@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
@@ -14,10 +14,14 @@ use betterlite_logging::logging_state::types::{
     CallbackPolicy, DynamicCallbacks, RequestLoggingFlags,
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
+use betterlite_models::catalog::BundledCatalog;
 use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
+use betterlite_models::json_provider_registry::JSONProviderRegistry;
+use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
+use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::{
-    ProviderIdentity, ResolutionError, ResolutionRequest, ResolvedModel,
+    ProviderIdentity, ResolutionContext, ResolutionError, ResolutionRequest, ResolvedModel,
 };
 use betterlite_openai::api::rerank_contracts::records::{RerankDocument, RerankResponse};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
@@ -30,7 +34,7 @@ use super::call::{RerankCall, ReturnDocuments};
 use super::dispatch::{
     Headers, OptionsRequest, Params, RerankOperations, SendRequest, provider_failure, value_failure,
 };
-use super::plan::{RerankIdentity, RerankPlan, rerank};
+use super::plan::{CatalogIdentity, RerankIdentity, RerankPlan, rerank};
 use super::selection::SelectedConfig;
 
 mod families;
@@ -732,5 +736,190 @@ fn a_mapping_failure_raises_through_the_error_mapping() {
     )
     .expect_err("the mapping raises");
     assert!(error.message.starts_with("Invalid parameter: stream"));
+    assert!(ops.sends().is_empty());
+}
+
+#[test]
+fn return_documents_null_is_absent_and_false_is_sent() {
+    let ops = FakeOps::default();
+    let identity = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Known(ProviderId::Cohere),
+        Some("k"),
+        Some("https://d/v1"),
+    );
+    let mut logging = logging_state();
+    let mut call = call("cohere");
+    call.return_documents = ReturnDocuments::Null;
+    dispatch(
+        &identity,
+        &ops,
+        &defaults(),
+        &BTreeMap::new(),
+        call,
+        &mut logging,
+    )
+    .expect("the null return_documents dispatches");
+    assert_eq!(ops.sends()[0].optional_params.get("return_documents"), None);
+
+    let mut logging = logging_state();
+    let mut call = call("cohere");
+    call.return_documents = ReturnDocuments::Value(false);
+    dispatch(
+        &identity,
+        &ops,
+        &defaults(),
+        &BTreeMap::new(),
+        call,
+        &mut logging,
+    )
+    .expect("the false return_documents dispatches");
+    assert_eq!(
+        ops.sends()[1].optional_params.get("return_documents"),
+        Some(&Json::Bool(false))
+    );
+}
+
+#[test]
+fn the_logger_gets_the_call_user() {
+    let ops = FakeOps::default();
+    let identity = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Known(ProviderId::Cohere),
+        Some("k"),
+        Some("https://d/v1"),
+    );
+    let mut logging = logging_state();
+    let mut call = call("cohere");
+    call.kwargs = with(&[("user", Json::Text(String::from("u-1")))]);
+    dispatch(
+        &identity,
+        &ops,
+        &defaults(),
+        &BTreeMap::new(),
+        call,
+        &mut logging,
+    )
+    .expect("the call dispatches");
+    assert_eq!(logging.user.as_deref(), Some("u-1"));
+}
+
+#[test]
+fn every_provider_slug_selects_its_config() {
+    let cases = [
+        ("azure_ai", SelectedConfig::AzureAi),
+        ("hosted_vllm", SelectedConfig::HostedVllm),
+        ("huggingface", SelectedConfig::HuggingFace),
+        ("deepinfra", SelectedConfig::Deepinfra),
+        ("vertex_ai", SelectedConfig::VertexAi),
+        ("fireworks_ai", SelectedConfig::FireworksAi),
+        ("watsonx", SelectedConfig::Watsonx),
+        ("dashscope", SelectedConfig::Dashscope),
+        ("qwencloud", SelectedConfig::Qwencloud),
+        ("qwen_ai_platform", SelectedConfig::QwenAiPlatform),
+        ("openai", SelectedConfig::Cohere),
+    ];
+    for (slug, expected) in cases {
+        let identity = ProviderIdentity::Custom(slug.to_owned());
+        assert_eq!(
+            super::selection::selected_config(&identity, "rerank-v1", None, &[]),
+            expected,
+            "{slug}"
+        );
+    }
+    let nvidia = ProviderIdentity::Custom(String::from("nvidia_nim"));
+    assert_eq!(
+        super::selection::selected_config(&nvidia, "rerank-v1", None, &[]),
+        SelectedConfig::NvidiaRetrieval
+    );
+    assert_eq!(
+        super::selection::selected_config(&nvidia, "ranking/nvidia/rerank-qa", None, &[]),
+        SelectedConfig::NvidiaRanking
+    );
+}
+
+#[test]
+fn the_catalog_identity_resolves_a_declared_provider() {
+    let catalog = BundledCatalog::default().get();
+    let known = BTreeSet::new();
+    let custom = BTreeSet::new();
+    let empty_environment = BTreeMap::new();
+    let context = ResolutionContext {
+        catalog: &catalog,
+        known_model_names: &known,
+        custom_providers: &custom,
+        environment: &empty_environment,
+        registry: JSONProviderRegistry::default(),
+        policies: ProviderPolicies::default(),
+        globals: GlobalCredentials::default(),
+    };
+    let identity = CatalogIdentity { context: &context };
+    let resolved = identity
+        .resolve(&ResolutionRequest {
+            model: "rerank-v1",
+            custom_llm_provider: Some("cohere"),
+            api_base: None,
+            api_key: None,
+        })
+        .expect("a declared provider resolves");
+    assert_eq!(resolved.provider.slug(), "cohere");
+    assert_eq!(resolved.model, "rerank-v1");
+}
+
+#[test]
+fn watsonx_reads_its_environment_credentials() {
+    let ops = FakeOps::default();
+    let identity = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Custom("watsonx".to_owned()),
+        None,
+        None,
+    );
+    let mut logging = logging_state();
+    dispatch(
+        &identity,
+        &ops,
+        &defaults(),
+        &environment(&[
+            ("WATSONX_API_KEY", "env-key"),
+            ("WATSONX_API_BASE", "https://env.watsonx.test"),
+        ]),
+        call("watsonx"),
+        &mut logging,
+    )
+    .expect("watsonx takes the environment credentials");
+    let sends = ops.sends();
+    assert_eq!(sends[0].config, SelectedConfig::Watsonx);
+    assert_eq!(sends[0].api_key.as_deref(), Some("env-key"));
+    assert_eq!(
+        sends[0].api_base.as_deref(),
+        Some("https://env.watsonx.test")
+    );
+    assert_eq!(sends[0].optional_params.get("token"), None);
+}
+
+#[test]
+fn watsonx_without_credentials_raises_the_key_error() {
+    let ops = FakeOps::default();
+    let identity = FakeIdentity::new(
+        "rerank-v1",
+        ProviderIdentity::Custom("watsonx".to_owned()),
+        None,
+        None,
+    );
+    let mut logging = logging_state();
+    let error = dispatch(
+        &identity,
+        &ops,
+        &defaults(),
+        &BTreeMap::new(),
+        call("watsonx"),
+        &mut logging,
+    )
+    .expect_err("watsonx needs a key");
+    assert_eq!(
+        error.message,
+        "Error: Watsonx API key not set. Set WATSONX_API_KEY in environment variables or pass in as parameter - 'api_key='."
+    );
     assert!(ops.sends().is_empty());
 }
