@@ -1,0 +1,12 @@
+task: B4443
+deviations:
+  - what: Process memory is the VmHWM peak from /proc/self/status on Linux, and None on a platform without /proc such as macOS, where LiteLLM reads resource.getrusage(RUSAGE_SELF).ru_maxrss and divides by 1024 or 1024*1024.
+    why: getrusage has no safe wrapper in the dependency set and the workspace forbids unsafe code, and /proc carries the same peak that ru_maxrss reports on Linux; the macOS path has no safe source, so the log shows "unknown" there.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L116-L129
+  - what: thread_count is the OS thread count from /proc/self/status, and 0 where that file is absent, instead of Python's threading.active_count().
+    why: betterlite runs its probes as async tasks on the runtime rather than one Python thread per check, so the process's OS threads are the closest available measure and a missing source reports 0 rather than failing the log line.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L606-L617
+  - what: Exceptions are ProbeFailure values carrying the message, the status code and the raw request typed dict, returned in exceptions_by_model_id beside the JSON rows; LiteLLM returns the live Python exception objects from the same map.
+    why: the JSON answer keeps the same integer exception_status and never the exception itself, and the typed value gives B8388 the status without an untyped object.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L619-L655
+kept_bugs: []
