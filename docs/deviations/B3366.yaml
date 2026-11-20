@@ -81,6 +81,13 @@ deviations:
     why: LiteLLM takes extra_body as a named argument and does not pass it to container_file_list_handler either.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L1042-L1043
   - what: >-
+      An extra_query value is text or an integer, where LiteLLM declares dict[str, object] and hands any value to
+      httpx, which repeats a list value and renders a boolean as true or false.
+    why: >-
+      B3363's shared container request types carry extra_query as a ParamValue map for every file endpoint, and the
+      provider transform overlays what it receives the same way; a caller needing another value sends its text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L1041
+  - what: >-
       A supplied client is typed as Source::Blocking or Source::Asynchronous, so LiteLLM's isinstance test that
       rebuilds a wrongly typed client has no runtime branch here; a wrong client type does not compile.
     why: >-
