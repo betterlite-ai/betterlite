@@ -41,7 +41,10 @@ impl Helper for Op {
             Input::ComplexityPlacement { model } => {
                 check_output(model, check_complexity_placement(model))
             }
-            Input::AccessWindows { model } => access_output(model),
+            Input::AccessWindows { model } => {
+                let database = TimeZoneDatabase::from_env();
+                check_output(model, check_access_windows(model, &database))
+            }
             Input::CapabilityLimits { model_list, limit } => {
                 limits_output(check_capability_limits(model_list, *limit))
             }
@@ -58,11 +61,6 @@ fn check_output(model: &JsonObject, result: Result<(), DeploymentCheckError>) ->
             serde_json::json!({"refused": true, "model_name": name, "message": error.to_string()}),
         ),
     }
-}
-
-fn access_output(model: &JsonObject) -> HelperResult {
-    let database = TimeZoneDatabase::from_env();
-    check_output(model, check_access_windows(model, &database))
 }
 
 fn limits_output(result: Result<(), DeploymentCheckError>) -> HelperResult {
