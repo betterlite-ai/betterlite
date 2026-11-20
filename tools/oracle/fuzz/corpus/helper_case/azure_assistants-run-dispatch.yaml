@@ -1,0 +1,5 @@
+kind: helper
+name: azure-assistants-seed-run-dispatch
+call: {azure_assistants: {run_dispatch: [{arun_thread: true, stream: false, run: {thread_id: thread_a, assistant_id: asst_a}}]}}
+env: {}
+compare: {ignore: []}

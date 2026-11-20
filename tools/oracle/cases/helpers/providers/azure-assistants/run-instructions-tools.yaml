@@ -1,0 +1,35 @@
+kind: helper
+name: azure-assistants-run-instructions-tools
+call:
+  azure_assistants:
+    run_instructions_tools:
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        run: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: extra, instructions: base, metadata: {tag: x}, model: gpt-4o-mini, tools: [{type: code_interpreter}]}
+        replies:
+          - {status: 200, headers: {content-type: application/json}, body: '{"id":"run_1","object":"thread.run","created_at":1700000000,"assistant_id":"asst_1","thread_id":"thread_a","status":"queued","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[{"type":"code_interpreter"}]}'}
+          - {status: 200, headers: {content-type: application/json}, body: '{"id":"run_1","object":"thread.run","created_at":1700000000,"completed_at":1700000005,"assistant_id":"asst_1","thread_id":"thread_a","status":"completed","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"metadata":{"tag":"x"},"response_format":"auto","tool_choice":"auto","tools":[{"type":"code_interpreter"}],"truncation_strategy":{"type":"auto"},"usage":{"completion_tokens":10,"prompt_tokens":5,"total_tokens":15},"temperature":0.5,"top_p":0.25}'}
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        run: {thread_id: thread_a, assistant_id: asst_a}
+        replies:
+          - {status: 200, headers: {content-type: application/json}, body: '{"id":"run_1","object":"thread.run","created_at":1700000000,"assistant_id":"asst_1","thread_id":"thread_a","status":"queued","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[{"type":"code_interpreter"}]}'}
+          - {status: 200, headers: {content-type: application/json}, body: '{"id":"run_1","object":"thread.run","created_at":1700000000,"completed_at":1700000005,"assistant_id":"asst_1","thread_id":"thread_a","status":"completed","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[{"type":"code_interpreter"}]}'}
+      - api_key: sk-fixture
+        api_base: https://example.test
+        api_version: "2024-02-01"
+        run:
+          thread_id: thread_a
+          assistant_id: asst_a
+          additional_instructions: null
+          instructions: override
+          metadata: {tag: x, other: y}
+          model: gpt-4o
+          tools: [{type: file_search}, {type: function, function: {name: lookup, description: looks up, parameters: {type: object}}}]
+        replies:
+          - {status: 200, headers: {content-type: application/json}, body: '{"id":"run_1","object":"thread.run","created_at":1700000000,"assistant_id":"asst_1","thread_id":"thread_a","status":"queued","instructions":"override","model":"gpt-4o","parallel_tool_calls":true,"tools":[{"type":"file_search"}]}'}
+          - {status: 200, headers: {content-type: application/json}, body: '{"id":"run_1","object":"thread.run","created_at":1700000000,"completed_at":1700000005,"assistant_id":"asst_1","thread_id":"thread_a","status":"completed","instructions":"override","model":"gpt-4o","parallel_tool_calls":true,"tools":[{"type":"file_search"}]}'}
+env: {}
+compare: {ignore: []}
