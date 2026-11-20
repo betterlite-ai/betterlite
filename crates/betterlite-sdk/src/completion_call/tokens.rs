@@ -91,11 +91,8 @@ pub async fn count_tokens(
             tools: request.tools,
         })
         .await;
-    Ok(TokenCountResponse::local(
-        total,
-        request.model,
-        &resolved.model,
-    ))
+    let answer = TokenCountResponse::local(total, request.model, &resolved.model);
+    Ok(answer)
 }
 fn system_message(system: &str) -> Json {
     Json::Object(IndexMap::from([

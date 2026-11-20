@@ -4,6 +4,7 @@ use crate::call_setup::RequestMap;
 use crate::call_setup::correlation::CallOutcome;
 use crate::call_wrapper::state::LoggingHandle;
 use crate::call_wrapper::target::CallTarget;
+use crate::completion_request::args::CompletionArgs;
 use crate::completion_request::call::FallbackCall;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
@@ -24,16 +25,8 @@ pub async fn run_fallbacks(
     logging: Option<&LoggingHandle>,
 ) -> Result<CallOutcome, CompletionCallError> {
     let original = call.args.model.clone().unwrap_or_default();
-    let mut base = args_to_map(&call.args)?;
-    base.shift_remove("model");
-    base.shift_remove("acompletion");
-    base.shift_remove("fallbacks");
-    base.insert(
-        String::from("litellm_call_id"),
-        Json::Text(Uuid::new_v4().to_string()),
-    );
-    let base = filter_internal_params(base);
-    let mut candidates = Vec::with_capacity(call.fallbacks.len() + 1);
+    let base = fallback_base(&call.args)?;
+    let mut candidates = Vec::with_capacity(call.fallbacks.len().saturating_add(1));
     candidates.push(Json::Text(original.clone()));
     candidates.extend(call.fallbacks);
     let mut last_error: Option<String> = None;
@@ -64,9 +57,19 @@ pub async fn run_fallbacks(
             }
         }
     }
-    Err(CompletionCallError::AllFallbacksFailed {
-        last: last_error.unwrap_or_else(|| String::from("None")),
-    })
+    let last = last_error.unwrap_or_else(|| String::from("None"));
+    Err(CompletionCallError::AllFallbacksFailed { last })
+}
+fn fallback_base(args: &CompletionArgs) -> Result<RequestMap, CompletionCallError> {
+    let mut base = args_to_map(args)?;
+    base.shift_remove("model");
+    base.shift_remove("acompletion");
+    base.shift_remove("fallbacks");
+    base.insert(
+        String::from("litellm_call_id"),
+        Json::Text(Uuid::new_v4().to_string()),
+    );
+    Ok(filter_internal_params(base))
 }
 fn overlay(mut base: RequestMap, fields: &IndexMap<String, Json>) -> RequestMap {
     for (name, value) in fields {

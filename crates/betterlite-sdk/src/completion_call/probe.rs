@@ -11,6 +11,7 @@ use http::header::AUTHORIZATION;
 use http::{HeaderMap, HeaderValue, Method};
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
+use serde_json::Number;
 use std::future::Future;
 use std::time::Duration;
 use thiserror::Error;
@@ -35,7 +36,6 @@ pub enum ProbeFailure {
     #[error(transparent)]
     Call(#[from] CallError),
 }
-// B5364's real probe: the model lookup openai.models.retrieve makes, and a real completion
 pub struct CompletionProbe<'probe, 'ports> {
     pub client: &'probe ProxiedClient,
     pub completion: &'probe CompletionTarget<'ports>,
@@ -43,24 +43,27 @@ pub struct CompletionProbe<'probe, 'ports> {
     pub api_key: Option<SecretString>,
     pub timeout: Duration,
 }
+fn model_url(base: &str, model: &str) -> Result<Url, ProbeFailure> {
+    let mut url = Url::parse(base).map_err(|_error| ProbeFailure::ApiBase {
+        api_base: base.to_owned(),
+    })?;
+    let mut segments = url
+        .path_segments_mut()
+        .map_err(|_error| ProbeFailure::ApiBase {
+            api_base: base.to_owned(),
+        })?;
+    segments.pop_if_empty();
+    segments.push("models");
+    segments.push(model);
+    drop(segments);
+    Ok(url)
+}
 impl CompletionProbe<'_, '_> {
     async fn retrieve(&self, model: &str) -> Result<(), ProbeFailure> {
         let Some(base) = self.api_base.as_deref() else {
             return Err(ProbeFailure::MissingApiBase);
         };
-        let mut url = Url::parse(base).map_err(|_error| ProbeFailure::ApiBase {
-            api_base: base.to_owned(),
-        })?;
-        {
-            let mut segments = url
-                .path_segments_mut()
-                .map_err(|_error| ProbeFailure::ApiBase {
-                    api_base: base.to_owned(),
-                })?;
-            segments.pop_if_empty();
-            segments.push("models");
-            segments.push(model);
-        }
+        let url = model_url(base, model)?;
         let mut headers = HeaderMap::new();
         if let Some(key) = &self.api_key {
             let value = HeaderValue::from_str(&format!("Bearer {}", key.expose_secret()))
@@ -120,7 +123,7 @@ impl ModelProbe for CompletionProbe<'_, '_> {
             if let Some(tokens) = request.max_tokens {
                 map.insert(
                     String::from("max_tokens"),
-                    Json::Number(serde_json::Number::from(tokens)),
+                    Json::Number(Number::from(tokens)),
                 );
             }
             if let Some(key) = request.api_key {

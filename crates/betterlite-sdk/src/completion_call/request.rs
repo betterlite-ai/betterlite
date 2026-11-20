@@ -35,7 +35,6 @@ pub fn args_to_map(args: &CompletionArgs) -> Result<RequestMap, CompletionCallEr
     }
     Ok(map)
 }
-// The provider-mapped optional params in the OpenAI request shape dispatch reads
 pub fn chat_body(call: &PreparedCall) -> Result<Vec<u8>, CompletionCallError> {
     let mut fields = IndexMap::new();
     for (name, value) in &call.options.params {
@@ -62,6 +61,7 @@ pub fn chat_operation(
         calls,
     }))
 }
+#[must_use]
 pub fn call_id(call: &PreparedCall) -> String {
     match call.kwargs.get("litellm_call_id") {
         Some(Json::Text(id)) => id.clone(),
@@ -123,9 +123,9 @@ async fn stream_outcome(answer: ChatStreamAnswer) -> Result<CallOutcome, Complet
         converted_from_mock: false,
     }))
 }
-// The SSE frames the provider stream carried, as the chunk objects a stream answer holds
 pub fn sse_chunks(bytes: &[u8]) -> Result<Json, CompletionCallError> {
-    let text = String::from_utf8_lossy(bytes);
+    let text = String::from_utf8(bytes.to_vec())
+        .map_err(|_error| CompletionCallError::Field { field: "stream" })?;
     let mut chunks = Vec::new();
     for event in text.split("\n\n") {
         for line in event.lines() {
@@ -141,6 +141,7 @@ pub fn sse_chunks(bytes: &[u8]) -> Result<Json, CompletionCallError> {
     }
     Ok(Json::List(chunks))
 }
+#[must_use]
 pub fn responses_operation() -> Operation {
     Operation::Responses(ResponsesRequest)
 }

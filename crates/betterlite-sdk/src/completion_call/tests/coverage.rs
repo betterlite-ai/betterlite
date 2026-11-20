@@ -1,14 +1,15 @@
 use std::sync::Arc;
 
+use betterlite_config::sections::openai_credentials::Settings;
 use betterlite_context::agentic_loop_plan::{FollowupMessage, JsonMap};
 use betterlite_core::api::chat_agentic_loop::{ChatContinuation, ChatLoopResult};
 use betterlite_core::operation::chat::ChatFailure;
-use betterlite_core::responses_bridge::ResponsesBridgeCapabilities;
 use betterlite_models::decisions::Json;
 use betterlite_openai::chat::execution::ChatError;
 use betterlite_openai::stream::chunk::Chunk;
 use futures_util::StreamExt as _;
 use serde_json::value::RawValue;
+use uuid::Uuid;
 
 use super::USER;
 use super::support::{
@@ -17,7 +18,6 @@ use super::support::{
 };
 use crate::call_setup::correlation::CallOutcome;
 use crate::call_wrapper::error::class_status;
-use crate::call_wrapper::target::CallTarget;
 use crate::completion_call::bridge_facts::ModelBridgeFacts;
 use crate::completion_call::error::CompletionCallError;
 use crate::completion_call::fallbacks::run_fallbacks;
@@ -35,10 +35,10 @@ use crate::completion_request::call::{
 fn target_errors_carry_their_status() {
     let harness = Harness::new();
     let target = harness.target();
-    let mapped = target.error(CompletionCallError::MissingMock, "gpt-4o");
-    assert_eq!(class_status(&mapped.class), Some(400));
-    let mapped = target.error(CompletionCallError::NoFallbackResponse, "gpt-4o");
-    assert_eq!(class_status(&mapped.class), Some(500));
+    let missing = target.error(CompletionCallError::MissingMock, "gpt-4o");
+    assert_eq!(class_status(&missing.class), Some(400));
+    let no_fallback = target.error(CompletionCallError::NoFallbackResponse, "gpt-4o");
+    assert_eq!(class_status(&no_fallback.class), Some(500));
 }
 
 #[tokio::test]
@@ -56,7 +56,7 @@ async fn target_route_failure_keeps_its_status() {
 #[test]
 fn target_call_id_comes_from_the_kwarg_or_a_fresh_uuid() {
     let mut call = PreparedCall::default();
-    uuid::Uuid::parse_str(&request::call_id(&call)).unwrap();
+    Uuid::parse_str(&request::call_id(&call)).unwrap();
     call.kwargs.insert(
         String::from("litellm_call_id"),
         Json::Text(String::from("given-id")),
@@ -195,11 +195,15 @@ async fn retry_runs_the_completion_entry_and_the_async_entry() {
         dig(&answer, &["id"]),
         Some(&Json::Text(String::from("chatcmpl-1")))
     );
-    let call = request(&format!(
+    let async_call = request(&format!(
         r#"{{"num_retries":1,"model":"gpt-4o","messages":[{USER}]}}"#
     ));
-    let outcome = harness.async_target().retry(call, None).await.unwrap();
-    let CallOutcome::Response(answer) = outcome else {
+    let async_outcome = harness
+        .async_target()
+        .retry(async_call, None)
+        .await
+        .unwrap();
+    let CallOutcome::Response(answer) = async_outcome else {
         panic!("the async entry answers");
     };
     assert_eq!(
@@ -252,10 +256,11 @@ async fn async_continuation_answers_and_streams_through_the_call() {
         String::from("stream"),
         RawValue::from_string(String::from("true")).unwrap(),
     );
-    let result = ChatContinuation::complete(&target, "gpt-4o", &messages, &stream_params, &kwargs)
-        .await
-        .unwrap();
-    let ChatLoopResult::Stream(stream) = result else {
+    let stream_result =
+        ChatContinuation::complete(&target, "gpt-4o", &messages, &stream_params, &kwargs)
+            .await
+            .unwrap();
+    let ChatLoopResult::Stream(stream) = stream_result else {
         panic!("a streamed continuation answers a stream");
     };
     let chunks: Vec<Chunk> = stream.collect().await;
@@ -293,18 +298,18 @@ fn bridge_facts_no_foundry_rules_keep_azure_ai_on_chat() {
     let bridge = ModelBridgeFacts {
         facts: &facts,
         foundry: &configured,
-        openai: betterlite_config::sections::openai_credentials::Settings::default(),
+        openai: Settings::default(),
         litellm_api_base: None,
     };
     assert!(!bridge.foundry_supports_responses("azure/gpt-5", None));
     assert!(!bridge.foundry_chat_rejects_tools("azure/gpt-5", None));
     let rules = NoFoundryRules;
-    let bridge = ModelBridgeFacts {
+    let no_rules = ModelBridgeFacts {
         facts: &facts,
         foundry: &rules,
-        openai: betterlite_config::sections::openai_credentials::Settings::default(),
+        openai: Settings::default(),
         litellm_api_base: None,
     };
-    assert!(!bridge.foundry_supports_responses("azure/gpt-5", None));
-    assert!(!bridge.foundry_chat_rejects_tools("azure/gpt-5", None));
+    assert!(!no_rules.foundry_supports_responses("azure/gpt-5", None));
+    assert!(!no_rules.foundry_chat_rejects_tools("azure/gpt-5", None));
 }

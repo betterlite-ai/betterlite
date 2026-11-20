@@ -3,20 +3,24 @@
 mod coverage;
 mod support;
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::sections::openai_credentials::Settings;
 use betterlite_config::types::ProxyTrust;
 use betterlite_core::dispatch::error::DispatchError;
-use betterlite_core::environment_validation::probe::{ModelProbe, ProbeCompletion};
-use betterlite_core::responses_bridge::ResponsesBridgeCapabilities;
+use betterlite_core::environment_validation::probe::ProbeCompletion;
+use betterlite_core::responses_bridge::{ModelInfoError, ReasoningEffort};
 use betterlite_error::error::ErrorClass;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::Object;
+use serde_json::Number;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::task::JoinSet;
 
 use crate::call_setup::correlation::CallOutcome;
 use crate::call_wrapper::error::{class_name, class_status};
@@ -584,8 +588,7 @@ async fn retry_one_means_a_single_call() {
 
 #[test]
 fn retry_strategy_rejects_a_non_text_value() {
-    let error =
-        RetryStrategy::parse(Some(&Json::Number(serde_json::Number::from(5_i64)))).unwrap_err();
+    let error = RetryStrategy::parse(Some(&Json::Number(Number::from(5_i64)))).unwrap_err();
     assert!(error.to_string().contains("retry_strategy"));
     assert_eq!(
         RetryStrategy::parse(Some(&Json::Text(String::from("constant_retry")))).unwrap(),
@@ -608,26 +611,25 @@ async fn read_request(stream: &mut TcpStream) -> String {
             break;
         }
     }
-    String::from_utf8_lossy(&buffer).into_owned()
+    String::from_utf8(buffer).unwrap()
 }
 
-async fn spawn_server(status: u16) -> (String, tokio::task::JoinHandle<String>) {
+async fn spawn_server(status: u16) -> (String, JoinSet<String>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
-    let handle = tokio::spawn(async move {
+    let mut server = JoinSet::new();
+    server.spawn(async move {
         let (mut stream, _peer) = listener.accept().await.unwrap();
         let seen = read_request(&mut stream).await;
         let answer = format!("HTTP/1.1 {status} X\r\ncontent-length: 0\r\n\r\n");
         stream.write_all(answer.as_bytes()).await.unwrap();
         seen
     });
-    (format!("http://{address}/v1"), handle)
+    (format!("http://{address}/v1"), server)
 }
 
 fn client() -> ProxiedClient {
-    let policy = Arc::new(
-        ProxyPolicy::resolve(&ProxyTrust::default(), &std::collections::BTreeMap::new()).unwrap(),
-    );
+    let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap());
     ProxiedClient::outbound(&policy).unwrap()
 }
 
@@ -636,7 +638,7 @@ async fn probe_lookup_sends_a_bearer_get_for_the_model() {
     let harness = Harness::new();
     let target = harness.target();
     let client = client();
-    let (base, server) = spawn_server(200).await;
+    let (base, mut server) = spawn_server(200).await;
     let probe = CompletionProbe {
         client: &client,
         completion: &target,
@@ -645,7 +647,7 @@ async fn probe_lookup_sends_a_bearer_get_for_the_model() {
         timeout: Duration::from_secs(5),
     };
     probe.retrieve_openai_model("gpt/4o").await.unwrap();
-    let seen = server.await.unwrap();
+    let seen = server.join_next().await.unwrap().unwrap();
     assert!(seen.contains("GET /v1/models/gpt%2F4o HTTP/1.1"), "{seen}");
     assert!(
         seen.to_ascii_lowercase()
@@ -659,7 +661,7 @@ async fn probe_lookup_reports_the_answer_status() {
     let harness = Harness::new();
     let target = harness.target();
     let client = client();
-    let (base, server) = spawn_server(404).await;
+    let (base, mut server) = spawn_server(404).await;
     let probe = CompletionProbe {
         client: &client,
         completion: &target,
@@ -669,7 +671,7 @@ async fn probe_lookup_reports_the_answer_status() {
     };
     let error = probe.retrieve_openai_model("gpt-4o").await.unwrap_err();
     assert!(matches!(&error, ProbeFailure::Status { status: 404 }));
-    server.await.unwrap();
+    server.join_next().await.unwrap().unwrap();
 }
 
 #[tokio::test]
@@ -722,7 +724,7 @@ fn bridge<'a>(facts: &'a FakeFacts, foundry: &'a FakeFoundry) -> ModelBridgeFact
     ModelBridgeFacts {
         facts,
         foundry,
-        openai: betterlite_config::sections::openai_credentials::Settings::default(),
+        openai: Settings::default(),
         litellm_api_base: None,
     }
 }
@@ -739,7 +741,7 @@ fn bridge_facts_answers_model_info_and_unknown_models() {
     assert_eq!(facts_bridge.model_info("gpt-5", "openai").unwrap(), info);
     assert!(matches!(
         facts_bridge.model_info("other", "openai"),
-        Err(betterlite_core::responses_bridge::ModelInfoError::Unknown { model }) if model == "other"
+        Err(ModelInfoError::Unknown { model }) if model == "other"
     ));
     assert_eq!(
         support::lock(&facts.seen).clone(),
@@ -759,7 +761,7 @@ fn bridge_facts_passes_the_foundry_questions_to_its_field() {
     assert!(
         facts_bridge.foundry_supports_responses("azure/gpt-5", Some("https://x.openai.azure.com"))
     );
-    let effort = betterlite_core::responses_bridge::ReasoningEffort::Text(String::from("high"));
+    let effort = ReasoningEffort::Text(String::from("high"));
     assert!(facts_bridge.foundry_chat_rejects_tools("azure/gpt-5", Some(&effort)));
     let calls = support::lock(&foundry.calls).clone();
     assert_eq!(calls.len(), 2);

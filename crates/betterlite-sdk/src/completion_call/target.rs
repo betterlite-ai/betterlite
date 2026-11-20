@@ -22,6 +22,7 @@ use betterlite_core::operation::chat::ChatCall;
 use betterlite_models::decisions::Json;
 use betterlite_openai::chat::MockSettings;
 use betterlite_redact::secret::Redactor;
+use serde::de::DeserializeOwned;
 use std::sync::Arc;
 // main.py's completion: prepare the call, then run the outcome B5655 chose
 pub struct CompletionTarget<'ports> {
@@ -37,6 +38,7 @@ pub struct CompletionTarget<'ports> {
     pub sleeper: &'ports dyn Sleeper,
 }
 impl CompletionTarget<'_> {
+    #[must_use]
     pub fn error(&self, error: CompletionCallError, model: &str) -> CallError {
         into_call_error(&error, model, "", &self.redactor)
     }
@@ -69,35 +71,29 @@ impl CompletionTarget<'_> {
         let operation = request::chat_operation(call, &body, Arc::clone(&self.calls))?;
         request::execute(&self.dispatch, operation).await
     }
-    // The Responses API bridge B5655 chose; its entry owns the request shape
     async fn bridge_call(&self, call: &PreparedCall) -> Result<CallOutcome, CompletionCallError> {
         if call.custom_llm_provider.as_deref() == Some("palm") {
             return Err(CompletionCallError::Palm);
         }
         request::execute(&self.dispatch, request::responses_operation()).await
     }
-    // B255's mock calls: the answer the caller or the operator injected, never a provider
     fn mock_call(&self, call: &MockCall) -> Result<CallOutcome, CompletionCallError> {
-        let response = match call.call.kwargs.get("mock_response") {
-            None | Some(Json::Null) => None,
-            Some(value) => Some(kwarg(value, "mock_response")?),
-        };
-        let tool_calls = match call.call.kwargs.get("mock_tool_calls") {
-            None | Some(Json::Null) => None,
-            Some(value) => Some(kwarg(value, "mock_tool_calls")?),
-        };
+        let mock_response = optional_kwarg(&call.call, "mock_response")?;
+        let tool_calls = optional_kwarg(&call.call, "mock_tool_calls")?;
         let choice_count = call
             .call
             .choice_count
             .and_then(|count| u32::try_from(count).ok());
-        let Some(mut plan) =
-            resolve_mock(None, response.as_ref(), tool_calls.as_deref(), choice_count)
-        else {
+        let Some(mut plan) = resolve_mock(
+            None,
+            mock_response.as_ref(),
+            tool_calls.as_deref(),
+            choice_count,
+        ) else {
             return Err(CompletionCallError::MissingMock);
         };
-        plan.prompt_tokens = call
-            .prompt_tokens
-            .and_then(|count| u64::try_from(count).ok());
+        let prompt_tokens = call.prompt_tokens;
+        plan.prompt_tokens = prompt_tokens.and_then(|count| u64::try_from(count).ok());
         let id = format!("chatcmpl-{}", self.ids.next_call_id());
         let created = u64::try_from(self.clock.now().timestamp()).unwrap_or(0);
         if call.call.stream {
@@ -123,8 +119,6 @@ impl CompletionTarget<'_> {
         let encoded = serde_json::to_value(&response)?;
         Ok(CallOutcome::Response(serde_json::from_value(encoded)?))
     }
-    // batch_completion_models: each deployment runs with the request's params overlaid by its own,
-    // and a failing deployment is skipped for the next one
     async fn model_list(
         &self,
         call: ModelListCall,
@@ -173,10 +167,16 @@ impl CallTarget for CompletionTarget<'_> {
         retry::with_retries(self, request, logging, self.sleeper).await
     }
 }
-fn kwarg<T: serde::de::DeserializeOwned>(
-    value: &Json,
-    field: &'static str,
-) -> Result<T, CompletionCallError> {
+fn kwarg<T: DeserializeOwned>(value: &Json, field: &'static str) -> Result<T, CompletionCallError> {
     let encoded = serde_json::to_value(value)?;
     serde_json::from_value(encoded).map_err(|_error| CompletionCallError::Field { field })
+}
+fn optional_kwarg<T: DeserializeOwned>(
+    call: &PreparedCall,
+    name: &'static str,
+) -> Result<Option<T>, CompletionCallError> {
+    match call.kwargs.get(name) {
+        None | Some(Json::Null) => Ok(None),
+        Some(value) => Ok(Some(kwarg(value, name)?)),
+    }
 }

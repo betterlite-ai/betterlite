@@ -15,8 +15,9 @@ use betterlite_core::api::chat_agentic_loop::{
 use betterlite_models::decisions::Json;
 use betterlite_openai::chat::response::ChatResponse;
 use betterlite_openai::stream::chunk::Chunk;
-use futures_util::{StreamExt as _, stream::BoxStream};
+use futures_util::{StreamExt as _, stream, stream::BoxStream};
 use indexmap::IndexMap;
+use serde_json::value::{RawValue, to_raw_value};
 impl AsyncCompletionTarget<'_> {
     // the provider-agnostic dispatch point for the chat-completions agentic loop
     pub(super) async fn agentic(
@@ -32,12 +33,11 @@ impl AsyncCompletionTarget<'_> {
         if serde_json::from_str::<ChatResponse>(&text).is_err() {
             return Ok(outcome);
         }
-        let raw = serde_json::value::RawValue::from_string(text)?;
+        let raw = RawValue::from_string(text)?;
         let model = args.model.clone().unwrap_or_default();
         let messages = followup_messages(&args.messages)?;
         let optional = optional_params(args)?;
         let kwargs = raw_map(&args.kwargs)?;
-        let stream = args.stream == Some(true);
         let call = ChatLoopCall {
             response: raw.as_ref(),
             model: &model,
@@ -46,7 +46,7 @@ impl AsyncCompletionTarget<'_> {
             kwargs: &kwargs,
             logging: AgenticLoggingHandle::Absent,
             custom_llm_provider: provider.unwrap_or(""),
-            stream,
+            stream: args.stream == Some(true),
         };
         let ports = LoopPorts {
             continuation: self,
@@ -101,9 +101,7 @@ impl ChatContinuation for AsyncCompletionTarget<'_> {
                         );
                     }
                 }
-                Ok(ChatLoopResult::Stream(
-                    futures_util::stream::iter(chunks).boxed(),
-                ))
+                Ok(ChatLoopResult::Stream(stream::iter(chunks).boxed()))
             }
         }
     }
@@ -111,9 +109,8 @@ impl ChatContinuation for AsyncCompletionTarget<'_> {
 fn json_from_raw(raw: &str) -> Result<Json, CompletionCallError> {
     Ok(serde_json::from_str(raw)?)
 }
-fn raw_value(json: &Json) -> Result<Box<serde_json::value::RawValue>, CallError> {
-    serde_json::value::to_raw_value(json)
-        .map_err(|source| CallError::from(plain_error(&source.to_string())))
+fn raw_value(json: &Json) -> Result<Box<RawValue>, CallError> {
+    to_raw_value(json).map_err(|source| CallError::from(plain_error(&source.to_string())))
 }
 fn chunk_of(value: Json) -> Result<Chunk, CompletionCallError> {
     let encoded = serde_json::to_value(value)?;
@@ -122,14 +119,14 @@ fn chunk_of(value: Json) -> Result<Chunk, CompletionCallError> {
 fn followup_messages(messages: &[Json]) -> Result<Vec<FollowupMessage>, CompletionCallError> {
     let mut list = Vec::with_capacity(messages.len());
     for message in messages {
-        list.push(FollowupMessage(serde_json::value::to_raw_value(message)?));
+        list.push(FollowupMessage(to_raw_value(message)?));
     }
     Ok(list)
 }
 fn raw_map(values: &IndexMap<String, Json>) -> Result<JsonMap, CompletionCallError> {
     let mut map = JsonMap::new();
     for (name, value) in values {
-        map.insert(name.clone(), serde_json::value::to_raw_value(value)?);
+        map.insert(name.clone(), to_raw_value(value)?);
     }
     Ok(map)
 }
@@ -147,7 +144,7 @@ fn optional_params(args: &CompletionArgs) -> Result<JsonMap, CompletionCallError
         if matches!(value, Json::Null) {
             continue;
         }
-        map.insert(name, serde_json::value::to_raw_value(&value)?);
+        map.insert(name, to_raw_value(&value)?);
     }
     Ok(map)
 }

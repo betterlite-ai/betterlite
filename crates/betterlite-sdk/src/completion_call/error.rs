@@ -12,7 +12,6 @@ use betterlite_openai::chat::execution::ChatError;
 use betterlite_openai::text_completion_execution::failure::CompletionFailure;
 use betterlite_redact::secret::Redactor;
 use thiserror::Error;
-// Every failure the completion call can name before exception_type classifies it
 #[derive(Debug, Error)]
 pub enum CompletionCallError {
     #[error(transparent)]
@@ -59,7 +58,7 @@ pub enum CompletionCallError {
     #[error("the {field} value is not valid here")]
     Field { field: &'static str },
 }
-// exception_type(): the raw exception carries the provider, the model and any status the branch knew
+#[must_use]
 pub fn into_call_error(
     error: &CompletionCallError,
     model: &str,

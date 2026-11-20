@@ -43,7 +43,6 @@ impl AsyncCompletionTarget<'_> {
             &self.inner.redactor,
         )
     }
-    // ### APPLY MOCK DELAY ###
     pub(crate) async fn sleep_mock_delay(
         &self,
         call: &MockCall,
@@ -109,7 +108,7 @@ impl CallTarget for AsyncCompletionTarget<'_> {
             .await
             .map_err(|error| self.async_error(CompletionCallError::from(error), &model, None))?;
         let provider = provider_of(&prepared).map(str::to_owned);
-        let prepared = match prepared {
+        let hooked = match prepared {
             PreparedCompletion::Fallbacks(call) => {
                 let outcome = super::fallbacks::run_fallbacks(self, call, logging)
                     .await
@@ -133,13 +132,13 @@ impl CallTarget for AsyncCompletionTarget<'_> {
         };
         let outcome = self
             .inner
-            .run(prepared, true, logging)
+            .run(hooked, true, logging)
             .await
             .map_err(|error| self.async_error(error, &model, provider.as_deref()))?;
-        let outcome = self
+        let converted = self
             .convert_text_reply(provider.as_deref(), outcome)
             .map_err(|error| self.async_error(error, &model, provider.as_deref()))?;
-        self.agentic(outcome, &args, provider.as_deref())
+        self.agentic(converted, &args, provider.as_deref())
             .await
             .map_err(|error| self.async_error(error, &model, provider.as_deref()))
     }

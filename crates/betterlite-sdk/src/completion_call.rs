@@ -1,4 +1,3 @@
-// The SDK form of main.py's completion and acompletion: B5655 prepares the call, this module runs it.
 pub mod bridge_facts;
 pub mod error;
 pub mod fallbacks;

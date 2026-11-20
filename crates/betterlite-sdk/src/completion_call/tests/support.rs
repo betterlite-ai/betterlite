@@ -1,5 +1,4 @@
 // The ports B5655's preparation asks for, and the recording doubles the completion call's tests drive.
-#![allow(dead_code)]
 
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -39,13 +38,13 @@ use betterlite_openai::chat::deployment::{ChatDeployment, OpenAiDefaults};
 use betterlite_openai::openai_base_config::Object;
 use betterlite_redact::secret::Redactor;
 use chrono::{DateTime, FixedOffset};
-use futures_util::StreamExt as _;
+use futures_util::{StreamExt as _, stream};
 use http::HeaderMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::value::RawValue;
 
 use crate::call_setup::RequestMap;
-use crate::call_setup::correlation::{CallOutcome, ChatStream};
+use crate::call_setup::correlation::CallOutcome;
 use crate::call_wrapper::error::{CallError, plain_error};
 use crate::call_wrapper::ports::{IdSource, WrapperClock};
 use crate::call_wrapper::state::LoggingHandle;
@@ -149,9 +148,7 @@ pub(super) fn deployment_named(model_id: &str) -> ChatDeployment {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct Lookup {
     pub model: String,
-    pub provider: Option<String>,
     pub api_base: Option<String>,
-    pub has_key: bool,
 }
 
 #[derive(Default)]
@@ -179,9 +176,7 @@ impl ModelMetadata for FakeMetadata {
     ) -> Result<ResolvedModel, ResolutionError> {
         lock(&self.lookups).push(Lookup {
             model: request.model.to_owned(),
-            provider: request.custom_llm_provider.map(str::to_owned),
             api_base: request.api_base.map(str::to_owned),
-            has_key: request.api_key.is_some(),
         });
         Ok(ResolvedModel {
             model: self
@@ -440,9 +435,7 @@ impl ChatCall for FakeChat {
     ) -> Result<ChatStreamAnswer, ChatFailure> {
         self.record(&call);
         let frames = lock(&self.frames).clone();
-        let body =
-            futures_util::stream::iter(frames.into_iter().map(|frame| Ok(frame.into_bytes())))
-                .boxed();
+        let body = stream::iter(frames.into_iter().map(|frame| Ok(frame.into_bytes()))).boxed();
         Ok(ChatStreamAnswer {
             body,
             upstream_headers: HeaderMap::new(),
@@ -543,7 +536,6 @@ pub(super) struct ProviderSeen {
     pub api_base: Option<String>,
     pub key: Option<String>,
     pub system: Option<String>,
-    pub message_count: usize,
 }
 
 pub(super) struct FakeProviderCounter {
@@ -598,7 +590,6 @@ impl ProviderTokenCounter for FakeProviderCounter {
                 .as_ref()
                 .map(|key| key.expose_secret().to_owned()),
             system: request.system.map(str::to_owned),
-            message_count: request.messages.map_or(0, <[Json]>::len),
         });
         lock(&self.answer).clone()
     }
@@ -881,34 +872,8 @@ impl Harness {
     }
 }
 
-pub(super) fn stream_answer(frames: &[&str]) -> ChatStream {
-    let mut chunks = Vec::new();
-    for frame in frames {
-        let Some(payload) = frame.strip_prefix("data:") else {
-            continue;
-        };
-        let payload = payload.trim();
-        if payload.is_empty() || payload == "[DONE]" {
-            continue;
-        }
-        chunks.push(json(payload));
-    }
-    ChatStream {
-        model_response: Json::List(chunks),
-        json_mode: false,
-        converted_from_mock: false,
-    }
-}
-
 pub(super) fn secret(text: &str) -> SecretString {
     SecretString::from(text.to_owned())
-}
-
-pub(super) fn index_of(values: &[RequestMap], name: &str) -> Vec<Option<Json>> {
-    values
-        .iter()
-        .map(|value| value.get(name).cloned())
-        .collect()
 }
 
 pub(super) fn text_of(value: Option<&Json>) -> Option<&str> {
