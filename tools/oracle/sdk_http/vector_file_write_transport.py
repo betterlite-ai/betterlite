@@ -1,7 +1,7 @@
 import asyncio
 from collections.abc import Coroutine, Mapping
 from datetime import UTC, datetime
-from typing import Final, Literal, Protocol, TypedDict, Unpack
+from typing import Final, Literal, Protocol
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
@@ -31,44 +31,72 @@ AsyncAnswer = Coroutine[object, object, Answer]
 Work = Answer | AsyncAnswer
 ExtraBody = dict[str, object] | None
 
-class UpdateKwargs(TypedDict):
-    vector_store_id: str
-    file_id: str
-    update_request: VectorStoreFileUpdateRequest
-    vector_store_files_provider_config: BaseVectorStoreFilesConfig  # ast-grep-ignore: no-long-names
-    custom_llm_provider: str
-    litellm_params: GenericLiteLLMParams
-    logging_obj: Logging
-    extra_headers: dict[str, str] | None
-    extra_body: ExtraBody
-    timeout: float | httpx.Timeout | None
-
-
-class DeleteKwargs(TypedDict):
-    vector_store_id: str
-    file_id: str
-    vector_store_files_provider_config: BaseVectorStoreFilesConfig  # ast-grep-ignore: no-long-names
-    custom_llm_provider: str
-    litellm_params: GenericLiteLLMParams
-    logging_obj: Logging
-    extra_headers: dict[str, str] | None
-    timeout: float | httpx.Timeout | None
-
-
 class UpdateHandler(Protocol):
-    def __call__(self, **kwargs: Unpack[UpdateKwargs]) -> Work: ...
+    def __call__(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L11366-L11443
+        self,
+        *,
+        vector_store_id: str,
+        file_id: str,
+        update_request: VectorStoreFileUpdateRequest,
+        # ast-grep-ignore: no-long-names
+        vector_store_files_provider_config: BaseVectorStoreFilesConfig,
+        custom_llm_provider: str,
+        litellm_params: GenericLiteLLMParams,
+        logging_obj: Logging,
+        extra_headers: dict[str, str] | None = None,
+        extra_body: ExtraBody = None,
+        timeout: float | httpx.Timeout | None = None,
+    ) -> Work: ...
 
 
 class AsyncUpdateHandler(Protocol):
-    def __call__(self, **kwargs: Unpack[UpdateKwargs]) -> AsyncAnswer: ...
+    def __call__(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L11300-L11364
+        self,
+        *,
+        vector_store_id: str,
+        file_id: str,
+        update_request: VectorStoreFileUpdateRequest,
+        # ast-grep-ignore: no-long-names
+        vector_store_files_provider_config: BaseVectorStoreFilesConfig,
+        custom_llm_provider: str,
+        litellm_params: GenericLiteLLMParams,
+        logging_obj: Logging,
+        extra_headers: dict[str, str] | None = None,
+        extra_body: ExtraBody = None,
+        timeout: float | httpx.Timeout | None = None,
+    ) -> AsyncAnswer: ...
 
 
 class DeleteHandler(Protocol):
-    def __call__(self, **kwargs: Unpack[DeleteKwargs]) -> Work: ...
+    def __call__(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L11504-L11572
+        self,
+        *,
+        vector_store_id: str,
+        file_id: str,
+        # ast-grep-ignore: no-long-names
+        vector_store_files_provider_config: BaseVectorStoreFilesConfig,
+        custom_llm_provider: str,
+        litellm_params: GenericLiteLLMParams,
+        logging_obj: Logging,
+        extra_headers: dict[str, str] | None = None,
+        timeout: float | httpx.Timeout | None = None,
+    ) -> Work: ...
 
 
 class AsyncDeleteHandler(Protocol):
-    def __call__(self, **kwargs: Unpack[DeleteKwargs]) -> AsyncAnswer: ...
+    def __call__(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L11445-L11502
+        self,
+        *,
+        vector_store_id: str,
+        file_id: str,
+        # ast-grep-ignore: no-long-names
+        vector_store_files_provider_config: BaseVectorStoreFilesConfig,
+        custom_llm_provider: str,
+        litellm_params: GenericLiteLLMParams,
+        logging_obj: Logging,
+        extra_headers: dict[str, str] | None = None,
+        timeout: float | httpx.Timeout | None = None,
+    ) -> AsyncAnswer: ...
 
 
 class Handlers(Protocol):
