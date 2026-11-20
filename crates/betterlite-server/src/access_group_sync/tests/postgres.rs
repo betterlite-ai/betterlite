@@ -420,6 +420,5 @@ pub(super) async fn retry_evicts_desired(pool: &Pool) {
         evicted,
         vec!["g1".to_owned(), "g4".to_owned(), "g8".to_owned()]
     );
-    assert_eq!(team_ids(pool, "g1").await, Some(vec!["t1".to_owned()]));
-    assert_eq!(team_ids(pool, "g2").await, Some(Vec::new()));
+    assert_team_t1_rows(pool).await;
 }
