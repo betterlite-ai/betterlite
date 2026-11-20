@@ -80,6 +80,13 @@ fn an_empty_environment_value_reads_as_unset() {
     .err()
     .expect("the empty project reads as unset");
     assert!(matches!(error, PubSubError::MissingProjectId));
+    let topic_error = try_open(
+        &[("GCS_PUBSUB_TOPIC_ID", "")],
+        overrides(Some(PROJECT), None),
+    )
+    .err()
+    .expect("the empty topic reads as unset");
+    assert!(matches!(topic_error, PubSubError::MissingTopicId));
 }
 
 #[test]
@@ -128,6 +135,26 @@ fn credentials_come_from_the_environment_or_the_constructor() {
             .as_ref()
             .map(|secret| secret.expose_secret()),
         Some("/keys/override.json")
+    );
+}
+
+#[tokio::test]
+async fn an_empty_credentials_value_reads_as_unset() {
+    let environment = [
+        ("GCS_PUBSUB_PROJECT_ID", PROJECT),
+        ("GCS_PUBSUB_TOPIC_ID", TOPIC),
+        ("GCS_PATH_SERVICE_ACCOUNT", ""),
+    ];
+    let fixture = open(&environment, Overrides::default(), 512);
+    fixture.logger.publish_message(&Json::Null).await;
+    let access = fixture.auth.access_requests();
+    assert_eq!(access.len(), 1);
+    assert_eq!(
+        access[0]
+            .credentials
+            .as_ref()
+            .map(|secret| secret.expose_secret()),
+        None
     );
 }
 
