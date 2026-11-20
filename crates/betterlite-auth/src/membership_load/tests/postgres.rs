@@ -14,7 +14,7 @@ use betterlite_postgres_fixture::error::FixtureError;
 use clap::Parser;
 use deadpool_postgres::{Manager, Pool};
 use rust_decimal::Decimal;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 use tokio_postgres::NoTls;
 use tokio_util::task::TaskTracker;
 
@@ -49,18 +49,10 @@ async fn database() -> (PostgresFixture, Pool) {
         .resolve()
         .await
         .expect("the database fixture");
-    let pool = Pool::builder(Manager::new(
-        fixture
-            .options
-            .url
-            .expose_secret()
-            .parse()
-            .expect("the database url"),
-        NoTls,
-    ))
-    .max_size(2)
-    .build()
-    .expect("the database pool");
+    let pool = Pool::builder(Manager::new(fixture.options.config.clone(), NoTls))
+        .max_size(2)
+        .build()
+        .expect("the database pool");
     (fixture, pool)
 }
 

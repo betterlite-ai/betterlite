@@ -5,5 +5,5 @@ deviations:
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L505-L518"
   - what: "The exact row is read with find_first over a two-column user_id/team_id filter and LIMIT 1, not with find_unique over Prisma's user_id_team_id compound where."
     why: "B2315's NativeKey binds one column, so a unique read cannot name both key columns; the composite primary key makes the filtered first row the same row Prisma's compound unique selects. The include still carries litellm_budget_table=true."
-    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L2338-L2342"
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L2349-L2351"
 kept_bugs: []
