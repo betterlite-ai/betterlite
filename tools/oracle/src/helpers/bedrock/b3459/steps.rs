@@ -19,33 +19,108 @@ const UNIQUE_ID: &str = "0a1b2c3d";
 
 type StoreOutcome = Result<(Option<String>, Option<String>), WorkflowError<ScriptedApiError>>;
 
-struct CaseSettings<'case> {
-    vector: &'case S3VectorsVectorStoreOptions,
-    environment: &'case BTreeMap<String, String>,
-    embedding: Option<RAGIngestEmbeddingOptions>,
+type BuiltWorkflow = (S3VectorsWorkflow<RecordingApi, ScriptedEmbedder>, Recorder);
+
+trait StepSource {
+    fn vector(&self) -> &S3VectorsVectorStoreOptions;
+    fn environment(&self) -> &BTreeMap<String, String>;
+    fn embedding(&self) -> Option<RAGIngestEmbeddingOptions>;
+    fn answer(&self) -> Vec<Vec<f64>>;
 }
 
-fn build_workflow(
-    case: &CaseSettings<'_>,
-    recorder: &Recorder,
-    answer: Vec<Vec<f64>>,
+impl StepSource for DimensionCase {
+    fn vector(&self) -> &S3VectorsVectorStoreOptions {
+        &self.vector
+    }
+
+    fn environment(&self) -> &BTreeMap<String, String> {
+        &self.environment
+    }
+
+    fn embedding(&self) -> Option<RAGIngestEmbeddingOptions> {
+        self.embedding.clone()
+    }
+
+    fn answer(&self) -> Vec<Vec<f64>> {
+        self.answer.clone()
+    }
+}
+
+impl StepSource for FlowCase {
+    fn vector(&self) -> &S3VectorsVectorStoreOptions {
+        &self.vector
+    }
+
+    fn environment(&self) -> &BTreeMap<String, String> {
+        &self.environment
+    }
+
+    fn embedding(&self) -> Option<RAGIngestEmbeddingOptions> {
+        self.embedding.clone()
+    }
+
+    fn answer(&self) -> Vec<Vec<f64>> {
+        self.answer.clone()
+    }
+}
+
+impl StepSource for EmbedStep {
+    fn vector(&self) -> &S3VectorsVectorStoreOptions {
+        &self.vector
+    }
+
+    fn environment(&self) -> &BTreeMap<String, String> {
+        &self.environment
+    }
+
+    fn embedding(&self) -> Option<RAGIngestEmbeddingOptions> {
+        self.embedding.clone()
+    }
+
+    fn answer(&self) -> Vec<Vec<f64>> {
+        self.answer.clone()
+    }
+}
+
+impl StepSource for StoreStep {
+    fn vector(&self) -> &S3VectorsVectorStoreOptions {
+        &self.vector
+    }
+
+    fn environment(&self) -> &BTreeMap<String, String> {
+        &self.environment
+    }
+
+    fn embedding(&self) -> Option<RAGIngestEmbeddingOptions> {
+        self.embedding.clone()
+    }
+
+    fn answer(&self) -> Vec<Vec<f64>> {
+        Vec::new()
+    }
+}
+
+fn build_workflow<S: StepSource>(
+    source: &S,
     failing: bool,
-) -> Result<S3VectorsWorkflow<RecordingApi, ScriptedEmbedder>, Box<HelperError>> {
+) -> Result<BuiltWorkflow, Box<HelperError>> {
+    let recorder = Recorder::default();
     let settings = S3VectorsSettings::from_vector_store_config(
-        case.vector,
-        case.embedding.clone(),
-        case.environment,
+        source.vector(),
+        source.embedding(),
+        source.environment(),
     )
     .or_value_error()?;
-    let embedder = ScriptedEmbedder::new(recorder.clone(), answer, failing);
-    Ok(S3VectorsWorkflow::new(
+    let embedder = ScriptedEmbedder::new(recorder.clone(), source.answer(), failing);
+    let workflow = S3VectorsWorkflow::new(
         settings,
         RecordingApi {
             recorder: recorder.clone(),
         },
         embedder,
         UNIQUE_ID.to_owned(),
-    ))
+    );
+    Ok((workflow, recorder))
 }
 
 pub(super) fn settings(cases: &[SettingsCase]) -> HelperResult {
@@ -85,13 +160,7 @@ pub(super) fn dimension(runtime: &Runtime, cases: &[DimensionCase]) -> HelperRes
 }
 
 fn dimension_for(runtime: &Runtime, case: &DimensionCase) -> HelperResult {
-    let recorder = Recorder::default();
-    let settings = CaseSettings {
-        vector: &case.vector,
-        environment: &case.environment,
-        embedding: case.embedding.clone(),
-    };
-    let workflow = build_workflow(&settings, &recorder, case.answer.clone(), case.failing)?;
+    let (workflow, recorder) = build_workflow(case, case.failing)?;
     let chunks = vec!["one".to_owned()];
     let embeddings = vec![vec![0.5_f64]];
     runtime
@@ -109,13 +178,7 @@ pub(super) fn flow(runtime: &Runtime, cases: &[FlowCase]) -> HelperResult {
 }
 
 fn flow_for(runtime: &Runtime, case: &FlowCase) -> HelperResult {
-    let recorder = Recorder::default();
-    let settings = CaseSettings {
-        vector: &case.vector,
-        environment: &case.environment,
-        embedding: case.embedding.clone(),
-    };
-    let workflow = build_workflow(&settings, &recorder, case.answer.clone(), false)?;
+    let (workflow, recorder) = build_workflow(case, false)?;
     let outcome = runtime.block_on(workflow.store(
         case.filename.as_deref(),
         &case.chunks,
@@ -128,36 +191,42 @@ fn flow_for(runtime: &Runtime, case: &FlowCase) -> HelperResult {
 }
 
 pub(super) fn embed(runtime: &Runtime, step: &EmbedStep) -> HelperResult {
-    let recorder = Recorder::default();
-    let settings = CaseSettings {
-        vector: &step.vector,
-        environment: &step.environment,
-        embedding: step.embedding.clone(),
-    };
-    let workflow = build_workflow(&settings, &recorder, step.answer.clone(), false)?;
-    let mut results: Vec<Value> = Vec::with_capacity(step.chunk_sets.len());
-    for chunks in &step.chunk_sets {
-        let vectors = runtime.block_on(workflow.embed(chunks)).or_value_error()?;
-        results.push(json!(vectors));
-    }
-    Ok(json!({
-        "results": results,
-        "operations": recorder.operations(),
-    }))
+    let (workflow, recorder) = build_workflow(step, false)?;
+    let results = embed_chunks(&workflow, runtime, &step.chunk_sets)?;
+    results_value(results, &recorder)
 }
 
 pub(super) fn store(runtime: &Runtime, step: &StoreStep) -> HelperResult {
-    let recorder = Recorder::default();
-    let settings = CaseSettings {
-        vector: &step.vector,
-        environment: &step.environment,
-        embedding: step.embedding.clone(),
-    };
-    let workflow = build_workflow(&settings, &recorder, Vec::new(), false)?;
-    let mut results: Vec<Value> = Vec::with_capacity(step.calls.len());
-    for call in &step.calls {
-        results.push(store_call(&workflow, runtime, call)?);
+    let (workflow, recorder) = build_workflow(step, false)?;
+    let results = store_calls(&workflow, runtime, &step.calls)?;
+    results_value(results, &recorder)
+}
+
+fn embed_chunks(
+    workflow: &S3VectorsWorkflow<RecordingApi, ScriptedEmbedder>,
+    runtime: &Runtime,
+    chunk_sets: &[Vec<String>],
+) -> Result<Vec<Value>, Box<HelperError>> {
+    let mut results: Vec<Value> = Vec::with_capacity(chunk_sets.len());
+    for chunks in chunk_sets {
+        let vectors = runtime.block_on(workflow.embed(chunks)).or_value_error()?;
+        results.push(json!(vectors));
     }
+    Ok(results)
+}
+
+fn store_calls(
+    workflow: &S3VectorsWorkflow<RecordingApi, ScriptedEmbedder>,
+    runtime: &Runtime,
+    calls: &[StoreCall],
+) -> Result<Vec<Value>, Box<HelperError>> {
+    calls
+        .iter()
+        .map(|call| store_call(workflow, runtime, call))
+        .collect()
+}
+
+fn results_value(results: Vec<Value>, recorder: &Recorder) -> HelperResult {
     Ok(json!({
         "results": results,
         "operations": recorder.operations(),

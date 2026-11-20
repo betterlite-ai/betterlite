@@ -83,10 +83,6 @@ Input: TypeAlias = SettingsInput | DimensionInput | FlowInput | EmbedInput | Sto
 
 
 class ScriptedRouter(Router):
-    operations: list[JsonValue]
-    answer: list[list[float]]
-    failing: bool
-
     def __init__(
         self,
         operations: list[JsonValue],
@@ -104,8 +100,8 @@ class ScriptedRouter(Router):
     async def aembedding(
         self,
         model: str,
-        input: str | list[str],  # noqa: A002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L5933
-        is_async: bool | None = True,  # noqa: ARG002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L5934
+        input: str | list[str],  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L5933
+        is_async: bool | None = True,  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L5934
         **_kwargs: JsonValue,
     ) -> EmbeddingResponse:
         texts: list[str] = []
@@ -114,9 +110,8 @@ class ScriptedRouter(Router):
                 texts = [input]
             case list():
                 texts = input
-        self.operations.append(
-            _JSON.validate_python({"call": "embedding", "model": model, "input": texts})
-        )
+        recorded = {"call": "embedding", "model": model, "input": texts}
+        self.operations.append(_JSON.validate_python(recorded))
         if self.failing:
             raise RuntimeError("scripted embedding failure")
         data = [
@@ -127,8 +122,6 @@ class ScriptedRouter(Router):
 
 
 class RecordingIngestion(S3VectorsRAGIngestion):
-    operations: list[JsonValue]
-
     def __init__(
         self,
         vector: S3VectorsVectorStoreOptions,
@@ -151,28 +144,24 @@ class RecordingIngestion(S3VectorsRAGIngestion):
 
     @override
     async def _ensure_vector_bucket_exists(self) -> None:
-        self.operations.append(
-            _JSON.validate_python({"call": "ensure_bucket", "bucket": self.vector_bucket_name})
-        )
+        self.operations.append({"call": "ensure_bucket", "bucket": self.vector_bucket_name})
 
     @override
     async def _ensure_vector_index_exists(self) -> None:
         self.operations.append(
-            _JSON.validate_python(
-                {
-                    "call": "ensure_index",
-                    "bucket": self.vector_bucket_name,
-                    "index": self.index_name,
-                    "dimension": self.dimension,
-                    "distance_metric": self.distance_metric,
-                    "non_filterable_metadata_keys": list(self.non_filterable_metadata_keys),
-                }
-            )
+            {
+                "call": "ensure_index",
+                "bucket": self.vector_bucket_name,
+                "index": self.index_name,
+                "dimension": self.dimension,
+                "distance_metric": self.distance_metric,
+                "non_filterable_metadata_keys": list(self.non_filterable_metadata_keys),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/s3_vectors_ingestion.py#L99-L102
+            }
         )
 
     @override
     async def _put_vectors(self, vectors: Sequence[S3VectorEntry]) -> None:
-        recorded = [
+        stored = [
             {
                 "key": entry["key"],
                 "data": {"float32": list(entry["data"]["float32"])},
@@ -180,107 +169,113 @@ class RecordingIngestion(S3VectorsRAGIngestion):
             }
             for entry in vectors
         ]
-        self.operations.append(
-            _JSON.validate_python(
-                {
-                    "call": "put_vectors",
-                    "bucket": self.vector_bucket_name,
-                    "index": self.index_name,
-                    "vectors": recorded,
-                }
-            )
-        )
+        recorded = {
+            "call": "put_vectors",
+            "bucket": self.vector_bucket_name,
+            "index": self.index_name,
+            "vectors": stored,
+        }
+        self.operations.append(_JSON.validate_python(recorded))
+
+
+def build_ingestion(
+    vector: S3VectorsVectorStoreOptions,
+    embedding: RAGIngestEmbeddingOptions | None,
+    environment: dict[str, str],
+    answer: list[list[float]] | None,
+    *,
+    failing: bool = False,
+) -> RecordingIngestion:
+    router = ScriptedRouter([], answer, failing=failing)
+    return RecordingIngestion(vector, embedding, environment, router)
 
 
 def settings_for(case: SettingsCase) -> JsonValue:
-    router = ScriptedRouter([], None, failing=False)
     try:
-        ingestion = RecordingIngestion(
-            case["vector"], case.get("embedding"), case["environment"], router
+        ingestion = build_ingestion(
+            case["vector"], case.get("embedding"), case["environment"], None
         )
     except ValueError as error:
-        return _JSON.validate_python({"failed": str(error)})
+        return {"failed": str(error)}
     embedding_config = ingestion.embedding_config
-    return _JSON.validate_python(
-        {
-            "vector_bucket_name": ingestion.vector_bucket_name,
-            "index_name": ingestion.index_name,
-            "embedding_model": None if embedding_config is None else embedding_config.get("model"),
-            "distance_metric": ingestion.distance_metric,
-            "non_filterable_metadata_keys": list(ingestion.non_filterable_metadata_keys),
-            "dimension": ingestion.dimension,
-            "aws_region_name": ingestion.aws_region_name,
-        }
-    )
+    return {
+        "vector_bucket_name": ingestion.vector_bucket_name,
+        "index_name": ingestion.index_name,
+        "embedding_model": None if embedding_config is None else embedding_config.get("model"),
+        "distance_metric": ingestion.distance_metric,
+        "non_filterable_metadata_keys": list(ingestion.non_filterable_metadata_keys),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/s3_vectors_ingestion.py#L99-L102
+        "dimension": ingestion.dimension,
+        "aws_region_name": ingestion.aws_region_name,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L845-L848
+    }
 
 
 def dimension_for(case: DimensionCase) -> JsonValue:
-    router = ScriptedRouter([], case["answer"], failing=case["failing"])
-    ingestion = RecordingIngestion(
-        case["vector"], case.get("embedding"), case["environment"], router
+    ingestion = build_ingestion(
+        case["vector"],
+        case.get("embedding"),
+        case["environment"],
+        case["answer"],
+        failing=case["failing"],
     )
     asyncio.run(ingestion.store(None, "a.txt", None, ["one"], [[0.5]]))
-    return _JSON.validate_python({"operations": router.operations})
+    return {"operations": ingestion.operations}
 
 
 def flow_for(case: FlowCase) -> JsonValue:
-    router = ScriptedRouter([], case.get("answer"), failing=False)
-    ingestion = RecordingIngestion(
-        case["vector"], case.get("embedding"), case["environment"], router
+    ingestion = build_ingestion(
+        case["vector"], case.get("embedding"), case["environment"], case.get("answer")
     )
-    vector_store_id, filename = asyncio.run(
-        ingestion.store(None, case.get("filename"), None, case["chunks"], case["embeddings"])
+    requested_name = case.get("filename")
+    vector_store_id, stored_name = asyncio.run(
+        ingestion.store(None, requested_name, None, case["chunks"], case["embeddings"])
     )
-    return _JSON.validate_python(
-        {
-            "result": {"vector_store_id": vector_store_id, "filename": filename},
-            "operations": router.operations,
-        }
-    )
+    return {
+        "result": {"vector_store_id": vector_store_id, "filename": stored_name},
+        "operations": ingestion.operations,
+    }
 
 
 def embed_step(input_value: EmbedInput) -> JsonValue:
-    router = ScriptedRouter([], input_value["answer"], failing=False)
-    ingestion = RecordingIngestion(
-        input_value["vector"], input_value.get("embedding"), input_value["environment"], router
+    ingestion = build_ingestion(
+        input_value["vector"],
+        input_value.get("embedding"),
+        input_value["environment"],
+        input_value["answer"],
     )
     results: list[JsonValue] = [
         _JSON.validate_python(asyncio.run(ingestion.embed(chunks)))
         for chunks in input_value["chunk_sets"]
     ]
-    return _JSON.validate_python({"results": results, "operations": router.operations})
+    return {"results": results, "operations": ingestion.operations}
 
 
 def store_call(ingestion: RecordingIngestion, call: StoreCall) -> JsonValue:
     try:
         vector_store_id, filename = asyncio.run(
-            ingestion.store(None, call.get("filename"), None, call["chunks"], call.get("embeddings"))
+            ingestion.store(
+                None, call.get("filename"), None, call["chunks"], call.get("embeddings")
+            )
         )
     except ValueError as error:
-        return _JSON.validate_python({"failed": str(error)})
-    return _JSON.validate_python({"vector_store_id": vector_store_id, "filename": filename})
+        return {"failed": str(error)}
+    return {"vector_store_id": vector_store_id, "filename": filename}
 
 
 def store_step(input_value: StoreInput) -> JsonValue:
-    router = ScriptedRouter([], None, failing=False)
-    ingestion = RecordingIngestion(
-        input_value["vector"], input_value.get("embedding"), input_value["environment"], router
+    ingestion = build_ingestion(
+        input_value["vector"], input_value.get("embedding"), input_value["environment"], None
     )
     results: list[JsonValue] = [store_call(ingestion, call) for call in input_value["calls"]]
-    return _JSON.validate_python({"results": results, "operations": router.operations})
+    return {"results": results, "operations": ingestion.operations}
 
 
 def run(input_value: Input) -> JsonValue:
     if input_value["step"] == "settings":
-        return _JSON.validate_python(
-            {"settings": [settings_for(case) for case in input_value["cases"]]}
-        )
+        return {"settings": [settings_for(case) for case in input_value["cases"]]}
     if input_value["step"] == "dimension":
-        return _JSON.validate_python(
-            {"cases": [dimension_for(case) for case in input_value["cases"]]}
-        )
+        return {"cases": [dimension_for(case) for case in input_value["cases"]]}
     if input_value["step"] == "flow":
-        return _JSON.validate_python({"cases": [flow_for(case) for case in input_value["cases"]]})
+        return {"cases": [flow_for(case) for case in input_value["cases"]]}
     if input_value["step"] == "embed":
         return embed_step(input_value)
     return store_step(input_value)
