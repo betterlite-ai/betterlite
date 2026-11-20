@@ -1,0 +1,19 @@
+kind: helper
+name: issuer-predicate-unmatched
+call:
+  b4662:
+    function: issuer_backfill
+    issuer_rows:
+      - server_id: srv-1
+        alias: null
+        server_name: Server
+        auth_type: oauth2
+        issuer: https://idp.example.com
+        authorization_url: https://idp.example.com/authorize
+        token_url: https://other.example.com/token
+        registration_url: null
+        updated_by: mcp_oauth_discovery
+    fail_server_ids: []
+    runs: 1
+env: {}
+compare: {ignore: []}
