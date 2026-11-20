@@ -52,11 +52,7 @@ impl CallRecorder {
 
     pub(super) fn calls_json(&self) -> Result<Vec<Value>, Box<HelperError>> {
         let calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
-        let mut values = Vec::with_capacity(calls.len());
-        for call in calls.iter() {
-            values.push(call_json(call)?);
-        }
-        Ok(values)
+        calls.iter().map(call_json).collect()
     }
 }
 
