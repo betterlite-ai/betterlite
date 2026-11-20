@@ -60,9 +60,8 @@ fn cato_networks_accepts_a_ca_path() {
 #[test]
 fn cato_networks_rejects_a_ssl_verify_number() {
     let params = params_from(r#"{"guardrail":"cato_networks","mode":"pre_call","ssl_verify":7}"#);
-    let error = initialize_cato_networks(&params, Some("cato-guard"))
-        .err()
-        .expect("invalid ssl_verify");
+    let error =
+        initialize_cato_networks(&params, Some("cato-guard")).expect_err("invalid ssl_verify");
     assert_eq!(
         error.to_string(),
         "the guardrail parameter ssl_verify has an invalid value"

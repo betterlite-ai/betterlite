@@ -5,9 +5,9 @@ use super::kind::HookKind;
 use super::spec::{HookSettings, HookSpec};
 
 // The wire name and settings every arm of one kind's dispatch needs, so each arm line stays short
-pub(super) struct Arms<'a> {
-    pub(super) kind: &'a str,
-    pub(super) settings: &'a HookSettings,
+pub(super) struct Arms<'settings> {
+    pub(super) kind: &'settings str,
+    pub(super) settings: &'settings HookSettings,
 }
 
 impl Arms<'_> {

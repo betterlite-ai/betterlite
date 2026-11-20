@@ -7,6 +7,24 @@ use super::super::spec::{HookSettings, HookSpec};
 use super::super::wire;
 
 // These folders' initializers build a class from ports only B8666's dispatch has
+fn kind_maker(kind: &str) -> Option<fn(LitellmParams) -> HookKind> {
+    Some(match kind {
+        wire::BLOCK_CODE_EXECUTION => |params| HookKind::BlockCodeExecution(Box::new(params)),
+        wire::COMPRESR => |params| HookKind::Compresr(Box::new(params)),
+        wire::CUSTOM_CODE => |params| HookKind::CustomCode(Box::new(params)),
+        wire::HIDDENLAYER => |params| HookKind::Hiddenlayer(Box::new(params)),
+        wire::JAVELIN => |params| HookKind::Javelin(Box::new(params)),
+        wire::LLM_AS_A_JUDGE => |params| HookKind::LlmAsAJudge(Box::new(params)),
+        wire::NOMA => |params| HookKind::Noma(Box::new(params)),
+        wire::NOMA_V2 => |params| HookKind::NomaV2(Box::new(params)),
+        wire::ONYX => |params| HookKind::Onyx(Box::new(params)),
+        wire::OVALIX => |params| HookKind::Ovalix(Box::new(params)),
+        wire::PANGEA => |params| HookKind::Pangea(Box::new(params)),
+        wire::REPELLOAI => |params| HookKind::Repelloai(Box::new(params)),
+        _other => return None,
+    })
+}
+
 pub(super) fn build(
     kind: &str,
     params: &LitellmParams,
@@ -14,55 +32,6 @@ pub(super) fn build(
     settings: &HookSettings,
     _ports: &HookPorts,
 ) -> Option<Result<HookSpec, HookRegistryError>> {
-    Some(match kind {
-        wire::BLOCK_CODE_EXECUTION => Ok(HookSpec::new(
-            settings,
-            HookKind::BlockCodeExecution(Box::new(params.clone())),
-        )),
-        wire::COMPRESR => Ok(HookSpec::new(
-            settings,
-            HookKind::Compresr(Box::new(params.clone())),
-        )),
-        wire::CUSTOM_CODE => Ok(HookSpec::new(
-            settings,
-            HookKind::CustomCode(Box::new(params.clone())),
-        )),
-        wire::HIDDENLAYER => Ok(HookSpec::new(
-            settings,
-            HookKind::Hiddenlayer(Box::new(params.clone())),
-        )),
-        wire::JAVELIN => Ok(HookSpec::new(
-            settings,
-            HookKind::Javelin(Box::new(params.clone())),
-        )),
-        wire::LLM_AS_A_JUDGE => Ok(HookSpec::new(
-            settings,
-            HookKind::LlmAsAJudge(Box::new(params.clone())),
-        )),
-        wire::NOMA => Ok(HookSpec::new(
-            settings,
-            HookKind::Noma(Box::new(params.clone())),
-        )),
-        wire::NOMA_V2 => Ok(HookSpec::new(
-            settings,
-            HookKind::NomaV2(Box::new(params.clone())),
-        )),
-        wire::ONYX => Ok(HookSpec::new(
-            settings,
-            HookKind::Onyx(Box::new(params.clone())),
-        )),
-        wire::OVALIX => Ok(HookSpec::new(
-            settings,
-            HookKind::Ovalix(Box::new(params.clone())),
-        )),
-        wire::PANGEA => Ok(HookSpec::new(
-            settings,
-            HookKind::Pangea(Box::new(params.clone())),
-        )),
-        wire::REPELLOAI => Ok(HookSpec::new(
-            settings,
-            HookKind::Repelloai(Box::new(params.clone())),
-        )),
-        _other => return None,
-    })
+    let make = kind_maker(kind)?;
+    Some(Ok(HookSpec::new(settings, make(params.clone()))))
 }
