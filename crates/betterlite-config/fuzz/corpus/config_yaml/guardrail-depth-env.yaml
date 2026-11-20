@@ -1,0 +1,8 @@
+# default_max_recurse_depth is read from DEFAULT_MAX_RECURSE_DEPTH, not from this file.
+general_settings:
+  master_key: sk-1234
+guardrails:
+  - guardrail_name: content-filter-inputs
+    litellm_params:
+      guardrail: litellm_content_filter
+      mode: pre_call
