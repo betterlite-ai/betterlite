@@ -55,18 +55,27 @@ class FakeConnection:
     pass
 
 
+class FakeOpenSearchModule(ModuleType):
+    OpenSearch: type[FakeOpenSearch]
+    RequestsHttpConnection: type[FakeConnection]
+
+
+class FakeAws4AuthModule(ModuleType):
+    AWS4Auth: type[FakeAws4Auth]
+
+
 def install_fakes(errors: list[str], operations: list[str]) -> None:
     INDEX.errors = errors
     INDEX.attempts = 0
     INDEX.index_name = ""
     INDEX.body = None
     INDEX.operations = operations
-    opensearch = ModuleType("opensearchpy")
-    opensearch.__dict__["OpenSearch"] = FakeOpenSearch
-    opensearch.__dict__["RequestsHttpConnection"] = FakeConnection
+    opensearch = FakeOpenSearchModule("opensearchpy")
+    opensearch.OpenSearch = FakeOpenSearch
+    opensearch.RequestsHttpConnection = FakeConnection
     sys.modules["opensearchpy"] = opensearch
-    aws4auth = ModuleType("requests_aws4auth")
-    aws4auth.__dict__["AWS4Auth"] = FakeAws4Auth
+    aws4auth = FakeAws4AuthModule("requests_aws4auth")
+    aws4auth.AWS4Auth = FakeAws4Auth
     sys.modules["requests_aws4auth"] = aws4auth
 
 

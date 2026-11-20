@@ -1,7 +1,7 @@
 import asyncio
 import os
 from typing import Final
-from unittest.mock import patch
+from unittest.mock import AsyncMock
 
 from litellm.rag.ingestion.bedrock_ingestion import BedrockRAGIngestion
 from litellm.types.rag import BedrockVectorStoreOptions, RAGIngestOptions
@@ -19,8 +19,6 @@ from .inputs import (
     StoreInput,
 )
 
-SLEEPS: Final[list[float]] = []
-
 DETECTED_SOURCE: Final[dict[str, JsonValue]] = {
     "dataSource": {
         "dataSourceId": "ds1",
@@ -34,15 +32,12 @@ DETECTED_SOURCE: Final[dict[str, JsonValue]] = {
 }
 
 
-async def fast_sleep(delay: float) -> None:
-    SLEEPS.append(delay)
-
-
 class RecordingIngestion(BedrockRAGIngestion):
     client: FakeClient
 
     @override
-    def _get_boto3_client(self, _service_name: str) -> FakeClient:
+    def _get_boto3_client(self, service_name: str) -> FakeClient:
+        _ = service_name
         return self.client
 
     def collection(self, unique_id: str, account_id: str, caller_arn: str) -> tuple[str, str]:
@@ -88,6 +83,14 @@ def build(
     return ingestion
 
 
+def prepared_ingestion(
+    vector: BedrockVectorStoreOptions, environment: dict[str, str], failures: list[str]
+) -> tuple[FakeClient, RecordingIngestion]:
+    client = scripted_client()
+    install_fakes(failures, client.scripted.operations)
+    return client, build(vector, environment, client)
+
+
 def content_type_value(value: str) -> str | None:
     if value == "":
         return None
@@ -105,7 +108,7 @@ def scripted_client() -> FakeClient:
     )
 
 
-def policies(input_value: PoliciesInput) -> JsonValue:
+def policies(input_value: PoliciesInput) -> dict[str, JsonValue]:
     client = scripted_client()
     client.scripted.statuses = ["ACTIVE"]
     ingestion = build(input_value["vector"], input_value["environment"], client)
@@ -121,7 +124,7 @@ def policies(input_value: PoliciesInput) -> JsonValue:
     }
 
 
-def collection(input_value: CollectionInput) -> JsonValue:
+def collection(input_value: CollectionInput) -> dict[str, JsonValue]:
     client = scripted_client()
     client.scripted.statuses = list(input_value["statuses"])
     ingestion = build(input_value["vector"], input_value["environment"], client)
@@ -133,23 +136,23 @@ def collection(input_value: CollectionInput) -> JsonValue:
         return {
             "outcome": "timeout",
             "created": ingestion.created("opensearch_collection"),
-            "operations": client.scripted.operations,
+            "operations": list(client.scripted.operations),
         }
     return {
         "outcome": "created",
         "name": name,
         "arn": arn,
         "created": ingestion.created("opensearch_collection"),
-        "operations": client.scripted.operations,
+        "operations": list(client.scripted.operations),
     }
 
 
-def index(input_value: IndexInput) -> JsonValue:
-    client = scripted_client()
-    install_fakes(list(input_value["failures"]), client.scripted.operations)
+def index(input_value: IndexInput) -> dict[str, JsonValue]:
+    client, ingestion = prepared_ingestion(
+        input_value["vector"], input_value["environment"], list(input_value["failures"])
+    )
     client.scripted.statuses = ["ACTIVE"]
     client.scripted.collection_endpoint = input_value["endpoint"]
-    ingestion = build(input_value["vector"], input_value["environment"], client)
     outcome = "created"
     try:
         ingestion.flow()
@@ -165,7 +168,7 @@ def index(input_value: IndexInput) -> JsonValue:
     }
 
 
-def role(input_value: RoleInput) -> JsonValue:
+def role(input_value: RoleInput) -> dict[str, JsonValue]:
     unique_id = input_value["unique_id"]
     account_id = input_value["account_id"]
     client = scripted_client()
@@ -176,7 +179,7 @@ def role(input_value: RoleInput) -> JsonValue:
         "outcome": "created",
         "role_arn": arn,
         "created": ingestion.created("iam_role"),
-        "operations": client.scripted.operations,
+        "operations": list(client.scripted.operations),
         "role_name": client.scripted.role_params["RoleName"],
         "policy_name": client.scripted.policy_params["PolicyName"],
         "trust_document": DOCUMENT.validate_json(
@@ -188,7 +191,7 @@ def role(input_value: RoleInput) -> JsonValue:
     }
 
 
-def flow(input_value: FlowInput) -> JsonValue:
+def flow(input_value: FlowInput) -> dict[str, JsonValue]:
     client = scripted_client()
     install_fakes([], client.scripted.operations)
     client.scripted.statuses = ["ACTIVE"]
@@ -196,21 +199,19 @@ def flow(input_value: FlowInput) -> JsonValue:
     knowledge_base, _file_key = ingestion.flow()
     return {
         "outcome": "initialized",
-        "operations": client.scripted.operations,
+        "operations": list(client.scripted.operations),
         "knowledge_base_id": knowledge_base,
         "data_source_id": ingestion.data_source_id,
         "s3_bucket": ingestion.s3_bucket,
         "s3_prefix": ingestion.s3_prefix,
-        "created_keys": ingestion.created_keys(),
+        "created_keys": list(ingestion.created_keys()),
         "index_body": INDEX.body,
     }
 
 
-def store(input_value: StoreInput) -> JsonValue:
-    client = scripted_client()
-    install_fakes([], client.scripted.operations)
+def store(input_value: StoreInput) -> dict[str, JsonValue]:
+    client, ingestion = prepared_ingestion(input_value["vector"], input_value["environment"], [])
     client.scripted.job_statuses = list(input_value["job_statuses"])
-    ingestion = build(input_value["vector"], input_value["environment"], client)
     knowledge_base, file_key = ingestion.stored(
         input_value["content"], input_value["filename"], input_value["content_type"]
     )
@@ -218,7 +219,7 @@ def store(input_value: StoreInput) -> JsonValue:
         "outcome": "stored",
         "knowledge_base_id": knowledge_base,
         "file_key": file_key,
-        "operations": client.scripted.operations,
+        "operations": list(client.scripted.operations),
         "content_type": content_type_value(client.scripted.content_type),
     }
 
@@ -238,5 +239,9 @@ def dispatch(input_value: Input) -> JsonValue:
 
 
 def run(input_value: Input) -> JsonValue:
-    with patch.object(asyncio, "sleep", fast_sleep):
+    real_sleep = asyncio.sleep
+    asyncio.sleep = AsyncMock()
+    try:
         return dispatch(input_value)
+    finally:
+        asyncio.sleep = real_sleep
