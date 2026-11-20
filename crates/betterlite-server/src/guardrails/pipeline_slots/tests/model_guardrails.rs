@@ -95,6 +95,21 @@ fn model_guardrails_wrap_a_bare_string_from_the_deployment() {
 }
 
 #[test]
+fn model_guardrails_wrap_a_bare_string_from_the_alias_group() {
+    let request = object(vec![("model", json!("alias"))]);
+    let lookup = FakeDeployments {
+        by_id: BTreeMap::new(),
+        by_name: deployments_by_name("alias", None, vec![json!("pii"), json!(["block"])]),
+    };
+    let finder: &dyn DeploymentGuardrails = &lookup;
+    let merged = merge_model_level_guardrails(&request, Some(finder), true, None).unwrap();
+    assert_eq!(
+        merged.get("metadata"),
+        Some(&json!({"guardrails": ["pii", "block"]}))
+    );
+}
+
+#[test]
 fn model_guardrails_without_a_deployment_setting_leave_the_data() {
     let request = object(vec![("metadata", json!({"model_info": {"id": "dep-1"}}))]);
     let lookup = FakeDeployments {
@@ -247,6 +262,21 @@ fn model_guardrails_without_an_alias_leave_the_data(#[case] request: JsonMap) {
     let lookup = FakeDeployments {
         by_id: BTreeMap::new(),
         by_name: deployments_by_name("", None, vec![json!(["pii"])]),
+    };
+    let finder: &dyn DeploymentGuardrails = &lookup;
+    let merged = merge_model_level_guardrails(&request, Some(finder), true, None).unwrap();
+    assert_eq!(merged, request);
+}
+
+#[test]
+fn model_guardrails_leave_the_data_when_the_alias_group_carries_none() {
+    let request = object(vec![("model", json!("alias"))]);
+    let lookup = FakeDeployments {
+        by_id: BTreeMap::new(),
+        by_name: BTreeMap::from([(
+            ("alias".to_owned(), None),
+            vec![Deployment { guardrails: None }],
+        )]),
     };
     let finder: &dyn DeploymentGuardrails = &lookup;
     let merged = merge_model_level_guardrails(&request, Some(finder), true, None).unwrap();

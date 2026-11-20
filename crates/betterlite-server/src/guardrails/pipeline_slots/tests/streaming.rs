@@ -179,7 +179,11 @@ fn stream_gated_guardrail_names_needs_a_translation() {
 
 #[test]
 fn stream_gated_guardrail_names_keeps_only_streamable_post_call_pipelines() {
-    let callbacks = callbacks(&[("pii", true, false), ("block", false, true)]);
+    let callbacks = callbacks(&[
+        ("pii", true, false),
+        ("block", false, true),
+        ("audit", true, false),
+    ]);
     let assembling = FakeTranslation::<true>;
     let request = data_with(&[
         ("policy-a", pipeline(PipelineMode::PostCall, &["pii"])),
@@ -187,7 +191,7 @@ fn stream_gated_guardrail_names_keeps_only_streamable_post_call_pipelines() {
             "policy-b",
             pipeline(PipelineMode::PostCall, &["block", "moderation"]),
         ),
-        ("policy-c", pipeline(PipelineMode::PreCall, &["moderation"])),
+        ("policy-c", pipeline(PipelineMode::PreCall, &["audit"])),
     ]);
     let named = stream_gated_guardrail_names(&request, Some(&assembling), &callbacks);
     assert_eq!(named, BTreeSet::from(["pii".to_owned()]));
