@@ -1,0 +1,48 @@
+kind: helper
+name: identity-descriptors-session-resolution
+call:
+  b3039:
+    function: session_resolution
+    data:
+      litellm_session_id: top
+      metadata:
+        session_id: meta
+      litellm_metadata:
+        session_id: lm
+calls:
+  - b3039:
+      function: session_resolution
+      data:
+        metadata:
+          session_id: meta
+        litellm_metadata:
+          session_id: lm
+  - b3039:
+      function: session_resolution
+      data:
+        litellm_metadata:
+          session_id: lm
+  - b3039:
+      function: session_resolution
+      data: {}
+  - b3039:
+      function: session_resolution
+      data:
+        metadata: {}
+        litellm_metadata:
+          session_id: lm
+  - b3039:
+      function: session_resolution
+      data:
+        metadata:
+          session_id: null
+        litellm_metadata:
+          session_id: lm
+  - b3039:
+      function: session_resolution
+      data:
+        litellm_session_id: null
+        metadata:
+          session_id: meta
+env: {}
+compare: {ignore: []}

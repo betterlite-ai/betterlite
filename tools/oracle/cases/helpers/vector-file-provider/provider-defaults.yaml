@@ -1,0 +1,31 @@
+kind: helper
+name: vector-file-provider-defaults
+call:
+  vector_file_provider:
+    vector_store_id: vs_a
+    custom_llm_provider: null
+    kwargs: {}
+    registry: null
+calls:
+  - vector_file_provider:
+      vector_store_id: vs_a
+      custom_llm_provider: ""
+      kwargs: {}
+      registry: null
+  - vector_file_provider:
+      vector_store_id: vs_a
+      custom_llm_provider: azure
+      kwargs: {}
+      registry: null
+  - vector_file_provider:
+      vector_store_id: vs_a
+      custom_llm_provider: openai/gpt-4o
+      kwargs: {}
+      registry: null
+  - vector_file_provider:
+      vector_store_id: vs_a
+      custom_llm_provider: unknown
+      kwargs: {}
+      registry: null
+env: {}
+compare: {ignore: []}

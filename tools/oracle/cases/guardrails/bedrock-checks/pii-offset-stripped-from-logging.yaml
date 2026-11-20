@@ -1,0 +1,33 @@
+kind: helper
+name: pii-offset-stripped-from-logging
+call:
+  b3725:
+    source: INPUT
+    messages:
+      - {role: user, content: "my email is a@b.c"}
+    response: null
+    logging_event_type: null
+    checks: {sensitiveInformation: {}}
+    content_filter_threshold: null
+    prompt_attack_threshold: null
+    pii_confidence_threshold: 0.9
+    disable_exception_on_block: false
+    data: {model: gpt-4o}
+    reply:
+      status: 200
+      body:
+        results:
+          sensitiveInformation:
+            results:
+              - type: EMAIL
+                confidenceScore: 0.6
+                messageIndex: 0
+                contentIndex: 0
+                beginOffset: 12
+                endOffset: 17
+      raw: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/requests/0/authorization
+      why: "Each side signs its own request at its own clock time, so the SigV4 signature differs"
