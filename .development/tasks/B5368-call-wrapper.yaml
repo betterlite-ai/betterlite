@@ -112,7 +112,7 @@ dod:
 - text: New helper corpus seeds call `b5368` and replay through the shared parser.
   proof: [helper-case-corpus]
 checks:
-  optional: []
+  optional: [mutants]
   commands:
   - id: call-order
     why: The fixed order of steps was changed.
