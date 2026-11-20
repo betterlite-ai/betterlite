@@ -123,16 +123,14 @@ fn metadata_answer(
         client: NoHfConfig,
         base_url: HF_CONFIG_BASE_URL.to_owned(),
     };
-    let dynamic = NoDynamicMetadata;
     let sources = HelperSources {
         environment: &environment,
-        dynamic: &dynamic,
+        dynamic: &NoDynamicMetadata,
         hf: &hf,
     };
-    let cache = ModelInfoCache::new(64);
     let source = HelperModelMetadata {
         sources: &sources,
-        cache: &cache,
+        cache: &ModelInfoCache::new(64),
     };
     let snapshot = CatalogSnapshot { catalog: engine };
     let metadata = RouterMetadata {
@@ -143,22 +141,10 @@ fn metadata_answer(
         source: &source,
     };
     let mut keys = ModelCostKeys::default();
-    dispatch(function, &metadata, arguments, &mut keys)
-}
-
-fn dispatch<Source>(
-    function: Function,
-    metadata: &RouterMetadata<'_, '_, '_, Source>,
-    arguments: &Arguments,
-    keys: &mut ModelCostKeys,
-) -> Result<Value, Failure>
-where
-    Source: ModelMetadataSource,
-{
     match function {
-        Function::DeploymentInfo => deployment_answer(metadata, arguments, keys),
-        Function::RouterInfo => router_answer(metadata, arguments, keys, false),
-        Function::AzureLogs => router_answer(metadata, arguments, keys, true),
+        Function::DeploymentInfo => deployment_answer(&metadata, arguments, &mut keys),
+        Function::RouterInfo => router_answer(&metadata, arguments, &mut keys, false),
+        Function::AzureLogs => router_answer(&metadata, arguments, &mut keys, true),
         Function::Listing | Function::Configured | Function::Raw => Err(Failure(
             "this function does not read deployment model info".to_owned(),
         )),
