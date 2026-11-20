@@ -12,9 +12,9 @@ use thiserror::Error;
 // The store's failure type belongs to the caller, so it is carried rather than boxed.
 #[derive(Debug, Error)]
 pub enum RotationError<Store> {
-    #[error("the SSO identity assertion could not be re-encrypted")]
+    #[error("the SSO identity assertion could not be re-encrypted: {0}")]
     Cipher(#[from] SecretError),
-    #[error("the SSO identity assertion rows failed")]
+    #[error("the SSO identity assertion rows failed: {0}")]
     Store(#[from] Store),
 }
 
