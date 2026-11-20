@@ -26,7 +26,7 @@ use crate::api::transcription_contract::AudioFile;
 use self::config::{ClientSource, Headers, TranscriptionHttpConfig, UrlInput, Validation};
 use self::error::{TranscriptionHttpError, send_failure_facts, status_facts};
 use self::reply::TranscriptionReply;
-use self::wire::TranscriptionTransport;
+use self::wire::TranscriptionTransport as _;
 
 // The arguments llm_http_handler.py's audio_transcriptions hands its two helpers
 pub struct TranscriptionCall<'call> {

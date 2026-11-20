@@ -1,7 +1,5 @@
 use betterlite_models::decisions::Json;
-use betterlite_openai::api::transcription_contract::{
-    AudioTranscriptionData, TranscriptionResponse,
-};
+use betterlite_openai::api::transcription_contract::AudioTranscriptionData;
 use betterlite_openai::openai_base_config::Object;
 use serde_json::Number;
 
@@ -43,7 +41,10 @@ async fn run_reply(
     config.response =
         serde_json::from_str(response).expect("the response fixture is a transcription response");
     let mut optional = Object::new();
-    optional.insert(String::from("response_format"), format);
+    optional.insert(
+        String::from("response_format"),
+        serde_json::to_value(format).expect("the response format is JSON"),
+    );
     let litellm = object("{}");
     let request_call = call(&optional, &litellm);
     let mut fixture = Fixture::new("transcription");

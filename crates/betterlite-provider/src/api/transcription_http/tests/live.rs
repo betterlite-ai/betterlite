@@ -11,7 +11,6 @@ use betterlite_http_fixture::server::serve;
 use betterlite_openai::api::transcription_contract::{
     AudioTranscriptionData, AudioTranscriptionRequestData,
 };
-use betterlite_openai::openai_base_config::Object;
 
 use super::support::{
     Entry, Events, Fixture, ProxiedSource, RecordingConfig, call, object, record,
@@ -51,10 +50,7 @@ async fn exchange(data: AudioTranscriptionRequestData) -> (Request, Transcriptio
     let api_base = format!("http://{}/v1", serving.address);
     let events = Events::new();
     let source = proxied_source();
-    let mut config = RecordingConfig::new(
-        record(AudioTranscriptionData::Object(Object::new())),
-        &events,
-    );
+    let mut config = RecordingConfig::new(data, &events);
     config.response =
         serde_json::from_str(r#"{"text":"live"}"#).expect("the response fixture is valid");
     let optional = object("{}");

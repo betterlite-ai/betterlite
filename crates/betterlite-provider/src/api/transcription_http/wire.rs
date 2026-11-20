@@ -239,7 +239,13 @@ fn form_pairs(fields: &Object) -> Result<Vec<(String, String)>, TranscriptionHtt
                     pairs.push((name.clone(), field_text(name, item)?));
                 }
             }
-            item => pairs.push((name.clone(), field_text(name, item)?)),
+            item @ Json::Null
+            | item @ Json::Bool(_)
+            | item @ Json::Number(_)
+            | item @ Json::Text(_)
+            | item @ Json::Object(_) => {
+                pairs.push((name.clone(), field_text(name, item)?));
+            }
         }
     }
     Ok(pairs)

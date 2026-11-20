@@ -23,13 +23,13 @@ impl TranscriptionTransport for ProxiedClient {
             url, headers, body, ..
         } = request;
         match body {
-            TranscriptionBody::Encoded(body) => {
+            TranscriptionBody::Encoded(encoded) => {
                 self.send_following(OutboundRequest {
                     method: Method::POST,
                     url,
                     query: Vec::new(),
                     headers,
-                    body,
+                    body: encoded,
                     deadline,
                 })
                 .await?
@@ -45,10 +45,12 @@ impl TranscriptionTransport for ProxiedClient {
                     .body(data)
                     .build()
                     .map_err(TransportError::Build)?;
-                for (name, value) in built.headers_mut().iter_mut() {
-                    if SECRET_HEADERS.contains(&name.as_str()) {
-                        value.set_sensitive(true);
-                    }
+                for (_name, value) in built
+                    .headers_mut()
+                    .iter_mut()
+                    .filter(|(name, _value)| SECRET_HEADERS.contains(&name.as_str()))
+                {
+                    value.set_sensitive(true);
                 }
                 self.execute_buffered(built, self.limits.body_bytes)
                     .await
