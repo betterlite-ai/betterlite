@@ -188,8 +188,9 @@ def lookup(input_value: Input) -> dict[str, JsonValue]:
     first = ONE_STORE.validate_python(
         registry.get_vector_store_to_run(params, tools=tools)  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/vector_store_registry.py#L189-L205
     )
+    resolved_name = "" if name is None else name
     named = ONE_STORE.validate_python(
-        registry.get_litellm_managed_vector_store_from_registry_by_name("" if name is None else name)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/vector_store_registry.py#L250-L259
+        registry.get_litellm_managed_vector_store_from_registry_by_name(resolved_name)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/vector_store_registry.py#L250-L259
     )
     return {
         "first": None if first is None else store_value(first),
@@ -208,12 +209,11 @@ def fallback(input_value: Input) -> dict[str, JsonValue]:
     calls: list[JsonValue] = []
     database = input_value.get("database")
     db: PrismaClient | None = None if database is None else FakeClient(database, calls)
+    pending_call = registry.pop_vector_stores_to_run_with_db_fallback(params, tools, db)  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/vector_store_registry.py#L303-L396
     raised: str | None = None
     stores: list[JsonValue] = []
     try:
-        stores = project(
-            asyncio.run(registry.pop_vector_stores_to_run_with_db_fallback(params, tools=tools, prisma_client=db))  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/vector_store_registry.py#L303-L396
-        )
+        stores = project(asyncio.run(pending_call))
     except TypeError as error:
         raised = str(error)
     return {
