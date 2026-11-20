@@ -9,7 +9,7 @@ use super::cache::CacheOutcome;
 use super::error::CallError;
 use super::fields::field;
 use super::state::{LoggingHandle, WrapperOptions};
-use super::steps;
+use super::steps::{self, CallView};
 use super::target::CallTarget;
 use crate::call_setup::RequestMap;
 use crate::call_setup::correlation::CallOutcome;
@@ -176,6 +176,20 @@ where
         }
         success::post_call(self, &outcome)?;
         success::finish(self, outcome).await
+    }
+
+    // update_response_metadata for the success paths, which hold the final response
+    fn update_metadata(&self, outcome: &CallOutcome) {
+        steps::update_metadata(
+            self.wrapper,
+            self.logging.as_ref(),
+            &CallView {
+                request: &self.request,
+                model: self.model.as_deref(),
+            },
+            steps::times(self.start, self.end, self.wrapper.clock.as_ref()),
+            outcome,
+        );
     }
 
     // the deployment hooks may convert the request, so the logging object follows the hook's stream value

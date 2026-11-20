@@ -45,7 +45,9 @@ where
         input.model.unwrap_or_default(),
     )
     .map_err(|error| CallError::from(error.classify()))?;
-    if json_schema_validation_enabled(input.request, input.validation)? {
+    let schema_validation = field::<bool>(input.request, "enable_json_schema_validation")?
+        .unwrap_or(input.validation.enable_json_schema_validation);
+    if schema_validation {
         validate_response_format(input.request, content, input.validation.limits)?;
     }
     validate_enforced_schema(input.request, content, input.validation.limits)
@@ -66,14 +68,6 @@ fn first_message_content(fields: &IndexMap<String, Json>) -> Option<&str> {
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
         | None => None,
     }
-}
-
-fn json_schema_validation_enabled(
-    request: &RequestMap,
-    validation: Validation,
-) -> Result<bool, CallError> {
-    let flag: Option<bool> = field(request, "enable_json_schema_validation")?;
-    Ok(flag.unwrap_or(validation.enable_json_schema_validation))
 }
 
 fn validate_json(schema: &Json, response: &str, limits: SchemaLimits) -> Result<(), CallError> {

@@ -707,7 +707,7 @@ impl Fixture {
     }
 
     pub(crate) fn with_cache(mut self) -> Self {
-        let cache: Arc<dyn CacheHandler> = Arc::clone(&self.cache);
+        let cache: Arc<ScriptedCache> = Arc::clone(&self.cache);
         self.wrapper.cache = Some(cache);
         self
     }

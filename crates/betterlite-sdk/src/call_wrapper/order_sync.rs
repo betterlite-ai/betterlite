@@ -36,7 +36,7 @@ pub(super) struct SyncRun<'run, E, B: BlockingBridge> {
 
 impl<'run, E, B> SyncRun<'run, E, B>
 where
-    E: RuleEvaluator,
+    E: RuleEvaluator + Send + Sync,
     B: BlockingBridge,
 {
     pub(super) fn new(

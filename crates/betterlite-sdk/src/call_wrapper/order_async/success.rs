@@ -15,7 +15,7 @@ use crate::call_wrapper::logging::{
 };
 use crate::call_wrapper::post_call::{PostCallInput, Validation, run as post_call_processing};
 use crate::call_wrapper::state::LoggingHandle;
-use crate::call_wrapper::steps::{self, CallView};
+use crate::call_wrapper::steps;
 
 pub(super) async fn stream_result<E>(
     run: &AsyncRun<'_, E>,
@@ -39,16 +39,7 @@ where
     if complete == Some(true) {
         return steps::assemble(run.wrapper, &run.request, run.logging.as_ref(), &outcome);
     }
-    steps::update_metadata(
-        run.wrapper,
-        run.logging.as_ref(),
-        &CallView {
-            request: &run.request,
-            model: run.model.as_deref(),
-        },
-        steps::times(run.start, run.end, run.wrapper.clock.as_ref()),
-        &outcome,
-    );
+    run.update_metadata(&outcome);
     match &run.wrapper.cache {
         None => Ok(outcome),
         Some(cache) => Ok(cache.wrap_streaming_result(outcome, &run.call_type)),
@@ -91,16 +82,7 @@ where
         log_success(run, &hooked);
         return Ok(combine_embedding(run, hooked));
     }
-    steps::update_metadata(
-        run.wrapper,
-        run.logging.as_ref(),
-        &CallView {
-            request: &run.request,
-            model: run.model.as_deref(),
-        },
-        steps::times(run.start, run.end, run.wrapper.clock.as_ref()),
-        &hooked,
-    );
+    run.update_metadata(&hooked);
     log_success(run, &hooked);
     Ok(hooked)
 }
