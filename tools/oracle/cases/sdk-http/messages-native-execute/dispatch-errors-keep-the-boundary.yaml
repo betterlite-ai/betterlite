@@ -1,0 +1,36 @@
+kind: sdk_http
+name: messages-native-dispatch-errors-keep-the-boundary
+env: {}
+call:
+  messages_native_execute:
+    request:
+      max_tokens: 32
+      messages:
+        - {role: user, content: "hello"}
+      model: claude-sonnet-4-20250514
+      metadata:
+      stop_sequences:
+      stream: false
+      system:
+      temperature:
+      thinking:
+      tool_choice:
+      tools:
+      top_k:
+      top_p:
+      api_key: sk-bad
+      custom_llm_provider: anthropic
+      kwargs: {}
+    provider:
+    hooks: []
+    searches: []
+    interceptors: []
+upstream:
+  - status: 401
+    headers: {content-type: application/json}
+    body:
+      type: error
+      error:
+        type: authentication_error
+        message: invalid x-api-key
+compare: {headers: [], headers_present: [], upstream_headers: [x-api-key, anthropic-version], ignore: []}

@@ -1,0 +1,54 @@
+kind: sdk_http
+name: messages-native-first-matching-interceptor-wins
+env: {}
+call:
+  messages_native_execute:
+    request:
+      max_tokens: 1024
+      messages:
+        - {role: user, content: "advise me"}
+      model: claude-sonnet-4-20250514
+      metadata:
+      stop_sequences:
+      stream: false
+      system:
+      temperature: 0.5
+      thinking:
+      tool_choice:
+      tools:
+        - {name: advisor, type: advisor_20260301}
+      top_k:
+      top_p:
+      api_key: sk-test
+      custom_llm_provider: anthropic
+      kwargs: {}
+    provider:
+    hooks: []
+    searches: []
+    interceptors:
+      - can_handle: false
+        answer:
+          id: msg_skipped
+          type: message
+          role: assistant
+          model: claude-sonnet-4-20250514
+          content:
+            - {type: text, text: skipped}
+          stop_reason: end_turn
+          stop_sequence:
+          usage: {input_tokens: 1, output_tokens: 1}
+      - can_handle: true
+        answer:
+          id: msg_05
+          type: message
+          role: assistant
+          model: claude-sonnet-4-20250514
+          content:
+            - {type: text, text: intercepted}
+          stop_reason: end_turn
+          stop_sequence:
+          usage: {input_tokens: 2, output_tokens: 3}
+      - can_handle: true
+        answer:
+upstream: []
+compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}

@@ -1,0 +1,61 @@
+kind: sdk_http
+name: messages-native-sanitize-before-hooks
+env: {}
+call:
+  messages_native_execute:
+    request:
+      max_tokens: 32
+      messages:
+        - role: user
+          content:
+            - {type: text, text: "   "}
+            - {type: text, text: hello}
+        - role: assistant
+          content:
+            - {type: thinking, thinking: "  ", signature: "sig"}
+            - {type: text, text: hi}
+            - {type: tool_use, id: "functions.Bash:0", name: Bash, input: {}}
+        - role: user
+          content:
+            - {type: tool_result, tool_use_id: "functions.Bash:0", content: done}
+            - {type: server_tool_use, id: srvtoolu_01, name: web_search, input: {query: rust}}
+            - type: web_search_tool_result
+              tool_use_id: srvtoolu_01
+              content:
+                - {type: web_search_result, title: Rust, url: "https://rust-lang.org", snippet: A language}
+        - role: user
+          content:
+            - {type: text, text: " \t "}
+      model: claude-sonnet-4-20250514
+      metadata:
+      stop_sequences:
+      stream: false
+      system: be brief
+      temperature:
+      thinking:
+      tool_choice:
+      tools:
+      top_k:
+      top_p:
+      api_key: sk-test
+      custom_llm_provider: anthropic
+      kwargs: {}
+    provider:
+    hooks:
+      - effect: pass
+    searches: []
+    interceptors: []
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: msg_01
+      type: message
+      role: assistant
+      model: claude-sonnet-4-20250514
+      content:
+        - {type: text, text: ok}
+      stop_reason: end_turn
+      stop_sequence:
+      usage: {input_tokens: 5, output_tokens: 2}
+compare: {headers: [], headers_present: [], upstream_headers: [x-api-key, anthropic-version, content-type], ignore: []}
