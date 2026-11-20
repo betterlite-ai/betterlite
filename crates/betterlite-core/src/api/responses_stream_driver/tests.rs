@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::VecDeque;
+use std::io;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -74,8 +75,8 @@ fn redactor() -> Redactor {
     Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor builds")
 }
 
-fn payload(text: &str) -> Result<Vec<u8>, SourceFailure> {
-    Ok(text.as_bytes().to_vec())
+fn payload(text: &str) -> Vec<u8> {
+    text.as_bytes().to_vec()
 }
 
 fn transport(kind: TransportKind, message: &str) -> Result<Vec<u8>, SourceFailure> {
@@ -103,30 +104,33 @@ fn delta(event: &Event) -> String {
 }
 
 fn fallback(error: &DriverError) -> &MidStreamFallbackDetails {
-    match error {
-        DriverError::Class {
-            class: ErrorClass::MidStreamFallback(details),
-        } => details,
-        other => panic!("expected a mid-stream fallback, got {other:?}"),
-    }
+    let DriverError::Class {
+        class: ErrorClass::MidStreamFallback(details),
+    } = error
+    else {
+        panic!("expected a mid-stream fallback, got {error:?}");
+    };
+    details
 }
 
 fn connection_message(error: &DriverError) -> &str {
-    match error {
-        DriverError::Class {
-            class: ErrorClass::ApiConnection(context),
-        } => &context.message,
-        other => panic!("expected an api connection error, got {other:?}"),
-    }
+    let DriverError::Class {
+        class: ErrorClass::ApiConnection(context),
+    } = error
+    else {
+        panic!("expected an api connection error, got {error:?}");
+    };
+    &context.message
 }
 
 fn timeout_details(error: &DriverError) -> &TimeoutDetails {
-    match error {
-        DriverError::Class {
-            class: ErrorClass::Timeout(details),
-        } => details,
-        other => panic!("expected a streaming timeout, got {other:?}"),
-    }
+    let DriverError::Class {
+        class: ErrorClass::Timeout(details),
+    } = error
+    else {
+        panic!("expected a streaming timeout, got {error:?}");
+    };
+    details
 }
 
 fn class_of(error: &DriverError) -> &ErrorClass {
@@ -173,7 +177,7 @@ impl ResponsesEventTransform for DecodingTransform {
 struct NoTokenization;
 
 impl UsageTokenization for NoTokenization {
-    type Error = std::io::Error;
+    type Error = io::Error;
 
     fn messages(&self, _request: &EstimateRequest<'_>) -> Result<Vec<Json>, Self::Error> {
         Ok(Vec::new())
@@ -187,7 +191,7 @@ impl UsageTokenization for NoTokenization {
 struct NoCost;
 
 impl ResponsesCostCalculator for NoCost {
-    type Error = std::io::Error;
+    type Error = io::Error;
 
     fn response_cost(&self, _target: &CostTarget<'_>) -> Result<Option<Decimal>, Self::Error> {
         Ok(None)
@@ -443,7 +447,7 @@ impl RecordingCache {
             .clone()
     }
 
-    fn record(&self, write: CacheWrite, asynchronous: bool) {
+    fn record(&self, write: &CacheWrite, asynchronous: bool) {
         let suffix = if asynchronous { ":async" } else { ":sync" };
         self.writes
             .lock()
@@ -455,12 +459,12 @@ impl RecordingCache {
 #[async_trait]
 impl ResponsesStreamCacheTarget for RecordingCache {
     fn add_cache(&self, write: CacheWrite) -> Result<(), PortFailure> {
-        self.record(write, false);
+        self.record(&write, false);
         Ok(())
     }
 
     async fn async_add_cache(&self, write: CacheWrite) -> Result<(), PortFailure> {
-        self.record(write, true);
+        self.record(&write, true);
         Ok(())
     }
 }
@@ -490,6 +494,13 @@ impl Ports {
             chunk_hooks: self.chunk_hooks.clone(),
             clock,
             redactor,
+        }
+    }
+
+    fn failing(failure: &Arc<FailurePort>) -> Self {
+        Self {
+            failure: Some(Arc::<FailurePort>::clone(failure)),
+            ..Self::default()
         }
     }
 }
@@ -658,18 +669,20 @@ fn assert_single_success(success: &SuccessPort, failure: &FailurePort) {
 async fn live_sse_delivery_yields_events_and_finishes() {
     let success = Arc::new(SuccessPort::default());
     let failure = Arc::new(FailurePort::default());
-    let mut ports = Ports::default();
-    ports.success = Some(Arc::<SuccessPort>::clone(&success));
-    ports.failure = Some(Arc::<FailurePort>::clone(&failure));
+    let ports = Ports {
+        success: Some(Arc::<SuccessPort>::clone(&success)),
+        failure: Some(Arc::<FailurePort>::clone(&failure)),
+        ..Ports::default()
+    };
     let fixture = Fixture::new(ports, fixed_clock());
     let hooks = fixture.hooks();
     let mut stream = fixture.stream(
         &hooks,
         prefetched(vec![
-            payload(CREATED),
-            payload(DELTA),
-            payload(COMPLETED),
-            payload(DONE),
+            Ok(payload(CREATED)),
+            Ok(payload(DELTA)),
+            Ok(payload(COMPLETED)),
+            Ok(payload(DONE)),
         ]),
         None,
     );
@@ -695,8 +708,7 @@ async fn live_sse_delivery_yields_events_and_finishes() {
 #[tokio::test]
 async fn early_stream_end_before_any_event_raises_a_fallback() {
     let failure = Arc::new(FailurePort::default());
-    let mut ports = Ports::default();
-    ports.failure = Some(Arc::<FailurePort>::clone(&failure));
+    let ports = Ports::failing(&failure);
     let fixture = Fixture::new(ports, fixed_clock());
     let hooks = fixture.hooks();
     let mut stream = fixture.stream(&hooks, prefetched(Vec::new()), None);
@@ -719,7 +731,7 @@ async fn early_stream_end_before_any_event_raises_a_fallback() {
 async fn early_stream_end_after_a_lifecycle_event_still_falls_back() {
     let fixture = Fixture::new(Ports::default(), fixed_clock());
     let hooks = fixture.hooks();
-    let mut stream = fixture.stream(&hooks, prefetched(vec![payload(CREATED)]), None);
+    let mut stream = fixture.stream(&hooks, prefetched(vec![Ok(payload(CREATED))]), None);
     stream
         .next_event()
         .await
@@ -734,13 +746,12 @@ async fn early_stream_end_after_a_lifecycle_event_still_falls_back() {
 #[tokio::test]
 async fn early_stream_end_after_output_raises_the_connection_error() {
     let failure = Arc::new(FailurePort::default());
-    let mut ports = Ports::default();
-    ports.failure = Some(Arc::<FailurePort>::clone(&failure));
+    let ports = Ports::failing(&failure);
     let fixture = Fixture::new(ports, fixed_clock());
     let hooks = fixture.hooks();
     let mut stream = fixture.stream(
         &hooks,
-        prefetched(vec![payload(CREATED), payload(DELTA)]),
+        prefetched(vec![Ok(payload(CREATED)), Ok(payload(DELTA))]),
         None,
     );
     stream.next_event().await.expect("the created event yields");
@@ -760,7 +771,7 @@ async fn the_done_marker_without_a_terminal_event_raises_the_early_end_error() {
     let hooks = fixture.hooks();
     let mut stream = fixture.stream(
         &hooks,
-        prefetched(vec![payload(CREATED), payload(DONE)]),
+        prefetched(vec![Ok(payload(CREATED)), Ok(payload(DONE))]),
         None,
     );
     stream.next_event().await.expect("the created event yields");
@@ -774,13 +785,12 @@ async fn the_done_marker_without_a_terminal_event_raises_the_early_end_error() {
 #[tokio::test]
 async fn the_done_marker_after_a_terminal_event_ends_the_iteration() {
     let failure = Arc::new(FailurePort::default());
-    let mut ports = Ports::default();
-    ports.failure = Some(Arc::<FailurePort>::clone(&failure));
+    let ports = Ports::failing(&failure);
     let fixture = Fixture::new(ports, fixed_clock());
     let hooks = fixture.hooks();
     let mut stream = fixture.stream(
         &hooks,
-        prefetched(vec![payload(COMPLETED), payload(DONE)]),
+        prefetched(vec![Ok(payload(COMPLETED)), Ok(payload(DONE))]),
         None,
     );
     stream
@@ -800,14 +810,13 @@ async fn the_done_marker_after_a_terminal_event_ends_the_iteration() {
 #[tokio::test]
 async fn transport_error_after_a_terminal_event_ends_the_iteration() {
     let failure = Arc::new(FailurePort::default());
-    let mut ports = Ports::default();
-    ports.failure = Some(Arc::<FailurePort>::clone(&failure));
+    let ports = Ports::failing(&failure);
     let fixture = Fixture::new(ports, fixed_clock());
     let hooks = fixture.hooks();
     let mut stream = fixture.stream(
         &hooks,
         prefetched(vec![
-            payload(COMPLETED),
+            Ok(payload(COMPLETED)),
             transport(TransportKind::ReadError, "peer closed the connection"),
         ]),
         None,
@@ -829,8 +838,7 @@ async fn transport_error_after_a_terminal_event_ends_the_iteration() {
 #[tokio::test]
 async fn transport_error_before_output_raises_a_fallback_with_503() {
     let failure = Arc::new(FailurePort::default());
-    let mut ports = Ports::default();
-    ports.failure = Some(Arc::<FailurePort>::clone(&failure));
+    let ports = Ports::failing(&failure);
     let fixture = Fixture::new(ports, fixed_clock());
     let hooks = fixture.hooks();
     let mut stream = fixture.stream(
@@ -855,15 +863,14 @@ async fn transport_error_before_output_raises_a_fallback_with_503() {
 #[tokio::test]
 async fn transport_error_after_output_raises_the_transport_error() {
     let failure = Arc::new(FailurePort::default());
-    let mut ports = Ports::default();
-    ports.failure = Some(Arc::<FailurePort>::clone(&failure));
+    let ports = Ports::failing(&failure);
     let fixture = Fixture::new(ports, fixed_clock());
     let hooks = fixture.hooks();
     let mut stream = fixture.stream(
         &hooks,
         prefetched(vec![
-            payload(CREATED),
-            payload(DELTA),
+            Ok(payload(CREATED)),
+            Ok(payload(DELTA)),
             transport(TransportKind::ReadError, "peer closed the connection"),
         ]),
         None,
@@ -871,27 +878,24 @@ async fn transport_error_after_output_raises_the_transport_error() {
     stream.next_event().await.expect("the created event yields");
     stream.next_event().await.expect("the delta yields");
     let error = stream.next_event().await.expect_err("the read fails");
-    match error {
-        DriverError::Transport(failure) => {
-            assert_eq!(failure.kind, TransportKind::ReadError);
-            assert_eq!(failure.message, "peer closed the connection");
-        }
-        other => panic!("expected the transport error, got {other:?}"),
-    }
+    let DriverError::Transport(transport) = error else {
+        panic!("expected the transport error");
+    };
+    assert_eq!(transport.kind, TransportKind::ReadError);
+    assert_eq!(transport.message, "peer closed the connection");
     assert_eq!(failure.classes().len(), 1);
 }
 
 #[tokio::test]
 async fn other_http_errors_raise_even_after_a_terminal_event() {
     let failure = Arc::new(FailurePort::default());
-    let mut ports = Ports::default();
-    ports.failure = Some(Arc::<FailurePort>::clone(&failure));
+    let ports = Ports::failing(&failure);
     let fixture = Fixture::new(ports, fixed_clock());
     let hooks = fixture.hooks();
     let mut stream = fixture.stream(
         &hooks,
         prefetched(vec![
-            payload(COMPLETED),
+            Ok(payload(COMPLETED)),
             transport(TransportKind::HttpError, "the request timed out"),
         ]),
         None,
@@ -901,18 +905,17 @@ async fn other_http_errors_raise_even_after_a_terminal_event() {
         .await
         .expect("the terminal event yields");
     let error = stream.next_event().await.expect_err("the read fails");
-    match error {
-        DriverError::Transport(failure) => assert_eq!(failure.kind, TransportKind::HttpError),
-        other => panic!("expected the transport error, got {other:?}"),
-    }
+    let DriverError::Transport(transport) = error else {
+        panic!("expected the transport error");
+    };
+    assert_eq!(transport.kind, TransportKind::HttpError);
     assert_eq!(failure.classes().len(), 1);
 }
 
 #[tokio::test]
 async fn a_framing_failure_raises_an_unclassified_error() {
     let failure = Arc::new(FailurePort::default());
-    let mut ports = Ports::default();
-    ports.failure = Some(Arc::<FailurePort>::clone(&failure));
+    let ports = Ports::failing(&failure);
     let fixture = Fixture::new(ports, fixed_clock());
     let hooks = fixture.hooks();
     let mut stream = fixture.stream(
