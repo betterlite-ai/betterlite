@@ -138,7 +138,9 @@ class ScriptedHook:
         effect = self.script["effect"]
         if effect == "pass":
             return None
-        values = self.script["values"]
+        values = self.script.get("values")
+        if values is None:
+            values = {}
         if effect == "replace":
             return dict(values)
         kwargs.update(values)

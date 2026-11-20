@@ -5,7 +5,7 @@ use betterlite_core::api::messages_native_execute::entry::MessagesEntryResult;
 use betterlite_core::api::messages_native_execute::error::MessagesExecuteError;
 use betterlite_core::api::messages_native_execute::seams::{
     CacheControlHook, CacheControlOutcome, CacheControlRequest, InterceptorRequest,
-    MessagesInterceptor, PreRequestHook, SearchShortCircuit,
+    MessagesInterceptor, PreRequestHook, SearchRequest, SearchShortCircuit,
 };
 use betterlite_core::api::messages_reasoning_route::seams::{
     ProviderLookup, ProviderResolution, ResolvedTarget,
@@ -89,7 +89,7 @@ pub(super) struct ScriptedHook {
 
 #[async_trait]
 impl PreRequestHook for ScriptedHook {
-    fn callback_name(&self) -> &str {
+    fn callback_name(&self) -> &'static str {
         "scripted"
     }
 
@@ -127,17 +127,13 @@ pub(super) struct ScriptedSearch {
 
 #[async_trait]
 impl SearchShortCircuit for ScriptedSearch {
-    fn callback_name(&self) -> &str {
+    fn callback_name(&self) -> &'static str {
         "scripted-search"
     }
 
     async fn try_short_circuit_search(
         &self,
-        _model: &str,
-        _messages: &[Json],
-        _tools: Option<&[Json]>,
-        _provider: Option<&str>,
-        _kwargs: &IndexMap<String, Json>,
+        _request: &SearchRequest<'_>,
     ) -> Result<Option<Json>, MessagesExecuteError> {
         Ok(self.answer.clone())
     }

@@ -86,12 +86,13 @@ pub(super) fn record_failure(
 ) -> Result<(), SdkHttpError> {
     match error {
         MessagesExecuteError::Raised(raised) => {
+            let inner = *raised;
             outcome.failure = Some(Failure {
-                class: raised.class,
-                status: raised.status.unwrap_or(500),
-                error_type: raised.kind.map_or(Json::Null, Json::Text),
-                param: raised.param.map_or(Json::Null, Json::Text),
-                code: raised.code.map_or(Json::Null, Json::Text),
+                class: inner.class,
+                status: inner.status.unwrap_or(500),
+                error_type: inner.kind.map_or(Json::Null, Json::Text),
+                param: inner.param.map_or(Json::Null, Json::Text),
+                code: inner.code.map_or(Json::Null, Json::Text),
             });
         }
         MessagesExecuteError::Classified(class) => outcome.failure = Some(class_failure(&class)),
