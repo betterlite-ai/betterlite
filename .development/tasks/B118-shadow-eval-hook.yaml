@@ -10,7 +10,8 @@ description: >-
   part builds the logger itself: its constructor, `_sampled_jobs`, `async_log_success_event` and the slot release
   (shadow_eval_logger.py L819-L849 and L905-L1038). This task builds them in betterlite-server as the module
   `shadow_eval_logger`, and adds the small seam in betterlite-logging that gives the logger the call details it reads.
-  B069 registers the logger at startup next to the spend logger (proxy_server.py L2751-L2759); this task does not.
+  This task also registers the logger at startup next to B069's spend logger in `spend::startup::start` (proxy_server.py
+  L2759), only when a database exists, from the B4083 job loader and B8660 shadow_spend pair that start already receives.
 
 
   The seam. LiteLLM hands this logger `kwargs=model_call_details`, the response object and the guardrail snapshot
@@ -133,6 +134,8 @@ scope:
     - tools/oracle/helpers/b118/**
     - tools/oracle/src/helpers/server/b118.rs
     - tools/oracle/src/helpers/server/b118/**
+    - crates/betterlite-server/src/spend/startup.rs
+    - crates/betterlite-server/src/spend/startup/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L52-L59
@@ -158,7 +161,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1565
     why: The `internal_call_origin` metadata key that marks the gateway's own sub-calls.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2751-L2759
-    why: B069's registration; LiteLLM builds this logger only when a database is configured.
+    why: The registration this task adds; LiteLLM builds this logger only when a database is configured.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/litellm_agent/__init__.py#L1-L5
     why: The litellm_agent package only re-exports B8253's resolver; nothing to build here.
 dod:
@@ -237,7 +240,6 @@ out_of_scope:
   - "The judge prompt and budgets, PairwiseVerdict, `_unmask_preference`, the tool text, `_forwarded_team_id`, `_call_router_shadow` and `_call_judge` (L60-L70, L452-L480, L534-L578, L663-L668, L1266-L1371): B4084."
   - "`_key_or_team_is_over_budget`, `_run_shadow_eval` and `_run_shadow_arm` (L623-L660, L1042-L1216): B4085."
   - "litellm/integrations/litellm_agent/litellm_agent_model_resolver.py: B8253. Its `__init__.py` only re-exports the resolver, and B8253's betterlite-prompts module is that export. The litellm_agent arms of the logger catalog (litellm_logging.py L4582-L4589 and L5371-L5374) are B8655 and B8742."
-  - "Registering ShadowEvalLogger at startup when a database exists (proxy_server.py L2751-L2759): B069."
   - "Capturing the snapshot after the guardrails ran (litellm_pre_call_utils.py L1970-L1990): B1105. Flushing the funnel counters in the spend update job (proxy/utils.py L7506-L7529, L7577-L7702): B1744."
   - "The shadow eval management routes (auto_router_endpoints.py): B356 and its sibling route tasks."
 pitfalls:

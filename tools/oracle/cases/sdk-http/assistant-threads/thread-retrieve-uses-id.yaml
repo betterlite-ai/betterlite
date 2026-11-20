@@ -1,0 +1,20 @@
+kind: sdk_http
+name: sdk-http-assistant-threads-retrieve-uses-id
+env:
+  OPENAI_API_KEY: sk-env
+call:
+  assistant_threads:
+    operation: get
+    mode: sync
+    provider: openai
+    thread_id: "thread a/1"
+    kwargs: {user: u1}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: thread_a, object: thread, created_at: 1, metadata: null}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, openai-beta]
+  ignore: []

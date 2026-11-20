@@ -72,17 +72,8 @@ description: >-
   Prove it releases after both an ordinary result and an error, and that an actual
   callback-bound reservation is left for settlement. This internal layer test
   supplements HTTP failure cleanup without inventing a public test endpoint.
-  unbound_cancel_http exercises the real unbound route as well: POST to B086's
-  /batches/{batch_id}/cancel, /v1/batches/{batch_id}/cancel and
-  /{provider}/v1/batches/{batch_id}/cancel aliases, with provider openai, a
-  B1019 model-encoded batch ID and a JSON model matching the priced deployment.
-  The auth body supplies the reservation estimate; cancellation routes by the ID.
-  A test-owned upstream barrier holds the cancellation response until a read-only
-  Redis observation proves the reservation exists, then returns the same valid
-  cancelling Batch response on each peer. After the response, observe zero spend
-  and compare a subsequent chat; this must fail if the installed release layer
-  is omitted. Do not use an executed-batch ID, whose MIT path requires an
-  unavailable enterprise managed-store hook.
+  The batch cancel routes (B086) are later work, so the HTTP test of an unbound
+  cancellation, unbound_cancel_http, belongs to B086; this task does not add it.
 
   Models: model_charge_http uses a positive model_max_budget and
   positive mock usage. Await the real success callback's counter write, then send
@@ -143,8 +134,6 @@ references:
     why: B3003's settlement, finalized and callback_bound decisions whose real HTTP composition is missing.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/budget_reservation_release_middleware.py#L19-L33
     why: B8270 owns this layer; B8680 installs it, and the integration test must call its real release adapter.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/batches_endpoints/endpoints.py#L1017-L1142
-    why: B086's existing cancel route decorators and model-encoded dispatch supply the unbound-reservation HTTP test, not another route registration.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L454-L552
     why: B9240's coordinator is observed through scheduled effects and subsequent HTTP admission.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10628-L10645
@@ -184,7 +173,7 @@ checks:
         && grep -rlq '^kind: http$' tools/oracle/cases/http/budget-lifecycle
     - id: reservation-tests
       why: The real gateways or the production unbound release composition leave reserved spend behind or settle it twice.
-      run: cargo build --locked -p betterlite && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::reservation_success_http(::|$)/) | test(/::reservation_failure_http(::|$)/) | test(/::unbound_release_adapters(::|$)/) | test(/::unbound_cancel_http(::|$)/)'
+      run: cargo build --locked -p betterlite && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::reservation_success_http(::|$)/) | test(/::reservation_failure_http(::|$)/) | test(/::unbound_release_adapters(::|$)/)'
     - id: model-tests
       why: Model/session callbacks and the next auth check use different counters or charging is missing.
       run: cargo build --locked -p betterlite && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::model_charge_http(::|$)/) | test(/::session_charge_http(::|$)/)'
@@ -213,7 +202,6 @@ out_of_scope:
   - "reset_budget_job.py is assigned to B9240 and B3009-B3013, including every phase and helper; B8372 owns the scheduled caller. B071 writes only their integration tests."
   - "Model budget algorithms and increments are B3005/B3006/B3016; session algorithms and rate-limit context are B3007/B3017; fallback policy is B3008, execution B310, router construction B8613/B8381."
   - "B773 and B778 own /key/generate and /key/info, B003/B8630 own chat routing, and B8660 already owns the three HTTP zero-model-cap cases. No existing route or case file moves here."
-  - "B086 owns cancel_batch and its three route aliases, and B1019 owns the model-encoded ID codec. This task only supplies the missing reservation lifecycle comparison through them."
 pitfalls:
   - A cap of zero is skipped by reservation counter collection, so use a positive cap to prove estimate-versus-headroom admission.
   - Invoking an A2A agent sets invoked_agent_id, whereas MaxBudgetPerSessionHandler reads the key's agent_id.

@@ -1,0 +1,63 @@
+kind: helper
+name: shared-stream-raw-model-name
+call:
+  b9720:
+    kind: raw_model
+    request_data:
+      model: gpt-4o
+      metadata:
+        _complexity_router_return_raw_model_name: true
+calls:
+  - b9720:
+      kind: raw_model
+      request_data:
+        model: gpt-4o
+        litellm_metadata:
+          _complexity_router_return_raw_model_name: true
+  - b9720:
+      kind: raw_model
+      request_data:
+        metadata:
+          _complexity_router_return_raw_model_name: false
+        litellm_metadata:
+          _complexity_router_return_raw_model_name: true
+  - b9720:
+      kind: raw_model
+      request_data:
+        metadata:
+          _complexity_router_return_raw_model_name: "true"
+  - b9720:
+      kind: raw_model
+      request_data:
+        metadata:
+          _complexity_router_return_raw_model_name: 1
+  - b9720:
+      kind: raw_model
+      request_data:
+        metadata:
+          - _complexity_router_return_raw_model_name: true
+  - b9720:
+      kind: raw_model
+      request_data:
+        metadata: null
+        litellm_metadata: {}
+  - b9720:
+      kind: raw_model
+      request_data:
+        model: gpt-4o
+  - b9720:
+      kind: raw_model
+      request_data:
+        metadata:
+          other: true
+        litellm_metadata:
+          _complexity_router_return_raw_model_name: true
+  - b9720:
+      kind: raw_model
+      request_data:
+        metadata:
+          _complexity_router_return_raw_model_name: true
+        litellm_metadata: text
+env: {}
+compare:
+  ignore: []

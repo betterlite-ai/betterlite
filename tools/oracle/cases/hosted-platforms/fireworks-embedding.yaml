@@ -1,0 +1,39 @@
+kind: helper
+name: fireworks-embedding
+call:
+  b8310:
+    op: embedding
+    provider: fireworks_ai
+    model: accounts/fireworks/models/llama-v3p1-8b-instruct
+    input: hi
+    api_base: "{{upstream}}/v1"
+    api_key: "sk-passed"
+    globals: {api_key: "sk-global"}
+    env: {FIREWORKS_AI_API_KEY: "sk-env"}
+    answer:
+      status: 200
+      body: '{"object":"list","data":[{"object":"embedding","embedding":[0.1,0.2],"index":0}],"model":"oracle","usage":{"prompt_tokens":2,"total_tokens":2}}'
+calls:
+  - b8310:
+      op: embedding
+      provider: fireworks_ai
+      model: accounts/fireworks/models/llama-v3p1-8b-instruct
+      input: hi
+      api_base: "{{upstream}}/v1"
+      globals: {api_key: "sk-global"}
+      env: {FIREWORKS_AI_API_KEY: "sk-env"}
+      answer:
+        status: 200
+        body: '{"object":"list","data":[{"object":"embedding","embedding":[0.1,0.2],"index":0}],"model":"oracle","usage":{"prompt_tokens":2,"total_tokens":2}}'
+  - b8310:
+      op: embedding
+      provider: fireworks_ai
+      model: accounts/fireworks/models/llama-v3p1-8b-instruct
+      input: hi
+      api_base: "{{upstream}}/v1"
+      globals: {api_key: "sk-global"}
+      answer:
+        status: 200
+        body: '{"object":"list","data":[{"object":"embedding","embedding":[0.1,0.2],"index":0}],"model":"oracle","usage":{"prompt_tokens":2,"total_tokens":2}}'
+env: {}
+compare: {ignore: []}

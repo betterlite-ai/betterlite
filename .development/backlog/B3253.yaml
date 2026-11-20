@@ -2,7 +2,7 @@ id: B3253
 milestone: M6 guardrails
 title: Remote template catalog and AI suggestions
 status: todo
-depends_on: [B003, B732, B855, B756, B865, B175, B173, B3252]
+depends_on: [B003, B732, B855, B756, B865, B175, B173, B3252, B5656, B8665]
 file: tasks/B3253-policy-catalog-suggest.yaml
 covers:
   - "litellm/proxy/management_endpoints/policy_endpoints/ai_policy_suggester.py"

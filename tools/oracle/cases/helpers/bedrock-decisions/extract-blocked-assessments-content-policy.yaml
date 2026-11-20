@@ -1,0 +1,20 @@
+kind: helper
+name: extract-blocked-assessments-content-policy
+call:
+  b3722:
+    bedrock_decisions:
+      blocked_assessments:
+        response:
+          assessments:
+            - contentPolicy:
+                filters:
+                  - type: HATE
+                    confidence: HIGH
+                    filterStrength: HIGH
+                    action: BLOCKED
+                  - type: VIOLENCE
+                    confidence: LOW
+                    filterStrength: MEDIUM
+                    action: NONE
+env: {}
+compare: {ignore: []}

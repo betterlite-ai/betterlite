@@ -1,0 +1,10 @@
+kind: helper
+name: bedrock-mantle-settings-reply
+call:
+  bedrock_mantle_settings:
+    mantle_passthrough_reply_shape:
+      cases:
+        - {custom_llm_provider: bedrock_mantle, endpoint: converse}
+        - {custom_llm_provider: bedrock_mantle, endpoint: invoke}
+env: {}
+compare: {ignore: []}

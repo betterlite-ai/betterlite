@@ -2,7 +2,7 @@ id: B146
 milestone: M10 admin ui
 title: Admin UI pages for models, routing, playground, chat and the model hub working against betterlite
 status: todo
-depends_on: [B4920, B4921, B144, B9091, B860, B786, B8272, B8676, B9690, B9691, B9692, B9693, B9695]
+depends_on: [B4920, B4921, B144, B9091, B860, B786, B8676, B9690, B9691, B9692, B9693, B9695]
 file: tasks/B146-dashboard-model-pages.yaml
 covers:
   - "ui/litellm-dashboard/src/app/(dashboard)/model-insights/{page.tsx,_components/ModelInsightsView*}"

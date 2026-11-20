@@ -1,0 +1,14 @@
+kind: helper
+name: auth-tag-budgets-registry-overflow
+call:
+  auth_tag_budgets:
+    function: tag_registry
+    database: true
+    names: []
+    cached: []
+    rows: []
+    generated: {prefix: tag, count: 5001}
+    fail_query: false
+env: {}
+compare:
+  ignore: []
