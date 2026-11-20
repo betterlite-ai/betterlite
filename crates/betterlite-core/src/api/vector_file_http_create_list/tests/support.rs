@@ -36,8 +36,8 @@ use crate::api::vector_file_http_create_list::config::{
 };
 use crate::api::vector_file_http_create_list::error::FileTransportError;
 use crate::api::vector_file_http_create_list::service::{
-    ClientSource, FileCall, FileDeps, FileRequest, FileTarget, FileTransport, LogContext,
-    PreparedFile, prepare,
+    ClientSource, CreateCall, FileCall, FileDeps, FileRequest, FileTarget, FileTransport, ListCall,
+    LogContext, PreparedFile, prepare,
 };
 use crate::api::vector_store_http_write::error::{
     BaseLlmException, ClientError, HeaderMap, UrlFailure, header_map,
@@ -280,29 +280,17 @@ impl ClientSource for Source {
 // The provider config's answers are observable through this stand-in
 pub(crate) struct RecordingConfig {
     base: Option<String>,
-    errors: Mutex<Vec<(String, u16, HeaderMap)>>,
 }
 
 impl RecordingConfig {
     pub(crate) fn new(base: &str) -> Self {
         Self {
             base: Some(base.to_owned()),
-            errors: Mutex::default(),
         }
     }
 
     pub(crate) fn without_base() -> Self {
-        Self {
-            base: None,
-            errors: Mutex::default(),
-        }
-    }
-
-    pub(crate) fn errors(&self) -> Vec<(String, u16, HeaderMap)> {
-        self.errors
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+        Self { base: None }
     }
 }
 
@@ -351,10 +339,6 @@ impl FilesConfig for RecordingConfig {
     }
 
     fn error_class(&self, message: &str, status_code: u16, headers: HeaderMap) -> BaseLlmException {
-        self.errors
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push((message.to_owned(), status_code, headers.clone()));
         BaseLlmException {
             status_code,
             message: message.to_owned(),
@@ -476,4 +460,58 @@ impl<'call> CallRequest<'call> {
             timeout: self.timeout,
         }
     }
+}
+
+pub(crate) fn request_with_headers<'call>(
+    vector_store_id: &'call str,
+    params: &'call FilesParams,
+    headers: &'call BTreeMap<String, String>,
+) -> CallRequest<'call> {
+    CallRequest {
+        headers: Some(headers),
+        ..CallRequest::new(vector_store_id, params)
+    }
+}
+
+pub(crate) fn file_deps<'deps, C, S>(config: &'deps C, source: &'deps S) -> FileDeps<'deps, C, S>
+where
+    C: FilesConfig,
+    S: ClientSource,
+{
+    FileDeps {
+        config,
+        source,
+        supplied: None,
+    }
+}
+
+pub(crate) fn create_call<'call>(
+    request: &CallRequest<'call>,
+    original: &'call FileParams,
+    extra_body: Option<&'call IndexMap<String, Json>>,
+) -> FileCall<'call> {
+    FileCall::Create(CreateCall {
+        target: request.target(),
+        create_request: original,
+        extra_body,
+    })
+}
+
+pub(crate) fn list_call<'call>(
+    request: &CallRequest<'call>,
+    query_params: &'call FileParams,
+    extra_query: Option<&'call IndexMap<String, Json>>,
+) -> FileCall<'call> {
+    FileCall::List(ListCall {
+        target: request.target(),
+        query_params,
+        extra_query,
+    })
+}
+
+pub(crate) fn request_header<'request>(
+    request: &'request FileRequest,
+    name: &str,
+) -> Option<&'request str> {
+    request.headers.get(name)?.to_str().ok()
 }

@@ -42,7 +42,7 @@ fn clean_attributes(fields: &mut IndexMap<String, Json>) -> Result<(), FileTrans
     };
     let map = attributes
         .iter()
-        .map(|(name, value)| serde_json::to_value(value).map(|value| (name.clone(), value)))
+        .map(|(name, value)| serde_json::to_value(value).map(|encoded| (name.clone(), encoded)))
         .collect::<Result<IndexMap<String, _>, _>>()
         .map_err(FileTransportError::Encode)?;
     let Some(cleaned) = metadata_filter_limit(Some(&map)) else {
@@ -64,7 +64,11 @@ pub(crate) fn query_pairs(
     for (name, value) in fields {
         let items: &[Json] = match value {
             Json::List(items) => items.as_slice(),
-            single => from_ref(single),
+            single @ Json::Null
+            | single @ Json::Bool(_)
+            | single @ Json::Number(_)
+            | single @ Json::Text(_)
+            | single @ Json::Object(_) => from_ref(single),
         };
         for item in items {
             pairs.push((name.clone(), query_text(name, item)?));

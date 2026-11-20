@@ -6,12 +6,12 @@ use rstest::rstest;
 use secrecy::SecretString;
 
 use super::support::{
-    CallRequest, Events, Fixture, Reply, Source, Wire, caller_headers, file_params, openai_config,
-    openai_settings,
+    CallRequest, Events, Fixture, Reply, Source, Wire, caller_headers, create_call, file_deps,
+    file_params, list_call, openai_config, openai_settings, request_header,
 };
 use super::{FILE, LIST, json, run};
 use crate::api::vector_file_http_create_list::config::FilesParams;
-use crate::api::vector_file_http_create_list::service::{CreateCall, FileCall, FileDeps, ListCall};
+use crate::api::vector_file_http_create_list::service::FileRequest;
 use crate::api::vector_store_http_write::service::ClientKind;
 
 #[derive(Clone, Copy, Debug)]
@@ -28,39 +28,7 @@ fn provider_params(api_base: &str) -> FilesParams {
     }
 }
 
-#[tokio::test]
-async fn create_list_credentials() {
-    let settings = openai_settings();
-    let config = openai_config(&settings, "sk-env");
-    let events = Events::new();
-    let wire = Wire::replying(Reply::json(200, FILE), &events);
-    let source = Source::new(wire.clone());
-    let deps = FileDeps {
-        config: &config,
-        source: &source,
-        supplied: None,
-    };
-    let files = provider_params("http://mock.test/v1");
-    let headers = caller_headers(&[
-        ("Authorization", "Bearer sk-caller"),
-        ("Content-Type", "text/plain"),
-        ("OpenAI-Beta", "assistants=v1"),
-        ("X-Trace", "x"),
-    ]);
-    let request = CallRequest {
-        headers: Some(&headers),
-        ..CallRequest::new("vs_a", &files)
-    };
-    let original = file_params(r#"{"file_id":"file_a"}"#);
-    let mut fixture = Fixture::new("vector_store_file_create");
-    let create = FileCall::Create(CreateCall {
-        target: request.target(),
-        create_request: &original,
-        extra_body: None,
-    });
-    run(&mut fixture, &deps, ClientKind::Sync, &create, &events)
-        .await
-        .expect("the create succeeds");
+fn assert_create_logging(fixture: &Fixture) {
     assert_eq!(fixture.input(), Some(&json(r#""""#)));
     assert_eq!(
         fixture.logged("api_base"),
@@ -76,12 +44,58 @@ async fn create_list_credentials() {
             r#"{"Authorization":"Be****er","Content-Type":"application/json","OpenAI-Beta":"assistants=v1","X-Trace":"x"}"#
         ))
     );
+}
+
+fn assert_list_credentials(requests: &[FileRequest]) {
+    assert_eq!(requests.len(), 1);
+    assert_eq!(
+        request_header(&requests[0], "openai-beta"),
+        Some("assistants=v2")
+    );
+    assert_eq!(
+        request_header(&requests[0], "authorization"),
+        Some("Bearer sk-provider")
+    );
+}
+
+fn assert_wire_headers(requests: &[FileRequest]) {
+    assert_eq!(requests.len(), 2);
+    assert!(requests.iter().all(|sent| {
+        request_header(sent, "authorization") == Some("Bearer sk-provider")
+            && request_header(sent, "content-type") == Some("application/json")
+            && request_header(sent, "openai-beta") == Some("assistants=v1")
+            && request_header(sent, "x-trace") == Some("x")
+    }));
+}
+
+#[tokio::test]
+async fn create_list_credentials() {
+    let settings = openai_settings();
+    let config = openai_config(&settings, "sk-env");
+    let events = Events::new();
+    let wire = Wire::replying(Reply::json(200, FILE), &events);
+    let source = Source::new(wire.clone());
+    let deps = file_deps(&config, &source);
+    let files = provider_params("http://mock.test/v1");
+    let headers = caller_headers(&[
+        ("Authorization", "Bearer sk-caller"),
+        ("Content-Type", "text/plain"),
+        ("OpenAI-Beta", "assistants=v1"),
+        ("X-Trace", "x"),
+    ]);
+    let request = CallRequest {
+        headers: Some(&headers),
+        ..CallRequest::new("vs_a", &files)
+    };
+    let original = file_params(r#"{"file_id":"file_a"}"#);
+    let mut fixture = Fixture::new("vector_store_file_create");
+    let call = create_call(&request, &original, None);
+    run(&mut fixture, &deps, ClientKind::Sync, &call, &events)
+        .await
+        .expect("the create succeeds");
+    assert_create_logging(&fixture);
     let query = file_params(r#"{"limit":4}"#);
-    let list = FileCall::List(ListCall {
-        target: request.target(),
-        query_params: &query,
-        extra_query: None,
-    });
+    let list = list_call(&request, &query, None);
     run(&mut fixture, &deps, ClientKind::Sync, &list, &events)
         .await
         .expect("the list succeeds");
@@ -90,15 +104,7 @@ async fn create_list_credentials() {
         Some(&json(r#"{"limit":4}"#))
     );
     assert_eq!(events.recorded(), ["log", "send", "log", "send"]);
-    let requests = wire.requests();
-    assert_eq!(requests.len(), 2);
-    assert!(requests.iter().all(|sent| {
-        let header = |name: &str| sent.headers.get(name).and_then(|value| value.to_str().ok());
-        header("authorization") == Some("Bearer sk-provider")
-            && header("content-type") == Some("application/json")
-            && header("openai-beta") == Some("assistants=v1")
-            && header("x-trace") == Some("x")
-    }));
+    assert_wire_headers(&wire.requests());
 }
 
 #[rstest]
@@ -111,11 +117,7 @@ async fn list_without_caller_headers_adds_v2_beta(#[case] caller: CallerHeaders)
     let events = Events::new();
     let wire = Wire::replying(Reply::json(200, LIST), &events);
     let source = Source::new(wire.clone());
-    let deps = FileDeps {
-        config: &config,
-        source: &source,
-        supplied: None,
-    };
+    let deps = file_deps(&config, &source);
     let files = provider_params("http://mock.test/v1");
     let plain = CallRequest::new("vs_a", &files);
     let empty: BTreeMap<String, String> = BTreeMap::new();
@@ -130,11 +132,7 @@ async fn list_without_caller_headers_adds_v2_beta(#[case] caller: CallerHeaders)
     let query: IndexMap<String, Json> = IndexMap::new();
     let original = file_params("{}");
     let mut fixture = Fixture::new("vector_store_file_list");
-    let call = FileCall::List(ListCall {
-        target: request.target(),
-        query_params: &original,
-        extra_query: Some(&query),
-    });
+    let call = list_call(request, &original, Some(&query));
     run(
         &mut fixture,
         &deps,
@@ -144,10 +142,5 @@ async fn list_without_caller_headers_adds_v2_beta(#[case] caller: CallerHeaders)
     )
     .await
     .expect("the list succeeds");
-    let requests = wire.requests();
-    assert_eq!(requests.len(), 1);
-    let sent = &requests[0];
-    let header = |name: &str| sent.headers.get(name).and_then(|value| value.to_str().ok());
-    assert_eq!(header("openai-beta"), Some("assistants=v2"));
-    assert_eq!(header("authorization"), Some("Bearer sk-provider"));
+    assert_list_credentials(&wire.requests());
 }
