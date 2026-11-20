@@ -61,9 +61,26 @@ pub async fn execute(
     request: MessagesEntryRequest,
     seams: &MessagesEntrySeams<'_>,
 ) -> Result<MessagesEntryOutcome, MessagesExecuteError> {
-    let state = prepare(request, seams).await?;
-    if let Some(result) = state.search(seams).await? {
-        return Ok(MessagesEntryOutcome::Returned(result));
+    let pending = hooks_pending(request, seams).await?;
+    let state = settle(pending, seams)?;
+    let mut search_kwargs = state.kwargs.clone();
+    search_kwargs.insert(
+        "metadata".to_owned(),
+        state.named.metadata.clone().unwrap_or(Json::Null),
+    );
+    for searcher in seams.search_short_circuits {
+        let response = searcher
+            .try_short_circuit_search(
+                &state.request.model,
+                &state.messages,
+                state.named.tools.as_deref(),
+                state.provider.as_deref(),
+                &search_kwargs,
+            )
+            .await?;
+        if let Some(value) = response {
+            return Ok(MessagesEntryOutcome::Returned(state.search_result(value)?));
+        }
     }
     if let Some(result) = state.intercept(seams).await? {
         return Ok(MessagesEntryOutcome::Returned(result));
@@ -75,14 +92,6 @@ pub async fn execute(
     let continuation =
         MessagesExecutionContinuation::prepare(prepared, Arc::clone(&seams.redactor))?;
     Ok(MessagesEntryOutcome::Dispatch(Box::new(continuation)))
-}
-
-async fn prepare(
-    request: MessagesEntryRequest,
-    seams: &MessagesEntrySeams<'_>,
-) -> Result<EntryState, MessagesExecuteError> {
-    let pending = hooks_pending(request, seams).await?;
-    settle(pending, seams)
 }
 
 // The cache hook, the provider resolution and every pre-request hook, up to the named-argument pops
@@ -181,32 +190,6 @@ fn pop_named_arguments(
 }
 
 impl EntryState {
-    async fn search(
-        &self,
-        seams: &MessagesEntrySeams<'_>,
-    ) -> Result<Option<MessagesEntryResult>, MessagesExecuteError> {
-        let mut search_kwargs = self.kwargs.clone();
-        search_kwargs.insert(
-            "metadata".to_owned(),
-            self.named.metadata.clone().unwrap_or(Json::Null),
-        );
-        for searcher in seams.search_short_circuits {
-            let response = searcher
-                .try_short_circuit_search(
-                    &self.request.model,
-                    &self.messages,
-                    self.named.tools.as_deref(),
-                    self.provider.as_deref(),
-                    &search_kwargs,
-                )
-                .await?;
-            if let Some(value) = response {
-                return Ok(Some(self.search_result(value)?));
-            }
-        }
-        Ok(None)
-    }
-
     fn search_result(&self, value: Json) -> Result<MessagesEntryResult, MessagesExecuteError> {
         if self.original_stream {
             return Ok(MessagesEntryResult::Stream(Box::new(
