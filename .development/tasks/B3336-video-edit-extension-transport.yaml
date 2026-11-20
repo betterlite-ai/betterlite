@@ -34,6 +34,8 @@ description: >-
   and `transport_error_behavior`, with one named case per DoD item. The task changes no wire format, so there is no fuzz target.
 scope:
   paths:
+    - "crates/betterlite-core/src/api/vector_store_http_write/service.rs"
+    - "crates/betterlite-core/src/api/vector_store_http_write/service/facts.rs"
     - crates/betterlite-core/src/api/video_edit_transport.rs
     - crates/betterlite-core/src/api/video_edit_transport/**
   lint_tables: false

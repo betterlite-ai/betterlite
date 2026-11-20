@@ -439,3 +439,10 @@ path = "fuzz_targets/spend_estimate.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "object_permissions"
+path = "fuzz_targets/object_permissions.rs"
+test = false
+doc = false
+bench = false
