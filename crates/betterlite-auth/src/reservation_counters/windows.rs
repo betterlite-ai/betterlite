@@ -24,52 +24,52 @@ pub(crate) fn window_counters(
     durations: &dyn DurationParser,
     now: DateTime<Utc>,
 ) -> Vec<BudgetCounter> {
-    let mut counters = Vec::with_capacity(windows.len());
-    for value in windows {
-        let window = coerce_window(value);
-        let Some(duration) = window_duration(&window) else {
-            continue;
-        };
-        let Some(max_budget) = window_amount(window.as_ref().get("max_budget")) else {
-            continue;
-        };
-        if max_budget <= Decimal::ZERO {
-            continue;
-        }
-        let Some(window_start) = budget_window_start(&window, now, durations) else {
-            // LiteLLM prints the entity id here; a key's id is the key token, so only the type and duration go out
-            tracing::warn!(
-                entity_type = entity.entity_type.wire_value(),
-                budget_duration = %duration,
-                "Skipping budget window with invalid duration"
-            );
-            continue;
-        };
-        let Some(clock_start) = system_time(window_start) else {
-            warn_outside_clock(entity, &duration);
-            continue;
-        };
-        counters.push(BudgetCounter {
-            counter_key: format!("{}:window:{duration}", entity.prefix),
-            max_budget,
-            fallback_spend: Decimal::ZERO,
-            entity_type: entity.entity_type.clone(),
-            entity_id: format!("{}:{duration}", entity.entity_id),
-            source_cache_key: None,
-            spend_log_entity_id: Some(entity.entity_id.clone()),
-            window_duration: Some(duration),
-            window_start: Some(clock_start),
-        });
-    }
-    counters
+    windows
+        .iter()
+        .filter_map(|value| window_counter(entity, value, durations, now))
+        .collect()
 }
 
-fn warn_outside_clock(entity: &WindowEntity, duration: &str) {
-    tracing::warn!(
-        entity_type = entity.entity_type.wire_value(),
-        budget_duration = %duration,
-        "Skipping budget window outside the supported clock range"
-    );
+fn window_counter(
+    entity: &WindowEntity,
+    value: &JsonData,
+    durations: &dyn DurationParser,
+    now: DateTime<Utc>,
+) -> Option<BudgetCounter> {
+    let window = coerce_window(value);
+    let duration = window_duration(&window)?;
+    let max_budget = window_amount(window.as_ref().get("max_budget"))?;
+    if max_budget <= Decimal::ZERO {
+        return None;
+    }
+    let Some(window_start) = budget_window_start(&window, now, durations) else {
+        // LiteLLM prints the entity id here; a key's id is the key token, so only the type and duration go out
+        tracing::warn!(
+            entity_type = entity.entity_type.wire_value(),
+            budget_duration = %duration,
+            "Skipping budget window with invalid duration"
+        );
+        return None;
+    };
+    let Some(clock_start) = system_time(window_start) else {
+        tracing::warn!(
+            entity_type = entity.entity_type.wire_value(),
+            budget_duration = %duration,
+            "Skipping budget window outside the supported clock range"
+        );
+        return None;
+    };
+    Some(BudgetCounter {
+        counter_key: format!("{}:window:{duration}", entity.prefix),
+        max_budget,
+        fallback_spend: Decimal::ZERO,
+        entity_type: entity.entity_type.clone(),
+        entity_id: format!("{}:{duration}", entity.entity_id),
+        source_cache_key: None,
+        spend_log_entity_id: Some(entity.entity_id.clone()),
+        window_duration: Some(duration),
+        window_start: Some(clock_start),
+    })
 }
 
 fn window_duration(window: &BudgetWindow) -> Option<String> {
