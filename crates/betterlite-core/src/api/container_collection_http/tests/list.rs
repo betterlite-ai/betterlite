@@ -312,6 +312,26 @@ fn list_rejects_a_bad_param_before_it_asks_for_a_client() {
     assert!(fixture.sent().is_empty());
 }
 
+#[test]
+fn list_asks_the_config_for_the_base_with_the_api_base_and_every_param() {
+    let mut fixture = Fixture::new(200, LIST_BODY);
+    fixture
+        .params
+        .insert(String::from("api_base"), json!("https://given.test"));
+    fixture
+        .params
+        .insert(String::from("api_key"), json!("sk-9"));
+    let call = fixture.list_call(empty_page(), None);
+    container_list_handler(&call, &fixture.source, None, &fixture.hook).unwrap();
+    assert_eq!(
+        fixture.config.bases.lock().unwrap().clone(),
+        vec![(
+            Some(String::from("https://given.test")),
+            fixture.params.clone()
+        )]
+    );
+}
+
 #[tokio::test]
 async fn list_async_sends_through_the_async_client() {
     let fixture = Fixture::new(200, LIST_BODY);
