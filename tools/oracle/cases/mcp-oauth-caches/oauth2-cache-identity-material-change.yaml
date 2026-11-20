@@ -1,0 +1,43 @@
+kind: helper
+name: oauth2-cache-identity-material-change
+call:
+  b4662:
+    function: identity
+    servers:
+      - server_id: srv-1
+        name: Server
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: oauth2
+        oauth2_flow: client_credentials
+        client_id: client
+        client_secret: secret
+        token_url: https://idp.example.com/token
+        scopes:
+          - read
+          - write
+      - server_id: srv-1
+        name: Server
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: oauth2
+        oauth2_flow: client_credentials
+        client_id: client
+        client_secret: secret
+        token_url: https://idp.example.com/token
+        scopes:
+          - read
+      - server_id: srv-1
+        name: Server
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: oauth2
+        oauth2_flow: client_credentials
+        client_id: client
+        client_secret: rotated
+        token_url: https://idp.example.com/token
+        scopes:
+          - read
+          - write
+env: {}
+compare: {ignore: []}

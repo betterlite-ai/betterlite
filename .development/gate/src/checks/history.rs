@@ -116,7 +116,7 @@ pub(crate) fn passed(log_dir: &Path, facts: &Facts) -> Result<BTreeMap<String, S
     Ok(found)
 }
 
-pub(crate) fn runs(log_dir: &Path) -> Result<BTreeSet<PathBuf>, GateError> {
+fn runs(log_dir: &Path) -> Result<BTreeSet<PathBuf>, GateError> {
     let runs = log_dir.join("runs");
     if !runs.is_dir() {
         return Ok(BTreeSet::new());
@@ -134,12 +134,4 @@ pub(crate) fn runs(log_dir: &Path) -> Result<BTreeSet<PathBuf>, GateError> {
         found.insert(run.path());
     }
     Ok(found)
-}
-
-pub(crate) fn unfinished(log_dir: &Path, earlier: &BTreeSet<PathBuf>) -> Result<bool, GateError> {
-    Ok(runs(log_dir)?.iter().any(|run| {
-        !earlier.contains(run)
-            && !run.join("result.json").exists()
-            && !run.join("error.txt").exists()
-    }))
 }

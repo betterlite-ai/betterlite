@@ -1,14 +1,14 @@
 id: B2416
 milestone: M5 API families
 title: Responses retrieve and input-items HTTP transport
-status: todo
+status: done
 depends_on: [B173, B1114, B509, B249, B2402, B2401, B9952]
 file: tasks/B2416-responses-read-transport.yaml
 covers:
   - "litellm/llms/custom_httpx/llm_http_handler.py"
 parent: B009
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2650
