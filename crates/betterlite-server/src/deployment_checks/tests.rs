@@ -189,6 +189,8 @@ const CAPABILITY_LIMIT_MESSAGE: &str = "config.yaml model_list: At most 0 auto-r
 
 const LLM_V2_LIMIT_MESSAGE: &str = "config.yaml model_list: At most 1 auto-router(s) with classifier_type 'llm_v2' (Fuse v2) can be registered but this would make 2. Use a different classifier or remove an existing Fuse v2 router. A LiteLLM license with the 'auto_router' feature lifts the limit.";
 
+const BOTH_CAPABILITIES_LIMIT_MESSAGE: &str = "config.yaml model_list: At most 1 auto-router(s) with classifier_type 'heuristic_v2' can be registered but this would make 2. Use classifier_type 'heuristic' for this router or remove an existing heuristic_v2 router. At most 1 auto-router(s) with classifier_type 'llm_v2' (Fuse v2) can be registered but this would make 2. Use a different classifier or remove an existing Fuse v2 router. A LiteLLM license with the 'auto_router' feature lifts the limit.";
+
 fn heuristic_v2(name: &str) -> JsonObject {
     entry(&format!(
         r#"{{"model_name": "{name}", "litellm_params": {{"model": "auto_router/complexity_router", "complexity_router_config": {{"classifier_type": "heuristic_v2"}}}}}}"#
@@ -218,6 +220,16 @@ fn with_classifier(name: &str, classifier: &str) -> JsonObject {
     )],
     0_usize,
     CUSTOMIZATION_LIMIT_MESSAGE
+)]
+#[case::both_capabilities_joined(
+    vec![
+        heuristic_v2("a"),
+        heuristic_v2("b"),
+        with_classifier("c", "llm_v2"),
+        with_classifier("d", "llm_v2"),
+    ],
+    1_usize,
+    BOTH_CAPABILITIES_LIMIT_MESSAGE
 )]
 #[case::capability_claims_one_capability(
     vec![entry(
