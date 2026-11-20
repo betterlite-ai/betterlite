@@ -57,16 +57,18 @@ impl SpeechCompletions for BridgeCompletions {
                 api_key,
                 timeout_seconds,
             };
-            let executor = native::executor(&chat, &api_base, &env)
-                .map_err(|error| SpeechCallError::Internal {
+            let executor = native::executor(&chat, &api_base, &env).map_err(|error| {
+                SpeechCallError::Internal {
                     message: error.to_string(),
-                })?;
-            let deployment = executor
-                .deployments
-                .first()
-                .ok_or_else(|| SpeechCallError::Internal {
-                    message: format!("no deployment serves {model}"),
-                })?;
+                }
+            })?;
+            let deployment =
+                executor
+                    .deployments
+                    .first()
+                    .ok_or_else(|| SpeechCallError::Internal {
+                        message: format!("no deployment serves {model}"),
+                    })?;
             match executor.send(deployment, &request).await {
                 Ok(answer) => Ok(SpeechCompletionOutput::Response(Box::new(
                     SpeechCompletionAnswer {
