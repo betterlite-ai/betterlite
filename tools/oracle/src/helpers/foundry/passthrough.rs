@@ -158,8 +158,9 @@ fn outcome_fields(
 ) -> (&'static str, Option<(&'static str, Value)>) {
     match outcome {
         Some(FoundryRelayedLog::Azure(AzureRelayedLog::Chat(_))) => ("chat", None),
-        Some(FoundryRelayedLog::Azure(AzureRelayedLog::Relay(_)))
-        | Some(FoundryRelayedLog::Relay(_)) => ("relay", None),
+        Some(FoundryRelayedLog::Azure(AzureRelayedLog::Relay(_)) | FoundryRelayedLog::Relay(_)) => {
+            ("relay", None)
+        }
         Some(FoundryRelayedLog::Azure(AzureRelayedLog::Terminal(_))) => ("terminal", None),
         Some(FoundryRelayedLog::Ocr(response)) => ("ocr", Some(("ocr", ocr_fields(response)))),
         Some(FoundryRelayedLog::Standard(response)) => (
