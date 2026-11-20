@@ -14,7 +14,7 @@ use rust_decimal::Decimal;
 
 use super::super::CostRecorder;
 use super::super::view;
-use super::PreparationError;
+use super::{PreparationError, object_value, text_value};
 use crate::cost::context::pricing::{PricingQuery, deployment_info};
 use crate::cost::prepare::ResponseView;
 
@@ -37,8 +37,9 @@ impl<Inference> CostRecorder<'_, Inference> {
             let empty = PriceRecord::new();
             let model_info = PtuModelInfo::from(record.as_ref().unwrap_or(&empty));
             let response_headers = string_map(log.model_call_details.get("response_headers"));
-            let additional_headers = view::hidden_params(view)
-                .and_then(|hidden| string_map(hidden.get("additional_headers")));
+            let hidden = view::typed(view).and_then(|typed| typed.hidden_params);
+            let additional_headers =
+                hidden.and_then(|params| string_map(params.get("additional_headers")));
             if is_spilled_over_ptu_request(
                 &model_info,
                 response_headers.as_ref(),
@@ -71,13 +72,10 @@ pub(crate) fn uses_custom_pricing(
                 .get(*key)
                 .is_some_and(|value| *value != Json::Null)
         });
-        if priced {
-            return Ok(true);
-        }
         let off_peak = model_info
             .get("off_peak_pricing")
             .is_some_and(|value| *value != Json::Null);
-        if off_peak {
+        if priced || off_peak {
             return Ok(true);
         }
     }
@@ -86,40 +84,28 @@ pub(crate) fn uses_custom_pricing(
 
 // _get_base_model_from_metadata: a non-null top-level value wins, then metadata, then litellm_metadata.
 pub(crate) fn base_model(log: &LoggingState) -> Result<Option<String>, PreparationError> {
-    match log.litellm_params.get("base_model") {
-        None | Some(Json::Null) => {}
-        Some(Json::Text(text)) => return Ok(Some(text.clone())),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            return Err(PreparationError::BaseModel);
-        }
+    if let Some(found) = base_model_value(log.litellm_params.get("base_model"))? {
+        return Ok(Some(found));
     }
     for field in ["metadata", "litellm_metadata"] {
-        if let Some(found) = metadata_base_model(log.litellm_params.get(field), field)? {
-            return Ok(Some(found));
+        let Some(metadata) = optional_object(log.litellm_params.get(field), field)? else {
+            continue;
+        };
+        let model_info = optional_object(metadata.get("model_info"), field)?;
+        let found = base_model_value(model_info.and_then(|info| info.get("base_model")))?;
+        if found.is_some() {
+            return Ok(found);
         }
     }
     Ok(None)
 }
 
-fn metadata_base_model(
-    value: Option<&Json>,
-    field: &'static str,
-) -> Result<Option<String>, PreparationError> {
-    let Some(metadata) = optional_object(value, field)? else {
-        return Ok(None);
-    };
-    let Some(model_info) = metadata.get("model_info") else {
-        return Ok(None);
-    };
-    let Some(model_info) = present_object(model_info, field)? else {
-        return Ok(None);
-    };
-    match model_info.get("base_model") {
+fn base_model_value(value: Option<&Json>) -> Result<Option<String>, PreparationError> {
+    match value {
         None | Some(Json::Null) => Ok(None),
-        Some(Json::Text(text)) => Ok(Some(text.clone())),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(PreparationError::BaseModel)
-        }
+        Some(found) => text_value(found)
+            .map(|text| Some(text.to_owned()))
+            .ok_or(PreparationError::BaseModel),
     }
 }
 
@@ -133,8 +119,14 @@ pub(crate) fn router_model_id(log: &LoggingState) -> Result<Option<String>, Prep
 
 pub(crate) fn params_view(litellm_params: &IndexMap<String, Json>) -> LitellmParams {
     LitellmParams {
-        metadata: object_field(litellm_params.get("metadata")),
-        litellm_metadata: object_field(litellm_params.get("litellm_metadata")),
+        metadata: litellm_params
+            .get("metadata")
+            .and_then(object_value)
+            .cloned(),
+        litellm_metadata: litellm_params
+            .get("litellm_metadata")
+            .and_then(object_value)
+            .cloned(),
         litellm_session_id: None,
         litellm_trace_id: None,
         prompt_id: None,
@@ -143,51 +135,26 @@ pub(crate) fn params_view(litellm_params: &IndexMap<String, Json>) -> LitellmPar
     }
 }
 
-fn object_field(value: Option<&Json>) -> Option<IndexMap<String, Json>> {
-    match value {
-        Some(Json::Object(fields)) => Some(fields.clone()),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
-        | None => None,
-    }
-}
-
+// Python's falsy test on a deployment metadata field: null, false, 0, "", [] and {} all read as absent.
 fn optional_object<'value>(
     value: Option<&'value Json>,
     field: &'static str,
 ) -> Result<Option<&'value IndexMap<String, Json>>, PreparationError> {
     match value {
-        None | Some(Json::Null) => Ok(None),
+        None | Some(Json::Null | Json::Bool(false)) => Ok(None),
+        Some(Json::Object(fields)) if fields.is_empty() => Ok(None),
         Some(Json::Object(fields)) => Ok(Some(fields)),
-        Some(Json::Bool(false)) => Ok(None),
-        Some(Json::Number(number)) if number_is_zero(number) => Ok(None),
         Some(Json::Text(text)) if text.is_empty() => Ok(None),
         Some(Json::List(items)) if items.is_empty() => Ok(None),
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+        Some(Json::Number(number))
+            if Decimal::from_str(&number.to_string()).is_ok_and(|value| value.is_zero()) =>
+        {
+            Ok(None)
+        }
+        Some(Json::Bool(true) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
             Err(PreparationError::Metadata { field })
         }
     }
-}
-
-fn present_object<'value>(
-    value: &'value Json,
-    field: &'static str,
-) -> Result<Option<&'value IndexMap<String, Json>>, PreparationError> {
-    match value {
-        Json::Object(fields) if fields.is_empty() => Ok(None),
-        Json::Object(fields) => Ok(Some(fields)),
-        Json::Null => Ok(None),
-        Json::Bool(false) => Ok(None),
-        Json::Number(number) if number_is_zero(number) => Ok(None),
-        Json::Text(text) if text.is_empty() => Ok(None),
-        Json::List(items) if items.is_empty() => Ok(None),
-        Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-            Err(PreparationError::Metadata { field })
-        }
-    }
-}
-
-fn number_is_zero(number: &serde_json::Number) -> bool {
-    Decimal::from_str(&number.to_string()).is_ok_and(|value| value.is_zero())
 }
 
 pub(crate) fn string_map(value: Option<&Json>) -> Option<BTreeMap<String, String>> {
@@ -197,12 +164,7 @@ pub(crate) fn string_map(value: Option<&Json>) -> Option<BTreeMap<String, String
     Some(
         fields
             .iter()
-            .filter_map(|(name, value)| match value {
-                Json::Text(text) => Some((name.clone(), text.clone())),
-                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-                    None
-                }
-            })
+            .filter_map(|(name, value)| Some((name.clone(), text_value(value)?.to_owned())))
             .collect(),
     )
 }

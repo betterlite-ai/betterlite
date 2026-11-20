@@ -7,7 +7,7 @@ use crate::api::media_relay_logging::spend::decimal_json;
 // The header the cost calculator reads before the price map, as core_helpers names it.
 pub const RESPONSE_COST_HEADER: &str = "llm_provider-x-litellm-response-cost";
 
-// Ports core_helpers.set_response_cost_in_hidden_params: no cost means no header, and no response_cost field.
+// ast-grep-ignore: no-long-names
 pub fn set_response_cost_in_hidden_params(
     hidden_params: &mut IndexMap<String, Json>,
     cost: Option<Decimal>,

@@ -94,6 +94,34 @@ where
 {
     // Ports _response_cost_calculator for both the sync header and the async success path.
     pub async fn record(&self, log: &mut LoggingState, input: RecordInput<'_>) -> Option<Decimal> {
-        flow::record(self, log, input).await
+        let mut request = flow::ViewRequest {
+            cache_hit: input.cache_hit,
+            litellm_model_name: input.litellm_model_name,
+            router_model_id: input.router_model_id,
+            background: false,
+        };
+        match input.response {
+            RecordResponse::Typed {
+                response,
+                background,
+            } => {
+                request.background = background;
+                flow::record_view(self, log, &ResponseView::Typed(response), &request).await
+            }
+            RecordResponse::Event(event) => {
+                flow::record_prepared(self, log, view::event_view(event), &request).await
+            }
+            RecordResponse::Json(body) => {
+                request.background = view::background(body);
+                flow::record_prepared(self, log, view::body_view(body), &request).await
+            }
+            RecordResponse::GenerateContent(body) => {
+                request.background = view::background(body);
+                flow::record_generate_content(self, log, body, &request).await
+            }
+            RecordResponse::Absent => {
+                flow::record_view(self, log, &ResponseView::Other, &request).await
+            }
+        }
     }
 }

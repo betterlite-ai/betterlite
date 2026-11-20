@@ -48,27 +48,31 @@ pub(super) struct BillingIdentity {
     pub(super) prompt: String,
 }
 
-pub(super) fn custom_llm_provider(log: &LoggingState) -> Result<Option<String>, PreparationError> {
-    match log.model_call_details.get("custom_llm_provider") {
+// A logging field declared as a string; a value of another type names the field.
+pub(super) fn text_field(
+    map: &IndexMap<String, Json>,
+    field: &'static str,
+) -> Result<Option<String>, PreparationError> {
+    match map.get(field) {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Text(text)) => Ok(Some(text.clone())),
         Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(PreparationError::Field {
-                field: "custom_llm_provider",
-            })
+            Err(PreparationError::Field { field })
         }
     }
 }
 
-pub(super) fn data_residency(log: &LoggingState) -> Result<Option<String>, PreparationError> {
-    match log.litellm_params.get("data_residency") {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Text(text)) => Ok(Some(text.clone())),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(PreparationError::Field {
-                field: "data_residency",
-            })
-        }
+pub(super) const fn text_value(value: &Json) -> Option<&str> {
+    match value {
+        Json::Text(text) => Some(text),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
+    }
+}
+
+pub(super) const fn object_value(value: &Json) -> Option<&IndexMap<String, Json>> {
+    match value {
+        Json::Object(fields) => Some(fields),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
     }
 }
 
@@ -77,28 +81,22 @@ pub(super) fn prompt(log: &LoggingState) -> String {
     if !SPEECH_CALL_TYPES.contains(&log.call_type.as_str()) {
         return String::new();
     }
-    match log.model_call_details.get("input") {
-        Some(Json::Text(text)) => text.clone(),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
-        | None => String::new(),
-    }
+    log.model_call_details
+        .get("input")
+        .and_then(text_value)
+        .unwrap_or_default()
+        .to_owned()
 }
 
-// _resolve_vertex_location_for_cost: explicit parameters, then the configured default, then select_region.
+// _resolve_vertex_location_for_cost: explicit parameters, then the logged ones, then the default.
 pub(super) fn vertex_location(
     log: &LoggingState,
     model: &str,
     settings: &VertexSettings,
     regions: &dyn VertexRegionNormalizer,
 ) -> Result<Option<String>, PreparationError> {
-    let provider = match log.model_call_details.get("custom_llm_provider") {
-        None | Some(Json::Null) => return Ok(None),
-        Some(Json::Text(text)) => text,
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            return Err(PreparationError::Field {
-                field: "custom_llm_provider",
-            });
-        }
+    let Some(provider) = text_field(&log.model_call_details, "custom_llm_provider")? else {
+        return Ok(None);
     };
     if !provider.starts_with(VERTEX_PROVIDER_PREFIX) {
         return Ok(None);
@@ -110,14 +108,14 @@ pub(super) fn vertex_location(
 }
 
 fn explicit_location(params: &IndexMap<String, Json>) -> Option<&str> {
-    for field in ["vertex_location", "vertex_ai_location"] {
-        if let Some(Json::Text(text)) = params.get(field)
-            && !text.is_empty()
-        {
-            return Some(text);
-        }
-    }
-    None
+    ["vertex_location", "vertex_ai_location"]
+        .iter()
+        .find_map(|field| {
+            params
+                .get(*field)
+                .and_then(text_value)
+                .filter(|text| !text.is_empty())
+        })
 }
 
 // _resolve_mantle_region_for_cost: only bedrock_mantle resolves a region, from the logged params.
@@ -125,21 +123,17 @@ pub(super) fn mantle_region(
     log: &LoggingState,
     mantle: &dyn MantleRegionResolver,
 ) -> Result<Option<String>, PreparationError> {
-    match log.model_call_details.get("custom_llm_provider") {
-        Some(Json::Text(provider)) if provider == MANTLE_PROVIDER => {}
-        Some(Json::Text(_)) | None | Some(Json::Null) => return Ok(None),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => return Ok(None),
+    if text_field(&log.model_call_details, "custom_llm_provider")?.as_deref()
+        != Some(MANTLE_PROVIDER)
+    {
+        return Ok(None);
     }
-    let params = match log.model_call_details.get("litellm_params") {
-        Some(Json::Object(fields)) => fields,
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
-        | None => {
-            return mantle
-                .region(&IndexMap::new())
-                .map(Some)
-                .map_err(PreparationError::Mantle);
-        }
-    };
+    let empty = IndexMap::new();
+    let params = log
+        .model_call_details
+        .get("litellm_params")
+        .and_then(object_value)
+        .unwrap_or(&empty);
     mantle
         .region(params)
         .map(Some)
@@ -160,19 +154,16 @@ pub(super) fn stored_cache_hit(log: &LoggingState) -> Option<bool> {
 // additional_response_cost adds only a positive number; Python's bool counts as 1 or 0.
 pub(super) fn additional_cost(log: &LoggingState) -> Option<Decimal> {
     match log.model_call_details.get("additional_response_cost") {
-        Some(Json::Number(number)) => Decimal::from_str(&number.to_string()).ok(),
         Some(Json::Bool(true)) => Some(Decimal::ONE),
         Some(Json::Bool(false)) => Some(Decimal::ZERO),
-        Some(Json::Null | Json::Text(_) | Json::List(_) | Json::Object(_)) | None => None,
+        Some(value) => amount(value),
+        None => None,
     }
 }
 
 pub(super) fn total_with_additional(amount: Decimal, additional: Option<Decimal>) -> Decimal {
     match additional {
-        Some(extra) if extra > Decimal::ZERO => match amount.checked_add(extra) {
-            Some(total) => total,
-            None => amount,
-        },
+        Some(extra) if extra > Decimal::ZERO => amount.checked_add(extra).unwrap_or(amount),
         Some(_) | None => amount,
     }
 }
@@ -187,7 +178,7 @@ pub(super) fn amount(value: &Json) -> Option<Decimal> {
 // is_unbilled_non_inference_call: only management reads are free, minus background responses and the poller.
 pub(super) fn unbilled(log: &LoggingState, background: bool) -> bool {
     is_unbilled(
-        call_category(Some(&log.call_type)),
+        call_category(Some(log.call_type.as_str())),
         cost_poll_origin(&log.litellm_params),
         background,
     )
@@ -195,16 +186,12 @@ pub(super) fn unbilled(log: &LoggingState, background: bool) -> bool {
 
 // The origin is looked up in metadata first, then litellm_metadata, as LiteLLM's merge does.
 fn cost_poll_origin(litellm_params: &IndexMap<String, Json>) -> Option<Origin> {
-    let found =
-        ["metadata", "litellm_metadata"]
-            .iter()
-            .find_map(|name| match litellm_params.get(*name) {
-                Some(Json::Object(fields)) => fields.get("internal_call_origin"),
-                Some(
-                    Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_),
-                )
-                | None => None,
-            });
+    let found = ["metadata", "litellm_metadata"].iter().find_map(|name| {
+        litellm_params
+            .get(*name)
+            .and_then(object_value)
+            .and_then(|fields| fields.get("internal_call_origin"))
+    });
     match found {
         Some(Json::Text(origin)) if origin == BACKGROUND_COST_POLL_ORIGIN => {
             Some(Origin::BackgroundResponseCostPoll)

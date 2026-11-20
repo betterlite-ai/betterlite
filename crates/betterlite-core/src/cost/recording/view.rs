@@ -1,6 +1,7 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
+use super::identity::{object_value, text_value};
 use crate::cost::context::CostResponse;
 use crate::cost::prepare::{DictionaryResponse, ResponseView, TypedResponse};
 use crate::cost::usage::{BillingResponse, BillingUsage, ResponseKind};
@@ -23,122 +24,114 @@ pub(super) enum JsonResponseError {
 
 // A mapping body exposes only its keys, the same view the dictionary cost path reads.
 pub(super) fn body_view(body: &Json) -> Result<Option<ResponseView<'_>>, JsonResponseError> {
-    let Some(fields) = object(body) else {
+    let Some(fields) = object_value(body) else {
         return Ok(None);
     };
     Ok(Some(ResponseView::Dictionary(DictionaryResponse {
-        model: text(fields, "model"),
+        model: fields.get("model").and_then(text_value),
         usage: usage_of(fields)?,
-        service_tier: text(fields, "service_tier"),
+        service_tier: fields.get("service_tier").and_then(text_value),
     })))
 }
 
 // Ports the terminal-event unwrap: only completion, incomplete and failure events carry the response.
 pub(super) fn event_view(event: &Json) -> Result<Option<ResponseView<'_>>, JsonResponseError> {
-    let Some(fields) = object(event) else {
+    let Some(fields) = object_value(event) else {
         return Ok(None);
     };
-    let Some(event_type) = text(fields, "type") else {
+    let Some(event_type) = fields.get("type").and_then(text_value) else {
         return Ok(None);
     };
     if !TERMINAL_EVENTS.contains(&event_type) {
         return Ok(None);
     }
-    let Some(inner) = fields.get("response") else {
-        return Err(JsonResponseError::Response);
-    };
-    let Some(response) = object(inner) else {
+    let Some(response) = fields.get("response").and_then(object_value) else {
         return Err(JsonResponseError::Response);
     };
     Ok(Some(ResponseView::Typed(TypedResponse {
         kind: ResponseKind::Responses,
-        model: text(response, "model"),
+        model: response.get("model").and_then(text_value),
         usage: usage_of(response)?,
-        service_tier: text(response, "service_tier"),
+        service_tier: response.get("service_tier").and_then(text_value),
         hidden_params: hidden(response)?,
     })))
 }
 
 // is_background_response: a mapping reads its key, every other shape carries no such attribute.
 pub(super) fn background(body: &Json) -> bool {
-    object(body)
+    object_value(body)
         .and_then(|fields| fields.get("background"))
         .is_some_and(|value| matches!(value, Json::Bool(true)))
 }
 
-pub(super) fn hidden_params<'view>(
-    view: &'view ResponseView<'_>,
-) -> Option<&'view IndexMap<String, Json>> {
+// The variant carrying response attributes; the others expose no kind or hidden params.
+pub(super) fn typed<'view>(view: &'view ResponseView<'_>) -> Option<&'view TypedResponse<'view>> {
     match view {
-        ResponseView::Typed(typed) => typed.hidden_params,
+        ResponseView::Typed(typed) => Some(typed),
         ResponseView::Realtime { .. } | ResponseView::Dictionary(_) | ResponseView::Other => None,
     }
 }
 
 pub(super) fn hidden_text<'view>(view: &'view ResponseView<'_>, key: &str) -> Option<&'view str> {
-    match hidden_params(view)?.get(key) {
-        Some(Json::Text(value)) if !value.is_empty() => Some(value),
-        Some(
-            Json::Null
-            | Json::Bool(_)
-            | Json::Number(_)
-            | Json::Text(_)
-            | Json::List(_)
-            | Json::Object(_),
-        )
-        | None => None,
-    }
+    let params = typed(view)?.hidden_params?;
+    params
+        .get(key)
+        .and_then(text_value)
+        .filter(|value| !value.is_empty())
 }
 
 pub(super) fn cost_response<'view>(
     view: &'view ResponseView<'view>,
 ) -> Option<CostResponse<'view>> {
-    match view {
-        ResponseView::Typed(typed) => Some(CostResponse::Object {
+    if let Some(typed) = typed(view) {
+        return Some(CostResponse::Object {
             model: typed.model,
             hidden_params: typed.hidden_params,
             response_ms: None,
-        }),
-        ResponseView::Dictionary(dictionary) => Some(CostResponse::Dictionary {
-            model: dictionary.model,
-        }),
-        ResponseView::Realtime { .. } | ResponseView::Other => None,
+        });
     }
+    if let ResponseView::Realtime { .. } = view {
+        return Some(CostResponse::Object {
+            model: None,
+            hidden_params: None,
+            response_ms: None,
+        });
+    }
+    let ResponseView::Dictionary(dictionary) = view else {
+        return None;
+    };
+    Some(CostResponse::Dictionary {
+        model: dictionary.model,
+    })
 }
 
 // The usage projection get_usage_object reads, rebuilt here because prepare's view stays private.
 pub(super) fn billing_response(view: &ResponseView<'_>) -> BillingResponse<'_> {
-    BillingResponse {
-        kind: kind(view),
-        usage: usage(view),
-        service_tier: service_tier(view),
-        hidden_params: hidden_params(view),
-    }
-}
-
-fn kind(view: &ResponseView<'_>) -> ResponseKind {
     match view {
-        ResponseView::Typed(typed) => typed.kind,
-        ResponseView::Realtime { .. } | ResponseView::Dictionary(_) | ResponseView::Other => {
-            ResponseKind::Other
-        }
-    }
-}
-
-fn usage<'usage>(view: &'usage ResponseView<'_>) -> BillingUsage<'usage> {
-    match view {
-        ResponseView::Realtime { usage, .. } => BillingUsage::Chat(usage),
-        ResponseView::Typed(typed) => copied_usage(&typed.usage),
-        ResponseView::Dictionary(dictionary) => copied_usage(&dictionary.usage),
-        ResponseView::Other => BillingUsage::Absent,
-    }
-}
-
-fn service_tier<'tier>(view: &'tier ResponseView<'_>) -> Option<&'tier str> {
-    match view {
-        ResponseView::Typed(typed) => typed.service_tier,
-        ResponseView::Dictionary(dictionary) => dictionary.service_tier,
-        ResponseView::Realtime { .. } | ResponseView::Other => None,
+        ResponseView::Typed(typed) => BillingResponse {
+            kind: typed.kind,
+            usage: copied_usage(&typed.usage),
+            service_tier: typed.service_tier,
+            hidden_params: typed.hidden_params,
+        },
+        ResponseView::Dictionary(dictionary) => BillingResponse {
+            kind: ResponseKind::Other,
+            usage: copied_usage(&dictionary.usage),
+            service_tier: dictionary.service_tier,
+            hidden_params: None,
+        },
+        ResponseView::Realtime { record, usage } => BillingResponse {
+            kind: ResponseKind::Other,
+            usage: BillingUsage::Chat(usage),
+            service_tier: record.service_tier.as_deref(),
+            hidden_params: None,
+        },
+        ResponseView::Other => BillingResponse {
+            kind: ResponseKind::Other,
+            usage: BillingUsage::Absent,
+            service_tier: None,
+            hidden_params: None,
+        },
     }
 }
 
@@ -158,21 +151,6 @@ const fn copied_usage<'usage>(usage: &'usage BillingUsage<'_>) -> BillingUsage<'
     }
 }
 
-fn object(value: &Json) -> Option<&IndexMap<String, Json>> {
-    match value {
-        Json::Object(fields) => Some(fields),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
-    }
-}
-
-fn text<'fields>(fields: &'fields IndexMap<String, Json>, key: &str) -> Option<&'fields str> {
-    match fields.get(key) {
-        Some(Json::Text(value)) => Some(value),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
-        | None => None,
-    }
-}
-
 fn usage_of(fields: &IndexMap<String, Json>) -> Result<BillingUsage<'_>, JsonResponseError> {
     match fields.get("usage") {
         None => Ok(BillingUsage::Absent),
@@ -189,9 +167,8 @@ fn hidden(
 ) -> Result<Option<&IndexMap<String, Json>>, JsonResponseError> {
     match fields.get("_hidden_params") {
         None | Some(Json::Null) => Ok(None),
-        Some(Json::Object(hidden)) => Ok(Some(hidden)),
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            Err(JsonResponseError::Hidden)
-        }
+        Some(value) => object_value(value)
+            .map(Some)
+            .ok_or(JsonResponseError::Hidden),
     }
 }

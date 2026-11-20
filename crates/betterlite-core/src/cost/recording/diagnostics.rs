@@ -8,6 +8,7 @@ use betterlite_models::zero_cost::{
     TokenUsage, ZeroCostDiagnostic, diagnose_zero_cost, zero_cost_warning,
 };
 use indexmap::IndexMap;
+use rust_decimal::Decimal;
 
 use super::CostRecorder;
 use super::identity::{self, BillingIdentity, PreparationError};
@@ -39,7 +40,7 @@ pub(super) struct Finding {
 pub(super) struct DiagnosticInput<'view> {
     pub(super) view: &'view ResponseView<'view>,
     pub(super) background: bool,
-    pub(super) cost: Option<rust_decimal::Decimal>,
+    pub(super) cost: Option<Decimal>,
     pub(super) calculation_failed: bool,
     pub(super) litellm_model_name: Option<String>,
     pub(super) router_model_id: Option<String>,
@@ -66,20 +67,15 @@ where
                 return;
             }
         };
-        match found {
-            Some(finding) => {
-                log.model_call_details
-                    .insert(DIAGNOSTIC_KEY.to_owned(), finding_json(&finding));
-                if !log.cost.zero_cost_warned {
-                    log.cost.zero_cost_warned = true;
-                    tracing::warn!("{}", finding.warning);
-                }
-            }
-            None => {
-                log.model_call_details
-                    .insert(DIAGNOSTIC_KEY.to_owned(), Json::Null);
-            }
+        if let Some(finding) = &found
+            && !log.cost.zero_cost_warned
+        {
+            log.cost.zero_cost_warned = true;
+            tracing::warn!("{}", finding.warning);
         }
+        let value = found.map_or(Json::Null, |finding| finding_json(&finding));
+        log.model_call_details
+            .insert(DIAGNOSTIC_KEY.to_owned(), value);
     }
 
     // Ports _zero_cost_finding: zero or unbilled costs only, priced through B1682 and B1683.
@@ -110,7 +106,7 @@ where
         };
         let params = identity::metadata::params_view(&log.litellm_params);
         let metadata = merge_litellm_metadata(&params);
-        let provider = identity::custom_llm_provider(log)?;
+        let provider = identity::text_field(&log.model_call_details, "custom_llm_provider")?;
         let warning = zero_cost_warning(
             &diagnostic,
             model_group(&metadata),
@@ -136,7 +132,7 @@ where
             .filter(|name| !name.is_empty())
             .unwrap_or(&log.model)
             .to_owned();
-        let provider = identity::custom_llm_provider(log)?;
+        let provider = identity::text_field(&log.model_call_details, "custom_llm_provider")?;
         let base = identity::metadata::base_model(log)?;
         let router = match input.router_model_id.as_deref() {
             Some(router) if !router.is_empty() => Some(router.to_owned()),
@@ -172,9 +168,10 @@ pub(super) fn failure_information(
     billing: Option<&BillingIdentity>,
     call_type: &str,
 ) -> Json {
-    let mut fields = IndexMap::new();
-    fields.insert("error_str".to_owned(), Json::Text(message.to_owned()));
-    fields.insert("traceback_str".to_owned(), Json::Text(String::new()));
+    let mut fields = IndexMap::from([
+        ("error_str".to_owned(), Json::Text(message.to_owned())),
+        ("traceback_str".to_owned(), Json::Text(String::new())),
+    ]);
     if let Some(billing) = billing {
         fields.insert("model".to_owned(), Json::Text(billing.model.clone()));
         fields.insert(
@@ -226,11 +223,7 @@ fn text_or_null(text: Option<&str>) -> Json {
 }
 
 fn model_group(metadata: &IndexMap<String, Json>) -> Option<&str> {
-    match metadata.get("model_group") {
-        Some(Json::Text(group)) => Some(group),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
-        | None => None,
-    }
+    metadata.get("model_group").and_then(identity::text_value)
 }
 
 fn token_usage(usage: &Usage) -> TokenUsage {
