@@ -35,7 +35,7 @@ use indexmap::IndexMap;
 use secrecy::SecretString;
 
 use crate::api::responses_compact_call::call::CompactResponsesCall;
-use crate::api::responses_compact_call::deps::CompactConfigFactory;
+use crate::api::responses_compact_call::deps::{CompactConfigFactory, ConfigRequest};
 use crate::api::responses_compact_call::error::CompactParamError;
 use crate::api::responses_compact_http::config::{
     CompactConfig, CompactParams, CompactTransformRequest, Headers, SignRequest, Signed,
@@ -167,6 +167,12 @@ impl Wire {
                 status,
                 body: body.to_owned(),
             });
+    }
+
+    pub(crate) fn repeat(&self, status: u16, body: &str, times: u8) {
+        for _ in 0..times {
+            self.queue(status, body);
+        }
     }
 
     pub(crate) fn requests(&self) -> Vec<Arc<CompactRequest>> {
@@ -400,17 +406,11 @@ pub(crate) struct Configs {
     pub(crate) supported: Option<Vec<String>>,
 }
 
-// The registry decides which providers have a native config; the factory builds one for anything
-// that got past it, so an unsupported provider must fail in the B157 lookup and never reach HTTP
+// The registry decides native support; the factory builds a config for whatever B157 let through
 impl CompactConfigFactory for Configs {
     type Provider = TestConfig;
 
-    fn compact_config(
-        &self,
-        _model: &str,
-        _provider: &str,
-        _api_base: Option<&str>,
-    ) -> Option<TestConfig> {
+    fn compact_config(&self, _request: &ConfigRequest<'_>) -> Option<TestConfig> {
         Some(TestConfig::new(&self.events, self.supported.clone()))
     }
 }

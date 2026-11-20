@@ -65,7 +65,7 @@ where
             let (provider, model) = scripted(&run.model, run.custom_llm_provider.as_deref());
             Ok(RunOutcome {
                 result: None,
-                failure: Some(failure(&error, &provider, &model, fixture.redactor())),
+                failure: Some(failure(&error, &provider, &model, &fixture.redactor)),
             })
         }
     }

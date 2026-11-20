@@ -99,9 +99,7 @@ async fn compact_optional_parameters() {
     let events = Events::new();
     let mut harness = Harness::new();
     let wire = Wire::new(&events);
-    for _index in 0_u8..4_u8 {
-        wire.queue(200, COMPACT_OK);
-    }
+    wire.repeat(200, COMPACT_OK, 4);
     let source = Source::new(&wire);
     let resolver = ModelNames::default();
     let lookup = Registry;
@@ -216,9 +214,7 @@ async fn compact_timeout_and_residency() {
     let events = Events::new();
     let mut harness = Harness::new();
     let wire = Wire::new(&events);
-    for _index in 0_u8..11_u8 {
-        wire.queue(200, COMPACT_OK);
-    }
+    wire.repeat(200, COMPACT_OK, 11);
     let source = Source::new(&wire);
     let resolver = ModelNames::default();
     let lookup = Registry;

@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use betterlite_core::api::responses_compact_call::call::CompactResponsesCall;
 use betterlite_core::api::responses_compact_call::deps::{
-    CompactConfigFactory, CompactResponsesDeps,
+    CompactConfigFactory, CompactResponsesDeps, ConfigRequest,
 };
 use betterlite_core::api::responses_compact_call::error::CompactResponsesError;
 use betterlite_core::api::responses_compact_call::{acompact_responses, compact_responses};
@@ -44,7 +44,7 @@ impl LogSink for Sink {
 
 // The pre-call state a production compact request logs through, with nothing attached
 pub(super) struct Fixture {
-    redactor: Redactor,
+    pub(super) redactor: Redactor,
     sink: Sink,
     state: LoggingState,
     now: DateTime<FixedOffset>,
@@ -77,10 +77,6 @@ impl Fixture {
             state,
             now,
         })
-    }
-
-    pub(super) const fn redactor(&self) -> &Redactor {
-        &self.redactor
     }
 
     // Prepare then send under one logging environment, so the pre-call and the post-call share the same state
@@ -199,13 +195,8 @@ pub(super) struct Configs {
 impl CompactConfigFactory for Configs {
     type Provider = OpenAiCompactConfig;
 
-    fn compact_config(
-        &self,
-        _model: &str,
-        provider: &str,
-        _api_base: Option<&str>,
-    ) -> Option<OpenAiCompactConfig> {
-        (provider == "openai").then(|| OpenAiCompactConfig {
+    fn compact_config(&self, request: &ConfigRequest<'_>) -> Option<OpenAiCompactConfig> {
+        (request.provider == "openai").then(|| OpenAiCompactConfig {
             api_key: self.api_key.clone(),
         })
     }
