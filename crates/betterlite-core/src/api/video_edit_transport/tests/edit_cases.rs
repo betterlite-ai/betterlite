@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::multipart::MultipartPart;
 use betterlite_http::proxy::outbound::RequestBody;
 use betterlite_http_fixture::request::Request;
@@ -224,6 +225,11 @@ fn dod_3_prefetch_pair() {
         .expect("the prefetch POST arrived");
     let main_request = main_fixture.finish().expect("the main POST arrived");
     assert_prefetch_wire(&prefetch_request, &main_request);
+    assert_prefetch_records(&harness);
+}
+
+// The prefetch reply reaches the edit transform, and the prefetch call sees the call's id, URL and headers
+fn assert_prefetch_records(harness: &Harness<ProxiedClient>) {
     let seen = harness
         .config
         .edit_seen()

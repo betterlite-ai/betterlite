@@ -60,9 +60,9 @@ fn dod_1_async_hand_off_in_runtime() {
 
 // The hand-off comes before the runtime guard, so _is_async still returns the async handler's future
 fn assert_pending(handled: Result<Handled<'_>, VideoEditTransportError>) {
-    let handled = handled.unwrap_or_else(|error| panic!("the sync handler failed: {error}"));
+    let pending = handled.unwrap_or_else(|error| panic!("the sync handler failed: {error}"));
     assert!(
-        matches!(handled, Handled::Pending(_)),
+        matches!(pending, Handled::Pending(_)),
         "the sync handler ran instead of handing off"
     );
 }
