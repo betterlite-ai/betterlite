@@ -1,4 +1,9 @@
-use super::call_kind::Unbuilt;
+mod azure;
+pub mod call;
+mod client;
+mod native;
+pub mod outcome;
+mod vertex;
 
-pub type Call = Unbuilt<1052>;
-pub type Outcome = Unbuilt<1052>;
+pub type Call = call::Call;
+pub type Outcome = outcome::Outcome;
