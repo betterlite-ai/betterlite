@@ -47,7 +47,7 @@ use self::relay::{TextSource, relay_bytes};
 // the existing chat implementation, reached through the dispatch pipeline's port
 pub(crate) struct ChatCalls {
     pub(crate) executor: Arc<ChatExecutor>,
-    pub(crate) counter: Counter,
+    pub(crate) counter: Arc<Counter>,
 }
 
 impl ChatCalls {
@@ -57,7 +57,10 @@ impl ChatCalls {
             &Arc::new(executor.client.clone()),
             &BundledCatalog::default().get(),
         )?;
-        Ok(Self { executor, counter })
+        Ok(Self {
+            executor,
+            counter: Arc::new(counter),
+        })
     }
 }
 
@@ -292,6 +295,6 @@ pub(super) fn render_stream(
 }
 
 mod mock;
-mod recovery;
+pub(crate) mod recovery;
 mod relay;
 mod tests;

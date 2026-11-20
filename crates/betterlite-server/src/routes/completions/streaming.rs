@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 use std::io;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use axum::body::{Body, Bytes};
@@ -8,15 +8,20 @@ use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE};
 use axum::http::{HeaderMap, HeaderName, HeaderValue};
 use axum::response::{IntoResponse as _, Response};
 use betterlite_core::message_utilities::response_streams::StreamError;
-use betterlite_core::operation::text_stream::TextStreamResult;
+use betterlite_core::operation::text_completion::{TextCompletionCallInput, TextCompletionFailure};
+use betterlite_core::operation::text_stream::{TextStreamAnswer, TextStreamResult};
 use betterlite_models::controls::control_options::ControlOptions;
+use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use betterlite_openai::chat::ChatRequest;
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
-use betterlite_openai::text_completion_stream::{DONE_FRAME, without_nulls};
+use betterlite_openai::stream::SseParser;
+use betterlite_openai::text_completion_execution::CompletionAnswer;
+use betterlite_openai::text_completion_request::CompletionRequest;
+use betterlite_openai::text_completion_stream::{DONE_FRAME, decode_chat_events, without_nulls};
 use betterlite_provider::operation::{
-    ChatOperation, OperationError, OperationRequest, OperationResult,
+    ChatCompletion, ChatOperation, OperationError, OperationRequest, OperationResult,
 };
 use betterlite_provider::prepared::PreparedRequest;
 use betterlite_provider::prepared::deployment::Deployment;
@@ -25,9 +30,13 @@ use futures_util::StreamExt as _;
 use futures_util::stream::{self, BoxStream};
 
 use crate::routes::chat::headers::success_headers;
+use crate::routes::chat::streaming::recovery;
 use crate::server::chat_setup::provider_call::{CallError, chat_error};
 
 use self::pump::{FrameSource, Pump, next_frame};
+
+use super::CompletionCalls;
+use super::bridge::{chat_call_failure, chat_stream_answer, converted};
 
 // The route whose upstream rules a chat stream follows: only the chat route's provider adds stream usage
 pub(crate) enum StreamUsage {
@@ -136,6 +145,112 @@ impl FrameSource<io::Error> for ChunkFrames {
         pending.push_back(Bytes::from(format!("data: {text}\n\n")));
         Ok(false)
     }
+}
+
+// The completion route's buffered answer for a chat deployment: the chat completion the provider sent, or
+// the length-truncated reply LiteLLM rebuilds for an output-limit 400, converted either way.
+pub(super) async fn buffered(
+    calls: &CompletionCalls,
+    request: &CompletionRequest,
+    answered: (OperationResult, HeaderMap, Duration),
+) -> Result<CompletionAnswer, TextCompletionFailure> {
+    let (result, headers, time) = answered;
+    let (completion, headers) = if let OperationResult::OutputLimit { sent } = &result {
+        recovered_completion(calls, sent, headers, request.model.as_deref()).await?
+    } else {
+        let OperationResult::Chat(completion) = result else {
+            return Err(chat_call_failure(CallError::Mismatched, calls));
+        };
+        (completion, headers)
+    };
+    converted(completion, headers, time)
+}
+
+async fn recovered_completion(
+    calls: &CompletionCalls,
+    sent: &JsonValue,
+    headers: HeaderMap,
+    model: Option<&str>,
+) -> Result<(ChatCompletion, HeaderMap), TextCompletionFailure> {
+    let Some(counter) = &calls.counter else {
+        return Err(chat_call_failure(CallError::Mismatched, calls));
+    };
+    recovery::recovered_completion(&calls.state.executor, counter, sent, headers, model)
+        .await
+        .map_err(|failure| TextCompletionFailure::internal(&failure.to_string()))
+}
+
+// The same answer streamed: the provider's chat stream, or the two recovered frames, read as the text
+// completion chunks the route sends.
+pub(super) async fn streamed(
+    calls: &CompletionCalls,
+    call: &TextCompletionCallInput<'_>,
+    chat: &ChatRequest,
+    control: ControlOptions,
+) -> Result<TextStreamAnswer, TextCompletionFailure> {
+    let started = Instant::now();
+    let (result, headers) = provider_stream(
+        &calls.state.executor,
+        &call.deployment,
+        chat,
+        control,
+        StreamUsage::Text,
+    )
+    .await
+    .map_err(|error| chat_call_failure(error, calls))?;
+    if let OperationResult::OutputLimit { sent } = &result {
+        return recovered_stream(calls, call.request, sent, headers, started.elapsed()).await;
+    }
+    let OperationResult::Stream(stream) = result else {
+        return Err(chat_call_failure(CallError::Mismatched, calls));
+    };
+    let usage = include_usage(call.request);
+    Ok(chat_stream_answer(
+        *stream,
+        call.request.model.as_deref(),
+        usage,
+        started.elapsed(),
+    ))
+}
+
+async fn recovered_stream(
+    calls: &CompletionCalls,
+    request: &CompletionRequest,
+    sent: &JsonValue,
+    headers: HeaderMap,
+    upstream_time: Duration,
+) -> Result<TextStreamAnswer, TextCompletionFailure> {
+    let Some(counter) = &calls.counter else {
+        return Err(chat_call_failure(CallError::Mismatched, calls));
+    };
+    let (frames, headers) =
+        recovery::recovered_frames(&calls.state.executor, counter, sent, headers)
+            .await
+            .map_err(|failure| TextCompletionFailure::internal(&failure.to_string()))?;
+    let mut parser = SseParser::default();
+    let mut events = Vec::new();
+    for frame in frames {
+        let parsed = parser
+            .push(&frame)
+            .map_err(|source| TextCompletionFailure::internal(&source.to_string()))?;
+        events.extend(parsed);
+    }
+    events.extend(parser.finish());
+    let model = request.model.as_deref().unwrap_or_default();
+    let chunks = decode_chat_events(&events, model, include_usage(request))
+        .map_err(|source| TextCompletionFailure::internal(&source.to_string()))?;
+    Ok(TextStreamAnswer {
+        body: stream::iter(chunks.into_iter().map(Ok)).boxed(),
+        upstream_headers: headers,
+        upstream_time,
+    })
+}
+
+fn include_usage(request: &CompletionRequest) -> bool {
+    request
+        .stream_options
+        .as_ref()
+        .is_some_and(|chosen| chosen.include_usage)
 }
 
 pub(crate) mod pump;

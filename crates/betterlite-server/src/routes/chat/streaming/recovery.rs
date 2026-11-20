@@ -4,25 +4,37 @@ use axum::http::HeaderMap;
 use betterlite_core::dispatch::chat::mock_stream::sse_frame;
 use betterlite_core::operation::chat::{ChatFailure, ChatStreamAnswer};
 use betterlite_models::controls::json_value::JsonValue;
-use betterlite_openai::chat::execution::ChatError;
+use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
 use betterlite_openai::output_limits::build::{
     OutputLimitResponse, RecoveredBody, Recovery, build_limit_response,
 };
-use betterlite_openai::stream::chunk::Delta;
+use betterlite_openai::stream::chunk::{Chunk, Delta};
 use betterlite_provider::operation::ChatCompletion;
+use betterlite_tokenizer::count::Counter;
 use futures_util::StreamExt as _;
 use futures_util::stream;
 
 use super::ChatCalls;
 
 // the buffered answer for an output-limit 400: the completion restamped with the model the client asked for
-pub(super) async fn completion(
+pub(crate) async fn completion(
     calls: &ChatCalls,
     sent: &JsonValue,
     headers: HeaderMap,
     client_model: Option<&str>,
 ) -> Result<(ChatCompletion, HeaderMap), ChatFailure> {
-    let answer = recover(calls, sent, headers).await?;
+    recovered_completion(&calls.executor, &calls.counter, sent, headers, client_model).await
+}
+
+// the same answer for a route that holds the executor and the token counter itself
+pub(crate) async fn recovered_completion(
+    executor: &ChatExecutor,
+    tokens: &Counter,
+    sent: &JsonValue,
+    headers: HeaderMap,
+    client_model: Option<&str>,
+) -> Result<(ChatCompletion, HeaderMap), ChatFailure> {
+    let answer = recover(executor, tokens, sent, headers).await?;
     let RecoveredBody::Completion(response) = answer.body else {
         return Err(ChatFailure::Mismatched);
     };
@@ -33,16 +45,36 @@ pub(super) async fn completion(
 }
 
 // the two frames LiteLLM's stream wrapper sends for the one recovered chunk
-pub(super) async fn stream(
+pub(crate) async fn stream(
     calls: &ChatCalls,
     sent: &JsonValue,
     headers: HeaderMap,
     upstream_time: Duration,
 ) -> Result<ChatStreamAnswer, ChatFailure> {
-    let answer = recover(calls, sent, headers).await?;
-    let RecoveredBody::Chunk(mut chunk) = answer.body else {
+    let (frames, headers) =
+        recovered_frames(&calls.executor, &calls.counter, sent, headers).await?;
+    Ok(ChatStreamAnswer {
+        body: stream::iter(frames.into_iter().map(Ok)).boxed(),
+        upstream_headers: headers,
+        upstream_time,
+    })
+}
+
+// the same two frames for a route that holds the executor and the token counter itself
+pub(crate) async fn recovered_frames(
+    executor: &ChatExecutor,
+    tokens: &Counter,
+    sent: &JsonValue,
+    headers: HeaderMap,
+) -> Result<([Vec<u8>; 2], HeaderMap), ChatFailure> {
+    let answer = recover(executor, tokens, sent, headers).await?;
+    let RecoveredBody::Chunk(chunk) = answer.body else {
         return Err(ChatFailure::Mismatched);
     };
+    Ok((chunk_frames(chunk)?, answer.headers))
+}
+
+fn chunk_frames(mut chunk: Chunk) -> Result<[Vec<u8>; 2], ChatFailure> {
     let held: Vec<Option<String>> = chunk
         .choices
         .iter_mut()
@@ -56,15 +88,12 @@ pub(super) async fn stream(
     }
     let second =
         sse_frame(&chunk).map_err(|source| ChatFailure::Route(ChatError::Encode { source }))?;
-    Ok(ChatStreamAnswer {
-        body: stream::iter(vec![Ok(first), Ok(second)]).boxed(),
-        upstream_headers: answer.headers,
-        upstream_time,
-    })
+    Ok([first, second])
 }
 
 async fn recover(
-    calls: &ChatCalls,
+    executor: &ChatExecutor,
+    tokens: &Counter,
     sent: &JsonValue,
     headers: HeaderMap,
 ) -> Result<OutputLimitResponse, ChatFailure> {
@@ -74,9 +103,9 @@ async fn recover(
     let data = serde_json::from_slice(&encoded)
         .map_err(|source| ChatFailure::Route(ChatError::Encode { source }))?;
     let recovery = Recovery {
-        clock: calls.executor.clock,
-        next_id: calls.executor.next_id,
-        tokens: &calls.counter,
+        clock: executor.clock,
+        next_id: executor.next_id,
+        tokens,
     };
     build_limit_response(&data, headers, &recovery)
         .await

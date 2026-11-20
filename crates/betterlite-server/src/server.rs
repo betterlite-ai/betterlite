@@ -22,7 +22,7 @@ use crate::state::shared::Shared;
 use axum::http::StatusCode;
 use axum::middleware::{from_fn, from_fn_with_state};
 use axum::response::{IntoResponse as _, Response as AxumResponse};
-use axum::{Json, Router};
+use axum::{Extension, Json, Router};
 use betterlite_config::types::Config;
 use betterlite_error::envelope::EnvelopeError;
 use betterlite_error::envelope::error_body_call_id;
@@ -182,6 +182,7 @@ pub(crate) fn application(
 ) -> Result<Router, ServerError> {
     let executor = Arc::new(chat);
     let calls = Arc::new(ChatCalls::new(config, Arc::clone(&executor))?);
+    let counter = Arc::clone(&calls.counter);
     let vertex = vertex_embedding_calls(config, &executor, tasks)?;
     let shared = Arc::new(Shared {
         bundled_catalog: Arc::clone(&executor.bundled_catalog),
@@ -199,7 +200,9 @@ pub(crate) fn application(
                 .include_call_id_in_error_body,
         )?,
         embedding_routes(executor, vertex, read_through),
-    );
+    )
+    // the completion route recovers an output-limit 400 with the counter the chat route counts prompts with
+    .layer(Extension(counter));
     // a route layer, so a blocked route's 404 still passes the security headers, size limit and admission below
     let stacked = request_stack::wrap(
         routed.route_layer(from_fn(filter_route)),

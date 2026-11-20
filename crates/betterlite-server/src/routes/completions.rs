@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use axum::Json;
 use axum::Router;
 use axum::body::Bytes;
-use axum::extract::{Path, State};
+use axum::extract::{Extension, Path, State};
 use axum::http::HeaderMap;
 use axum::response::{IntoResponse as _, Response};
 use axum::routing::post;
@@ -26,18 +26,18 @@ use betterlite_openai::completion_chat_bridge::{CompletionEndpoint, chat_request
 use betterlite_openai::text_completion_execution::CompletionExecutor;
 use betterlite_openai::text_completion_request::{CompletionRequest, CompletionRequestError};
 use betterlite_provider::operation::OperationResult;
+use betterlite_tokenizer::count::Counter;
 use tokio::sync::OnceCell;
 use uuid::Uuid;
 
-use crate::server::chat_setup::provider_call::{CallError, answer_chat};
+use crate::pre_call::rewrites::resolve_call_id;
+use crate::server::chat_setup::provider_call::answer_chat;
 use crate::state::ServerState;
 
-use super::chat::MAX_CALL_ID_LENGTH;
 use super::chat::headers::success_headers;
 
 use self::bridge::{
-    bridge_failure, chat_call_failure, chat_stream_answer, converted, json_response, text_answer,
-    text_result, text_stream,
+    bridge_failure, chat_call_failure, json_response, text_answer, text_result, text_stream,
 };
 use self::error::{FailureAnswer, failure_answer, render};
 
@@ -71,6 +71,7 @@ pub(crate) fn routes(state: &Arc<ServerState>) -> Router {
             .sections
             .error_body_call_id
             .include_call_id_in_error_body,
+        counter: None,
     })
 }
 
@@ -80,12 +81,15 @@ struct CompletionState {
     execution: Arc<CompletionExecutor>,
     dispatch: Arc<Dispatch>,
     include_call_id: bool,
+    // the token counter the application shares with the chat route, so an output-limit reply counts as it does
+    counter: Option<Arc<Counter>>,
 }
 
 // one per request: LiteLLM's completion route answers a failure with the call id header alone, never with the provider's
 struct CompletionCalls {
     state: Arc<ServerState>,
     execution: Arc<CompletionExecutor>,
+    counter: Option<Arc<Counter>>,
 }
 
 #[async_trait]
@@ -121,56 +125,32 @@ impl TextCompletionCall for CompletionCalls {
                     answer_chat(&self.state.executor, &chat, &call.deployment, control)
                         .await
                         .map_err(|error| chat_call_failure(error, self))?;
-                let OperationResult::Chat(completion) = result else {
-                    return Err(chat_call_failure(CallError::Mismatched, self));
-                };
-                Ok(ChatCallAnswer::Buffered(text_result(converted(
-                    completion, headers, time,
-                )?)))
+                let answer =
+                    streaming::buffered(self, call.request, (result, headers, time)).await?;
+                Ok(ChatCallAnswer::Buffered(text_result(answer)))
             }
             ChatCallMode::Streamed => {
-                let started = Instant::now();
-                let (result, _) = streaming::provider_stream(
-                    &self.state.executor,
-                    &call.deployment,
-                    &chat,
-                    control,
-                    streaming::StreamUsage::Text,
-                )
-                .await
-                .map_err(|error| chat_call_failure(error, self))?;
-                let OperationResult::Stream(stream) = result else {
-                    return Err(chat_call_failure(CallError::Mismatched, self));
-                };
-                let options = call.request.stream_options.as_ref();
-                let include_usage = options.is_some_and(|chosen| chosen.include_usage);
-                Ok(ChatCallAnswer::Streamed(chat_stream_answer(
-                    *stream,
-                    call.request.model.as_deref(),
-                    include_usage,
-                    started.elapsed(),
-                )))
+                let answer = streaming::streamed(self, &call, &chat, control).await?;
+                Ok(ChatCallAnswer::Streamed(answer))
             }
         }
     }
 }
 
-fn routed_call_id(headers: &HeaderMap) -> String {
-    headers
-        .get("x-litellm-call-id")
-        .and_then(|value| value.to_str().ok())
-        .filter(|value| (1..=MAX_CALL_ID_LENGTH).contains(&value.len()))
-        .map_or_else(|| Uuid::new_v4().to_string(), str::to_owned)
-}
-
 async fn completions(
-    State(state): State<CompletionState>,
+    State(mut state): State<CompletionState>,
+    counter: Option<Extension<Arc<Counter>>>,
     path_model: Option<Path<String>>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
+    state.counter = counter.map(|Extension(shared)| shared);
     let started = Instant::now();
-    let call_id = routed_call_id(&headers);
+    let call_id = resolve_call_id(
+        headers
+            .get("x-litellm-call-id")
+            .and_then(|value| value.to_str().ok()),
+    );
     let request = match CompletionRequest::parse(&body) {
         Ok(request) => request,
         Err(error) => {
@@ -287,6 +267,7 @@ fn operation(
     let calls = Arc::new(CompletionCalls {
         state: Arc::clone(&state.state),
         execution: Arc::clone(&state.execution),
+        counter: state.counter.clone(),
     });
     let streaming = request.stream == Some(true);
     let call = TextCompletionRequest {
