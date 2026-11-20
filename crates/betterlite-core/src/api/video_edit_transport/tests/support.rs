@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::future::{Future, ready};
+use std::future::Future;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
@@ -46,6 +46,12 @@ pub(crate) const KNOWN_PROVIDER: &str = "openai";
 #[error("{message}")]
 pub(crate) struct Refusal {
     pub(crate) message: String,
+}
+
+fn refuse(message: &str) -> BoxError {
+    Box::new(Refusal {
+        message: message.to_owned(),
+    })
 }
 
 #[derive(Clone, Default)]
@@ -151,14 +157,14 @@ impl WriteTransport for Wire {
             .unwrap_or_else(PoisonError::into_inner)
             .push(request);
         if let Some(error) = failure {
-            return ready(Err(error));
+            return Err(error);
         }
         let reply = reply.expect("the wire has a reply left");
-        ready(Ok(UpstreamResponse {
+        Ok(UpstreamResponse {
             status: reply.status,
             headers: reply.headers,
             body: reply.body,
-        }))
+        })
     }
 }
 
@@ -189,20 +195,24 @@ impl<Client> FakeSource<Client> {
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
     }
+
+    fn record(&self, mode: ClientKind, provider: &str, ssl_verify: Option<bool>) {
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(SourceCall {
+                mode,
+                provider: provider.to_owned(),
+                ssl_verify,
+            });
+    }
 }
 
 impl<Client: WriteTransport + Clone> VideoClientSource for FakeSource<Client> {
     type Client = Client;
 
     fn sync_client(&self, ssl_verify: Option<bool>) -> Result<Client, VideoClientError> {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(SourceCall {
-                mode: ClientKind::Sync,
-                provider: String::new(),
-                ssl_verify,
-            });
+        self.record(ClientKind::Sync, "", ssl_verify);
         Ok(self.client.clone())
     }
 
@@ -211,14 +221,7 @@ impl<Client: WriteTransport + Clone> VideoClientSource for FakeSource<Client> {
         provider: &str,
         ssl_verify: Option<bool>,
     ) -> Result<Client, VideoClientError> {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(SourceCall {
-                mode: ClientKind::Asynchronous,
-                provider: provider.to_owned(),
-                ssl_verify,
-            });
+        self.record(ClientKind::Asynchronous, provider, ssl_verify);
         if provider == KNOWN_PROVIDER {
             return Ok(self.client.clone());
         }
@@ -239,6 +242,7 @@ pub(crate) struct RecordedPreCall {
 }
 
 // B249's logging handle: it records each pre_call and answers the response transform with the same logging object
+#[derive(Default)]
 pub(crate) struct FakeLog {
     pub(crate) events: Events,
     pub(crate) calls: Arc<Mutex<Vec<RecordedPreCall>>>,
@@ -248,12 +252,12 @@ pub(crate) struct FakeLog {
 
 impl FakeLog {
     pub(crate) fn new(events: &Events) -> Self {
-        Self {
-            events: events.clone(),
-            calls: Arc::default(),
-            object: Params::new(),
-            refusal: None,
-        }
+        Self::default().with_events(events)
+    }
+
+    fn with_events(mut self, events: &Events) -> Self {
+        self.events = events.clone();
+        self
     }
 
     pub(crate) fn calls(&self) -> Vec<RecordedPreCall> {
@@ -359,7 +363,50 @@ pub(crate) struct ExtensionPlan {
     pub(crate) refusal: Option<String>,
 }
 
+trait Planned {
+    fn refusal_message(&self) -> Option<&str>;
+}
+
+impl Planned for EditPlan {
+    fn refusal_message(&self) -> Option<&str> {
+        self.refusal.as_deref()
+    }
+}
+
+impl Planned for ExtensionPlan {
+    fn refusal_message(&self) -> Option<&str> {
+        self.refusal.as_deref()
+    }
+}
+
+// The transform input both call types carry, recorded the same way for the extension
+fn extension_seen(
+    input: &VideoExtensionInput<'_>,
+    context: &VideoRequestContext<'_>,
+) -> ExtensionSeen {
+    ExtensionSeen {
+        prompt: input.prompt.to_owned(),
+        video_id: input.video_id.to_owned(),
+        seconds: input.seconds.to_owned(),
+        extra_body: input.extra_body.cloned(),
+        api_base: context.api_base.to_owned(),
+        headers: context.headers.clone(),
+    }
+}
+
+// The reply both response transforms record: the edit passes the request data it sent and the extension none
+fn reply_seen(reply: &VideoReply<'_>, request_data: Option<&Params>) -> ReplySeen {
+    ReplySeen {
+        status: reply.raw_response.status,
+        body: reply.raw_response.body.clone(),
+        provider: reply.custom_llm_provider.map(ToOwned::to_owned),
+        request_data: request_data.cloned(),
+        logging: reply.logging_obj.model_call_details.clone(),
+    }
+}
+
 // The provider config the handlers see: every method records what it was handed and answers from these fields
+#[derive(Default)]
 pub(crate) struct FakeConfig {
     pub(crate) events: Events,
     pub(crate) validation: Headers,
@@ -380,23 +427,30 @@ pub(crate) struct FakeConfig {
 
 impl FakeConfig {
     pub(crate) fn new(events: &Events) -> Self {
-        Self {
-            events: events.clone(),
-            validation: Headers::new(),
-            base: None,
-            prefetch: None,
-            edit: None,
-            extension: None,
-            response_refusal: None,
-            validated: Mutex::default(),
-            url_seen: Mutex::default(),
-            prefetch_seen: Mutex::default(),
-            edit_seen: Mutex::default(),
-            extension_seen: Mutex::default(),
-            edit_reply_seen: Mutex::default(),
-            extension_reply_seen: Mutex::default(),
-            errors: Mutex::default(),
+        Self::default().with_events(events)
+    }
+
+    fn with_events(mut self, events: &Events) -> Self {
+        self.events = events.clone();
+        self
+    }
+
+    fn record<T>(&self, slot: &Mutex<Option<T>>, value: T) {
+        *slot.lock().unwrap_or_else(PoisonError::into_inner) = Some(value);
+    }
+
+    fn plan<'plan, P: Planned>(
+        &self,
+        plan: Option<&'plan P>,
+        missing: &str,
+    ) -> Result<&'plan P, BoxError> {
+        let Some(found) = plan else {
+            return Err(refuse(missing));
+        };
+        if let Some(message) = found.refusal_message() {
+            return Err(refuse(message));
         }
+        Ok(found)
     }
 
     pub(crate) fn validated(&self) -> Option<Validated> {
@@ -455,20 +509,31 @@ impl FakeConfig {
             .clone()
     }
 
-    fn refuse(&self, message: &str) -> BoxError {
-        Box::new(Refusal {
-            message: message.to_owned(),
-        })
-    }
-
     fn answer(&self) -> Result<VideoObject, BoxError> {
         if let Some(message) = &self.response_refusal {
-            return Err(self.refuse(message));
+            return Err(refuse(message));
         }
         Ok(VideoObject::new(
             "video-1".to_owned(),
             "completed".to_owned(),
         ))
+    }
+
+    fn record_extension_transform(
+        &self,
+        input: &VideoExtensionInput<'_>,
+        context: &VideoRequestContext<'_>,
+    ) -> Result<(String, Params), BoxError> {
+        let plan = self.plan(self.extension.as_ref(), "the fixture has no extension plan")?;
+        self.events.push("extension-transform");
+        let seen = extension_seen(input, context);
+        self.record(&self.extension_seen, seen);
+        Ok((plan.url.clone(), plan.data.clone()))
+    }
+
+    fn record_extension_reply(&self, reply: &VideoReply<'_>) {
+        self.events.push("extension-response");
+        self.record(&self.extension_reply_seen, reply_seen(reply, None));
     }
 }
 
@@ -525,24 +590,19 @@ impl BaseVideoConfig for FakeConfig {
         context: VideoRequestContext<'_>,
     ) -> Result<(String, Params, Option<RequestFiles>), BoxError> {
         self.events.push("edit-transform");
-        *self
-            .edit_seen
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = Some(EditSeen {
-            prompt: input.prompt.to_owned(),
-            video_id: input.video_id.to_owned(),
-            video_file: input.video_file.is_some(),
-            extra_body: input.extra_body.cloned(),
-            prefetched: input.prefetched_source_data.cloned(),
-            api_base: context.api_base.to_owned(),
-            headers: context.headers.clone(),
-        });
-        let Some(plan) = &self.edit else {
-            return Err(self.refuse("the fixture has no edit plan"));
-        };
-        if let Some(message) = &plan.refusal {
-            return Err(self.refuse(message));
-        }
+        self.record(
+            &self.edit_seen,
+            EditSeen {
+                prompt: input.prompt.to_owned(),
+                video_id: input.video_id.to_owned(),
+                video_file: input.video_file.is_some(),
+                extra_body: input.extra_body.cloned(),
+                prefetched: input.prefetched_source_data.cloned(),
+                api_base: context.api_base.to_owned(),
+                headers: context.headers.clone(),
+            },
+        );
+        let plan = self.plan(self.edit.as_ref(), "the fixture has no edit plan")?;
         Ok((plan.url.clone(), plan.data.clone(), plan.files.clone()))
     }
 
@@ -552,16 +612,7 @@ impl BaseVideoConfig for FakeConfig {
         request_data: Option<&Params>,
     ) -> Result<VideoObject, BoxError> {
         self.events.push("edit-response");
-        *self
-            .edit_reply_seen
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = Some(ReplySeen {
-            status: reply.raw_response.status,
-            body: reply.raw_response.body.clone(),
-            provider: reply.custom_llm_provider.map(ToOwned::to_owned),
-            request_data: request_data.cloned(),
-            logging: reply.logging_obj.model_call_details.clone(),
-        });
+        self.record(&self.edit_reply_seen, reply_seen(&reply, request_data));
         self.answer()
     }
 
@@ -570,42 +621,14 @@ impl BaseVideoConfig for FakeConfig {
         input: VideoExtensionInput<'_>,
         context: VideoRequestContext<'_>,
     ) -> Result<(String, Params), BoxError> {
-        self.events.push("extension-transform");
-        *self
-            .extension_seen
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = Some(ExtensionSeen {
-            prompt: input.prompt.to_owned(),
-            video_id: input.video_id.to_owned(),
-            seconds: input.seconds.to_owned(),
-            extra_body: input.extra_body.cloned(),
-            api_base: context.api_base.to_owned(),
-            headers: context.headers.clone(),
-        });
-        let Some(plan) = &self.extension else {
-            return Err(self.refuse("the fixture has no extension plan"));
-        };
-        if let Some(message) = &plan.refusal {
-            return Err(self.refuse(message));
-        }
-        Ok((plan.url.clone(), plan.data.clone()))
+        self.record_extension_transform(&input, &context)
     }
 
     fn transform_video_extension_response(
         &self,
         reply: VideoReply<'_>,
     ) -> Result<VideoObject, BoxError> {
-        self.events.push("extension-response");
-        *self
-            .extension_reply_seen
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = Some(ReplySeen {
-            status: reply.raw_response.status,
-            body: reply.raw_response.body.clone(),
-            provider: reply.custom_llm_provider.map(ToOwned::to_owned),
-            request_data: None,
-            logging: reply.logging_obj.model_call_details.clone(),
-        });
+        self.record_extension_reply(&reply);
         self.answer()
     }
 
@@ -634,6 +657,25 @@ impl BaseVideoConfig for FakeConfig {
             status_code_is_synthesized: false,
         })
     }
+}
+
+// Both call structs take the same fields, and each adds the one value only it carries
+macro_rules! call_request {
+    ($harness:ident, $request:ident, $extra:ident: $value:expr) => {
+        $request {
+            prompt: &$harness.prompt,
+            video_id: &$harness.video_id,
+            provider: &$harness.provider,
+            litellm_params: &$harness.params,
+            extra_headers: $harness.extra_headers.as_ref(),
+            extra_body: $harness.extra_body.as_ref(),
+            timeout: $harness.timeout,
+            client: $harness.supplied_client(),
+            api_key: $harness.api_key.as_ref(),
+            is_async: $harness.is_async,
+            $extra: $value,
+        }
+    };
 }
 
 // One call's inputs and its recording collaborators; a case changes only the fields it exercises
@@ -700,41 +742,18 @@ impl<Client: WriteTransport + Clone> Harness<Client> {
     }
 
     pub(crate) fn edit_request(&self) -> VideoEditRequest<'_, Client> {
-        VideoEditRequest {
-            prompt: &self.prompt,
-            video_id: &self.video_id,
-            provider: &self.provider,
-            litellm_params: &self.params,
-            video_file: self.video_file.as_ref(),
-            extra_headers: self.extra_headers.as_ref(),
-            extra_body: self.extra_body.as_ref(),
-            timeout: self.timeout,
-            client: self.supplied.as_ref().map(|(kind, client)| SuppliedClient {
-                kind: *kind,
-                transport: client,
-            }),
-            api_key: self.api_key.as_ref(),
-            is_async: self.is_async,
-        }
+        call_request!(self, VideoEditRequest, video_file: self.video_file.as_ref())
     }
 
     pub(crate) fn extension_request(&self) -> VideoExtensionRequest<'_, Client> {
-        VideoExtensionRequest {
-            prompt: &self.prompt,
-            video_id: &self.video_id,
-            seconds: &self.seconds,
-            provider: &self.provider,
-            litellm_params: &self.params,
-            extra_headers: self.extra_headers.as_ref(),
-            extra_body: self.extra_body.as_ref(),
-            timeout: self.timeout,
-            client: self.supplied.as_ref().map(|(kind, client)| SuppliedClient {
-                kind: *kind,
-                transport: client,
-            }),
-            api_key: self.api_key.as_ref(),
-            is_async: self.is_async,
-        }
+        call_request!(self, VideoExtensionRequest, seconds: &self.seconds)
+    }
+
+    fn supplied_client(&self) -> Option<SuppliedClient<'_, Client>> {
+        self.supplied.as_ref().map(|(kind, client)| SuppliedClient {
+            kind: *kind,
+            transport: client,
+        })
     }
 }
 

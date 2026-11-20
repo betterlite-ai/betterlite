@@ -15,6 +15,7 @@ use crate::api::bfl::edit::media::SuppliedMedia;
 use crate::api::vector_store_http_write::service::ClientKind;
 use crate::api::video_edit_transport::calls::Handled;
 use crate::api::video_edit_transport::config::RequestFile;
+use crate::api::video_edit_transport::edits::VideoEditHandlers as _;
 use crate::api::video_edit_transport::error::{VideoClientError, VideoEditTransportError};
 
 #[rstest]
@@ -22,8 +23,7 @@ use crate::api::video_edit_transport::error::{VideoClientError, VideoEditTranspo
 #[case::dod_1_unknown_provider_unconverted(dod_1_unknown_provider_unconverted)]
 #[case::dod_2_client_and_headers(dod_2_client_and_headers)]
 #[case::dod_2_api_key_argument(dod_2_api_key_argument)]
-#[case::dod_2_supplied_client_matches(dod_2_supplied_client_matches)]
-#[case::dod_2_supplied_client_mismatch(dod_2_supplied_client_mismatch)]
+#[case::dod_2_supplied_client(dod_2_supplied_client)]
 #[case::dod_3_prefetch_pair(dod_3_prefetch_pair)]
 #[case::dod_3_prefetch_absent(dod_3_prefetch_absent)]
 #[case::dod_3_prefetch_timeout(dod_3_prefetch_timeout)]
@@ -159,38 +159,37 @@ fn dod_2_api_key_argument() {
     assert_eq!(validated.api_key, Some("argument-key".to_owned()));
 }
 
-fn dod_2_supplied_client_matches() {
+fn dod_2_supplied_client() {
     let events = Events::new();
-    let supplied = Wire::new(vec![Reply::json(200, "{}")], &events);
-    let mut harness = Harness::new(&events, Wire::new(Vec::new(), &events));
-    harness.supplied = Some((ClientKind::Asynchronous, supplied.clone()));
-    let transport = harness.transport();
-    let created = run(transport.async_video_edit(harness.edit_request(), &harness.config))
-        .expect("the supplied client answers");
-    assert_eq!(created.id, "video-1");
-    assert!(harness.source.calls().is_empty());
-    assert_eq!(supplied.requests().len(), 1);
-}
-
-fn dod_2_supplied_client_mismatch() {
-    let events = Events::new();
-    let supplied = Wire::new(Vec::new(), &events);
+    let matching = Wire::new(vec![Reply::json(200, "{}")], &events);
+    let mut supplied_harness = Harness::new(&events, Wire::new(Vec::new(), &events));
+    supplied_harness.supplied = Some((ClientKind::Asynchronous, matching.clone()));
+    let supplied_transport = supplied_harness.transport();
+    let supplied_object = run(supplied_transport
+        .async_video_edit(supplied_harness.edit_request(), &supplied_harness.config))
+    .expect("the supplied client answers");
+    assert_eq!(supplied_object.id, "video-1");
+    assert!(supplied_harness.source.calls().is_empty());
+    assert_eq!(matching.requests().len(), 1);
+    let mismatched = Wire::new(Vec::new(), &events);
     let pooled = Wire::new(vec![Reply::json(200, "{}")], &events);
-    let mut harness = Harness::new(&events, pooled.clone());
-    harness.supplied = Some((ClientKind::Sync, supplied.clone()));
-    let transport = harness.transport();
-    let created = run(transport.async_video_edit(harness.edit_request(), &harness.config))
+    let mut pooled_harness = Harness::new(&events, pooled.clone());
+    pooled_harness.supplied = Some((ClientKind::Sync, mismatched.clone()));
+    let pooled_transport = pooled_harness.transport();
+    let pooled_object =
+        run(pooled_transport
+            .async_video_edit(pooled_harness.edit_request(), &pooled_harness.config))
         .expect("the pooled client answers");
-    assert_eq!(created.id, "video-1");
+    assert_eq!(pooled_object.id, "video-1");
     assert_eq!(
-        harness.source.calls(),
+        pooled_harness.source.calls(),
         vec![SourceCall {
             mode: ClientKind::Asynchronous,
             provider: "openai".to_owned(),
             ssl_verify: None,
         }]
     );
-    assert!(supplied.requests().is_empty());
+    assert!(mismatched.requests().is_empty());
     assert_eq!(pooled.requests().len(), 1);
 }
 

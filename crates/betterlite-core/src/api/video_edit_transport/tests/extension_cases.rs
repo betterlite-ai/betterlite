@@ -13,6 +13,7 @@ use super::support::{
 use crate::api::vector_store_http_write::service::ClientKind;
 use crate::api::video_edit_transport::calls::Handled;
 use crate::api::video_edit_transport::error::{VideoClientError, VideoEditTransportError};
+use crate::api::video_edit_transport::extensions::VideoExtensionHandlers as _;
 
 #[rstest]
 #[case::dod_1_async_hand_off(dod_1_async_hand_off)]

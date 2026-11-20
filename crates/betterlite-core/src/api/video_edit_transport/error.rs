@@ -57,6 +57,23 @@ pub enum WireFailure {
     Param { field: String },
 }
 
+// One edit try block's failures: each waits here until _handle_error turns it into the provider's error
+#[derive(Debug, Error)]
+pub enum StepFailure {
+    #[error("{0}")]
+    Config(BoxError),
+    #[error(transparent)]
+    Logging(#[from] PrePostError),
+    #[error(transparent)]
+    Wire(#[from] WireFailure),
+}
+
+impl From<BoxError> for StepFailure {
+    fn from(error: BoxError) -> Self {
+        Self::Config(error)
+    }
+}
+
 // A provider config's error is opaque here, so it travels typed only as far as this module's boundary
 #[derive(Debug, Error)]
 pub enum VideoEditTransportError {

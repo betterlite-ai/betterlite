@@ -40,19 +40,11 @@ impl VideoParams {
     }
 }
 
-fn text<'params>(
-    params: &'params Params,
-    field: &'static str,
-) -> Result<Option<&'params str>, FieldTypeError> {
+fn text(params: &Params, field: &'static str) -> Result<Option<&str>, FieldTypeError> {
     match params.get(field) {
         None | Some(Json::Null) => Ok(None),
-        Some(Json::Text(value)) => Ok(Some(value)),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(FieldTypeError {
-                field,
-                expected: "a string",
-            })
-        }
+        Some(Json::Text(value)) => Ok(Some(value.as_str())),
+        Some(_) => Err(string_type(field)),
     }
 }
 
@@ -60,12 +52,21 @@ fn flag(params: &Params, field: &'static str) -> Result<Option<bool>, FieldTypeE
     match params.get(field) {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Bool(value)) => Ok(Some(*value)),
-        Some(Json::Text(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(FieldTypeError {
-                field,
-                expected: "a boolean",
-            })
-        }
+        Some(_) => Err(flag_type(field)),
+    }
+}
+
+const fn string_type(field: &'static str) -> FieldTypeError {
+    FieldTypeError {
+        field,
+        expected: "a string",
+    }
+}
+
+const fn flag_type(field: &'static str) -> FieldTypeError {
+    FieldTypeError {
+        field,
+        expected: "a boolean",
     }
 }
 
@@ -127,12 +128,22 @@ pub(crate) fn header_pairs(headers: &ErrorHeaders) -> Headers {
     pairs
 }
 
-pub(crate) fn json_request(
+// Files send multipart, and no files (or an empty list) send the JSON body as LiteLLM does
+pub(crate) fn video_request(
     url: &str,
     headers: &Headers,
     data: &Params,
+    files: Option<&RequestFiles>,
     timeout: Option<Duration>,
 ) -> Result<WriteRequest, WireFailure> {
+    let body = match files {
+        Some(upload_files) => {
+            let parts = multipart_parts(data, upload_files)?;
+            let boundary = Uuid::new_v4().simple().to_string();
+            RequestBody::Multipart { boundary, parts }
+        }
+        None => RequestBody::Json(serde_json::to_vec(data).map_err(WireFailure::Encode)?),
+    };
     Ok(WriteRequest {
         method: Method::POST,
         url: Url::parse(url).map_err(|source| WireFailure::RequestUrl {
@@ -140,34 +151,16 @@ pub(crate) fn json_request(
             source,
         })?,
         headers: wire_headers(headers)?,
-        body: RequestBody::Json(serde_json::to_vec(data).map_err(WireFailure::Encode)?),
-        timeout,
-    })
-}
-
-pub(crate) fn multipart_request(
-    url: &str,
-    headers: &Headers,
-    data: &Params,
-    files: &RequestFiles,
-    timeout: Option<Duration>,
-) -> Result<WriteRequest, WireFailure> {
-    let parts = multipart_parts(data, files)?;
-    let boundary = Uuid::new_v4().simple().to_string();
-    Ok(WriteRequest {
-        method: Method::POST,
-        url: Url::parse(url).map_err(|source| WireFailure::RequestUrl {
-            url: url.to_owned(),
-            source,
-        })?,
-        headers: wire_headers(headers)?,
-        body: RequestBody::Multipart { boundary, parts },
+        body,
         timeout,
     })
 }
 
 // httpx renders the data fields first and the file fields after them, in the order it was given
-fn multipart_parts(data: &Params, files: &RequestFiles) -> Result<Vec<MultipartPart>, WireFailure> {
+fn multipart_parts(
+    data: &Params,
+    files: &[RequestFile],
+) -> Result<Vec<MultipartPart>, WireFailure> {
     let mut parts = Vec::new();
     for (name, value) in data {
         if let Json::List(items) = value {
