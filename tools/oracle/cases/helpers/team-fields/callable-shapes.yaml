@@ -1,0 +1,36 @@
+kind: helper
+name: team_metadata_callable_shapes
+call:
+  team_fields:
+    function: validate
+    general_settings: {}
+    validator: function
+    operation: create
+    metadata: {}
+    existing_metadata: null
+    team_id: null
+    team_alias: null
+    requester: {user_id: u1, user_email: null, user_role: null}
+calls:
+  - team_fields:
+      function: validate
+      general_settings: {}
+      validator: accept
+      operation: create
+      metadata: {}
+      existing_metadata: null
+      team_id: null
+      team_alias: null
+      requester: {user_id: u1, user_email: null, user_role: null}
+  - team_fields:
+      function: validate
+      general_settings: {}
+      validator: sync
+      operation: create
+      metadata: {}
+      existing_metadata: null
+      team_id: null
+      team_alias: null
+      requester: {user_id: u1, user_email: null, user_role: null}
+env: {}
+compare: {ignore: []}
