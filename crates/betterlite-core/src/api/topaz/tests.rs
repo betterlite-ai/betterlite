@@ -4,7 +4,9 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use betterlite_models::decisions::Json;
-use betterlite_openai::api::image_contracts::records::{ImageFile, ImageHeaders, ImageParams};
+use betterlite_openai::api::image_contracts::records::{
+    ImageFile, ImageHeaders, ImageParams, ImageUsage,
+};
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Number;
@@ -224,7 +226,7 @@ fn topaz_map_openai_params_rejects_a_size_without_two_parts(#[case] size: &str) 
 #[test]
 fn topaz_map_openai_params_rejects_a_size_that_is_not_text() {
     let attempt = map_openai_params(
-        &params(&[("size", Json::Number(Number::from(1024)))]),
+        &params(&[("size", Json::Number(Number::from(1024_i32)))]),
         ImageParams::new(),
     );
 
@@ -362,7 +364,7 @@ fn topaz_transform_response_base64_encodes_the_body() {
     assert_eq!(image.revised_prompt, None);
     assert_eq!(reply.response.created, 17);
     assert_eq!(reply.response.data.as_ref().map(Vec::len), Some(1));
-    assert_eq!(reply.response.usage, None);
+    assert_eq!(reply.response.usage, Some(ImageUsage::default()));
 }
 
 #[test]
