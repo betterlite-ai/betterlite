@@ -1,14 +1,16 @@
 #![cfg(test)]
 
+use betterlite_core::agents::AgentConfig;
 use betterlite_core::agents::AgentResponse;
 use betterlite_redact::structured::SensitiveDataMasker;
 use chrono::DateTime;
 use serde_json::json;
 
+use super::ConfigMode;
+use super::ConfigSource;
+use super::PatchSource;
 use super::PlanContext;
-use super::plan_create;
-use super::plan_patch;
-use super::plan_replace;
+use super::plan_write;
 use crate::agent_credentials::REDACTED_BY_LITELM;
 use crate::agent_persistence::support::agent;
 use crate::agent_persistence::support::patch;
@@ -35,11 +37,29 @@ fn stored() -> StoredAgent {
     }
 }
 
+macro_rules! planned {
+    ($source:expr, $existing:expr, $actor:expr, $context:expr) => {{ plan_write(&$source, $existing, $actor, $context).expect("the plan") }};
+}
+
 fn context(masker: &SensitiveDataMasker) -> PlanContext<'_> {
     PlanContext {
         masker,
         max_json_depth: 100,
         now: DateTime::from_timestamp(1_700_000_000, 0).expect("a fixed instant"),
+    }
+}
+
+fn create_source(config: &AgentConfig) -> ConfigSource<'_> {
+    ConfigSource {
+        agent: config,
+        mode: ConfigMode::Create,
+    }
+}
+
+fn replace_source(config: &AgentConfig) -> ConfigSource<'_> {
+    ConfigSource {
+        agent: config,
+        mode: ConfigMode::Replace,
     }
 }
 
@@ -54,7 +74,7 @@ fn create_drops_a_marker_secret_and_writes_an_absent_switch_as_null() {
         r#"{{"agent_name": "a", "litellm_params": {}}}"#,
         marker_params()
     ));
-    let plan = plan_create(&config, "author", &context(&masker)).expect("the create plan");
+    let plan = planned!(create_source(&config), None, "author", &context(&masker));
     assert_eq!(
         plan.columns.litellm_params.as_deref(),
         Some(r#"{"model":"m"}"#)
@@ -72,8 +92,8 @@ fn create_writes_static_headers_only_when_non_empty() {
     let masker = SensitiveDataMasker::default();
     let empty = agent(r#"{"agent_name": "a", "static_headers": {}}"#);
     let filled = agent(r#"{"agent_name": "a", "static_headers": {"x": "1"}}"#);
-    let empty_plan = plan_create(&empty, "author", &context(&masker)).expect("the empty plan");
-    let filled_plan = plan_create(&filled, "author", &context(&masker)).expect("the filled plan");
+    let empty_plan = planned!(create_source(&empty), None, "author", &context(&masker));
+    let filled_plan = planned!(create_source(&filled), None, "author", &context(&masker));
     assert_eq!(empty_plan.columns.static_headers, None);
     assert_eq!(
         filled_plan.columns.static_headers.as_deref(),
@@ -87,7 +107,7 @@ fn create_deduplicates_access_group_ids_and_skips_null_limits() {
     let config = agent(
         r#"{"agent_name": "a", "access_group_ids": ["b", "a", "b"], "tpm_limit": null, "rpm_limit": 7}"#,
     );
-    let plan = plan_create(&config, "author", &context(&masker)).expect("the create plan");
+    let plan = planned!(create_source(&config), None, "author", &context(&masker));
     assert_eq!(
         plan.columns.access_group_ids,
         Some(vec![String::from("b"), String::from("a")])
@@ -103,8 +123,12 @@ fn replace_restores_stored_secrets_and_clears_omitted_columns() {
         r#"{{"agent_name": "a", "agent_card_params": {{}}, "litellm_params": {{"api_key": "{REDACTED_BY_LITELM}", "model": "m2"}}}}"#
     ));
     let existing = stored();
-    let plan =
-        plan_replace(&incoming, Some(&existing), "author", &context(&masker)).expect("the plan");
+    let plan = planned!(
+        replace_source(&incoming),
+        Some(&existing),
+        "author",
+        &context(&masker)
+    );
     assert_eq!(
         plan.columns.litellm_params.as_deref(),
         Some(r#"{"api_key":"sk-stored","model":"m2"}"#)
@@ -125,8 +149,12 @@ fn replace_keeps_a_stored_secret_the_body_leaves_out() {
     let incoming =
         agent(r#"{"agent_name": "a", "agent_card_params": {}, "litellm_params": {"model": "m"}}"#);
     let existing = stored();
-    let plan =
-        plan_replace(&incoming, Some(&existing), "author", &context(&masker)).expect("the plan");
+    let plan = planned!(
+        replace_source(&incoming),
+        Some(&existing),
+        "author",
+        &context(&masker)
+    );
     assert_eq!(
         plan.columns.litellm_params.as_deref(),
         Some(r#"{"api_key":"sk-stored","model":"m"}"#)
@@ -140,8 +168,12 @@ fn replace_restores_a_stored_kill_switch_secret() {
         r#"{{"agent_name": "a", "agent_card_params": {{}}, "kill_switch": {{"url": "https://example.test/hook", "auth": {{"type": "bearer", "token": "{REDACTED_BY_LITELM}"}}}}}}"#
     ));
     let existing = stored();
-    let plan =
-        plan_replace(&incoming, Some(&existing), "author", &context(&masker)).expect("the plan");
+    let plan = planned!(
+        replace_source(&incoming),
+        Some(&existing),
+        "author",
+        &context(&masker)
+    );
     assert_eq!(
         plan.columns.kill_switch.as_deref(),
         Some(
@@ -155,7 +187,12 @@ fn patch_writes_only_the_carried_columns() {
     let masker = SensitiveDataMasker::default();
     let existing = stored();
     let request = patch(r#"{"agent_name": "b"}"#);
-    let plan = plan_patch(&request, &existing, "author", &context(&masker)).expect("the plan");
+    let plan = planned!(
+        PatchSource { agent: &request },
+        Some(&existing),
+        "author",
+        &context(&masker)
+    );
     assert_eq!(plan.columns.agent_name.as_deref(), Some("b"));
     assert_eq!(plan.columns.litellm_params, None);
     assert_eq!(plan.columns.agent_card_params, None);
@@ -174,7 +211,12 @@ fn patch_turns_null_headers_and_lists_into_empty_and_clears_a_null_limit() {
     let request = patch(
         r#"{"static_headers": null, "extra_headers": null, "access_group_ids": null, "tpm_limit": null}"#,
     );
-    let plan = plan_patch(&request, &existing, "author", &context(&masker)).expect("the plan");
+    let plan = planned!(
+        PatchSource { agent: &request },
+        Some(&existing),
+        "author",
+        &context(&masker)
+    );
     assert_eq!(plan.columns.static_headers.as_deref(), Some("{}"));
     assert_eq!(plan.columns.extra_headers, Some(Vec::new()));
     assert_eq!(plan.columns.access_group_ids, Some(Vec::new()));
@@ -186,7 +228,12 @@ fn patch_restores_a_marker_secret_and_the_stored_switch_secret() {
     let masker = SensitiveDataMasker::default();
     let existing = stored();
     let request = patch(&format!(r#"{{"litellm_params": {}}}"#, marker_params()));
-    let plan = plan_patch(&request, &existing, "author", &context(&masker)).expect("the plan");
+    let plan = planned!(
+        PatchSource { agent: &request },
+        Some(&existing),
+        "author",
+        &context(&masker)
+    );
     assert_eq!(
         plan.columns.litellm_params.as_deref(),
         Some(r#"{"api_key":"sk-stored","model":"m"}"#)
@@ -194,8 +241,12 @@ fn patch_restores_a_marker_secret_and_the_stored_switch_secret() {
     let switch = patch(&format!(
         r#"{{"kill_switch": {{"url": "https://example.test/hook", "auth": {{"type": "bearer", "token": "{REDACTED_BY_LITELM}"}}}}}}"#
     ));
-    let switch_plan =
-        plan_patch(&switch, &existing, "author", &context(&masker)).expect("the switch plan");
+    let switch_plan = planned!(
+        PatchSource { agent: &switch },
+        Some(&existing),
+        "author",
+        &context(&masker)
+    );
     let stored_switch = switch_plan.columns.kill_switch.expect("the switch column");
     assert!(stored_switch.contains(r#""token":"stored-token""#));
 }
@@ -206,7 +257,12 @@ fn patch_writes_a_present_card_and_de_duplicates_groups() {
     let existing = stored();
     let request =
         patch(r#"{"agent_card_params": {"name": "c"}, "access_group_ids": ["x", "x", "y"]}"#);
-    let plan = plan_patch(&request, &existing, "author", &context(&masker)).expect("the plan");
+    let plan = planned!(
+        PatchSource { agent: &request },
+        Some(&existing),
+        "author",
+        &context(&masker)
+    );
     let card = plan.columns.agent_card_params.expect("the card column");
     assert!(card.contains(r#""name":"c""#));
     assert_eq!(

@@ -31,70 +31,21 @@ fn push_identity_fields<'values>(
     fields: &'values IdentityFields,
     stamp: Option<&'values Option<NaiveDateTime>>,
 ) {
-    push_present(columns, "provider", fields.provider.as_ref(), "");
-    push_present(columns, "tenant_id", fields.tenant_id.as_ref(), "");
-    push_present(columns, "client_id", fields.client_id.as_ref(), "");
-    push_present(columns, "issuer", fields.issuer.as_ref(), "");
-    push_present(
+    push_columns!(
         columns,
-        "service_principal_id",
-        fields.service_principal_id.as_ref(),
-        "",
+        fields,
+        "provider" => provider : "",
+        "tenant_id" => tenant_id : "",
+        "client_id" => client_id : "",
+        "issuer" => issuer : "",
+        "service_principal_id" => service_principal_id : "",
+        "required_roles" => required_roles : "",
+        "required_scopes" => required_scopes : "",
+        "active" => active : "",
+        "revision" => revision : "",
     );
-    push_present(
-        columns,
-        "required_roles",
-        fields.required_roles.as_ref(),
-        "",
-    );
-    push_present(
-        columns,
-        "required_scopes",
-        fields.required_scopes.as_ref(),
-        "",
-    );
-    push_present(columns, "active", fields.active.as_ref(), "");
-    push_present(columns, "revision", fields.revision.as_ref(), "");
     if let Some(stamp) = stamp {
         columns.push("last_authenticated_at", stamp, "");
-    }
-}
-
-fn push_conflict_fields<'values>(
-    columns: &mut ColumnList<'values>,
-    assignments: &mut Vec<String>,
-    fields: &'values IdentityFields,
-    stamp: Option<&'values Option<NaiveDateTime>>,
-) {
-    if let Some(value) = &fields.provider {
-        assignments.push(columns.push_conflict("provider", value, ""));
-    }
-    if let Some(value) = &fields.tenant_id {
-        assignments.push(columns.push_conflict("tenant_id", value, ""));
-    }
-    if let Some(value) = &fields.client_id {
-        assignments.push(columns.push_conflict("client_id", value, ""));
-    }
-    if let Some(value) = &fields.issuer {
-        assignments.push(columns.push_conflict("issuer", value, ""));
-    }
-    if let Some(value) = &fields.service_principal_id {
-        assignments.push(columns.push_conflict("service_principal_id", value, ""));
-    }
-    if let Some(value) = &fields.required_roles {
-        assignments.push(columns.push_conflict("required_roles", value, ""));
-    }
-    if let Some(value) = &fields.required_scopes {
-        assignments.push(columns.push_conflict("required_scopes", value, ""));
-    }
-    if let Some(value) = &fields.active {
-        assignments.push(columns.push_conflict("active", value, ""));
-    }
-    if let Some(value) = &fields.revision {
-        assignments.push(columns.push_conflict("revision", value, ""));
-    }
-    if let Some(stamp) = stamp {
-        assignments.push(columns.push_conflict("last_authenticated_at", stamp, ""));
     }
 }
 
@@ -161,38 +112,32 @@ pub(super) async fn write_identity(
     relation: &IdentityRelationWrite,
 ) -> Result<(), AgentPersistenceError> {
     match relation {
-        IdentityRelationWrite::Create(fields) => insert_identity(tx, agent_id, fields).await,
-        IdentityRelationWrite::Update(fields) => update_identity(tx, agent_id, fields).await,
+        IdentityRelationWrite::Create(fields) => {
+            write_identity_row(tx, agent_id, fields, true).await
+        }
+        IdentityRelationWrite::Update(fields) => {
+            write_identity_row(tx, agent_id, fields, false).await
+        }
         IdentityRelationWrite::Upsert(upsert) => upsert_identity(tx, agent_id, upsert).await,
     }
 }
 
-async fn insert_identity(
+async fn write_identity_row(
     tx: &DbSession<'_>,
     agent_id: &str,
     fields: &IdentityFields,
+    insert: bool,
 ) -> Result<(), AgentPersistenceError> {
     let agent_key = String::from(agent_id);
     let stamp = timestamp_of(fields);
     let mut list = ColumnList::default();
     list.push("agent_id", &agent_key, "");
     push_identity_fields(&mut list, fields, stamp.as_ref());
-    let sql = list.insert_sql(IDENTITY_TABLE);
-    execute(tx, &sql, &list.parameters).await?;
-    Ok(())
-}
-
-async fn update_identity(
-    tx: &DbSession<'_>,
-    agent_id: &str,
-    fields: &IdentityFields,
-) -> Result<(), AgentPersistenceError> {
-    let agent_key = String::from(agent_id);
-    let stamp = timestamp_of(fields);
-    let mut list = ColumnList::default();
-    list.push("agent_id", &agent_key, "");
-    push_identity_fields(&mut list, fields, stamp.as_ref());
-    let sql = list.update_sql(IDENTITY_TABLE, "agent_id");
+    let sql = if insert {
+        list.insert_sql(IDENTITY_TABLE)
+    } else {
+        list.update_sql(IDENTITY_TABLE, "agent_id")
+    };
     execute(tx, &sql, &list.parameters).await?;
     Ok(())
 }
@@ -209,13 +154,9 @@ async fn upsert_identity(
     list.push("agent_id", &agent_key, "");
     push_identity_fields(&mut list, &upsert.create, create_stamp.as_ref());
     let insert = list.insert_sql(IDENTITY_TABLE);
-    let mut assignments = Vec::new();
-    push_conflict_fields(
-        &mut list,
-        &mut assignments,
-        &upsert.update,
-        update_stamp.as_ref(),
-    );
+    let start = list.parameters.len();
+    push_identity_fields(&mut list, &upsert.update, update_stamp.as_ref());
+    let assignments = list.assignments_from(start);
     if assignments.is_empty() {
         return Ok(());
     }

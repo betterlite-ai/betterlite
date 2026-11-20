@@ -36,21 +36,6 @@ impl<'values> ColumnList<'values> {
         self.parameters.push(value);
     }
 
-    // Call after insert_sql: the conflict columns join the parameter list but not the insert list.
-    pub(super) fn push_conflict<T>(
-        &mut self,
-        name: &'static str,
-        value: &'values T,
-        cast: &str,
-    ) -> String
-    where
-        T: ToSql + Sync + 'values,
-    {
-        self.push(name, value, cast);
-        let placeholder = self.placeholders.last().cloned().unwrap_or_default();
-        format!("\"{name}\" = {placeholder}")
-    }
-
     pub(super) fn insert_sql(&self, table: &str) -> String {
         format!(
             "INSERT INTO \"{table}\" ({}) VALUES ({})",
@@ -60,20 +45,12 @@ impl<'values> ColumnList<'values> {
     }
 
     pub(super) fn update_sql(&self, table: &str, key: &str) -> String {
-        let mut assignments: Vec<String> = self
-            .names
-            .iter()
-            .zip(&self.placeholders)
-            .skip(1)
-            .map(|(name, placeholder)| format!("\"{name}\" = {placeholder}"))
-            .collect();
+        let mut assignments = self.assignments_from(1);
         if assignments.is_empty() {
             assignments.push(format!("\"{key}\" = \"{key}\""));
         }
-        format!(
-            "UPDATE \"{table}\" SET {} WHERE \"{key}\" = $1",
-            assignments.join(", "),
-        )
+        let set = assignments.join(", ");
+        format!("UPDATE \"{table}\" SET {set} WHERE \"{key}\" = $1")
     }
 
     pub(super) fn quoted_names(&self) -> Vec<String> {
@@ -81,6 +58,16 @@ impl<'values> ColumnList<'values> {
             .iter()
             .map(|name| format!("\"{name}\""))
             .collect()
+    }
+
+    pub(super) fn assignments_from(&self, start: usize) -> Vec<String> {
+        let mut assignments = Vec::new();
+        let names = self.names.iter().skip(start);
+        let placeholders = self.placeholders.iter().skip(start);
+        for (name, placeholder) in names.zip(placeholders) {
+            assignments.push(format!("\"{name}\" = {placeholder}"));
+        }
+        assignments
     }
 }
 
@@ -97,81 +84,29 @@ pub(super) fn push_present<'values, T>(
     }
 }
 
-fn push_json_columns<'values>(list: &mut ColumnList<'values>, columns: &'values AgentColumns) {
-    push_present(list, "agent_name", columns.agent_name.as_ref(), "");
-    push_present(
-        list,
-        "litellm_params",
-        columns.litellm_params.as_ref(),
-        "::text::jsonb",
-    );
-    push_present(
-        list,
-        "agent_card_params",
-        columns.agent_card_params.as_ref(),
-        "::text::jsonb",
-    );
-    push_present(
-        list,
-        "static_headers",
-        columns.static_headers.as_ref(),
-        "::text::jsonb",
-    );
-    push_present(
-        list,
-        "kill_switch",
-        columns.kill_switch.as_ref(),
-        "::text::jsonb",
-    );
-}
-
-fn push_list_columns<'values>(list: &mut ColumnList<'values>, columns: &'values AgentColumns) {
-    push_present(list, "extra_headers", columns.extra_headers.as_ref(), "");
-    push_present(
-        list,
-        "access_group_ids",
-        columns.access_group_ids.as_ref(),
-        "",
-    );
-}
-
-fn push_limit_columns<'values>(list: &mut ColumnList<'values>, columns: &'values AgentColumns) {
-    push_present(list, "tpm_limit", columns.tpm_limit.as_ref(), "::bigint");
-    push_present(list, "rpm_limit", columns.rpm_limit.as_ref(), "::bigint");
-    push_present(
-        list,
-        "session_tpm_limit",
-        columns.session_tpm_limit.as_ref(),
-        "::bigint",
-    );
-    push_present(
-        list,
-        "session_rpm_limit",
-        columns.session_rpm_limit.as_ref(),
-        "::bigint",
-    );
-}
-
-fn push_meta_columns<'values>(list: &mut ColumnList<'values>, columns: &'values AgentColumns) {
-    push_present(list, "enabled", columns.enabled.as_ref(), "");
-    push_present(list, "execution_mode", columns.execution_mode.as_ref(), "");
-    push_present(
-        list,
-        "identity_managed",
-        columns.identity_managed.as_ref(),
-        "",
-    );
-    push_present(list, "created_by", columns.created_by.as_ref(), "");
-    push_present(list, "created_at", columns.created_at.as_ref(), "");
-    push_present(list, "updated_by", columns.updated_by.as_ref(), "");
-    push_present(list, "updated_at", columns.updated_at.as_ref(), "");
-}
-
 fn push_agent_columns<'values>(list: &mut ColumnList<'values>, columns: &'values AgentColumns) {
-    push_json_columns(list, columns);
-    push_list_columns(list, columns);
-    push_limit_columns(list, columns);
-    push_meta_columns(list, columns);
+    push_columns!(
+        list,
+        columns,
+        "agent_name" => agent_name : "",
+        "litellm_params" => litellm_params : "::text::jsonb",
+        "agent_card_params" => agent_card_params : "::text::jsonb",
+        "static_headers" => static_headers : "::text::jsonb",
+        "kill_switch" => kill_switch : "::text::jsonb",
+        "extra_headers" => extra_headers : "",
+        "access_group_ids" => access_group_ids : "",
+        "tpm_limit" => tpm_limit : "::bigint",
+        "rpm_limit" => rpm_limit : "::bigint",
+        "session_tpm_limit" => session_tpm_limit : "::bigint",
+        "session_rpm_limit" => session_rpm_limit : "::bigint",
+        "enabled" => enabled : "",
+        "execution_mode" => execution_mode : "",
+        "identity_managed" => identity_managed : "",
+        "created_by" => created_by : "",
+        "created_at" => created_at : "",
+        "updated_by" => updated_by : "",
+        "updated_at" => updated_at : "",
+    );
 }
 
 pub(super) async fn execute(
@@ -179,10 +114,7 @@ pub(super) async fn execute(
     sql: &str,
     parameters: &[&(dyn ToSql + Sync)],
 ) -> Result<u64, AgentPersistenceError> {
-    match tx.execute(sql, parameters).await {
-        Ok(affected) => Ok(affected),
-        Err(source) => Err(write_error(source)),
-    }
+    tx.execute(sql, parameters).await.map_err(write_error)
 }
 
 fn decode_first(rows: &[Row]) -> Result<Option<StoredAgent>, AgentPersistenceError> {
@@ -194,27 +126,21 @@ fn decode_first(rows: &[Row]) -> Result<Option<StoredAgent>, AgentPersistenceErr
         .map_err(|source| AgentPersistenceError::Database(DbError::InvalidRecord { source }))
 }
 
-pub(super) async fn read_agent(
-    tx: &DbSession<'_>,
-    agent_id: &str,
-) -> Result<Option<StoredAgent>, AgentPersistenceError> {
-    let statement = format!("{AGENT_SELECT_SQL} WHERE a.agent_id = $1");
-    let rows = tx
-        .query(&statement, &[&agent_id])
-        .await
-        .map_err(|source| AgentPersistenceError::Database(backend(source)))?;
-    decode_first(&rows)
+pub(super) enum AgentSource<'query, 'session> {
+    Session(&'query DbSession<'session>),
+    Client(&'query Client),
 }
 
-pub(super) async fn read_agent_on(
-    client: &Client,
+pub(super) async fn read_agent(
+    source: AgentSource<'_, '_>,
     agent_id: &str,
 ) -> Result<Option<StoredAgent>, AgentPersistenceError> {
     let statement = format!("{AGENT_SELECT_SQL} WHERE a.agent_id = $1");
-    let rows = client
-        .query(&statement, &[&agent_id])
-        .await
-        .map_err(|source| AgentPersistenceError::Database(backend(source)))?;
+    let rows = match source {
+        AgentSource::Session(tx) => tx.query(&statement, &[&agent_id]).await,
+        AgentSource::Client(client) => client.query(&statement, &[&agent_id]).await,
+    }
+    .map_err(|source| AgentPersistenceError::Database(backend(source)))?;
     decode_first(&rows)
 }
 

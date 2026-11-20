@@ -7,13 +7,9 @@ use betterlite_auth::agent_policy::AgentExecutionMode;
 use betterlite_auth::agent_policy::AgentResponse as PolicyAgent;
 use betterlite_auth::identity::EntraIdentityConfig;
 use betterlite_auth::identity::ExecutionMode;
-use betterlite_core::agents::AgentConfig;
-use betterlite_core::agents::PatchAgentRequest;
 use betterlite_core::agents::card::AgentCard;
 use betterlite_core::agents::json::AgentJson;
-use betterlite_redact::structured::SensitiveDataMasker;
 
-use crate::agent_credentials::kill_switch::serialize_agent_kill_switch;
 use crate::agent_credentials::params::parse_agent_litellm_params;
 // ast-grep-ignore: no-long-names
 use crate::agent_credentials::restore::restore_redacted_litellm_params;
@@ -101,70 +97,6 @@ pub(super) fn headers_text(headers: Option<&BTreeMap<String, String>>, max_depth
             .collect(),
     );
     safe_json_text(&value, max_depth)
-}
-
-pub(super) fn create_headers(agent: &AgentConfig, context: &PlanContext<'_>) -> Option<String> {
-    let headers = agent.static_headers.as_ref().and_then(Option::as_ref)?;
-    if headers.is_empty() {
-        return None;
-    }
-    Some(headers_text(Some(headers), context.max_json_depth))
-}
-
-pub(super) fn replace_headers(agent: &AgentConfig, context: &PlanContext<'_>) -> String {
-    headers_text(
-        agent.static_headers.as_ref().and_then(Option::as_ref),
-        context.max_json_depth,
-    )
-}
-
-pub(super) fn patched_headers(
-    agent: &PatchAgentRequest,
-    context: &PlanContext<'_>,
-) -> Option<String> {
-    agent
-        .static_headers
-        .as_ref()
-        .map(|headers| headers_text(headers.as_ref(), context.max_json_depth))
-}
-
-pub(super) fn patched_card(
-    agent: &PatchAgentRequest,
-    context: &PlanContext<'_>,
-) -> Result<Option<String>, AgentPersistenceError> {
-    let Some(card) = agent.agent_card_params.as_ref() else {
-        return Ok(None);
-    };
-    Ok(Some(card_text(Some(card), context)?))
-}
-
-pub(super) fn patched_params(
-    agent: &PatchAgentRequest,
-    existing: &StoredAgent,
-    context: &PlanContext<'_>,
-) -> Option<String> {
-    let incoming = agent.litellm_params.as_ref()?;
-    let stored = stored_params(Some(existing));
-    Some(params_text(Some(incoming), &stored, context))
-}
-
-pub(super) fn patched_kill_switch(
-    agent: &PatchAgentRequest,
-    existing: &StoredAgent,
-) -> Result<Option<String>, AgentPersistenceError> {
-    let Some(switch) = agent.kill_switch.as_ref() else {
-        return Ok(None);
-    };
-    Ok(Some(serialize_agent_kill_switch(
-        switch.as_ref(),
-        existing.kill_switch_column.as_ref(),
-    )?))
-}
-
-pub(super) fn patched_groups(agent: &PatchAgentRequest) -> Option<Vec<String>> {
-    let groups = agent.access_group_ids.as_ref()?;
-    let values = groups.clone().unwrap_or_default();
-    Some(deduplicated(&values))
 }
 
 pub(super) fn deduplicated(values: &[String]) -> Vec<String> {

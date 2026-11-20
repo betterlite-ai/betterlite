@@ -77,35 +77,24 @@ impl Database {
             .expect("the statement runs")
     }
 
-    pub(crate) async fn count(&self, sql: &str, parameters: &[&(dyn ToSql + Sync)]) -> i64 {
+    pub(crate) async fn count(&self, sql: &str, args: &[&(dyn ToSql + Sync)]) -> i64 {
         let client = self.pool.get().await.expect("a fixture connection");
-        let row = client
-            .query_one(sql, parameters)
-            .await
-            .expect("the count query runs");
+        let query = client.query_one(sql, args);
+        let row = query.await.expect("the count query runs");
         row.get(0)
     }
 
-    pub(crate) async fn text(
-        &self,
-        sql: &str,
-        parameters: &[&(dyn ToSql + Sync)],
-    ) -> Option<String> {
+    pub(crate) async fn text(&self, sql: &str, args: &[&(dyn ToSql + Sync)]) -> Option<String> {
         let client = self.pool.get().await.expect("a fixture connection");
-        let row = client
-            .query_opt(sql, parameters)
-            .await
-            .expect("the value query runs")?;
+        let query = client.query_opt(sql, args);
+        let row = query.await.expect("the value query runs")?;
         row.get(0)
     }
 
-    pub(crate) async fn json(
-        &self,
-        sql: &str,
-        parameters: &[&(dyn ToSql + Sync)],
-    ) -> Option<JsonData> {
-        let text = self.text(sql, parameters).await?;
-        Some(serde_json::from_str(&text).expect("the stored JSON decodes"))
+    pub(crate) async fn json(&self, sql: &str, args: &[&(dyn ToSql + Sync)]) -> Option<JsonData> {
+        let text = self.text(sql, args).await?;
+        let decoded = serde_json::from_str(&text).expect("the stored JSON decodes");
+        Some(decoded)
     }
 
     pub(crate) async fn decode_agent(&self, agent_id: &str) -> StoredAgent {

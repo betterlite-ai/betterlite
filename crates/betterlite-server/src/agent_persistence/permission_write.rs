@@ -64,15 +64,13 @@ fn kind_of(name: &str) -> Option<ColumnKind> {
 }
 
 fn convert(value: &JsonData, kind: ColumnKind) -> Result<PermissionValue, AgentPersistenceError> {
-    match kind {
-        ColumnKind::List => Ok(PermissionValue::List(serde_json::from_value(
-            serde_json::to_value(value)?,
-        )?)),
-        ColumnKind::Json => Ok(PermissionValue::Json(serde_json::to_string(value)?)),
-        ColumnKind::Flag => Ok(PermissionValue::Flag(serde_json::from_value(
-            serde_json::to_value(value)?,
-        )?)),
-    }
+    let json = serde_json::to_value(value)?;
+    let converted = match kind {
+        ColumnKind::Json => PermissionValue::Json(serde_json::to_string(value)?),
+        ColumnKind::List => PermissionValue::List(serde_json::from_value(json)?),
+        ColumnKind::Flag => PermissionValue::Flag(serde_json::from_value(json)?),
+    };
+    Ok(converted)
 }
 
 fn converted_record(

@@ -1,3 +1,9 @@
+macro_rules! push_columns {
+    ($list:expr, $values:expr, $($name:literal => $field:ident : $cast:literal),* $(,)?) => {
+        $(push_present($list, $name, $values.$field.as_ref(), $cast);)*
+    };
+}
+
 pub mod change_publisher;
 pub mod create;
 pub mod error;
@@ -28,13 +34,16 @@ use self::error::open_failure;
 use self::patch::UpdateRequest;
 use self::patch::commit_update;
 use self::patch::existing_agent;
+use self::patch::require_agent;
 use self::remove::delete_agent;
 use self::replace::patch_request;
-use self::row::read_agent_on;
+use self::write_plan::ColumnSource;
+use self::write_plan::ConfigMode;
+use self::write_plan::ConfigSource;
+use self::write_plan::PatchSource;
 use self::write_plan::PlanContext;
-use self::write_plan::plan_create;
-use self::write_plan::plan_patch;
-use self::write_plan::plan_replace;
+use self::write_plan::plan_write;
+use crate::agent_rows::codec::StoredAgent;
 
 pub trait AgentChangePublisher: Send + Sync {
     fn agents_changed(&self) -> impl Future<Output = ()> + Send;
@@ -56,6 +65,25 @@ impl<P: AgentChangePublisher> AgentStore<P> {
         }
     }
 
+    async fn commit(
+        &self,
+        agent_id: &str,
+        source: &dyn ColumnSource,
+        existing: Option<&StoredAgent>,
+        actor: &str,
+    ) -> Result<AgentResponse, AgentPersistenceError> {
+        let context = self.context();
+        let plan = plan_write(source, existing, actor, &context)?;
+        let request = UpdateRequest {
+            agent_id,
+            plan: &plan,
+            permission: source.permission(),
+            existing_permission: existing.and_then(|record| record.object_permission_id.as_deref()),
+            missing: source.not_found(agent_id),
+        };
+        commit_update(self, &request).await
+    }
+
     pub async fn add_agent_to_db(
         &self,
         agent: &AgentConfig,
@@ -63,7 +91,11 @@ impl<P: AgentChangePublisher> AgentStore<P> {
         agent_id: Option<&str>,
     ) -> Result<AgentResponse, AgentPersistenceError> {
         let context = self.context();
-        let plan = plan_create(agent, created_by, &context)?;
+        let source = ConfigSource {
+            agent,
+            mode: ConfigMode::Create,
+        };
+        let plan = plan_write(&source, None, created_by, &context)?;
         store_agent(self, agent, &plan, agent_id).await
     }
 
@@ -73,28 +105,23 @@ impl<P: AgentChangePublisher> AgentStore<P> {
         agent: &AgentConfig,
         updated_by: &str,
     ) -> Result<AgentResponse, AgentPersistenceError> {
-        if agent.agent_card_params.is_none() {
+        if agent.agent_card_params.is_some() {
+            let existing = existing_agent(&self.store, agent_id).await?;
+            self.commit(
+                agent_id,
+                &ConfigSource {
+                    agent,
+                    mode: ConfigMode::Replace,
+                },
+                existing.as_ref(),
+                updated_by,
+            )
+            .await
+        } else {
             let replacement = patch_request(agent);
-            return self
-                .patch_agent_in_db(agent_id, &replacement, updated_by)
-                .await;
+            self.patch_agent_in_db(agent_id, &replacement, updated_by)
+                .await
         }
-        let missing = format!("Agent not found, passed agent_id={agent_id}");
-        let client = self.store.session().await.map_err(open_failure)?;
-        let existing = read_agent_on(&client, agent_id).await?;
-        drop(client);
-        let context = self.context();
-        let plan = plan_replace(agent, existing.as_ref(), updated_by, &context)?;
-        let request = UpdateRequest {
-            agent_id,
-            plan: &plan,
-            permission: agent.object_permission.as_ref(),
-            existing_permission: existing
-                .as_ref()
-                .and_then(|stored| stored.object_permission_id.as_deref()),
-            missing,
-        };
-        commit_update(self, &request).await
     }
 
     pub async fn patch_agent_in_db(
@@ -103,20 +130,11 @@ impl<P: AgentChangePublisher> AgentStore<P> {
         agent: &PatchAgentRequest,
         updated_by: &str,
     ) -> Result<AgentResponse, AgentPersistenceError> {
-        let missing = format!("Agent with ID {agent_id} not found");
-        let Some(existing) = existing_agent(&self.store, agent_id).await? else {
-            return Err(AgentPersistenceError::NotFound(missing));
-        };
-        let context = self.context();
-        let plan = plan_patch(agent, &existing, updated_by, &context)?;
-        let request = UpdateRequest {
-            agent_id,
-            plan: &plan,
-            permission: agent.object_permission.as_ref(),
-            existing_permission: existing.object_permission_id.as_deref(),
-            missing,
-        };
-        commit_update(self, &request).await
+        let source = PatchSource { agent };
+        let missing = source.not_found(agent_id);
+        let existing = require_agent(&self.store, agent_id, &missing).await?;
+        self.commit(agent_id, &source, Some(&existing), updated_by)
+            .await
     }
 
     pub async fn delete_agent_from_db(&self, agent_id: &str) -> Result<(), AgentPersistenceError> {

@@ -3,6 +3,7 @@ use betterlite_db::postgres_store::session::DbSession;
 use deadpool_postgres::Client;
 
 use super::error::AgentPersistenceError;
+use super::row::AgentSource;
 use super::row::read_agent;
 
 const RETIRE_SQL: &str = r#"INSERT INTO "LiteLLM_RetiredAgent" (original_agent_id) VALUES ($1) ON CONFLICT (original_agent_id) DO NOTHING"#;
@@ -28,7 +29,7 @@ pub(super) async fn delete_agent(
         .transaction()
         .await
         .map_err(|source| AgentPersistenceError::Database(backend(source)))?;
-    let Some(record) = read_agent(&tx, agent_id).await? else {
+    let Some(record) = read_agent(AgentSource::Session(&tx), agent_id).await? else {
         return Err(AgentPersistenceError::NotFound(String::from(missing)));
     };
     if record.agent.identity_managed {

@@ -9,6 +9,7 @@ use super::error::open_failure;
 use super::error::write_error;
 use super::identity_write::history_should_insert;
 use super::permission_write::prepare;
+use super::row::AgentSource;
 use super::row::RowWrite;
 use super::row::read_agent;
 use super::row::write_rows;
@@ -36,9 +37,11 @@ pub(super) async fn store_agent<P: AgentChangePublisher>(
         insert: true,
     };
     write_rows(&tx, &write).await?;
-    let record = read_agent(&tx, &target_id).await?.ok_or_else(|| {
-        AgentPersistenceError::NotFound(format!("Agent not found, passed agent_id={target_id}"))
-    })?;
+    let record = read_agent(AgentSource::Session(&tx), &target_id)
+        .await?
+        .ok_or_else(|| {
+            AgentPersistenceError::NotFound(format!("Agent not found, passed agent_id={target_id}"))
+        })?;
     tx.commit().await.map_err(write_error)?;
     store.publisher.agents_changed().await;
     Ok(record.agent)
