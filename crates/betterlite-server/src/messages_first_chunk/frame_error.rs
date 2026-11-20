@@ -60,7 +60,10 @@ fn parsed_object(frame: &[u8]) -> Option<JsonObject> {
     let text = from_utf8(frame).ok()?;
     let payload = text.strip_prefix(DATA_PREFIX)?;
     let trimmed = payload.trim();
-    if trimmed.is_empty() || trimmed == DONE_MARKER {
+    if trimmed.is_empty() {
+        return None;
+    }
+    if trimmed == DONE_MARKER {
         return None;
     }
     let Ok(Json::Object(data)) = serde_json::from_str::<Json>(trimmed) else {
