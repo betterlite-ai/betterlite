@@ -22,9 +22,9 @@ deviations:
       standard logging payload and merged metadata, not by calling B1716's get_logging_payload. betterlite-server
       holds get_logging_payload, and betterlite-server depends on betterlite-logging, so this crate cannot call
       it; the projection reuses the shared ports of _get_spend_logs_metadata, storage_messages, storage_response,
-      storage_request_body, _get_batch_trace_session_id and _redact_logged_api_key, and reproduces
-      _get_spend_logs_id's id order and aretrieve_batch suffix locally because the shared
-      spend_metadata::spend_logs_id takes the raw call kwargs that a logger event does not carry.
+      storage_request_body, _get_batch_trace_session_id and _redact_logged_api_key, and takes
+      _get_spend_logs_id's id order and aretrieve_batch suffix from the shared
+      spend_metadata::spend_logs_id_from_ids that spend_logs_id also calls.
     why: >-
       A crate cycle blocks the call, and a logger event carries the standard logging payload and the merged
       metadata but no call kwargs or litellm_params. The record keeps the same fields and the same derivations
