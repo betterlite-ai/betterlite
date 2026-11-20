@@ -1,0 +1,21 @@
+kind: sdk_http
+name: image-variations-variation-upload-and-ignored-options
+env: {OPENAI_API_KEY: sk-env}
+call:
+  image_variations:
+    image: {filename: a.png, content: abc, content_type: image/png}
+    model: openai/dall-e-2
+    n: 3
+    response_format: b64_json
+    size: 1024x1024
+    user: u
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {created: 1, data: [{url: 'https://example.test/a.png'}]}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore:
+    - {pointer: /upstream/0/body, why: a multipart boundary is random on each side so the captured body bytes never match}

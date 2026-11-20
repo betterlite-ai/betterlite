@@ -1,0 +1,11 @@
+kind: helper
+name: auth-invalidation-access-group-cache-projection
+call:
+  auth_invalidation:
+    scenario: access
+    management_ttl: 45.0
+    access_group_ttl: 600.0
+    access_group_id: oracle-group
+    table: {access_group_id: oracle-group, access_group_name: Oracle Group}
+env: {DEFAULT_ACCESS_GROUP_CACHE_TTL: "600"}
+compare: {ignore: []}
