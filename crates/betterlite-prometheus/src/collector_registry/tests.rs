@@ -232,6 +232,15 @@ fn prepare_buckets_keeps_an_existing_infinite_bound() {
 }
 
 #[test]
+fn prepare_buckets_keeps_equal_bounds() {
+    let prepared = prepare_buckets(&[Bucket::Seconds(1.0), Bucket::Seconds(1.0)]).unwrap();
+    assert_eq!(
+        prepared,
+        vec![Bucket::Seconds(1.0), Bucket::Seconds(1.0), Bucket::Infinite]
+    );
+}
+
+#[test]
 fn prepare_buckets_treats_a_positive_infinity_as_the_infinite_bound() {
     let prepared =
         prepare_buckets(&[Bucket::Seconds(0.5), Bucket::Seconds(f64::INFINITY)]).unwrap();
