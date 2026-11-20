@@ -1,0 +1,25 @@
+kind: sdk_http
+name: run-stream-manager-is-lazy
+env: {}
+call:
+  assistant_run:
+    mode: run_stream
+    provider: openai
+    thread_id: thread_a
+    assistant_id: asst_a
+    event_handler: true
+    params: {api_key: 'sk-test'}
+upstream:
+  - status: 200
+    headers: {content-type: text/event-stream}
+    events:
+      - '{"event": "thread.run.created", "data": {"id": "run_1", "object": "thread.run", "status": "queued"}}'
+      - '{"event": "thread.message.created", "data": {"id": "msg_1", "object": "thread.message", "status": "in_progress", "thread_id": "thread_a", "content": []}}'
+      - '{"event": "thread.message.delta", "data": {"id": "msg_1", "object": "thread.message.delta", "delta": {}}}'
+      - '{"event": "thread.run.completed", "data": {"id": "run_1", "object": "thread.run", "status": "completed"}}'
+      - '[DONE]'
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, openai-beta]
+  ignore: []
