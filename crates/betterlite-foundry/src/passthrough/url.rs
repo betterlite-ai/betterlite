@@ -106,11 +106,7 @@ fn overlap_length(root_segments: &[String], native_segments: &[String]) -> usize
 
 // httpx's copy_with(path=...): the decoded path is parsed again, which requotes it and drops the query
 fn rebuilt(mut url: HttpxUrl, segments: &[String]) -> Result<String, FoundryPassthroughError> {
-    let encoded: Vec<String> = segments
-        .iter()
-        .map(|segment| segment.replace('?', "%3F").replace('#', "%23"))
-        .collect();
-    let path = format!("/{}", encoded.join("/"));
+    let path = format!("/{}", segments.join("/"));
     url.path = rewritten_path(&url, &path)?;
     url.query = None;
     Ok(url.href().trim_end_matches('/').to_owned())

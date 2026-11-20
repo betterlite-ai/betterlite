@@ -9,7 +9,7 @@ use super::RES;
 
 pub(super) fn foundry_root_path() {
     foundry_root_truncates_at_the_first_exact_models_segment();
-    foundry_root_requotes_reserved_characters();
+    foundry_root_rejects_reserved_characters();
     foundry_root_rejects_a_control_character();
 }
 
@@ -44,16 +44,17 @@ fn foundry_root_truncates_at_the_first_exact_models_segment() {
     );
 }
 
-// httpx's copy_with quotes a decoded '?' or '#' back into the path
-fn foundry_root_requotes_reserved_characters() {
-    assert_eq!(
-        foundry_root(&format!("{RES}/a%3Fb/models")).unwrap(),
-        format!("{RES}/a%3Fb")
-    );
-    assert_eq!(
-        foundry_root(&format!("{RES}/a%23b/models/x")).unwrap(),
-        format!("{RES}/a%23b")
-    );
+// httpx's copy_with refuses a decoded '?' or '#', so the rewritten base is unwritable
+fn foundry_root_rejects_reserved_characters() {
+    for base in [
+        format!("{RES}/a%3Fb/models"),
+        format!("{RES}/a%23b/models/x"),
+    ] {
+        assert!(matches!(
+            foundry_root(&base),
+            Err(FoundryPassthroughError::UnwritableBasePath)
+        ));
+    }
 }
 
 fn foundry_root_rejects_a_control_character() {
