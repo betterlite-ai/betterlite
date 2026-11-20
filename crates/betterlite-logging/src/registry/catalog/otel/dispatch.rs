@@ -1,4 +1,3 @@
-// The name-to-builder table every callback name goes through; catalog.rs sits at its line limit.
 use std::sync::Arc;
 
 use betterlite_config::sections::callback_settings::names::CallbackName;
@@ -51,6 +50,7 @@ macro_rules! builder_dispatch {
     };
 }
 
+// This table lives here because catalog.rs would pass its 300-line limit with it inline
 builder_dispatch! {
     arms {
         Arize => super::super::arize,
