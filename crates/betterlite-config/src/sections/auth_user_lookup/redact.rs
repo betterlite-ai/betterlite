@@ -19,18 +19,15 @@ pub fn redacted_params(values: &IndexMap<String, JsonData>) -> JsonData {
     let masker = SensitiveDataMasker::default();
     let mut redacted = BTreeMap::new();
     for (key, value) in values {
-        let kept = if is_secret_field(&masker, key) {
-            JsonData::String(REDACTED.to_owned())
-        } else {
-            redacted_value(&masker, value, 1)
-        };
+        let kept =
+            if EXTRA_SECRET_FIELDS.contains(&key.as_str()) || masker.is_sensitive_key(key, &[]) {
+                JsonData::String(REDACTED.to_owned())
+            } else {
+                redacted_value(&masker, value, 1)
+            };
         redacted.insert(key.clone(), kept);
     }
     JsonData::Object(redacted)
-}
-
-fn is_secret_field(masker: &SensitiveDataMasker, key: &str) -> bool {
-    EXTRA_SECRET_FIELDS.contains(&key) || masker.is_sensitive_key(key, &[])
 }
 
 fn redacted_value(masker: &SensitiveDataMasker, value: &JsonData, depth: usize) -> JsonData {
@@ -42,12 +39,15 @@ fn redacted_value(masker: &SensitiveDataMasker, value: &JsonData, depth: usize) 
             fields
                 .iter()
                 .map(|(name, child)| {
-                    let kept = if is_secret_field(masker, name) {
-                        JsonData::String(REDACTED.to_owned())
-                    } else {
-                        redacted_value(masker, child, depth.saturating_add(1))
-                    };
-                    (name.clone(), kept)
+                    if EXTRA_SECRET_FIELDS.contains(&name.as_str())
+                        || masker.is_sensitive_key(name, &[])
+                    {
+                        return (name.clone(), JsonData::String(REDACTED.to_owned()));
+                    }
+                    (
+                        name.clone(),
+                        redacted_value(masker, child, depth.saturating_add(1)),
+                    )
                 })
                 .collect(),
         ),

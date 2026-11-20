@@ -1,4 +1,5 @@
 mod redact;
+mod resolve_json;
 mod tests;
 
 use std::collections::BTreeMap;
@@ -11,7 +12,6 @@ use rust_decimal::prelude::ToPrimitive as _;
 use serde::{Deserialize, Serialize};
 
 use crate::loader::{ConfigError, EnvironmentLookup};
-use crate::resolve::resolve_string;
 use crate::sections::Section;
 
 pub const ROLE_PERMISSIONS_PATH: &str = "general_settings.role_permissions";
@@ -124,7 +124,7 @@ fn role_permissions(
     path: &str,
     lookup: &dyn EnvironmentLookup,
 ) -> Result<Option<Vec<RoleBasedPermissions>>, ConfigError> {
-    let resolved = to_json(value, path, lookup, 0)?;
+    let resolved = resolve_json::resolved(value, path, lookup)?;
     if matches!(resolved, JsonData::Null) {
         return Ok(None);
     }
@@ -139,7 +139,7 @@ fn user_defaults(
     lookup: &dyn EnvironmentLookup,
 ) -> Result<Option<DefaultUserParams>, ConfigError> {
     let path = DEFAULT_USER_PARAMS_PATH;
-    let resolved = to_json(value, path, lookup, 0)?;
+    let resolved = resolve_json::resolved(value, path, lookup)?;
     match resolved {
         JsonData::Object(fields) if fields.is_empty() => Ok(None),
         JsonData::Object(fields) => Ok(Some(DefaultUserParams {
@@ -212,88 +212,5 @@ fn invalid(path: &str, value: bool) -> ConfigError {
     ConfigError::InvalidScalar {
         path: path.to_owned(),
         value,
-    }
-}
-
-// proxy_server.py resolves os.environ/ through mappings and the mapping items of a list, never a list string
-fn to_json(
-    value: RawValue,
-    path: &str,
-    lookup: &dyn EnvironmentLookup,
-    depth: usize,
-) -> Result<JsonData, ConfigError> {
-    if depth > MAX_NESTED_DEPTH {
-        return Err(invalid(path, false));
-    }
-    match value {
-        RawValue::Null => Ok(JsonData::Null),
-        RawValue::Boolean(flag) => Ok(JsonData::Bool(flag)),
-        RawValue::Integer(number) => Ok(JsonData::Number(serde_json::Number::from(number))),
-        RawValue::Float(number) => serde_json::Number::from_f64(number)
-            .map(JsonData::Number)
-            .ok_or_else(|| invalid(path, false)),
-        RawValue::Text(text) => resolve_string(text, path, lookup).map(JsonData::String),
-        RawValue::Object(fields) => object_json(fields, path, lookup, depth),
-        RawValue::Array(items) => list_json(items, path, lookup, depth),
-    }
-}
-
-fn object_json(
-    fields: BTreeMap<String, RawValue>,
-    path: &str,
-    lookup: &dyn EnvironmentLookup,
-    depth: usize,
-) -> Result<JsonData, ConfigError> {
-    let mut resolved = BTreeMap::new();
-    for (key, value) in fields {
-        let child = format!("{path}.{key}");
-        let kept = match value {
-            RawValue::Text(text) => JsonData::String(resolve_string(text, &child, lookup)?),
-            other => to_json(other, &child, lookup, depth + 1)?,
-        };
-        resolved.insert(key, kept);
-    }
-    Ok(JsonData::Object(resolved))
-}
-
-// a list keeps every item as written except a mapping, whose values the config resolver still walks
-fn list_json(
-    items: Vec<RawValue>,
-    path: &str,
-    lookup: &dyn EnvironmentLookup,
-    depth: usize,
-) -> Result<JsonData, ConfigError> {
-    let mut resolved = Vec::new();
-    for item in items {
-        resolved.push(match item {
-            RawValue::Object(fields) => object_json(fields, path, lookup, depth + 1)?,
-            other => to_json_shallow(other, path, depth + 1)?,
-        });
-    }
-    Ok(JsonData::Array(resolved))
-}
-
-fn to_json_shallow(value: RawValue, path: &str, depth: usize) -> Result<JsonData, ConfigError> {
-    if depth > MAX_NESTED_DEPTH {
-        return Err(invalid(path, false));
-    }
-    match value {
-        RawValue::Null => Ok(JsonData::Null),
-        RawValue::Boolean(flag) => Ok(JsonData::Bool(flag)),
-        RawValue::Integer(number) => Ok(JsonData::Number(serde_json::Number::from(number))),
-        RawValue::Float(number) => serde_json::Number::from_f64(number)
-            .map(JsonData::Number)
-            .ok_or_else(|| invalid(path, false)),
-        RawValue::Text(text) => Ok(JsonData::String(text)),
-        RawValue::Array(items) => items
-            .into_iter()
-            .map(|item| to_json_shallow(item, path, depth + 1))
-            .collect::<Result<Vec<_>, _>>()
-            .map(JsonData::Array),
-        RawValue::Object(fields) => fields
-            .into_iter()
-            .map(|(key, item)| Ok((key, to_json_shallow(item, path, depth + 1)?)))
-            .collect::<Result<BTreeMap<_, _>, ConfigError>>()
-            .map(JsonData::Object),
     }
 }

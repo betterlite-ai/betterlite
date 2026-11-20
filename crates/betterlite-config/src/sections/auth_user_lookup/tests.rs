@@ -26,6 +26,13 @@ fn scalar(value: &JsonData) -> Option<f64> {
     }
 }
 
+fn scalar_error_path(source: &str) -> String {
+    match load(source, &[]) {
+        Err(ConfigError::InvalidScalar { path, .. }) => path,
+        other => panic!("the setting should fail startup as an invalid scalar: {other:?}"),
+    }
+}
+
 #[test]
 fn loads_role_permissions() {
     let settings = load(
@@ -143,12 +150,7 @@ fn malformed_role_stops_startup(#[case] role: &str) {
     - role: \"{role}\"
 "
     );
-    match load(&source, &[]) {
-        Err(ConfigError::InvalidScalar { path, .. }) => {
-            assert_eq!(path, ROLE_PERMISSIONS_PATH);
-        }
-        other => panic!("role {role:?} should fail startup: {other:?}"),
-    }
+    assert_eq!(scalar_error_path(&source), ROLE_PERMISSIONS_PATH);
 }
 
 #[rstest]
@@ -188,12 +190,10 @@ fn defaults_numeric_budget_conversion(#[case] written: &str, #[case] expected: f
 fn invalid_budget_stops_startup(#[case] written: &str) {
     let source =
         format!("litellm_settings:\n  default_internal_user_params:\n    max_budget: {written}\n");
-    match load(&source, &[]) {
-        Err(ConfigError::InvalidScalar { path, .. }) => {
-            assert_eq!(path, format!("{DEFAULT_USER_PARAMS_PATH}.max_budget"));
-        }
-        other => panic!("budget {written:?} should fail startup: {other:?}"),
-    }
+    assert_eq!(
+        scalar_error_path(&source),
+        format!("{DEFAULT_USER_PARAMS_PATH}.max_budget")
+    );
 }
 
 #[rstest]
@@ -203,12 +203,7 @@ fn invalid_budget_stops_startup(#[case] written: &str) {
 #[case::list("[1, 2]")]
 fn nonmapping_defaults_named_error(#[case] written: &str) {
     let source = format!("litellm_settings:\n  default_internal_user_params: {written}\n");
-    match load(&source, &[]) {
-        Err(ConfigError::InvalidScalar { path, .. }) => {
-            assert_eq!(path, DEFAULT_USER_PARAMS_PATH);
-        }
-        other => panic!("defaults {written:?} should fail startup: {other:?}"),
-    }
+    assert_eq!(scalar_error_path(&source), DEFAULT_USER_PARAMS_PATH);
 }
 
 #[rstest]
@@ -220,12 +215,10 @@ fn nonmapping_defaults_named_error(#[case] written: &str) {
 fn nonfinite_budget_named_error(#[case] written: &str) {
     let source =
         format!("litellm_settings:\n  default_internal_user_params:\n    max_budget: {written}\n");
-    match load(&source, &[]) {
-        Err(ConfigError::InvalidScalar { path, .. }) => {
-            assert_eq!(path, format!("{DEFAULT_USER_PARAMS_PATH}.max_budget"));
-        }
-        other => panic!("budget {written:?} should fail startup: {other:?}"),
-    }
+    assert_eq!(
+        scalar_error_path(&source),
+        format!("{DEFAULT_USER_PARAMS_PATH}.max_budget")
+    );
 }
 
 // a YAML non-finite float never reaches the section: the YAML layer refuses it first
