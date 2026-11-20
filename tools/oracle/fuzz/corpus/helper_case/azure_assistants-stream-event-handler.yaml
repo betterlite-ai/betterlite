@@ -1,0 +1,5 @@
+kind: helper
+name: azure-assistants-seed-stream-event-handler
+call: {azure_assistants: {stream_event_handler: [{arun_thread: true, stream: true, handler: true, run: {thread_id: thread_a, assistant_id: asst_a}}]}}
+env: {}
+compare: {ignore: []}

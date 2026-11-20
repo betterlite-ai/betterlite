@@ -1,0 +1,14 @@
+kind: helper
+name: bedrock-decisions-should-raise-seed
+call:
+  b3722:
+    bedrock_decisions:
+      should_raise:
+        response:
+          action: GUARDRAIL_INTERVENED
+          assessments:
+            - topicPolicy:
+                topics:
+                  - action: BLOCKED
+env: {}
+compare: {ignore: []}

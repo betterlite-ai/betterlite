@@ -1,7 +1,7 @@
 id: B8640
 title: Pass-through mount base, shared state and config routes
 description: >-
-  The pass-through route tasks build their routers and handlers and leave the merge into the app to wave 17. No B1100 stub covers them, so today none of these paths answers. This task builds what every pass-through family shares, the area's mount functions and the config routes. Four family parts then fill one family file each and own that family's HTTP oracle cases: B8606 (common providers and OpenAI), B8607 (Bedrock, Comprehend Medical, Azure Speech and Transcribe), B8608 (Vertex and Azure) and B8609 (Fal, AssemblyAI, TinyFish, VLLM, GigaChat and Watsonx).
+  The pass-through route tasks build their routers and handlers and leave the merge into the app to wave 17. No B1100 stub covers them, so today none of these paths answers. This task builds what every pass-through family shares, the area's mount functions and the config routes. Four family parts then fill one family file each and own that family's HTTP oracle cases: B8606 (common providers and OpenAI), B8607 (Bedrock, Comprehend Medical, Azure Speech and Transcribe), B8608 (Vertex and Azure) and B8609 (Fal, AssemblyAI and TinyFish); B10026 adds the VLLM, GigaChat and Watsonx mount to the same file, saas_vgw.rs.
   LiteLLM includes the whole llm_passthrough router at one slot in proxy_server.py (L19966, `reserve_lazy_slot(app, "llm_passthrough")`), the openai_passthrough router just before it and the config routes of pass_through_endpoints.py just after. Lazy loading changes nothing a client sees, so here every route is mounted at startup.
 
   Shared state (app/pass_through/routes/deps.rs). `PassThroughState::new(state: &ServerState)` builds, from `state.shared` and nothing global:
@@ -89,7 +89,7 @@ deviations:
   - what: Every pass-through family is mounted at startup instead of on the first request to its prefix.
     why: LiteLLM's lazy slot only delays the Python import; the routes and their order are the same once loaded.
 out_of_scope:
-  - "The family mounts and their HTTP cases: B8606, B8607, B8608 and B8609. The Langfuse route mount and its HTTP cases: B103. The port adapters: B8641. The socket adapters: B8642. Configured route matching: B8643."
+  - "The family mounts and their HTTP cases: B8606, B8607, B8608, B8609 and B10026. The Langfuse route mount and its HTTP cases: B103. The port adapters: B8641. The socket adapters: B8642. Configured route matching: B8643."
   - "B3618's RouterPassthrough and B7324's LlmRequestProcessor and ExceptionMapper production values: B8694 builds them over B8690 to B8693."
   - "The startup install of configured endpoints: B8374 (config) and B8384 (database). They must use the same route table this task reads."
 pitfalls:

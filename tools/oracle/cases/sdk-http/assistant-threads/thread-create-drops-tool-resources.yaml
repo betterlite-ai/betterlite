@@ -1,0 +1,23 @@
+kind: sdk_http
+name: sdk-http-assistant-threads-create-drops-tool-resources
+env:
+  OPENAI_API_KEY: sk-env
+call:
+  assistant_threads:
+    operation: create
+    mode: sync
+    provider: openai
+    messages:
+      - {role: user, content: hello}
+    metadata: {tag: x}
+    tool_resources: {file_search: {vector_store_ids: [vs_a]}}
+    kwargs: {}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: thread_a, object: thread, created_at: 1, metadata: {tag: x}, tool_resources: {}}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, openai-beta]
+  ignore: []

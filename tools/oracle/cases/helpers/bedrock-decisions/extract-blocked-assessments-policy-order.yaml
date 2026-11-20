@@ -1,0 +1,45 @@
+kind: helper
+name: extract-blocked-assessments-policy-order
+call:
+  b3722:
+    bedrock_decisions:
+      blocked_assessments:
+        response:
+          action: GUARDRAIL_INTERVENED
+          assessments:
+            - topicPolicy:
+                topics:
+                  - name: finance
+                    action: BLOCKED
+              contentPolicy:
+                filters:
+                  - type: HATE
+                    confidence: HIGH
+                    filterStrength: HIGH
+                    action: BLOCKED
+              wordPolicy:
+                customWords:
+                  - match: secret
+                    action: BLOCKED
+                managedWordLists:
+                  - type: PROFANITY
+                    match: profane
+                    action: BLOCKED
+              sensitiveInformationPolicy:
+                piiEntities:
+                  - type: EMAIL
+                    match: a@b.c
+                    action: BLOCKED
+                regexes:
+                  - name: account
+                    regex: '\d{4}'
+                    match: "1234"
+                    action: BLOCKED
+              contextualGroundingPolicy:
+                filters:
+                  - type: GROUNDING
+                    threshold: 0.75
+                    score: 0.5
+                    action: BLOCKED
+env: {}
+compare: {ignore: []}

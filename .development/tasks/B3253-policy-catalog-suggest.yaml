@@ -86,7 +86,11 @@ description: >-
   `select_templates(&self, request: &SuggestModelRequest) -> Result<SuggestModelReply, SuggestModelError>`. `SuggestModelRequest` holds `model`, `system_prompt`, `user_prompt`,
   the tool JSON, `temperature`. `SuggestModelReply` holds `tool_arguments: Option<String>` (the first choice's first tool call arguments, none when there is no tool call).
   `SuggestModelError` carries a message string. Production wiring: `supported_params` is B175's supported-OpenAI-parameter query (read its signature in crates/betterlite-models/src/params
-  and use it unchanged), and `select_templates` is one OpenAI-style chat call through the provider dispatcher using environment keys. That wiring is B8665's `SdkSuggestModel`, built over the outbound client; tests use a fake client.
+  and use it unchanged), and `select_templates` is one OpenAI-style chat call through the provider dispatcher using environment keys. This task builds that wiring as `SdkSuggestModel` in policy_catalog_routes (moved here from B8665, the only route that
+  uses it): `select_templates` makes one chat completion the way `litellm.acompletion` does, not through the router, with the
+  model from the request, a system and a user message from the two prompts, the tool as the only tool and the temperature,
+  through B5656's `AsyncCompletionTarget` built with the outbound `ProxiedClient`. A provider error becomes `SuggestModelError`
+  with its text. Route tests use a fake client; `SdkSuggestModel` gets tests named `policy_catalog_routes::tests::sdk_model_`.
 
 
   Tests. Native tests named for the filters in the checks: `policy_suggester::tests::` in betterlite-policy (`tool_` for the exact tool JSON, `system_` and `user_` for the prompt
@@ -214,7 +218,6 @@ out_of_scope:
   - "The enrich routes, _build_refinement_prompt and the competitor builders (L667-L1084) are B3252's."
   - "test_policy_template and _test_guardrail_definitions (L1123-L1265) are B3249's."
   - "ai_policy_suggester.py has no other function than the three ported here (suggest, _build_system_prompt, _build_user_prompt)."
-  - "The production implementation of PolicySuggestModel (the dispatcher call behind litellm.acompletion) is B8665's `SdkSuggestModel`."
 
 pitfalls:
   - "A 200 answer from GitHub is returned as it is, so an empty array `[]` reaches the client; only failures fall back, not emptiness."

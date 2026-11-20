@@ -1,0 +1,104 @@
+id: B10021
+title: Auto-router catalog of saved complexity routers
+description: >-
+  LiteLLM keeps a small catalog of the complexity routers saved in the database (proxy_config.auto_router_db_catalog): every model reload rebuilds it from the model rows, and the auto-router availability route reads it to find a saved router and count the allowances the others hold. This task builds only the catalog, from auto_router_availability.py L29-L80: the entry type, build_auto_router_catalog with its field decryption, and the AutoRouterCatalog trait readers take it through. B8381's DeploymentSync rebuilds and holds the catalog and implements the trait, B8610 puts it in Shared and B8613 hands it over at startup, so those three wait on this task and not on B379. B379 keeps the dry-run authorization, validate_complexity_router_config, auto_router_availability and the two routes, and reads the catalog through the trait.
+
+
+  Layout. Code goes in betterlite-server, module router_preview_validation::catalog: crates/betterlite-server/src/router_preview_validation/catalog.rs, with tests in router_preview_validation/catalog/tests.rs. The parent router_preview_validation.rs is B379's and exists as an empty file that declares this module.
+
+
+  The trait. `pub trait AutoRouterCatalog: Send + Sync { fn catalog(&self) -> Option<Arc<Vec<AutoRouterCatalogEntry>>>; }`. None is LiteLLM's auto_router_db_catalog being None (no successful model read yet, or the last build failed), which B379's availability route answers with 503.
+
+
+  The entry. AutoRouterCatalogEntry (LiteLLM's frozen dataclass) holds model_id: String, team_id: Option<String>, created_by: Option<String> and deployment: CatalogDeployment, all public. CatalogDeployment is the deployment shape LiteLLM builds and the availability counters read, as typed structs that serialize to exactly {"litellm_params": {"model": <model>, "complexity_router_config": <value or null>}, "model_info": {"id": <model_id>, "db_model": true}}: litellm_params holds model: String and complexity_router_config: Option<JsonData> (betterlite-db's JsonData, the stored value), model_info holds id: String and db_model: bool.
+
+
+  The build. `build_auto_router_catalog(rows: &[ProxyModelTable], cipher: &DbCipher) -> Option<Vec<AutoRouterCatalogEntry>>`. The rows are B721's betterlite_db::resource_rows::model::ProxyModelTable, the same rows B8382's model reader returns, so litellm_params is already an object and model_info is an object or absent. First validate every row the way LiteLLM's _CatalogSource does: model_info may be absent or null, and its team_id may be absent, null or a string; any other team_id fails the whole build, and the answer is None, not a catalog without that row. Then keep, in row order, only the rows whose litellm_params.model, after the field read below, is a string that B377's classify_strategy_router_model (betterlite-server router_dependencies) classifies as Complexity. A missing or non-string model skips the row, and so does a semantic, adaptive or quality router or a plain model. Each kept row gives model_id, team_id from model_info (None without model_info), created_by, and the deployment with model, complexity_router_config read through the same field read, model_info.id = model_id and db_model = true. No rows give Some of an empty Vec.
+
+
+  The field read (_catalog_field). A string value goes through B1600's DbCipher::decrypt_value with the field name ("model" or "complexity_router_config") and the policy LiteLLM's decrypt_value_helper(exception_type="debug", return_original_value=True) means: a failed decrypt logs at debug and keeps the stored text. cache_settings_read/stored.rs names that policy KEEP_ORIGINAL. Any other value is kept as stored, and an absent key reads as null.
+
+
+  Tests in router_preview_validation/catalog/tests.rs, names starting with `catalog_`. They build ProxyModelTable rows from JSON and a DbCipher with a test signing key, and cover: only complexity routers kept, in row order; team_id and created_by carried and None without model_info; a non-string or missing model skipped; an encrypted model and an encrypted complexity_router_config decrypted, and a value that doesn't decrypt kept as stored; a non-string config kept as stored and a missing one as null; a numeric team_id making the whole build None; no rows giving an empty catalog; and the deployment serializing to the JSON shape above.
+
+
+  Oracle. These are helper cases on the b10021 operation; no route reaches the catalog until B379's availability route, and B379 owns those HTTP cases. Input is {"rows": [...]}, each row a model table row with model_id, model_name, litellm_params, and optional model_info and created_by; the answer is null or the list of entries as JSON (model_id, team_id, created_by, deployment). The Python adapter calls the pinned build_auto_router_catalog from litellm.proxy.management_helpers.auto_router_availability with the row dicts and turns each entry and its MappingProxyType deployment into plain dicts. Neither side has a signing key in a helper case, so every string stays as stored there; decryption is proved by the native tests.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/router_preview_validation/catalog.rs
+    - crates/betterlite-server/src/router_preview_validation/catalog/**
+    - tools/oracle/src/helpers/server/b10021.rs
+    - tools/oracle/src/helpers/server/b10021/**
+    - tools/oracle/helpers/b10021.py
+    - tools/oracle/helpers/b10021/**
+    - tools/oracle/cases/helpers/auto-router-catalog/**
+    - tools/oracle/fuzz/corpus/helper_case/auto-router-catalog-*
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/auto_router_availability.py#L29-L80
+    why: Owned. _CatalogModelInfo, _CatalogSource, AutoRouterCatalogEntry, _catalog_field and build_auto_router_catalog.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L8066-L8093
+    why: Call sites. remove_auto_router_catalog_entries drops removed ids, and the model read rebuilds the catalog from the raw rows (B8381 does both).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L395-L435
+    why: Reader. The availability route answers 503 for a None catalog and reads model_id, team_id, created_by and deployment (B379).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L180-L206
+    why: decrypt_value_helper, the debug log and the original value kept on failure.
+
+dod:
+  - text: build_auto_router_catalog keeps only complexity routers in row order, with model_id, team_id, created_by and the deployment shape LiteLLM builds, and skips a row whose model is missing or not a string.
+    proof: [catalog-tests, oracle, helper-python]
+  - text: A team_id that is neither absent, null nor a string makes the whole build None, and no rows give an empty catalog.
+    proof: [catalog-tests, oracle, helper-python]
+  - text: String values of model and complexity_router_config are decrypted with the keep-original policy, a value that doesn't decrypt stays as stored, and other values are kept as they are.
+    proof: [catalog-tests]
+  - text: The AutoRouterCatalog trait and the entry types are public in router_preview_validation::catalog.
+    proof: [catalog-tests]
+  - text: The b10021 adapter passes the strict Python checks and a new helper seed names the operation.
+    proof: [helper-python, helper-case-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: catalog-tests
+      why: the catalog build, its field read or the entry shape is missing or differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^router_preview_validation::catalog::tests::catalog_/)'
+    - id: helper-python
+      why: the b10021 adapter is missing or fails the strict Python checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10021.py tools/oracle/helpers/b10021)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: no new b10021 seed reaches the shared helper case parser
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/auto-router-catalog-*")" &&
+        grep -lE 'b10021"?:' tools/oracle/fuzz/corpus/helper_case/auto-router-catalog-* &&
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/auto-router-catalog/complexity-routers-only.yaml
+  - tools/oracle/cases/helpers/auto-router-catalog/team-and-creator.yaml
+  - tools/oracle/cases/helpers/auto-router-catalog/model-not-a-string.yaml
+  - tools/oracle/cases/helpers/auto-router-catalog/bad-team-id-drops-catalog.yaml
+
+deviations: []
+
+out_of_scope:
+  - "auto_router_availability (L83-L148), the availability and validation routes, the dry-run authorization and validate_complexity_router_config: B379."
+  - "Holding the catalog, rebuilding it on each model read and remove_catalog_entries for removed models: B8381's DeploymentSync, which implements the trait."
+  - "The auto_router_catalog field in Shared: B8610. Handing DeploymentSync over as the catalog at startup: B8613."
+  - "Reading and decoding model rows: B8382 and B721. classify_strategy_router_model: B377. The stored-secret codec: B1600 and B2303."
+
+pitfalls:
+  - "A bad team_id in one row doesn't drop just that row: it makes the whole catalog None, so the availability route answers 503 until a later reload builds again."
+  - "The model is decrypted before it is classified, so an encrypted auto_router/complexity_router model still counts."
+  - "classify_strategy_router_model matches by prefix, so auto_router/complexity_router_v2 is a complexity router and auto_router/semantic is not."
+  - "complexity_router_config is null in the deployment when the row has none; the key is always there."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

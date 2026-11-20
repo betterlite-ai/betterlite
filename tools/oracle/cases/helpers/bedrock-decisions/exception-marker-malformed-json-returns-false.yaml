@@ -1,0 +1,11 @@
+kind: helper
+name: exception-marker-malformed-json-returns-false
+call:
+  b3722:
+    bedrock_decisions:
+      has_exception:
+        view:
+          kind: content
+          body: '{"Output": {"__type": '
+env: {}
+compare: {ignore: []}
