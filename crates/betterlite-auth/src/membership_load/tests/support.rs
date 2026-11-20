@@ -466,12 +466,9 @@ pub(crate) fn lookup(
 }
 
 pub(crate) fn spawn_call(
-    cache: Arc<FakeCache>,
-    rows: &Arc<FakeRows>,
-    index: Arc<dyn MembershipIndex>,
+    subject: MembershipLookup,
     tasks: &TaskTracker,
 ) -> JoinHandle<Result<Option<LiteLLMTeamMembership>, MembershipLoadError>> {
-    let subject = lookup(cache, Some(Arc::clone(rows)), index, tasks);
     tasks.spawn(async move {
         subject
             .get_team_membership(Some("user-1"), Some("team-1"))

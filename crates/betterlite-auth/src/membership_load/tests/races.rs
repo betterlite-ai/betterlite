@@ -172,7 +172,10 @@ async fn reset_pops_reservation_before_load_finishes() {
     let rows = FakeRows::blocked(RowsAnswer::Found);
     let (registry, shared) = index();
     let tasks = TaskTracker::new();
-    let caller = spawn_call(cache, &rows, shared, &tasks);
+    let caller = spawn_call(
+        lookup(cache, Some(Arc::clone(&rows)), shared, &tasks),
+        &tasks,
+    );
     rows.wait_started().await;
     let ResetRig {
         invalidation,
@@ -209,7 +212,10 @@ async fn reset_writes_spend_after_load() {
     let rows = FakeRows::blocked(RowsAnswer::Found);
     let (registry, shared) = index();
     let tasks = TaskTracker::new();
-    let caller = spawn_call(cache, &rows, shared, &tasks);
+    let caller = spawn_call(
+        lookup(cache, Some(Arc::clone(&rows)), shared, &tasks),
+        &tasks,
+    );
     rows.wait_started().await;
     let ResetRig {
         invalidation,
