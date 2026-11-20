@@ -4,7 +4,6 @@ use crate::model_group_info::error::GroupInfoError;
 use crate::model_group_info::group::{ClientsideAuth, ModelGroupInfo};
 use crate::model_group_info::row::ConfiguredLimits;
 
-// The per-call running answer: the group, the totals, the reasoning answer and the last auth params.
 pub(crate) struct AggregateState<'a> {
     pub(crate) model_group: &'a str,
     pub(crate) user_facing: &'a str,
@@ -29,20 +28,12 @@ impl<'a> AggregateState<'a> {
     // The totals, the last auth and the reasoning answer are applied once, after every deployment.
     pub(crate) fn finish(self) -> Option<ModelGroupInfo> {
         let mut group = self.group?;
-        if let Some(tpm) = self.totals.tpm {
-            group.tpm = Some(tpm);
-        }
-        if let Some(rpm) = self.totals.rpm {
-            group.rpm = Some(rpm);
-        }
-        if let Some(itpm) = self.totals.itpm {
-            group.itpm = Some(itpm);
-        }
-        if let Some(otpm) = self.totals.otpm {
-            group.otpm = Some(otpm);
-        }
+        group.tpm = self.totals.tpm.or(group.tpm);
+        group.rpm = self.totals.rpm.or(group.rpm);
+        group.itpm = self.totals.itpm.or(group.itpm);
+        group.otpm = self.totals.otpm.or(group.otpm);
         if let Some(auth) = self.auth.flatten() {
-            group.configurable_clientside_auth_params = Some(auth);
+            group.clientside_auth = Some(auth);
         }
         group.supported_reasoning_efforts = self.reasoning.supported;
         Some(group)

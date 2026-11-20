@@ -1,7 +1,6 @@
 use betterlite_models::model_registration::JsonObject;
 use serde::Deserialize;
 
-// One helper_case call: the Router the case builds and the answer it reads.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {

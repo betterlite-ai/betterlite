@@ -34,15 +34,11 @@ class RouterStorage(Protocol):
 
 
 class FixedDeploymentInfo:
-    def __init__(
-        self, answers: dict[str, dict[str, JsonValue]], failing: bool
-    ) -> None:
+    def __init__(self, answers: dict[str, dict[str, JsonValue]], failing: bool) -> None:
         self.answers = answers
         self.failing = failing
 
-    def __call__(
-        self, model_id: str, model_name: str
-    ) -> dict[str, JsonValue] | None:
+    def __call__(self, model_id: str, model_name: str) -> dict[str, JsonValue] | None:
         _ = model_name
         if self.failing:
             raise AttributeError("the case asked for a failing deployment metadata lookup")
@@ -53,9 +49,7 @@ class FixedParameters:
     def __init__(self, answers: dict[str, list[str] | None]) -> None:
         self.answers = answers
 
-    def __call__(
-        self, model: str, custom_llm_provider: str | None = None
-    ) -> list[str] | None:
+    def __call__(self, model: str, custom_llm_provider: str | None = None) -> list[str] | None:
         if custom_llm_provider is None:
             return self.answers.get(model)
         return self.answers.get(custom_llm_provider + "/" + model)
@@ -91,7 +85,7 @@ def run(input_value: Input) -> JsonValue:
     storage: RouterStorage = router
     for index in input_value["missing_ids"]:
         model_info = storage.model_list[index].get("model_info")
-        if isinstance(model_info, dict):
+        if isinstance(model_info, dict):  # ast-grep-ignore: no-isinstance
             del model_info["id"]
     deployment_info = FixedDeploymentInfo(
         input_value["deployment_info"], input_value["lookup_error"]

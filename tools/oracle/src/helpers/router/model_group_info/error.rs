@@ -3,7 +3,6 @@ use betterlite_router::deployment_identity::error::InvalidDeployment;
 use betterlite_router::model_group_info::error::GroupInfoError;
 use betterlite_router::wildcard_catalog::error::PatternCatalogError;
 
-// The ways a case fails before an answer: the aggregation itself, or an input the adapter cannot read.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Failure {
     #[error(transparent)]

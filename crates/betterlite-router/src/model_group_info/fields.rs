@@ -19,12 +19,6 @@ pub fn json_float(value: Option<&Decimal>) -> Json {
         .map_or(Json::Null, Json::Number)
 }
 
-#[must_use]
-pub fn json_int(value: Option<i64>) -> Json {
-    value.map_or(Json::Null, |number| Json::Number(Number::from(number)))
-}
-
-// A float-typed ModelGroupInfo field: absent or null is none, a number is that number, and another JSON type is an error.
 pub fn number_value(
     map: &JsonObject,
     field: &'static str,
@@ -38,7 +32,6 @@ pub fn number_value(
     }
 }
 
-// An int-typed field: tpm, rpm, itpm and otpm take a JSON integer and nothing else.
 pub fn int_value(map: &JsonObject, field: &'static str) -> Result<Option<i64>, GroupInfoError> {
     match map.get(field) {
         None | Some(Json::Null) => Ok(None),
@@ -72,7 +65,6 @@ pub fn bool_value(map: &JsonObject, field: &'static str) -> Result<bool, GroupIn
     }
 }
 
-// The constructor default is "chat", an explicit null stays null, and any other string is the mode.
 pub fn mode_value(map: &JsonObject) -> Result<Option<String>, GroupInfoError> {
     match map.get("mode") {
         None => Ok(Some("chat".to_owned())),
@@ -98,7 +90,6 @@ pub fn text_list(value: &Json, field: &'static str) -> Result<Vec<String>, Group
     Ok(names)
 }
 
-// The first deployment's constructor: absent means the empty list the model declares, null stays null.
 pub fn constructor_params(map: &JsonObject) -> Result<Option<Vec<String>>, GroupInfoError> {
     match map.get("supported_openai_params") {
         None => Ok(Some(Vec::new())),
@@ -107,7 +98,6 @@ pub fn constructor_params(map: &JsonObject) -> Result<Option<Vec<String>>, Group
     }
 }
 
-// A later deployment replaces the list only when the metadata carries one.
 pub fn replacement_params(map: &JsonObject) -> Result<Option<Vec<String>>, GroupInfoError> {
     match map.get("supported_openai_params") {
         None | Some(Json::Null) => Ok(None),

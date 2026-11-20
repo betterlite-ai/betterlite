@@ -13,7 +13,7 @@ use crate::model_catalog_lookup::error::LookupError;
 use crate::model_group_info::error::GroupInfoError;
 use crate::model_group_info::group::ModelGroupInfo;
 use crate::model_group_info::row::{
-    ConfiguredLimits, RowParams, fallback_metadata, first_group, merge_later,
+    RowParams, configured_limits, fallback_metadata, first_group, merge_later,
 };
 use crate::model_group_info::sources::{
     DeploymentInfo, GroupSources, ProviderAnswer, ProviderFailure, ProviderRequest,
@@ -121,19 +121,19 @@ where
     P: SupportedParameterSource,
 {
     let params = RowParams::parse(&row.litellm_params)?;
-    let mut limits = ConfiguredLimits::read(row)?;
+    let mut limits = configured_limits(row)?;
     let found = lookup_metadata(sources, row, &params, keys).await;
     let mapped = deployment_is_catalog_mapped(found.as_ref(), &row.model_info);
     let answer = provider_answer(sources, &params)?;
     state.auth = Some(params.clientside_auth);
     let metadata = resolve_metadata(sources, state.model_group, row, &answer, found)?;
-    let mut current = merged_group(
-        state.group.take(),
-        state.user_facing,
-        &answer,
-        &metadata,
-        &mut limits,
-    )?;
+    let mut current = match state.group.take() {
+        Some(mut group) => {
+            merge_later(&mut group, &answer, &metadata, &mut limits)?;
+            group
+        }
+        None => first_group(state.user_facing, &answer, &metadata)?,
+    };
     current.supports_fast_mode = current.supports_fast_mode
         && supports_fast_mode(
             sources.fast_mode_catalog,
@@ -224,18 +224,4 @@ fn supported_params<P: SupportedParameterSource>(
             message: error.to_string(),
         }),
     }
-}
-
-fn merged_group(
-    existing: Option<ModelGroupInfo>,
-    user_facing: &str,
-    answer: &ProviderAnswer,
-    metadata: &JsonObject,
-    limits: &mut ConfiguredLimits,
-) -> Result<ModelGroupInfo, GroupInfoError> {
-    let Some(mut group) = existing else {
-        return first_group(user_facing, answer, metadata);
-    };
-    merge_later(&mut group, answer, metadata, limits)?;
-    Ok(group)
 }

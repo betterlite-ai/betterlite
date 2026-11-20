@@ -6,7 +6,6 @@ use crate::model_group_info::sources::{
     ProviderAnswer, ProviderFailure, ProviderRequest, ProviderResolver,
 };
 
-// get_llm_provider from the resolution inputs the router already holds.
 pub struct ContextProviderResolver<'a> {
     pub resolution: &'a ResolutionContext<'a>,
 }

@@ -328,7 +328,7 @@ fn mixed_provider_group() {
     assert!(!group.supports_fast_mode);
     assert_eq!(group.supported_reasoning_efforts, Some(Vec::new()));
     assert_eq!(group.supported_openai_params, Some(Vec::new()));
-    assert_eq!(group.configurable_clientside_auth_params, None);
+    assert_eq!(group.clientside_auth, None);
 }
 
 #[test]
@@ -344,9 +344,9 @@ fn widest_token_limit() {
         r#"{"mode":"chat","max_input_tokens":500,"max_output_tokens":20}"#,
     );
     scenario.metadata("c", r#"{"mode":"chat","max_input_tokens":900}"#);
-    for model in ["m1", "m2", "m3"] {
-        scenario.answer(&format!("openai/{model}"), model, "openai");
-    }
+    scenario.answer("openai/m1", "m1", "openai");
+    scenario.answer("openai/m2", "m2", "openai");
+    scenario.answer("openai/m3", "m3", "openai");
 
     let group = group_of(&scenario, "g");
     assert_eq!(group.max_input_tokens, Some(decimal("900")));
@@ -441,7 +441,7 @@ fn deployment_order_effects() {
     assert_eq!(group.rpm, Some(1));
     assert_eq!(group.itpm, Some(5));
     assert_eq!(group.otpm, Some(6));
-    assert_eq!(group.configurable_clientside_auth_params, None);
+    assert_eq!(group.clientside_auth, None);
 }
 
 #[test]
@@ -565,7 +565,7 @@ fn last_auth_param_null() {
         );
 
     let group = group_of(&scenario, "g");
-    assert_eq!(group.configurable_clientside_auth_params, None);
+    assert_eq!(group.clientside_auth, None);
 }
 
 #[test]
@@ -585,7 +585,7 @@ fn last_auth_param_present() {
     );
 
     let group = group_of(&scenario, "g");
-    let auth = group.configurable_clientside_auth_params.expect("auth");
+    let auth = group.clientside_auth.expect("auth");
     assert_eq!(
         auth.first(),
         Some(&ClientsideAuth::Name("temperature".to_owned()))
@@ -608,7 +608,7 @@ fn constructor_auth_drops_extras() {
     scenario.answer("openai/b846-alpha", "b846-alpha", "openai");
     let group = group_of(&scenario, "g");
     assert_eq!(
-        group.configurable_clientside_auth_params,
+        group.clientside_auth,
         Some(vec![ClientsideAuth::Item(parse(
             r#"{"api_base":"https://constructor"}"#
         ))])

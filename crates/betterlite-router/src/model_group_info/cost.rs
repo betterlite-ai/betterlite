@@ -33,7 +33,6 @@ fn finite_decimal(value: f64) -> Result<Decimal, CostError> {
     })
 }
 
-// The metadata and fallback costs that arrive as JSON numbers go through the same checked conversion.
 pub fn decimal_from_lexeme(lexeme: &str) -> Result<Decimal, CostError> {
     parse_decimal_lexeme(lexeme).map_err(|_error| CostError::NotRepresentable {
         value: lexeme.to_owned(),

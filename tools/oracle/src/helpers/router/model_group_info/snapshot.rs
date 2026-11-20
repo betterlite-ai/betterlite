@@ -8,7 +8,6 @@ use betterlite_router::model_catalog_lookup::alias::{AliasMap, AliasTarget};
 use super::error::Failure;
 use super::input::{Input, Row};
 
-// A Router as the aggregation sees it: the model list under its indices, and the model_group_alias entries.
 pub(crate) struct Snapshot {
     pub(crate) catalog: DeploymentCatalog,
     pub(crate) aliases: AliasMap,

@@ -4,10 +4,10 @@ use betterlite_models::decisions::Json;
 use betterlite_models::metadata::levels::ReasoningEffort;
 use betterlite_models::model_registration::JsonObject;
 use rust_decimal::Decimal;
+use serde_json::Number;
 
-use crate::model_group_info::fields::{json_float, json_int};
+use crate::model_group_info::fields::json_float;
 
-// The boolean flags ModelGroupInfo carries as fields, held together so the aggregate has one typed set.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum Capability {
     ParallelFunctionCalling,
@@ -19,7 +19,6 @@ pub enum Capability {
 }
 
 impl Capability {
-    // The ModelGroupInfo field this flag is written as.
     pub fn field(self) -> &'static str {
         match self {
             Self::ParallelFunctionCalling => "supports_parallel_function_calling",
@@ -67,11 +66,10 @@ pub struct ModelGroupInfo {
     pub supports_fast_mode: bool,
     pub supported_reasoning_efforts: Option<Vec<ReasoningEffort>>,
     pub supported_openai_params: Option<Vec<String>>,
-    pub configurable_clientside_auth_params: Option<Vec<ClientsideAuth>>,
+    pub clientside_auth: Option<Vec<ClientsideAuth>>,
 }
 
 impl ModelGroupInfo {
-    // The model_dump() the wire answer and the oracle helper both show.
     #[must_use]
     pub fn to_json(&self) -> JsonObject {
         let mut fields = JsonObject::new();
@@ -100,11 +98,13 @@ impl ModelGroupInfo {
             "input_cost_per_pixel".to_owned(),
             json_float(self.input_cost_per_pixel.as_ref()),
         );
-        fields.insert("mode".to_owned(), optional_text(self.mode.as_deref()));
-        fields.insert("tpm".to_owned(), json_int(self.tpm));
-        fields.insert("rpm".to_owned(), json_int(self.rpm));
-        fields.insert("itpm".to_owned(), json_int(self.itpm));
-        fields.insert("otpm".to_owned(), json_int(self.otpm));
+        let mode = self.mode.clone().map(Json::Text).unwrap_or(Json::Null);
+        fields.insert("mode".to_owned(), mode);
+        let int = |value: Option<i64>| value.map(Number::from).map_or(Json::Null, Json::Number);
+        fields.insert("tpm".to_owned(), int(self.tpm));
+        fields.insert("rpm".to_owned(), int(self.rpm));
+        fields.insert("itpm".to_owned(), int(self.itpm));
+        fields.insert("otpm".to_owned(), int(self.otpm));
         for capability in Capability::ALL {
             let enabled = self.capabilities.contains(&capability);
             fields.insert(capability.field().to_owned(), Json::Bool(enabled));
@@ -119,11 +119,13 @@ impl ModelGroupInfo {
         );
         fields.insert(
             "supported_openai_params".to_owned(),
-            optional_text_list(self.supported_openai_params.as_deref()),
+            self.supported_openai_params
+                .as_deref()
+                .map_or(Json::Null, text_list),
         );
         fields.insert(
             "configurable_clientside_auth_params".to_owned(),
-            json_auth(self.configurable_clientside_auth_params.as_deref()),
+            json_auth(self.clientside_auth.as_deref()),
         );
         fields
     }
@@ -146,14 +148,6 @@ fn text_list(values: &[String]) -> Json {
             .map(|value| Json::Text(value.clone()))
             .collect(),
     )
-}
-
-fn optional_text(value: Option<&str>) -> Json {
-    value.map_or(Json::Null, |text| Json::Text(text.to_owned()))
-}
-
-fn optional_text_list(values: Option<&[String]>) -> Json {
-    values.map_or(Json::Null, text_list)
 }
 
 fn json_efforts(efforts: Option<&[ReasoningEffort]>) -> Json {

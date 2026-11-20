@@ -23,7 +23,6 @@ pub trait DeploymentInfo {
     ) -> impl Future<Output = Result<Option<JsonObject>, Self::Error>> + Send;
 }
 
-// get_llm_provider's two answers the aggregate uses.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProviderAnswer {
     pub litellm_model: String,

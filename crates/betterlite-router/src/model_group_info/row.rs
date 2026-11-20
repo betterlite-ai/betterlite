@@ -14,7 +14,6 @@ use crate::model_group_info::fields::{
 use crate::model_group_info::group::{Capability, ClientsideAuth, ModelGroupInfo};
 use crate::model_group_info::sources::ProviderAnswer;
 
-// LiteLLM_Params as _set_model_group_info reads it: the model, its provider declaration and the auth params.
 pub struct RowParams<'a> {
     pub model: &'a str,
     pub custom_llm_provider: Option<&'a str>,
@@ -43,7 +42,6 @@ impl<'a> RowParams<'a> {
     }
 }
 
-// The tpm/rpm/itpm/otpm a deployment configures, from the row, then litellm_params, then model_info.
 #[derive(Debug, Default, Eq, PartialEq)]
 pub struct ConfiguredLimits {
     pub tpm: Option<i64>,
@@ -52,15 +50,13 @@ pub struct ConfiguredLimits {
     pub otpm: Option<i64>,
 }
 
-impl ConfiguredLimits {
-    pub fn read(row: &DeploymentSpec) -> Result<Self, GroupInfoError> {
-        Ok(Self {
-            tpm: first_limit(row, "tpm")?,
-            rpm: first_limit(row, "rpm")?,
-            itpm: first_limit(row, "itpm")?,
-            otpm: first_limit(row, "otpm")?,
-        })
-    }
+pub fn configured_limits(row: &DeploymentSpec) -> Result<ConfiguredLimits, GroupInfoError> {
+    Ok(ConfiguredLimits {
+        tpm: first_limit(row, "tpm")?,
+        rpm: first_limit(row, "rpm")?,
+        itpm: first_limit(row, "itpm")?,
+        otpm: first_limit(row, "otpm")?,
+    })
 }
 
 fn first_limit(row: &DeploymentSpec, field: &'static str) -> Result<Option<i64>, GroupInfoError> {
@@ -141,11 +137,10 @@ pub fn first_group(
         supports_fast_mode: true,
         supported_reasoning_efforts: None,
         supported_openai_params: constructor_params(metadata)?,
-        configurable_clientside_auth_params: auth_field(metadata, false)?,
+        clientside_auth: auth_field(metadata, false)?,
     })
 }
 
-// model_info may override the user-facing model_group the constructor was given.
 fn identity(metadata: &JsonObject, user_facing: &str) -> Result<String, GroupInfoError> {
     match metadata.get("model_group") {
         None => Ok(user_facing.to_owned()),
@@ -169,7 +164,6 @@ fn providers(
     }
 }
 
-// Every flag that reads true, for the constructor and for a later deployment it only ever adds to.
 pub fn capabilities(metadata: &JsonObject) -> Result<BTreeSet<Capability>, GroupInfoError> {
     let mut enabled = BTreeSet::new();
     for capability in Capability::ALL {
@@ -194,27 +188,25 @@ pub fn merge_later(
     {
         group.providers.push(answer.provider.clone());
     }
-    widen(
-        &mut group.max_input_tokens,
-        number_value(metadata, "max_input_tokens")?,
-    );
-    widen(
-        &mut group.max_output_tokens,
-        number_value(metadata, "max_output_tokens")?,
-    );
-    widen(
-        &mut group.input_cost_per_token,
-        cost_value(metadata.get("input_cost_per_token"))?,
-    );
-    widen(
-        &mut group.output_cost_per_token,
-        cost_value(metadata.get("output_cost_per_token"))?,
-    );
+    let max_input = number_value(metadata, "max_input_tokens")?;
+    widen(&mut group.max_input_tokens, max_input);
+    let max_output = number_value(metadata, "max_output_tokens")?;
+    widen(&mut group.max_output_tokens, max_output);
+    let input_cost = cost_value(metadata.get("input_cost_per_token"))?;
+    widen(&mut group.input_cost_per_token, input_cost);
+    let output_cost = cost_value(metadata.get("output_cost_per_token"))?;
+    widen(&mut group.output_cost_per_token, output_cost);
     group.capabilities.extend(capabilities(metadata)?);
     if let Some(params) = replacement_params(metadata)? {
         group.supported_openai_params = Some(params);
     }
-    metadata_limits(limits, metadata)?;
+    // A later deployment's own tpm/rpm answers fill a gap the row did not configure, and only then.
+    if limits.tpm.is_none() {
+        limits.tpm = int_value(metadata, "tpm")?;
+    }
+    if limits.rpm.is_none() {
+        limits.rpm = int_value(metadata, "rpm")?;
+    }
     Ok(())
 }
 
@@ -225,18 +217,4 @@ fn widen(current: &mut Option<Decimal>, found: Option<Decimal>) {
     if current.is_none_or(|held| value > held) {
         *current = Some(value);
     }
-}
-
-// A later deployment's own tpm/rpm answer fills a gap the row did not configure, and only then.
-fn metadata_limits(
-    limits: &mut ConfiguredLimits,
-    metadata: &JsonObject,
-) -> Result<(), GroupInfoError> {
-    if limits.tpm.is_none() {
-        limits.tpm = int_value(metadata, "tpm")?;
-    }
-    if limits.rpm.is_none() {
-        limits.rpm = int_value(metadata, "rpm")?;
-    }
-    Ok(())
 }
