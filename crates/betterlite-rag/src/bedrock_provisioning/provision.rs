@@ -27,7 +27,6 @@ mod index;
 mod resources;
 pub(crate) mod tests;
 
-const COLLECTION_PROPAGATION: Duration = Duration::from_secs(60);
 const ROLE_PROPAGATION: Duration = Duration::from_secs(10);
 
 pub struct BedrockProvisioner<'deps, Transport> {
@@ -118,10 +117,7 @@ where
     ) -> Result<(String, String), ProvisionError<Transport::Error>> {
         let name = format!("litellm-kb-{unique_id}");
         resources::create_policies(self, &name, account_id, caller_arn).await?;
-        let collection_id = resources::create_collection(self, &name).await?;
-        self.state.created_resources.opensearch_collection = Some(name.clone());
-        let arn = resources::wait_for_collection(self, &collection_id).await?;
-        sleep(COLLECTION_PROPAGATION).await;
+        let arn = resources::create_collection_and_wait(self, &name).await?;
         Ok((name, arn))
     }
 
@@ -171,9 +167,7 @@ where
             collection_arn,
             bucket: &bucket,
         };
-        let role_arn = iam::create_role(self, &role_resources, &role_name).await?;
-        self.state.created_resources.iam_role = Some(role_name.clone());
-        iam::attach_role_policy(self, &role_resources, &role_name).await?;
+        let role_arn = iam::create_role_with_policy(self, &role_resources, &role_name).await?;
         sleep(ROLE_PROPAGATION).await;
         Ok(role_arn)
     }

@@ -6,42 +6,36 @@ use crate::bedrock_provisioning::plan::RoleResources;
 use crate::bedrock_provisioning::provision::BedrockProvisioner;
 use crate::bedrock_provisioning::provision::error::ProvisionError;
 
-pub(super) async fn create_role<Transport>(
-    provisioner: &BedrockProvisioner<'_, Transport>,
+// CreateRole and PutRolePolicy stay one step; the role name is recorded between them
+pub(super) async fn create_role_with_policy<Transport>(
+    provisioner: &mut BedrockProvisioner<'_, Transport>,
     resources: &RoleResources<'_>,
     role_name: &str,
 ) -> Result<String, ProvisionError<Transport::Error>>
 where
     Transport: AwsRagTransport,
 {
-    let document = serde_json::to_string(&plan::trust_policy(resources)).map_err(|source| {
+    let trust = serde_json::to_string(&plan::trust_policy(resources)).map_err(|source| {
         CallError::Serialize {
             operation: query::CREATE_ROLE,
             source,
         }
     })?;
-    let body = iam_call(
-        provisioner,
-        query::CREATE_ROLE,
+    let create_call = query::iam_request(
         resources.region,
+        query::CREATE_ROLE,
         &[
             ("RoleName", role_name),
-            ("AssumeRolePolicyDocument", document.as_str()),
+            ("AssumeRolePolicyDocument", trust.as_str()),
         ],
-    )
-    .await?;
-    Ok(query::child_text(&body, "Role", "Arn", query::CREATE_ROLE)?)
-}
-
-pub(super) async fn attach_role_policy<Transport>(
-    provisioner: &BedrockProvisioner<'_, Transport>,
-    resources: &RoleResources<'_>,
-    role_name: &str,
-) -> Result<(), ProvisionError<Transport::Error>>
-where
-    Transport: AwsRagTransport,
-{
-    let document =
+    );
+    let created = provisioner
+        .send(&create_call)
+        .await?
+        .require_success(create_call.operation)?;
+    let role_arn = query::child_text(&created.body, "Role", "Arn", query::CREATE_ROLE)?;
+    provisioner.state.created_resources.iam_role = Some(role_name.to_owned());
+    let permissions =
         serde_json::to_string(&plan::permissions_policy(resources)).map_err(|source| {
             CallError::Serialize {
                 operation: query::PUT_ROLE_POLICY,
@@ -49,34 +43,18 @@ where
             }
         })?;
     let policy_name = format!("{role_name}-policy");
-    let pairs = [
-        ("RoleName", role_name),
-        ("PolicyName", policy_name.as_str()),
-        ("PolicyDocument", document.as_str()),
-    ];
-    iam_call(
-        provisioner,
-        query::PUT_ROLE_POLICY,
+    let attach_call = query::iam_request(
         resources.region,
-        &pairs,
-    )
-    .await?;
-    Ok(())
-}
-
-async fn iam_call<Transport>(
-    provisioner: &BedrockProvisioner<'_, Transport>,
-    operation: &'static str,
-    region: &str,
-    pairs: &[(&str, &str)],
-) -> Result<Vec<u8>, ProvisionError<Transport::Error>>
-where
-    Transport: AwsRagTransport,
-{
-    let call = query::iam_request(region, operation, pairs);
-    let response = provisioner
-        .send(&call)
+        query::PUT_ROLE_POLICY,
+        &[
+            ("RoleName", role_name),
+            ("PolicyName", policy_name.as_str()),
+            ("PolicyDocument", permissions.as_str()),
+        ],
+    );
+    provisioner
+        .send(&attach_call)
         .await?
-        .require_success(call.operation)?;
-    Ok(response.body)
+        .require_success(attach_call.operation)?;
+    Ok(role_arn)
 }

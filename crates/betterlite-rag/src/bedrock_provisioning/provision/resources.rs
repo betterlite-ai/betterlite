@@ -14,6 +14,7 @@ use crate::bedrock_provisioning::provision::error::ProvisionError;
 
 const COLLECTION_POLLS: usize = 60;
 const COLLECTION_POLL_INTERVAL: Duration = Duration::from_secs(5);
+const COLLECTION_PROPAGATION: Duration = Duration::from_secs(60);
 const ACTIVE: &str = "ACTIVE";
 
 pub(super) async fn create_policies<Transport>(
@@ -76,8 +77,9 @@ where
     Ok(())
 }
 
-pub(super) async fn create_collection<Transport>(
-    provisioner: &BedrockProvisioner<'_, Transport>,
+// record the collection before the wait, so cleanup finds it even when the wait times out
+pub(super) async fn create_collection_and_wait<Transport>(
+    provisioner: &mut BedrockProvisioner<'_, Transport>,
     name: &str,
 ) -> Result<String, ProvisionError<Transport::Error>>
 where
@@ -94,26 +96,16 @@ where
             operation: aoss::CREATE_COLLECTION,
             source,
         })?;
-    let id = created
+    let collection_id = created
         .create_collection_detail
         .and_then(|detail| detail.id)
         .ok_or(CallError::MissingEntry {
             operation: aoss::CREATE_COLLECTION,
             field: "createCollectionDetail.id",
         })?;
-    Ok(id)
-}
-
-pub(super) async fn wait_for_collection<Transport>(
-    provisioner: &BedrockProvisioner<'_, Transport>,
-    collection_id: &str,
-) -> Result<String, ProvisionError<Transport::Error>>
-where
-    Transport: AwsRagTransport,
-{
-    let region = provisioner.clients.settings.aws_region_name.clone();
+    provisioner.state.created_resources.opensearch_collection = Some(name.to_owned());
     for _ in 0..COLLECTION_POLLS {
-        let call = aoss::batch_get_collection(&region, CollectionSelection::Id(collection_id))?;
+        let call = aoss::batch_get_collection(&region, CollectionSelection::Id(&collection_id))?;
         let response = provisioner
             .send(&call)
             .await?
@@ -124,6 +116,7 @@ where
                 operation: aoss::BATCH_GET_COLLECTION,
                 field: "arn",
             })?;
+            sleep(COLLECTION_PROPAGATION).await;
             return Ok(arn);
         }
         sleep(COLLECTION_POLL_INTERVAL).await;
