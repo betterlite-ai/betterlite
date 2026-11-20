@@ -18,6 +18,8 @@ call:
         validated: {x: validated}
         transformed:
           ssml_body: "<speak>hello</speak>"
+          # the async transport sends a raw str as application/octet-stream, the mock records such a body as bytes, and this provider header pins the same media type on both sides; see docs/deviations/B2452.yaml
+          headers: {content-type: application/octet-stream}
 upstream:
   - status: 200
     headers: {x-request-id: speech_1}
