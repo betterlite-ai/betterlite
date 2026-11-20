@@ -40,11 +40,12 @@ class ResponseView(TypedDict):
 RESPONSE: Final = TypeAdapter(ResponseView)
 
 EnvTransform = Callable[[dict[str, str], str, NoMessages, Obj, Obj, str | None, str | None], Obj]
+UrlTransform = Callable[[str | None, str | None, str, Obj, Obj], str]
 ReplyTransform = Callable[
     [str | None, httpx.Response, ImageResponse, Logging, Obj, FileTypes, Obj, Obj, None],
     ImageResponse,
 ]
-AsyncReplyTransform = Callable[
+AsyncReplyFn = Callable[
     [str | None, ClientResponse, ImageResponse, Logging, Obj, FileTypes, Obj, Obj, None],
     Awaitable[ImageResponse],
 ]
@@ -54,9 +55,8 @@ AsyncReplyTransform = Callable[
 class TopazConfig(Protocol):
     def get_supported_openai_params(self, model: str) -> Sequence[str]: ...
 
-    def get_complete_url(
-        self, api_base: str | None, api_key: str | None, model: str, optional_params: Obj, litellm_params: Obj,
-    ) -> str: ...
+    @property
+    def get_complete_url(self) -> UrlTransform: ...
 
     def map_openai_params(
         self, non_default_params: Obj, optional_params: Obj, model: str, *, drop_params: bool,
@@ -64,7 +64,7 @@ class TopazConfig(Protocol):
 
     def prepare_file_tuple(self, file_data: FileTypes) -> Prepared: ...
 
-    def transform_request_image_variation(
+    def transform_request_image_variation(  # ast-grep-ignore: no-long-names
         self, model: str | None, image: FileTypes, optional_params: Obj, headers: Obj,
     ) -> FieldsView: ...
 
@@ -72,10 +72,10 @@ class TopazConfig(Protocol):
     def validate_environment(self) -> EnvTransform: ...
 
     @property
-    def transform_response_image_variation(self) -> ReplyTransform: ...
+    def transform_response_image_variation(self) -> ReplyTransform: ...  # ast-grep-ignore
 
     @property
-    def async_transform_response_image_variation(self) -> AsyncReplyTransform: ...
+    def async_transform_response_image_variation(self) -> AsyncReplyFn: ...  # ast-grep-ignore
 
 
 class ConfigBoundary(BaseModel):
@@ -87,7 +87,7 @@ def topaz_config() -> TopazConfig:
     found = ProviderConfigManager.get_provider_image_variation_config(MODEL, LlmProviders.TOPAZ)
     if found is None:
         raise ValueError(f"no image variation config is registered for {MODEL}")
-    return ConfigBoundary.model_validate({"config": found}).config
+    return ConfigBoundary.model_validate({"config": found}).config  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9400-L9408
 
 
 CONFIG: Final = topaz_config()
@@ -295,4 +295,5 @@ def call_value(call: Call) -> JsonValue:
 
 
 def run(input_value: JsonValue) -> JsonValue:
-    return [call_value(call) for call in Input.model_validate(input_value).calls]
+    calls = Input.model_validate(input_value).calls
+    return [call_value(call) for call in calls]
