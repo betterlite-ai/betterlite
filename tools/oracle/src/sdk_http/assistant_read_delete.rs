@@ -120,11 +120,11 @@ impl CallKind for Call {
     }
 }
 
-struct Harness<'a> {
+struct Harness<'run> {
     transport: Arc<ProxiedClient>,
-    env: &'a BTreeMap<String, String>,
-    azure: &'a AzureSettings,
-    settings: &'a Settings,
+    env: &'run BTreeMap<String, String>,
+    azure: &'run AzureSettings,
+    settings: &'run Settings,
 }
 
 impl Harness<'_> {
