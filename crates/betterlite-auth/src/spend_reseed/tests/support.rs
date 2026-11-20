@@ -500,15 +500,11 @@ impl ReseedCache for FakeCache {
         if self.increment_fails.load(Ordering::Relaxed) {
             return Err(FakeError);
         }
-        let base = self
-            .increments
-            .lock()
-            .expect("the fake increment lock")
-            .get(counter_key)
-            .copied()
-            .unwrap_or(Decimal::ZERO);
+        let held = self.increments.lock().expect("the fake increment lock");
+        let base = held.get(counter_key).copied().unwrap_or(Decimal::ZERO);
+        drop(held);
         sleep(self.increment_delay).await;
-        let next = base.checked_add(increment).unwrap_or(Decimal::MAX);
+        let next = incremented(base, increment);
         self.increments
             .lock()
             .expect("the fake increment lock")
@@ -530,7 +526,7 @@ impl WindowReseedCache for FakeCache {
             Some(ReseedCacheValue::Number(value)) => value,
             Some(_) | None => Decimal::ZERO,
         };
-        let next = base.checked_add(amount).unwrap_or(Decimal::MAX);
+        let next = incremented(base, amount);
         *self.redis.lock().unwrap_or_else(PoisonError::into_inner) =
             Some(ReseedCacheValue::Number(next));
         self.redis_increments
@@ -539,6 +535,10 @@ impl WindowReseedCache for FakeCache {
             .push((counter_key.to_owned(), amount));
         Ok(next)
     }
+}
+
+fn incremented(base: Decimal, amount: Decimal) -> Decimal {
+    base.checked_add(amount).unwrap_or(Decimal::MAX)
 }
 
 pub(crate) struct FakeBatch {

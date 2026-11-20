@@ -10,6 +10,14 @@ deviations:
       The workspace requires checked Decimal money and the spend columns read back as exact
       numerics; the native window tests pin the values on amounts both arithmetics agree on.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/spend_counter_reseed.py#L455-L477
+  - what: >-
+      A warmed counter's amount recorded into the active batch is the exact Decimal the cache or
+      the database row held; LiteLLM's from_db returns a float, so its record holds the nearest
+      double.
+    why: >-
+      The workspace requires checked Decimal money and the active batch carries Decimals; the
+      amount becomes a float only where the Redis and local tiers store one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/spend_counter_reseed.py#L251-L277
 kept_bugs:
   - what: >-
       A failed or stale window table read falls back to the spend-logs aggregate, and a failed

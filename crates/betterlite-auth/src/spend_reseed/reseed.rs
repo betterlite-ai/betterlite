@@ -16,11 +16,11 @@ use crate::spend_counter_batch::batch::{CounterValue, SpendCounterBatchError};
 
 use super::cache::{ActiveSpendBatch, ReseedCache, WindowReseedCache};
 use super::locks::LockRegistry;
-use super::reads::{bounded_row, cached_amount, end_user_lookup, gated_primary, primary_lookup};
+use super::reads::{bounded_row, cached_amount, counter_row, end_user_lookup, primary_lookup};
 use super::rows::{LookupAnswer, OwnedLookup, SpendCounterRows, SpendRow, WindowEntity};
 use super::values::{SpendValueError, aggregate_amount, stored_amount};
-use super::warm::{warm, warm_window};
-use super::windows::WindowQuery;
+use super::warm::warm;
+use super::windows::{WindowQuery, warm_window};
 
 pub const SPEND_COUNTER_LOOKUP: &str = "spend_counter";
 pub const END_USER_SPEND_LOOKUP: &str = "end_user_spend";
@@ -33,6 +33,12 @@ pub enum CoalescedError<CacheError> {
     Spend(#[from] SpendValueError),
     #[error(transparent)]
     Batch(#[from] SpendCounterBatchError),
+}
+
+// the two database reads differ in the decoder, the lookup name and whether the db gate applies
+enum CounterRead {
+    Primary,
+    EndUser,
 }
 
 pub struct SpendCounterReseed<Rows: SpendCounterRows> {
@@ -51,17 +57,7 @@ impl<Rows: SpendCounterRows> SpendCounterReseed<Rows> {
         let Some(rows) = self.rows.as_ref().map(Arc::clone) else {
             return Ok(None);
         };
-        let Some(lookup) = primary_lookup(counter_key, self.durations.as_ref(), self.clock.now())
-        else {
-            return Ok(None);
-        };
-        let owned = OwnedLookup::from(lookup);
-        let gate = Arc::clone(&self.gate);
-        let request = async move {
-            let answer = gated_primary(gate.as_ref(), rows.as_ref(), owned).await;
-            Ok::<_, DbLookupError>(answer)
-        };
-        self.bounded_amount(request, SPEND_COUNTER_LOOKUP, counter_key)
+        self.counter_amount(rows, counter_key, CounterRead::Primary)
             .await
     }
 
@@ -72,21 +68,37 @@ impl<Rows: SpendCounterRows> SpendCounterReseed<Rows> {
         let Some(rows) = self.rows.as_ref().map(Arc::clone) else {
             return Ok(None);
         };
-        let Some(lookup) = end_user_lookup(counter_key, self.durations.as_ref(), self.clock.now())
-        else {
+        self.counter_amount(rows, counter_key, CounterRead::EndUser)
+            .await
+    }
+
+    async fn counter_amount(
+        &self,
+        rows: Arc<Rows>,
+        counter_key: &str,
+        read: CounterRead,
+    ) -> Result<Option<Decimal>, SpendValueError> {
+        let (lookup, gate, name) = match read {
+            CounterRead::Primary => (
+                primary_lookup(counter_key, self.durations.as_ref(), self.clock.now()),
+                Some(Arc::clone(&self.gate)),
+                SPEND_COUNTER_LOOKUP,
+            ),
+            CounterRead::EndUser => (
+                end_user_lookup(counter_key, self.durations.as_ref(), self.clock.now()),
+                None,
+                END_USER_SPEND_LOOKUP,
+            ),
+        };
+        let Some(lookup) = lookup else {
             return Ok(None);
         };
         let owned = OwnedLookup::from(lookup);
-        // the floor read carries no db lookup gate: the bounded lookup alone guards it
         let request = async move {
-            let answer = match rows.spend_row(owned.borrowed()).await {
-                Ok(row) => LookupAnswer::Row(row),
-                Err(error) => LookupAnswer::Failed(error),
-            };
+            let answer = counter_row(gate.as_deref(), rows.as_ref(), owned).await;
             Ok::<_, DbLookupError>(answer)
         };
-        self.bounded_amount(request, END_USER_SPEND_LOOKUP, counter_key)
-            .await
+        self.bounded_amount(request, name, counter_key).await
     }
 
     async fn bounded_amount<Failure, Lookup>(
@@ -135,17 +147,31 @@ impl<Rows: SpendCounterRows> SpendCounterReseed<Rows> {
         Batch: ActiveSpendBatch + ?Sized,
     {
         let _guard = self.locks.hold(counter_key).await;
-        let batched = batch.read(counter_key).await?;
-        if let Some(CounterValue::Amount(amount)) = batched {
-            return Ok(Some(amount));
-        }
-        if let Some(amount) = cached_amount(cache, batched.is_some(), counter_key).await? {
+        if let Some(amount) = self.cached_answer(cache, batch, counter_key).await? {
             return Ok(Some(amount));
         }
         let Some(db_spend) = self.from_db(counter_key).await? else {
             return Ok(None);
         };
         warm(cache, batch, counter_key, db_spend, require_cache_warm).await
+    }
+
+    // a batched amount answers first, and a batched null keeps the per-pod memory from answering
+    async fn cached_answer<Cache, Batch>(
+        &self,
+        cache: &Cache,
+        batch: &Batch,
+        counter_key: &str,
+    ) -> Result<Option<Decimal>, CoalescedError<Cache::Error>>
+    where
+        Cache: ReseedCache + ?Sized,
+        Batch: ActiveSpendBatch + ?Sized,
+    {
+        match batch.read(counter_key).await? {
+            Some(CounterValue::Amount(amount)) => Ok(Some(amount)),
+            Some(CounterValue::Missing) => cached_amount(cache, true, counter_key).await,
+            None => cached_amount(cache, false, counter_key).await,
+        }
     }
 
     // same read precedence as coalesced, but a vanished winner's amount is added and warm failures propagate
@@ -164,20 +190,16 @@ impl<Rows: SpendCounterRows> SpendCounterReseed<Rows> {
         Batch: ActiveSpendBatch + ?Sized,
     {
         let _guard = self.locks.hold(counter_key).await;
-        let batched = batch.read(counter_key).await?;
-        if let Some(CounterValue::Amount(amount)) = batched {
+        if let Some(amount) = self.cached_answer(cache, batch, counter_key).await? {
             return Ok(Some(amount));
         }
-        if let Some(amount) = cached_amount(cache, batched.is_some(), counter_key).await? {
-            return Ok(Some(amount));
-        }
-        let Some(window_spend) = self
+        match self
             .window_from_db(entity_type, entity_id, window_duration, window_start)
             .await?
-        else {
-            return Ok(None);
-        };
-        warm_window(cache, batch, counter_key, window_spend).await
+        {
+            None => Ok(None),
+            Some(window_spend) => warm_window(cache, batch, counter_key, window_spend).await,
+        }
     }
 
     fn lookup_request<'request>(&'request self, name: &'request str) -> LookupRequest<'request> {
