@@ -64,7 +64,7 @@ fn numbered_row(index: i64) -> SpendLogRow {
     SpendLogRow::from([("index".to_owned(), SpendLogValue::Whole(index))])
 }
 
-async fn cache_for(fixture: &RedisFixture) -> Arc<RedisCache> {
+pub(crate) async fn cache_for(fixture: &RedisFixture) -> Arc<RedisCache> {
     let url = serde_json::to_string(fixture.as_ref()).unwrap();
     let overrides: RedisOverrides = serde_json::from_str(&format!(r#"{{"url":{url}}}"#)).unwrap();
     let options = RedisCacheOptions {
@@ -83,7 +83,7 @@ async fn cache_for(fixture: &RedisFixture) -> Arc<RedisCache> {
     Arc::new(connect(options, &env).await.unwrap())
 }
 
-fn buffer(cache: &Arc<RedisCache>) -> RedisUpdateBuffer {
+pub(crate) fn buffer(cache: &Arc<RedisCache>) -> RedisUpdateBuffer {
     let lists = RedisSpendLists {
         cache: Arc::clone(cache),
     };
@@ -96,7 +96,7 @@ fn buffer(cache: &Arc<RedisCache>) -> RedisUpdateBuffer {
     }
 }
 
-async fn raw(fixture: &RedisFixture) -> MultiplexedConnection {
+pub(crate) async fn raw(fixture: &RedisFixture) -> MultiplexedConnection {
     Client::open(fixture.as_ref())
         .unwrap()
         .get_multiplexed_async_connection()
@@ -104,7 +104,7 @@ async fn raw(fixture: &RedisFixture) -> MultiplexedConnection {
         .unwrap()
 }
 
-async fn push(connection: &mut MultiplexedConnection, key: &str, values: &[String]) {
+pub(crate) async fn push(connection: &mut MultiplexedConnection, key: &str, values: &[String]) {
     let mut command = cmd("RPUSH");
     command.arg(key);
     for value in values {
@@ -113,11 +113,11 @@ async fn push(connection: &mut MultiplexedConnection, key: &str, values: &[Strin
     let _length: i64 = command.query_async(connection).await.unwrap();
 }
 
-async fn length(connection: &mut MultiplexedConnection, key: &str) -> i64 {
+pub(crate) async fn length(connection: &mut MultiplexedConnection, key: &str) -> i64 {
     cmd("LLEN").arg(key).query_async(connection).await.unwrap()
 }
 
-async fn range(
+pub(crate) async fn range(
     connection: &mut MultiplexedConnection,
     key: &str,
     start: i64,

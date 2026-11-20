@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use betterlite_redis::cache_primitives::protocol::RedisScalar;
-use betterlite_redis::list_operations::RedisPipelineLpopOperation;
 use betterlite_redis::list_operations::error::RedisListOperationsError;
 use betterlite_redis::list_operations::results::{LpopPipelineEntry, LpopResult};
+use betterlite_redis::list_operations::{RedisPipelineLpopOperation, RedisPipelineRpushOperation};
 use betterlite_redis::redis_cache::RedisCache;
 use futures_util::future::BoxFuture;
 
@@ -32,6 +32,13 @@ impl BufferReply {
 pub struct BufferPop {
     pub key: String,
     pub count: Option<i64>,
+}
+
+// One non-destructive append of the pipeline: the queue key and the encoded values to append.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BufferPush {
+    pub key: String,
+    pub values: Vec<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -66,6 +73,22 @@ pub trait SpendBufferLists: Send + Sync {
         values: &'call [String],
         max_len: i64,
     ) -> SpendListFuture<'call, i64>;
+}
+
+// The append-only list calls the publisher needs. The drain and the publish paths are separate ports so a scripted drain stays three methods and the publisher must be handed a port that really can push.
+pub trait SpendBufferPush: Send + Sync {
+    // The reply is the list length after the append, which the publisher reports as the queue gauge.
+    fn rpush<'call>(
+        &'call self,
+        key: &'call str,
+        values: &'call [String],
+    ) -> SpendListFuture<'call, i64>;
+
+    // One reply per operation, in the same order, each the length of its list after the append.
+    fn rpush_pipeline<'call>(
+        &'call self,
+        operations: &'call [BufferPush],
+    ) -> SpendListFuture<'call, Vec<i64>>;
 }
 
 pub struct RedisSpendLists {
@@ -140,6 +163,60 @@ impl SpendBufferLists for RedisSpendLists {
                 .await
                 .map_err(|source| SpendBufferListError::Redis {
                     operation: "async_rpush_and_trim",
+                    source,
+                })
+        })
+    }
+}
+
+impl SpendBufferPush for RedisSpendLists {
+    // A live list needs a running Redis, which the db tests fake at the SpendBufferPush seam.
+    #[cfg_attr(test, mutants::skip)]
+    fn rpush<'call>(
+        &'call self,
+        key: &'call str,
+        values: &'call [String],
+    ) -> SpendListFuture<'call, i64> {
+        Box::pin(async move {
+            let pushed: Vec<RedisScalar> = values
+                .iter()
+                .map(|value| RedisScalar::Text(value.clone()))
+                .collect();
+            self.cache
+                .lists
+                .async_rpush(key, &pushed)
+                .await
+                .map_err(|source| SpendBufferListError::Redis {
+                    operation: "async_rpush",
+                    source,
+                })
+        })
+    }
+
+    // A live list needs a running Redis, which the db tests fake at the SpendBufferPush seam.
+    #[cfg_attr(test, mutants::skip)]
+    fn rpush_pipeline<'call>(
+        &'call self,
+        operations: &'call [BufferPush],
+    ) -> SpendListFuture<'call, Vec<i64>> {
+        Box::pin(async move {
+            let rpush_list: Vec<RedisPipelineRpushOperation> = operations
+                .iter()
+                .map(|operation| RedisPipelineRpushOperation {
+                    key: operation.key.clone(),
+                    values: operation
+                        .values
+                        .iter()
+                        .map(|value| RedisScalar::Text(value.clone()))
+                        .collect(),
+                })
+                .collect();
+            self.cache
+                .lists
+                .async_rpush_pipeline(&rpush_list)
+                .await
+                .map_err(|source| SpendBufferListError::Redis {
+                    operation: "async_rpush_pipeline",
                     source,
                 })
         })
