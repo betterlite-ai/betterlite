@@ -1,0 +1,9 @@
+kind: helper
+name: sso-assertion-rotation-seed
+call:
+  b10010:
+    rows:
+      - {kind: plain, user_id: alice, payload: first-assertion-token}
+      - {kind: raw, user_id: bravo, text: not-a-ciphertext}
+env: {}
+compare: {ignore: []}

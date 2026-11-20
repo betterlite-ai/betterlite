@@ -1,0 +1,20 @@
+kind: helper
+name: rotate-rows
+call:
+  b10010:
+    rows:
+      - {kind: plain, user_id: alice, payload: first-assertion-token}
+      - {kind: plain, user_id: bravo, payload: second-assertion-token}
+      - {kind: plain, user_id: charlie, payload: third-assertion-token}
+env: {}
+compare: {ignore: []}
+calls:
+  - b10010:
+      rows: []
+  - b10010:
+      rows:
+        - {kind: plain, user_id: alice, payload: only-assertion-token}
+  - b10010:
+      rows:
+        - {kind: plain, user_id: alice, payload: '{"access_token":"token-alpha"}'}
+        - {kind: plain, user_id: bravo, payload: 'a payload with spaces and a - dash'}

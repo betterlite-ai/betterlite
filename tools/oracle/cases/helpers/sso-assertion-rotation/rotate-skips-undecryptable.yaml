@@ -1,0 +1,22 @@
+kind: helper
+name: rotate-skips-undecryptable
+call:
+  b10010:
+    rows:
+      - {kind: plain, user_id: alice, payload: first-assertion-token}
+      - {kind: raw, user_id: bravo, text: not-a-ciphertext}
+      - {kind: plain, user_id: charlie, payload: third-assertion-token}
+env: {}
+compare: {ignore: []}
+calls:
+  - b10010:
+      rows:
+        - {kind: raw, user_id: bravo, text: not-a-ciphertext}
+  - b10010:
+      rows:
+        - {kind: raw, user_id: bravo, text: ""}
+        - {kind: raw, user_id: charlie, text: "*"}
+  - b10010:
+      rows:
+        - {kind: raw, user_id: bravo, text: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA}
+        - {kind: plain, user_id: charlie, payload: third-assertion-token}
