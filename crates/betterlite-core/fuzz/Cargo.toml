@@ -492,3 +492,10 @@ path = "fuzz_targets/rag_json_decoder.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "gemini_upload_reply"
+path = "fuzz_targets/gemini_upload_reply.rs"
+test = false
+doc = false
+bench = false

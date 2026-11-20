@@ -1,0 +1,25 @@
+kind: sdk_http
+name: vector-file-read-transport-read-error-scope
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  vector_file_read_transport:
+    mode: async
+    vector_store_id: vs_a
+    file_id: file_b
+    operations: [retrieve]
+upstream:
+  - status: 404
+    headers: {content-type: text/plain, x-request-id: r}
+    events: [missing]
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization]
+  ignore:
+    - pointer: /vector_file_read_transport/value/failure/message
+      why: >-
+        LiteLLM never checks the status on this GET, so its response transform calls response.json()
+        on the text body and names the JSON decode failure, while betterlite reports the provider's
+        body text; the status, the synthesized flag and the headers are what both sides compare.
+    - pointer: /vector_file_read_transport/value/failure/headers/date
+      why: each side answers from its own mock, so a server-stamped date would differ while answering nothing
