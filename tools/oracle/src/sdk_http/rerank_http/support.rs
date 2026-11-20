@@ -75,7 +75,7 @@ pub(super) struct RecordingConfig {
 }
 
 impl RecordingConfig {
-    pub(super) fn new(events: Arc<Mutex<Vec<String>>>) -> Self {
+    pub(super) const fn new(events: Arc<Mutex<Vec<String>>>) -> Self {
         Self {
             events,
             seen: Mutex::new(None),
@@ -199,13 +199,16 @@ impl LogSink for Sink {
     fn emit(&self, _record: LogRecord) {}
 }
 
+// The handler's future crosses the send, so the recording callback must be Send too
+pub(super) type Logger = dyn Fn(&Json) -> Result<(), PrePostError> + Send + Sync;
+
 // The pre-call a production request runs: the same state, with a logger callback that records its turn
 pub(super) struct Fixture {
     pub(super) redactor: Redactor,
     pub(super) sink: Sink,
     pub(super) state: LoggingState,
     pub(super) now: DateTime<FixedOffset>,
-    pub(super) logger: Box<dyn Fn(&Json) -> Result<(), PrePostError> + Sync>,
+    pub(super) logger: Box<Logger>,
 }
 
 impl Fixture {
