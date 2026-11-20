@@ -14,5 +14,8 @@ call:
       - {metric: probe, labels: {model: m, end_user: e4}, at_seconds: 70, max_series: null, ttl_seconds: 5, cleanup_interval_seconds: 0}
       - {metric: probe, labels: {model: m, end_user: e5}, at_seconds: 75, max_series: null, ttl_seconds: 5, cleanup_interval_seconds: 0}
       - {metric: probe, labels: {model: m, end_user: e6}, at_seconds: 76, max_series: null, ttl_seconds: 5, cleanup_interval_seconds: 0}
+    enable_end_user_tracking: false
+    amount: 0
+    emissions: []
 env: {}
 compare: {ignore: []}

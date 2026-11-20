@@ -53,7 +53,6 @@ enum RawLimit {
 }
 
 // max_series and ttl are None when their key is null; cleanup_interval is None for null, zero and negative, which all run the TTL pass on every call
-// LiteLLM reads each key as Optional and skips tracking when both max_series and ttl_seconds are None
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
     pub max_series: Option<i64>,

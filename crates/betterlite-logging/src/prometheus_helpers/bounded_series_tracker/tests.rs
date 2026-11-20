@@ -3,6 +3,8 @@
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
+use rstest::rstest;
+
 use super::{
     BoundedPrometheusSeriesTracker, ChildRemoval, RemovableMetric, SeriesKey, SeriesLimits,
     TrackerError,
@@ -135,32 +137,27 @@ fn moves_a_repeated_series_to_the_end_of_the_eviction_order() {
     assert_eq!(metric.attempts(), vec![second]);
 }
 
-#[test]
-fn treats_zero_or_negative_max_series_as_unlimited() {
-    let zeroed = ProbeMetric::new(ProbeOutcome::Removed);
-    let negative = ProbeMetric::new(ProbeOutcome::Removed);
+#[rstest]
+#[case::zero(Some(0))]
+#[case::negative(Some(-5))]
+fn treats_zero_or_negative_max_series_as_unlimited(#[case] max_series: Option<i64>) {
+    let metric = ProbeMetric::new(ProbeOutcome::Removed);
     let tracker = BoundedPrometheusSeriesTracker::default();
     let start = Instant::now();
     let first = values(&["a"]);
     let second = values(&["b"]);
     let third = values(&["c"]);
-    let bounds = [
-        (&zeroed, limits(Some(0), None, None)),
-        (&negative, limits(Some(-5), None, None)),
-    ];
-    for (probe, step_limits) in bounds {
-        tracker
-            .track_series(probe, key("m", &first), step_limits, start)
-            .unwrap();
-        tracker
-            .track_series(probe, key("m", &second), step_limits, start)
-            .unwrap();
-        tracker
-            .track_series(probe, key("m", &third), step_limits, start)
-            .unwrap();
-    }
-    assert_eq!(zeroed.attempts(), Vec::new());
-    assert_eq!(negative.attempts(), Vec::new());
+    let bounds = limits(max_series, None, None);
+    tracker
+        .track_series(&metric, key("m", &first), bounds, start)
+        .unwrap();
+    tracker
+        .track_series(&metric, key("m", &second), bounds, start)
+        .unwrap();
+    tracker
+        .track_series(&metric, key("m", &third), bounds, start)
+        .unwrap();
+    assert_eq!(metric.attempts(), Vec::new());
 }
 
 #[test]

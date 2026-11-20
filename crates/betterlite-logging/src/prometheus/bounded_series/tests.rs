@@ -8,7 +8,7 @@ use betterlite_prometheus::collector_factory::collector::{Collector, MetricUpdat
 use betterlite_prometheus::label_value_record::{LabelDumpValue, UserApiKeyLabelValues};
 use rust_decimal::Decimal;
 
-use super::{CounterEmission, SeriesLimits};
+use super::{CounterEmission, CounterEmissionError, SeriesLimits};
 use crate::end_user::EndUserCostTrackingSettings;
 use crate::prometheus_helpers::bounded_series_tracker::{
     BoundedPrometheusSeriesTracker, ChildRemoval, RemovableMetric,
@@ -112,6 +112,15 @@ impl EmissionFixture {
             end_user_settings,
         }
     }
+
+    fn emit_tracked(
+        &self,
+        labelled: &UserApiKeyLabelValues,
+        at: Instant,
+    ) -> Result<(), CounterEmissionError<ProbeError>> {
+        self.emission()
+            .inc_labeled_counter(labelled, self.source(tracking_enabled()), ONE, at)
+    }
 }
 
 fn words(items: &[&str]) -> Vec<String> {
@@ -194,18 +203,16 @@ fn increments_before_tracking_the_series() {
     };
     let fixture = EmissionFixture::new(&["model", "end_user"], limits);
     let start = Instant::now();
-    for (offset, end_user) in [(0_u64, "e1"), (1, "e2"), (2, "e3")] {
-        let labelled = values(&[("model", Some("m")), ("end_user", Some(end_user))]);
-        fixture
-            .emission()
-            .inc_labeled_counter(
-                &labelled,
-                fixture.source(tracking_enabled()),
-                ONE,
-                start + Duration::from_secs(offset),
-            )
-            .unwrap();
-    }
+    let first = values(&[("model", Some("m")), ("end_user", Some("e1"))]);
+    let second = values(&[("model", Some("m")), ("end_user", Some("e2"))]);
+    let third = values(&[("model", Some("m")), ("end_user", Some("e3"))]);
+    fixture.emit_tracked(&first, start).unwrap();
+    fixture
+        .emit_tracked(&second, start + Duration::from_secs(1))
+        .unwrap();
+    fixture
+        .emit_tracked(&third, start + Duration::from_secs(2))
+        .unwrap();
     assert_eq!(
         events(&fixture.counter),
         vec![
@@ -227,18 +234,12 @@ fn tracks_a_metric_whose_only_label_is_the_end_user() {
     };
     let fixture = EmissionFixture::new(&["end_user"], limits);
     let start = Instant::now();
-    for (offset, end_user) in [(0_u64, "e1"), (1, "e2")] {
-        let labelled = values(&[("end_user", Some(end_user))]);
-        fixture
-            .emission()
-            .inc_labeled_counter(
-                &labelled,
-                fixture.source(tracking_enabled()),
-                ONE,
-                start + Duration::from_secs(offset),
-            )
-            .unwrap();
-    }
+    let first = values(&[("end_user", Some("e1"))]);
+    let second = values(&[("end_user", Some("e2"))]);
+    fixture.emit_tracked(&first, start).unwrap();
+    fixture
+        .emit_tracked(&second, start + Duration::from_secs(1))
+        .unwrap();
     assert_eq!(
         events(&fixture.counter),
         vec![
@@ -258,18 +259,12 @@ fn tracks_the_series_in_the_supported_label_order() {
     };
     let fixture = EmissionFixture::new(&["end_user", "model"], limits);
     let start = Instant::now();
-    for (offset, end_user) in [(0_u64, "e1"), (1, "e2")] {
-        let labelled = values(&[("model", Some("m")), ("end_user", Some(end_user))]);
-        fixture
-            .emission()
-            .inc_labeled_counter(
-                &labelled,
-                fixture.source(tracking_enabled()),
-                ONE,
-                start + Duration::from_secs(offset),
-            )
-            .unwrap();
-    }
+    let first = values(&[("model", Some("m")), ("end_user", Some("e1"))]);
+    let second = values(&[("model", Some("m")), ("end_user", Some("e2"))]);
+    fixture.emit_tracked(&first, start).unwrap();
+    fixture
+        .emit_tracked(&second, start + Duration::from_secs(1))
+        .unwrap();
     let removals: Vec<ProbeEvent> = events(&fixture.counter)
         .into_iter()
         .filter(|event| matches!(event, ProbeEvent::Removal { .. }))
@@ -304,22 +299,20 @@ fn skips_tracking_for_a_metric_without_the_end_user_label() {
         cleanup_interval: None,
     };
     let fixture = EmissionFixture::new(&["model", "user"], limits);
-    for user in ["u1", "u2", "u3"] {
-        let labelled = values(&[("model", Some("m")), ("user", Some(user))]);
-        fixture
-            .emission()
-            .inc_labeled_counter(
-                &labelled,
-                fixture.source(tracking_enabled()),
-                ONE,
-                Instant::now(),
-            )
-            .unwrap();
-    }
-    assert!(
-        events(&fixture.counter)
-            .iter()
-            .all(|event| matches!(event, ProbeEvent::Increment { .. }))
+    let start = Instant::now();
+    let first = values(&[("model", Some("m")), ("user", Some("u1"))]);
+    let second = values(&[("model", Some("m")), ("user", Some("u2"))]);
+    let third = values(&[("model", Some("m")), ("user", Some("u3"))]);
+    fixture.emit_tracked(&first, start).unwrap();
+    fixture.emit_tracked(&second, start).unwrap();
+    fixture.emit_tracked(&third, start).unwrap();
+    assert_eq!(
+        events(&fixture.counter),
+        vec![
+            increment(&[("model", "m"), ("user", "u1")], ONE),
+            increment(&[("model", "m"), ("user", "u2")], ONE),
+            increment(&[("model", "m"), ("user", "u3")], ONE),
+        ]
     );
 }
 
@@ -331,40 +324,33 @@ fn skips_tracking_when_the_end_user_is_none() {
         cleanup_interval: None,
     };
     let fixture = EmissionFixture::new(&["model", "end_user"], limits);
-    for _round in 0..3 {
-        let labelled = values(&[("model", Some("m"))]);
-        fixture
-            .emission()
-            .inc_labeled_counter(
-                &labelled,
-                fixture.source(tracking_enabled()),
-                ONE,
-                Instant::now(),
-            )
-            .unwrap();
-    }
-    assert!(
-        events(&fixture.counter)
-            .iter()
-            .all(|event| matches!(event, ProbeEvent::Increment { .. }))
+    let start = Instant::now();
+    let first = values(&[("model", Some("m1"))]);
+    let second = values(&[("model", Some("m2"))]);
+    let third = values(&[("model", Some("m3"))]);
+    fixture.emit_tracked(&first, start).unwrap();
+    fixture.emit_tracked(&second, start).unwrap();
+    fixture.emit_tracked(&third, start).unwrap();
+    assert_eq!(
+        events(&fixture.counter),
+        vec![
+            increment(&[("model", "m1"), ("end_user", "None")], ONE),
+            increment(&[("model", "m2"), ("end_user", "None")], ONE),
+            increment(&[("model", "m3"), ("end_user", "None")], ONE),
+        ]
     );
 }
 
 #[test]
 fn skips_tracking_when_no_limit_is_configured() {
     let fixture = EmissionFixture::new(&["model", "end_user"], SeriesLimits::default());
-    for end_user in ["e1", "e2", "e3"] {
-        let labelled = values(&[("model", Some("m")), ("end_user", Some(end_user))]);
-        fixture
-            .emission()
-            .inc_labeled_counter(
-                &labelled,
-                fixture.source(tracking_enabled()),
-                ONE,
-                Instant::now(),
-            )
-            .unwrap();
-    }
+    let start = Instant::now();
+    let first = values(&[("model", Some("m")), ("end_user", Some("e1"))]);
+    let second = values(&[("model", Some("m")), ("end_user", Some("e2"))]);
+    let third = values(&[("model", Some("m")), ("end_user", Some("e3"))]);
+    fixture.emit_tracked(&first, start).unwrap();
+    fixture.emit_tracked(&second, start).unwrap();
+    fixture.emit_tracked(&third, start).unwrap();
     assert!(
         events(&fixture.counter)
             .iter()

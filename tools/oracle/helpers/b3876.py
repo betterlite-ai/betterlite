@@ -1,7 +1,7 @@
 import json
 import time
 from functools import partial
-from typing import Literal, NotRequired, TypedDict
+from typing import Literal, TypedDict
 
 import litellm
 from litellm.integrations.prometheus import PrometheusLogger
@@ -38,20 +38,20 @@ class Input(TypedDict):
     function: Literal["track_end_user", "inc_labeled_counter"]
     metric_name: DEFINED_PROMETHEUS_METRICS
     supported_labels: list[str]
-    metrics: NotRequired[dict[str, Outcome]]
-    steps: NotRequired[list[TrackStep]]
-    enable_end_user_tracking: NotRequired[bool]
-    max_series: NotRequired[int | None]
-    ttl_seconds: NotRequired[float | None]
-    cleanup_interval_seconds: NotRequired[float | None]
-    amount: NotRequired[int]
-    emissions: NotRequired[list[EmissionStep]]
+    metrics: dict[str, Outcome]
+    steps: list[TrackStep]
+    enable_end_user_tracking: bool
+    max_series: int | None
+    ttl_seconds: float | None
+    cleanup_interval_seconds: float | None
+    amount: int
+    emissions: list[EmissionStep]
 
 
 class _ProbeMetric:
     def __init__(self, name: str, outcome: Outcome, log: list[JsonValue]) -> None:
         self._name = name
-        self._outcome = outcome
+        self._outcome: Outcome = outcome
         self._log = log
         self._labels: dict[str, JsonValue] = {}
 

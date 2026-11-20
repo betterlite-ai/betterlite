@@ -13,7 +13,7 @@ use betterlite_prometheus::collector_factory::collector::MetricValue;
 use betterlite_prometheus::label_value_record::{LabelDumpValue, UserApiKeyLabelValues};
 use rust_decimal::Decimal;
 
-use limits::{emission_limits, step_limits, time_at};
+use limits::{series_limits, time_at};
 use output::events_value;
 use probe::{ProbeLog, ProbeMetric, probe_metrics};
 
@@ -93,7 +93,11 @@ fn track_end_user(scenario: &TrackScenario) -> HelperResult {
     let tracker = BoundedPrometheusSeriesTracker::default();
     let base = Instant::now();
     for step in &scenario.steps {
-        let limits = step_limits(step)?;
+        let limits = series_limits(
+            step.max_series,
+            step.ttl_seconds,
+            step.cleanup_interval_seconds,
+        )?;
         let counter = metrics
             .get(&step.metric)
             .ok_or_else(|| invalid(&format!("no metric named {}", step.metric)))?;
@@ -114,7 +118,11 @@ fn track_end_user(scenario: &TrackScenario) -> HelperResult {
 
 fn inc_labeled_counter(scenario: &EmissionScenario) -> HelperResult {
     let log = Arc::new(Mutex::new(ProbeLog::default()));
-    let limits = emission_limits(scenario)?;
+    let limits = series_limits(
+        scenario.max_series,
+        scenario.ttl_seconds,
+        scenario.cleanup_interval_seconds,
+    )?;
     let counter = ProbeMetric {
         name: scenario.metric_name.clone(),
         outcome: Outcome::Removed,

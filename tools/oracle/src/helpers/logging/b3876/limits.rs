@@ -3,29 +3,17 @@ use std::time::{Duration, Instant};
 use betterlite_logging::prometheus_helpers::bounded_series_tracker::SeriesLimits;
 use betterlite_oracle_helper_api::error::HelperError;
 
-use super::{EmissionScenario, TrackStep, invalid};
+use super::invalid;
 
-pub(super) fn step_limits(step: &TrackStep) -> Result<SeriesLimits, Box<HelperError>> {
-    Ok(SeriesLimits {
-        max_series: step.max_series,
-        ttl: step.ttl_seconds.map(seconds_duration).transpose()?,
-        cleanup_interval: step
-            .cleanup_interval_seconds
-            .map(cleanup_duration)
-            .transpose()?,
-    })
-}
-
-pub(super) fn emission_limits(
-    scenario: &EmissionScenario,
+pub(super) fn series_limits(
+    max_series: Option<i64>,
+    ttl_seconds: Option<f64>,
+    cleanup_interval_seconds: Option<f64>,
 ) -> Result<SeriesLimits, Box<HelperError>> {
     Ok(SeriesLimits {
-        max_series: scenario.max_series,
-        ttl: scenario.ttl_seconds.map(seconds_duration).transpose()?,
-        cleanup_interval: scenario
-            .cleanup_interval_seconds
-            .map(cleanup_duration)
-            .transpose()?,
+        max_series,
+        ttl: ttl_seconds.map(seconds_duration).transpose()?,
+        cleanup_interval: cleanup_interval_seconds.map(cleanup_duration).transpose()?,
     })
 }
 

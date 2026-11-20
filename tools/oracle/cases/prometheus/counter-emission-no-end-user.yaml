@@ -5,6 +5,8 @@ call:
     function: inc_labeled_counter
     metric_name: litellm_requests_metric
     supported_labels: [model, user]
+    metrics: {}
+    steps: []
     enable_end_user_tracking: true
     max_series: 1
     ttl_seconds: null

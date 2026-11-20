@@ -10,5 +10,8 @@ call:
     steps:
       - {metric: probe, labels: {model: m, end_user: e1}, at_seconds: 0, max_series: 1, ttl_seconds: null, cleanup_interval_seconds: null}
       - {metric: probe, labels: {model: m, end_user: e2}, at_seconds: 1, max_series: 1, ttl_seconds: null, cleanup_interval_seconds: null}
+    enable_end_user_tracking: false
+    amount: 0
+    emissions: []
 env: {}
 compare: {ignore: []}

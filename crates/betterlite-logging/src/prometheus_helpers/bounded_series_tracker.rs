@@ -83,9 +83,9 @@ impl BoundedPrometheusSeriesTracker {
             )
         {
             let expired = expired_series(entries, now, ttl);
-            remove_expired(metric, entries, &expired)?;
+            remove_expired(self, metric, entries, &expired)?;
         }
-        evict_series(entries, limits.max_series, metric)
+        evict_series(self, entries, limits.max_series, metric)
     }
 
     pub fn remove_series<M: RemovableMetric>(
@@ -93,7 +93,11 @@ impl BoundedPrometheusSeriesTracker {
         metric: &M,
         label_values: &[Option<String>],
     ) -> Result<bool, TrackerError<M::Error>> {
-        remove_metric_child(metric, label_values)
+        match metric.remove_child(label_values) {
+            Ok(ChildRemoval::Removed | ChildRemoval::Absent) => Ok(true),
+            Ok(ChildRemoval::Unsupported) => Ok(false),
+            Err(source) => Err(TrackerError::Removal { source }),
+        }
     }
 }
 
@@ -117,12 +121,13 @@ fn expired_series(
 }
 
 fn remove_expired<M: RemovableMetric>(
+    tracker: &BoundedPrometheusSeriesTracker,
     metric: &M,
     entries: &mut TrackedSeries,
     expired: &[Vec<Option<String>>],
 ) -> Result<(), TrackerError<M::Error>> {
     for label_values in expired {
-        if remove_metric_child(metric, label_values)? {
+        if tracker.remove_series(metric, label_values)? {
             entries.shift_remove(label_values);
         }
     }
@@ -131,6 +136,7 @@ fn remove_expired<M: RemovableMetric>(
 
 // max_series at or below zero is unlimited, and a refused removal keeps the series so a later call retries it
 fn evict_series<M: RemovableMetric>(
+    tracker: &BoundedPrometheusSeriesTracker,
     entries: &mut TrackedSeries,
     max_series: Option<i64>,
     metric: &M,
@@ -143,26 +149,12 @@ fn evict_series<M: RemovableMetric>(
         let Some(oldest) = entries.keys().next().cloned() else {
             break;
         };
-        if !remove_metric_child(metric, &oldest)? {
+        if !tracker.remove_series(metric, &oldest)? {
             break;
         }
         entries.shift_remove(&oldest);
     }
     Ok(())
-}
-
-// LiteLLM's _remove_metric_child: a child that is gone counts as removed, a refusal keeps the series tracked, and any other error propagates
-fn remove_metric_child<M: RemovableMetric>(
-    metric: &M,
-    label_values: &[Option<String>],
-) -> Result<bool, TrackerError<M::Error>> {
-    let removal = metric
-        .remove_child(label_values)
-        .map_err(|source| TrackerError::Removal { source })?;
-    Ok(matches!(
-        removal,
-        ChildRemoval::Removed | ChildRemoval::Absent
-    ))
 }
 
 // an absent or zero interval runs the pass on every call, so every elapsed time clears it
