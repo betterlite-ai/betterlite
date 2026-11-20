@@ -101,6 +101,21 @@ fn mock_a_response_that_is_not_json_is_a_value_error() {
     assert!(fixture.decoder.seen().is_empty());
 }
 
+// the mock error leaves through the sync dispatch before any decode, so the provider is still the caller's
+#[test]
+fn mock_a_bad_body_dispatches_with_the_callers_provider() {
+    let mut fixture = Fixture::new();
+    fixture.provider = Some("azure".to_owned());
+    fixture.mock_response = Some(Json::Text("{ ".to_owned()));
+
+    let failure = fixture.retrieve().expect_err("the mock does not parse");
+
+    let ErrorClass::ApiConnection(context) = &failure.class else {
+        panic!("expected a value error, got {:?}", failure.class);
+    };
+    assert_eq!(context.provider.as_deref(), Some("azure"));
+}
+
 #[test]
 fn mock_a_body_that_does_not_match_the_record_names_the_retrieve_model() {
     let mut fixture = Fixture::new();
