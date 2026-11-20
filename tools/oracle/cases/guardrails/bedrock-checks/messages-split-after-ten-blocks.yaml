@@ -1,0 +1,48 @@
+kind: helper
+name: messages-split-after-ten-blocks
+call:
+  b3725:
+    source: INPUT
+    messages:
+      - role: user
+        content:
+          - {type: text, text: block-0}
+          - {type: text, text: block-1}
+          - {type: text, text: block-2}
+          - {type: text, text: block-3}
+          - {type: text, text: block-4}
+          - {type: text, text: block-5}
+          - {type: text, text: block-6}
+          - {type: text, text: block-7}
+          - {type: text, text: block-8}
+          - {type: text, text: block-9}
+          - {type: text, text: block-10}
+          - {type: text, text: block-11}
+          - {type: text, text: block-12}
+          - {type: text, text: block-13}
+          - {type: text, text: block-14}
+          - {type: text, text: block-15}
+          - {type: text, text: block-16}
+          - {type: text, text: block-17}
+          - {type: text, text: block-18}
+          - {type: text, text: block-19}
+          - {type: text, text: block-20}
+          - {type: text, text: block-21}
+          - {type: text, text: block-22}
+    response: null
+    logging_event_type: null
+    checks: {contentFilter: {}, promptAttack: {}, sensitiveInformation: {}}
+    content_filter_threshold: null
+    prompt_attack_threshold: null
+    pii_confidence_threshold: null
+    disable_exception_on_block: false
+    data: {model: gpt-4o}
+    reply:
+      status: 200
+      body: {}
+      raw: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/requests/0/authorization
+      why: "Each side signs its own request at its own clock time, so the SigV4 signature differs"

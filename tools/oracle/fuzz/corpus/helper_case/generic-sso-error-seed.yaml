@@ -1,0 +1,5 @@
+kind: helper
+name: generic-sso-error-corpus-seed
+call: {generic_sso_error: {message: "PKCE required by the authorization server", source: {status: 401, error_type: auth_error, param: null, code: "401"}, environment: {GENERIC_CLIENT_USE_PKCE: "false"}}}
+env: {}
+compare: {ignore: []}
