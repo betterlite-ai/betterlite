@@ -15,7 +15,7 @@ use crate::health_cycle::rss::{
 #[case::linux_fractional(1536, RssUnit::Kilobytes, 1.5_f64)]
 #[case::macos_bytes(2_097_152, RssUnit::Bytes, 2.0_f64)]
 #[case::macos_fractional(1_048_576, RssUnit::Bytes, 1.0_f64)]
-fn scaling_uses_the_getrusage_unit(raw: u64, unit: RssUnit, expected: f64) {
+fn scaling_uses_the_getrusage_unit(#[case] raw: u64, #[case] unit: RssUnit, #[case] expected: f64) {
     assert_eq!(rss_mb(raw, unit).to_bits(), expected.to_bits());
 }
 
@@ -52,7 +52,7 @@ fn vmhwm_scales_as_bytes_when_the_platform_says_so() {
 #[case::malformed_value("VmHWM:\t soon kB\n")]
 #[case::negative_value("VmHWM:\t -5 kB\n")]
 #[case::empty("")]
-fn an_unusable_status_has_no_measurement(status: &str) {
+fn an_unusable_status_has_no_measurement(#[case] status: &str) {
     assert_eq!(status_number(status, "VmHWM:"), None);
 }
 

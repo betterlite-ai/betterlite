@@ -68,10 +68,10 @@ fn probe_timeout(model_info: &JsonObject, fallback: Duration) -> Result<Duration
     let Some(seconds) = number.as_f64() else {
         return Err(invalid_timeout());
     };
-    if seconds > 0.0 {
+    if seconds > 0.0_f64 {
         return Ok(Duration::try_from_secs_f64(seconds).unwrap_or(Duration::MAX));
     }
-    if seconds < 0.0 {
+    if seconds < 0.0_f64 {
         return Ok(Duration::ZERO);
     }
     Ok(fallback)

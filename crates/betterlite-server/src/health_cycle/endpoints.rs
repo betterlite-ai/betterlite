@@ -47,8 +47,8 @@ fn response_json(response: &ProbeResponse) -> JsonObject {
         ("x-ratelimit-remaining-tokens", &response.remaining_tokens),
         ("x-ms-region", &response.region),
     ] {
-        if let Some(value) = value {
-            headers.insert(key.to_owned(), Json::Text(value.clone()));
+        if let Some(header) = value {
+            headers.insert(key.to_owned(), Json::Text(header.clone()));
         }
     }
     headers

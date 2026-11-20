@@ -30,7 +30,7 @@ pub struct ProbeFailure {
 
 impl ProbeFailure {
     #[must_use]
-    pub fn internal(message: String) -> Self {
+    pub const fn internal(message: String) -> Self {
         Self {
             message,
             status_code: 500,

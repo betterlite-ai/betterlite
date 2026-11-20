@@ -8,8 +8,8 @@ pub(crate) const RSS_STATUS_PATH: &str = "/proc/self/status";
 const RSS_FIELD: &str = "VmHWM:";
 const THREADS_FIELD: &str = "Threads:";
 // one kB is 1/1024 of a MiB and one byte is 1/1048576, the two divisors _get_process_rss_mb applies
-const KILOBYTES_TO_MEGABYTES: f64 = 0.0009765625;
-const BYTES_TO_MEGABYTES: f64 = 0.00000095367431640625;
+const KILOBYTES_TO_MEGABYTES: f64 = 0.000_976_562_5;
+const BYTES_TO_MEGABYTES: f64 = 0.000_000_953_674_316_406_25;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RssUnit {
@@ -42,7 +42,6 @@ pub(crate) fn status_number(status: &str, field: &str) -> Option<u64> {
     let value = status
         .lines()
         .find_map(|line| line.strip_prefix(field))?
-        .trim()
         .split_whitespace()
         .next()?;
     value.parse().ok()

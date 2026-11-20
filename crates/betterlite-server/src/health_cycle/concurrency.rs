@@ -1,5 +1,5 @@
 use futures_util::future::join_all;
-use futures_util::stream::{FuturesUnordered, StreamExt};
+use futures_util::stream::{FuturesUnordered, StreamExt as _};
 
 use crate::health_cycle::ports::ProviderHealth;
 use crate::health_cycle::probe::{PreparedProbe, ProbeOutcome, execute_probe};

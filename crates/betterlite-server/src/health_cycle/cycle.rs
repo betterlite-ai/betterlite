@@ -77,13 +77,13 @@ fn starting_models(
     if !model_list.is_empty() {
         return Some(model_list.to_vec());
     }
-    match cli_model {
-        Some(cli_model) => Some(vec![synthetic_deployment(cli_model)]),
-        None => {
+    cli_model.map_or_else(
+        || {
             cycle_skipped(context, "no_models");
             None
-        }
-    }
+        },
+        |model| Some(vec![synthetic_deployment(model)]),
+    )
 }
 
 // _dependency_deployments_to_probe over the same eligibility filter, so an opted-out deployment cannot re-enter as a dependency
