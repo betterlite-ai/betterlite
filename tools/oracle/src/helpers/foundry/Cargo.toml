@@ -18,6 +18,7 @@ betterlite-foundry = { path = "../../../../../crates/betterlite-foundry" }
 betterlite-http = { path = "../../../../../crates/betterlite-http" }
 betterlite-logging = { path = "../../../../../crates/betterlite-logging" }
 betterlite-models = { path = "../../../../../crates/betterlite-models" }
+betterlite-ocr = { path = "../../../../../crates/betterlite-ocr" }
 betterlite-openai = { path = "../../../../../crates/betterlite-openai" }
 betterlite-oracle-helper-api = { path = "../../../helper-api" }
 betterlite-oracle-runner = { path = "../../../runner" }

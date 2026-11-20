@@ -1,0 +1,62 @@
+kind: helper
+name: identity-descriptors-tag-deduplication
+call:
+  b3039:
+    function: tag_create
+    data:
+      metadata:
+        tags: [tag-a]
+      tags: [tag-b, tag-a, tag-b]
+    tag_limits:
+      - {tag_name: tag-a, rpm_limit: 10, tpm_limit: 20}
+      - {tag_name: tag-b, rpm_limit: 5, tpm_limit: null}
+    window_size: 60
+calls:
+  - b3039:
+      function: tag_create
+      data: {}
+      tag_limits:
+        - {tag_name: tag-a, rpm_limit: 10, tpm_limit: 20}
+      window_size: 60
+  - b3039:
+      function: tag_create
+      data:
+        metadata:
+          tags: [tag-a]
+        litellm_metadata:
+          tags: [tag-c]
+      tag_limits:
+        - {tag_name: tag-a, rpm_limit: 10, tpm_limit: 20}
+        - {tag_name: tag-c, rpm_limit: 3, tpm_limit: 4}
+      window_size: 30
+  - b3039:
+      function: tag_create
+      data:
+        tags: [tag-a]
+      tag_limits:
+        - {tag_name: tag-a, rpm_limit: null, tpm_limit: null}
+      window_size: 60
+  - b3039:
+      function: tag_create
+      data:
+        tags: [tag-b, tag-a]
+      tag_limits:
+        - {tag_name: tag-a, rpm_limit: 1, tpm_limit: 2}
+      window_size: 60
+  - b3039:
+      function: tag_create
+      data:
+        metadata: '{"tags": ["tag-a", "tag-a"]}'
+      tag_limits:
+        - {tag_name: tag-a, rpm_limit: 7, tpm_limit: 8}
+      window_size: 60
+  - b3039:
+      function: tag_create
+      data:
+        metadata:
+          tags: [tag-missing]
+      tag_limits:
+        - {tag_name: tag-a, rpm_limit: 1, tpm_limit: 2}
+      window_size: 60
+env: {}
+compare: {ignore: []}
