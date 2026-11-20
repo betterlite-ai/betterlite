@@ -110,8 +110,11 @@ class Recorder:
             raise ScriptedFailureError(failure)
         body = step.get("body")
         content = b"" if body is None else body.encode()
+        status = step.get("status")
+        if status is None:
+            raise ScriptedFailureError("script step carries no status")
         return httpx.Response(
-            step["status"], headers=step.get("headers"), content=content, request=request
+            status, headers=step.get("headers"), content=content, request=request
         )
 
 
