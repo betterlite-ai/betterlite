@@ -396,9 +396,9 @@ fn a_dst_change_shifts_the_local_window() {
         &database(),
     )
     .unwrap();
-    let spring = spring.first().unwrap();
-    assert!(is_window_active(spring, at("2026-03-29T00:30:00Z")).unwrap());
-    assert!(!is_window_active(spring, at("2026-03-29T01:30:00Z")).unwrap());
+    let shifted = spring.first().unwrap();
+    assert!(is_window_active(shifted, at("2026-03-29T00:30:00Z")).unwrap());
+    assert!(!is_window_active(shifted, at("2026-03-29T01:30:00Z")).unwrap());
 }
 
 fn wall_clock_takes_seconds_and_fractions() {

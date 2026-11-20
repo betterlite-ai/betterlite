@@ -73,6 +73,7 @@ pub fn parse_access_windows(
 }
 
 // access_windows_config_error: the message a malformed value raises while its deployment is built, absent when it parses.
+#[must_use]
 pub fn access_windows_config_error(
     model_info: &JsonObject,
     model_name: &str,
