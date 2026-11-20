@@ -865,7 +865,7 @@ async fn a_streaming_success_survives_a_one_second_provider_delay() {
 }
 
 async fn normalization_provider(upstream: TcpListener) {
-    let mock = axum::Router::new().fallback(|| async {
+    let mock = Router::new().fallback(|| async {
             (StatusCode::TOO_MANY_REQUESTS,
              [("retry-after", "5"), ("x-ratelimit-limit-requests", "100"), ("x-ratelimit-remaining-requests", "9"), ("x-ratelimit-limit-tokens", "1000"), ("x-ratelimit-remaining-tokens", "99"), ("x-ratelimit-reset-requests", "1s"), ("set-cookie", "secret-cookie"), ("access-control-allow-origin", "https://evil.example"), ("llm_provider-custom", "kept")],
              r#"{"error":{"message":"Bearer sk-secretsecretsecretsecret at 10.0.0.1 /home/private/file","litellm_call_id":"forged","type":"rate_limit_error","param":"Bearer sk-secretsecretsecretsecret"}}"#)
