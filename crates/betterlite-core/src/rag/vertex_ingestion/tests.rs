@@ -274,6 +274,10 @@ async fn corpus_create_sends_the_camel_case_body() {
     assert_eq!(calls[0].url, CORPUS_URL);
     assert_eq!(calls[0].timeout, Duration::from_secs(60));
     assert_eq!(
+        calls[0].body,
+        r#"{"displayName":"ingest-name","description":"notes","vectorDbConfig":{"index":"x"}}"#
+    );
+    assert_eq!(
         json_body(&calls[0]),
         expected(
             r#"{"displayName":"ingest-name","description":"notes","vectorDbConfig":{"index":"x"}}"#
@@ -618,6 +622,10 @@ async fn upload_posts_the_multipart_form() {
     assert_eq!(calls[0].content_type, "text/plain");
     assert_eq!(calls[0].timeout, Duration::from_secs(300));
     assert_eq!(harness.token.projects_seen(), [Some("proj".to_owned())]);
+    assert_eq!(
+        calls[0].body,
+        r#"{"rag_file":{"display_name":"notes.txt"}}"#
+    );
     assert_eq!(
         json_body(&calls[0]),
         expected(r#"{"rag_file":{"display_name":"notes.txt"}}"#)
