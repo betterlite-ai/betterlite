@@ -9,7 +9,6 @@ use betterlite_models::decisions::Json;
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use betterlite_redis::config_sync::publish::{PublishChange, PublishFuture};
 use clap::Parser;
-use deadpool_postgres::GenericClient as _;
 use deadpool_postgres::tokio_postgres::NoTls;
 use deadpool_postgres::{Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};

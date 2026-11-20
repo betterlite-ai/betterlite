@@ -48,13 +48,13 @@ fn consumed_answer(registry: &VectorStoreRegistry, input: &Input) -> HelperResul
 
 fn lookup(input: &Input) -> HelperResult {
     let registry = stored_registry(input)?;
-    lookup_answer(&registry, input, input.tools.clone())
+    lookup_answer(&registry, input, &input.tools)
 }
 
 fn lookup_answer(
     registry: &VectorStoreRegistry,
     input: &Input,
-    tools: Option<Vec<JsonObject>>,
+    tools: &Option<Vec<JsonObject>>,
 ) -> HelperResult {
     let first = get_vector_store_to_run(registry, &input.non_default_params, tools.as_deref())
         .or_value_error()?;
@@ -63,7 +63,7 @@ fn lookup_answer(
         first: first.as_ref().map_or(Value::Null, store_value),
         named: named.as_ref().map_or(Value::Null, store_value),
         params: &input.non_default_params,
-        tools: &tools,
+        tools,
         registry: stores_value(&registry.stores),
     };
     Ok(json!(fields))
