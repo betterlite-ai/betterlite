@@ -40,7 +40,12 @@ async fn the_setup_update_goes_before_the_backlog() {
         .with_pending_messages(&[AUDIO_APPEND])
         .with_client_message(update))
     .await;
-    assert_eq!(outcome.backend.frames(), vec![String::from(update)]);
+    assert_eq!(
+        outcome.backend.parsed(),
+        vec![json(
+            r#"{"type":"session.update","session":{"type":"realtime","instructions":"hi"}}"#
+        )]
+    );
     assert_eq!(
         outcome.state.setup.pending_messages_until_setup,
         vec![String::from(AUDIO_APPEND)]

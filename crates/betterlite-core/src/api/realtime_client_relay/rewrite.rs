@@ -105,6 +105,7 @@ where
 fn output_text(item: &IndexMap<String, Json>) -> Result<Option<String>, serde_json::Error> {
     match item.get("output") {
         None => Ok(None),
+        Some(Json::Text(text)) if text.is_empty() => Ok(None),
         Some(Json::Text(text)) => Ok(Some(text.clone())),
         Some(
             value
