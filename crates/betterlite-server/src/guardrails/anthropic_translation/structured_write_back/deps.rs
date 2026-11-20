@@ -7,8 +7,7 @@ use betterlite_models::model_capability_predicates::{CapabilityPredicates, Capab
 use betterlite_prompts::media::inline::RemoteMediaFetcher;
 use betterlite_prompts::media_fetch::error::ImageFetchError;
 
-// The structured write-back converts rows a guardrail sent back; it has no fetcher of its own, so a
-// remote media URL that would need downloading fails rather than reaching the network.
+// The write-back has no fetcher, so a remote media URL fails instead of reaching the network.
 pub(super) struct NoMedia;
 
 impl RemoteMediaFetcher for NoMedia {
@@ -31,8 +30,7 @@ impl RemoteMediaFetcher for NoMedia {
     }
 }
 
-// The adapter asks no parameter or capability question on the write-back path; preserve_midturn_system
-// answers both mid-turn checks before any lookup runs.
+// The write-back asks no parameter or capability question; the adapter's mid-turn checks run first.
 pub(super) struct NoParameters;
 
 impl SupportedParameterSource for NoParameters {

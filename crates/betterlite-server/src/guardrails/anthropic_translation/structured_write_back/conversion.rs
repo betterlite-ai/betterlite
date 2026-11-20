@@ -7,13 +7,9 @@ use uuid::Uuid;
 
 use super::deps::NoMedia;
 use super::error::StructuredWriteBackError;
-use super::{
-    CACHE_CONTROL, CONTENT, THINKING, TYPE, is_hoisted_top_level_system, is_system,
-    openai_system_message_to_anthropic,
-};
+use super::{CACHE_CONTROL, CONTENT, THINKING, TYPE, is_system, system_row_to_anthropic};
 
-// LiteLLM's factory reads modify_params from the process globals; the write-back has no such global,
-// so it converts with modify_params on and gets the placeholder user turn an empty list would raise without.
+// LiteLLM's modify_params is on: an empty list still yields the placeholder turn.
 const PROVIDER: &str = "anthropic";
 
 pub(super) fn prompt_rows(rows: &[Value]) -> Result<Vec<PromptJson>, StructuredWriteBackError> {
@@ -23,10 +19,6 @@ pub(super) fn prompt_rows(rows: &[Value]) -> Result<Vec<PromptJson>, StructuredW
                 .map_err(StructuredWriteBackError::Encoding)
         })
         .collect()
-}
-
-fn value_row(row: PromptJson) -> Result<Value, StructuredWriteBackError> {
-    serde_json::to_value(row).map_err(StructuredWriteBackError::Encoding)
 }
 
 async fn convert(
@@ -61,7 +53,7 @@ pub(super) async fn convert_grouped(
             return Err(StructuredWriteBackError::RowMissing);
         };
         for row in convert(&group_rows, model).await? {
-            converted.push(value_row(row)?);
+            converted.push(serde_json::to_value(row).map_err(StructuredWriteBackError::Encoding)?);
         }
     }
     Ok(converted)
@@ -72,7 +64,7 @@ pub(super) async fn placeholder(model: &str) -> Result<Vec<Value>, StructuredWri
     convert(&rows, model)
         .await?
         .into_iter()
-        .map(value_row)
+        .map(|row| serde_json::to_value(row).map_err(StructuredWriteBackError::Encoding))
         .collect()
 }
 
@@ -109,12 +101,12 @@ impl<'input> Conversion<'input> {
             }
             self.convert_run(&run).await?;
             run.clear();
-            if !self.hoisted_dropped && is_hoisted_top_level_system(message, self.hoisted) {
+            if !self.hoisted_dropped && self.hoisted.is_some_and(|hoisted| message == hoisted) {
                 self.hoisted_dropped = true;
                 continue;
             }
             if self.preserve_system_messages
-                && let Some(row) = openai_system_message_to_anthropic(message)
+                && let Some(row) = system_row_to_anthropic(message)
             {
                 self.converted.push(Value::Object(row));
             }
@@ -124,8 +116,7 @@ impl<'input> Conversion<'input> {
 
     pub(super) async fn finish(mut self) -> Result<Vec<Value>, StructuredWriteBackError> {
         if !self.converted.iter().any(|message| !is_system(message)) {
-            let placeholder_rows = placeholder(self.model).await?;
-            self.converted.extend(placeholder_rows);
+            self.converted.extend(placeholder(self.model).await?);
         }
         strip_thinking_cache_control(&mut self.converted);
         Ok(self.converted)

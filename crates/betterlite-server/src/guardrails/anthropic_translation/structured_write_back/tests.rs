@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use rstest::rstest;
 use serde_json::{Map, Value, json};
 
 use betterlite_models::full_model_metadata::parameters::SupportedParameterSource as _;
@@ -7,9 +8,8 @@ use betterlite_models::full_model_metadata::parameters::SupportedParameterSource
 use super::deps::NoParameters;
 use super::error::StructuredWriteBackError;
 use super::{
-    defer_systems_inside_tool_exchanges, fold_leading_systems_into_top_level,
-    hoisted_top_level_system_message, openai_system_message_to_anthropic, translate_to_openai,
-    write_back_structured_messages,
+    defer_tool_exchange_systems, fold_leading_systems, hoisted_system_message,
+    system_row_to_anthropic, translate_to_openai, write_back_structured_messages,
 };
 
 const PROMPT: &str =
@@ -42,14 +42,14 @@ fn user_turn(text: &str) -> Value {
 }
 
 fn anthropic_row(message: Value) -> Option<Value> {
-    openai_system_message_to_anthropic(&message).map(Value::Object)
+    system_row_to_anthropic(&message).map(Value::Object)
 }
 
 #[tokio::test]
 async fn hoisting_returns_the_first_message_for_a_string_system() {
     let request = data(r#"{"model": "gpt-4o", "system": "be nice"}"#);
     assert_eq!(
-        hoisted_top_level_system_message(&request).await.unwrap(),
+        hoisted_system_message(&request).await.unwrap(),
         Some(json!({"role": "system", "content": "be nice"}))
     );
 }
@@ -60,7 +60,7 @@ async fn hoisting_returns_the_system_turn_for_block_system() {
         r#"{"model": "gpt-4o", "system": [{"type": "text", "text": "a"}, {"type": "text", "text": "b"}]}"#,
     );
     assert_eq!(
-        hoisted_top_level_system_message(&request).await.unwrap(),
+        hoisted_system_message(&request).await.unwrap(),
         Some(json!({"role": "system", "content": [
             {"type": "text", "text": "a"},
             {"type": "text", "text": "b"}
@@ -68,23 +68,17 @@ async fn hoisting_returns_the_system_turn_for_block_system() {
     );
 }
 
+#[rstest]
+#[case::missing(r#"{"model": "gpt-4o"}"#)]
+#[case::null(r#"{"model": "gpt-4o", "system": null}"#)]
+#[case::empty_string(r#"{"model": "gpt-4o", "system": ""}"#)]
+#[case::empty_list(r#"{"model": "gpt-4o", "system": []}"#)]
+#[case::zero(r#"{"model": "gpt-4o", "system": 0}"#)]
+#[case::false_value(r#"{"model": "gpt-4o", "system": false}"#)]
+#[case::empty_object(r#"{"model": "gpt-4o", "system": {}}"#)]
 #[tokio::test]
-async fn hoisting_returns_none_for_a_missing_or_empty_system() {
-    for raw in [
-        r#"{"model": "gpt-4o"}"#,
-        r#"{"model": "gpt-4o", "system": null}"#,
-        r#"{"model": "gpt-4o", "system": ""}"#,
-        r#"{"model": "gpt-4o", "system": []}"#,
-        r#"{"model": "gpt-4o", "system": 0}"#,
-        r#"{"model": "gpt-4o", "system": false}"#,
-        r#"{"model": "gpt-4o", "system": {}}"#,
-    ] {
-        assert_eq!(
-            hoisted_top_level_system_message(&data(raw)).await.unwrap(),
-            None,
-            "{raw}"
-        );
-    }
+async fn hoisting_returns_none_for_a_missing_or_empty_system(#[case] raw: &str) {
+    assert_eq!(hoisted_system_message(&data(raw)).await.unwrap(), None);
 }
 
 #[test]
@@ -103,16 +97,14 @@ fn system_conversion_returns_none_for_an_empty_string() {
     );
 }
 
+#[rstest]
+#[case::missing_key(json!({"role": "system"}))]
+#[case::null(json!({"role": "system", "content": null}))]
+#[case::empty_list(json!({"role": "system", "content": []}))]
+#[case::object(json!({"role": "system", "content": {"text": "x"}}))]
 #[test]
-fn system_conversion_returns_none_for_content_of_another_type() {
-    for message in [
-        json!({"role": "system"}),
-        json!({"role": "system", "content": null}),
-        json!({"role": "system", "content": []}),
-        json!({"role": "system", "content": {"text": "x"}}),
-    ] {
-        assert_eq!(anthropic_row(message), None);
-    }
+fn system_conversion_returns_none_for_content_of_another_type(#[case] message: Value) {
+    assert_eq!(anthropic_row(message), None);
 }
 
 #[test]
@@ -170,7 +162,7 @@ fn system_conversion_judges_cache_control_by_truthiness() {
 fn fold_puts_the_existing_system_first_only_when_asked() {
     let leading = vec![system_row("new")];
     let mut asked = data(r#"{"system": "old"}"#);
-    fold_leading_systems_into_top_level(&mut asked, &leading, true);
+    fold_leading_systems(&mut asked, &leading, true);
     assert_eq!(
         asked.get("system"),
         Some(&json!([
@@ -179,7 +171,7 @@ fn fold_puts_the_existing_system_first_only_when_asked() {
         ]))
     );
     let mut not_asked = data(r#"{"system": "old"}"#);
-    fold_leading_systems_into_top_level(&mut not_asked, &leading, false);
+    fold_leading_systems(&mut not_asked, &leading, false);
     assert_eq!(
         not_asked.get("system"),
         Some(&json!([{"type": "text", "text": "new"}]))
@@ -191,7 +183,7 @@ fn fold_keeps_an_existing_array_system_as_it_is() {
     let mut request = data(
         r#"{"system": [{"type": "text", "text": "old", "cache_control": {"type": "ephemeral"}}]}"#,
     );
-    fold_leading_systems_into_top_level(&mut request, &[], true);
+    fold_leading_systems(&mut request, &[], true);
     assert_eq!(
         request.get("system"),
         Some(&json!([
@@ -208,7 +200,7 @@ fn fold_appends_block_content_of_a_system_row() {
         {"type": "text", "text": "b"}
     ]})];
     let mut request = data("{}");
-    fold_leading_systems_into_top_level(&mut request, &leading, true);
+    fold_leading_systems(&mut request, &leading, true);
     assert_eq!(
         request.get("system"),
         Some(&json!([
@@ -221,7 +213,7 @@ fn fold_appends_block_content_of_a_system_row() {
 #[test]
 fn fold_removes_the_system_key_when_nothing_is_left() {
     let mut request = data(r#"{"system": "", "messages": []}"#);
-    fold_leading_systems_into_top_level(&mut request, &[system_row("")], true);
+    fold_leading_systems(&mut request, &[system_row("")], true);
     assert_eq!(request.get("system"), None);
     assert_eq!(request.get("messages"), Some(&json!([])));
 }
@@ -230,29 +222,27 @@ fn fold_removes_the_system_key_when_nothing_is_left() {
 fn fold_ignores_a_leading_row_that_does_not_convert() {
     let leading = vec![json!("plain string"), system_row("kept")];
     let mut request = data("{}");
-    fold_leading_systems_into_top_level(&mut request, &leading, true);
+    fold_leading_systems(&mut request, &leading, true);
     assert_eq!(
         request.get("system"),
         Some(&json!([{"type": "text", "text": "kept"}]))
     );
 }
 
+#[rstest]
+#[case::null(json!(null))]
+#[case::zero(json!(0_i64))]
+#[case::false_value(json!(false))]
+#[case::object(json!({"text": "x"}))]
 #[test]
-fn fold_ignores_an_existing_system_of_another_type() {
-    for system in [
-        json!(null),
-        json!(0_i64),
-        json!(false),
-        json!({"text": "x"}),
-    ] {
-        let mut request = Map::new();
-        request.insert("system".to_owned(), system);
-        fold_leading_systems_into_top_level(&mut request, &[system_row("new")], true);
-        assert_eq!(
-            request.get("system"),
-            Some(&json!([{"type": "text", "text": "new"}]))
-        );
-    }
+fn fold_ignores_an_existing_system_of_another_type(#[case] system: Value) {
+    let mut request = Map::new();
+    request.insert("system".to_owned(), system);
+    fold_leading_systems(&mut request, &[system_row("new")], true);
+    assert_eq!(
+        request.get("system"),
+        Some(&json!([{"type": "text", "text": "new"}]))
+    );
 }
 
 #[test]
@@ -263,7 +253,7 @@ fn defer_holds_a_system_row_until_the_tool_result() {
         tool_result_row("call_1", "r"),
     ];
     assert_eq!(
-        defer_systems_inside_tool_exchanges(&messages),
+        defer_tool_exchange_systems(&messages),
         vec![
             tool_call_row("call_1"),
             tool_result_row("call_1", "r"),
@@ -281,7 +271,7 @@ fn defer_moves_the_system_row_after_two_results() {
         tool_result_row("call_1", "r2"),
     ];
     assert_eq!(
-        defer_systems_inside_tool_exchanges(&messages),
+        defer_tool_exchange_systems(&messages),
         vec![
             tool_call_row("call_1"),
             tool_result_row("call_1", "r1"),
@@ -294,7 +284,7 @@ fn defer_moves_the_system_row_after_two_results() {
 #[test]
 fn defer_keeps_the_order_without_a_tool_exchange() {
     let messages = vec![user_row("u"), system_row("note"), user_row("u2")];
-    assert_eq!(defer_systems_inside_tool_exchanges(&messages), messages);
+    assert_eq!(defer_tool_exchange_systems(&messages), messages);
 }
 
 #[test]
@@ -306,7 +296,7 @@ fn defer_flushes_at_the_end_of_the_exchange() {
         user_row("after"),
     ];
     assert_eq!(
-        defer_systems_inside_tool_exchanges(&messages),
+        defer_tool_exchange_systems(&messages),
         vec![
             tool_call_row("call_1"),
             tool_result_row("call_1", "r"),
@@ -325,7 +315,7 @@ fn defer_keeps_a_system_row_after_the_exchange_in_place() {
         system_row("outside"),
     ];
     assert_eq!(
-        defer_systems_inside_tool_exchanges(&messages),
+        defer_tool_exchange_systems(&messages),
         vec![
             tool_call_row("call_1"),
             tool_result_row("call_1", "r"),
@@ -346,7 +336,7 @@ fn defer_flushes_each_exchange_before_the_next() {
         tool_result_row("call_2", "r2"),
     ];
     assert_eq!(
-        defer_systems_inside_tool_exchanges(&messages),
+        defer_tool_exchange_systems(&messages),
         vec![
             tool_call_row("call_1"),
             tool_result_row("call_1", "r1"),
@@ -361,7 +351,7 @@ fn defer_flushes_each_exchange_before_the_next() {
 #[test]
 fn defer_keeps_every_system_row_when_all_rows_are_system() {
     let messages = vec![system_row("one"), system_row("two")];
-    assert_eq!(defer_systems_inside_tool_exchanges(&messages), messages);
+    assert_eq!(defer_tool_exchange_systems(&messages), messages);
 }
 
 #[tokio::test]
@@ -414,7 +404,7 @@ async fn structured_conversion_downloads_an_https_image_for_a_bedrock_model() {
 #[tokio::test]
 async fn structured_keeps_the_client_system_when_the_hoisted_prompt_is_unchanged() {
     let mut request = data(PROMPT);
-    let hoisted = hoisted_top_level_system_message(&request).await.unwrap();
+    let hoisted = hoisted_system_message(&request).await.unwrap();
     let returned = vec![hoisted.clone().unwrap(), user_row("u")];
     write_back_structured_messages(&mut request, &returned, hoisted.as_ref(), false)
         .await
@@ -426,7 +416,7 @@ async fn structured_keeps_the_client_system_when_the_hoisted_prompt_is_unchanged
 #[tokio::test]
 async fn structured_folds_a_rewritten_hoisted_prompt() {
     let mut request = data(PROMPT);
-    let hoisted = hoisted_top_level_system_message(&request).await.unwrap();
+    let hoisted = hoisted_system_message(&request).await.unwrap();
     let returned = vec![system_row("be mean"), user_row("u")];
     write_back_structured_messages(&mut request, &returned, hoisted.as_ref(), false)
         .await
@@ -441,7 +431,7 @@ async fn structured_folds_a_rewritten_hoisted_prompt() {
 #[tokio::test]
 async fn structured_drops_the_hoisted_prompt_once() {
     let mut request = data(PROMPT);
-    let hoisted = hoisted_top_level_system_message(&request).await.unwrap();
+    let hoisted = hoisted_system_message(&request).await.unwrap();
     let returned = vec![
         user_row("u"),
         system_row("be nice"),

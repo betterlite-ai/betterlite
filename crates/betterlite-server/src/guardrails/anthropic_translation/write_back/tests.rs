@@ -11,9 +11,8 @@ use crate::guardrails::tool_call_identity::ToolCallShape;
 
 use super::error::{ApplyError, WriteBackError};
 use super::{
-    apply_guardrail_responses_to_input, apply_guardrail_tool_calls_to_input,
-    rewritten_tool_use_input, write_back_message_text, write_back_system_block,
-    write_back_tool_use,
+    apply_responses_to_input, apply_tool_calls_to_input, rewritten_tool_use_input,
+    write_back_message_text, write_back_system_block, write_back_tool_use,
 };
 
 fn fields(value: &mut Value) -> &mut Map<String, Value> {
@@ -223,13 +222,11 @@ fn responses_to_input_writes_the_system_string_only_over_a_string() {
     }];
 
     let mut string_system = json!({"system": "old", "messages": []});
-    apply_guardrail_responses_to_input(fields(&mut string_system), &["new".to_owned()], &scanned)
-        .unwrap();
+    apply_responses_to_input(fields(&mut string_system), &["new".to_owned()], &scanned).unwrap();
     assert_eq!(string_system["system"], "new");
 
     let mut block_system = json!({"system": [text_block("old")]});
-    apply_guardrail_responses_to_input(fields(&mut block_system), &["new".to_owned()], &scanned)
-        .unwrap();
+    apply_responses_to_input(fields(&mut block_system), &["new".to_owned()], &scanned).unwrap();
     assert_eq!(block_system["system"], json!([text_block("old")]));
 }
 
@@ -253,7 +250,7 @@ fn responses_to_input_pairs_to_the_shorter_list() {
             target: InputWriteBackTarget::SystemString,
         },
     ];
-    apply_guardrail_responses_to_input(
+    apply_responses_to_input(
         fields(&mut data),
         &["A".to_owned(), "M".to_owned()],
         &scanned,
@@ -271,7 +268,7 @@ fn responses_to_input_writes_at_the_target_message_index() {
         target: InputWriteBackTarget::Message(MessageTextTarget::MessageContent { msg_idx: 0 }),
     }];
     let mut zero = json!({"messages": [{"content": "first"}, {"content": "second"}]});
-    apply_guardrail_responses_to_input(fields(&mut zero), &["NEW".to_owned()], &first).unwrap();
+    apply_responses_to_input(fields(&mut zero), &["NEW".to_owned()], &first).unwrap();
     assert_eq!(zero["messages"][0]["content"], "NEW");
     assert_eq!(zero["messages"][1]["content"], "second");
 
@@ -280,7 +277,7 @@ fn responses_to_input_writes_at_the_target_message_index() {
         target: InputWriteBackTarget::Message(MessageTextTarget::MessageContent { msg_idx: 1 }),
     }];
     let mut one = json!({"messages": [{"content": "first"}, {"content": "second"}]});
-    apply_guardrail_responses_to_input(fields(&mut one), &["NEW".to_owned()], &second).unwrap();
+    apply_responses_to_input(fields(&mut one), &["NEW".to_owned()], &second).unwrap();
     assert_eq!(one["messages"][0]["content"], "first");
     assert_eq!(one["messages"][1]["content"], "NEW");
 }
@@ -304,7 +301,7 @@ fn responses_to_input_writes_system_blocks_and_messages() {
             }),
         },
     ];
-    apply_guardrail_responses_to_input(
+    apply_responses_to_input(
         fields(&mut data),
         &["S".to_owned(), "M".to_owned()],
         &scanned,
@@ -323,8 +320,8 @@ fn responses_to_input_errors_when_the_message_is_missing() {
     }];
 
     let mut short = json!({"messages": [{"content": "only"}]});
-    let error = apply_guardrail_responses_to_input(fields(&mut short), &["X".to_owned()], &scanned)
-        .unwrap_err();
+    let error =
+        apply_responses_to_input(fields(&mut short), &["X".to_owned()], &scanned).unwrap_err();
     assert_eq!(
         error,
         WriteBackError::TargetMissing {
@@ -333,9 +330,8 @@ fn responses_to_input_errors_when_the_message_is_missing() {
     );
 
     let mut no_messages = json!({"system": "s"});
-    let error =
-        apply_guardrail_responses_to_input(fields(&mut no_messages), &["X".to_owned()], &scanned)
-            .unwrap_err();
+    let error = apply_responses_to_input(fields(&mut no_messages), &["X".to_owned()], &scanned)
+        .unwrap_err();
     assert_eq!(
         error,
         WriteBackError::TargetMissing {
@@ -344,12 +340,8 @@ fn responses_to_input_errors_when_the_message_is_missing() {
     );
 
     let mut scalar_messages = json!({"messages": "not a list"});
-    let error = apply_guardrail_responses_to_input(
-        fields(&mut scalar_messages),
-        &["X".to_owned()],
-        &scanned,
-    )
-    .unwrap_err();
+    let error = apply_responses_to_input(fields(&mut scalar_messages), &["X".to_owned()], &scanned)
+        .unwrap_err();
     assert_eq!(
         error,
         WriteBackError::TargetMissing {
@@ -363,12 +355,8 @@ fn responses_to_input_errors_when_the_message_is_missing() {
         target: InputWriteBackTarget::Message(row_target.clone()),
     }];
     let mut scalar_row = json!({"messages": ["not a message"]});
-    let error = apply_guardrail_responses_to_input(
-        fields(&mut scalar_row),
-        &["X".to_owned()],
-        &row_scanned,
-    )
-    .unwrap_err();
+    let error = apply_responses_to_input(fields(&mut scalar_row), &["X".to_owned()], &row_scanned)
+        .unwrap_err();
     assert_eq!(error, WriteBackError::TargetMissing { target: row_target });
 }
 
@@ -520,7 +508,7 @@ fn tool_calls_rewrites_only_changed_shapes() {
         json!({"function": {"name": "renamed", "arguments": "{\"q\":\"new\"}"}}),
         json!({"function": {"name": "two", "arguments": "{}"}}),
     ];
-    apply_guardrail_tool_calls_to_input(
+    apply_tool_calls_to_input(
         &mut messages,
         &scanned,
         &pre,
@@ -538,7 +526,7 @@ fn tool_calls_rewrites_only_changed_shapes() {
 fn tool_calls_ignores_a_returned_list_of_the_wrong_length() {
     let (scanned, pre, mut messages) = scanned_pair();
     let returned = vec![json!({"function": {"name": "renamed", "arguments": "{\"q\":\"new\"}"}})];
-    apply_guardrail_tool_calls_to_input(
+    apply_tool_calls_to_input(
         &mut messages,
         &scanned,
         &pre,
@@ -550,8 +538,7 @@ fn tool_calls_ignores_a_returned_list_of_the_wrong_length() {
     assert_eq!(messages[0]["content"][0]["name"], "one");
 
     let (scanned, pre, mut absent_answer) = scanned_pair();
-    apply_guardrail_tool_calls_to_input(&mut absent_answer, &scanned, &pre, None, Some("guard"))
-        .unwrap();
+    apply_tool_calls_to_input(&mut absent_answer, &scanned, &pre, None, Some("guard")).unwrap();
     assert_eq!(absent_answer[0]["content"][0]["input"], json!({}));
     assert_eq!(
         absent_answer[0]["content"][1]["input"],
@@ -563,8 +550,7 @@ fn tool_calls_ignores_a_returned_list_of_the_wrong_length() {
 fn tool_calls_stops_at_the_shortest_list() {
     let (scanned, pre, mut messages) = scanned_pair();
     let returned = vec![json!({"function": {"name": "renamed", "arguments": "{\"q\":\"new\"}"}})];
-    apply_guardrail_tool_calls_to_input(&mut messages, &scanned, &pre[..1], Some(&returned), None)
-        .unwrap();
+    apply_tool_calls_to_input(&mut messages, &scanned, &pre[..1], Some(&returned), None).unwrap();
     assert_eq!(messages[0]["content"][0]["input"], json!({"q": "new"}));
     assert_eq!(messages[0]["content"][0]["name"], "renamed");
     assert_eq!(messages[0]["content"][1]["input"], json!({"kept": true}));
@@ -577,9 +563,8 @@ fn tool_calls_rejects_an_array_argument_whole() {
         json!({"function": {"name": "one", "arguments": "{\"q\":\"new\"}"}}),
         json!({"function": {"name": "two", "arguments": "[]"}}),
     ];
-    let error =
-        apply_guardrail_tool_calls_to_input(&mut messages, &scanned, &pre, Some(&returned), None)
-            .unwrap_err();
+    let error = apply_tool_calls_to_input(&mut messages, &scanned, &pre, Some(&returned), None)
+        .unwrap_err();
     assert_eq!(
         error,
         ApplyError::Unappliable(UnappliableRequestRewrite::new(None))
@@ -606,8 +591,7 @@ fn tool_calls_leaves_an_unchanged_invalid_argument_list_alone() {
     let mut messages = vec![json!({"content": [
         {"type": "tool_use", "id": "t1", "name": "one", "input": {"kept": true}}
     ]})];
-    apply_guardrail_tool_calls_to_input(&mut messages, &scanned, &pre, Some(&returned), None)
-        .unwrap();
+    apply_tool_calls_to_input(&mut messages, &scanned, &pre, Some(&returned), None).unwrap();
     assert_eq!(messages[0]["content"][0]["input"], json!({"kept": true}));
 }
 
@@ -620,18 +604,12 @@ fn tool_calls_errors_when_the_message_is_missing() {
     ];
     let mut empty: Vec<Value> = Vec::new();
     let error =
-        apply_guardrail_tool_calls_to_input(&mut empty, &scanned, &pre, Some(&returned), None)
-            .unwrap_err();
+        apply_tool_calls_to_input(&mut empty, &scanned, &pre, Some(&returned), None).unwrap_err();
     assert_eq!(error, ApplyError::MessageMissing { msg_idx: 0 });
 
     let mut scalar_message = vec![json!("not a message")];
-    let error = apply_guardrail_tool_calls_to_input(
-        &mut scalar_message,
-        &scanned,
-        &pre,
-        Some(&returned),
-        None,
-    )
-    .unwrap_err();
+    let error =
+        apply_tool_calls_to_input(&mut scalar_message, &scanned, &pre, Some(&returned), None)
+            .unwrap_err();
     assert_eq!(error, ApplyError::MessageMissing { msg_idx: 0 });
 }

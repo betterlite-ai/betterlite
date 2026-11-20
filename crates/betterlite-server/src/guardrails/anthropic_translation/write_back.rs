@@ -146,7 +146,7 @@ pub fn write_back_tool_use(
     }
 }
 
-pub fn apply_guardrail_tool_calls_to_input(
+pub fn apply_tool_calls_to_input(
     messages: &mut [Value],
     scanned_tool_calls: &[ScannedToolCall],
     pre_guardrail_tool_calls: &[ToolCallShape],
@@ -197,7 +197,7 @@ pub fn apply_guardrail_tool_calls_to_input(
     Ok(())
 }
 
-pub fn apply_guardrail_responses_to_input(
+pub fn apply_responses_to_input(
     data: &mut Map<String, Value>,
     responses: &[String],
     scanned: &[ScannedText],

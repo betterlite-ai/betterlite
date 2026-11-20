@@ -20,7 +20,7 @@ use serde_json::{Map, Value};
 use conversion::Conversion;
 use deps::{NoCapabilities, NoParameters};
 use error::StructuredWriteBackError;
-use system_rows::{is_truthy, text_block, text_blocks_row, text_row};
+use system_rows::{is_present, text_block, text_block_row};
 
 const CACHE_CONTROL: &str = "cache_control";
 const CONTENT: &str = "content";
@@ -40,13 +40,6 @@ pub fn is_system(message: &Value) -> bool {
         .is_some_and(|role| role.eq_ignore_ascii_case(SYSTEM))
 }
 
-// LiteLLM also matches the hoisted prompt by object identity; a JSON row here has none, and an
-// identical object is equal, so every row it matches is matched here too.
-#[must_use]
-pub fn is_hoisted_top_level_system(message: &Value, hoisted: Option<&Value>) -> bool {
-    hoisted.is_some_and(|hoisted| message == hoisted)
-}
-
 pub async fn translate_to_openai(
     data: &Map<String, Value>,
 ) -> Result<Object, StructuredWriteBackError> {
@@ -62,10 +55,10 @@ pub async fn translate_to_openai(
     Ok(translated)
 }
 
-pub async fn hoisted_top_level_system_message(
+pub async fn hoisted_system_message(
     data: &Map<String, Value>,
 ) -> Result<Option<Value>, StructuredWriteBackError> {
-    let Some(system) = data.get(SYSTEM).filter(|value| is_truthy(value)) else {
+    let Some(system) = data.get(SYSTEM).filter(|value| is_present(value)) else {
         return Ok(None);
     };
     let mut probe = Map::new();
@@ -82,15 +75,27 @@ pub async fn hoisted_top_level_system_message(
 }
 
 #[must_use]
-pub fn openai_system_message_to_anthropic(message: &Value) -> Option<Map<String, Value>> {
-    match message.get(CONTENT) {
-        Some(Value::String(text)) => text_row(text),
-        Some(Value::Array(blocks)) => text_blocks_row(blocks),
-        Some(Value::Null | Value::Bool(_) | Value::Number(_) | Value::Object(_)) | None => None,
-    }
+pub fn system_row_to_anthropic(message: &Value) -> Option<Map<String, Value>> {
+    let content = match message.get(CONTENT)? {
+        Value::String(text) if !text.is_empty() => Value::String(text.clone()),
+        Value::Array(blocks) => {
+            let converted: Vec<Value> = blocks.iter().filter_map(text_block_row).collect();
+            if converted.is_empty() {
+                return None;
+            }
+            Value::Array(converted)
+        }
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Object(_) => {
+            return None;
+        }
+    };
+    let mut row = Map::new();
+    row.insert(ROLE.to_owned(), Value::String(SYSTEM.to_owned()));
+    row.insert(CONTENT.to_owned(), content);
+    Some(row)
 }
 
-pub fn fold_leading_systems_into_top_level(
+pub fn fold_leading_systems(
     data: &mut Map<String, Value>,
     leading_systems: &[Value],
     include_existing_system: bool,
@@ -108,7 +113,7 @@ pub fn fold_leading_systems_into_top_level(
         }
     }
     for row in leading_systems {
-        let Some(converted) = openai_system_message_to_anthropic(row) else {
+        let Some(converted) = system_row_to_anthropic(row) else {
             continue;
         };
         match converted.get(CONTENT) {
@@ -124,12 +129,17 @@ pub fn fold_leading_systems_into_top_level(
     data.insert(SYSTEM.to_owned(), Value::Array(folded));
 }
 
-pub fn defer_systems_inside_tool_exchanges(messages: &[Value]) -> Vec<Value> {
+pub fn defer_tool_exchange_systems(messages: &[Value]) -> Vec<Value> {
     let positioned: Vec<(usize, PromptJson)> = messages
         .iter()
         .enumerate()
         .filter(|(_, message)| !is_system(message))
-        .map(|(index, message)| (index, prompt_row(message)))
+        .map(|(index, message)| {
+            // Value and prompts Json share one data model, so a row that cannot convert is still emitted.
+            let row =
+                serde_json::from_value::<PromptJson>(message.clone()).unwrap_or(PromptJson::Null);
+            (index, row)
+        })
         .collect();
     let rows: Vec<PromptJson> = positioned.iter().map(|(_, row)| row.clone()).collect();
     let mut deferred_positions: HashSet<usize> = HashSet::new();
@@ -177,20 +187,20 @@ pub async fn write_back_structured_messages(
     preserve_system_messages: bool,
 ) -> Result<(), StructuredWriteBackError> {
     let model = model_of(data);
-    let ordered = defer_systems_inside_tool_exchanges(structured_messages);
+    let ordered = defer_tool_exchange_systems(structured_messages);
     let leading_count = ordered
         .iter()
         .position(|message| !is_system(message))
         .unwrap_or(ordered.len());
     let (leading, rest) = ordered.split_at(leading_count);
+    // LiteLLM also matches by object identity, and equal JSON rows cover every match it can make.
     let hoisted_in_leading = leading
         .iter()
-        .any(|message| is_hoisted_top_level_system(message, hoisted_system_message));
-    // The one leading row that is the untouched hoisted prompt leaves the client's system prompt
-    // exactly as it was sent; folding it would rebuild it as an array of text blocks.
+        .any(|message| hoisted_system_message.is_some_and(|hoisted| message == hoisted));
+    // Folding an untouched hoisted prompt would rebuild the client's system string as text blocks.
     let only_the_hoisted_prompt = leading_count == 1 && hoisted_in_leading;
     if !leading.is_empty() && !only_the_hoisted_prompt {
-        fold_leading_systems_into_top_level(data, leading, hoisted_system_message.is_none());
+        fold_leading_systems(data, leading, hoisted_system_message.is_none());
     }
     let mut conversion = Conversion::new(
         &model,
@@ -212,10 +222,4 @@ fn model_of(data: &Map<String, Value>) -> String {
         )
         | None => String::new(),
     }
-}
-
-// A Value and the prompts crate's Json describe the same data model, so this bridge cannot fail;
-// a row that somehow did would carry no role, group on its own, and still be emitted unchanged.
-fn prompt_row(value: &Value) -> PromptJson {
-    serde_json::from_value(value.clone()).unwrap_or(PromptJson::Null)
 }
