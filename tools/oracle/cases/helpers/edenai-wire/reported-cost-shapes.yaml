@@ -1,0 +1,96 @@
+kind: helper
+name: edenai-reported-cost-shapes
+call:
+  b6100:
+    costs:
+      - {cost: 2}
+      - {cost: 2.25}
+      - {cost: "2.25"}
+      - {cost: " 0.10 "}
+      - {cost: "1e3"}
+      - {cost: "+.5"}
+      - {cost: "1."}
+      - {cost: "-2"}
+      - {cost: "0x10"}
+      - {cost: true}
+      - {cost: false}
+      - {cost: null}
+      - {other: 1}
+      - {x-edenai-cost: 3}
+      - {cost: 1, x-edenai-cost: 2}
+      - {cost: null, x-edenai-cost: 2}
+      - {cost: "abc", x-edenai-cost: 2}
+      - {x-edenai-cost: {}}
+      - {cost: ""}
+      - {cost: "   "}
+      - {cost: [1]}
+      - {cost: {amount: 1}}
+      - 5
+      - [{cost: 1}]
+      - null
+    cost_bodies: []
+    cost_headers: []
+    credentials: []
+    chat_params: []
+    chat_requests: []
+    chat_replies: []
+    chunks: []
+    models: []
+    embedding_plans: []
+    embedding_replies: []
+    responses_prepare: []
+    responses_replies: []
+    messages_environments: []
+    messages_replies: []
+calls:
+  - b6100:
+      costs: []
+      cost_bodies:
+        - '{"cost": 1.5}'
+        - '{"x-edenai-cost": "4"}'
+        - '{"cost": 2, "x-edenai-cost": 3}'
+        - '{"cost": null}'
+        - '{"cost": "abc"}'
+        - "not json"
+        - '"text"'
+        - "null"
+        - "[]"
+        - '{"data": [{"id": "a"}]}'
+      cost_headers: []
+      credentials: []
+      chat_params: []
+      chat_requests: []
+      chat_replies: []
+      chunks: []
+      models: []
+      embedding_plans: []
+      embedding_replies: []
+      responses_prepare: []
+      responses_replies: []
+      messages_environments: []
+      messages_replies: []
+  - b6100:
+      costs: []
+      cost_bodies: []
+      cost_headers:
+        - {x-edenai-cost: "2.5"}
+        - {cost: "3"}
+        - {x-edenai-cost: "2", cost: "1"}
+        - {cost: "abc"}
+        - {x-edenai-cost: "abc"}
+        - {x-request-id: "1"}
+        - {}
+      credentials: []
+      chat_params: []
+      chat_requests: []
+      chat_replies: []
+      chunks: []
+      models: []
+      embedding_plans: []
+      embedding_replies: []
+      responses_prepare: []
+      responses_replies: []
+      messages_environments: []
+      messages_replies: []
+env: {}
+compare: {ignore: []}

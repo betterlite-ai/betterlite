@@ -1,0 +1,6 @@
+kind: helper
+name: anthropic-guardrail-write-back-structured-thinking-cache-control-stripped
+call:
+  b3674: {"function": "structured", "scenarios": [{"data": {"model": "claude-sonnet-4-5", "system": "top", "messages": []}, "messages": [{"role": "system", "content": "top"}, {"role": "assistant", "content": [{"type": "thinking", "thinking": "hmm", "signature": "sig", "cache_control": {"type": "ephemeral"}}, {"type": "text", "text": "answer", "cache_control": {"type": "ephemeral"}}]}], "preserve_system_messages": false, "compute_hoisted": true}]}
+env: {}
+compare: {ignore: []}

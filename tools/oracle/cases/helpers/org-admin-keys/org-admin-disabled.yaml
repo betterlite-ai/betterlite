@@ -1,0 +1,13 @@
+kind: helper
+name: org-admin-disabled
+call:
+  b10015:
+    calls:
+      - role: org_admin
+        settings: {disable_key_generate_for_org_admin: true}
+      - role: org_admin
+        settings: {disable_key_generate_for_org_admin: false}
+      - role: org_admin
+        settings: {}
+env: {}
+compare: {ignore: []}

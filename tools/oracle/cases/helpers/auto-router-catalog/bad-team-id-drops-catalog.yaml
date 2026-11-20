@@ -1,0 +1,40 @@
+kind: helper
+name: auto-router-catalog-bad-team-id-drops-catalog
+call:
+  b10021:
+    rows:
+      - model_id: saved-complexity
+        model_name: saved-complexity
+        litellm_params: {model: auto_router/complexity_router}
+        model_info: {team_id: team-a}
+      - model_id: bad-team
+        model_name: bad-team
+        litellm_params: {model: auto_router/complexity_router}
+        model_info: {team_id: 7}
+calls:
+  - b10021:
+      rows:
+        - model_id: bad-flag
+          model_name: bad-flag
+          litellm_params: {model: gpt-4o}
+          model_info: {team_id: true}
+  - b10021:
+      rows:
+        - model_id: bad-list
+          model_name: bad-list
+          litellm_params: {model: gpt-4o}
+          model_info: {team_id: [team-a]}
+  - b10021:
+      rows:
+        - model_id: bad-object
+          model_name: bad-object
+          litellm_params: {model: gpt-4o}
+          model_info: {team_id: {id: team-a}}
+  - b10021:
+      rows:
+        - model_id: string-team
+          model_name: string-team
+          litellm_params: {model: auto_router/complexity_router}
+          model_info: {team_id: team-a}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,13 @@
+kind: helper
+name: flow-classification-per-user-tokens
+call:
+  b4662:
+    function: flow_classify
+    signals:
+      - has_per_user_tokens: true
+        authorization_url: null
+        registration_url: null
+        token_url: null
+        credentials: null
+env: {}
+compare: {ignore: []}

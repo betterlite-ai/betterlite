@@ -14,7 +14,7 @@ fn settings_sandbox_bash_and_give_only_a_worker_the_stop_hook() {
         (
             "worker",
             Some("/gate"),
-            r#","hooks":{"Stop":[{"hooks":[{"type":"command","command":"cd\"$CLAUDE_PROJECT_DIR\"&&'/gate'hook--reportjson-schema","timeout":300}]}]}"#,
+            r#","hooks":{"Stop":[{"hooks":[{"type":"command","command":"cd\"$CLAUDE_PROJECT_DIR\"&&'/gate'hook--reportjson-schema","timeout":900}]}]}"#,
         ),
     ];
     for (seat, stop_gate, hooks) in cases {
