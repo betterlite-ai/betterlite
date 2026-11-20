@@ -1,7 +1,7 @@
 id: B3366
 milestone: M5 api families
 title: Explicit container file listing
-status: todo
+status: done
 depends_on: [B3360, B3361, B3363, B522, B547, B173, B249, B2402, B247, B185]
 file: tasks/B3366-container-file-list.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/custom_httpx/llm_http_handler.py"
 parent: B094
 split_from: B094
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2671
