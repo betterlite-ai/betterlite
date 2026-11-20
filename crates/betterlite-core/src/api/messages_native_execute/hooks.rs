@@ -15,13 +15,8 @@ use crate::api::messages_reasoning_route::seams::ProviderLookup;
 
 pub(super) fn litellm_params(provider: Option<&str>) -> Json {
     let mut fields: IndexMap<String, Json> = IndexMap::new();
-    fields.insert(
-        "custom_llm_provider".to_owned(),
-        match provider {
-            Some(name) => Json::Text(name.to_owned()),
-            None => Json::Null,
-        },
-    );
+    let custom = provider.map_or(Json::Null, |name| Json::Text(name.to_owned()));
+    fields.insert("custom_llm_provider".to_owned(), custom);
     Json::Object(fields)
 }
 
@@ -144,13 +139,11 @@ pub(super) fn build_hook_map(
     kwargs: &IndexMap<String, Json>,
 ) -> IndexMap<String, Json> {
     let mut hook_map: IndexMap<String, Json> = IndexMap::new();
-    hook_map.insert(
-        "tools".to_owned(),
-        match request.tools.as_deref() {
-            Some(list) => Json::List(list.to_vec()),
-            None => Json::Null,
-        },
-    );
+    let tools = request
+        .tools
+        .as_deref()
+        .map_or(Json::Null, |list| Json::List(list.to_vec()));
+    hook_map.insert("tools".to_owned(), tools);
     hook_map.insert("stream".to_owned(), Json::Bool(stream));
     hook_map.insert("litellm_params".to_owned(), litellm_params(provider));
     hook_map.insert(

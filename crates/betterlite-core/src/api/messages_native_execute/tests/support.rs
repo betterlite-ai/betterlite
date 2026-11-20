@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use indexmap::IndexMap;
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret, SecretString};
 
 use super::super::dispatch::MessagesExecutionContinuation;
 use super::super::entry::{MessagesEntryRequest, MessagesEntryResult};
@@ -12,7 +12,7 @@ use super::super::error::{MessagesExecuteError, RaisedException};
 use super::super::pipeline::MessagesEntryOutcome;
 use super::super::seams::{
     CacheControlHook, CacheControlOutcome, CacheControlRequest, InterceptorRequest,
-    MessagesEntrySeams, MessagesInterceptor, PreRequestHook, SearchShortCircuit,
+    MessagesEntrySeams, MessagesInterceptor, PreRequestHook, SearchRequest, SearchShortCircuit,
 };
 use crate::api::messages_reasoning_route::seams::{
     ProviderLookup, ProviderResolution, ResolvedTarget,
@@ -61,11 +61,44 @@ pub(super) fn request(model: &str, messages: Vec<Json>) -> MessagesEntryRequest 
     }
 }
 
+// The request most behavior tests start from; a test overrides the fields it exercises
+pub(super) fn hi_request() -> MessagesEntryRequest {
+    let messages = vec![json(r#"{"role":"user","content":"hi"}"#)];
+    request("claude-sonnet-4-20250514", messages)
+}
+
+// Every named argument the interceptor contract forwards, set to a recognizable value
+pub(super) fn full_entry() -> MessagesEntryRequest {
+    let mut entry = hi_request();
+    entry.max_tokens = 64;
+    entry.stream = Some(true);
+    entry.tools = Some(vec![json(r#"{"name":"Bash"}"#)]);
+    entry.metadata = Some(json(r#"{"user_id":"u1"}"#));
+    entry.stop_sequences = Some(json(r#"["stop"]"#));
+    entry.system = Some(json(r#""sys""#));
+    entry.temperature = Some(json("0.5"));
+    entry.thinking = Some(json(r#"{"type":"enabled","budget_tokens":1024}"#));
+    entry.tool_choice = Some(json(r#"{"type":"auto"}"#));
+    entry.top_k = Some(json("5"));
+    entry.top_p = Some(json("0.9"));
+    entry.api_key = Some(SecretString::from("sk-test".to_owned()));
+    entry.api_base = Some("https://api.example".to_owned());
+    entry.kwargs.insert("custom".to_owned(), json("1"));
+    entry
+}
+
+pub(super) fn history(text: &str) -> Vec<Json> {
+    let messages: Vec<Json> = serde_json::from_str(text).unwrap();
+    messages
+}
+
 fn optional(value: Option<&Json>) -> Json {
-    match value {
-        Some(found) => found.clone(),
-        None => Json::Null,
-    }
+    value.map_or(Json::Null, Json::clone)
+}
+
+fn insert_text(record: &mut IndexMap<String, Json>, name: &str, value: Option<&str>) {
+    let field = value.map_or(Json::Null, |text| Json::Text(text.to_owned()));
+    record.insert(name.to_owned(), field);
 }
 
 pub(super) struct Harness {
@@ -99,6 +132,7 @@ impl Harness {
     }
 }
 
+#[derive(Clone)]
 pub(super) struct CacheCall {
     pub(super) messages: Vec<Json>,
     pub(super) system: Option<Json>,
@@ -110,7 +144,7 @@ pub(super) struct CacheCall {
 }
 
 pub(super) struct Cache {
-    pub(super) calls: Mutex<Vec<CacheCall>>,
+    calls: Mutex<Vec<CacheCall>>,
     pub(super) replacement_messages: Option<Vec<Json>>,
     pub(super) replacement_system: Option<Json>,
 }
@@ -122,6 +156,11 @@ impl Cache {
             replacement_messages: None,
             replacement_system: None,
         }
+    }
+
+    pub(super) fn calls(&self) -> Vec<CacheCall> {
+        let calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
+        calls.clone()
     }
 }
 
@@ -142,19 +181,20 @@ impl CacheControlHook for Cache {
         let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
         calls.push(call);
         drop(calls);
-        let messages = match &self.replacement_messages {
-            Some(replacement) => replacement.clone(),
-            None => request.messages.to_vec(),
-        };
-        let system = match &self.replacement_system {
-            Some(replacement) => Some(replacement.clone()),
-            None => request.system.cloned(),
-        };
+        let messages = self
+            .replacement_messages
+            .clone()
+            .unwrap_or_else(|| request.messages.to_vec());
+        let system = self
+            .replacement_system
+            .clone()
+            .or_else(|| request.system.cloned());
         Ok(CacheControlOutcome { messages, system })
     }
 }
 
 // One resolution call's arguments, so a test can assert which of them the entry passed
+#[derive(Clone)]
 pub(super) struct LookupCall {
     pub(super) model: Option<String>,
     pub(super) custom_llm_provider: Option<String>,
@@ -164,7 +204,7 @@ pub(super) struct LookupCall {
 
 pub(super) struct Resolver {
     provider: Option<&'static str>,
-    pub(super) lookups: Mutex<Vec<LookupCall>>,
+    lookups: Mutex<Vec<LookupCall>>,
 }
 
 impl Resolver {
@@ -173,6 +213,11 @@ impl Resolver {
             provider,
             lookups: Mutex::new(Vec::new()),
         }
+    }
+
+    pub(super) fn lookups(&self) -> Vec<LookupCall> {
+        let lookups = self.lookups.lock().unwrap_or_else(PoisonError::into_inner);
+        lookups.clone()
     }
 }
 
@@ -202,6 +247,7 @@ pub(super) enum HookEffect {
     Raise(RaisedException),
 }
 
+#[derive(Clone)]
 pub(super) struct HookCall {
     pub(super) model: String,
     pub(super) messages: Vec<Json>,
@@ -210,7 +256,7 @@ pub(super) struct HookCall {
 
 pub(super) struct Hook {
     effect: HookEffect,
-    pub(super) calls: Mutex<Vec<HookCall>>,
+    calls: Mutex<Vec<HookCall>>,
 }
 
 impl Hook {
@@ -220,11 +266,16 @@ impl Hook {
             calls: Mutex::new(Vec::new()),
         }
     }
+
+    pub(super) fn calls(&self) -> Vec<HookCall> {
+        let calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
+        calls.clone()
+    }
 }
 
 #[async_trait]
 impl PreRequestHook for Hook {
-    fn callback_name(&self) -> &str {
+    fn callback_name(&self) -> &'static str {
         "scripted"
     }
 
@@ -249,11 +300,12 @@ impl PreRequestHook for Hook {
                 Ok(None)
             }
             HookEffect::Replace(replacement) => Ok(Some(replacement.clone())),
-            HookEffect::Raise(error) => Err(MessagesExecuteError::Raised(error.clone())),
+            HookEffect::Raise(error) => Err(MessagesExecuteError::Raised(Box::new(error.clone()))),
         }
     }
 }
 
+#[derive(Clone)]
 pub(super) struct SearchCall {
     pub(super) model: String,
     pub(super) messages: Vec<Json>,
@@ -265,7 +317,7 @@ pub(super) struct SearchCall {
 pub(super) struct Searcher {
     answer: Option<Json>,
     error: Option<RaisedException>,
-    pub(super) calls: Mutex<Vec<SearchCall>>,
+    calls: Mutex<Vec<SearchCall>>,
 }
 
 impl Searcher {
@@ -276,36 +328,37 @@ impl Searcher {
             calls: Mutex::new(Vec::new()),
         }
     }
+
+    pub(super) fn calls(&self) -> Vec<SearchCall> {
+        let calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
+        calls.clone()
+    }
 }
 
 #[async_trait]
 impl SearchShortCircuit for Searcher {
-    fn callback_name(&self) -> &str {
+    fn callback_name(&self) -> &'static str {
         "scripted-search"
     }
 
     async fn try_short_circuit_search(
         &self,
-        model: &str,
-        messages: &[Json],
-        tools: Option<&[Json]>,
-        provider: Option<&str>,
-        kwargs: &IndexMap<String, Json>,
+        request: &SearchRequest<'_>,
     ) -> Result<Option<Json>, MessagesExecuteError> {
         let call = SearchCall {
-            model: model.to_owned(),
-            messages: messages.to_vec(),
-            tools: tools.map(<[Json]>::to_vec),
-            provider: provider.map(str::to_owned),
-            kwargs: kwargs.clone(),
+            model: request.model.to_owned(),
+            messages: request.messages.to_vec(),
+            tools: request.tools.map(<[Json]>::to_vec),
+            provider: request.provider.map(str::to_owned),
+            kwargs: request.kwargs.clone(),
         };
         let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
         calls.push(call);
         drop(calls);
-        match &self.error {
-            Some(error) => Err(MessagesExecuteError::Raised(error.clone())),
-            None => Ok(self.answer.clone()),
+        if let Some(error) = &self.error {
+            return Err(MessagesExecuteError::Raised(Box::new(error.clone())));
         }
+        Ok(self.answer.clone())
     }
 }
 
@@ -315,11 +368,13 @@ pub(super) enum InterceptorAnswer {
     Raise(RaisedException),
 }
 
+pub(super) type CanCall = (Option<Vec<Json>>, Option<String>);
+
 pub(super) struct Interceptor {
     can: bool,
     answer: InterceptorAnswer,
-    pub(super) can_calls: Mutex<Vec<(Option<Vec<Json>>, Option<String>)>>,
-    pub(super) handled: Mutex<Vec<IndexMap<String, Json>>>,
+    can_calls: Mutex<Vec<CanCall>>,
+    handled: Mutex<Vec<IndexMap<String, Json>>>,
 }
 
 impl Interceptor {
@@ -331,45 +386,45 @@ impl Interceptor {
             handled: Mutex::new(Vec::new()),
         }
     }
+
+    pub(super) fn can_calls(&self) -> Vec<CanCall> {
+        let calls = self
+            .can_calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        calls.clone()
+    }
+
+    pub(super) fn handled(&self) -> Vec<IndexMap<String, Json>> {
+        let handled = self.handled.lock().unwrap_or_else(PoisonError::into_inner);
+        handled.clone()
+    }
 }
 
 fn recorded(request: &InterceptorRequest<'_>) -> IndexMap<String, Json> {
     let mut record = IndexMap::new();
     record.insert("model".to_owned(), Json::Text(request.model.to_owned()));
     record.insert("messages".to_owned(), Json::List(request.messages.to_vec()));
-    record.insert(
-        "tools".to_owned(),
-        match request.tools {
-            Some(list) => Json::List(list.to_vec()),
-            None => Json::Null,
-        },
-    );
+    let tools = request
+        .tools
+        .map_or(Json::Null, |list| Json::List(list.to_vec()));
+    record.insert("tools".to_owned(), tools);
     record.insert("stream".to_owned(), Json::Bool(request.stream));
     record.insert(
         "max_tokens".to_owned(),
         Json::Number(serde_json::Number::from(request.max_tokens)),
     );
-    record.insert(
-        "custom_llm_provider".to_owned(),
-        match request.custom_llm_provider {
-            Some(name) => Json::Text(name.to_owned()),
-            None => Json::Null,
-        },
+    insert_text(
+        &mut record,
+        "custom_llm_provider",
+        request.custom_llm_provider,
     );
-    record.insert(
-        "api_key".to_owned(),
-        match request.api_key {
-            Some(secret) => Json::Text(secret.expose_secret().to_owned()),
-            None => Json::Null,
-        },
+    insert_text(
+        &mut record,
+        "api_key",
+        request.api_key.map(ExposeSecret::expose_secret),
     );
-    record.insert(
-        "api_base".to_owned(),
-        match request.api_base {
-            Some(base) => Json::Text(base.to_owned()),
-            None => Json::Null,
-        },
-    );
+    insert_text(&mut record, "api_base", request.api_base);
     record.insert("metadata".to_owned(), optional(request.metadata));
     record.insert(
         "stop_sequences".to_owned(),
@@ -383,6 +438,33 @@ fn recorded(request: &InterceptorRequest<'_>) -> IndexMap<String, Json> {
     record.insert("top_p".to_owned(), optional(request.top_p));
     record.insert("kwargs".to_owned(), Json::Object(request.kwargs.clone()));
     record
+}
+
+// Every argument first_matching_interceptor_wins forwards, asserted against the expected values
+pub(super) fn assert_forwarded_arguments(sent: &IndexMap<String, Json>) {
+    assert_eq!(sent["model"], json(r#""claude-sonnet-4-20250514""#));
+    assert_eq!(sent["max_tokens"], json("64"));
+    assert_eq!(sent["stream"], Json::Bool(true));
+    assert_eq!(sent["tools"], json(r#"[{"name":"Bash"}]"#));
+    assert_eq!(sent["custom_llm_provider"], json(r#""anthropic""#));
+    assert_eq!(sent["api_key"], json(r#""sk-test""#));
+    assert_eq!(sent["api_base"], json(r#""https://api.example""#));
+    assert_eq!(sent["metadata"], json(r#"{"user_id":"u1"}"#));
+    assert_eq!(sent["stop_sequences"], json(r#"["stop"]"#));
+    assert_eq!(sent["system"], json(r#""sys""#));
+    assert_eq!(sent["temperature"], json("0.5"));
+    assert_eq!(
+        sent["thinking"],
+        json(r#"{"type":"enabled","budget_tokens":1024}"#)
+    );
+    assert_eq!(sent["tool_choice"], json(r#"{"type":"auto"}"#));
+    assert_eq!(sent["top_k"], json("5"));
+    assert_eq!(sent["top_p"], json("0.9"));
+    assert_eq!(sent["kwargs"], json(r#"{"custom":1}"#));
+    assert_eq!(
+        sent["messages"],
+        json(r#"[{"role":"user","content":"hi"}]"#)
+    );
 }
 
 #[async_trait]
@@ -407,7 +489,9 @@ impl MessagesInterceptor for Interceptor {
         match &self.answer {
             InterceptorAnswer::Response(value) => Ok(MessagesEntryResult::Response(value.clone())),
             InterceptorAnswer::None => Ok(MessagesEntryResult::None),
-            InterceptorAnswer::Raise(error) => Err(MessagesExecuteError::Raised(error.clone())),
+            InterceptorAnswer::Raise(error) => {
+                Err(MessagesExecuteError::Raised(Box::new(error.clone())))
+            }
         }
     }
 }

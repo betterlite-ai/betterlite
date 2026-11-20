@@ -83,8 +83,8 @@ impl MessagesExecutionContinuation {
         let duplicate = dispatch
             .kwargs
             .keys()
-            .cloned()
-            .find(|key| NAMED_KEYWORDS.contains(&key.as_str()));
+            .find(|&key| NAMED_KEYWORDS.contains(&key.as_str()))
+            .cloned();
         if let Some(name) = duplicate {
             return Err(MessagesExecuteError::DuplicateKeyword { name });
         }
@@ -98,7 +98,9 @@ impl MessagesExecutionContinuation {
     ) -> Result<MessagesEntryResult, MessagesExecuteError> {
         match outcome {
             MessagesDispatchOutcome::Returned(result) => Ok(result),
-            MessagesDispatchOutcome::Raised(raised) => Err(MessagesExecuteError::Raised(raised)),
+            MessagesDispatchOutcome::Raised(raised) => {
+                Err(MessagesExecuteError::Raised(Box::new(raised)))
+            }
             MessagesDispatchOutcome::BaseLlmException(exception) => {
                 let raw = RawException {
                     model: self.dispatch.model.clone(),

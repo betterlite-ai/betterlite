@@ -10,7 +10,7 @@ use super::hooks::{
     build_hook_map, cache_stage, pop_named, pop_typed_arguments, provider_from_hook_map,
     resolve_provider, run_pre_request_hooks, sanitize_messages,
 };
-use super::seams::{InterceptorRequest, MessagesEntrySeams, advisor_requested};
+use super::seams::{InterceptorRequest, MessagesEntrySeams, SearchRequest, advisor_requested};
 use crate::api::messages_fake_stream::MessagesFakeStream;
 
 // B4115 sets this marker when it converted a streaming web-search request to a non-streaming call
@@ -69,15 +69,14 @@ pub async fn execute(
         state.named.metadata.clone().unwrap_or(Json::Null),
     );
     for searcher in seams.search_short_circuits {
-        let response = searcher
-            .try_short_circuit_search(
-                &state.request.model,
-                &state.messages,
-                state.named.tools.as_deref(),
-                state.provider.as_deref(),
-                &search_kwargs,
-            )
-            .await?;
+        let search = SearchRequest {
+            model: &state.request.model,
+            messages: &state.messages,
+            tools: state.named.tools.as_deref(),
+            provider: state.provider.as_deref(),
+            kwargs: &search_kwargs,
+        };
+        let response = searcher.try_short_circuit_search(&search).await?;
         if let Some(value) = response {
             return Ok(MessagesEntryOutcome::Returned(state.search_result(value)?));
         }
@@ -112,7 +111,7 @@ async fn hooks_pending(
     let hook_provider = provider
         .clone()
         .or_else(|| resolve_provider(&request, seams));
-    let hook_map = build_hook_map(
+    let built = build_hook_map(
         &request,
         hook_provider.as_deref(),
         requested_stream,
@@ -122,7 +121,7 @@ async fn hooks_pending(
         seams.pre_request_hooks,
         &request.model,
         &cached.messages,
-        hook_map,
+        built,
     )
     .await?;
     Ok(PendingHooks {

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use betterlite_anthropic::tools::wire::ADVISOR_TYPE;
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::Redactor;
 use indexmap::IndexMap;
@@ -11,7 +12,7 @@ use super::error::MessagesExecuteError;
 use crate::api::messages_reasoning_route::seams::ProviderResolution;
 
 // litellm/types/llms/anthropic.py's ANTHROPIC_ADVISOR_TOOL_TYPE
-pub const ADVISOR_TOOL_TYPE: &str = betterlite_anthropic::tools::wire::ADVISOR_TYPE;
+pub const ADVISOR_TOOL_TYPE: &str = ADVISOR_TYPE;
 // litellm/constants.py's ADVISOR_NATIVE_PROVIDERS
 pub const ADVISOR_NATIVE_PROVIDERS: [&str; 1] = ["anthropic"];
 
@@ -52,6 +53,15 @@ pub trait PreRequestHook: Send + Sync {
     ) -> Result<Option<IndexMap<String, Json>>, MessagesExecuteError>;
 }
 
+// The arguments a WebSearchInterceptionLogger's try_short_circuit_search receives
+pub struct SearchRequest<'request> {
+    pub model: &'request str,
+    pub messages: &'request [Json],
+    pub tools: Option<&'request [Json]>,
+    pub provider: Option<&'request str>,
+    pub kwargs: &'request IndexMap<String, Json>,
+}
+
 // A WebSearchInterceptionLogger instance's try_short_circuit_search; the first non-null answer wins
 #[async_trait]
 pub trait SearchShortCircuit: Send + Sync {
@@ -59,11 +69,7 @@ pub trait SearchShortCircuit: Send + Sync {
 
     async fn try_short_circuit_search(
         &self,
-        model: &str,
-        messages: &[Json],
-        tools: Option<&[Json]>,
-        provider: Option<&str>,
-        kwargs: &IndexMap<String, Json>,
+        request: &SearchRequest<'_>,
     ) -> Result<Option<Json>, MessagesExecuteError>;
 }
 
@@ -122,7 +128,7 @@ pub fn advisor_requested(tools: Option<&[Json]>, provider: Option<&str>) -> bool
 // Everything the entry asks the composition layer for; each slice keeps the registry's order
 pub struct MessagesEntrySeams<'seams> {
     pub cache: &'seams dyn CacheControlHook,
-    pub provider_resolution: &'seams dyn ProviderResolution,
+    pub provider_resolution: &'seams (dyn ProviderResolution + Send + Sync),
     pub pre_request_hooks: &'seams [Arc<dyn PreRequestHook>],
     pub search_short_circuits: &'seams [Arc<dyn SearchShortCircuit>],
     pub interceptors: &'seams [Arc<dyn MessagesInterceptor>],

@@ -40,7 +40,7 @@ pub enum MessagesExecuteError {
     },
     // Errors from the cache hook, pre-request hooks, web-search and interceptors stay unclassified
     #[error(transparent)]
-    Raised(#[from] RaisedException),
+    Raised(Box<RaisedException>),
     // B011 already ran, so the composing caller renders this class instead of classifying it again
     #[error("the final execution's exception was classified by the dispatch boundary")]
     Classified(Box<ErrorClass>),
