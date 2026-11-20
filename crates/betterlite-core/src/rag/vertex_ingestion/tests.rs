@@ -32,11 +32,11 @@ fn flags_supports_existing_file_id_matches_the_shared_state() {
     assert_eq!(supported, IngestionState::SUPPORTS_EXISTING_FILE_ID);
 }
 
-#[tokio::test]
-async fn flags_embed_returns_no_embeddings() {
+#[test]
+fn flags_embed_returns_no_embeddings() {
     let harness = build(PROJECT_OPTIONS, &VertexSettings::default(), None, None, &[]);
     let chunks = ["one chunk".to_owned()];
-    assert_eq!(harness.ingestion.embed(&chunks).await, None);
+    assert_eq!(harness.ingestion.embed(&chunks), None);
 }
 
 #[tokio::test]
