@@ -1,0 +1,259 @@
+id: B10006
+title: Custom Python providers and the legacy provider settings through the server
+description: >-
+  B044 installed Provider::Legacy over the Deployment that exists today: one resolved model, base and key, no
+  process settings, and no record of whether the deployment set its own base or key, since
+  ChatDeployment::resolve_with fills an absent base and key from the OpenAI fallbacks. Four LiteLLM behaviors had no
+  channel there. This task adds the channel and builds them: the custom_provider_map Python handlers
+  (_complete_custom_providers, main.py L4982-L5042, and the custom embedding branch, L7274-L7296), the custom
+  endpoint's litellm.api_base priority and empty-base error (L4924-L4926), the Aleph Alpha and litellm_proxy fallbacks
+  for a deployment that sets no key or base (B044 refuses such a deployment, and a custom one without its own base, at startup until then), and
+  _complete_aiohttp_openai (L2390-L2448), whose base and key chain
+  contradicts two server tests B010 wrote. It was split off B044 on 11-19 and waits until the core is done.
+
+
+  Config. B044's proxy_custom_dispatch section reads litellm_settings.custom_provider_map: a list of entries, each
+  with a string provider and a string custom_handler, kept in order with duplicates. An entry without either key is a
+  config error that names the entry's index, as LiteLLM's item["provider"] lookup fails there. Move the server's
+  CustomProviderItem (python_hooks/load.rs) into the section as its entry type and make
+  PythonHooks::load_custom_providers take the section's entries, so one type crosses from config to the loader.
+  Test custom_provider_map_loads in the section's tests, and add config_yaml seeds named custom_provider_map*.
+
+
+  Startup. LiteLLM imports each custom_handler with get_instance_fn while load_config walks litellm_settings
+  (proxy_server.py L6457-L6470), then custom_llm_setup (utils.py L572-L581) adds the provider names to
+  litellm._custom_providers. A call needs the host and tracker beside the HookObject, so load_custom_providers returns
+  each provider name with its LoadedHook. Put `LegacyProviders` in the new server module
+  crates/betterlite-server/src/server/chat_setup/legacy_providers.rs and its folder, with its own error enum.
+  `LegacyProviders::load(config, environment, hooks: &PythonHooks)` loads the handlers in config order and builds one
+  `Arc<LegacySettings>` and the configured flags of every deployment, keyed by model_id. B8613's lifespan calls it once
+  at its config-load step, at LiteLLM's position, with the LifespanInputs python_hooks Arc, and never calls
+  PythonHooks::new. A failed import stops startup with the HooksError that names the handler, as get_instance_fn
+  raising stops load_config. Hand the value over the way B9997 hands over the MCP registry: Started carries
+  `legacy_providers: Arc<LegacyProviders>`, B8610's StartupOutputs gains it and run_proxy copies it, and Shared gains
+  `legacy_providers`, set in application(). chat_executor fills its custom_providers set (chat_setup.rs, today an
+  empty BTreeSet beside known_names) with the section's provider names, so a deployment model like
+  my-provider/my-model resolves as get_llm_provider does after custom_llm_setup. The names come from config, so that
+  step needs no Python.
+
+
+  The seam. `LegacySettings` lives in B044's legacy_dispatch module and holds the proxy_custom_dispatch Settings,
+  B1500's proxy_provider_options Settings (LITELLM_PROXY_API_BASE and LITELLM_PROXY_API_KEY), litellm.api_base,
+  litellm.api_key and litellm.openai_key from resource_sdk_settings, litellm.headers from embedding_provider_settings
+  (the section that already reads litellm_settings.headers), and the resolved http2 flag of B172's TlsPolicy.
+  Deployment gains `pub legacy: Option<LegacyInputs>`, where `LegacyInputs { settings: Arc<LegacySettings>,
+  base_configured: bool, key_configured: bool }`. base_configured is true when the deployment's litellm_params.api_base
+  is a non-empty string and key_configured when it sets an api_key. from_chat and from_params set None, and so does
+  every Deployment literal; None keeps B044's deployment-only behavior. provider_chat, the stream path and
+  provider_embedding set inputs.legacy from shared.legacy_providers for the deployment's model_id before prepare.
+  Thread it the way B9990 threads the Anthropic runtime: one more argument, or a field on the struct that already
+  carries that runtime if B9990's merged code has one. The chat, completions and embeddings routes pass
+  `&state.shared.legacy_providers`.
+
+
+  Through the seam, in B044's base and key functions. Aleph Alpha takes the deployment's key only when key_configured,
+  else the section's chain (litellm.aleph_alpha_key, ALEPH_ALPHA_API_KEY, ALEPHALPHA_API_KEY, litellm.api_key), and
+  its base the same way (litellm.api_base, ALEPH_ALPHA_API_BASE, https://api.aleph-alpha.com/complete), through the
+  resolve methods B044 wrote. litellm_proxy takes B1500's LITELLM_PROXY_API_BASE and LITELLM_PROXY_API_KEY when the
+  deployment sets none. The custom endpoint posts to litellm.api_base, else the deployment's base when
+  base_configured, else the request fails with LiteLLM's ValueError text "api_base not set. Set api_base or
+  litellm.api_base for custom endpoints". Remove B044's custom-base row from docs/deviations/B044.yaml.
+
+  These chains replace B044's startup refusal. Delete the check in chat_deployments in chat_setup.rs, the
+  ChatSetupError::UnbuiltChain variant and the rstest unbuilt_chain_stops_startup in chat_setup/tests.rs, so an
+  aleph_alpha or litellm_proxy deployment that leaves out its own api_key or api_base starts and takes LiteLLM's
+  chain, and a custom deployment without its own api_base starts and takes litellm.api_base at request time, else
+  fails that request with the ValueError text above (main.py L4924-L4926), never at startup. The rstest
+  a_legacy_deployment_without_its_own_credentials_starts in chat_setup/tests.rs keeps B044's five cases
+  (aleph_alpha_prefix_without_api_key, aleph_alpha_provider_without_api_base, litellm_proxy_prefix_without_api_base,
+  litellm_proxy_provider_without_api_key, custom_prefix_without_api_base) and asserts chat_executor now answers Ok
+  for each.
+
+
+  aiohttp_openai. apply_aiohttp_defaults in chat_setup.rs stops replacing the resolved values with the deployment's
+  own: the base is the deployment's api_base, litellm.api_base, OPENAI_BASE_URL, OPENAI_API_BASE, then
+  https://api.openai.com/v1, and the key is the deployment's api_key, litellm.api_key, litellm.openai_key, then
+  OPENAI_API_KEY, which is the order OpenAiDefaults already gives resolve_with. The organization stays None. In the
+  aiohttp adapter, with legacy set, empty call headers fall back to litellm.headers, a non-None extra_headers overwrites
+  the optional extra_headers, and with http2 on each request logs at warning "litellm.http2 is enabled but
+  aiohttp_openai/ always uses aiohttp, which has no HTTP/2 client; this request stays on HTTP/1.1" and stays on
+  HTTP/1.1. The two cases in provider_call/tests/defaults.rs then expect http://127.0.0.1:1/chat/completions and
+  "Bearer env-key"; add a case without the environment that expects https://api.openai.com/v1/chat/completions and
+  "Bearer None". In provider_call/tests/errors.rs, aiohttp_without_a_key_sends_bearer_none becomes
+  aiohttp_without_a_key_takes_openai_api_key and expects "authorization: bearer env-key". Delete the first row of
+  docs/deviations/B010.yaml, which says aiohttp_openai reads only its deployment's values.
+
+
+  Custom handlers. provider_chat, the stream path and provider_embedding ask Provider::from_deployment first; when it
+  answers UnavailableAdapter for a provider name LegacyProviders holds, the call goes to that handler instead. Select
+  the last entry with that provider. When none matches, answer LiteLLMUnknownProvider, a 400 BadRequestError with
+  "Unmapped LLM provider for this endpoint. You passed model={model}, custom_llm_provider={custom_llm_provider}. Check
+  supported provider and route: https://docs.litellm.ai/docs/providers" (types/utils.py L151), in B184's envelope.
+  Chat asks B044's custom_chat_llm_router for the method with async_fn true, since the proxy always calls acompletion,
+  and the request's stream. It passes the keywords of L5016-L5033: model, messages, headers (the call's, else
+  litellm.headers, else {}), model_response (a new betterlite ModelResponse, B5657), print_verbose, api_key, api_base,
+  acompletion, logging_obj, optional_params, litellm_params, logger_fn, timeout, custom_prompt_dict, client and
+  encoding. Call through HookObject::call_method_raw with the deployment's timeout as the deadline (B165's call_within),
+  not the 30 second hook default. A returned ModelResponse becomes the chat completion. Only when stream is literally
+  True does the returned async iterator become a stream, its chunks going through B5653's decode_provider_chunk
+  custom-provider branch into the SSE relay. Embedding calls aembedding with model, input, logging_obj, api_base,
+  api_key, timeout, optional_params, model_response (a new EmbeddingResponse, B5658), print_verbose and
+  litellm_params. api_key and api_base are the deployment's configured values or None. An exception the handler raises
+  goes through the same error mapping as a provider failure.
+
+
+  Tests. server::chat_setup::legacy_providers tests load handlers from temporary modules next to a config file through
+  a PythonHooks built for that file: order and the last match for a duplicated name, the unknown-provider 400, a plain
+  class and a subclass of betterlite's CustomLLM (B164) both serving chat, a stream and an embedding, a failed import,
+  and the flags by model_id. Tests whose names start with seam_ in betterlite-provider cover the Aleph Alpha and
+  litellm_proxy fallbacks with key_configured and base_configured false, the custom endpoint's priority and empty-base
+  error, and the aiohttp headers fallback and http2 warning. shared_legacy_providers asserts Shared.legacy_providers is
+  Arc::ptr_eq with the StartupOutputs value; handoff_legacy_providers asserts the lifespan loads once and Started holds
+  the result. HTTP cases under tools/oracle/cases/providers/legacy-settings/ boot the proxy: python-chat,
+  python-stream and python-embedding over a fixture handler in tools/oracle/fixtures/legacy-settings/, written as a
+  plain Python class with acompletion, astreaming and aembedding and no CustomLLM base, because the same module runs
+  under LiteLLM; custom-handler-missing (a deployment that names a custom provider no entry registers),
+  custom-base-missing (a custom/ model with neither base set), aiohttp-global-base (no base or key on the deployment,
+  OPENAI_BASE_URL and OPENAI_API_KEY in the case env) and aleph-env-credentials (no key or base on the deployment,
+  ALEPH_ALPHA_API_KEY and ALEPH_ALPHA_API_BASE in the case env). If the oracle cannot yet put the fixture module beside
+  the config it generates, add that in tools/oracle/src/gateway.rs. About 170 nonblank LiteLLM lines: the aiohttp arm
+  45, the custom provider arm 45, the custom embedding branch 18, the Aleph Alpha, litellm_proxy and custom base
+  chains 15, the config load 12 and custom_llm_setup 8.
+scope:
+  paths:
+    - crates/betterlite-config/src/sections/proxy_custom_dispatch.rs
+    - crates/betterlite-config/src/sections/proxy_custom_dispatch/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/custom_provider_map*
+    - crates/betterlite-provider/src/legacy_dispatch.rs
+    - crates/betterlite-provider/src/legacy_dispatch/**
+    - crates/betterlite-provider/src/prepared/deployment.rs
+    - crates/betterlite-provider/src/aiohttp_openai_dispatch.rs
+    - crates/betterlite-provider/src/aiohttp_openai_dispatch/**
+    - crates/betterlite-provider/src/embedding_rerank_providers/tests.rs
+    - crates/betterlite-provider/src/provider/tests/openai.rs
+    - crates/betterlite-provider/src/operation/tests.rs
+    - crates/betterlite-server/src/python_hooks.rs
+    - crates/betterlite-server/src/python_hooks/load.rs
+    - crates/betterlite-server/src/python_hooks/load/tests.rs
+    - crates/betterlite-server/src/server/chat_setup.rs
+    - crates/betterlite-server/src/server/chat_setup/tests.rs
+    - crates/betterlite-server/src/server/chat_setup/legacy_providers.rs
+    - crates/betterlite-server/src/server/chat_setup/legacy_providers/**
+    - crates/betterlite-server/src/server/chat_setup/provider_call.rs
+    - crates/betterlite-server/src/server/chat_setup/provider_call/embedding.rs
+    - crates/betterlite-server/src/server/chat_setup/provider_call/tests.rs
+    - crates/betterlite-server/src/server/chat_setup/provider_call/tests/defaults.rs
+    - crates/betterlite-server/src/server/chat_setup/provider_call/tests/errors.rs
+    - crates/betterlite-server/src/server/chat_setup/provider_call/tests/stream.rs
+    - crates/betterlite-server/src/routes/completions.rs
+    - crates/betterlite-server/src/routes/completions/streaming.rs
+    - crates/betterlite-server/src/routes/completions/streaming/tests.rs
+    - crates/betterlite-server/src/routes/chat/streaming.rs
+    - crates/betterlite-server/src/routes/chat/streaming/tests.rs
+    - crates/betterlite-server/src/routes/chat/tests.rs
+    - crates/betterlite-server/src/routes/embeddings.rs
+    - crates/betterlite-server/src/routes/tests.rs
+    - crates/betterlite-server/src/state/shared.rs
+    - crates/betterlite-server/src/server.rs
+    - crates/betterlite-server/src/server/inputs.rs
+    - crates/betterlite-server/src/server/tests.rs
+    - crates/betterlite-server/src/cost_service/tests.rs
+    - crates/betterlite-server/src/auth/auth_model_lists/tests.rs
+    - crates/betterlite/src/lifespan.rs
+    - crates/betterlite/src/lifespan/**
+    - docs/deviations/B010.yaml
+    - docs/deviations/B044.yaml
+    - tools/oracle/src/gateway.rs
+    - tools/oracle/cases/providers/legacy-settings/**
+    - tools/oracle/fixtures/legacy-settings/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L2390-L2448
+    why: Aiohttp dispatch adds the global OpenAI base and key, the litellm.headers fallback and the http2 warning before the bare adapter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L3009-L3020
+    why: The Aleph Alpha key and base chains a deployment without its own values falls back to.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L4924-L4926
+    why: The custom endpoint puts litellm.api_base first and raises when no base is left.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L4982-L5042
+    why: Last-match handler selection, the unknown-provider error, the method router call and its keywords.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6057-L6063
+    why: The custom map is checked only after every built-in provider arm.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7274-L7296
+    why: The custom embedding branch and the arguments it forwards.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6457-L6470
+    why: Where load_config imports each custom_handler and runs custom_llm_setup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L572-L581
+    why: custom_llm_setup registers each provider name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L151
+    why: The unknown-provider message.
+dod:
+  - text: The proxy_custom_dispatch section loads custom_provider_map entries in order with duplicates, refuses an entry without provider or custom_handler, and the loader no longer refuses the key as unsupported.
+    proof: [map-config-tests, map-config-corpus]
+  - text: A custom provider deployment calls the last matching handler's acompletion, astreaming or aembedding with LiteLLM's keywords and the deployment's timeout as deadline, and a provider with no handler answers LiteLLM's unknown-provider 400.
+    proof: [legacy-providers-tests, oracle]
+  - text: Startup loads every handler once through the lifespan's PythonHooks, a failed import stops startup, and the same LegacyProviders reaches Started, StartupOutputs and shared.legacy_providers.
+    proof: [legacy-providers-tests, wiring-tests]
+  - text: A deployment without its own base or key gets the Aleph Alpha and litellm_proxy fallbacks, the custom endpoint puts litellm.api_base first and fails with LiteLLM's text when no base is left, and B044's custom-base deviation is gone.
+    proof: [seam-tests, oracle]
+  - text: B044's startup refusal is gone, with its ChatSetupError::UnbuiltChain variant and its test, and an aleph_alpha or litellm_proxy deployment without its own api_key or api_base, or a custom one without its own api_base, starts.
+    proof: [refusal-lifted]
+  - text: aiohttp_openai takes main.py's base and key chain, falls back to litellm.headers and warns under http2, the server tests assert LiteLLM's values, and B010's aiohttp deviation is gone.
+    proof: [seam-tests, aiohttp-tests, oracle]
+  - text: The fixture handler passes ruff.
+    proof: [fixture-lint]
+checks:
+  optional: [mutants]
+  commands:
+    - id: map-config-tests
+      why: custom_provider_map is still refused as unsupported, or loses order, duplicates or the entry error
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(custom_provider_map_loads)'
+    - id: map-config-corpus
+      why: no fresh configuration seed reaches the custom_provider_map loader
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/custom_provider_map*')" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: legacy-providers-tests
+      why: handlers load out of order, the first duplicate wins, the unknown provider is not a 400, a handler call misses a keyword, or the hook loader tests break
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^server::chat_setup::legacy_providers::/)' && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^python_hooks::load::/)'
+    - id: seam-tests
+      why: a fallback chain ignores the configured flags, the custom endpoint keeps the deployment base first, a Deployment literal breaks, or a deviation row that this task closes is still there
+      run: test -z "$(grep -l B10006 docs/deviations/B044.yaml)" && cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::seam_/)' && cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^legacy_dispatch::/) | test(/^aiohttp_openai_dispatch::/) | test(/^embedding_rerank_providers::/) | test(/^provider::tests::/) | test(/^operation::/)'
+    - id: refusal-lifted
+      why: B044's startup refusal still stops an aleph_alpha or litellm_proxy deployment, or a custom one without a base, that LiteLLM serves from its global chain
+      run: test -z "$(grep -l -e UnbuiltChain -e unbuilt_chain_stops_startup crates/betterlite-server/src/server/chat_setup.rs crates/betterlite-server/src/server/chat_setup/tests.rs)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^server::chat_setup::tests::a_legacy_deployment_without_its_own_credentials_starts::/)'
+    - id: aiohttp-tests
+      why: the server tests still assert the bare adapter's base and key, or B010's aiohttp deviation is still logged
+      run: test -z "$(grep -l 'https://api.openai.com/chat/completions' crates/betterlite-server/src/server/chat_setup/provider_call/tests/defaults.rs)" && test -z "$(grep -l aiohttp_without_a_key_sends_bearer_none crates/betterlite-server/src/server/chat_setup/provider_call/tests/errors.rs)" && test -z "$(grep -l 'aiohttp_openai reads only its deployment' docs/deviations/B010.yaml)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^server::chat_setup::provider_call::tests::/)'
+    - id: wiring-tests
+      why: the lifespan loads the handlers twice or not at all, or the routes read another LegacyProviders than Shared holds
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(shared_legacy_providers)' && cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(handoff_legacy_providers)'
+    - id: fixture-lint
+      why: the fixture handler module is missing or fails ruff
+      run: test -d tools/oracle/fixtures/legacy-settings && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/fixtures/legacy-settings
+oracle_cases:
+  - tools/oracle/cases/providers/legacy-settings/python-chat.yaml
+  - tools/oracle/cases/providers/legacy-settings/python-stream.yaml
+  - tools/oracle/cases/providers/legacy-settings/python-embedding.yaml
+  - tools/oracle/cases/providers/legacy-settings/custom-handler-missing.yaml
+  - tools/oracle/cases/providers/legacy-settings/custom-base-missing.yaml
+  - tools/oracle/cases/providers/legacy-settings/aiohttp-global-base.yaml
+  - tools/oracle/cases/providers/legacy-settings/aleph-env-credentials.yaml
+deviations:
+  - what: A custom_provider_map handler gets logging_obj, encoding, client and logger_fn as None and a print_verbose that does nothing.
+    why: betterlite has no Python Logging object, tiktoken encoding or HTTP handler to hand over. The arguments a handler reads to make its call (model, messages, credentials, optional_params, litellm_params, timeout) are LiteLLM's.
+  - what: A handler call that runs past the deployment's timeout ends with a timeout error.
+    why: LiteLLM passes timeout to the handler but never bounds the call itself, and the embedded interpreter's pool needs a deadline for every job.
+out_of_scope:
+  - custom_chat_llm_router, the legacy wire formats, decode_custom_output, the Aleph Alpha resolve methods and the litellm_proxy embedding branch are B044's; this task feeds them the seam and calls them.
+  - The CustomLLM, CustomLLMError, CustomLLMItem and BaseLLM classes are B164's. The oracle fixture stays a plain class because the same module runs under LiteLLM.
+  - The rest of ProxyConfig.load_config belongs to B8590, B8374, B165, B189 and the setting owners B124 lists; this task takes only its custom_provider_map branch. The rest of main.py is B044's, B158's and the provider umbrellas B044's out_of_scope names.
+  - The Python SDK's litellm.custom_provider_map, litellm.provider_list and litellm._custom_providers are B157's settings and B5367's custom_llm_setup in betterlite-sdk; the server keeps its own provider set.
+pitfalls:
+  - main.py checks litellm._custom_providers only after every built-in provider arm (L6061), so a custom provider that reuses a LiteLLM provider name never reaches its handler; decide by LiteLLM's provider names, not by the adapters betterlite has built so far.
+  - The custom_provider_map loop has no break, so a duplicated provider name selects the last configured handler.
+  - _complete_custom puts litellm.api_base before the deployment's own api_base, unlike every neighboring provider.
+  - _complete_aiohttp_openai falls back to https://api.openai.com/v1, while B010's bare adapter defaults to https://api.openai.com without /v1; only the dispatch default reaches a proxy request.
+  - A deployment that sets api_base to https://api.openai.com/v1 still configured it, so decide base_configured from litellm_params.api_base and never by comparing the resolved base with the OpenAI default.
+  - B9986 and B9988 add Deployment fields and literals of their own. Set legacy to None in each, and report a literal outside this scope so the architect widens it.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
