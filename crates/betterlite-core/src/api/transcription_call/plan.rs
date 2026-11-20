@@ -160,27 +160,25 @@ fn sdk_options(plan: &Plan, api_version: Option<String>) -> ResourceSdkRequestOp
     }
 }
 
-// the openai branch: api_base, key and organization, each through its own fallback chain
+// the two branches main selects before any provider config: which one, and the credentials it carries
+#[derive(Clone, Copy)]
+pub(super) enum CredentialScheme {
+    Azure,
+    OpenAi,
+}
+
+pub(super) enum BranchCredentials {
+    Azure(AzureCredentials),
+    OpenAi(OpenAiCredentials),
+}
+
 pub(super) struct OpenAiCredentials {
     pub api_base: String,
     pub api_key: Option<SecretString>,
     pub organization: Option<String>,
 }
 
-pub(super) fn openai_credentials(plan: &Plan, settings: &Settings) -> OpenAiCredentials {
-    let resolved = ResourceSdkSettings::from(settings);
-    let options = sdk_options(plan, None);
-    OpenAiCredentials {
-        api_base: resolved.openai_base(&options),
-        api_key: resolved.openai_api_key(&options).cloned(),
-        organization: first_text([
-            resolved.organization.as_deref(),
-            resolved.openai_organization.as_deref(),
-        ]),
-    }
-}
-
-// the azure branch: its key chain never reads AZURE_OPENAI_API_KEY, unlike speech's
+// the azure key chain never reads AZURE_OPENAI_API_KEY, unlike speech's
 pub(super) struct AzureCredentials {
     pub api_base: Option<String>,
     pub api_version: Option<String>,
@@ -188,26 +186,43 @@ pub(super) struct AzureCredentials {
     pub azure_ad_token: Option<SecretString>,
 }
 
-pub(super) fn azure_credentials(
+pub(super) fn credentials(
+    scheme: CredentialScheme,
     plan: &Plan,
     call: &TranscriptionCall,
     settings: &Settings,
-) -> AzureCredentials {
+) -> BranchCredentials {
     let resolved = ResourceSdkSettings::from(settings);
-    let options = sdk_options(plan, call.api_version.clone());
-    AzureCredentials {
-        api_base: resolved.azure_base(&options).map(str::to_owned),
-        api_version: resolved.azure_version(&options).map(str::to_owned),
-        api_key: first_secret([
-            options.api_key.as_ref(),
-            resolved.api_key.as_ref(),
-            resolved.azure_key.as_ref(),
-            resolved.azure_api_key.as_ref(),
-        ]),
-        azure_ad_token: first_secret([
-            call.azure_ad_token.as_ref(),
-            resolved.azure_ad_token.as_ref(),
-        ]),
+    match scheme {
+        CredentialScheme::Azure => {
+            let options = sdk_options(plan, call.api_version.clone());
+            BranchCredentials::Azure(AzureCredentials {
+                api_base: resolved.azure_base(&options).map(str::to_owned),
+                api_version: resolved.azure_version(&options).map(str::to_owned),
+                api_key: first_secret([
+                    options.api_key.as_ref(),
+                    resolved.api_key.as_ref(),
+                    resolved.azure_key.as_ref(),
+                    resolved.azure_api_key.as_ref(),
+                ]),
+                azure_ad_token: first_secret([
+                    call.azure_ad_token.as_ref(),
+                    resolved.azure_ad_token.as_ref(),
+                ]),
+            })
+        }
+        // the openai branch: api_base, key and organization, each through its own fallback chain
+        CredentialScheme::OpenAi => {
+            let options = sdk_options(plan, None);
+            BranchCredentials::OpenAi(OpenAiCredentials {
+                api_base: resolved.openai_base(&options),
+                api_key: resolved.openai_api_key(&options).cloned(),
+                organization: first_text([
+                    resolved.organization.as_deref(),
+                    resolved.openai_organization.as_deref(),
+                ]),
+            })
+        }
     }
 }
 

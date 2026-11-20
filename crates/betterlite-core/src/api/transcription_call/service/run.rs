@@ -14,7 +14,9 @@ use crate::api::transcription_call::DEFAULT_TIMEOUT_SECONDS;
 use crate::api::transcription_call::call::{SuppliedClientKind, TranscriptionCall};
 use crate::api::transcription_call::dispatch::{TranscriptionAnswer, TranscriptionDispatch};
 use crate::api::transcription_call::error::TranscriptionError;
-use crate::api::transcription_call::plan::{Plan, azure_credentials, openai_credentials, prepare};
+use crate::api::transcription_call::plan::{
+    BranchCredentials, CredentialScheme, Plan, credentials, prepare,
+};
 use crate::api::transcription_call::target::{
     AzureTranscription, InjectedTranscription, OpenAiTranscription, TranscriptionInput,
     TranscriptionTarget, retry_count,
@@ -28,13 +30,6 @@ struct BranchCall<'call> {
     input: &'call str,
     timeout: Duration,
     max_retries: u32,
-}
-
-// the two transports main selects while no provider config is needed
-#[derive(Clone, Copy)]
-enum Transport {
-    Azure,
-    OpenAi,
 }
 
 impl<Dispatch> Transcriptions<'_, Dispatch>
@@ -68,10 +63,10 @@ where
         };
         self.log(call, &plan)?;
         if matches!(plan.slug.as_str(), "azure" | "azure_ai") && plan.config.is_none() {
-            return self.provider(Transport::Azure, &branch).await;
+            return self.provider(CredentialScheme::Azure, &branch).await;
         }
         if plan.openai_transport {
-            return self.provider(Transport::OpenAi, &branch).await;
+            return self.provider(CredentialScheme::OpenAi, &branch).await;
         }
         if plan.slug == "nvidia_riva" {
             return self.injected(InjectedTarget::Riva, None, &branch).await;
@@ -114,12 +109,11 @@ where
     // the two transports main selects before its injected branches, each with its own credential chain
     async fn provider(
         &self,
-        transport: Transport,
+        scheme: CredentialScheme,
         branch: &BranchCall<'_>,
     ) -> Result<TranscriptionAnswer, TranscriptionError<Dispatch::Error>> {
-        match transport {
-            Transport::Azure => {
-                let credentials = azure_credentials(branch.plan, branch.call, self.settings);
+        match credentials(scheme, branch.plan, branch.call, self.settings) {
+            BranchCredentials::Azure(secrets) => {
                 let mut optional_params = branch.plan.optional_params.clone();
                 // the Azure branch adds extra_headers to the options even when the caller passed none
                 optional_params.insert(
@@ -131,33 +125,31 @@ where
                         input: self.base_input(
                             branch,
                             optional_params,
-                            credentials.api_base.as_deref(),
-                            credentials.api_key.as_ref(),
+                            secrets.api_base.as_deref(),
+                            secrets.api_key.as_ref(),
                             branch.call.client,
                         ),
-                        api_version: credentials.api_version.as_deref(),
-                        azure_ad_token: credentials.azure_ad_token.as_ref(),
+                        api_version: secrets.api_version.as_deref(),
+                        azure_ad_token: secrets.azure_ad_token.as_ref(),
                     }))
                     .await
                     .map_err(TranscriptionError::Dispatch)
             }
-            Transport::OpenAi => {
-                let credentials = openai_credentials(branch.plan, self.settings);
-                self.dispatch
-                    .transcribe(TranscriptionTarget::OpenAi(OpenAiTranscription {
-                        input: self.base_input(
-                            branch,
-                            branch.plan.optional_params.clone(),
-                            Some(credentials.api_base.as_str()),
-                            credentials.api_key.as_ref(),
-                            branch.call.client,
-                        ),
-                        organization: credentials.organization.as_deref(),
-                        family: transcription_family(branch.plan.config),
-                    }))
-                    .await
-                    .map_err(TranscriptionError::Dispatch)
-            }
+            BranchCredentials::OpenAi(secrets) => self
+                .dispatch
+                .transcribe(TranscriptionTarget::OpenAi(OpenAiTranscription {
+                    input: self.base_input(
+                        branch,
+                        branch.plan.optional_params.clone(),
+                        Some(secrets.api_base.as_str()),
+                        secrets.api_key.as_ref(),
+                        branch.call.client,
+                    ),
+                    organization: secrets.organization.as_deref(),
+                    family: transcription_family(branch.plan.config),
+                }))
+                .await
+                .map_err(TranscriptionError::Dispatch),
         }
     }
 
