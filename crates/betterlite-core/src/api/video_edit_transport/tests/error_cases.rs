@@ -20,6 +20,7 @@ use crate::api::video_edit_transport::error::VideoEditTransportError;
 #[case::dod_8_prefetch_status(dod_8_prefetch_status)]
 #[case::dod_8_prefetch_decode(dod_8_prefetch_decode)]
 #[case::dod_8_main_status(dod_8_main_status)]
+#[case::dod_8_extension_status(dod_8_extension_status)]
 #[case::dod_8_edit_response_transform(dod_8_edit_response_transform)]
 #[case::dod_8_extension_response_transform(dod_8_extension_response_transform)]
 #[case::dod_8_send_failure(dod_8_send_failure)]
@@ -184,6 +185,25 @@ fn dod_8_main_status() {
         vec![("gone".to_owned(), 404, headers(&[("content-length", "4")]))]
     );
     assert!(harness.config.edit_reply_seen().is_none());
+    assert_eq!(wire.requests().len(), 1);
+}
+
+fn dod_8_extension_status() {
+    let events = Events::new();
+    let wire = Wire::new(vec![Reply::json(404, "gone")], &events);
+    let harness = Harness::new(&events, wire.clone());
+    let transport = harness.transport();
+    let error =
+        expect_failure(transport.video_extension(harness.extension_request(), &harness.config));
+    let provider = provider_error(error);
+    assert_eq!(provider.status_code, 404);
+    assert!(!provider.status_code_is_synthesized);
+    assert_eq!(provider.message, "gone");
+    assert_eq!(
+        harness.config.errors(),
+        vec![("gone".to_owned(), 404, headers(&[("content-length", "4")]))]
+    );
+    assert!(harness.config.extension_reply_seen().is_none());
     assert_eq!(wire.requests().len(), 1);
 }
 

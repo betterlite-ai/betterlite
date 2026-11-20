@@ -1,0 +1,49 @@
+task: B3336
+deviations:
+  - what: >-
+      A sync handler called from inside a running runtime returns
+      VideoEditTransportError::SyncInRuntime with status_code 500 and the message "video sync
+      handler cannot run inside a running runtime".
+    why: >-
+      LiteLLM's sync handler never needs a runtime because its client is synchronous. betterlite's
+      runs the shared async implementation on a new current-thread runtime, and Tokio panics when
+      that happens inside another runtime. The typed error lets the gateway answer 500 instead of
+      aborting the task.
+    link: ""
+  - what: >-
+      A supplied client is used when its ClientKind matches the mode the handler runs, Sync for
+      video_edit and video_extension and Asynchronous for their async twins; a supplied client of
+      the other kind is ignored and the pooled client is built from the source.
+    why: >-
+      LiteLLM tests isinstance(client, HTTPHandler) or isinstance(client, AsyncHTTPHandler).
+      betterlite's SuppliedClient carries its kind instead of a Python class, so the same choice is
+      a variant match.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L8051
+  - what: >-
+      An error raised by transform_video_edit_response or transform_video_extension_response
+      becomes the provider's error class with the reply's HTTP status, headers and body text, and
+      the body text is the message.
+    why: >-
+      The task's eighth DoD item says so. LiteLLM's _handle_error would see only the transform's
+      own exception, which carries no response, and synthesize a 500 whose text is that
+      exception's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L8127
+  - what: >-
+      The prefetch reply is decoded into a JSON object; a reply that is valid JSON but not an
+      object, a list or a scalar, is the typed PrefetchDecode error.
+    why: >-
+      LiteLLM types the prefetch body as dict in get_video_edit_prefetch_params and
+      prefetched_source_data as dict[str, object] | None in transform_video_edit_request, while
+      httpx's .json() accepts any JSON and would pass a list through. betterlite keeps the
+      declared type.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L8090
+kept_bugs:
+  - what: >-
+      _handle_error only ever sets status_code_is_synthesized to true and never clears a flag the
+      provider's own error class set, so a provider error returned for an HTTP status response
+      keeps whatever flag its class built.
+    why: >-
+      A provider whose get_error_class marks the status synthesized would report that flag on a
+      response-backed error. betterlite copies it because a setup that reads the flag from a
+      provider error class relies on the provider's value surviving.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6109
