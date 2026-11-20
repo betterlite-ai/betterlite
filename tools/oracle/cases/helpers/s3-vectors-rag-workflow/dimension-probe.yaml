@@ -18,6 +18,7 @@ call:
         failing: false
       - vector: {vector_bucket_name: probe-bucket, index_name: probe-index}
         environment: {}
+        answer: []
         failing: false
 env: {}
 compare: {ignore: []}
