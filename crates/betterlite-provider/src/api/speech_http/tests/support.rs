@@ -490,6 +490,7 @@ impl TextToSpeechConfig for RecordingConfig {
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
         *responses = responses.saturating_add(1);
+        drop(responses);
         BinaryContent::from_response(raw_response)
     }
 
