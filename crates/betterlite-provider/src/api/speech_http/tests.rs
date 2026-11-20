@@ -221,7 +221,10 @@ async fn speech_http_sync_and_async_send_the_same_http() {
         captures[0].headers,
         vec![("x".to_owned(), "caller".to_owned())]
     );
-    assert_eq!(captures[0].body.as_deref(), Some(br#"{"input":"hello"}"#));
+    assert_eq!(
+        captures[0].body.as_deref(),
+        Some(br#"{"input":"hello"}"#.as_slice())
+    );
     let requests = harness.wire.requests();
     assert_eq!(requests[0].timeout, Some(Duration::from_secs(5)));
     assert_eq!(requests[1].timeout, Some(Duration::from_secs(5)));
