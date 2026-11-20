@@ -67,6 +67,27 @@ fn native_defaults_post_the_audio_speech_body() {
     );
 }
 
+// LiteLLM builds `headers or litellm.headers` and never passes it to audio_speech
+#[test]
+fn configured_global_headers_stay_out_of_the_request() {
+    let variables = [("OPENAI_API_KEY", "sk-global-headers")];
+    let harness = Harness::new(
+        loaded_settings(
+            "litellm_settings: {headers: {x-global: 'no'}}\n",
+            &variables,
+        ),
+        RecordingTransport::ok("audio/mpeg", &[1]),
+        &variables,
+    );
+    let native = SpeechCall {
+        voice: named_voice("alloy"),
+        ..base_call("openai/tts-1")
+    };
+    harness.run_ok(&native);
+    let sent = harness.transport.sent();
+    assert_eq!(header(&sent[0], "x-global"), None);
+}
+
 #[test]
 fn native_defaults_use_the_speech_timeout_and_retries() {
     let settings = loaded_settings(SOURCE, &[]);

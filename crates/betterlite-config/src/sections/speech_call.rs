@@ -1,6 +1,7 @@
 mod tests;
 
-use betterlite_openai::openai_base_config::Object;
+use std::collections::BTreeMap;
+
 use secrecy::SecretString;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
@@ -28,7 +29,7 @@ pub struct RawSettings {
     pub project: Option<String>,
     pub azure_key: Option<SecretString>,
     pub api_version: Option<String>,
-    pub headers: Option<Object>,
+    pub headers: Option<BTreeMap<String, String>>,
     pub num_retries: Option<RawNumber>,
     pub request_timeout: Option<RawNumber>,
 }
@@ -45,7 +46,7 @@ pub struct Settings {
     pub project: Option<String>,
     pub azure_key: Option<SecretString>,
     pub api_version: Option<String>,
-    pub headers: Option<Object>,
+    pub headers: Option<BTreeMap<String, String>>,
     pub openai_base_url: Option<String>,
     pub openai_api_base: Option<String>,
     pub openai_api_key: Option<SecretString>,
