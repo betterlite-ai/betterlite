@@ -51,6 +51,13 @@ async fn refresh_reports_the_cause_of_a_failed_reload() {
     let error = refresh.refresh().await.unwrap_err();
     assert_eq!(refresh.calls.load(Ordering::SeqCst), 1);
     assert_eq!(error.to_string(), "the search tools table is unreachable");
+    assert!(
+        error
+            .source()
+            .unwrap()
+            .downcast_ref::<TableUnreachable>()
+            .is_some()
+    );
 }
 
 #[test]
