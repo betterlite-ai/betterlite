@@ -162,9 +162,7 @@ where
     let api_key = params.api_key.as_ref().map(ExposeSecret::expose_secret);
     let mut headers = config.validate_environment(&extra, api_key);
     headers.insert("Content-Type".to_owned(), "application/json".to_owned());
-    for (name, value) in &extra {
-        headers.insert(name.clone(), value.clone());
-    }
+    headers.extend(extra);
     let url = config.get_complete_url(params.api_base, call.base.litellm_params)?;
     let context = config::ContainerRequestContext {
         litellm_params: call.base.litellm_params,
