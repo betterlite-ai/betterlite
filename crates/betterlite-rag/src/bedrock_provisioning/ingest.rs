@@ -55,7 +55,7 @@ impl<Transport> BedrockProvisioner<'_, Transport>
 where
     Transport: AwsRagTransport,
 {
-    // Bedrock embeds the file inside the ingestion job, so there is no vector to hand back
+    // ast-grep-ignore: no-one-line-functions - BedrockRAGIngestion.embed returns None, and the ingestion job embeds the file
     pub fn embed(&self, _chunks: &[String]) -> Option<Vec<Vec<f64>>> {
         None
     }

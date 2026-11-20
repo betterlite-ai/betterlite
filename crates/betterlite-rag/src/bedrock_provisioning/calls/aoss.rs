@@ -1,5 +1,4 @@
 use betterlite_context::aws_partition::get_aws_partition;
-use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -136,19 +135,13 @@ pub fn batch_get_collection(
     }
 }
 
-pub fn parse_json<Response: DeserializeOwned>(
-    body: &[u8],
-    operation: &'static str,
-) -> Result<Response, CallError> {
-    serde_json::from_slice(body).map_err(|source| CallError::Json { operation, source })
-}
-
 // an empty collectionDetails list is an answer that cannot be used, not an empty collection
 pub fn first_collection(
     body: &[u8],
     operation: &'static str,
 ) -> Result<CollectionDetail, CallError> {
-    let response: BatchGetCollectionResponse = parse_json(body, operation)?;
+    let response: BatchGetCollectionResponse =
+        serde_json::from_slice(body).map_err(|source| CallError::Json { operation, source })?;
     response
         .collection_details
         .into_iter()

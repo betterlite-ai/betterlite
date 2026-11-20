@@ -8,6 +8,7 @@ use self::support::{
     ACCOUNT, CALLER_ARN, COLLECTION_ARN, ScriptedTransport, UNIQUE_ID, answer, new_provisioner,
     repeated, status,
 };
+use crate::bedrock_provisioning::calls::error::CallError;
 use crate::bedrock_provisioning::provision::error::ProvisionError;
 
 pub(crate) mod support;
@@ -57,6 +58,28 @@ async fn collection_sends_the_three_policies_then_creates_and_records() {
         ]
     );
     assert_eq!(started.elapsed(), Duration::from_secs(60));
+}
+
+#[tokio::test(start_paused = true)]
+async fn collection_reports_a_create_body_that_is_not_json() {
+    let transport = ScriptedTransport::new(vec![
+        answer("{}"),
+        answer("{}"),
+        answer("{}"),
+        answer("not json"),
+    ]);
+    let mut provisioner = new_provisioner(r#"{"aws_region_name":"us-west-2"}"#, transport);
+    let error = provisioner
+        .create_opensearch_collection(UNIQUE_ID, ACCOUNT, CALLER_ARN)
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        ProvisionError::Call(CallError::Json {
+            operation: "CreateCollection",
+            ..
+        })
+    ));
 }
 
 #[tokio::test(start_paused = true)]

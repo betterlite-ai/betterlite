@@ -68,8 +68,11 @@ where
         .await?;
         let call = aoss::create_collection(&region, &name)?;
         let response = self.send(&call).await?.require_success(call.operation)?;
-        let created: aoss::CreateCollectionResponse =
-            aoss::parse_json(&response.body, aoss::CREATE_COLLECTION)?;
+        let created: aoss::CreateCollectionResponse = serde_json::from_slice(&response.body)
+            .map_err(|source| CallError::Json {
+                operation: aoss::CREATE_COLLECTION,
+                source,
+            })?;
         let collection_id = created
             .create_collection_detail
             .and_then(|detail| detail.id)
@@ -165,7 +168,12 @@ where
         resources: &RoleResources<'_>,
         role_name: &str,
     ) -> Result<String, ProvisionError<Transport::Error>> {
-        let document = plan_document(&plan::trust_policy(resources), query::CREATE_ROLE)?;
+        let document = serde_json::to_string(&plan::trust_policy(resources)).map_err(|source| {
+            CallError::Serialize {
+                operation: query::CREATE_ROLE,
+                source,
+            }
+        })?;
         let body = self
             .iam_call(
                 query::CREATE_ROLE,
@@ -184,7 +192,13 @@ where
         resources: &RoleResources<'_>,
         role_name: &str,
     ) -> Result<(), ProvisionError<Transport::Error>> {
-        let document = plan_document(&plan::permissions_policy(resources), query::PUT_ROLE_POLICY)?;
+        let document =
+            serde_json::to_string(&plan::permissions_policy(resources)).map_err(|source| {
+                CallError::Serialize {
+                    operation: query::PUT_ROLE_POLICY,
+                    source,
+                }
+            })?;
         let policy_name = format!("{role_name}-policy");
         let mut pairs: Vec<(&str, &str)> = vec![("RoleName", role_name)];
         pairs.push(("PolicyName", policy_name.as_str()));
@@ -237,13 +251,6 @@ where
         }
         Err(ProvisionError::CollectionTimeout)
     }
-}
-
-fn plan_document<Plan: Serialize>(
-    plan: &Plan,
-    operation: &'static str,
-) -> Result<String, CallError> {
-    serde_json::to_string(plan).map_err(|source| CallError::Serialize { operation, source })
 }
 
 fn index_url(endpoint: &str, region: &str) -> Result<String, CallError> {

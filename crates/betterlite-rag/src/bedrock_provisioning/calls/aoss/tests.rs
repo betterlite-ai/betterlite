@@ -5,7 +5,7 @@ use serde::Deserialize;
 use super::{
     BATCH_GET_COLLECTION, CREATE_ACCESS_POLICY, CREATE_COLLECTION, CREATE_SECURITY_POLICY,
     CollectionSelection, CreateCollectionResponse, aoss_url, batch_get_collection,
-    create_collection, create_policy, first_collection, parse_json,
+    create_collection, create_policy, first_collection,
 };
 use crate::bedrock_provisioning::calls::CallRequest;
 use crate::bedrock_provisioning::plan;
@@ -161,7 +161,7 @@ fn call_aoss_url_follows_the_partition_suffix() {
 #[test]
 fn call_create_collection_reads_the_detail_id() {
     let body = br#"{"createCollectionDetail":{"id":"abc","name":"kb","status":"CREATING"}}"#;
-    let created: CreateCollectionResponse = parse_json(body, CREATE_COLLECTION).unwrap();
+    let created: CreateCollectionResponse = serde_json::from_slice(body).unwrap();
     assert_eq!(
         created
             .create_collection_detail
@@ -172,13 +172,8 @@ fn call_create_collection_reads_the_detail_id() {
 
 #[test]
 fn call_create_collection_reports_a_missing_detail() {
-    let created: CreateCollectionResponse = parse_json(b"{}", CREATE_COLLECTION).unwrap();
+    let created: CreateCollectionResponse = serde_json::from_slice(b"{}").unwrap();
     assert_eq!(created.create_collection_detail, None);
-}
-
-#[test]
-fn call_parse_json_reports_a_body_that_is_not_json() {
-    assert!(parse_json::<CreateCollectionResponse>(b"not json", CREATE_COLLECTION).is_err());
 }
 
 #[test]
