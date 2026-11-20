@@ -54,7 +54,7 @@ impl Helper for Op {
     }
 }
 
-fn outcome(call: &Call) -> Outcome {
+const fn outcome(call: &Call) -> Outcome {
     let settings = Settings {
         key_generation_disabled: call.settings.key_generation_disabled,
     };
