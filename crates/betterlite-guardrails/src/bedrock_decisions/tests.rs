@@ -113,12 +113,16 @@ fn context<'record>(
     }
 }
 
-fn call_log<'call>(prices: &'call ModelCatalog) -> CallLog<'call> {
+fn call_log(prices: &ModelCatalog) -> CallLog<'_> {
     CallLog {
         guardrail_provider: "bedrock",
         event_type: Some(GuardrailEventHooks::DuringCall),
-        start_time: SystemTime::UNIX_EPOCH + Duration::from_millis(100_250),
-        now: SystemTime::UNIX_EPOCH + Duration::from_millis(102_750),
+        start_time: SystemTime::UNIX_EPOCH
+            .checked_add(Duration::from_millis(100_250))
+            .expect("the test clock is after the epoch"),
+        now: SystemTime::UNIX_EPOCH
+            .checked_add(Duration::from_millis(102_750))
+            .expect("the test clock is after the epoch"),
         pricing: Pricing {
             catalog: prices,
             aws_region_name: None,

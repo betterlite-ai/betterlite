@@ -34,10 +34,10 @@ use crate::guardrail_records::record::GuardrailStatus;
 #[case(r#"{"output":{"__type":"ValidationException"}}"#, false)]
 #[case(r#"{"__type":"ValidationException"}"#, false)]
 #[case(r#"{"Exception":"ValidationException"}"#, false)]
-#[case(r#"[]"#, false)]
+#[case("[]", false)]
 #[case(r#""ValidationException""#, false)]
-#[case(r#"null"#, false)]
-#[case(r#"1.5"#, false)]
+#[case("null", false)]
+#[case("1.5", false)]
 #[case(r#"{"Output":{"__type":"Exception"},"x":1.0}"#, true)]
 fn payload_has_exception_needs_a_text_marker_under_output(
     #[case] wire: &str,

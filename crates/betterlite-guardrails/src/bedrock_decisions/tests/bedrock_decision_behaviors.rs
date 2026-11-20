@@ -77,7 +77,7 @@ fn should_raise_only_for_intervened_and_blocked(#[case] wire: &str, #[case] expe
 )]
 #[case(
     r#"{"assessments":[{"topicPolicy":null,"contentPolicy":{},"wordPolicy":{"customWords":[]},"sensitiveInformationPolicy":{"piiEntities":null,"regexes":[]}}]}"#,
-    r#"[]"#
+    "[]"
 )]
 fn blocked_assessments_emit_a_block_per_policy_with_matches(
     #[case] wire: &str,
