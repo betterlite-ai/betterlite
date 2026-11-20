@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, VecDeque};
+use std::str::from_utf8;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -79,7 +80,7 @@ fn status(value: u16) -> Json {
 }
 
 fn answer(status: u16, headers: &[(&str, &str)], body: &[u8]) -> UpstreamResponse {
-    let headers = headers
+    let header_map = headers
         .iter()
         .map(|(name, value)| {
             (
@@ -90,7 +91,7 @@ fn answer(status: u16, headers: &[(&str, &str)], body: &[u8]) -> UpstreamRespons
         .collect();
     UpstreamResponse {
         status,
-        headers,
+        headers: header_map,
         body: body.to_vec(),
     }
 }
@@ -141,7 +142,7 @@ impl UploadTransport for FakeTransport {
             body,
             timeout,
         } = request;
-        let body = match body {
+        let seen_body = match body {
             UploadBody::Bytes(data) => vec![data],
             UploadBody::Multipart { boundary, parts } => {
                 vec![encode(&boundary, &parts).expect("a multipart body")]
@@ -163,13 +164,14 @@ impl UploadTransport for FakeTransport {
                 url: url.to_string(),
                 headers,
                 timeout,
-                body,
+                body: seen_body,
             });
         let mut answers = self.wire.answers.lock().expect("the wire is not poisoned");
         answers.pop_front().ok_or(TransportError::Closed)
     }
 }
 
+#[derive(Clone)]
 struct FakeSource {
     transport: FakeTransport,
 }
@@ -236,7 +238,7 @@ impl FileUploadConfig for Config {
     }
 
     fn file_upload_http_method(&self) -> Method {
-        self.method
+        self.method.clone()
     }
 
     fn transform_create_file_request(
@@ -313,6 +315,13 @@ impl RecordingSink {
     }
 }
 
+// The mode and the caller's request pieces for one upload call
+struct RunCall<'call> {
+    mode: Mode,
+    call: &'call FileCreate,
+    params: &'call FileParams,
+}
+
 struct Harness {
     config: Config,
     source: FakeSource,
@@ -334,7 +343,6 @@ impl Harness {
         )
         .expect("a logging init");
         let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("a redactor");
-        let now = DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00").expect("a fixed now");
         let state = LoggingState::new(
             init,
             CorrelationSetup {
@@ -367,6 +375,20 @@ impl Harness {
         call: &FileCreate,
         params: &FileParams,
     ) -> Result<Json, UploadError> {
+        let source = self.source.clone();
+        let supplied = self.supplied.clone();
+        let run_call = RunCall { mode, call, params };
+        self.run_against(&source, supplied, run_call).await
+    }
+
+    // The same call over a caller-chosen client source, so a test can watch a transport other than the fake
+    async fn run_against<S: ClientSource>(
+        &mut self,
+        source: &S,
+        supplied: Option<(Mode, S::Client)>,
+        run_call: RunCall<'_>,
+    ) -> Result<Json, UploadError> {
+        let RunCall { mode, call, params } = run_call;
         let upload_params = UploadParams {
             api_base: Some(API_BASE),
             api_key: None,
@@ -378,8 +400,7 @@ impl Harness {
             params: &upload_params,
         };
         let boundaries = || String::from(BOUNDARY);
-        let supplied = self
-            .supplied
+        let supplied_client = supplied
             .as_ref()
             .map(|(supplied_mode, transport)| SuppliedClient {
                 mode: *supplied_mode,
@@ -387,8 +408,8 @@ impl Harness {
             });
         let deps = UploadDeps {
             config: &self.config,
-            source: &self.source,
-            supplied,
+            source,
+            supplied: supplied_client,
             tasks: &self.tasks,
             boundaries: &boundaries,
             limits: ApiLimits::default(),
@@ -452,7 +473,10 @@ fn create_call() -> FileCreate {
     }
 }
 
-fn two_step_plan(config: TwoStepFileUploadConfig) -> UploadPlan {
+fn two_step_plan(
+    config: TwoStepFileUploadConfig,
+    url_location: Option<UploadUrlLocation>,
+) -> UploadPlan {
     UploadPlan::TwoStep(Box::new(TwoStepPlan {
         initial_method: Some(config.initial_request.method),
         initial_url: Some(config.initial_request.url),
@@ -462,13 +486,13 @@ fn two_step_plan(config: TwoStepFileUploadConfig) -> UploadPlan {
         upload_url: Some(config.upload_request.url),
         upload_headers: config.upload_request.headers,
         upload_data: config.upload_request.data,
-        url_location: Some(config.upload_url_location),
+        url_location,
         url_key: config.upload_url_key,
     }))
 }
 
 fn manus_plan() -> UploadPlan {
-    two_step_plan(manus_config())
+    two_step_plan(manus_config(), Some(UploadUrlLocation::Body))
 }
 
 fn manus_config() -> TwoStepFileUploadConfig {
@@ -609,7 +633,7 @@ async fn upload_plan_order_real_anthropic_plan() {
     assert_eq!(seen[0].method, Method::POST);
     assert_eq!(seen[0].url, API_BASE);
     // the multipart content type and boundary are the transport's to add, like httpx's files= argument
-    let body = std::str::from_utf8(&seen[0].body[0]).expect("a utf-8 multipart body");
+    let body = from_utf8(&seen[0].body[0]).expect("a utf-8 multipart body");
     assert!(body.contains("name=\"file\"; filename=\"rows.jsonl\""));
     assert!(body.contains("name=\"purpose\""));
     assert!(body.ends_with(&format!("--{BOUNDARY}--\r\n")));
@@ -659,33 +683,16 @@ async fn two_step_upload() {
     assert_eq!(field(saved, "extra"), &Json::Bool(true));
 }
 
+// a missing location defaults to headers, where the URL is read under any casing and no key is used
+#[rstest]
+#[case::missing(None)]
+#[case::declared(Some(UploadUrlLocation::Headers))]
 #[tokio::test]
-async fn two_step_upload_headers_location() {
-    // no upload_url_location means headers, and no key is read there
-    let plan = two_step_plan(TwoStepFileUploadConfig {
-        initial_request: TwoStepFileUploadRequest {
-            method: String::from("POST"),
-            url: String::from(API_BASE),
-            headers: BTreeMap::from([(
-                String::from("X-Goog-Upload-Command"),
-                String::from("start"),
-            )]),
-            data: UploadData::Text(String::from("{\"file\":{}}")),
-        },
-        upload_request: TwoStepFileUploadRequest {
-            method: String::from("POST"),
-            url: String::new(),
-            headers: BTreeMap::from([(
-                String::from("X-Goog-Upload-Command"),
-                String::from("upload, finalize"),
-            )]),
-            data: UploadData::Bytes(b"payload".to_vec()),
-        },
-        upload_url_location: UploadUrlLocation::Headers,
-        upload_url_key: Some(String::from("ignored-key")),
-    });
+async fn two_step_upload_headers_location(#[case] location: Option<UploadUrlLocation>) {
+    let mut config = manus_config();
+    config.upload_url_key = Some(String::from("ignored-key"));
     let mut harness = Harness::new(
-        plan,
+        two_step_plan(config, location),
         API_BASE,
         vec![
             answer(
@@ -732,17 +739,15 @@ async fn two_step_upload_failure_skips_the_second_request(#[case] body: &str) {
         .run(Mode::Sync, &create_call(), &params())
         .await
         .unwrap_err();
-    match error {
-        UploadError::Provider(provider) => {
-            assert_eq!(provider.status_code, 500);
-            assert!(provider.status_code_is_synthesized);
-            assert_eq!(
-                provider.message,
-                "Failed to get upload URL from initial request"
-            );
-        }
-        other => panic!("expected a provider error, found {other}"),
-    }
+    let UploadError::Provider(provider) = error else {
+        panic!("expected a provider error");
+    };
+    assert_eq!(provider.status_code, 500);
+    assert!(provider.status_code_is_synthesized);
+    assert_eq!(
+        provider.message,
+        "Failed to get upload URL from initial request"
+    );
     assert_eq!(harness.seen().len(), 1);
     assert!(
         !harness
@@ -768,13 +773,11 @@ async fn two_step_upload_second_step_failure() {
         .run(Mode::Sync, &create_call(), &params())
         .await
         .unwrap_err();
-    match error {
-        UploadError::Provider(provider) => {
-            assert_eq!(provider.status_code, 500);
-            assert!(provider.status_code_is_synthesized);
-        }
-        other => panic!("expected a provider error, found {other}"),
-    }
+    let UploadError::Provider(provider) = error else {
+        panic!("expected a provider error");
+    };
+    assert_eq!(provider.status_code, 500);
+    assert!(provider.status_code_is_synthesized);
     assert_eq!(harness.seen().len(), 2);
     assert!(
         !harness
@@ -786,22 +789,25 @@ async fn two_step_upload_second_step_failure() {
 
 #[tokio::test]
 async fn two_step_upload_custom_key() {
-    let plan = two_step_plan(TwoStepFileUploadConfig {
-        initial_request: betterlite_openai::api::file_type_records::TwoStepFileUploadRequest {
-            method: String::from("POST"),
-            url: String::from(API_BASE),
-            headers: BTreeMap::new(),
-            data: UploadData::Text(String::from("{}")),
+    let plan = two_step_plan(
+        TwoStepFileUploadConfig {
+            initial_request: TwoStepFileUploadRequest {
+                method: String::from("POST"),
+                url: String::from(API_BASE),
+                headers: BTreeMap::new(),
+                data: UploadData::Text(String::from("{}")),
+            },
+            upload_request: TwoStepFileUploadRequest {
+                method: String::from("POST"),
+                url: String::new(),
+                headers: BTreeMap::new(),
+                data: UploadData::Bytes(b"payload".to_vec()),
+            },
+            upload_url_location: UploadUrlLocation::Body,
+            upload_url_key: Some(String::from("target")),
         },
-        upload_request: betterlite_openai::api::file_type_records::TwoStepFileUploadRequest {
-            method: String::from("POST"),
-            url: String::new(),
-            headers: BTreeMap::new(),
-            data: UploadData::Bytes(b"payload".to_vec()),
-        },
-        upload_url_location: UploadUrlLocation::Body,
-        upload_url_key: Some(String::from("target")),
-    });
+        Some(UploadUrlLocation::Body),
+    );
     let mut harness = Harness::new(
         plan,
         API_BASE,

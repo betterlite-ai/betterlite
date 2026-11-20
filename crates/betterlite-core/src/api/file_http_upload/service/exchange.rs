@@ -23,17 +23,17 @@ use crate::api::file_http_upload::plan::{MediaPlan, PresignedPlan, TwoStepPlan, 
 use crate::api::vector_store_http_write::error::handle_error;
 
 use super::wire::{headers_from, request_url, upload_method};
-use super::{BlockStream, ClientSource, Mode, UploadBody, UploadRequest, UploadTransport};
+use super::{BlockStream, Mode, UploadBody, UploadRequest, UploadTransport};
 
 // The answer transform_create_file_response reads, with the URL the last request was sent to
-pub struct Reply {
+pub(super) struct Reply {
     pub response: UpstreamResponse,
     pub url: String,
 }
 
-pub struct Exchange<'ctx, 'env, C: FileUploadConfig, S: ClientSource> {
+pub(super) struct Exchange<'ctx, 'env, C: FileUploadConfig, Client> {
     pub config: &'ctx C,
-    pub client: &'ctx S::Client,
+    pub client: &'ctx Client,
     pub api_base: &'ctx str,
     pub headers: &'ctx Headers,
     pub params: &'ctx mut FileParams,
@@ -45,13 +45,13 @@ pub struct Exchange<'ctx, 'env, C: FileUploadConfig, S: ClientSource> {
     pub limits: ApiLimits,
 }
 
-impl<C, S> Exchange<'_, '_, C, S>
+impl<C, Client> Exchange<'_, '_, C, Client>
 where
     C: FileUploadConfig,
-    S: ClientSource,
+    Client: UploadTransport,
 {
     // The two-step branch is the one LiteLLM wraps in try/except, so its failures become provider errors
-    pub async fn two_step(&mut self, plan: &TwoStepPlan) -> Result<Reply, UploadError> {
+    pub(super) async fn two_step(&mut self, plan: &TwoStepPlan) -> Result<Reply, UploadError> {
         match self.run_two_step(plan).await {
             Ok(reply) => Ok(reply),
             Err(error) => Err(self.converted_failure(error)),
@@ -109,7 +109,7 @@ where
     }
 
     // A presigned request is sent as the transform built it, and its failures are not converted
-    pub async fn presigned(&self, plan: &PresignedPlan) -> Result<Reply, UploadError> {
+    pub(super) async fn presigned(&self, plan: &PresignedPlan) -> Result<Reply, UploadError> {
         let method = upload_method(&plan.method)?;
         let headers = headers_from(
             plan.headers
@@ -122,7 +122,7 @@ where
     }
 
     // The media branch streams one POST and checks 200/201 itself, both inside LiteLLM's try/except
-    pub async fn media(&self, plan: MediaPlan) -> Result<Reply, UploadError> {
+    pub(super) async fn media(&self, plan: MediaPlan) -> Result<Reply, UploadError> {
         let result = self.run_media(plan).await;
         if let Err(error) = &result {
             self.emit_error(error);
@@ -163,7 +163,7 @@ where
     }
 
     // A text, byte or multipart plan sends its body to api_base; only a traditional body uses PUT
-    pub async fn base_body(&self, body: UploadBody) -> Result<Reply, UploadError> {
+    pub(super) async fn base_body(&self, body: UploadBody) -> Result<Reply, UploadError> {
         let method = match &body {
             UploadBody::Bytes(_) => match self.config.file_upload_http_method() {
                 Method::PUT => Method::PUT,
@@ -175,7 +175,7 @@ where
             .await
     }
 
-    pub async fn multipart(&self, parts: Vec<MultipartPart>) -> Result<Reply, UploadError> {
+    pub(super) async fn multipart(&self, parts: Vec<MultipartPart>) -> Result<Reply, UploadError> {
         let body = UploadBody::Multipart {
             boundary: (self.boundaries)(),
             parts,
@@ -183,7 +183,7 @@ where
         self.base_body(body).await
     }
 
-    pub fn emit_error(&self, error: &UploadError) {
+    fn emit_error(&self, error: &UploadError) {
         self.env.emit(
             LogLevel::Error,
             &format!("Error creating file: {error}"),
@@ -215,7 +215,7 @@ where
         headers_from(
             self.headers
                 .iter()
-                .map(|(name, value)| (name.as_str(), value.expose_secret().as_str())),
+                .map(|(name, value)| (name.as_str(), value.expose_secret())),
         )
     }
 
@@ -224,11 +224,11 @@ where
         let base = self
             .headers
             .iter()
-            .map(|(name, value)| (name.as_str(), value.expose_secret().as_str()));
-        let extra = extra
+            .map(|(name, value)| (name.as_str(), value.expose_secret()));
+        let transform_headers = extra
             .iter()
             .map(|(name, value)| (name.as_str(), value.as_str()));
-        headers_from(base.chain(extra))
+        headers_from(base.chain(transform_headers))
     }
 
     fn media_headers(&self, content_type: Option<&str>) -> Result<HeaderMap, UploadError> {
@@ -249,11 +249,10 @@ where
     fn block_stream(&self, body_stream: ByteStream) -> BlockStream {
         let (sender, receiver) = mpsc::channel::<Vec<u8>>(1);
         self.tasks.spawn_blocking(move || {
-            for block in BlockIter::new(body_stream) {
-                if sender.blocking_send(block).is_err() {
-                    return;
-                }
-            }
+            // A reader that went away closes the channel, which stops the producer at once
+            BlockIter::new(body_stream)
+                .try_for_each(|block| sender.blocking_send(block))
+                .unwrap_or_default();
         });
         Box::pin(stream::unfold(receiver, |mut channel| async move {
             channel.recv().await.map(|block| (block, channel))

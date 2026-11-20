@@ -124,11 +124,11 @@ pub struct PreparedUpload<'deps, 'env, C: FileUploadConfig, S: ClientSource> {
 }
 
 // create_file's front half: credentials, the complete URL, the transformed plan, the client, the async pre_call
-pub fn prepare<'deps, 'state, 'env, C, S>(
+pub fn prepare<'deps, 'env, C, S>(
     deps: &'deps UploadDeps<'deps, C, S>,
     mode: Mode,
     call: &UploadCall<'_>,
-    log: &'deps mut LogContext<'state, 'env>,
+    log: &'deps mut LogContext<'_, 'env>,
 ) -> Result<PreparedUpload<'deps, 'env, C, S>, UploadError>
 where
     C: FileUploadConfig,
@@ -210,13 +210,13 @@ where
 }
 
 // The plan's shape picks the branch; only a sync byte body is decoded before it is sent
-async fn run_plan<C, S>(
-    exchange: &mut Exchange<'_, '_, C, S>,
+async fn run_plan<C, Client>(
+    exchange: &mut Exchange<'_, '_, C, Client>,
     plan: UploadPlan,
 ) -> Result<Reply, UploadError>
 where
     C: FileUploadConfig,
-    S: ClientSource,
+    Client: UploadTransport,
 {
     match plan {
         UploadPlan::TwoStep(two_step) => exchange.two_step(&two_step).await,

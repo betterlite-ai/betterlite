@@ -5,17 +5,15 @@ use std::time::Duration;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::transport_error::TransportError;
 use http::HeaderMap;
+use tokio::time::timeout;
 
-use crate::api::api_boundaries::ApiLimits;
-use crate::api::file_http_upload::config::UploadParams;
 use crate::api::file_http_upload::plan::{MediaPlan, UploadPlan};
 use crate::api::file_http_upload::service::{
-    ClientSource, LogContext, Mode, UploadBody, UploadCall, UploadDeps, UploadRequest,
-    UploadTransport, prepare, send,
+    ClientSource, Mode, UploadBody, UploadRequest, UploadTransport,
 };
 use crate::api::vector_store_http_write::error::ClientError;
 
-use super::{API_BASE, BOUNDARY, Harness, create_call, params, pre_post_env};
+use super::{API_BASE, Harness, RunCall, create_call, params};
 
 // An endless media body that records when the blocking producer lets it go
 struct Endless {
@@ -74,36 +72,16 @@ async fn media_cancellation_closes_the_block_producer() {
         content_type: None,
     }));
     let mut harness = Harness::new(plan, API_BASE, Vec::new());
-    let params = params();
-    let call = create_call();
-    let upload_params = UploadParams {
-        api_base: Some(API_BASE),
-        api_key: None,
-        ssl_verify: None,
-        litellm_params: &params,
+    let run_call = RunCall {
+        mode: Mode::Sync,
+        call: &create_call(),
+        params: &params(),
     };
-    let upload_call = UploadCall {
-        data: &call,
-        params: &upload_params,
-    };
-    let boundaries = || String::from(BOUNDARY);
-    let source = Source;
-    let deps = UploadDeps {
-        config: &harness.config,
-        source: &source,
-        supplied: None,
-        tasks: &harness.tasks,
-        boundaries: &boundaries,
-        limits: ApiLimits::default(),
-    };
-    let env = pre_post_env(&harness.redactor, &harness.sink);
-    let mut log = LogContext {
-        state: &mut harness.state,
-        env: &env,
-    };
-    let prepared = prepare(&deps, Mode::Sync, &upload_call, &mut log).expect("the media plan");
-    send(prepared).await.expect("the dropped body is no error");
-    let stopped = tokio::time::timeout(Duration::from_secs(5), async {
+    harness
+        .run_against(&Source, None, run_call)
+        .await
+        .expect("the dropped body is no error");
+    let stopped = timeout(Duration::from_secs(5), async {
         harness.tasks.close();
         harness.tasks.wait().await;
     })

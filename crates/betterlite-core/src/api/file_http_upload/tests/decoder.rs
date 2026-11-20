@@ -1,3 +1,4 @@
+use std::fs;
 use std::path::Path;
 
 use betterlite_openai::api::file_type_records::UploadUrlLocation;
@@ -94,9 +95,9 @@ fn decode_file_upload_location_is_bounded() {
 #[test]
 fn replays_upload_location_corpus() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/file_upload_location");
-    let replayed = std::fs::read_dir(corpus)
+    let replayed = fs::read_dir(corpus)
         .expect("the corpus directory")
-        .map(|entry| std::fs::read(entry.expect("a corpus entry").path()).expect("a corpus file"))
+        .map(|entry| fs::read(entry.expect("a corpus entry").path()).expect("a corpus file"))
         .map(|bytes| {
             drop(decode_file_upload_location(
                 &bytes,

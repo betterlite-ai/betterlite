@@ -1,5 +1,6 @@
 use betterlite_anthropic::files::request::create_file_parts;
 use betterlite_models::decisions::Json;
+use betterlite_openai::api::file_type_records::UploadUrlLocation;
 use betterlite_openai::files::records::FileCreate;
 use betterlite_prompts::media_metadata::{FileBody, FileData};
 use http::Method;
@@ -114,7 +115,7 @@ async fn two_step_upload_invalid_method_names_the_method() {
     let mut config = manus_config();
     config.upload_request.method = String::from("FROB");
     let mut harness = Harness::new(
-        two_step_plan(config),
+        two_step_plan(config, Some(UploadUrlLocation::Body)),
         API_BASE,
         vec![answer(
             200,
@@ -126,17 +127,15 @@ async fn two_step_upload_invalid_method_names_the_method() {
         .run(Mode::Sync, &create_call(), &params())
         .await
         .unwrap_err();
-    match error {
-        UploadError::Provider(provider) => {
-            assert_eq!(provider.status_code, 500);
-            assert!(provider.status_code_is_synthesized);
-            assert_eq!(
-                provider.message,
-                "the upload method FROB is not an HTTP method"
-            );
-        }
-        other => panic!("expected a provider error, found {other}"),
-    }
+    let UploadError::Provider(provider) = error else {
+        panic!("expected a provider error");
+    };
+    assert_eq!(provider.status_code, 500);
+    assert!(provider.status_code_is_synthesized);
+    assert_eq!(
+        provider.message,
+        "the upload method FROB is not an HTTP method"
+    );
     // the initial request went out and the failure stopped the second one
     assert_eq!(harness.seen().len(), 1);
 }

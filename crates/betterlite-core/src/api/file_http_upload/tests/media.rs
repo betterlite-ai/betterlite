@@ -46,7 +46,7 @@ async fn media_upload_blocks() {
     assert_eq!(seen[0].timeout, Some(Duration::from_secs(30)));
     assert_eq!(seen[0].body.len(), 2);
     // LiteLLM's _MEDIA_UPLOAD_BLOCK_SIZE is four MiB, exactly
-    assert_eq!(MEDIA_UPLOAD_BLOCK_SIZE, 4_194_304);
+    assert_eq!(MEDIA_UPLOAD_BLOCK_SIZE, 0x0040_0000);
     // the first block starts with head and fills to the limit, so the last eight bytes are the tail
     assert_eq!(seen[0].body[0].len(), MEDIA_UPLOAD_BLOCK_SIZE);
     assert!(seen[0].body[0].starts_with(b"head"));
@@ -91,14 +91,12 @@ async fn media_upload_unexpected_status(#[case] code: u16, #[case] expected: &st
         .run(Mode::Sync, &create_call(), &params())
         .await
         .unwrap_err();
-    match error {
-        UploadError::Provider(provider) => {
-            assert_eq!(provider.status_code, 500);
-            assert!(provider.status_code_is_synthesized);
-            assert_eq!(provider.message, expected);
-        }
-        other => panic!("expected a provider error, found {other}"),
-    }
+    let UploadError::Provider(provider) = error else {
+        panic!("expected a provider error");
+    };
+    assert_eq!(provider.status_code, 500);
+    assert!(provider.status_code_is_synthesized);
+    assert_eq!(provider.message, expected);
 }
 
 #[tokio::test]
@@ -112,12 +110,10 @@ async fn media_upload_status_error() {
         .run(Mode::Asynchronous, &create_call(), &params())
         .await
         .unwrap_err();
-    match error {
-        UploadError::Provider(provider) => {
-            assert_eq!(provider.status_code, 400);
-            assert!(!provider.status_code_is_synthesized);
-            assert_eq!(provider.message, "bad media");
-        }
-        other => panic!("expected a provider error, found {other}"),
-    }
+    let UploadError::Provider(provider) = error else {
+        panic!("expected a provider error");
+    };
+    assert_eq!(provider.status_code, 400);
+    assert!(!provider.status_code_is_synthesized);
+    assert_eq!(provider.message, "bad media");
 }

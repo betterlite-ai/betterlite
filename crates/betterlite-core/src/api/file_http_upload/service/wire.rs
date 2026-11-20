@@ -1,3 +1,5 @@
+use std::str::from_utf8;
+
 use http::header::{HeaderName, HeaderValue};
 use http::{HeaderMap, Method};
 use url::Url;
@@ -38,7 +40,7 @@ pub(super) fn request_url(text: &str) -> Result<Url, UploadError> {
 pub(super) fn traditional_body(mode: Mode, bytes: &[u8]) -> Result<Vec<u8>, UploadError> {
     match mode {
         Mode::Sync => {
-            std::str::from_utf8(bytes).map_err(UploadError::Decode)?;
+            from_utf8(bytes).map_err(UploadError::Decode)?;
             Ok(bytes.to_vec())
         }
         Mode::Asynchronous => Ok(bytes.to_vec()),

@@ -1,3 +1,5 @@
+use std::io;
+
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
@@ -11,47 +13,36 @@ use super::{UploadBody, UploadRequest, UploadTransport};
 impl UploadTransport for ProxiedClient {
     async fn send(&self, request: UploadRequest) -> Result<UpstreamResponse, TransportError> {
         let deadline = request.timeout.unwrap_or(self.limits.read_timeout);
-        match request.body {
+        let body = match request.body {
             UploadBody::Multipart { boundary, parts } => {
-                self.send_following(OutboundRequest {
-                    method: request.method,
-                    url: request.url,
-                    query: Vec::new(),
-                    headers: request.headers,
-                    body: RequestBody::Multipart { boundary, parts },
-                    deadline,
-                })
-                .await?
-                .buffered(self.limits.body_bytes)
-                .await
+                return self
+                    .send_following(OutboundRequest {
+                        method: request.method,
+                        url: request.url,
+                        query: Vec::new(),
+                        headers: request.headers,
+                        body: RequestBody::Multipart { boundary, parts },
+                        deadline,
+                    })
+                    .await?
+                    .buffered(self.limits.body_bytes)
+                    .await;
             }
-            UploadBody::Bytes(data) => {
-                let built = self
-                    .client
-                    .request(request.method, request.url)
-                    .timeout(deadline)
-                    .headers(request.headers)
-                    .body(data)
-                    .build()
-                    .map_err(TransportError::Build)?;
-                self.execute_buffered(built, self.limits.body_bytes)
-                    .await
-                    .map_err(TransportError::Rejected)
-            }
+            UploadBody::Bytes(data) => Body::from(data),
             UploadBody::Blocks(blocks) => {
-                let chunks = blocks.map(|block| Ok::<Vec<u8>, std::io::Error>(block));
-                let built = self
-                    .client
-                    .request(request.method, request.url)
-                    .timeout(deadline)
-                    .headers(request.headers)
-                    .body(Body::wrap_stream(chunks))
-                    .build()
-                    .map_err(TransportError::Build)?;
-                self.execute_buffered(built, self.limits.body_bytes)
-                    .await
-                    .map_err(TransportError::Rejected)
+                Body::wrap_stream(blocks.map(|block| Ok::<Vec<u8>, io::Error>(block)))
             }
-        }
+        };
+        let built = self
+            .client
+            .request(request.method, request.url)
+            .timeout(deadline)
+            .headers(request.headers)
+            .body(body)
+            .build()
+            .map_err(TransportError::Build)?;
+        self.execute_buffered(built, self.limits.body_bytes)
+            .await
+            .map_err(TransportError::Rejected)
     }
 }

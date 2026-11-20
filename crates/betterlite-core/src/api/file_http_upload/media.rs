@@ -1,3 +1,5 @@
+use std::mem;
+
 use betterlite_openai::api::file_type_records::ByteStream;
 
 // _MEDIA_UPLOAD_BLOCK_SIZE: JSONL rows regroup into blocks this size, one block buffered at most
@@ -26,12 +28,12 @@ impl Iterator for BlockIter {
         loop {
             if self.buffer.len() >= MEDIA_UPLOAD_BLOCK_SIZE {
                 let rest = self.buffer.split_off(MEDIA_UPLOAD_BLOCK_SIZE);
-                return Some(std::mem::replace(&mut self.buffer, rest));
+                return Some(mem::replace(&mut self.buffer, rest));
             }
             match self.pieces.next() {
                 Some(piece) => self.buffer.extend_from_slice(&piece),
                 None if self.buffer.is_empty() => return None,
-                None => return Some(std::mem::take(&mut self.buffer)),
+                None => return Some(mem::take(&mut self.buffer)),
             }
         }
     }
