@@ -70,8 +70,8 @@ description: >-
   `build_response_cache(params: &Map<String, Json>, deps: &SemanticDeps) -> Result<Cache, SemanticBuildError>` calls
   build_semantic_backend. With a backend it calls B4299's Cache constructor with the same params and the backend
   injected; without one it calls the constructor with the params alone. The Cache keeps the type string from the map,
-  so GET /cache/ping still reports "redis-semantic". Make SemanticDeps and its fields, SemanticBackend, SemanticBuildError and both functions `pub`, so B8612 and B8613 reach them as `betterlite_server::semantic_cache::*`. B8612's CacheReinit and
-  B8613's startup in crates/betterlite, which builds SemanticDeps, call build_response_cache in place of B4299's constructor (see out_of_scope).
+  so GET /cache/ping still reports "redis-semantic". Make SemanticDeps and its fields, SemanticBackend, SemanticBuildError and both functions `pub`, so B8612 and B8613 reach them as `betterlite_server::semantic_cache::*`. B8612 and B8613 land
+  first with B4299's constructor, so the semantic cache types answer CacheTypeNotSupportedError until this task. Then route B8612's init_cache (crates/betterlite-server/src/shared_ports) through build_response_cache, add a `deps: SemanticDeps` argument to `CacheRuntime::new`, and build SemanticDeps in B8613's startup (crates/betterlite/src/lifespan.rs) where it calls CacheRuntime::new.
 
 
   Tests in `semantic_cache::tests`, named by prefix. `build_` tests check the key mapping for each type
@@ -87,6 +87,9 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/semantic_cache.rs
     - crates/betterlite-server/src/semantic_cache/**
+    - crates/betterlite-server/src/shared_ports.rs
+    - crates/betterlite-server/src/shared_ports/**
+    - crates/betterlite/src/lifespan.rs
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L80-L130
@@ -133,7 +136,6 @@ out_of_scope:
   - "Cache.__init__ for the other types, the injected backend rule and callback registration: B4299."
   - "RedisSemanticCache and its live index (B4382), ValkeySemanticCache (B8296), QdrantSemanticCache (B4383)."
   - "Embedding calls, Router lookup, truncation and timeouts: B4381 and B4310."
-  - "Calling build_response_cache from the production CacheReinit (ProxyConfig._init_cache for B8502) and from the startup cache build: B8612 (ResponseCacheReinit) and B8613 (crates/betterlite lifespan)."
   - "Passing B8501's cloud credential source to the LiveClientFactory: B8610, which builds Shared.redis."
   - "The readiness report that calls index_info: B8540."
 pitfalls:

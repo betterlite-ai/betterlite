@@ -1,0 +1,15 @@
+kind: helper
+name: mcp-identifier-resolution-missing-attribute-never-matches
+call:
+  b10000:
+    server: {server_id: srv-1, alias: alias-1}
+    identifier: display-name-1
+calls:
+  - b10000:
+      server: {server_id: srv-1, server_name: null}
+      identifier: ""
+  - b10000:
+      server: {}
+      identifier: srv-1
+env: {}
+compare: {ignore: []}

@@ -22,6 +22,10 @@ description: >-
   handshakes. Native resolvers exercise unavailable/expired credentials without live cloud access.
   No new parser is needed. Own 149 nonblank/non-comment function lines; budget 145 implementation,
   125 tests,110 transcripts,85 adapters,55 config tests/seeds and 30 wiring =550 lines.
+  Health check. B4449's `NativeHealthBackend` (crates/betterlite-server/src/health_native_backend) lands first and answers
+  the realtime mode with `HealthProbeError` naming it as not built. Once this task is merged, add its field to
+  NativeHealthBackend and replace that answer with a call to this task's entry, converting B4440's call arguments in
+  and the reply out with hidden params headers carried over, as B4449 does for the other modes.
 scope:
   paths:
   - crates/betterlite-core/src/api/realtime_connection_plan.rs
@@ -37,6 +41,8 @@ scope:
   - tools/oracle/helpers/realtime_probe_websocket/**
   - tools/oracle/cases/websocket/realtime-probe/**
   - tools/oracle/fuzz/corpus/websocket_oracle/realtime-probe-*
+  - crates/betterlite-server/src/health_native_backend.rs
+  - crates/betterlite-server/src/health_native_backend/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/realtime_api/main.py#L62-L69

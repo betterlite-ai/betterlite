@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-mod support;
+pub(crate) mod support;
 use crate::anthropic_dispatch::base::Surface;
 use betterlite_anthropic::chat_call::CallStyle;
 use betterlite_context::chat_config_selection::tags::ChatConfigTag;

@@ -115,6 +115,7 @@ pub mod managed_file_routes;
 pub mod managed_resource_access;
 pub mod managed_resource_ids;
 pub mod managed_resource_store;
+pub mod managed_store_access;
 pub mod mcp_client_resources;
 pub mod mcp_sdk_resources;
 pub mod media_providers;

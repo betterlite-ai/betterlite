@@ -37,6 +37,15 @@ description: >-
   from that task's text, with the config its name implies (master key set, no database unless the name says db). Their
   helper cases stay with them. Tests in policy_tools/tests.rs (names start with `mount_` and `embedder_`) assert that
   start fills the slot once, that the routes reuse the one GuardrailClasses, and that a request without a key gets 401.
+
+  Dashboard compliance cases. The Playground's Compliance quick test sends POST /utils/test_policies_and_guardrails
+  {policy_names, guardrail_names, inputs:{texts:[t]}, inputs_list, request_data:{}, input_type:"request", agent_id}
+  with unset fields as explicit null and reads inputs.texts and guardrail_errors[].guardrail_name and message; the
+  batch run sends inputs_list:[{texts:[t]}...] and, in chat-completions mode with a fixed agent, agent_id, and reads
+  results[].guardrail_errors. Write tools/oracle/cases/ui/playground/compliance-quick-and-batch.yaml through the
+  booted proxy with a passing and a blocked quick test, a batch and the batch with agent_id (B9694 leaves it here).
+
+  Compliance tab. The quick test sends POST /utils/test_policies_and_guardrails {policy_names, guardrail_names, inputs:{texts:[t]}, inputs_list, request_data:{}, input_type:"request", agent_id} with unset fields as explicit null and reads inputs.texts and guardrail_errors[].guardrail_name/message; the batch run sends inputs_list:[{texts:[t]}...] and, in chat-completions mode with a fixed agent, agent_id, and reads results[].guardrail_errors. Add tools/oracle/cases/ui/playground/compliance-quick-and-batch.yaml with a passing and a blocked quick test, a batch, and the batch with agent_id, using B860's Postgres fixture with B9942's bootstrap.
 scope:
   paths:
     - crates/betterlite-server/src/app/guardrails/policy_tools.rs
@@ -47,6 +56,7 @@ scope:
     - tools/oracle/cases/policies/compliance/**
     - tools/oracle/cases/policies/templates-catalog/**
     - tools/oracle/cases/policies/templates-suggest/**
+    - tools/oracle/cases/ui/playground/compliance-quick-and-batch.yaml
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_lazy_features.py#L80-L90
@@ -55,6 +65,10 @@ references:
     why: The resolve and estimate-impact routes.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/semantic_text_index.py#L75-L98
     why: router_embedder, which the semantic guard embeds through.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/playground/components/complianceUI/ComplianceUI.tsx#L488-L579
+    why: Quick and batch compliance bodies, agent_id in chat mode.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L3878-L3925
+    why: The compliance request sends unset fields as explicit null.
 dod:
   - text: start sets the guardrail embedder slot once from the router embedder, and leaves it empty with an error log when the router embedder cannot be built.
     proof: [mount-tests]
@@ -62,6 +76,8 @@ dod:
     proof: [mount-tests]
   - text: Those routes answer through the booted proxy as LiteLLM does, and a request without a key gets 401.
     proof: [mount-tests, oracle]
+  - text: "The Compliance tab's quick and batch tests match LiteLLM through the booted proxy."
+    proof: [oracle]
 checks:
   optional: []
   commands:
@@ -74,8 +90,10 @@ out_of_scope:
   - "The guardrail class dispatch, ComplianceGuardrails, ContentFilterRunner and the embedder slot type: B8666. SdkSuggestModel: B8665. The router embedder: B8631."
   - "The shared route state and the area file: B8667."
 pitfalls:
+  - "The compliance call sends unset fields as explicit null, and a handler that treats null differently from absent changes the result."
   - "Building a second GuardrailClasses for the routes would give the pipeline and compliance tests their own class cache, so a semantic guard would build its route index twice."
   - "The embedder slot is a OnceLock; setting it twice fails, so start sets it exactly once."
+  - "The compliance call sends unset fields as explicit null, and a handler that treats null differently from absent changes the result."
 review_level: security
 budget:
   max_changed_lines: 1500
@@ -121,3 +139,4 @@ oracle_cases:
   - tools/oracle/cases/policies/templates-suggest/empty-body.yaml
   - tools/oracle/cases/policies/templates-suggest/bad-body-422.yaml
   - tools/oracle/cases/policies/templates-suggest/no-auth-401.yaml
+  - tools/oracle/cases/ui/playground/compliance-quick-and-batch.yaml

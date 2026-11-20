@@ -169,7 +169,7 @@ out_of_scope:
   - "B3240 owns resolve_policy_guardrails. B3241 owns the policy and attachment registries. B3682 owns the guardrail registry and get_initialized_guardrail_callback. B5471 owns GuardrailContract, GuardrailApiInputs and GuardrailFailure."
   - "B3803 owns CustomCodeGuardrail, its block and result handling and the response-rejection program. B3668 owns process_output_response for completed chat responses."
   - "B865 owns the management completion wrapper. B2400 owns handle_exception_on_proxy. B004 owns the chat completion path and its request type."
-  - "The production AgentChat implementation and the production ComplianceGuardrails implementation that reach the chat handler and each guardrail class: B8666 implements ComplianceGuardrails and B8790 implements AgentChat. This task writes the traits and fakes."
+  - "The production AgentChat implementation and the production ComplianceGuardrails implementation that reach the chat handler and each guardrail class: B8790 implements AgentChat. This task writes the traits and fakes, and also implements ComplianceGuardrails over B8666's GuardrailClasses: NotFound when by_name finds nothing, NoApplyGuardrail when the class does not override apply_guardrail (even though such an apply_guardrail returns the inputs unchanged), otherwise Done with the result of apply_guardrail."
   - "The mount of this route into the app and the list of route modules: B8790."
   - "The imports of sse_keepalive and CustomGuardrail's other paths in endpoints.py: used only by other routes in the file."
 

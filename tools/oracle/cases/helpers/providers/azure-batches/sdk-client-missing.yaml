@@ -1,0 +1,25 @@
+kind: helper
+name: sdk-client-missing
+call:
+  azure_batches:
+    steps:
+    - action: project
+      builder: none
+      args: {api_key: ms-1, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+    - action: create
+      builder: none
+      args: {api_key: ms-2, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      data: {completion_window: 24h, endpoint: /v1/chat/completions, input_file_id: file_in}
+    - action: retrieve
+      builder: none
+      args: {api_key: ms-3, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      query: {batch_id: batch_a}
+    - action: cancel
+      builder: none
+      args: {api_key: ms-4, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      query: {batch_id: batch_a}
+    - action: list
+      builder: none
+      args: {api_key: ms-5, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+env: {}
+compare: {ignore: []}

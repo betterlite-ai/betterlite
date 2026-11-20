@@ -1,0 +1,9 @@
+kind: helper
+name: json_base64_pad_run
+call:
+  b3462:
+    mode: json
+    body: '{"ingest_options": {"vector_store": {}}, "file": {"filename": "pad.txt", "content": "QQ==QQ=="}}'
+env: {}
+compare:
+  ignore: []

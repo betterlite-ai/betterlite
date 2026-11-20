@@ -1,14 +1,14 @@
 id: B944
 milestone: M5 api families
 title: Responses ws history
-status: todo
+status: done
 depends_on: [B010, B171, B903, B909, B732, B925, B174]
 file: tasks/B944-responses-ws-history.yaml
 covers:
   - "litellm/responses/streaming_iterator.py"
 parent: B080
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2625

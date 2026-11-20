@@ -40,6 +40,8 @@ description: >-
   Own provider/sentinel/context declarations at auto_router_compression.py:24-31,41-43,
   and the policy fields at 51-56. Counted span 24-258: 178 lines.
 
+
+  Pre-call adapter. B8805 installs CompressionArming as a no-op that clears the two request flags and arms nothing. Replace it in B8805's pre-call hook ports with the real adapter over this task's arm_pre_call with shared.router.
 scope:
   paths:
     - crates/betterlite-router/src/auto_router_compression.rs
@@ -49,6 +51,8 @@ scope:
     - tools/oracle/helpers/b3546/**
     - tools/oracle/src/helpers/router/b3546.rs
     - tools/oracle/src/helpers/router/b3546/**
+    - crates/betterlite-server/src/app/inference/pre_call_hooks.rs
+    - crates/betterlite-server/src/app/inference/pre_call_hooks/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/auto_router_compression.py#L24-L31

@@ -1,0 +1,98 @@
+id: B10014
+title: Managed vector store lookup and store access check
+description: >-
+  Implement the three functions at vector_store_endpoints/utils.py:260-353 in core::api::managed_store_access:
+  get_litellm_managed_vector_store, assert_user_can_access_vector_store and
+  assert_user_can_access_vector_store_id. B8802's VectorStoreAccess, the vector file routes (B1076, B1081),
+  the RAG store check (B3463) and B9998's pass-through vector adapter call them. B1061 keeps the endpoint
+  grant checks at L354-L559 and calls none of these.
+
+  Layout. Module api::managed_store_access in betterlite-core, crates/betterlite-core/src/api/managed_store_access.rs
+  with its tests in managed_store_access/tests.rs. The file is an empty stub its parent declares. It sits
+  outside B1061's vector_endpoint_access on purpose, so the two tasks never share files.
+
+  Lookup. Resolve nonempty ids from B1062's registry first, then B749's shared cache/database lookup
+  (vector_store_rows_by_uuids in betterlite_auth::auth_resource_grants::managed_rows, over its
+  ManagedVectorStoreCache and ManagedVectorStoreRows ports, taking the first row). Normalize string
+  litellm_params with B1060. The registry comes in through a one-method port in this module whose lookup
+  returns a Result, implemented here for B1062's VectorStoreRegistry with store_by_id (that one never fails),
+  so tests and the helper can script a failing registry. Resolution exceptions fail closed with a 500 whose
+  detail is "Unable to validate vector store access"; no database gives null; unknown provider-native ids
+  stay allowed by the managed-id assertion.
+
+  Assertion. Ownership delegates to B1060's can_user_access_vector_store and accepts a caller-supplied
+  denial detail. The module's error enum carries the status (403 or 500) and the detail text, and route
+  owners build the final HTTP envelope from it. No route, credential fetch or 404 for an unmanaged id is
+  added here.
+
+  Oracle. Helper cases on the b10014 operation, with typed id, auth and scripted registry, cache and row
+  effects as input; the Python adapter patches litellm.vector_store_registry, prisma_client and
+  user_api_key_cache and calls the pinned functions. The answer is the returned store or null, the
+  HTTPException status and detail, the warning line and which lookups ran. No new parser is introduced.
+scope:
+  paths:
+  - crates/betterlite-core/src/api/managed_store_access.rs
+  - crates/betterlite-core/src/api/managed_store_access/**
+  - tools/oracle/cases/helpers/managed-store-access/**
+  - tools/oracle/fuzz/corpus/helper_case/managed-store-access-*
+  - tools/oracle/helpers/b10014.py
+  - tools/oracle/helpers/b10014/**
+  - tools/oracle/src/helpers/core_ops/b10014.rs
+  - tools/oracle/src/helpers/core_ops/b10014/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/utils.py#L260-L353
+  why: Owned. The managed-id resolution with its two fail-closed arms and the two ownership assertions.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L4038-L4094
+  why: get_managed_vector_store_rows_by_uuids, the shared cache and database lookup B749 already ports.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/vector_store_registry.py#L215-L222
+  why: The registry lookup by id that B1062's store_by_id ports.
+dod:
+- text: >-
+    managed_id_resolution returns null for id="" without a lookup. Registry hit vs_a is normalized and
+    returned without shared-cache access. Registry miss with no database returns null; otherwise request
+    get_managed_vector_store_rows_by_uuids(uuids=[vs_a]) and select the first row, or null for []. A registry
+    exception emits "Failed to resolve vector store id=%s from registry: %s" and HTTPException status=500,
+    detail="Unable to validate vector store access" without trying cache. Cache/conversion failure emits
+    "Failed to resolve vector store id=%s from shared cache: %s" with the same error. Helper type/param/code
+    remain absent; final HTTP envelopes belong to route owners.
+  proof: [store-tests, oracle, helper-python]
+- text: >-
+    managed_owner_assertion allows an unknown provider id and returns null, but a managed vs_a owned by
+    team=a denies an ungranted team=b with HTTPException 403,detail="Access denied: You do not have permission to access this vector store".
+    A supplied detail="blocked here" replaces that text. Granted calls return the normalized managed
+    record. The assertion does not fetch credentials or turn a missing unmanaged id into 404.
+  proof: [store-tests, oracle, helper-python, helper-case-corpus]
+checks:
+  optional: []
+  commands:
+  - id: store-tests
+    why: managed-id resolution or the ownership assertion lets a request through that LiteLLM refuses, or fails open
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::managed_store_access::/)'
+  - id: helper-python
+    why: The b10014 adapter is missing or fails the strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10014.py tools/oracle/helpers/b10014)" &&
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+      uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: No new b10014 seed reaches the shared helper case parser.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/managed-store-access-*")" &&
+      grep -lE 'b10014"?:' tools/oracle/fuzz/corpus/helper_case/managed-store-access-* &&
+      cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-core-ops --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/managed-store-access/managed-id-resolution.yaml
+- tools/oracle/cases/helpers/managed-store-access/managed-owner-assertion.yaml
+deviations: []
+out_of_scope:
+- B1061 owns utils.py:354-559, the endpoint pattern match and the store and file endpoint grant checks.
+- B1060 owns the litellm_params normalization and can_user_access_vector_store. B1062 owns the registry, B749 the shared cache and database row loading.
+- Route tasks own the final HTTP response and any credential fetch after the check.
+pitfalls:
+- Registry failure is a 500 access-validation failure, not an unmanaged-id fallback, and the cache is not tried after it.
+- An id that neither the registry nor the database knows is a provider-native id and passes; only a managed store is checked for ownership.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

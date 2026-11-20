@@ -38,6 +38,7 @@ fn deployment() -> Deployment {
         max_retries: None,
         drop_params: None,
         provider_affinity_header: None,
+        anthropic: None,
     }
 }
 

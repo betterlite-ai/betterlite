@@ -1,0 +1,6 @@
+task: B8872
+deviations:
+  - what: The enabled initialization reports the configured callback names through tracing instead of LiteLLM's print of the audit_log_callbacks list with its Python callback objects.
+    why: A loaded Python object can print credentials through its repr; only the disabled warning is reproduced verbatim.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6538-L6547
+kept_bugs: []

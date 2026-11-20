@@ -1,8 +1,11 @@
 id: B1215
 title: Create stored model deployments
 description: >-
-  Implement POST /model/new through ModelWriteAccess, AutoRouterCapabilitySlot, encrypted ModelRepository
-  persistence and serving catalog publication. Consume general_settings.enforce_rpm_tpm_on_model_add=false
+  Implement POST /model/new through ModelWriteAccess, encrypted ModelRepository
+  persistence and serving catalog publication. Write through the plain model table: with no license limit and no
+  member auto-router write, LiteLLM's _auto_router_capability_slot yields just that table
+  (model_management_endpoints.py L556-L558), and a member auto-router write fails at B832's MemberRouterWrite hook
+  until B378 registers it. B834 later wraps this write in its AutoRouterCapabilitySlot and depends on this task. Consume general_settings.enforce_rpm_tpm_on_model_add=false
   and reject missing required rate limits when enabled. Retain existing database success if a later serving
   reload fails; use the source explicit reload-error response.
 

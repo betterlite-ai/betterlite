@@ -1,0 +1,20 @@
+kind: helper
+name: tracing-detail-with-violation-categories
+call:
+  b3722:
+    bedrock_decisions:
+      tracing_detail:
+        response:
+          action: GUARDRAIL_INTERVENED
+          assessments:
+            - topicPolicy:
+                topics:
+                  - name: finance
+                    action: BLOCKED
+            - contentPolicy:
+                filters:
+                  - type: HATE
+                    action: BLOCKED
+        aws_region_name: null
+env: {}
+compare: {ignore: []}
