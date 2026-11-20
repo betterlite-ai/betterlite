@@ -60,6 +60,14 @@ scope:
   - crates/betterlite-sdk/Cargo.toml
   - crates/betterlite-sdk/src/call_wrapper.rs
   - crates/betterlite-sdk/src/call_wrapper/**
+  - crates/betterlite-error/src/retry_policy.rs
+  - crates/betterlite-error/src/retry_policy/**
+  - crates/betterlite-error/src/error.rs
+  - crates/betterlite-error/src/error/**
+  - crates/betterlite-router/src/retry_policy/policy.rs
+  - crates/betterlite-router/src/retry_policy/policy/**
+  - crates/betterlite-router/src/fallback_observations/error_info.rs
+  - crates/betterlite-router/src/fallback_observations/error_info/**
   - tools/oracle/cases/helpers/call-wrapper/**
   - "tools/oracle/fuzz/corpus/helper_case/call_wrapper-*"
   - tools/oracle/helpers/b5368.py
@@ -172,6 +180,6 @@ pitfalls:
   the sync failure handler wrote, so don't move it to a background task.
 - '`return_raw_request` must not send a real key: it uses "my-fake-api-key" whatever the request holds.'
 budget:
-  max_changed_lines: 3500
+  max_changed_lines: 4300
   max_new_expects: 0
 review_level: security
