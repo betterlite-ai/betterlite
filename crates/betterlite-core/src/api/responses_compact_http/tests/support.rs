@@ -97,7 +97,7 @@ pub(crate) struct Fixture {
     sink: Sink,
     pub(crate) state: LoggingState,
     now: DateTime<FixedOffset>,
-    // Each run's pre-call details, since the response transform overwrites the state's additional_args
+    // Each run's pre-call record, taken before the response transform overwrites the state's additional_args
     calls: Arc<Mutex<Vec<LoggedJson>>>,
 }
 
@@ -141,12 +141,7 @@ impl Fixture {
         C: CompactConfig,
         S: ClientSource,
     {
-        let calls = Arc::clone(&self.calls);
-        let logger = |details: &LoggedJson| -> Result<(), PrePostError> {
-            calls
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .push(details.clone());
+        let logger = |_details: &LoggedJson| -> Result<(), PrePostError> {
             events.push("log");
             Ok(())
         };
@@ -166,6 +161,10 @@ impl Fixture {
             )
             .await?
         };
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(LoggedJson::Object(self.state.model_call_details.clone()));
         send(
             prepared,
             &mut LogContext {

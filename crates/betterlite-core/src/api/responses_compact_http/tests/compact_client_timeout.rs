@@ -234,6 +234,7 @@ pub(super) fn timeout_messages() {
     }
 }
 
+#[derive(Clone, Copy)]
 enum Timed {
     Exact(&'static str),
     AsyncPrefix,
