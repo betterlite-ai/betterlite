@@ -52,7 +52,6 @@ pub struct AzureRun<'data> {
     pub supplied_timeout: Option<Duration>,
 }
 
-// both payloads are boxed: openai's run dwarfs the pointer the enum would otherwise carry
 pub enum RunTarget<'data> {
     OpenAi(Box<OpenAiRun>),
     Azure(Box<AzureRun<'data>>),
