@@ -13,7 +13,7 @@ call:
     contextual_grounding: false
     disable_exception_on_block: false
     data: {model: gpt-4o}
-    replies:
+    replies: []
 env: {}
 compare:
   ignore: []
