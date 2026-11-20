@@ -19,4 +19,6 @@ compare:
   headers: []
   headers_present: []
   upstream_headers: []
-  ignore: []
+  ignore:
+    - pointer: /detail/0/input
+      why: betterlite's 422 envelope carries type, loc and msg like B003's other query validation answers

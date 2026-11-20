@@ -9,4 +9,7 @@ deviations:
   - what: A proxy without general_settings.master_key answers 401 on the route, where LiteLLM treats the caller as an anonymous internal user and reads the report.
     why: The route's own guard refuses a request that carries no AuthContext as defense in depth; every oracle case configures a master key, where both proxies answer 401.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1871-L1877
-kept_bugs: []
+kept_bugs:
+  - what: GROUPS_SQL subtracts cache hits and failures from COUNT(*), so a row that is both a cache hit and a failure is subtracted twice and api_requests can go negative.
+    why: A working cache dashboard's counts have to match the numbers LiteLLM shows, so the statement is copied character for character and the result is not clamped.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/analytics_endpoints/cache_activity.py#L67-L69
