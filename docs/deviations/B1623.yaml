@@ -21,13 +21,22 @@ deviations:
       mismatch. Every state LiteLLM mints is ASCII, so no working setup sees a different result.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1582
   - what: >-
-      A GENERIC_SSO_HEADERS value that fails to parse, or a header name or value that cannot be sent,
+      A GENERIC_SSO_HEADERS value that fails to parse, or a header the non-PKCE adapter cannot send,
       answers 500 internal_server_error with code 500. The pinned code raises the ValueError from
-      header.split("=") outside its try and lets an unsendable header fail inside fastapi-sso, so both
-      end as FastAPI's generic 500 body with no type, param or code.
+      header.split("=") outside its try and lets fastapi-sso send the header inside it, so both end as
+      FastAPI's generic 500 body with no type, param or code.
     why: >-
       The status is the same; betterlite answers its typed error envelope so the failure is classified
       instead of surfacing an unhandled exception. No working setup depends on the shape of a crash
       response.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1403-L1412
+  - what: >-
+      In the PKCE exchange a header name or value that cannot be sent answers 401 auth_error with param
+      token_exchange and code 401, where the pinned httpx client raises while sending and the wrapper
+      re-raises that exception into FastAPI's generic 500 body.
+    why: >-
+      The exchange returns a typed failure instead of an exception, and that error classifies an
+      unusable header next to the other token-exchange failures; no working setup can depend on a crash
+      status, and a header that cannot be sent is an operator configuration error either way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1619-L1629
 kept_bugs: []

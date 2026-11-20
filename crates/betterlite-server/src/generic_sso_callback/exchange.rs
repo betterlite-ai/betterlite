@@ -2,7 +2,7 @@ use betterlite_auth::jwt_claims::TypedValue;
 use betterlite_auth::oauth_client::OAuthClient;
 use betterlite_auth::oauth_client::document::OAuthDiscoveryDocument;
 use betterlite_auth::oauth_client::exchange::{
-    CallbackRequest, ExchangeRequest, OAuthExchange, exchange,
+    CallbackRequest, ExchangeRequest, OAuthExchange, exchange as oauth_client_exchange,
 };
 use betterlite_auth::oidc_token_exchange::decode::ProviderClaims;
 use betterlite_auth::oidc_token_exchange::exchange::{TokenExchangeRequest, exchange_pkce_code};
@@ -195,7 +195,7 @@ async fn oauth_exchange(
         redirect_uri: Some(config.redirect_url),
         include_client_id,
     };
-    let exchanged = exchange(&client, transport, &discovery, &request).await?;
+    let exchanged = oauth_client_exchange(&client, transport, &discovery, &request).await?;
     exchanged_from_oauth(&exchanged)
 }
 
