@@ -232,7 +232,7 @@ fn logging_state(redactor: &Redactor) -> LoggingState {
         setup,
         redactor,
         || String::from("generated"),
-        Duration::default(),
+        Duration::default,
     )
     .unwrap()
 }
