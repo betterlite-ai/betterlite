@@ -22,12 +22,15 @@ fn mock_retrieve_returns_the_record_before_any_lookup() {
             Json::Text("routed".to_owned()),
         )])),
     )]));
-    fixture.mock_response = Some(json!({
-        "id": "cntr_mock",
-        "object": "container",
-        "created_at": 1_i64,
-        "status": "running"
-    }));
+    fixture.mock_response = Some(
+        serde_json::from_value(json!({
+            "id": "cntr_mock",
+            "object": "container",
+            "created_at": 1_i64,
+            "status": "running"
+        }))
+        .expect("the mock body is JSON"),
+    );
 
     let object = fixture.retrieve().expect("the mock answers");
 
@@ -119,7 +122,8 @@ fn mock_a_bad_body_dispatches_with_the_callers_provider() {
 #[test]
 fn mock_a_body_that_does_not_match_the_record_names_the_retrieve_model() {
     let mut fixture = Fixture::new();
-    fixture.mock_response = Some(json!({"id": 5}));
+    fixture.mock_response =
+        Some(serde_json::from_value(json!({"id": 5})).expect("the mock body is JSON"));
 
     let failure = fixture.retrieve().expect_err("the body does not decode");
 
@@ -135,7 +139,8 @@ fn mock_a_body_that_does_not_match_the_record_names_the_retrieve_model() {
 fn mock_a_delete_body_that_does_not_match_names_the_delete_model() {
     let mut fixture = Fixture::new();
     fixture.handler = StubHandler::deleting(deleted_result());
-    fixture.mock_response = Some(json!({"id": "cntr_1"}));
+    fixture.mock_response =
+        Some(serde_json::from_value(json!({"id": "cntr_1"})).expect("the mock body is JSON"));
 
     let failure = fixture.delete().expect_err("the body does not decode");
 

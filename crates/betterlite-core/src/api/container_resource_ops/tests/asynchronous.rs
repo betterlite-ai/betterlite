@@ -57,12 +57,15 @@ async fn async_delete_returns_the_raw_provider_id_without_re_encoding() {
 #[tokio::test]
 async fn async_mock_returns_the_record_without_the_handler() {
     let mut fixture = Fixture::new();
-    fixture.mock_response = Some(json!({
-        "id": "cntr_mock",
-        "object": "container",
-        "created_at": 1_i64,
-        "status": "running"
-    }));
+    fixture.mock_response = Some(
+        serde_json::from_value(json!({
+            "id": "cntr_mock",
+            "object": "container",
+            "created_at": 1_i64,
+            "status": "running"
+        }))
+        .expect("the mock body is JSON"),
+    );
 
     let object = fixture.aretrieve().await.expect("the mock answers");
 
