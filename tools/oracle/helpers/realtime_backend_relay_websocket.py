@@ -7,11 +7,10 @@ import litellm
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.litellm_core_utils.realtime_streaming import BackendClose, RealTimeStreaming
 from litellm.llms.base_llm.realtime.transformation import BaseRealtimeConfig, RealtimeBackend
-from litellm.types.llms.openai import OpenAIRealtimeEvents
+from litellm.types.llms.openai import OpenAIRealtimeOutputItemDone, OpenAIRealtimeResponseDelta
 from litellm.types.realtime import (
-    RealtimeInputAudioTranscriptionUsage,
-    RealtimeResponseTransformInput,
-    RealtimeResponseTypedDict,
+    RealtimeInputAudioTranscriptionUsage as InputUsage,
+    RealtimeResponseTransformInput as TransformInput,
 )
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
 from typing_extensions import override
@@ -41,6 +40,17 @@ class Input(TypedDict):
     force_transcription_model: str | None
 
 
+class ResponseDocument(TypedDict):
+    response: JsonValue
+    current_output_item_id: str | None
+    current_response_id: str | None
+    current_delta_chunks: list[OpenAIRealtimeResponseDelta] | None
+    current_conversation_id: str | None
+    current_item_chunks: list[OpenAIRealtimeOutputItemDone] | None
+    current_delta_type: str | None
+    session_configuration_request: str | None
+
+
 class CallFlags(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     success: JsonValue = Field(default=None, alias="realtime_session_success_logged")
@@ -56,23 +66,23 @@ class ProviderMethods(Protocol):
     def transform_realtime_request(
         self,
         message: str,
-        model: str,
-        session_configuration_request: str | None = None,
+        _model: str,
+        _session_configuration_request: str | None = None,
     ) -> Sequence[str | bytes]: ...
 
     def transform_realtime_response(
         self,
         message: str | bytes,
-        model: str,
-        logging_obj: Logging,
-        realtime_response_transform_input: RealtimeResponseTransformInput,
-    ) -> RealtimeResponseTypedDict: ...
+        _model: str,
+        _logging_obj: Logging,
+        realtime_response_transform_input: TransformInput,  # ast-grep-ignore: no-long-names
+    ) -> ResponseDocument: ...
 
     def requires_session_configuration(self) -> bool: ...
 
-    def unbilled_usage_on_session_close(
-        self, model: str
-    ) -> RealtimeInputAudioTranscriptionUsage | None: ...
+    def unbilled_usage_on_session_close(  # ast-grep-ignore: no-long-names
+        self, _model: str
+    ) -> InputUsage | None: ...
 
 
 class ClientMethods(Protocol):
@@ -82,7 +92,7 @@ class ClientMethods(Protocol):
 class BackendMethods(Protocol):
     async def send(self, message: str) -> None: ...
 
-    async def recv(self, decode: bool | None = None) -> str: ...
+    async def recv(self, *, decode: bool | None = None) -> str: ...
 
     async def close(self) -> None: ...
 
@@ -108,8 +118,10 @@ def frame(text: str) -> JsonValue:
     try:
         value = JSON.validate_json(text)
     except ValidationError:
-        return JSON.validate_python({"kind": "text", "text": text})
-    return JSON.validate_python({"kind": "json", "value": value})
+        text_frame: dict[str, JsonValue] = {"kind": "text", "text": text}
+        return text_frame
+    json_frame: dict[str, JsonValue] = {"kind": "json", "value": value}
+    return json_frame
 
 
 class ScriptedProvider(ProviderMethods):
@@ -131,18 +143,18 @@ class ScriptedProvider(ProviderMethods):
         message: str | bytes,
         _model: str,
         _logging_obj: Logging,
-        _realtime_response_transform_input: RealtimeResponseTransformInput,
-    ) -> RealtimeResponseTypedDict:
-        event = cast(OpenAIRealtimeEvents, JSON.validate_json(message))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/realtime/transformation.py#L115-L127
+        realtime_response_transform_input: TransformInput,  # ast-grep-ignore: no-long-names
+    ) -> ResponseDocument:
+        state = realtime_response_transform_input  # ast-grep-ignore: no-long-names
         return {
-            "response": event,
-            "current_output_item_id": None,
-            "current_response_id": None,
-            "current_delta_chunks": None,
-            "current_conversation_id": None,
-            "current_item_chunks": None,
-            "current_delta_type": None,
-            "session_configuration_request": None,
+            "response": JSON.validate_json(message),
+            "current_output_item_id": state["current_output_item_id"],
+            "current_response_id": state["current_response_id"],
+            "current_delta_chunks": state["current_delta_chunks"],
+            "current_conversation_id": state["current_conversation_id"],
+            "current_item_chunks": state["current_item_chunks"],
+            "current_delta_type": state["current_delta_type"],
+            "session_configuration_request": state["session_configuration_request"],
         }
 
     @override
@@ -150,9 +162,9 @@ class ScriptedProvider(ProviderMethods):
         return self._document["requires_session_configuration"]
 
     @override
-    def unbilled_usage_on_session_close(
+    def unbilled_usage_on_session_close(  # ast-grep-ignore: no-long-names
         self, _model: str
-    ) -> RealtimeInputAudioTranscriptionUsage | None:
+    ) -> InputUsage | None:
         return None
 
 
@@ -178,7 +190,7 @@ class ScriptedBackend(BackendMethods):
         self.sent.append(message)
 
     @override
-    async def recv(self, decode: bool | None = None) -> str:
+    async def recv(self, *, decode: bool | None = None) -> str:
         self.decode_calls.append(decode)
         if not self._frames:
             raise closed(self._close)
@@ -224,12 +236,14 @@ def snapshot(
     logging_obj: Logging,
 ) -> JsonValue:
     flags = LoggedDetails.model_validate(logging_obj).model_call_details
+    client_frames: list[JsonValue] = [frame(text) for text in client.sent]
+    backend_frames: list[JsonValue] = [frame(text) for text in backend.sent]
     payload: dict[str, JsonValue] = {
         "close": {"code": close.code, "reason": close.reason},
-        "client": JSON.validate_python([frame(text) for text in client.sent]),
-        "backend": JSON.validate_python([frame(text) for text in backend.sent]),
+        "client": JSON.validate_python(client_frames),
+        "backend": JSON.validate_python(backend_frames),
         "decode_calls": JSON.validate_python(backend.decode_calls),
-        "messages": JSON.validate_python(streaming.messages),
+        "messages": JSON.validate_python(streaming.messages),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L145
         "input_messages": JSON.validate_python(streaming.input_messages),
         "logged": {"success": flags.success, "failure": flags.failure},
     }
