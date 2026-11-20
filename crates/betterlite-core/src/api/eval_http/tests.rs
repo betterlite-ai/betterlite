@@ -231,7 +231,7 @@ async fn list_and_get_keep_the_clients_deadline(#[case] handler: Handler) {
     assert_eq!(bench.config.asked().len(), 1);
 }
 
-// A post 404, a delete 500 and the boundary delete 400 are status errors the client raises, so _handle_error carries the status and text
+// A post 404, a delete 500, the boundary delete 400 and a 302 with no Location are status errors the client raises, so _handle_error carries the status and text
 #[rstest]
 #[case::create(
     Handler::Create,
@@ -250,6 +250,12 @@ async fn list_and_get_keep_the_clients_deadline(#[case] handler: Handler) {
     "400 Bad Request",
     r#"{"error":{"message":"bad request"}}"#,
     400_u16
+)]
+#[case::delete_unfollowed_redirect(
+    Handler::Delete,
+    "302 Found",
+    r#"{"error":{"message":"moved"}}"#,
+    302_u16
 )]
 #[tokio::test]
 async fn post_and_delete_status_errors_go_through_handle_error(

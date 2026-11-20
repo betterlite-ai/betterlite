@@ -66,12 +66,12 @@ pub(super) fn send_failed(
     failed(config, &raised)
 }
 
-// post and delete call raise_for_status, so a 4xx or 5xx answer is converted before the response transform sees it
+// post and delete call raise_for_status, which raises for every status outside 2xx, so a 3xx the client did not follow is converted too
 pub(super) fn check_status(
     config: EvalConfig<'_>,
     reply: UpstreamResponse,
 ) -> Result<UpstreamResponse, EvalHttpError> {
-    if reply.status < 400 {
+    if (200..=299).contains(&reply.status) {
         return Ok(reply);
     }
     Err(failed(config, &status_facts(&reply)))
