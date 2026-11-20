@@ -1,8 +1,7 @@
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
-use betterlite_router::model_catalog_lookup::error::LookupError;
 use betterlite_server::access_group_models::{
-    config_sourced_sibling, served_by_a_config_deployment,
+    ModelSyncError, config_sourced_sibling, served_by_a_config_deployment,
 };
 use betterlite_server::model_visibility::testing::{FixtureError, Row as SnapshotRow, Snapshot};
 use serde::Deserialize;
@@ -20,7 +19,7 @@ enum Failure {
     #[error("the served_by_a_config_deployment function needs a model_name")]
     MissingModelName,
     #[error(transparent)]
-    Lookup(#[from] LookupError),
+    Lookup(#[from] ModelSyncError),
 }
 
 #[derive(Clone, Copy, Deserialize)]
@@ -84,7 +83,8 @@ fn answer(input: &Input) -> Result<Value, Failure> {
             let Some(deployment_id) = input.deployment_id.as_deref() else {
                 return Err(Failure::MissingDeploymentId);
             };
-            let found = config_sourced_sibling(&fixture.catalog, deployment_id, &input.model_id)?;
+            let found = config_sourced_sibling(&fixture.catalog, deployment_id, &input.model_id)
+                .map_err(ModelSyncError::from)?;
             Ok(json!({"result": found}))
         }
         Predicate::ServedByAConfigDeployment => {
@@ -92,7 +92,8 @@ fn answer(input: &Input) -> Result<Value, Failure> {
                 return Err(Failure::MissingModelName);
             };
             let found =
-                served_by_a_config_deployment(Some(&fixture.catalog), model_name, &input.model_id)?;
+                served_by_a_config_deployment(Some(&fixture.catalog), model_name, &input.model_id)
+                    .map_err(ModelSyncError::from)?;
             Ok(json!({"result": found}))
         }
     }
