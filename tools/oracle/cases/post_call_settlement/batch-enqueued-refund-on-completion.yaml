@@ -1,0 +1,16 @@
+kind: helper
+name: post-call-settlement-batch-enqueued-refund-on-completion
+call:
+  b3046:
+    function: success_hook
+    call_id: call-1
+    pop_tokens: 700
+    response:
+      id: b-1
+      status: completed
+      object: batch
+    stash:
+      owner_call_id: call-1
+      batch_tokens: 900
+env: {}
+compare: {ignore: []}

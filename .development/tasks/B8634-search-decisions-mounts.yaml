@@ -17,6 +17,8 @@ description: >-
 
 
   Proof. HTTP oracle cases through the booted proxy: tools/oracle/cases/search/wiring/tools-list.yaml (config `search_tools` with two tools, one with `search_tool_info.description`, GET /v1/search/tools with the master key), tools-list-empty.yaml (no search_tools, GET /search/tools gives `data: []`), call-unknown-tool.yaml (POST /v1/search/not-configured with a query body), and tools/oracle/cases/decisions/wiring/systemone-invalid-body.yaml (POST /systemone with an object missing the required fields). B8275 and B8276 cannot run HTTP cases at their own gates because this task mounts their routes, so their cases live here too, as their descriptions list them: tools/oracle/cases/search-call/ auth-required-search, auth-required-named and auth-required-list (each search path without a valid key gets LiteLLM's 401 body), and tools/oracle/cases/decisions-routes/ auth-required-systemone, auth-required-decisions and invalid-body-decisions (POST /v1/decisions with a JSON list body gets the 400 "Invalid Decisions request" error). Unit tests: the chain's order with fake links, the claude-only fall-through, the hooks against fixed env values, and both mounts answering their paths in search_routes/tests.rs.
+
+  Booted cases from B040 and B9751, which need this decisions mount. self-hosted-compatible/media/decisions makes an OpenAI-format and a SystemOne-format request to hosted_vllm through POST /v1/decisions and /decisions with a named choice question, using B3510's request and response records, and checks B3513 and B3514's selected config, the upstream /v1/systemone URL and no Authorization when the placeholder key resolves to None. ui/guardrail-forms/decision-questions-and-model-groups replays the guardrails page DecisionTestSection request described in B9751's task file: POST /v1/decisions with an OpenAI decision deployment and deterministic answers, reading answers[].name, type and probability.
 scope:
   paths:
   - crates/betterlite-server/src/app/inference.rs
@@ -31,6 +33,8 @@ scope:
   - tools/oracle/cases/decisions/wiring/**
   - tools/oracle/cases/search-call/**
   - tools/oracle/cases/decisions-routes/**
+  - tools/oracle/cases/self-hosted-compatible/media/decisions.yaml
+  - tools/oracle/cases/ui/guardrail-forms/decision-questions-and-model-groups.yaml
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/endpoints.py#L17-L40
@@ -50,6 +54,10 @@ dod:
   proof: [chain-tests]
 - text: ProviderApiBaseHooks gives the Copilot and ChatGPT bases without a login and the Vertex Claude URL from B1304.
   proof: [chain-tests]
+- text: "Hosted vLLM decisions in OpenAI and SystemOne format reach the selected config and upstream URL as LiteLLM does."
+  proof: [oracle]
+- text: "The guardrails page decision test request answers with the same decision fields as LiteLLM."
+  proof: [oracle]
 checks:
   optional: []
   commands:
@@ -73,6 +81,8 @@ oracle_cases:
 - tools/oracle/cases/decisions-routes/auth-required-systemone.yaml
 - tools/oracle/cases/decisions-routes/auth-required-decisions.yaml
 - tools/oracle/cases/decisions-routes/invalid-body-decisions.yaml
+- tools/oracle/cases/self-hosted-compatible/media/decisions.yaml
+- tools/oracle/cases/ui/guardrail-forms/decision-questions-and-model-groups.yaml
 deviations: []
 out_of_scope:
 - "Route behavior: B8275 and B8276. The search, tool pick and decisions calls: B3272, B3273, B3515. The authorization checks: B749, B737, B4114."
