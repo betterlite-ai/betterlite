@@ -11,9 +11,7 @@ use serde_json::json;
 pub(crate) fn rendered_query(
     query: Option<&IndexMap<String, ParamValue>>,
 ) -> Option<BTreeMap<String, String>> {
-    let Some(values) = query else {
-        return None;
-    };
+    let values = query?;
     Some(
         values
             .iter()
@@ -24,9 +22,7 @@ pub(crate) fn rendered_query(
 
 // B3364's list handler takes the caller's query as JSON values, text and integers as given
 pub(crate) fn query_object(query: Option<&IndexMap<String, ParamValue>>) -> Option<Object> {
-    let Some(values) = query else {
-        return None;
-    };
+    let values = query?;
     let mut object = Object::new();
     for (name, value) in values {
         let rendered = match value {

@@ -38,7 +38,7 @@ pub(crate) enum ContainerOperation {
 }
 
 impl ContainerOperation {
-    fn missing(self, provider: String) -> ContainerOpError {
+    const fn missing(self, provider: String) -> ContainerOpError {
         match self {
             Self::Create => ContainerOpError::Unsupported { provider },
             Self::List => ContainerOpError::ConfigMissing { provider },

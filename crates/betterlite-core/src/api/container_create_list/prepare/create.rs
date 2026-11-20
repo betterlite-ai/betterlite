@@ -164,9 +164,7 @@ fn mapped_create_params(
 fn extra_body_json(
     extra_body: Option<&BTreeMap<String, String>>,
 ) -> Option<IndexMap<String, JsonValue>> {
-    let Some(values) = extra_body else {
-        return None;
-    };
+    let values = extra_body?;
     Some(
         values
             .iter()

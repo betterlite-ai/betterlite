@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_logging::logging_state::correlation::{
@@ -295,7 +295,7 @@ impl StubHandler {
         failure.map_or_else(|| Ok(self.list.clone()), Err)
     }
 
-    fn record(&self, pending: PendingCall<'_>, form: HandlerForm) {
+    fn record(&self, pending: &PendingCall<'_>, form: HandlerForm) {
         match pending {
             PendingCall::Create(call) => {
                 let seen = SeenCreate {
@@ -329,7 +329,7 @@ impl ContainerCollectionHandler for StubHandler {
         &self,
         call: &CreateHandlerCall<'_>,
     ) -> Result<ContainerObject, ContainerCollectionError> {
-        self.record(PendingCall::Create(call), HandlerForm::Blocking);
+        self.record(&PendingCall::Create(call), HandlerForm::Blocking);
         self.answer_create()
     }
 
@@ -337,7 +337,7 @@ impl ContainerCollectionHandler for StubHandler {
         &self,
         call: &CreateHandlerCall<'_>,
     ) -> impl Future<Output = Result<ContainerObject, ContainerCollectionError>> + Send {
-        self.record(PendingCall::Create(call), HandlerForm::Async);
+        self.record(&PendingCall::Create(call), HandlerForm::Async);
         ready(self.answer_create())
     }
 
@@ -345,7 +345,7 @@ impl ContainerCollectionHandler for StubHandler {
         &self,
         call: &ListHandlerCall<'_>,
     ) -> Result<ContainerListResponse, ContainerCollectionError> {
-        self.record(PendingCall::List(call), HandlerForm::Blocking);
+        self.record(&PendingCall::List(call), HandlerForm::Blocking);
         self.answer_list()
     }
 
@@ -353,7 +353,7 @@ impl ContainerCollectionHandler for StubHandler {
         &self,
         call: &ListHandlerCall<'_>,
     ) -> impl Future<Output = Result<ContainerListResponse, ContainerCollectionError>> + Send {
-        self.record(PendingCall::List(call), HandlerForm::Async);
+        self.record(&PendingCall::List(call), HandlerForm::Async);
         ready(self.answer_list())
     }
 }
@@ -434,6 +434,15 @@ impl ContainerConfigLookup for StubLookup {
     }
 }
 
+// the logging fields the tests read, copied out so no guard is held across their assertions
+pub(crate) struct LoggedState {
+    pub(crate) call_type: String,
+    pub(crate) model: String,
+    pub(crate) custom_llm_provider: Option<String>,
+    pub(crate) optional_params: IndexMap<String, Json>,
+    pub(crate) litellm_params: IndexMap<String, Json>,
+}
+
 pub(crate) struct Fixture {
     pub(crate) handler: StubHandler,
     pub(crate) lookup: StubLookup,
@@ -463,8 +472,15 @@ impl Fixture {
         }
     }
 
-    pub(crate) fn state(&self) -> MutexGuard<'_, LoggingState> {
-        self.logging.lock().unwrap_or_else(PoisonError::into_inner)
+    pub(crate) fn state(&self) -> LoggedState {
+        let state = self.logging.lock().unwrap_or_else(PoisonError::into_inner);
+        LoggedState {
+            call_type: state.call_type.clone(),
+            model: state.model.clone(),
+            custom_llm_provider: state.custom_llm_provider.clone(),
+            optional_params: state.optional_params.clone(),
+            litellm_params: state.litellm_params.clone(),
+        }
     }
 
     pub(crate) fn create(
