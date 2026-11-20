@@ -10,7 +10,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::containers::container_file_http::request::SslVerify;
 use betterlite_openai::containers::container_file_http::transport::ContainerMethod;
 use betterlite_openai::openai_base_config::Object;
-use serde_json::{Value, json};
+use serde_json::json;
 
 use super::tests::{
     BASE, BlockingFake, CREATE_BODY, FakeClient, Fixture, REQUEST_HEADERS, REQUEST_ID,
@@ -32,12 +32,9 @@ fn api_key_params(value: &str) -> Object {
 fn create_posts_the_transformed_body_with_the_default_timeout() {
     let mut fixture = Fixture::new(200, CREATE_BODY);
     fixture.params = api_key_params("sk-1");
-    let mut expires = Object::new();
-    expires.insert(String::from("anchor"), Value::from("last_active_at"));
-    expires.insert(String::from("minutes"), Value::from(20_i32));
-    fixture
-        .create_params
-        .insert(String::from("expires_after"), Value::Object(expires));
+    fixture.create_params =
+        serde_json::from_str(r#"{"expires_after":{"anchor":"last_active_at","minutes":20}}"#)
+            .unwrap();
     let call = fixture.create_call("box");
     let object = container_create_handler(&call).unwrap();
     let sent = fixture.sent();
@@ -51,11 +48,11 @@ fn create_posts_the_transformed_body_with_the_default_timeout() {
     assert_eq!(authorization, Some("Bearer sk-1"));
     assert_eq!(content_type, Some("application/json"));
     let body: Object = serde_json::from_slice(request.body.as_deref().unwrap()).unwrap();
-    let expected: Value = serde_json::from_str(
+    let expected: Object = serde_json::from_str(
         r#"{"name":"box","expires_after":{"anchor":"last_active_at","minutes":20}}"#,
     )
     .unwrap();
-    assert_eq!(serde_json::to_value(&body).unwrap(), expected);
+    assert_eq!(body, expected);
     assert_eq!(object.id, "cntr_abc");
     assert_eq!(object.name.as_deref(), Some("box"));
     assert_eq!(object.status, "running");

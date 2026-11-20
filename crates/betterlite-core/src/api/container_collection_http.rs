@@ -114,44 +114,38 @@ where
     }
 }
 
-pub fn container_create_handler<Source>(
-    call: &ContainerCreateCall<'_, Source>,
-) -> Result<records::ContainerObject, ContainerCollectionError>
-where
-    Source: CollectionClientSource,
-{
-    let (client, params) = pick(&call.base, call.base.blocking, Source::blocking_client)?;
-    poll_once(create_body(client.get(), &params, call))?
+// The four entry points differ only in the call, the reply and the awaited body, so one template spells them
+macro_rules! collection_handlers {
+    ($($blocking:ident, $asynchronous:ident, $call:ident, $reply:path, $body:ident;)*) => {
+        $(
+            pub fn $blocking<Source>(
+                call: &$call<'_, Source>,
+            ) -> Result<$reply, ContainerCollectionError>
+            where
+                Source: CollectionClientSource,
+            {
+                let (client, params) =
+                    pick(&call.base, call.base.blocking, Source::blocking_client)?;
+                poll_once($body(client.get(), &params, call))?
+            }
+
+            pub async fn $asynchronous<Source>(
+                call: &$call<'_, Source>,
+            ) -> Result<$reply, ContainerCollectionError>
+            where
+                Source: CollectionClientSource,
+            {
+                let (client, params) =
+                    pick(&call.base, call.base.asynchronous, Source::async_client)?;
+                $body(client.get(), &params, call).await
+            }
+        )*
+    };
 }
 
-pub async fn acontainer_create_handler<Source>(
-    call: &ContainerCreateCall<'_, Source>,
-) -> Result<records::ContainerObject, ContainerCollectionError>
-where
-    Source: CollectionClientSource,
-{
-    let (client, params) = pick(&call.base, call.base.asynchronous, Source::async_client)?;
-    create_body(client.get(), &params, call).await
-}
-
-pub fn container_list_handler<Source>(
-    call: &ContainerListCall<'_, Source>,
-) -> Result<records::ContainerListResponse, ContainerCollectionError>
-where
-    Source: CollectionClientSource,
-{
-    let (client, params) = pick(&call.base, call.base.blocking, Source::blocking_client)?;
-    poll_once(list_body(client.get(), &params, call))?
-}
-
-pub async fn acontainer_list_handler<Source>(
-    call: &ContainerListCall<'_, Source>,
-) -> Result<records::ContainerListResponse, ContainerCollectionError>
-where
-    Source: CollectionClientSource,
-{
-    let (client, params) = pick(&call.base, call.base.asynchronous, Source::async_client)?;
-    list_body(client.get(), &params, call).await
+collection_handlers! {
+    container_create_handler, acontainer_create_handler, ContainerCreateCall, records::ContainerObject, create_body;
+    container_list_handler, acontainer_list_handler, ContainerListCall, records::ContainerListResponse, list_body;
 }
 
 async fn create_body<Client, Source>(

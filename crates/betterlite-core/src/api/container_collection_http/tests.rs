@@ -478,12 +478,12 @@ pub(super) async fn deadline_failure() -> TransferError {
 pub(super) fn provider_error(failure: &ContainerCollectionError) -> &BaseLlmException {
     match failure {
         ContainerCollectionError::Provider(provider) => provider,
-        other @ ContainerCollectionError::Config(_)
-        | other @ ContainerCollectionError::Params(_)
-        | other @ ContainerCollectionError::Client(_)
-        | other @ ContainerCollectionError::Logging(_)
-        | other @ ContainerCollectionError::Encode(_)
-        | other @ ContainerCollectionError::Suspended => {
+        other @ (ContainerCollectionError::Config(_)
+        | ContainerCollectionError::Params(_)
+        | ContainerCollectionError::Client(_)
+        | ContainerCollectionError::Logging(_)
+        | ContainerCollectionError::Encode(_)
+        | ContainerCollectionError::Suspended) => {
             panic!("expected a provider failure, got {other:?}")
         }
     }

@@ -19,7 +19,7 @@ pub(super) enum Failure {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Input {
+pub(crate) struct Input {
     pub(super) operation: Operation,
     #[serde(default)]
     pub(super) name: String,
