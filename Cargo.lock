@@ -1672,6 +1672,7 @@ dependencies = [
  "jsonschema",
  "lopdf",
  "lru",
+ "mime_guess",
  "mutants",
  "num-traits",
  "percent-encoding",
@@ -1914,11 +1915,13 @@ dependencies = [
  "betterlite-http",
  "betterlite-logging",
  "betterlite-models",
+ "betterlite-ocr",
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-redact",
  "betterlite-secret-managers",
  "betterlite-tokenizer",
+ "caseless",
  "chrono",
  "futures-util",
  "http 1.5.0",
@@ -2348,6 +2351,7 @@ dependencies = [
  "aws-smithy-async",
  "axum",
  "base64 0.23.1",
+ "betterlite-auth",
  "betterlite-config",
  "betterlite-db",
  "betterlite-env",
@@ -2392,11 +2396,13 @@ dependencies = [
 name = "betterlite-mcp-fuzz"
 version = "0.0.0"
 dependencies = [
+ "betterlite-auth",
  "betterlite-config",
  "betterlite-mcp",
  "chrono",
  "libfuzzer-sys",
  "secrecy",
+ "serde_json",
 ]
 
 [[package]]
@@ -2568,6 +2574,7 @@ dependencies = [
  "betterlite-a2a",
  "betterlite-anthropic",
  "betterlite-auth",
+ "betterlite-azure",
  "betterlite-cli",
  "betterlite-compression",
  "betterlite-config",
@@ -2593,10 +2600,12 @@ dependencies = [
  "betterlite-redis",
  "betterlite-router",
  "betterlite-sdk",
+ "betterlite-secret-managers",
  "betterlite-server",
  "betterlite-streaming",
  "betterlite-tokenizer",
  "betterlite-transcribe",
+ "betterlite-vertex",
  "betterlite-websearch",
  "bytes",
  "chrono",
@@ -3037,6 +3046,7 @@ dependencies = [
  "betterlite-http",
  "betterlite-logging",
  "betterlite-models",
+ "betterlite-ocr",
  "betterlite-openai",
  "betterlite-oracle-helper-api",
  "betterlite-oracle-runner",
@@ -3278,6 +3288,7 @@ dependencies = [
 name = "betterlite-oracle-mcp"
 version = "0.1.0"
 dependencies = [
+ "betterlite-auth",
  "betterlite-config",
  "betterlite-db",
  "betterlite-http",
@@ -4013,6 +4024,7 @@ dependencies = [
  "betterlite-error",
  "betterlite-foundry",
  "betterlite-http",
+ "betterlite-http-fixture",
  "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
@@ -4339,6 +4351,7 @@ dependencies = [
  "fancy-regex 0.19.2",
  "hex",
  "indexmap 2.14.2",
+ "jiff",
  "prometheus-client",
  "rand 0.10.3",
  "rand_distr",
@@ -4495,6 +4508,7 @@ dependencies = [
 name = "betterlite-server"
 version = "0.1.0"
 dependencies = [
+ "aes 0.9.3",
  "aho-corasick",
  "async-stream",
  "async-trait",
@@ -4529,6 +4543,7 @@ dependencies = [
  "betterlite-ocr",
  "betterlite-openai",
  "betterlite-openapi",
+ "betterlite-policy",
  "betterlite-postgres-fixture",
  "betterlite-prompts",
  "betterlite-provider",
@@ -4547,6 +4562,7 @@ dependencies = [
  "betterlite-vertex",
  "bytes",
  "caseless",
+ "cbc 0.2.1",
  "chrono",
  "clap",
  "crc32fast",
@@ -4559,6 +4575,7 @@ dependencies = [
  "futures-util",
  "getrandom 0.4.3",
  "hex",
+ "hmac 0.13.0",
  "http 1.5.0",
  "http-body 1.1.0",
  "hyper-util",
@@ -4600,6 +4617,7 @@ dependencies = [
  "speedate",
  "strum",
  "subtle",
+ "temp-env",
  "tempfile",
  "thiserror",
  "tokio",

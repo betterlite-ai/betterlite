@@ -1,0 +1,23 @@
+kind: helper
+name: sail-wire-extra-body-merge
+call:
+  b6411:
+    function: extra_body
+    model: llama-3-70b
+    steps:
+      - {extra_body: {}, request_metadata: null, drop_params: false, global_drop_params: false}
+      - {extra_body: {metadata: {a: 1}}, request_metadata: null, drop_params: false, global_drop_params: false}
+      - {extra_body: {metadata: {a: 1}}, request_metadata: {b: 2}, drop_params: false, global_drop_params: false}
+      - {extra_body: {metadata: {a: 1}}, request_metadata: {a: 9, b: 2}, drop_params: false, global_drop_params: false}
+      - {extra_body: {metadata: text}, request_metadata: {b: 2}, drop_params: false, global_drop_params: false}
+      - {extra_body: {metadata: null}, request_metadata: null, drop_params: false, global_drop_params: false}
+      - {extra_body: {service_tier: flex}, request_metadata: null, drop_params: false, global_drop_params: false}
+      - {extra_body: {service_tier: flex}, request_metadata: null, drop_params: true, global_drop_params: false}
+      - {extra_body: {service_tier: flex, metadata: {completion_window: asap}}, request_metadata: null, drop_params: false, global_drop_params: false}
+      - {extra_body: {metadata: {completion_window: asap}}, request_metadata: null, drop_params: false, global_drop_params: false}
+      - {extra_body: {metadata: {completion_window: asap, keep: 1}}, request_metadata: {b: 2}, drop_params: true, global_drop_params: false}
+      - {extra_body: {other: 1}, request_metadata: {b: 2}, drop_params: false, global_drop_params: false}
+      - {extra_body: {other: 1}, request_metadata: [1], drop_params: false, global_drop_params: false}
+      - {extra_body: {metadata: {completion_window: asap}}, request_metadata: {b: 2}, drop_params: false, global_drop_params: true}
+env: {}
+compare: {ignore: []}

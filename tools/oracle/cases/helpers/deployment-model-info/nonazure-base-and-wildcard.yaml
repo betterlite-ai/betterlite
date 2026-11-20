@@ -1,0 +1,53 @@
+kind: helper
+name: deployment-model-info-nonazure-base-and-wildcard
+call:
+  deployment_model_info:
+    function: router_info
+    model_list: []
+    model_cost:
+      openai/gpt-4o:
+        max_tokens: 500
+        max_input_tokens: 400
+        input_cost_per_token: 0.1
+        output_cost_per_token: 0.2
+        litellm_provider: openai
+      openai/base-gpt:
+        max_tokens: 999
+        input_cost_per_token: 0.9
+        output_cost_per_token: 0.9
+        litellm_provider: openai
+    arguments:
+      received_model_name: base-group
+      deployment:
+        model_name: base-group
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: base-one
+          base_model: openai/base-gpt
+calls:
+  - deployment_model_info:
+      function: router_info
+      model_list:
+        - model_name: openai/*
+          litellm_params:
+            model: openai/gpt-4o-mini
+          model_info:
+            id: wild
+      model_cost:
+        openai/gpt-4o-mini:
+          max_tokens: 777
+          max_input_tokens: 700
+          input_cost_per_token: 0.05
+          output_cost_per_token: 0.06
+          litellm_provider: openai
+      arguments:
+        received_model_name: openai/gpt-4o-mini
+        deployment:
+          model_name: openai/*
+          litellm_params:
+            model: openai/*
+          model_info:
+            id: wild
+env: {}
+compare: {ignore: []}

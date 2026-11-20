@@ -1,0 +1,18 @@
+kind: probe
+name: affinity-claims-parser-byte-bound
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      affinity_claims:
+        shared: false
+        steps:
+          - kind: parse
+            pad_len: 2097152
+compare:
+  expected_difference:
+    - pointer: /output/affinity_claims/steps/0
+      reference: {kind: parse, shape: pin, byte_count: 2097152, reason: null}
+      rust: {kind: parse, shape: rejected, byte_count: 0, reason: too_large}
+      why: betterlite refuses pin bytes past 1048576 bytes before decoding them, a bound LiteLLM's JSON adapter has no equivalent for
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/affinity_cache.py#L81-L85

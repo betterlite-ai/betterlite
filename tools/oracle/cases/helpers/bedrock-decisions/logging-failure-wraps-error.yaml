@@ -1,0 +1,24 @@
+kind: helper
+name: logging-failure-wraps-error
+call:
+  b3722:
+    bedrock_decisions:
+      log_failure:
+        detail: upstream timeout
+        completed_chunk_usages:
+          - contentPolicyUnits: 1
+          - contentPolicyUnits: 2
+        request_data:
+          model: gpt-4o
+        guardrail:
+          name: gr-name
+          identifier: gr-1
+          version: "3"
+          disable_exception_on_block: false
+env: {}
+compare:
+  ignore:
+    - pointer: /value/metadata/standard_logging_guardrail_information/0/end_time
+      why: the log records the wall clock when it runs, which no two runs share
+    - pointer: /value/metadata/standard_logging_guardrail_information/0/duration
+      why: the duration is measured from the same wall clock
