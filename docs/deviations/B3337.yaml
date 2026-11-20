@@ -6,4 +6,13 @@ deviations:
   - what: litellm_params.ssl_verify is read as a boolean and any other JSON type is a typed error naming the field, where LiteLLM hands the value to its httpx client, which also accepts a CA bundle path string.
     why: betterlite's pooled clients take the TLS decision from the TLS policy B173 resolves, and a CA bundle path reaches them through litellm_settings.ssl_verify or SSL_CERT_FILE; the handler passes only the boolean on.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L8636-L8640
-kept_bugs: []
+kept_bugs:
+  - what: A caller's own Authorization cannot override the provider's. OpenAI's video validate_environment writes Authorization Bearer <key> into the map it is handed, and the handler's later headers.update re-applies that same mutated map, so the provider's key is what the request transform and the send carry.
+    why: A working setup sends the provider key on the wire; the handler seeds validate_environment with the caller's headers and keeps the returned map, as B2402's validated_headers does for vector stores, so the observable result stays provider-wins.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L86-L91
+  - what: Both status handlers accept timeout and never pass it to the POST or the GET, so a call runs on the chosen client's own deadline whatever the caller asked for.
+    why: The caller always sends timeout or DEFAULT_REQUEST_TIMEOUT (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1062-L1074), and the async handler drops it the same way (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L8710-L8798); a deployment setting a short per-call timeout relies on the handler ignoring it and on the client default applying, and honoring it would time out calls LiteLLM lets run.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L8604-L8708
+  - what: Both status handlers accept extra_body and never merge it into the status request.
+    why: The caller passes extra_body (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1069) and a working setup has always had it ignored on this call; merging it into the POST body or the GET would change the request such a setup sends.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L8612

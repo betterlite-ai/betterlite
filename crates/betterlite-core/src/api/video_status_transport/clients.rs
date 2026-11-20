@@ -41,7 +41,7 @@ pub enum Selected<'client, Client> {
     Created(Client),
 }
 
-impl<'client, Client> Selected<'client, Client> {
+impl<Client> Selected<'_, Client> {
     #[must_use]
     pub const fn get(&self) -> &Client {
         match self {

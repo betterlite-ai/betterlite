@@ -53,11 +53,14 @@ impl<Factories: ClientFactories> VideoStatusHandler<'_, Factories> {
     }
 
     // the one body both entry points run, with the try block being the send and the response transform
-    async fn run<'call, Mode: Channel<Factories>>(
+    async fn run<'call, Mode>(
         &'call self,
         config: &'call StatusConfig<'call, Factories>,
         call: StatusCall<'call, Factories::Synchronous, Factories::Asynchronous>,
-    ) -> Result<VideoObject, VideoStatusError> {
+    ) -> Result<VideoObject, VideoStatusError>
+    where
+        Mode: Channel<Factories>,
+    {
         let client = choose_client::<Factories, Mode>(self.factories, &call)?;
         let request = build_request(config, &call)?;
         let record = pre_call_record(&request, call.video_id);
@@ -88,10 +91,14 @@ impl<Factories: ClientFactories> VideoStatusHandler<'_, Factories> {
     }
 }
 
-fn choose_client<'call, Factories: ClientFactories, Mode: Channel<Factories>>(
+fn choose_client<'call, Factories, Mode>(
     factories: &Factories,
     call: &StatusCall<'call, Factories::Synchronous, Factories::Asynchronous>,
-) -> Result<Selected<'call, Mode::Client>, VideoStatusError> {
+) -> Result<Selected<'call, Mode::Client>, VideoStatusError>
+where
+    Factories: ClientFactories,
+    Mode: Channel<Factories>,
+{
     match Mode::supplied(call) {
         Some(supplied) => Ok(Selected::Supplied(supplied)),
         None => Ok(Selected::Created(Mode::build(
@@ -102,7 +109,7 @@ fn choose_client<'call, Factories: ClientFactories, Mode: Channel<Factories>>(
     }
 }
 
-// validate_environment, then extra_headers copied over it, then get_complete_url and the request transform
+// validate_environment seeded with the caller's headers, then get_complete_url and the request transform
 fn build_request<Synchronous, Asynchronous>(
     config: &dyn VideoStatusConfig<SyncClient = Synchronous, AsyncClient = Asynchronous>,
     call: &StatusCall<'_, Synchronous, Asynchronous>,
@@ -112,15 +119,12 @@ where
 {
     let empty = Headers::new();
     let given = call.extra_headers.unwrap_or(&empty);
-    let mut headers = config.validate_environment(VideoEnvironment {
+    let headers = config.validate_environment(VideoEnvironment {
         headers: given,
         model: "",
         api_key: call.api_key,
         litellm_params: Some(call.litellm_params),
     })?;
-    if let Some(extra) = call.extra_headers {
-        headers.extend(extra.clone());
-    }
     let base = api_base(call.litellm_params)?;
     let complete = config.get_complete_url("", base, call.litellm_params)?;
     let context = VideoRequestContext {
@@ -160,7 +164,10 @@ enum Polled<Output> {
 }
 
 // the blocking path's single poll: its client answers at once, so only a broken one leaves this waiting
-fn poll_once<Running: Future>(future: Running) -> Polled<Running::Output> {
+fn poll_once<Running>(future: Running) -> Polled<Running::Output>
+where
+    Running: Future,
+{
     let mut pinned = pin!(future);
     let mut context = Context::from_waker(Waker::noop());
     match pinned.as_mut().poll(&mut context) {
