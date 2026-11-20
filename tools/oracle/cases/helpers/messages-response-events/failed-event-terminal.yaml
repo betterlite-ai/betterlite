@@ -1,0 +1,143 @@
+kind: helper
+name: messages-response-events-failed-event-terminal
+call:
+  messages_response_events:
+    message_id: msg_failed
+    model: model_a
+    redaction: disabled
+    steps:
+      - function: process_event
+        event:
+          shape: mapping
+          fields:
+            type: response.failed
+            response:
+              error: {type: rate_limit_error, message: busy}
+calls:
+  - messages_response_events:
+      message_id: msg_defaults
+      model: model_a
+      redaction: disabled
+      steps:
+        - {function: process_event, event: {shape: mapping, fields: {type: response.failed}}}
+        - {function: process_event, event: {shape: mapping, fields: {type: response.failed, response: null}}}
+        - {function: process_event, event: {shape: mapping, fields: {type: response.failed, response: {error: null}}}}
+        - {function: process_event, event: {shape: mapping, fields: {type: response.failed, response: {error: 5}}}}
+        - {function: process_event, event: {shape: mapping, fields: {type: response.failed, response: {error: plain}}}}
+        - {function: process_event, event: {shape: mapping, fields: {type: response.failed, response: {error: {}}}}}
+  - messages_response_events:
+      message_id: msg_scalar_5
+      model: model_a
+      redaction: disabled
+      steps:
+        - {function: process_event, event: {shape: mapping, fields: {type: response.failed, response: 5}}}
+  - messages_response_events:
+      message_id: msg_scalar_float
+      model: model_a
+      redaction: disabled
+      steps:
+        - {function: process_event, event: {shape: mapping, fields: {type: response.failed, response: 5.5}}}
+  - messages_response_events:
+      message_id: msg_scalar_list
+      model: model_a
+      redaction: disabled
+      steps:
+        - {function: process_event, event: {shape: mapping, fields: {type: response.failed, response: [1]}}}
+  - messages_response_events:
+      message_id: msg_scalar_bool
+      model: model_a
+      redaction: disabled
+      steps:
+        - {function: process_event, event: {shape: mapping, fields: {type: response.failed, response: true}}}
+  - messages_response_events:
+      message_id: msg_content
+      model: model_a
+      redaction: disabled
+      steps:
+        - function: process_event
+          event:
+            shape: mapping
+            fields:
+              type: response.output_item.added
+              item: {type: message, id: item_a}
+        - {function: process_event, event: {shape: mapping, fields: {type: response.output_text.delta, item_id: item_a, delta: ahead}}}
+        - function: process_event
+          event:
+            shape: mapping
+            fields:
+              type: response.failed
+              response:
+                error: {type: rate_limit_error, message: busy}
+  - messages_response_events:
+      message_id: msg_twice
+      model: model_a
+      redaction: disabled
+      steps:
+        - function: process_event
+          event:
+            shape: mapping
+            fields:
+              type: response.failed
+              response:
+                error: {type: rate_limit_error, message: busy}
+        - function: process_event
+          event:
+            shape: mapping
+            fields:
+              type: response.failed
+              response:
+                error: {type: rate_limit_error, message: busy}
+  - messages_response_events:
+      message_id: msg_attribute
+      model: model_a
+      redaction: disabled
+      steps:
+        - function: process_event
+          event:
+            shape: attributes
+            attributes:
+              type: response.failed
+              response:
+                shape: object
+                error: {shape: object, message: busy, type: rate_limit_error}
+  - messages_response_events:
+      message_id: msg_attribute_scalar
+      model: model_a
+      redaction: disabled
+      steps:
+        - function: process_event
+          event:
+            shape: attributes
+            attributes:
+              type: response.failed
+              response:
+                shape: object
+                error: {shape: value, value: 5}
+  - messages_response_events:
+      message_id: msg_attribute_mapping
+      model: model_a
+      redaction: disabled
+      steps:
+        - function: process_event
+          event:
+            shape: attributes
+            attributes:
+              type: response.failed
+              response:
+                shape: object
+                error: {shape: value, value: {type: rate_limit_error, message: busy}}
+  - messages_response_events:
+      message_id: msg_secret
+      model: model_a
+      redaction: disabled
+      steps:
+        - {function: error_chunk, status_code: 500, message: "sk-1234567890abcdef boom"}
+        - function: process_event
+          event:
+            shape: mapping
+            fields:
+              type: response.failed
+              response:
+                error: {type: rate_limit_error, message: "sk-1234567890abcdef busy"}
+env: {LITELLM_DISABLE_REDACT_SECRETS: "true"}
+compare: {ignore: []}

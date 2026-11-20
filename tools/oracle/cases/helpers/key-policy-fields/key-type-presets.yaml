@@ -1,0 +1,13 @@
+kind: helper
+name: key-policy-fields-key-type-presets
+call:
+  key_policy_fields:
+    calls:
+      - {function: key_type, request: {key_alias: a}, columns: {key_alias: a}}
+      - {function: key_type, request: {key_alias: a, key_type: null}, columns: {key_type: llm_api, key_alias: a}}
+      - {function: key_type, request: {key_type: llm_api}, columns: {key_alias: a}}
+      - {function: key_type, request: {key_type: management}, columns: {allowed_routes: ["custom"], key_alias: a}}
+      - {function: key_type, request: {key_type: read_only}, columns: {}}
+      - {function: key_type, request: {key_type: default}, columns: {allowed_routes: ["custom"]}}
+env: {}
+compare: {ignore: []}

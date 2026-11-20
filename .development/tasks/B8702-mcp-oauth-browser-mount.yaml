@@ -47,6 +47,8 @@ description: >-
   answer once this task mounts them. Write each listed case from its route task's description, DoD and case names
   (.development/tasks/B7971-mcp-oauth-browser-routes.yaml and B4719-mcp-oauth-browser-routes.yaml), with the config,
   key and ignore rules each describes. B4718's five session cases move here too, as tools/oracle/cases/http/mcp-oauth-session/, written from B4718-mcp-oauth-sessions.yaml's route steps and DoD with a master key, no database and no response cache: a supplied server_id kept, a generated id, credentials redacted with scopes kept, 401 without a key, and 400 for an invalid name.
+
+  Booted case from B9695: ui/chat-app/connect-flow-status reads GET /authorize/flow?flow=<handle> with cookies and no bearer after starting a flow, and again with an unknown handle, as the /ui/chat ConnectFlowSurface sends it.
 scope:
   paths:
     - crates/betterlite-server/src/app/mcp.rs
@@ -55,6 +57,7 @@ scope:
     - tools/oracle/cases/http/mcp-oauth-routes/**
     - tools/oracle/cases/http/mcp-oauth-browser/**
     - tools/oracle/cases/http/mcp-oauth-session/**
+    - tools/oracle/cases/ui/chat-app/connect-flow-status.yaml
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L4656-L4962
@@ -70,6 +73,8 @@ dod:
     proof: [browser-route-tests]
   - text: The moved B7971, B4719 and B4718 cases match LiteLLM through the booted proxy.
     proof: [browser-route-cases, oracle]
+  - text: "The connect flow read after starting a flow and with an unknown handle answers as LiteLLM does."
+    proof: [oracle]
 checks:
   optional: []
   commands:
@@ -115,6 +120,7 @@ oracle_cases:
   - tools/oracle/cases/http/mcp-oauth-session/session-credentials-redacted.yaml
   - tools/oracle/cases/http/mcp-oauth-session/session-requires-auth.yaml
   - tools/oracle/cases/http/mcp-oauth-session/session-invalid-name-400.yaml
+  - tools/oracle/cases/ui/chat-app/connect-flow-status.yaml
 deviations: []
 out_of_scope:
   - "Route behavior: B7971, B4719, B4675 and B7532."

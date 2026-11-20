@@ -28,7 +28,7 @@ description: >-
   `shared.guardrails.runtime`; `mutation`, B3685's `MutationState` with B3685's review rows over `shared.db` and
   `database: None` when `shared.db` is None, which is how those routes answer without a database; `read_through`, one
   guardrail `RegistryReadThrough` from B8665's `guardrail_read_through(runtime, db_objects)` with B8612's
-  `ProxyDbObjects`; and `policies`, B3243's persistence handle, derived from `shared.policies` (B9320) and still an Option over `shared.db`. Read each route module
+  `ProxyDbObjects`; and `policies`, B3243's persistence handle (`PolicyStore`), built over the two B3241 registry handles Shared holds (`Mutex<PolicyRegistry>` and `Mutex<AttachmentRegistry>`) and still an Option over `shared.db`. Read each route module
   before writing and take the state type it exports. No statics.
 
 

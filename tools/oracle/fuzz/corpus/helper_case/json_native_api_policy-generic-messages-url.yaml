@@ -1,0 +1,15 @@
+kind: helper
+name: json-native-api-policy-generic-messages-url-seed
+call:
+  json_native_api_policy:
+    calls:
+      - kind: generic_messages_url
+        model: anthropic/probe-model
+        environment: {}
+        api_base: "https://generic.invalid/v1/"
+      - kind: generic_messages_url
+        model: anthropic/probe-model
+        environment: {}
+        api_base: "https://complete.invalid/v1/messages"
+env: {}
+compare: {ignore: []}

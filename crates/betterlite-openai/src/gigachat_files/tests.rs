@@ -1,26 +1,41 @@
 #![cfg(test)]
 
-use std::collections::VecDeque;
-use std::future::{Future, ready};
+use std::collections::{BTreeMap, VecDeque};
+use std::future::{Future, pending, ready};
+use std::io;
+use std::net::{IpAddr, SocketAddr, TcpListener as StdListener};
+use std::str::from_utf8;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::tls::Verification;
+use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::UpstreamResponse;
+use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::multipart::MultipartPart;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_http::proxy::{ProxiedClient, base_builder};
+use betterlite_http::user_url::error::{SsrfError, UserUrlError};
+use betterlite_http::user_url::fetch::UserUrlFetcher;
+use betterlite_http::user_url::validate::{Resolve, UrlValidator};
 use http::HeaderMap;
-use http::header::{HeaderName, HeaderValue};
+use http::header::{HeaderName, HeaderValue, LOCATION};
+use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+use tokio::net::{TcpListener, TcpStream};
+use tokio::task::JoinSet;
 use uuid::Uuid;
 
 use super::{
-    DOWNLOAD_TIMEOUT, GigachatFileTransport, GigachatFileUploader, GigachatFilesConfig,
-    UPLOAD_TIMEOUT,
+    GigachatFileTransport, GigachatFileUploader, GigachatFilesConfig, UPLOAD_TIMEOUT, UploadError,
 };
 use crate::gigachat_chat::config::{GigachatBearer, GigachatImageUploader as _};
 use crate::gigachat_chat::error::GigaChatError;
+use crate::gigachat_files::download::ImageDownloader;
 use crate::gigachat_utils::IdSource;
 
 const DEFAULT_API_BASE: &str = "https://api.test/v1";
@@ -28,7 +43,7 @@ const DATA_URL: &str = "data:image/png;base64,QUJD";
 const FIXED: u128 = 0x0123_4567_89ab_4def_8123_4567_89ab_cdef;
 const FIXED_SIMPLE: &str = "0123456789ab4def8123456789abcdef";
 const FIXED_UUID: &str = "01234567-89ab-4def-8123-456789abcdef";
-const IMAGE_URL: &str = "https://img.test/a.png";
+const IMAGE_URL: &str = "http://img.test/a.png";
 
 struct FixedIds;
 
@@ -98,22 +113,23 @@ impl GigachatBearer for ScriptedBearer {
 enum Scripted {
     Answer(UpstreamResponse),
     Fail,
+    Stall,
 }
 
 impl Scripted {
     fn into_result(self) -> Result<UpstreamResponse, TransportError> {
         match self {
             Self::Answer(response) => Ok(response),
-            Self::Fail => Err(TransportError::BodyTooLarge { limit: 0 }),
+            // only the download listener stalls; the upload fake answers at once
+            Self::Fail | Self::Stall => Err(TransportError::BodyTooLarge { limit: 0 }),
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct SeenDownload {
-    method: String,
-    url: String,
-    deadline: Duration,
+    line: String,
+    host: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -178,14 +194,6 @@ fn seen_upload(request: &OutboundRequest) -> SeenUpload {
     }
 }
 
-fn seen_download(request: &OutboundRequest) -> SeenDownload {
-    SeenDownload {
-        method: request.method.as_str().to_owned(),
-        url: request.url.to_string(),
-        deadline: request.deadline,
-    }
-}
-
 fn record<T>(queue: &Mutex<Vec<T>>, entry: T) {
     queue.lock().unwrap().push(entry);
 }
@@ -202,20 +210,30 @@ fn scripted(replies: &Mutex<VecDeque<Scripted>>) -> Result<UpstreamResponse, Tra
 }
 
 impl GigachatFileTransport for Fake {
-    fn download(
-        &self,
-        request: OutboundRequest,
-    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
-        record(&self.state.downloads, seen_download(&request));
-        ready(scripted(&self.state.download_replies))
-    }
-
     fn upload(
         &self,
         request: OutboundRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
         record(&self.state.uploads, seen_upload(&request));
         ready(scripted(&self.state.upload_replies))
+    }
+}
+
+// Names the tests rely on; any other name fails the way getaddrinfo does
+struct FakeResolver;
+
+#[async_trait]
+impl Resolve for FakeResolver {
+    async fn resolve(&self, host: &str, port: u16) -> io::Result<Vec<SocketAddr>> {
+        if let Ok(address) = host.parse::<IpAddr>() {
+            return Ok(vec![SocketAddr::new(address, port)]);
+        }
+        let address: IpAddr = match host {
+            "img.test" | "cdn.test" => "93.184.216.34".parse().unwrap(),
+            "intranet.test" => "10.0.0.5".parse().unwrap(),
+            _ => return Err(io::Error::other("Name or service not known")),
+        };
+        Ok(vec![SocketAddr::new(address, port)])
     }
 }
 
@@ -226,6 +244,8 @@ struct Setup {
     env_base: Option<&'static str>,
     credentials: Option<&'static str>,
     token: Option<&'static str>,
+    connect_timeout: Duration,
+    read_timeout: Duration,
 }
 
 fn setup() -> Setup {
@@ -235,30 +255,81 @@ fn setup() -> Setup {
         env_base: None,
         credentials: None,
         token: Some("token-1"),
+        connect_timeout: TransportLimits::DEFAULT.connect_timeout,
+        read_timeout: TransportLimits::DEFAULT.read_timeout,
     }
 }
 
 struct Fixture {
     state: Arc<FakeState>,
     bearer: Arc<ScriptedBearer>,
-    uploader: GigachatFileUploader<Fake>,
+    uploader: GigachatFileUploader<Fake, FakeResolver>,
+    _tasks: JoinSet<()>,
+}
+
+fn download_client(given: Setup, port: u16) -> ProxiedClient {
+    let mut environment = BTreeMap::new();
+    environment.insert(
+        String::from("HTTP_PROXY"),
+        format!("http://127.0.0.1:{port}"),
+    );
+    let policy = Arc::new(
+        ProxyPolicy::resolve(&ProxyTrust::default(), &environment)
+            .expect("the proxy policy resolves"),
+    );
+    let limits = TransportLimits {
+        connect_timeout: given.connect_timeout,
+        read_timeout: given.read_timeout,
+        body_bytes: TransportLimits::DEFAULT.body_bytes,
+        header_bytes: TransportLimits::DEFAULT.header_bytes,
+    };
+    ProxiedClient::build(base_builder().http1_only(), &policy, limits)
+        .expect("the download client builds")
+}
+
+fn uploader_config(
+    given: Setup,
+    downloader: ImageDownloader<FakeResolver>,
+    bearer: Arc<ScriptedBearer>,
+) -> GigachatFilesConfig<FakeResolver> {
+    GigachatFilesConfig {
+        bearer,
+        ids: Arc::new(FixedIds),
+        credentials: given.credentials.map(SecretString::from),
+        api_base: given.api_base.map(str::to_owned),
+        api_base_env: given.env_base.map(str::to_owned),
+        downloader,
+    }
+}
+
+fn download_listener() -> (TcpListener, u16) {
+    let listener = StdListener::bind("127.0.0.1:0").expect("the listener binds");
+    listener
+        .set_nonblocking(true)
+        .expect("the listener is nonblocking");
+    let port = listener.local_addr().expect("the address is known").port();
+    let joined = TcpListener::from_std(listener).expect("the listener joins the runtime");
+    (joined, port)
 }
 
 fn fixture(given: Setup) -> Fixture {
+    let (async_listener, port) = download_listener();
     let state = Arc::new(FakeState::default());
+    let mut tasks = JoinSet::new();
+    tasks.spawn(serve_downloads(async_listener, Arc::clone(&state)));
+    let downloader = ImageDownloader {
+        urls: UserUrlFetcher {
+            validator: UrlValidator::new(FakeResolver, &[], &Verification::Enabled),
+            validation: true,
+        },
+        client: download_client(given, port),
+    };
     let bearer = Arc::new(
         given
             .token
             .map_or_else(|| ScriptedBearer::failing(401), ScriptedBearer::issuing),
     );
-    let shared = Arc::clone(&bearer);
-    let config = GigachatFilesConfig {
-        bearer: shared,
-        ids: Arc::new(FixedIds),
-        credentials: given.credentials.map(SecretString::from),
-        api_base: given.api_base.map(str::to_owned),
-        api_base_env: given.env_base.map(str::to_owned),
-    };
+    let config = uploader_config(given, downloader, Arc::clone(&bearer));
     let uploader = GigachatFileUploader::new(
         Fake {
             state: Arc::clone(&state),
@@ -270,7 +341,73 @@ fn fixture(given: Setup) -> Fixture {
         state,
         bearer,
         uploader,
+        _tasks: tasks,
     }
+}
+
+async fn serve_downloads(listener: TcpListener, state: Arc<FakeState>) {
+    while let Ok((mut stream, _peer)) = listener.accept().await {
+        let Some(seen) = read_head(&mut stream).await else {
+            continue;
+        };
+        record(&state.downloads, seen);
+        let queued = state
+            .download_replies
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .pop_front();
+        match queued {
+            Some(Scripted::Answer(response)) => write_answer(&mut stream, response).await,
+            Some(Scripted::Stall) => pending::<()>().await,
+            Some(Scripted::Fail) | None => {}
+        }
+    }
+}
+
+async fn read_head(stream: &mut TcpStream) -> Option<SeenDownload> {
+    let mut received = Vec::new();
+    let mut chunk = [0_u8; 4096];
+    loop {
+        let read = stream.read(&mut chunk).await.ok()?;
+        if read == 0 {
+            return None;
+        }
+        received.extend_from_slice(chunk.get(..read)?);
+        let Some(head_end) = received.windows(4).position(|window| window == b"\r\n\r\n") else {
+            continue;
+        };
+        let head = from_utf8(received.get(..head_end)?).ok()?;
+        let mut lines = head.lines();
+        let request_line = lines.next()?.to_owned();
+        let host = lines.find_map(|header| {
+            let (name, value) = header.split_once(':')?;
+            name.eq_ignore_ascii_case("host")
+                .then(|| value.trim().to_owned())
+        });
+        return Some(SeenDownload {
+            line: request_line,
+            host,
+        });
+    }
+}
+
+async fn write_answer(stream: &mut TcpStream, response: UpstreamResponse) {
+    let mut reply = format!("HTTP/1.1 {} Answer\r\n", response.status).into_bytes();
+    for (name, value) in &response.headers {
+        reply.extend_from_slice(name.as_str().as_bytes());
+        reply.extend_from_slice(b": ");
+        reply.extend_from_slice(value.as_bytes());
+        reply.extend_from_slice(b"\r\n");
+    }
+    reply.extend_from_slice(
+        format!(
+            "content-length: {}\r\nconnection: close\r\n\r\n",
+            response.body.len()
+        )
+        .as_bytes(),
+    );
+    reply.extend_from_slice(&response.body);
+    drop(stream.write_all(&reply).await);
 }
 
 impl Fixture {
@@ -355,7 +492,7 @@ async fn a_data_url_is_decoded_without_a_download() {
 }
 
 #[tokio::test]
-async fn a_remote_image_is_downloaded_and_uploaded() {
+async fn a_public_image_url_still_downloads() {
     let fixture = fixture(setup());
     fixture.script_download(answer_with_type(200, "image/gif", &[1, 2, 3]));
     fixture.script_upload(id_reply("file-2"));
@@ -364,9 +501,8 @@ async fn a_remote_image_is_downloaded_and_uploaded() {
     let downloads = fixture.downloads();
     assert_eq!(downloads.len(), 1);
     let download = first(&downloads);
-    assert_eq!(download.method, "GET");
-    assert_eq!(download.url, IMAGE_URL);
-    assert_eq!(download.deadline, DOWNLOAD_TIMEOUT);
+    assert_eq!(download.line, "GET http://93.184.216.34/a.png HTTP/1.1");
+    assert_eq!(download.host.as_deref(), Some("img.test"));
     let uploads = fixture.uploads();
     let part = &first(&uploads).parts[1];
     assert_eq!(part.content_type.as_deref(), Some("image/gif"));
@@ -466,11 +602,11 @@ async fn a_different_url_is_uploaded_again() {
     fixture.script_upload(id_reply("file-1"));
     fixture.script_upload(id_reply("file-2"));
     assert_eq!(
-        fixture.uploader.upload("https://img.test/a").await,
+        fixture.uploader.upload("http://img.test/a").await,
         Some(String::from("file-1"))
     );
     assert_eq!(
-        fixture.uploader.upload("https://img.test/b").await,
+        fixture.uploader.upload("http://img.test/b").await,
         Some(String::from("file-2"))
     );
     assert_eq!(fixture.downloads().len(), 2);
@@ -504,11 +640,11 @@ async fn the_cache_drops_the_oldest_entry_first() {
     fixture.script_upload(id_reply("file"));
     fixture.script_download(answer_with_type(200, "image/png", b"x"));
     fixture.script_upload(id_reply("file"));
-    fixture.uploader.upload("https://img.test/a").await;
-    fixture.uploader.upload("https://img.test/b").await;
-    fixture.uploader.upload("https://img.test/a").await;
-    fixture.uploader.upload("https://img.test/c").await;
-    fixture.uploader.upload("https://img.test/a").await;
+    fixture.uploader.upload("http://img.test/a").await;
+    fixture.uploader.upload("http://img.test/b").await;
+    fixture.uploader.upload("http://img.test/a").await;
+    fixture.uploader.upload("http://img.test/c").await;
+    fixture.uploader.upload("http://img.test/a").await;
     assert_eq!(fixture.downloads().len(), 4);
 }
 
@@ -540,10 +676,14 @@ async fn an_upload_status_of_500_returns_none_and_is_not_cached() {
     assert_eq!(fixture.uploads().len(), 2);
 }
 
+#[rstest]
+#[case::bad_request(400)]
+#[case::not_found(404)]
 #[tokio::test]
-async fn a_download_status_of_404_returns_none() {
+async fn a_download_status_of_400_or_more_returns_none(#[case] status: u16) {
     let fixture = fixture(setup());
-    fixture.script_download(answer(404, "missing"));
+    fixture.script_download(answer(status, r#"{"id":"file-4"}"#));
+    fixture.script_upload(id_reply("file-4"));
     assert_eq!(fixture.uploader.upload(IMAGE_URL).await, None);
     assert!(fixture.uploads().is_empty());
 }
@@ -608,6 +748,15 @@ async fn a_transport_download_failure_returns_none() {
 }
 
 #[tokio::test]
+async fn a_body_over_the_client_limit_returns_none() {
+    let fixture = fixture(setup());
+    let oversized = vec![b'x'; TransportLimits::DEFAULT.body_bytes.saturating_add(1)];
+    fixture.script_download(answer_with_type(200, "image/png", &oversized));
+    assert_eq!(fixture.uploader.upload(IMAGE_URL).await, None);
+    assert!(fixture.uploads().is_empty());
+}
+
+#[tokio::test]
 async fn a_transport_upload_failure_returns_none_and_is_not_cached() {
     let fixture = fixture(setup());
     fixture.script_upload(Scripted::Fail);
@@ -637,6 +786,18 @@ async fn a_base_that_is_not_a_url_returns_none() {
     given.api_base = Some("not a url");
     let fixture = fixture(given);
     assert_eq!(fixture.uploader.upload(DATA_URL).await, None);
+    assert!(fixture.uploads().is_empty());
+}
+
+#[rstest]
+#[case::no_base64_marker("data:image/png,xyz")]
+#[case::parameter_before_marker("data:image/png;charset=x;base64,QUJD")]
+#[case::empty_mime("data:;base64,QUJD")]
+#[tokio::test]
+async fn a_data_url_the_decoder_skips_is_refused(#[case] image_url: &str) {
+    let fixture = fixture(setup());
+    assert_eq!(fixture.uploader.upload(image_url).await, None);
+    assert!(fixture.downloads().is_empty());
     assert!(fixture.uploads().is_empty());
 }
 
@@ -733,38 +894,6 @@ async fn padding_beyond_the_canonical_form_is_accepted() {
 }
 
 #[tokio::test]
-async fn a_data_url_without_the_base64_marker_is_downloaded() {
-    let fixture = fixture(setup());
-    fixture.script_download(answer_with_type(200, "image/png", b"x"));
-    fixture.script_upload(id_reply("file-10"));
-    fixture.uploader.upload("data:image/png,xyz").await;
-    let downloads = fixture.downloads();
-    assert_eq!(first(&downloads).url, "data:image/png,xyz");
-    assert_eq!(fixture.uploads().len(), 1);
-}
-
-#[tokio::test]
-async fn a_data_url_parameter_before_the_marker_is_downloaded() {
-    let fixture = fixture(setup());
-    fixture.script_download(answer_with_type(200, "image/png", b"x"));
-    fixture.script_upload(id_reply("file-11"));
-    fixture
-        .uploader
-        .upload("data:image/png;charset=x;base64,QUJD")
-        .await;
-    assert_eq!(fixture.downloads().len(), 1);
-}
-
-#[tokio::test]
-async fn a_data_url_with_an_empty_mime_is_downloaded() {
-    let fixture = fixture(setup());
-    fixture.script_download(answer_with_type(200, "image/png", b"x"));
-    fixture.script_upload(id_reply("file-12"));
-    fixture.uploader.upload("data:;base64,QUJD").await;
-    assert_eq!(fixture.downloads().len(), 1);
-}
-
-#[tokio::test]
 async fn a_data_url_with_a_non_ascii_payload_returns_none() {
     let fixture = fixture(setup());
     assert_eq!(
@@ -798,4 +927,74 @@ async fn an_empty_credential_is_not_passed_to_the_bearer() {
     fixture.script_upload(id_reply("file-14"));
     fixture.uploader.upload(DATA_URL).await;
     assert_eq!(fixture.bearer.seen(), vec![None]);
+}
+
+#[rstest]
+#[case::loopback("http://127.0.0.1/a.png", "127.0.0.1")]
+#[case::link_local("http://169.254.169.254/latest/meta-data/", "169.254.169.254")]
+#[case::private_range("http://intranet.test/a.png", "10.0.0.5")]
+#[tokio::test]
+async fn an_internal_image_url_is_refused_before_any_request(
+    #[case] image_url: &str,
+    #[case] address: &str,
+) {
+    let fixture = fixture(setup());
+    let blocked = match fixture.uploader.try_upload(image_url).await {
+        Err(UploadError::Download(UserUrlError::Ssrf(SsrfError::BlockedAddress {
+            address: blocked,
+        }))) => blocked,
+        other => panic!("expected a blocked address, got {other:?}"),
+    };
+    assert_eq!(blocked, address.parse::<IpAddr>().unwrap());
+    assert!(fixture.downloads().is_empty());
+    assert!(fixture.uploads().is_empty());
+}
+
+#[rstest]
+#[case::to_link_local("http://169.254.169.254/latest/meta-data/", false)]
+#[case::to_public_host("http://cdn.test/b.png", true)]
+#[tokio::test]
+async fn a_redirected_download_checks_the_next_hop(#[case] location: &str, #[case] followed: bool) {
+    let fixture = fixture(setup());
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        LOCATION,
+        HeaderValue::from_str(location).expect("the location is a header value"),
+    );
+    fixture.script_download(Scripted::Answer(UpstreamResponse {
+        status: 302,
+        headers,
+        body: Vec::new(),
+    }));
+    fixture.script_download(answer_with_type(200, "image/png", b"y"));
+    fixture.script_upload(id_reply("file-2"));
+    let id = fixture.uploader.upload(IMAGE_URL).await;
+    let downloads = fixture.downloads();
+    assert_eq!(
+        first(&downloads).line,
+        "GET http://93.184.216.34/a.png HTTP/1.1"
+    );
+    assert_eq!(first(&downloads).host.as_deref(), Some("img.test"));
+    if followed {
+        assert_eq!(id, Some(String::from("file-2")));
+        assert_eq!(downloads.len(), 2);
+        assert_eq!(downloads[1].line, "GET http://93.184.216.34/b.png HTTP/1.1");
+        assert_eq!(downloads[1].host.as_deref(), Some("cdn.test"));
+        assert_eq!(fixture.uploads().len(), 1);
+    } else {
+        assert_eq!(id, None);
+        assert_eq!(downloads.len(), 1);
+        assert!(fixture.uploads().is_empty());
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_stalled_download_gives_up_at_the_download_timeout() {
+    let mut given = setup();
+    given.connect_timeout = Duration::from_mins(20);
+    given.read_timeout = Duration::from_mins(20);
+    let fixture = fixture(given);
+    fixture.script_download(Scripted::Stall);
+    let error = fixture.uploader.try_upload(IMAGE_URL).await.unwrap_err();
+    assert!(matches!(error, UploadError::DownloadTimeout));
 }

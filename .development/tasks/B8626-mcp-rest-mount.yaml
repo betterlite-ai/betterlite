@@ -36,6 +36,8 @@ description: >-
   a key), tools-call-unknown-server (POST /mcp-rest/tools/call with name "missing-tool" and server_id "missing"),
   test-connection-no-key (POST /mcp-rest/test/connection without a key) and test-connection-bad-url (POST
   /mcp-rest/test/connection with the master key and a NewMCPServerRequest whose url is "ftp://example.invalid").
+
+  Booted cases from B124. Add the HTTP cases local-tool-call, local-tool-failure and local-tool-no-key under tools/oracle/cases/http/proxy-remainder: mcp_tools with name serialize, a description, handler json.dumps and an object input_schema, and an allowed HTTP MCP server toolsrv against the mock provider whose initialize and tools/list replies advertise serialize. POST /mcp-rest/tools/call with server_id toolsrv, name serialize and arguments {"obj": {"answer": 42}} and the master key returns 200 with the JSON string as text content; an unsupported keyword reaches the Python exception and returns the 200 error-tool result with isError true; no key gives the 401 auth error (compare type, param and code). No upstream tools/call is sent, since the authorized server selects the local handler (B8871's loader, which B9997's BootRegistries runs). Do not remove the server authorization check to make a local tool callable without a server.
 scope:
   paths:
     - crates/betterlite-server/src/app/mcp.rs
@@ -43,6 +45,9 @@ scope:
     - crates/betterlite-server/src/app/mcp/rest/**
     - tools/oracle/cases/http/mcp-wiring-rest/**
     - tools/oracle/cases/http/mcp-rest-preview/**
+    - tools/oracle/cases/http/proxy-remainder/local-tool-call.yaml
+    - tools/oracle/cases/http/proxy-remainder/local-tool-failure.yaml
+    - tools/oracle/cases/http/proxy-remainder/local-tool-no-key.yaml
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L97-L110
@@ -58,6 +63,8 @@ dod:
     proof: [rest-tests]
   - text: The moved B4729 cases and the five REST cases match LiteLLM through the booted proxy.
     proof: [rest-cases, oracle]
+  - text: "Configured local tools keep server authorization through POST /mcp-rest/tools/call and tell handler failures from auth failures as LiteLLM does."
+    proof: [oracle]
 checks:
   optional: []
   commands:
@@ -80,6 +87,9 @@ oracle_cases:
   - tools/oracle/cases/http/mcp-wiring-rest/tools-call-unknown-server.yaml
   - tools/oracle/cases/http/mcp-wiring-rest/test-connection-no-key.yaml
   - tools/oracle/cases/http/mcp-wiring-rest/test-connection-bad-url.yaml
+  - tools/oracle/cases/http/proxy-remainder/local-tool-call.yaml
+  - tools/oracle/cases/http/proxy-remainder/local-tool-failure.yaml
+  - tools/oracle/cases/http/proxy-remainder/local-tool-no-key.yaml
 deviations: []
 out_of_scope:
   - "Route behavior: B4727, B4728, B4729 and B4730."

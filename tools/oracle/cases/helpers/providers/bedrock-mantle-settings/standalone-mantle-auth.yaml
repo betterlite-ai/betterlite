@@ -1,0 +1,40 @@
+kind: helper
+name: standalone-mantle-auth
+call:
+  bedrock_mantle_settings:
+    standalone_mantle_auth:
+      cases:
+        - api_base: 'https://bedrock-mantle.us-east-1.api.aws/v1'
+          headers: [[X-Caller, fixture]]
+          api_key: explicit-fixture-key
+          model: openai.gpt-oss-120b
+          stream: true
+          fake_stream: false
+          credentials: {access_key_id: fixture-access-key, secret_access_key: fixture-secret-key}
+          now: 1700000000
+        - api_base: 'https://bedrock-mantle.us-east-1.api.aws/v1'
+          api_key: ''
+          environment: {BEDROCK_MANTLE_API_KEY: mantle-fixture-key}
+          credentials: {access_key_id: fixture-access-key, secret_access_key: fixture-secret-key}
+          now: 1700000000
+        - api_base: 'https://bedrock-mantle.eu-west-3.api.aws/openai/v1'
+          headers:
+            - [X-Caller, fixture]
+            - [Authorization, 'Bearer caller-fixture-key']
+            - [authorization, 'Bearer caller-lower-key']
+          optional_params: {aws_region_name: us-east-2}
+          model: openai.gpt-oss-120b
+          credentials: {access_key_id: fixture-access-key, secret_access_key: fixture-secret-key, session_token: fixture-session-token}
+          now: 1700000000
+        - api_base: 'https://proxy.example/v1'
+          optional_params: {aws_region_name: us-east-2}
+          credentials: {access_key_id: fixture-access-key, secret_access_key: fixture-secret-key}
+          now: 1700000000
+        - api_base: 'https://proxy.example/v1'
+          headers:
+            - [Content-Type, application/custom]
+            - [X-Caller, fixture]
+          credentials: {access_key_id: fixture-access-key, secret_access_key: fixture-secret-key}
+          now: 1700000000
+env: {}
+compare: {ignore: []}

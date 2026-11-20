@@ -56,11 +56,14 @@ description: >-
   in policy_api/tests.rs are mounted_paths_require_auth, inspection_uses_shared_runtime,
   enrichment_uses_deployment, router_reload_is_observed and no_router_still_mounts. Drive the composed area
   with tower and a local provider, not route functions called directly. This task adds no byte parser or fuzz target.
+
+  Booted case from B9735: ui/management-selectors/policy-names-and-resolved-guardrails lists GET /policies/list (B3248, mounted by B8669) and reads policies[].policy_name, then sends GET /policy/info/<name> for a selected policy and reads resolved_guardrails[], as the shared selectors send them (B9735's policy paragraph). The list step needs B8669's mount.
 scope:
   paths:
     - crates/betterlite-server/src/app/guardrails/policy_api.rs
     - crates/betterlite-server/src/app/guardrails/policy_api/**
     - tools/oracle/cases/policies/policy-api-wiring/**
+    - tools/oracle/cases/ui/management-selectors/policy-names-and-resolved-guardrails.yaml
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/__init__.py#L1-L20
@@ -86,6 +89,8 @@ dod:
     proof: [mount-tests, new-http-cases, oracle]
   - text: Four new composition cases compare request captures, statuses, error envelopes, SSE order and response headers against the booted pinned proxy.
     proof: [new-http-cases, oracle]
+  - text: "The policy selector list and info reads give the same policy names and resolved guardrails as LiteLLM."
+    proof: [oracle]
 checks:
   optional: []
   commands:
@@ -100,6 +105,7 @@ oracle_cases:
   - tools/oracle/cases/policies/policy-api-wiring/competitor-environment.yaml
   - tools/oracle/cases/policies/policy-api-wiring/stream-validation-before-headers.yaml
   - tools/oracle/cases/policies/policy-api-wiring/inspect-and-crud-static-paths.yaml
+  - tools/oracle/cases/ui/management-selectors/policy-names-and-resolved-guardrails.yaml
 deviations: []
 out_of_scope:
   - "management_endpoints/policy_endpoints/__init__.py has no function definitions; its endpoint functions and private re-exports are B3249, B3250, B3251, B3252 and B3253, whose covers include endpoints.py."
