@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use betterlite_http::interactions::base::{ClientError, Params, RequestHeaders};
+use betterlite_http::proxy::multipart::MultipartPart;
 use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_pre_post::error::PrePostError;
@@ -26,12 +27,12 @@ struct CallParts<'call> {
     api_key: Option<&'call SecretString>,
 }
 
-// what either transform hands back, so the request is assembled once
+// what either transform hands back, so the request is assembled once; a creation names its parts, a lookup names none
 struct Exchange {
     url: String,
     method: Method,
     query: Vec<(String, String)>,
-    body: CharacterBody,
+    parts: Option<Vec<MultipartPart>>,
     logged: Option<IndexMap<String, Json>>,
     timeout: Option<Duration>,
 }
@@ -69,8 +70,8 @@ where
         litellm_params: params,
         headers: &headers,
     };
-    let mut exchange = match call {
-        CharacterCall::Create(create) => created(config, create, context, boundary)?,
+    let exchange = match call {
+        CharacterCall::Create(create) => created(config, create, context)?,
         CharacterCall::Get(get) => {
             let (url, query) = config
                 .transform_get_request(get.character_id, context)
@@ -79,30 +80,32 @@ where
                 url,
                 method: Method::GET,
                 query,
-                body: CharacterBody::Empty,
+                parts: None,
                 logged: None,
                 timeout: None,
             }
         }
     };
+    // httpx encodes the files inside post(), so pre_call runs before a part can fail the encoding
     log_pre_call(
         logging,
         env,
         PreCallRecord {
             input: call.input(),
             url: &exchange.url,
-            body: exchange.logged.take(),
+            body: exchange.logged.clone(),
         },
         &headers,
     )
     .map_err(CharacterError::Logging)?;
-    assembled(config, exchange, &headers)
+    assembled(config, exchange, &headers, boundary)
 }
 
 fn assembled<C>(
     config: &C,
     exchange: Exchange,
     headers: &RequestHeaders,
+    boundary: &str,
 ) -> Result<CharacterRequest, CharacterFault<C>>
 where
     C: CharacterConfig,
@@ -110,11 +113,15 @@ where
     let url = request_url(&exchange.url, &exchange.query)
         .map_err(|failure| converted(config, failure))?;
     let wire_headers = header_map(headers).map_err(|failure| converted(config, failure))?;
+    let body = match exchange.parts {
+        None => CharacterBody::Empty,
+        Some(parts) => multipart_body(&parts, boundary).map_err(CharacterError::Multipart)?,
+    };
     Ok(CharacterRequest {
         method: exchange.method,
         url,
         headers: wire_headers,
-        body: exchange.body,
+        body,
         timeout: exchange.timeout,
     })
 }
@@ -123,7 +130,6 @@ fn created<C>(
     config: &C,
     call: &CharacterCreateCall<'_>,
     context: CharacterContext<'_>,
-    boundary: &str,
 ) -> Result<Exchange, CharacterFault<C>>
 where
     C: CharacterConfig,
@@ -131,13 +137,12 @@ where
     let (url, files) = config
         .transform_create_request(call.name, call.video, context)
         .map_err(CharacterError::Provider)?;
-    let body = multipart_body(&files, boundary).map_err(CharacterError::Multipart)?;
     let named = IndexMap::from([(String::from("name"), Json::Text(call.name.to_owned()))]);
     Ok(Exchange {
         url,
         method: Method::POST,
         query: Vec::new(),
-        body,
+        parts: Some(files),
         logged: Some(named),
         timeout: call.timeout,
     })
