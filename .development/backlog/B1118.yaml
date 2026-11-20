@@ -1,7 +1,7 @@
 id: B1118
 milestone: M5 API families
 title: Messages native execution
-status: todo
+status: done
 depends_on: [B174, B011, B571, B572, B189, B2435, B961, B2430, B962, B009, B2401, B9952]
 file: tasks/B1118-messages-native-execute.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/llms/anthropic/pass_through/messages/interceptors/__init__.py"
 parent: B081
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2685
