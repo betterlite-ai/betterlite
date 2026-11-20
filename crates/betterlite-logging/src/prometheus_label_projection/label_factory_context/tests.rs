@@ -26,6 +26,14 @@ fn the_sanitized_enum_carries_every_scalar() {
         Some(Some("ab".to_owned()))
     );
     assert_eq!(context.sanitized_enum.get("team").cloned(), Some(None));
+    assert_eq!(context.sanitized_enum.get("tags").cloned(), Some(None));
+    assert_eq!(
+        context
+            .sanitized_enum
+            .get("custom_metadata_labels")
+            .cloned(),
+        Some(None)
+    );
 }
 
 #[test]
