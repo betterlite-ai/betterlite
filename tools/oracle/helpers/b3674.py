@@ -101,8 +101,11 @@ class ScannedCall:
 
 
 class ToolCallShapeView(Protocol):
-    name: str | None
-    arguments: str
+    @property
+    def name(self) -> str | None: ...
+
+    @property
+    def arguments(self) -> str: ...
 
 
 WriteResponses: TypeAlias = Callable[
