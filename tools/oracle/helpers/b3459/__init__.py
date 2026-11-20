@@ -104,8 +104,8 @@ class ScriptedRouter(Router):
     async def aembedding(
         self,
         model: str,
-        input: str | list[str],
-        is_async: bool | None = True,
+        input: str | list[str],  # noqa: A002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L5933
+        is_async: bool | None = True,  # noqa: ARG002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L5934
         **_kwargs: JsonValue,
     ) -> EmbeddingResponse:
         texts: list[str] = []
