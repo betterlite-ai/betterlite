@@ -272,6 +272,29 @@ impl ClientSource for StubSource {
     }
 }
 
+// A client whose send fails with no status, the way a shutdown or a refused connection arrives
+pub(super) struct ClosedClient;
+
+impl ImageGenerationTransport for ClosedClient {
+    fn generate(
+        &self,
+        _request: OutboundRequest,
+    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
+        std::future::ready(Err(TransportError::Closed))
+    }
+}
+
+pub(super) struct ClosedSource;
+
+impl ClientSource for ClosedSource {
+    type Client = ClosedClient;
+    type Error = Infallible;
+
+    fn client(&self, _ssl_verify: Option<bool>) -> Result<ClosedClient, Infallible> {
+        Ok(ClosedClient)
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("the test source refuses to build a client")]
 pub(super) struct SourceRefusal;

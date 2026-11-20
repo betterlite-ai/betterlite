@@ -29,8 +29,8 @@ use crate::api::image_contracts::shared::{ImageEnvironment, ImageUrlRequest};
 mod support;
 
 use support::{
-    Captured, FailingSource, PoolSource, StubClient, StubSource, listener, reply, serve_once,
-    stall_once,
+    Captured, ClosedClient, ClosedSource, FailingSource, PoolSource, StubClient, StubSource,
+    listener, reply, serve_once, stall_once,
 };
 
 const IMAGE_REPLY: &[u8] = br#"{"created":1,"data":[{"b64_json":"YQ=="}]}"#;
@@ -817,4 +817,34 @@ async fn timeout_message(kind: ClientKind, timeout: Duration) -> String {
     assert_eq!(error.status_code, 408);
     assert!(!error.status_code_is_synthesized);
     error.message
+}
+
+// A send that fails without an HTTP status becomes a synthesized 500 whose message is the transport error's
+#[tokio::test]
+async fn generation_transport_failure() {
+    let fixture = Fixture::working(ImageHeaders::new());
+    let client = ClosedClient;
+    let source = ClosedSource;
+    let params = litellm_params("http://unused/v1", None, None);
+    let options = caller_options(None);
+    let call = generation(&options, &params);
+    let mut recorder = Recorder::default();
+    let deps = ImageGenerationDeps {
+        config: &fixture,
+        source: &source,
+        supplied: Some(SuppliedClient {
+            kind: ClientKind::Sync,
+            transport: &client,
+        }),
+    };
+    let prepared =
+        prepare(&deps, ClientKind::Sync, &call, &mut recorder).expect("the prepared request");
+    let error = expect_provider(send(prepared).await);
+    assert_eq!(error.status_code, 500);
+    assert!(error.status_code_is_synthesized);
+    assert_eq!(
+        error.message,
+        "the client is shutting down and takes no new requests"
+    );
+    assert_eq!(error.headers, Some(Vec::new()));
 }
