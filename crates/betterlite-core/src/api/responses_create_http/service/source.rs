@@ -10,7 +10,7 @@ use futures_util::stream::BoxStream;
 use crate::api::responses_stream_driver::source::{PayloadSource, SourceFailure, classify};
 
 // The live response body as B927 reads it: SSE frames parsed off the wire, errors classified as transport failures
-pub struct WireSource {
+pub(super) struct WireSource {
     body: BoxStream<'static, Result<Vec<u8>, HttpError>>,
     parser: SseParser,
     pending: VecDeque<Vec<u8>>,
@@ -18,7 +18,7 @@ pub struct WireSource {
 
 impl WireSource {
     #[must_use]
-    pub fn new(response: StreamResponse) -> Self {
+    pub(super) fn new(response: StreamResponse) -> Self {
         Self {
             body: response.body_stream().boxed(),
             parser: SseParser::default(),

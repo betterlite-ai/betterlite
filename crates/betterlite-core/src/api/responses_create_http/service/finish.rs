@@ -74,7 +74,7 @@ where
 // The buffered reply reaches transform_response_api_response after the send catch, as the source does
 pub(super) fn transformed<C>(
     config: &C,
-    answer: UpstreamResponse,
+    answer: &UpstreamResponse,
     log: &mut LogContext<'_, '_>,
 ) -> Result<ResponsesReply, CreateError>
 where
@@ -192,7 +192,7 @@ where
             source,
         })?;
     let response = typed(reply.response)?;
-    Ok(CreateOutcome::Synthetic(CreateSynthetic {
+    Ok(CreateOutcome::Synthetic(Box::new(CreateSynthetic {
         setup: StreamSetup {
             model: applied.model.clone(),
             custom_llm_provider: applied.custom_llm_provider.clone(),
@@ -201,7 +201,7 @@ where
             call_type: None,
         },
         response,
-    }))
+    })))
 }
 
 #[derive(Serialize)]

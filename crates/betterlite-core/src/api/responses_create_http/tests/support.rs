@@ -476,7 +476,7 @@ impl Fixture {
             },
             &redactor,
             || String::from("generated"),
-            Duration::default(),
+            Duration::default,
         )
         .expect("the logging state");
         Self {

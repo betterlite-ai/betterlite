@@ -41,7 +41,7 @@ macro_rules! value_kinds {
 value_kinds!(Json, PromptJson);
 
 fn number_kind(text: &str) -> &'static str {
-    if text.contains(|character: char| matches!(character, '.' | 'e' | 'E')) {
+    if text.contains(['.', 'e', 'E']) {
         "float"
     } else {
         "int"
@@ -64,9 +64,11 @@ pub(crate) fn float_value(value: &PromptJson) -> Result<f64, FloatError> {
         PromptJson::Text(text) => {
             parse_float_text(text).map_err(|()| FloatError::Text { text: text.clone() })
         }
-        other => Err(FloatError::NotANumber {
-            kind: other.value_kind(),
-        }),
+        other @ (PromptJson::Null | PromptJson::List(_) | PromptJson::Object(_)) => {
+            Err(FloatError::NotANumber {
+                kind: other.value_kind(),
+            })
+        }
     }
 }
 
@@ -75,10 +77,10 @@ fn parse_float_text(text: &str) -> Result<f64, ()> {
     if trimmed.is_empty() {
         return Err(());
     }
-    let (negative, rest) = match trimmed.strip_prefix('-') {
-        Some(rest) => (true, rest),
-        None => (false, trimmed.strip_prefix('+').unwrap_or(trimmed)),
-    };
+    let (negative, rest) = trimmed.strip_prefix('-').map_or_else(
+        || (false, trimmed.strip_prefix('+').unwrap_or(trimmed)),
+        |rest| (true, rest),
+    );
     let lowered = rest.to_ascii_lowercase();
     if matches!(lowered.as_str(), "inf" | "infinity") {
         return Ok(if negative {
@@ -93,23 +95,23 @@ fn parse_float_text(text: &str) -> Result<f64, ()> {
     if !valid_decimal(rest) {
         return Err(());
     }
-    trimmed.replace('_', "").parse::<f64>().map_err(|_| ())
+    match trimmed.replace('_', "").parse::<f64>() {
+        Ok(value) => Ok(value),
+        Err(_) => Err(()),
+    }
 }
 
 // Python allows digits, one dot, underscores between digits and one exponent at the end
 fn valid_decimal(text: &str) -> bool {
-    let mut parts = text.splitn(2, |character: char| matches!(character, 'e' | 'E'));
+    let mut parts = text.splitn(2, ['e', 'E']);
     let mantissa = parts.next().unwrap_or("");
     if !valid_mantissa(mantissa) {
         return false;
     }
-    match parts.next() {
-        None => true,
-        Some(exponent) => {
-            let digits = exponent.strip_prefix(['+', '-']).unwrap_or(exponent);
-            valid_digits(digits)
-        }
-    }
+    parts.next().map_or(true, |exponent| {
+        let digits = exponent.strip_prefix(['+', '-']).unwrap_or(exponent);
+        valid_digits(digits)
+    })
 }
 
 fn valid_mantissa(text: &str) -> bool {

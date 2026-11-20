@@ -193,11 +193,11 @@ enum StreamExpect {
 }
 
 // One create call: its stream inputs, its callbacks and the transport's scripted answers
-struct CallSetup<'a> {
-    optional: &'a Object,
-    body: Option<&'a Object>,
-    fake: Option<&'a ModelJson>,
-    metadata: Option<&'a IndexMap<String, ModelJson>>,
+struct CallSetup<'call> {
+    optional: &'call Object,
+    body: Option<&'call Object>,
+    fake: Option<&'call ModelJson>,
+    metadata: Option<&'call IndexMap<String, ModelJson>>,
     callbacks: CallbackPlan,
     mode: ClientKind,
     answers: Vec<Answer>,
@@ -344,7 +344,7 @@ async fn check_stream(scenario: StreamScenario, outcome: CreateOutcome, wire: &W
 }
 
 // A prepared fake stream drops the body's stream key and returns synthetic events with the request
-async fn check_synthetic(outcome: CreateOutcome, sent: &[Sent]) {
+fn check_synthetic(outcome: CreateOutcome, sent: &[Sent]) {
     assert!(!sent[0].stream);
     assert!(body_map(&sent[0].body_json()).get("stream").is_none());
     let CreateOutcome::Synthetic(synthetic) = outcome else {
@@ -406,7 +406,7 @@ enum SignCase {
     r#"{"timeout":"9"}"#,
     Duration::from_secs(9)
 ))]
-#[case::neither_defaults_to_zero(SignCase::Timeout(None, r#"{}"#, Duration::ZERO))]
+#[case::neither_defaults_to_zero(SignCase::Timeout(None, "{}", Duration::ZERO))]
 #[case::optional_number(SignCase::Timeout(
     None,
     r#"{"timeout":3.5}"#,

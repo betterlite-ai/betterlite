@@ -124,8 +124,8 @@ pub struct CreateSynthetic {
 
 pub enum CreateOutcome {
     Value(Box<RawValue>),
-    Live(CreateLive),
-    Synthetic(CreateSynthetic),
+    Live(Box<CreateLive>),
+    Synthetic(Box<CreateSynthetic>),
 }
 
 pub(super) enum Selected<'deps, Client> {
@@ -167,7 +167,7 @@ impl Staged {
     ) -> Result<CreateOutcome, CreateError>
     where
         C: CreateConfig,
-        D: ?Sized,
+        D: DeploymentHookDispatcher + ?Sized,
         E: ContinuationExecutor + ?Sized,
     {
         let setup = StreamSetup {
@@ -178,15 +178,17 @@ impl Staged {
             call_type: Some(String::from("responses")),
         };
         match answer {
-            SentReply::Streaming(source) => Ok(CreateOutcome::Live(CreateLive { setup, source })),
-            SentReply::Buffered(answer) => {
-                let reply = transformed(config, answer, log)?;
+            SentReply::Streaming(source) => {
+                Ok(CreateOutcome::Live(Box::new(CreateLive { setup, source })))
+            }
+            SentReply::Buffered(buffered) => {
+                let reply = transformed(config, &buffered, log)?;
                 if self.stream_requested {
                     let response = typed(reply.response)?;
-                    return Ok(CreateOutcome::Synthetic(CreateSynthetic {
+                    return Ok(CreateOutcome::Synthetic(Box::new(CreateSynthetic {
                         setup,
                         response,
-                    }));
+                    })));
                 }
                 let callbacks = custom_logger_callbacks(&hooks.callbacks, hooks.resolver);
                 let job = Finish {

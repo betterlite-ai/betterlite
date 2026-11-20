@@ -89,15 +89,18 @@ pub(super) fn optional_headers(optional_params: &Object) -> Result<Headers, Crea
     let fields = match value {
         PromptJson::Null => return Ok(Headers::new()),
         PromptJson::Object(fields) => fields,
-        other => {
+        other @ (PromptJson::Bool(_)
+        | PromptJson::Number(_)
+        | PromptJson::Text(_)
+        | PromptJson::List(_)) => {
             return Err(CreateError::OptionalHeaders {
                 found: other.value_kind(),
             });
         }
     };
     let mut headers = Headers::new();
-    for (name, value) in fields {
-        let text = match value {
+    for (name, entry) in fields {
+        let text = match entry {
             PromptJson::Text(text) => text,
             other @ (PromptJson::Null
             | PromptJson::Bool(_)

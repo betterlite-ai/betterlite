@@ -22,12 +22,16 @@ use super::hook::{self, Applied};
 use super::{ClientSource, CreateCall, CreateDeps, CreateRequest, LogContext, Selected, Staged};
 
 // The supplied client is reused only when its class matches the handler's, as isinstance does in LiteLLM
-pub(super) fn select_client<'deps, C: CreateConfig, S: ClientSource>(
+pub(super) fn select_client<'deps, C, S>(
     deps: &'deps CreateDeps<'_, C, S>,
     mode: ClientKind,
     params: &CreateParams,
     shared_session: Option<SharedSession>,
-) -> Result<Selected<'deps, S::Client>, CreateError> {
+) -> Result<Selected<'deps, S::Client>, CreateError>
+where
+    C: CreateConfig,
+    S: ClientSource,
+{
     if let Some(supplied) = &deps.supplied
         && supplied.kind == mode
     {
@@ -64,7 +68,7 @@ where
             stage: Stage::Validate,
             source,
         })?;
-    if let Some(extra_headers) = call.extra_headers.filter(|headers| !headers.is_empty()) {
+    if let Some(extra_headers) = call.extra_headers.filter(|supplied| !supplied.is_empty()) {
         headers.extend(extra_headers.clone());
     }
     let api_base = config
@@ -77,12 +81,15 @@ where
 }
 
 // The transform, extra_body and request-context steps, then the stream flags fake prep changes
-pub(super) async fn begin<C: CreateConfig>(
+pub(super) async fn begin<C>(
     config: &C,
     mode: ClientKind,
     call: &CreateCall<'_>,
     applied: Applied,
-) -> Result<Staged, CreateError> {
+) -> Result<Staged, CreateError>
+where
+    C: CreateConfig,
+{
     let (headers, api_base) = validated_environment(config, call, &applied)?;
     let mut data = transformed_data(config, mode, &applied, &headers).await?;
     data = overlaid(config, call, &applied, data)?;
