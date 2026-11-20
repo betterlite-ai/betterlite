@@ -265,6 +265,27 @@ fn responses_to_input_pairs_to_the_shorter_list() {
 }
 
 #[test]
+fn responses_to_input_writes_at_the_target_message_index() {
+    let first = [ScannedText {
+        text: "first".to_owned(),
+        target: InputWriteBackTarget::Message(MessageTextTarget::MessageContent { msg_idx: 0 }),
+    }];
+    let mut zero = json!({"messages": [{"content": "first"}, {"content": "second"}]});
+    apply_guardrail_responses_to_input(fields(&mut zero), &["NEW".to_owned()], &first).unwrap();
+    assert_eq!(zero["messages"][0]["content"], "NEW");
+    assert_eq!(zero["messages"][1]["content"], "second");
+
+    let second = [ScannedText {
+        text: "second".to_owned(),
+        target: InputWriteBackTarget::Message(MessageTextTarget::MessageContent { msg_idx: 1 }),
+    }];
+    let mut one = json!({"messages": [{"content": "first"}, {"content": "second"}]});
+    apply_guardrail_responses_to_input(fields(&mut one), &["NEW".to_owned()], &second).unwrap();
+    assert_eq!(one["messages"][0]["content"], "first");
+    assert_eq!(one["messages"][1]["content"], "NEW");
+}
+
+#[test]
 fn responses_to_input_writes_system_blocks_and_messages() {
     let mut data = json!({
         "system": [{"type": "image", "source": {"type": "url", "url": "https://example.test/i.png"}}, text_block("old")],

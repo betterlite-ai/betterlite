@@ -2,6 +2,9 @@
 
 use serde_json::{Map, Value, json};
 
+use betterlite_models::full_model_metadata::parameters::SupportedParameterSource as _;
+
+use super::deps::NoParameters;
 use super::error::StructuredWriteBackError;
 use super::{
     defer_systems_inside_tool_exchanges, fold_leading_systems_into_top_level,
@@ -355,6 +358,38 @@ async fn structured_translation_preserves_a_midturn_system_row() {
     );
 }
 
+#[test]
+fn structured_translation_declares_no_parameters() {
+    assert_eq!(
+        NoParameters.supported_openai_params("claude-sonnet-4-5", Some("anthropic")),
+        Ok(None)
+    );
+}
+
+#[tokio::test]
+async fn structured_conversion_downloads_an_https_image_for_a_bedrock_model() {
+    let returned = vec![json!({"role": "user", "content": [
+        {"type": "image_url", "image_url": {"url": "https://example.test/a.png"}}
+    ]})];
+
+    let mut bedrock = data(r#"{"model": "invoke/anthropic.claude-v2", "messages": []}"#);
+    let error = write_back_structured_messages(&mut bedrock, &returned, None, false)
+        .await
+        .unwrap_err();
+    assert!(matches!(&error, StructuredWriteBackError::Conversion(_)));
+
+    let mut plain = data(r#"{"model": "claude-sonnet-4-5", "messages": []}"#);
+    write_back_structured_messages(&mut plain, &returned, None, false)
+        .await
+        .unwrap();
+    assert_eq!(
+        plain.get("messages"),
+        Some(&json!([{"role": "user", "content": [
+            {"type": "image", "source": {"type": "url", "url": "https://example.test/a.png"}}
+        ]}]))
+    );
+}
+
 #[tokio::test]
 async fn structured_keeps_the_client_system_when_the_hoisted_prompt_is_unchanged() {
     let mut request = data(PROMPT);
@@ -396,6 +431,7 @@ async fn structured_drops_the_hoisted_prompt_once() {
     write_back_structured_messages(&mut request, &returned, hoisted.as_ref(), true)
         .await
         .unwrap();
+    assert_eq!(request.get("system"), Some(&json!("be nice")));
     assert_eq!(
         request.get("messages"),
         Some(&json!([
