@@ -1,0 +1,19 @@
+kind: helper
+name: membership-cache-invalid-shapes-seed
+call:
+  membership_cache:
+    payloads:
+      - kind: stored
+        payload: {}
+      - kind: stored
+        payload:
+          user_id: [user-1]
+          team_id: team-1
+      - kind: stored
+        payload: 0
+      - kind: stored
+        payload: false
+      - kind: stored
+        payload: []
+env: {}
+compare: {ignore: []}

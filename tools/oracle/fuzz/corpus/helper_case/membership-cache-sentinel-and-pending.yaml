@@ -1,0 +1,16 @@
+kind: helper
+name: membership-cache-sentinel-and-pending-seed
+call:
+  membership_cache:
+    payloads:
+      - kind: pending
+      - kind: stored
+        payload: "__no_team_membership__"
+      - kind: typed
+        membership:
+          user_id: member-1
+          team_id: team-1
+          spend: 0.5
+          total_spend: 4.5
+env: {}
+compare: {ignore: []}

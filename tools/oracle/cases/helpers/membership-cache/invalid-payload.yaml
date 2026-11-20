@@ -1,0 +1,23 @@
+kind: helper
+name: membership-cache-invalid-payload
+call:
+  membership_cache:
+    payloads:
+      - kind: stored
+        payload: {}
+      - kind: stored
+        payload:
+          user_id: 7
+          team_id: team-1
+      - kind: stored
+        payload: false
+      - kind: stored
+        payload: 0
+      - kind: stored
+        payload: []
+      - kind: stored
+        payload: null
+      - kind: stored
+        payload: "__no_team_membership"
+env: {}
+compare: {ignore: []}

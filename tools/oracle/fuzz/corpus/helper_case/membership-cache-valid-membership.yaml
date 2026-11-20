@@ -1,0 +1,13 @@
+kind: helper
+name: membership-cache-valid-membership-seed
+call:
+  membership_cache:
+    payloads:
+      - kind: stored
+        payload:
+          user_id: user-1
+          team_id: team-1
+          spend: 1.5
+          total_spend: 2.5
+env: {}
+compare: {ignore: []}
