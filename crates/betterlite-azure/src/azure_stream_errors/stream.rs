@@ -11,9 +11,7 @@ use betterlite_openai::text_completion_transport::logging::StreamDefaults;
 use betterlite_openai::text_completion_transport::sdk::{ByteStream, SdkError};
 use betterlite_streaming::provider_chunk_decode::chunk::ProviderChunk;
 use betterlite_streaming::provider_chunk_decode::error::ProviderChunkError;
-use betterlite_streaming::provider_chunk_decode::wrapper::{
-    StreamSetup, StreamWrapper, WrapperError,
-};
+use betterlite_streaming::provider_chunk_decode::wrapper::{StreamSetup, StreamWrapper};
 use betterlite_streaming::stream_chunk_shaping::records::{
     JsonObject, JsonValue, StreamChunk, StreamOptions,
 };
@@ -188,13 +186,6 @@ fn provider_chunk(payload: &[u8]) -> Result<ProviderChunk, ProviderChunkError> {
     Ok(ProviderChunk::Json(Box::new(value)))
 }
 
-const fn wrapper_error(error: WrapperError) -> StreamingError {
-    match error {
-        WrapperError::Chunk(chunk) => StreamingError::Chunk(chunk),
-        WrapperError::Usage(usage) => StreamingError::Usage(usage),
-    }
-}
-
 // None means the payload shaped no chunk and the next one is read; Some carries the item to yield.
 fn process_payload(state: &mut StreamState, payload: &[u8]) -> Option<Item> {
     let chunk = match provider_chunk(payload) {
@@ -204,7 +195,7 @@ fn process_payload(state: &mut StreamState, payload: &[u8]) -> Option<Item> {
     state
         .wrapper
         .push(&chunk)
-        .map_err(wrapper_error)
+        .map_err(StreamingError::from)
         .transpose()
 }
 
@@ -264,7 +255,7 @@ async fn step(mut state: StreamState) -> Option<(Item, StreamState)> {
             Advance::Closing => state
                 .wrapper
                 .finish()
-                .map(|chunk| chunk.map_err(wrapper_error))?,
+                .map(|chunk| chunk.map_err(StreamingError::from))?,
         };
         if item.is_err() {
             state.phase = Phase::Failed;

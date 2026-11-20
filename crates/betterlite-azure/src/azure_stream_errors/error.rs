@@ -3,6 +3,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::text_completion_transport::logging::SecretHeaders;
 use betterlite_openai::text_completion_transport::sdk::SdkError;
 use betterlite_streaming::provider_chunk_decode::error::ProviderChunkError;
+use betterlite_streaming::provider_chunk_decode::wrapper::WrapperError;
 use thiserror::Error;
 
 // Python's getattr: Absent means the attribute does not exist, Present(None) means it is None
@@ -181,5 +182,14 @@ pub enum StreamingError {
 impl From<Raised> for StreamingError {
     fn from(raised: Raised) -> Self {
         Self::Azure(AzureStreamFailure::raised(raised))
+    }
+}
+
+impl From<WrapperError> for StreamingError {
+    fn from(error: WrapperError) -> Self {
+        match error {
+            WrapperError::Chunk(chunk) => Self::Chunk(chunk),
+            WrapperError::Usage(usage) => Self::Usage(usage),
+        }
     }
 }

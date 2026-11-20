@@ -153,7 +153,8 @@ impl StreamSource for ScriptedSource {
         if let Some(error) = &self.get_error {
             return Err(error.clone());
         }
-        let transport: Arc<dyn ChatStreamTransport> = Arc::clone(&self.transport);
+        let transport: Arc<ScriptedTransport> = Arc::clone(&self.transport);
+        let transport: Arc<dyn ChatStreamTransport> = transport;
         Ok(StreamClient {
             kind: self.kind,
             api_key: self.api_key.clone(),
@@ -468,14 +469,6 @@ pub fn raised_with(status: Option<u16>, message: String) -> Raised {
         Reported::Present(Some(message.clone())),
         message,
     )
-}
-
-#[must_use]
-pub const fn json_text(value: &Json) -> Option<&str> {
-    match value {
-        Json::Text(text) => Some(text),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
-    }
 }
 
 pub fn block_on<Fut>(future: Fut) -> Fut::Output
