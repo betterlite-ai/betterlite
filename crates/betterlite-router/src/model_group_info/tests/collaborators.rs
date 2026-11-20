@@ -20,7 +20,7 @@ use crate::deployment_model_info::discovery::CatalogSnapshot;
 use crate::deployment_model_info::metadata::{ModelMetadataSource, RouterMetadata};
 use crate::model_group_info::provider::ContextProviderResolver;
 use crate::model_group_info::sources::{
-    DeploymentInfo, ProviderFailure, ProviderRequest, ProviderResolver,
+    DeploymentInfo as _, ProviderFailure, ProviderRequest, ProviderResolver as _,
 };
 
 // The dynamic metadata source behind RouterMetadata, answering one builtin model name.
@@ -34,11 +34,8 @@ impl ModelMetadataSource for InfoSource {
         model: &str,
         _keys: &mut ModelCostKeys,
     ) -> impl Future<Output = Result<Option<JsonObject>, Infallible>> + Send {
-        let answer = if model == "b846-builtin" {
-            Some(parse(r#"{"key":"b846-builtin","max_input_tokens":20}"#))
-        } else {
-            None
-        };
+        let answer = (model == "b846-builtin")
+            .then(|| parse(r#"{"key":"b846-builtin","max_input_tokens":20}"#));
         ready(Ok(answer))
     }
 }

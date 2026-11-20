@@ -32,7 +32,6 @@ pub struct GroupRows {
 }
 
 // get_model_group_info: an alias follows to its target and answers under the alias name, a hidden one answers none.
-#[must_use]
 pub fn get_model_group_info<'call, D, R, P>(
     lookup: &CatalogLookup<'_>,
     sources: &'call GroupSources<'call, D, R, P>,
@@ -152,12 +151,11 @@ where
     let mapped = deployment_is_catalog_mapped(found.as_ref(), &row.model_info);
     let answer = provider_answer(sources.providers, &params)?;
     state.auth = params.clientside_auth;
-    let metadata = match found {
-        Some(metadata) => metadata,
-        None => {
-            let supported = supported_params(sources.parameters, &answer)?;
-            fallback_metadata(state.model_group, &answer.provider, row, &supported)?
-        }
+    let metadata = if let Some(metadata) = found {
+        metadata
+    } else {
+        let supported = supported_params(sources.parameters, &answer)?;
+        fallback_metadata(state.model_group, &answer.provider, row, &supported)?
     };
     let mut current = match state.group.take() {
         Some(mut group) => {
