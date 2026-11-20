@@ -22,7 +22,7 @@ description: >-
 
   live.rs. `LiveGuardrail` is an enum with one variant per class: the builtin kinds of B3682's `CallbackSpec` (Bedrock,
   Lakera, LakeraV2, Presidio, ToolPermission, ToolPolicy and the Compression marker) and one variant per `HookSpec` variant
-  of B8521. Each variant holds the class value that class's task builds from the spec's arguments (read each class
+  of B8521 (B8210, B3792 and B3815 add the decision_model, prompt_security and two MCP ones). Each variant holds the class value that class's task builds from the spec's arguments (read each class
   module in crates/betterlite-guardrails for its constructor). `LiveGuardrail::build(callback: &GuardrailCallback, ports:
   &ClassPorts) -> Result<LiveGuardrail, DispatchError>` matches on the spec. `ClassPorts` carries what class
   constructors take beyond their arguments: the outbound `ProxiedClient`, the semantic router builder (semantic.rs) and
@@ -151,7 +151,7 @@ deviations:
   - what: A held guardrail reaches its class through one match on its spec instead of a Python subclass instance.
     why: Guardrail callbacks are data in betterlite (B3682), and Rust has no class dictionary to inspect; clients see the same hooks run.
 out_of_scope:
-  - "The classes and their hooks: each class task under B105 to B109, including B8773 for the content filter class. The spec types: B3682 and B8521."
+  - "The classes and their hooks: each class task under B105 to B109, including B8773 for the content filter class. The spec types: B3682 and B8521, with the decision_model, prompt_security and two MCP variants from B8210, B3792 and B3815."
   - "Building the one GuardrailClasses and installing its callbacks: B8613. ProxyLogging and its add_guardrail_callbacks: B8399. The unified hook path: B3680."
   - "Setting the embedder slot from the router embedder, and the routes that use ComplianceGuardrails, ContentFilterRunner and the pipeline hooks: B8790."
   - "The tool policy adapters, the read-through and the suggestion model: B8665."

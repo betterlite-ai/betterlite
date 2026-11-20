@@ -1,0 +1,11 @@
+kind: helper
+name: auth-invalidation-team-refresh-projection
+call:
+  auth_invalidation:
+    scenario: team
+    management_ttl: 45.0
+    team_id: oracle-team
+    team: {team_id: oracle-team, team_alias: oracle-alias}
+    stale_alias: {team_id: oracle-team, team_alias: stale-alias}
+env: {}
+compare: {ignore: []}

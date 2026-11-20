@@ -1,7 +1,7 @@
 id: B8310
 title: Fireworks, Together, Groq, Cloudflare, Perplexity and NVIDIA NIM dispatch
 description: >-
-  The provider parts of the aggregator group build pure configs and leave the call sites to the umbrella: B6070 to B6072 and B5832 (Fireworks), B5831 (Together), B5833 (Groq), B5836 (Cloudflare), B5834 and B6120 (Perplexity) and B5837 (NVIDIA NIM). This task owns those call sites. Put them in the module hosted_platform_dispatch of betterlite-provider and plug each arm into the dispatch table through B2230's chat selection and B5360's media and resource selection, the same way B8157 does for the self-hosted providers. Unknown providers still fail as before.
+  The provider parts of the aggregator group build pure configs and leave the call sites to the umbrella: B6070 to B6072 and B5832 (Fireworks), B5831 (Together), B5833 (Groq), B5836 (Cloudflare), B6120 (Perplexity chat) and B5837 (NVIDIA NIM). This task owns those call sites. Perplexity's embedding, Responses, search and decisions parts (B5834) are deferred until the core is done (Max, 11-19), so B5834 adds their call sites itself once it lands, and this task leaves a stub for each, described below. Put them in the module hosted_platform_dispatch of betterlite-provider and plug each arm into the dispatch table through B2230's chat selection and B5360's media and resource selection, the same way B8157 does for the self-hosted providers. Unknown providers still fail as before.
 
 
   Settings. Add the config section hosted_platform_keys. It reads the litellm_settings globals api_key, api_base, headers, groq_key and cloudflare_api_key, and the env vars GROQ_API_KEY, GROQ_API_BASE, CLOUDFLARE_API_KEY, CLOUDFLARE_API_BASE, CLOUDFLARE_ACCOUNT_ID, and FIREWORKS_AI_API_KEY. Every value defaults to None, and an empty string counts as unset, since LiteLLM chains them with `or`. The dispatch functions take the section as config.sections.hosted_platform_keys and never read the environment themselves.
@@ -22,10 +22,10 @@ description: >-
   Arms in the completion dispatch: fireworks_ai and together_ai (L5889-L5893), groq (L5903-L5904) and cloudflare (L6038-L6039). Keep the order: the text completion arm at L5881-L5888 (B024's) comes first, so a fireworks_ai or together_ai call with text_completion true goes there.
 
 
-  Embedding arms in main.py embedding(). fireworks_ai (L6986-L6999): api_key is api_key, else the global api_key, else FIREWORKS_AI_API_KEY; api_base is passed as it came; the call is the OpenAI client embedding with no headers. perplexity (L7335-L7348): the shared HTTP embedding handler with api_base and api_key as they came and empty litellm_params. The together_ai and nvidia_nim embeddings go through the OpenAI branch at L6504-L6555, which B044 builds, so nothing is added for them.
+  Embedding arms in main.py embedding(). fireworks_ai (L6986-L6999): api_key is api_key, else the global api_key, else FIREWORKS_AI_API_KEY; api_base is passed as it came; the call is the OpenAI client embedding with no headers. perplexity (L7335-L7348) is B5834's arm; here `ProviderId::Perplexity` gets an explicit embedding arm that calls `perplexity::embedding` in hosted_platform_dispatch/perplexity.rs. That stub returns `DispatchError::NotBuilt { provider: "perplexity", operation: "embedding" }` (the module's error enum in hosted_platform_dispatch/error.rs), displayed as "{provider} {operation} support is not built yet". The arm must answer that error and never None, since None would let the call reach B044's OpenAI embedding branch and send the wrong request. The together_ai and nvidia_nim embeddings go through the OpenAI branch at L6504-L6555, which B044 builds, so nothing is added for them.
 
 
-  Config wiring. Where B2230 or B5360 returns a tag for these providers, build the config from its part: Fireworks chat, completion, Responses, embedding and rerank (B6070, B6071, B6072, B5832), Together chat, completion and rerank (B5831), Groq chat and transcription (B5833), Cloudflare chat and decisions (B5836), Perplexity chat, embedding, Responses, search and decisions (B5834, B6120), and NVIDIA NIM chat, embedding, rerank and passthrough (B5837). Chat for perplexity and nvidia_nim reaches B024's OpenAI-compatible arm (L5930-L5956), which takes the config this wiring builds.
+  Config wiring. Where B2230 or B5360 returns a tag for these providers, build the config from its part: Fireworks chat, completion, Responses, embedding and rerank (B6070, B6071, B6072, B5832), Together chat, completion and rerank (B5831), Groq chat and transcription (B5833), Cloudflare chat and decisions (B5836), Perplexity chat (B6120), and NVIDIA NIM chat, embedding, rerank and passthrough (B5837). Chat for perplexity and nvidia_nim reaches B024's OpenAI-compatible arm (L5930-L5956), which takes the config this wiring builds. The Perplexity Responses, search and decisions tags go to `perplexity::responses`, `perplexity::search` and `perplexity::decisions` in perplexity.rs, and each returns NotBuilt with its operation. Give these stubs and `perplexity::embedding` the signatures the real wiring needs, so B5834 only fills them in. This is how main's provider adapter stubs answer an adapter that is not built (OperationError::UnavailableAdapter in betterlite-provider provider.rs). Tests named `unbuilt_perplexity_embedding`, `unbuilt_perplexity_responses`, `unbuilt_perplexity_search` and `unbuilt_perplexity_decisions` in hosted_platform_dispatch/perplexity/tests.rs assert each NotBuilt answer and that the embedding arm never returns None; B5834 deletes them.
 
 
   HTTP oracle cases through the booted proxy prove the parts end to end, since this is the first place a route reaches them: POST /v1/chat/completions for fireworks_ai, together_ai, groq (non-streaming and streaming) and cloudflare models with api_base set to the mock upstream, and POST /v1/embeddings for a fireworks_ai model. Use model names LiteLLM's model map lists at the pin, for example fireworks_ai/accounts/fireworks/models/llama-v3p1-8b-instruct, together_ai/meta-llama/Llama-3.3-70B-Instruct-Turbo, groq/llama-3.1-8b-instant and cloudflare/@cf/meta/llama-3.1-8b-instruct. Helper cases cover the key and base chains (groq, cloudflare, fireworks embedding).
@@ -57,14 +57,16 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6986-L6999
     why: The fireworks_ai embedding arm.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7335-L7348
-    why: The perplexity embedding arm.
+    why: The perplexity embedding arm. B5834 fills it in; here it answers NotBuilt.
 dod:
   - text: The Fireworks, Together, Groq and Cloudflare dispatch functions resolve key, base and headers as LiteLLM does and pass or omit provider_config the same way.
     proof: [hosted-dispatch-tests, oracle]
   - text: Fireworks and Together log post_call on a handler error and return the error unchanged; Groq and Cloudflare do not catch it.
     proof: [hosted-dispatch-tests]
-  - text: The fireworks_ai and perplexity embedding arms match LiteLLM.
+  - text: The fireworks_ai embedding arm matches LiteLLM.
     proof: [hosted-dispatch-tests, oracle]
+  - text: A perplexity embedding call and the Perplexity Responses, search and decisions tags answer NotBuilt naming the operation, and the embedding arm never falls through to another branch.
+    proof: [unbuilt-tests]
   - text: The hosted_platform_keys section loads every listed global and env var, with None defaults.
     proof: [hosted-keys-tests]
   - text: Chat and embedding calls for these providers through the proxy return the same status, body and upstream headers as LiteLLM.
@@ -75,6 +77,9 @@ checks:
     - id: hosted-dispatch-tests
       run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^hosted_platform_dispatch::/)'
       why: Without the dispatch functions there are no such tests, so the check fails on the base branch.
+    - id: unbuilt-tests
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^hosted_platform_dispatch::/) & test(/::unbuilt_perplexity_/)'
+      why: A deferred Perplexity operation returns None and reaches another provider's branch, or its error does not name the operation.
     - id: hosted-keys-tests
       run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::hosted_platform_keys::/)'
       why: Without the section its loader tests are missing.
@@ -93,8 +98,12 @@ oracle_cases:
 deviations:
   - what: Reply ids LiteLLM generates and token usage estimates are compared as present, not equal, in the HTTP cases.
     why: The ids are random and usage comes from each side's tokenizer.
+  - what: Perplexity embeddings, Responses, search and decisions fail with "perplexity {operation} support is not built yet"; LiteLLM serves them. Perplexity chat works.
+    why: B5834 is deferred until the core is done (Max, 11-19), and a request must not reach another provider's branch instead. B5834 removes this.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7335-L7348
 out_of_scope:
   - "The provider configs and transforms belong to B5831, B5832, B5833, B5834, B5836, B5837, B6070, B6071, B6072 and B6120; picking a config from the provider name is B2230 and B5360."
+  - "The perplexity embedding arm and the Perplexity embedding, Responses, search and decisions wiring: B5834. It depends on this task and fills in the stubs in perplexity.rs."
   - "The OpenAI embedding branch that together_ai and nvidia_nim share (main.py L6504-L6555) is B044's, and the OpenAI-compatible chat arm is B024's."
   - "The provider defaults filled by get_llm_provider (get_llm_provider_logic.py) are B210 and B211."
   - "The Cloudflare branch of validate_environment (utils.py L6957) belongs to B5364 with the rest of that function."
@@ -107,5 +116,6 @@ pitfalls:
   - "_complete_cloudflare passes no client argument, unlike every other function here."
   - "map_extra_body_params runs only when the provider config is the Fireworks chat config, not for any other config a caller passed."
   - "The GroqChatConfig merge never overwrites a key the request already set."
+  - "Perplexity chat is B6120's and is built here, so only embeddings, Responses, search and decisions get the NotBuilt stub."
 budget: {max_changed_lines: 1500, max_new_expects: 0}
 review_level: standard
