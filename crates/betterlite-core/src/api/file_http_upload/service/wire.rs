@@ -55,6 +55,14 @@ pub(super) fn upload_method(method: &str) -> Result<Method, UploadError> {
     })
 }
 
+// httpx sends a str or bytes data= body under application/octet-stream when no content type is given
+pub(super) fn default_content_type(mut headers: HeaderMap) -> HeaderMap {
+    headers
+        .entry(CONTENT_TYPE)
+        .or_insert(HeaderValue::from_static("application/octet-stream"));
+    headers
+}
+
 // A media upload carries the configured content type, or the octet-stream default when none is given
 pub(super) fn media_headers(
     mut headers: HeaderMap,

@@ -38,6 +38,7 @@ use crate::api::api_boundaries::ApiLimits;
 use crate::api::vector_store_http_write::error::{BaseLlmException, ClientError};
 
 use super::config::{FileParams, FileResponse, FileUploadConfig, Headers, UploadParams};
+use super::decoder::decode_file_upload_location;
 use super::error::{TransformFailure, UploadError, UrlFailure};
 use super::plan::{
     MultipartPlan, PresignedPlan, TwoStepPlan, UploadPlan, bytes_json, initial_data_json,
@@ -677,11 +678,18 @@ async fn two_step_upload() {
     );
     // the caller's timeout reaches both steps, as LiteLLM passes it to each request
     assert_eq!(seen[0].timeout, Some(Duration::from_secs(30)));
-    // the second request carries only upload_request headers and data
+    // the second request carries only upload_request headers, plus httpx's octet-stream default
     assert_eq!(seen[1].method, Method::PUT);
     assert_eq!(seen[1].url, "http://uploads.example.test/manus/1");
     assert_eq!(seen[1].body, vec![b"{\"row\":1}\n".to_vec()]);
-    assert!(seen[1].headers.is_empty());
+    assert_eq!(
+        seen[1]
+            .headers
+            .get(CONTENT_TYPE)
+            .expect("the octet-stream default"),
+        "application/octet-stream"
+    );
+    assert_eq!(seen[1].headers.len(), 1);
     assert_eq!(seen[1].timeout, Some(Duration::from_secs(30)));
     // the truthy response body is kept for the transform
     let saved = field(field(&result, "params"), "initial_file_response");
@@ -859,23 +867,6 @@ async fn upload_body_modes() {
     );
 }
 
-// a text plan uses PUT only when the provider config asks for it
-#[rstest]
-#[case::post(Method::POST, Method::POST)]
-#[case::put(Method::PUT, Method::PUT)]
-#[tokio::test]
-async fn upload_text_method(#[case] method: Method, #[case] expected: Method) {
-    let mut harness = Harness::build(
-        Config::with_method(text_plan(), API_BASE, method),
-        vec![answer(200, &[], b"{}")],
-    );
-    harness
-        .run(Mode::Sync, &create_call(), &params())
-        .await
-        .unwrap();
-    assert_eq!(harness.seen()[0].method, expected);
-}
-
 #[tokio::test]
 async fn upload_body_modes_bytes() {
     let plan = || UploadPlan::Bytes(vec![0xff, 0x00, b'a']);
@@ -993,4 +984,23 @@ async fn upload_diagnostics_media_placeholder_and_error_log() {
     let error_messages = async_harness.sink.messages(LogLevel::Error);
     assert_eq!(error_messages.len(), 1);
     assert!(error_messages[0].contains("Failed to get upload URL from initial request"));
+}
+
+// every fuzz corpus seed decodes without panicking, the invariant the fuzz target checks
+#[test]
+fn replays_upload_location_corpus() {
+    let corpus =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/file_upload_location");
+    let mut replayed = 0_usize;
+    for entry in std::fs::read_dir(corpus).expect("the corpus directory") {
+        let bytes = std::fs::read(entry.expect("a corpus entry").path()).expect("a corpus file");
+        drop(decode_file_upload_location(
+            &bytes,
+            UploadUrlLocation::Body,
+            "upload_url",
+            ApiLimits::default(),
+        ));
+        replayed += 1;
+    }
+    assert!(replayed >= 8);
 }

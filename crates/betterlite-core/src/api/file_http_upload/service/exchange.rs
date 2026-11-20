@@ -25,7 +25,7 @@ use crate::api::file_http_upload::media::BlockIter;
 use crate::api::file_http_upload::plan::{MediaPlan, PresignedPlan, TwoStepPlan, encoded_body};
 use crate::api::vector_store_http_write::error::handle_error;
 
-use super::wire::{headers_from, media_headers, request_url, upload_method};
+use super::wire::{default_content_type, headers_from, media_headers, request_url, upload_method};
 use super::{BlockStream, Mode, UploadBody, UploadRequest, UploadTransport};
 
 // The answer transform_create_file_response reads, with the URL the last request was sent to
@@ -208,6 +208,10 @@ where
         headers: HeaderMap,
         body: UploadBody,
     ) -> Result<Reply, UploadError> {
+        let headers = match &body {
+            UploadBody::Bytes(_) => default_content_type(headers),
+            UploadBody::Multipart { .. } | UploadBody::Blocks(_) => headers,
+        };
         let request = UploadRequest {
             method: method.clone(),
             url: request_url(url)?,
