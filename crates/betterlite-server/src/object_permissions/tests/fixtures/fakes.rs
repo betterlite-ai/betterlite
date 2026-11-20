@@ -8,6 +8,7 @@ use betterlite_auth::auth_pubsub::endpoint::{
 use betterlite_auth::auth_pubsub::eviction::{CacheError, LocalEviction};
 use betterlite_auth::auth_pubsub::message::Invalidation;
 use betterlite_cache::backend::BackendError;
+use tokio::task::yield_now;
 
 #[derive(Default)]
 pub(crate) struct RecordingEviction {
@@ -28,7 +29,7 @@ impl LocalEviction for RecordingEviction {
     fn apply(&self, invalidation: Invalidation) -> Result<(), CacheError> {
         self.keys
             .lock()
-            .unwrap()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .push(invalidation.cache_key.clone());
         if !self.fail {
             return Ok(());
@@ -87,7 +88,7 @@ pub(crate) async fn wait_for_publishes(
         if messages.len() >= expected {
             return messages;
         }
-        tokio::task::yield_now().await;
+        yield_now().await;
     }
     endpoint.messages.lock().unwrap().clone()
 }

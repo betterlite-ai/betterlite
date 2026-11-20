@@ -70,6 +70,29 @@ fn permission_input(permission: &str) -> BTreeMap<String, JsonData> {
     data
 }
 
+async fn pinned_update(
+    data: &mut BTreeMap<String, JsonData>,
+    database: &TestDatabase,
+) -> Result<Option<String>, ObjectPermissionError> {
+    handle_update_object_permission_common(data, Some("perm-1"), Some(database.prisma()), &[]).await
+}
+
+async fn seed_shallow_permission(database: &TestDatabase) {
+    database
+        .seed_permission(
+            "perm-1",
+            r#"["a"]"#,
+            Some(r#"{"srv-a": ["t1"], "srv-b": ["t2"]}"#),
+        )
+        .await;
+    database
+        .execute(
+            r#"UPDATE "LiteLLM_ObjectPermissionTable" SET agents = ARRAY['agent-a'] WHERE object_permission_id = 'perm-1'"#,
+            &[],
+        )
+        .await;
+}
+
 #[tokio::test]
 async fn attach_db_first() {
     let mut data = fields(r#"{"object_permission_id": "perm-1"}"#);
@@ -122,7 +145,7 @@ async fn attach_v1_fallback() {
     attach_object_permission_to_dict(&mut found, Some(database.prisma()))
         .await
         .unwrap();
-    let JsonData::Object(attached) = found.get("object_permission").unwrap() else {
+    let JsonData::Object(attached) = &found["object_permission"] else {
         panic!("the attached row dump is an object");
     };
     assert_eq!(
@@ -229,19 +252,7 @@ async fn pinned_upsert_id() {
 #[tokio::test]
 async fn shallow_replace_and_null() {
     let database = TestDatabase::start().await;
-    database
-        .seed_permission(
-            "perm-1",
-            r#"["a"]"#,
-            Some(r#"{"srv-a": ["t1"], "srv-b": ["t2"]}"#),
-        )
-        .await;
-    database
-        .execute(
-            r#"UPDATE "LiteLLM_ObjectPermissionTable" SET agents = ARRAY['agent-a'] WHERE object_permission_id = 'perm-1'"#,
-            &[],
-        )
-        .await;
+    seed_shallow_permission(&database).await;
     let incoming = fields(
         r#"{"mcp_servers": ["b"], "models": null, "mcp_tool_permissions": {"srv-a": ["t1"]}}"#,
     );
@@ -262,14 +273,7 @@ async fn shallow_replace_and_null() {
         "object_permission".to_owned(),
         JsonData::Object(incoming.clone()),
     );
-    let returned = handle_update_object_permission_common(
-        &mut data,
-        Some("perm-1"),
-        Some(database.prisma()),
-        &[],
-    )
-    .await
-    .unwrap();
+    let returned = pinned_update(&mut data, &database).await.unwrap();
     assert_eq!(returned.as_deref(), Some("perm-1"));
     let row = database.permission_row("perm-1").await.unwrap();
     assert_eq!(row.get("models"), Some(&JsonData::Null));
@@ -584,14 +588,7 @@ async fn grandfathered_collision() {
         .await;
 
     let mut unrelated = permission_input(r#"{"mcp_servers": ["srv-b"]}"#);
-    let returned = handle_update_object_permission_common(
-        &mut unrelated,
-        Some("perm-1"),
-        Some(database.prisma()),
-        &[],
-    )
-    .await
-    .unwrap();
+    let returned = pinned_update(&mut unrelated, &database).await.unwrap();
     assert_eq!(returned.as_deref(), Some("perm-1"));
     let row = database.permission_row("perm-1").await.unwrap();
     assert_eq!(row.get("mcp_servers"), Some(&json(r#"["srv-b"]"#)));
@@ -601,23 +598,9 @@ async fn grandfathered_collision() {
     );
 
     let mut echoed = permission_input(r#"{"mcp_tool_permissions": {"shared": ["t1"]}}"#);
-    handle_update_object_permission_common(
-        &mut echoed,
-        Some("perm-1"),
-        Some(database.prisma()),
-        &[],
-    )
-    .await
-    .unwrap();
+    pinned_update(&mut echoed, &database).await.unwrap();
     let mut deleted = permission_input(r#"{"mcp_tool_permissions": {}}"#);
-    handle_update_object_permission_common(
-        &mut deleted,
-        Some("perm-1"),
-        Some(database.prisma()),
-        &[],
-    )
-    .await
-    .unwrap();
+    pinned_update(&mut deleted, &database).await.unwrap();
     assert_eq!(
         database
             .permission_row("perm-1")
@@ -715,20 +698,15 @@ async fn cache_id_filter_order() {
     let eviction = RecordingEviction::default();
     let endpoint = Arc::new(RecordingEndpoint::default());
     let tasks = PublishTasks::default();
-    invalidate_cached_object_permissions(
-        &[
-            Some("first"),
-            Some(""),
-            None,
-            Some("first"),
-            Some("second"),
-            Some(""),
-        ],
-        &eviction,
-        &tasks,
-        Some(&endpoint),
-    )
-    .await;
+    let ids = [
+        Some("first"),
+        Some(""),
+        None,
+        Some("first"),
+        Some("second"),
+        Some(""),
+    ];
+    invalidate_cached_object_permissions(&ids, &eviction, &tasks, Some(&endpoint)).await;
     let messages = wait_for_publishes(&endpoint, 3).await;
     tasks.shutdown().await;
     assert_eq!(
@@ -951,10 +929,10 @@ fn entries_project_raw_forms() {
     let from_text = mcp_tool_permission_entries(Some(&string(r#"{"srv-a": ["t1"]}"#))).unwrap();
     let from_text_names: Vec<&str> = from_text["srv-a"].iter().map(String::as_str).collect();
     assert_eq!(from_text_names, ["t1"]);
-    assert!(mcp_tool_permission_entries(Some(&string("{"))).is_err());
-    assert!(mcp_tool_permission_entries(Some(&string("null"))).is_err());
-    assert!(mcp_tool_permission_entries(Some(&json(r#"{"srv-a": "t1"}"#))).is_err());
-    assert!(mcp_tool_permission_entries(Some(&json(r#"{"srv-a": [1]}"#))).is_err());
+    mcp_tool_permission_entries(Some(&string("{"))).unwrap_err();
+    mcp_tool_permission_entries(Some(&string("null"))).unwrap_err();
+    mcp_tool_permission_entries(Some(&json(r#"{"srv-a": "t1"}"#))).unwrap_err();
+    mcp_tool_permission_entries(Some(&json(r#"{"srv-a": [1]}"#))).unwrap_err();
 }
 
 #[test]
