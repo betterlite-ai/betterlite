@@ -62,19 +62,20 @@ fn answer(
     source: &Fake,
     hook: &RecordingHook,
 ) -> HelperResult {
+    let conclusion = match outcome {
+        Ok(value) => (String::from("response"), value),
+        Err(ContainerCollectionError::Provider(exception)) => {
+            (String::from("error"), projection::provider(&exception))
+        }
+        Err(other) => return Err(failure(&other)),
+    };
     let mut output = Map::new();
     output.insert(
         String::from("request"),
         projection::request(&source.requests())?,
     );
     output.insert(String::from("log"), projection::log(&hook.calls())?);
-    match outcome {
-        Ok(value) => output.insert(String::from("response"), value),
-        Err(ContainerCollectionError::Provider(exception)) => {
-            output.insert(String::from("error"), projection::provider(&exception))
-        }
-        Err(other) => return Err(failure(&other)),
-    };
+    output.insert(conclusion.0, conclusion.1);
     Ok(Value::Object(output))
 }
 

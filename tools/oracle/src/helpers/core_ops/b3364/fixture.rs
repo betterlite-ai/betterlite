@@ -144,16 +144,13 @@ impl Fake {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(request.clone());
-        match self
+        let stopped = self
             .0
             .failure
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .take()
-        {
-            Some(stopped) => Err(stopped),
-            None => Ok(self.0.reply.clone()),
-        }
+            .take();
+        stopped.map_or_else(|| Ok(self.0.reply.clone()), Err)
     }
 
     pub(super) fn requests(&self) -> Vec<CollectionRequest> {
@@ -229,8 +226,8 @@ async fn send_into_the_hold(client: &ProxiedClient) -> Result<TransferError, Box
         sleep(HOLD).await;
         Ok(())
     };
-    let (result, held) = tokio::join!(client.send_buffered(request), held);
-    held?;
+    let (result, listener_finished) = tokio::join!(client.send_buffered(request), held);
+    listener_finished?;
     match result {
         Err(stopped) => Ok(TransferError::Transport(stopped)),
         Ok(_) => Err(failure("the local listener answered instead of timing out")),

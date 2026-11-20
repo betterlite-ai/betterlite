@@ -34,10 +34,11 @@ pub(super) fn request(requests: &[CollectionRequest]) -> Result<Value, Box<Helpe
         .map(|(name, value)| (name, Value::String(value)))
         .collect();
     parsed.set_query(None);
-    let body = match sent.body.as_deref() {
-        Some(bytes) => serde_json::from_slice(bytes).or_value_error()?,
-        None => Value::Null,
-    };
+    let body = sent
+        .body
+        .as_deref()
+        .map_or(Ok(Value::Null), serde_json::from_slice)
+        .or_value_error()?;
     let timeout = match sent.method {
         ContainerMethod::Post => sent.timeout.map(|held| Value::from(held.as_secs())),
         ContainerMethod::Get | ContainerMethod::Delete => None,
