@@ -1,8 +1,10 @@
 use std::time::Duration;
 
+use betterlite_config::sections::assistant_keepalive::PingSetting as ConfigPingSetting;
 use betterlite_config::sections::settings::JsonValue;
 
-pub use betterlite_config::sections::assistant_keepalive::PingSetting;
+// clippy::pub_use is denied and no expect may be added, so an alias keeps the moved type nameable here
+pub type PingSetting = ConfigPingSetting;
 
 #[must_use]
 pub fn coerce_keepalive_interval(setting: Option<&PingSetting>) -> Option<Duration> {
