@@ -17,13 +17,9 @@ use crate::api::vector_store_http_write::error::{ClientError, status_facts};
 use crate::api::vector_store_http_write::service::{ClientKind, Operation};
 
 use self::facts::Sent;
-use self::request::{
-    Parts, log_pre_call, logged_query, request_url, select_client, validated_headers, wire_body,
-    wire_headers,
-};
+use self::request::{delete_parts, select_client, update_parts, validated_headers, wire_headers};
 use super::config::{FileWriteConfig, WriteParams};
 use super::error::FileWriteError;
-use super::params::merged_request;
 
 mod facts;
 mod proxied;
@@ -137,40 +133,19 @@ where
     let api_base = deps
         .config
         .complete_url(target.params, target.vector_store_id)?;
-    let Parts { url, query, body } = match call {
-        WriteCall::Update(update) => {
-            let merged = merged_request(update.update_request, update.extra_body)?;
-            let (target_url, payload) =
-                deps.config
-                    .transform_update_request(&merged, &api_base, target.file_id)?;
-            log_pre_call(&api_base, &headers, Some(&payload), log)?;
-            Parts {
-                url: request_url(&target_url)?,
-                query: Vec::new(),
-                body: wire_body(&payload)?,
-            }
-        }
-        WriteCall::Delete(_) => {
-            let (target_url, query) = deps
-                .config
-                .transform_delete_request(&api_base, target.file_id)?;
-            log_pre_call(&api_base, &headers, Some(&logged_query(&query)), log)?;
-            Parts {
-                url: request_url(&target_url)?,
-                query: query.into_iter().collect(),
-                body: RequestBody::Empty,
-            }
-        }
+    let parts = match call {
+        WriteCall::Update(update) => update_parts(deps.config, update, &api_base, &headers, log)?,
+        WriteCall::Delete(delete) => delete_parts(deps.config, delete, &api_base, &headers, log)?,
     };
     Ok(PreparedWrite {
         config: deps.config,
         client,
         request: WriteRequest {
             method: http_method(operation),
-            url,
-            query,
+            url: parts.url,
+            query: parts.query,
             headers: wire_headers(&headers)?,
-            body,
+            body: parts.body,
             timeout: target.timeout,
         },
         operation,
@@ -198,10 +173,8 @@ where
         operation,
         mode,
     } = prepared;
-    let timeout = request
-        .timeout
-        .unwrap_or_else(|| client.get().default_timeout());
     let given = request.timeout;
+    let timeout = given.unwrap_or_else(|| client.get().default_timeout());
     let started = Instant::now();
     let reply = client.get().send(request).await;
     let sent = Sent {
@@ -217,8 +190,20 @@ where
             &facts::transport_facts(&error, &sent),
         ))
     })?;
+    answer_outcome(config, operation, &answer)
+}
+
+// The response transform runs after the send catch: only a status below 400 reaches it, and anything else is _handle_error's
+fn answer_outcome<C>(
+    config: &C,
+    operation: Operation,
+    answer: &UpstreamResponse,
+) -> Result<Json, FileWriteError>
+where
+    C: FileWriteConfig,
+{
     if answer.status < 400 {
-        let response = facts::http_response(&answer);
+        let response = facts::http_response(answer);
         return match operation {
             Operation::Update => config
                 .transform_update_response(&response)
@@ -230,6 +215,6 @@ where
     }
     Err(FileWriteError::Provider(facts::provider_error(
         config,
-        &status_facts(&answer),
+        &status_facts(answer),
     )))
 }

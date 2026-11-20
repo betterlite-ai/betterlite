@@ -186,8 +186,7 @@ impl OpenAiFileWriteConfig<'_> {
 // add_openai_metadata over the mapping: strings only, no hidden_params, the first 16, and an empty dict stays an empty dict
 fn cleaned_attributes(attributes: &IndexMap<String, Json>) -> Result<Json, FileWriteError> {
     let encoded = serde_json::to_value(attributes).map_err(FileWriteError::Encode)?;
-    let values: IndexMap<String, serde_json::Value> =
-        serde_json::from_value(encoded).map_err(FileWriteError::Encode)?;
+    let values = serde_json::from_value(encoded).map_err(FileWriteError::Encode)?;
     let cleaned = metadata_filter_limit(Some(&values));
     let filtered = serde_json::to_value(&cleaned).map_err(FileWriteError::Encode)?;
     serde_json::from_value(filtered).map_err(FileWriteError::Encode)
