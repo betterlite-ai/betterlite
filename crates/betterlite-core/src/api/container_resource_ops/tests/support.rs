@@ -462,18 +462,18 @@ impl FakeClient {
             .clone()
     }
 
-    fn respond(&self, request: &ContainerHttpRequest) -> Result<ContainerHttpReply, TransferError> {
+    fn respond(&self, request: &ContainerHttpRequest) -> ContainerHttpReply {
         self.seen
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(request.clone());
-        Ok(self.reply.clone())
+        self.reply.clone()
     }
 }
 
 impl BlockingClient for FakeClient {
     fn send(&self, request: &ContainerHttpRequest) -> Result<ContainerHttpReply, TransferError> {
-        self.respond(request)
+        Ok(self.respond(request))
     }
 }
 
@@ -482,7 +482,7 @@ impl AsyncClient for FakeClient {
         &self,
         request: &ContainerHttpRequest,
     ) -> impl Future<Output = Result<ContainerHttpReply, TransferError>> + Send {
-        ready(self.respond(request))
+        ready(Ok(self.respond(request)))
     }
 }
 
