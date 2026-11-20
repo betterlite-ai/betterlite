@@ -39,13 +39,13 @@ impl OrgAdminKeysError {
 }
 
 // only the exact org_admin role is gated: an org membership on any other global role stays with the caller's own key checks
-pub const fn check_org_admin_can_generate_keys(
+pub const fn check_org_admin_key_generation(
     role: UserRole,
     settings: &OrgAdminKeySettings,
 ) -> Result<(), OrgAdminKeysError> {
     match role {
         UserRole::OrgAdmin => {
-            if settings.disable_key_generate_for_org_admin {
+            if settings.key_generation_disabled {
                 Err(OrgAdminKeysError::KeyGenerationDisabled)
             } else {
                 Ok(())

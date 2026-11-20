@@ -11,12 +11,9 @@ fn settings(source: &str, variables: &[(&str, &str)]) -> Result<bool, ConfigErro
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
         .collect();
-    ConfigLoader { lookup }.load(source).map(|config| {
-        config
-            .sections
-            .org_admin_keys
-            .disable_key_generate_for_org_admin
-    })
+    ConfigLoader { lookup }
+        .load(source)
+        .map(|config| config.sections.org_admin_keys.key_generation_disabled)
 }
 
 #[rstest]

@@ -17,8 +17,8 @@ pub struct Raw {
 
 #[derive(Debug, Default, Deserialize)]
 struct RawGeneral {
-    #[serde(default)]
-    disable_key_generate_for_org_admin: Entry<RawFlag>,
+    #[serde(default, rename = "disable_key_generate_for_org_admin")]
+    key_generation_disabled: Entry<RawFlag>,
 }
 
 // a key present with null differs from an absent key, though both resolve to the setting's default here
@@ -45,11 +45,11 @@ enum RawFlag {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Settings {
-    pub disable_key_generate_for_org_admin: bool,
+    pub key_generation_disabled: bool,
 }
 
 // LiteLLM keeps the org admin switch off unless Python's bool() of the runtime value is true
-fn is_truthy<L>(flag: RawFlag, path: &str, lookup: &L) -> Result<bool, ConfigError>
+fn flag_value<L>(flag: RawFlag, path: &str, lookup: &L) -> Result<bool, ConfigError>
 where
     L: EnvironmentLookup,
 {
@@ -77,12 +77,12 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         let path = "general_settings.disable_key_generate_for_org_admin";
-        let disabled = match self.general_settings.disable_key_generate_for_org_admin {
+        let disabled = match self.general_settings.key_generation_disabled {
             Entry::Absent | Entry::Null(()) => false,
-            Entry::Value(flag) => is_truthy(flag, path, lookup)?,
+            Entry::Value(flag) => flag_value(flag, path, lookup)?,
         };
         Ok(Settings {
-            disable_key_generate_for_org_admin: disabled,
+            key_generation_disabled: disabled,
         })
     }
 }

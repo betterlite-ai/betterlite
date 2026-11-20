@@ -8,7 +8,7 @@ use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::org_admin_keys::Settings;
 use rstest::rstest;
 
-use super::{KEY_GENERATION_DISABLED, OrgAdminKeysError, check_org_admin_can_generate_keys};
+use super::{KEY_GENERATION_DISABLED, OrgAdminKeysError, check_org_admin_key_generation};
 
 fn loaded(source: &str) -> Settings {
     let lookup: BTreeMap<String, String> = BTreeMap::new();
@@ -19,17 +19,17 @@ fn loaded(source: &str) -> Settings {
 #[test]
 fn org_admin_passes_when_generation_is_allowed() {
     let settings = Settings {
-        disable_key_generate_for_org_admin: false,
+        key_generation_disabled: false,
     };
-    check_org_admin_can_generate_keys(UserRole::OrgAdmin, &settings).unwrap();
+    check_org_admin_key_generation(UserRole::OrgAdmin, &settings).unwrap();
 }
 
 #[test]
 fn org_admin_is_refused_with_the_exact_detail() {
     let settings = Settings {
-        disable_key_generate_for_org_admin: true,
+        key_generation_disabled: true,
     };
-    let error = check_org_admin_can_generate_keys(UserRole::OrgAdmin, &settings).unwrap_err();
+    let error = check_org_admin_key_generation(UserRole::OrgAdmin, &settings).unwrap_err();
     assert_eq!(error, OrgAdminKeysError::KeyGenerationDisabled);
     assert_eq!(error.status_code(), StatusCode::FORBIDDEN);
     assert_eq!(error.detail().error, KEY_GENERATION_DISABLED);
@@ -48,18 +48,18 @@ fn org_admin_is_refused_with_the_exact_detail() {
 #[case::customer(UserRole::Customer)]
 fn every_other_role_passes_with_generation_disabled(#[case] role: UserRole) {
     let settings = Settings {
-        disable_key_generate_for_org_admin: true,
+        key_generation_disabled: true,
     };
-    check_org_admin_can_generate_keys(role, &settings).unwrap();
+    check_org_admin_key_generation(role, &settings).unwrap();
 }
 
 // an org-admin membership is a row this helper never receives: only the global role decides
 #[test]
 fn internal_user_with_org_admin_membership_passes() {
     let settings = Settings {
-        disable_key_generate_for_org_admin: true,
+        key_generation_disabled: true,
     };
-    check_org_admin_can_generate_keys(UserRole::InternalUser, &settings).unwrap();
+    check_org_admin_key_generation(UserRole::InternalUser, &settings).unwrap();
 }
 
 #[rstest]
@@ -73,6 +73,6 @@ fn internal_user_with_org_admin_membership_passes() {
 )]
 #[case::switch_absent("general_settings: {}\n", false)]
 fn the_loaded_section_reaches_the_guard(#[case] source: &str, #[case] refused: bool) {
-    let outcome = check_org_admin_can_generate_keys(UserRole::OrgAdmin, &loaded(source));
+    let outcome = check_org_admin_key_generation(UserRole::OrgAdmin, &loaded(source));
     assert_eq!(outcome.is_err(), refused);
 }

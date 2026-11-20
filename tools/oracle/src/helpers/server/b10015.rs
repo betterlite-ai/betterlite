@@ -2,7 +2,7 @@ use betterlite_auth::user_roles::UserRole;
 use betterlite_config::sections::org_admin_keys::Settings;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
-use betterlite_server::org_admin_keys::{ErrorDetail, check_org_admin_can_generate_keys};
+use betterlite_server::org_admin_keys::{ErrorDetail, check_org_admin_key_generation};
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -24,8 +24,8 @@ struct Call {
 
 #[derive(Debug, Deserialize)]
 struct Snapshot {
-    #[serde(default)]
-    disable_key_generate_for_org_admin: bool,
+    #[serde(default, rename = "disable_key_generate_for_org_admin")]
+    key_generation_disabled: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -56,9 +56,9 @@ impl Helper for Op {
 
 fn outcome(call: &Call) -> Outcome {
     let settings = Settings {
-        disable_key_generate_for_org_admin: call.settings.disable_key_generate_for_org_admin,
+        key_generation_disabled: call.settings.key_generation_disabled,
     };
-    match check_org_admin_can_generate_keys(call.role, &settings) {
+    match check_org_admin_key_generation(call.role, &settings) {
         Ok(()) => Outcome {
             status: None,
             detail: None,
