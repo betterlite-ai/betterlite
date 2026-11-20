@@ -156,7 +156,7 @@ def tool_call(item: ToolCallInput) -> ChatCompletionMessageToolCall:
 
 
 def container_depth(text: str) -> int:
-    # serde_json refuses a document nested 128 containers deep, so the Rust projection keeps such arguments a string
+    # serde_json stops at 128 nested containers, so a deeper argument text stays a string
     open_containers = 0
     deepest = 0
     in_string = False
