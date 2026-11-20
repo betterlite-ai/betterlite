@@ -71,10 +71,10 @@ fn compact_params(api_base: &str, query: Option<&str>) -> CompactParams {
 }
 
 fn base_with_query(api_base: &str, query: Option<&str>) -> String {
-    match query {
-        Some(query) => format!("{api_base}?{query}"),
-        None => api_base.to_owned(),
-    }
+    query.map_or_else(
+        || api_base.to_owned(),
+        |suffix| format!("{api_base}?{suffix}"),
+    )
 }
 
 fn compact_call<'call>(call: &'call Call, params: &'call CompactParams) -> CompactCall<'call> {
