@@ -6,7 +6,7 @@ use super::support::{FakeRows, Fixture, auth, dec, group_budget, group_row};
 #[tokio::test]
 async fn group_matched_uses_only_the_token_groups() {
     let mut fixture = Fixture::new();
-    fixture.token = auth(r#"{"token":"tok","matched_model_access_groups":["a","b"]}"#);
+    fixture.token = auth(r#"{"token":"tok","matched_model_access_groups":["a","b","a"]}"#);
     fixture.rows = FakeRows::default().with_groups(vec![
         group_row("a", "1", r#"{"max_budget":5}"#),
         group_row("c", "1", r#"{"max_budget":9}"#),
