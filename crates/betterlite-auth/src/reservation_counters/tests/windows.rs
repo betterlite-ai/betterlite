@@ -86,7 +86,7 @@ async fn window_start_accepts_a_reset_before_the_epoch() {
     let list = fixture.counters().await;
     let counter = only(&list);
     let expected = UNIX_EPOCH
-        .checked_sub(Duration::from_days(3))
+        .checked_sub(Duration::from_hours(72))
         .expect("the pre-epoch start");
     assert_eq!(counter.window_start, Some(expected));
 }
@@ -101,7 +101,7 @@ async fn window_start_accepts_a_year_one_reset() {
     let list = fixture.counters().await;
     let counter = only(&list);
     let expected = UNIX_EPOCH
-        .checked_sub(Duration::from_days(719_163))
+        .checked_sub(Duration::from_hours(17_259_912))
         .expect("the year-one start");
     assert_eq!(counter.window_start, Some(expected));
 }
