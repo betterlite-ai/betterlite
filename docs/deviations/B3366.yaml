@@ -1,0 +1,104 @@
+task: B3366
+deviations:
+  - what: >-
+      The operation is two Rust functions, list_container_files and alist_container_files. The async one prepares the
+      same call and awaits the async handler, where LiteLLM's one list_container_files returns a coroutine when
+      _is_async is set and alist_container_files runs that function in an executor under a copied contextvars context.
+    why: >-
+      A Rust function returns one type, so it cannot choose between a value and a future, and there is no event loop to
+      hand the sync body to. Both entries call the same prepare_call, so they cannot drift, and the logging state, the
+      redactor and the request timeout are explicit arguments instead of a context to copy.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L921-L978
+  - what: >-
+      The provider config is reached through B3368's ContainerConfigLookup, which takes the ProviderId and answers
+      &dyn BaseContainerConfig, instead of core asking LiteLLM's ProviderConfigManager for a config built from the
+      caller's credentials.
+    why: >-
+      Core cannot build a BaseContainerConfig with credentials (the Azure config is B547's and not landed) and cannot
+      name serde_json::Map or Value, which clippy.toml disallows; the caller that holds the credentials builds the
+      config from the name, the same seam B3361 uses for provider configs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L1082-L1087
+  - what: >-
+      A provider name outside the known set fails with "Container provider config not found for provider: X" as an
+      ApiConnection error. LiteLLM's litellm.LlmProviders(name) raises a ValueError for an unknown name before the
+      None check, and only a known provider with no container config reaches that message.
+    why: >-
+      B3361's get_provider_container_config answers None for both cases and has no enum constructor, so the port has
+      one clear failure for the two; docs/compatibility.md leaves Python's constructor messages alone.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L1082-L1087
+  - what: >-
+      In the Rust request an absent timeout is None and keeps the declared 600 seconds, while an explicit zero takes
+      the request timeout; LiteLLM's None falls through `timeout or DEFAULT_REQUEST_TIMEOUT` to the request timeout
+      exactly as its zero does.
+    why: >-
+      Option<f64> cannot tell an omitted argument from an explicit null, and docs/compatibility.md makes an absent or
+      null value take the declared default, which is 600.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L1118
+  - what: >-
+      The resolved timeout reaches the handler as f64 seconds and the httpx.Timeout alternative is not modeled, and the
+      value of litellm.constants.request_timeout enters through ContainerFileListDeps instead of being read here.
+    why: >-
+      The argument is declared as a float, B3363's ContainerHttpRequest has no timeout field, and configuration enters
+      betterlite through the config crate; clippy.toml forbids std::env::var outside it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L562-L577
+  - what: >-
+      A transform that answers no params sends no query pairs, so a query already present in the base URL survives;
+      httpx's `params=params or None` and B3363's empty pair list mean the same thing.
+    why: >-
+      An empty dict passed as params to httpx replaces the URL's query with nothing, while None preserves it; the
+      transport here keeps the URL's own query whenever the pair list is empty.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L9555
+  - what: >-
+      pre_call's params are logged as the rendered query pairs, name to string, rather than the transform's typed
+      dict.
+    why: >-
+      The pairs are what the transport sends and what B3363's pre_call_record takes, an IndexMap<String, String>, so
+      the typed values have no slot in the record.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L9541-L9549
+  - what: >-
+      Query pairs are emitted in key order. LiteLLM's dict keeps after, limit, order and then extra_query's insertion
+      order, and httpx renders that order into the URL.
+    why: >-
+      betterlite's JSON object is ordered by key (serde_json without preserve_order), so the transform's params and
+      their rendering come out sorted; a server reads query names without regard to their order.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L9529-L9538
+  - what: >-
+      A caught transport failure carries betterlite's transport message, for example "the client is shutting down and
+      takes no new requests", where LiteLLM uses str(exception); the class and the synthesized 500 match.
+    why: >-
+      B3363's TransferError is the only description of the failure that reaches the handler, and its variants carry no
+      provider response with text of its own.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6081-L6105
+  - what: >-
+      A kwargs entry named api_key, api_base or api_version is replaced by the matching named argument. LiteLLM's
+      signature binds those names as parameters, so its kwargs never carries them and it has no precedence to state.
+    why: >-
+      The Rust request holds the named credentials as fields and the kwargs as a map, with no argument binding to keep
+      those names out of the map, so the struct needs a rule of its own; the value the caller stated as a named
+      argument wins.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L1067-L1072
+  - what: extra_body is accepted on the request and never reaches the handler.
+    why: LiteLLM takes extra_body as a named argument and does not pass it to container_file_list_handler either.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L1042-L1043
+  - what: >-
+      A supplied client is typed as Source::Blocking or Source::Asynchronous, so LiteLLM's isinstance test that
+      rebuilds a wrongly typed client has no runtime branch here; a wrong client type does not compile.
+    why: >-
+      The client kind is a generic parameter on the call, so the check moves to the type system and there is no
+      wrongly typed value to test at run time.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L9507-L9511
+  - what: >-
+      The async client is built through ClientSource::async_client(ssl_verify) with no provider argument; LiteLLM
+      passes llm_provider=litellm.LlmProviders.OPENAI to get_async_httpx_client.
+    why: >-
+      B173's client source answers one asynchronous client per call and owns provider selection, and ssl_verify is the
+      only input this handler has for it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L9585-L9592
+kept_bugs:
+  - what: >-
+      The timeout argument never reaches the HTTP client: the GET is sent with url, headers and params only, so the
+      selected client's own deadline applies however short a timeout the caller passed.
+    why: >-
+      A working LiteLLM setup that passes timeout sees the client's default deadline and not the value it passed, and
+      ContainerHttpRequest has no timeout field to send; betterlite keeps the same wire behavior on purpose.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L9552-L9556
