@@ -1,0 +1,35 @@
+kind: probe
+name: admin-ambiguous-public-name
+probes:
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      access_windows:
+        model: shared
+        mode: team
+        proxy_admin: true
+        deployments:
+          - {model_name: gpt, id: a, team_id: t1, team_public_model_name: shared}
+          - {model_name: gpt, id: b, team_id: t2, team_public_model_name: shared}
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      access_windows:
+        model: shared
+        mode: team
+        proxy_admin: true
+        deployments:
+          - {model_name: gpt, id: a, team_id: t1, team_public_model_name: shared}
+          - {model_name: gpt, id: b, team_id: t1, team_public_model_name: shared}
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      access_windows:
+        model: shared
+        mode: team
+        proxy_admin: true
+        deployments:
+          - {model_name: gpt, id: a, team_id: t1, team_public_model_name: shared}
+          - {model_name: gpt, id: open}
+compare:
+  ignore: []
