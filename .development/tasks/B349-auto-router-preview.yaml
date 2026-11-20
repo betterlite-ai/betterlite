@@ -16,7 +16,9 @@ description: 'Implement POST /auto_router/test_routing over B379 dry-run authori
   typed Rust services above; synchronous facades and structural accessors reuse the same primitive instead
   of separate ports. Bound the route_probe outside-byte parser to 1048576 bytes before decoding; on excess
   use its typed invalid-input outcome (classifier/observation consumers keep their pinned warning/fallback
-  path). B1100 registers routes/auto_router_preview.rs as a stub, so fill only crates/betterlite-server/src/routes/auto_router_preview.rs and leave routes.rs and state.rs as they are.'
+  path). B1100 registers routes/auto_router_preview.rs as a stub, so fill only crates/betterlite-server/src/routes/auto_router_preview.rs and leave routes.rs and state.rs as they are.
+
+  Booted case from B9691: ui/model-forms/routing-test-saved-and-unsaved replays the auto-router form request POST /auto_router/test_routing against a saved and an unsaved config, with the request shape from the routing tester paragraph of the B9691 task file.'
 scope:
   paths:
   - crates/betterlite-server/src/auto_router_preview.rs
@@ -36,6 +38,7 @@ scope:
   - tools/oracle/helpers/b349/**
   - tools/oracle/src/helpers/server/b349.rs
   - tools/oracle/src/helpers/server/b349/**
+  - tools/oracle/cases/ui/model-forms/routing-test-saved-and-unsaved.yaml
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L438-L615
@@ -69,6 +72,8 @@ dod:
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
+- text: "The model form routing test against a saved and an unsaved config answers as LiteLLM does."
+  proof: [oracle]
 checks:
   optional:
   - mutants
@@ -102,6 +107,7 @@ oracle_cases:
 - tools/oracle/cases/routing/auto-router-preview/main-model-never-called.yaml
 - tools/oracle/cases/routing/auto-router-preview/preview-no-decision-400.yaml
 - tools/oracle/cases/routing/auto-router-preview/parser-byte-bound.yaml
+- tools/oracle/cases/ui/model-forms/routing-test-saved-and-unsaved.yaml
 deviations:
 - what: Availability returns uncapped capability and tuning allowances.
   why: The accepted product decision omits LiteLLM's enterprise license checks while retaining ownership

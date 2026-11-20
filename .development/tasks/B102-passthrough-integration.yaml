@@ -5,7 +5,8 @@ description: >-
   uncovered executable remainder is accepting the open-source managed-ID flag and proving the
   composed logging and optional stream-cost paths over the real server. B8930 builds cost
   injection and B8931 constructs the logging graph. B8640 supplies that graph to its existing
-  PassThroughState, and B8606-B8609 already mount the provider families. This task registers no
+  PassThroughState, and B8606, B8607 and B8608 already mount the provider families it
+  exercises; B8609's Fal, AssemblyAI, TinyFish, VLLM, GigaChat and Watsonx mounts are later work. This task registers no
   route, builds no second handler graph, and changes no app or Shared module. Its server module
   passthrough_integration contains integration fixtures and tests under tests.rs or tests/;
   the skeleton declares the module. If B8640 has not acquired the runtime handoff recorded in
@@ -34,8 +35,8 @@ description: >-
   must produce the real usage and charge in exactly one callback. An upstream 4xx produces one
   failure and no success; byte relay and successful SSE complete once; dropping a stream after
   usage logs partial usage once, and shutting down accounts for delayed billing tasks. Exercise
-  TinyFish's early stream poller and end-of-stream fallback together to prove at-most-one
-  billing, and the Transcribe admission/logger pair to prove one shared live rate source. Reuse
+  the Transcribe admission/logger pair to prove one shared live rate source. TinyFish's early
+  stream poller and end-of-stream fallback check belongs to B8609, which mounts TinyFish. Reuse
   B8931's graph and the application's injected external resources rather than testing another
   hand-assembled graph. A transport fixture may preserve the real provider URL while serving
   loopback bytes: endpoint classification checks the URL's host, so replacing api.openai.com

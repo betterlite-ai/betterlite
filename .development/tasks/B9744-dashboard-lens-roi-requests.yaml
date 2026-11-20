@@ -95,6 +95,18 @@ description: >-
   only individually identified generated ids, credentials and timestamps are ignored.
   This is roughly 500 HTTP lines and 80 patch lines plus tests, with zero translated backend
   or retained React functions.
+
+  Browser walk. B147 runs the other analytics pages through B144's harness and lands first. Once this task's
+  page fixes are in, run the Lens and ROI walk the same way (a dashboard_lens_roi_pages test for
+  tools/dashboard/browser-check.sh), after normal sign-in.
+  Visit Lens and verify its actual saved administrative rows or empty state, model labels and
+  unavailable recorded-activity controls. Do not inject a fake connected worker, fake findings
+  or a mock ClickHouse response to enable New investigation. B8682 explicitly has no native
+  storage binding, and B9744 corrects the worker image instructions; the browser must not claim
+  a functioning investigation engine. Visit ROI, open settings, save a changed nonsecret
+  field with repos empty, refresh, display demo results and download the locally generated
+  people CSV. Exercise idle cancel and reset, observing the real API responses. No GitHub
+  account, paid token or estimator call is needed for this flow.
 scope:
   paths:
     - ui/dashboard/patches/53-lens-roi-pages.patch

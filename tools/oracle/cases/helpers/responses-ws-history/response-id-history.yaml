@@ -1,0 +1,91 @@
+kind: helper
+name: response-id-history
+call:
+  responses_ws_history:
+    setup:
+      model: openai/gpt-4o-mini
+      custom_llm_provider: null
+      api_key: null
+      api_base: null
+      timeout: null
+      first_message: null
+      litellm_metadata: null
+      kwargs: {}
+    credentials: []
+    proxy: []
+    frames: []
+    warmup: []
+    warmup_ids: []
+    case:
+      inputs: []
+      completions: []
+      store:
+      - id: raw-1
+        messages:
+        - type: message
+          role: user
+          content:
+          - type: output_text
+            text: A
+      first: resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpncHQtNG8tbWluaTtyZXNwb25zZV9pZDpyYXctMQ==
+      append:
+        type: message
+        role: assistant
+        content:
+        - type: output_text
+          text: B
+      missing: raw-2
+      applied: []
+      base_kwargs: []
+calls:
+- responses_ws_history:
+    setup:
+      model: openai/gpt-4o-mini
+      custom_llm_provider: null
+      api_key: null
+      api_base: null
+      timeout: null
+      first_message: null
+      litellm_metadata: null
+      kwargs: {}
+    credentials: []
+    proxy: []
+    frames: []
+    warmup: []
+    warmup_ids: []
+    case:
+      inputs: []
+      completions: []
+      store:
+      - id: raw-1
+        messages:
+        - type: message
+          role: user
+          content:
+          - type: output_text
+            text: A
+      - id: raw-1
+        messages:
+        - type: message
+          role: user
+          content:
+          - type: output_text
+            text: B
+      - id: raw-x
+        messages:
+        - type: message
+          role: user
+          content:
+          - type: output_text
+            text: C
+      first: raw-1
+      append:
+        type: message
+        role: assistant
+        content: []
+      missing: raw-x
+      applied: []
+      base_kwargs: []
+env: {}
+compare:
+  ignore: []

@@ -11,7 +11,9 @@ description: >-
   unavailable email-event requests receive stock not-found checks in B9772, not a service.
 
   This final part adds the theme editor's authenticated save/read/reset lifecycle and runs
-  one representative accepted transaction from every split part. Theme's B1662 already
+  one representative accepted transaction from every core split part. B9775 (secret manager
+  settings) and B9776 (MCP and web-search settings) are later work and run their own cases, so
+  none of theirs is reused here. Theme's B1662 already
   implements GET /get/ui_theme_settings and PATCH /update/ui_theme_settings. The retained
   UIThemeSettings component calls fetch directly with getProxyBaseUrl and the configured
   authentication header name, default Authorization, carrying Bearer <session key> even
@@ -80,8 +82,6 @@ oracle_cases:
   - tools/oracle/cases/ui/logging-settings/spend-log-retention-and-clear.yaml
   - tools/oracle/cases/ui/budget-tags/budget-modal-roundtrip-and-delete.yaml
   - tools/oracle/cases/ui/passthrough-settings/create-edit-delete-generated-id.yaml
-  - tools/oracle/cases/ui/secret-settings/vault-modal-omission-and-clear-eligible-mit.yaml
-  - tools/oracle/cases/ui/tool-search-settings/test-panel-filter-headers.yaml
 deviations: []
 out_of_scope:
   - B9090 imports every unchanged theme component/test; B9091/B9092/B9093 and B144 own build, shell branding, serving and browser foundation rather than these HTTP transactions.

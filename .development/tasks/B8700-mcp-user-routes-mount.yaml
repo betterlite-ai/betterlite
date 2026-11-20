@@ -33,6 +33,8 @@ description: >-
   answer once this task mounts them. Write each listed case from its route task's description, DoD and case names
   (.development/tasks/B4723-mcp-user-credential-routes.yaml and B4724-mcp-user-env-routes.yaml), with the config, key
   and ignore rules each describes.
+
+  Booted case from B9695: ui/chat-app/mcp-credentials-list-and-revoke is a list, revoke, list transcript (GET /v1/mcp/user-credentials, DELETE /v1/mcp/server/<id>/oauth-user-credential, then the list again), as the /ui/chat MCPCredentialsTab sends it.
 scope:
   paths:
     - crates/betterlite-server/src/app/mcp.rs
@@ -40,6 +42,7 @@ scope:
     - crates/betterlite-server/src/app/mcp/user_routes/**
     - tools/oracle/cases/http/mcp-user-credentials/**
     - tools/oracle/cases/http/mcp-user-env-vars/**
+    - tools/oracle/cases/ui/chat-app/mcp-credentials-list-and-revoke.yaml
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L2420-L2940
@@ -51,6 +54,8 @@ dod:
     proof: [user-route-tests]
   - text: The moved B4723 and B4724 cases match LiteLLM through the booted proxy.
     proof: [user-route-cases, oracle]
+  - text: "The chat app credential list, revoke and second list answer as LiteLLM does."
+    proof: [oracle]
 checks:
   optional: []
   commands:
@@ -95,6 +100,7 @@ oracle_cases:
   - tools/oracle/cases/http/mcp-user-env-vars/clear-missing-row-ok.yaml
   - tools/oracle/cases/http/mcp-user-env-vars/list-skips-servers-without-required.yaml
   - tools/oracle/cases/http/mcp-user-env-vars/list-no-accessible-servers-empty.yaml
+  - tools/oracle/cases/ui/chat-app/mcp-credentials-list-and-revoke.yaml
 deviations: []
 out_of_scope:
   - "Route behavior: B4723 and B4724. Storage: B4713 and B4714."

@@ -2,18 +2,20 @@ id: B066
 title: Assemble settings routes and publish dashboard banners and callback metadata
 description: >-
   Finish the settings API composition in betterlite-server::settings_api, mounting each
-  completed route bundle once: B1647/B1648 secret-manager overrides, B1650 cost settings,
-  B1651 estimates, B1653 coordination Redis, B1654 compliance, B1655 release information,
-  B1657 signup defaults, B1658 allowed IPs, B1660 UI flags, B1661 SSO settings, B1662 theme/logo
-  and B1663 search settings. Compose B3125's prompt-cache prediction router at the
-  inclusion point from cost_tracking_settings.py without duplicating its route registrations.
+  completed route bundle once: B1650 cost settings, B1651 estimates, B1653 coordination Redis,
+  B1654 compliance, B1655 release information, B1657 signup defaults, B1658 allowed IPs, B1660 UI flags, B1661 SSO
+  settings and B1662 theme/logo. The secret-manager overrides (B1647, B1648),
+  search settings (B1663) and the prompt-cache prediction router (B3125, at the inclusion point
+  from cost_tracking_settings.py) are later work: each of those tasks adds its own router to the
+  keyed or public router here when it lands, and until then its paths answer 404 like any
+  unmounted route.
   Preserve each owner's public/authenticated distinction; construction tests must detect
   duplicate or missing registrations. settings_api hands out the keyed routes and the public
   routes as two routers, since B8675 merges the first inside the auth layers and the second
   through mount_public. The composition takes one `Arc<dyn ConfigOverlayPort>` (B8379's port in
   betterlite-server's config_overlay_port) and passes that same Arc to every bundle that takes
   it: B1657's router and the bundles that call B1656's shared update or reload_config (B1650,
-  B1658, B1660, B1661, B1662, B1663); a construction test gives a recording fake and checks
+  B1658, B1660, B1661, B1662); a construction test gives a recording fake and checks
   that GET /get/internal_user_settings reaches it. The HTTP oracle cases for these routes (management/settings-composition, management/callback-metadata and
   management/user-banner) belong to B8675, since the routes answer only once it mounts settings_api; this task proves
   its routes with the native tests below. The Python-only types/ui_crud __init__ files supply
