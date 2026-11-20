@@ -1,0 +1,9 @@
+task: B740
+deviations:
+  - what: A failed cache read during a tag or model access group budget probe reaches the caller as TagPayload or GroupPayload, while LiteLLM's DualCache.async_get_cache logs the backend error and returns None, so the name is simply re-fetched from the database.
+    why: docs/compatibility.md makes a backend failure an error that names the field rather than a silent miss, and the auth stage turns it into the same 401 a cache failure raises elsewhere; proven by cache_read_error_propagates in betterlite-auth.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L294-L297
+  - what: When writing a fetched row back to the cache fails, the batch read drops every fetched row of that response while the writes before the failure stay cached, where LiteLLM's DualCache.async_set_cache swallows the write error and the fetch keeps returning all of its rows.
+    why: betterlite surfaces a cache backend failure instead of hiding it, and the fetch's own debug-drop path keeps the response fail-open (no budget rows) rather than returning rows it could not cache; proven by cache_failure_keeps_prior_writes in betterlite-auth.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L515-L518
+kept_bugs: []

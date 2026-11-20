@@ -1,0 +1,12 @@
+kind: helper
+name: key-policy-fields-budget-window-reset-times
+call:
+  key_policy_fields:
+    calls:
+      - {function: budget_windows, budget_limits: null, now: "2026-05-01T10:00:00.123456+00:00"}
+      - {function: budget_windows, budget_limits: [], now: "2026-05-01T10:00:00.123456+00:00"}
+      - {function: budget_windows, budget_limits: [{budget_duration: 1d, max_budget: 10.0}], now: "2026-05-01T10:00:00.123456+00:00"}
+      - {function: budget_windows, budget_limits: [{budget_duration: 1h, max_budget: 2.5}, {budget_duration: 30m, max_budget: 4.0}], now: "2026-05-01T10:00:00.123456+00:00"}
+      - {function: budget_windows, budget_limits: [{budget_duration: 7d, max_budget: 100.0}], now: "2026-12-31T23:59:59.999999+00:00"}
+env: {}
+compare: {ignore: []}
