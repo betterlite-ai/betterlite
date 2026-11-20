@@ -40,6 +40,30 @@ fn header(request: &WriteRequest, name: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
+struct ExpectedRequest<'expected> {
+    method: Method,
+    url: &'expected str,
+    timeout: Option<Duration>,
+    body: Option<&'expected str>,
+    headers: &'expected [(&'expected str, &'expected str)],
+}
+
+// The lock guard cannot outlive this sync function, so the async tests never hold one across an await
+fn assert_wire_request(wire: &Wire, expected: &ExpectedRequest<'_>) {
+    let requests = wire.requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].method, expected.method);
+    assert_eq!(requests[0].url.as_str(), expected.url);
+    assert_eq!(requests[0].timeout, expected.timeout);
+    match expected.body {
+        Some(body) => assert_eq!(body_json(&requests[0]), json(body)),
+        None => assert!(matches!(&requests[0].body, RequestBody::Empty)),
+    }
+    for &(name, value) in expected.headers {
+        assert_eq!(header(&requests[0], name).as_deref(), Some(value));
+    }
+}
+
 async fn run<'deps, C, S>(
     fixture: &mut Fixture,
     deps: &'deps WriteDeps<'deps, C, S>,
@@ -119,24 +143,19 @@ async fn delete_omits_empty_body(#[case] mode: ClientKind) {
     assert_eq!(deleted.id.as_deref(), Some("resp_a"));
     assert_eq!(deleted.object.as_deref(), Some("response"));
     assert_eq!(deleted.deleted, Some(true));
-    let requests = wire.requests();
-    assert_eq!(requests.len(), 1);
-    assert_eq!(requests[0].method, Method::DELETE);
-    assert_eq!(
-        requests[0].url.as_str(),
-        "http://mock.test/v1/responses/resp%2Fa"
+    assert_wire_request(
+        &wire,
+        &ExpectedRequest {
+            method: Method::DELETE,
+            url: "http://mock.test/v1/responses/resp%2Fa",
+            timeout: Some(Duration::from_secs(7)),
+            body: None,
+            headers: &[
+                ("content-type", "application/json"),
+                ("authorization", "Bearer sk-provider"),
+            ],
+        },
     );
-    assert!(matches!(&requests[0].body, RequestBody::Empty));
-    assert_eq!(requests[0].timeout, Some(Duration::from_secs(7)));
-    assert_eq!(
-        header(&requests[0], "content-type").as_deref(),
-        Some("application/json")
-    );
-    assert_eq!(
-        header(&requests[0], "authorization").as_deref(),
-        Some("Bearer sk-provider")
-    );
-    drop(requests);
     assert_eq!(fixture.input(), Some(&json(r#""""#)));
     assert_eq!(
         fixture.logged("api_base"),
@@ -267,20 +286,19 @@ async fn cancel_posts_empty_object(#[case] mode: ClientKind) {
         typed.additional_headers.get("llm_provider-content-type"),
         Some(&Json::Text(String::from("application/json")))
     );
-    let requests = wire.requests();
-    assert_eq!(requests.len(), 1);
-    assert_eq!(requests[0].method, Method::POST);
-    assert_eq!(
-        requests[0].url.as_str(),
-        "http://mock.test/v1/responses/resp_a/cancel"
+    assert_wire_request(
+        &wire,
+        &ExpectedRequest {
+            method: Method::POST,
+            url: "http://mock.test/v1/responses/resp_a/cancel",
+            timeout: None,
+            body: Some("{}"),
+            headers: &[
+                ("authorization", "Bearer sk-provider"),
+                ("x-trace", "trace-a"),
+            ],
+        },
     );
-    assert_eq!(body_json(&requests[0]), json("{}"));
-    assert_eq!(
-        header(&requests[0], "authorization").as_deref(),
-        Some("Bearer sk-provider")
-    );
-    assert_eq!(header(&requests[0], "x-trace").as_deref(), Some("trace-a"));
-    drop(requests);
     assert_eq!(fixture.input(), Some(&json(r#""resp_a""#)));
     assert_eq!(
         fixture.logged("api_base"),
