@@ -79,10 +79,16 @@ async fn supplied_client_of_the_called_mode_answers(
 }
 
 // The sync handler drops an async client and the async handler a sync one, and either then asks the pool with litellm_params' ssl_verify
+#[rstest]
+#[case::async_handler_drops_sync(ClientKind::Asynchronous, ClientKind::Sync)]
+#[case::sync_handler_drops_async(ClientKind::Sync, ClientKind::Asynchronous)]
 #[tokio::test]
-async fn wrong_mode_client_selects_the_pool() {
+async fn wrong_mode_client_selects_the_pool(
+    #[case] mode: ClientKind,
+    #[case] supplied: ClientKind,
+) {
     let events = Events::new();
-    let supplied = Wire::replying(Reply::json(200, FILE), &events);
+    let unused = Wire::replying(Reply::json(200, FILE), &events);
     let pooled = Wire::replying(Reply::json(200, FILE), &events);
     let source = Source::new(pooled.clone());
     let config = RecordingConfig::new("http://mock.test/v1");
@@ -90,8 +96,8 @@ async fn wrong_mode_client_selects_the_pool() {
         config: &config,
         source: &source,
         supplied: Some(SuppliedClient {
-            kind: ClientKind::Sync,
-            transport: &supplied,
+            kind: supplied,
+            transport: &unused,
         }),
     };
     let mut unverified = params("http://unused.test");
@@ -109,17 +115,11 @@ async fn wrong_mode_client_selects_the_pool() {
         None,
     );
     let mut fixture = Fixture::new("vector_store_file_update");
-    run(
-        &mut fixture,
-        &deps,
-        ClientKind::Asynchronous,
-        &call,
-        &events,
-    )
-    .await
-    .expect("the update succeeds");
+    run(&mut fixture, &deps, mode, &call, &events)
+        .await
+        .expect("the update succeeds");
     assert_eq!(source.calls(), [Some(false)]);
-    assert!(supplied.requests().is_empty());
+    assert!(unused.requests().is_empty());
     let requests = pooled.requests();
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].timeout, Some(Duration::from_secs(7)));
