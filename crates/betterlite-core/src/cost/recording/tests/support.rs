@@ -518,6 +518,12 @@ pub(super) fn state(init: &str) -> LoggingState {
     }
 }
 
+pub(super) fn deployment_log(metadata: &str, model_info: &str) -> LoggingState {
+    state(&format!(
+        r#"{{"model":"gpt-4o","call_type":"completion","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_params":{{"{metadata}":{{"model_info":{model_info}}}}}}}"#
+    ))
+}
+
 pub(super) fn openai(log: &mut LoggingState) {
     provider(log, "openai");
 }

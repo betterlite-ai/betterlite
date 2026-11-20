@@ -16,8 +16,8 @@ mod support;
 
 use support::{
     FakeCatalog, Fakes, INIT, MANAGEMENT, a_price, a_tier, capture, chat_usage, decimal,
-    earlier_finding, json_text, object_fields, openai, priced_gpt4o, provider, record, respond,
-    state, stored_diagnostic, stored_failure, typed, typed_response,
+    deployment_log, earlier_finding, json_text, object_fields, openai, priced_gpt4o, provider,
+    record, respond, state, stored_diagnostic, stored_failure, typed, typed_response,
 };
 
 #[test]
@@ -443,6 +443,104 @@ fn a_deployment_model_info_keeps_its_own_rates_instead_of_the_cost_map_tables() 
     assert_eq!(stored_diagnostic(&log), Some(Json::Null));
     assert!(!log.cost.zero_cost_warned);
     assert_eq!(warnings.len(), 0);
+}
+
+#[test]
+fn a_metadata_tiered_model_info_reports_the_missing_keys() {
+    let fakes = Fakes::default();
+    let mut log = deployment_log(
+        "metadata",
+        r#"{"tiered_pricing":[{"input_cost_per_token":1,"output_cost_per_token":1}]}"#,
+    );
+    openai(&mut log);
+    let usage = chat_usage();
+    let hidden = IndexMap::new();
+    let recorder = fakes.recorder();
+    let (cost, warnings) =
+        capture(|| record(&recorder, &mut log, typed(typed_response(&usage, &hidden))));
+    assert_eq!(cost, Some(Decimal::ZERO));
+    assert_eq!(
+        stored_diagnostic(&log),
+        Some(json_text(
+            r#"{"reason":"missing_pricing_key","pricing_model":"gpt-4o","missing_pricing_keys":["input_cost_per_token","output_cost_per_token"]}"#
+        ))
+    );
+    assert!(log.cost.zero_cost_warned);
+    assert_eq!(warnings.len(), 1);
+}
+
+#[test]
+fn a_metadata_tiered_model_info_reports_a_calculation_error() {
+    let fakes = Fakes::default().with_failure();
+    let mut log = deployment_log(
+        "metadata",
+        r#"{"tiered_pricing":[{"input_cost_per_token":1}]}"#,
+    );
+    openai(&mut log);
+    let usage = chat_usage();
+    let hidden = IndexMap::new();
+    let cost = record(
+        &fakes.recorder(),
+        &mut log,
+        typed(typed_response(&usage, &hidden)),
+    );
+    assert_eq!(cost, None);
+    assert_eq!(
+        stored_diagnostic(&log),
+        Some(json_text(
+            r#"{"reason":"cost_calculation_error","pricing_model":"gpt-4o","missing_pricing_keys":[]}"#
+        ))
+    );
+    assert!(log.cost.zero_cost_warned);
+}
+
+#[test]
+fn a_litellm_metadata_off_peak_model_info_reports_the_missing_keys() {
+    let fakes = Fakes::default();
+    let mut log = deployment_log(
+        "litellm_metadata",
+        r#"{"off_peak_pricing":{"input_cost_per_token":1}}"#,
+    );
+    openai(&mut log);
+    let usage = chat_usage();
+    let hidden = IndexMap::new();
+    let recorder = fakes.recorder();
+    let (cost, warnings) =
+        capture(|| record(&recorder, &mut log, typed(typed_response(&usage, &hidden))));
+    assert_eq!(cost, Some(Decimal::ZERO));
+    assert_eq!(
+        stored_diagnostic(&log),
+        Some(json_text(
+            r#"{"reason":"missing_pricing_key","pricing_model":"gpt-4o","missing_pricing_keys":["input_cost_per_token","output_cost_per_token"]}"#
+        ))
+    );
+    assert!(log.cost.zero_cost_warned);
+    assert_eq!(warnings.len(), 1);
+}
+
+#[test]
+fn a_litellm_metadata_off_peak_model_info_reports_a_calculation_error() {
+    let fakes = Fakes::default().with_failure();
+    let mut log = deployment_log(
+        "litellm_metadata",
+        r#"{"off_peak_pricing":{"input_cost_per_token":1}}"#,
+    );
+    openai(&mut log);
+    let usage = chat_usage();
+    let hidden = IndexMap::new();
+    let cost = record(
+        &fakes.recorder(),
+        &mut log,
+        typed(typed_response(&usage, &hidden)),
+    );
+    assert_eq!(cost, None);
+    assert_eq!(
+        stored_diagnostic(&log),
+        Some(json_text(
+            r#"{"reason":"cost_calculation_error","pricing_model":"gpt-4o","missing_pricing_keys":[]}"#
+        ))
+    );
+    assert!(log.cost.zero_cost_warned);
 }
 
 #[test]

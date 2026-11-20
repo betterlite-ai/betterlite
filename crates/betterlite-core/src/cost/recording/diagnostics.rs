@@ -1,4 +1,3 @@
-use betterlite_logging::fields::usage::Usage;
 use betterlite_logging::logging_metadata::setup::merge_litellm_metadata;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
@@ -22,6 +21,7 @@ use crate::cost::usage::{BillingUsageError, get_usage_object};
 
 const DIAGNOSTIC_KEY: &str = "zero_cost_diagnostic";
 pub(super) const FAILURE_KEY: &str = "response_cost_failure_debug_information";
+type ModelInfo = IndexMap<String, Json>;
 
 #[derive(Debug, thiserror::Error)]
 pub(super) enum DiagnosticError {
@@ -94,14 +94,19 @@ where
         let Some(usage) = get_usage_object(&view::billing_response(input.view))? else {
             return Ok(None);
         };
-        let Some((model, pricing_model, priced)) = self.priced_entry(log, input)? else {
+        let Some((model, pricing_model, priced, raw_info)) = self.priced_entry(log, input)? else {
             return Ok(None);
         };
-        let tokens = token_usage(&usage);
+        let tokens = TokenUsage {
+            prompt_tokens: usage.prompt_tokens,
+            completion_tokens: usage.completion_tokens,
+            prompt_audio_tokens: audio_tokens(usage.prompt_tokens_details.as_ref()),
+            completion_audio_tokens: audio_tokens(usage.completion_tokens_details.as_ref()),
+        };
         let Some(diagnostic) = diagnose_zero_cost(
             &tokens,
             &pricing_model,
-            &pricing_json(&priced),
+            &raw_info.unwrap_or_else(|| pricing_json(&priced)),
             input.calculation_failed,
         ) else {
             return Ok(None);
@@ -127,13 +132,12 @@ where
         &self,
         log: &LoggingState,
         input: &DiagnosticInput<'_>,
-    ) -> Result<Option<(String, String, PricedModel)>, DiagnosticError> {
-        let model = input
+    ) -> Result<Option<(String, String, PricedModel, Option<ModelInfo>)>, DiagnosticError> {
+        let named = input
             .litellm_model_name
             .as_deref()
-            .filter(|name| !name.is_empty())
-            .unwrap_or(&log.model)
-            .to_owned();
+            .filter(|name| !name.is_empty());
+        let model = named.unwrap_or(&log.model).to_owned();
         let provider = identity::text_field(&log.model_call_details, "custom_llm_provider")?;
         let base = identity::metadata::base_model(log)?;
         let router = match input.router_model_id.as_deref() {
@@ -160,8 +164,8 @@ where
         else {
             return Ok(None);
         };
-        let priced = self.priced_model(&request, log, &pricing_model, entry)?;
-        Ok(Some((model, pricing_model, priced)))
+        let (priced, raw_info) = self.priced_model(&request, log, &pricing_model, entry)?;
+        Ok(Some((model, pricing_model, priced, raw_info)))
     }
 
     // A deployment model_info keeps its own rates; only a cost-map entry takes the map's tables.
@@ -171,7 +175,7 @@ where
         log: &LoggingState,
         key: &str,
         record: PriceRecord,
-    ) -> Result<PricedModel, BillingContextError> {
+    ) -> Result<(PricedModel, Option<ModelInfo>), DiagnosticError> {
         let raw_router_entry = request
             .router_model_id
             .is_some_and(|id| self.lookup.raw_cost_map_entry(id).is_some());
@@ -190,27 +194,34 @@ where
             off_peak_pricing: None,
             off_peak_cache_read_present: false,
         };
+        let mut raw_info: Option<ModelInfo> = None;
         if (!from_deployment || raw_router_entry)
             && let Some(tables) = self.effective_tables(key, request.custom_llm_provider)
         {
             priced.tiered_pricing = tables.tiered_pricing;
             priced.off_peak_pricing = tables.off_peak_pricing;
+        } else if from_deployment && !raw_router_entry {
+            raw_info = ["metadata", "litellm_metadata"].iter().find_map(|field| {
+                let metadata = identity::object_value(log.litellm_params.get(*field)?)?;
+                identity::object_value(metadata.get("model_info")?).cloned()
+            });
         }
-        Ok(priced)
+        Ok((priced, raw_info))
     }
 
     // The record keeps only a nested table's shape; resolving its own key keeps the decoded rates.
     fn effective_tables(&self, key: &str, provider: Option<&str>) -> Option<PricedModel> {
         let priced = self.lookup.effective_priced_model(key, provider)?;
-        matches!(
-            priced.record.get("key"),
-            Some(Scalar::Text(found)) if found.as_str() == key
-        )
-        .then_some(priced)
+        let Some(Scalar::Text(found)) = priced.record.get("key") else {
+            return None;
+        };
+        (found.as_str() == key).then_some(priced)
     }
 }
 
 pub(super) fn finding_json(finding: &Finding) -> Json {
+    let reason = Json::Text(finding.diagnostic.reason.label().to_owned());
+    let pricing_model = Json::Text(finding.diagnostic.pricing_model.clone());
     let keys = finding
         .diagnostic
         .missing_pricing_keys
@@ -218,25 +229,10 @@ pub(super) fn finding_json(finding: &Finding) -> Json {
         .map(|key| Json::Text((*key).to_owned()))
         .collect();
     Json::Object(IndexMap::from([
-        (
-            "reason".to_owned(),
-            Json::Text(finding.diagnostic.reason.label().to_owned()),
-        ),
-        (
-            "pricing_model".to_owned(),
-            Json::Text(finding.diagnostic.pricing_model.clone()),
-        ),
+        ("reason".to_owned(), reason),
+        ("pricing_model".to_owned(), pricing_model),
         ("missing_pricing_keys".to_owned(), Json::List(keys)),
     ]))
-}
-
-fn token_usage(usage: &Usage) -> TokenUsage {
-    TokenUsage {
-        prompt_tokens: usage.prompt_tokens,
-        completion_tokens: usage.completion_tokens,
-        prompt_audio_tokens: audio_tokens(usage.prompt_tokens_details.as_ref()),
-        completion_audio_tokens: audio_tokens(usage.completion_tokens_details.as_ref()),
-    }
 }
 
 fn audio_tokens(details: Option<&IndexMap<String, Json>>) -> i64 {
