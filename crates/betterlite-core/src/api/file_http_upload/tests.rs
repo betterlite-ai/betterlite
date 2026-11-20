@@ -43,15 +43,20 @@ use super::plan::{
 };
 
 mod decoder;
+mod diagnostics;
+mod failures;
 mod media;
+mod service;
 use super::service::{
-    ClientSource, LogContext, Mode, UploadBody, UploadCall, UploadDeps, UploadRequest,
-    UploadTransport, prepare, send,
+    ClientSource, LogContext, Mode, SuppliedClient, UploadBody, UploadCall, UploadDeps,
+    UploadRequest, UploadTransport, prepare, send,
 };
+use media::media_plan;
 
 const BOUNDARY: &str = "b2461-boundary";
 const API_BASE: &str = "http://api.example.test/v1/files";
 const UPLOAD_URL: &str = "http://uploads.example.test/gcs/upload-1";
+const NOW: i64 = 1_700_000_000;
 
 fn field<'json>(value: &'json Json, name: &str) -> &'json Json {
     lookup(value, name).expect("the field is logged")
@@ -69,10 +74,6 @@ fn text(value: &str) -> Json {
 }
 
 fn status(value: u16) -> Json {
-    Json::Number(Number::from(value))
-}
-
-fn number(value: usize) -> Json {
     Json::Number(Number::from(value))
 }
 
@@ -314,6 +315,7 @@ impl RecordingSink {
 struct Harness {
     config: Config,
     source: FakeSource,
+    supplied: Option<(Mode, FakeTransport)>,
     tasks: TaskTracker,
     state: LoggingState,
     redactor: Redactor,
@@ -340,7 +342,7 @@ impl Harness {
             },
             &redactor,
             || String::from("generated"),
-            Duration::default(),
+            Duration::default,
         )
         .expect("a logging state");
         Self {
@@ -350,6 +352,7 @@ impl Harness {
                     wire: Wire::with(answers),
                 },
             },
+            supplied: None,
             tasks: TaskTracker::new(),
             state,
             redactor,
@@ -374,39 +377,33 @@ impl Harness {
             params: &upload_params,
         };
         let boundaries = || String::from(BOUNDARY);
-        let Self {
-            config,
-            source,
-            tasks,
-            state,
-            redactor,
-            sink,
-        } = self;
+        let supplied = self
+            .supplied
+            .as_ref()
+            .map(|(supplied_mode, transport)| SuppliedClient {
+                mode: *supplied_mode,
+                transport,
+            });
         let deps = UploadDeps {
-            config,
-            source,
-            supplied: None,
-            tasks,
+            config: &self.config,
+            source: &self.source,
+            supplied,
+            tasks: &self.tasks,
             boundaries: &boundaries,
             limits: ApiLimits::default(),
         };
-        let env = PrePostEnv {
-            debug: DebugSettings::default(),
-            globals: GlobalFlags::default(),
-            decision: Decision {
-                content: false,
-                key_info: false,
-            },
-            redactor,
-            log: sink,
-            input_callbacks: &[],
-            sentry: None,
-            logger_fn: None,
-            now: DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00").expect("a fixed now"),
+        let env = pre_post_env(&self.redactor, &self.sink);
+        let mut log = LogContext {
+            state: &mut self.state,
+            env: &env,
         };
-        let mut log = LogContext { state, env: &env };
         let prepared = prepare(&deps, mode, &upload_call, &mut log)?;
         send(prepared).await
+    }
+
+    fn with_supplied(mut self, mode: Mode, transport: FakeTransport) -> Self {
+        self.supplied = Some((mode, transport));
+        self
     }
 
     fn seen(&self) -> Vec<Seen> {
@@ -415,6 +412,23 @@ impl Harness {
 
     fn details(&self) -> Json {
         Json::Object(self.state.model_call_details.clone())
+    }
+}
+
+fn pre_post_env<'env>(redactor: &'env Redactor, sink: &'env RecordingSink) -> PrePostEnv<'env> {
+    PrePostEnv {
+        debug: DebugSettings::default(),
+        globals: GlobalFlags::default(),
+        decision: Decision {
+            content: false,
+            key_info: false,
+        },
+        redactor,
+        log: sink,
+        input_callbacks: &[],
+        sentry: None,
+        logger_fn: None,
+        now: DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00").expect("a fixed now"),
     }
 }
 
@@ -501,10 +515,9 @@ fn text_plan() -> UploadPlan {
 #[tokio::test]
 async fn upload_plan_order() {
     let mut harness = Harness::new(text_plan(), API_BASE, vec![answer(200, &[], b"{}")]);
-    let result = harness
-        .run(Mode::Sync, &create_call(), &params())
-        .await
-        .unwrap();
+    let mut call = create_call();
+    call.extra_headers = IndexMap::from([(String::from("api-key"), String::from("sk-1234"))]);
+    let result = harness.run(Mode::Sync, &call, &params()).await.unwrap();
     assert_eq!(
         harness.config.calls(),
         [
@@ -518,6 +531,11 @@ async fn upload_plan_order() {
     assert_eq!(seen.len(), 1);
     assert_eq!(seen[0].method, Method::POST);
     assert_eq!(seen[0].url, API_BASE);
+    // validate_environment's headers reach the traditional upload as it returned them
+    assert_eq!(
+        seen[0].headers.get("api-key").expect("the caller key"),
+        "sk-1234"
+    );
     assert_eq!(
         seen[0].body,
         vec![b"{\"display_name\":\"rows.jsonl\"}".to_vec()]
@@ -586,18 +604,12 @@ async fn upload_plan_order_real_anthropic_plan() {
     let seen = harness.seen();
     assert_eq!(seen.len(), 1);
     assert_eq!(seen[0].method, Method::POST);
+    assert_eq!(seen[0].url, API_BASE);
+    // the multipart content type and boundary are the transport's to add, like httpx's files= argument
     let body = std::str::from_utf8(&seen[0].body[0]).expect("a utf-8 multipart body");
     assert!(body.contains("name=\"file\"; filename=\"rows.jsonl\""));
     assert!(body.contains("name=\"purpose\""));
     assert!(body.ends_with(&format!("--{BOUNDARY}--\r\n")));
-    let content_type = seen[0]
-        .headers
-        .get(CONTENT_TYPE)
-        .expect("a multipart content type");
-    assert_eq!(
-        content_type.to_str().expect("a header value"),
-        format!("multipart/form-data; boundary={BOUNDARY}")
-    );
 }
 
 #[tokio::test]

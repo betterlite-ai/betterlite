@@ -11,7 +11,7 @@ use crate::api::file_http_upload::service::Mode;
 
 use super::{API_BASE, Harness, answer, create_call, params};
 
-fn media_plan(pieces: Vec<Vec<u8>>, content_type: Option<String>) -> UploadPlan {
+pub(super) fn media_plan(pieces: Vec<Vec<u8>>, content_type: Option<String>) -> UploadPlan {
     UploadPlan::Media(Box::new(MediaPlan {
         body_stream: Box::new(pieces.into_iter()),
         content_type,
@@ -45,8 +45,12 @@ async fn media_upload_blocks() {
     );
     assert_eq!(seen[0].timeout, Some(Duration::from_secs(30)));
     assert_eq!(seen[0].body.len(), 2);
+    // LiteLLM's _MEDIA_UPLOAD_BLOCK_SIZE is four MiB, exactly
+    assert_eq!(MEDIA_UPLOAD_BLOCK_SIZE, 4_194_304);
+    // the first block starts with head and fills to the limit, so the last eight bytes are the tail
     assert_eq!(seen[0].body[0].len(), MEDIA_UPLOAD_BLOCK_SIZE);
-    assert_eq!(seen[0].body[1], b"headtail".to_vec());
+    assert!(seen[0].body[0].starts_with(b"head"));
+    assert_eq!(seen[0].body[1], b"aaaatail".to_vec());
 }
 
 // an unset or empty configured type takes the octet-stream default, and an empty stream sends nothing
