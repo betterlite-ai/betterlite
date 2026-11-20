@@ -250,9 +250,10 @@ async fn the_logged_response_strips_the_pii_offsets() {
     .await
     .expect("a passing check");
     let record = only_record(&request_data);
+    // The record stores the response as a GuardrailValue object, whose keys come out sorted.
     assert_eq!(
         encoded(&field(&record, "guardrail_response")),
-        r#"{"results":{"sensitiveInformation":{"results":[{"type":"EMAIL","confidenceScore":0.6}]}}}"#
+        r#"{"results":{"sensitiveInformation":{"results":[{"confidenceScore":0.6,"type":"EMAIL"}]}}}"#
     );
 }
 
