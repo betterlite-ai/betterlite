@@ -92,10 +92,10 @@ pub(crate) fn elapsed_text(elapsed: Duration) -> String {
     }
 }
 
+// Python writes a whole second as 600.0, and Rust writes the same Duration as 600
 fn format_timeout(timeout: Option<Duration>) -> String {
     match timeout {
         None => "None".to_owned(),
-        Some(value) if value.subsec_nanos() == 0 => value.as_secs().to_string(),
         Some(value) => value.as_secs_f64().to_string(),
     }
 }

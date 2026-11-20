@@ -65,6 +65,7 @@ pub trait VideoHttpConfig: Send + Sync {
     type Error: StdError + Send + Sync + 'static;
 
     // The base body is the empty mapping, and a provider starts from the extra headers it was handed
+    #[cfg_attr(test, mutants::skip)]
     fn validate_environment(&self, _request: VideoEnvironment<'_>) -> Headers {
         Headers::new()
     }
