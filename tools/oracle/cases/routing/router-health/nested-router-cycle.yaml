@@ -1,0 +1,22 @@
+kind: probe
+name: nested-router-cycle
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      strategy_router_health:
+        models:
+          - model_name: a
+            litellm_params:
+              model: auto_router/complexity_router
+              complexity_router_config:
+                tiers: {SIMPLE: b}
+            model_info: {id: a-id}
+          - model_name: b
+            litellm_params:
+              model: auto_router/complexity_router
+              complexity_router_config:
+                tiers: {SIMPLE: a, COMPLEX: missing-leaf}
+            model_info: {id: b-id}
+compare:
+  ignore: []

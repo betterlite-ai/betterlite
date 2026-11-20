@@ -16,6 +16,11 @@ description: >-
   MIT startup has no managed_vector_stores enterprise hook. Preserve its unavailable multi-model branch.
   The owned ranges contain 291 nonblank/non-comment lines; 270 implementation, 190 route tests,
   170 HTTP fixtures and 85 decoder/wiring lines fit 715 of the 790 budget.
+
+  Gemini File Search arm. B035 answers Gemini File Search as not built and lands first. Bind B1390's File Search
+  to B1064's vector execution in B035's studio dispatch (crates/betterlite-provider/src/studio_dispatch) and write
+  tools/oracle/cases/api/studio/file-search.yaml through these routes with POST /v1/vector_stores and the search
+  aliases.
 scope:
   paths:
   - crates/betterlite-server/src/api.rs
@@ -28,6 +33,9 @@ scope:
   - tools/oracle/helpers/b1067/**
   - tools/oracle/src/helpers/server/b1067.rs
   - tools/oracle/src/helpers/server/b1067/**
+  - crates/betterlite-provider/src/studio_dispatch.rs
+  - crates/betterlite-provider/src/studio_dispatch/**
+  - tools/oracle/cases/api/studio/file-search.yaml
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/endpoints.py#L30-L283
@@ -75,6 +83,8 @@ dod:
     400 detail="Index docs already exists", no write. GET returns {data:[...]} from B1062 including empty [].
     Missing required index_name is 422 detail validation, without OpenAI error fields. No provider HTTP occurs.
   proof: [route-tests, oracle, request-corpus]
+- text: "A Gemini File Search store created through POST /v1/vector_stores and searched through the search aliases matches LiteLLM through the booted proxy."
+  proof: [oracle]
 checks:
   optional: []
   commands:
@@ -93,6 +103,7 @@ oracle_cases:
 - tools/oracle/cases/api/vector-search-routes/registered-search-overlay.yaml
 - tools/oracle/cases/api/vector-search-routes/create-target-models-without-enterprise.yaml
 - tools/oracle/cases/api/vector-search-routes/index-admin-create-and-list.yaml
+- tools/oracle/cases/api/studio/file-search.yaml
 deviations:
 - what: >-
     Pending the managed-resource decision, nonempty target_model_names returns the MIT 500 detail error

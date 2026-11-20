@@ -9,6 +9,7 @@ publish.workspace = true
 path = "lib.rs"
 
 [dependencies]
+betterlite-auth = { path = "../../../../../crates/betterlite-auth" }
 betterlite-config = { path = "../../../../../crates/betterlite-config" }
 betterlite-db = { path = "../../../../../crates/betterlite-db" }
 betterlite-http = { path = "../../../../../crates/betterlite-http" }

@@ -12,7 +12,22 @@ description: 'Implement GET /auto_router/shadow_eval and GET /auto_router/shadow
   the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
   instead of separate ports. Bound the shadow_q outside-byte parser to 1048576 bytes before decoding;
   on excess use its typed invalid-input outcome (classifier/observation consumers keep their pinned warning/fallback
-  path). B1100 registers routes/shadow_eval_results.rs as a stub, so fill only crates/betterlite-server/src/routes/shadow_eval_results.rs and leave routes.rs and state.rs as they are.'
+  path). B1100 registers routes/shadow_eval_results.rs as a stub, so fill only crates/betterlite-server/src/routes/shadow_eval_results.rs and leave routes.rs and state.rs as they are.
+
+  Dashboard shadow form lifecycle. B9743 covers the cost page selectors and patch; this task adds the job lifecycle the ShadowEvalStartForm drives (ShadowEvalStartForm.tsx L204-L223), as tools/oracle/cases/ui/cost/shadow-form-lifecycle.yaml, once B356''s start and stop routes are in. Through the booted proxy, perform GET /auto_router/shadow_eval, POST /auto_router/shadow_eval/start,
+  GET /auto_router/shadow_eval/{job_id}, POST /auto_router/shadow_eval/{job_id}/stop with no body,
+  then list/detail readback. Send the form''s api_key_ids,team_ids,user_ids arrays, models and
+  router_names, direction forward, shadow_percentage=10,duration_days=7,max_budget=10 and
+  judge_model. A second flow uses direction reverse, models=[] and baseline_model. Configure
+  one ui-router deployment with model auto_router/complexity_router, complexity_router_default_model
+  ui-model and complexity_router_config tiers SIMPLE/MEDIUM/COMPLEX/REASONING all mapped to
+  ui-model, plus ordinary configured ui-model and ui-judge OpenAI aliases with dummy credentials
+  and local mock bases. Keep adaptive disabled and send no traffic to sample, so the job
+  lifecycle is deterministic and incurs no model calls. Use the real B356 registry/catalog
+  binding; report missing startup wiring to its owner instead of seeding a fake registry.
+  Capture generated job ids per proxy. Assert status 201 on creation, remaining budget,
+  targets/arms, zero usage, stopped state and stable response fields. Include a view-only
+  caller''s rejected start with the same valid form; UI visibility alone is not authorization.'
 scope:
   paths:
   - crates/betterlite-server/src/shadow_eval_results.rs
@@ -32,6 +47,7 @@ scope:
   - tools/oracle/helpers/b357/**
   - tools/oracle/src/helpers/server/b357.rs
   - tools/oracle/src/helpers/server/b357/**
+  - tools/oracle/cases/ui/cost/shadow-form-lifecycle.yaml
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L1802-L1895
@@ -63,6 +79,8 @@ dod:
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
+- text: "The shadow job lifecycle the start form drives (start, detail, stop with no body, list and detail readback, a rejected view-only start) matches LiteLLM through the booted proxy."
+  proof: [oracle]
 checks:
   optional:
   - mutants
@@ -96,6 +114,7 @@ oracle_cases:
 - tools/oracle/cases/routing/shadow-eval-results/budget-and-time-derived-status.yaml
 - tools/oracle/cases/routing/shadow-eval-results/deleted-target-labels.yaml
 - tools/oracle/cases/routing/shadow-eval-results/parser-byte-bound.yaml
+- tools/oracle/cases/ui/cost/shadow-form-lifecycle.yaml
 deviations:
 - what: The shadow_q byte parser rejects inputs over 1048576 bytes before allocation.
   why: The source has no equivalent byte bound at this parser boundary; bounded-inputs requires a finite

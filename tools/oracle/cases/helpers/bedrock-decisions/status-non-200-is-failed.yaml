@@ -1,0 +1,10 @@
+kind: helper
+name: status-non-200-is-failed
+call:
+  b3722:
+    bedrock_decisions:
+      status:
+        status_code: 500
+        body: '{"action": "NONE"}'
+env: {}
+compare: {ignore: []}

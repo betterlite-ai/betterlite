@@ -2,10 +2,8 @@ use std::time::Duration;
 
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::transport_error::TransportError;
-use betterlite_models::decisions::Json;
-use serde_json::Number;
 
-use super::super::error::{FailureFacts, HeaderMap};
+use super::super::error::{FailureFacts, HeaderMap, display_facts, timeout_facts};
 use super::{ClientKind, Operation};
 
 // What the timeout message needs from the send that just failed
@@ -27,23 +25,14 @@ pub(super) fn http_response(reply: &UpstreamResponse) -> http::Response<Vec<u8>>
 
 pub(super) fn transport_facts(error: &TransportError, sent: &Sent) -> FailureFacts {
     if caught_timeout(error, sent.mode, sent.operation) {
-        return FailureFacts {
-            response_status: None,
-            status: Some(Json::Number(Number::from(408_u16))),
-            text: Some(timeout_message(sent)),
-            headers: Some(HeaderMap::new()),
-            response: None,
-            display: String::new(),
+        // the sync handlers pass no timeout, so their message shows none; the async one shows the deadline it ran with
+        let timeout = match sent.mode {
+            ClientKind::Sync => None,
+            ClientKind::Asynchronous => Some(sent.timeout),
         };
+        return timeout_facts(sent.mode, timeout, sent.elapsed);
     }
-    FailureFacts {
-        response_status: None,
-        status: None,
-        text: None,
-        headers: None,
-        response: None,
-        display: error.to_string(),
-    }
+    display_facts(error.to_string())
 }
 
 // Only the update handlers and the sync delete handler catch httpx.TimeoutException; the async delete does not
@@ -53,24 +42,4 @@ fn caught_timeout(error: &TransportError, mode: ClientKind, operation: Operation
         TransportError::ConnectTimeout(_) | TransportError::Deadline(_)
     );
     timed_out && !(mode == ClientKind::Asynchronous && operation == Operation::Delete)
-}
-
-fn timeout_message(sent: &Sent) -> String {
-    if sent.mode == ClientKind::Sync {
-        return "litellm.Timeout: Connection timed out after None seconds.".to_owned();
-    }
-    format!(
-        "litellm.Timeout: Connection timed out. Timeout passed={}, time taken={}.{:03} seconds",
-        format_timeout(sent.timeout),
-        sent.elapsed.as_secs(),
-        sent.elapsed.subsec_millis(),
-    )
-}
-
-fn format_timeout(timeout: Duration) -> String {
-    if timeout.subsec_nanos() == 0 {
-        timeout.as_secs().to_string()
-    } else {
-        timeout.as_secs_f64().to_string()
-    }
 }

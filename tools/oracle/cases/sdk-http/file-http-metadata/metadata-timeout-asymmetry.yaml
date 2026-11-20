@@ -1,0 +1,19 @@
+kind: sdk_http
+name: file-http-metadata-timeout-asymmetry
+env: {}
+call:
+  file_http_metadata:
+    operation: delete
+    mode: sync
+    file_id: file_batch
+    api_key: sk-xai
+    timeout_seconds: 5
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file_batch, purpose: batch, bytes: 12, created_at: 1700000000}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization]
+  ignore: []

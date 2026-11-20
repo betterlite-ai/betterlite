@@ -8,7 +8,7 @@ description: >-
   optional litellm-changed-by for attribution and pass it to B773, not as a response header.
 
   Normal generation requires a database or HTTP500 common database detail.error, DEBUG-logs entered
-  /key/generate, then B864 checks organization-admin scope. Reject nonnull max_budget when negative
+  /key/generate, then B10015's check_org_admin_can_generate_keys checks organization-admin scope. Reject nonnull max_budget when negative
   or nonfinite with HTTP400 detail.error max_budget must be a non-negative finite number. Received:
   <value>; zero is valid. B894 validates soft_budget next. B1224 supplies the optional custom generation
   hook: require a coroutine or ValueError user_custom_key_generate must be a coroutine; await once,
@@ -27,7 +27,7 @@ description: >-
   HTTP errors retain status/detail but use internal_server_error; ProxyException survives; others
   use status_code or500 and internal_server_error with openai_error_param.
 
-  Service-account order differs: database500, B864 org scope, B892 allowed routes, B861 pass-through,
+  Service-account order differs: database500, B10015 org scope, B892 allowed routes, B861 pass-through,
   then B771 validates service-account team ID. If metadata or service_account_id is null, copy metadata
   and stamp service_account_id from truthy key_alias or UUID4; retain existing empty/false/zero IDs.
   DEBUG-log entered /key/generate, then run the same custom hook with the stamped request. Team lookup

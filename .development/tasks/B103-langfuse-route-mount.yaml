@@ -88,7 +88,7 @@ out_of_scope:
   - "PassThroughState, the order of the family calls and the call to langfuse::mount_public: B8640. The shared handler: B3613 and B3615."
   - "The proxy key check behind KeyAuthAdapter: B052. _get_dynamic_logging_metadata: B1109. get_secret: B8500. validate_url and the user_url_policy section: B5082."
   - "Logging of a Langfuse pass-through call (is_langfuse_route and the success handler): B3605 to B3607, assembled by B8931 and proven together over HTTP by B102."
-  - "The provider pass-through routes and their mounts, which B548, B566, B625, B658, B3630 and B3650 once left to B103: B3618 to B3629 and B8606 to B8609 register and mount them, B3613, B3615 and B6510 forward, and B102 owns the logging integration cases. The raw Bedrock Mantle relay has no proxy route at the pin; it goes through the SDK pass-through of B101 and B3570 to B3574."
+  - "The provider pass-through routes and their mounts, which B548, B566, B625, B658, B3630 and B3650 once left to B103: B3618 to B3629, B8606 to B8609 and B10026 register and mount them, B3613, B3615 and B6510 forward, and B102 owns the logging integration cases. The raw Bedrock Mantle relay has no proxy route at the pin; it goes through the SDK pass-through of B101 and B3570 to B3574."
 pitfalls:
   - "Merging the router through `mount` instead of `mount_public` turns authorization-without-colon-500 into a 401, because the master key stage reads `Basic ...` as the key."
   - "LiteLLM's handler passes `Bearer <key>` as api_key; B8292 already adds the prefix, so KeyAuthAdapter must not add a second `Bearer `."
