@@ -69,13 +69,6 @@ impl Events {
             .unwrap_or_else(PoisonError::into_inner)
             .push(name.to_owned());
     }
-
-    pub(crate) fn recorded(&self) -> Vec<String> {
-        self.0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
 }
 
 pub(crate) struct Sink;
@@ -255,9 +248,11 @@ impl WriteTransport for Wire {
     }
 }
 
+type SourceCalls = Arc<Mutex<Vec<(Option<bool>, bool)>>>;
+
 pub(crate) struct Source {
     wire: Wire,
-    calls: Arc<Mutex<Vec<(Option<bool>, bool)>>>,
+    calls: SourceCalls,
 }
 
 impl Source {
@@ -337,12 +332,12 @@ impl RecordingConfig {
         operation: ResourceOperation,
     ) -> Result<ResourceRequest, ResponseResourceError> {
         let mut request = resource_request(response_id, api_base, operation)?;
-        if let Some(payload) = self
+        let configured = self
             .payload
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-        {
+            .clone();
+        if let Some(payload) = configured {
             request.payload = payload;
         }
         Ok(request)

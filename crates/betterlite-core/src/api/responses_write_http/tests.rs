@@ -18,7 +18,9 @@ use self::support::{
     captured_messages, capturing, delete_call, extra_body, openai_config, openai_settings, params,
     write_deps,
 };
-use crate::api::responses_write_http::config::{ResponsesConfig, WriteParams};
+use crate::api::responses_write_http::config::{
+    OpenAiResponsesConfig, ResponsesConfig, WriteParams,
+};
 use crate::api::responses_write_http::error::WriteError;
 use crate::api::responses_write_http::service::{
     CancelCall, ClientKind, ClientSource, DeleteCall, SharedSession, SuppliedClient, WriteCall,
@@ -117,26 +119,24 @@ async fn delete_omits_empty_body(#[case] mode: ClientKind) {
     assert_eq!(deleted.id.as_deref(), Some("resp_a"));
     assert_eq!(deleted.object.as_deref(), Some("response"));
     assert_eq!(deleted.deleted, Some(true));
-    {
-        let requests = wire.requests();
-        assert_eq!(requests.len(), 1);
-        let request = &requests[0];
-        assert_eq!(request.method, Method::DELETE);
-        assert_eq!(
-            request.url.as_str(),
-            "http://mock.test/v1/responses/resp%2Fa"
-        );
-        assert!(matches!(&request.body, RequestBody::Empty));
-        assert_eq!(request.timeout, Some(Duration::from_secs(7)));
-        assert_eq!(
-            header(request, "content-type").as_deref(),
-            Some("application/json")
-        );
-        assert_eq!(
-            header(request, "authorization").as_deref(),
-            Some("Bearer sk-provider")
-        );
-    }
+    let requests = wire.requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].method, Method::DELETE);
+    assert_eq!(
+        requests[0].url.as_str(),
+        "http://mock.test/v1/responses/resp%2Fa"
+    );
+    assert!(matches!(&requests[0].body, RequestBody::Empty));
+    assert_eq!(requests[0].timeout, Some(Duration::from_secs(7)));
+    assert_eq!(
+        header(&requests[0], "content-type").as_deref(),
+        Some("application/json")
+    );
+    assert_eq!(
+        header(&requests[0], "authorization").as_deref(),
+        Some("Bearer sk-provider")
+    );
+    drop(requests);
     assert_eq!(fixture.input(), Some(&json(r#""""#)));
     assert_eq!(
         fixture.logged("api_base"),
@@ -267,22 +267,20 @@ async fn cancel_posts_empty_object(#[case] mode: ClientKind) {
         typed.additional_headers.get("llm_provider-content-type"),
         Some(&Json::Text(String::from("application/json")))
     );
-    {
-        let requests = wire.requests();
-        assert_eq!(requests.len(), 1);
-        let request = &requests[0];
-        assert_eq!(request.method, Method::POST);
-        assert_eq!(
-            request.url.as_str(),
-            "http://mock.test/v1/responses/resp_a/cancel"
-        );
-        assert_eq!(body_json(request), json("{}"));
-        assert_eq!(
-            header(request, "authorization").as_deref(),
-            Some("Bearer sk-provider")
-        );
-        assert_eq!(header(request, "x-trace").as_deref(), Some("trace-a"));
-    }
+    let requests = wire.requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].method, Method::POST);
+    assert_eq!(
+        requests[0].url.as_str(),
+        "http://mock.test/v1/responses/resp_a/cancel"
+    );
+    assert_eq!(body_json(&requests[0]), json("{}"));
+    assert_eq!(
+        header(&requests[0], "authorization").as_deref(),
+        Some("Bearer sk-provider")
+    );
+    assert_eq!(header(&requests[0], "x-trace").as_deref(), Some("trace-a"));
+    drop(requests);
     assert_eq!(fixture.input(), Some(&json(r#""resp_a""#)));
     assert_eq!(
         fixture.logged("api_base"),
@@ -627,158 +625,227 @@ async fn write_transport_failures(#[case] operation: Operation) {
 #[tokio::test]
 async fn write_client_and_logging_contract() {
     let settings = openai_settings();
-    let config = openai_config(&settings, "sk-provider");
     let events = Events::new();
-    let supplied = Wire::replying(Reply::json(200, CANCELLED), &events);
-    let created = Wire::replying(Reply::json(200, CANCELLED), &events);
-    let source = Source::new(created.clone());
-    let unverified = params("http://mock.test/v1");
-    let verified = WriteParams {
-        api_base: Some(String::from("http://mock.test/v1")),
-        api_key: None,
-        ssl_verify: Some(false),
+    let supplied = Wire::replying(Reply::json(200, DELETED), &events);
+    let created = Wire::replying(Reply::json(200, DELETED), &events);
+    let cancel = Wire::replying(
+        Reply::json(200, CANCELLED).with_header("content-type", "application/json"),
+        &events,
+    );
+    let mut contract = ClientContract {
+        config: openai_config(&settings, "sk-provider"),
+        source: Source::new(created.clone()),
+        cancel_source: Source::new(cancel),
+        supplied,
+        created,
+        events,
+        unverified: params("http://mock.test/v1"),
+        verified: WriteParams {
+            api_base: Some(String::from("http://mock.test/v1")),
+            api_key: None,
+            ssl_verify: Some(false),
+        },
+        fixture: Fixture::new("responses"),
     };
-    let mut fixture = Fixture::new("responses");
-    {
+    contract.reused().await;
+    contract.absent().await;
+    contract.wrong_kind().await;
+    contract.created_clients().await;
+    contract.logs().await;
+}
+
+struct ClientContract<'settings> {
+    config: OpenAiResponsesConfig<'settings>,
+    source: Source,
+    cancel_source: Source,
+    supplied: Wire,
+    created: Wire,
+    events: Events,
+    unverified: WriteParams,
+    verified: WriteParams,
+    fixture: Fixture,
+}
+
+impl ClientContract<'_> {
+    async fn reused(&mut self) {
         let deps = write_deps(
-            &config,
-            &source,
+            &self.config,
+            &self.source,
             Some(SuppliedClient {
                 kind: ClientKind::Sync,
-                transport: &supplied,
+                transport: &self.supplied,
             }),
             Some(SharedSession),
         );
-        let call = operation_call(Operation::Delete, "resp_a", &unverified, None, None);
-        run(&mut fixture, &deps, ClientKind::Sync, &call, &events)
-            .await
-            .expect("a matching injected client is reused");
-    }
-    assert!(source.calls().is_empty());
-    assert_eq!(supplied.requests().len(), 1);
-    assert!(created.requests().is_empty());
-    {
-        let deps = write_deps(&config, &source, None, Some(SharedSession));
-        let call = operation_call(Operation::Delete, "resp_a", &verified, None, None);
-        run(&mut fixture, &deps, ClientKind::Sync, &call, &events)
-            .await
-            .expect("an absent client comes from the source");
-    }
-    assert_eq!(source.calls(), vec![(Some(false), false)]);
-    assert_eq!(created.requests().len(), 1);
-    {
-        let deps = write_deps(
-            &config,
-            &source,
-            Some(SuppliedClient {
-                kind: ClientKind::Sync,
-                transport: &supplied,
-            }),
-            Some(SharedSession),
-        );
-        let call = operation_call(Operation::Delete, "resp_a", &unverified, None, None);
+        let call = operation_call(Operation::Delete, "resp_a", &self.unverified, None, None);
         run(
-            &mut fixture,
+            &mut self.fixture,
+            &deps,
+            ClientKind::Sync,
+            &call,
+            &self.events,
+        )
+        .await
+        .expect("a matching injected client is reused");
+        assert!(self.source.calls().is_empty());
+        assert_eq!(self.supplied.requests().len(), 1);
+        assert!(self.created.requests().is_empty());
+    }
+
+    async fn absent(&mut self) {
+        let deps = write_deps(&self.config, &self.source, None, Some(SharedSession));
+        let call = operation_call(Operation::Delete, "resp_a", &self.verified, None, None);
+        run(
+            &mut self.fixture,
+            &deps,
+            ClientKind::Sync,
+            &call,
+            &self.events,
+        )
+        .await
+        .expect("an absent client comes from the source");
+        assert_eq!(self.source.calls(), vec![(Some(false), false)]);
+        assert_eq!(self.created.requests().len(), 1);
+    }
+
+    async fn wrong_kind(&mut self) {
+        let deps = write_deps(
+            &self.config,
+            &self.source,
+            Some(SuppliedClient {
+                kind: ClientKind::Sync,
+                transport: &self.supplied,
+            }),
+            Some(SharedSession),
+        );
+        let call = operation_call(Operation::Delete, "resp_a", &self.unverified, None, None);
+        run(
+            &mut self.fixture,
             &deps,
             ClientKind::Asynchronous,
             &call,
-            &events,
+            &self.events,
         )
         .await
         .expect("a wrong-kind client is replaced");
+        assert_eq!(
+            self.source.calls(),
+            vec![(Some(false), false), (None, true)]
+        );
+        assert_eq!(self.supplied.requests().len(), 1);
+        assert_eq!(self.created.requests().len(), 2);
     }
-    assert_eq!(source.calls(), vec![(Some(false), false), (None, true)]);
-    assert_eq!(supplied.requests().len(), 1);
-    assert_eq!(created.requests().len(), 2);
-    let (captured, _guard) = capturing();
-    {
-        let deps = write_deps(&config, &source, None, Some(SharedSession));
-        let call = operation_call(Operation::Delete, "resp_a", &unverified, None, None);
+
+    async fn created_clients(&mut self) {
+        let (captured, _guard) = capturing();
+        self.async_delete().await;
+        self.async_cancel().await;
+        self.sync_delete().await;
+        let client_lines: Vec<String> = captured_messages(&captured)
+            .into_iter()
+            .filter(|message| message.contains("Creating HTTP client for"))
+            .collect();
+        assert_eq!(
+            client_lines,
+            vec![
+                String::from("Creating HTTP client for delete_response with shared_session: Some"),
+                String::from("Creating HTTP client for cancel_response with shared_session: None"),
+            ]
+        );
+    }
+
+    async fn async_delete(&mut self) {
+        let deps = write_deps(&self.config, &self.source, None, Some(SharedSession));
+        let call = operation_call(Operation::Delete, "resp_a", &self.unverified, None, None);
         run(
-            &mut fixture,
+            &mut self.fixture,
             &deps,
             ClientKind::Asynchronous,
             &call,
-            &events,
+            &self.events,
         )
         .await
         .expect("the async delete creates its client");
     }
-    {
-        let deps = write_deps(&config, &source, None, None);
-        let call = operation_call(Operation::Cancel, "resp_a", &unverified, None, None);
+
+    async fn async_cancel(&mut self) {
+        let deps = write_deps(&self.config, &self.cancel_source, None, None);
+        let call = operation_call(Operation::Cancel, "resp_a", &self.unverified, None, None);
         run(
-            &mut fixture,
+            &mut self.fixture,
             &deps,
             ClientKind::Asynchronous,
             &call,
-            &events,
+            &self.events,
         )
         .await
         .expect("the async cancel creates its client");
     }
-    {
-        let deps = write_deps(&config, &source, None, Some(SharedSession));
-        let call = operation_call(Operation::Delete, "resp_a", &unverified, None, None);
-        run(&mut fixture, &deps, ClientKind::Sync, &call, &events)
-            .await
-            .expect("the sync delete creates its client");
-    }
-    let client_lines: Vec<String> = captured_messages(&captured)
-        .into_iter()
-        .filter(|message| message.contains("Creating HTTP client for"))
-        .collect();
-    assert_eq!(
-        client_lines,
-        vec![
-            String::from("Creating HTTP client for delete_response with shared_session: Some"),
-            String::from("Creating HTTP client for cancel_response with shared_session: None"),
-        ]
-    );
-    let mut logging_fixture = Fixture::new("responses");
-    let write_params = params("http://mock.test/v1");
-    {
-        let deps = write_deps(&config, &source, None, None);
-        let call = operation_call(Operation::Delete, "resp_a", &write_params, None, None);
+
+    async fn sync_delete(&mut self) {
+        let deps = write_deps(&self.config, &self.source, None, Some(SharedSession));
+        let call = operation_call(Operation::Delete, "resp_a", &self.unverified, None, None);
         run(
-            &mut logging_fixture,
+            &mut self.fixture,
             &deps,
             ClientKind::Sync,
             &call,
-            &events,
+            &self.events,
+        )
+        .await
+        .expect("the sync delete creates its client");
+    }
+
+    async fn logs(&mut self) {
+        self.fixture = Fixture::new("responses");
+        let write_params = params("http://mock.test/v1");
+        self.logged_delete(&write_params).await;
+        assert_eq!(self.fixture.input(), Some(&json(r#""""#)));
+        assert_eq!(
+            self.fixture.logged("api_base"),
+            Some(&json(r#""http://mock.test/v1/responses""#))
+        );
+        self.logged_cancel(&write_params).await;
+        assert_eq!(self.fixture.input(), Some(&json(r#""resp_a""#)));
+        assert_eq!(
+            self.fixture.logged("api_base"),
+            Some(&json(r#""http://mock.test/v1/responses/resp_a/cancel""#))
+        );
+    }
+
+    async fn logged_delete(&mut self, write_params: &WriteParams) {
+        let deps = write_deps(&self.config, &self.source, None, None);
+        let call = operation_call(Operation::Delete, "resp_a", write_params, None, None);
+        run(
+            &mut self.fixture,
+            &deps,
+            ClientKind::Sync,
+            &call,
+            &self.events,
         )
         .await
         .expect("the delete logs its call");
     }
-    assert_eq!(logging_fixture.input(), Some(&json(r#""""#)));
-    assert_eq!(
-        logging_fixture.logged("api_base"),
-        Some(&json(r#""http://mock.test/v1/responses""#))
-    );
-    {
-        let deps = write_deps(&config, &source, None, None);
+
+    async fn logged_cancel(&mut self, write_params: &WriteParams) {
         let call = WriteCall::Cancel(CancelCall {
             target: WriteTarget {
                 response_id: "resp_a",
-                params: &write_params,
+                params: write_params,
                 extra_headers: None,
                 timeout: None,
             },
             extra_body: None,
         });
+        let deps = write_deps(&self.config, &self.cancel_source, None, None);
         run(
-            &mut logging_fixture,
+            &mut self.fixture,
             &deps,
             ClientKind::Sync,
             &call,
-            &events,
+            &self.events,
         )
         .await
         .expect("the cancel logs its call");
     }
-    assert_eq!(logging_fixture.input(), Some(&json(r#""resp_a""#)));
-    assert_eq!(
-        logging_fixture.logged("api_base"),
-        Some(&json(r#""http://mock.test/v1/responses/resp_a/cancel""#))
-    );
 }
