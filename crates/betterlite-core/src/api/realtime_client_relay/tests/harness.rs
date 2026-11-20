@@ -50,6 +50,21 @@ pub(super) fn json(text: &str) -> Json {
     serde_json::from_str(text).expect("json value")
 }
 
+fn begin_attempt(
+    failures: &[usize],
+    attempts: &mut usize,
+    prefix: &str,
+) -> Result<(), WebSocketError> {
+    let attempt = *attempts;
+    *attempts = (*attempts).saturating_add(1);
+    if failures.contains(&attempt) {
+        return Err(WebSocketError {
+            message: format!("{prefix} {attempt} failed"),
+        });
+    }
+    Ok(())
+}
+
 #[derive(Clone, Default)]
 pub(super) struct SendLog(Arc<Mutex<SendData>>);
 
@@ -68,18 +83,8 @@ impl SendLog {
     }
 
     fn begin(&self) -> Result<(), WebSocketError> {
-        let (attempt, refused) = {
-            let mut data = lock(&self.0);
-            let attempt = data.attempts;
-            data.attempts = data.attempts.saturating_add(1);
-            (attempt, data.failures.contains(&attempt))
-        };
-        if refused {
-            return Err(WebSocketError {
-                message: format!("the scripted send {attempt} failed"),
-            });
-        }
-        Ok(())
+        let mut data = lock(&self.0);
+        begin_attempt(&data.failures, &mut data.attempts, "the scripted send")
     }
 
     fn push(&self, frame: String) {
@@ -124,18 +129,13 @@ impl ScopedWebSocket for ScriptedClient {
 #[async_trait]
 impl ClientWebSocket for ScriptedClient {
     async fn send_text(&mut self, data: &str) -> Result<(), WebSocketError> {
-        let (attempt, refused) = {
-            let mut state = lock(&self.data);
-            let attempt = state.attempts;
-            state.attempts = state.attempts.saturating_add(1);
-            (attempt, state.failures.contains(&attempt))
-        };
-        if refused {
-            return Err(WebSocketError {
-                message: format!("the scripted client send {attempt} failed"),
-            });
-        }
-        lock(&self.data).sent.push(data.to_owned());
+        let mut state = lock(&self.data);
+        begin_attempt(
+            &state.failures,
+            &mut state.attempts,
+            "the scripted client send",
+        )?;
+        state.sent.push(data.to_owned());
         Ok(())
     }
 
@@ -288,17 +288,6 @@ pub(super) struct ScriptedGuardrail {
 }
 
 impl ScriptedGuardrail {
-    pub(super) fn blocking(hooks: Vec<GuardrailEventHooks>, block_on: &str) -> Self {
-        Self {
-            hooks,
-            block_on: Some(block_on.to_owned()),
-            custom: true,
-            policy: RealtimeGuardrailPolicy::default(),
-            checks: Arc::new(Mutex::new(Vec::new())),
-            applied: Arc::new(Mutex::new(Vec::new())),
-        }
-    }
-
     pub(super) fn allowing(hooks: Vec<GuardrailEventHooks>) -> Self {
         Self {
             hooks,
@@ -308,6 +297,12 @@ impl ScriptedGuardrail {
             checks: Arc::new(Mutex::new(Vec::new())),
             applied: Arc::new(Mutex::new(Vec::new())),
         }
+    }
+
+    pub(super) fn blocking(hooks: Vec<GuardrailEventHooks>, block_on: &str) -> Self {
+        let mut guardrail = Self::allowing(hooks);
+        guardrail.block_on = Some(block_on.to_owned());
+        guardrail
     }
 
     pub(super) fn checked(&self) -> Vec<(GuardrailEventHooks, String)> {
@@ -607,38 +602,20 @@ pub(super) fn guardrail_refs(
         .collect()
 }
 
+enum Step {
+    Ack,
+    Close(BackendClose),
+}
+
 pub(super) async fn ack(fixture: Fixture) -> Outcome {
-    let Fixture {
-        mut state,
-        provider,
-        guardrails,
-        normalizer,
-        redactor,
-        client,
-        backend,
-        logging,
-    } = fixture;
-    let refs = guardrail_refs(&guardrails);
-    let callbacks = relay_callbacks(&refs);
-    let mut relay = RealtimeClientRelay {
-        state: &mut state,
-        provider: provider.as_ref(),
-        guardrails: &refs,
-        callbacks,
-        redactor: redactor.as_ref(),
-    };
-    let exit = relay.client_ack_messages().await;
-    Outcome {
-        exit,
-        state,
-        client,
-        backend,
-        logging,
-        normalizer,
-    }
+    run_fixture(fixture, Step::Ack).await
 }
 
 pub(super) async fn close(fixture: Fixture, close: BackendClose) -> Outcome {
+    run_fixture(fixture, Step::Close(close)).await
+}
+
+async fn run_fixture(fixture: Fixture, step: Step) -> Outcome {
     let Fixture {
         mut state,
         provider,
@@ -658,9 +635,15 @@ pub(super) async fn close(fixture: Fixture, close: BackendClose) -> Outcome {
         callbacks,
         redactor: redactor.as_ref(),
     };
-    relay.close_client(&close).await;
+    let exit = match step {
+        Step::Ack => relay.client_ack_messages().await,
+        Step::Close(close) => {
+            relay.close_client(&close).await;
+            ClientLoopExit::ClientDisconnected
+        }
+    };
     Outcome {
-        exit: ClientLoopExit::ClientDisconnected,
+        exit,
         state,
         client,
         backend,

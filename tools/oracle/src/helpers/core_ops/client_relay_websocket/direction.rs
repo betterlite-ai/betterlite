@@ -13,6 +13,31 @@ pub(crate) enum ScriptedFailure {
     Backend,
 }
 
+// Both directions LiteLLM spawns share one script: signal, wait for cancellation, or finish at once
+async fn wait_for_turn(
+    label: &str,
+    wait: DirectionWait,
+    signals: bool,
+    timeline: &Frames,
+    cancellation: &CancellationToken,
+    notification: &Notify,
+) -> bool {
+    if wait == DirectionWait::Cancel {
+        cancellation.cancelled().await;
+        timeline.locked().push(format!("{label}-cancel"));
+        return true;
+    }
+    if wait == DirectionWait::Signal {
+        notification.notified().await;
+        timeline.locked().push(format!("{label}-signal"));
+    }
+    if signals {
+        timeline.locked().push(format!("{label}-notify"));
+        notification.notify_one();
+    }
+    false
+}
+
 // The client direction LiteLLM spawns, scripted: it signals, waits for cancellation, or finishes at once
 pub(crate) async fn run_client_direction(
     timeline: Frames,
@@ -20,18 +45,17 @@ pub(crate) async fn run_client_direction(
     notification: Arc<Notify>,
     lifetime: &LifetimeDocument,
 ) -> ClientLoopExit {
-    if lifetime.client_wait == DirectionWait::Cancel {
-        cancellation.cancelled().await;
-        timeline.locked().push(String::from("client-cancel"));
+    if wait_for_turn(
+        "client",
+        lifetime.client_wait,
+        lifetime.client_signals,
+        &timeline,
+        &cancellation,
+        &notification,
+    )
+    .await
+    {
         return client_exit(lifetime.client_outcome);
-    }
-    if lifetime.client_wait == DirectionWait::Signal {
-        notification.notified().await;
-        timeline.locked().push(String::from("client-signal"));
-    }
-    if lifetime.client_signals {
-        timeline.locked().push(String::from("client-notify"));
-        notification.notify_one();
     }
     timeline.locked().push(String::from("client-finish"));
     client_exit(lifetime.client_outcome)
@@ -45,21 +69,20 @@ pub(crate) async fn run_backend_direction(
     lifetime: &LifetimeDocument,
     close: BackendClose,
 ) -> Result<BackendClose, ScriptedFailure> {
-    if lifetime.backend_wait == DirectionWait::Cancel {
-        cancellation.cancelled().await;
-        timeline.locked().push(String::from("backend-cancel"));
+    if wait_for_turn(
+        "backend",
+        lifetime.backend_wait,
+        lifetime.backend_signals,
+        &timeline,
+        &cancellation,
+        &notification,
+    )
+    .await
+    {
         return match lifetime.backend_outcome {
             BackendOutcome::Close => Ok(close),
             BackendOutcome::Error => Err(ScriptedFailure::Backend),
         };
-    }
-    if lifetime.backend_wait == DirectionWait::Signal {
-        notification.notified().await;
-        timeline.locked().push(String::from("backend-signal"));
-    }
-    if lifetime.backend_signals {
-        timeline.locked().push(String::from("backend-notify"));
-        notification.notify_one();
     }
     match lifetime.backend_outcome {
         BackendOutcome::Close => {

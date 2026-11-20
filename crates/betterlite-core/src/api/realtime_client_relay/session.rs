@@ -71,10 +71,10 @@ where
     Ok(injected)
 }
 
-fn mutate(
-    event: &mut ClientEvent,
-    apply: impl FnOnce(&mut IndexMap<String, Json>) -> bool,
-) -> bool {
+fn mutate<Apply>(event: &mut ClientEvent, apply: Apply) -> bool
+where
+    Apply: FnOnce(&mut IndexMap<String, Json>) -> bool,
+{
     match &mut event.value {
         Json::Object(root) => apply(root),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => false,

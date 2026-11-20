@@ -1,8 +1,6 @@
 use std::error::Error;
 
-use crate::api::realtime_contracts::close::ClientLoopExit;
 use crate::api::realtime_contracts::config::BaseRealtimeConfig;
-use crate::api::realtime_contracts::transport::ClientWebSocket;
 use crate::api::realtime_sender::RealtimeSend as _;
 use crate::api::realtime_session_state::logging::SessionInput;
 use crate::api::realtime_setup_buffer::{SetupBuffer as _, SetupFlush as _};
@@ -15,48 +13,8 @@ use super::session;
 const SESSION_UPDATE: &str = "session.update";
 const RESPONSE_CREATE: &str = "response.create";
 
-// LiteLLM's _receive_client_message: a closed or broken client socket is a disconnect, not a loop failure
-pub(crate) async fn receive(client: Option<&mut dyn ClientWebSocket>) -> Option<String> {
-    let Some(socket) = client else {
-        tracing::debug!("Client disconnected: the realtime client websocket is not connected");
-        return None;
-    };
-    match socket.receive_text().await {
-        Ok(message) => Some(message),
-        Err(error) => {
-            tracing::debug!("Client disconnected: {error}");
-            None
-        }
-    }
-}
-
-pub(crate) async fn run<Config, CallbackError>(
-    relay: &mut RealtimeClientRelay<'_, Config, CallbackError>,
-) -> ClientLoopExit
-where
-    Config: BaseRealtimeConfig,
-    CallbackError: Error + Send + 'static,
-{
-    loop {
-        let Some(message) = relay.receive_client_message().await else {
-            return ClientLoopExit::ClientDisconnected;
-        };
-        match handle(relay, &message).await {
-            Ok(()) => {}
-            Err(error) if error.is_backend_closed() => {
-                tracing::debug!("Backend closed while forwarding a client message: {error}");
-                return ClientLoopExit::BackendClosed;
-            }
-            Err(error) => {
-                tracing::debug!("Error in client ack messages: {error}");
-                return ClientLoopExit::ClientDisconnected;
-            }
-        }
-    }
-}
-
 // One client frame: guardrail rewrites, the pending-response drop, the session rewrites, then logging and delivery
-async fn handle<Config, CallbackError>(
+pub(super) async fn handle<Config, CallbackError>(
     relay: &mut RealtimeClientRelay<'_, Config, CallbackError>,
     message: &str,
 ) -> Result<(), RealtimeClientRelayError<Config::Error, CallbackError>>

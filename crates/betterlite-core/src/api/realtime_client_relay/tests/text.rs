@@ -18,6 +18,13 @@ fn pre_call_guardrail() -> ScriptedGuardrail {
     ScriptedGuardrail::allowing(vec![GuardrailEventHooks::PreCall])
 }
 
+async fn run_frame(guardrail: &ScriptedGuardrail, frame: &str) -> Outcome {
+    ack(Fixture::default()
+        .with_guardrail(guardrail.clone())
+        .with_client_message(frame))
+    .await
+}
+
 #[tokio::test]
 async fn client_text_and_tool_guardrails() {
     joined_input_text_is_checked().await;
@@ -32,10 +39,7 @@ async fn client_text_and_tool_guardrails() {
 async fn joined_input_text_is_checked() {
     let guardrail = pre_call_guardrail();
     let frame = r#"{"type":"conversation.item.create","item":{"type":"message","role":"user","content":[{"type":"input_text","text":"a"},{"type":"input_audio","text":"ignored"},{"type":"input_text","text":"b"}]}}"#;
-    let outcome = ack(Fixture::default()
-        .with_guardrail(guardrail.clone())
-        .with_client_message(frame))
-    .await;
+    let outcome = run_frame(&guardrail, frame).await;
     assert_eq!(guardrail.applied(), vec![vec![String::from("a b")]]);
     assert_eq!(outcome.backend.parsed(), vec![json(frame)]);
     assert_eq!(outcome.pre_calls(), vec![String::from(frame)]);
@@ -70,10 +74,7 @@ async fn blocked_text_swallows_one_response_create() {
 async fn tool_output_is_checked_before_the_user_role() {
     let guardrail = pre_call_guardrail();
     let frame = r#"{"type":"conversation.item.create","item":{"type":"function_call_output","call_id":"call-1","output":{"value":"obj"},"role":"user"}}"#;
-    let outcome = ack(Fixture::default()
-        .with_guardrail(guardrail.clone())
-        .with_client_message(frame))
-    .await;
+    let outcome = run_frame(&guardrail, frame).await;
     assert_eq!(
         guardrail.applied(),
         vec![vec![String::from(r#"{"value":"obj"}"#)]]
@@ -101,10 +102,7 @@ async fn blocked_tool_output_is_replaced_before_cancellation() {
 async fn empty_tool_output_is_not_checked() {
     let guardrail = pre_call_guardrail();
     let frame = r#"{"type":"conversation.item.create","item":{"type":"function_call_output","call_id":"call-1","output":""}}"#;
-    let outcome = ack(Fixture::default()
-        .with_guardrail(guardrail.clone())
-        .with_client_message(frame))
-    .await;
+    let outcome = run_frame(&guardrail, frame).await;
     assert!(guardrail.applied().is_empty());
     assert_eq!(outcome.backend.parsed(), vec![json(frame)]);
 }
