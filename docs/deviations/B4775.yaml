@@ -1,0 +1,41 @@
+task: B4775
+deviations:
+  - what: >-
+      The redacted litellm_params JSON string, the result of redact_sensitive_agent_litellm_params on a
+      string input, is compact serde_json text. LiteLLM returns json.dumps text with a space after each
+      comma and colon.
+    why: >-
+      Only the parsed content is read back. At the pin the only caller passes an already-parsed object, so
+      no client sees the string.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_registry.py#L227-L232
+  - what: >-
+      serialize_agent_kill_switch takes a typed AgentKillSwitchConfig, so LiteLLM's ValidationError for an
+      invalid incoming dict cannot happen here. A request with an invalid kill_switch is rejected earlier,
+      when the request body is parsed.
+    why: >-
+      Typed boundary from B4770. The rejection is the request parse error, not an error raised from the
+      database layer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_registry.py#L296-L302
+  - what: >-
+      The stored kill switch column is compact serde_json text with headers, query_params and body keys in
+      map order. LiteLLM writes json.dumps text with spaces and the operator's key order.
+    why: >-
+      The column is read back through parse_agent_kill_switch, and JSON whitespace and object key order are
+      not part of the stored config.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_registry.py#L302
+  - what: >-
+      A kill switch body value deep enough to exceed LiteLLM's 100-level recursion budget is stored as
+      sent. LiteLLM's safe_dumps replaces every value past DEFAULT_MAX_RECURSE_DEPTH with the string
+      "MaxDepthExceeded", so the config read back no longer holds what the admin configured.
+    why: >-
+      Replacing configured data with an error marker is lost data no working setup relies on. The body
+      arrives as parsed JSON, whose parser already bounds how deep a request can nest.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/safe_json_dumps.py#L39-L40
+kept_bugs:
+  - what: >-
+      Array items pair with the stored array by position only, so a marker echoed back after the admin
+      reorders or resizes the list restores the wrong stored secret.
+    why: >-
+      A working setup relies on an unchanged list restoring wholesale, and there is no stable identity to
+      match items by. LiteLLM documents this as its own narrow limitation (LIT-6736).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_registry.py#L309-L358
