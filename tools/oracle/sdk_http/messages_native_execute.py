@@ -1,5 +1,6 @@
 import asyncio
 import json
+from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Callable
 from typing import Final, Literal, NotRequired, TypedDict, cast
 
@@ -13,9 +14,9 @@ from litellm.integrations.websearch_interception.handler import (
     WebSearchInterceptionLogger,
 )
 from litellm.litellm_core_utils.get_llm_provider_logic import get_llm_provider
-from litellm.llms.anthropic.pass_through.messages import handler as entry_handler
-from litellm.llms.anthropic.pass_through.messages.fake_stream_iterator import (
-    FakeAnthropicMessagesStreamIterator,
+from litellm.llms.anthropic.pass_through.messages import (
+    fake_stream_iterator,
+    handler as entry_handler,
 )
 from pydantic import BaseModel, ConfigDict
 from pydantic import JsonValue as Json
@@ -75,7 +76,7 @@ class NativeExecuteCall(TypedDict):
 
 class Recordings:
     def __init__(self) -> None:
-        self.cache: dict[str, Json] | None = None
+        self.cache: dict[str, Json] = {}
         self.hooks: list[Json] = []
         self.dispatch: dict[str, Json] | None = None
 
@@ -84,7 +85,7 @@ class Dispatcher:
     def __init__(
         self,
         recordings: Recordings,
-        handler: Callable[..., Json],
+        handler: Callable[..., Json],  # type: ignore[explicit-any]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/handler.py#L254-L256
     ) -> None:
         self.recordings = recordings
         self.handler = handler  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/handler.py#L254-L256
@@ -101,7 +102,7 @@ class Dispatcher:
             record[name] = value
         self.recordings.dispatch = record
         object.__setattr__(litellm, "get_llm_provider", get_llm_provider)
-        return self.handler(**call)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/handler.py#L254-L256
+        return self.handler(**call)
 
 
 class CacheRecorder:
@@ -111,7 +112,7 @@ class CacheRecorder:
     def __call__(
         self, messages: list[Json], system: Json, kwargs: dict[str, Json], **call: Json
     ) -> tuple[list[Json], Json]:
-        if self.recordings.cache is None:
+        if not self.recordings.cache:
             self.recordings.cache = {
                 "messages": messages, "system": system, "model": call.get("model"),
                 "custom_llm_provider": call.get("custom_llm_provider"),
@@ -147,7 +148,9 @@ class ScriptedHook:
 
 
 class SearchDouble:
-    async def pre_request(self, _model: str, _messages: list[Json], _kwargs: dict[str, Json]) -> None: ...
+    async def pre_request(
+        self, _model: str, _messages: list[Json], _kwargs: dict[str, Json]
+    ) -> None: ...
 
     async def short_circuit(self, **_call: Json) -> dict[str, Json] | None: ...
 
@@ -167,9 +170,11 @@ class ScriptedSearch(SearchDouble):
         return self.script.get("answer")
 
 
-class InterceptorDouble:
+class InterceptorDouble(ABC):
+    @abstractmethod
     def can_handle(self, _tools: list[Json] | None, _provider: str | None) -> bool: ...
 
+    @abstractmethod
     async def handle(self, **_call: Json) -> Json: ...
 
 
@@ -209,7 +214,8 @@ def install(call: NativeExecuteCall, recordings: Recordings) -> None:
     callbacks: list[CustomLogger] = []
     for script in call["hooks"]:
         hook = CustomLogger()
-        object.__setattr__(hook, "async_pre_request_hook", ScriptedHook(script, recordings).pre_request)
+        scripted_hook = ScriptedHook(script, recordings)
+        object.__setattr__(hook, "async_pre_request_hook", scripted_hook.pre_request)
         callbacks.append(hook)
     for search_script in call["searches"]:
         search = WebSearchInterceptionLogger()
@@ -218,10 +224,12 @@ def install(call: NativeExecuteCall, recordings: Recordings) -> None:
         object.__setattr__(search, "try_short_circuit_search", scripted.short_circuit)
         callbacks.append(search)
     object.__setattr__(litellm, "callbacks", callbacks)
-    type.__setattr__(AnthropicCacheControlHook, "maybe_inject_cache_control", staticmethod(CacheRecorder(recordings)))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py
+    cache_hook = staticmethod(CacheRecorder(recordings))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py
+    type.__setattr__(AnthropicCacheControlHook, "maybe_inject_cache_control", cache_hook)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py
     object.__setattr__(litellm, "get_llm_provider", ScriptedResolver(call["provider"]))
-    object.__setattr__(entry_handler, "get_messages_interceptors", InterceptorRegistry(call["interceptors"]))
-    dispatcher = Dispatcher(recordings, entry_handler.anthropic_messages_handler)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/handler.py#L254-L256
+    registry = InterceptorRegistry(call["interceptors"])
+    object.__setattr__(entry_handler, "get_messages_interceptors", registry)
+    dispatcher = Dispatcher(recordings, entry_handler.anthropic_messages_handler)  # type: ignore[misc, arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/handler.py#L254-L256
     object.__setattr__(entry_handler, "anthropic_messages_handler", dispatcher)
 
 
@@ -244,7 +252,7 @@ async def execute(call: NativeExecuteCall, api_base: str) -> dict[str, Json]:
     outcome: dict[str, Json] = {"response": None, "stream": [], "failure": None}
     try:
         answer = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/handler.py#L254-L256
-            "dict[str, Json] | FakeAnthropicMessagesStreamIterator | None",
+            "dict[str, Json] | fake_stream_iterator.FakeAnthropicMessagesStreamIterator | None",
             await entry_handler.anthropic_messages(  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1674-L1681
                 max_tokens=request["max_tokens"], messages=request["messages"],
                 model=request["model"], metadata=request["metadata"],
@@ -264,12 +272,13 @@ async def execute(call: NativeExecuteCall, api_base: str) -> dict[str, Json]:
         }
     else:
         match answer:
-            case FakeAnthropicMessagesStreamIterator():  # type: ignore[misc]  # ast-grep-ignore: no-long-names  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/fake_stream_iterator.py#L194-L203
+            # ast-grep-ignore: no-long-names
+            case fake_stream_iterator.FakeAnthropicMessagesStreamIterator():  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/fake_stream_iterator.py#L194-L203
                 stream = cast("AsyncIterator[bytes]", answer)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/fake_stream_iterator.py#L194-L203
                 outcome["stream"] = await collect_stream(stream)
             case dict() | None:
                 outcome["response"] = answer
-    outcome["cache"] = recordings.cache or {}
+    outcome["cache"] = recordings.cache
     outcome["hooks"] = recordings.hooks
     outcome["dispatch"] = recordings.dispatch
     return outcome
