@@ -144,6 +144,9 @@ async fn postgres_visibility_matrix() {
         availability: &availability,
     };
 
+    let counted = list_keys(Some(client), &query(1, 50)).await.unwrap();
+    assert_eq!(counted.total_count, Some(12));
+
     let all = tokens(client, key_filters()).await;
     assert_eq!(
         all,

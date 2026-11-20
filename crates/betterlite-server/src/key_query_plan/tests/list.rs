@@ -5,9 +5,12 @@ use std::sync::{Arc, Mutex};
 
 use rust_decimal::Decimal;
 
+use betterlite_db::auxiliary_repository::repository::PrismaClient;
 use betterlite_db::budget_permission_rows::JsonData;
+use betterlite_db::database_replica::availability::Availability;
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use betterlite_db::postgres_store::errors::DbError;
+use betterlite_db::postgres_store::session::PostgresStore;
 
 use crate::key_query_plan::KeyQueryPlanError;
 use crate::key_query_plan::list::{list_keys, list_keys_with};
@@ -144,6 +147,23 @@ impl KeyListSource for FakeSource {
         *self.attach_calls.lock().unwrap() += 1;
         async move { self.answer(Failure::Attach, ()) }
     }
+}
+
+#[tokio::test]
+async fn user_lookup_without_database_errors() {
+    let store = PostgresStore { pool: None };
+    let availability = Availability::default();
+    let client = PrismaClient {
+        writer: &store,
+        reader: &store,
+        availability: &availability,
+    };
+    let ids = vec![String::from("alice")];
+    let error = KeyListSource::find_users(&client, ids).await.unwrap_err();
+    assert!(matches!(
+        error,
+        KeyQueryPlanError::Database(DbError::NoDbConnected)
+    ));
 }
 
 #[tokio::test]
