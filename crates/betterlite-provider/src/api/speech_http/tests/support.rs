@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
+use std::mem::take;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
@@ -38,10 +39,32 @@ use crate::api::speech_provider_contract::{
     ClassAttribute, SpeechHeaders, SpeechMappingOptions, SpeechRequestInput, TextToSpeechConfig,
 };
 
+pub(crate) const URL: &str = "http://provider.test/v1/audio/speech";
+
 pub(crate) struct Sink;
 
 impl LogSink for Sink {
     fn emit(&self, _record: LogRecord) {}
+}
+
+pub(crate) fn json(text: &str) -> Json {
+    serde_json::from_str(text).expect("the expected JSON parses")
+}
+
+pub(crate) fn object(text: &str) -> Object {
+    serde_json::from_str(text).expect("the object fixture parses")
+}
+
+pub(crate) fn data(
+    dict: Option<&str>,
+    ssml: Option<&str>,
+    provider: Option<SpeechHeaders>,
+) -> TextToSpeechRequestData {
+    TextToSpeechRequestData {
+        dict_body: dict.map(object),
+        ssml_body: ssml.map(ToOwned::to_owned),
+        headers: provider,
+    }
 }
 
 // The pre-call a production request runs, observable through the state it records
@@ -241,6 +264,65 @@ impl ClientSource for Source {
     }
 }
 
+// The standard speech call a test starts from: one wire, its source and the recording config over them
+pub(crate) struct Harness {
+    pub(crate) wire: Wire,
+    pub(crate) source: Source,
+    pub(crate) config: RecordingConfig,
+    pub(crate) declared: SpeechParams,
+    pub(crate) optional: Object,
+    pub(crate) litellm: Object,
+    pub(crate) caller: SpeechHeaders,
+    pub(crate) voice: Option<&'static str>,
+    pub(crate) timeout: Option<Duration>,
+}
+
+impl Harness {
+    pub(crate) fn new(reply: Reply) -> Self {
+        Self::from_wire(Wire::replying(reply))
+    }
+
+    pub(crate) fn from_wire(wire: Wire) -> Self {
+        let source = Source::new(wire.clone());
+        Self {
+            wire,
+            source,
+            config: RecordingConfig::new(
+                Ok(URL.to_owned()),
+                data(Some(r#"{"input":"hello"}"#), None, None),
+                SpeechHeaders::new(),
+            ),
+            declared: params(None, Some(URL), None),
+            optional: Object::new(),
+            litellm: Object::new(),
+            caller: SpeechHeaders::new(),
+            voice: None,
+            timeout: None,
+        }
+    }
+
+    pub(crate) fn deps(&self) -> SpeechDeps<'_, Source> {
+        SpeechDeps {
+            config: &self.config,
+            source: &self.source,
+            supplied: None,
+        }
+    }
+
+    pub(crate) fn call(&self) -> SpeechCall<'_> {
+        SpeechCall {
+            model: "tts-1",
+            input: "hello",
+            voice: self.voice,
+            optional_params: &self.optional,
+            litellm_params: &self.litellm,
+            extra_headers: (!self.caller.is_empty()).then_some(&self.caller),
+            params: &self.declared,
+            timeout: self.timeout,
+        }
+    }
+}
+
 pub(crate) const IMPATIENT: TransportLimits = TransportLimits {
     read_timeout: Duration::from_millis(100),
     ..TransportLimits::DEFAULT
@@ -315,7 +397,7 @@ impl RecordingConfig {
     }
 
     pub(crate) fn validations(&self) -> Vec<Validation> {
-        std::mem::take(
+        take(
             &mut *self
                 .validations
                 .lock()
@@ -324,7 +406,7 @@ impl RecordingConfig {
     }
 
     pub(crate) fn observed(&self) -> Vec<SpeechObserved> {
-        std::mem::take(&mut *self.observed.lock().unwrap_or_else(PoisonError::into_inner))
+        take(&mut *self.observed.lock().unwrap_or_else(PoisonError::into_inner))
     }
 
     pub(crate) fn errors(&self) -> Vec<(String, u16, SpeechHeaders)> {
@@ -403,10 +485,11 @@ impl TextToSpeechConfig for RecordingConfig {
     }
 
     fn speech_response(&self, _model: &str, raw_response: UpstreamResponse) -> BinaryContent {
-        *self
+        let mut responses = self
             .responses
             .lock()
-            .unwrap_or_else(PoisonError::into_inner) += 1;
+            .unwrap_or_else(PoisonError::into_inner);
+        *responses = responses.saturating_add(1);
         BinaryContent::from_response(raw_response)
     }
 

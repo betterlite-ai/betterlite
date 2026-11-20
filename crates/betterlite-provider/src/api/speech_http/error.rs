@@ -79,10 +79,9 @@ pub(super) fn handle_error(
     facts: &FailureFacts,
     config: &dyn TextToSpeechConfig,
 ) -> SpeechProviderError {
-    let received = match facts.response_status {
-        Some(status) => u16::try_from(status).ok(),
-        None => facts.status,
-    };
+    let received = facts
+        .response_status
+        .map_or(facts.status, |status| u16::try_from(status).ok());
     let exception = config.get_error_class(
         &error_text(facts),
         received.unwrap_or(500),
@@ -113,11 +112,6 @@ fn error_headers(facts: &FailureFacts) -> SpeechHeaders {
     facts
         .headers
         .clone()
-        .or_else(|| {
-            facts
-                .response
-                .as_ref()
-                .and_then(|response| response.headers.clone())
-        })
+        .or_else(|| facts.response.as_ref()?.headers.clone())
         .unwrap_or_default()
 }

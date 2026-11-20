@@ -97,8 +97,8 @@ fn timeout_message(sent: &Sent) -> String {
 pub(super) fn format_timeout(timeout: Option<Duration>) -> String {
     match timeout {
         None => "None".to_owned(),
-        Some(timeout) if timeout.subsec_nanos() == 0 => format!("{}.0", timeout.as_secs()),
-        Some(timeout) => timeout.as_secs_f64().to_string(),
+        Some(whole) if whole.subsec_nanos() == 0 => format!("{}.0", whole.as_secs()),
+        Some(fraction) => fraction.as_secs_f64().to_string(),
     }
 }
 

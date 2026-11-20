@@ -109,7 +109,7 @@ enum Selected<'client, Client> {
 impl<Client> Selected<'_, Client> {
     const fn get(&self) -> &Client {
         match self {
-            Self::Supplied(client) => *client,
+            Self::Supplied(client) => client,
             Self::Created(client) => client,
         }
     }
@@ -187,7 +187,6 @@ where
         payload,
         mode,
     } = prepared;
-    let body = wire_body(payload, config)?;
     let timeout = target.timeout;
     let effective = timeout.unwrap_or_else(|| client.get().default_timeout());
     let started = Instant::now();
@@ -197,7 +196,7 @@ where
             method: Method::POST,
             url: target.url,
             headers: target.headers,
-            body,
+            body: wire_body(payload, config)?,
             timeout,
         })
         .await;
@@ -207,16 +206,14 @@ where
         effective,
         elapsed: started.elapsed(),
     };
-    let reply = reply.map_err(|error| {
+    let response = reply.map_err(|error| {
         SpeechError::Provider(handle_error(&facts::transport(&error, &sent), config))
     })?;
-    if !(200..300).contains(&reply.status) {
-        return Err(SpeechError::Provider(handle_error(
-            &facts::status(&reply),
-            config,
-        )));
+    if !(200..300).contains(&response.status) {
+        let failed = facts::status(&response);
+        return Err(SpeechError::Provider(handle_error(&failed, config)));
     }
-    let content = config.speech_response(model, reply);
+    let content = config.speech_response(model, response);
     let hidden = set_provider_response_headers(&AdditionalHeaders::default(), &content.headers);
     Ok(SpeechBinaryResponse { content, hidden })
 }

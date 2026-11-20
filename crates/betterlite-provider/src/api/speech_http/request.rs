@@ -83,10 +83,9 @@ pub(super) fn payload(data: &TextToSpeechRequestData) -> Payload {
     if let Some(body) = &data.dict_body {
         return Payload::Dict(body.clone());
     }
-    match &data.ssml_body {
-        Some(text) => Payload::Ssml(text.clone()),
-        None => Payload::Missing,
-    }
+    data.ssml_body
+        .as_ref()
+        .map_or(Payload::Missing, |text| Payload::Ssml(text.clone()))
 }
 
 pub(super) fn wire_headers(headers: &SpeechHeaders) -> Result<HeaderMap, SpeechError> {
