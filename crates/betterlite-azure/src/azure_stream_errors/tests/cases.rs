@@ -289,10 +289,7 @@ fn oidc_sources() -> ScriptedSources {
     ScriptedSources::new(
         200,
         "{\"access_token\":\"exchanged-token\",\"expires_in\":3600}",
-        BTreeMap::from([(
-            "env/ASSERTION".to_owned(),
-            SecretString::from("assertion-A"),
-        )]),
+        BTreeMap::from([("ASSERTION".to_owned(), SecretString::from("assertion-A"))]),
     )
 }
 
@@ -363,10 +360,7 @@ fn assert_oidc_failure() {
     let failing_sources = ScriptedSources::new(
         400,
         "{\"error\":\"invalid_client\",\"error_description\":\"bad assertion\"}",
-        BTreeMap::from([(
-            "env/ASSERTION".to_owned(),
-            SecretString::from("assertion-A"),
-        )]),
+        BTreeMap::from([("ASSERTION".to_owned(), SecretString::from("assertion-A"))]),
     );
     let oidc_fixture = oidc_call.call();
     let source = scripted_source(ClientKind::AzureOpenAi, &[], sse_payload());
@@ -394,7 +388,11 @@ fn assert_malformed_exchange() {
         None,
     );
     let oidc_fixture = oidc_call.call();
-    let malformed = ScriptedSources::new(200, "{}", BTreeMap::new());
+    let malformed = ScriptedSources::new(
+        200,
+        "{}",
+        BTreeMap::from([("ASSERTION".to_owned(), SecretString::from("assertion-A"))]),
+    );
     let mut recorder = Recorder::default();
     let error = block_on(streaming(
         &scripted_source(ClientKind::AzureOpenAi, &[], sse_payload()),
@@ -434,19 +432,21 @@ fn assert_oidc_pre(source: &ScriptedSource, call: &StreamCall<'_>) {
     );
 }
 
-fn assert_sync_pre_refusal(
-    source: &ScriptedSource,
-    sources: &ScriptedSources,
-    call: &StreamCall<'_>,
-) {
+fn assert_sync_pre_refusal(source: &ScriptedSource, call: &StreamCall<'_>) {
     let mut refused = Recorder {
         pre: Vec::new(),
         response_headers: Vec::new(),
         fail_pre: true,
     };
-    let error = block_on(streaming(source, sources, call, &mut refused, runtime()))
-        .err()
-        .expect("a refused pre_call fails the sync call");
+    let error = block_on(streaming(
+        source,
+        &oidc_sources(),
+        call,
+        &mut refused,
+        runtime(),
+    ))
+    .err()
+    .expect("a refused pre_call fails the sync call");
     assert!(matches!(
         error,
         StreamingError::Logging(PrePostError::CallbackFailed { .. })
@@ -471,7 +471,6 @@ fn assert_async_pre_refusal(source: &ScriptedSource, call: &StreamCall<'_>) {
 }
 
 fn stream_logging() {
-    let sources = plain_sources();
     let source = scripted_source(ClientKind::AzureOpenAi, &[], sse_payload());
     let fixture = credential_fixture(
         CallFixture::default(),
@@ -481,8 +480,9 @@ fn stream_logging() {
     );
     let call = fixture.call();
     assert_oidc_pre(&source, &call);
-    assert_sync_pre_refusal(&source, &sources, &call);
-    assert_async_pre_refusal(&source, &call);
+    assert_sync_pre_refusal(&source, &call);
+    let async_source = scripted_source(ClientKind::AsyncAzureOpenAi, &[], sse_payload());
+    assert_async_pre_refusal(&async_source, &call);
 }
 
 fn assert_sync_refuses_async(
@@ -547,10 +547,14 @@ fn stream_wrong_client() {
     let sources = plain_sources();
     let fixture = CallFixture::default();
     let call = fixture.call();
-    let mut recorder = Recorder::default();
-    assert_sync_refuses_async(&sources, &call, &mut recorder);
-    assert_sync_accepts_open_ai(&sources, &call, &mut recorder);
-    assert_async_refuses_sync(&call, &mut recorder);
-    assert_async_accepts(&call, &mut recorder);
-    assert_other_client(&sources, &call, &mut recorder);
+    let mut sync_refusal = Recorder::default();
+    assert_sync_refuses_async(&sources, &call, &mut sync_refusal);
+    let mut sync_accept = Recorder::default();
+    assert_sync_accepts_open_ai(&sources, &call, &mut sync_accept);
+    let mut async_refusal = Recorder::default();
+    assert_async_refuses_sync(&call, &mut async_refusal);
+    let mut async_accept = Recorder::default();
+    assert_async_accepts(&call, &mut async_accept);
+    let mut other = Recorder::default();
+    assert_other_client(&sources, &call, &mut other);
 }

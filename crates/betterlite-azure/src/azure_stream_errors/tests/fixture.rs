@@ -250,12 +250,14 @@ impl Transport for RecordingTransport {
 }
 
 struct FixedResolver {
-    assertions: BTreeMap<String, SecretString>,
+    environment: BTreeMap<String, SecretString>,
 }
 
 impl SecretResolver for FixedResolver {
+    // LiteLLM's get_secret_str resolves an oidc/env/<name> reference through os.getenv(<name>)
     fn get_secret_str(&self, reference: &str) -> Option<SecretString> {
-        self.assertions.get(reference).cloned()
+        let name = reference.strip_prefix("oidc/env/")?;
+        self.environment.get(name).cloned()
     }
 }
 
@@ -266,15 +268,19 @@ pub(super) struct ScriptedSources {
 }
 
 impl ScriptedSources {
-    pub(super) fn new(status: u16, body: &str, assertions: BTreeMap<String, SecretString>) -> Self {
-        Self::build(status, RecordedBody::Fixed(body.to_owned()), assertions)
+    pub(super) fn new(
+        status: u16,
+        body: &str,
+        environment: BTreeMap<String, SecretString>,
+    ) -> Self {
+        Self::build(status, RecordedBody::Fixed(body.to_owned()), environment)
     }
 
-    pub(super) fn echoing(assertions: BTreeMap<String, SecretString>) -> Self {
-        Self::build(200, RecordedBody::FromAssertion, assertions)
+    pub(super) fn echoing(environment: BTreeMap<String, SecretString>) -> Self {
+        Self::build(200, RecordedBody::FromAssertion, environment)
     }
 
-    fn build(status: u16, body: RecordedBody, assertions: BTreeMap<String, SecretString>) -> Self {
+    fn build(status: u16, body: RecordedBody, environment: BTreeMap<String, SecretString>) -> Self {
         let forms = Arc::new(Mutex::new(Vec::new()));
         let settings = ConfigLoader {
             lookup: BTreeMap::new(),
@@ -301,7 +307,7 @@ impl ScriptedSources {
         Self {
             exchange,
             forms,
-            resolver: FixedResolver { assertions },
+            resolver: FixedResolver { environment },
         }
     }
 

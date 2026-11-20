@@ -43,14 +43,8 @@ fn recorded_tokens(recorder: &Recorder) -> Vec<Json> {
 
 fn identity_assertions() -> BTreeMap<String, SecretString> {
     BTreeMap::from([
-        (
-            "env/ASSERTION-A".to_owned(),
-            SecretString::from("assertion-A"),
-        ),
-        (
-            "env/ASSERTION-B".to_owned(),
-            SecretString::from("assertion-B"),
-        ),
+        ("ASSERTION-A".to_owned(), SecretString::from("assertion-A")),
+        ("ASSERTION-B".to_owned(), SecretString::from("assertion-B")),
     ])
 }
 
