@@ -53,14 +53,14 @@ async fn cache_activity(
         Ok(requested) => requested,
         Err(parameters) => return CacheActivityError::MissingDates(parameters).into_response(),
     };
-    let Some(store) = store.as_deref() else {
+    let Some(database) = store.as_deref() else {
         return CacheActivityError::DatabaseMissing.into_response();
     };
     let (start_date, end_date) = match requested_dates(&requested) {
         Ok(dates) => dates,
         Err(error) => return error.into_response(),
     };
-    respond(store, start_date, end_date, &requested).await
+    respond(database, start_date, end_date, &requested).await
 }
 
 fn requested_dates(

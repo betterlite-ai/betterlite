@@ -288,10 +288,8 @@ impl CacheActivityStore for FakeStore {
     }
 }
 
-fn fake_store(handle: &Arc<FakeStore>) -> Option<Arc<dyn CacheActivityStore>> {
-    let concrete: Arc<FakeStore> = Arc::clone(handle);
-    let shared: Arc<dyn CacheActivityStore> = concrete;
-    Some(shared)
+fn fake_store(handle: &Arc<FakeStore>) -> Arc<dyn CacheActivityStore> {
+    Arc::clone(handle)
 }
 
 #[tokio::test]
@@ -328,7 +326,7 @@ async fn route_a_missing_end_date_answers_422() {
     let caller = caller();
     let store = Arc::new(FakeStore::answering(CacheActivityRows::default()));
     let reply = call(
-        routes(fake_store(&store)),
+        routes(Some(fake_store(&store))),
         request(
             Method::GET,
             "/global/activity/cache_hits?start_date=2024-01-01",
@@ -386,7 +384,7 @@ async fn route_a_bad_start_date_answers_400_with_python_repr() {
     let caller = caller();
     let store = Arc::new(FakeStore::answering(CacheActivityRows::default()));
     let reply = call(
-        routes(fake_store(&store)),
+        routes(Some(fake_store(&store))),
         request(
             Method::GET,
             "/global/activity/cache_hits?start_date=2024-13-01&end_date=2024-01-31",
@@ -407,7 +405,7 @@ async fn route_a_bad_end_date_answers_400() {
     let caller = caller();
     let store = Arc::new(FakeStore::answering(CacheActivityRows::default()));
     let reply = call(
-        routes(fake_store(&store)),
+        routes(Some(fake_store(&store))),
         request(
             Method::GET,
             "/global/activity/cache_hits?start_date=2024-01-01&end_date=2024-01-32",
@@ -427,7 +425,7 @@ async fn route_the_start_date_is_parsed_before_the_end_date() {
     let caller = caller();
     let store = Arc::new(FakeStore::answering(CacheActivityRows::default()));
     let reply = call(
-        routes(fake_store(&store)),
+        routes(Some(fake_store(&store))),
         request(
             Method::GET,
             "/global/activity/cache_hits?start_date=2024-13-01&end_date=2024-01-32",
@@ -447,7 +445,7 @@ async fn route_a_single_quote_date_uses_double_quoted_python_repr() {
     let caller = caller();
     let store = Arc::new(FakeStore::answering(CacheActivityRows::default()));
     let reply = call(
-        routes(fake_store(&store)),
+        routes(Some(fake_store(&store))),
         request(
             Method::GET,
             "/global/activity/cache_hits?start_date=2024-01-0%275&end_date=2024-01-31",
@@ -467,7 +465,7 @@ async fn route_store_failures_reach_the_generic_internal_error() {
     let caller = caller();
     let store = Arc::new(FakeStore::failing());
     let reply = call(
-        routes(fake_store(&store)),
+        routes(Some(fake_store(&store))),
         request(Method::GET, REPORT_URI, Some(&caller)),
     )
     .await;
@@ -483,7 +481,7 @@ async fn route_filters_and_dates_reach_the_store() {
     let caller = caller();
     let store = Arc::new(FakeStore::answering(CacheActivityRows::default()));
     let reply = call(
-        routes(fake_store(&store)),
+        routes(Some(fake_store(&store))),
         request(
             Method::GET,
             "/global/activity/cache_hits?start_date=2023-12-31&end_date=2024-1-5&key_aliases=a&key_aliases=b&models=m&models=",
@@ -508,7 +506,7 @@ async fn route_answers_the_cache_activity_report() {
     let caller = caller();
     let store = Arc::new(FakeStore::answering(sample_rows()));
     let reply = call(
-        routes(fake_store(&store)),
+        routes(Some(fake_store(&store))),
         request(Method::GET, REPORT_URI, Some(&caller)),
     )
     .await;

@@ -84,7 +84,7 @@ impl IntoResponse for CacheActivityError {
     }
 }
 
-fn missing_date_issue(name: &'static str) -> MissingDateIssue {
+const fn missing_date_issue(name: &'static str) -> MissingDateIssue {
     MissingDateIssue {
         kind: "missing",
         loc: ["query", name],
