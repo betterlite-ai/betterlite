@@ -1,0 +1,50 @@
+id: B10013
+title: Router search tool refresh port
+description: >-
+  After a search tool create, update or delete, LiteLLM's management routes reload the router's search tools from the database (_refresh_router_search_tools calls proxy_config.reload_search_tools_from_db). The routes are B3275's, in betterlite-server, and the reload is B8384's, in the binary crate crates/betterlite, which betterlite-server may not depend on. So the port between them sits in betterlite-server, and both tasks build on it without waiting on each other. This task builds only that port.
+
+
+  Module search_tool_refresh in betterlite-server, crates/betterlite-server/src/search_tool_refresh.rs with its tests in search_tool_refresh/tests.rs. The file is an empty stub its parent declares. It holds one public trait and one error type:
+
+  `RouterSearchRefresh: Send + Sync` with one native async method, `refresh(&self) -> Result<(), SearchRefreshError>`. It stands for reload_search_tools_from_db: refresh the calling process's router from the search tools table.
+
+  `SearchRefreshError` keeps its cause as #[source] Box<dyn std::error::Error + Send + Sync> and displays that cause's text, so B3275's route can log LiteLLM's "Search tool router refresh failed after a management write: %s" with it. Debug and Display add nothing else.
+
+
+  B3275 takes an implementation of the trait as a constructor argument of its route state and calls it after a committed write, logging and never answering an error from it. B8384 implements it on reload_search_tools_from_db. B8673 passes B8384's implementation to B3275's routes. None of that is built here.
+
+
+  Tests in search_tool_refresh::tests use a fake implementation: one that succeeds, and one that fails with a cause whose text the error's Display shows and whose source() returns that cause.
+scope:
+  paths:
+    - crates/betterlite-server/src/search_tool_refresh.rs
+    - crates/betterlite-server/src/search_tool_refresh/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/search_tool_management.py#L54-L65
+    why: The best-effort refresh the routes call after a write, with its log line.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9039-L9057
+    why: reload_search_tools_from_db, what the trait stands for; B8384 implements it.
+dod:
+  - text: RouterSearchRefresh has the one async refresh method, and an implementation can succeed or fail with a SearchRefreshError.
+    proof: [refresh-tests]
+  - text: SearchRefreshError shows its cause's text in Display and returns the cause from source().
+    proof: [refresh-tests]
+checks:
+  optional: []
+  commands:
+    - id: refresh-tests
+      why: The refresh port or its error type is missing, or the error drops its cause.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^search_tool_refresh::tests::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "_refresh_router_search_tools, the call after each write and its log line: B3275."
+  - "reload_search_tools_from_db, load_search_tools and the merge of config and database tools: B8384, which implements this trait."
+  - "Passing B8384's implementation to B3275's routes: B8673."
+pitfalls:
+  - "The trait is the only thing both sides share; don't add a default implementation or a no-op type here, since a missing router is B8384's case to handle and LiteLLM skips the refresh then."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
