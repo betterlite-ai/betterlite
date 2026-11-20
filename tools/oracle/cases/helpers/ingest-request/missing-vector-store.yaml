@@ -1,0 +1,9 @@
+kind: helper
+name: missing_vector_store
+call:
+  b3462:
+    mode: json
+    body: '{"file_url": "https://example.test/doc.pdf"}'
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,17 @@
+kind: helper
+name: audit-attribution-corpus-payload
+call:
+  audit_attribution:
+    function: payload
+    id: audit-3
+    updated_at: "2024-05-06T07:08:09.123456+00:00"
+    changed_by: null
+    changed_by_api_key: null
+    action: updated
+    table_name: LiteLLM_TeamTable
+    object_id: team-1
+    before_value:
+      api_key: sk-1234567890
+    updated_values: null
+env: {}
+compare: {ignore: []}

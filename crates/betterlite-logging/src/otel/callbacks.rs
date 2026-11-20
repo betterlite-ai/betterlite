@@ -1,6 +1,8 @@
 pub mod agentops;
+pub mod arize_callback;
 pub mod levo;
 pub mod logfire;
+pub mod phoenix_callback;
 pub mod traceloop;
 pub mod weave;
 
