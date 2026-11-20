@@ -374,7 +374,9 @@ fn first_store_follows_the_deduplicated_ids() {
         list(&["unknown", "vs_b", "vs_a", "vs_b"]),
     )]);
     let mut tools = vec![tool("vs_a", vec![])];
-    let found = get_vector_store_to_run(&registry, &params, Some(tools.as_slice())).unwrap();
+    let found = get_vector_store_to_run(&registry, &params, Some(tools.as_slice()))
+        .unwrap()
+        .expect("vs_b answers first");
     assert_eq!(found.vector_store_id.as_deref(), Some("vs_b"));
     assert_eq!(
         params.get("vector_store_ids"),
