@@ -9,11 +9,18 @@ use super::rows::ActiveUsersRow;
 
 pub(super) const MAX_DAYS: u64 = 7;
 pub(super) const MAX_WEEKS: u64 = 7;
+pub(super) const MAX_MONTHS: u64 = 7;
 pub(super) const WAU_SPAN_DAYS: u64 = 48;
+// seven 30-day months, each including its last day, reach back 209 days from the end boundary
+pub(super) const MAU_SPAN_DAYS: u64 = 209;
+pub(super) const PER_USER_SPAN_DAYS: u64 = 30;
 const WEEK_DAYS: u64 = 7;
+const MONTH_DAYS: u64 = 30;
 const PERIOD_START_DAYS: u64 = 6;
-const DATE_FORMAT: &str = "%Y-%m-%d";
+const PERIOD_LAST_DAYS: u64 = 29;
+pub(super) const DATE_FORMAT: &str = "%Y-%m-%d";
 const LABEL_DATE_FORMAT: &str = "%b %d";
+const MONTH_LABEL_FORMAT: &str = "%b";
 
 #[derive(Debug)]
 pub(super) struct Window {
@@ -48,53 +55,121 @@ pub(super) fn active_users_result(
     report: ActiveUsersReport,
     row: ActiveUsersRow,
 ) -> Result<TagActiveUsersResponse, AnalyticsError> {
-    match report {
-        ActiveUsersReport::Daily => Ok(TagActiveUsersResponse {
-            tag: row.tag,
-            active_users: row.active_users,
-            date: row.date,
-            period_start: None,
-            period_end: None,
-        }),
-        ActiveUsersReport::Weekly => weekly_result(window, row),
-    }
+    let bucket = match report {
+        ActiveUsersReport::Daily => {
+            return Ok(TagActiveUsersResponse {
+                tag: row.tag,
+                active_users: row.active_users,
+                date: row.date,
+                period_start: None,
+                period_end: None,
+            });
+        }
+        ActiveUsersReport::Weekly => WEEK_BUCKET,
+        ActiveUsersReport::Monthly => MONTH_BUCKET,
+    };
+    bucketed_result(window, row, &bucket)
 }
 
-pub(super) fn weekly_result(
+struct Bucket {
+    noun: &'static str,
+    limit: u64,
+    last_offset: u64,
+    days: u64,
+    period_length: u64,
+    label_format: &'static str,
+}
+
+// weekly keeps the Week 0 label a checked subtraction gives offset seven, where monthly rejects that offset
+const WEEK_BUCKET: Bucket = Bucket {
+    noun: "Week",
+    limit: MAX_WEEKS,
+    last_offset: MAX_WEEKS,
+    days: WEEK_DAYS,
+    period_length: PERIOD_START_DAYS,
+    label_format: LABEL_DATE_FORMAT,
+};
+
+const MONTH_BUCKET: Bucket = Bucket {
+    noun: "Month",
+    limit: MAX_MONTHS,
+    last_offset: MAX_MONTHS - 1,
+    days: MONTH_DAYS,
+    period_length: PERIOD_LAST_DAYS,
+    label_format: MONTH_LABEL_FORMAT,
+};
+
+fn bucketed_result(
     window: &Window,
     row: ActiveUsersRow,
+    bucket: &Bucket,
 ) -> Result<TagActiveUsersResponse, AnalyticsError> {
     let ActiveUsersRow {
         tag,
         active_users,
         date,
     } = row;
-    let Ok(week_offset) = date.parse::<i64>() else {
-        return Err(AnalyticsError::WeekBucket { bucket: date });
-    };
-    let offset = u64::try_from(week_offset)
-        .map_err(|_negative| AnalyticsError::WeekOffset { week_offset })?;
-    let period_days = offset
-        .checked_mul(WEEK_DAYS)
-        .ok_or(AnalyticsError::WeekOffset { week_offset })?;
-    let week_number = MAX_WEEKS
+    let bucket_offset = offset_of(&date)?;
+    let number = bucket_number(bucket, bucket_offset)?;
+    let (period_start, period_end) =
+        period_of(window, bucket_offset, bucket.days, bucket.period_length)?;
+    Ok(TagActiveUsersResponse {
+        tag,
+        active_users,
+        date: format!(
+            "{} {number} ({})",
+            bucket.noun,
+            period_start.format(bucket.label_format)
+        ),
+        period_start: Some(period_start.format(DATE_FORMAT).to_string()),
+        period_end: Some(period_end.format(DATE_FORMAT).to_string()),
+    })
+}
+
+fn bucket_number(bucket: &Bucket, bucket_offset: i64) -> Result<u64, AnalyticsError> {
+    let offset = u64::try_from(bucket_offset).map_err(|_negative| AnalyticsError::Offset {
+        offset: bucket_offset,
+    })?;
+    if offset > bucket.last_offset {
+        return Err(AnalyticsError::Offset {
+            offset: bucket_offset,
+        });
+    }
+    bucket
+        .limit
         .checked_sub(offset)
-        .ok_or(AnalyticsError::WeekOffset { week_offset })?;
+        .ok_or(AnalyticsError::Offset {
+            offset: bucket_offset,
+        })
+}
+
+fn offset_of(date: &str) -> Result<i64, AnalyticsError> {
+    date.parse::<i64>()
+        .map_err(|_error| AnalyticsError::Bucket {
+            bucket: date.to_owned(),
+        })
+}
+
+fn period_of(
+    window: &Window,
+    bucket_offset: i64,
+    days_per_bucket: u64,
+    period_length: u64,
+) -> Result<(NaiveDate, NaiveDate), AnalyticsError> {
+    let offset = u64::try_from(bucket_offset).map_err(|_negative| AnalyticsError::Offset {
+        offset: bucket_offset,
+    })?;
+    let period_days = offset
+        .checked_mul(days_per_bucket)
+        .ok_or(AnalyticsError::Offset {
+            offset: bucket_offset,
+        })?;
     let period_end = window
         .end_day
         .checked_sub_days(Days::new(period_days))
         .ok_or(AnalyticsError::Window)?;
     let period_start = period_end
-        .checked_sub_days(Days::new(PERIOD_START_DAYS))
+        .checked_sub_days(Days::new(period_length))
         .ok_or(AnalyticsError::Window)?;
-    Ok(TagActiveUsersResponse {
-        tag,
-        active_users,
-        date: format!(
-            "Week {week_number} ({})",
-            period_start.format(LABEL_DATE_FORMAT)
-        ),
-        period_start: Some(period_start.format(DATE_FORMAT).to_string()),
-        period_end: Some(period_end.format(DATE_FORMAT).to_string()),
-    })
+    Ok((period_start, period_end))
 }
