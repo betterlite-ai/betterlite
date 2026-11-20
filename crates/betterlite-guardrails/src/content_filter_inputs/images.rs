@@ -125,7 +125,7 @@ where
     Ok(descriptions)
 }
 
-async fn describe_one<C>(
+pub(super) async fn describe_one<C>(
     completion: &C,
     request: &ImageDescriptionRequest,
     permits: &Semaphore,

@@ -4,7 +4,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use tokio::sync::Barrier;
+use tokio::sync::{Barrier, Semaphore};
 use tokio::task::yield_now;
 use tokio::time::timeout;
 
@@ -15,7 +15,7 @@ use crate::content_filter_inputs::error::ImageProcessingError;
 use crate::content_filter_inputs::images::{
     IMAGE_DESCRIPTION_CONCURRENCY, IMAGE_DESCRIPTION_PROMPT, ImageDescriptionCompletion,
     ImageDescriptionReply, ImageDescriptionRequest, ImageDescriptionResponse, ImageScan,
-    process_images,
+    describe_one, process_images,
 };
 use crate::guardrail_base::failure::GuardrailFailure;
 
@@ -227,6 +227,32 @@ async fn image_description_calls_are_capped_at_eight_in_flight() {
     assert_eq!(state.calls, 12);
     assert_eq!(state.peak, IMAGE_DESCRIPTION_CONCURRENCY);
     assert!(detections.is_empty());
+}
+
+#[tokio::test]
+async fn image_description_closed_semaphore_is_a_typed_error() {
+    let completion = Scripted {
+        response: reply(Some("a scene")),
+        requests: Mutex::new(Vec::new()),
+    };
+    let permits = Semaphore::new(1);
+    permits.close();
+    let request = ImageDescriptionRequest {
+        model: "vision-model".to_owned(),
+        system_prompt: IMAGE_DESCRIPTION_PROMPT,
+        image_url: "img-1".to_owned(),
+    };
+    let error = describe_one(&completion, &request, &permits)
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        &error,
+        ImageProcessingError::SemaphoreClosed { .. }
+    ));
+    let GuardrailFailure::Other(message) = error.into_failure() else {
+        panic!("a closed semaphore is not a block");
+    };
+    assert_eq!(message, "the image description semaphore closed");
 }
 
 #[tokio::test]
