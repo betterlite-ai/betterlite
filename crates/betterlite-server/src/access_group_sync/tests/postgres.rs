@@ -372,21 +372,22 @@ pub(super) async fn team_lock_blocks_until_released(pool: &Pool) {
     let store = PostgresStore {
         pool: Some(pool.clone()),
     };
-    let mut holder = store.session().await.unwrap();
-    let holding = holder.transaction().await.unwrap();
-    holding
+    let mut client = store.session().await.unwrap();
+    let transaction = client.transaction().await.unwrap();
+    transaction
         .query(TEAM_ADVISORY_LOCK_SQL, &[&"t1"])
         .await
         .expect("the held team lock");
     let cache = ScriptedCache::new();
     let mut pending = Box::pin(sync_team_access_groups(&store, &cache, "t1"));
-    let waiting = timeout(Duration::from_secs(1), &mut pending).await;
+    let outcome = timeout(Duration::from_secs(1), &mut pending).await;
+    let still_blocked = outcome.is_err();
     assert!(
-        waiting.is_err(),
+        still_blocked,
         "the sync waits while another transaction holds the team lock"
     );
     assert_eq!(team_ids(pool, "g1").await, None);
-    holding.rollback().await.unwrap();
+    transaction.rollback().await.unwrap();
     timeout(Duration::from_secs(5), pending)
         .await
         .expect("the sync finishes once the lock is released")
