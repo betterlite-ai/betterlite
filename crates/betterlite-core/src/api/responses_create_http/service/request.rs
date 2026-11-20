@@ -8,8 +8,7 @@ use http::Method;
 use http::header::{HeaderName, HeaderValue};
 use url::Url;
 
-use crate::api::responses_compact_http::body::SignedBody;
-use crate::api::responses_compact_http::error::Stage;
+use crate::api::responses_compact_http::body::{SignedBody, signed_body_kwargs};
 use crate::api::responses_compact_http::service::{ClientKind, SharedSession};
 use crate::api::vector_store_http_write::error::display_facts;
 
@@ -18,7 +17,7 @@ use super::super::config::{
     Headers,
 };
 use super::super::convert::{FloatError, float_value};
-use super::super::error::{CreateError, provider_error};
+use super::super::error::{CreateError, Stage, provider_error};
 use super::hook::{self, Applied};
 use super::{ClientSource, CreateCall, CreateDeps, CreateRequest, LogContext, Selected, Staged};
 
