@@ -80,6 +80,6 @@ fn a_null_reset_at_is_not_expired() {
     );
     fields.insert("reset_at".to_owned(), JsonData::Null);
     let window = JsonData::Object(fields);
-    let fields = window_fields("k1", &window).unwrap();
-    assert_eq!(fields.reset_at, None);
+    let parsed = window_fields("k1", &window).unwrap();
+    assert_eq!(parsed.reset_at, None);
 }

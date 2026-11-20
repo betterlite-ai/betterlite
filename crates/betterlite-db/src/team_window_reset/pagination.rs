@@ -160,9 +160,9 @@ async fn reset_row<Schedule, Cache, Durations>(
     row: &WindowRow,
 ) -> Result<Option<String>, WindowResetError<Schedule::Failure>>
 where
-    Schedule: ResetSchedule,
+    Schedule: ResetSchedule + Sync,
     Cache: WindowCounterCache,
-    Durations: WindowDurationSeconds,
+    Durations: WindowDurationSeconds + Sync,
 {
     let Some(raw) = row.budget_limits.as_deref() else {
         return Ok(None);

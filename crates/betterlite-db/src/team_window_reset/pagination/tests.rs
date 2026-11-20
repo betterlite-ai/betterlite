@@ -9,8 +9,8 @@ use crate::budget_reset_policy::phase_draining::ResetLimits;
 use crate::team_window_reset::tests::support::{
     CountingReconnect, FakeCounterCache, KEY_COLUMN, KEY_TABLE, TABLES, TEAM_COLUMN, TEAM_TABLE,
     TestDurations, TestSchedule, WindowHarness, budget_limits_type, close_store, decimal, finish,
-    insert_expired_windows, insert_windows, moment, next_text, past, provision, schema,
-    window_json, window_text, windows_text,
+    insert_expired_windows, insert_windows, moment, next_text, provision, schema, window_json,
+    window_text, windows_text,
 };
 
 const PAST_TEXT: &str = "2025-12-30T00:00:00+00:00";
@@ -90,7 +90,7 @@ async fn walks_every_page_until_the_table_ends() {
         Some(decimal("0"))
     );
     close_store(harness.store.clone());
-    finish(fixture, harness.store.clone(), client).await;
+    finish(fixture, harness.store, client).await;
 }
 
 #[tokio::test]
@@ -125,7 +125,7 @@ async fn leaves_a_window_that_has_not_expired_alone() {
     assert_eq!(window_text(&fresh, "reset_at"), Some(FRESH_TEXT.to_owned()));
     assert_window_reset(&client, KEY_TABLE, KEY_COLUMN, "2-due").await;
     close_store(harness.store.clone());
-    finish(fixture, harness.store.clone(), client).await;
+    finish(fixture, harness.store, client).await;
 }
 
 #[tokio::test]
@@ -155,7 +155,7 @@ async fn reads_and_keeps_the_json_string_form() {
     harness.run().await;
     assert_window_reset(&client, KEY_TABLE, KEY_COLUMN, "s").await;
     close_store(harness.store.clone());
-    finish(fixture, harness.store.clone(), client).await;
+    finish(fixture, harness.store, client).await;
 }
 
 #[tokio::test]
@@ -186,7 +186,7 @@ async fn rewrites_the_whole_list_keeping_the_fresh_window() {
     assert_eq!(window_text(hourly, "reset_at"), Some(next_text()));
     assert_eq!(window_text(daily, "reset_at"), Some(FRESH_TEXT.to_owned()));
     close_store(harness.store.clone());
-    finish(fixture, harness.store.clone(), client).await;
+    finish(fixture, harness.store, client).await;
 }
 
 #[tokio::test]
@@ -209,7 +209,7 @@ async fn resets_team_windows_too() {
         Some(decimal("0"))
     );
     close_store(harness.store.clone());
-    finish(fixture, harness.store.clone(), client).await;
+    finish(fixture, harness.store, client).await;
 }
 
 #[tokio::test]
@@ -240,7 +240,7 @@ async fn a_malformed_window_stops_only_its_own_source() {
     );
     assert_window_reset(&client, TEAM_TABLE, TEAM_COLUMN, "t1").await;
     close_store(harness.store.clone());
-    finish(fixture, harness.store.clone(), client).await;
+    finish(fixture, harness.store, client).await;
 }
 
 #[tokio::test]
@@ -266,7 +266,7 @@ async fn a_failed_write_stops_only_its_own_source() {
     );
     assert_window_reset(&client, TEAM_TABLE, TEAM_COLUMN, "t1").await;
     close_store(harness.store.clone());
-    finish(fixture, harness.store.clone(), client).await;
+    finish(fixture, harness.store, client).await;
 }
 
 #[tokio::test]
@@ -283,5 +283,5 @@ async fn a_missing_table_stops_only_its_own_source() {
     harness.run().await;
     assert_window_reset(&client, TEAM_TABLE, TEAM_COLUMN, "t1").await;
     close_store(harness.store.clone());
-    finish(fixture, harness.store.clone(), client).await;
+    finish(fixture, harness.store, client).await;
 }

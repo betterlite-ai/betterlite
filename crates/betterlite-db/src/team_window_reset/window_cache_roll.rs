@@ -33,9 +33,9 @@ pub struct WindowResetter<'ports, Schedule, Cache, Durations> {
 
 impl<Schedule, Cache, Durations> WindowResetter<'_, Schedule, Cache, Durations>
 where
-    Schedule: ResetSchedule,
+    Schedule: ResetSchedule + Sync,
     Cache: WindowCounterCache,
-    Durations: WindowDurationSeconds,
+    Durations: WindowDurationSeconds + Sync,
 {
     // _reset_expired_window: only an expired window moves; its counter settles first, then the JSON expiry advances, then the maintained row roll is best effort.
     pub(crate) async fn reset_expired_window(
@@ -46,10 +46,10 @@ where
     ) -> Result<bool, WindowResetError<Schedule::Failure>> {
         let fields = window_fields(row_id, window)?;
         let expired =
-            window_is_expired(fields.reset_at, self.now.naive_utc()).map_err(|source| {
+            window_is_expired(fields.reset_at, self.now.naive_utc()).map_err(|cause| {
                 WindowResetError::Expiry {
                     row: row_id.to_owned(),
-                    source,
+                    source: cause,
                 }
             })?;
         if !expired {

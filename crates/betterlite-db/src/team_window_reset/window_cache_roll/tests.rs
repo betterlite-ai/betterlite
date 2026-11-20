@@ -44,7 +44,7 @@ async fn expired_window_settles_the_counter_and_rolls_the_spend_row() {
     assert_eq!(spend.to_bits(), 0.0_f64.to_bits());
     assert_eq!(updated_at, moment(0).naive_utc());
     close_store(harness.store.clone());
-    finish(fixture, harness.store.clone(), client).await;
+    finish(fixture, harness.store, client).await;
 }
 
 #[tokio::test]
@@ -81,7 +81,7 @@ async fn team_windows_use_the_team_counter_prefix() {
     assert_eq!(start, moment(0).naive_utc());
     assert_eq!(spend.to_bits(), 0.0_f64.to_bits());
     close_store(harness.store.clone());
-    finish(fixture, harness.store.clone(), client).await;
+    finish(fixture, harness.store, client).await;
 }
 
 #[tokio::test]
@@ -114,7 +114,7 @@ async fn window_with_a_future_reset_time_is_untouched() {
     assert_eq!(start, past());
     assert_eq!(spend.to_bits(), 99.0_f64.to_bits());
     close_store(harness.store.clone());
-    finish(fixture, harness.store.clone(), client).await;
+    finish(fixture, harness.store, client).await;
 }
 
 #[tokio::test]
@@ -146,7 +146,7 @@ async fn window_without_a_reset_time_is_untouched() {
     assert_eq!(window_text(&window, "reset_at"), None);
     assert!(window_spend_row(&client, "key", "k1", "1h").await.is_none());
     close_store(harness.store.clone());
-    finish(fixture, harness.store.clone(), client).await;
+    finish(fixture, harness.store, client).await;
 }
 
 #[tokio::test]
@@ -185,7 +185,7 @@ async fn expired_window_without_a_cap_resets_to_zero_without_a_read() {
         Some(decimal(0))
     );
     close_store(harness.store.clone());
-    finish(fixture, harness.store.clone(), client).await;
+    finish(fixture, harness.store, client).await;
 }
 
 #[tokio::test]
@@ -220,7 +220,7 @@ async fn redis_failure_keeps_the_reset_and_the_memory_counter() {
     assert_eq!(harness.cache.redis_of("spend:key:k1:window:1h"), None);
     assert_eq!(window_text(&window, "reset_at"), Some(next_text()));
     close_store(harness.store.clone());
-    finish(fixture, harness.store.clone(), client).await;
+    finish(fixture, harness.store, client).await;
 }
 
 #[tokio::test]
@@ -255,7 +255,7 @@ async fn unparsable_duration_skips_only_the_roll() {
     assert_eq!(start, past());
     assert_eq!(spend.to_bits(), 99.0_f64.to_bits());
     close_store(harness.store.clone());
-    finish(fixture, harness.store.clone(), client).await;
+    finish(fixture, harness.store, client).await;
 }
 
 #[tokio::test]
@@ -289,7 +289,7 @@ async fn calendar_overflow_skips_only_the_roll() {
     assert_eq!(start, past());
     assert_eq!(spend.to_bits(), 99.0_f64.to_bits());
     close_store(harness.store.clone());
-    finish(fixture, harness.store.clone(), client).await;
+    finish(fixture, harness.store, client).await;
 }
 
 #[tokio::test]
@@ -323,5 +323,5 @@ async fn refused_reset_time_leaves_the_window_unchanged() {
         Some(decimal(0))
     );
     close_store(harness.store.clone());
-    finish(fixture, harness.store.clone(), client).await;
+    finish(fixture, harness.store, client).await;
 }

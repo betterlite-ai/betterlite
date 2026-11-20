@@ -75,7 +75,7 @@ async fn resets_every_due_team_and_reports_the_counts() {
     );
     assert!(harness.failures.events().is_empty());
     close_store(harness.store.clone());
-    finish(fixture, harness.store.clone(), client).await;
+    finish(fixture, harness.store, client).await;
 }
 
 #[tokio::test]
@@ -103,7 +103,7 @@ async fn leaves_a_team_whose_reset_time_is_ahead_alone() {
         Some(0)
     );
     close_store(harness.store.clone());
-    finish(fixture, harness.store.clone(), client).await;
+    finish(fixture, harness.store, client).await;
 }
 
 #[tokio::test]
@@ -129,7 +129,7 @@ async fn invalidates_each_reset_teams_counter() {
         vec!["spend:team:a".to_owned(), "spend:team:b".to_owned()]
     );
     close_store(harness.store.clone());
-    finish(fixture, harness.store.clone(), client).await;
+    finish(fixture, harness.store, client).await;
 }
 
 #[tokio::test]
@@ -150,7 +150,7 @@ async fn rollover_keeps_the_spend_above_the_cap() {
         Some(moment(3600).naive_utc())
     );
     close_store(harness.store.clone());
-    finish(fixture, harness.store.clone(), client).await;
+    finish(fixture, harness.store, client).await;
 }
 
 #[tokio::test]
@@ -183,7 +183,7 @@ async fn one_refused_team_does_not_stop_the_chunk() {
     assert_eq!(event.error, "Failed to reset 1 teams: bad: no such unit");
     assert_eq!(number_of(&event.event_metadata, "num_teams_found"), Some(2));
     close_store(harness.store.clone());
-    finish(fixture, harness.store.clone(), client).await;
+    finish(fixture, harness.store, client).await;
 }
 
 #[tokio::test]
@@ -213,7 +213,7 @@ async fn a_chunk_where_every_team_fails_reports_them_without_writing() {
     assert!(event.error.contains("b: no such unit"));
     assert_eq!(number_of(&event.event_metadata, "num_teams_found"), Some(2));
     close_store(harness.store.clone());
-    finish(fixture, harness.store.clone(), client).await;
+    finish(fixture, harness.store, client).await;
 }
 
 #[tokio::test]
@@ -235,7 +235,7 @@ async fn a_failed_read_reports_the_phase_without_writing() {
     assert_eq!(number_of(&event.event_metadata, "num_teams_found"), Some(0));
     assert!(harness.cache.calls().is_empty());
     close_store(harness.store.clone());
-    finish(fixture, harness.store.clone(), client).await;
+    finish(fixture, harness.store, client).await;
 }
 
 #[tokio::test]
@@ -261,7 +261,7 @@ async fn a_failed_write_reports_the_phase_and_stops() {
     assert_spend(&client, TEAM_TABLE, TEAM_COLUMN, "b", 4.0).await;
     assert!(harness.cache.calls().is_empty());
     close_store(harness.store.clone());
-    finish(fixture, harness.store.clone(), client).await;
+    finish(fixture, harness.store, client).await;
 }
 
 #[tokio::test]
@@ -291,7 +291,7 @@ async fn chunks_stop_at_the_configured_maximum() {
     harness.run().await;
     assert_eq!(reset_count(&client, &["a", "b", "c"]).await, 3_usize);
     close_store(harness.store.clone());
-    finish(fixture, harness.store.clone(), client).await;
+    finish(fixture, harness.store, client).await;
 }
 
 #[tokio::test]
@@ -320,7 +320,7 @@ async fn nothing_due_reports_zero_counts_and_writes_nothing() {
     assert!(harness.failures.events().is_empty());
     assert!(harness.cache.calls().is_empty());
     close_store(harness.store.clone());
-    finish(fixture, harness.store.clone(), client).await;
+    finish(fixture, harness.store, client).await;
 }
 
 #[test]

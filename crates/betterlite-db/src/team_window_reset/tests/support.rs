@@ -147,6 +147,10 @@ pub(crate) fn decimal(text: &str) -> Decimal {
     Decimal::from_str(text).expect("a decimal amount")
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one argument per column of the team row a test seeds"
+)]
 pub(crate) async fn insert_team(
     client: &Client,
     team_id: &str,
@@ -202,6 +206,10 @@ pub(crate) async fn insert_expired_windows(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one argument per column of the window spend row a test seeds"
+)]
 pub(crate) async fn seed_window_spend(
     client: &Client,
     entity_type: &str,
@@ -884,7 +892,7 @@ impl<Cache, Durations, Reconnect> WindowHarness<Cache, Durations, Reconnect> {
     pub(crate) async fn run(&mut self)
     where
         Cache: WindowCounterCache,
-        Durations: WindowDurationSeconds + Sync,
+        Durations: WindowDurationSeconds + Send + Sync,
         Reconnect: DbReconnect + Send,
     {
         let window_spend = WindowSpendStore::from_store(self.store.clone());
