@@ -39,7 +39,7 @@ struct KeyIdentityView {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
-struct AuthTokenQuery {
+pub(crate) struct AuthTokenQuery {
     plugin_name: Option<String>,
 }
 

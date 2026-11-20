@@ -90,30 +90,16 @@ async fn forward_method(app: Router, method: Method) -> StatusCode {
 async fn forwards_every_supported_method() {
     let upstream = FakeUpstream::answering(reply(StatusCode::OK, ""));
     let app = router(plugin_state(Arc::clone(&upstream)));
-    assert_eq!(
-        forward_method(app.clone(), Method::GET).await,
-        StatusCode::OK
-    );
-    assert_eq!(
-        forward_method(app.clone(), Method::POST).await,
-        StatusCode::OK
-    );
-    assert_eq!(
-        forward_method(app.clone(), Method::PUT).await,
-        StatusCode::OK
-    );
-    assert_eq!(
-        forward_method(app.clone(), Method::DELETE).await,
-        StatusCode::OK
-    );
-    assert_eq!(
-        forward_method(app.clone(), Method::PATCH).await,
-        StatusCode::OK
-    );
-    assert_eq!(
-        forward_method(app.clone(), Method::OPTIONS).await,
-        StatusCode::OK
-    );
+    for method in [
+        Method::GET,
+        Method::POST,
+        Method::PUT,
+        Method::DELETE,
+        Method::PATCH,
+        Method::OPTIONS,
+    ] {
+        assert_eq!(forward_method(app.clone(), method).await, StatusCode::OK);
+    }
     assert_eq!(forward_method(app, Method::HEAD).await, StatusCode::OK);
     let sent = upstream.sent();
     let forwarded: Vec<Method> = sent.iter().map(|request| request.method.clone()).collect();
@@ -273,12 +259,12 @@ async fn answers_502_when_a_forwarded_header_is_invalid() {
 async fn answers_413_for_a_body_over_the_limit() {
     let upstream = FakeUpstream::answering(reply(StatusCode::OK, ""));
     let app = router(plugin_state(Arc::clone(&upstream)));
-    let body = Body::from(vec![0_u8; REQUEST_BODY_LIMIT + 1]);
+    let payload = Body::from(vec![0_u8; REQUEST_BODY_LIMIT + 1]);
     let request = authorized(
         method_request(
             Method::POST,
             "/plugin-proxy/litellm-platform-plugin/path",
-            body,
+            payload,
         ),
         master_key(),
     );
@@ -290,14 +276,14 @@ async fn answers_413_for_a_body_over_the_limit() {
 
 #[tokio::test]
 async fn passes_a_redirect_response_through() {
-    let mut headers = HeaderMap::new();
-    headers.insert(
+    let mut answer_headers = HeaderMap::new();
+    answer_headers.insert(
         "location",
         HeaderValue::from_static("http://elsewhere.local"),
     );
     let answer = PluginReply {
         status: StatusCode::FOUND,
-        headers,
+        headers: answer_headers,
         body: Vec::new(),
     };
     let upstream = FakeUpstream::answering(answer);
@@ -314,18 +300,18 @@ async fn passes_a_redirect_response_through() {
 
 #[tokio::test]
 async fn drops_unsafe_response_headers_and_forces_the_sandbox() {
-    let mut headers = HeaderMap::new();
-    headers.insert("content-encoding", HeaderValue::from_static("gzip"));
-    headers.insert("transfer-encoding", HeaderValue::from_static("chunked"));
-    headers.insert("content-length", HeaderValue::from_static("10"));
-    headers.insert("set-cookie", HeaderValue::from_static("session=abc"));
-    headers.insert(
+    let mut answer_headers = HeaderMap::new();
+    answer_headers.insert("content-encoding", HeaderValue::from_static("gzip"));
+    answer_headers.insert("transfer-encoding", HeaderValue::from_static("chunked"));
+    answer_headers.insert("content-length", HeaderValue::from_static("10"));
+    answer_headers.insert("set-cookie", HeaderValue::from_static("session=abc"));
+    answer_headers.insert(
         "content-security-policy",
         HeaderValue::from_static("default-src *"),
     );
     let answer = PluginReply {
         status: StatusCode::OK,
-        headers,
+        headers: answer_headers,
         body: b"page".to_vec(),
     };
     let upstream = FakeUpstream::answering(answer);
@@ -359,7 +345,7 @@ async fn reads_the_custom_key_header_on_every_request() {
     first
         .headers_mut()
         .insert("x-custom-key", HeaderValue::from_static("sk-caller"));
-    let (_status, _headers, _body) = send(app.clone(), first).await;
+    let (_first_status, _first_headers, _first_body) = send(app.clone(), first).await;
     source.rename(None);
     let mut second = authorized(
         get_request("/plugin-proxy/litellm-platform-plugin/path"),
@@ -368,7 +354,7 @@ async fn reads_the_custom_key_header_on_every_request() {
     second
         .headers_mut()
         .insert("x-custom-key", HeaderValue::from_static("sk-caller"));
-    let (_status, _headers, _body) = send(app, second).await;
+    let (_second_status, _second_headers, _second_body) = send(app, second).await;
     let sent = upstream.sent();
     assert!(!sent[0].headers.contains_key("x-custom-key"));
     assert_eq!(sent[1].headers["x-custom-key"], "sk-caller");

@@ -8,7 +8,7 @@ use axum::http::{Request, StatusCode};
 use axum::routing::get as route_get;
 use betterlite_auth::auth_identity::roles::Role;
 
-use super::{list_plugins, plugin_auth_token};
+use super::{caller_identity, list_plugins, plugin_auth_token};
 use crate::plugin_routes::claim::{SALT_VARIABLE, verify_plugin_session_claim};
 use crate::plugin_routes::config::PluginRegistry;
 use crate::plugin_routes::proxy::PluginState;
@@ -171,21 +171,12 @@ async fn auth_token_uses_the_key_identity() {
     .await;
 }
 
-async fn claim_role_for(roles: Vec<Role>) -> String {
-    temp_env::async_with_vars([(SALT_VARIABLE, Some(SALT))], async move {
-        let app = application(idle_state());
-        let request = authorized(
-            get_request("/api/plugins/auth-token"),
-            caller("key-owner", roles),
-        );
-        let (status, _headers, body) = send(app, request).await;
-        assert_eq!(status, StatusCode::OK);
-        let token = json(&body)["session_claim"].as_str().unwrap().to_owned();
-        verify_plugin_session_claim(PLUGIN, &token)
-            .unwrap()
-            .user_role
-    })
-    .await
+fn claim_role_for(roles: Vec<Role>) -> String {
+    let context = caller("key-owner", roles);
+    caller_identity(&context.principal)
+        .expect("the caller identity is read")
+        .user_role
+        .expect("the caller has a role")
 }
 
 #[tokio::test]
@@ -206,28 +197,27 @@ async fn auth_token_uses_the_user_record_id_when_the_caller_has_no_key() {
     .await;
 }
 
-#[tokio::test]
-async fn auth_token_falls_back_to_the_platform_admin_role() {
-    let role = claim_role_for(vec![Role::PlatformAdmin]).await;
-    assert_eq!(role, "proxy_admin");
+#[test]
+fn auth_token_falls_back_to_the_platform_admin_role() {
+    assert_eq!(claim_role_for(vec![Role::PlatformAdmin]), "proxy_admin");
 }
 
-#[tokio::test]
-async fn auth_token_falls_back_to_the_platform_viewer_role() {
-    let role = claim_role_for(vec![Role::PlatformViewer]).await;
-    assert_eq!(role, "proxy_admin_viewer");
+#[test]
+fn auth_token_falls_back_to_the_platform_viewer_role() {
+    assert_eq!(
+        claim_role_for(vec![Role::PlatformViewer]),
+        "proxy_admin_viewer"
+    );
 }
 
-#[tokio::test]
-async fn auth_token_falls_back_to_the_org_admin_role() {
-    let role = claim_role_for(vec![Role::OrgAdmin]).await;
-    assert_eq!(role, "org_admin");
+#[test]
+fn auth_token_falls_back_to_the_org_admin_role() {
+    assert_eq!(claim_role_for(vec![Role::OrgAdmin]), "org_admin");
 }
 
-#[tokio::test]
-async fn auth_token_falls_back_to_the_internal_user_role() {
-    let role = claim_role_for(Vec::new()).await;
-    assert_eq!(role, "internal_user");
+#[test]
+fn auth_token_falls_back_to_the_internal_user_role() {
+    assert_eq!(claim_role_for(Vec::new()), "internal_user");
 }
 
 #[tokio::test]

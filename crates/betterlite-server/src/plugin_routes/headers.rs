@@ -84,17 +84,16 @@ fn insert_identity(
     user_id: Option<&str>,
     user_role: Option<&str>,
 ) -> Result<(), PluginError> {
-    if let Some(user_id) = user_id {
-        let value = HeaderValue::from_str(user_id).map_err(|_error| PluginError::HeaderValue {
+    if let Some(id) = user_id {
+        let value = HeaderValue::from_str(id).map_err(|_error| PluginError::HeaderValue {
             name: "x-litellm-user-id",
         })?;
         forwarded.insert(HeaderName::from_static("x-litellm-user-id"), value);
     }
-    if let Some(user_role) = user_role {
-        let value =
-            HeaderValue::from_str(user_role).map_err(|_error| PluginError::HeaderValue {
-                name: "x-litellm-user-role",
-            })?;
+    if let Some(role) = user_role {
+        let value = HeaderValue::from_str(role).map_err(|_error| PluginError::HeaderValue {
+            name: "x-litellm-user-role",
+        })?;
         forwarded.insert(HeaderName::from_static("x-litellm-user-role"), value);
     }
     Ok(())

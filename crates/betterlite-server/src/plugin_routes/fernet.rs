@@ -52,7 +52,7 @@ pub(crate) struct FernetKey {
 
 impl FernetKey {
     // Split as the spec does: the first half signs, the second half encrypts.
-    pub(crate) fn from_material(material: [u8; KEY_BYTES]) -> Self {
+    pub(crate) const fn from_material(material: [u8; KEY_BYTES]) -> Self {
         let mut signing = [0_u8; HALF_KEY_BYTES];
         let mut encryption = [0_u8; HALF_KEY_BYTES];
         let (first, second) = material.split_at(HALF_KEY_BYTES);

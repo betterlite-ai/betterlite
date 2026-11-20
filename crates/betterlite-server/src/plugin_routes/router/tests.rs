@@ -47,7 +47,7 @@ async fn serves_the_proxy_with_a_trailing_slash() {
     let upstream = FakeUpstream::answering(reply(StatusCode::OK, ""));
     let app = router(plugin_state(Arc::clone(&upstream)));
     let request = authorized(
-        get_request(&format!("/plugin-proxy/{}/", PLUGIN)),
+        get_request(&format!("/plugin-proxy/{PLUGIN}/")),
         master_key(),
     );
     let (status, _headers, _body) = send(app, request).await;
@@ -60,7 +60,7 @@ async fn serves_the_proxy_with_a_path() {
     let upstream = FakeUpstream::answering(reply(StatusCode::OK, ""));
     let app = router(plugin_state(Arc::clone(&upstream)));
     let request = authorized(
-        get_request(&format!("/plugin-proxy/{}/a/b", PLUGIN)),
+        get_request(&format!("/plugin-proxy/{PLUGIN}/a/b")),
         master_key(),
     );
     let (status, _headers, _body) = send(app, request).await;
@@ -73,7 +73,7 @@ async fn does_not_serve_the_proxy_without_a_trailing_slash() {
     let upstream = FakeUpstream::answering(reply(StatusCode::OK, ""));
     let app = router(plugin_state(Arc::clone(&upstream)));
     let request = authorized(
-        get_request(&format!("/plugin-proxy/{}", PLUGIN)),
+        get_request(&format!("/plugin-proxy/{PLUGIN}")),
         master_key(),
     );
     let (status, _headers, _body) = send(app, request).await;
@@ -85,7 +85,7 @@ async fn proxy_method_status(app: Router, method: Method) -> StatusCode {
     let request = authorized(
         Request::builder()
             .method(method)
-            .uri(format!("/plugin-proxy/{}/path", PLUGIN))
+            .uri(format!("/plugin-proxy/{PLUGIN}/path"))
             .body(Body::empty())
             .unwrap(),
         master_key(),
@@ -133,7 +133,7 @@ async fn answers_405_for_a_method_the_proxy_does_not_serve() {
     let request = authorized(
         Request::builder()
             .method(Method::TRACE)
-            .uri(format!("/plugin-proxy/{}/path", PLUGIN))
+            .uri(format!("/plugin-proxy/{PLUGIN}/path"))
             .body(Body::empty())
             .unwrap(),
         master_key(),

@@ -34,6 +34,7 @@ impl PluginRegistry {
         }
         let mut plugins = self.plugins.write().unwrap_or_else(PoisonError::into_inner);
         *plugins = next;
+        drop(plugins);
         Ok(())
     }
 }

@@ -1,3 +1,4 @@
+use hmac::digest::InvalidLength;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -17,7 +18,7 @@ pub enum PluginError {
     #[error("the plugin claim key could not be derived: {source}")]
     ClaimKey {
         #[source]
-        source: hmac::digest::InvalidLength,
+        source: InvalidLength,
     },
     #[error("the forwarded header {name} has an invalid value")]
     HeaderValue { name: &'static str },

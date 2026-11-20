@@ -140,7 +140,8 @@ fn parses_the_plugin_key_as_a_secret() {
         ))
         .unwrap();
     let plugins = registry.plugins.read().unwrap();
-    let key = plugins["alpha"].plugin_key.as_ref().unwrap();
+    let key = plugins["alpha"].plugin_key.clone().unwrap();
+    drop(plugins);
     assert_eq!(key.expose_secret(), "sk-plugin");
 }
 
