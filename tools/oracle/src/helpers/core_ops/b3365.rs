@@ -2,6 +2,7 @@ mod clients;
 mod support;
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::future::Future;
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -122,38 +123,41 @@ fn run_case(input: &Input) -> HelperResult {
         logging: hook.clone(),
     };
     let call = fixture.call(input);
-    let outcome = match input.operation {
-        Operation::Retrieve => retrieve(&handler, &call, input)?,
-        Operation::Delete => delete(&handler, &call, input)?,
-    };
+    let outcome = operation_outcome(&handler, &call, input)?;
     let request = source.only_request()?;
     observation(input, &request, hook.record(), outcome)
 }
 
-fn retrieve(handler: &Handler, call: &Call<'_>, input: &Input) -> HelperResult {
-    match handler.container_retrieve_handler(call, input.asynchronous) {
-        Ok(Handled::Done(record)) => Ok(ok_outcome(&container_json(&record))),
-        Ok(Handled::Pending(pending)) => {
-            let runtime = Builder::new_current_thread().build().or_value_error()?;
-            let settled = runtime.block_on(pending);
-            Ok(settled.map_or_else(
-                |error| error_outcome(&error, &input.reply),
-                |record| ok_outcome(&container_json(&record)),
-            ))
-        }
-        Err(error) => Ok(error_outcome(&error, &input.reply)),
+fn operation_outcome(handler: &Handler, call: &Call<'_>, input: &Input) -> HelperResult {
+    match input.operation {
+        Operation::Retrieve => settle(
+            handler.container_retrieve_handler(call, input.asynchronous),
+            input,
+            |record| json!({"kind": "ok", "record": container_json(record)}),
+        ),
+        Operation::Delete => settle(
+            handler.container_delete_handler(call, input.asynchronous),
+            input,
+            |record| json!({"kind": "ok", "record": deletion_json(record)}),
+        ),
     }
 }
 
-fn delete(handler: &Handler, call: &Call<'_>, input: &Input) -> HelperResult {
-    match handler.container_delete_handler(call, input.asynchronous) {
-        Ok(Handled::Done(record)) => Ok(ok_outcome(&deletion_json(&record))),
+fn settle<Reply, Pending>(
+    handled: Result<Handled<Reply, Pending>, ContainerResourceHttpError>,
+    input: &Input,
+    encode: fn(&Reply) -> Value,
+) -> HelperResult
+where
+    Pending: Future<Output = Result<Reply, ContainerResourceHttpError>>,
+{
+    match handled {
+        Ok(Handled::Done(record)) => Ok(json!({"kind": "ok", "record": encode(&record)})),
         Ok(Handled::Pending(pending)) => {
             let runtime = Builder::new_current_thread().build().or_value_error()?;
-            let settled = runtime.block_on(pending);
-            Ok(settled.map_or_else(
+            Ok(runtime.block_on(pending).map_or_else(
                 |error| error_outcome(&error, &input.reply),
-                |record| ok_outcome(&deletion_json(&record)),
+                |record| json!({"kind": "ok", "record": encode(&record)}),
             ))
         }
         Err(error) => Ok(error_outcome(&error, &input.reply)),
@@ -191,10 +195,6 @@ fn extra_query(input: &Input) -> IndexMap<String, ParamValue> {
         .iter()
         .map(|(name, value)| (name.clone(), ParamValue::Text(value.clone())))
         .collect()
-}
-
-fn ok_outcome(record: &Value) -> Value {
-    json!({"kind": "ok", "record": record})
 }
 
 fn error_outcome(error: &ContainerResourceHttpError, reply: &ReplyInput) -> Value {
