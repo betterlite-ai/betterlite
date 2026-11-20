@@ -141,6 +141,27 @@ async fn create_sends_the_declared_fields() {
     });
 }
 
+// the mock answers before the provider is resolved, so a provider no enum member names still returns it
+#[tokio::test]
+async fn create_mock_precedes_provider_resolution() {
+    let fakes = Fakes::new();
+    let source = fakes.source(CREATE_RESULT);
+    let mut logs = Logs::new("vector_store_create");
+    let optional = Params::new();
+    let kwargs = params(
+        r#"{"api_base":"https://mock.invalid/v1","mock_response":{"id":"vs_a","object":"vector_store"}}"#,
+    );
+    let mut call = create_call(&optional, &kwargs, Entry::Sync);
+    call.custom_llm_provider = Some("bogus");
+    let deps = fakes.deps(&source, None);
+    let result = logs
+        .run_create(&deps, &call)
+        .await
+        .expect("the mock answers");
+    assert_eq!(result, json(CREATE_RESULT));
+    fakes.seen.with(|seen| assert_eq!(seen.clients.len(), 0));
+}
+
 // ssl_verify is the GenericLiteLLMParams flag the caller set, handed to the client source as given
 #[rstest]
 #[case::verify(r#"{"api_base":"https://mock.invalid/v1","ssl_verify":true}"#, true)]

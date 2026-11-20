@@ -191,6 +191,14 @@ async fn registry_overlays_search_credentials() {
     logs.run_search(&deps, &call)
         .await
         .expect("the mock provider answers");
+    // the overlay lands before the pre-call logging, so the recorded params carry it too
+    let Json::Object(litellm_params) = logs.detail("litellm_params") else {
+        panic!("the logged litellm params are an object");
+    };
+    assert_eq!(
+        litellm_params.get("api_key"),
+        Some(&Json::Text(String::from("sk-registry")))
+    );
     fakes.seen.with(|seen| {
         assert_eq!(
             seen.search_litellm_params
@@ -236,7 +244,8 @@ async fn invalid_executor_fails_before_any_http() {
     let fakes = Fakes::new();
     let source = fakes.source(SEARCH_RESULT);
     let mut logs = Logs::new("vector_store_search");
-    let kwargs = params(r#"{"api_base":"https://mock.invalid/v1"}"#);
+    // a mock that would answer does not run: the executor is checked before the mock
+    let kwargs = params(r#"{"api_base":"https://mock.invalid/v1","mock_response":"yes"}"#);
     let optional = Params::new();
     let query = SearchQuery::Text(String::from("one"));
     let mut call = search_call(&query, &optional, &kwargs, Entry::Sync);
