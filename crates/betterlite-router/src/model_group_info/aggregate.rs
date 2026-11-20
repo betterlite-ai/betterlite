@@ -125,7 +125,9 @@ where
 {
     let mut state = AggregateState::new(&rows.model_group, user_facing);
     for row in &rows.rows {
-        if row.model_name != rows.model_group && !rows.pattern_matches {
+        // _set_model_group_info's match: the row's own name, or a group name the wildcard router covers.
+        let matched = row.model_name == rows.model_group || rows.pattern_matches;
+        if !matched {
             continue;
         }
         advance(sources, row, &mut state, keys).await?;
