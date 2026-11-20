@@ -1,0 +1,30 @@
+task: B8746
+deviations:
+  - what: The otel and logfire names each build their own legacy OpenTelemetry logger. LiteLLM hands back any plain OpenTelemetry already in memory, so after langtrace, signoz or the other name, otel and logfire reuse that logger and export to the earlier name's endpoint.
+    why: That reuse sends otel and logfire spans to another vendor's collector, which reads as an accident of the order the callbacks were listed in; each name keeps its own logger here, so its endpoint and headers are the ones its own variables configure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4813-L4828
+  - what: >-
+      With LITELLM_OTEL_V2 on, the eleven names in this task stop startup with the unavailable-adapter error naming the callback
+      until B110 injects the runtime built by B10007, and agentops does so whatever the switch until B10008 lands; LiteLLM
+      builds them without a runtime.
+    why: The V2 logger needs the production runtime and AgentOps needs an async startup fetch. A silent fallback to the legacy logger would export somewhere the operator did not configure, so the arm refuses its name instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4798-L4811
+  - what: >-
+      A callback_settings.otel.attributes value that is not a mapping of include_list and exclude_list string lists fails
+      the config load naming callback_settings.otel.attributes; LiteLLM logs the ValueError when the otel logger starts and
+      runs without that logger.
+    why: The config layer carries the setting typed. Both lists set, an unknown attribute name and the token type still fail at logger init as in LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L176-L187
+  - what: >-
+      callback_settings.otel.baggage_team_metadata_keys and baggage_metadata_keys in config.yaml do not reach the legacy otel
+      logger. Only the environment supplies them on that path; the YAML values configure the V2 logger, which reads the typed
+      otel settings section.
+    why: LiteLLM passes the whole callback_settings.otel dict to OpenTelemetry(**kwargs) and pops those two keys as overrides on top of the environment. The typed otel section flattens an absent key and an empty list into the same value, so it cannot tell an override from no override, and the legacy path keeps the environment as its only source.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L393-L403
+  - what: >-
+      After otel, the Phoenix auto start resolves arize_phoenix through the catalog, so with LITELLM_OTEL_V2 on it builds the
+      V2 arize_phoenix logger when the runtime is injected; LiteLLM constructs its legacy ArizePhoenixLogger by hand whatever
+      the switch says.
+    why: The auto start runs the same arm an explicit arize_phoenix callback runs, so one switch decides both. Building the legacy class behind the operator's back would export a second logger class alongside the V2 one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L5292-L5302
+kept_bugs: []
