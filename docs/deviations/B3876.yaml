@@ -1,0 +1,23 @@
+task: B3876
+deviations:
+  - what: >-
+      The tracker serializes every mutation with std::sync::Mutex, which is not reentrant, where LiteLLM uses an RLock. A metric whose remove() call re-entered the same tracker would block instead of proceeding.
+    why: >-
+      Rust has no reentrant mutex that hands out mutable access without the interior mutability this workspace bans, and the removal callback is prometheus-client's child removal, which never calls back into the tracker, so no working LiteLLM setup reaches the difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_helpers/bounded_prometheus_series_tracker.py#L26-L42
+  - what: >-
+      A negative or NaN prometheus_end_user_metrics_ttl_seconds is rejected when the config loads and the error names the key; LiteLLM keeps the value as an Optional float, so a negative one expires every tracked series and NaN expires none after the first pass.
+    why: >-
+      betterlite stores the ttl as std::time::Duration, which cannot hold a negative or NaN value, and the config layer reports a value outside the field's type instead of silently keeping it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L501-L503
+  - what: >-
+      A zero or negative prometheus_end_user_metrics_cleanup_interval_seconds loads as no interval, which runs the ttl pass on every call.
+    why: >-
+      LiteLLM's _should_run_ttl_cleanup treats a None, zero or negative interval the same way, so the normalized value keeps the behavior and drops a duration the type cannot express as nonpositive.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_helpers/bounded_prometheus_series_tracker.py#L79-L81
+kept_bugs:
+  - what: >-
+      An absent supported label value reaches the counter as the literal string "None", because LiteLLM fills the missing labels with None and prometheus_client's labels() renders every value with str().
+    why: >-
+      Metrics scraped from a working LiteLLM deployment carry "None" in those label values, and dashboards and recording rules match on them, so betterlite keeps the literal rather than rendering an empty string.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4679-L4681
