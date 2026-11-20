@@ -1,0 +1,12 @@
+kind: helper
+name: gemini-rag-store-missing-api-key
+call:
+  b3454:
+    script: []
+    options:
+      name: notes
+      vector_store:
+        custom_llm_provider: gemini
+    environment: {}
+env: {}
+compare: {ignore: []}
