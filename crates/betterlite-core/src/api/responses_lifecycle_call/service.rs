@@ -62,20 +62,15 @@ where
         self.retrieved_reply(outcome, &plan, &call.identity)
     }
 
+    // the wrapper decodes first, hands the sync function the decoded id and provider, and rewrites once more
     pub async fn aget_responses(
         &self,
         call: &ResponsesRetrieveCall,
         log: LifecycleLog<'_, '_>,
     ) -> Result<TypedReply, Box<LifecycleFailure>> {
-        self.retrieve_twice(call, log).await
-    }
-
-    async fn retrieve_twice(
-        &self,
-        call: &ResponsesRetrieveCall,
-        log: LifecycleLog<'_, '_>,
-    ) -> Result<TypedReply, Box<LifecycleFailure>> {
-        let twin = retrieved_twin(call);
+        let mut twin = call.clone();
+        twin.identity = decode(&call.identity);
+        twin.aget_responses = Some(Json::Bool(true));
         let mut reply = self.get_responses(&twin, log).await?;
         let provider = twin.identity.custom_llm_provider.as_deref();
         self.rewrite(&mut reply.response, provider, &twin.identity)?;
@@ -99,10 +94,12 @@ where
 
     pub async fn alist_input_items(
         &self,
-        call: ResponsesInputItemsCall,
+        mut twin: ResponsesInputItemsCall,
         log: LifecycleLog<'_, '_>,
     ) -> Result<Json, Box<LifecycleFailure>> {
-        self.list_input_items(&input_items_twin(&call), log).await
+        twin.identity = decode(&twin.identity);
+        twin.alist_input_items = Some(Json::Bool(true));
+        self.list_input_items(&twin, log).await
     }
 
     async fn run_read(
@@ -216,18 +213,4 @@ where
             ))
         })
     }
-}
-
-fn retrieved_twin(call: &ResponsesRetrieveCall) -> ResponsesRetrieveCall {
-    let mut twin = call.clone();
-    twin.identity = decode(&call.identity);
-    twin.aget_responses = Some(Json::Bool(true));
-    twin
-}
-
-fn input_items_twin(call: &ResponsesInputItemsCall) -> ResponsesInputItemsCall {
-    let mut twin = call.clone();
-    twin.identity = decode(&call.identity);
-    twin.alist_input_items = Some(Json::Bool(true));
-    twin
 }
