@@ -37,20 +37,18 @@ description: >-
   the prompts position of load_config (L7027-L7034, after the policy engine setup and before credentials), when
   `config.sections.prompts` is not empty, B8293's `init_prompts` fills it with the config file path; its error stops
   startup with its text. B8384's load_prompts gets this same registry.
-  One B9320 `Arc<PolicyRuntime>`, built here over the handles B9320 names and backing B8590's policy-init port through a binary-side adapter. It runs at the init_policy_engine position (after init_guardrails_v2, before prompts), and an empty policies key still skips it. The same Arc goes through Started and StartupOutputs into `Shared.policies`.
-  5. Router handle. `RouterHandle::new(None)` before the response cache, because B8651's SemanticDeps holds it.
-  6. Response cache. `CacheRuntime::new(...)` (B8612) with SemanticDeps { router: the handle, factory, http: the chat
-  executor's client, env }. When litellm_settings.cache is true, resolve every os.environ/ string in the cache params
+  B8590's policy-init port is backed by a binary-side adapter at the init_policy_engine position (after init_guardrails_v2, before prompts): an empty or missing policies key skips it as LiteLLM does, and a non-empty one stops startup with "no policy engine is installed for 'policies'" until the policy runtime (B9320, later work) takes this position. The bare B3241 policy and attachment registry handles go through Started and StartupOutputs to B8384 and B8399, which read them on each request.
+  5. Router handle. `RouterHandle::new(None)` before the response cache.
+  6. Response cache. `CacheRuntime::new(...)` (B8612) with no semantic cache deps, so the semantic cache types keep
+  B4299's CacheTypeNotSupportedError until B8651 (later work) adds SemanticDeps here. When litellm_settings.cache is true, resolve every os.environ/ string in the cache params
   through the secret lookup and call `reinit.init_cache(params)` (load_config L6355-L6377); the usage Redis it returns
   becomes the usage Redis, as _set_redis_usage_cache does. This is the only response cache build at startup: if B8374's
   merged code builds one another way, replace that call. Make B4304's one `CacheWriteTracker` here too.
   7. Router. When a config file was loaded, in load_config order (L6905-L6928): B8378's check_capability_limits over the
   model_list with B377's unlicensed limit; for each entry B8378's check_max_agentic_loops, check_complexity_placement,
-  check_access_windows and pin_complexity_model_id; B8587's `resolve_complexity_plugins` with
-  `Some(&*python_hooks)` (the LifespanInputs Arc) and the config file path; when router_settings.plugins is a list,
-  B8587's `resolve_routing_plugins` with the same Arc, that list, the config file path and the label
-  "router_settings.plugins" (L6974-L6981), and the handles go in order to B363's router-level plugin list through the
-  parts (read B363's merged field); then call B8384's
+  check_access_windows and pin_complexity_model_id. Plugin resolution (B8587) and the router-level plugin list
+  (B363) are later work, so a config that sets router_settings.plugins or a plugin in a complexity_router_config stops
+  startup with "no routing plugin support is installed for '<key>'" naming that key; then call B8384's
   `parse_search_tools(&config)`, set the entries on the parts (`parts.search_tools`, an empty list when it returns
   none), and `handle.install(ProxyRouter::build(parts)?)` with `parts = RouterParts::from_config(&config,
   slot.get().is_some())`, the Router(...) call at L6992. The search tools are supplied this way even when no database is
@@ -72,7 +70,7 @@ description: >-
   that Arc and the database store and implements B8611's `DeploymentSyncPort`: add_deployment calls DeploymentSync's
   add_deployment with the store, and does nothing without a database. Started carries it as `deployment_sync: Arc<dyn
   DeploymentSyncPort>` and the same DeploymentSync as `auto_router_catalog: Arc<dyn AutoRouterCatalog>` (B8381
-  implements B379's trait). With a database store, build one B9948 `ModelsReadThrough`: RegistryReadThrough::new over
+  implements B10021's trait). With a database store, build one B9948 `ModelsReadThrough`: RegistryReadThrough::new over
   ModelResync with B9948's DeploymentModelSync (the store, the same DeploymentSync Arc, the router handle and the
   ModelReconcileLock DeploymentSync was built with) and B8612's ProxyDbObjects. Started carries it as
   `model_read_through: Option<Arc<dyn ModelReadThrough>>` (B9949's trait), None without a database: LiteLLM's attempt
@@ -126,8 +124,8 @@ description: >-
   a failing deployment check stops startup before the router is installed, attach_redis gets the usage Redis,
   startup_event runs between the Redis selection and the buffer check, a config with prompts fills the registry Started
   holds, the DeploymentSyncPort in Started reaches DeploymentSync's add_deployment, the ConfigOverlayPort in Started
-  reloads into the same ProxyConfigState Started holds, a config with router_settings.plugins hands the resolved
-  plugins to the router parts in order, the guardrail callback source
+  reloads into the same ProxyConfigState Started holds, a config with router_settings.plugins stops startup with
+  the missing plugin support error, the guardrail callback source
   answers a guardrail added after start, the tracker drains before the response cache disconnect, the gateway
   accumulator and the spend producer drain once each, Started.python_hooks is Arc::ptr_eq with the LifespanInputs
   python_hooks, and run_proxy still calls start, server::run and stop in that order. lifespan collector tests (names
@@ -174,7 +172,7 @@ checks:
 oracle_cases: []
 deviations: []
 out_of_scope:
-  - "Each startup and shutdown step: B8374 and the owners it names. The deployment checks: B8378. Plugin resolution: B8587."
+  - "Each startup and shutdown step: B8374 and the owners it names. The deployment checks: B8378. Plugin resolution: B8587, which adds that step later."
   - "The types made here: B8611, B8612 and B8614. The Shared fields: B8610. McpRegistry and VectorStores, with their place in this step: B9997 and B9998."
   - "The collector subcommand and its port: B1709."
   - "Calling init_callbacks: B8742's callback_loggers slot, from app::callbacks::start. Filling the GuardrailClasses embedder slot: B8790. The Shared fields: B8610."

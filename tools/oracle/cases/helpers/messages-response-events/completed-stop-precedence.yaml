@@ -1,0 +1,117 @@
+kind: helper
+name: messages-response-events-completed-stop-precedence
+call:
+  messages_response_events:
+    message_id: msg_refusal
+    model: model_a
+    redaction: enabled
+    steps:
+      - function: process_event
+        event:
+          shape: attributes
+          attributes:
+            type: response.completed
+            response:
+              shape: object
+              output:
+                - {type: message, content: [{type: refusal, refusal: final-no}]}
+              status: completed
+              usage: {input_tokens: 10, input_tokens_details: {cached_tokens: 3}, output_tokens: 2, total_tokens: 12}
+calls:
+  - messages_response_events:
+      message_id: msg_tool
+      model: model_a
+      redaction: enabled
+      steps:
+        - function: process_event
+          event:
+            shape: attributes
+            attributes:
+              type: response.completed
+              response:
+                shape: object
+                output:
+                  - {type: function_call, call_id: call_a, name: lookup, arguments: "{}"}
+                status: completed
+                usage: {input_tokens: 10, input_tokens_details: {cached_tokens: 3}, output_tokens: 2, total_tokens: 12}
+  - messages_response_events:
+      message_id: msg_incomplete
+      model: model_a
+      redaction: enabled
+      steps:
+        - function: process_event
+          event:
+            shape: attributes
+            attributes:
+              type: response.incomplete
+              response:
+                shape: object
+                output:
+                  - {type: function_call, call_id: call_a, name: lookup, arguments: "{}"}
+                status: incomplete
+                usage: {input_tokens: 10, input_tokens_details: {cached_tokens: 3}, output_tokens: 2, total_tokens: 12}
+  - messages_response_events:
+      message_id: msg_streamed
+      model: model_a
+      redaction: enabled
+      steps:
+        - {function: process_event, event: {shape: mapping, fields: {type: response.refusal.delta, item_id: rb, delta: streamed}}}
+        - function: process_event
+          event:
+            shape: attributes
+            attributes:
+              type: response.completed
+              response: {shape: object, output: [], status: completed}
+  - messages_response_events:
+      message_id: msg_final
+      model: model_a
+      redaction: enabled
+      steps:
+        - {function: process_event, event: {shape: mapping, fields: {type: response.refusal.delta, item_id: rb, delta: streamed}}}
+        - function: process_event
+          event:
+            shape: attributes
+            attributes:
+              type: response.completed
+              response:
+                shape: object
+                output:
+                  - {type: message, content: [{type: refusal, refusal: final-no}]}
+                status: completed
+  - messages_response_events:
+      message_id: msg_twice
+      model: model_a
+      redaction: enabled
+      steps:
+        - function: process_event
+          event:
+            shape: attributes
+            attributes: {type: response.completed, response: {shape: object, output: [], status: completed}}
+        - function: process_event
+          event:
+            shape: attributes
+            attributes: {type: response.completed, response: {shape: object, output: [], status: completed}}
+  - messages_response_events:
+      message_id: msg_open
+      model: model_a
+      redaction: enabled
+      steps:
+        - function: process_event
+          event:
+            shape: mapping
+            fields:
+              type: response.output_item.added
+              item: {type: message, id: item_a}
+        - function: process_event
+          event:
+            shape: attributes
+            attributes:
+              type: response.completed
+              response:
+                shape: object
+                output:
+                  - {type: message, content: [{type: refusal, refusal: final-no}]}
+                status: completed
+                usage: {input_tokens: 10, input_tokens_details: {cached_tokens: 3}, output_tokens: 2, total_tokens: 12}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,22 @@
+kind: helper
+name: key-policy-fields-effective-policy-patch
+call:
+  key_policy_fields:
+    calls:
+      - function: effective_policy
+        operation: update
+        existing: {token: hashed, key_alias: old, spend: 1.5, object_permission: {object_permission_id: perm-1}, router_settings: {a: 1}}
+        patch: {key_alias: new, router_settings: "{\"b\":2}"}
+        request: {key_alias: new, spend: 2.5}
+      - function: effective_policy
+        operation: regenerate
+        existing: {token: hashed, key_alias: old, organization_id: null, org_id: org-1}
+        patch: {metadata: null}
+        request: {key: target}
+      - function: effective_policy
+        operation: update
+        existing: {token: hashed, key_alias: old}
+        patch: {budget_limits: "[{\"budget_duration\":\"1d\",\"max_budget\":10.0}]"}
+        request: {key: hashed, budget_limits: [{budget_duration: 1d, max_budget: 10.0}]}
+env: {}
+compare: {ignore: []}

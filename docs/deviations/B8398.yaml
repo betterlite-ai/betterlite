@@ -1,0 +1,12 @@
+task: B8398
+deviations:
+  - what: A missing requested team and a caller who is not on the team surface as the typed TeamMissing (404) and NotAMember (403) errors carrying the team id, where LiteLLM raises an HTTPException whose detail names the user, the team and, for a missing team, the /team/new call that creates it.
+    why: The listing module has no HTTP layer, so it keeps LiteLLM's status and the identity of the failing team and leaves the response body to the route owner.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad2cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8436-L8453
+kept_bugs:
+  - what: A team the listing cannot fetch contributes no team access group models, because the failed lookup is logged at debug and the listing falls back to the key's own access groups where the team's groups would be the complete answer.
+    why: LiteLLM swallows every HTTPException there, a database outage included, and a working setup keeps its key groups on /v1/models instead of failing the whole call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad2cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8456-L8476
+  - what: A comma-separated model id with an empty element, such as a trailing comma, fails the whole batch with the empty name listed as an inaccessible model.
+    why: LiteLLM checks every element of the split list without dropping empty ones, so a client that sends a trailing comma is refused there too and the two answers stay identical.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad2cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8876-L8885

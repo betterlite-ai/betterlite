@@ -1,0 +1,19 @@
+kind: helper
+name: auth-tag-budgets-cache-partial-effects
+call:
+  auth_tag_budgets:
+    function: tags
+    database: true
+    names: [tag-a, tag-b]
+    cached:
+      - tag_name: tag-a
+        models: [model-cached]
+        spend: 1.5
+    rows:
+      - tag_name: tag-b
+        models: [model-fetched]
+        spend: 2.5
+    fail_query: false
+env: {}
+compare:
+  ignore: []

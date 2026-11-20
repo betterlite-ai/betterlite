@@ -1,0 +1,24 @@
+kind: helper
+name: mantle-passthrough-path
+call:
+  bedrock_mantle_settings:
+    mantle_passthrough_path:
+      cases:
+        - {}
+        - {aws_region_name: eu-west-2}
+        - {api_base: 'https://bedrock-mantle.ap-south-1.api.aws/v1'}
+        - {api_base: 'https://bedrock-mantle.us-west-2.api.aws/v1', aws_bedrock_runtime_endpoint: 'https://configured.example'}
+        - api_base: 'https://bedrock-mantle.eu-west-1.api.aws'
+          environment: {AWS_BEDROCK_RUNTIME_ENDPOINT: 'https://environment.example'}
+        - api_base: 'https://proxy.example/v1'
+          aws_bedrock_runtime_endpoint: 'https://configured.example'
+          aws_region_name: eu-west-1
+        - {api_key: explicit-fixture-key, environment: {BEDROCK_MANTLE_API_KEY: mantle-fixture-key}}
+        - environment: {BEDROCK_MANTLE_API_KEY: mantle-fixture-key, AWS_BEARER_TOKEN_BEDROCK: bedrock-fixture-key}
+        - {api_key: 42, environment: {AWS_BEARER_TOKEN_BEDROCK: bedrock-fixture-key}}
+        - {api_key: null, environment: {AWS_BEARER_TOKEN_BEDROCK: bedrock-fixture-key}}
+        - {aws_region_name: NOT A REGION}
+        - {endpoint_type: agentcore}
+        - {aws_region_name: cn-north-1, api_base: 'https://bedrock-mantle.cn-north-1.api.aws', endpoint_type: agent}
+env: {}
+compare: {ignore: []}

@@ -1,7 +1,7 @@
 id: B819
 milestone: M4 keys, spend and management
 title: Reconcile access-group key and team membership
-status: todo
+status: done
 depends_on: [B714, B720, B726, B734, B770, B860]
 file: tasks/B819-access-group-sync.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/management_helpers/access_group_team_sync.py"
 parent: B058
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2688

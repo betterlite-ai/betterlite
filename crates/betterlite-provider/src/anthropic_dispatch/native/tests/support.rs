@@ -3,7 +3,7 @@ mod fixture;
 mod media;
 mod response;
 mod services;
-mod wire;
+pub(crate) mod wire;
 
 use crate::anthropic_dispatch::base::Surface;
 use crate::anthropic_dispatch::completion::{CompletionCall, CompletionSettings};

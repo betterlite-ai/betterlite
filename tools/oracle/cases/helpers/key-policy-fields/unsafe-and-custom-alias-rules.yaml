@@ -1,0 +1,19 @@
+kind: helper
+name: key-policy-fields-unsafe-and-custom-alias-rules
+call:
+  key_policy_fields:
+    calls:
+      - {function: alias, pattern: ".*", enabled: true, alias: "../etc/passwd"}
+      - {function: alias, pattern: ".*", enabled: false, alias: "x/../y"}
+      - {function: alias, pattern: ".*", enabled: true, alias: ".."}
+      - {function: alias, pattern: ".*", enabled: true, alias: "a\tb"}
+      - {function: alias, pattern: ".*", enabled: false, alias: "Any.Alias_1"}
+      - {function: alias, pattern: ".*", enabled: false, alias: ""}
+      - {function: alias, pattern: "[a-z]+", enabled: false, alias: "UPPER"}
+      - {function: alias, pattern: "[a-z]+", enabled: false, alias: "lower"}
+      - {function: alias, pattern: "[a-z-]+", enabled: true, alias: "-leading"}
+      - {function: alias, pattern: "abc", enabled: false, alias: "xabcx"}
+      - {function: alias, pattern: "[0-9]{1,4}", enabled: false, alias: "1234"}
+      - {function: alias, pattern: "[0-9]{1,4}", enabled: false, alias: "12345"}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,32 @@
+kind: helper
+name: login-absent-and-non-string
+call:
+  b10003:
+    function: login
+env: {}
+compare: {ignore: []}
+calls:
+  - b10003:
+      function: login
+      id_token: null
+      refresh_token: null
+  - b10003:
+      function: login
+      id_token: 5
+      refresh_token: 7
+  - b10003:
+      function: login
+      id_token: ""
+      refresh_token: refresh-1
+  - b10003:
+      function: login
+      id_token: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MDAwMDAwMDAsImlzcyI6Imh0dHBzOi8vaWRwLmV4YW1wbGUiLCJzdWIiOiJ1c2VyLTEifQ.c2lnbmF0dXJl"
+      refresh_token: ""
+  - b10003:
+      function: login
+      id_token: [x]
+      refresh_token: {token: refresh-1}
+  - b10003:
+      function: login
+      id_token: true
+      refresh_token: false

@@ -1,0 +1,15 @@
+kind: helper
+name: post-call-settlement-logging-hook-streaming-response
+call:
+  b3046:
+    function: logging_hook
+    call_id: call-1
+    runs: 2
+    headers:
+      x-litellm-call-id: call-1
+    stash:
+      owner_call_id: call-1
+      statuses:
+        - {code: OK, current_limit: 5000, limit_remaining: 4000, rate_limit_type: tokens, descriptor_key: api_key, descriptor_value: key-1}
+env: {}
+compare: {ignore: []}

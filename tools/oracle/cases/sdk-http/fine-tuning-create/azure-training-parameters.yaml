@@ -1,0 +1,61 @@
+kind: sdk_http
+name: fine-tuning-create-azure-training-parameters
+env: {}
+call:
+  fine_tuning_create:
+    runs:
+      - provider: azure
+        model: gpt-4o-mini
+        training_file: file_train
+        hyperparameters: {n_epochs: 2, prompt_loss_weight: 0.25}
+        extra_body: {trainingType: 9, ignored: true, azure_ad_token: secret}
+        params: {api_key: sk-azure, api_version: "2024-10-01", trainingType: 2, max_retries: 0}
+      - provider: azure
+        model: gpt-4o-mini
+        training_file: file_train
+        params: {api_key: sk-azure, api_version: "2024-10-01", max_retries: 0}
+      - provider: azure
+        model: gpt-4o-mini
+        training_file: file_train
+        params: {api_key: sk-azure, api_version: "2024-10-01", trainingType: 0, max_retries: 0}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: ft_az
+      object: fine_tuning.job
+      created_at: 1720000100
+      model: gpt-4o-mini
+      status: queued
+      training_file: file_train
+      organization_id: org_az
+      result_files: []
+      seed: 7
+      hyperparameters: {n_epochs: 2}
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: ft_az
+      object: fine_tuning.job
+      created_at: 1720000100
+      model: gpt-4o-mini
+      status: queued
+      training_file: file_train
+      organization_id: org_az
+      result_files: []
+      seed: 7
+      hyperparameters: {n_epochs: 2}
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: ft_az
+      object: fine_tuning.job
+      created_at: 1720000100
+      model: gpt-4o-mini
+      status: queued
+      training_file: file_train
+      organization_id: org_az
+      result_files: []
+      seed: 7
+      hyperparameters: {n_epochs: 2}
+compare: {headers: [], headers_present: [], upstream_headers: [api-key, content-type], ignore: []}

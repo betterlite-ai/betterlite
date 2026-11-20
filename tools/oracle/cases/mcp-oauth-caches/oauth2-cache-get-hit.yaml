@@ -1,0 +1,25 @@
+kind: helper
+name: oauth2-cache-get-hit
+call:
+  b4662:
+    function: oauth2_get_token
+    server:
+      server_id: srv-1
+      name: Server
+      transport: http
+      url: https://mcp.example.com/mcp
+      auth_type: oauth2
+      oauth2_flow: client_credentials
+      client_id: client
+      client_secret: secret
+      token_url: https://idp.example.com/token
+      scopes:
+        - read
+        - write
+    outcomes:
+      - kind: success
+        body: "{\"access_token\": \"tok\"}"
+    calls: 2
+    concurrent: false
+env: {}
+compare: {ignore: []}

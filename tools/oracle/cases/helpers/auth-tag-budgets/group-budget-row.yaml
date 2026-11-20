@@ -1,0 +1,20 @@
+kind: helper
+name: auth-tag-budgets-group-budget-row
+call:
+  auth_tag_budgets:
+    function: groups
+    database: true
+    names: [group-a, group-b]
+    cached: []
+    rows:
+      - access_group_name: group-a
+        spend: 3.5
+        litellm_budget_table:
+          budget_id: budget-a
+          max_budget: 12.5
+      - access_group_name: group-b
+        spend: 0.0
+    fail_query: false
+env: {}
+compare:
+  ignore: []

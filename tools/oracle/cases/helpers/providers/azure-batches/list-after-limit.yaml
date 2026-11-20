@@ -1,0 +1,25 @@
+kind: helper
+name: list-after-limit
+call:
+  azure_batches:
+    steps:
+    - action: list
+      args: {api_key: ll-1, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      reply: {status: 200, body: {object: list, data: [{id: batch_a, completion_window: 24h, created_at: 1741000000, endpoint: /v1/chat/completions, input_file_id: file_in, object: batch, status: completed, cancelled_at: null, cancelling_at: null, completed_at: 1741000100, error_file_id: null, errors: null, expired_at: null, expires_at: null, failed_at: null, finalizing_at: null, in_progress_at: null, metadata: null, model: null, output_file_id: file_out, request_counts: {completed: 3, failed: 0, total: 3}, usage: null}], has_more: true, first_id: batch_a, last_id: batch_a}}
+    - action: list
+      after: batch_x
+      limit: 5
+      args: {api_key: ll-2, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      reply: {status: 200, body: {object: list, data: [], has_more: false}}
+    - action: list
+      is_async: true
+      after: batch_y
+      args: {api_key: ll-3, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      reply: {status: 200, body: {object: list, data: [], has_more: false}}
+    - action: list
+      is_async: true
+      limit: 0
+      args: {api_key: ll-4, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      reply: {status: 200, body: {object: list, data: [], has_more: false}}
+env: {}
+compare: {ignore: []}

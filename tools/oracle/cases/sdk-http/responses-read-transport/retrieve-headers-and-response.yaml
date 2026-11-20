@@ -1,0 +1,30 @@
+kind: sdk_http
+name: responses-read-transport-retrieve-headers-and-response
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  responses_read_transport:
+    runs:
+      - operation: retrieve
+        mode: sync
+        response_id: resp/a
+        extra_headers: {Authorization: "Bearer sk-caller", X-Trace: trace-a}
+        extra_body: {ignored: true}
+        timeout_seconds: 7
+      - operation: retrieve
+        mode: async
+        response_id: resp/a
+        extra_headers: {Authorization: "Bearer sk-caller", X-Trace: trace-a}
+        extra_body: {ignored: true}
+        timeout_seconds: 7
+upstream:
+  - status: 200
+    headers: {content-type: application/json, x-request-id: req_a}
+    body: {id: resp_a, created_at: 9, status: completed, model: gpt-4o, output: []}
+  - status: 200
+    headers: {content-type: application/json, x-request-id: req_a}
+    body: {id: resp_a, created_at: 9, status: completed, model: gpt-4o, output: []}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, x-trace, content-type]
+  ignore: []

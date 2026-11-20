@@ -19,8 +19,11 @@ description: >-
   <the type of CollectedChunksCall.start_time>, pub end_time: <same>, pub request_body: &'a serde_json::Map<String, serde_json::Value>,
   pub kwargs: <B3605's typed kwargs map> }`. HandlerOutcome is B3608's type (optional result plus kwargs map), and the result is B3605's
   response-object enum. url_route and end_time are unused by the logic (LiteLLM only accepts them); keep them in the struct so the
-  signature stays LiteLLM's. B3606 builds the adapter and passes the list body as websocket_messages (an empty slice when the body is
-  not a list). B8931 builds the logger once.
+  signature stays LiteLLM's. B3606 lands first with a VertexAiLive adapter that returns `ProviderLogError::NotBuilt { branch: "vertex_ai_live" }`.
+  Replace that adapter in crates/betterlite-server/src/pass_through_logging/provider_dispatch with one that calls this handler
+  and passes the list body as websocket_messages (an empty slice when the body is not a list), and drop the NotBuilt arm
+  with its test. B8931 lands first without this logger:
+  build VertexAiLiveLogger once in its crates/betterlite-server/src/passthrough_runtime and hand it to the adapter.
 
   Types you use and do not define: Usage with its prompt and completion token detail records (B2214), ModelResponse (B031), the
   grounding request counter and its GroundingRequests record (B1322, betterlite-vertex, grounding_requests), CostBreakdown (B1667) and
@@ -97,7 +100,7 @@ description: >-
 
   Why the oracle only covers usage. Pricing needs the call's logging object, the catalog and the clock, so it gets native tests with
   a fake cost recorder. The pure parts (snapshots, residual rule, modality totals, usage record, turn split, grounding sums) get
-  helper cases through the b3643 helper, and the booted proxy has no route to this handler yet (B3606 wires it, B3607 adds the HTTP
+  helper cases through the b3643 helper, and the booted proxy has no route to this handler yet (this task wires it into B3606's dispatch, B3607 adds the HTTP
   cases).
 scope:
   paths:
@@ -109,6 +112,10 @@ scope:
     - tools/oracle/helpers/b3643/**
     - tools/oracle/src/helpers/server/b3643.rs
     - tools/oracle/src/helpers/server/b3643/**
+    - crates/betterlite-server/src/pass_through_logging/provider_dispatch.rs
+    - crates/betterlite-server/src/pass_through_logging/provider_dispatch/**
+    - crates/betterlite-server/src/passthrough_runtime.rs
+    - crates/betterlite-server/src/passthrough_runtime/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_ai_live_passthrough_logging_handler.py#L25-L106

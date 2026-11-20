@@ -24,9 +24,16 @@ description: >-
 
   The empty response is SpendAnalyticsPaginatedResponse (B3090) with results [] and a DailySpendMetadata that has every field at its default except page = the requested page, total_pages = 0 and has_more = false (so total_spend 0.0, all totals 0, api_key_limit, total_api_keys and entity_total_api_keys null, and total_pages 0 where the default is 1).
 
-  `routes/agent_daily_activity.rs` exports `routes(state: &Arc<ServerState>) -> Router` like a B1100 stub, but no B1100 entry merges it: B8661 merges it in app/spend.rs. Fill only that file (it only calls the handler) and leave routes.rs and state.rs alone. Register GET /agent/daily/activity exactly once; it sits behind the server's authentication middleware.
+  `routes/agent_daily_activity.rs` exports `routes(state: &Arc<ServerState>) -> Router` like a B1100 stub, but no B1100 entry merges it: this task merges it in B8661's app/spend.rs (see Oracle). Fill that file (it only calls the handler) and leave routes.rs and state.rs alone. Register GET /agent/daily/activity exactly once; it sits behind the server's authentication middleware.
 
-  Oracle. B8661 mounts the route, so it owns the HTTP cases in tools/oracle/cases/agent-activity/ and proves the route over HTTP with the Postgres fixtures B860 provides. Here the tests drive the handler with tower's oneshot over the module's own Router and fake ports. Do not add a helper operation: every function here reaches the route.
+  The analytics agent arm. B3095 leaves the Agent arm of `resolve_entity_scope` (crates/betterlite-server/src/daily_activity_entities)
+  answering `EntityScopeError::NotBuilt { entity: "agent" }`. Put `resolve_agent` in its place: call this task's
+  `AgentActivityResolver::resolve_scope(agent_ids, auth)` on a resolver reference you add to `EntityScopeContext`, with
+  query.entity_ids and the caller, then `build_scope` with the AGENT constant, the returned agent_ids as entity_ids,
+  exclude_entity_ids from the query, query.api_key as Single and agent_metadata as `Some(map)`, mapping each
+  `AgentMetadata { agent_name }` into `{"agent_name": ...}`; errors pass through in their own #[from] variant.
+
+  Oracle. B8661 builds the spend area mount (crates/betterlite-server/src/app/spend.rs) without this route and lands first. Add the one line to its `mount` that merges `crate::routes::agent_daily_activity::routes(state)` after B3102's route (routes.rs declares the module but router() does not merge it, so this is its only merge), and write the HTTP cases in tools/oracle/cases/agent-activity/ (admin scopes, owned and granted agents, the empty page, the agents feature gate and the missing database) through the booted proxy with the Postgres fixtures B860 provides. Here the tests drive the handler with tower's oneshot over the module's own Router and fake ports. Do not add a helper operation: every function here reaches the route.
 scope:
   paths:
     - crates/betterlite-server/Cargo.toml
@@ -38,6 +45,10 @@ scope:
     - tools/oracle/helpers/b4787/**
     - tools/oracle/src/helpers/server/b4787.rs
     - tools/oracle/src/helpers/server/b4787/**
+    - crates/betterlite-server/src/app/spend.rs
+    - tools/oracle/cases/agent-activity/**
+    - crates/betterlite-server/src/daily_activity_entities.rs
+    - crates/betterlite-server/src/daily_activity_entities/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/endpoints.py#L311-L375
@@ -75,8 +86,10 @@ dod:
     proof: [request-tests]
   - text: A non-empty or unrestricted scope calls get_daily_activity with table litellm_dailyagentspend, entity field agent_id, the scoped ids (None or the list), the metadata, the exclusions and every date, model, key and page argument.
     proof: [request-tests]
-  - text: The handler answers GET /agent/daily/activity through tower's oneshot over the module's own Router with fake ports; B8661 merges the route behind the server's authentication middleware and proves it over HTTP.
+  - text: The handler answers GET /agent/daily/activity through tower's oneshot over the module's own Router with fake ports, and this task merges the route into B8661's spend mount behind the server's authentication middleware and proves it over HTTP.
     proof: [request-tests]
+  - text: "GET /agent/daily/activity is merged once into the spend mount and answers like LiteLLM through the booted proxy for admins, scoped users, the feature gate and a missing database."
+    proof: [oracle]
 checks:
   optional: []
   commands:
@@ -86,7 +99,15 @@ checks:
     - id: request-tests
       why: query parsing, check order, the empty response or the get_daily_activity arguments differ from LiteLLM
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_daily_activity::request::/)'
-oracle_cases: []
+oracle_cases:
+- tools/oracle/cases/agent-activity/no-database.yaml
+- tools/oracle/cases/agent-activity/admin-all-agents.yaml
+- tools/oracle/cases/agent-activity/admin-requested-ids-and-exclusions.yaml
+- tools/oracle/cases/agent-activity/user-unrestricted-owned-only.yaml
+- tools/oracle/cases/agent-activity/user-restricted-grants.yaml
+- tools/oracle/cases/agent-activity/user-no-grants-empty-page.yaml
+- tools/oracle/cases/agent-activity/requested-ids-filtered-to-permitted.yaml
+- tools/oracle/cases/agent-activity/feature-disabled-for-internal-user.yaml
 deviations:
   - what: resolve_agent_daily_activity_scope is named resolve_scope on AgentActivityResolver, and it takes no database argument.
     why: A name over 30 characters is refused by the lint rule, and betterlite passes the database to a dependency through its constructor.
