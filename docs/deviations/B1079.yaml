@@ -1,0 +1,33 @@
+task: B1079
+deviations:
+  - what: >-
+      A call-level drop_params of type string, which LiteLLM's GenericLiteLLMParams
+      declares as bool|str|None, is refused as a wrong-typed field; LiteLLM reads a
+      nonempty string as enabled and an empty string as no override.
+    why: >-
+      The rerank call view takes the boolean form only, so Python truthiness never
+      decides whether an unsupported option is dropped; the task text routes the drop
+      flag through the B002 normalizer instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L168
+kept_bugs:
+  - what: >-
+      Jina's api_base falls back to BEDROCK_API_BASE, a copy-paste of the Bedrock
+      branch, so an unset JINA base can send a Jina call to a Bedrock endpoint.
+    why: >-
+      A working LiteLLM setup that sets BEDROCK_API_BASE relies on this fallback; the
+      task's DoD requires it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L316
+  - what: >-
+      The Infinity branch computes a global api_key candidate and then calls the
+      handler without it, so litellm.api_key is never sent for Infinity rerank.
+    why: >-
+      LiteLLM's own branch omits the computed key; a setup relying on litellm.api_key
+      for Infinity is already broken, and the task's DoD keeps the omission.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L260-L275
+  - what: >-
+      Watsonx inserts its returned token into the optional rerank params whenever the
+      token is not None, so an empty token is sent while an absent one is omitted.
+    why: >-
+      The check is an explicit None comparison in LiteLLM and the task's DoD spells
+      out the same empty-string behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L502-L503
