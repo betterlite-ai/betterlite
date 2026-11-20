@@ -1,6 +1,6 @@
 import asyncio
-from collections.abc import Coroutine
-from typing import Literal, Protocol, TypedDict, Unpack
+from collections.abc import Coroutine, Mapping
+from typing import Literal, Protocol
 
 import litellm.vector_stores.main as vector_store_main
 import openai
@@ -12,45 +12,33 @@ from openai_chat import Failure, project_failure
 Operation = Literal["update", "delete"]
 Mode = Literal["sync", "async"]
 
-AsyncUpdateWork = Coroutine[object, object, VectorStoreCreateResponse]
-AsyncDeleteWork = Coroutine[object, object, JsonValue]
-
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 
 
-class WriteOptions(TypedDict, total=False):
-    api_base: str
-    name: str | None
-    expires_after: JsonValue
-    metadata: JsonValue
-    file_ids: list[str] | None
-    chunking_strategy: JsonValue
-    unknown: JsonValue
-    extra_headers: JsonValue
-    extra_query: JsonValue
-    extra_body: JsonValue
-    timeout: float | None
-    custom_llm_provider: str | None
-
-
-# The four entries take optional arguments as keywords, so one options map feeds both modes
 class WriteFacade(Protocol):
     def update(
-        self, vector_store_id: str, **options: Unpack[WriteOptions]
-    ) -> VectorStoreCreateResponse: ...
+        self,
+        vector_store_id: str,
+        **options: JsonValue,
+    ) -> VectorStoreCreateResponse | Coroutine[object, object, VectorStoreCreateResponse]: ...
 
     def aupdate(
-        self, vector_store_id: str, **options: Unpack[WriteOptions]
-    ) -> AsyncUpdateWork: ...
+        self,
+        vector_store_id: str,
+        **options: JsonValue,
+    ) -> Coroutine[object, object, VectorStoreCreateResponse]: ...
 
-    def delete(self, vector_store_id: str, **options: Unpack[WriteOptions]) -> JsonValue: ...
+    def delete(self, vector_store_id: str, **options: JsonValue) -> JsonValue: ...
 
     def adelete(
-        self, vector_store_id: str, **options: Unpack[WriteOptions]
-    ) -> AsyncDeleteWork: ...
+        self,
+        vector_store_id: str,
+        **options: JsonValue,
+    ) -> Coroutine[object, object, Mapping[str, object]]: ...
 
 
-WRITES: WriteFacade = vector_store_main
+# LiteLLM declares metadata as dict[str, str] and the extra fields as dict[str, object] but forwards the JSON it gets
+WRITES: WriteFacade = vector_store_main  # pyright: ignore[reportAssignmentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L841-L846
 
 
 class Run(BaseModel):
@@ -115,13 +103,13 @@ class VectorStoreWriteRequest(BaseModel):
 
 
 # update reads file_ids and chunking_strategy from **kwargs; null takes the SDK default
-def write_options(run: Run, api_base: str) -> WriteOptions:
+def write_options(run: Run, api_base: str) -> dict[str, JsonValue]:
     return {
         "api_base": api_base,
         "name": run.name,
         "expires_after": run.expires_after,
         "metadata": run.metadata,
-        "file_ids": run.file_ids,
+        "file_ids": JSON.validate_python(run.file_ids),
         "chunking_strategy": run.chunking_strategy,
         "unknown": run.unknown,
         "extra_headers": run.extra_headers,

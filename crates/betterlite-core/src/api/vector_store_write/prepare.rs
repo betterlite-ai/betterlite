@@ -180,10 +180,10 @@ fn insert_candidate<T>(
 where
     T: Serialize + ?Sized,
 {
-    let Some(value) = value else {
+    let Some(present) = value else {
         return Ok(());
     };
-    let encoded = serde_json::to_value(value)?;
+    let encoded = serde_json::to_value(present)?;
     candidates.insert(field.to_owned(), serde_json::from_value(encoded)?);
     Ok(())
 }

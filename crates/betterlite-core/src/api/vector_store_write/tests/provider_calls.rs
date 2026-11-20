@@ -3,12 +3,20 @@ use betterlite_error::envelope::WireField;
 use betterlite_models::identity::provider_id::ProviderId;
 
 use super::super::error::VectorStoreWriteFailure;
-use super::support::{Fixture, REQUEST_TIMEOUT, Resolution, Spy, Which, call, recorded, success};
+use super::support::{
+    Fixture, REQUEST_TIMEOUT, Recorded, Resolution, Spy, Which, call, recorded, success,
+};
 
 fn provider_fixture(provider: &str) -> Fixture {
     let mut fixture = Fixture::new();
     fixture.arguments.provider = Some(provider.to_owned());
     fixture
+}
+
+async fn recorded_update(provider: Option<&str>, spy: &Spy, resolution: &Resolution) -> Recorded {
+    let mut fixture = Fixture::new();
+    fixture.arguments.provider = provider.map(String::from);
+    recorded(Which::Update, spy, &fixture, resolution, REQUEST_TIMEOUT).await
 }
 
 // exception_type maps a local ValueError to APIConnectionError with its 500 and no wire fields
@@ -27,31 +35,10 @@ fn assert_connection_failure(failure: &VectorStoreWriteFailure) {
 async fn write_provider_selection() {
     let resolution = Resolution::new();
     let spy = Spy::replying(success());
-    let absent = recorded(
-        Which::Update,
-        &spy,
-        &Fixture::new(),
-        &resolution,
-        REQUEST_TIMEOUT,
-    )
-    .await;
-    let named = recorded(
-        Which::Update,
-        &spy,
-        &provider_fixture("openai"),
-        &resolution,
-        REQUEST_TIMEOUT,
-    )
-    .await;
+    let absent = recorded_update(None, &spy, &resolution).await;
+    let named = recorded_update(Some("openai"), &spy, &resolution).await;
     assert_eq!(absent, named);
-    let qualified = recorded(
-        Which::Update,
-        &spy,
-        &provider_fixture("openai/gpt-4o"),
-        &resolution,
-        REQUEST_TIMEOUT,
-    )
-    .await;
+    let qualified = recorded_update(Some("openai/gpt-4o"), &spy, &resolution).await;
     assert_eq!(qualified.provider, ProviderId::Openai);
     assert_eq!(qualified.config, VectorStoresConfigTag::OpenAI);
     let refused = Spy::replying(success());

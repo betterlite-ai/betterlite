@@ -26,7 +26,7 @@ async fn write_timeout_and_logging() {
         .kwargs
         .insert(String::from("file_ids"), file_ids());
     let seen = recorded(Which::Update, &spy, &fixture, &resolution, REQUEST_TIMEOUT).await;
-    assert_eq!(seen.timeout, Duration::from_secs(6000));
+    assert_eq!(seen.timeout, Duration::from_mins(100));
     assert_eq!(seen.api_base.as_deref(), Some(API_BASE));
     assert_eq!(seen.model, "");
     assert_eq!(seen.call_type, "endpoint_func");
@@ -57,7 +57,7 @@ async fn timeout_zero_selects_request_timeout() {
     let mut zero = Fixture::new();
     zero.arguments.timeout = Some(0.0_f64);
     let default_seen = recorded(Which::Update, &spy, &zero, &resolution, REQUEST_TIMEOUT).await;
-    assert_eq!(default_seen.timeout, Duration::from_secs(6000));
+    assert_eq!(default_seen.timeout, Duration::from_mins(100));
     let environment_seen = recorded(Which::Update, &spy, &zero, &resolution, 12.0_f64).await;
     assert_eq!(environment_seen.timeout, Duration::from_secs(12));
     let absent = Fixture::new();

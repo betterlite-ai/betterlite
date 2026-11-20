@@ -45,7 +45,7 @@ fn forwards_the_system_home() {
 fn loads_request_timeout() {
     let unset = environment(&[]);
     let default_seconds = load_request_timeout(&unset).expect("the default loads");
-    assert_eq!(seconds(default_seconds), Duration::from_secs(6000));
+    assert_eq!(seconds(default_seconds), Duration::from_mins(100));
     let configured = environment(&[("REQUEST_TIMEOUT", "12")]);
     let environment_seconds = load_request_timeout(&configured).expect("the value loads");
     assert_eq!(seconds(environment_seconds), Duration::from_secs(12));
