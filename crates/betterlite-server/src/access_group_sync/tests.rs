@@ -505,6 +505,15 @@ async fn concurrent_team_appends() {
 }
 
 #[tokio::test]
+async fn team_lock_blocks_until_released() {
+    let (fixture, pool) = postgres::database().await;
+    postgres::seed_groups(&pool).await;
+    postgres::seed_teams(&pool).await;
+    postgres::team_lock_blocks_until_released(&pool).await;
+    postgres::close(fixture, pool).await;
+}
+
+#[tokio::test]
 async fn post_commit_eviction_failure() {
     let (fixture, pool) = postgres::database().await;
     postgres::seed_groups(&pool).await;

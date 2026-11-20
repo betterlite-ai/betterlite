@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 
 use betterlite_db::auxiliary_repository::repository::PrismaClient;
 use betterlite_db::database_replica::availability::Availability;
@@ -9,6 +10,7 @@ use betterlite_postgres_fixture::connection::PostgresFixture;
 use clap::Parser;
 use deadpool_postgres::{Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
+use tokio::time::timeout;
 use tokio_postgres::NoTls;
 use tokio_postgres::types::ToSql;
 
@@ -19,7 +21,7 @@ use crate::access_group_sync::key::{
     sync_key_access_groups,
 };
 use crate::access_group_sync::team::{
-    TeamSyncError, reconcile_team_access_groups, sync_team_access_groups,
+    TEAM_ADVISORY_LOCK_SQL, TeamSyncError, reconcile_team_access_groups, sync_team_access_groups,
 };
 
 const SCHEMA: &str = r#"
@@ -364,6 +366,32 @@ pub(super) async fn concurrent_team_appends(pool: &Pool) {
     let mut teams = team_ids(pool, "gc").await.unwrap();
     teams.sort();
     assert_eq!(teams, vec!["ta".to_owned(), "tb".to_owned()]);
+}
+
+pub(super) async fn team_lock_blocks_until_released(pool: &Pool) {
+    let store = PostgresStore {
+        pool: Some(pool.clone()),
+    };
+    let mut holder = store.session().await.unwrap();
+    let holding = holder.transaction().await.unwrap();
+    holding
+        .query(TEAM_ADVISORY_LOCK_SQL, &[&"t1"])
+        .await
+        .expect("the held team lock");
+    let cache = ScriptedCache::new();
+    let mut pending = Box::pin(sync_team_access_groups(&store, &cache, "t1"));
+    let waiting = timeout(Duration::from_secs(1), &mut pending).await;
+    assert!(
+        waiting.is_err(),
+        "the sync waits while another transaction holds the team lock"
+    );
+    assert_eq!(team_ids(pool, "g1").await, None);
+    holding.rollback().await.unwrap();
+    timeout(Duration::from_secs(5), pending)
+        .await
+        .expect("the sync finishes once the lock is released")
+        .unwrap();
+    assert_eq!(team_ids(pool, "g1").await, Some(vec!["t1".to_owned()]));
 }
 
 pub(super) async fn retry_evicts_desired(pool: &Pool) {
