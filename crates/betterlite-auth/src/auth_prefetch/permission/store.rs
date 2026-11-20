@@ -13,7 +13,7 @@ use betterlite_db::resource_repository::table::KeyFilter;
 use super::lookup::PermissionError;
 use crate::auth_read::adapter::AuthReadAdapter;
 use crate::auth_read::table::{
-    AuthReadError, AuthTable, Create, FindMany, FindOne, Presence, ReadContext, Update, widen,
+    AuthReadError, AuthTable, Create, FindMany, FindOne, Presence, ReadContext, Update,
 };
 
 type OneAnswer = Result<Option<JsonData>, AuthReadError<TableError>>;
@@ -111,6 +111,28 @@ impl AuthTable for PermissionTable {
     }
     async fn create(&self, _request: Create<(), ()>) -> RowAnswer {
         Err(UNREAD)
+    }
+}
+// ObjectPermissionRepository::table builds DbError<Infallible>, so only the source-free variants pass through
+fn widen(error: DbError) -> DbError<TableError> {
+    match error {
+        DbError::NoDbConnected => DbError::NoDbConnected,
+        DbError::Pool { source } => DbError::Pool { source },
+        DbError::Backend { source } => DbError::Backend { source },
+        DbError::InvalidRecord { source } => match source {},
+        DbError::CreateNull => DbError::CreateNull,
+        DbError::UniqueViolation { constraint, source } => {
+            DbError::UniqueViolation { constraint, source }
+        }
+        DbError::SqlState {
+            code,
+            constraint,
+            source,
+        } => DbError::SqlState {
+            code,
+            constraint,
+            source,
+        },
     }
 }
 fn fault(error: TableError) -> DbError<TableError> {
