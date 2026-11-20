@@ -103,6 +103,8 @@ class TransportEnvelope(BaseModel):
 
 # The sync handler's _run_sync_responses_pre_call_deployment_hook, over the case's patch
 class PatchHook(CustomLogger):
+    patch: dict[str, JsonValue]
+
     def __init__(self, patch: dict[str, JsonValue]) -> None:
         self.patch = patch
 
@@ -113,7 +115,9 @@ class PatchHook(CustomLogger):
         kwargs: dict[str, object],
         call_type: CallTypes | None,
     ) -> dict[str, JsonValue] | None:
-        return JSON_MAP.validate_python(kwargs | self.patch)
+        merged = JSON_MAP.validate_python(kwargs)
+        merged.update(self.patch)
+        return merged
 
 
 # The scripted async_should_run_agentic_loop and async_run_agentic_loop pair
