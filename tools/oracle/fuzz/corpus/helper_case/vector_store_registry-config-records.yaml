@@ -1,0 +1,12 @@
+kind: helper
+name: vector-store-registry-config-records-corpus-seed
+call:
+  vector_store_registry:
+    operation: config_records
+    entries:
+      - vector_store_name: notes
+        litellm_params:
+          vector_store_id: vs_a
+          custom_llm_provider: openai
+env: {}
+compare: {ignore: []}

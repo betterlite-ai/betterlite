@@ -1,0 +1,51 @@
+task: B3462
+deviations:
+  - what: >-
+      Blocked credential fields are checked in the order the task lists them:
+      vertex_credentials, vertex_ai_credentials, aws_access_key_id,
+      aws_secret_access_key, aws_session_token, aws_web_identity_token,
+      aws_role_name, aws_session_name, aws_profile_name, aws_sts_endpoint,
+      aws_external_id, azure_ad_token, api_key, api_base. When one request sets
+      several of them, the error names the first in that order.
+    why: >-
+      LiteLLM iterates a Python set literal, so which field it names depends on
+      hash randomization. Deterministic order makes the rejection testable and
+      the reported field stable. The set holds the same 14 fields, so the
+      accepted and rejected requests are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L497-L512
+  - what: >-
+      The decoder returns ingest_options, an optional secured document of
+      (safe_filename, content bytes, content_type), file_url and file_id, and
+      only a multipart or base64 file is validated. A file_url or file_id passes
+      the source check and comes back as given, with no upload scanning.
+    why: >-
+      Decoding stays independent of storage and ingestion. The shape matches the
+      pin's multipart and JSON branches, with the safe filename and detected
+      content type produced by the injected upload validation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L404-L525
+  - what: >-
+      A non-empty multipart `request` field that is not valid JSON, or holds a
+      JSON value that is not an object, or is not text (a file part or a
+      request[] list), is a 400 (RequestInvalidJson, RequestNotObject,
+      RequestNotText). LiteLLM calls orjson.loads and then .get without a guard,
+      so these inputs leave the handler as an uncaught JSONDecodeError,
+      AttributeError or TypeError and surface as a 500. An empty `request`
+      string is parsed as given, which is the docs/compatibility.md rule that
+      replaces LiteLLM's `if request_json_str:` truthiness skip.
+    why: >-
+      A malformed client field is the client's error; a 500 says the server
+      broke and hides the cause. The status is the only observable difference,
+      since LiteLLM's exception text is not a contract.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L442-L447
+  - what: >-
+      A multipart key sent both plainly and with a [] suffix (file plus
+      file[], or request plus request[]) is a 400 naming the field, the
+      FormError::ScalarAppend the shared get_form_data returns. LiteLLM's
+      get_form_data appends the [] value with
+      parsed_form_data.setdefault(key, []).append(value), which raises
+      AttributeError on the already stored scalar and surfaces as a 500.
+    why: >-
+      A malformed multipart body is the client's mistake; a 500 hides the cause.
+      A plain key alone keeps LiteLLM's last-value-wins behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L459-L467
+kept_bugs: []

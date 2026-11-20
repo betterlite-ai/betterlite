@@ -1,0 +1,15 @@
+kind: helper
+name: vector-store-registry-mutations-corpus-seed
+call:
+  vector_store_registry:
+    operation: mutations
+    stores:
+      - vector_store_id: vs_a
+        custom_llm_provider: openai
+    steps:
+      - kind: add
+        store:
+          vector_store_id: vs_b
+          custom_llm_provider: bedrock
+env: {}
+compare: {ignore: []}

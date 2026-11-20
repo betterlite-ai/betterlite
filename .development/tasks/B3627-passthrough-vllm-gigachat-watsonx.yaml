@@ -71,7 +71,7 @@ references:
   - url: https://docs.litellm.ai/docs/pass_through/gigachat
     why: User-facing description of the gigachat route.
 dod:
-  - text: The handlers are tested with tower's oneshot over this module's own Router and fake ports. B8609 mounts the routes and proves them over HTTP with the oracle cases that were listed here.
+  - text: The handlers are tested with tower's oneshot over this module's own Router and fake ports. B10026 mounts the routes and proves them over HTTP with the oracle cases that were listed here.
     proof: [vllm-route-tests]
   - text: The vllm route sends a router model to the router with the body as `json` only for a JSON content type and the key's litellm_metadata, relays a Buffered reply, streams a StatusStream reply with its own status and headers and no keepalive, and answers 500 for a ByteStream reply.
     proof: [vllm-route-tests]

@@ -1,0 +1,24 @@
+kind: sdk_http
+name: sdk-http-assistant-threads-settings-and-azure-client
+env:
+  AZURE_API_KEY: azure-env-key
+  AZURE_API_VERSION: "2024-01-01"
+call:
+  assistant_threads:
+    operation: create
+    mode: sync
+    provider: azure
+    messages:
+      - {role: user, content: hello}
+    metadata: {tag: x}
+    tool_resources: {file_search: {vector_store_ids: [vs_a]}}
+    kwargs: {api_version: "2024-06-01", timeout: 30}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: thread_a, object: thread, created_at: 1, metadata: {tag: x}, tool_resources: {}}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [api-key, openai-beta]
+  ignore: []

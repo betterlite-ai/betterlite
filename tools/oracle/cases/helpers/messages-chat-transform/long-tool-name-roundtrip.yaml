@@ -1,0 +1,78 @@
+kind: helper
+name: messages-chat-transform-long-tool-name-roundtrip
+call:
+  messages_chat_transform:
+    operation: input_params
+    kwargs:
+      model: gpt-4o
+      messages:
+      - role: user
+        content: hi
+      tools:
+      - name: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        input_schema:
+          type: object
+      tool_choice:
+        type: tool
+        name: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    custom_llm_provider: null
+calls:
+- messages_chat_transform:
+    operation: convenience
+    kwargs:
+      model: gpt-4o
+      messages:
+      - role: user
+        content: hi
+      tools:
+      - name: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        input_schema:
+          type: object
+      tool_choice:
+        type: tool
+        name: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    custom_llm_provider: null
+- messages_chat_transform:
+    operation: response
+    response:
+      id: chat_a
+      model: gpt-4o
+      choices:
+      - finish_reason: tool_calls
+        message:
+          content: null
+          tool_calls:
+          - id: call_1
+            function:
+              name: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_635361c4
+              arguments: '{"x":1}'
+            provider_specific_fields: null
+          reasoning_content: null
+          thinking_blocks: null
+          refusal: null
+          provider_specific_fields: null
+      usage:
+        prompt_tokens: 10
+        completion_tokens: 2
+        prompt_tokens_details: null
+        server_tool_use: null
+        cache_read_input_tokens: null
+        cache_creation_input_tokens: null
+        _cache_read_input_tokens: null
+        _cache_creation_input_tokens: null
+    tool_name_mapping:
+      aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_635361c4: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    polyfill_result: null
+- messages_chat_transform:
+    operation: compose
+    request:
+      model: gpt-4o
+      messages:
+      - role: user
+        content: hi
+      - role: system
+        content: late
+    custom_llm_provider: null
+    preserve_midturn_system: true
+env: {}
+compare: {ignore: []}

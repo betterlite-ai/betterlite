@@ -1,0 +1,27 @@
+kind: sdk_http
+name: sdk-http-assistant-create-flag-and-failures
+env: {}
+call:
+  assistant_create:
+    provider: openai
+    model: gpt-4o-mini
+    entry: async
+    api_base: mock
+    api_key: sk-test
+    async_create_assistants: false
+upstream:
+  - status: 404
+    headers: {content-type: application/json}
+    body:
+      error:
+        message: no such assistant
+        type: invalid_request_error
+        param: assistant_id
+        code: missing
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, openai-beta, content-type, accept]
+  ignore:
+    - pointer: /assistant_create/value/failure/message
+      why: LiteLLM prefixes the mapped exception text and betterlite writes its own

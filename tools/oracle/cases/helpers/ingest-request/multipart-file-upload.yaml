@@ -1,0 +1,17 @@
+kind: helper
+name: multipart_file_upload
+call:
+  b3462:
+    mode: multipart
+    parts:
+      - name: file
+        kind: upload
+        filename: notes.txt
+        content_hex: '68656c6c6f0a'
+        content_type: text/plain
+      - name: request
+        kind: text
+        text: '{"ingest_options": {"vector_store": {"vector_store_id": "vs-1"}}}'
+env: {}
+compare:
+  ignore: []

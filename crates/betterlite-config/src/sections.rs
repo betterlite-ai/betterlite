@@ -325,6 +325,7 @@ pub mod openai_mock_transport;
 pub mod openai_provider;
 pub mod openai_realtime;
 pub mod openai_workload_identity;
+pub mod org_admin_keys;
 pub mod otel_settings;
 pub mod panw_prisma_airs;
 pub mod pass_through_registry;
@@ -472,10 +473,12 @@ use std::fmt;
 
 use serde::de::DeserializeOwned;
 
+use crate::api::fine_tuning_provider_config;
 use crate::api::realtime_session_state;
 use crate::api::response_chat_request;
 use crate::api::responses_hook_policy;
 use crate::api::vector_context_shaping;
+use crate::api::vector_store_registry;
 use crate::loader::{ConfigError, EnvironmentLookup, parse_view};
 
 pub trait Section: DeserializeOwned + Default {
@@ -606,7 +609,7 @@ sections! {
     dynamic_rate_limit_policy, dynamoai_moderation, embedding_host_settings,
     embedding_provider_settings, end_user_identity, end_user_registry, enkryptai_detection,
     error_body_call_id, executed_batch_runner, fallback_budget, fallback_plans,
-    file_upload_options, file_upload_routing, file_upload_validation, focus_export_schedule,
+    file_upload_options, file_upload_routing, file_upload_validation, fine_tuning_provider_config, focus_export_schedule,
     foundry_credentials, foundry_image_edits, foundry_vector_stores, full_model_metadata,
     gcs_response_cache, gdc_settings, gemini_cache_create, gemini_cache_prefix, generic_guardrail_api, gigachat_auth, gigachat_route, grayswan,
     guardrail_identity, guardrail_judge, guardrail_message_skip, guardrail_modes, guardrail_params, guardrail_scan_cache, guardrail_translation,
@@ -630,7 +633,7 @@ sections! {
     model_patch, model_public_settings, model_rate_limits, model_visibility, moderation_model,
     native_messages_hosts_settings, oauth_tokens, ollama_model_metadata, openai_chat_content,
     openai_credentials, openai_like_settings, openai_mock_transport, openai_provider,
-    openai_realtime, openai_workload_identity, otel_settings, panw_prisma_airs,
+    openai_realtime, openai_workload_identity, org_admin_keys, otel_settings, panw_prisma_airs,
     pass_through_registry, passthrough_request_policies, passthrough_runtime, passthrough_websocket, password_login, password_policy, payload_exclusions, pillar_runtime, pointfive_params, policy_engine,
     pre_call, pre_routing_registry, presidio_runtime, prometheus_bounded_series, prometheus_budget_refresh,
     prometheus_exporter, prometheus_request_budget, prompt_affinity, prompt_cache_accounting, prompt_injection, prompt_repositories, prompt_runtime, provider_resolution,
@@ -651,7 +654,7 @@ sections! {
     tier_definitions, tinyfish_route, token_counting, tokenizer_engines, transcription_call, trusted_network,
     two_solver_classifier, ui_discovery, ui_session_cleanup, usage_routing, usage_routing_v2,
     usage_v2_accounting, user_delete, user_fields, user_info, user_update, user_url_policy,
-    vector_context_shaping, verbose_hooks, vertex_credential_sources, vertex_embedding_dispatch,
+    vector_context_shaping, vector_store_registry, verbose_hooks, vertex_credential_sources, vertex_embedding_dispatch,
     vertex_gcs_settings, vertex_image_credentials, vertex_schema_shaping, vigil_runtime, virtual_key_auth, virtual_key_routes, voyage_credentials,
     websearch_request_hooks, worker_options_reload, xai_identity, xai_oauth_settings, xecguard_runtime,
     config_param_cache, data_cloud_credentials, db_watchdog, enterprise_ml_credentials, fallback_errors, gateway_provider_keys, hosted_platform_keys, mcp_discovery, model_hub_credentials, prompts, public_skills_index, regional_host_keys, smtp_transport, weighted_failover,

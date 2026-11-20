@@ -1,0 +1,17 @@
+kind: helper
+name: key-policy-fields-json-column-and-organization-precedence
+call:
+  key_policy_fields:
+    calls:
+      - {function: json_column, column: router_settings, value: "{\"a\":1}"}
+      - {function: json_column, column: budget_limits, value: "[{\"budget_duration\":\"1d\"}]"}
+      - {function: json_column, column: router_settings, value: {already: object}}
+      - {function: json_column, column: metadata, value: "not json"}
+      - {function: json_column, column: router_settings, value: "null"}
+      - {function: json_column, column: budget_limits, value: null}
+      - {function: json_column, column: router_settings, value: "{"}
+      - {function: verification_row, row: {organization_id: null, org_id: org-1, key_alias: alias}}
+      - {function: verification_row, row: {org_id: org-1}}
+      - {function: verification_row, row: {organization_id: org-2, org_id: org-1}}
+env: {}
+compare: {ignore: []}

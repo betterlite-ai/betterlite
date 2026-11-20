@@ -1,0 +1,10 @@
+kind: helper
+name: bedrock-mantle-native-sse
+call:
+  bedrock_mantle_chat:
+    function: native_sse
+    events:
+      - '{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}'
+      - '{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":5}}'
+env: {}
+compare: {ignore: []}

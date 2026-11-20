@@ -1,0 +1,13 @@
+kind: helper
+name: auth-tag-budgets-fetch-errors-dropped
+call:
+  auth_tag_budgets:
+    function: tags
+    database: true
+    names: [tag-a]
+    cached: []
+    rows: []
+    fail_query: true
+env: {}
+compare:
+  ignore: []

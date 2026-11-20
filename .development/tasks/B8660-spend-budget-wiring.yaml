@@ -11,13 +11,12 @@ description: >-
 
   3. Shadow spend callables. B4083's shadow job loader takes two injected async fields: `read_spend(counter_key: String, fallback_spend: f64, max_budget: f64) -> f64` and `write_spend(counter_key: String, cost: f64)`. Build both in crates/betterlite-server/src/app/spend/budget.rs as `pub fn shadow_spend(shared: &Shared)`, returning the pair: `read_spend` calls B2321's `get_current_spend` and `write_spend` calls B3015's `increment_spend_counter`, both over the spend counter cache inside `shared.budget`, with the arguments passed through and the result returned unchanged. B8662 passes this pair to B069's spend::startup::start, which builds the shadow job loader with it.
 
-  4. Background interaction release. B3499 takes an injected `ReservationRelease` port on its create path (a trait in betterlite-core next to `acreate`, with one async method, `release`, taking the reservation the logging object carries and returning B3496's ReleaseError), and the SettlementHost the background poll gets forwards `release_reservation` to it. Implement it in app/spend/budget.rs as `pub fn interaction_release(shared: &Shared)`, returning the port over the release method of `shared.budget`'s settlement accessor (B8481 maps it to B3003's `release_budget_reservation`). Convert the reservation to the type B3003 takes with a checked conversion and return its error unchanged. The caller of acreate passes this port in.
 
-  5. B732's `BudgetAdmission` port. Its `admit(&AuthContext, &RequestScope)` has only the `AlwaysAdmits` test double, and nothing in production calls it: LiteLLM's admission after auth is `_reserve_budget_after_common_checks`, which B1225 builds as the real stage over B8480 with the request body, token objects and settings that `admit` cannot carry. Remove the trait from crates/betterlite-server/src/auth/auth_identity.rs and the double from auth_identity/tests.rs. Remove `AdmissionLease` and `RequestScope` too when nothing else uses them (grep the crate first); keep `AuthContext`.
+  4. B732's `BudgetAdmission` port. Its `admit(&AuthContext, &RequestScope)` has only the `AlwaysAdmits` test double, and nothing in production calls it: LiteLLM's admission after auth is `_reserve_budget_after_common_checks`, which B1225 builds as the real stage over B8480 with the request body, token objects and settings that `admit` cannot carry. Remove the trait from crates/betterlite-server/src/auth/auth_identity.rs and the double from auth_identity/tests.rs. Remove `AdmissionLease` and `RequestScope` too when nothing else uses them (grep the crate first); keep `AuthContext`.
 
   HTTP oracle cases, through the booted proxy with B860's Postgres fixtures and the oracle's mock provider, in tools/oracle/cases/budget-services/ (B8481 handed them here because the limiter reaches auth only after step 1). A key whose `model_max_budget` gives the requested model `{"max_budget": 0, "budget_duration": "1d"}` is refused on `/v1/chat/completions` with the status, error type, param and code LiteLLM answers. The same key asking for a model outside its map gets 200. A team with the same zero cap on the model refuses its team key. Each case compares status, body and the error fields.
 
-  Tests in crates/betterlite-server/src/app/spend/budget/tests.rs (names start with `budget_`): build Shared with a `BudgetServices` over fake engines, build B753's and B755's slots from it, charge a model through the limiter's callback port and assert the key, user, team and end-user ports see that charge (one instance); assert B1225's slot passes None with no router and Some after a router is installed on the same handle; and assert the shadow pair reads and writes through the shared counter cache and the interaction release port calls the settlement release once.
+  Tests in crates/betterlite-server/src/app/spend/budget/tests.rs (names start with `budget_`): build Shared with a `BudgetServices` over fake engines, build B753's and B755's slots from it, charge a model through the limiter's callback port and assert the key, user, team and end-user ports see that charge (one instance); assert B1225's slot passes None with no router and Some after a router is installed on the same handle; and assert the shadow pair reads and writes through the shared counter cache.
 scope:
   paths:
     - crates/betterlite-server/src/app/spend/budget.rs
@@ -43,7 +42,7 @@ dod:
     proof: [budget-tests, oracle]
   - text: The reservation call gets shared.router_views.current() read once per request, None without a router.
     proof: [budget-tests]
-  - text: The shadow spend pair forwards to get_current_spend and increment_spend_counter over the shared spend counter cache, and the interaction release port forwards to the settlement accessor's release.
+  - text: The shadow spend pair forwards to get_current_spend and increment_spend_counter over the shared spend counter cache.
     proof: [budget-tests]
   - text: BudgetAdmission and its test double are gone and the auth identity tests still pass.
     proof: [admission-removed]
@@ -53,7 +52,7 @@ checks:
   optional: []
   commands:
     - id: budget-tests
-      why: an auth slot builds its own limiter, the reservation call caches or drops the router view, or the shadow pair or the interaction release port reaches another instance
+      why: an auth slot builds its own limiter, the reservation call caches or drops the router view, or the shadow pair reaches another instance
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::spend::budget::tests::budget_/)'
     - id: admission-removed
       why: the unused BudgetAdmission port is still there, or removing it broke the auth identity tests

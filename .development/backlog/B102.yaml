@@ -2,7 +2,7 @@ id: B102
 milestone: M5 api families
 title: Pass-through endpoint framework and its config API
 status: todo
-depends_on: [B002, B8606, B8607, B8608, B8609, B8610, B8640, B8930, B8931]
+depends_on: [B002, B8606, B8607, B8608, B8610, B8640, B8930, B8931]
 file: tasks/B102-passthrough-integration.yaml
 covers:
   - "litellm/proxy/pass_through_endpoints/pass_through_endpoints.py"

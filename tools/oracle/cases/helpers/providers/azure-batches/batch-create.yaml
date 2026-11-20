@@ -1,0 +1,38 @@
+kind: helper
+name: batch-create
+call:
+  azure_batches:
+    steps:
+    - action: create
+      args: {api_key: bc-1, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      data: {completion_window: 24h, endpoint: /v1/chat/completions, input_file_id: file_in, metadata: {team: alpha}, output_expires_after: {anchor: created_at, seconds: 3600}, extra_headers: {x-ms-client-request-id: req-a}, extra_body: {mode: batch}, timeout: 7.5}
+      reply: {status: 200, body: {id: batch_a, completion_window: 24h, created_at: 1741000000, endpoint: /v1/chat/completions, input_file_id: file_in, object: batch, status: completed, cancelled_at: null, cancelling_at: null, completed_at: 1741000100, error_file_id: null, errors: null, expired_at: null, expires_at: null, failed_at: null, finalizing_at: null, in_progress_at: null, metadata: null, model: null, output_file_id: file_out, request_counts: {completed: 3, failed: 0, total: 3}, usage: null}}
+    - action: create
+      is_async: true
+      args: {api_key: bc-2, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      data: {completion_window: 24h, endpoint: /v1/embeddings, input_file_id: file_b}
+      reply: {status: 200, body: {id: batch_a, completion_window: 24h, created_at: 1741000000, endpoint: /v1/chat/completions, input_file_id: file_in, object: batch, status: completed, cancelled_at: null, cancelling_at: null, completed_at: 1741000100, error_file_id: null, errors: null, expired_at: null, expires_at: null, failed_at: null, finalizing_at: null, in_progress_at: null, metadata: null, model: null, output_file_id: file_out, request_counts: {completed: 3, failed: 0, total: 3}, usage: null}}
+    - action: create
+      client: azure_openai
+      args: {api_key: bc-3, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      data: {completion_window: 24h, endpoint: /v1/chat/completions, input_file_id: file_c}
+      reply: {status: 200, body: {id: batch_a, completion_window: 24h, created_at: 1741000000, endpoint: /v1/chat/completions, input_file_id: file_in, object: batch, status: completed, cancelled_at: null, cancelling_at: null, completed_at: 1741000100, error_file_id: null, errors: null, expired_at: null, expires_at: null, failed_at: null, finalizing_at: null, in_progress_at: null, metadata: null, model: null, output_file_id: file_out, request_counts: {completed: 3, failed: 0, total: 3}, usage: null}}
+    - action: create
+      is_async: true
+      client: async_azure_openai
+      args: {api_key: bc-4, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      data: {completion_window: 24h, endpoint: /v1/responses, input_file_id: file_d}
+      reply: {status: 200, body: {id: batch_a, completion_window: 24h, created_at: 1741000000, endpoint: /v1/chat/completions, input_file_id: file_in, object: batch, status: completed, cancelled_at: null, cancelling_at: null, completed_at: 1741000100, error_file_id: null, errors: null, expired_at: null, expires_at: null, failed_at: null, finalizing_at: null, in_progress_at: null, metadata: null, model: null, output_file_id: file_out, request_counts: {completed: 3, failed: 0, total: 3}, usage: null}}
+    - action: create
+      client: openai
+      args: {api_key: bc-5, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      data: {completion_window: 24h, endpoint: /v1/videos, input_file_id: file_e}
+      reply: {status: 200, body: {id: batch_a, completion_window: 24h, created_at: 1741000000, endpoint: /v1/chat/completions, input_file_id: file_in, object: batch, status: completed, cancelled_at: null, cancelling_at: null, completed_at: 1741000100, error_file_id: null, errors: null, expired_at: null, expires_at: null, failed_at: null, finalizing_at: null, in_progress_at: null, metadata: null, model: null, output_file_id: file_out, request_counts: {completed: 3, failed: 0, total: 3}, usage: null}}
+    - action: create
+      is_async: true
+      client: async_openai
+      args: {api_key: bc-6, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      data: {completion_window: 24h, endpoint: /v1/images/generations, input_file_id: file_f}
+      reply: {status: 200, body: {id: batch_a, completion_window: 24h, created_at: 1741000000, endpoint: /v1/chat/completions, input_file_id: file_in, object: batch, status: completed, cancelled_at: null, cancelling_at: null, completed_at: 1741000100, error_file_id: null, errors: null, expired_at: null, expires_at: null, failed_at: null, finalizing_at: null, in_progress_at: null, metadata: null, model: null, output_file_id: file_out, request_counts: {completed: 3, failed: 0, total: 3}, usage: null}}
+env: {}
+compare: {ignore: []}

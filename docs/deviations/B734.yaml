@@ -1,0 +1,12 @@
+task: B734
+deviations:
+  - what: "A batch key eviction warns once per failed key, in input order, with \"Failed to evict cached key entry for %s; a deleted key may authenticate until its TTL expires: %s\"."
+    why: "The per-key helper returns its error to the batch instead of logging it, so the batch owns the warning; LiteLLM logs \"Failed to invalidate cached key entry\" inside the per-key helper, in completion order, and its batch-level warning never fires because that helper swallows every error."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3047-L3119"
+  - what: "A reset whose Redis SET and fallback DELETE both fail returns InvalidationError::SpendResetUnavailable, whose message is the 503 detail.error text and whose source is the SET error, for the management route to map to HTTP 503."
+    why: "The helper is a library entry point in betterlite and raises no HTTP types; the route layer that owns status codes is built by its own task."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L2959-L2965"
+  - what: "The reset spend is taken as a Decimal and written to the counter and floor caches as the nearest f64; LiteLLM receives new_spend as a float."
+    why: "Betterlite reads budget rows as Decimal, and both caches hold JSON numbers; a spend finer than f64 carries is rounded at the cache write, and a value with no finite f64 form is a typed SpendOutOfRange error."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L2872-L2877"
+kept_bugs: []
