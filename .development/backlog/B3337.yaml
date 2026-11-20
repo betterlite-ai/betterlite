@@ -1,14 +1,14 @@
 id: B3337
 milestone: M5 api families
 title: Video status transport
-status: todo
+status: done
 depends_on: [B3331, B173, B249, B2402]
 file: tasks/B3337-video-status-transport.yaml
 covers:
   - "litellm/llms/custom_httpx/llm_http_handler.py"
 parent: B093
 split_from: B093
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2689
