@@ -121,6 +121,16 @@ async fn a_short_pipeline_reply_pads_the_missing_slots_with_none() {
 }
 
 #[tokio::test]
+async fn an_entity_slot_with_an_empty_list_leaves_the_entity_none() {
+    let lists = Arc::new(FakeLists::default());
+    let mut replies = vec![BufferReply::Missing; 7];
+    replies[0] = BufferReply::List(Vec::new());
+    lists.script_pipeline(replies);
+    let pipeline = attached(&lists).drain_pipeline().await.unwrap();
+    assert_eq!(pipeline.entity, None);
+}
+
+#[tokio::test]
 async fn extra_pipeline_replies_are_ignored() {
     let lists = Arc::new(FakeLists::default());
     let mut replies = vec![BufferReply::Missing; 7];
