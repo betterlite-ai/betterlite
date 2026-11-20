@@ -80,9 +80,9 @@ where
         RawValue::Number(RawNumber::Text(text)) => {
             Ok(PingSetting::Text(resolve_string(text, KEY, lookup)?))
         }
-        RawValue::Number(RawNumber::Boolean(value)) => Err(ConfigError::InvalidScalar {
+        RawValue::Number(RawNumber::Boolean(enabled)) => Err(ConfigError::InvalidScalar {
             path: KEY.to_owned(),
-            value,
+            value: enabled,
         }),
         RawValue::Other(_) => Err(ConfigError::InvalidScalar {
             path: KEY.to_owned(),
