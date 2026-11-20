@@ -1,0 +1,25 @@
+kind: helper
+name: messages_response_events-transitions-seed
+call:
+  messages_response_events:
+    message_id: msg_seed
+    model: model_seed
+    redaction: enabled
+    steps:
+      - {function: process_event, event: {shape: mapping, fields: {type: response.created}}}
+      - function: process_event
+        event:
+          shape: mapping
+          fields:
+            type: response.output_item.added
+            item: {type: message, id: item_seed}
+      - {function: process_event, event: {shape: mapping, fields: {type: response.output_text.delta, item_id: item_seed, delta: seed}}}
+      - function: process_event
+        event:
+          shape: mapping
+          fields:
+            type: response.failed
+            response:
+              error: {type: rate_limit_error, message: seed}
+env: {}
+compare: {ignore: []}
