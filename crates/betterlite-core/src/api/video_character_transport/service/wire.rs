@@ -4,10 +4,16 @@ use std::str::from_utf8;
 
 use betterlite_http::interactions::base::{RequestFailure, RequestHeaders, ResponseHeaders};
 use betterlite_http::proxy::UpstreamResponse;
+use betterlite_http::proxy::multipart::encode;
 use betterlite_http::proxy::outbound::merge_query;
 use http::header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
 use secrecy::ExposeSecret as _;
 use url::Url;
+
+use super::super::clients::{CharacterBody, CharacterRequest};
+use super::super::config::CharacterConfig;
+use super::super::error::{CharacterError, CharacterFault, converted};
+use super::prepare::Exchange;
 
 // httpx's response.text: UTF-8 with errors="replace", so each invalid sequence reads as one U+FFFD
 pub(crate) fn body_text(body: &[u8]) -> String {
@@ -98,4 +104,41 @@ pub(crate) fn multipart_boundary(headers: &HeaderMap) -> Option<&str> {
         }
     }
     None
+}
+
+// the request an exchange becomes: the transform's url and parts, the final headers and the caller's deadline
+pub(super) fn assembled<C>(
+    config: &C,
+    exchange: Exchange,
+    headers: &RequestHeaders,
+    boundary: &str,
+) -> Result<CharacterRequest, CharacterFault<C>>
+where
+    C: CharacterConfig,
+{
+    let url = request_url(&exchange.url, &exchange.query)
+        .map_err(|failure| converted(config, failure))?;
+    let mut wire_headers = header_map(headers).map_err(|failure| converted(config, failure))?;
+    let body = match exchange.parts {
+        None => CharacterBody::Empty,
+        Some(parts) => {
+            let chosen = multipart_boundary(&wire_headers)
+                .map_or_else(|| boundary.to_owned(), str::to_owned);
+            if !wire_headers.contains_key(CONTENT_TYPE) {
+                let content_type = format!("multipart/form-data; boundary={chosen}");
+                let value = HeaderValue::from_bytes(content_type.as_bytes())
+                    .map_err(RequestFailure::HeaderValue)
+                    .map_err(|failure| converted(config, failure))?;
+                wire_headers.insert(CONTENT_TYPE, value);
+            }
+            CharacterBody::Multipart(encode(&chosen, &parts).map_err(CharacterError::Multipart)?)
+        }
+    };
+    Ok(CharacterRequest {
+        method: exchange.method,
+        url,
+        headers: wire_headers,
+        body,
+        timeout: exchange.timeout,
+    })
 }

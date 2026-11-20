@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use betterlite_http::interactions::base::{ClientError, Params, RequestFailure, RequestHeaders};
-use betterlite_http::proxy::multipart::{MultipartPart, encode};
+use betterlite_http::interactions::base::{ClientError, Params, RequestHeaders};
+use betterlite_http::proxy::multipart::MultipartPart;
 use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_pre_post::error::PrePostError;
@@ -11,15 +11,14 @@ use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use http::Method;
-use http::header::{CONTENT_TYPE, HeaderValue};
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 
-use super::super::clients::{CharacterBody, CharacterRequest};
+use super::super::clients::CharacterRequest;
 use super::super::config::{CharacterConfig, CharacterContext, CharacterEnvironment};
-use super::super::error::{CharacterError, CharacterFault, converted};
-use super::CharacterCall;
-use super::wire::{header_map, multipart_boundary, request_url};
+use super::super::error::{CharacterError, CharacterFault};
+use super::wire::assembled;
+use super::{CharacterCall, CharacterCreateCall};
 
 // the litellm_params fields the handlers read before a transform sees them
 struct CallParts<'call> {
@@ -29,13 +28,13 @@ struct CallParts<'call> {
 }
 
 // what either transform hands back, so the request is assembled once; a creation names its parts and the name pre_call logs, a lookup names neither
-struct Exchange {
-    url: String,
-    method: Method,
-    query: Vec<(String, String)>,
-    parts: Option<Vec<MultipartPart>>,
-    logged: Option<IndexMap<String, Json>>,
-    timeout: Option<Duration>,
+pub(super) struct Exchange {
+    pub(super) url: String,
+    pub(super) method: Method,
+    pub(super) query: Vec<(String, String)>,
+    pub(super) parts: Option<Vec<MultipartPart>>,
+    pub(super) logged: Option<IndexMap<String, Json>>,
+    pub(super) timeout: Option<Duration>,
 }
 
 // what a call reads before any transform sees it
@@ -71,21 +70,7 @@ where
         headers: &headers,
     };
     let exchange = match call {
-        CharacterCall::Create(create) => {
-            let (url, files) = config
-                .transform_create_request(create.name, create.video, context)
-                .map_err(CharacterError::Provider)?;
-            let named =
-                IndexMap::from([(String::from("name"), Json::Text(create.name.to_owned()))]);
-            Exchange {
-                url,
-                method: Method::POST,
-                query: Vec::new(),
-                parts: Some(files),
-                logged: Some(named),
-                timeout: create.timeout,
-            }
-        }
+        CharacterCall::Create(create) => created(config, create, context)?,
         CharacterCall::Get(get) => {
             let (url, query) = config
                 .transform_get_request(get.character_id, context)
@@ -115,39 +100,25 @@ where
     assembled(config, exchange, &headers, boundary)
 }
 
-fn assembled<C>(
+fn created<C>(
     config: &C,
-    exchange: Exchange,
-    headers: &RequestHeaders,
-    boundary: &str,
-) -> Result<CharacterRequest, CharacterFault<C>>
+    call: &CharacterCreateCall<'_>,
+    context: CharacterContext<'_>,
+) -> Result<Exchange, CharacterFault<C>>
 where
     C: CharacterConfig,
 {
-    let url = request_url(&exchange.url, &exchange.query)
-        .map_err(|failure| converted(config, failure))?;
-    let mut wire_headers = header_map(headers).map_err(|failure| converted(config, failure))?;
-    let body = match exchange.parts {
-        None => CharacterBody::Empty,
-        Some(parts) => {
-            let chosen = multipart_boundary(&wire_headers)
-                .map_or_else(|| boundary.to_owned(), str::to_owned);
-            if !wire_headers.contains_key(CONTENT_TYPE) {
-                let content_type = format!("multipart/form-data; boundary={chosen}");
-                let value = HeaderValue::from_bytes(content_type.as_bytes())
-                    .map_err(RequestFailure::HeaderValue)
-                    .map_err(|failure| converted(config, failure))?;
-                wire_headers.insert(CONTENT_TYPE, value);
-            }
-            CharacterBody::Multipart(encode(&chosen, &parts).map_err(CharacterError::Multipart)?)
-        }
-    };
-    Ok(CharacterRequest {
-        method: exchange.method,
+    let (url, parts) = config
+        .transform_create_request(call.name, call.video, context)
+        .map_err(CharacterError::Provider)?;
+    let named = IndexMap::from([(String::from("name"), Json::Text(call.name.to_owned()))]);
+    Ok(Exchange {
         url,
-        headers: wire_headers,
-        body,
-        timeout: exchange.timeout,
+        method: Method::POST,
+        query: Vec::new(),
+        parts: Some(parts),
+        logged: Some(named),
+        timeout: call.timeout,
     })
 }
 

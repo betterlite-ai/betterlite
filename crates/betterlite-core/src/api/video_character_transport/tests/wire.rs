@@ -1,4 +1,4 @@
-use std::io::{Read, Write};
+use std::io::{Read as _, Write as _};
 use std::net::TcpListener;
 use std::thread;
 use std::time::Duration;
@@ -393,16 +393,23 @@ fn creation_refuses_a_reply_past_the_response_cap() {
 fn sync_creation_keeps_a_body_read_timeout_typed() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
-    let server = thread::spawn(move || {
-        let (mut stream, _peer) = listener.accept().unwrap();
-        let mut request = [0_u8; 1024];
-        let _read = stream.read(&mut request);
-        stream
-            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n")
-            .unwrap();
-        thread::sleep(Duration::from_millis(300));
-        let _written = stream.write_all(b"{}");
-    });
+    let server = thread::Builder::new()
+        .name("body-deadline".to_owned())
+        .spawn(move || {
+            let (mut stream, _peer) = listener.accept().unwrap();
+            let mut request = [0_u8; 1024];
+            let _read = stream.read(&mut request);
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n")
+                .unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(10)))
+                .unwrap();
+            // the head arrives and the body never does, so the client's own deadline ends the read, then it hangs up
+            let mut sink = [0_u8; 64];
+            let _closed = stream.read(&mut sink);
+        })
+        .unwrap();
     let base = format!("http://{address}");
     let (mut config, log, mut state, mut clients) = parts("video_create_character");
     config.create_url = format!("{base}/v1/characters");
@@ -412,7 +419,7 @@ fn sync_creation_keeps_a_body_read_timeout_typed() {
     let litellm = params(&[("api_base", base.as_str())]);
     let clip = video();
     let mut call = create_call("Wren", &clip, &litellm);
-    call.timeout = Some(Duration::from_millis(50));
+    call.timeout = Some(Duration::from_millis(500));
 
     let error = match transport.video_create_character_handler(&call) {
         Ok(_handled) => panic!("the body deadline ends the call"),
