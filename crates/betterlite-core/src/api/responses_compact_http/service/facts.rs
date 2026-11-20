@@ -7,7 +7,7 @@ use betterlite_models::decisions::Json;
 use serde_json::Number;
 
 use crate::api::vector_store_http_write::error::{
-    FailureFacts, HeaderMap, ResponseFacts, header_text,
+    FailureFacts, HeaderMap, ResponseFacts, header_map,
 };
 
 use super::ClientKind;
@@ -27,7 +27,9 @@ pub(crate) fn status_facts(reply: &UpstreamResponse) -> FailureFacts {
         |_| format!("{} bytes that are not UTF-8", reply.body.len()),
         ToOwned::to_owned,
     );
-    let mut headers = error_headers(&reply.headers);
+    let mut headers = header_map(&reply.headers);
+    headers.remove("content-encoding");
+    headers.remove("content-length");
     // httpx re-encodes the decoded body into the masked response, so a non-empty one carries a new content-length
     if !reply.body.is_empty() {
         let length = reply.body.len().to_string();
@@ -45,14 +47,6 @@ pub(crate) fn status_facts(reply: &UpstreamResponse) -> FailureFacts {
         }),
         display: String::new(),
     }
-}
-
-fn error_headers(headers: &http::HeaderMap) -> HeaderMap {
-    headers
-        .iter()
-        .filter(|(name, _)| !matches!(name.as_str(), "content-encoding" | "content-length"))
-        .map(|(name, value)| (name.as_str().to_owned(), Json::Text(header_text(value))))
-        .collect()
 }
 
 // A connect or read timeout becomes litellm.Timeout with status 408 and no headers; other failures synthesize a 500
