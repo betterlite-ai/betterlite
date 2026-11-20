@@ -104,30 +104,21 @@ fn delta(event: &Event) -> String {
 }
 
 fn fallback(error: &DriverError) -> &MidStreamFallbackDetails {
-    let DriverError::Class {
-        class: ErrorClass::MidStreamFallback(details),
-    } = error
-    else {
+    let ErrorClass::MidStreamFallback(details) = class_of(error) else {
         panic!("expected a mid-stream fallback, got {error:?}");
     };
     details
 }
 
 fn connection_message(error: &DriverError) -> &str {
-    let DriverError::Class {
-        class: ErrorClass::ApiConnection(context),
-    } = error
-    else {
+    let ErrorClass::ApiConnection(context) = class_of(error) else {
         panic!("expected an api connection error, got {error:?}");
     };
     &context.message
 }
 
 fn timeout_details(error: &DriverError) -> &TimeoutDetails {
-    let DriverError::Class {
-        class: ErrorClass::Timeout(details),
-    } = error
-    else {
+    let ErrorClass::Timeout(details) = class_of(error) else {
         panic!("expected a streaming timeout, got {error:?}");
     };
     details
@@ -499,8 +490,11 @@ impl Ports {
 
     fn failing(failure: &Arc<FailurePort>) -> Self {
         Self {
+            success: None,
             failure: Some(Arc::<FailurePort>::clone(failure)),
-            ..Self::default()
+            chunk_hooks: Vec::new(),
+            cache: None,
+            cache_handler: None,
         }
     }
 }
@@ -672,7 +666,9 @@ async fn live_sse_delivery_yields_events_and_finishes() {
     let ports = Ports {
         success: Some(Arc::<SuccessPort>::clone(&success)),
         failure: Some(Arc::<FailurePort>::clone(&failure)),
-        ..Ports::default()
+        chunk_hooks: Vec::new(),
+        cache: None,
+        cache_handler: None,
     };
     let fixture = Fixture::new(ports, fixed_clock());
     let hooks = fixture.hooks();

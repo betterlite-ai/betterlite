@@ -27,9 +27,11 @@ async fn terminal_error_events_raise_before_the_deployment_hook(
         ReplacingHook::new(serde_json::from_str(COMPLETED).expect("the replacement decodes"));
     let failure = Arc::new(FailurePort::default());
     let ports = Ports {
+        success: None,
         failure: Some(Arc::<FailurePort>::clone(&failure)),
         chunk_hooks: vec![Arc::<ReplacingHook>::clone(&hook)],
-        ..Ports::default()
+        cache: None,
+        cache_handler: None,
     };
     let fixture = Fixture::new(ports, fixed_clock());
     let hooks = fixture.hooks();
@@ -65,8 +67,11 @@ async fn the_deployment_hook_decides_whether_output_started() {
     let replacement: Event = serde_json::from_str(DELTA).expect("the replacement decodes");
     let hook = ReplacingHook::new(replacement);
     let ports = Ports {
+        success: None,
+        failure: None,
         chunk_hooks: vec![Arc::<ReplacingHook>::clone(&hook)],
-        ..Ports::default()
+        cache: None,
+        cache_handler: None,
     };
     let fixture = Fixture::new(ports, fixed_clock());
     let hooks = fixture.hooks();
@@ -133,8 +138,11 @@ async fn undecodable_payloads_are_skipped() {
 async fn invalid_utf8_payload_raises_an_unclassified_error() {
     let failure = Arc::new(FailurePort::default());
     let ports = Ports {
+        success: None,
         failure: Some(Arc::<FailurePort>::clone(&failure)),
-        ..Ports::default()
+        chunk_hooks: Vec::new(),
+        cache: None,
+        cache_handler: None,
     };
     let fixture = Fixture::new(ports, fixed_clock());
     let hooks = fixture.hooks();
@@ -155,8 +163,11 @@ async fn invalid_utf8_payload_raises_an_unclassified_error() {
 async fn streaming_duration_limit_blocks_the_first_read() {
     let failure = Arc::new(FailurePort::default());
     let ports = Ports {
+        success: None,
         failure: Some(Arc::<FailurePort>::clone(&failure)),
-        ..Ports::default()
+        chunk_hooks: Vec::new(),
+        cache: None,
+        cache_handler: None,
     };
     let fixture = Fixture::new(ports, scripted_clock(&[LATE]));
     let hooks = fixture.hooks();
@@ -186,8 +197,11 @@ async fn streaming_duration_limit_stops_after_a_received_event() {
 fn sync_iteration_runs_failure_handlers_without_a_runtime() {
     let failure = Arc::new(FailurePort::default());
     let ports = Ports {
+        success: None,
         failure: Some(Arc::<FailurePort>::clone(&failure)),
-        ..Ports::default()
+        chunk_hooks: Vec::new(),
+        cache: None,
+        cache_handler: None,
     };
     let fixture = Fixture::new(ports, fixed_clock());
     let hooks = fixture.hooks();
@@ -206,7 +220,10 @@ fn sync_iteration_logs_a_completed_response_inline() {
     let success = Arc::new(SuccessPort::default());
     let ports = Ports {
         success: Some(Arc::<SuccessPort>::clone(&success)),
-        ..Ports::default()
+        failure: None,
+        chunk_hooks: Vec::new(),
+        cache: None,
+        cache_handler: None,
     };
     let fixture = Fixture::new(ports, fixed_clock());
     let hooks = fixture.hooks();
@@ -224,7 +241,10 @@ async fn live_iteration_drains_pending_logging_after_completion() {
     let success = Arc::new(SuccessPort::default());
     let ports = Ports {
         success: Some(Arc::<SuccessPort>::clone(&success)),
-        ..Ports::default()
+        failure: None,
+        chunk_hooks: Vec::new(),
+        cache: None,
+        cache_handler: None,
     };
     let fixture = Fixture::new(ports, fixed_clock());
     let hooks = fixture.hooks();
@@ -244,9 +264,10 @@ async fn fake_response_iteration_slices_text_into_chunks() {
     let cache = Arc::new(RecordingCache::default());
     let ports = Ports {
         success: Some(Arc::<SuccessPort>::clone(&success)),
+        failure: None,
+        chunk_hooks: Vec::new(),
         cache: Some(Arc::<RecordingCache>::clone(&cache)),
         cache_handler: Some(Arc::new(caching_handler())),
-        ..Ports::default()
     };
     let fixture = Fixture::new(ports, fixed_clock());
     let hooks = fixture.hooks();
@@ -281,9 +302,10 @@ fn cached_response_iteration_marks_cache_hit_and_skips_persistence() {
     let cache = Arc::new(RecordingCache::default());
     let ports = Ports {
         success: Some(Arc::<SuccessPort>::clone(&success)),
+        failure: None,
+        chunk_hooks: Vec::new(),
         cache: Some(Arc::<RecordingCache>::clone(&cache)),
         cache_handler: Some(Arc::new(caching_handler())),
-        ..Ports::default()
     };
     let fixture = Fixture::new(ports, fixed_clock());
     let hooks = fixture.hooks();
@@ -312,7 +334,10 @@ async fn cached_response_iteration_logs_only_when_completed_is_yielded() {
     let success = Arc::new(SuccessPort::default());
     let ports = Ports {
         success: Some(Arc::<SuccessPort>::clone(&success)),
-        ..Ports::default()
+        failure: None,
+        chunk_hooks: Vec::new(),
+        cache: None,
+        cache_handler: None,
     };
     let fixture = Fixture::new(ports, fixed_clock());
     let hooks = fixture.hooks();
@@ -334,7 +359,10 @@ fn separate_synthetic_streams_keep_their_indices_and_callbacks_apart() {
     let success = Arc::new(SuccessPort::default());
     let ports = Ports {
         success: Some(Arc::<SuccessPort>::clone(&success)),
-        ..Ports::default()
+        failure: None,
+        chunk_hooks: Vec::new(),
+        cache: None,
+        cache_handler: None,
     };
     let fixture = Fixture::new(ports, fixed_clock());
     let hooks = fixture.hooks();
