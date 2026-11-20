@@ -96,20 +96,17 @@ pub(crate) async fn authenticate(
         .map_or_else(default_resolver, Arc::clone);
     let mut authenticated: Option<AuthContext> = None;
     for backend in INSTALLED_STAGES {
-        let Ok(input) = stage_input(*backend, &request, authenticated.as_ref(), &resolver) else {
-            return authentication_error(&AuthenticationFailure::Missing);
+        let input = match stage_input(*backend, &request, authenticated.as_ref(), &resolver) {
+            Ok(input) => input,
+            Err(failure) => return stage_failure_response(&failure),
         };
-        match dispatch(*backend, &input, master_key) {
+        let prefetched = match prefetch_tag_budgets(input).await {
+            Ok(prefetched) => prefetched,
+            Err(failure) => return stage_failure_response(&failure),
+        };
+        match dispatch(*backend, &prefetched, master_key) {
             Ok(context) => authenticated = Some(context),
-            Err(StageFailure::Authentication(failure)) => {
-                return authentication_error(&failure);
-            }
-            Err(StageFailure::ModelAccess(rejection)) => {
-                return rejection_response(&rejection);
-            }
-            Err(StageFailure::ResourceGrants(exception)) => {
-                return denial_response(&exception);
-            }
+            Err(failure) => return stage_failure_response(&failure),
         }
     }
     if let Some(context) = authenticated {
@@ -118,12 +115,22 @@ pub(crate) async fn authenticate(
     next.run(request).await
 }
 
+fn stage_failure_response(failure: &StageFailure) -> Response {
+    match failure {
+        StageFailure::Authentication(authentication) => authentication_error(authentication),
+        StageFailure::ModelAccess(rejection) => rejection_response(rejection),
+        StageFailure::ResourceGrants(exception) | StageFailure::TagBudgets(exception) => {
+            denial_response(exception)
+        }
+    }
+}
+
 fn stage_input(
     backend: AuthBackend,
     request: &Request<Body>,
     authenticated: Option<&AuthContext>,
     resolver: &Arc<RequestModelResolver>,
-) -> Result<StageInput, AuthenticationFailure> {
+) -> Result<StageInput, StageFailure> {
     match backend {
         AuthBackend::MasterKey => Ok(StageInput::MasterKey(extract_key(request.headers()))),
         AuthBackend::AuthRequestModels | AuthBackend::AuthModelPatterns => {
@@ -138,7 +145,7 @@ fn stage_input(
                 Ok(requested) => requested,
                 Err(error) => {
                     tracing::debug!(error = %error, "the request model stage failed");
-                    return Err(AuthenticationFailure::Missing);
+                    return Err(StageFailure::from(AuthenticationFailure::Missing));
                 }
             };
             let rule = rule_for_request(request);
@@ -152,7 +159,26 @@ fn stage_input(
                 },
             )))
         }
-        AuthBackend::AuthResourceGrants => resource_grant_stage_input(request, authenticated),
+        AuthBackend::AuthResourceGrants => Ok(resource_grant_stage_input(request, authenticated)?),
+        AuthBackend::AuthTagBudgets => Ok(StageInput::AuthTagBudgets(Box::new(
+            auth_tag_budgets::stage_input(request, authenticated)?,
+        ))),
+    }
+}
+
+// stage_input cannot await while holding the request borrow (Request<Body> is Send but not Sync), so the caller awaits the prefetch on the owned stage
+async fn prefetch_tag_budgets(input: StageInput) -> Result<StageInput, StageFailure> {
+    match input {
+        StageInput::AuthTagBudgets(stage) => {
+            auth_tag_budgets::prefetch(&stage)
+                .await
+                .map_err(StageFailure::TagBudgets)?;
+            Ok(StageInput::AuthTagBudgets(stage))
+        }
+        other @ (StageInput::MasterKey(_)
+        | StageInput::AuthRequestModels(_)
+        | StageInput::AuthModelPatterns(_)
+        | StageInput::AuthResourceGrants(_)) => Ok(other),
     }
 }
 

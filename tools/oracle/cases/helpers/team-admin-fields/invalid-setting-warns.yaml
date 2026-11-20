@@ -1,0 +1,38 @@
+kind: helper
+name: invalid_setting_warns
+call:
+  team_admin_fields:
+    function: resolve
+    general_settings: {"team_admin_editable_team_fields": {"max_budget": true}}
+    supported: ["tpm_limit", "rpm_limit", "max_budget"]
+calls:
+  - team_admin_fields:
+      function: resolve
+      general_settings: {"team_admin_editable_team_fields": "max_budget"}
+      supported: ["tpm_limit", "rpm_limit", "max_budget"]
+  - team_admin_fields:
+      function: resolve
+      general_settings: {"team_admin_editable_team_fields": 5}
+      supported: ["tpm_limit", "rpm_limit", "max_budget"]
+  - team_admin_fields:
+      function: resolve
+      general_settings: {"team_admin_editable_team_fields": false}
+      supported: ["tpm_limit", "rpm_limit", "max_budget"]
+  - team_admin_fields:
+      function: resolve
+      general_settings: {"team_admin_editable_team_fields": ["tpm_limit", 5]}
+      supported: ["tpm_limit", "rpm_limit", "max_budget"]
+  - team_admin_fields:
+      function: resolve
+      general_settings: {"team_admin_editable_team_fields": [["tpm_limit"]]}
+      supported: ["tpm_limit", "rpm_limit", "max_budget"]
+  - team_admin_fields:
+      function: resolve
+      general_settings: {"team_admin_editable_team_fields": null}
+      supported: ["tpm_limit", "rpm_limit", "max_budget"]
+  - team_admin_fields:
+      function: resolve
+      general_settings: {}
+      supported: ["tpm_limit", "rpm_limit", "max_budget"]
+env: {}
+compare: {ignore: []}

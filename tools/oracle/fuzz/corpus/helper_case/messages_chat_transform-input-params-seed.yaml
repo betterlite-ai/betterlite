@@ -1,0 +1,14 @@
+kind: helper
+name: messages-chat-transform-input-params-seed
+call:
+  messages_chat_transform:
+    operation: input_params
+    kwargs:
+      model: gpt-4o
+      messages:
+      - role: user
+        content: hi
+      system: guide
+    custom_llm_provider: openai
+env: {}
+compare: {ignore: []}

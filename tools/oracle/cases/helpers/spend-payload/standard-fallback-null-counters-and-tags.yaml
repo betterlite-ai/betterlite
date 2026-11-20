@@ -1,0 +1,33 @@
+kind: helper
+name: standard payload counters keep nulls and its tags override metadata tags
+call:
+  spend_payload:
+    function: payload
+    kwargs:
+      model: gpt-4o-mini
+      litellm_trace_id: trace-fallback
+      litellm_params:
+        api_base: https://api.openai.com/v1
+        metadata: {tags: [alpha]}
+      standard_logging_object:
+        id: row-2
+        model: openai/gpt-4o-mini
+        model_group: mini-group
+        custom_llm_provider: openai
+        api_base: https://api.openai.com/v1
+        total_tokens: null
+        prompt_tokens: 3
+        completion_tokens: 2
+        request_tags: [beta]
+        metadata: {}
+        model_map_information: null
+    response:
+      mapping:
+        usage: {}
+    start_time: "2024-01-01T00:00:00+00:00"
+    end_time: "2024-01-01T00:00:02+00:00"
+    settings: {store_bodies: false}
+    clock: 1700000000.0
+    session_uuid: "00000000-0000-0000-0000-000000000002"
+env: {}
+compare: {ignore: []}

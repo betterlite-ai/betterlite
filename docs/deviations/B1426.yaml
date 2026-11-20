@@ -1,0 +1,27 @@
+task: B1426
+deviations:
+  - what: >-
+      A deployment cannot opt the generic OpenAI-compatible Messages path into ttl-bearing cache_control
+      hints: betterlite's deployment metadata record has a typed supported_endpoints field but no typed
+      cache_control_ttl, so the generic policy strips hints to their portable core unless a JSON provider
+      descriptor's own constraints declare cache_control_ttl.
+    why: >-
+      The deployment selector that reads model_info is B038's, and crates/betterlite-models/src/metadata.rs
+      carries no cache_control_ttl field, so no typed value can carry the flag to the policy; the descriptor-level
+      constraint LiteLLM's JSON subclass reads is implemented and tested here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/handler.py#L92-L106
+kept_bugs:
+  - what: >-
+      A chat base URL with a trailing slash gets /chat/completions appended as it stands, so the request path
+      carries a doubled slash, for example https://host/v1//chat/completions.
+    why: >-
+      LiteLLM's generated chat get_complete_url appends without cleaning slashes, and a configured base with a
+      trailing slash still resolves on the servers LiteLLM talks to.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/dynamic_config.py#L74-L92
+  - what: >-
+      A Responses base URL that already ends in /responses gets another /responses appended, so the request
+      path ends in /responses/responses.
+    why: >-
+      LiteLLM's generated Responses get_complete_url strips trailing slashes and appends the suffix
+      unconditionally, and copying it keeps the slug-cache and URL cases matching the source exactly.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/dynamic_config.py#L211-L230

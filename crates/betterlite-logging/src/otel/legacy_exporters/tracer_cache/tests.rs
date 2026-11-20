@@ -95,6 +95,12 @@ fn cache(settings_config: OpenTelemetryConfig, max_providers: usize) -> DynamicT
     )
 }
 
+#[must_use]
+pub(crate) fn project_names(cache: &DynamicTracerCache) -> Vec<String> {
+    let projects = cache.projects.lock().expect("the project cache lock");
+    projects.keys().cloned().collect()
+}
+
 #[derive(Debug, Clone)]
 struct Posted {
     uri: String,

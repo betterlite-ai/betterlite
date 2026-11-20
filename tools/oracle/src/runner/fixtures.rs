@@ -1,9 +1,14 @@
+use std::path::Path;
+
+use betterlite_oracle_runner::helpers::{
+    generate_prisma_client, prisma::fill_key_models, sync_litellm,
+};
 use betterlite_postgres_fixture::connection::{
     DatabaseNameGenerator, PostgresFixture, RandomDatabaseName,
 };
 use betterlite_postgres_fixture::error::FixtureError;
 use betterlite_postgres_fixture::seed::DatabaseFixture;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::OracleError;
 use crate::case::Case;
@@ -58,6 +63,10 @@ fn provision_pair<G>(
 where
     G: DatabaseNameGenerator,
 {
+    // the fixture's gateways run from the synced venv, and LiteLLM's Prisma client must exist before it boots
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    sync_litellm(&root)?;
+    generate_prisma_client(&root)?;
     let first = PostgresFixture::provision_with_generator_sync(configured_url, database, generator)
         .map_err(OracleError::DatabaseFixture)?;
     let second =
@@ -74,9 +83,36 @@ where
                 return Err(OracleError::DatabaseFixture(error));
             }
         };
-    Ok(FixtureGuard {
+    fill_seeded_key_models(&root, database, first, second)
+}
+
+// LiteLLM reads a key through a view that rejects a NULL models column, and the fixture's key seed leaves it empty
+fn fill_seeded_key_models(
+    root: &Path,
+    database: &DatabaseFixture,
+    first: PostgresFixture,
+    second: PostgresFixture,
+) -> Result<FixtureGuard, OracleError> {
+    let filled = if database.seed.keys.is_empty() {
+        Ok(())
+    } else {
+        fill_key_models(root, first.options.url.expose_secret())
+            .and_then(|()| fill_key_models(root, second.options.url.expose_secret()))
+            .map_err(OracleError::HelperRun)
+    };
+    let guard = FixtureGuard {
         databases: Some((first, second)),
-    })
+    };
+    match filled {
+        Ok(()) => Ok(guard),
+        Err(operation) => match guard.close() {
+            Ok(()) => Err(operation),
+            Err(cleanup) => Err(OracleError::OperationCleanup {
+                operation: Box::new(operation),
+                cleanup,
+            }),
+        },
+    }
 }
 
 impl FixtureGuard {

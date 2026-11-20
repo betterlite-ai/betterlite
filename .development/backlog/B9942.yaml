@@ -1,13 +1,13 @@
 id: B9942
 milestone: M4 keys, spend and management
 title: Prisma client for the oracle's LiteLLM and the booted fixture tests
-status: todo
+status: done
 depends_on: [B860]
 file: tasks/B9942-oracle-prisma-toolchain.yaml
 covers: []
 parent: null
 split_from: B5076
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2556

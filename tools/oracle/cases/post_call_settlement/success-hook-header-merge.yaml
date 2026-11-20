@@ -1,0 +1,18 @@
+kind: helper
+name: post-call-settlement-success-hook-header-merge
+call:
+  b3046:
+    function: success_hook
+    call_id: call-1
+    response:
+      id: chatcmpl-1
+      status: completed
+      _hidden_params:
+        additional_headers:
+          x-request-id: abc
+    stash:
+      owner_call_id: call-1
+      statuses:
+        - {code: OK, current_limit: 5000, limit_remaining: 4000, rate_limit_type: tokens, descriptor_key: api_key, descriptor_value: key-1}
+env: {}
+compare: {ignore: []}

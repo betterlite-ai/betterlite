@@ -1,0 +1,15 @@
+kind: helper
+name: json-native-api-policy-generic-responses-url-seed
+call:
+  json_native_api_policy:
+    calls:
+      - kind: generic_responses_url
+        model: openai_like/any
+        environment: {OPENAI_LIKE_API_BASE: "https://generic-resp.invalid/v1/"}
+        api_base: null
+      - kind: generic_responses_url
+        model: openai_like/any
+        environment: {}
+        api_base: "https://explicit-resp.invalid/"
+env: {}
+compare: {ignore: []}

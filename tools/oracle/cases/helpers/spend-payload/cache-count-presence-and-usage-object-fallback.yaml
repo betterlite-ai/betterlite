@@ -1,0 +1,28 @@
+kind: helper
+name: cache counts fall back to the usage object only when response details are not a mapping
+call:
+  spend_payload:
+    function: payload
+    kwargs:
+      model: openai/gpt-4o
+      litellm_trace_id: trace-cache-counts
+      litellm_params:
+        metadata:
+          model_group: gpt-4o
+          model_info: {id: dep-cache}
+          usage_object:
+            prompt_tokens_details: {cached_tokens: 8, cache_creation_tokens: 6}
+    response:
+      mapping:
+        usage:
+          total_tokens: 5
+          prompt_tokens: 3
+          completion_tokens: 2
+          prompt_tokens_details: fallback
+    start_time: "2024-01-01T00:00:00+00:00"
+    end_time: "2024-01-01T00:00:02+00:00"
+    settings: {store_bodies: false}
+    clock: 1700000000.0
+    session_uuid: "00000000-0000-0000-0000-000000000004"
+env: {}
+compare: {ignore: []}

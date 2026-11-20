@@ -17,6 +17,7 @@ use crate::callback_logger::CallbackLogger as _;
 use betterlite_config::loader::EnvironmentLookup;
 use tokio::task::yield_now;
 
+use crate::audit::payload::StandardAuditLogPayload;
 use crate::callback_logger::event::LoggerEvent;
 use crate::fields::payload::StandardLoggingPayload;
 use crate::s3_batch::Element;
@@ -215,6 +216,39 @@ async fn callback_logger_queues_model_events() {
     );
     assert_eq!(queued.entries[0].retrying_since, None);
     assert!(client.requests().is_empty());
+    drop(logger);
+}
+
+#[tokio::test]
+async fn callback_logger_timestamps_audit_events_with_its_clock() {
+    let logger = logger(
+        ScriptedClient::with_replies(&[]),
+        "",
+        BTreeMap::new(),
+        None,
+        None,
+    );
+    let audit = StandardAuditLogPayload {
+        id: "audit-1".to_owned(),
+        updated_at: "2026-01-02T03:04:05+00:00".to_owned(),
+        changed_by: "admin".to_owned(),
+        hashed_changed_by_api_key: "sk-key".to_owned(),
+        action: "updated".to_owned(),
+        table_name: "LiteLLM_TeamTable".to_owned(),
+        object_id: "team-1".to_owned(),
+        before_value: None,
+        updated_values: None,
+    };
+    logger
+        .async_log_audit_event(&audit)
+        .await
+        .expect("the audit record is queued");
+    let queued = logger.queue.snapshot();
+    assert_eq!(queued.entries.len(), 1);
+    assert_eq!(
+        queued.entries[0].s3_object_key,
+        "audit_logs/1970-01-01/00-00-00_audit-1.json"
+    );
     drop(logger);
 }
 

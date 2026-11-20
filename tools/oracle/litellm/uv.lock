@@ -400,6 +400,7 @@ dependencies = [
     { name = "azure-ai-contentsafety" },
     { name = "azure-storage-file-datalake" },
     { name = "litellm", extra = ["proxy", "semantic-router"] },
+    { name = "prisma" },
     { name = "prometheus-client" },
     { name = "pypdf" },
 ]
@@ -418,6 +419,7 @@ requires-dist = [
     { name = "azure-ai-contentsafety", specifier = ">=1.0.0,<2.0" },
     { name = "azure-storage-file-datalake", specifier = ">=12.26.1" },
     { name = "litellm", extras = ["proxy", "semantic-router"], specifier = "==1.105.1" },
+    { name = "prisma", specifier = "==0.11.0" },
     { name = "prometheus-client", specifier = "==0.20.0" },
     { name = "pypdf", specifier = ">=6.16.1,<7.0" },
 ]
@@ -1982,6 +1984,15 @@ wheels = [
 ]
 
 [[package]]
+name = "nodeenv"
+version = "1.12.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e6/99/d27cfc9518f49e4cbc25c683ec7cf8704a9d31311341c291c0e78ddf791b/nodeenv-1.12.0.tar.gz", hash = "sha256:4ea7f88339310afebc3253f2c7a91b94bacf97d73a36a5c108962abdfaca501e", size = 131292, upload-time = "2026-10-31T19:03:18.847Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2d/6a/8a9ac7d5e2f7cf53c459bfef90ebc17a2f8cd54b665af96799d4c534840e/nodeenv-1.12.0-py3-none-any.whl", hash = "sha256:80644d65c10cc2be12e3e4b54b3367ff288c7ad24ae75c2dcc65454fc7449d4d", size = 39442, upload-time = "2026-10-31T19:03:17.427Z" },
+]
+
+[[package]]
 name = "nodejs-wheel-binaries"
 version = "24.19.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2382,6 +2393,25 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/06/8f/d741afb1dcd1848161189e017d27972e7e78556d8dce66b94d4235093706/polars_runtime_32-1.44.2-cp310-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:c4a09fb14aad711526346efc0cb2015c2fd0555ce4118b6524e5debbaea65ff5", size = 49887654, upload-time = "2026-09-09T07:40:37.455Z" },
     { url = "https://files.pythonhosted.org/packages/ba/e7/c61c1c7eea37705920fe7c1302d1dd80d1165db2b928f0da3eae6d1ebb75/polars_runtime_32-1.44.2-cp310-abi3-win_amd64.whl", hash = "sha256:8598e7a20efba70bb74978c7df7af7c606ff4d79b9b48fdd808250b189bc9a13", size = 51297967, upload-time = "2026-09-09T07:40:41.993Z" },
     { url = "https://files.pythonhosted.org/packages/e7/a0/d0dd0d2ec95fa328dd47055905fae53ba3cd79f11c8973326ebe75a49e4c/polars_runtime_32-1.44.2-cp310-abi3-win_arm64.whl", hash = "sha256:d51040d3ab40157f6db3c62be59cab5b80fb3c8d158924769c4982a1c8eef730", size = 44303345, upload-time = "2026-09-09T07:40:47.081Z" },
+]
+
+[[package]]
+name = "prisma"
+version = "0.11.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "click" },
+    { name = "httpx" },
+    { name = "jinja2" },
+    { name = "nodeenv" },
+    { name = "pydantic" },
+    { name = "python-dotenv" },
+    { name = "tomlkit" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/2b/62/23a2638aa14d8eefd16bc4b230a6e65d8de5f69bfaeeaf954654c923f02e/prisma-0.11.0.tar.gz", hash = "sha256:3f2f2fd2361e1ec5ff655f2a04c7860c2f2a5bc4c91f78ca9c5c6349735bf693", size = 94181, upload-time = "2023-10-22T22:59:55.817Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/85/a1/a8734bb5668bb47eb777ac90176ad8135580d4f676c67416d468e03d3eaa/prisma-0.11.0-py3-none-any.whl", hash = "sha256:22bb869e59a2968b99f3483bb417717273ffbc569fd1e9ceed95e5614cbaf53a", size = 109302, upload-time = "2023-10-22T22:59:53.897Z" },
 ]
 
 [[package]]

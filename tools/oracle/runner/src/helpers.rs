@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::env;
 use std::io::{self, Write as _};
 use std::iter;
 use std::path::Path;
@@ -215,6 +216,37 @@ pub fn sync_litellm(root: &Path) -> Result<(), HelperRunError> {
     }
 }
 
+// Prisma writes client.py only when generate runs, so its presence is the record that the client exists
+pub fn generate_prisma_client(root: &Path) -> Result<(), HelperRunError> {
+    let project = root.join("tools/oracle/litellm");
+    let site_packages = prisma::venv_site_packages(&project)?;
+    if site_packages.join("prisma/client.py").is_file() {
+        return Ok(());
+    }
+    // the booted tests run as separate processes against one Prisma CLI cache, so a second process waits here for the first
+    let lock_path = env::temp_dir().join("betterlite-oracle-prisma-generate.lock");
+    let _lock = prisma::lock_prisma_generate(&lock_path)?;
+    if site_packages.join("prisma/client.py").is_file() {
+        return Ok(());
+    }
+    let schema = site_packages.join("litellm/proxy/schema.prisma");
+    if !schema.is_file() {
+        return Err(HelperRunError::PrismaMissing { path: schema });
+    }
+    let status = Command::new("uv")
+        .args(["run", "--locked", "prisma", "generate", "--schema"])
+        .arg(&schema)
+        .current_dir(&project)
+        .status()
+        .map_err(HelperRunError::PrismaGenerate)?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(HelperRunError::PrismaGenerateExited(status))
+    }
+}
+
 mod answers;
+pub mod prisma;
 mod python;
 mod tests;

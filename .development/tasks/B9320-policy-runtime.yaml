@@ -5,8 +5,11 @@ description: >-
   but no composition task supplies one pair of registries to all their callers. B8590's config boot port calls
   init_policies without a concrete implementation, B8610's Shared has no policy state, and neither policies nor
   policy_attachments has a typed config section. Build the missing state and configuration boundary here. Do not
-  port the registry, validator, startup algorithm or database refresh again. The architect attaches this module
-  to B8613's startup, B8610's handoff and the existing consumers before dispatch; those shared files are not in scope.
+  port the registry, validator, startup algorithm or database refresh again. B8613 lands first:
+  its binary-side adapter for B8590's policy-init port stops startup with "no policy engine is installed for 'policies'" for a
+  non-empty policies key and hands the bare B3241 registries on. Replace that adapter in B8613's crates/betterlite/src/lifespan.rs
+  with one over this module. The architect attaches it to B8610's handoff and the existing consumers before dispatch;
+  those shared files are not in scope.
 
   Add public betterlite-server::policy_runtime, with PolicyRuntime, PolicyRuntimeError and submodules for config
   conversion and validator inputs. PolicyRuntime holds the exact policy and attachment handles accepted by the
@@ -72,6 +75,7 @@ scope:
     - tools/oracle/helpers/b9320/**
     - tools/oracle/src/helpers/server/b9320.rs
     - tools/oracle/src/helpers/server/b9320/**
+    - crates/betterlite/src/lifespan.rs
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/__init__.py#L1-L58
@@ -118,7 +122,7 @@ deviations: []
 out_of_scope:
   - "init_policies.py _print_policies_on_startup, init_policies and get_policies_summary are B3250; init_policies_sync has no caller at the pin."
   - "policy_engine/__init__.py only re-exports AttachmentRegistry, ConditionEvaluator, PolicyMatcher, PolicyRegistry, PolicyResolver, PolicyValidator and the two registry accessors; their implementations belong to B3240, B3241 and B3245."
-  - "Startup invocation and skip logic are B8590/B8374/B8613; shared handoff is B8610; policy and attachment refresh scheduling and ordering are B8384."
+  - "Startup invocation and skip logic are B8590/B8374/B8613, apart from the adapter swap above; shared handoff is B8610; policy and attachment refresh scheduling and ordering are B8384."
   - "Registry algorithms are B3241, validation B3245, persistence B3243 and route state consumers B8667/B8669/B8790/B9321; this task supplies collaborators without changing their functions."
   - "Request selection is B1108, hook assembly B8399/B8802/B8805, and retrieval reconstruction B3269; B9323 supplies their missing inference/retrieval evidence and B079 their database-composition cases."
   - "The Python type-package exports are B167/B7948, not a second Rust facade."

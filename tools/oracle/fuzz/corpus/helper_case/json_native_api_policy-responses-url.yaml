@@ -1,0 +1,16 @@
+kind: helper
+name: json-native-api-policy-responses-url-seed
+call:
+  json_native_api_policy:
+    calls:
+      - kind: responses_url
+        model: sail/any
+        environment: {}
+      - kind: responses_url
+        model: llamagate/any
+        environment: {}
+        descriptor:
+          base_url: "https://slashes.invalid/v1///"
+          api_key_env: PROBE_KEY
+env: {}
+compare: {ignore: []}

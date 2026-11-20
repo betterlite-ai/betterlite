@@ -1,0 +1,74 @@
+id: B10023
+title: Global SSE keepalive interval config section
+description: >-
+  An operator can make every streaming response send ": ping" frames while it waits for the upstream, by setting litellm_settings.sse_keepalive_ping_interval_seconds (litellm/__init__.py L267, default None, so no pings). load_config sets it on the litellm module as given (proxy_server.py L6620-L6628), and every SSE path reads it later: the shared stream generator, the assistant run relay, the usage AI chat and the pass-through relays. No betterlite section reads the key yet, so B002's loader stops startup on a config that sets it. This task builds only the section that loads it, so B8632's stream generator builder waits on this task and not on B089's assistant run routes.
+
+
+  The section is `assistant_keepalive`, the stub already on main: crates/betterlite-config/src/sections/assistant_keepalive.rs, with its tests in sections/assistant_keepalive/tests.rs. The skeleton created the stub, its `pub mod` line and its entry in the sections! list, so replace the stub and touch nothing else in sections.rs. The name is older than this task; keep it. Its Raw view reads litellm_settings only, and the value reaches other crates as config.sections.assistant_keepalive, a `Settings` struct with one public field `sse_keepalive_ping_interval_seconds: Option<PingSetting>`.
+
+
+  The value type is B7324's `PingSetting` (`Seconds(f64)` for a YAML number, an integer becoming its f64, and `Text(String)` for a string, kept raw), moved down into this section so config and server share one type: define it here with the derives it has in crates/betterlite-server/src/keepalive_interval.rs, and replace its definition there with `pub use betterlite_config::sections::assistant_keepalive::PingSetting;`, so every server use keeps its import path and no caller maps one enum onto another. Absent and null both give None. Coercing the raw value is not this section's job: B7324's coerce_keepalive_interval and B8603's resolver apply LiteLLM's rules where the value is used (a non-finite, zero, negative or unparseable value disables pings there, and "1.5" means 1.5 seconds), and B8632, B10025 and B081 pass the section's value on as is. A bool, list or map is outside the key's declared float type and is a ConfigError naming litellm_settings.sse_keepalive_ping_interval_seconds, as docs/compatibility.md says for every section. No environment variable feeds the key.
+
+
+  Tests in `sections::assistant_keepalive::tests`, through `ConfigLoader::load` (loader.rs) with the production Config: the key absent and null give None; 0, -1 and 1 give Seconds(0.0), Seconds(-1.0) and Seconds(1.0); 2.5 gives Seconds(2.5); "bad", "nan", "inf" and "1.5" come back as Text unchanged; true and a list are errors naming the key; and a config that sets the key loads without ConfigError::Unsupported. Add config_yaml corpus seeds named assistant-keepalive-*.yaml: one with a number, one with a string and one with null.
+
+scope:
+  paths:
+    - crates/betterlite-config/src/sections/assistant_keepalive.rs
+    - crates/betterlite-config/src/sections/assistant_keepalive/**
+    - crates/betterlite-server/src/keepalive_interval.rs
+    - "crates/betterlite-config/fuzz/corpus/config_yaml/assistant-keepalive-*"
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L267
+    why: The setting and its None default, so SSE keepalives are off until an operator sets an interval.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6620-L6628
+    why: load_config sets any other litellm_settings key on the litellm module as given, with no coercion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/sse_keepalive.py#L22-L31
+    why: coerce_keepalive_interval, the rules the readers apply to the raw value (B7324 ports them).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9755-L9770
+    why: The stream generator's resolver falls back to this global value (B8603, fed by B8632).
+
+dod:
+  - text: The section loads litellm_settings.sse_keepalive_ping_interval_seconds as a raw number or string, and absent or null gives None.
+    proof: [settings-tests]
+  - text: A bool, list or map value stops loading with an error naming the key, and a config that sets the key loads without the unsupported-keys error.
+    proof: [settings-tests]
+  - text: The config corpus has the new seeds and replays them.
+    proof: [config-corpus]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: settings-tests
+      why: the key is not loaded, a raw value is changed, or the unsupported-key claim is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-config --no-tests=fail
+        -E 'test(/^sections::assistant_keepalive::/) - test(replays_the_config_yaml_corpus)'
+    - id: config-corpus
+      why: the new assistant-keepalive config seeds are missing or do not replay
+      run: >-
+        git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml | grep -Fq "/assistant-keepalive-" &&
+        test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs &&
+        cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - "Coercing the value into a ping interval: B7324 (coerce_keepalive_interval, ttft_interval_for) and B8603 (resolve_keepalive_seconds). Passing it to the stream generator: B8632."
+  - "The assistant run relay that also reads it: B089. The usage AI chat: B10025. The pass-through relays: B3613, B3615, B3618 and B8694."
+  - "The per-deployment litellm_params.keepalive_seconds and allow_client_keepalive_override: B005 and B8603."
+
+pitfalls:
+  - "Keep a string as text, even one that looks numeric: coerce_keepalive_interval parses it later, and \"nan\" or \"inf\" must reach it as text to be refused there."
+  - "0 is a valid value here; it means no pings when coerced, but a deployment's keepalive_seconds: 0 is a separate hard disable that B8603 handles."
+  - "Read only litellm_settings; keepalive_seconds under a model's litellm_params is a different, per-deployment key."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

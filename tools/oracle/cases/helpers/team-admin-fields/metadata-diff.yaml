@@ -1,0 +1,43 @@
+kind: helper
+name: metadata_diff
+call:
+  team_admin_fields:
+    function: changed_team
+    request: {"team_id": "t"}
+    existing: {"team_id": "t", "metadata": {"a": 1}}
+calls:
+  - team_admin_fields:
+      function: changed_team
+      request: {"team_id": "t", "metadata": null}
+      existing: {"team_id": "t", "metadata": {"a": 1}}
+  - team_admin_fields:
+      function: changed_team
+      request: {"team_id": "t", "metadata": {"a": 1}}
+      existing: {"team_id": "t", "metadata": {"a": 1}}
+  - team_admin_fields:
+      function: changed_team
+      request: {"team_id": "t", "metadata": {"guardrails": ["g2"]}}
+      existing: {"team_id": "t", "metadata": {"guardrails": ["g1"], "keep": 1}}
+  - team_admin_fields:
+      function: changed_team
+      request: {"team_id": "t", "metadata": {"custom": 2}}
+      existing: {"team_id": "t", "metadata": {"custom": 1}}
+  - team_admin_fields:
+      function: changed_team
+      request: {"team_id": "t", "metadata": {"nested": {"a": 2, "b": 3}}}
+      existing: {"team_id": "t", "metadata": {"nested": {"a": 1}}}
+  - team_admin_fields:
+      function: changed_team
+      request: {"team_id": "t", "metadata": {"team_member_budget_id": "b", "keep": 1}}
+      existing: {"team_id": "t", "metadata": {"team_member_budget_id": "a", "keep": 1}}
+  - team_admin_fields:
+      function: changed_team
+      request: {"team_id": "t", "metadata": {"custom": 1, "nested": {"a": 1}, "new": true}}
+      existing: {"team_id": "t", "metadata": {"custom": 1, "nested": {"a": 1}}}
+  - team_admin_fields:
+      function: team_verdict
+      request: {"team_id": "t", "metadata": {"nested": {"a": 2, "b": 3}}}
+      existing: {"team_id": "t", "metadata": {"nested": {"a": 1}}}
+      permitted: ["metadata"]
+env: {}
+compare: {ignore: []}

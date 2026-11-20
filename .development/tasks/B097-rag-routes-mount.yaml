@@ -235,7 +235,7 @@ out_of_scope:
   - "rag_endpoints/__init__.py only re-exports the router; B3465's routes function stands for it."
   - "rag/__init__.py (aingest, aquery, ingest, query, arag_ingest, rag_ingest) and rag/utils.py (get_rag_ingestion_class, get_rag_transformation_class): B7888 builds the Python facade. Nothing in the proxy calls the two utils getters at the pin, and B3460's registry replaces get_rag_ingestion_class."
   - "The route lists that put /rag/ingest and /rag/query among LiteLLM's native routes for key permissions: B868."
-  - "Shared, its fields and the area aggregator: B8610. The vector store registry loaded from vector_store_registry: B8614. The credential_list loader and registry: B1601."
+  - "Shared, its fields and the area aggregator: B8610. The vector store registry in shared.vector_stores, loaded from vector_store_registry: B9998. The credential_list loader and registry: B1601."
 
 pitfalls:
   - "LiteLLM's own docstring shows `-F 'ingest_options=...'` (endpoints.py L555), but parse_rag_ingest_request reads a part named `request` holding the whole JSON body (L442-L447), so a case with an `ingest_options` part gets \"ingest_options must contain 'vector_store' configuration\"."

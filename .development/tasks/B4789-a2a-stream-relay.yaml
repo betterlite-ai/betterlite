@@ -120,7 +120,7 @@ out_of_scope:
   - "build_message_send_params is B6950. This task calls it."
   - "normalize_stream_event and normalize_request_params are B4812, reached through the StreamEventConverter port. B8589 wires it."
   - "asend_message_streaming and the native or bridge choice behind it are B4814, reached through the UpstreamAgentStream port."
-  - "async_streaming_data_generator, the proxy streaming hooks, failure hook and message redaction are B004's common request processing in betterlite-server, reached through the StreamHooks port."
+  - "async_streaming_data_generator, the proxy streaming hooks, failure hook and message redaction are B9720's shared generator in betterlite-server; B8589's A2aStreamHooks puts it behind the StreamHooks port."
   - "_forward_jsonrpc, the header helpers, _enforce_inbound_trace_id and the push url check are B4788."
   - "_served_version is B4811 and B4812."
   - "wrap_passthrough_sse_bytes_with_keepalive_pings, keepalive_ping_has_fired, resolve_ttft_keepalive_interval and the other functions of sse_keepalive.py: no A2A caller at the pin."

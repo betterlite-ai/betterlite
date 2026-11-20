@@ -1,0 +1,43 @@
+kind: helper
+name: budget_window_comparisons
+call:
+  team_admin_fields:
+    function: changed_key
+    request: {"key": "sk-1", "budget_limits": [{"budget_duration": "7d", "max_budget": 50.0}, {"budget_duration": "1d", "max_budget": 10.0}]}
+    existing: {"token": "sk-1", "budget_limits": [{"budget_duration": "1d", "max_budget": 10.0, "reset_at": "2024-06-01T00:00:00Z"}, {"budget_duration": "7d", "max_budget": 50.0}]}
+calls:
+  - team_admin_fields:
+      function: changed_key
+      request: {"key": "sk-1", "budget_limits": [{"budget_duration": "1d", "max_budget": 11.0}, {"budget_duration": "7d", "max_budget": 50.0}]}
+      existing: {"token": "sk-1", "budget_limits": [{"budget_duration": "1d", "max_budget": 10.0, "reset_at": "2024-06-01T00:00:00Z"}, {"budget_duration": "7d", "max_budget": 50.0}]}
+  - team_admin_fields:
+      function: changed_key
+      request: {"key": "sk-1", "budget_limits": []}
+      existing: {"token": "sk-1"}
+  - team_admin_fields:
+      function: changed_key
+      request: {"key": "sk-1", "budget_limits": null}
+      existing: {"token": "sk-1", "budget_limits": []}
+  - team_admin_fields:
+      function: changed_key
+      request: {"key": "sk-1"}
+      existing: {"token": "sk-1", "budget_limits": null}
+  - team_admin_fields:
+      function: changed_key
+      request: {"key": "sk-1", "budget_limits": [{"budget_duration": "1d", "max_budget": 10.0}, {"budget_duration": "1d", "max_budget": 10.0}]}
+      existing: {"token": "sk-1"}
+  - team_admin_fields:
+      function: changed_key
+      request: {"key": "sk-1", "budget_limits": [{"budget_duration": "1d", "max_budget": 10.0}, {"budget_duration": "1d", "max_budget": 10.0}]}
+      existing: {"token": "sk-1", "budget_limits": [{"budget_duration": "1d", "max_budget": 10.0}, {"budget_duration": "1d", "max_budget": 10.0}]}
+  - team_admin_fields:
+      function: changed_key
+      request: {"key": "sk-1", "budget_limits": [{"budget_duration": "1d", "max_budget": 10.0}]}
+      existing: {"token": "sk-1", "budget_limits": [{"budget_duration": "1d", "max_budget": [1, 2]}]}
+  - team_admin_fields:
+      function: key_verdict
+      request: {"key": "sk-1", "budget_limits": [{"budget_duration": "7d", "max_budget": 50.0}, {"budget_duration": "1d", "max_budget": 10.0}]}
+      existing: {"token": "sk-1", "budget_limits": [{"budget_duration": "1d", "max_budget": 10.0, "reset_at": "2024-06-01T00:00:00Z"}, {"budget_duration": "7d", "max_budget": 50.0}]}
+      enabled: true
+env: {}
+compare: {ignore: []}

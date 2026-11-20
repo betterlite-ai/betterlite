@@ -1,0 +1,97 @@
+id: B10000
+title: Resolve MCP server identifiers to server IDs
+description: >-
+  Port LiteLLM's MCP identifier resolver, object_permission_utils.py L251-L318: `_mcp_server_identifier_matches`, `_get_db_mcp_servers_by_identifiers` and `_resolve_mcp_server_identifiers_to_ids`. A key, team or organization grant can name an MCP server by its server_id, alias, server_name or name, and the resolver turns each such identifier into the set of server IDs it matches, from the database and from the in-memory registry. Three tasks call it: B816's ambiguity check on changed mcp_tool_permissions keys (L352), B817's team allowed-server read (L458) and B818's grandfathering, team allowed-server and key-against-team checks (L553, L584, L708). Code goes in the new module `mcp_identifier_resolution` in betterlite-server (crates/betterlite-server/src/mcp_identifier_resolution.rs and its folder), with tests in `mcp_identifier_resolution/tests.rs`. It reads no config key and no environment variable.
+
+
+  The matcher. `identifier_matches(names: &ServerNames<'_>, identifier: &str) -> bool`, where `ServerNames` borrows four optional strings: server_id, alias, server_name and name. It is true when the identifier equals one of the four that is present. A registry record (B6590's `betterlite_mcp::server_record::MCPServer`, whose fields hold server_id, name, alias and server_name) fills all four. A database row fills server_id, alias and server_name only, since LiteLLM_MCPServerTable has no name column and LiteLLM's getattr gives None there.
+
+
+  The database lookup. `db_servers_by_identifiers(identifiers: &BTreeSet<String>, client: Option<PrismaClient<'_>>) -> Result<Vec<ServerRow>, ResolveError>` returns an empty list when there is no client or no identifier, and otherwise runs one query on "LiteLLM_MCPServerTable" for the rows whose server_id, alias or server_name is in the identifier list. Read only those three columns into `ServerRow`. Go through B726's `PrismaTableRepository` with the `MCPServerTable` binding and its read handle, the way mcp_rotation/tables.rs reads that table with a static SQL string.
+
+
+  The resolver. `resolve_identifiers_to_ids(identifiers: &BTreeSet<String>, client: Option<PrismaClient<'_>>, registry: &[&MCPServer]) -> Result<BTreeMap<String, BTreeSet<String>>, ResolveError>`. No identifiers give an empty map without a query. Otherwise every identifier starts with an empty set. For each database row with a non-empty server_id, every identifier the row matches gains that server_id. Then for each registry record with a non-empty server_id, every identifier it matches gains its server_id. A database error returns before the registry is read. The registry is an argument in the shape B4731's get_registry returns, the records in registry order, so this task doesn't wait on the MCP registry. LiteLLM keys that dict by server_id (mcp_server_manager.py L2113, L2115, L2683, L3296), so its `identifier == registry_key` test and its `server_id or registry_key` fallback both come down to the record's server_id here. Until B4731 lands, B816's route callers pass an empty registry, and only database servers can collide.
+
+
+  `ResolveError` is this module's error enum and wraps the database error with its source. The three functions and `ServerNames`, `ServerRow` and `ResolveError` are public. No `unwrap`, no `expect` outside tests.
+
+
+  Tests in `mcp_identifier_resolution/tests.rs`. Names start with `matches_` for the matcher and `resolve_` for the lookup and the resolver. The resolver tests use a real database from B860's PostgresFixture over POSTGRES_TEST_URL, as mcp_rotation's tests do, and build registry records in the test. They cover: an identifier matched by a database row and by a registry record gets both IDs; an alias shared by two servers gets both IDs and is not rejected here; an identifier nothing matches keeps an empty set; no identifiers or no client gives no query; a row or record with an empty server_id adds nothing; a registry record matches by name while a row can't; a database error comes back as ResolveError and the registry is not read.
+
+
+  The oracle adapter is operation b10000 and covers the matcher only, since the lookup and the resolver read the database and LiteLLM's module-level registry. Its input is `{"server": {...}, "identifier": "..."}`, where server holds any of server_id, alias, server_name and name, and its answer is `{"matches": <bool>}`. The Python side builds a types.SimpleNamespace with only the given attributes and calls `_mcp_server_identifier_matches` from litellm.proxy.management_helpers.object_permission_utils, so a missing attribute reads as None the way a database row's name does.
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp_identifier_resolution.rs
+    - crates/betterlite-server/src/mcp_identifier_resolution/**
+    - tools/oracle/src/helpers/server/b10000.rs
+    - tools/oracle/src/helpers/server/b10000/**
+    - tools/oracle/helpers/b10000.py
+    - tools/oracle/helpers/b10000/**
+    - tools/oracle/cases/helpers/mcp-identifier-resolution/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L251-L257
+    why: _mcp_server_identifier_matches, the four attributes read through getattr with None for a missing one.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L260-L276
+    why: _get_db_mcp_servers_by_identifiers, the empty answer without a client or identifiers and the one OR query on three columns.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L279-L318
+    why: _resolve_mcp_server_identifiers_to_ids, the database pass and then the registry pass into one map of sets.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L335-L371
+    why: B816's ambiguity check, the caller that needs several IDs per identifier to come back unrejected.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L361-L373
+    why: LiteLLM_MCPServerTable has server_id, server_name and alias but no name column.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L2377-L2381
+    why: get_registry, the config servers united with the database servers, keyed by server_id.
+  - url: https://github.com/betterlite-ai/betterlite/blob/e6ddd649156/crates/betterlite-server/src/mcp_rotation/tables.rs#L24-L27
+    why: Static SQL over LiteLLM_MCPServerTable in betterlite-server.
+  - url: https://github.com/betterlite-ai/betterlite/blob/e6ddd649156/crates/betterlite-server/src/mcp_rotation/tables.rs#L162-L167
+    why: A PrismaTableRepository over B726's MCPServerTable binding.
+  - url: https://github.com/betterlite-ai/betterlite/blob/e6ddd649156/crates/betterlite-mcp/src/server_record.rs#L76-L80
+    why: The registry record's server_id, name, alias and server_name.
+dod:
+  - text: >-
+      identifier_matches is true for an identifier equal to a present server_id, alias, server_name or name, and false for one equal to
+      none of them, with a missing name never matching.
+    proof: [matcher-tests, oracle, helper-python]
+  - text: >-
+      resolve_identifiers_to_ids returns every identifier with the union of its database and registry IDs, keeps an empty set for an
+      unmatched one, keeps several IDs for a shared alias, skips an empty server_id, and returns an empty map with no query for no
+      identifiers; the lookup returns no rows without a client.
+    proof: [resolver-tests]
+  - text: A database error comes back as ResolveError before the registry is read.
+    proof: [resolver-tests]
+  - text: The oracle cases run the same records and identifiers through LiteLLM's matcher and betterlite's and agree.
+    proof: [oracle, helper-python]
+checks:
+  optional: []
+  commands:
+    - id: matcher-tests
+      why: the matcher tests are missing or an attribute is compared differently from LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp_identifier_resolution::tests::matches_/)'
+    - id: resolver-tests
+      why: the resolver tests are missing, or the database and registry matches are not united, an empty server_id counts, or an error lets the registry run
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp_identifier_resolution::tests::resolve_/)'
+    - id: helper-python
+      why: the oracle adapter is untouched or fails strict Python checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10000.py tools/oracle/helpers/b10000)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-identifier-resolution/identity-attribute-match.yaml
+  - tools/oracle/cases/helpers/mcp-identifier-resolution/missing-attribute-never-matches.yaml
+deviations: []
+out_of_scope:
+  - 'litellm/proxy/management_helpers/object_permission_utils.py: B816 owns attach_object_permission_to_dict (L35-L73), prepare_object_permission_upsert (L82-L129), handle_update_object_permission_common (L132-L183), invalidate_cached_object_permissions (L186-L199), _set_object_permission (L202-L237), _mcp_tool_permission_entries (L324-L332), reject_ambiguous_mcp_tool_permission_keys (L335-L371).'
+  - 'litellm/proxy/management_helpers/object_permission_utils.py: B817 owns _dedupe_preserving_order (L240-L248), _drop_stale_object_permission_mcp_servers (L374-L390), _drop_stale_object_permission_mcp_tool_permissions (L393-L405), _drop_stale_object_permission_mcp_identifiers (L408-L422), _flatten_resolved_mcp_server_ids (L425-L428), _resolve_team_allowed_mcp_servers (L431-L463), _get_allow_all_keys_server_ids (L466-L472), _get_all_mcp_server_ids (L475-L481), _existing_object_permission_mcp_servers (L484-L495).'
+  - 'litellm/proxy/management_helpers/object_permission_utils.py: B818 owns enforce_all_proxy_mcp_servers_grant_is_admin_only (L498-L528), _get_grandfathered_key_mcp_server_ids (L531-L558), _get_team_allowed_mcp_servers (L561-L599), _extract_requested_mcp_server_ids (L602-L625), _extract_requested_mcp_access_groups (L628-L638), _extract_requested_mcp_toolsets (L641-L651), validate_key_mcp_servers_against_team (L654-L794), _validate_requested_toolsets (L797-L839), _extract_requested_vector_stores (L842-L851), validate_key_vector_stores_against_team (L854-L879), _extract_requested_search_tools (L882-L891), validate_key_search_tools_against_team (L894-L941).'
+  - The MCP server registry and get_registry are B4731's; the callers pass its records in.
+pitfalls:
+  - The query filters on server_id, alias and server_name, while the match after it also accepts name; only a registry record can match by name.
+  - Database matches don't stop registry matches. The source's docstring calls the database authoritative, but the code unites both passes.
+  - Every requested identifier is in the answer, an unmatched one with an empty set; B817's team read keeps such identifiers and its cleanup drops them, so neither may lose the key.
+  - Several IDs for one identifier is a normal answer here. B816 decides when that is a collision, and an exact server_id among them is never one.
+  - A database error must return before the registry pass, so a caller never gets a map built from the registry alone.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

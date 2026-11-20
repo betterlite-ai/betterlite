@@ -16,6 +16,8 @@ pub enum LegacyLifecycleError {
     Metadata(#[from] MetadataError),
     #[error("standard_callback_dynamic_params must be an object")]
     DynamicParams,
+    #[error("{field} must be a number between 0.0 and 1.0")]
+    SamplingRate { field: &'static str },
     #[error("the guardrail entry field {field} must be {expected}")]
     GuardrailField {
         field: &'static str,

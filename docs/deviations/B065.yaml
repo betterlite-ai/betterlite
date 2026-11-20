@@ -1,0 +1,18 @@
+task: B065
+deviations:
+  - what: Audit storage and callbacks run without a license, and auditing defaults on when neither the setting nor LITELLM_STORE_AUDIT_LOGS supplies a value. LiteLLM falls back to premium_user is True and create_audit_log_for_update returns early unless premium_user is True.
+    why: betterlite removes paid tiers, so the enabled feature default replaces the stock OSS premium fallback, and object_events_emit_the_pinned_payload_shape proves callbacks and a database write without a license.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/audit_logs.py#L27-L40
+  - what: Saturated callback delivery logs and counts a rejected audit callback event while the database insert still runs; accepted callbacks use the existing worker timeout and shutdown drain. LiteLLM creates one unbounded asyncio task per callback and reports its exception from a done callback.
+    why: Repository async rules require bounded admission and owned tasks instead of detached create_task delivery, and neither a rejected callback nor a delivery failure may cancel the database write.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/audit_logs.py#L135-L159
+  - what: A caller that schedules a whole audit record with AuditService.try_submit receives a logged admission rejection when the audit-write queue is full, and that record reaches neither a callback nor the database. LiteLLM has no background admission path and every caller awaits create_audit_log_for_update.
+    why: The shared background submission API replaces caller-owned detached audit tasks with bounded work drained by the server.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/config_override_endpoints.py#L117-L132
+  - what: Diagnostic logs contain audit ids, callback names and sanitized failures rather than the complete audit record or secret-bearing callback parameters. LiteLLM's verbose_proxy_logger.debug prints the whole LiteLLM_AuditLogs model at the same point.
+    why: changed_by_api_key and the before/after values must not escape through Debug or exception text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/audit_logs.py#L219-L244
+  - what: An object audit whose before_value or after_value is not JSON text is logged as Failed Creating audit log and skipped, while LiteLLM's record validator raises the json.loads error out of the management endpoint.
+    why: The audit write never fails a completed mutation, the same rule its best-effort insert failure follows; B2330's record contract already documents this conversion.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3842
+kept_bugs: []

@@ -1,0 +1,15 @@
+kind: helper
+name: sail-wire-chat-request-seed
+call:
+  b6411:
+    function: chat_request
+    model: sail-seed
+    steps:
+      - request: {messages: [], service_tier: default, metadata: {completion_window: flex}, trace: seed}
+        drop_params: true
+        global_drop_params: false
+      - request: {messages: [], extra_body: {metadata: {seed: 1}}}
+        drop_params: false
+        global_drop_params: false
+env: {}
+compare: {ignore: []}

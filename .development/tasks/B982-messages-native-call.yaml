@@ -7,7 +7,7 @@ description: >-
   API.
 
 
-  The dispatcher anthropic_messages_handler calls B1118 native execution. get_messages_interceptors (B987) and anthropic_messages_with_mcp
+  The dispatcher anthropic_messages_handler calls B1118 native execution. The interceptor slice (B1118's get_messages_interceptors, empty until B987 adds the advisor) and anthropic_messages_with_mcp
   (B988) are injected seams composed by B081 in pinned order; neither lower native execution nor this dispatcher
   imports the parent routes. Validate metadata before transport.
 
@@ -82,8 +82,7 @@ description: >-
   Direct inputs come from B014 (Call dispatch across providers and call types, shared settings and helpers), B171
   (Direct helper oracle and URL path encoding), B961 (Messages native prepare), B962 (Messages thinking), B963 (Messages
   options), B974 (Messages chat call), B979 (Messages native stream), B985 (Messages response call), B1087 (Api
-  boundaries), B1118 (Messages native execution), B570 (Anthropic request headers and model discovery), B948 (Responses
-  mcp selection), B002 (Load LiteLLM config.yaml into typed config). These are callable/type/config owners, not
+  boundaries), B1118 (Messages native execution), B570 (Anthropic request headers and model discovery), B002 (Load LiteLLM config.yaml into typed config). These are callable/type/config owners, not
   provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
 scope:
   paths:

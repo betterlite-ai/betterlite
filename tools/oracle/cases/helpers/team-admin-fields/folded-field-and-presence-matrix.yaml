@@ -1,0 +1,58 @@
+kind: helper
+name: folded_field_and_presence_matrix
+call:
+  team_admin_fields:
+    function: changed_team
+    request: {"team_id": "t", "metadata": {"logging": ["x"]}}
+    existing: {"team_id": "t", "metadata": {"logging": ["y"]}}
+calls:
+  - team_admin_fields:
+      function: changed_team
+      request: {"team_id": "t", "guardrails": ["g2"]}
+      existing: {"team_id": "t", "metadata": {"guardrails": ["g1"]}}
+  - team_admin_fields:
+      function: changed_team
+      request: {"team_id": "t", "tags": ["x"]}
+      existing: {"team_id": "t", "metadata": {"tags": ["x"]}}
+  - team_admin_fields:
+      function: changed_team
+      request: {"team_id": "t", "policies": null}
+      existing: {"team_id": "t", "metadata": {"policies": ["p"]}}
+  - team_admin_fields:
+      function: changed_team
+      request: {"team_id": "t", "model_rpm_limit": {"gpt": 10}}
+      existing: {"team_id": "t", "metadata": {"model_rpm_limit": {"gpt": 5}}}
+  - team_admin_fields:
+      function: changed_team
+      request: {"team_id": "t"}
+      existing: {"team_id": "t", "metadata": {"a": null}}
+  - team_admin_fields:
+      function: changed_key
+      request: {"key": "sk-1", "tags": ["a"]}
+      existing: {"token": "sk-1", "metadata": {"tags": ["b"]}}
+  - team_admin_fields:
+      function: changed_key
+      request: {"key": "sk-1", "metadata": {"model_rpm_limit": {"gpt": 1}}}
+      existing: {"token": "sk-1", "metadata": {"model_rpm_limit": {"gpt": 2}}}
+  - team_admin_fields:
+      function: changed_key
+      request: {"key": "sk-1", "tags": null}
+      existing: {"token": "sk-1", "metadata": {"tags": ["x"]}}
+  - team_admin_fields:
+      function: changed_key
+      request: {"key": "sk-1", "metadata": {"a": null}}
+      existing: {"token": "sk-1"}
+  - team_admin_fields:
+      function: changed_team
+      request: {"team_id": "t", "model_aliases": {"gpt": "gpt-4"}}
+      existing: {"team_id": "t", "litellm_model_table": {"model_aliases": {"gpt": "gpt-4"}, "created_by": "c", "updated_by": "u"}}
+  - team_admin_fields:
+      function: changed_team
+      request: {"team_id": "t", "model_aliases": {}}
+      existing: {"team_id": "t", "litellm_model_table": {"model_aliases": "not json", "created_by": "c", "updated_by": "u"}}
+  - team_admin_fields:
+      function: changed_team
+      request: {"team_id": "t", "model_aliases": {"gpt": "gpt-3"}}
+      existing: {"team_id": "t", "litellm_model_table": {"model_aliases": {"gpt": "gpt-4"}, "created_by": "c", "updated_by": "u"}}
+env: {}
+compare: {ignore: []}

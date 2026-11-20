@@ -1,0 +1,36 @@
+kind: helper
+name: json-native-api-policy-json-messages-headers-seed
+call:
+  json_native_api_policy:
+    calls:
+      - kind: json_messages_headers
+        model: empiriolabs/probe-model
+        environment: {PROBE_KEY: sk-env}
+        descriptor:
+          base_url: "https://descriptor.invalid/v1"
+          api_key_env: PROBE_KEY
+        headers: {}
+        optional_params: {}
+        messages: []
+      - kind: json_messages_headers
+        model: aihubmix/probe-model
+        environment: {}
+        descriptor:
+          base_url: "https://descriptor.invalid/v1"
+          api_key_env: PROBE_KEY
+        headers: {x-api-key: caller}
+        global_api_key: sk-global
+        optional_params: {}
+        messages: []
+      - kind: json_messages_headers
+        model: gmi/probe-model
+        environment: {}
+        descriptor:
+          base_url: "https://descriptor.invalid/v1"
+          api_key_env: PROBE_KEY
+        headers: {}
+        global_api_key: sk-global
+        optional_params: {}
+        messages: []
+env: {}
+compare: {ignore: []}

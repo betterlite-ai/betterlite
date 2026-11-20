@@ -1,0 +1,41 @@
+kind: helper
+name: field_edit_denied
+call:
+  team_admin_fields:
+    function: team_verdict
+    request: {"team_id": "t", "max_budget": 10.0}
+    existing: {"team_id": "t", "max_budget": 5.0}
+    permitted: ["tpm_limit", "rpm_limit"]
+calls:
+  - team_admin_fields:
+      function: team_request
+      request: {"team_id": "t", "max_budget": 10.0}
+      existing: {"team_id": "t", "max_budget": 5.0}
+      permitted: ["tpm_limit", "rpm_limit"]
+  - team_admin_fields:
+      function: team_verdict
+      request: {"team_id": "t", "max_budget": 5.0}
+      existing: {"team_id": "t", "max_budget": 5.0}
+      permitted: []
+  - team_admin_fields:
+      function: team_verdict
+      request: {"team_id": "t", "tpm_limit": 1, "rpm_limit": 2}
+      existing: {"team_id": "t"}
+      permitted: ["tpm_limit"]
+  - team_admin_fields:
+      function: team_verdict
+      request: {"team_id": "t", "max_budget": 10.0}
+      existing: {"team_id": "t", "max_budget": 5.0}
+      permitted: ["max_budget"]
+  - team_admin_fields:
+      function: team_verdict
+      request: {"team_id": "t", "tpm_limit": 1, "team_member_rpm_limit": 3}
+      existing: {"team_id": "t"}
+      permitted: ["tpm_limit"]
+  - team_admin_fields:
+      function: team_verdict
+      request: {"team_id": "t", "max_budget": null}
+      existing: {"team_id": "t", "max_budget": 5.0}
+      permitted: ["max_budget"]
+env: {}
+compare: {ignore: []}

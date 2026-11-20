@@ -1,7 +1,7 @@
 id: B864
-title: Feature and organization key generation switches
+title: Feature access switches for agents and vector stores
 description: >-
-  Implement two guards, not route registration. FeatureName accepts agents or vector_stores. Exact
+  Implement the feature access guard, not route registration. FeatureName accepts agents or vector_stores. Exact
   proxy_admin and proxy_admin_viewer roles (enum or equivalent string) return before reading settings.
   Others read disable_{feature}_for_internal_users with default False and pass when falsy. Despite the
   name, a truthy disable flag blocks every non-proxy-admin role, including org_admin, external users
@@ -12,11 +12,7 @@ description: >-
   'Access to {agents|vector_stores} is disabled for your role. Contact your proxy admin.' No local
   ProxyException type/param/code or warning is added.
 
-  check_org_admin_can_generate_keys returns immediately for every role except exact org_admin. For
-  that role, falsy disable_key_generate_for_org_admin passes and truthy fails HTTP 403 detail.error
-  'key generation is disabled for org admins. Contact your proxy admin.'. A caller with an org-admin
-  membership but global role internal_user is not blocked by this helper; general key permissions
-  remain the caller's responsibility. No paid-tier branch or license bypass exists in this file.
+  check_org_admin_can_generate_keys and its disable_key_generate_for_org_admin setting are B10015's, and nothing here calls them.
 
 
   Build the production management_rbac module in betterlite-server; reuse the typed dependencies listed
@@ -25,13 +21,11 @@ description: >-
 
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/common_utils/rbac_utils.py:
-  check_feature_access_for_user (L17-L68; 42 source lines), check_org_admin_can_generate_keys (L71-L96;
-  22 source lines).
+  check_feature_access_for_user (L17-L68; 42 source lines).
 
 
-  All five general_settings keys default False: disable_agents_for_internal_users,
-  allow_agents_for_team_admins, disable_vector_stores_for_internal_users,
-  allow_vector_stores_for_team_admins and disable_key_generate_for_org_admin. There are no environment
+  All four general_settings keys default False: disable_agents_for_internal_users,
+  allow_agents_for_team_admins, disable_vector_stores_for_internal_users and allow_vector_stores_for_team_admins. There are no environment
   bindings. The Python branch uses truthiness, not 'is True': null/empty/zero are false and a nonempty
   string such as 'false' is true if present in the runtime settings map. Do not invent int parsing,
   startup fallback or a warn-and-ignore path here.
@@ -43,14 +37,10 @@ description: >-
   outcomes; actual membership reads remain B863's Postgres tests. Compare exact 403 detail objects.
 
 
-  Config tests loads_agents_switches, loads_vector_store_switches, loads_org_key_switch,
+  Config tests loads_agents_switches, loads_vector_store_switches,
   all_switches_default_false and runtime_truthiness call B002's loader and consume the resulting
-  values in both guards. Include true, false, null and the accepted scalar truthiness cases. Use the
-  existing config_yaml corpus with all five nested keys; no second settings parser is introduced.
-
-
-  The two functions contain 50 nonblank noncomment lines excluding docstrings. Allow 70 guards,
-  210 tests, 70 adapters, 50 config and 30 wiring lines, 430 within 500.
+  values in the guard. Include true, false, null and the accepted scalar truthiness cases. Use the
+  existing config_yaml corpus with all four nested keys; no second settings parser is introduced.
 scope:
   paths:
     - crates/betterlite-server/src/management_rbac.rs
@@ -73,14 +63,10 @@ references:
     why: Dynamic feature-specific disable/allow settings, False defaults and B863 exemption call.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/rbac_utils.py#L17-L68
     why: Own check_feature_access_for_user; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/rbac_utils.py#L71-L96
-    why: Own check_org_admin_can_generate_keys; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/rbac_utils.py#L90-L95
-    why: general_settings.disable_key_generate_for_org_admin default and read site.
 dod:
   - text: exemption_only_when_both_flags, exemption_for_org_or_team_admin, exemption_lookup_false_denies, exemption_error_propagates and exemption_call_arguments prove the B863 boundary.
     proof: [behavior-tests]
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: org_admin_disabled,
+  - text: 'Implement the owned behavior and ordered failure effects; named tests:
       proxy_admin_unaffected, internal_feature_disabled, team_admin_exemption.'
     proof:
       - behavior-tests
@@ -120,10 +106,9 @@ checks:
     - id: config-corpus
       why: The task added no new configuration seed or production config replay fails.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/management-rbac-*")"
-        && grep -rlq "disable_key_generate_for_org_admin" crates/betterlite-config/fuzz/corpus/config_yaml/management-rbac-*
+        && grep -rlq "disable_agents_for_internal_users" crates/betterlite-config/fuzz/corpus/config_yaml/management-rbac-*
         && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
-  - tools/oracle/cases/helpers/management-rbac/org-admin-disabled.yaml
   - tools/oracle/cases/helpers/management-rbac/proxy-admin-unaffected.yaml
   - tools/oracle/cases/helpers/management-rbac/internal-feature-disabled.yaml
   - tools/oracle/cases/helpers/management-rbac/admin-viewer-bypasses-settings.yaml
@@ -131,15 +116,14 @@ oracle_cases:
   - tools/oracle/cases/helpers/management-rbac/disabled-blocks-all-nonadmin-roles.yaml
   - tools/oracle/cases/helpers/management-rbac/falsy-disabled-short-circuit.yaml
   - tools/oracle/cases/helpers/management-rbac/truthy-string-is-not-false.yaml
-  - tools/oracle/cases/helpers/management-rbac/org-role-not-membership.yaml
   - tools/oracle/cases/helpers/management-rbac/no-type-param-code-in-detail.yaml
 deviations: []
 out_of_scope:
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - "check_org_admin_can_generate_keys and the disable_key_generate_for_org_admin setting: B10015, which B055 calls."
 pitfalls:
   - 'The oracle helper for this task is pre-registered as management_rbac in the server group. Replace the stub Op in tools/oracle/src/helpers/server/management_rbac.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/management_rbac.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - allow_agents_for_team_admins also exempts an organization administrator found by B863.
-  - disable_key_generate_for_org_admin checks the global role, not membership rows.
   - A nonempty string 'false' is truthy in the source's runtime settings map.
 budget:
   max_changed_lines: 1500

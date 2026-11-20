@@ -1,0 +1,45 @@
+kind: helper
+name: key_budget_permission
+call:
+  team_admin_fields:
+    function: member_key_budgets
+    general_settings: {"team_admin_editable_team_fields": ["member_key_budgets", "tpm_limit"]}
+calls:
+  - team_admin_fields:
+      function: member_key_budgets
+      general_settings: {"team_admin_editable_team_fields": ["tpm_limit"]}
+  - team_admin_fields:
+      function: member_key_budgets
+      general_settings: {}
+  - team_admin_fields:
+      function: key_verdict
+      request: {"key": "sk-1", "max_budget": 10.0, "budget_duration": "1d"}
+      existing: {"token": "sk-1", "max_budget": 5.0, "budget_duration": "1d"}
+      enabled: true
+  - team_admin_fields:
+      function: key_verdict
+      request: {"key": "sk-1", "max_budget": 10.0}
+      existing: {"token": "sk-1", "max_budget": 5.0}
+      enabled: false
+  - team_admin_fields:
+      function: key_verdict
+      request: {"key": "sk-1", "spend": 12.5}
+      existing: {"token": "sk-1", "spend": 12.5}
+      enabled: true
+  - team_admin_fields:
+      function: key_verdict
+      request: {"key": "sk-1", "tpm_limit": 3}
+      existing: {"token": "sk-1"}
+      enabled: true
+  - team_admin_fields:
+      function: key_verdict
+      request: {"key": "sk-1"}
+      existing: {"token": "sk-1", "max_budget": 5.0}
+      enabled: true
+  - team_admin_fields:
+      function: key_request
+      request: {"key": "sk-1", "budget_duration": "2d"}
+      existing: {"token": "sk-1", "budget_duration": "1d"}
+      enabled: true
+env: {}
+compare: {ignore: []}

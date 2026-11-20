@@ -17,7 +17,7 @@ use super::context::standard_logging_object;
 use super::error::LegacyLifecycleError;
 use super::lifecycle::{LegacyLifecycle, LifecycleCall};
 
-pub(super) fn apply_attributes(
+pub(crate) fn apply_attributes(
     lifecycle: &LegacyLifecycle,
     span: &LiveSpan,
     call: &LifecycleCall<'_>,
@@ -36,7 +36,7 @@ pub(super) fn apply_attributes(
     }
 }
 
-pub(super) fn record_exception(span: &LiveSpan, call: &LifecycleCall<'_>) {
+pub(crate) fn record_exception(span: &LiveSpan, call: &LifecycleCall<'_>) {
     let empty = MetadataMap::new();
     let payload = standard_logging_object(call.kwargs).unwrap_or(&empty);
     record_exception_on_span(&mut *span.lock(), call.exception, payload);

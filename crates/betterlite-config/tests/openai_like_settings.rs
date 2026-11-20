@@ -45,6 +45,21 @@ const ENVIRONMENT: &[(&str, &str)] = &[
 ];
 
 #[rstest]
+#[case::explicit_wins(ENVIRONMENT, Some("http://explicit/v1"), Some("http://explicit/v1"))]
+#[case::environment(&[("OPENAI_LIKE_API_BASE", "http://env/v1")], None, Some("http://env/v1"))]
+#[case::absent(&[], None, None)]
+#[case::empty_explicit_without_environment(&[], Some(""), None)]
+fn responses_base_required(
+    #[case] environment: &[(&str, &str)],
+    #[case] explicit: Option<&str>,
+    #[case] expected: Option<&str>,
+) {
+    // the generic Responses URL takes the base resolve returns and raises when it is None
+    let (base, _) = settings(environment).resolve(explicit, None);
+    assert_eq!(base.as_deref(), expected);
+}
+
+#[rstest]
 #[case::explicit_wins(
     ENVIRONMENT,
     Some("http://explicit/v1"),

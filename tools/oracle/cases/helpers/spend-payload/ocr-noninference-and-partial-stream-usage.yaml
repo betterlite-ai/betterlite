@@ -1,0 +1,26 @@
+kind: helper
+name: ocr usage reads usage_info and ignores recovered mid-stream usage
+call:
+  spend_payload:
+    function: payload
+    kwargs:
+      model: azure/gpt-4o-doc
+      call_type: ocr
+      litellm_trace_id: trace-ocr
+      combined_usage_object: {total_tokens: 9, prompt_tokens: 4, completion_tokens: 5}
+      litellm_params:
+        api_base: https://example.openai.azure.com/
+        metadata:
+          model_group: doc-model
+          model_info: {id: model-ocr}
+          tags: [ocr]
+    response:
+      mapping:
+        usage_info: {pages_processed: 2}
+    start_time: "2024-01-01T00:00:00+00:00"
+    end_time: "2024-01-01T00:00:02+00:00"
+    settings: {store_bodies: false}
+    clock: 1700000000.0
+    session_uuid: "00000000-0000-0000-0000-000000000001"
+env: {}
+compare: {ignore: []}

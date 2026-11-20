@@ -1,0 +1,14 @@
+id: B10011
+milestone: M9 agents and mcp
+title: SSO assertion cache, persistence and retention
+status: todo
+depends_on: [B002, B1600, B4650, B10003, B10010]
+file: tasks/B10011-sso-assertion-retention.yaml
+covers:
+  - "litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_store.py"
+parent: B137
+split_from: B4663
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

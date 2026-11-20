@@ -2,7 +2,7 @@ id: B9720
 milestone: M8 platform
 title: Shared streaming data generator for Anthropic messages and A2A streams
 status: todo
-depends_on: [B8604, B8602, B7324, B958, B980, B4789]
+depends_on: [B8604, B8602, B7324, B958, B980]
 file: tasks/B9720-shared-stream-generator.yaml
 covers:
   - "litellm/proxy/common_request_processing.py"

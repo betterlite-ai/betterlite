@@ -1,0 +1,18 @@
+task: B1000
+deviations:
+  - what: A timeout that is negative, non-finite or too large to hold as a std Duration fails before any provider call with "timeout must be a non-negative number of seconds, got {seconds}", where LiteLLM hands the float straight to the OpenAI client or the Topaz aiohttp handler.
+    why: betterlite carries the timeout as a Duration, and its checked constructor refuses values the Python HTTP clients would fail on deeper inside the call; refusing at the parameter keeps the failure beside its cause and makes it the same ValueError the other pre-call checks raise.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L677
+kept_bugs:
+  - what: A provider result that is neither a dict, an ImageResponse nor a coroutine makes aimage_variation run the synchronous call a second time and return that second result without checking it, so such a result costs two provider requests.
+    why: LiteLLM's async wrapper treats an unrecognized first result as a coroutine it could not await and repeats the call; a working setup observes exactly that second request, and the task keeps the fallback for parity.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L601-L602
+  - what: The signature accepts n, response_format, size and user, but the provider call always receives optional_params={}, so none of the four reaches the wire.
+    why: LiteLLM hardcodes the empty optional_params in both branches, and a working setup relies on variations forwarding only the image no matter which of the signature options it passes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L680
+  - what: A Topaz timeout of 0 or None becomes REQUEST_TIMEOUT (6000 seconds by default), so an explicit zero cannot disable the timeout, while the same value passed to OpenAI stays 0 and reaches its client unchanged.
+    why: LiteLLM applies `litellm_params.get("timeout") or DEFAULT_REQUEST_TIMEOUT` on the Topaz branch only; setups that set REQUEST_TIMEOUT rely on the 6000-second fallback, and the asymmetry with OpenAI is observable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L695
+  - what: An OpenAI variation with no timeout reaches the OpenAI client as no timeout at all, so the client's own 600-second default applies, while Topaz receives the 6000-second proxy default.
+    why: LiteLLM passes litellm_params.get("timeout", None) unchanged to the OpenAI branch and only applies its fallback to the Topaz branch; a working setup that leaves the timeout unset depends on the longer Topaz deadline.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L677

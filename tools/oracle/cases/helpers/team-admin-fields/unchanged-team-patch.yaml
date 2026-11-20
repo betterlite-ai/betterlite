@@ -1,0 +1,36 @@
+kind: helper
+name: unchanged_team_patch
+call:
+  team_admin_fields:
+    function: team_verdict
+    request: {"team_id": "t", "team_alias": "a", "tpm_limit": 10, "budget_duration": "1d", "rpm_limit": 5, "metadata": {"x": 1}}
+    existing: {"team_id": "t", "team_alias": "a", "tpm_limit": 10, "budget_duration": "1d", "metadata": {"x": 1}}
+    permitted: ["rpm_limit"]
+calls:
+  - team_admin_fields:
+      function: team_request
+      request: {"team_id": "t", "team_alias": "a", "tpm_limit": 10, "budget_duration": "1d", "rpm_limit": 5, "metadata": {"x": 1}}
+      existing: {"team_id": "t", "team_alias": "a", "tpm_limit": 10, "budget_duration": "1d", "metadata": {"x": 1}}
+      permitted: ["rpm_limit"]
+  - team_admin_fields:
+      function: team_verdict
+      request: {"team_id": "t"}
+      existing: {"team_id": "t"}
+      permitted: ["tpm_limit"]
+  - team_admin_fields:
+      function: team_verdict
+      request: {"team_id": "t", "tags": ["x"]}
+      existing: {"team_id": "t", "metadata": {"tags": ["y"]}}
+      permitted: ["tags"]
+  - team_admin_fields:
+      function: team_verdict
+      request: {"team_id": "t", "rpm_limit": 5, "metadata": {"x": 1, "y": 2}}
+      existing: {"team_id": "t", "rpm_limit": 5, "metadata": {"x": 1}}
+      permitted: ["metadata", "rpm_limit"]
+  - team_admin_fields:
+      function: team_verdict
+      request: {"team_id": "t", "metadata": {"custom": 2}}
+      existing: {"team_id": "t", "metadata": {"custom": 1}}
+      permitted: ["metadata"]
+env: {}
+compare: {ignore: []}

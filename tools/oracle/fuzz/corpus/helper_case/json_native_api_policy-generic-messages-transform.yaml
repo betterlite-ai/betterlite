@@ -1,0 +1,20 @@
+kind: helper
+name: json-native-api-policy-generic-messages-transform-seed
+call:
+  json_native_api_policy:
+    calls:
+      - kind: generic_messages_transform
+        model: anthropic/probe-model
+        environment: {}
+        optional_params:
+          max_tokens: 16
+          temperature: 0.5
+          system:
+            - {type: text, text: "x-anthropic-billing-header: abc"}
+            - {type: text, text: keep}
+        messages:
+          - role: user
+            content:
+              - {type: text, text: hello, cache_control: {type: ephemeral, ttl: 1h}}
+env: {}
+compare: {ignore: []}

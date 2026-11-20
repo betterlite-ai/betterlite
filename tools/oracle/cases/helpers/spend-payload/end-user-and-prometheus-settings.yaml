@@ -1,0 +1,15 @@
+kind: helper
+name: the top-level end user wins for prometheus once the exact enable flag is set
+call:
+  spend_payload:
+    function: end_user
+    litellm_params:
+      user_api_key_end_user_id: top-user
+      metadata: {user_api_key_end_user_id: merged-user}
+    service: prometheus
+    settings:
+      disable_end_user_cost_tracking: false
+      enable_end_user_cost_tracking_prometheus_only: true
+      store_bodies: false
+env: {}
+compare: {ignore: []}

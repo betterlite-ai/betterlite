@@ -1,0 +1,4 @@
+litellm_settings:
+  store_audit_logs: null
+  audit_log_callbacks: []
+  s3_audit_callback_params: {}

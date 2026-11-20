@@ -40,7 +40,10 @@ impl Preset for ArizePreset {
     }
 }
 
-fn arize_headers(environment: &dyn EnvironmentLookup, config: &ArizeConfig) -> Option<String> {
+pub(crate) fn arize_headers(
+    environment: &dyn EnvironmentLookup,
+    config: &ArizeConfig,
+) -> Option<String> {
     let mut pieces = Vec::new();
     if let Some(space_id) = config.space_id.clone().or_else(|| config.space_key.clone()) {
         pieces.push(format!("space_id={space_id}"));

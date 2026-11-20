@@ -1,8 +1,8 @@
 id: B818
 title: Prevent resource grant escalation by keys
 description: >-
-  Implement resource-grant validation with B816 permission records, B817 MCP resolution and B747 unified
-  access-group MCP lookup. Helpers raise HTTPException with detail.error, status 403 and no local
+  Implement resource-grant validation with B816 permission records, B10000 MCP identifier resolution (pass it
+  get_registry's records from B10020's ServerRegistry, which the MCP helpers take as an argument), B817 grant cleanup and team reads, and B747 unified access-group MCP lookup. Helpers raise HTTPException with detail.error, status 403 and no local
   type/param/code override; each calling route owns its wire mapping. None writes the database. Defaults
   are prisma_client=null, is_proxy_admin=false and existing_key_object_permission=null. The all-proxy
   team grant guard returns immediately for proxy admins or requests without "all-proxy-mcpservers";
@@ -67,7 +67,7 @@ description: >-
 
   The B856 helper operation exposes only the pure extractors, toolset check and vector/search validators
   (the latter are async without I/O). Compare 403 details and input preservation with B171 seeds. Native
-  MCP tests inject the registry and use real Postgres via POSTGRES_TEST_URL, falling back to B860
+  MCP tests build the registry with B10020's ServerRegistry::new and use real Postgres via POSTGRES_TEST_URL, falling back to B860
   testcontainers only when absent; connection errors fail. Do not call global-dependent resolvers from
   the Python helper. This task registers no endpoint; callers own HTTP integration.
 
@@ -156,9 +156,10 @@ out_of_scope:
     (L35-L73), prepare_object_permission_upsert (L82-L129), handle_update_object_permission_common (L132-L183),
     invalidate_cached_object_permissions (L186-L199), _set_object_permission (L202-L237), _mcp_tool_permission_entries
     (L324-L332), reject_ambiguous_mcp_tool_permission_keys (L335-L371).'
+  - 'litellm/proxy/management_helpers/object_permission_utils.py: B10000 owns _mcp_server_identifier_matches (L251-L257),
+    _get_db_mcp_servers_by_identifiers (L260-L276) and _resolve_mcp_server_identifiers_to_ids (L279-L318).'
   - 'litellm/proxy/management_helpers/object_permission_utils.py: B817 owns _dedupe_preserving_order (L240-L248),
-    _mcp_server_identifier_matches (L251-L257), _get_db_mcp_servers_by_identifiers (L260-L276), _resolve_mcp_server_identifiers_to_ids
-    (L279-L318), _drop_stale_object_permission_mcp_servers (L374-L390), _drop_stale_object_permission_mcp_tool_permissions
+    _drop_stale_object_permission_mcp_servers (L374-L390), _drop_stale_object_permission_mcp_tool_permissions
     (L393-L405), _drop_stale_object_permission_mcp_identifiers (L408-L422), _flatten_resolved_mcp_server_ids
     (L425-L428), _resolve_team_allowed_mcp_servers (L431-L463), _get_allow_all_keys_server_ids (L466-L472),
     _get_all_mcp_server_ids (L475-L481), _existing_object_permission_mcp_servers (L484-L495).'

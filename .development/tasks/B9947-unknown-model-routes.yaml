@@ -57,6 +57,11 @@ description: >-
   for another model, the master key, no upstream reply, and content-type compared with no ignores.
 scope:
   paths:
+  - "crates/betterlite-server/src/server/render.rs"
+  - "crates/betterlite-server/src/routes/embeddings/read_through.rs"
+  - "crates/betterlite-server/src/routes/completions/read_through.rs"
+  - "crates/betterlite-server/src/routes/chat/tests/unknown_model_cases.rs"
+  - "crates/betterlite-server/src/routes/chat/failure.rs"
   - crates/betterlite-server/src/state/model_read_through.rs
   - crates/betterlite-server/src/routes/chat.rs
   - crates/betterlite-server/src/routes/chat/tests.rs

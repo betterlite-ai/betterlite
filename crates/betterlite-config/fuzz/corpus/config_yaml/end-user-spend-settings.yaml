@@ -1,0 +1,5 @@
+# litellm_settings carries the two end-user cost-tracking switches; both default to null
+litellm_settings:
+  disable_end_user_cost_tracking: true
+  enable_end_user_cost_tracking_prometheus_only: false
+model_list: []

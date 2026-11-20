@@ -1,0 +1,115 @@
+kind: helper
+name: date-prefix-unknown-model-and-status
+call:
+  queue_rollup:
+    model_usage:
+      payload:
+        request_id: "req-unvalidated-date"
+        call_type: "acompletion"
+        api_key: "sk-unvalidated"
+        spend: 0.0
+        total_tokens: 0
+        prompt_tokens: 0
+        completion_tokens: 0
+        startTime: "2026-13-45T99:99:99Z"
+        endTime: "2026-13-45T99:99:99Z"
+        completionStartTime: null
+        model: "gpt-4o"
+        model_id: null
+        model_group: null
+        mcp_namespaced_tool_name: null
+        agent_id: null
+        api_base: ""
+        user: ""
+        metadata: "not-json"
+        cache_hit: "False"
+        cache_key: ""
+        request_tags: "not-json"
+        team_id: null
+        organization_id: null
+        end_user: null
+        requester_ip_address: null
+        custom_llm_provider: null
+        messages: null
+        response: null
+        proxy_server_request: null
+        session_id: null
+        request_duration_ms: null
+        status: "failure"
+        litellm_call_id: "call-unvalidated"
+calls:
+  - queue_rollup:
+      model_usage:
+        payload:
+          request_id: "req-short-date"
+          call_type: "acompletion"
+          api_key: "sk-short"
+          spend: 0.25
+          total_tokens: 2
+          prompt_tokens: 2
+          completion_tokens: 0
+          startTime: "2026-1-2"
+          endTime: "2026-1-2"
+          completionStartTime: null
+          model: "gpt-4o"
+          model_id: null
+          model_group: "group-short"
+          mcp_namespaced_tool_name: null
+          agent_id: null
+          api_base: ""
+          user: "user-short"
+          metadata: "{}"
+          cache_hit: "False"
+          cache_key: ""
+          request_tags: '["task:summarization"]'
+          team_id: null
+          organization_id: null
+          end_user: null
+          requester_ip_address: null
+          custom_llm_provider: "openai"
+          messages: null
+          response: null
+          proxy_server_request: null
+          session_id: null
+          request_duration_ms: 5
+          status: "success"
+          litellm_call_id: "call-short"
+  - queue_rollup:
+      model_usage:
+        payload:
+          request_id: "req-missing-identities"
+          call_type: "acompletion"
+          api_key: "sk-missing"
+          spend: 0.5
+          total_tokens: 7
+          prompt_tokens: 4
+          completion_tokens: 3
+          startTime: "2026-01-02"
+          endTime: "2026-01-02"
+          completionStartTime: null
+          model: "gpt-4o"
+          model_id: null
+          model_group: null
+          mcp_namespaced_tool_name: null
+          agent_id: null
+          api_base: ""
+          user: "user-missing"
+          metadata: "{}"
+          cache_hit: "False"
+          cache_key: ""
+          request_tags: "[]"
+          team_id: null
+          organization_id: null
+          end_user: null
+          requester_ip_address: null
+          custom_llm_provider: null
+          messages: null
+          response: null
+          proxy_server_request: null
+          session_id: null
+          request_duration_ms: 9
+          status: "success"
+          litellm_call_id: "call-missing"
+env: {}
+compare:
+  ignore: []

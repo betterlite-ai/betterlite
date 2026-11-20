@@ -1,0 +1,17 @@
+name: embeddings-unknown-model
+config: |
+  model_list:
+    - model_name: embed-model
+      litellm_params: {model: openai/text-embedding-3-small, api_base: "{{upstream}}", api_key: oracle-key}
+env: {}
+request:
+  method: POST
+  path: /v1/embeddings
+  headers: {content-type: application/json, authorization: Bearer oracle-master}
+  body: {model: missing-model, input: hello}
+upstream: []
+compare:
+  headers: [content-type]
+  headers_present: []
+  upstream_headers: []
+  ignore: []

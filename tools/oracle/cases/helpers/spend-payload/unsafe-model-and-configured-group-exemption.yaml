@@ -1,0 +1,27 @@
+kind: helper
+name: a failed prompt-shaped model survives when the router configures its group
+call:
+  spend_payload:
+    function: payload
+    kwargs:
+      model: tell me a story
+      litellm_trace_id: trace-unsafe
+      litellm_params:
+        metadata:
+          model_group: tell me a story
+          model_info: {id: dep-unsafe}
+          status: failure
+          error_information: {error_message: upstream failed}
+    start_time: "2024-01-01T00:00:00+00:00"
+    end_time: "2024-01-01T00:00:02+00:00"
+    settings: {store_bodies: false}
+    router:
+      model_list:
+        - model_name: tell me a story
+          litellm_params: {model: openai/gpt-4o}
+      recognized: [tell me a story]
+      team_public: []
+    clock: 1700000000.0
+    session_uuid: "00000000-0000-0000-0000-000000000003"
+env: {}
+compare: {ignore: []}

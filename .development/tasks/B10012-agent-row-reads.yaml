@@ -1,0 +1,73 @@
+id: B10012
+title: Agent row reads and the agents listing
+description: >-
+  Several core readers need an agent row from "LiteLLM_AgentsTable" but none of the agent writes. B8384's agents loader lists every agent after each model reconcile (LiteLLM's get_all_agents_from_db, the only caller being _init_agents_in_db), and B8612's agents read-through reads one row by id or name when the registry misses it. This task builds that read side: the select, the row codec and the listing. B4777 builds the create, replace, patch and delete writes on top of it and reads its rows through the same codec, and B4784 reads one row with it too.
+
+
+  Layout. Module agent_rows in betterlite-server, crates/betterlite-server/src/agent_rows.rs, with submodules as you need and a tests.rs beside each. The file is an empty stub its parent declares; it sits outside B4777's agent_persistence on purpose, so the two tasks never share files. SQL is plain tokio-postgres through B700's PostgresStore with `$n` parameters only. The record types come from B4770 (betterlite_core::agents::AgentResponse, AgentCard and AgentObjectPermission, and AgentJson from betterlite_core::agents::json) and B4772 (AgentIdentityBinding); use those, not the AgentResponse in betterlite-auth or betterlite-a2a.
+
+
+  The select. `AGENT_SELECT_SQL` is one `&str`: all columns of the agents table (a.*), then the identity columns with the prefix `i_` and the object permission columns with the prefix `p_`, from the agents table LEFT JOIN `"LiteLLM_AgentIdentity"` ON agent_id LEFT JOIN `"LiteLLM_ObjectPermissionTable"` ON object_permission_id. It has no WHERE or ORDER BY; callers append their own, as Prisma's find_many and find_unique with include object_permission and identity do.
+
+
+  The codec. `AgentRowCodec` implements B700's `RowCodec` with `Model = StoredAgent`, where `StoredAgent { agent: AgentResponse, object_permission_id: Option<String>, litellm_params_column: Option<AgentJson>, kill_switch_column: Option<AgentJson> }`. The raw columns are kept because B4777's writes restore a secret from the stored value, and `AgentResponse` serializes without kill switch auth secrets. Decoding rules: timestamps are `TIMESTAMP(3)` without zone, read as chrono NaiveDateTime and taken as UTC; tpm_limit and the other three limits are INTEGER columns widened to i64; spend is DOUBLE PRECISION converted with `Decimal::from_f64` (0.1 stays 0.1); `litellm_params` NULL gives None, otherwise B4775's `parse_agent_litellm_params` (it accepts an object and a JSON string); `agent_card_params` is an object or a JSON string holding one, then `AgentCard`; `static_headers` is an object or a JSON string (NULL gives None); `kill_switch` goes through B4775's `parse_agent_kill_switch`, so `AgentResponse.kill_switch` keeps the secret, as LiteLLM's model_validate does; the identity is None when `i_agent_id` is NULL, otherwise an `AgentIdentityBinding` with NULL role or scope arrays read as empty lists and tenant_id, client_id and service_principal_id parsed as UUIDs; the object permission is None when `object_permission_id` is NULL, otherwise an `AgentObjectPermission` built from the six columns it has (mcp_servers, mcp_access_groups, mcp_toolsets, mcp_tool_permissions, models, agents), where mcp_tool_permissions is an object or a JSON string holding one. `enabled`, `execution_mode` and `identity_managed` come from their columns; `jwt_auth_configured` is false, `keys` and `search_score` are None. The codec is public. Its error is `RowDecodeError`, with one variant per failed column kind, and it never puts a column's value in its text.
+
+
+  The listing. `get_all_agents_from_db(store: &PostgresStore) -> Result<Vec<AgentResponse>, AgentListError>` runs `AGENT_SELECT_SQL ORDER BY a.created_at DESC` and decodes every row. Any failure, database or decode, is `AgentListError` with the text `Error getting agents from DB: <error>`. LiteLLM returns dicts that B4776's registry validates into AgentResponse; this returns the typed value directly. B8384 calls it under B4776's reconcile lock and hands the result to B4776's load_agents_from_db_and_config.
+
+
+  Tests run on real Postgres with B700's test support and the agent tables from betterlite's migrations: a row with an identity and a permission, one with neither, a JSON string stored in each jsonb column, NULL role and scope arrays, a spend of 0.1, a kill switch with a secret kept in StoredAgent and the response, and the listing's newest-first order and its error text. Every listing test has listing in its name, and no codec test does, so the two checks below select them apart.
+scope:
+  paths:
+    - crates/betterlite-server/src/agent_rows.rs
+    - crates/betterlite-server/src/agent_rows/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_registry.py#L893-L918
+    why: Owned. get_all_agents_from_db, newest first, with the error prefix.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L8982-L8995
+    why: Call site. _init_agents_in_db lists the rows under the reconcile lock and loads them into the registry, in B8384's code.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/schema.prisma#L68-L127
+    why: Columns, types and relations of the agents and identity tables the select joins.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/schema.prisma#L337-L358
+    why: The object permission table columns the codec reads.
+dod:
+  - text: Rows decode into AgentResponse with the identity, the object permission, the raw litellm_params and kill_switch columns, UTC timestamps, widened limits and exact spend, and a JSON string stored in a jsonb column reads the same as an object.
+    proof: [row-codec-tests]
+  - text: A row with no identity or no object permission decodes with None for it, and NULL role or scope arrays read as empty lists.
+    proof: [row-codec-tests]
+  - text: The kill switch secret stays in StoredAgent and the decoded response, and no column value appears in a RowDecodeError's text.
+    proof: [row-codec-tests]
+  - text: "Listing returns every agent newest first with identity and permission, and wraps a failure as `Error getting agents from DB: <error>`."
+    proof: [listing-tests]
+checks:
+  optional: []
+  commands:
+    - id: row-codec-tests
+      why: An agent row does not decode into AgentResponse and StoredAgent against real Postgres.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_rows::/) - test(/listing/)'
+    - id: listing-tests
+      why: get_all_agents_from_db does not order newest first or wrap its failure.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_rows::.*listing/)'
+oracle_cases: []
+deviations:
+  - what: get_all_agents_from_db returns typed AgentResponse values instead of dicts.
+    why: LiteLLM's dicts are read only by the registry reload, which validates them into AgentResponse; typed values replace that round trip.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_registry.py#L893-L918
+  - what: The codec accepts a JSON string stored in a jsonb column (litellm_params, agent_card_params, static_headers, kill_switch, mcp_tool_permissions) as well as an object.
+    why: B4777 writes parsed jsonb values, and older rows can hold the string form; B4775's parsers already accept both and the response JSON is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_registry.py#L893-L918
+out_of_scope:
+  - "add_agent_to_db, update_agent_in_db, patch_agent_in_db, delete_agent_from_db and their write plans, permission, identity and history writes: B4777, which reads its rows through this codec."
+  - "parse_agent_litellm_params and parse_agent_kill_switch: B4775. This task calls them and does not copy their rules."
+  - "AgentRegistry, load_agents_from_db_and_config and the reconcile lock: B4776. The agents loader and its order: B8384. The read-through that reads one row by id or name: B8612."
+  - "The AgentRecord, AgentTableClient and AgentIdWhere protocols and agents_table: Prisma adapters with no native counterpart."
+pitfalls:
+  - "Timestamp columns are `TIMESTAMP(3)` without zone, so read chrono NaiveDateTime and take it as UTC; a zoned type fails on every row."
+  - "The kill switch column holds an auth secret; the codec keeps it, so a test that prints a decoded row or an error must not leak it into a log line."
+  - "spend is DOUBLE PRECISION; converting through a string or with `as` loses the exact 0.1 that Decimal::from_f64 keeps."
+  - "An identity row exists for some agents and not others, so every `i_` column is nullable after the LEFT JOIN even where the identity table says NOT NULL; test i_agent_id for NULL first."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

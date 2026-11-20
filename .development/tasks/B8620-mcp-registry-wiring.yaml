@@ -2,10 +2,10 @@ id: B8620
 title: Build the MCP area state and its registry-side adapters
 description: >-
   Every MCP task builds its piece against ports and leaves the one shared instance of each piece to "the composition
-  root". The foundation now builds the server registry itself: B8614's McpRegistry (B4731's SharedRegistry, B6765's
+  root". The foundation now builds the server registry itself: B9997's McpRegistry (B4731's SharedRegistry, B6765's
   RegistryMutator over B6763's ServerBuilder and B6762's DiscoverySlots, and B4680's ToolRegistry) sits in
-  `shared.mcp_registry`, loaded from config before the listener by B8614's BootRegistries and from the database by
-  B8384. This task builds the rest of the MCP area state once per process, as `McpState`, and the three area entry
+  `shared.mcp_registry`, loaded from config before the listener by the BootRegistries methods and from the database by the
+  DbObjectSync loaders that B9997 completes. This task builds the rest of the MCP area state once per process, as `McpState`, and the three area entry
   points. It mounts no route.
 
 
@@ -64,15 +64,15 @@ description: >-
   Decryptor of B6763 implemented over B1600's StoredCipher (decrypt_value_helper with return_original_value false, so
   a failure is None).
 
-  6. SSO assertions: one B4663 SsoAssertionCache, and config_declares_id_jag computed once from the config file's
-  mcp_servers as B4663's text says. B8622 builds the assertion store over both.
+  6. SSO assertions: one B10011 SsoAssertionCache, and config_declares_id_jag computed once from the config file's
+  mcp_servers as B10011's text says. B8622 builds the assertion store over both.
 
   7. Separator check: McpState::build calls B8970's startup_diagnostics::check_separator once with the
   MCP_TOOL_PREFIX_SEPARATOR value from item 2, so an invalid separator logs one warning per process.
 
 
   Tests in app::mcp::core:: and app::mcp::state:: : McpState::shared returns the same Arc on a second call; McpCore
-  builds from a config with no database and reads the servers B8614 loaded into `shared.mcp_registry`; ProbeClient
+  builds from a config with no database and reads the servers B9997 loaded into `shared.mcp_registry`; ProbeClient
   against a local axum test server (a 200, a redirect that is not followed, a timeout on paused time); the Decryptor
   round-trips a value sealed with B1600's StoredCipher and returns None for garbage; DcrClientStore answers Ok(None)
   without a database; and the config section loads every key it adds set, unset and empty.
@@ -118,7 +118,7 @@ deviations:
   - what: The MCP environment values are read once at startup, so changing PROXY_BASE_URL, the GENERIC_* SSO client values or MCP_TOOL_PREFIX_SEPARATOR in a running process has no effect until restart.
     why: rules.yaml allows reading the environment only in the config crate, which loads once.
 out_of_scope:
-  - "Loading config and database servers into shared.mcp_registry, and the mutator's own ports: B8614 and B8384."
+  - "Loading config and database servers into shared.mcp_registry, and the mutator's own ports: B9997."
   - "Mounting any MCP route: B8624, B8702, B8625, B8627, B8700, B8701, B9950 and B8626."
   - "Caller identity and admission state: B8621. Per-user token stores, the SSO assertion store and the OAuth SessionStore: B8622. OAuth flow ports: B8623."
 pitfalls:

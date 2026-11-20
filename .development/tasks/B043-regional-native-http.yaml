@@ -180,7 +180,7 @@ out_of_scope:
   - B7325 owns all GigaChat authenticator functions; B8177 owns chat, stream and utility functions; B8178 owns embedding, file and passthrough functions, with inherited get_models supplied by B3570. upload_file_async and its private async download helper have no live caller at the pin.
   - B8179 owns NLP Cloud config, completion handler, stream cleaner and error constructor. Its empty embedding stub has no caller at the pin. B8312 already owns ordinary NLP Cloud HTTP proof.
   - B8312 owns the regional main.py dispatch functions, embedding branches, speech branch and config assembly; all other main.py functions remain with their facade/provider owners. B1686 owns price dispatch, so neither cost registry nor call accounting is wired here.
-  - B006, B082, B083, B085, B080 and B938 own the endpoint functions. B1100/B8610 own route composition, B8636 fills rerank/Responses production ports, and B8609 mounts GigaChat passthrough once. B8626/B8701/B8728 are MCP area mounts and do not leave a regional route to register.
+  - B006, B082, B083, B085, B080 and B938 own the endpoint functions. B1100/B8610 own route composition, B8636 fills rerank/Responses production ports, and B10026 mounts GigaChat passthrough once. B8626/B8701/B8728 are MCP area mounts and do not leave a regional route to register.
 pitfalls:
   - A chat-shaped base is discarded for DashScope images but remapped for rerank; use the operation-specific environment override so both cases reach the local mock.
   - MiniMax speech reads top-level status and ced, and the fallback audio_file is top-level too; the older prose describing base_resp or data.audio_file is not the pinned behavior.

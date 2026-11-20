@@ -1,7 +1,7 @@
 id: B372
 milestone: M2 routing
 title: Affinity identity and atomic pin claims
-status: todo
+status: done
 depends_on: [B360, B301, B361]
 file: tasks/B372-affinity-claims.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/caching/affinity_cache.py"
 parent: B020
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2636

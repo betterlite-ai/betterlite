@@ -78,7 +78,7 @@ deviations:
 out_of_scope:
 - "async_data_generator (L9830-L10079), which starts the wrapper and writes `: ping` frames: B8604. The chunk shaping and SSE frame helpers (L9344-L9623): B8602."
 - "coerce_keepalive_interval, ttft_keepalive_interval and the first-byte keepalive in common_request_processing.py and sse_keepalive.py: B7324 and B005. They decide the ping before the first upstream byte, while this module decides it between chunks."
-- "Loading litellm_settings.sse_keepalive_ping_interval_seconds: the config section of B089 (assistant_keepalive) loads it, and B8632 passes its value here."
+- "Loading litellm_settings.sse_keepalive_ping_interval_seconds: the config section of B10023 (assistant_keepalive) loads it, and B8632 passes its value here."
 - "The rest of litellm/proxy/proxy_server.py: owners by area are listed in the proxy_server.py inventory head of B1216, B1125, B850, B848, B779, B899, B849 and B851."
 pitfalls:
 - 'A model_id the router no longer resolves returns None at once; it must not fall through to the group rule, because a sibling deployment never served this stream.'

@@ -2,7 +2,7 @@ id: B765
 milestone: M4 keys, spend and management
 title: JWT user and team provisioning and fallback identity
 status: todo
-depends_on: [B001, B002, B003, B1637, B171, B723, B732, B733, B736, B737, B739, B760, B761, B808, B856, B860, B869, B871, B879, B890]
+depends_on: [B001, B002, B003, B10024, B171, B723, B732, B733, B736, B737, B739, B760, B761, B808, B856, B860, B869, B871, B879, B890]
 file: tasks/B765-jwt-provisioning.yaml
 covers:
   - "litellm/proxy/auth/handle_jwt.py"
