@@ -74,7 +74,8 @@ fn expired(now: Duration, checked_at: Duration, expiry: i64) -> bool {
             elapsed.as_secs_f64() >= Decimal::from(expiry).to_f64().unwrap_or(f64::INFINITY)
         }
         None => {
-            expiry < 0 && checked_at.duration_since(now).as_secs_f64() <= magnitude_seconds(expiry)
+            expiry.is_negative()
+                && checked_at.duration_since(now).as_secs_f64() <= magnitude_seconds(expiry)
         }
     }
 }

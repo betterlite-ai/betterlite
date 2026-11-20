@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+mod cache;
 mod cadence;
 mod create;
 mod errors;

@@ -247,6 +247,7 @@ fn defaults_debug_redacted() {
     .unwrap();
     let rendered = format!("{:?}", settings.default_internal_user_params.unwrap());
     assert!(rendered.contains("REDACTED"), "{rendered}");
+    assert!(rendered.contains("authorization"), "{rendered}");
     assert!(!rendered.contains("sk-live-secret"), "{rendered}");
     assert!(
         !rendered.contains("postgres://user:pass@host/db"),

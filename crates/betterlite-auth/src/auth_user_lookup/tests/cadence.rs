@@ -1,10 +1,10 @@
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use rstest::rstest;
 
 use super::support::{ManualClock, ScriptedClock, cadence_entry, user_row};
-use crate::auth_user_lookup::cadence::{Cadence, CadenceClock};
+use crate::auth_user_lookup::cadence::{Cadence, CadenceClock, WallClock};
 
 fn cadence_with(max_size: usize) -> (Arc<ManualClock>, Cadence) {
     let clock = Arc::new(ManualClock::default());
@@ -114,4 +114,46 @@ fn update_samples_clock() {
         Duration::from_secs(250)
     );
     assert!(cadence.should_check_db("user_id:a", 5));
+}
+
+#[test]
+fn wall_clock_reads_the_system_time() {
+    let sampled = WallClock.now();
+    let system = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("the system clock is after the epoch");
+    assert!(
+        system.abs_diff(sampled) < Duration::from_secs(60),
+        "the wall clock samples the system time"
+    );
+}
+
+#[test]
+fn negative_expiry_uses_backward_movement_magnitude() {
+    let (clock, cadence) = cadence_with(100);
+    clock.set(Duration::from_secs(100));
+    cadence.update("user_id:u1", None);
+    clock.set(Duration::from_secs(97));
+    assert!(
+        cadence.should_check_db("user_id:u1", -5),
+        "three seconds back is inside the five second magnitude"
+    );
+    assert!(
+        !cadence.should_check_db("user_id:u1", 5),
+        "a positive expiry never expires from backward movement"
+    );
+    clock.set(Duration::from_secs(95));
+    assert!(
+        cadence.should_check_db("user_id:u1", -5),
+        "a movement equal to the magnitude expires the stored miss"
+    );
+    clock.set(Duration::from_secs(94));
+    assert!(
+        !cadence.should_check_db("user_id:u1", -5),
+        "a movement past the magnitude is not expired"
+    );
+    assert!(
+        !cadence.should_check_db("user_id:u1", 0),
+        "a zero expiry leaves a backward clock unexpired"
+    );
 }
