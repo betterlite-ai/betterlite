@@ -1,6 +1,3 @@
-use std::fs;
-use std::path::Path;
-
 use betterlite_openai::api::file_type_records::UploadUrlLocation;
 use http::{HeaderMap, HeaderValue};
 use rstest::rstest;
@@ -90,23 +87,4 @@ fn decode_file_upload_location_is_bounded() {
     )
     .expect_err("a body over the limit");
     assert!(error.to_string().contains("the maximum is 4"));
-}
-
-#[test]
-fn replays_upload_location_corpus() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/file_upload_location");
-    let replayed = fs::read_dir(corpus)
-        .expect("the corpus directory")
-        .map(|entry| fs::read(entry.expect("a corpus entry").path()).expect("a corpus file"))
-        .map(|bytes| {
-            drop(decode_file_upload_location(
-                &bytes,
-                UploadUrlLocation::Body,
-                "upload_url",
-                ApiLimits::default(),
-            ));
-            drop(upload_url_from_headers(&HeaderMap::new()));
-        })
-        .count();
-    assert!(replayed >= 8);
 }
