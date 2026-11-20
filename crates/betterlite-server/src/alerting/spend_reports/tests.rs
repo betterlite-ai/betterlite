@@ -431,7 +431,10 @@ async fn weekly_report_defaults_to_seven_days() {
     reports.send_weekly_spend_report(None).await;
     assert_eq!(
         asked_dates(&asked),
-        vec![("2026-01-08".to_owned(), "2026-01-15".to_owned())]
+        vec![
+            ("2026-01-08".to_owned(), "2026-01-15".to_owned()),
+            ("2026-01-08".to_owned(), "2026-01-15".to_owned()),
+        ]
     );
     assert_eq!(reports.cache.written()[0].ttl_seconds, 604_800);
 }
@@ -448,7 +451,10 @@ async fn weekly_report_uses_the_local_date_for_the_window() {
     reports.send_weekly_spend_report(Some("1d")).await;
     assert_eq!(
         asked_dates(&asked),
-        vec![("2026-02-28".to_owned(), "2026-03-01".to_owned())]
+        vec![
+            ("2026-02-28".to_owned(), "2026-03-01".to_owned()),
+            ("2026-02-28".to_owned(), "2026-03-01".to_owned()),
+        ]
     );
     assert_eq!(
         reports.cache.written()[0].key,
@@ -502,7 +508,10 @@ async fn weekly_report_accepts_an_uppercase_unit() {
     reports.send_weekly_spend_report(Some("7D")).await;
     assert_eq!(
         asked_dates(&asked),
-        vec![("2026-01-08".to_owned(), "2026-01-15".to_owned())]
+        vec![
+            ("2026-01-08".to_owned(), "2026-01-15".to_owned()),
+            ("2026-01-08".to_owned(), "2026-01-15".to_owned()),
+        ]
     );
     assert_eq!(reports.cache.written()[0].ttl_seconds, 604_800);
 }
@@ -636,7 +645,10 @@ async fn monthly_report_uses_the_month_window_of_the_local_date() {
     reports.send_monthly_spend_report().await;
     assert_eq!(
         asked_dates(&asked),
-        vec![("2026-02-01".to_owned(), "2026-02-28".to_owned())]
+        vec![
+            ("2026-02-01".to_owned(), "2026-02-28".to_owned()),
+            ("2026-02-01".to_owned(), "2026-02-28".to_owned()),
+        ]
     );
     assert_eq!(
         reports.cache.written()[0].key,
