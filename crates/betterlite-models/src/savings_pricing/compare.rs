@@ -1,0 +1,283 @@
+use chrono::{DateTime, Utc};
+use jiff::tz::TimeZoneDatabase;
+use rust_decimal::Decimal;
+use serde::Deserialize;
+use serde_json::Number;
+
+use crate::anthropic_pricing::{
+    ANTHROPIC_PROVIDER, AnthropicPriceRequest, TokenPriceRequest, token_cost,
+};
+use crate::cost_usage::server_tool_projection::ServerToolProjection;
+use crate::price_fields::decimal_lexeme::parse_decimal_lexeme;
+use crate::price_lookup::PricedModel;
+use crate::savings_evidence::error::SavingsEvidenceError;
+use crate::savings_evidence::numeric::{RoutingDecision, numeric_savings};
+use crate::savings_evidence::pricing_basis::PricingBasis;
+use crate::savings_evidence::snapshot::{
+    BaselineCostSnapshot, CostBreakdown, pricing_basis_from_breakdown, recorded_token_cost,
+};
+use crate::savings_evidence::spend::BaselineCosts;
+use crate::savings_evidence::usage::{LoggedUsage, PromptTokensDetails};
+use crate::tiered_pricing::Scalar;
+use crate::token_cost::{GenericCostRequest, generic_cost_per_token};
+use crate::token_rates::ModelInfo;
+
+use super::context::{ModelIdentity, SavingsPricingContext};
+use super::usage::{RequestUsage, cost_usage, prompt_extras};
+
+// price_baseline_comparison's provenance literal: the baseline was observed on the same deployment or modeled.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ComparisonProvenance {
+    ObservedIdentical,
+    Modeled,
+}
+
+pub struct CostOfUsageInput<'a> {
+    pub identity: &'a ModelIdentity,
+    pub usage: &'a RequestUsage,
+    pub model_info: Option<&'a PricedModel>,
+    pub basis: &'a PricingBasis,
+    pub moment: DateTime<Utc>,
+    pub database: &'a TimeZoneDatabase,
+}
+
+// _cost_of_usage: anthropic prices with tier only, every other provider with the full basis.
+pub fn cost_of_usage<C>(context: &C, request: &CostOfUsageInput<'_>) -> Option<Decimal>
+where
+    C: SavingsPricingContext,
+{
+    let usage = cost_usage(request.usage);
+    let extras = prompt_extras(request.usage);
+    let projection = ServerToolProjection::default();
+    let costs = if request.identity.provider == ANTHROPIC_PROVIDER {
+        let price = TokenPriceRequest::Anthropic(AnthropicPriceRequest {
+            model: &request.identity.model,
+            usage: &usage,
+            prompt_extras: &extras,
+            supplied_model_info: request.model_info.map(|priced| &priced.record),
+            provider_specific_entry: None,
+            service_tier: request.basis.service_tier.as_deref(),
+            projection: &projection,
+            moment: request.moment,
+        });
+        token_cost(&price, context.public_lookup(), request.database).ok()?
+    } else {
+        let price = GenericCostRequest {
+            model: &request.identity.model,
+            custom_llm_provider: Some(&request.identity.provider),
+            usage: &usage,
+            prompt_extras: &extras,
+            supplied_pricing: request.model_info,
+            service_tier: request.basis.service_tier.as_deref(),
+            data_residency: request.basis.data_residency.as_deref(),
+            vertex_location: request.basis.vertex_location.as_deref(),
+            moment: request.moment,
+        };
+        generic_cost_per_token(&price, context.public_lookup(), request.database).ok()?
+    };
+    costs.prompt_cost.checked_add(costs.completion_cost)
+}
+
+pub struct SnapshotInput<'a> {
+    pub model: &'a str,
+    pub prices: Option<&'a ModelInfo>,
+    pub actual_spend: Decimal,
+    pub cost_breakdown: Option<&'a CostBreakdown>,
+    pub routing_decision: Option<&'a RoutingDecision>,
+}
+
+// baseline_cost_snapshot: the recorded evidence a later comparison reads, through B1693's strict snapshot.
+pub fn baseline_cost_snapshot(
+    request: &SnapshotInput<'_>,
+) -> Result<BaselineCostSnapshot, SavingsEvidenceError> {
+    let actual_spend = checked_amount(request.actual_spend, "actual_spend")?;
+    let actual_token_cost = recorded_token_cost(request.cost_breakdown)
+        .map(|cost| checked_amount(cost, "actual_token_cost"))
+        .transpose()?;
+    let classifier_cost = numeric_savings(
+        request
+            .routing_decision
+            .and_then(|decision| decision.classifier_cost.as_ref()),
+    )
+    .map(|cost| checked_amount(cost, "classifier_cost"))
+    .transpose()?
+    .unwrap_or(Decimal::ZERO);
+    Ok(BaselineCostSnapshot {
+        model: request.model.to_owned(),
+        provider: ANTHROPIC_PROVIDER.to_owned(),
+        prices: request.prices.cloned(),
+        basis: pricing_basis_from_breakdown(request.cost_breakdown),
+        actual_spend,
+        actual_token_cost,
+        classifier_cost,
+    })
+}
+
+fn checked_amount(amount: Decimal, field: &'static str) -> Result<Decimal, SavingsEvidenceError> {
+    if amount.is_sign_negative() {
+        return Err(SavingsEvidenceError::NegativeAmount { field });
+    }
+    Ok(amount)
+}
+
+pub struct ComparisonInput<'a> {
+    pub snapshot: &'a BaselineCostSnapshot,
+    pub baseline_usage: Option<&'a RequestUsage>,
+    pub provenance: Option<ComparisonProvenance>,
+    pub moment: DateTime<Utc>,
+    pub database: &'a TimeZoneDatabase,
+}
+
+// price_baseline_comparison: replace only the baseline token portion, keeping every non-token charge on both sides.
+pub fn price_baseline_comparison<C>(
+    context: &C,
+    request: &ComparisonInput<'_>,
+) -> Option<BaselineCosts>
+where
+    C: SavingsPricingContext,
+{
+    let usage = request.baseline_usage?;
+    let provenance = request.provenance?;
+    let actual = request
+        .snapshot
+        .actual_spend
+        .checked_add(request.snapshot.classifier_cost)?;
+    if provenance == ComparisonProvenance::ObservedIdentical {
+        return Some(BaselineCosts {
+            actual,
+            baseline: request.snapshot.actual_spend,
+        });
+    }
+    let prices = request.snapshot.prices.as_ref()?;
+    let recorded = request.snapshot.actual_token_cost?;
+    let identity = ModelIdentity {
+        model: request.snapshot.model.clone(),
+        provider: request.snapshot.provider.clone(),
+    };
+    let priced = PricedModel {
+        record: prices.clone(),
+        tiered_pricing: Vec::new(),
+        off_peak_pricing: None,
+        off_peak_cache_read_present: false,
+    };
+    let token_cost = cost_of_usage(
+        context,
+        &CostOfUsageInput {
+            identity: &identity,
+            usage,
+            model_info: Some(&priced),
+            basis: &request.snapshot.basis,
+            moment: request.moment,
+            database: request.database,
+        },
+    )?;
+    if token_cost < Decimal::ZERO {
+        return None;
+    }
+    let baseline = request
+        .snapshot
+        .actual_spend
+        .checked_add(token_cost)?
+        .checked_sub(recorded)?;
+    if baseline < Decimal::ZERO {
+        return None;
+    }
+    Some(BaselineCosts { actual, baseline })
+}
+
+// effective_baseline_info == selected_model_info, with nested values conservatively unequal.
+#[must_use]
+pub fn same_prices(left: Option<&ModelInfo>, right: Option<&ModelInfo>) -> bool {
+    match (left, right) {
+        (None, None) => true,
+        (Some(left), Some(right)) => {
+            left.len() == right.len()
+                && left.iter().all(|(key, value)| {
+                    right
+                        .get(key)
+                        .is_some_and(|other| same_scalar(value, other))
+                })
+        }
+        (Some(_), None) | (None, Some(_)) => false,
+    }
+}
+
+fn same_scalar(left: &Scalar, right: &Scalar) -> bool {
+    match (left, right) {
+        (Scalar::Null, Scalar::Null) => true,
+        (Scalar::Bool(left), Scalar::Bool(right)) => left == right,
+        (Scalar::Number(left), Scalar::Number(right)) => same_number(left, right),
+        (Scalar::Text(left), Scalar::Text(right)) => left == right,
+        _ => false,
+    }
+}
+
+fn same_number(left: &Number, right: &Number) -> bool {
+    let left_lexeme = left.to_string();
+    let right_lexeme = right.to_string();
+    match (
+        parse_decimal_lexeme(&left_lexeme),
+        parse_decimal_lexeme(&right_lexeme),
+    ) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => left_lexeme == right_lexeme,
+    }
+}
+
+// baseline_usage == usage, field by field over the parsed usage and the TTL split.
+#[must_use]
+pub fn same_usage(left: &RequestUsage, right: &RequestUsage) -> bool {
+    same_logged_usage(&left.usage, &right.usage)
+        && left.cache_creation_token_details == right.cache_creation_token_details
+}
+
+fn same_logged_usage(left: &LoggedUsage, right: &LoggedUsage) -> bool {
+    (
+        left.prompt_tokens,
+        left.completion_tokens,
+        left.total_tokens,
+        left.cache_read_input_tokens,
+        left.cache_creation_input_tokens,
+        left.completion_tokens_details,
+        left.prompt_tokens_details.as_ref().map(prompt_counters),
+    ) == (
+        right.prompt_tokens,
+        right.completion_tokens,
+        right.total_tokens,
+        right.cache_read_input_tokens,
+        right.cache_creation_input_tokens,
+        right.completion_tokens_details,
+        right.prompt_tokens_details.as_ref().map(prompt_counters),
+    )
+}
+
+fn prompt_counters(details: &PromptTokensDetails) -> (i64, i64, i64, i64, i64, i64, i64) {
+    (
+        details.cached_tokens,
+        details.cache_creation_tokens,
+        details.cache_write_tokens,
+        details.text_tokens,
+        details.audio_tokens,
+        details.image_tokens,
+        details.video_tokens,
+    )
+}
+
+// math.isclose with the source's rel_tol=1e-9 and abs_tol=1e-12, in Decimal.
+#[must_use]
+pub fn amounts_close(left: Decimal, right: Decimal) -> bool {
+    if left == right {
+        return true;
+    }
+    let Some(difference) = left.checked_sub(right).map(Decimal::abs) else {
+        return false;
+    };
+    let scale = left.abs().max(right.abs());
+    let Some(relative) = scale.checked_mul(Decimal::new(1, 9)) else {
+        return false;
+    };
+    difference <= relative.max(Decimal::new(1, 12))
+}
+
+mod tests;
