@@ -18,12 +18,8 @@ fn entry(category: &str, fields: &[(&str, FieldValue<'_>)]) -> Json {
     let mut object = IndexMap::from([("category".to_owned(), Json::Text(category.to_owned()))]);
     for (key, field) in fields {
         let value = match field {
-            FieldValue::Text(text) => {
-                text.map_or_else(|| Json::Null, |text| Json::Text(text.clone()))
-            }
-            FieldValue::Number(number) => {
-                number.map_or_else(|| Json::Null, |number| Json::Number(number.clone()))
-            }
+            FieldValue::Text(text) => text.cloned().map_or(Json::Null, Json::Text),
+            FieldValue::Number(number) => number.cloned().map_or(Json::Null, Json::Number),
         };
         object.insert((*key).to_owned(), value);
     }
@@ -149,7 +145,7 @@ fn filter_entry(
     )
 }
 
-fn content_middle(filter: &ContentFilter) -> [(&'static str, FieldValue<'_>); 2] {
+const fn content_middle(filter: &ContentFilter) -> [(&'static str, FieldValue<'_>); 2] {
     [
         ("confidence", FieldValue::Text(filter.confidence.as_ref())),
         (
@@ -159,7 +155,7 @@ fn content_middle(filter: &ContentFilter) -> [(&'static str, FieldValue<'_>); 2]
     ]
 }
 
-fn grounding_middle(filter: &GroundingFilter) -> [(&'static str, FieldValue<'_>); 2] {
+const fn grounding_middle(filter: &GroundingFilter) -> [(&'static str, FieldValue<'_>); 2] {
     [
         ("threshold", FieldValue::Number(filter.threshold.as_ref())),
         ("score", FieldValue::Number(filter.score.as_ref())),
