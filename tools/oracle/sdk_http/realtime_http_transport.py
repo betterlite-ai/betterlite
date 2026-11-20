@@ -33,24 +33,32 @@ class EchoConfig(BaseRealtimeHTTPConfig):
         return "" if api_key is None else api_key
 
     @override
-    def get_complete_url(self, api_base: str | None, model: str, api_version: str | None = None) -> str:
+    def get_complete_url(
+        self, api_base: str | None, model: str, api_version: str | None = None
+    ) -> str:
         base = "" if api_base is None else api_base
         return f"{base}/custom/{model}/{'none' if api_version is None else api_version}"
 
     @override
-    def get_transcription_session_url(self, api_base: str | None, model: str, api_version: str | None = None) -> str:
+    def get_transcription_session_url(
+        self, api_base: str | None, model: str, api_version: str | None = None
+    ) -> str:
         base = "" if api_base is None else api_base
         return f"{base}/transcription/{model}/{'none' if api_version is None else api_version}"
 
     @override
-    def validate_environment(self, headers: dict[str, str], model: str, api_key: str | None = None) -> dict[str, str]:
+    def validate_environment(
+        self, headers: dict[str, str], model: str, api_key: str | None = None
+    ) -> dict[str, str]:
         if model == "refuse":
             raise ValueError(REFUSED)
         key = "" if api_key is None else api_key
         return {**headers, "api-key": key, "Content-Type": "application/json"}
 
     @override
-    def get_realtime_calls_url(self, api_base: str | None, model: str, api_version: str | None = None) -> str:
+    def get_realtime_calls_url(
+        self, api_base: str | None, model: str, api_version: str | None = None
+    ) -> str:
         base = ("" if api_base is None else api_base).rstrip("/")
         return f"{base}/calls/{model}/{'none' if api_version is None else api_version}"
 
