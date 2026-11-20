@@ -1,0 +1,102 @@
+task: B8690
+deviations:
+  - what: >-
+      Only the async call exists in Rust. LiteLLM's blocking llm_passthrough_route and its
+      PassthroughStreamingResponse wrapper are not built.
+    why: >-
+      Every caller at the pinned commit uses allm_passthrough_route, and B7890 gives Python's blocking
+      function by awaiting the async call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L566-L595
+  - what: >-
+      The provider_config keyword override is not read; the config comes from B5360's tag alone.
+    why: >-
+      No caller at the pinned commit passes provider_config, and the tag holds the same eight configs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L475-L480
+  - what: >-
+      The logging state is a parameter the caller makes and passes in, instead of the object the
+      @client decorator builds.
+    why: >-
+      The proxy makes it in pre-call (B8694) and the router executor makes it for its hop (B8691);
+      the call only updates the state it is given.
+    link: ""
+  - what: >-
+      The provider config is selected before the litellm_params are built and the logging state is
+      updated, so a provider without a passthrough config leaves the state untouched.
+    why: >-
+      LiteLLM updates the state first and raises "Provider ... not found" afterwards. The task's step
+      order puts the config choice before the params, and the observable difference is only the
+      side effect on a state whose call then fails.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L466-L482
+  - what: >-
+      No environment variable is read: the provider resolver and the merged provider configs get an
+      empty environment and empty global credentials, so AZURE_*, AWS_*, VLLM_API_BASE,
+      GIGACHAT_* and WATSONX_* fallbacks do not apply.
+    why: >-
+      betterlite configuration enters through the config crate; the caller passes api_base, api_key
+      and deployment litellm_params in the arguments and extra map.
+    link: ""
+  - what: >-
+      Bedrock runtime requests are not SigV4-signed and no AWS bearer token is read, so without the
+      provider's own key material the call fails with botocore's "Unable to locate credentials" text.
+    why: >-
+      Signing needs botocore's SigV4 and the AWS credential chain, neither of which betterlite-core
+      may depend on. LiteLLM reaches the same error when botocore finds no credentials.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L1681-L1699
+  - what: >-
+      Bedrock Mantle takes its bearer token only from litellm_params.api_key, not from
+      BEDROCK_MANTLE_API_KEY or AWS_BEARER_TOKEN_BEDROCK.
+    why: >-
+      Those variables are configuration and enter through the config crate, which this call does not
+      read; the ValueError text is LiteLLM's own and names the variables a setup can set on the
+      deployment instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/common_utils.py#L37-L38
+  - what: >-
+      A caller-supplied client only lends its two timeouts; the call always builds its own
+      ProxiedClient (B173) from the injected policy and limits.
+    why: >-
+      A Rust caller cannot inject an httpx transport, and B173's client is the one client crate every
+      outbound call uses. The resolved timeout still reaches connect and read exactly as in LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L442-L460
+  - what: >-
+      The resolved timeout is also the request's total deadline; httpx applies it per connect, read,
+      write and pool operation.
+    why: >-
+      B173's OutboundRequest carries one deadline and sets reqwest's total request timeout from it.
+    link: ""
+  - what: >-
+      A content body is sent with Content-Type application/octet-stream when the caller supplied no
+      Content-Type header, where httpx sends no Content-Type for raw bytes.
+    why: >-
+      B173's RequestBody::Bytes always names its content type, and dropping it would need a change in
+      the shared transport crate.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L530-L540
+  - what: >-
+      Reply headers keep neither the upstream's case nor its order: names arrive lowercased and
+      sorted, with repeated names joined.
+    why: >-
+      B3572 hands the reply over as http::HeaderMap, which normalizes names, and the reply type is a
+      Vec of pairs taken from it.
+    link: ""
+  - what: >-
+      litellm_params do not derive litellm_trace_id or litellm_session_id from metadata.trace_id or
+      metadata.session_id, and custom-pricing model_info keys are not expanded.
+    why: >-
+      Those derivations belong to the logging and pricing tasks that own metadata; this call copies
+      the keys the caller passed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_litellm_params.py#L188-L193
+kept_bugs:
+  - what: >-
+      The signed body is built before the model swap, so a Bedrock Mantle request signs, and sends,
+      the caller's model text instead of the resolved one.
+    why: >-
+      LiteLLM signs at L518 and swaps json["model"] at L527, and the signed bytes replace the body at
+      L533. A working Mantle setup relies on the body being signed as given, so betterlite copies it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L517-L529
+  - what: >-
+      A 3xx answer is not an error: raise_for_status only raises for 4xx and 5xx, so a non-streaming
+      redirect comes back as the reply and a streaming redirect is relayed as a stream that carries
+      the already-read body.
+    why: >-
+      LiteLLM's async wrapper calls raise_for_status (L343-L344) and httpx leaves redirects alone;
+      clients that read the status themselves depend on it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L339-L346
