@@ -1,0 +1,33 @@
+task: B1623
+deviations:
+  - what: >-
+      SSO failure logs name the typed failure and never the additional header values or a provider response
+      body; the pinned wrapper logs the whole exception together with the passed-in headers on every
+      failure that is not the PKCE hint.
+    why: >-
+      The additional headers are operator-supplied credentials, and a failed token or userinfo body carries
+      freshly issued bearer tokens. A log that copies them leaks secrets into log storage, and no working
+      setup can depend on a log line it cannot read. The typed errors already carry a status instead of a
+      body, so the diagnostic names the failure without either.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1458-L1469
+  - what: >-
+      The PKCE state-to-cookie comparison runs over the UTF-8 bytes of both values, so a matching pair
+      holding non-ASCII text completes the login and a mismatch answers 400 auth_error with param state.
+      Python's secrets.compare_digest raises TypeError for a str holding non-ASCII characters, so the
+      pinned code turns such a state into an unhandled server error.
+    why: >-
+      The state comes from the attacker-supplied callback query, and a 500 on that input is the bug the
+      rule names; the byte comparison keeps the constant-time property and answers the declared 400 for a
+      mismatch. Every state LiteLLM mints is ASCII, so no working setup sees a different result.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1582
+  - what: >-
+      A GENERIC_SSO_HEADERS value that fails to parse, or a header name or value that cannot be sent,
+      answers 500 internal_server_error with code 500. The pinned code raises the ValueError from
+      header.split("=") outside its try and lets an unsendable header fail inside fastapi-sso, so both
+      end as FastAPI's generic 500 body with no type, param or code.
+    why: >-
+      The status is the same; betterlite answers its typed error envelope so the failure is classified
+      instead of surfacing an unhandled exception. No working setup depends on the shape of a crash
+      response.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1403-L1412
+kept_bugs: []
