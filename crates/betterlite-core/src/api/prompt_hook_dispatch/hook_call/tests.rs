@@ -59,7 +59,10 @@ async fn call(
 fn kwargs(deployment: &str) -> JsonObject {
     object(vec![
         ("litellm_metadata", Json::Object(JsonObject::new())),
-        ("model_info", object(vec![("id", text(deployment))])),
+        (
+            "model_info",
+            Json::Object(object(vec![("id", text(deployment))])),
+        ),
     ])
 }
 

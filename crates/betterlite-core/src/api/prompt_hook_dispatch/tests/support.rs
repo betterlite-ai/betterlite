@@ -163,7 +163,7 @@ impl PromptManager<TestError> for FakeManager {
 }
 
 pub(crate) fn backend(fake: &Arc<FakeManager>) -> Backend {
-    Arc::clone(fake)
+    Arc::<FakeManager>::clone(fake)
 }
 
 fn respond(
