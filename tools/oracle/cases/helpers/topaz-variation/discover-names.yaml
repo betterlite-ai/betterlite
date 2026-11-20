@@ -1,0 +1,37 @@
+kind: helper
+name: topaz-variation-discover-names
+call:
+  topaz_variation:
+    calls:
+      - function: models
+      - function: base_model
+        model: topaz/Text Refine
+      - function: base_model
+        model: topaz/Standard V2
+      - function: supported
+      - function: credential
+        field: api_key
+        value: null
+        environment: {TOPAZ_API_KEY: server-key}
+      - function: credential
+        field: api_key
+        value: explicit-key
+        environment: {TOPAZ_API_KEY: server-key}
+      - function: credential
+        field: api_key
+        value: ""
+        environment: {}
+      - function: credential
+        field: api_base
+        value: null
+        environment: {TOPAZ_API_BASE: "https://server.test/v1"}
+      - function: credential
+        field: api_base
+        value: ""
+        environment: {TOPAZ_API_BASE: "https://server.test/v1"}
+      - function: credential
+        field: api_base
+        value: null
+        environment: {}
+env: {}
+compare: {ignore: []}
