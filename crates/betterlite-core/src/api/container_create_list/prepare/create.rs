@@ -1,11 +1,16 @@
+use std::collections::BTreeMap;
 use std::sync::Mutex;
 use std::time::Duration;
 
 use betterlite_logging::logging_state::LoggingState;
+use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::container_contracts::config::BaseContainerConfig;
-use betterlite_openai::api::container_contracts::records::ContainerObject;
+use betterlite_openai::api::container_contracts::records::{
+    ContainerCreateRequestParams, ContainerObject,
+};
 use betterlite_openai::openai_base_config::Object;
+use betterlite_redact::secret::Redactor;
 use indexmap::IndexMap;
 use secrecy::ExposeSecret;
 
@@ -15,7 +20,10 @@ use super::super::logging::{LoggedCall, log_call};
 use super::super::params;
 use super::super::{CREATE_CALL_TYPE, ContainerCallDeps, ContainerCreateCall};
 use super::{ContainerOperation, mock_answer, provider_config, resolved_timeout};
+use crate::api::container_collection_http::ContainerCollectionError;
 use crate::api::container_file_endpoints::handler::ContainerConfigLookup;
+// ast-grep-ignore: no-long-names
+use crate::containers::container_request_parameters::encode_container_id_in_response;
 use crate::containers::container_request_parameters::{
     // ast-grep-ignore: no-long-names
     get_optional_params_container_create,
@@ -128,7 +136,13 @@ fn mapped_create_params(
     logging: &Mutex<LoggingState>,
 ) -> Result<Object, ContainerOpError> {
     // ast-grep-ignore: no-long-names
-    let requested = get_requested_container_create_optional_param(&params::create_request(call));
+    let requested = get_requested_container_create_optional_param(&ContainerCreateRequestParams {
+        expires_after: call.expires_after.clone(),
+        file_ids: call.file_ids.clone(),
+        extra_headers: call.extra_headers.clone(),
+        extra_body: call.extra_body.clone(),
+        name: Some(call.name.clone()),
+    });
     // ast-grep-ignore: no-long-names
     let mapped = get_optional_params_container_create(&requested);
     let logged: IndexMap<String, Json> = serde_json::from_value(serde_json::to_value(&mapped)?)?;
@@ -144,4 +158,61 @@ fn mapped_create_params(
         },
     )?;
     Ok(handler_params)
+}
+
+// B3361's encode_container_id_in_response reads extra_body as JSON values
+fn extra_body_json(
+    extra_body: Option<&BTreeMap<String, String>>,
+) -> Option<IndexMap<String, JsonValue>> {
+    let Some(values) = extra_body else {
+        return None;
+    };
+    Some(
+        values
+            .iter()
+            .map(|(name, value)| (name.clone(), JsonValue::Text(value.clone())))
+            .collect(),
+    )
+}
+
+// _encode_created_container_id's encode step: the object as returned, with a routed id
+fn encode_created(
+    container: ContainerObject,
+    call: &ContainerCreateCall,
+    redactor: &Redactor,
+) -> Result<ContainerObject, ContainerOpFailure> {
+    // ast-grep-ignore: no-long-names
+    let encoded = encode_container_id_in_response(
+        &container.id,
+        Some(&call.custom_llm_provider),
+        call.litellm_metadata.as_ref(),
+        extra_body_json(call.extra_body.as_ref()).as_ref(),
+    )
+    .map_err(|error| {
+        failure(
+            ContainerOpError::Encode(error),
+            &call.custom_llm_provider,
+            redactor,
+        )
+    })?;
+    Ok(ContainerObject {
+        id: encoded,
+        ..container
+    })
+}
+
+// the handler's answer, mapped once and encoded before the caller sees it
+pub(crate) fn finish_create(
+    answer: Result<ContainerObject, ContainerCollectionError>,
+    call: &ContainerCreateCall,
+    redactor: &Redactor,
+) -> Result<ContainerObject, ContainerOpFailure> {
+    let container = answer.map_err(|error| {
+        failure(
+            ContainerOpError::Handler(error),
+            &call.custom_llm_provider,
+            redactor,
+        )
+    })?;
+    encode_created(container, call, redactor)
 }

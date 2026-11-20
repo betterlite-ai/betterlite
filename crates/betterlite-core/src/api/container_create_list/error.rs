@@ -4,7 +4,7 @@ use betterlite_error::dispatch::{DispatchInput, RawException, dispatch};
 use betterlite_error::error::details::ResponseDetails;
 use betterlite_error::error::{ErrorClass, ErrorContext};
 use betterlite_logging::logging_state::LoggingStateError;
-use betterlite_openai::api::container_contracts::error::{BaseLlmException, ContainerError};
+use betterlite_openai::api::container_contracts::error::ContainerError;
 use betterlite_openai::containers::container_file_http::ContainerFileHttpError;
 use betterlite_redact::secret::Redactor;
 use thiserror::Error;
@@ -115,15 +115,11 @@ fn handler_class(
             return value_error(error.to_string(), provider, redactor);
         }
     };
-    provider_class(upstream, provider, redactor)
-}
-
-fn provider_class(error: &BaseLlmException, provider: &str, redactor: &Redactor) -> ErrorClass {
     dispatch(
         &DispatchInput::Raw(Box::new(exception(
-            error.message.clone(),
+            upstream.message.clone(),
             provider,
-            Some(error.status_code),
+            Some(upstream.status_code),
         ))),
         redactor,
     )

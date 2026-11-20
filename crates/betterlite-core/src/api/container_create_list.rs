@@ -21,14 +21,11 @@ use betterlite_redact::secret::Redactor;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 
-use self::error::{ContainerOpError, ContainerOpFailure, failure};
+use self::error::ContainerOpFailure;
 use self::handler::ContainerCollectionHandler;
-use self::params::extra_body_json;
-use self::prepare::create::{PreparedCreate, prepare_create};
-use self::prepare::list::{PreparedList, prepare_list};
+use self::prepare::create::{PreparedCreate, finish_create, prepare_create};
+use self::prepare::list::{PreparedList, finish_list, prepare_list};
 use crate::api::container_file_endpoints::handler::ContainerConfigLookup;
-// ast-grep-ignore: no-long-names
-use crate::containers::container_request_parameters::encode_container_id_in_response;
 
 // LiteLLM declares both providers and the timeout argument with these defaults
 pub const DEFAULT_PROVIDER: &str = "openai";
@@ -81,49 +78,54 @@ pub struct ContainerListCall {
     pub extra: IndexMap<String, Json>,
 }
 
-impl Default for ContainerCreateCall {
-    fn default() -> Self {
-        Self {
-            name: String::new(),
-            expires_after: None,
-            file_ids: None,
-            timeout: Some(DEFAULT_TIMEOUT_SECONDS),
-            api_key: None,
-            api_base: None,
-            api_version: None,
-            custom_llm_provider: DEFAULT_PROVIDER.to_owned(),
-            extra_headers: None,
-            extra_query: None,
-            extra_body: None,
-            mock_response: None,
-            litellm_metadata: None,
-            litellm_call_id: None,
-            extra: IndexMap::new(),
+// both signatures declare the same defaults: the openai provider and 600 seconds
+macro_rules! container_call_default {
+    ($call:ident { $($field:ident: $value:expr),* $(,)? }) => {
+        impl Default for $call {
+            fn default() -> Self {
+                Self {
+                    $($field: $value,)*
+                }
+            }
         }
-    }
+    };
 }
 
-impl Default for ContainerListCall {
-    fn default() -> Self {
-        Self {
-            after: None,
-            limit: None,
-            order: None,
-            timeout: Some(DEFAULT_TIMEOUT_SECONDS),
-            api_key: None,
-            api_base: None,
-            api_version: None,
-            custom_llm_provider: DEFAULT_PROVIDER.to_owned(),
-            extra_headers: None,
-            extra_query: None,
-            extra_body: None,
-            mock_response: None,
-            litellm_metadata: None,
-            litellm_call_id: None,
-            extra: IndexMap::new(),
-        }
-    }
-}
+container_call_default!(ContainerCreateCall {
+    name: String::new(),
+    expires_after: None,
+    file_ids: None,
+    timeout: Some(DEFAULT_TIMEOUT_SECONDS),
+    api_key: None,
+    api_base: None,
+    api_version: None,
+    custom_llm_provider: DEFAULT_PROVIDER.to_owned(),
+    extra_headers: None,
+    extra_query: None,
+    extra_body: None,
+    mock_response: None,
+    litellm_metadata: None,
+    litellm_call_id: None,
+    extra: IndexMap::new(),
+});
+
+container_call_default!(ContainerListCall {
+    after: None,
+    limit: None,
+    order: None,
+    timeout: Some(DEFAULT_TIMEOUT_SECONDS),
+    api_key: None,
+    api_base: None,
+    api_version: None,
+    custom_llm_provider: DEFAULT_PROVIDER.to_owned(),
+    extra_headers: None,
+    extra_query: None,
+    extra_body: None,
+    mock_response: None,
+    litellm_metadata: None,
+    litellm_call_id: None,
+    extra: IndexMap::new(),
+});
 
 // the collaborators the operations need: B247's logging object, B185's redactor and REQUEST_TIMEOUT's seconds
 #[derive(Clone, Copy)]
@@ -134,136 +136,112 @@ pub struct ContainerCallDeps<'deps> {
     pub request_timeout_seconds: f64,
 }
 
-// LiteLLM's create_container: mock first, then the blocking handler runs the call it prepared
-pub fn create_container<Handler, Configs>(
-    handler: &Handler,
-    configs: &Configs,
-    deps: ContainerCallDeps<'_>,
-    call: &ContainerCreateCall,
-) -> Result<ContainerObject, ContainerOpFailure>
-where
-    Handler: ContainerCollectionHandler,
-    Configs: ContainerConfigLookup,
-{
-    let ready = match prepare_create(configs, &deps, call)? {
-        PreparedCreate::Mock(container) => return Ok(container),
-        PreparedCreate::Call(ready) => ready,
-    };
-    let created = handler
-        .create(&ready.handler_call(call, deps.logging))
-        .map_err(|error| {
-            failure(
-                ContainerOpError::Handler(error),
-                &call.custom_llm_provider,
+// the four entry points differ only in the call, the reply, the handler method and whether the handler answer is awaited
+macro_rules! container_operations {
+    (
+        sync $name:ident,
+        $call:ident,
+        $reply:ty,
+        $prepared:ident,
+        $prepare:path,
+        $method:ident,
+        $finish:path
+    ) => {
+        pub fn $name<Handler, Configs>(
+            handler: &Handler,
+            configs: &Configs,
+            deps: ContainerCallDeps<'_>,
+            call: &$call,
+        ) -> Result<$reply, ContainerOpFailure>
+        where
+            Handler: ContainerCollectionHandler,
+            Configs: ContainerConfigLookup,
+        {
+            let ready = match $prepare(configs, &deps, call)? {
+                $prepared::Mock(answer) => return Ok(answer),
+                $prepared::Call(ready) => ready,
+            };
+            $finish(
+                handler.$method(&ready.handler_call(call, deps.logging)),
+                call,
                 deps.redactor,
             )
-        })?;
-    encode_created(created, call, deps.redactor)
+        }
+    };
+    (
+        asynchronous $name:ident,
+        $call:ident,
+        $reply:ty,
+        $prepared:ident,
+        $prepare:path,
+        $method:ident,
+        $finish:path
+    ) => {
+        pub async fn $name<Handler, Configs>(
+            handler: &Handler,
+            configs: &Configs,
+            deps: ContainerCallDeps<'_>,
+            call: &$call,
+        ) -> Result<$reply, ContainerOpFailure>
+        where
+            Handler: ContainerCollectionHandler,
+            Configs: ContainerConfigLookup,
+        {
+            let ready = match $prepare(configs, &deps, call)? {
+                $prepared::Mock(answer) => return Ok(answer),
+                $prepared::Call(ready) => ready,
+            };
+            $finish(
+                handler
+                    .$method(&ready.handler_call(call, deps.logging))
+                    .await,
+                call,
+                deps.redactor,
+            )
+        }
+    };
 }
 
-// LiteLLM's acreate_container: the same steps through the async handler, encoded after it finishes
-pub async fn acreate_container<Handler, Configs>(
-    handler: &Handler,
-    configs: &Configs,
-    deps: ContainerCallDeps<'_>,
-    call: &ContainerCreateCall,
-) -> Result<ContainerObject, ContainerOpFailure>
-where
-    Handler: ContainerCollectionHandler,
-    Configs: ContainerConfigLookup,
-{
-    let ready = match prepare_create(configs, &deps, call)? {
-        PreparedCreate::Mock(container) => return Ok(container),
-        PreparedCreate::Call(ready) => ready,
-    };
-    let created = handler
-        .acreate(&ready.handler_call(call, deps.logging))
-        .await
-        .map_err(|error| {
-            failure(
-                ContainerOpError::Handler(error),
-                &call.custom_llm_provider,
-                deps.redactor,
-            )
-        })?;
-    encode_created(created, call, deps.redactor)
-}
+// LiteLLM's create_container: mock first, then the blocking handler runs the call it prepared
+container_operations!(
+    sync create_container,
+    ContainerCreateCall,
+    ContainerObject,
+    PreparedCreate,
+    prepare_create,
+    create,
+    finish_create
+);
+
+// LiteLLM's acreate_container: the same steps through the async handler
+container_operations!(
+    asynchronous acreate_container,
+    ContainerCreateCall,
+    ContainerObject,
+    PreparedCreate,
+    prepare_create,
+    acreate,
+    finish_create
+);
 
 // LiteLLM's list_containers: mock first, then the blocking handler answers as is
-pub fn list_containers<Handler, Configs>(
-    handler: &Handler,
-    configs: &Configs,
-    deps: ContainerCallDeps<'_>,
-    call: &ContainerListCall,
-) -> Result<ContainerListResponse, ContainerOpFailure>
-where
-    Handler: ContainerCollectionHandler,
-    Configs: ContainerConfigLookup,
-{
-    let ready = match prepare_list(configs, &deps, call)? {
-        PreparedList::Mock(response) => return Ok(response),
-        PreparedList::Call(ready) => ready,
-    };
-    handler
-        .list(&ready.handler_call(call, deps.logging))
-        .map_err(|error| {
-            failure(
-                ContainerOpError::Handler(error),
-                &call.custom_llm_provider,
-                deps.redactor,
-            )
-        })
-}
+container_operations!(
+    sync list_containers,
+    ContainerListCall,
+    ContainerListResponse,
+    PreparedList,
+    prepare_list,
+    list,
+    finish_list
+);
 
 // LiteLLM's alist_containers: the same steps through the async handler
-pub async fn alist_containers<Handler, Configs>(
-    handler: &Handler,
-    configs: &Configs,
-    deps: ContainerCallDeps<'_>,
-    call: &ContainerListCall,
-) -> Result<ContainerListResponse, ContainerOpFailure>
-where
-    Handler: ContainerCollectionHandler,
-    Configs: ContainerConfigLookup,
-{
-    let ready = match prepare_list(configs, &deps, call)? {
-        PreparedList::Mock(response) => return Ok(response),
-        PreparedList::Call(ready) => ready,
-    };
-    handler
-        .alist(&ready.handler_call(call, deps.logging))
-        .await
-        .map_err(|error| {
-            failure(
-                ContainerOpError::Handler(error),
-                &call.custom_llm_provider,
-                deps.redactor,
-            )
-        })
-}
-
-// _encode_created_container_id's encode step: the object as returned, with a routed id
-fn encode_created(
-    container: ContainerObject,
-    call: &ContainerCreateCall,
-    redactor: &Redactor,
-) -> Result<ContainerObject, ContainerOpFailure> {
-    // ast-grep-ignore: no-long-names
-    let encoded = encode_container_id_in_response(
-        &container.id,
-        Some(&call.custom_llm_provider),
-        call.litellm_metadata.as_ref(),
-        extra_body_json(call.extra_body.as_ref()).as_ref(),
-    )
-    .map_err(|error| {
-        failure(
-            ContainerOpError::Encode(error),
-            &call.custom_llm_provider,
-            redactor,
-        )
-    })?;
-    Ok(ContainerObject {
-        id: encoded,
-        ..container
-    })
-}
+container_operations!(
+    asynchronous alist_containers,
+    ContainerListCall,
+    ContainerListResponse,
+    PreparedList,
+    prepare_list,
+    alist,
+    finish_list
+);

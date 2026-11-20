@@ -18,7 +18,7 @@ use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::api::container_contracts::config::{
     BaseContainerConfig, ContainerListQuery, ContainerRequestContext,
 };
-use betterlite_openai::api::container_contracts::error::{BaseLlmException, ContainerError};
+use betterlite_openai::api::container_contracts::error::ContainerError;
 use betterlite_openai::api::container_contracts::records::{
     ContainerFileListResponse, ContainerListResponse, ContainerObject, DeleteContainerResult,
 };
@@ -30,7 +30,9 @@ use indexmap::IndexMap;
 use secrecy::SecretString;
 
 use super::super::error::ContainerOpFailure;
-use super::super::handler::{ContainerCollectionHandler, CreateHandlerCall, ListHandlerCall};
+use super::super::handler::{
+    ContainerCollectionHandler, CreateHandlerCall, HandlerCallBase, ListHandlerCall,
+};
 use super::super::{
     ContainerCallDeps, ContainerCreateCall, ContainerListCall, acreate_container, alist_containers,
     create_container, list_containers,
@@ -213,26 +215,26 @@ pub(crate) struct SeenList {
     pub(crate) extra_query: Option<Object>,
 }
 
-fn seen_base(
-    logging: &Mutex<LoggingState>,
-    litellm_params: &Object,
-    headers: Option<&BTreeMap<String, String>>,
-    timeout: Option<Duration>,
-    form: HandlerForm,
-) -> SeenBase {
-    let state = logging.lock().unwrap_or_else(PoisonError::into_inner);
-    let base = SeenBase {
+// either operation's handler call, so the stub records both through one entry point
+enum PendingCall<'call> {
+    Create(&'call CreateHandlerCall<'call>),
+    List(&'call ListHandlerCall<'call>),
+}
+
+fn seen_base(base: &HandlerCallBase<'_>, form: HandlerForm) -> SeenBase {
+    let state = base.logging.lock().unwrap_or_else(PoisonError::into_inner);
+    let seen = SeenBase {
         form,
-        litellm_params: litellm_params.clone(),
-        headers: headers.cloned(),
-        timeout,
+        litellm_params: base.litellm_params.clone(),
+        headers: base.extra_headers.cloned(),
+        timeout: base.timeout,
         call_type: state.call_type.clone(),
         provider: state.custom_llm_provider.clone(),
         model: state.model.clone(),
         optional_params: state.optional_params.clone(),
     };
     drop(state);
-    base
+    seen
 }
 
 // the seam's test double: answers with its fixtures, or with the failure a test queued once
@@ -293,44 +295,32 @@ impl StubHandler {
         failure.map_or_else(|| Ok(self.list.clone()), Err)
     }
 
-    fn record_create(&self, call: &CreateHandlerCall<'_>, form: HandlerForm) {
-        let base = seen_base(
-            call.base.logging,
-            call.base.litellm_params,
-            call.base.extra_headers,
-            call.base.timeout,
-            form,
-        );
-        let seen = SeenCreate {
-            base,
-            name: call.name.to_owned(),
-            params: call.params.clone(),
-        };
-        self.create_seen
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(seen);
-    }
-
-    fn record_list(&self, call: &ListHandlerCall<'_>, form: HandlerForm) {
-        let base = seen_base(
-            call.base.logging,
-            call.base.litellm_params,
-            call.base.extra_headers,
-            call.base.timeout,
-            form,
-        );
-        let seen = SeenList {
-            base,
-            after: call.after.map(str::to_owned),
-            limit: call.limit,
-            order: call.order.map(str::to_owned),
-            extra_query: call.extra_query.cloned(),
-        };
-        self.list_seen
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(seen);
+    fn record(&self, pending: PendingCall<'_>, form: HandlerForm) {
+        match pending {
+            PendingCall::Create(call) => {
+                let seen = SeenCreate {
+                    base: seen_base(&call.base, form),
+                    name: call.name.to_owned(),
+                    params: call.params.clone(),
+                };
+                self.create_seen
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .push(seen);
+            }
+            PendingCall::List(call) => {
+                self.list_seen
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .push(SeenList {
+                        base: seen_base(&call.base, form),
+                        after: call.after.map(str::to_owned),
+                        limit: call.limit,
+                        order: call.order.map(str::to_owned),
+                        extra_query: call.extra_query.cloned(),
+                    });
+            }
+        }
     }
 }
 
@@ -339,7 +329,7 @@ impl ContainerCollectionHandler for StubHandler {
         &self,
         call: &CreateHandlerCall<'_>,
     ) -> Result<ContainerObject, ContainerCollectionError> {
-        self.record_create(call, HandlerForm::Blocking);
+        self.record(PendingCall::Create(call), HandlerForm::Blocking);
         self.answer_create()
     }
 
@@ -347,7 +337,7 @@ impl ContainerCollectionHandler for StubHandler {
         &self,
         call: &CreateHandlerCall<'_>,
     ) -> impl Future<Output = Result<ContainerObject, ContainerCollectionError>> + Send {
-        self.record_create(call, HandlerForm::Async);
+        self.record(PendingCall::Create(call), HandlerForm::Async);
         ready(self.answer_create())
     }
 
@@ -355,7 +345,7 @@ impl ContainerCollectionHandler for StubHandler {
         &self,
         call: &ListHandlerCall<'_>,
     ) -> Result<ContainerListResponse, ContainerCollectionError> {
-        self.record_list(call, HandlerForm::Blocking);
+        self.record(PendingCall::List(call), HandlerForm::Blocking);
         self.answer_list()
     }
 
@@ -363,7 +353,7 @@ impl ContainerCollectionHandler for StubHandler {
         &self,
         call: &ListHandlerCall<'_>,
     ) -> impl Future<Output = Result<ContainerListResponse, ContainerCollectionError>> + Send {
-        self.record_list(call, HandlerForm::Async);
+        self.record(PendingCall::List(call), HandlerForm::Async);
         ready(self.answer_list())
     }
 }
@@ -453,11 +443,15 @@ pub(crate) struct Fixture {
 
 impl Fixture {
     pub(crate) fn new() -> Self {
+        let handler = StubHandler::answering();
+        let lookup = StubLookup::carrying();
+        let logging = logging();
+        let redactor = redactor();
         Self {
-            handler: StubHandler::answering(),
-            lookup: StubLookup::carrying(),
-            logging: logging(),
-            redactor: redactor(),
+            handler,
+            lookup,
+            logging,
+            redactor,
         }
     }
 

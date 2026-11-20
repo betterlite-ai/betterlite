@@ -4,8 +4,11 @@ use std::time::Duration;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::container_contracts::config::BaseContainerConfig;
-use betterlite_openai::api::container_contracts::records::ContainerListResponse;
+use betterlite_openai::api::container_contracts::records::{
+    ContainerListOptionalParams, ContainerListResponse,
+};
 use betterlite_openai::openai_base_config::Object;
+use betterlite_redact::secret::Redactor;
 use indexmap::IndexMap;
 use secrecy::ExposeSecret;
 
@@ -15,6 +18,7 @@ use super::super::logging::{LoggedCall, log_call};
 use super::super::params;
 use super::super::{ContainerCallDeps, ContainerListCall, LIST_CALL_TYPE};
 use super::{ContainerOperation, mock_answer, provider_config, resolved_timeout};
+use crate::api::container_collection_http::ContainerCollectionError;
 use crate::api::container_file_endpoints::handler::ContainerConfigLookup;
 // ast-grep-ignore: no-long-names
 use crate::containers::container_request_parameters::get_requested_container_list_optional_param;
@@ -123,7 +127,13 @@ fn log_list_params(
     logging: &Mutex<LoggingState>,
 ) -> Result<(), ContainerOpError> {
     // ast-grep-ignore: no-long-names
-    let requested = get_requested_container_list_optional_param(&params::list_request(call));
+    let requested = get_requested_container_list_optional_param(&ContainerListOptionalParams {
+        after: call.after.clone(),
+        limit: call.limit,
+        order: call.order.clone(),
+        extra_headers: call.extra_headers.clone(),
+        extra_query: params::rendered_query(call.extra_query.as_ref()),
+    });
     let logged: IndexMap<String, Json> = serde_json::from_value(serde_json::to_value(&requested)?)?;
     log_call(
         logging,
@@ -136,4 +146,19 @@ fn log_list_params(
         },
     )?;
     Ok(())
+}
+
+// the handler's answer as it is, since list has no encode step
+pub(crate) fn finish_list(
+    answer: Result<ContainerListResponse, ContainerCollectionError>,
+    call: &ContainerListCall,
+    redactor: &Redactor,
+) -> Result<ContainerListResponse, ContainerOpFailure> {
+    answer.map_err(|error| {
+        failure(
+            ContainerOpError::Handler(error),
+            &call.custom_llm_provider,
+            redactor,
+        )
+    })
 }
