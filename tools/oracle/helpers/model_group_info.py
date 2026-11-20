@@ -1,14 +1,9 @@
-from collections.abc import Sequence
 from typing import Final, Literal, Protocol, TypedDict
 
 import litellm
 from litellm.exceptions import BadRequestError
 from litellm.router import Router
-from litellm.types.router import (
-    DeploymentTypedDict,
-    ModelGroupInfo,
-    RouterModelGroupAliasItem,
-)
+from litellm.types.router import ModelGroupInfo, RouterModelGroupAliasItem
 from pydantic import JsonValue, TypeAdapter
 
 ANSWER: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
@@ -19,7 +14,7 @@ LLM_PROVIDER_FUNCTION: Final = "get_llm_provider"
 
 class Input(TypedDict):
     model_group: str
-    model_list: list[DeploymentTypedDict]
+    model_list: list[dict[str, JsonValue]]
     model_group_alias: dict[str, str | RouterModelGroupAliasItem]
     deployment_info: dict[str, dict[str, JsonValue]]
     model_cost: dict[str, dict[str, JsonValue]]
@@ -30,11 +25,11 @@ class Input(TypedDict):
 
 
 class RouterStorage(Protocol):
-    model_list: Sequence[dict[str, JsonValue]]
+    model_list: list[dict[str, JsonValue]]
 
 
 class FixedDeploymentInfo:
-    def __init__(self, answers: dict[str, dict[str, JsonValue]], failing: bool) -> None:
+    def __init__(self, answers: dict[str, dict[str, JsonValue]], *, failing: bool) -> None:
         self.answers = answers
         self.failing = failing
 
@@ -56,7 +51,7 @@ class FixedParameters:
 
 
 class FailingProvider:
-    def __init__(self, bad_request: bool) -> None:
+    def __init__(self, *, bad_request: bool) -> None:
         self.bad_request = bad_request
 
     def __call__(
@@ -69,7 +64,10 @@ class FailingProvider:
         _ = custom_llm_provider, api_base, api_key
         if self.bad_request:
             raise BadRequestError(
-                message="LLM Provider NOT provided. Pass in the LLM provider you are trying to call. You passed model="
+                message=(
+                    "LLM Provider NOT provided. Pass in the LLM provider "
+                    "you are trying to call. You passed model="
+                )
                 + model,
                 model=model,
                 llm_provider="",
@@ -88,14 +86,14 @@ def run(input_value: Input) -> JsonValue:
         if isinstance(model_info, dict):  # ast-grep-ignore: no-isinstance
             del model_info["id"]
     deployment_info = FixedDeploymentInfo(
-        input_value["deployment_info"], input_value["lookup_error"]
+        input_value["deployment_info"], failing=input_value["lookup_error"]
     )
     setattr(router, DEPLOYMENT_INFO_METHOD, deployment_info)  # ast-grep-ignore: no-reflection
     parameters = FixedParameters(input_value["parameters"])
     setattr(litellm, SUPPORTED_PARAMS_FUNCTION, parameters)  # ast-grep-ignore: no-reflection
     provider_error = input_value["provider_error"]
     if provider_error != "none":
-        failing = FailingProvider(provider_error == "bad_request")
+        failing = FailingProvider(bad_request=provider_error == "bad_request")
         setattr(litellm, LLM_PROVIDER_FUNCTION, failing)  # ast-grep-ignore: no-reflection
     group: ModelGroupInfo | None = router.get_model_group_info(input_value["model_group"])
     if group is None:
