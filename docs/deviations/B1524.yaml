@@ -1,0 +1,56 @@
+task: B1524
+deviations:
+  - what: >-
+      A size value that is not one text widthxheight pair fails with the typed SizeFormat error,
+      where LiteLLM's assertion raises AssertionError, and a non-text size fails the same way
+      instead of raising AttributeError from split.
+    why: >-
+      The pinned source asserts inside map_openai_params, so an image call with a size the caller
+      can fix ends as an unclassified failure the dispatch answers with 500. The task requires
+      exactly two parts, and the typed error lets B046's dispatch answer the request error the
+      value deserves. drop_params does not change it, as in LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/topaz/image_variations/transformation.py#L55-L59
+  - what: >-
+      The response time both transforms compute is returned beside the converted ImageResponse in
+      TopazReply, so the caller logs it and the reply records which entry point produced it
+      (Elapsed for the sync transform, Measured for the async one).
+    why: >-
+      LiteLLM's ImageResponse constructor accepts response_ms and drops it: it assigns a local
+      _response_ms and never stores it, so the object the SDK returns carries no timing and the
+      number only reaches the log line. betterlite returns it beside the response so the same log
+      line still gets it without a hidden field on the shared response type.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2655-L2667
+  - what: >-
+      The converted reply carries created, data and usage, and each image carries b64_json, url and
+      revised_prompt; the always-null extras LiteLLM's model_dump_json() emits are absent.
+    why: >-
+      ImageResponse extends the openai ImagesResponse, so its dump adds background, quality,
+      output_format, size and each image's provider_specific_fields as nulls that a Topaz transform
+      never sets. The shared image response record has no such fields, they carry no meaning, and
+      the distinct-timing-sources case compares the three declared values on both sides.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2613-L2622
+kept_bugs:
+  - what: >-
+      An explicit api_key of "" falls back to TOPAZ_API_KEY, and an explicit api_base of "" falls
+      back to TOPAZ_API_BASE, where docs/compatibility.md would use the empty value as given.
+    why: >-
+      LiteLLM reads both through `x or get_secret_str(...)`. The task requires the truthy fallback
+      and the discover-names case pins it, so betterlite keeps the source's rule at these two
+      credential entry points even though the compatibility default would pass "" through.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/topaz/common_utils.py#L40-L46
+  - what: >-
+      A falsey filename or content type in a prepared upload tuple is replaced with image.png or
+      image/png, where docs/compatibility.md would use the empty value as given.
+    why: >-
+      LiteLLM's prepare_file_tuple applies `member or default` to both members. The task requires
+      the fallback and the tuple-defaults case pins it; an upload with no filename or MIME is the
+      case the default exists for, so a working setup relies on the substitution.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/topaz/image_variations/transformation.py#L80-L94
+  - what: >-
+      A size of "x" passes the two-part check and sends empty output_width and output_height, and
+      "99x" sends an empty height, because the source splits on the letter x and only counts parts.
+    why: >-
+      LiteLLM splits on the letter x and asserts the count, so these values reach the provider as
+      empty strings instead of as an error. A working setup sends a real widthxheight pair, but the
+      task requires the exact split and the string-dimensions case pins both.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/topaz/image_variations/transformation.py#L55-L59
