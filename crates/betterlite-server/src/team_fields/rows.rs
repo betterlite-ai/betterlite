@@ -48,7 +48,7 @@ pub fn sanitize_for_log(value: LogValue<'_>) -> String {
         LogValue::Display(value) => value.to_string(),
         LogValue::Debug(value) => format!("{value:?}"),
     };
-    text.replace('\r', "").replace('\n', "")
+    text.replace(['\r', '\n'], "")
 }
 
 #[async_trait]
