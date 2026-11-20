@@ -1,0 +1,109 @@
+kind: helper
+name: messages-response-events-text-and-refusal-deltas
+call:
+  messages_response_events:
+    message_id: msg_text
+    model: model_a
+    redaction: enabled
+    steps:
+      - function: process_event
+        event:
+          shape: mapping
+          fields:
+            type: response.output_item.added
+            item: {type: message, id: item_a}
+      - {function: process_event, event: {shape: mapping, fields: {type: response.output_text.delta, item_id: item_a, delta: hi}}}
+      - {function: process_event, event: {shape: mapping, fields: {type: response.output_text.delta, item_id: other, delta: x}}}
+      - {function: process_event, event: {shape: mapping, fields: {type: response.output_text.delta, delta: ""}}}
+      - {function: process_event, event: {shape: mapping, fields: {type: response.output_text.delta, item_id: "", delta: "y"}}}
+      - {function: process_event, event: {shape: mapping, fields: {type: response.output_text.delta, item_id: item_a}}}
+      - {function: process_event, event: {shape: mapping, fields: {type: response.refusal.delta, item_id: item_a, delta: "no"}}}
+      - {function: process_event, event: {shape: mapping, fields: {type: response.refusal.delta, delta: zz}}}
+      - {function: process_event, event: {shape: mapping, fields: {type: response.refusal.delta, item_id: item_a, delta: ""}}}
+      - {function: process_event, event: {shape: mapping, fields: {type: response.refusal.delta, item_id: reason_a, delta: 5}}}
+calls:
+  - messages_response_events:
+      message_id: msg_lazy
+      model: model_a
+      redaction: enabled
+      steps:
+        - {function: process_event, event: {shape: mapping, fields: {type: response.output_text.delta, item_id: item_a, delta: first}}}
+        - {function: process_event, event: {shape: mapping, fields: {type: response.output_text.delta, item_id: item_a}}}
+  - messages_response_events:
+      message_id: msg_refusal
+      model: model_a
+      redaction: enabled
+      steps:
+        - {function: process_event, event: {shape: mapping, fields: {type: response.refusal.delta, item_id: rb, delta: r1}}}
+        - {function: process_event, event: {shape: mapping, fields: {type: response.refusal.delta, item_id: rb, delta: r2}}}
+  - messages_response_events:
+      message_id: msg_attributes
+      model: model_a
+      redaction: enabled
+      steps:
+        - function: process_event
+          event:
+            shape: mapping
+            fields:
+              type: response.output_item.added
+              item: {type: message, id: item_a}
+        - function: process_event
+          event:
+            shape: attributes
+            attributes: {type: response.output_text.delta, item_id: item_b, delta: attr}
+        - function: process_event
+          event:
+            shape: attributes
+            attributes: {type: response.refusal.delta, item_id: item_a, delta: attrref}
+        - function: process_event
+          event:
+            shape: attributes
+            attributes: {type: response.refusal.delta, item_id: item_b, delta: 9}
+  - messages_response_events:
+      message_id: msg_attributed
+      model: model_a
+      redaction: enabled
+      steps:
+        - function: process_event
+          event:
+            shape: mapping
+            fields:
+              type: response.output_item.added
+              item: {type: message, id: item_a}
+        - function: process_event
+          event:
+            shape: attributed
+            attributes: {delta: "", item_id: ""}
+            fields: {type: response.output_text.delta, item_id: item_a, delta: fallback}
+        - function: process_event
+          event:
+            shape: attributed
+            attributes: {delta: attr}
+            fields: {type: response.output_text.delta, item_id: item_a, delta: fallback}
+        - function: process_event
+          event:
+            shape: attributed
+            attributes: {delta: ""}
+            fields: {type: response.refusal.delta, item_id: item_a, delta: refused}
+  - messages_response_events:
+      message_id: msg_type_fallbacks
+      model: model_a
+      redaction: enabled
+      steps:
+        - function: process_event
+          event:
+            shape: attributed
+            attributes: {type: null}
+            fields: {type: response.created}
+        - function: process_event
+          event:
+            shape: attributed
+            attributes: {type: ""}
+            fields: {type: response.created}
+        - function: process_event
+          event:
+            shape: attributed
+            attributes: {}
+            fields: {}
+env: {}
+compare: {ignore: []}

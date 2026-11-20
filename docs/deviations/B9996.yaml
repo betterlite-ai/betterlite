@@ -1,0 +1,18 @@
+task: B9996
+deviations:
+  - what: >-
+      The GigaChat image uploader fetches a chat message's image_url through betterlite's user URL guard. A URL whose
+      host resolves to a loopback, link-local, private or other non-global address, a redirect to one, or a scheme
+      other than http and https sends no request. The uploader logs "Error uploading file to GigaChat" with the guard's
+      message and returns None, so the message goes to GigaChat without that image, as after any failed upload. Hosts
+      listed in user_url_allowed_hosts still download, user_url_validation false turns the check off, and a plain http
+      URL is fetched from the checked address with its original Host header. A body over the download client body
+      limit (16 MiB by default) returns None, where LiteLLM reads any size.
+    why: >-
+      LiteLLM's _download_image_sync sends client.get(url) with certificate checks off and redirects on, and never
+      checks the host. Any client that can send a GigaChat chat request can make the gateway fetch an internal address,
+      and the body is uploaded to GigaChat and attached to that client's message. No working setup relies on the gateway
+      fetching internal hosts for a client, and an internal image host can be added to user_url_allowed_hosts. The
+      body limit keeps one image URL from filling the gateway's memory.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/file_handler.py#L61-L70
+kept_bugs: []

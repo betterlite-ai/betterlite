@@ -1,0 +1,13 @@
+task: B9947
+deviations:
+  - what: >-
+      The model name inside the not-found message is redacted before it reaches the client, so a model that looks like a key answers with the redacted text in error.message and, on the chat and embeddings routes, in error.provider_specific_fields.error.
+    why: >-
+      LiteLLM echoes the model text exactly as the caller sent it, which puts a key pasted into the model field into the response body and the logs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L158
+kept_bugs:
+  - what: >-
+      On /completions an unknown model answers 400 with the message "400: {'error': '/completions: Invalid model name passed in model=<model>. Call `/v1/models` to view available models for your key.'}", error.type and error.param both the string "None", and no provider_specific_fields, instead of the structured not-found body the chat and embeddings routes answer.
+    why: >-
+      LiteLLM's completion handler catches the HTTPException in its generic except and rebuilds a ProxyException from str(e) and getattr defaults, so the dict detail, its type and its param are lost. A working setup gets this exact body today, and the oracle case completions-unknown-model compares it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12258-L12269
