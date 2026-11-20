@@ -226,7 +226,11 @@ fn json(body: &str) -> Json {
 fn object(body: &str) -> Object {
     match json(body) {
         Json::Object(fields) => fields,
-        other => panic!("not an object: {other:?}"),
+        other @ Json::Null
+        | other @ Json::Bool(_)
+        | other @ Json::Number(_)
+        | other @ Json::Text(_)
+        | other @ Json::List(_) => panic!("not an object: {other:?}"),
     }
 }
 

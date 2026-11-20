@@ -92,46 +92,28 @@ fn azure_attachment_drop_and_content_drops_invalid_attachments_with_drop_params(
 #[test]
 fn azure_attachment_drop_and_content_rejects_non_list_attachments() {
     let fixture = Fixture::new();
-    let message = data(r#"{"role":"user","content":"hello","attachments":{}}"#);
-    let error = call(
-        &fixture,
-        &request("azure", Some(&message), &params("azure")),
-        Operation::Append,
-        false,
-    )
-    .unwrap_err();
-    assert_eq!(
-        error.to_string(),
-        "Invalid param. attachments should always be a list. Got=<class 'dict'>, Expected=List. Raw value={}"
-    );
-    assert!(matches!(
-        error.error,
-        MessageError::Setup(SetupError::Options(OptionError::AttachmentsNotList { .. }))
-    ));
-    let float = data(r#"{"role":"user","content":"hello","attachments":5.5}"#);
-    let error = call(
-        &fixture,
-        &request("azure", Some(&float), &params("azure")),
-        Operation::Append,
-        false,
-    )
-    .unwrap_err();
-    assert_eq!(
-        error.to_string(),
-        "Invalid param. attachments should always be a list. Got=<class 'float'>, Expected=List. Raw value=5.5"
-    );
-    let negative = data(r#"{"role":"user","content":"hello","attachments":-5}"#);
-    let error = call(
-        &fixture,
-        &request("azure", Some(&negative), &params("azure")),
-        Operation::Append,
-        false,
-    )
-    .unwrap_err();
-    assert_eq!(
-        error.to_string(),
-        "Invalid param. attachments should always be a list. Got=<class 'int'>, Expected=List. Raw value=-5"
-    );
+    for (raw, kind) in [("{}", "dict"), ("5.5", "float"), ("-5", "int")] {
+        let message = data(&format!(
+            r#"{{"role":"user","content":"hello","attachments":{raw}}}"#
+        ));
+        let failure = call(
+            &fixture,
+            &request("azure", Some(&message), &params("azure")),
+            Operation::Append,
+            false,
+        )
+        .unwrap_err();
+        assert_eq!(
+            failure.to_string(),
+            format!(
+                "Invalid param. attachments should always be a list. Got=<class '{kind}'>, Expected=List. Raw value={raw}"
+            )
+        );
+        assert!(matches!(
+            failure.error,
+            MessageError::Setup(SetupError::Options(OptionError::AttachmentsNotList { .. }))
+        ));
+    }
 }
 
 #[test]

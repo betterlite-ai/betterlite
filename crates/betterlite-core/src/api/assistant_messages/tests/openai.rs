@@ -6,6 +6,7 @@ use super::super::service::Operation;
 use super::{Fixture, MESSAGE_REPLY, call, data, json, message_of, page_of, params, request};
 
 const PAGE_REPLY: &str = r#"{"object":"list","data":[],"has_more":false}"#;
+const PAGINATION_PARAMS: &str = r#"{"after":"msg_a","before":"msg_z","limit":2,"order":"asc","a_add_message":1,"aget_messages":"true","api_base":"https://openai.test/v1","api_key":"sk-test"}"#;
 
 #[test]
 fn append_openai_message() {
@@ -145,15 +146,42 @@ fn append_openai_message_rejects_a_system_role_at_the_typed_boundary() {
 fn message_list_ignores_pagination() {
     let fixture = Fixture::new();
     fixture.transport.queue(200, PAGE_REPLY);
+    let list_params: MessageParams = serde_json::from_str(PAGINATION_PARAMS).unwrap();
+    let page = page_of(
+        call(
+            &fixture,
+            &request("openai", None, &list_params),
+            Operation::List,
+            false,
+        )
+        .unwrap(),
+    );
+    assert!(page.data.is_empty());
+    assert_eq!(page.has_more, Some(false));
+    assert_eq!(
+        page.extra.get("object").and_then(|value| value.as_str()),
+        Some("list")
+    );
+    let seen = fixture.transport.requests();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(seen[0].method, "GET");
+    assert_eq!(
+        seen[0].url,
+        "https://openai.test/v1/threads/thread_a/messages"
+    );
+    assert!(seen[0].body.is_none());
+}
+
+#[test]
+fn message_list_async_repeats_the_request() {
+    let fixture = Fixture::new();
     fixture.transport.queue(200, PAGE_REPLY);
-    let params: MessageParams = serde_json::from_str(
-        r#"{"after":"msg_a","before":"msg_z","limit":2,"order":"asc","a_add_message":1,"aget_messages":"true","api_base":"https://openai.test/v1","api_key":"sk-test"}"#,
-    )
-    .unwrap();
+    fixture.transport.queue(200, PAGE_REPLY);
+    let list_params: MessageParams = serde_json::from_str(PAGINATION_PARAMS).unwrap();
     let sync_page = page_of(
         call(
             &fixture,
-            &request("openai", None, &params),
+            &request("openai", None, &list_params),
             Operation::List,
             false,
         )
@@ -162,20 +190,11 @@ fn message_list_ignores_pagination() {
     let async_page = page_of(
         call(
             &fixture,
-            &request("openai", None, &params),
+            &request("openai", None, &list_params),
             Operation::List,
             true,
         )
         .unwrap(),
-    );
-    assert!(sync_page.data.is_empty());
-    assert_eq!(sync_page.has_more, Some(false));
-    assert_eq!(
-        sync_page
-            .extra
-            .get("object")
-            .and_then(|value| value.as_str()),
-        Some("list")
     );
     assert_eq!(async_page, sync_page);
     let seen = fixture.transport.requests();

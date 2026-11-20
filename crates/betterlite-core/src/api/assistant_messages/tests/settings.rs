@@ -24,21 +24,10 @@ fn message_settings_and_failures_resolves_openai_credentials() {
     fixture.settings.organization = Some(String::from("global-org"));
     fixture.settings.openai_organization = Some(String::from("env-org"));
     fixture.transport.queue(200, MESSAGE_REPLY);
-    fixture.transport.queue(200, MESSAGE_REPLY);
     let message = data(r#"{"role":"user","content":"hello"}"#);
-    let mut params = MessageParams::default();
     call(
         &fixture,
-        &request("openai", Some(&message), &params),
-        Operation::Append,
-        false,
-    )
-    .unwrap();
-    params.api_key = Some(SecretString::from("sk-request"));
-    params.organization = Some(String::from("request-org"));
-    call(
-        &fixture,
-        &request("openai", Some(&message), &params),
+        &request("openai", Some(&message), &MessageParams::default()),
         Operation::Append,
         false,
     )
@@ -55,12 +44,30 @@ fn message_settings_and_failures_resolves_openai_credentials() {
             .map(String::as_str),
         Some("global-org")
     );
+}
+
+#[test]
+fn message_settings_and_failures_prefers_request_credentials() {
+    let fixture = Fixture::new();
+    fixture.transport.queue(200, MESSAGE_REPLY);
+    let message = data(r#"{"role":"user","content":"hello"}"#);
+    let mut request_params = params("openai");
+    request_params.api_key = Some(SecretString::from("sk-request"));
+    request_params.organization = Some(String::from("request-org"));
+    call(
+        &fixture,
+        &request("openai", Some(&message), &request_params),
+        Operation::Append,
+        false,
+    )
+    .unwrap();
+    let seen = fixture.transport.requests();
     assert_eq!(
-        seen[1].headers.get("authorization").map(String::as_str),
+        seen[0].headers.get("authorization").map(String::as_str),
         Some("Bearer sk-request")
     );
     assert_eq!(
-        seen[1]
+        seen[0]
             .headers
             .get("openai-organization")
             .map(String::as_str),
@@ -95,7 +102,7 @@ fn message_settings_and_failures_reads_timeouts() {
     let message = data(r#"{"role":"user","content":"hello"}"#);
     let mut zero = params("openai");
     zero.timeout = Some(serde_json::from_str("0").unwrap());
-    zero.request_timeout = Some(30.0);
+    zero.request_timeout = Some(30.0_f64);
     call(
         &fixture,
         &request("openai", Some(&message), &zero),
@@ -233,7 +240,7 @@ fn message_settings_and_failures_sends_the_azure_ad_token() {
         seen[0].headers.get("authorization").map(String::as_str),
         Some("Bearer ad-token")
     );
-    assert!(seen[0].headers.get("api-key").is_none());
+    assert!(!seen[0].headers.contains_key("api-key"));
 }
 
 #[test]
