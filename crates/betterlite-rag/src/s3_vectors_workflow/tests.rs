@@ -228,20 +228,41 @@ fn settings_keep_the_credentials_out_of_errors_and_debug() {
     assert!(!text.contains("super-secret-value"));
 
     let settings = s3_settings(
-        r#"{"vector_bucket_name": "b", "aws_access_key_id": "AKIDEXAMPLE", "aws_session_token": "session-token", "aws_sts_endpoint": "https://sts.example", "aws_external_id": "external"}"#,
+        r#"{"vector_bucket_name": "b", "aws_access_key_id": "AKIDEXAMPLE", "aws_secret_access_key": "vectors-secret", "aws_session_token": "session-token", "aws_session_name": "session-name", "aws_profile_name": "vectors-profile", "aws_role_name": "vectors-role", "aws_web_identity_token": "web-identity-token", "aws_sts_endpoint": "https://sts.example", "aws_external_id": "external"}"#,
     );
+    let credentials = &settings.credentials;
     assert_eq!(
-        settings.credentials.access_key_id.unwrap().expose_secret(),
+        credentials.access_key_id.as_ref().unwrap().expose_secret(),
         "AKIDEXAMPLE"
     );
     assert_eq!(
-        settings.credentials.sts_endpoint.as_deref(),
-        Some("https://sts.example")
+        credentials
+            .secret_access_key
+            .as_ref()
+            .unwrap()
+            .expose_secret(),
+        "vectors-secret"
     );
     assert_eq!(
-        settings.credentials.external_id.as_deref(),
-        Some("external")
+        credentials.session_token.as_ref().unwrap().expose_secret(),
+        "session-token"
     );
+    assert_eq!(credentials.session_name.as_deref(), Some("session-name"));
+    assert_eq!(credentials.profile_name.as_deref(), Some("vectors-profile"));
+    assert_eq!(credentials.role_name.as_deref(), Some("vectors-role"));
+    assert_eq!(
+        credentials
+            .web_identity_token
+            .as_ref()
+            .unwrap()
+            .expose_secret(),
+        "web-identity-token"
+    );
+    assert_eq!(
+        credentials.sts_endpoint.as_deref(),
+        Some("https://sts.example")
+    );
+    assert_eq!(credentials.external_id.as_deref(), Some("external"));
     assert!(!format!("{settings:?}").contains("AKIDEXAMPLE"));
 }
 
