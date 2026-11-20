@@ -57,7 +57,7 @@ impl Fixture {
                 &mut fixture.tag_rows,
                 input,
                 |tag: &TagTable| tag.tag_name.clone(),
-                |name| json!({"tag_name": name, "models": [], "spend": 0}),
+                |name| json!({"tag_name": name, "models": [], "spend": 0_i32}),
             )?;
         } else {
             seed(
@@ -65,7 +65,7 @@ impl Fixture {
                 &mut fixture.group_rows,
                 input,
                 |budget: &ModelAccessGroupBudget| budget.access_group_name.clone(),
-                |name| json!({"access_group_name": name, "spend": 0}),
+                |name| json!({"access_group_name": name, "spend": 0_i32}),
             )?;
         }
         Ok(fixture)
