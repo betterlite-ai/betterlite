@@ -5,7 +5,7 @@ use betterlite_http::proxy::UpstreamResponse;
 use betterlite_models::params::ParameterError;
 use http::HeaderMap;
 use serde::Deserialize;
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
 
 use crate::anthropic_dispatch::Anthropic;
@@ -39,21 +39,17 @@ struct SentOutputConfig {
 
 #[derive(Deserialize)]
 struct SentMessage {
-    content: SentContent,
-}
-
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum SentContent {
-    Text(String),
-    Parts(Vec<SentPart>),
+    content: Vec<SentPart>,
 }
 
 #[derive(Deserialize)]
 struct SentPart {
     #[serde(rename = "type")]
     kind: String,
-    source: SentSource,
+    #[serde(default)]
+    text: Option<String>,
+    #[serde(default)]
+    source: Option<SentSource>,
 }
 
 #[derive(Deserialize)]
@@ -95,10 +91,7 @@ fn failure(status: u16, content_type: &'static str, body: &str) -> wire::Answer 
 }
 
 // The provider error both upstream-failure cases read: the status, the message and the headers it carries.
-async fn provider_error(
-    harness: &mut Harness,
-    request: OperationRequest,
-) -> (u16, String, HeaderMap) {
+async fn provider_error(harness: &Harness, request: OperationRequest) -> (u16, String, HeaderMap) {
     let result = support::complete(harness, request).await;
     let Err(OperationError::Provider { response }) = result else {
         panic!("an upstream failure keeps the status the provider gave it");
@@ -114,7 +107,7 @@ async fn provider_error(
 
 pub(super) async fn http() {
     let mut harness = Harness::start(vec![buffered()]).await;
-    let result = support::complete(&harness, support::chat(chat_body("")))
+    let result = support::complete(&harness, support::chat(&chat_body("")))
         .await
         .expect("the buffered call answers");
     let OperationResult::Anthropic(AnthropicResult::Reply(reply)) = result else {
@@ -130,7 +123,11 @@ pub(super) async fn http() {
     assert!(!shown.contains("_hidden_params"));
     let requests = harness.requests().await;
     assert_eq!(requests.len(), 1);
-    let sent = &requests[0];
+    assert_chat_request(&requests[0]);
+}
+
+// The request a plain chat call sends: the Messages endpoint, its auth, its version and its text block.
+fn assert_chat_request(sent: &wire::Recorded) {
     assert_eq!(sent.method, "POST");
     assert_eq!(sent.path, "/v1/messages");
     assert_eq!(sent.header("x-api-key"), Some("sk-test"));
@@ -144,15 +141,14 @@ pub(super) async fn http() {
     );
     let body = sent_body(sent);
     assert_eq!(body.model, MODEL);
-    let SentContent::Text(text) = &body.messages[0].content else {
-        panic!("a string message is sent as a string block");
-    };
-    assert_eq!(text, "hi");
+    let part = &body.messages[0].content[0];
+    assert_eq!(part.kind, "text");
+    assert_eq!(part.text.as_deref(), Some("hi"));
 }
 
 pub(super) async fn error() {
     let mut harness = Harness::start(vec![failure(400, "application/json", ERROR_REPLY)]).await;
-    let (status, body, headers) = provider_error(&mut harness, support::chat(chat_body(""))).await;
+    let (status, body, headers) = provider_error(&harness, support::chat(&chat_body(""))).await;
     assert_eq!(status, 400);
     assert!(body.contains("model is required"));
     let content_type = headers
@@ -170,7 +166,7 @@ pub(super) async fn unsupported_param() {
     let mut harness = Harness::start(Vec::new()).await;
     let result = support::complete(
         &harness,
-        support::chat(chat_body(r#","logit_bias":{"1":2}"#)),
+        support::chat(&chat_body(r#","logit_bias":{"1":2}"#)),
     )
     .await;
     let Err(OperationError::Parameters {
@@ -187,7 +183,7 @@ pub(super) async fn dropped_param() {
     let mut harness = Harness::start(vec![buffered()]).await;
     let result = support::complete(
         &harness,
-        support::chat(chat_body(r#","logit_bias":{"1":2},"drop_params":true"#)),
+        support::chat(&chat_body(r#","logit_bias":{"1":2},"drop_params":true"#)),
     )
     .await
     .expect("drop_params sends the call without the parameter");
@@ -213,7 +209,7 @@ pub(super) async fn remote_file() {
     ])
     .await;
     let url = format!("{}/file.pdf", harness.base);
-    let result = support::complete(&harness, support::chat(file_body(&url)))
+    let result = support::complete(&harness, support::chat(&file_body(&url)))
         .await
         .expect("the fetched file is a document block");
     assert!(matches!(
@@ -226,20 +222,18 @@ pub(super) async fn remote_file() {
     assert_eq!(requests[0].path, "/file.pdf");
     assert_eq!(requests[1].method, "POST");
     let body = sent_body(&requests[1]);
-    let SentContent::Parts(parts) = &body.messages[0].content else {
-        panic!("the fetched file is sent as a content block");
-    };
-    assert_eq!(parts[0].kind, "document");
-    assert_eq!(parts[0].source.kind, "base64");
-    assert_eq!(parts[0].source.media_type, "application/pdf");
-    assert_eq!(parts[0].source.data, "JVBERi0xLjQK");
+    let part = &body.messages[0].content[0];
+    assert_eq!(part.kind, "document");
+    let source = part.source.as_ref().expect("the document source");
+    assert_eq!(source.kind, "base64");
+    assert_eq!(source.media_type, "application/pdf");
+    assert_eq!(source.data, "JVBERi0xLjQK");
 }
 
 pub(super) async fn remote_file_error() {
     let mut harness = Harness::start(vec![failure(404, "text/plain", "missing")]).await;
     let url = format!("{}/missing.pdf", harness.base);
-    let (status, body, _headers) =
-        provider_error(&mut harness, support::chat(file_body(&url))).await;
+    let (status, body, _headers) = provider_error(&harness, support::chat(&file_body(&url))).await;
     assert_eq!(status, 400);
     assert!(body.contains(&url));
     let requests = harness.requests().await;
@@ -251,7 +245,7 @@ pub(super) async fn remote_file_error() {
 #[tokio::test]
 async fn the_provider_headers_carry_the_reply_headers() {
     let harness = Harness::start(vec![buffered()]).await;
-    let (_, upstream) = support::upstream(&harness, support::chat(chat_body("")))
+    let (_, upstream) = support::upstream(&harness, support::chat(&chat_body("")))
         .await
         .expect("the buffered call answers");
     let content_type = upstream
@@ -271,7 +265,7 @@ async fn the_provider_headers_carry_the_stream_headers() {
     }])
     .await;
     let body = chat_body(r#","stream":true"#);
-    let (_, upstream) = support::upstream(&harness, support::stream(body))
+    let (_, upstream) = support::upstream(&harness, support::stream(&body))
         .await
         .expect("the streaming call opens");
     let content_type = upstream
@@ -287,7 +281,7 @@ async fn the_extra_headers_reach_the_upstream_request() {
     let mut harness = Harness::start(vec![buffered()]).await;
     let result = support::complete(
         &harness,
-        support::chat(chat_body(r#","extra_headers":{"x-custom":"yes"}"#)),
+        support::chat(&chat_body(r#","extra_headers":{"x-custom":"yes"}"#)),
     )
     .await;
     assert!(matches!(
@@ -307,7 +301,7 @@ async fn the_additional_drop_params_take_the_named_parameter_out() {
     let mut harness = Harness::start(vec![buffered()]).await;
     let result = support::complete(
         &harness,
-        support::chat(chat_body(
+        support::chat(&chat_body(
             r#","logit_bias":{"1":2},"extra_body":{"x-extra":{"keep":1}},"additional_drop_params":["logit_bias"]"#,
         )),
     )
@@ -330,7 +324,7 @@ async fn the_extra_body_can_be_dropped_by_name() {
     let mut harness = Harness::start(vec![buffered()]).await;
     let result = support::complete(
         &harness,
-        support::chat(chat_body(
+        support::chat(&chat_body(
             r#","extra_body":{"x-extra":{"keep":1}},"additional_drop_params":["extra_body"]"#,
         )),
     )
@@ -353,7 +347,7 @@ async fn the_provider_field_reaches_the_body_with_its_beta() {
     harness.deployment.model = String::from(OPUS);
     let body =
         format!(r#"{{"model":"{OPUS}","messages":{USER},"output_config":{{"effort":"high"}}}}"#);
-    let result = support::complete(&harness, support::chat(body)).await;
+    let result = support::complete(&harness, support::chat(&body)).await;
     assert!(matches!(
         result,
         Ok(OperationResult::Anthropic(AnthropicResult::Reply(_)))
@@ -375,7 +369,7 @@ async fn the_allowed_openai_param_reaches_the_body() {
     let mut harness = Harness::start(vec![buffered()]).await;
     let result = support::complete(
         &harness,
-        support::chat(chat_body(
+        support::chat(&chat_body(
             r#","logprobs":true,"allowed_openai_params":["logprobs"]"#,
         )),
     )
@@ -411,16 +405,17 @@ async fn the_upstream_timeout_is_the_operation_timeout() {
         server: JoinSet::new(),
     };
     let body = chat_body(r#","stream":true"#);
-    let result = support::complete(&harness, support::stream(body)).await;
+    let result = support::complete(&harness, support::stream(&body)).await;
     assert!(matches!(result, Err(OperationError::Timeout)));
 }
 
 // The accepted connections stay open, so the client's read runs into its deadline.
-async fn hold(listener: TcpListener) {
+async fn hold(listener: TcpListener) -> Vec<TcpStream> {
     let mut sockets = Vec::new();
     while let Ok((socket, _peer)) = listener.accept().await {
         sockets.push(socket);
     }
+    sockets
 }
 
 // The legacy surface refuses at every stage, even with a runtime on the deployment.
@@ -428,7 +423,7 @@ async fn hold(listener: TcpListener) {
 async fn the_legacy_surface_answers_unavailable() {
     let mut harness = Harness::start(vec![buffered()]).await;
     harness.deployment.timeout = HANG;
-    let operation = support::chat(chat_body(""));
+    let operation = support::chat(&chat_body(""));
     let messages = Provider::Anthropic(Anthropic {
         surface: Surface::Messages,
     });

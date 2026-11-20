@@ -95,7 +95,7 @@ pub(super) async fn complete(
     provider.decode(&prepared, upstream)
 }
 
-pub(super) fn chat(body: String) -> OperationRequest {
+pub(super) fn chat(body: &str) -> OperationRequest {
     OperationRequest::Chat(Box::new(ChatOperation {
         model: String::from(MODEL),
         request: ChatRequest::parse(body.as_bytes()).expect("the test request"),
@@ -103,7 +103,7 @@ pub(super) fn chat(body: String) -> OperationRequest {
     }))
 }
 
-pub(super) fn stream(body: String) -> OperationRequest {
+pub(super) fn stream(body: &str) -> OperationRequest {
     OperationRequest::Stream(Box::new(ChatOperation {
         model: String::from(MODEL),
         request: ChatRequest::parse(body.as_bytes()).expect("the test request"),

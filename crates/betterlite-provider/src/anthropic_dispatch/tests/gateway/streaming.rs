@@ -1,3 +1,4 @@
+use std::fmt::Write as _;
 use std::str::from_utf8;
 
 use betterlite_openai::stream::chunk::{Choice, Chunk, ThinkingBlock, ThinkingKind};
@@ -41,10 +42,10 @@ const THINKING_EVENTS: [&str; 7] = [
 ];
 
 fn sse(events: &[&str]) -> wire::Answer {
-    let body = events
-        .iter()
-        .map(|event| format!("data: {event}\n\n"))
-        .collect();
+    let body = events.iter().fold(String::new(), |mut body, event| {
+        write!(body, "data: {event}\n\n").expect("the body is a string");
+        body
+    });
     wire::Answer {
         status: 200,
         content_type: "text/event-stream",
@@ -58,18 +59,18 @@ fn request() -> String {
 
 async fn chunks(events: &[&str]) -> Vec<Chunk> {
     let harness = Harness::start(vec![sse(events)]).await;
-    let result = support::complete(&harness, support::stream(request()))
+    let result = support::complete(&harness, support::stream(&request()))
         .await
         .expect("the streaming call answers");
     let OperationResult::Anthropic(AnthropicResult::Stream(frames)) = result else {
         panic!("a streaming call is a frame stream");
     };
     timeout(TIMEOUT, async move {
-        let mut frames = frames;
+        let mut stream = frames;
         let mut parsed = Vec::new();
-        while let Some(frame) = frames.next().await {
-            let frame = frame.expect("a frame");
-            let text = from_utf8(&frame).expect("a utf-8 frame");
+        while let Some(frame) = stream.next().await {
+            let received = frame.expect("a frame");
+            let text = from_utf8(&received).expect("a utf-8 frame");
             let data = text
                 .trim_end()
                 .strip_prefix("data: ")
@@ -103,8 +104,10 @@ fn tool_calls(chunks: &[Chunk]) -> Vec<(&str, &str)> {
 }
 
 fn thinking_deltas(chunks: &[Chunk]) -> (Vec<&str>, Vec<&ThinkingBlock>) {
+    // The signature-only chunk repeats the reasoning field empty, so only real text counts.
     let reasoning = choices(chunks)
         .filter_map(|choice| choice.delta.reasoning_content.as_deref())
+        .filter(|text| !text.is_empty())
         .collect();
     let blocks = choices(chunks)
         .flat_map(|choice| choice.delta.thinking_blocks.iter().flatten())

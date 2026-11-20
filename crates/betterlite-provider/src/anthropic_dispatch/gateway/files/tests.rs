@@ -33,10 +33,10 @@ impl RemoteMediaFetcher for Recorder {
         &self,
         urls: &[String],
     ) -> impl Future<Output = Result<Vec<String>, ImageFetchError>> + Send {
-        let urls = urls.to_vec();
+        let requested = urls.to_vec();
         async move {
-            let mut converted = Vec::with_capacity(urls.len());
-            for url in urls {
+            let mut converted = Vec::with_capacity(requested.len());
+            for url in requested {
                 converted.push(self.convert_url(&url).await?);
             }
             Ok(converted)

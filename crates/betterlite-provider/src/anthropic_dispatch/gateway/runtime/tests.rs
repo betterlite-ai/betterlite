@@ -99,7 +99,7 @@ fn the_option_defaults_read_the_option_values() {
             .temperature
             .as_ref()
             .and_then(serde_json::Number::as_f64),
-        Some(0.25)
+        Some(0.25_f64)
     );
     assert_eq!(defaults.top_k, Some(7));
     assert_eq!(defaults.system.as_deref(), Some("sys"));
@@ -113,7 +113,7 @@ fn the_legacy_defaults_keep_the_raw_option_values() {
     );
     let legacy = legacy_defaults(&config);
     assert_eq!(legacy.max_tokens_to_sample, Some(42));
-    assert_eq!(legacy.temperature, Some(0.25));
+    assert_eq!(legacy.temperature, Some(0.25_f64));
 }
 
 #[test]

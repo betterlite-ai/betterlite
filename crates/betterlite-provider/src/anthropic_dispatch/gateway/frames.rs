@@ -9,6 +9,7 @@ use betterlite_http::error::HttpError;
 use betterlite_openai::chat::ChatRequest;
 use betterlite_openai::text_completion_stream::chat_chunk;
 use betterlite_streaming::provider_chunk_decode::chunk::ProviderChunk;
+use betterlite_streaming::provider_chunk_decode::error::ProviderChunkError;
 use betterlite_streaming::provider_chunk_decode::wrapper::{
     StreamSetup, StreamWrapper, WrapperError,
 };
@@ -101,6 +102,10 @@ async fn step(frames: &mut Frames) -> Step {
     match pushed(frames, decoded) {
         Ok(Some(chunk)) => written(frames, &chunk),
         Ok(None) => Step::Retry,
+        // CustomStreamWrapper treats the wrapper's StopIteration as the end of the source and finalizes.
+        Err(FrameError::Wrapper(WrapperError::Chunk(ProviderChunkError::StopIteration))) => {
+            ending(frames)
+        }
         Err(error) => failed(
             frames,
             &error,
