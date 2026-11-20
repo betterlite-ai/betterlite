@@ -1,0 +1,62 @@
+id: B10025
+title: Mount the usage AI chat route with its production factory
+description: >-
+  B8271 built POST /usage/ai/chat in usage_ai_chat_route.rs and B3103 built the engine behind it. The route takes its collaborators through `UsageAiChatState` and the `UsageChatFactory` trait and left the real factory and the mount to the wiring, and no B1100 registry entry merges the module. This task writes the factory, builds the state once, mounts the route and proves it over HTTP. B8673 keeps the search tool mount.
+
+
+  Where. crates/betterlite-server/src/app/admin/usage_chat.rs and app/admin/usage_chat/** (the skeleton declares the module in app/admin.rs as an empty file), tests in app/admin/usage_chat/tests.rs, plus one line in admin.rs `mount`. Read the trait definitions in usage_ai_chat_route/state.rs, usage_ai_chat/model.rs and usage_ai_chat/source.rs on the branch and implement exactly those signatures.
+
+
+  1. Usage chat factory. `UsageChatFactory` returns B3103's UsageChatParts for one request. The model client is B5656's SDK completion call: LiteLLM's usage AI chat calls litellm.acompletion directly (ai_usage_chat.py L552 and L581), not the router, so config deployments do not apply and the provider key comes from the environment. Write `SdkUsageChatModel`, B3103's UsageChatModel over B5656's `AsyncCompletionTarget`, with `complete` for the tool-call turn and `stream` for the final answer. The data source is B3103's DailyActivityUsageData over B729's DailyActivityRepository on `shared.db`, with no repository when there is no database, so the engine answers its database-not-connected error. The clock gives the local date. Write `DbUsageChatFactory` holding the database and the model client.
+
+
+  2. State. `ping_interval` is LiteLLM's litellm.sse_keepalive_ping_interval_seconds (endpoints.py L71): B10023's `assistant_keepalive` section in the loaded Config (`state.config.sections.assistant_keepalive.sse_keepalive_ping_interval_seconds`), read once per mount; it is an `Option<PingSetting>` already, since B10023 moved B7324's type into that section. The route coerces it with coerce_keepalive_interval, so pass the raw value. `caller_id` is B8271's GuardCallerId.
+
+
+  3. Mount. `pub(crate) fn mount_usage_chat(router: Router, state: &Arc<ServerState>) -> Router` merges usage_ai_chat_route::routes once. The path needs a key in LiteLLM (Depends(user_api_key_auth)), so admin.rs `mount` calls it.
+
+
+  Tests in app/admin/usage_chat/tests.rs (module `app::admin::usage_chat::tests`, names start with `oneshot_` and `usage_parts_`) use the in-memory fakes of B8610's tests. They assert POST /usage/ai/chat answers something other than 404 on the mounted router, DbUsageChatFactory builds parts whose clock gives today's local date and whose data source has no repository without a database, and a configured interval of 2 and of "1.5" reaches the state as Seconds(2.0) and Text("1.5").
+
+
+  HTTP oracle cases. The three cases B8271 planned (tools/oracle/cases/usage-ai-chat/) move here unchanged with their folder from B8673; the worker writes them from B8271's text and runs them through the booted proxy with master key oracle-master.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/admin.rs
+    - crates/betterlite-server/src/app/admin/usage_chat.rs
+    - crates/betterlite-server/src/app/admin/usage_chat/**
+    - tools/oracle/cases/usage-ai-chat/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/endpoints.py#L34-L76
+    why: POST /usage/ai/chat behind user_api_key_auth, the caller id and the keepalive interval it passes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/ai_usage_chat.py#L548-L600
+    why: The two direct litellm.acompletion calls behind the usage AI chat.
+dod:
+  - text: DbUsageChatFactory gives B8271 the SDK model client, the database usage source and a local-date clock.
+    proof: [usage-chat-tests]
+  - text: The state takes the ping interval from B10023's section in the loaded config, read once, and B8271's caller-id check.
+    proof: [usage-chat-tests]
+  - text: The route module is merged once inside the auth layers and answers like LiteLLM through the booted proxy.
+    proof: [usage-chat-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: usage-chat-tests
+      why: the factory uses a fake or the router's completion call, the ping interval ignores the loaded config, or the route is not merged
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::admin::usage_chat::/)'
+oracle_cases:
+  - tools/oracle/cases/usage-ai-chat/auth-required.yaml
+  - tools/oracle/cases/usage-ai-chat/invalid-role.yaml
+  - tools/oracle/cases/usage-ai-chat/missing-messages.yaml
+deviations: []
+out_of_scope:
+  - "The handler, the state and the factory trait: B8271. The engine behind the chat: B3103. The search tool mount: B8673."
+  - "Idle-ping timing and stream wrapping: B005 and B8271. Loading the keepalive key: B10023."
+pitfalls:
+  - The usage AI chat calls the SDK directly, so passing the router's completion call would route through config deployments LiteLLM does not use here.
+  - Build the factory and read the ping interval once per mount, never per request.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

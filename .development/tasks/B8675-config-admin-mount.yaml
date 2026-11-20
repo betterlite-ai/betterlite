@@ -14,8 +14,8 @@ description: >-
   Where. crates/betterlite-server/src/app/admin.rs is the area file B8610's app.rs calls. The skeleton stubs it with
   `pub fn mount(router: Router, state: &Arc<ServerState>) -> Router`, `pub fn mount_public(router: Router, state:
   &Arc<ServerState>) -> Router` and `pub async fn start(state: &Arc<ServerState>)`, and declares the submodules
-  `config`, `models`, `prompts`, `search_usage`, `roi` and `urls`, each as an empty file. Four other admin parts
-  (B8676, B8672, B8673, B8677) add their own call to admin.rs, so add only one line per call and touch no other
+  `config`, `models`, `prompts`, `search_usage`, `roi` and `urls`, each as an empty file. Five other admin parts
+  (B8676, B8672, B8673, B10025, B8677) add their own call to admin.rs, so add only one line per call and touch no other
   line. Put this task's code in app/admin/config.rs with tests in app/admin/config/tests.rs; app/admin/urls.rs stays an empty file.
   Read each route module on the branch before writing and use the names and constructor arguments it exports; build
   every state value once per mount, never per request. No statics.

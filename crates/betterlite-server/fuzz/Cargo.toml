@@ -413,6 +413,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "compliance_request"
+path = "fuzz_targets/compliance_request.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "plugin_session_claim"
 path = "fuzz_targets/plugin_session_claim.rs"
 test = false

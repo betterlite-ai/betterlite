@@ -1,0 +1,100 @@
+id: B10024
+title: Team membership patch and roster write failures
+description: >-
+  JWT provisioning with sync_user_role_and_teams on moves a user into the teams its token names and out of the others, and LiteLLM does that through the SCIM module's patch_team_membership (scim_v2.py L2288-L2322). This task builds only that function and the roster write machinery under it (L2200-L2322): the per-team add and remove with their no-op cases, the failure records, the status a failed batch reports and the error that names every failed write. B765 calls patch_team_membership with raise_on_error false, so it waits on this task and not on B1637, which keeps the SCIM user and group reconciliation, the key blocking and the reference cleanup and calls these pieces with raise_on_error true.
+
+
+  Layout. Code goes in betterlite-server, module scim_access_reconciliation::membership: crates/betterlite-server/src/scim_access_reconciliation/membership.rs, with tests in scim_access_reconciliation/membership/tests.rs. The parent scim_access_reconciliation.rs is B1637's and exists as an empty file that declares this module.
+
+
+  The writes. `RosterWrite` is a plain enum, `Add { user_id, team_id }` and `Remove { user_id, team_id }`, and its label is LiteLLM's text, "add <user_id> to <team_id>" or "remove <user_id> from <team_id>". An add calls B808's team_member_add service with team_id, member {user_id, role "user"} and a principal whose only field is user_role proxy_admin (B2314's UserAPIKeyAuth), so B808's database, cache and audit effects all happen. A ProxyException of type team_member_already_in_team is a no-op logged at debug as "User <user_id> is already in team <team_id>, skipping add"; every other error is a failed write. A remove calls B1207's team_member_delete service with team_id and user_id and the same principal. An HTTPException whose detail is the object {"error": "User not found in team"} (LiteLLM's _is_user_not_in_team_error) is a no-op logged at debug as "User <user_id> is not in team <team_id>, skipping remove"; every other error is a failed write. This module's error enum wraps B808's and B1207's errors with their source.
+
+
+  The failures. `RosterWriteFailure { description: String, status_code: u16 }`. `roster_write_status` (_roster_write_status) reads an error: an HTTPException gives its status_code, a ProxyException gives its code when that is a decimal number and 500 otherwise, and anything else gives 500. `run_roster_writes(writes)` (_collect_roster_write_failures over _attempt_roster_write) runs the writes one after another in the given order, never stops at a failure, logs each failed write at error as "SCIM roster write failed (<label>): <error>", and returns one failure per failed write with description "<label>: <error>". `ScimRosterSyncError` (SCIMRosterSyncError) holds the failures and the attempted count; its status_code is the failures' status when they all share one and 500 otherwise, and its text is "SCIM roster sync failed on <failed> of <attempted> team membership writes, leaving the roster partially updated. Retry the push to reconcile it. Failed writes: <the descriptions joined with "; ">".
+
+
+  The patch. `patch_team_membership(user_id, teams_to_add, teams_to_remove, raise_on_error) -> Result<(), ScimRosterSyncError>`: one Add per team to add, then one Remove per team to remove, both in the given order, through run_roster_writes. With failures and raise_on_error it returns ScimRosterSyncError with attempted = the number of writes; otherwise it returns Ok, so with raise_on_error false the failures are only in the log, as in LiteLLM. Nothing is rolled back. LiteLLM's group handler wraps each member in its own patch_team_membership(raise_on_error=True) and _attempt_roster_write unpacks that nested error; the failures and log lines come out the same as one flat batch, so B1637 passes the members' Add and Remove writes to run_roster_writes directly, and this module has no nested error to unpack.
+
+
+  Tests in scim_access_reconciliation/membership/tests.rs use a real database from B860's PostgresFixture over POSTGRES_TEST_URL and the real B808 and B1207 services, with ids like test-user-a and test-team-a. They cover: a user added to two teams and removed from a third in one patch; an add for a member already in the team and a remove for a user not in it, both no-ops with the debug line; an add to a missing team failing while the remove after it still runs; raise_on_error false returning Ok with the error line logged; raise_on_error true returning ScimRosterSyncError with the labels, the attempted count and the text; and the status of a unanimous and a mixed batch.
+
+
+  Oracle. Helper cases on the b10024 operation cover the pure parts, since the writes go through management handlers that read proxy_server globals. A case is either a batch step, {"failures": [{"description", "status_code"}], "attempted"}, answered with the error's status_code and text, or an error step, {"http_status": n} or {"proxy_code": "..."} or {}, answered with roster_write_status. The Python adapter builds SCIMRosterSyncError from RosterWriteFailure records, and HTTPException or ProxyException for an error step, and calls _roster_write_status, all from litellm.proxy.management_endpoints.scim.scim_v2. The two aggregate status cases come from B1637's plan.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/scim_access_reconciliation/membership.rs
+    - crates/betterlite-server/src/scim_access_reconciliation/membership/**
+    - tools/oracle/src/helpers/server/b10024.rs
+    - tools/oracle/src/helpers/server/b10024/**
+    - tools/oracle/helpers/b10024.py
+    - tools/oracle/helpers/b10024/**
+    - tools/oracle/cases/helpers/scim-access-state/unanimous-forbidden-keeps-status.yaml
+    - tools/oracle/cases/helpers/scim-access-state/mixed-failures-report-server-error.yaml
+    - tools/oracle/cases/helpers/scim-roster-writes/**
+    - tools/oracle/fuzz/corpus/helper_case/scim-roster-writes-*
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L2200-L2259
+    why: Owned. _is_user_not_in_team_error, RosterWriteFailure, _roster_write_status, SCIMRosterSyncError, _attempt_roster_write and _collect_roster_write_failures.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L2261-L2322
+    why: Owned. _add_user_to_team, _remove_user_from_team and patch_team_membership.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L2108-L2121
+    why: Caller. JWT team sync calls patch_team_membership with the default raise_on_error=False (B765).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L2819-L2864
+    why: Caller. The group handler wraps each member in patch_team_membership(raise_on_error=True) (B1637).
+
+dod:
+  - text: patch_team_membership runs every add, then every remove, with a proxy-admin principal, treats an existing member on add and a missing member on remove as no-ops logged at debug, and keeps going after a failed write.
+    proof: [membership-tests]
+  - text: With raise_on_error false the failures are logged and the patch returns Ok; with true it returns ScimRosterSyncError with every failed write, its label and the attempted count, and nothing is rolled back.
+    proof: [membership-tests]
+  - text: A batch whose failures share one status reports it and a mixed batch reports 500; an HTTP error gives its status, a proxy error its numeric code or 500, and anything else 500; the error text matches LiteLLM's.
+    proof: [membership-tests, oracle, helper-python]
+  - text: The b10024 adapter passes the strict Python checks and a new helper seed names the operation.
+    proof: [helper-python, helper-case-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: membership-tests
+      why: a team write, a no-op case, the failure collection or the batch error is missing or differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^scim_access_reconciliation::membership::tests::/)'
+    - id: helper-python
+      why: the b10024 adapter is missing or fails the strict Python checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10024.py tools/oracle/helpers/b10024)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: no new b10024 seed reaches the shared helper case parser
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/scim-roster-writes-*")" &&
+        grep -lE 'b10024"?:' tools/oracle/fuzz/corpus/helper_case/scim-roster-writes-* &&
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/scim-access-state/unanimous-forbidden-keeps-status.yaml
+  - tools/oracle/cases/helpers/scim-access-state/mixed-failures-report-server-error.yaml
+  - tools/oracle/cases/helpers/scim-roster-writes/write-status-from-error.yaml
+
+deviations: []
+
+out_of_scope:
+  - "_handle_team_membership_changes, the key block markers, _set_user_keys_blocked, _delete_rows_referencing_user, the active-state readers and _handle_group_membership_changes: B1637, over this module."
+  - "The team_member_add and team_member_delete services and their effects: B808 and B1207."
+  - "Calling patch_team_membership from JWT provisioning: B765."
+  - "The rest of scim_v2.py: B1633 to B1643 and B064, as B1637's out_of_scope lists them."
+
+pitfalls:
+  - "patch_team_membership returns Ok even when every write failed, unless raise_on_error is true; a caller can't read success from it."
+  - "Only a ProxyException of type team_member_already_in_team is a no-op on add, and only the detail {\"error\": \"User not found in team\"} on remove; the same text in a ProxyException message is a real failure."
+  - "A ProxyException code such as \"bad\" falls back to 500 instead of failing the batch, and an HTTPException keeps its own status even when its detail carries a code."
+  - "The writes run one at a time in the order given, adds first; B1637 sorts group members before it builds its writes, and patch_team_membership keeps the caller's order."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
