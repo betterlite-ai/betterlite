@@ -92,22 +92,26 @@ pub enum ContainerCollectionError {
 }
 
 type Chosen<'client, 'params, Client> = (Selected<'client, Client>, request::CallParams<'params>);
-// LiteLLM's order: the params first, so a bad one fails before any client is built, then the supplied client or a fresh one
+// The params come first because the client build needs their ssl_verify, so a bad one fails before any client exists
 impl<'call, Source: CollectionClientSource> CollectionBase<'call, Source> {
-    fn begin<'supplied, Client: CollectionTransport>(
+    fn begin<'supplied, Client>(
         &self,
         supplied: Option<&'supplied Client>,
         build: fn(&Source, Option<&SslVerify>) -> Result<Client, PoolError>,
-    ) -> Result<Chosen<'supplied, 'call, Client>, ContainerCollectionError> {
+    ) -> Result<Chosen<'supplied, 'call, Client>, ContainerCollectionError>
+    where
+        Client: CollectionTransport,
+    {
         let params = request::read_params(self.litellm_params)?;
         let client = Selected::choose(supplied, || build(self.source, params.ssl_verify.as_ref()))?;
         Ok((client, params))
     }
 }
 
-fn poll_once<Running: Future>(
-    future: Running,
-) -> Result<Running::Output, ContainerCollectionError> {
+fn poll_once<Running>(future: Running) -> Result<Running::Output, ContainerCollectionError>
+where
+    Running: Future,
+{
     let mut pinned = pin!(future);
     let mut context = Context::from_waker(Waker::noop());
     match pinned.as_mut().poll(&mut context) {
@@ -116,43 +120,59 @@ fn poll_once<Running: Future>(
     }
 }
 
-pub fn container_create_handler<Source: CollectionClientSource>(
+pub fn container_create_handler<Source>(
     call: &ContainerCreateCall<'_, Source>,
-) -> Result<records::ContainerObject, ContainerCollectionError> {
+) -> Result<records::ContainerObject, ContainerCollectionError>
+where
+    Source: CollectionClientSource,
+{
     let base = &call.base;
     let (client, params) = base.begin(base.blocking, Source::blocking_client)?;
     poll_once(create_body(client.get(), &params, call))?
 }
 
-pub async fn acontainer_create_handler<Source: CollectionClientSource>(
+pub async fn acontainer_create_handler<Source>(
     call: &ContainerCreateCall<'_, Source>,
-) -> Result<records::ContainerObject, ContainerCollectionError> {
+) -> Result<records::ContainerObject, ContainerCollectionError>
+where
+    Source: CollectionClientSource,
+{
     let base = &call.base;
     let (client, params) = base.begin(base.asynchronous, Source::async_client)?;
     create_body(client.get(), &params, call).await
 }
 
-pub fn container_list_handler<Source: CollectionClientSource>(
+pub fn container_list_handler<Source>(
     call: &ContainerListCall<'_, Source>,
-) -> Result<records::ContainerListResponse, ContainerCollectionError> {
+) -> Result<records::ContainerListResponse, ContainerCollectionError>
+where
+    Source: CollectionClientSource,
+{
     let base = &call.base;
     let (client, params) = base.begin(base.blocking, Source::blocking_client)?;
     poll_once(list_body(client.get(), &params, call))?
 }
 
-pub async fn acontainer_list_handler<Source: CollectionClientSource>(
+pub async fn acontainer_list_handler<Source>(
     call: &ContainerListCall<'_, Source>,
-) -> Result<records::ContainerListResponse, ContainerCollectionError> {
+) -> Result<records::ContainerListResponse, ContainerCollectionError>
+where
+    Source: CollectionClientSource,
+{
     let base = &call.base;
     let (client, params) = base.begin(base.asynchronous, Source::async_client)?;
     list_body(client.get(), &params, call).await
 }
 
-async fn create_body<Client: CollectionTransport, Source: CollectionClientSource>(
+async fn create_body<Client, Source>(
     client: &Client,
     params: &request::CallParams<'_>,
     call: &ContainerCreateCall<'_, Source>,
-) -> Result<records::ContainerObject, ContainerCollectionError> {
+) -> Result<records::ContainerObject, ContainerCollectionError>
+where
+    Client: CollectionTransport,
+    Source: CollectionClientSource,
+{
     let base = &call.base;
     let config = base.config;
     let extra = base.extra_headers.cloned().unwrap_or_default();
@@ -175,7 +195,8 @@ async fn create_body<Client: CollectionTransport, Source: CollectionClientSource
         timeout: Some(base.timeout.unwrap_or(DEFAULT_TIMEOUT)),
     };
     let reply = send(client, config, &request, true).await?;
-    if (400..=599).contains(&reply.status) {
+    // LiteLLM's POST calls raise_for_status, so every non-2xx reply is an error; the list GET has no such call
+    if !(200..=299).contains(&reply.status) {
         let message = str::from_utf8(&reply.body).map_or_else(
             |_| format!("{} bytes that are not UTF-8", reply.body.len()),
             str::to_owned,
@@ -186,11 +207,15 @@ async fn create_body<Client: CollectionTransport, Source: CollectionClientSource
     Ok(config.transform_container_create_response(&reply.body)?)
 }
 
-async fn list_body<Client: CollectionTransport, Source: CollectionClientSource>(
+async fn list_body<Client, Source>(
     client: &Client,
     params: &request::CallParams<'_>,
     call: &ContainerListCall<'_, Source>,
-) -> Result<records::ContainerListResponse, ContainerCollectionError> {
+) -> Result<records::ContainerListResponse, ContainerCollectionError>
+where
+    Client: CollectionTransport,
+    Source: CollectionClientSource,
+{
     let config = call.base.config;
     let headers =
         request::request_headers(config, call.base.extra_headers, params.api_key.as_ref());
@@ -237,24 +262,30 @@ fn target<'call>(
 }
 
 // Every exception from the send converts through _handle_error, with the status a POST timeout keeps and any other failure's 500
-async fn send<Client: CollectionTransport>(
+async fn send<Client>(
     client: &Client,
     config: &dyn config::BaseContainerConfig,
     request: &CollectionRequest,
     posted: bool,
-) -> Result<transport::ContainerHttpReply, ContainerCollectionError> {
+) -> Result<transport::ContainerHttpReply, ContainerCollectionError>
+where
+    Client: CollectionTransport,
+{
     client.send(request).await.map_err(|failure| {
         ContainerCollectionError::Provider(provider_failure(config, &failure, posted))
     })
 }
 
 // LiteLLM's create pre_call: the name as input, the JSON about to be sent as the complete input, and no params
-fn log_create<Source: CollectionClientSource>(
+fn log_create<Source>(
     call: &ContainerCreateCall<'_, Source>,
     url: &str,
     headers: &BTreeMap<String, String>,
     data: &Object,
-) -> Result<(), ContainerCollectionError> {
+) -> Result<(), ContainerCollectionError>
+where
+    Source: CollectionClientSource,
+{
     let mut record = request::pre_call_record(url, headers, &IndexMap::new());
     record.input = Json::Text(call.name.to_owned());
     record.additional_args.passthrough.clear();

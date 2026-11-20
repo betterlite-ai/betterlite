@@ -102,34 +102,34 @@ impl BaseContainerConfig for StubConfig {
     }
 
     fn transform_container_create_request(
-        &self, name: &str, params: &Object, context: ContainerRequestContext<'_>,
+        &self, name: &str, container_create_optional_request_params: &Object, context: ContainerRequestContext<'_>,
     ) -> Object {
-        self.creates.lock().unwrap_or_else(PoisonError::into_inner).push((name.to_owned(), params.clone(), context.headers.clone()));
-        requests::create_request(name, params)
+        self.creates.lock().unwrap_or_else(PoisonError::into_inner).push((name.to_owned(), container_create_optional_request_params.clone(), context.headers.clone()));
+        requests::create_request(name, container_create_optional_request_params)
     }
 
-    fn transform_container_create_response(&self, raw: &[u8]) -> Reply<ContainerObject> {
-        replies::decode_container_reply(raw)
+    fn transform_container_create_response(&self, raw_response: &[u8]) -> Reply<ContainerObject> {
+        replies::decode_container_reply(raw_response)
     }
 
     fn transform_container_list_request(
-        &self, base: &str, context: ContainerRequestContext<'_>, query: &ContainerListQuery<'_>,
+        &self, api_base: &str, context: ContainerRequestContext<'_>, query: &ContainerListQuery<'_>,
     ) -> Prepared {
         let params = requests::list_query(query);
-        self.lists.lock().unwrap_or_else(PoisonError::into_inner).push((base.to_owned(), context.headers.clone(), params.clone()));
-        (format!("{base}?api-version={API_VERSION}"), params)
+        self.lists.lock().unwrap_or_else(PoisonError::into_inner).push((api_base.to_owned(), context.headers.clone(), params.clone()));
+        (format!("{api_base}?api-version={API_VERSION}"), params)
     }
 
-    fn transform_container_list_response(&self, raw: &[u8]) -> Reply<ContainerListResponse> {
-        replies::decode_container_reply(raw)
+    fn transform_container_list_response(&self, raw_response: &[u8]) -> Reply<ContainerListResponse> {
+        replies::decode_container_reply(raw_response)
     }
 
     fn transform_container_retrieve_request(
         &self, _id: &str, _base: &str, _context: ContainerRequestContext<'_>,
     ) -> Reply<Prepared> { Ok((String::new(), Object::new())) }
 
-    fn transform_container_retrieve_response(&self, raw: &[u8]) -> Reply<ContainerObject> {
-        replies::decode_container_reply(raw)
+    fn transform_container_retrieve_response(&self, raw_response: &[u8]) -> Reply<ContainerObject> {
+        replies::decode_container_reply(raw_response)
     }
 
     fn transform_container_delete_request(
@@ -206,15 +206,12 @@ impl FakeClient {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push("send");
-        match self
+        let stopped = self
             .failure
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .take()
-        {
-            Some(failure) => Err(failure),
-            None => Ok(self.reply.clone()),
-        }
+            .take();
+        stopped.map_or_else(|| Ok(self.reply.clone()), Err)
     }
 
     pub(super) fn seen(&self) -> Vec<CollectionRequest> {
@@ -481,6 +478,13 @@ pub(super) async fn deadline_failure() -> TransferError {
 pub(super) fn provider_error(failure: &ContainerCollectionError) -> &BaseLlmException {
     match failure {
         ContainerCollectionError::Provider(provider) => provider,
-        other => panic!("expected a provider failure, got {other:?}"),
+        other @ ContainerCollectionError::Config(_)
+        | other @ ContainerCollectionError::Params(_)
+        | other @ ContainerCollectionError::Client(_)
+        | other @ ContainerCollectionError::Logging(_)
+        | other @ ContainerCollectionError::Encode(_)
+        | other @ ContainerCollectionError::Suspended => {
+            panic!("expected a provider failure, got {other:?}")
+        }
     }
 }

@@ -92,7 +92,7 @@ fn list_keeps_the_url_query_when_the_params_are_empty() {
 #[test]
 fn list_renders_every_extra_query_value_as_httpx_would() {
     let mut extra = Object::new();
-    extra.insert(String::from("page"), json!(5));
+    extra.insert(String::from("page"), json!(5_i32));
     extra.insert(String::from("flag"), json!(true));
     extra.insert(String::from("none"), json!(null));
     extra.insert(String::from("name"), json!("x"));
@@ -143,7 +143,7 @@ fn list_sends_an_array_extra_query_as_one_json_text_value() {
 fn list_logs_the_params_before_the_get() {
     let fixture = Fixture::new(202, LIST_BODY);
     let mut extra = Object::new();
-    extra.insert(String::from("page"), json!(5));
+    extra.insert(String::from("page"), json!(5_i32));
     let query = ContainerListQuery {
         after: Some("cntr_a"),
         limit: Some(2),
@@ -303,7 +303,9 @@ fn list_lets_a_3xx_body_through_to_the_transform() {
 #[test]
 fn list_rejects_a_bad_param_before_it_asks_for_a_client() {
     let mut fixture = Fixture::new(200, LIST_BODY);
-    fixture.params.insert(String::from("api_base"), json!(5));
+    fixture
+        .params
+        .insert(String::from("api_base"), json!(5_i32));
     let call = fixture.list_call(EMPTY_PAGE);
     let failure = container_list_handler(&call).unwrap_err();
     assert!(matches!(failure, ContainerCollectionError::Params(_)));

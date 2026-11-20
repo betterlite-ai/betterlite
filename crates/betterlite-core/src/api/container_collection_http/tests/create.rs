@@ -8,7 +8,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::containers::container_file_http::request::SslVerify;
 use betterlite_openai::containers::container_file_http::transport::ContainerMethod;
 use betterlite_openai::openai_base_config::Object;
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::tests::{
     BASE, BlockingFake, CREATE_BODY, FakeClient, Fixture, REQUEST_HEADERS, REQUEST_ID,
@@ -28,10 +28,12 @@ fn api_key_params(value: &str) -> Object {
 fn create_posts_the_transformed_body_with_the_default_timeout() {
     let mut fixture = Fixture::new(200, CREATE_BODY);
     fixture.params = api_key_params("sk-1");
-    fixture.create_params.insert(
-        String::from("expires_after"),
-        json!({"anchor": "last_active_at", "minutes": 20}),
-    );
+    let mut expires = Object::new();
+    expires.insert(String::from("anchor"), Value::from("last_active_at"));
+    expires.insert(String::from("minutes"), Value::from(20_i32));
+    fixture
+        .create_params
+        .insert(String::from("expires_after"), Value::Object(expires));
     let call = fixture.create_call("box");
     let object = container_create_handler(&call).unwrap();
     let sent = fixture.sent();
@@ -45,10 +47,11 @@ fn create_posts_the_transformed_body_with_the_default_timeout() {
     assert_eq!(authorization, Some("Bearer sk-1"));
     assert_eq!(content_type, Some("application/json"));
     let body: Object = serde_json::from_slice(request.body.as_deref().unwrap()).unwrap();
-    assert_eq!(
-        serde_json::to_value(&body).unwrap(),
-        json!({"name": "box", "expires_after": {"anchor": "last_active_at", "minutes": 20}})
-    );
+    let expected: Value = serde_json::from_str(
+        r#"{"name":"box","expires_after":{"anchor":"last_active_at","minutes":20}}"#,
+    )
+    .unwrap();
+    assert_eq!(serde_json::to_value(&body).unwrap(), expected);
     assert_eq!(object.id, "cntr_abc");
     assert_eq!(object.name.as_deref(), Some("box"));
     assert_eq!(object.status, "running");
@@ -249,6 +252,29 @@ fn create_reports_the_whole_body_for_an_error_status() {
 }
 
 #[test]
+fn create_lets_a_299_reply_through_to_the_transform() {
+    let fixture = Fixture::new(299, CREATE_BODY);
+    let call = fixture.create_call("box");
+    let object = container_create_handler(&call).unwrap();
+    assert_eq!(
+        object.id, "cntr_abc",
+        "299 is the last 2xx status, so raise_for_status accepts its body"
+    );
+}
+
+#[test]
+fn create_maps_a_1xx_reply_through_the_provider_exception() {
+    let fixture = Fixture::new(199, CREATE_BODY);
+    let call = fixture.create_call("box");
+    let failure = container_create_handler(&call).unwrap_err();
+    let provider = provider_error(&failure);
+    assert_eq!(
+        provider.status_code, 199,
+        "raise_for_status refuses every non-2xx status, informational ones included"
+    );
+}
+
+#[test]
 fn create_reports_the_size_of_a_non_utf8_error_body() {
     let fixture = Fixture::with_bytes(400, vec![0xff, 0xfe]);
     let call = fixture.create_call("box");
@@ -262,20 +288,25 @@ fn create_reports_the_size_of_a_non_utf8_error_body() {
 }
 
 #[test]
-fn create_lets_a_3xx_body_through_to_the_transform() {
+fn create_maps_a_3xx_reply_through_the_provider_exception() {
     let fixture = Fixture::new(300, CREATE_BODY);
     let call = fixture.create_call("box");
-    let object = container_create_handler(&call).unwrap();
+    let failure = container_create_handler(&call).unwrap_err();
+    let provider = provider_error(&failure);
     assert_eq!(
-        object.id, "cntr_abc",
-        "raise_for_status leaves a redirect alone, so its body is transformed like a success"
+        provider.status_code, 300,
+        "the POST calls raise_for_status, so a 3xx reply is an error like any other non-2xx"
+    );
+    assert_eq!(
+        provider.message, CREATE_BODY,
+        "the exception carries the whole reply body as its message"
     );
 }
 
 #[test]
 fn create_rejects_a_bad_param_before_it_asks_for_a_client() {
     let mut fixture = Fixture::new(200, CREATE_BODY);
-    fixture.params.insert(String::from("api_key"), json!(5));
+    fixture.params.insert(String::from("api_key"), json!(5_i32));
     let call = fixture.create_call("box");
     let failure = container_create_handler(&call).unwrap_err();
     assert!(matches!(failure, ContainerCollectionError::Params(_)));
