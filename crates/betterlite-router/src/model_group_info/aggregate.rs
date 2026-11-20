@@ -1,3 +1,5 @@
+use std::future::Future;
+
 use betterlite_context::anthropic_catalog_lookup::supports_fast_mode;
 use betterlite_models::decisions::Json;
 use betterlite_models::full_model_metadata::parameters::SupportedParameterSource;
@@ -10,6 +12,7 @@ use betterlite_openai::reasoning_effort_capability::{
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::model_catalog_lookup::alias::AliasTarget;
 use crate::model_catalog_lookup::error::LookupError;
+use crate::model_catalog_lookup::lookup::CatalogLookup;
 use crate::model_group_info::error::GroupInfoError;
 use crate::model_group_info::group::ModelGroupInfo;
 use crate::model_group_info::row::{
@@ -21,49 +24,76 @@ use crate::model_group_info::sources::{
 };
 use crate::model_group_info::state::AggregateState;
 
+// The catalog half of get_model_group_info: the resolved group, its stored rows and whether a wildcard route covers it.
+pub struct GroupRows {
+    pub model_group: String,
+    pub rows: Vec<DeploymentSpec>,
+    pub pattern_matches: bool,
+}
+
 // get_model_group_info: an alias follows to its target and answers under the alias name, a hidden one answers none.
-pub async fn get_model_group_info<D, R, P>(
-    sources: &GroupSources<'_, D, R, P>,
-    model_group: &str,
-    keys: &mut ModelCostKeys,
-) -> Result<Option<ModelGroupInfo>, GroupInfoError>
+#[must_use]
+pub fn get_model_group_info<'call, D, R, P>(
+    lookup: &CatalogLookup<'_>,
+    sources: &'call GroupSources<'call, D, R, P>,
+    model_group: &'call str,
+    keys: &'call mut ModelCostKeys,
+) -> impl Future<Output = Result<Option<ModelGroupInfo>, GroupInfoError>> + Send + 'call
 where
-    D: DeploymentInfo,
-    R: ProviderResolver,
+    D: DeploymentInfo + Sync,
+    R: ProviderResolver + Sync,
     P: SupportedParameterSource,
 {
-    let route = match sources.lookup.model_group_alias.get(model_group) {
-        None => AliasRoute::Group(model_group.to_owned()),
-        Some(target) => alias_route(target, model_group)?,
-    };
-    match route {
-        AliasRoute::Group(target) => {
-            set_model_group_info(sources, &target, model_group, keys).await
-        }
-        AliasRoute::Hidden => Ok(None),
+    let prepared = group_rows(lookup, model_group);
+    async move {
+        let Some(rows) = prepared? else {
+            return Ok(None);
+        };
+        set_model_group_info(sources, &rows, model_group, keys).await
     }
 }
 
-enum AliasRoute {
-    Group(String),
-    Hidden,
+// get_model_list plus pattern_router.route: everything the aggregation reads from the catalog, before the first await.
+fn group_rows(
+    lookup: &CatalogLookup<'_>,
+    model_group: &str,
+) -> Result<Option<GroupRows>, GroupInfoError> {
+    let target = match lookup.model_group_alias.get(model_group) {
+        None => Some(model_group.to_owned()),
+        Some(entry) => alias_target(entry, model_group)?,
+    };
+    let Some(resolved) = target else {
+        return Ok(None);
+    };
+    let rows = lookup.get_model_list(Some(resolved.as_str()), None)?;
+    let pattern_matches = lookup
+        .catalog
+        .pattern_router
+        .route(&resolved, None)
+        .is_some();
+    Ok(Some(GroupRows {
+        model_group: resolved,
+        rows,
+        pattern_matches,
+    }))
 }
 
-fn alias_route(target: &AliasTarget, alias: &str) -> Result<AliasRoute, GroupInfoError> {
+// The alias reads: a string target, an item's model unless it is hidden, and nothing for an unsupported kind.
+fn alias_target(target: &AliasTarget, alias: &str) -> Result<Option<String>, GroupInfoError> {
     match target {
-        AliasTarget::Name(name) => Ok(AliasRoute::Group(name.clone())),
-        AliasTarget::Unsupported(_) => Ok(AliasRoute::Hidden),
+        AliasTarget::Name(name) => Ok(Some(name.clone())),
+        AliasTarget::Unsupported(_) => Ok(None),
         AliasTarget::Item { model, hidden } => {
-            let Some(hidden) = hidden else {
+            let Some(flag) = hidden else {
                 return Err(malformed_alias(alias, "hidden"));
             };
-            if matches!(hidden, Json::Bool(true)) {
-                return Ok(AliasRoute::Hidden);
+            if matches!(flag, Json::Bool(true)) {
+                return Ok(None);
             }
             match model {
                 None => Err(malformed_alias(alias, "model")),
-                Some(Json::Null) => Ok(AliasRoute::Hidden),
-                Some(Json::Text(target)) => Ok(AliasRoute::Group(target.clone())),
+                Some(Json::Null) => Ok(None),
+                Some(Json::Text(name)) => Ok(Some(name.clone())),
                 Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
                     Err(GroupInfoError::AliasModel {
                         alias: alias.to_owned(),
@@ -81,27 +111,21 @@ fn malformed_alias(alias: &str, field: &'static str) -> GroupInfoError {
     })
 }
 
+// The aggregation half. Its future holds no catalog borrow, and that is what keeps it Send.
 async fn set_model_group_info<D, R, P>(
     sources: &GroupSources<'_, D, R, P>,
-    model_group: &str,
+    rows: &GroupRows,
     user_facing: &str,
     keys: &mut ModelCostKeys,
 ) -> Result<Option<ModelGroupInfo>, GroupInfoError>
 where
-    D: DeploymentInfo,
-    R: ProviderResolver,
+    D: DeploymentInfo + Sync,
+    R: ProviderResolver + Sync,
     P: SupportedParameterSource,
 {
-    let rows = sources.lookup.get_model_list(Some(model_group), None)?;
-    let pattern_matches = sources
-        .lookup
-        .catalog
-        .pattern_router
-        .route(model_group, None)
-        .is_some();
-    let mut state = AggregateState::new(model_group, user_facing);
-    for row in &rows {
-        if row.model_name != model_group && !pattern_matches {
+    let mut state = AggregateState::new(&rows.model_group, user_facing);
+    for row in &rows.rows {
+        if row.model_name != rows.model_group && !rows.pattern_matches {
             continue;
         }
         advance(sources, row, &mut state, keys).await?;
@@ -116,17 +140,23 @@ async fn advance<D, R, P>(
     keys: &mut ModelCostKeys,
 ) -> Result<(), GroupInfoError>
 where
-    D: DeploymentInfo,
-    R: ProviderResolver,
+    D: DeploymentInfo + Sync,
+    R: ProviderResolver + Sync,
     P: SupportedParameterSource,
 {
     let params = RowParams::parse(&row.litellm_params)?;
     let mut limits = configured_limits(row)?;
-    let found = lookup_metadata(sources, row, &params, keys).await;
+    let found = lookup_metadata(sources.deployment_info, row, &params, keys).await;
     let mapped = deployment_is_catalog_mapped(found.as_ref(), &row.model_info);
-    let answer = provider_answer(sources, &params)?;
-    state.auth = Some(params.clientside_auth);
-    let metadata = resolve_metadata(sources, state.model_group, row, &answer, found)?;
+    let answer = provider_answer(sources.providers, &params)?;
+    state.auth = params.clientside_auth;
+    let metadata = match found {
+        Some(metadata) => metadata,
+        None => {
+            let supported = supported_params(sources.parameters, &answer)?;
+            fallback_metadata(state.model_group, &answer.provider, row, &supported)?
+        }
+    };
     let mut current = match state.group.take() {
         Some(mut group) => {
             merge_later(&mut group, &answer, &metadata, &mut limits)?;
@@ -140,7 +170,7 @@ where
             &answer.litellm_model,
             &answer.provider,
         )
-        .map_err(|source| GroupInfoError::FastMode { source })?;
+        .map_err(GroupInfoError::from)?;
     state.reasoning.observe(resolve_supported_efforts(
         &metadata,
         mapped,
@@ -152,26 +182,25 @@ where
 }
 
 // The metadata lookup: an id the row lost or a failing lookup both leave the fallback in place.
-async fn lookup_metadata<D, R, P>(
-    sources: &GroupSources<'_, D, R, P>,
+async fn lookup_metadata<D>(
+    deployment_info: &D,
     row: &DeploymentSpec,
     params: &RowParams<'_>,
     keys: &mut ModelCostKeys,
 ) -> Option<JsonObject>
 where
-    D: DeploymentInfo,
+    D: DeploymentInfo + Sync,
 {
     let id = row.id()?;
-    sources
-        .deployment_info
+    deployment_info
         .info(id, params.model, keys)
         .await
         .ok()
         .flatten()
 }
 
-fn provider_answer<D, R, P>(
-    sources: &GroupSources<'_, D, R, P>,
+fn provider_answer<R>(
+    providers: &R,
     params: &RowParams<'_>,
 ) -> Result<ProviderAnswer, GroupInfoError>
 where
@@ -181,47 +210,28 @@ where
         model: params.model,
         custom_llm_provider: params.custom_llm_provider,
     };
-    match sources.providers.resolve_provider(&request) {
+    match providers.resolve_provider(&request) {
         Ok(answer) => Ok(answer),
         Err(ProviderFailure::BadRequest(message)) => {
             tracing::error!("litellm.router.py::get_model_group_info() - {message}");
-            Ok(ProviderAnswer {
-                litellm_model: String::new(),
-                provider: String::new(),
-            })
+            Ok(ProviderAnswer::default())
         }
         Err(ProviderFailure::Other(message)) => Err(GroupInfoError::Provider { message }),
     }
 }
 
-// The deployment metadata, or the ModelMapInfo the fallback builds out of the row's own model_info.
-fn resolve_metadata<D, R, P>(
-    sources: &GroupSources<'_, D, R, P>,
-    model_group: &str,
-    row: &DeploymentSpec,
+fn supported_params<P>(
+    parameters: &P,
     answer: &ProviderAnswer,
-    found: Option<JsonObject>,
-) -> Result<JsonObject, GroupInfoError>
+) -> Result<Vec<String>, GroupInfoError>
 where
     P: SupportedParameterSource,
 {
-    let Some(metadata) = found else {
-        let supported = supported_params(sources.parameters, answer)?;
-        return fallback_metadata(model_group, &answer.provider, row, supported);
-    };
-    Ok(metadata)
-}
-
-fn supported_params<P: SupportedParameterSource>(
-    parameters: &P,
-    answer: &ProviderAnswer,
-) -> Result<Vec<String>, GroupInfoError> {
     let provider = Some(answer.provider.as_str());
-    match parameters.supported_openai_params(&answer.litellm_model, provider) {
-        Ok(Some(params)) => Ok(params),
-        Ok(None) => Ok(Vec::new()),
-        Err(error) => Err(GroupInfoError::Parameters {
+    parameters
+        .supported_openai_params(&answer.litellm_model, provider)
+        .map(Option::unwrap_or_default)
+        .map_err(|error| GroupInfoError::Parameters {
             message: error.to_string(),
-        }),
-    }
+        })
 }

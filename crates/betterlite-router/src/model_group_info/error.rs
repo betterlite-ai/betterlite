@@ -18,11 +18,8 @@ pub enum GroupInfoError {
     Totals,
     #[error("resolving the deployment provider failed: {message}")]
     Provider { message: String },
-    #[error("the fast-mode capability lookup failed: {source}")]
-    FastMode {
-        #[source]
-        source: CapabilityError,
-    },
+    #[error("the fast-mode capability lookup failed")]
+    FastMode(#[from] CapabilityError),
     #[error("reading the deployment supported OpenAI parameters failed: {message}")]
     Parameters { message: String },
 }

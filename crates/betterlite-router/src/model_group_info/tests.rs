@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::future::{Future, ready};
 use std::io;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_context::anthropic_catalog_lookup::RawCatalog;
 use betterlite_models::decisions::Json;
@@ -15,6 +15,7 @@ use betterlite_models::model_metadata_resolution::names::ModelCostMap;
 use betterlite_models::model_registration::JsonObject;
 use rust_decimal::Decimal;
 use serde_json::Number;
+use tokio::runtime::Builder;
 
 use crate::catalog_updates::catalog::DeploymentCatalog;
 use crate::deployment_identity::spec::DeploymentSpec;
@@ -22,7 +23,6 @@ use crate::model_catalog_lookup::alias::{AliasMap, AliasTarget};
 use crate::model_catalog_lookup::error::LookupError;
 use crate::model_catalog_lookup::lookup::CatalogLookup;
 use crate::model_group_info::aggregate::get_model_group_info;
-use crate::model_group_info::cost::cost_value;
 use crate::model_group_info::error::GroupInfoError;
 use crate::model_group_info::group::{Capability, ClientsideAuth, ModelGroupInfo};
 use crate::model_group_info::sources::{
@@ -37,7 +37,8 @@ struct Logs(Arc<Mutex<Vec<u8>>>);
 
 impl io::Write for Logs {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(buf);
+        let mut logs = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        logs.extend_from_slice(buf);
         Ok(buf.len())
     }
 
@@ -177,7 +178,6 @@ impl Scenario {
             inferred_provider: &no_inferred,
         };
         let sources = GroupSources {
-            lookup: &lookup,
             deployment_info: &self.info,
             providers: &self.providers,
             parameters: &self.parameters,
@@ -185,7 +185,12 @@ impl Scenario {
             fast_mode_catalog: &self.fast_mode,
         };
         let mut keys = ModelCostKeys::default();
-        block_on(get_model_group_info(&sources, model_group, &mut keys))
+        block_on(get_model_group_info(
+            &lookup,
+            &sources,
+            model_group,
+            &mut keys,
+        ))
     }
 
     fn answer(&mut self, model: &str, litellm_model: &str, provider: &str) {
@@ -200,8 +205,11 @@ impl Scenario {
     }
 }
 
-fn block_on<F: Future>(future: F) -> F::Output {
-    tokio::runtime::Builder::new_current_thread()
+fn block_on<F>(future: F) -> F::Output
+where
+    F: Future,
+{
+    Builder::new_current_thread()
         .build()
         .expect("runtime")
         .block_on(future)
@@ -284,10 +292,6 @@ fn alias_item(scenario: &mut Scenario, alias: &str, model: Option<Json>, hidden:
         .world
         .aliases
         .insert(alias.to_owned(), AliasTarget::Item { model, hidden });
-}
-
-fn text(value: &str) -> Option<Json> {
-    Some(Json::Text(value.to_owned()))
 }
 
 const ALPHA: &str =
@@ -808,7 +812,7 @@ fn hidden_alias_none() {
     alias_item(
         &mut scenario,
         "hidden",
-        text("target"),
+        Some(Json::Text("target".to_owned())),
         Some(Json::Bool(true)),
     );
     assert_eq!(scenario.group("hidden").expect("info"), None);
@@ -830,7 +834,12 @@ fn invalid_alias_kind() {
 #[test]
 fn malformed_alias_error() {
     let mut scenario = Scenario::new(&[]);
-    alias_item(&mut scenario, "no-hidden", text("target"), None);
+    alias_item(
+        &mut scenario,
+        "no-hidden",
+        Some(Json::Text("target".to_owned())),
+        None,
+    );
     assert!(matches!(
         scenario.group("no-hidden"),
         Err(GroupInfoError::Lookup(LookupError::MalformedAlias {
@@ -952,46 +961,4 @@ fn reasoning_known_empty() {
     );
 }
 
-#[test]
-fn cost_scalar_conversion() {
-    assert_eq!(cost_value(None).expect("cost"), None);
-    assert_eq!(cost_value(Some(&Json::Null)).expect("cost"), None);
-    assert_eq!(
-        cost_value(Some(&Json::Bool(true))).expect("cost"),
-        Some(Decimal::ONE)
-    );
-    assert_eq!(
-        cost_value(Some(&Json::Bool(false))).expect("cost"),
-        Some(Decimal::ZERO)
-    );
-    assert_eq!(
-        cost_value(Some(&Json::Number(Number::from(0_i64)))).expect("cost"),
-        Some(Decimal::ZERO)
-    );
-    assert_eq!(
-        cost_value(Some(&Json::Text(" 2_000.5 ".to_owned()))).expect("cost"),
-        Some(decimal("2000.5"))
-    );
-    assert_eq!(
-        cost_value(Some(&Json::Text("1e-3".to_owned()))).expect("cost"),
-        Some(decimal("0.001"))
-    );
-    assert_eq!(
-        cost_value(Some(&Json::Text("abc".to_owned()))).expect("cost"),
-        None
-    );
-    assert_eq!(
-        cost_value(Some(&Json::Text("0x1".to_owned()))).expect("cost"),
-        None
-    );
-    assert_eq!(
-        cost_value(Some(&Json::List(Vec::new()))).expect("cost"),
-        None
-    );
-    assert_eq!(
-        cost_value(Some(&Json::Object(JsonObject::new()))).expect("cost"),
-        None
-    );
-    assert!(cost_value(Some(&Json::Text("inf".to_owned()))).is_err());
-    assert!(cost_value(Some(&Json::Text("nan".to_owned()))).is_err());
-}
+mod cost;

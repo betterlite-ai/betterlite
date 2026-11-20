@@ -19,24 +19,16 @@ pub enum Capability {
 }
 
 impl Capability {
-    pub fn field(self) -> &'static str {
-        match self {
-            Self::ParallelFunctionCalling => "supports_parallel_function_calling",
-            Self::Vision => "supports_vision",
-            Self::WebSearch => "supports_web_search",
-            Self::UrlContext => "supports_url_context",
-            Self::Reasoning => "supports_reasoning",
-            Self::FunctionCalling => "supports_function_calling",
-        }
-    }
-
-    pub const ALL: [Self; 6] = [
-        Self::ParallelFunctionCalling,
-        Self::Vision,
-        Self::WebSearch,
-        Self::UrlContext,
-        Self::Reasoning,
-        Self::FunctionCalling,
+    pub const ALL: [(&'static str, Self); 6] = [
+        (
+            "supports_parallel_function_calling",
+            Self::ParallelFunctionCalling,
+        ),
+        ("supports_vision", Self::Vision),
+        ("supports_web_search", Self::WebSearch),
+        ("supports_url_context", Self::UrlContext),
+        ("supports_reasoning", Self::Reasoning),
+        ("supports_function_calling", Self::FunctionCalling),
     ];
 }
 
@@ -73,6 +65,13 @@ impl ModelGroupInfo {
     #[must_use]
     pub fn to_json(&self) -> JsonObject {
         let mut fields = JsonObject::new();
+        self.insert_identity(&mut fields);
+        self.insert_limits(&mut fields);
+        self.insert_capabilities(&mut fields);
+        fields
+    }
+
+    fn insert_identity(&self, fields: &mut JsonObject) {
         fields.insert(
             "model_group".to_owned(),
             Json::Text(self.model_group.clone()),
@@ -98,24 +97,45 @@ impl ModelGroupInfo {
             "input_cost_per_pixel".to_owned(),
             json_float(self.input_cost_per_pixel.as_ref()),
         );
-        let mode = self.mode.clone().map(Json::Text).unwrap_or(Json::Null);
-        fields.insert("mode".to_owned(), mode);
-        let int = |value: Option<i64>| value.map(Number::from).map_or(Json::Null, Json::Number);
-        fields.insert("tpm".to_owned(), int(self.tpm));
-        fields.insert("rpm".to_owned(), int(self.rpm));
-        fields.insert("itpm".to_owned(), int(self.itpm));
-        fields.insert("otpm".to_owned(), int(self.otpm));
-        for capability in Capability::ALL {
-            let enabled = self.capabilities.contains(&capability);
-            fields.insert(capability.field().to_owned(), Json::Bool(enabled));
-        }
+        fields.insert(
+            "mode".to_owned(),
+            self.mode.clone().map_or(Json::Null, Json::Text),
+        );
+    }
+
+    fn insert_limits(&self, fields: &mut JsonObject) {
+        fields.insert(
+            "tpm".to_owned(),
+            self.tpm.map(Number::from).map_or(Json::Null, Json::Number),
+        );
+        fields.insert(
+            "rpm".to_owned(),
+            self.rpm.map(Number::from).map_or(Json::Null, Json::Number),
+        );
+        fields.insert(
+            "itpm".to_owned(),
+            self.itpm.map(Number::from).map_or(Json::Null, Json::Number),
+        );
+        fields.insert(
+            "otpm".to_owned(),
+            self.otpm.map(Number::from).map_or(Json::Null, Json::Number),
+        );
         fields.insert(
             "supports_fast_mode".to_owned(),
             Json::Bool(self.supports_fast_mode),
         );
+    }
+
+    fn insert_capabilities(&self, fields: &mut JsonObject) {
+        for (field, capability) in Capability::ALL {
+            let enabled = self.capabilities.contains(&capability);
+            fields.insert(field.to_owned(), Json::Bool(enabled));
+        }
         fields.insert(
             "supported_reasoning_efforts".to_owned(),
-            json_efforts(self.supported_reasoning_efforts.as_deref()),
+            json_list(self.supported_reasoning_efforts.as_deref(), |effort| {
+                Json::Text(effort_name(*effort).to_owned())
+            }),
         );
         fields.insert(
             "supported_openai_params".to_owned(),
@@ -125,9 +145,8 @@ impl ModelGroupInfo {
         );
         fields.insert(
             "configurable_clientside_auth_params".to_owned(),
-            json_auth(self.clientside_auth.as_deref()),
+            json_list(self.clientside_auth.as_deref(), ClientsideAuth::to_json),
         );
-        fields
     }
 }
 
@@ -150,24 +169,13 @@ fn text_list(values: &[String]) -> Json {
     )
 }
 
-fn json_efforts(efforts: Option<&[ReasoningEffort]>) -> Json {
-    efforts.map_or(Json::Null, |efforts| {
-        Json::List(
-            efforts
-                .iter()
-                .map(|effort| Json::Text(effort_name(*effort).to_owned()))
-                .collect(),
-        )
+fn json_list<T>(values: Option<&[T]>, convert: fn(&T) -> Json) -> Json {
+    values.map_or(Json::Null, |items| {
+        Json::List(items.iter().map(convert).collect())
     })
 }
 
-fn json_auth(entries: Option<&[ClientsideAuth]>) -> Json {
-    entries.map_or(Json::Null, |entries| {
-        Json::List(entries.iter().map(ClientsideAuth::to_json).collect())
-    })
-}
-
-fn effort_name(effort: ReasoningEffort) -> &'static str {
+const fn effort_name(effort: ReasoningEffort) -> &'static str {
     match effort {
         ReasoningEffort::None => "none",
         ReasoningEffort::Minimal => "minimal",

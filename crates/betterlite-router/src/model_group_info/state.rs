@@ -4,17 +4,18 @@ use crate::model_group_info::error::GroupInfoError;
 use crate::model_group_info::group::{ClientsideAuth, ModelGroupInfo};
 use crate::model_group_info::row::ConfiguredLimits;
 
-pub(crate) struct AggregateState<'a> {
-    pub(crate) model_group: &'a str,
-    pub(crate) user_facing: &'a str,
+pub(crate) struct AggregateState<'state> {
+    pub(crate) model_group: &'state str,
+    pub(crate) user_facing: &'state str,
     pub(crate) group: Option<ModelGroupInfo>,
     pub(crate) totals: Totals,
     pub(crate) reasoning: GroupReasoningEfforts,
-    pub(crate) auth: Option<Option<Vec<ClientsideAuth>>>,
+    // The last matched row's params, which replace the first row's only when the row carried some.
+    pub(crate) auth: Option<Vec<ClientsideAuth>>,
 }
 
-impl<'a> AggregateState<'a> {
-    pub(crate) fn new(model_group: &'a str, user_facing: &'a str) -> Self {
+impl<'state> AggregateState<'state> {
+    pub(crate) fn new(model_group: &'state str, user_facing: &'state str) -> Self {
         Self {
             model_group,
             user_facing,
@@ -32,7 +33,7 @@ impl<'a> AggregateState<'a> {
         group.rpm = self.totals.rpm.or(group.rpm);
         group.itpm = self.totals.itpm.or(group.itpm);
         group.otpm = self.totals.otpm.or(group.otpm);
-        if let Some(auth) = self.auth.flatten() {
+        if let Some(auth) = self.auth {
             group.clientside_auth = Some(auth);
         }
         group.supported_reasoning_efforts = self.reasoning.supported;

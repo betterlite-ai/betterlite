@@ -4,7 +4,7 @@ use serde_json::Number;
 
 use super::{ALPHA, BETA, Scenario, decimal, group_of, parse};
 use crate::model_group_info::error::GroupInfoError;
-use crate::model_group_info::group::{Capability, ClientsideAuth};
+use crate::model_group_info::group::{Capability, ClientsideAuth, ModelGroupInfo};
 
 #[test]
 fn rejects_a_fractional_limit() {
@@ -17,8 +17,8 @@ fn rejects_a_fractional_limit() {
     ));
 }
 
-#[test]
-fn wire_fields() {
+// A two-deployment group with every wire field set to a value the aggregation alone would not produce.
+fn decorated_group() -> ModelGroupInfo {
     let mut scenario = Scenario::new(&[ALPHA, BETA]);
     scenario.metadata("a", r#"{"mode":"chat"}"#);
     scenario.metadata("b", r#"{"mode":"chat"}"#);
@@ -35,7 +35,12 @@ fn wire_fields() {
         ClientsideAuth::Name("temperature".to_owned()),
         ClientsideAuth::Item(parse(r#"{"api_base":"https://b846"}"#)),
     ]);
-    let wire = group.to_json();
+    group
+}
+
+#[test]
+fn wire_identity_and_limits() {
+    let wire = decorated_group().to_json();
     assert_eq!(wire.get("model_group"), Some(&Json::Text("g".to_owned())));
     assert_eq!(
         wire.get("providers"),
@@ -45,14 +50,19 @@ fn wire_fields() {
         ]))
     );
     assert_eq!(wire.get("max_input_tokens"), Some(&Json::Null));
-    assert_eq!(
-        wire.get("input_cost_per_token"),
-        Some(&Json::Number(Number::from_f64(0.5).expect("finite")))
-    );
     assert_eq!(wire.get("tpm"), Some(&Json::Number(Number::from(7_i64))));
     assert_eq!(wire.get("mode"), Some(&Json::Text("chat".to_owned())));
     assert_eq!(wire.get("supports_vision"), Some(&Json::Bool(true)));
     assert_eq!(wire.get("supports_url_context"), Some(&Json::Bool(false)));
+}
+
+#[test]
+fn wire_costs_and_params() {
+    let wire = decorated_group().to_json();
+    assert_eq!(
+        wire.get("input_cost_per_token"),
+        Some(&Json::Number(Number::from_f64(0.5).expect("finite")))
+    );
     assert_eq!(
         wire.get("supported_reasoning_efforts"),
         Some(&Json::List(vec![Json::Text("low".to_owned())]))

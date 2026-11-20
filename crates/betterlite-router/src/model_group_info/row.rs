@@ -14,14 +14,14 @@ use crate::model_group_info::fields::{
 use crate::model_group_info::group::{Capability, ClientsideAuth, ModelGroupInfo};
 use crate::model_group_info::sources::ProviderAnswer;
 
-pub struct RowParams<'a> {
-    pub model: &'a str,
-    pub custom_llm_provider: Option<&'a str>,
+pub struct RowParams<'params> {
+    pub model: &'params str,
+    pub custom_llm_provider: Option<&'params str>,
     pub clientside_auth: Option<Vec<ClientsideAuth>>,
 }
 
-impl<'a> RowParams<'a> {
-    pub fn parse(params: &'a JsonObject) -> Result<Self, GroupInfoError> {
+impl<'params> RowParams<'params> {
+    pub fn parse(params: &'params JsonObject) -> Result<Self, GroupInfoError> {
         let Some(Json::Text(model)) = params.get("model") else {
             return Err(GroupInfoError::Field { field: "model" });
         };
@@ -74,7 +74,7 @@ pub fn fallback_metadata(
     model_group: &str,
     provider: &str,
     row: &DeploymentSpec,
-    supported: Vec<String>,
+    supported: &[String],
 ) -> Result<JsonObject, GroupInfoError> {
     let mut metadata = JsonObject::new();
     metadata.insert("key".to_owned(), Json::Text(model_group.to_owned()));
@@ -120,8 +120,20 @@ pub fn first_group(
     metadata: &JsonObject,
 ) -> Result<ModelGroupInfo, GroupInfoError> {
     Ok(ModelGroupInfo {
-        model_group: identity(metadata, user_facing)?,
-        providers: providers(metadata, answer)?,
+        model_group: match metadata.get("model_group") {
+            None => user_facing.to_owned(),
+            Some(Json::Text(name)) => name.clone(),
+            Some(_) => {
+                return Err(GroupInfoError::Field {
+                    field: "model_group",
+                });
+            }
+        },
+        providers: match metadata.get("providers") {
+            None => vec![answer.provider.clone()],
+            Some(Json::Null) => return Err(GroupInfoError::Field { field: "providers" }),
+            Some(value) => text_list(value, "providers")?,
+        },
         max_input_tokens: read_field(metadata, "max_input_tokens", parse_decimal)?,
         max_output_tokens: read_field(metadata, "max_output_tokens", parse_decimal)?,
         input_cost_per_token: read_field(metadata, "input_cost_per_token", parse_decimal)?,
@@ -140,31 +152,10 @@ pub fn first_group(
     })
 }
 
-fn identity(metadata: &JsonObject, user_facing: &str) -> Result<String, GroupInfoError> {
-    match metadata.get("model_group") {
-        None => Ok(user_facing.to_owned()),
-        Some(Json::Text(name)) => Ok(name.clone()),
-        Some(_) => Err(GroupInfoError::Field {
-            field: "model_group",
-        }),
-    }
-}
-
-fn providers(
-    metadata: &JsonObject,
-    answer: &ProviderAnswer,
-) -> Result<Vec<String>, GroupInfoError> {
-    match metadata.get("providers") {
-        None => Ok(vec![answer.provider.clone()]),
-        Some(Json::Null) => Err(GroupInfoError::Field { field: "providers" }),
-        Some(value) => text_list(value, "providers"),
-    }
-}
-
 pub fn capabilities(metadata: &JsonObject) -> Result<BTreeSet<Capability>, GroupInfoError> {
     let mut enabled = BTreeSet::new();
-    for capability in Capability::ALL {
-        if read_field(metadata, capability.field(), parse_flag)? == Some(true) {
+    for (field, capability) in Capability::ALL {
+        if read_field(metadata, field, parse_flag)? == Some(true) {
             enabled.insert(capability);
         }
     }

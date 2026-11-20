@@ -47,28 +47,26 @@ pub(crate) fn parse_i64(value: &Json, name: &'static str) -> Result<Option<i64>,
     let Json::Number(number) = value else {
         return Err(GroupInfoError::Field { field: name });
     };
-    integer(number, name)
+    if let Some(found) = number.as_i64() {
+        return Ok(Some(found));
+    }
+    let unsigned = number
+        .as_u64()
+        .ok_or(GroupInfoError::Field { field: name })?;
+    i64::try_from(unsigned)
+        .map(Some)
+        .map_err(|_error| GroupInfoError::Field { field: name })
 }
 
 pub(crate) const fn parse_flag(
     value: &Json,
     name: &'static str,
 ) -> Result<Option<bool>, GroupInfoError> {
-    if let Json::Bool(flag) = value {
-        return Ok(Some(*flag));
-    }
-    Err(GroupInfoError::Field { field: name })
-}
-
-fn integer(number: &Number, field: &'static str) -> Result<Option<i64>, GroupInfoError> {
-    if let Some(value) = number.as_i64() {
-        return Ok(Some(value));
-    }
-    match number.as_u64() {
-        Some(value) => i64::try_from(value)
-            .map(Some)
-            .map_err(|_error| GroupInfoError::Field { field }),
-        None => Err(GroupInfoError::Field { field }),
+    match value {
+        Json::Bool(flag) => Ok(Some(*flag)),
+        Json::Null | Json::Text(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+            Err(GroupInfoError::Field { field: name })
+        }
     }
 }
 
@@ -132,7 +130,7 @@ fn auth_list(value: &Json, keep_extras: bool) -> Result<Vec<ClientsideAuth>, Gro
         match item {
             Json::Text(name) => entries.push(ClientsideAuth::Name(name.clone())),
             Json::Object(fields) => {
-                entries.push(ClientsideAuth::Item(item_object(fields, keep_extras)?))
+                entries.push(ClientsideAuth::Item(item_object(fields, keep_extras)?));
             }
             Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => {
                 return Err(GroupInfoError::Field { field: AUTH });

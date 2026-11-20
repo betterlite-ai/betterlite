@@ -6,8 +6,8 @@ use crate::model_group_info::sources::{
     ProviderAnswer, ProviderFailure, ProviderRequest, ProviderResolver,
 };
 
-pub struct ContextProviderResolver<'a> {
-    pub resolution: &'a ResolutionContext<'a>,
+pub struct ContextProviderResolver<'resolution> {
+    pub resolution: &'resolution ResolutionContext<'resolution>,
 }
 
 impl ProviderResolver for ContextProviderResolver<'_> {

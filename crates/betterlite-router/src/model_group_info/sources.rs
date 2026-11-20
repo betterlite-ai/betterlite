@@ -9,7 +9,6 @@ use betterlite_models::model_registration::JsonObject;
 
 use crate::deployment_model_info::deployment_info::get_deployment_model_info;
 use crate::deployment_model_info::metadata::{ModelMetadataSource, RouterMetadata};
-use crate::model_catalog_lookup::lookup::CatalogLookup;
 
 // get_deployment_model_info behind a trait, so the aggregation can be tested and read by other crates without a full router.
 pub trait DeploymentInfo {
@@ -23,7 +22,7 @@ pub trait DeploymentInfo {
     ) -> impl Future<Output = Result<Option<JsonObject>, Self::Error>> + Send;
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ProviderAnswer {
     pub litellm_model: String,
     pub provider: String,
@@ -36,9 +35,9 @@ pub enum ProviderFailure {
     Other(String),
 }
 
-pub struct ProviderRequest<'a> {
-    pub model: &'a str,
-    pub custom_llm_provider: Option<&'a str>,
+pub struct ProviderRequest<'model> {
+    pub model: &'model str,
+    pub custom_llm_provider: Option<&'model str>,
 }
 
 pub trait ProviderResolver {
@@ -48,14 +47,13 @@ pub trait ProviderResolver {
     ) -> Result<ProviderAnswer, ProviderFailure>;
 }
 
-// Everything one get_model_group_info call reads, so the router owns the inputs and the module owns the aggregation.
-pub struct GroupSources<'a, D, R, P> {
-    pub lookup: &'a CatalogLookup<'a>,
-    pub deployment_info: &'a D,
-    pub providers: &'a R,
-    pub parameters: &'a P,
-    pub cost_map: &'a ModelCostMap,
-    pub fast_mode_catalog: &'a RawCatalog,
+// The collaborators one aggregation reads. The catalog stays out: its rows are read before the future is built.
+pub struct GroupSources<'sources, D, R, P> {
+    pub deployment_info: &'sources D,
+    pub providers: &'sources R,
+    pub parameters: &'sources P,
+    pub cost_map: &'sources ModelCostMap,
+    pub fast_mode_catalog: &'sources RawCatalog,
 }
 
 impl<Source> DeploymentInfo for RouterMetadata<'_, '_, '_, Source>
@@ -64,12 +62,12 @@ where
 {
     type Error = Infallible;
 
-    fn info(
+    async fn info(
         &self,
         model_id: &str,
         model_name: &str,
         keys: &mut ModelCostKeys,
-    ) -> impl Future<Output = Result<Option<JsonObject>, Infallible>> + Send {
-        async move { Ok(get_deployment_model_info(self, model_id, model_name, keys).await) }
+    ) -> Result<Option<JsonObject>, Infallible> {
+        Ok(get_deployment_model_info(self, model_id, model_name, keys).await)
     }
 }

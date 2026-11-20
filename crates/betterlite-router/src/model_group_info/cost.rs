@@ -13,7 +13,7 @@ pub enum CostError {
 // _cost_value_as_float: null is absent, a bool is 0 or 1, text follows float(), and a list or object is silently absent.
 pub fn cost_value(value: Option<&Json>) -> Result<Option<Decimal>, CostError> {
     match value {
-        None | Some(Json::Null) => Ok(None),
+        None | Some(Json::Null | Json::List(_) | Json::Object(_)) => Ok(None),
         Some(Json::Bool(flag)) => Ok(Some(if *flag { Decimal::ONE } else { Decimal::ZERO })),
         Some(Json::Number(number)) => decimal_from_lexeme(&number.to_string()).map(Some),
         Some(Json::Text(text)) => {
@@ -22,7 +22,6 @@ pub fn cost_value(value: Option<&Json>) -> Result<Option<Decimal>, CostError> {
             };
             finite_decimal(parsed).map(Some)
         }
-        Some(Json::List(_) | Json::Object(_)) => Ok(None),
     }
 }
 
