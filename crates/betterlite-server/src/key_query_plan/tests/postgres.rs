@@ -1,6 +1,9 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
+
 use betterlite_db::auxiliary_repository::repository::PrismaClient;
+use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::database_replica::availability::Availability;
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_postgres_fixture::connection::PostgresFixture;
@@ -54,6 +57,8 @@ VALUES
     ('expired-key', 'expired-key', 'dave', 'team-a', NULL, 'dave', NULL, NULL, NULL, '2020-01-01T00:00:00', NULL),
     ('blocked-key', 'blocked-key', 'dave', 'team-a', NULL, 'dave', NULL, NULL, NULL, NULL, TRUE),
     ('searchable', 'Alpha Search', 'dave', 'team-a', NULL, 'dave', NULL, NULL, NULL, NULL, NULL);
+INSERT INTO "LiteLLM_BudgetTable" (budget_id, max_budget) VALUES ('budget-1', 10);
+UPDATE "LiteLLM_VerificationToken" SET budget_id = 'budget-1' WHERE token = 'own-alice';
 CREATE TABLE "LiteLLM_DeletedVerificationToken" (
     id TEXT PRIMARY KEY,
     token TEXT,
@@ -146,6 +151,23 @@ async fn postgres_visibility_matrix() {
 
     let counted = list_keys(Some(client), &query(1, 50)).await.unwrap();
     assert_eq!(counted.total_count, Some(12));
+
+    let mut own_full = key_filters();
+    own_full.user_id = Some(String::from("alice"));
+    let mut full_request = query(1, 50);
+    full_request.filters = own_full;
+    full_request.return_full_object = true;
+    let full_response = list_keys(Some(client), &full_request).await.unwrap();
+    assert_eq!(full_response.keys.len(), 1);
+    let document = serde_json::to_string(&full_response.keys[0]).unwrap();
+    let fields: BTreeMap<String, JsonData> = serde_json::from_str(&document).unwrap();
+    let Some(JsonData::Object(budget)) = fields.get("litellm_budget_table") else {
+        panic!("a live row carries its joined budget row");
+    };
+    assert_eq!(
+        budget.get("budget_id"),
+        Some(&JsonData::String(String::from("budget-1")))
+    );
 
     let all = tokens(client, key_filters()).await;
     assert_eq!(
