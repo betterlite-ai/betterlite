@@ -16,6 +16,7 @@ pub const DEFAULT_API_BASE: &str = "https://api.topazlabs.com";
 const API_KEY_VARIABLE: &str = "TOPAZ_API_KEY";
 const API_BASE_VARIABLE: &str = "TOPAZ_API_BASE";
 
+// TopazModelInfo.get_base_model returns its argument, so the call passes the model through unchanged
 // TopazModelInfo.get_models: the five pinned display names, each behind the provider prefix
 pub const MODELS: [&str; 5] = [
     "topaz/Standard V2",

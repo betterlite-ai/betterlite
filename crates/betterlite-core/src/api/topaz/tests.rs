@@ -345,7 +345,13 @@ fn topaz_transform_request_carries_one_image_and_the_mapped_data() {
 
     let fields = transform_request(TopazFile::Bytes(b"pixels"), data.clone());
 
-    assert_eq!(fields.file, prepare_file_tuple(TopazFile::Bytes(b"pixels")));
+    assert_eq!(
+        fields.files,
+        vec![(
+            String::from("image"),
+            prepare_file_tuple(TopazFile::Bytes(b"pixels")),
+        )]
+    );
     assert_eq!(fields.data, data);
     assert_eq!(fields.data.get("model"), None);
 }

@@ -76,7 +76,12 @@ pub(super) fn upload_answer(spec: &FileSpec, optional_params: Option<&ImageParam
         return prepared_answer(&prepare_file_tuple(topaz_file(spec)));
     };
     let fields = transform_request(topaz_file(spec), params.clone());
-    json!({"files": {"image": prepared_answer(&fields.file)}, "data": fields.data})
+    let files = fields
+        .files
+        .iter()
+        .map(|(name, file)| (name.clone(), prepared_answer(file)))
+        .collect::<BTreeMap<String, Value>>();
+    json!({"files": files, "data": fields.data})
 }
 
 // the sync entry point reads the raw response's elapsed time

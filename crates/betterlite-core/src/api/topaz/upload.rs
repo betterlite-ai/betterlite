@@ -93,17 +93,21 @@ fn text_or_default(value: Option<&str>, fallback: &str) -> String {
     }
 }
 
-// transform_request_image_variation's fields: one image file part and the mapped data, never the model
+// the multipart field the one image rides under
+pub const IMAGE_FIELD: &str = "image";
+
+// transform_request_image_variation's fields: the one image file part under its wire name and the mapped
+// data, never the model
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TopazFormFields {
-    pub file: PreparedFile,
+    pub files: Vec<(String, PreparedFile)>,
     pub data: ImageParams,
 }
 
 #[must_use]
 pub fn transform_request(file: TopazFile<'_>, data: ImageParams) -> TopazFormFields {
     TopazFormFields {
-        file: prepare_file_tuple(file),
+        files: vec![(IMAGE_FIELD.to_owned(), prepare_file_tuple(file))],
         data,
     }
 }
