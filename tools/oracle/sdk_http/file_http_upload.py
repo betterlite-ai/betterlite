@@ -213,7 +213,7 @@ class FixtureConfig(MistralFilesConfig):
         return transformed_value(self.case.plan, self.api_base.removesuffix("/v1"))
 
     @override
-    def transform_create_file_response(  # pyright: ignore[reportIncompatibleMethodOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mistral/files/transformation.py#L187  # noqa: E501
+    def transform_create_file_response(  # pyright: ignore[reportIncompatibleMethodOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mistral/files/transformation.py#L187
         self, model: str | None, raw_response: httpx.Response, logging_obj: Logging,
         litellm_params: dict[str, JsonValue],  # type: ignore[override]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mistral/files/transformation.py#L187
     ) -> OpenAIFileObject:
@@ -259,7 +259,7 @@ def run_upload(case: UploadCall, api_base: str) -> Outcome:
         "purpose": "batch",
     }
     try:
-        work = BaseLLMHTTPHandler().create_file(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L3437  # noqa: E501
+        work = BaseLLMHTTPHandler().create_file(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L3437
             create_file_data=create_file_data,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1283
             litellm_params=dict[str, JsonValue](case.litellm_params),
             provider_config=FixtureConfig(case, api_base),
