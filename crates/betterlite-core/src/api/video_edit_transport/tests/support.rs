@@ -819,13 +819,13 @@ pub(crate) fn done(handled: Handled<'_>) -> VideoObject {
 pub(crate) fn provider_error(error: VideoEditTransportError) -> ProviderError {
     match error {
         VideoEditTransportError::Provider(inner) => *inner,
-        other @ VideoEditTransportError::Config(_)
-        | other @ VideoEditTransportError::Logging(_)
-        | other @ VideoEditTransportError::Client(_)
-        | other @ VideoEditTransportError::PrefetchDecode(_)
-        | other @ VideoEditTransportError::FieldType(_)
-        | other @ VideoEditTransportError::SyncInRuntime { .. }
-        | other @ VideoEditTransportError::Runtime(_) => {
+        other @ (VideoEditTransportError::Config(_)
+        | VideoEditTransportError::Logging(_)
+        | VideoEditTransportError::Client(_)
+        | VideoEditTransportError::PrefetchDecode(_)
+        | VideoEditTransportError::FieldType(_)
+        | VideoEditTransportError::SyncInRuntime { .. }
+        | VideoEditTransportError::Runtime(_)) => {
             panic!("expected a provider error, got {other:?}")
         }
     }

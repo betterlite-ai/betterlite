@@ -46,13 +46,13 @@ fn dod_7_extension_unconverted() {
         VideoEditTransportError::Config(source) => {
             assert_eq!(source.to_string(), "the extension transform refused");
         }
-        other @ VideoEditTransportError::Provider(_)
-        | other @ VideoEditTransportError::Logging(_)
-        | other @ VideoEditTransportError::Client(_)
-        | other @ VideoEditTransportError::PrefetchDecode(_)
-        | other @ VideoEditTransportError::FieldType(_)
-        | other @ VideoEditTransportError::SyncInRuntime { .. }
-        | other @ VideoEditTransportError::Runtime(_) => {
+        other @ (VideoEditTransportError::Provider(_)
+        | VideoEditTransportError::Logging(_)
+        | VideoEditTransportError::Client(_)
+        | VideoEditTransportError::PrefetchDecode(_)
+        | VideoEditTransportError::FieldType(_)
+        | VideoEditTransportError::SyncInRuntime { .. }
+        | VideoEditTransportError::Runtime(_)) => {
             panic!("the transform error was converted: {other:?}")
         }
     }
@@ -70,14 +70,14 @@ fn dod_7_extension_unconverted() {
         VideoEditTransportError::Logging(PrePostError::CallbackFailed { message }) => {
             assert_eq!(message, "the pre_call refused");
         }
-        other @ VideoEditTransportError::Provider(_)
-        | other @ VideoEditTransportError::Config(_)
-        | other @ VideoEditTransportError::Logging(_)
-        | other @ VideoEditTransportError::Client(_)
-        | other @ VideoEditTransportError::PrefetchDecode(_)
-        | other @ VideoEditTransportError::FieldType(_)
-        | other @ VideoEditTransportError::SyncInRuntime { .. }
-        | other @ VideoEditTransportError::Runtime(_) => {
+        other @ (VideoEditTransportError::Provider(_)
+        | VideoEditTransportError::Config(_)
+        | VideoEditTransportError::Logging(_)
+        | VideoEditTransportError::Client(_)
+        | VideoEditTransportError::PrefetchDecode(_)
+        | VideoEditTransportError::FieldType(_)
+        | VideoEditTransportError::SyncInRuntime { .. }
+        | VideoEditTransportError::Runtime(_)) => {
             panic!("the pre_call error was converted: {other:?}")
         }
     }
@@ -293,13 +293,13 @@ fn assert_field_type(error: VideoEditTransportError, field: &str, expected: &str
             assert_eq!(seen.field, field);
             assert_eq!(seen.expected, expected);
         }
-        other @ VideoEditTransportError::Provider(_)
-        | other @ VideoEditTransportError::Config(_)
-        | other @ VideoEditTransportError::Logging(_)
-        | other @ VideoEditTransportError::Client(_)
-        | other @ VideoEditTransportError::PrefetchDecode(_)
-        | other @ VideoEditTransportError::SyncInRuntime { .. }
-        | other @ VideoEditTransportError::Runtime(_) => {
+        other @ (VideoEditTransportError::Provider(_)
+        | VideoEditTransportError::Config(_)
+        | VideoEditTransportError::Logging(_)
+        | VideoEditTransportError::Client(_)
+        | VideoEditTransportError::PrefetchDecode(_)
+        | VideoEditTransportError::SyncInRuntime { .. }
+        | VideoEditTransportError::Runtime(_)) => {
             panic!("the wrong type travelled as {other:?}")
         }
     }
@@ -353,13 +353,13 @@ fn dod_9_sync_in_runtime() {
 fn assert_sync_in_runtime(handled: Result<Handled<'_>, VideoEditTransportError>) {
     match expect_failure(handled) {
         VideoEditTransportError::SyncInRuntime { status_code } => assert_eq!(status_code, 500),
-        other @ VideoEditTransportError::Provider(_)
-        | other @ VideoEditTransportError::Config(_)
-        | other @ VideoEditTransportError::Logging(_)
-        | other @ VideoEditTransportError::Client(_)
-        | other @ VideoEditTransportError::PrefetchDecode(_)
-        | other @ VideoEditTransportError::FieldType(_)
-        | other @ VideoEditTransportError::Runtime(_) => {
+        other @ (VideoEditTransportError::Provider(_)
+        | VideoEditTransportError::Config(_)
+        | VideoEditTransportError::Logging(_)
+        | VideoEditTransportError::Client(_)
+        | VideoEditTransportError::PrefetchDecode(_)
+        | VideoEditTransportError::FieldType(_)
+        | VideoEditTransportError::Runtime(_)) => {
             panic!("the sync handler ran inside a runtime: {other:?}")
         }
     }
