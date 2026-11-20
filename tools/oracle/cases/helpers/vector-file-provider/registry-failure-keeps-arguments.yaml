@@ -1,0 +1,39 @@
+kind: helper
+name: vector-file-provider-registry-failure-keeps-arguments
+call:
+  vector_file_provider:
+    vector_store_id: vs_a
+    custom_llm_provider: openai
+    kwargs: {api_key: caller, timeout: 7}
+    registry: null
+calls:
+  - vector_file_provider:
+      vector_store_id: vs_a
+      custom_llm_provider: openai
+      kwargs: {api_key: caller, timeout: 7}
+      registry:
+        result: null
+        error: null
+  - vector_file_provider:
+      vector_store_id: vs_a
+      custom_llm_provider: openai
+      kwargs: {api_key: caller, timeout: 7}
+      registry:
+        result: {}
+        error: null
+  - vector_file_provider:
+      vector_store_id: vs_a
+      custom_llm_provider: openai
+      kwargs: {api_key: caller, timeout: 7}
+      registry:
+        result: null
+        error: {class_name: ValueError, message: store missing}
+  - vector_file_provider:
+      vector_store_id: vs_a
+      custom_llm_provider: openai
+      kwargs: {api_key: caller, timeout: 7}
+      registry:
+        result: null
+        error: {class_name: RuntimeError, message: unavailable}
+env: {}
+compare: {ignore: []}

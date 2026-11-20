@@ -1,0 +1,6 @@
+kind: helper
+name: anthropic-guardrail-write-back-structured-only-system-rows-gets-placeholder
+call:
+  b3674: {"function": "structured", "scenarios": [{"data": {"model": "claude-sonnet-4-5", "system": "top", "messages": [{"role": "user", "content": "old"}]}, "messages": [{"role": "system", "content": "top"}], "preserve_system_messages": false, "compute_hoisted": true}]}
+env: {}
+compare: {ignore: []}

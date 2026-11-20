@@ -1,0 +1,80 @@
+kind: helper
+name: deployment-model-info-group-widest-versus-one-deployment
+call:
+  deployment_model_info:
+    function: listing
+    model_list:
+      - model_name: mixed
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: a
+          max_input_tokens: 100
+          max_output_tokens: 10
+      - model_name: mixed
+        litellm_params:
+          model: openai/gpt-4o-mini
+        model_info:
+          id: b
+          max_input_tokens: 900
+          max_output_tokens: 90
+      - model_name: mixed
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: c
+          max_output_tokens: 50
+    model_cost:
+      openai/gpt-4o:
+        max_tokens: 1000
+        input_cost_per_token: 0.1
+        output_cost_per_token: 0.2
+        litellm_provider: openai
+      openai/gpt-4o-mini:
+        max_tokens: 500
+        input_cost_per_token: 0.01
+        output_cost_per_token: 0.02
+        litellm_provider: openai
+    arguments:
+      model_name: mixed
+calls:
+  - deployment_model_info:
+      function: configured
+      model_list:
+        - model_name: mixed
+          litellm_params:
+            model: openai/gpt-4o
+          model_info:
+            id: a
+            max_input_tokens: 100
+            max_output_tokens: 10
+        - model_name: mixed
+          litellm_params:
+            model: openai/gpt-4o-mini
+          model_info:
+            id: b
+            max_input_tokens: 900
+            max_output_tokens: 90
+      model_cost:
+        openai/gpt-4o:
+          max_tokens: 1000
+          litellm_provider: openai
+      arguments:
+        model_name: mixed
+  - deployment_model_info:
+      function: configured
+      model_list:
+        - model_name: mixed
+          litellm_params:
+            model: openai/gpt-4o
+          model_info:
+            id: a
+            max_input_tokens: 100
+      model_cost:
+        openai/gpt-4o:
+          max_tokens: 1000
+          litellm_provider: openai
+      arguments:
+        model_name: absent
+env: {}
+compare: {ignore: []}
