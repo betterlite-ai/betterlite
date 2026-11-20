@@ -8,7 +8,10 @@ use betterlite_auth::auth_route_patterns::public_routes::check_configured_public
 use betterlite_config::sections::auth_route_patterns::Settings;
 use secrecy::SecretString;
 
+use super::auth_identity::StageFailure;
 use super::route_match::{RouteMatchError, decoded_route_path};
+use crate::cache_activity_routes::CACHE_ACTIVITY_PATH;
+use crate::error_body::{AuthenticationFailure, missing_credential_error};
 
 mod tests;
 
@@ -38,6 +41,23 @@ pub(crate) async fn stage(
     if check_configured_public_routes(&route, Ok(&settings.routes.public_routes)) {
         next.run(request).await
     } else {
-        super::authenticate(State(settings.master_key), request, next).await
+        match super::authenticate(State(settings.master_key), request, next).await {
+            Ok(response) => response,
+            Err(failure) => failure_response(&path, &failure),
+        }
     }
+}
+
+// The route declares LiteLLM's user_api_key_auth dependency itself, so a missing key gets that dependency's 401 body
+fn failure_response(path: &str, failure: &StageFailure) -> Response {
+    if path == CACHE_ACTIVITY_PATH
+        && matches!(
+            failure,
+            StageFailure::Authentication(authentication)
+                if matches!(**authentication, AuthenticationFailure::Missing)
+        )
+    {
+        return missing_credential_error();
+    }
+    super::stage_failure_response(failure)
 }

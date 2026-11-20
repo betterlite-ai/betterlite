@@ -886,6 +886,27 @@ async fn the_cache_activity_route_is_mounted_before_authentication() {
 }
 
 #[tokio::test]
+async fn route_a_missing_credential_answers_401_before_the_missing_dates() {
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load("general_settings:\n  master_key: oracle-master\n")
+    .unwrap();
+    // neither date is given, so a 422 would mean the auth layer let the request through
+    let request = Request::get("/global/activity/cache_hits")
+        .body(Body::empty())
+        .unwrap();
+    let response = application_for(&config).oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    // LiteLLM's user_api_key_auth dependency answers a missing key with this body
+    assert_eq!(
+        &*body,
+        br#"{"error":{"message":"Authentication Error, No api key passed in.","type":"auth_error","param":"None","code":"401"}}"#
+    );
+}
+
+#[tokio::test]
 async fn the_route_opens_the_database_from_general_settings() {
     let config = ConfigLoader {
         lookup: BTreeMap::new(),

@@ -80,15 +80,15 @@ pub(crate) async fn authenticate(
     State(master_key_state): State<Option<SecretString>>,
     mut request: Request<Body>,
     next: Next,
-) -> Response {
+) -> Result<Response, StageFailure> {
     if matches!(
         request.uri().path(),
         "/health/liveliness" | "/health/liveness" | "/health/readiness"
     ) {
-        return next.run(request).await;
+        return Ok(next.run(request).await);
     }
     let Some(master_key) = master_key_state.as_ref() else {
-        return next.run(request).await;
+        return Ok(next.run(request).await);
     };
     let resolver = request
         .extensions()
@@ -98,24 +98,24 @@ pub(crate) async fn authenticate(
     for backend in INSTALLED_STAGES {
         let input = match stage_input(*backend, &request, authenticated.as_ref(), &resolver) {
             Ok(input) => input,
-            Err(failure) => return stage_failure_response(&failure),
+            Err(failure) => return Err(failure),
         };
         let prefetched = match prefetch_tag_budgets(input).await {
             Ok(prefetched) => prefetched,
-            Err(failure) => return stage_failure_response(&failure),
+            Err(failure) => return Err(failure),
         };
         match dispatch(*backend, &prefetched, master_key) {
             Ok(context) => authenticated = Some(context),
-            Err(failure) => return stage_failure_response(&failure),
+            Err(failure) => return Err(failure),
         }
     }
     if let Some(context) = authenticated {
         request.extensions_mut().insert(context);
     }
-    next.run(request).await
+    Ok(next.run(request).await)
 }
 
-fn stage_failure_response(failure: &StageFailure) -> Response {
+pub(crate) fn stage_failure_response(failure: &StageFailure) -> Response {
     match failure {
         StageFailure::Authentication(authentication) => authentication_error(authentication),
         StageFailure::ModelAccess(rejection) => rejection_response(rejection),
