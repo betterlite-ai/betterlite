@@ -34,14 +34,19 @@ def dynamic_flag_answer(call: DynamicFlagCall) -> DynamicAnswer:
 
 def enforce_answer(call: ShouldEnforceCall) -> EnforceAnswer:
     limiter = make_limiter({}, TagLimits({}))
-    enforce = Operations.enforce(limiter, call["limit_type"], call["model_has_failures"])
+    enforce = Operations.enforce(
+        limiter, call["limit_type"], model_has_failures=call["model_has_failures"]
+    )
     return EnforceAnswer(enforce=enforce)
 
 
 def limit_answer(call: EnforcedLimitCall) -> LimitAnswer:
     limiter = make_limiter({}, TagLimits({}))
     limit = Operations.enforced_limit(
-        limiter, call["limit_value"], call["limit_type"], call["model_has_failures"]
+        limiter,
+        call["limit_value"],
+        call["limit_type"],
+        model_has_failures=call["model_has_failures"],
     )
     return LimitAnswer(limit=limit)
 

@@ -1,6 +1,9 @@
 from typing import Literal, TypeAlias, TypedDict
 
+import litellm
 from pydantic import JsonValue
+
+litellm.suppress_debug_info = True
 
 
 class AuthFields(TypedDict, total=False):

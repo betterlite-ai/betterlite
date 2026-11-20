@@ -1,5 +1,5 @@
 from collections.abc import Callable, Mapping, Sequence
-from typing import Final, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from litellm.caching.dual_cache import DualCache
 from litellm.proxy._types import UserAPIKeyAuth
@@ -25,12 +25,6 @@ from .types import (
 AUTH: TypeAdapter[UserAPIKeyAuth] = TypeAdapter(UserAPIKeyAuth)
 AGENT: TypeAdapter[AgentResponse] = TypeAdapter(AgentResponse)
 DESCRIPTOR: TypeAdapter[DescriptorView] = TypeAdapter(DescriptorView)
-RATE_LIMIT_DEFAULTS: Final[dict[str, None]] = {
-    "requests_per_unit": None,
-    "tokens_per_unit": None,
-    "max_parallel_requests": None,
-    "window_size": None,
-}
 
 
 class GroupMap:
@@ -66,11 +60,15 @@ class Operations(Protocol):
     ) -> bool: ...
 
     def _should_enforce_rate_limit(
-        self, limit_type: str | None, model_has_failures: bool
+        self, limit_type: str | None, *, model_has_failures: bool
     ) -> bool: ...
 
     def _get_enforced_limit(
-        self, limit_value: int | None, limit_type: str | None, model_has_failures: bool
+        self,
+        limit_value: int | None,
+        limit_type: str | None,
+        *,
+        model_has_failures: bool,
     ) -> int | None: ...
 
     # a def stops at five parameters, so the six-argument call type is a property value
@@ -89,13 +87,21 @@ class Operations(Protocol):
     ) -> bool:
         return self._is_dynamic_rate_limiting_enabled(rpm_limit_type, tpm_limit_type)
 
-    def enforce(self, limit_type: str | None, model_has_failures: bool) -> bool:
-        return self._should_enforce_rate_limit(limit_type, model_has_failures)
+    def enforce(self, limit_type: str | None, *, model_has_failures: bool) -> bool:
+        return self._should_enforce_rate_limit(
+            limit_type, model_has_failures=model_has_failures
+        )
 
     def enforced_limit(
-        self, limit_value: int | None, limit_type: str | None, model_has_failures: bool
+        self,
+        limit_value: int | None,
+        limit_type: str | None,
+        *,
+        model_has_failures: bool,
     ) -> int | None:
-        return self._get_enforced_limit(limit_value, limit_type, model_has_failures)
+        return self._get_enforced_limit(
+            limit_value, limit_type, model_has_failures=model_has_failures
+        )
 
     def create(
         self,
@@ -163,9 +169,18 @@ def make_auth(fields: AuthFields, server: ServerFields) -> UserAPIKeyAuth:
 def descriptor_json(descriptor: RateLimitDescriptor) -> DescriptorView:
     rate_limit = descriptor["rate_limit"]
     if rate_limit is None:
-        return DESCRIPTOR.validate_python({**descriptor, "rate_limit": None})
-    filled = {**RATE_LIMIT_DEFAULTS, **rate_limit}
-    return DESCRIPTOR.validate_python({**descriptor, "rate_limit": filled})
+        return DESCRIPTOR.validate_python(
+            {"key": descriptor["key"], "value": descriptor["value"], "rate_limit": None}
+        )
+    filled = {
+        "requests_per_unit": rate_limit.get("requests_per_unit"),
+        "tokens_per_unit": rate_limit.get("tokens_per_unit"),
+        "max_parallel_requests": rate_limit.get("max_parallel_requests"),
+        "window_size": rate_limit.get("window_size"),
+    }
+    return DESCRIPTOR.validate_python(
+        {"key": descriptor["key"], "value": descriptor["value"], "rate_limit": filled}
+    )
 
 
 def tag_limits_of(rows: list[TagLimitRow]) -> dict[str, TagRateLimit]:
