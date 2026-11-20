@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::pin::Pin;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use betterlite_http::interactions::base::Params;
+use betterlite_http::interactions::base::{ErrorClasses, Params, RequestFailure, ResponseHeaders};
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_state::LoggingState;
 use secrecy::SecretString;
@@ -18,6 +18,8 @@ use super::config::CharacterConfig;
 use super::error::{CharacterError, CharacterFault, converted};
 use crate::api::bfl::edit::media::SuppliedMedia;
 use crate::api::video_records::CharacterObject;
+use crate::api::videos_http_transport::client::{ClientKind, HttpVerb, Sent};
+use crate::api::videos_http_transport::error::elapsed_text;
 
 mod prepare;
 mod send;
@@ -83,6 +85,14 @@ impl<'call> CharacterCall<'call> {
         match self {
             Self::Create(call) => call.is_async,
             Self::Get(call) => call.is_async,
+        }
+    }
+
+    // httpx's post raises its own timeout, and its get raises none
+    const fn verb(&self) -> HttpVerb {
+        match self {
+            Self::Create(_) => HttpVerb::Post,
+            Self::Get(_) => HttpVerb::Get,
         }
     }
 
@@ -212,9 +222,15 @@ where
             &(self.boundary)(),
             call,
         )?;
-        let reply = client
-            .send_blocking(request)
-            .map_err(|failure| converted(self.config, failure))?;
+        let sent = Sent {
+            mode: ClientKind::Sync,
+            verb: call.verb(),
+            timeout: request.timeout,
+        };
+        let started = Instant::now();
+        let outcome = client.send_blocking(request);
+        let elapsed = started.elapsed();
+        let reply = outcome.map_err(|failure| send_failure(self.config, sent, elapsed, failure))?;
         answered(self.config, self.logging, &reply, transform).map(CharacterHandled::Done)
     }
 
@@ -234,10 +250,52 @@ where
             &(self.boundary)(),
             call,
         )?;
-        let reply = client
-            .send(request)
-            .await
-            .map_err(|failure| converted(self.config, failure))?;
+        let sent = Sent {
+            mode: ClientKind::Asynchronous,
+            verb: call.verb(),
+            timeout: request.timeout,
+        };
+        let started = Instant::now();
+        let outcome = client.send(request).await;
+        let elapsed = started.elapsed();
+        let reply = outcome.map_err(|failure| send_failure(self.config, sent, elapsed, failure))?;
         answered(self.config, self.logging, &reply, transform)
+    }
+}
+
+// httpx.post turns its own timeout into litellm.Timeout, which _handle_error reports with the 408 it carries; a get
+// raises nothing of its own, so every other failure keeps the typed reason the shared converter gives it
+fn send_failure<C>(
+    config: &C,
+    sent: Sent,
+    elapsed: Duration,
+    failure: RequestFailure,
+) -> CharacterFault<C>
+where
+    C: CharacterConfig,
+{
+    let timed_out = sent.verb == HttpVerb::Post
+        && matches!(&failure, RequestFailure::Transport(source) if source.is_timeout());
+    if !timed_out {
+        return converted(config, failure);
+    }
+    let message = timeout_message(sent, elapsed);
+    CharacterError::Provider(config.get_error_class(&message, 408_u16, &ResponseHeaders::new()))
+}
+
+// the message litellm.Timeout carries: the sync post names the timeout it was passed, the async one adds the time taken
+fn timeout_message(sent: Sent, elapsed: Duration) -> String {
+    let passed = sent.timeout.map_or_else(
+        || String::from("None"),
+        |value| value.as_secs_f64().to_string(),
+    );
+    match sent.mode {
+        ClientKind::Sync => {
+            format!("litellm.Timeout: Connection timed out after {passed} seconds.")
+        }
+        ClientKind::Asynchronous => format!(
+            "litellm.Timeout: Connection timed out. Timeout passed={passed}, time taken={} seconds",
+            elapsed_text(elapsed)
+        ),
     }
 }

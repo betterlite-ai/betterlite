@@ -9,7 +9,8 @@ use thiserror::Error;
 
 use super::config::CharacterConfig;
 
-// what a character call raises: setup and request transforms stay typed, and the send's failures take the shape _handle_error gives them
+// what a character call raises: a timed-out POST becomes the provider's 408, and every other setup or send failure
+// keeps its typed reason
 #[derive(Debug, Error)]
 pub enum CharacterError<ProviderError>
 where
@@ -23,8 +24,9 @@ where
     Multipart(TransportError),
     #[error("{0}")]
     Provider(#[source] ProviderError),
+    // the request could not be built or sent, and the failure is not the provider's own status
     #[error(transparent)]
-    Transport(RequestFailure),
+    Request(RequestFailure),
 }
 
 pub type CharacterFault<Config> = CharacterError<<Config as ErrorClasses>::Error>;
@@ -36,7 +38,7 @@ where
 {
     match handle_error(config, failure) {
         CallFailure::Provider(error) => CharacterError::Provider(error),
-        CallFailure::PassedThrough(passed) => CharacterError::Transport(passed),
+        CallFailure::PassedThrough(passed) => CharacterError::Request(passed),
     }
 }
 

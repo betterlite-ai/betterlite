@@ -4,14 +4,10 @@ use std::str::from_utf8;
 
 use betterlite_http::interactions::base::{RequestFailure, RequestHeaders, ResponseHeaders};
 use betterlite_http::proxy::UpstreamResponse;
-use betterlite_http::proxy::multipart::{MultipartPart, encode};
 use betterlite_http::proxy::outbound::merge_query;
-use betterlite_http::proxy::transport_error::TransportError;
-use reqwest::Url;
-use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
+use http::header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
 use secrecy::ExposeSecret as _;
-
-use super::super::clients::CharacterBody;
+use url::Url;
 
 // httpx's response.text: UTF-8 with errors="replace", so each invalid sequence reads as one U+FFFD
 pub(crate) fn body_text(body: &[u8]) -> String {
@@ -85,14 +81,22 @@ pub(crate) fn request_url(text: &str, query: &[(String, String)]) -> Result<Url,
     Ok(url)
 }
 
-// the transform's files list becomes one multipart body, marked with the boundary it was encoded against
-pub(crate) fn multipart_body(
-    parts: &[MultipartPart],
-    boundary: &str,
-) -> Result<CharacterBody, TransportError> {
-    let data = encode(boundary, parts)?;
-    Ok(CharacterBody::Multipart {
-        content_type: format!("multipart/form-data; boundary={boundary}"),
-        data,
-    })
+// httpx encodes the parts with the boundary a caller's content type names, quotes and case included, and generates
+// one for every other call
+pub(crate) fn multipart_boundary(headers: &HeaderMap) -> Option<&str> {
+    let value = headers.get(CONTENT_TYPE)?;
+    let text = from_utf8(value.as_bytes()).ok()?;
+    if !text.starts_with("multipart/form-data") {
+        return None;
+    }
+    for section in text.split(';') {
+        let trimmed = section.trim();
+        let head = trimmed.get(.."boundary=".len());
+        if head.is_some_and(|head| head.eq_ignore_ascii_case("boundary=")) {
+            return trimmed
+                .get("boundary=".len()..)
+                .map(|rest| rest.trim_matches('"'));
+        }
+    }
+    None
 }

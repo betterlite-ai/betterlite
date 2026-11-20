@@ -1678,7 +1678,6 @@ dependencies = [
  "percent-encoding",
  "pyo3",
  "regex",
- "reqwest",
  "rmcp",
  "rstest",
  "rust_decimal",

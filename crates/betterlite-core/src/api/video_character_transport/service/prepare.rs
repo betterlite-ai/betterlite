@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use betterlite_http::interactions::base::{ClientError, Params, RequestHeaders};
-use betterlite_http::proxy::multipart::MultipartPart;
+use betterlite_http::interactions::base::{ClientError, Params, RequestFailure, RequestHeaders};
+use betterlite_http::proxy::multipart::{MultipartPart, encode};
 use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_pre_post::error::PrePostError;
@@ -10,14 +10,15 @@ use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
+use http::Method;
+use http::header::{CONTENT_TYPE, HeaderValue};
 use indexmap::IndexMap;
-use reqwest::Method;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::super::clients::{CharacterBody, CharacterRequest};
 use super::super::config::{CharacterConfig, CharacterContext, CharacterEnvironment};
 use super::super::error::{CharacterError, CharacterFault, converted};
-use super::wire::{header_map, multipart_body, request_url};
+use super::wire::{header_map, multipart_boundary, request_url};
 use super::{CharacterCall, CharacterCreateCall};
 
 // the litellm_params fields the handlers read before a transform sees them
@@ -111,10 +112,22 @@ where
 {
     let url = request_url(&exchange.url, &exchange.query)
         .map_err(|failure| converted(config, failure))?;
-    let wire_headers = header_map(headers).map_err(|failure| converted(config, failure))?;
+    let mut wire_headers = header_map(headers).map_err(|failure| converted(config, failure))?;
     let body = match exchange.parts {
         None => CharacterBody::Empty,
-        Some(parts) => multipart_body(&parts, boundary).map_err(CharacterError::Multipart)?,
+        Some(parts) => {
+            let chosen = multipart_boundary(&wire_headers)
+                .map(str::to_owned)
+                .unwrap_or_else(|| boundary.to_owned());
+            if !wire_headers.contains_key(CONTENT_TYPE) {
+                let content_type = format!("multipart/form-data; boundary={chosen}");
+                let value = HeaderValue::from_bytes(content_type.as_bytes())
+                    .map_err(RequestFailure::HeaderValue)
+                    .map_err(|failure| converted(config, failure))?;
+                wire_headers.insert(CONTENT_TYPE, value);
+            }
+            CharacterBody::Multipart(encode(&chosen, &parts).map_err(CharacterError::Multipart)?)
+        }
     };
     Ok(CharacterRequest {
         method: exchange.method,
@@ -147,7 +160,8 @@ where
     })
 }
 
-// validate_environment, then the caller's headers applied over its answer, then get_complete_url
+// validate_environment with the caller's headers in the map it may rewrite, the way LiteLLM hands extra_headers in
+// and re-applies the dict the config mutated, then get_complete_url
 fn validated<C>(
     config: &C,
     call: &CallParts<'_>,
@@ -160,13 +174,12 @@ where
     for (name, value) in call.extra_headers.into_iter().flatten() {
         caller.insert(name.clone(), SecretString::from(value.clone()));
     }
-    let mut headers = config.validate_environment(CharacterEnvironment {
+    let headers = config.validate_environment(CharacterEnvironment {
         api_key: key.as_ref(),
-        headers: caller.clone(),
+        headers: caller,
         model: "",
         litellm_params: call.litellm_params,
     });
-    headers.extend(caller);
     let base = api_base(call.litellm_params).map_err(CharacterError::Client)?;
     let url = config
         .complete_url("", base, call.litellm_params)
