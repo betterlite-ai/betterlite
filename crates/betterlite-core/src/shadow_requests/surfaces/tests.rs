@@ -264,8 +264,7 @@ async fn responses_row_never_forwards_surface_only_keys() {
     );
 }
 
-// NoCapabilities answers false for every model, so a system turn after the first user turn
-// becomes a user message even on a model that declares mid-conversation system support.
+// NoCapabilities answers false, so a later system turn becomes a user message even for a capable model.
 #[tokio::test]
 async fn anthropic_row_converts_a_mid_conversation_system_turn_without_model_metadata() {
     let kwargs = object(
@@ -290,8 +289,7 @@ async fn anthropic_row_converts_a_mid_conversation_system_turn_without_model_met
     assert_eq!(roles, [Some("user"), Some("user"), Some("user")]);
 }
 
-// The bridge probe answers false for every model, so a Responses-mode model drops the summary
-// that LiteLLM keeps when the model map routes the chat request back through the Responses API.
+// The bridge probe answers false, so a Responses-mode model drops the reasoning summary LiteLLM keeps.
 #[tokio::test]
 async fn responses_row_drops_a_reasoning_summary_for_a_responses_mode_model() {
     let kwargs = object(

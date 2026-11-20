@@ -67,20 +67,11 @@ fn absent_messages_request<'request>(
     Box::pin(async { Ok(object(r#"{"model":"m"}"#)) })
 }
 
-fn custom_ops(chat_request: ChatRequestFn) -> SurfaceOps {
+fn custom_ops(chat_request: ChatRequestFn, wire_params: bool) -> SurfaceOps {
     SurfaceOps {
         chat_request,
         final_text: chat_text::final_text,
-        wire_params: false,
-        surface: Surface::Chat,
-    }
-}
-
-fn wire_ops(chat_request: ChatRequestFn) -> SurfaceOps {
-    SurfaceOps {
-        chat_request,
-        final_text: chat_text::final_text,
-        wire_params: true,
+        wire_params,
         surface: Surface::Chat,
     }
 }
@@ -114,7 +105,7 @@ async fn hosted_web_search_in_the_wire_body_skips_before_the_request_is_built() 
     let kwargs = object(
         r#"{"litellm_params":{"proxy_server_request":{"body":{"tools":[{"type":"web_search"}]}}}}"#,
     );
-    let ops = wire_ops(quiet_request);
+    let ops = custom_ops(quiet_request, true);
     let sample = judgeable_sample(&ops, &kwargs, &object("{}"), &chat_reply("answer")).await;
     assert!(sample.is_none());
 }
@@ -153,35 +144,35 @@ async fn the_chat_surface_reads_model_parameters_not_the_wire_body() {
 
 #[tokio::test]
 async fn hosted_web_search_added_by_the_translation_skips_the_sample() {
-    let ops = custom_ops(searching_request);
+    let ops = custom_ops(searching_request, false);
     let sample = judgeable_sample(&ops, &object("{}"), &object("{}"), &chat_reply("answer")).await;
     assert!(sample.is_none());
 }
 
 #[tokio::test]
 async fn a_failing_request_build_skips_the_sample() {
-    let ops = custom_ops(failing_request);
+    let ops = custom_ops(failing_request, false);
     let sample = judgeable_sample(&ops, &object("{}"), &object("{}"), &chat_reply("answer")).await;
     assert!(sample.is_none());
 }
 
 #[tokio::test]
 async fn messages_that_are_not_an_array_of_objects_skip_the_sample() {
-    let ops = custom_ops(string_messages_request);
+    let ops = custom_ops(string_messages_request, false);
     let sample = judgeable_sample(&ops, &object("{}"), &object("{}"), &chat_reply("answer")).await;
     assert!(sample.is_none());
 }
 
 #[tokio::test]
 async fn a_text_messages_value_skips_the_sample() {
-    let ops = custom_ops(text_messages_request);
+    let ops = custom_ops(text_messages_request, false);
     let sample = judgeable_sample(&ops, &object("{}"), &object("{}"), &chat_reply("answer")).await;
     assert!(sample.is_none());
 }
 
 #[tokio::test]
 async fn a_built_request_without_messages_skips_the_sample() {
-    let ops = custom_ops(absent_messages_request);
+    let ops = custom_ops(absent_messages_request, false);
     let sample = judgeable_sample(&ops, &object("{}"), &object("{}"), &chat_reply("answer")).await;
     assert!(sample.is_none());
 }
