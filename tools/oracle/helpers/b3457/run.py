@@ -3,12 +3,18 @@ import os
 from typing import Final
 from unittest.mock import AsyncMock
 
-from litellm.rag.ingestion.bedrock_ingestion import BedrockRAGIngestion
 from litellm.types.rag import BedrockVectorStoreOptions, RAGIngestOptions
 from pydantic import JsonValue
-from typing_extensions import override
 
-from .fakes import DOCUMENT, INDEX, FakeClient, FakeIndexError, Scripted, install_fakes
+from .fakes import (
+    DOCUMENT,
+    INDEX,
+    FakeClient,
+    FakeIndexError,
+    RecordingIngestion,
+    Scripted,
+    install_fakes,
+)
 from .inputs import (
     CollectionInput,
     FlowInput,
@@ -30,40 +36,6 @@ DETECTED_SOURCE: Final[dict[str, JsonValue]] = {
         },
     }
 }
-
-
-class RecordingIngestion(BedrockRAGIngestion):
-    client: FakeClient
-
-    @override
-    def _get_boto3_client(self, service_name: str) -> FakeClient:
-        _ = service_name
-        return self.client
-
-    def collection(self, unique_id: str, account_id: str, caller_arn: str) -> tuple[str, str]:
-        return asyncio.run(
-            self._create_opensearch_collection(unique_id, account_id, caller_arn)
-        )
-
-    def role(self, unique_id: str, account_id: str, collection_arn: str) -> str:
-        return asyncio.run(
-            self._create_bedrock_role(unique_id, account_id, collection_arn)
-        )
-
-    def flow(self) -> tuple[str | None, str | None]:
-        return asyncio.run(self.store(None, None, None, [], None))
-
-    def stored(
-        self, content: str | None, filename: str | None, content_type: str | None
-    ) -> tuple[str | None, str | None]:
-        encoded = None if content is None else content.encode()
-        return asyncio.run(self.store(encoded, filename, content_type, [], None))
-
-    def created(self, key: str) -> str:
-        return str(self._created_resources[key])
-
-    def created_keys(self) -> list[str]:
-        return sorted(self._created_resources)
 
 
 def build(
