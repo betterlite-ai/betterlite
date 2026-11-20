@@ -19,6 +19,7 @@ use super::responses::DistinctTagsResponse;
 use super::responses::TagActiveUsersResponse;
 use super::rows::ActiveUsersReport;
 use super::state::UserAgentAnalyticsState;
+use super::store::RangeQuery;
 use super::summary;
 use super::window::MAU_SPAN_DAYS;
 use super::window::MAX_DAYS;
@@ -95,15 +96,12 @@ async fn active_users(
         Err(source) => return query_failed(failure, &source),
     };
     let filter = query.filter();
-    let rows = match store
-        .active_users(
-            report,
-            &window.start_date,
-            &window.end_date,
-            filter.as_ref(),
-        )
-        .await
-    {
+    let range = RangeQuery {
+        start_date: &window.start_date,
+        end_date: &window.end_date,
+        filter: filter.as_ref(),
+    };
+    let rows = match store.active_users(report, range).await {
         Ok(rows) => rows,
         Err(source) => return query_failed(failure, &source),
     };

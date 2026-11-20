@@ -10,6 +10,7 @@ use super::query::AnalyticsQuery;
 use super::responses::TagSummaryMetrics;
 use super::responses::TagSummaryResponse;
 use super::state::UserAgentAnalyticsState;
+use super::store::RangeQuery;
 use super::window::DATE_FORMAT;
 
 const FAILURE: &str = "Failed to fetch tag summary analytics";
@@ -32,10 +33,12 @@ pub(super) async fn tag_summary(
         return invalid_date(&source);
     }
     let filter = query.filter();
-    match store
-        .tag_summary(start_date, end_date, filter.as_ref())
-        .await
-    {
+    let range = RangeQuery {
+        start_date,
+        end_date,
+        filter: filter.as_ref(),
+    };
+    match store.tag_summary(range).await {
         Ok(rows) => Json(TagSummaryResponse {
             results: rows.into_iter().map(TagSummaryMetrics::from).collect(),
         })

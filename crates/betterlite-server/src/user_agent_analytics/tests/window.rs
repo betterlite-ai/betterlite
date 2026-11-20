@@ -2,6 +2,7 @@ use chrono::NaiveDate;
 use rstest::rstest;
 
 use crate::user_agent_analytics::error::AnalyticsError;
+use crate::user_agent_analytics::rows::ActiveUsersReport;
 use crate::user_agent_analytics::rows::ActiveUsersRow;
 use crate::user_agent_analytics::tests::support::at;
 use crate::user_agent_analytics::tests::support::fixed_clock;
@@ -9,7 +10,7 @@ use crate::user_agent_analytics::tests::support::now;
 use crate::user_agent_analytics::window::MAX_DAYS;
 use crate::user_agent_analytics::window::WAU_SPAN_DAYS;
 use crate::user_agent_analytics::window::Window;
-use crate::user_agent_analytics::window::weekly_result;
+use crate::user_agent_analytics::window::active_users_result;
 
 fn date(year: i32, month: u32, day: u32) -> NaiveDate {
     NaiveDate::from_ymd_opt(year, month, day).expect("a date")
@@ -76,7 +77,8 @@ fn a_week_row_becomes_its_labelled_period(
     #[case] start: &str,
     #[case] end: &str,
 ) {
-    let point = weekly_result(&window(), row(offset)).expect("a week point");
+    let point = active_users_result(&window(), ActiveUsersReport::Weekly, row(offset))
+        .expect("a week point");
     assert_eq!(point.tag, "User-Agent:alpha");
     assert_eq!(point.active_users, 4);
     assert_eq!(point.date, label);
@@ -89,7 +91,8 @@ fn a_week_row_becomes_its_labelled_period(
 #[case::past_the_seventh_week(8)]
 #[case::beyond_the_calendar(i64::MAX)]
 fn an_impossible_week_offset_reports_an_offset_error(#[case] offset: i64) {
-    let error = weekly_result(&window(), row(offset)).expect_err("the offset is impossible");
+    let error = active_users_result(&window(), ActiveUsersReport::Weekly, row(offset))
+        .expect_err("the offset is impossible");
     assert!(matches!(error, AnalyticsError::Offset { .. }));
 }
 
@@ -97,6 +100,7 @@ fn an_impossible_week_offset_reports_an_offset_error(#[case] offset: i64) {
 fn a_week_bucket_that_is_not_an_offset_reports_a_bucket_error() {
     let mut week_row = row(0);
     week_row.date = "not-a-week".to_owned();
-    let error = weekly_result(&window(), week_row).expect_err("the bucket is impossible");
+    let error = active_users_result(&window(), ActiveUsersReport::Weekly, week_row)
+        .expect_err("the bucket is impossible");
     assert!(matches!(error, AnalyticsError::Bucket { bucket } if bucket == "not-a-week"));
 }

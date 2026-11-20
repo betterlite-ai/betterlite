@@ -35,7 +35,8 @@ pub struct TagSummaryRow {
     pub total_spend: Option<Decimal>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+// no Debug: the row carries the caller's api_key, and Debug would print it into logs and errors
+#[derive(Clone, Eq, PartialEq)]
 pub struct TagSpendRecord {
     pub tag: Option<String>,
     pub api_key: String,
@@ -67,89 +68,41 @@ where
         .map_err(|source| AnalyticsError::Database(backend(source)))
 }
 
-impl TryFrom<&Row> for TagSummaryRow {
-    type Error = AnalyticsError;
+// every row type reads its columns by field name, so each decode is one field left to right
+macro_rules! decode_columns {
+    ($row:ident => $record:ident { $($field:ident),+ $(,)? }) => {
+        impl TryFrom<&Row> for $record {
+            type Error = AnalyticsError;
 
-    fn try_from(row: &Row) -> Result<Self, Self::Error> {
-        Ok(Self {
-            tag: column(row, "tag")?,
-            unique_users: column(row, "unique_users")?,
-            total_requests: column(row, "total_requests")?,
-            successful_requests: column(row, "successful_requests")?,
-            failed_requests: column(row, "failed_requests")?,
-            total_tokens: column(row, "total_tokens")?,
-            total_spend: column(row, "total_spend")?,
-        })
-    }
+            fn try_from($row: &Row) -> Result<Self, Self::Error> {
+                Ok(Self {
+                    $($field: column($row, stringify!($field))?,)+
+                })
+            }
+        }
+    };
 }
 
-impl TryFrom<&Row> for TagSpendRecord {
-    type Error = AnalyticsError;
-
-    fn try_from(row: &Row) -> Result<Self, Self::Error> {
-        Ok(Self {
-            tag: column(row, "tag")?,
-            api_key: column(row, "api_key")?,
-            api_requests: column(row, "api_requests")?,
-            successful_requests: column(row, "successful_requests")?,
-            failed_requests: column(row, "failed_requests")?,
-            prompt_tokens: column(row, "prompt_tokens")?,
-            completion_tokens: column(row, "completion_tokens")?,
-            spend: column(row, "spend")?,
-        })
-    }
-}
-
-impl TryFrom<&Row> for TokenOwnerRow {
-    type Error = AnalyticsError;
-
-    fn try_from(row: &Row) -> Result<Self, Self::Error> {
-        Ok(Self {
-            token: column(row, "token")?,
-            user_id: column(row, "user_id")?,
-        })
-    }
-}
-
-impl TryFrom<&Row> for UserEmailRow {
-    type Error = AnalyticsError;
-
-    fn try_from(row: &Row) -> Result<Self, Self::Error> {
-        Ok(Self {
-            user_id: column(row, "user_id")?,
-            user_email: column(row, "user_email")?,
-        })
-    }
-}
-
-impl TryFrom<&Row> for DistinctTagRow {
-    type Error = AnalyticsError;
-
-    fn try_from(row: &Row) -> Result<Self, Self::Error> {
-        let tag = row
-            .try_get("tag")
-            .map_err(|source| AnalyticsError::Database(backend(source)))?;
-        Ok(Self { tag })
-    }
-}
-
-impl TryFrom<&Row> for ActiveUsersRow {
-    type Error = AnalyticsError;
-
-    fn try_from(row: &Row) -> Result<Self, Self::Error> {
-        let tag = row
-            .try_get("tag")
-            .map_err(|source| AnalyticsError::Database(backend(source)))?;
-        let active_users = row
-            .try_get("active_users")
-            .map_err(|source| AnalyticsError::Database(backend(source)))?;
-        let date = row
-            .try_get("date")
-            .map_err(|source| AnalyticsError::Database(backend(source)))?;
-        Ok(Self {
-            tag,
-            active_users,
-            date,
-        })
-    }
-}
+decode_columns!(row => DistinctTagRow { tag });
+decode_columns!(row => ActiveUsersRow { tag, active_users, date });
+decode_columns!(row => TagSummaryRow {
+    tag,
+    unique_users,
+    total_requests,
+    successful_requests,
+    failed_requests,
+    total_tokens,
+    total_spend,
+});
+decode_columns!(row => TagSpendRecord {
+    tag,
+    api_key,
+    api_requests,
+    successful_requests,
+    failed_requests,
+    prompt_tokens,
+    completion_tokens,
+    spend,
+});
+decode_columns!(row => TokenOwnerRow { token, user_id });
+decode_columns!(row => UserEmailRow { user_id, user_email });

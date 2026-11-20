@@ -51,6 +51,7 @@ use crate::user_agent_analytics::rows::TokenOwnerRow;
 use crate::user_agent_analytics::rows::UserEmailRow;
 use crate::user_agent_analytics::state::UserAgentAnalyticsState;
 use crate::user_agent_analytics::store::PostgresAnalyticsStore;
+use crate::user_agent_analytics::store::RangeQuery;
 use crate::user_agent_analytics::store::UserAgentAnalyticsStore;
 
 pub(crate) fn at(year: i32, month: u32, day: u32, hour: u32, minute: u32) -> DateTime<Utc> {
@@ -88,6 +89,28 @@ pub(crate) struct RangeCall {
     pub(crate) start_date: String,
     pub(crate) end_date: String,
     pub(crate) filter: Option<TagFilter>,
+}
+
+impl RangeCall {
+    fn from_query(query: RangeQuery<'_>) -> Self {
+        Self {
+            start_date: query.start_date.to_owned(),
+            end_date: query.end_date.to_owned(),
+            filter: query.filter.cloned(),
+        }
+    }
+}
+
+impl ActiveUsersCall {
+    fn from_query(report: ActiveUsersReport, query: RangeQuery<'_>) -> Self {
+        let range = RangeCall::from_query(query);
+        Self {
+            report,
+            start_date: range.start_date,
+            end_date: range.end_date,
+            filter: range.filter,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -177,6 +200,17 @@ impl FakeStore {
     fn take_failure(&self) -> Option<AnalyticsError> {
         self.failure.lock().expect("the recorded failure").take()
     }
+
+    fn answer<Row: Clone>(&self, rows: &[Row]) -> Result<Vec<Row>, AnalyticsError> {
+        if let Some(error) = self.take_failure() {
+            return Err(error);
+        }
+        Ok(rows.to_vec())
+    }
+}
+
+fn record<Call>(calls: &Mutex<Vec<Call>>, call: Call) {
+    calls.lock().expect("the recorded calls").push(call);
 }
 
 fn only<Record: Clone>(calls: &Mutex<Vec<Record>>) -> Record {
@@ -189,94 +223,42 @@ fn only<Record: Clone>(calls: &Mutex<Vec<Record>>) -> Record {
 impl UserAgentAnalyticsStore for FakeStore {
     async fn distinct_tags(&self) -> Result<Vec<DistinctTagRow>, AnalyticsError> {
         self.distinct_calls.fetch_add(1, Ordering::Relaxed);
-        if let Some(error) = self.take_failure() {
-            return Err(error);
-        }
-        Ok(self.distinct.clone())
+        self.answer(&self.distinct)
     }
 
     async fn active_users(
         &self,
         report: ActiveUsersReport,
-        start_date: &str,
-        end_date: &str,
-        filter: Option<&TagFilter>,
+        query: RangeQuery<'_>,
     ) -> Result<Vec<ActiveUsersRow>, AnalyticsError> {
-        self.calls
-            .lock()
-            .expect("the recorded calls")
-            .push(ActiveUsersCall {
-                report,
-                start_date: start_date.to_owned(),
-                end_date: end_date.to_owned(),
-                filter: filter.cloned(),
-            });
-        if let Some(error) = self.take_failure() {
-            return Err(error);
-        }
-        Ok(self.active.clone())
+        record(&self.calls, ActiveUsersCall::from_query(report, query));
+        self.answer(&self.active)
     }
 
     async fn tag_summary(
         &self,
-        start_date: &str,
-        end_date: &str,
-        filter: Option<&TagFilter>,
+        query: RangeQuery<'_>,
     ) -> Result<Vec<TagSummaryRow>, AnalyticsError> {
-        self.summary_calls
-            .lock()
-            .expect("the recorded calls")
-            .push(RangeCall {
-                start_date: start_date.to_owned(),
-                end_date: end_date.to_owned(),
-                filter: filter.cloned(),
-            });
-        if let Some(error) = self.take_failure() {
-            return Err(error);
-        }
-        Ok(self.summary.clone())
+        record(&self.summary_calls, RangeCall::from_query(query));
+        self.answer(&self.summary)
     }
 
     async fn tag_records(
         &self,
-        start_date: &str,
-        end_date: &str,
-        filter: Option<&TagFilter>,
+        query: RangeQuery<'_>,
     ) -> Result<Vec<TagSpendRecord>, AnalyticsError> {
-        self.record_calls
-            .lock()
-            .expect("the recorded calls")
-            .push(RangeCall {
-                start_date: start_date.to_owned(),
-                end_date: end_date.to_owned(),
-                filter: filter.cloned(),
-            });
-        if let Some(error) = self.take_failure() {
-            return Err(error);
-        }
-        Ok(self.records.clone())
+        record(&self.record_calls, RangeCall::from_query(query));
+        self.answer(&self.records)
     }
 
     async fn token_owners(&self, tokens: &[String]) -> Result<Vec<TokenOwnerRow>, AnalyticsError> {
-        self.token_calls
-            .lock()
-            .expect("the key lookups")
-            .push(tokens.to_vec());
-        if let Some(error) = self.take_failure() {
-            return Err(error);
-        }
-        Ok(self.owners.clone())
+        record(&self.token_calls, tokens.to_vec());
+        self.answer(&self.owners)
     }
 
     async fn user_emails(&self, user_ids: &[String]) -> Result<Vec<UserEmailRow>, AnalyticsError> {
-        self.user_calls
-            .lock()
-            .expect("the user lookups")
-            .push(user_ids.to_vec());
-        if let Some(error) = self.take_failure() {
-            return Err(error);
-        }
-        Ok(self.users.clone())
+        record(&self.user_calls, user_ids.to_vec());
+        self.answer(&self.users)
     }
 }
 

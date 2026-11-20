@@ -17,6 +17,13 @@ const FIRST_TAG_PARAMETER: usize = 3;
 const CONDITION_MARKER: &str = "/*conditions*/";
 
 #[derive(Clone, Copy)]
+pub struct RangeQuery<'query> {
+    pub start_date: &'query str,
+    pub end_date: &'query str,
+    pub filter: Option<&'query TagFilter>,
+}
+
+#[derive(Clone, Copy)]
 enum TagMatching {
     Sensitive,
     Insensitive,
@@ -48,23 +55,17 @@ pub trait UserAgentAnalyticsStore: Send + Sync {
     async fn active_users(
         &self,
         report: ActiveUsersReport,
-        start_date: &str,
-        end_date: &str,
-        filter: Option<&TagFilter>,
+        query: RangeQuery<'_>,
     ) -> Result<Vec<ActiveUsersRow>, AnalyticsError>;
 
     async fn tag_summary(
         &self,
-        start_date: &str,
-        end_date: &str,
-        filter: Option<&TagFilter>,
+        query: RangeQuery<'_>,
     ) -> Result<Vec<TagSummaryRow>, AnalyticsError>;
 
     async fn tag_records(
         &self,
-        start_date: &str,
-        end_date: &str,
-        filter: Option<&TagFilter>,
+        query: RangeQuery<'_>,
     ) -> Result<Vec<TagSpendRecord>, AnalyticsError>;
 
     async fn token_owners(&self, tokens: &[String]) -> Result<Vec<TokenOwnerRow>, AnalyticsError>;
@@ -104,17 +105,36 @@ impl PostgresAnalyticsStore {
         let rows = self.fetch(sql, &params).await?;
         rows.iter().map(Decoded::try_from).collect()
     }
+
+    async fn filtered_rows<Decoded>(
+        &self,
+        template: &str,
+        query: RangeQuery<'_>,
+        matching: TagMatching,
+    ) -> Result<Vec<Decoded>, AnalyticsError>
+    where
+        Decoded: for<'row> TryFrom<&'row Row, Error = AnalyticsError>,
+    {
+        let (sql, values) = filtered_sql(template, query, matching);
+        self.decoded_rows(&sql, &values).await
+    }
+}
+
+const fn active_users_sql(report: ActiveUsersReport) -> &'static str {
+    match report {
+        ActiveUsersReport::Daily => DAILY_ACTIVE_USERS_SQL,
+        ActiveUsersReport::Weekly => WEEKLY_ACTIVE_USERS_SQL,
+        ActiveUsersReport::Monthly => MONTHLY_ACTIVE_USERS_SQL,
+    }
 }
 
 fn filtered_sql(
     template: &str,
-    start_date: &str,
-    end_date: &str,
-    filter: Option<&TagFilter>,
+    query: RangeQuery<'_>,
     matching: TagMatching,
 ) -> (String, Vec<String>) {
-    let (conditions, values) = tag_conditions(filter, matching);
-    let mut params = vec![start_date.to_owned(), end_date.to_owned()];
+    let (conditions, values) = tag_conditions(query.filter, matching);
+    let mut params = vec![query.start_date.to_owned(), query.end_date.to_owned()];
     params.extend(values);
     (template.replace(CONDITION_MARKER, &conditions), params)
 }
@@ -154,55 +174,26 @@ impl UserAgentAnalyticsStore for PostgresAnalyticsStore {
     async fn active_users(
         &self,
         report: ActiveUsersReport,
-        start_date: &str,
-        end_date: &str,
-        filter: Option<&TagFilter>,
+        query: RangeQuery<'_>,
     ) -> Result<Vec<ActiveUsersRow>, AnalyticsError> {
-        let template = match report {
-            ActiveUsersReport::Daily => DAILY_ACTIVE_USERS_SQL,
-            ActiveUsersReport::Weekly => WEEKLY_ACTIVE_USERS_SQL,
-            ActiveUsersReport::Monthly => MONTHLY_ACTIVE_USERS_SQL,
-        };
-        let (sql, values) = filtered_sql(
-            template,
-            start_date,
-            end_date,
-            filter,
-            TagMatching::Insensitive,
-        );
-        self.decoded_rows(&sql, &values).await
+        self.filtered_rows(active_users_sql(report), query, TagMatching::Insensitive)
+            .await
     }
 
     async fn tag_summary(
         &self,
-        start_date: &str,
-        end_date: &str,
-        filter: Option<&TagFilter>,
+        query: RangeQuery<'_>,
     ) -> Result<Vec<TagSummaryRow>, AnalyticsError> {
-        let (sql, values) = filtered_sql(
-            TAG_SUMMARY_SQL,
-            start_date,
-            end_date,
-            filter,
-            TagMatching::Insensitive,
-        );
-        self.decoded_rows(&sql, &values).await
+        self.filtered_rows(TAG_SUMMARY_SQL, query, TagMatching::Insensitive)
+            .await
     }
 
     async fn tag_records(
         &self,
-        start_date: &str,
-        end_date: &str,
-        filter: Option<&TagFilter>,
+        query: RangeQuery<'_>,
     ) -> Result<Vec<TagSpendRecord>, AnalyticsError> {
-        let (sql, values) = filtered_sql(
-            TAG_RECORDS_SQL,
-            start_date,
-            end_date,
-            filter,
-            TagMatching::Sensitive,
-        );
-        self.decoded_rows(&sql, &values).await
+        self.filtered_rows(TAG_RECORDS_SQL, query, TagMatching::Sensitive)
+            .await
     }
 
     async fn token_owners(&self, tokens: &[String]) -> Result<Vec<TokenOwnerRow>, AnalyticsError> {

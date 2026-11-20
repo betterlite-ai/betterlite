@@ -8,6 +8,7 @@ use super::query::AnalyticsQuery;
 use super::query::Pagination;
 use super::rows::TagSpendRecord;
 use super::state::UserAgentAnalyticsState;
+use super::store::RangeQuery;
 use super::store::UserAgentAnalyticsStore;
 use super::window::PER_USER_SPAN_DAYS;
 use super::window::Window;
@@ -32,10 +33,12 @@ pub(super) async fn per_user_analytics(
         Err(source) => return query_failed(FAILURE, &source),
     };
     let filter = query.filter();
-    let records = match store
-        .tag_records(&window.start_date, &window.end_date, filter.as_ref())
-        .await
-    {
+    let range = RangeQuery {
+        start_date: &window.start_date,
+        end_date: &window.end_date,
+        filter: filter.as_ref(),
+    };
+    let records = match store.tag_records(range).await {
         Ok(records) => records,
         Err(source) => return query_failed(FAILURE, &source),
     };
