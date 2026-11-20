@@ -37,7 +37,7 @@ ExtraValues: TypeAlias = dict[str, object] | None
 
 
 class Handlers(Protocol):
-    def vector_store_file_create_handler(  # ast-grep-ignore: no-long-names
+    def vector_store_file_create_handler(  # ast-grep-ignore: no-long-names  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L10821-L10835
         self,
         *,
         vector_store_id: str,
@@ -51,7 +51,7 @@ class Handlers(Protocol):
         timeout: float | None = None,
     ) -> HandlerResult: ...
 
-    def async_vector_store_file_create_handler(  # ast-grep-ignore: no-long-names
+    def async_vector_store_file_create_handler(  # ast-grep-ignore: no-long-names  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L10756-L10769
         self,
         *,
         vector_store_id: str,
@@ -65,7 +65,7 @@ class Handlers(Protocol):
         timeout: float | None = None,
     ) -> AsyncHandlerResult: ...
 
-    def vector_store_file_list_handler(
+    def vector_store_file_list_handler(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L10962-L10976
         self,
         *,
         vector_store_id: str,
@@ -79,7 +79,7 @@ class Handlers(Protocol):
         timeout: float | None = None,
     ) -> HandlerResult: ...
 
-    def async_vector_store_file_list_handler(  # ast-grep-ignore: no-long-names
+    def async_vector_store_file_list_handler(  # ast-grep-ignore: no-long-names  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L10898-L10911
         self,
         *,
         vector_store_id: str,
