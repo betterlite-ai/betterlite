@@ -1,0 +1,12 @@
+kind: helper
+name: team_metadata_log_sanitization
+call:
+  team_fields: {function: sanitize, value: "a\rb"}
+calls:
+  - team_fields: {function: sanitize, value: "a\nb"}
+  - team_fields: {function: sanitize, value: "a\r\nb"}
+  - team_fields: {function: sanitize, value: "\r\n\r\n"}
+  - team_fields: {function: sanitize, value: "plain text"}
+  - team_fields: {function: sanitize, value: "line1\nline2\rline3"}
+env: {}
+compare: {ignore: []}

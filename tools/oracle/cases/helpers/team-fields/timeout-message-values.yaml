@@ -1,0 +1,28 @@
+kind: helper
+name: team_metadata_timeout_and_message_values
+call:
+  team_fields:
+    function: validate
+    general_settings: {team_metadata_validation_timeout: 0.02}
+    validator: sleep
+    operation: create
+    metadata: {}
+    existing_metadata: null
+    team_id: null
+    team_alias: null
+    requester: {user_id: null, user_email: null, user_role: null}
+calls:
+  - team_fields: {function: validate, general_settings: {team_metadata_validation_timeout: 2}, validator: sleep, operation: create, metadata: {}, existing_metadata: null, team_id: null, team_alias: null, requester: {user_id: null, user_email: null, user_role: null}}
+  - team_fields: {function: validate, general_settings: {team_metadata_validation_timeout: 0}, validator: sleep, operation: create, metadata: {}, existing_metadata: null, team_id: null, team_alias: null, requester: {user_id: null, user_email: null, user_role: null}}
+  - team_fields: {function: validate, general_settings: {team_metadata_validation_timeout: -1}, validator: sleep, operation: create, metadata: {}, existing_metadata: null, team_id: null, team_alias: null, requester: {user_id: null, user_email: null, user_role: null}}
+  - team_fields: {function: validate, general_settings: {team_metadata_validation_timeout: "0.02"}, validator: sleep, operation: create, metadata: {}, existing_metadata: null, team_id: null, team_alias: null, requester: {user_id: null, user_email: null, user_role: null}}
+  - team_fields: {function: validate, general_settings: {team_metadata_validation_timeout: true}, validator: sleep, operation: create, metadata: {}, existing_metadata: null, team_id: null, team_alias: null, requester: {user_id: null, user_email: null, user_role: null}}
+  - team_fields: {function: validate, general_settings: {}, validator: raises, operation: create, metadata: {}, existing_metadata: null, team_id: null, team_alias: null, requester: {user_id: null, user_email: null, user_role: null}}
+  - team_fields: {function: validate, general_settings: {team_metadata_validation_error_message: ""}, validator: raises, operation: create, metadata: {}, existing_metadata: null, team_id: null, team_alias: null, requester: {user_id: null, user_email: null, user_role: null}}
+  - team_fields: {function: validate, general_settings: {team_metadata_validation_error_message: "   "}, validator: raises, operation: create, metadata: {}, existing_metadata: null, team_id: null, team_alias: null, requester: {user_id: null, user_email: null, user_role: null}}
+  - team_fields: {function: validate, general_settings: {team_metadata_validation_error_message: "  spaced message  "}, validator: raises, operation: create, metadata: {}, existing_metadata: null, team_id: null, team_alias: null, requester: {user_id: null, user_email: null, user_role: null}}
+  - team_fields: {function: validate, general_settings: {team_metadata_validation_error_message: 7}, validator: raises, operation: create, metadata: {}, existing_metadata: null, team_id: null, team_alias: null, requester: {user_id: null, user_email: null, user_role: null}}
+  - team_fields: {function: validate, general_settings: {team_metadata_validation_error_message: true}, validator: raises, operation: create, metadata: {}, existing_metadata: null, team_id: null, team_alias: null, requester: {user_id: null, user_email: null, user_role: null}}
+  - team_fields: {function: validate, general_settings: {team_metadata_validation_error_message: []}, validator: raises, operation: create, metadata: {}, existing_metadata: null, team_id: null, team_alias: null, requester: {user_id: null, user_email: null, user_role: null}}
+env: {}
+compare: {ignore: []}

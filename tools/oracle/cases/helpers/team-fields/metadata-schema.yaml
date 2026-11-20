@@ -1,0 +1,14 @@
+kind: helper
+name: team_metadata_schema_parsing
+call:
+  team_fields: {function: schema, schema: null}
+calls:
+  - team_fields: {function: schema, schema: [{key: owner, label: Owner}, {key: team, label: null}]}
+  - team_fields: {function: schema, schema: [{key: b}, {key: a}, {key: b}, {key: a}]}
+  - team_fields: {function: schema, schema: {key: owner}}
+  - team_fields: {function: schema, schema: [owner]}
+  - team_fields: {function: schema, schema: [{key: owner, extra: 1}]}
+  - team_fields: {function: schema, schema: [{key: ""}]}
+  - team_fields: {function: schema, schema: [{key: owner, label: 7}]}
+env: {}
+compare: {ignore: []}

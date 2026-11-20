@@ -1,0 +1,56 @@
+kind: helper
+name: team_metadata_validator_failures
+call:
+  team_fields:
+    function: validate
+    general_settings: {}
+    validator: raises
+    operation: create
+    metadata: {owner: env}
+    existing_metadata: null
+    team_id: team-1
+    team_alias: null
+    requester: {user_id: u1, user_email: null, user_role: team_admin}
+calls:
+  - team_fields:
+      function: validate
+      general_settings: {}
+      validator: malformed_type
+      operation: create
+      metadata: {}
+      existing_metadata: null
+      team_id: null
+      team_alias: null
+      requester: {user_id: null, user_email: null, user_role: null}
+  - team_fields:
+      function: validate
+      general_settings: {}
+      validator: malformed_object
+      operation: create
+      metadata: {}
+      existing_metadata: null
+      team_id: null
+      team_alias: null
+      requester: {user_id: null, user_email: null, user_role: null}
+  - team_fields:
+      function: validate
+      general_settings: {}
+      validator: accept
+      operation: create
+      metadata: {}
+      existing_metadata: null
+      team_id: null
+      team_alias: null
+      requester: {user_id: null, user_email: null, user_role: null}
+  - team_fields:
+      function: validate
+      general_settings: {}
+      validator: reject
+      operation: create
+      metadata: {}
+      existing_metadata: null
+      team_id: null
+      team_alias: null
+      requester: {user_id: null, user_email: null, user_role: null}
+env: {}
+compare: {ignore: []}

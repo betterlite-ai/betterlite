@@ -1,0 +1,36 @@
+kind: helper
+name: team_metadata_rejection_messages
+call:
+  team_fields:
+    function: validate
+    general_settings: {}
+    validator: reject
+    operation: update
+    metadata: {owner: env}
+    existing_metadata: {owner: old}
+    team_id: team-1
+    team_alias: Alias
+    requester: {user_id: u1, user_email: u@example.com, user_role: team_admin}
+calls:
+  - team_fields:
+      function: validate
+      general_settings: {}
+      validator: reject_empty
+      operation: create
+      metadata: {}
+      existing_metadata: null
+      team_id: null
+      team_alias: null
+      requester: {user_id: null, user_email: null, user_role: null}
+  - team_fields:
+      function: validate
+      general_settings: {}
+      validator: accept
+      operation: create
+      metadata: {owner: env}
+      existing_metadata: null
+      team_id: team-1
+      team_alias: null
+      requester: {user_id: u1, user_email: null, user_role: org_admin}
+env: {}
+compare: {ignore: []}

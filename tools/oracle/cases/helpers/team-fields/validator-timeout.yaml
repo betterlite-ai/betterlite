@@ -1,0 +1,48 @@
+kind: helper
+name: team_metadata_validator_timeout
+call:
+  team_fields:
+    function: validate
+    general_settings: {team_metadata_validation_timeout: 0.02}
+    validator: sleep
+    operation: create
+    metadata: {}
+    existing_metadata: null
+    team_id: null
+    team_alias: null
+    requester: {user_id: u1, user_email: null, user_role: null}
+calls:
+  - team_fields:
+      function: validate
+      general_settings: {team_metadata_validation_timeout: 2}
+      validator: sleep
+      operation: create
+      metadata: {}
+      existing_metadata: null
+      team_id: null
+      team_alias: null
+      requester: {user_id: u1, user_email: null, user_role: null}
+  - team_fields:
+      function: validate
+      general_settings:
+        team_metadata_validation_timeout: 0.02
+        team_metadata_validation_error_message: "validator timed out"
+      validator: sleep
+      operation: create
+      metadata: {}
+      existing_metadata: null
+      team_id: null
+      team_alias: null
+      requester: {user_id: u1, user_email: null, user_role: null}
+  - team_fields:
+      function: validate
+      general_settings: {team_metadata_validation_error_message: "validator timed out"}
+      validator: sleep
+      operation: create
+      metadata: {}
+      existing_metadata: null
+      team_id: null
+      team_alias: null
+      requester: {user_id: u1, user_email: null, user_role: null}
+env: {}
+compare: {ignore: []}

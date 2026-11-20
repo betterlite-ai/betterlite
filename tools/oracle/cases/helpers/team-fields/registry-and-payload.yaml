@@ -1,0 +1,38 @@
+kind: helper
+name: team_metadata_registry_and_payload
+call:
+  team_fields: {function: registry, steps: [get, set_a, get, set_b, get, clear, get]}
+calls:
+  - team_fields: {function: registry, steps: [set_a, set_b, get, get, clear, get]}
+  - team_fields:
+      function: validate
+      general_settings: {}
+      validator: accept
+      operation: create
+      metadata: [owner, env]
+      existing_metadata: "text"
+      team_id: null
+      team_alias: null
+      requester: {user_id: null, user_email: null, user_role: null}
+  - team_fields:
+      function: validate
+      general_settings: {}
+      validator: accept
+      operation: update
+      metadata: {owner: env, region: eu}
+      existing_metadata: {owner: old}
+      team_id: team-1
+      team_alias: Alias
+      requester: {user_id: u1, user_email: u@example.com, user_role: team_admin}
+  - team_fields:
+      function: validate
+      general_settings: {}
+      validator: absent
+      operation: update
+      metadata: {owner: env}
+      existing_metadata: null
+      team_id: team-1
+      team_alias: null
+      requester: {user_id: u1, user_email: null, user_role: proxy_admin}
+env: {}
+compare: {ignore: []}

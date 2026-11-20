@@ -1,0 +1,25 @@
+task: B801
+deviations:
+  - what: >-
+      Configured metadata validators run without premium_user instead of raising the license-related HTTP 400
+      before validation.
+    why: >-
+      README Decisions removes the paid entitlement gate while retaining callback validation and its fail-closed
+      errors; metadata_without_license proves a required/type/allowed-value callback runs license free.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/team_metadata_validation.py#L111-L117
+  - what: >-
+      The callback receives a Python namespace carrying the payload attributes instead of LiteLLM's
+      TeamMetadataValidationPayload model, and its return value is read as JSON rather than through pydantic
+      model_validate, so a callback that returns a model instance instead of a mapping is unavailable (503).
+    why: >-
+      betterlite's hook bridge carries JSON between Python and Rust, so the payload is rebuilt with the same
+      attribute names and the result must have a JSON form; docs/compatibility.md says output is standard JSON.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/team_metadata_validation.py#L126-L133
+kept_bugs:
+  - what: >-
+      A rejected result whose error_message is the empty string surfaces the default rejection message, because
+      LiteLLM reads the field with `or`.
+    why: >-
+      Callers of the proxy see the default message for an empty rejection text today, and the task pins the
+      truthy-message rule, so betterlite keeps it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/team_metadata_validation.py#L135-L139
