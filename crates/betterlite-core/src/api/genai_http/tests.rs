@@ -341,7 +341,7 @@ async fn a_sync_stream_iterator_yields_each_event() {
     let deps = handler_deps(&config, &source);
     let contents = json(CONTENTS);
     let generation = object(CONFIG);
-    let params = kwargs(r#"{"model_info":{"id":"deployment-7"}}"#);
+    let params = kwargs("{}");
     let target = call(&contents, &generation, &params, true, None);
     let mut fixture = Fixture::new("generate_content");
 
