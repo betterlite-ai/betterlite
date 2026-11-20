@@ -41,12 +41,15 @@ impl WindowSpendStore {
     }
 
     // commit_window_spend_updates: the existing-key read and every seed stay outside the transaction, which then applies all upserts under one injected now
-    pub async fn commit_window_spend_updates<Logs: WindowSpendLogs>(
+    pub async fn commit_window_spend_updates<Logs>(
         &self,
         transactions: &[WindowSpendTransaction],
         logs: &Logs,
         now: DateTime<Utc>,
-    ) -> Result<(), WindowSpendError> {
+    ) -> Result<(), WindowSpendError>
+    where
+        Logs: WindowSpendLogs,
+    {
         if transactions.is_empty() {
             return Ok(());
         }
@@ -167,11 +170,14 @@ pub(super) fn ordered_transactions(
 }
 
 // _seed_base_for_missing_row: an existing primary key gets no seed even when its stored window is older than the incoming one
-async fn seed_for<Logs: WindowSpendLogs>(
+async fn seed_for<Logs>(
     transaction: &WindowSpendTransaction,
     existing: &HashSet<PrimaryKey>,
     logs: &Logs,
-) -> Result<Decimal, WindowSpendError> {
+) -> Result<Decimal, WindowSpendError>
+where
+    Logs: WindowSpendLogs,
+{
     if existing.contains(&primary_key(transaction)) {
         return Ok(Decimal::ZERO);
     }

@@ -89,11 +89,14 @@ impl<Rows: SpendCounterRows> SpendCounterReader<Rows> {
     }
 }
 
-async fn end_user_lookup<Rows: SpendCounterRows>(
+async fn end_user_lookup<Rows>(
     rows: Arc<Rows>,
     durations: Arc<dyn WindowDurationValidity>,
     counter_key: String,
-) -> Result<LookupAnswer<SpendRow, Rows::Error>, DbLookupError> {
+) -> Result<LookupAnswer<SpendRow, Rows::Error>, DbLookupError>
+where
+    Rows: SpendCounterRows,
+{
     let answer = match decode_spend_counter_key(counter_key.as_bytes(), durations.as_ref()) {
         Ok(SpendCounterKey::EndUser(user_id)) => {
             match rows.spend_row(SpendRowLookup::EndUser(user_id)).await {
@@ -101,17 +104,20 @@ async fn end_user_lookup<Rows: SpendCounterRows>(
                 Err(error) => LookupAnswer::Failed(error),
             }
         }
-        Ok(_other) | Err(_error) => LookupAnswer::Row(None),
+        Ok(_) | Err(_) => LookupAnswer::Row(None),
     };
     Ok(answer)
 }
 
-async fn gated_primary<Rows: SpendCounterRows>(
+async fn gated_primary<Rows>(
     gate: &LoopBoundSemaphore,
     rows: &Rows,
     durations: &dyn WindowDurationValidity,
     counter_key: &str,
-) -> LookupAnswer<SpendRow, Rows::Error> {
+) -> LookupAnswer<SpendRow, Rows::Error>
+where
+    Rows: SpendCounterRows,
+{
     let Ok(key) = decode_spend_counter_key(counter_key.as_bytes(), durations) else {
         return LookupAnswer::Row(None);
     };
@@ -141,8 +147,8 @@ fn primary_lookup(key: SpendCounterKey<'_>) -> Option<SpendRowLookup<'_>> {
             Some(SpendRowLookup::Organization(organization_id))
         }
         SpendCounterKey::Project(project_id) => Some(SpendRowLookup::Project(project_id)),
-        SpendCounterKey::EndUser(_user_id)
+        SpendCounterKey::EndUser(_)
         | SpendCounterKey::Window { .. }
-        | SpendCounterKey::Unknown(_text) => None,
+        | SpendCounterKey::Unknown(_) => None,
     }
 }

@@ -142,12 +142,15 @@ pub(crate) fn services(gate_slots: usize) -> Services {
     }
 }
 
-pub(crate) fn reader_with<Rows: SpendCounterRows>(
+pub(crate) fn reader_with<Rows>(
     rows: Option<Arc<Rows>>,
     durations: Arc<dyn WindowDurationValidity>,
     services: Services,
     deadline_seconds: f64,
-) -> SpendCounterReader<Rows> {
+) -> SpendCounterReader<Rows>
+where
+    Rows: SpendCounterRows,
+{
     SpendCounterReader {
         rows,
         durations,
