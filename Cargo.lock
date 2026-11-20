@@ -4047,6 +4047,7 @@ dependencies = [
  "indexmap 2.14.2",
  "jiff",
  "jsonwebtoken",
+ "mime_guess",
  "mutants",
  "pem",
  "regex",
