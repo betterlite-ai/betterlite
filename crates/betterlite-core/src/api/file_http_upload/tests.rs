@@ -670,25 +670,16 @@ async fn two_step_upload() {
     assert_eq!(seen.len(), 2);
     assert_eq!(seen[0].method, Method::POST);
     assert_eq!(seen[0].url, API_BASE);
-    assert_eq!(
-        seen[0].body,
-        vec![b"{\"filename\":\"rows.jsonl\"}".to_vec()]
-    );
-    assert_eq!(
-        seen[0].headers.get("api_key").expect("the initial key"),
-        "sk-manus"
-    );
+    let initial_body = &seen[0].body[0];
+    assert_eq!(initial_body, b"{\"filename\":\"rows.jsonl\"}");
+    let initial_key = seen[0].headers.get("api_key").expect("the initial key");
+    assert_eq!(initial_key, "sk-manus");
     assert_eq!(seen[0].timeout, Some(Duration::from_secs(30)));
     assert_eq!(seen[1].method, Method::PUT);
     assert_eq!(seen[1].url, "http://uploads.example.test/manus/1");
     assert_eq!(seen[1].body, vec![b"{\"row\":1}\n".to_vec()]);
-    assert_eq!(
-        seen[1]
-            .headers
-            .get(CONTENT_TYPE)
-            .expect("the octet-stream default"),
-        "application/octet-stream"
-    );
+    let content_type = seen[1].headers.get(CONTENT_TYPE).expect("the default");
+    assert_eq!(content_type, "application/octet-stream");
     assert_eq!(seen[1].headers.len(), 1);
     assert_eq!(seen[1].timeout, Some(Duration::from_secs(30)));
     let saved = field(field(&result, "params"), "initial_file_response");
