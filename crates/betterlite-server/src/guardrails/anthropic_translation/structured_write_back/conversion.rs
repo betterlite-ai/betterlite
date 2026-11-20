@@ -76,7 +76,7 @@ pub(super) struct Conversion<'input> {
     pub(super) converted: Vec<Value>,
 }
 
-impl<'input> Conversion<'input> {
+impl Conversion<'_> {
     pub(super) async fn walk(&mut self, rows: &[Value]) -> Result<(), StructuredWriteBackError> {
         let mut run: Vec<Value> = Vec::new();
         for message in rows {
