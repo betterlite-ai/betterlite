@@ -84,7 +84,15 @@ pub fn requested_stream_options(
         Some(Json::Object(fields)) if !fields.is_empty() => Some(StreamOptions {
             include_usage: matches!(fields.get("include_usage"), Some(Json::Bool(true))),
         }),
-        _ => defaults,
+        Some(
+            Json::Object(_)
+            | Json::Null
+            | Json::Bool(_)
+            | Json::Number(_)
+            | Json::Text(_)
+            | Json::List(_),
+        )
+        | None => defaults,
     }
 }
 
@@ -180,7 +188,7 @@ fn provider_chunk(payload: &[u8]) -> Result<ProviderChunk, ProviderChunkError> {
     Ok(ProviderChunk::Json(Box::new(value)))
 }
 
-fn wrapper_error(error: WrapperError) -> StreamingError {
+const fn wrapper_error(error: WrapperError) -> StreamingError {
     match error {
         WrapperError::Chunk(chunk) => StreamingError::Chunk(chunk),
         WrapperError::Usage(usage) => StreamingError::Usage(usage),

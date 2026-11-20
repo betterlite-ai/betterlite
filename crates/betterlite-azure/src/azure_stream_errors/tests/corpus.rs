@@ -17,7 +17,7 @@ fn replays_the_azure_stream_errors_corpus(
     let bytes = fs::read(&path).expect("the seed is readable");
     let decoded = decode_content_filter_error(&bytes);
     if name.starts_with("malformed") || name.starts_with("truncated") {
-        assert!(matches!(decoded, Err(_)), "{name} must fail to parse");
+        assert!(decoded.is_err(), "{name} must fail to parse");
     } else if name.starts_with("valid") {
         assert!(
             decoded.expect("a valid seed parses").is_some(),
@@ -25,6 +25,8 @@ fn replays_the_azure_stream_errors_corpus(
         );
     } else if name.starts_with("boundary") {
         decoded.expect("a boundary seed parses");
+    } else {
+        panic!("seed {name} has no recognized prefix");
     }
 }
 

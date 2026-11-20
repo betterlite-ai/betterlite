@@ -5,7 +5,7 @@ use std::sync::Arc;
 use betterlite_logging::logging_pre_post::args::AdditionalArgs;
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_models::decisions::{Extra, Json};
-use betterlite_openai::text_completion_transport::logging::{SecretHeaders, StreamDefaults};
+use betterlite_openai::text_completion_transport::logging::StreamDefaults;
 use betterlite_openai::text_completion_transport::sdk::ByteStream;
 use betterlite_streaming::stream_chunk_shaping::creation::{StreamInstant, system_instant};
 use http::HeaderMap;
@@ -22,6 +22,8 @@ pub struct StreamCall<'call> {
     pub api_base: &'call str,
     pub api_key: Option<&'call SecretString>,
     pub api_version: &'call str,
+    // streaming() and async_streaming() take dynamic_params and never read it
+    pub dynamic_params: bool,
     pub data: &'call Extra,
     pub model: &'call str,
     pub timeout: Option<f64>,

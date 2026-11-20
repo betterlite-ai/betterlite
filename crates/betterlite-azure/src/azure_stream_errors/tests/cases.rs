@@ -254,8 +254,8 @@ fn assert_unused_map(sources: &ScriptedSources) {
     assert!(params.http_client.shared);
     assert_eq!(params.max_retries, 3);
     assert_eq!(params.timeout, Some(12.5));
-    assert_eq!(params.credential, StreamCredential::ApiKey);
-    assert_eq!(params.logged_token(), None);
+    assert!(matches!(&params.credential, StreamCredential::ApiKey));
+    assert!(params.logged_token().is_none());
 }
 
 fn assert_plain_token(sources: &ScriptedSources) {
@@ -264,10 +264,10 @@ fn assert_plain_token(sources: &ScriptedSources) {
     token_call.azure_ad_token = Some(SecretString::from("plain-token"));
     let token_fixture = token_call.call();
     let params = unused_client_params(&token_fixture, sources).expect("token map builds");
-    assert_eq!(
-        params.credential,
-        StreamCredential::AzureAdToken(SecretString::from("plain-token"))
-    );
+    assert!(matches!(
+        &params.credential,
+        StreamCredential::AzureAdToken(_)
+    ));
     assert_eq!(
         params.logged_token().map(|token| token.expose_secret()),
         Some("plain-token")
@@ -331,10 +331,10 @@ fn assert_provider(sources: &ScriptedSources) {
     provider_call.provider = Some(callable_provider(42));
     let provider_fixture = provider_call.call();
     let params = unused_client_params(&provider_fixture, sources).expect("provider map builds");
-    assert_eq!(
-        params.credential,
+    assert!(matches!(
+        &params.credential,
         StreamCredential::AzureAdTokenProvider(42)
-    );
+    ));
 }
 
 fn assert_oidc_failure() {

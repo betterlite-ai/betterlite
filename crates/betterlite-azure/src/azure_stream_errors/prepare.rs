@@ -17,7 +17,7 @@ pub const ASYNC_CLIENT_MESSAGE: &str =
 pub const OIDC_PREFIX: &str = "oidc/";
 
 // The credential entry select_azure_base_url_or_endpoint leaves in the sync map
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub enum StreamCredential {
     ApiKey,
     AzureAdToken(SecretString),
@@ -26,7 +26,7 @@ pub enum StreamCredential {
 }
 
 // azure_client_params as azure.py's streaming() builds it and then never passes on
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct UnusedClientParams {
     pub api_version: String,
     pub endpoint: EndpointSelection,
@@ -40,7 +40,7 @@ pub struct UnusedClientParams {
 impl UnusedClientParams {
     // The map's azure_ad_token is the local variable azure.py logs; without one, the caller's token is
     #[must_use]
-    pub fn logged_token(&self) -> Option<&SecretString> {
+    pub const fn logged_token(&self) -> Option<&SecretString> {
         match &self.credential {
             StreamCredential::AzureAdToken(token) => Some(token),
             StreamCredential::ApiKey

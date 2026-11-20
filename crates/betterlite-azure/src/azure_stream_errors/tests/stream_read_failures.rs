@@ -64,5 +64,5 @@ pub(super) fn assert_absent_stream_options(
         runtime(),
     ))
     .expect("absent stream options open");
-    assert_eq!(absent_stream.stream_options, None);
+    assert!(absent_stream.stream_options.is_none());
 }

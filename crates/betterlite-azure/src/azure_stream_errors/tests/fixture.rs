@@ -15,6 +15,7 @@ use futures_util::stream;
 use http::{HeaderMap, HeaderName, HeaderValue};
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
+use tokio::runtime::Builder;
 use uuid::Uuid;
 
 use crate::azure_client_secret::SecretResolver;
@@ -33,18 +34,18 @@ use crate::oidc_exchange::{AzureOidcExchange, OidcExchangeInput};
 
 pub const CLOCK: i64 = 1_700_000_000;
 
-pub fn stream_instant() -> StreamInstant {
+pub const fn stream_instant() -> StreamInstant {
     StreamInstant {
         seconds: CLOCK,
         timestamp: 1_700_000_000.0,
     }
 }
 
-pub fn identifier() -> Uuid {
+pub const fn identifier() -> Uuid {
     Uuid::from_u128(7)
 }
 
-pub fn runtime() -> StreamRuntime {
+pub const fn runtime() -> StreamRuntime {
     StreamRuntime {
         now: stream_instant,
         next_id: identifier,
@@ -78,9 +79,9 @@ pub struct ScriptedTransport {
 
 fn header_map(headers: &[(String, String)]) -> HeaderMap {
     let mut map = HeaderMap::new();
-    for (name, value) in headers {
-        let name = HeaderName::from_bytes(name.as_bytes()).expect("fixture header name");
-        let value = HeaderValue::from_str(value).expect("fixture header value");
+    for (raw_name, raw_value) in headers {
+        let name = HeaderName::from_bytes(raw_name.as_bytes()).expect("fixture header name");
+        let value = HeaderValue::from_str(raw_value).expect("fixture header value");
         map.insert(name, value);
     }
     map
@@ -112,8 +113,8 @@ impl ChatStreamTransport for ScriptedTransport {
             })
             .collect();
         Box::pin(async move {
-            if let Some(failure) = failure {
-                return Err(failure);
+            if let Some(raised) = failure {
+                return Err(raised);
             }
             let body: ByteStream = Box::pin(stream::iter(items));
             Ok(StreamAnswer { headers, body })
@@ -152,10 +153,11 @@ impl StreamSource for ScriptedSource {
         if let Some(error) = &self.get_error {
             return Err(error.clone());
         }
+        let transport: Arc<dyn ChatStreamTransport> = Arc::clone(&self.transport);
         Ok(StreamClient {
             kind: self.kind,
             api_key: self.api_key.clone(),
-            transport: Arc::clone(&self.transport) as Arc<dyn ChatStreamTransport>,
+            transport,
         })
     }
 }
@@ -376,6 +378,7 @@ pub struct CallFixture {
     pub api_base: String,
     pub api_key: Option<SecretString>,
     pub api_version: String,
+    pub dynamic_params: bool,
     pub data: Extra,
     pub model: String,
     pub timeout: Option<f64>,
@@ -405,6 +408,7 @@ impl Default for CallFixture {
             api_base: "https://unit.test".to_owned(),
             api_key: Some(SecretString::from("call-key")),
             api_version: "2024-02-01".to_owned(),
+            dynamic_params: false,
             data: chat_data(),
             model: "deployment".to_owned(),
             timeout: Some(30.0),
@@ -423,6 +427,7 @@ impl CallFixture {
             api_base: &self.api_base,
             api_key: self.api_key.as_ref(),
             api_version: &self.api_version,
+            dynamic_params: self.dynamic_params,
             data: &self.data,
             model: &self.model,
             timeout: self.timeout,
@@ -466,15 +471,18 @@ pub fn raised_with(status: Option<u16>, message: String) -> Raised {
 }
 
 #[must_use]
-pub fn json_text(value: &Json) -> Option<&str> {
+pub const fn json_text(value: &Json) -> Option<&str> {
     match value {
         Json::Text(text) => Some(text),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
     }
 }
 
-pub fn block_on<Fut: Future>(future: Fut) -> Fut::Output {
-    tokio::runtime::Builder::new_current_thread()
+pub fn block_on<Fut>(future: Fut) -> Fut::Output
+where
+    Fut: Future,
+{
+    Builder::new_current_thread()
         .enable_all()
         .build()
         .expect("runtime builds")
@@ -519,7 +527,9 @@ pub fn failing_source(kind: ClientKind, failure: Raised) -> ScriptedSource {
 pub fn azure_failure(error: StreamingError) -> AzureStreamFailure {
     match error {
         StreamingError::Azure(failure) => failure,
-        other => panic!("expected an Azure failure, got {other:?}"),
+        StreamingError::Logging(_) | StreamingError::Chunk(_) | StreamingError::Usage(_) => {
+            panic!("expected an Azure failure, got {error:?}")
+        }
     }
 }
 

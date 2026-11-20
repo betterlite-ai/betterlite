@@ -13,7 +13,10 @@ use self::error::{AzureStreamFailure, Raised, StreamingError};
 use self::records::{GetStreamClient, StreamCall, StreamHooks, StreamRuntime, StreamSource};
 use self::stream::{AzureChatStream, WrapperHeaders};
 
-fn get_client<'call, 'get>(call: &'get StreamCall<'call>, is_async: bool) -> GetStreamClient<'get>
+const fn get_client<'call, 'get>(
+    call: &'get StreamCall<'call>,
+    is_async: bool,
+) -> GetStreamClient<'get>
 where
     'call: 'get,
 {
@@ -29,13 +32,16 @@ where
 }
 
 // AzureChatCompletion.streaming: the unused client parameters are assembled first and then dropped
-pub async fn streaming<Source: StreamSource>(
+pub async fn streaming<Source>(
     source: &Source,
     sources: &dyn CredentialSources,
     call: &StreamCall<'_>,
     hooks: &mut dyn StreamHooks,
     runtime: StreamRuntime,
-) -> Result<AzureChatStream, StreamingError> {
+) -> Result<AzureChatStream, StreamingError>
+where
+    Source: StreamSource,
+{
     let unused = prepare::unused_client_params(call, sources)?;
     let client = source.get(get_client(call, false))?;
     prepare::require_stream_client(&client, false)?;
@@ -59,24 +65,30 @@ pub async fn streaming<Source: StreamSource>(
 }
 
 // AzureChatCompletion.async_streaming: every failure inside the try becomes an AzureOpenAIError
-pub async fn async_streaming<Source: StreamSource>(
+pub async fn async_streaming<Source>(
     source: &Source,
     call: &StreamCall<'_>,
     hooks: &mut dyn StreamHooks,
     runtime: StreamRuntime,
-) -> Result<AzureChatStream, StreamingError> {
+) -> Result<AzureChatStream, StreamingError>
+where
+    Source: StreamSource,
+{
     match async_inner(source, call, hooks, runtime).await {
         Ok(stream) => Ok(stream),
         Err(raised) => Err(StreamingError::Azure(AzureStreamFailure::wrapped(raised))),
     }
 }
 
-async fn async_inner<Source: StreamSource>(
+async fn async_inner<Source>(
     source: &Source,
     call: &StreamCall<'_>,
     hooks: &mut dyn StreamHooks,
     runtime: StreamRuntime,
-) -> Result<AzureChatStream, Raised> {
+) -> Result<AzureChatStream, Raised>
+where
+    Source: StreamSource,
+{
     let client = source.get(get_client(call, true))?;
     prepare::require_stream_client(&client, true)?;
     hooks

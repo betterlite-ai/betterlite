@@ -80,5 +80,5 @@ pub(super) fn assert_empty_stream_options(
     let empty_call = empty.call();
     let empty_stream = block_on(streaming(source, sources, &empty_call, recorder, runtime()))
         .expect("empty stream options open");
-    assert_eq!(empty_stream.stream_options, None);
+    assert!(empty_stream.stream_options.is_none());
 }

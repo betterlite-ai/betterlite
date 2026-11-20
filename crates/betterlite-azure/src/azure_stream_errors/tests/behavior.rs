@@ -5,18 +5,43 @@ use http::{HeaderMap, HeaderValue};
 use secrecy::SecretString;
 
 use crate::azure_stream_errors::error::{AzureStreamFailure, Raised, Reported, StreamingError};
+use crate::azure_stream_errors::records::StreamCall;
 use crate::azure_stream_errors::stream::raw_headers;
 use crate::azure_stream_errors::{async_streaming, streaming};
 use crate::endpoints::projection::ClientKind;
 
 use super::fixture::{
-    CallFixture, Recorder, ScriptedSources, azure_failure, block_on, failing_source, raised_with,
-    runtime, scripted_source, secret_headers, sse_payload,
+    CallFixture, Recorder, ScriptedSource, ScriptedSources, azure_failure, block_on,
+    failing_source, raised_with, runtime, scripted_source, secret_headers, sse_payload,
 };
 
-#[test]
-fn azure_chat_streams_credential_identity_isolation() {
-    let assertions = BTreeMap::from([
+fn open_identity_stream(
+    source: &ScriptedSource,
+    sources: &ScriptedSources,
+    call: &StreamCall<'_>,
+    recorder: &mut Recorder,
+) {
+    block_on(streaming(source, sources, call, recorder, runtime()))
+        .expect("the identity opens a stream");
+}
+
+fn recorded_tokens(recorder: &Recorder) -> Vec<Json> {
+    recorder
+        .pre
+        .iter()
+        .map(|call| {
+            call.additional_args
+                .headers
+                .as_ref()
+                .and_then(|headers| headers.get("azure_ad_token"))
+                .cloned()
+                .unwrap_or(Json::Null)
+        })
+        .collect()
+}
+
+fn identity_assertions() -> BTreeMap<String, SecretString> {
+    BTreeMap::from([
         (
             "env/ASSERTION-A".to_owned(),
             SecretString::from("assertion-A"),
@@ -25,8 +50,12 @@ fn azure_chat_streams_credential_identity_isolation() {
             "env/ASSERTION-B".to_owned(),
             SecretString::from("assertion-B"),
         ),
-    ]);
-    let sources = ScriptedSources::echoing(assertions);
+    ])
+}
+
+#[test]
+fn azure_chat_streams_credential_identity_isolation() {
+    let sources = ScriptedSources::echoing(identity_assertions());
     let source = scripted_source(ClientKind::AzureOpenAi, &[], sse_payload());
 
     let mut first = CallFixture::default();
@@ -40,43 +69,11 @@ fn azure_chat_streams_credential_identity_isolation() {
     let second_call = second.call();
 
     let mut recorder = Recorder::default();
-    block_on(streaming(
-        &source,
-        &sources,
-        &first_call,
-        &mut recorder,
-        runtime(),
-    ))
-    .expect("first identity opens");
-    block_on(streaming(
-        &source,
-        &sources,
-        &second_call,
-        &mut recorder,
-        runtime(),
-    ))
-    .expect("second identity opens");
-    block_on(streaming(
-        &source,
-        &sources,
-        &first_call,
-        &mut recorder,
-        runtime(),
-    ))
-    .expect("first identity opens again");
+    open_identity_stream(&source, &sources, &first_call, &mut recorder);
+    open_identity_stream(&source, &sources, &second_call, &mut recorder);
+    open_identity_stream(&source, &sources, &first_call, &mut recorder);
 
-    let tokens: Vec<Json> = recorder
-        .pre
-        .iter()
-        .map(|call| {
-            call.additional_args
-                .headers
-                .as_ref()
-                .and_then(|headers| headers.get("azure_ad_token"))
-                .cloned()
-                .unwrap_or(Json::Null)
-        })
-        .collect();
+    let tokens = recorded_tokens(&recorder);
     assert_eq!(tokens[0], Json::Text("token-assertion-A".to_owned()));
     assert_eq!(tokens[1], Json::Text("token-assertion-B".to_owned()));
     assert_eq!(tokens[2], tokens[0]);
@@ -128,7 +125,7 @@ fn a_missing_messages_key_fails_before_pre_call() {
     let source = scripted_source(ClientKind::AzureOpenAi, &[], sse_payload());
     let sources = ScriptedSources::new(200, "{}", BTreeMap::new());
     let mut fixture = CallFixture::default();
-    fixture.data.remove("messages");
+    fixture.data.shift_remove("messages");
     let call = fixture.call();
     let mut recorder = Recorder::default();
     let error = block_on(streaming(

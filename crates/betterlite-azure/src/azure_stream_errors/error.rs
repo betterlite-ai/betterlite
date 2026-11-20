@@ -42,7 +42,7 @@ impl Raised {
 
     // an exception an SDK client or our transport raised: class plus whichever attributes it carries
     #[must_use]
-    pub fn raised(
+    pub const fn raised(
         class: String,
         status: Reported<Option<u16>>,
         message: Reported<Option<String>>,
