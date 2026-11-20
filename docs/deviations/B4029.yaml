@@ -1,0 +1,30 @@
+task: B4029
+deviations:
+  - what: The cache, the sender, the report source, the user spend source, the pod lock, the clock and the random first-run offsets are injected traits instead of the proxy logging object's internal_usage_cache, send_alert, proxy_server's prisma_client and the module level scheduler.
+    why: betterlite has no module state, and B8656 wires the real implementations from ProxyLogging's internal usage cache (B4293), B4024, B1725, B700 and B1690.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1855-L1892
+  - what: send_user_spend_alerts takes a has_database flag, and the real query source is built only when a database is connected.
+    why: LiteLLM reads the global prisma_client from proxy_server, which betterlite does not have.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1973-L1977
+  - what: Job rules are returned as plain job settings by plan_spend_jobs and the runners, with no scheduler started in this task.
+    why: LiteLLM registers them on APScheduler inside proxy_server.py, and B8372 registers the jobs on the server task tracker, with B8656 supplying the ports and events. The alerting and prisma_client guard around the registration belongs to that wiring, so plan_spend_jobs takes only the frequency and the args.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11237-L11320
+  - what: HOURS_IN_A_DAY is a constructor value that defaults to 24, not read here from the environment.
+    why: No backlog task owns that constant, so the caller reads the env var.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L432
+  - what: A weekly time range of "7D" is accepted and its marker is set with 7 days in seconds. LiteLLM sends the report first and then duration_in_seconds raises "Unsupported duration unit" for the uppercase D, so it logs "Invalid time range format" and never marks the report as sent, and the next run sends it again.
+    why: duration_in_seconds matches the unit with [smhdw], so the uppercase unit that send_weekly_spend_report itself accepts fails only after the message went out; a range the producer accepts should not re-send the report every run.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/duration_parser.py#L51-L106
+  - what: plan_spend_jobs accepts a spend_report_frequency of "7D" and plans the weekly job. LiteLLM's own unit check passes the uppercase D and then duration_in_seconds raises "Unsupported duration unit" while the jobs are registered, so the proxy fails to start.
+    why: the frequency the producer accepts should be the frequency the plan accepts, and a config whose unit is a capital D is not a different schedule.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11245-L11250
+  - what: The weekly time range takes an unsigned decimal day count before the unit, so " 7d", "7_0d" and "-7d" are rejected. LiteLLM's int() strips whitespace and accepts underscores, so "7_0d" sends a 70-day report and " 7d" sends a 7-day report before duration_in_seconds fails on the same text and leaves the marker unset.
+    why: A signed or punctuated day count is a config typo, and accepting it sends a report whose window nobody asked for; the digits-only rule rejects it before the query instead of after the message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1845-L1847
+  - what: evaluate_user_spend takes a UserSpendChecks struct with the thresholds and anomalies flags, where LiteLLM passes the two booleans as separate parameters.
+    why: The workspace allows one bool parameter per function, and grouping the two flags keeps the call sites and the oracle adapter readable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/user_spend_alerts.py#L121-L127
+  - what: The monthly report's catch-all logs "Error sending monthly spend report", where LiteLLM logs the weekly wording from the monthly handler.
+    why: LiteLLM's message is a copy-paste slip; an operator reading the log of a failed monthly report needs the monthly name, and no working setup matches on the text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1960-L1961
+kept_bugs: []
