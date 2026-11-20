@@ -747,7 +747,7 @@ fn brave_search_dates_read_json_values(#[case] literal: &str, #[case] expected: 
 #[case::compact_with_short_time("20240305T2359", Some("2024-03-05"))]
 #[case::compact_short_year("240305 UTC", Some("2005-03-24"))]
 #[case::compact_short_year_before_label("990101h", Some("1999-01-01"))]
-#[case::compact_year_before_label("20240305h", Some("2024-03-05"))]
+#[case::compact_year_before_label("20240304h", Some("2024-03-04"))]
 #[case::compact_year_before_label_away_from_today("19990101h", Some("1999-01-01"))]
 #[case::compact_twelve_digits_before_label("199901011200h", Some("1999-01-01"))]
 #[case::compact_fourteen_digits_before_label("19990101120000h", Some("1999-01-01"))]
