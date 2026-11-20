@@ -1,0 +1,21 @@
+kind: helper
+name: proxy-custom-aleph-control
+call:
+  aleph_alpha:
+    model: aleph_alpha/luminous-base-control
+    messages:
+      - role: system
+        content: Be brief.
+      - role: user
+        content: The capital of France is
+    api_base: https://api.aleph-alpha.com/complete
+    api_key: sk-aleph
+    optional_params: {}
+    defaults: {}
+    max_tokens: 4096
+    created: 1700000000
+    reply:
+      status: 200
+      body: '{"completions":[{"completion":"Paris.","finish_reason":"stop"}]}'
+env: {}
+compare: {ignore: []}
