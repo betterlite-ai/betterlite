@@ -1,0 +1,5 @@
+litellm_settings:
+  blog_posts_url: https://blog.example.invalid/rss.xml
+  public_mcp_servers: []
+  public_mcp_hub_strict_whitelist: true
+  public_model_groups_links: {}
