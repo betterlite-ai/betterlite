@@ -21,8 +21,7 @@ use super::call::TranscriptionCall;
 use super::dispatch::{TranscriptionAnswer, TranscriptionDispatch};
 use super::error::{AsyncTranscriptionError, TranscriptionError};
 use super::{
-    public_duration_is_absent, python_type_name, store_hidden_duration,
-    transcription_response_from_cached_dict,
+    cached_audio_response, error_type_name, public_duration_is_absent, store_hidden_duration,
 };
 
 mod logging;
@@ -53,7 +52,8 @@ where
     ) -> Result<TranscriptionAnswer, TranscriptionError<Dispatch::Error>> {
         let input = get_audio_file_name(&file);
         let processed = process_audio_file(file, self.files)?;
-        self.transcription_answer(call, &processed, &input).await
+        let answer = self.run(call, &processed, &input).await?;
+        Ok(self.with_measured_duration(answer, &processed))
     }
 
     // atranscription(*args, **kwargs): KeyError("model") before the try, then the sync call and its checks
@@ -63,7 +63,7 @@ where
         call: &TranscriptionCall,
         file: AudioFile<'_>,
         file_from_kwargs: bool,
-    ) -> Result<TranscriptionResponse, AsyncTranscriptionError<Dispatch::Error>> {
+    ) -> Result<TranscriptionResponse, AsyncTranscriptionError> {
         let Some(model) = model else {
             return Err(AsyncTranscriptionError::MissingModel);
         };
@@ -84,34 +84,33 @@ where
                 ));
             }
         };
-        let mut response = match self
-            .transcription_answer(&asynchronous, &processed, &input)
+        let answer = self
+            .run(&asynchronous, &processed, &input)
             .await
             .map_err(|error| {
                 AsyncTranscriptionError::mapped(&error, model, &provider, self.redactor)
-            })? {
+            })?;
+        let mut response = match self.with_measured_duration(answer, &processed) {
             TranscriptionAnswer::Reply(reply) => reply.response,
-            TranscriptionAnswer::Mapping(mapping) => {
-                match transcription_response_from_cached_dict(mapping) {
-                    Ok(response) => response,
-                    Err(error) => {
-                        return Err(AsyncTranscriptionError::mapped(
-                            &error,
-                            model,
-                            &provider,
-                            self.redactor,
-                        ));
-                    }
+            TranscriptionAnswer::Mapping(mapping) => match cached_audio_response(mapping) {
+                Ok(response) => response,
+                Err(error) => {
+                    return Err(AsyncTranscriptionError::mapped(
+                        &error,
+                        model,
+                        &provider,
+                        self.redactor,
+                    ));
                 }
-            }
+            },
             TranscriptionAnswer::Unexpected(_) => {
-                let second = self
-                    .transcription_answer(&asynchronous, &processed, &input)
-                    .await
-                    .map_err(|error| {
-                        AsyncTranscriptionError::mapped(&error, model, &provider, self.redactor)
-                    })?;
-                match second {
+                let second =
+                    self.run(&asynchronous, &processed, &input)
+                        .await
+                        .map_err(|error| {
+                            AsyncTranscriptionError::mapped(&error, model, &provider, self.redactor)
+                        })?;
+                match self.with_measured_duration(second, &processed) {
                     TranscriptionAnswer::Reply(reply) => reply.response,
                     TranscriptionAnswer::Mapping(_) => {
                         let failure = TranscriptionError::<Dispatch::Error>::InvalidResponse {
@@ -126,7 +125,7 @@ where
                     }
                     TranscriptionAnswer::Unexpected(value) => {
                         let failure = TranscriptionError::<Dispatch::Error>::InvalidResponse {
-                            python_type: python_type_name(&value),
+                            python_type: error_type_name(&value),
                         };
                         return Err(AsyncTranscriptionError::mapped(
                             &failure,
@@ -145,17 +144,6 @@ where
             store_hidden_duration(&mut response, duration);
         }
         Ok(response)
-    }
-
-    // the sync call's body, before the outer wrapper looks at what it returned
-    async fn transcription_answer(
-        &self,
-        call: &TranscriptionCall,
-        processed: &ProcessedAudioFile,
-        input: &str,
-    ) -> Result<TranscriptionAnswer, TranscriptionError<Dispatch::Error>> {
-        let answer = self.run(call, processed, input).await?;
-        Ok(self.with_measured_duration(answer, processed))
     }
 
     // both sync results and awaited async results get the duration, stored hidden only

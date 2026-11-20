@@ -4,7 +4,7 @@ use betterlite_context::media_config_selection::audio_transcription::AudioTransc
 use betterlite_context::non_default_params::Params;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::audio_file_input::ProcessedAudioFile;
-use betterlite_openai::openai_base_config::{Headers, Object};
+use betterlite_openai::openai_base_config::Headers;
 use betterlite_openai::transcription::client::SharedSession;
 use betterlite_openai::transcription::config::TranscriptionFamily;
 use indexmap::IndexMap;
@@ -40,28 +40,6 @@ impl TranscriptionInput<'_> {
             .map(|(name, value)| (name.clone(), decisions_json(value)))
             .collect()
     }
-
-    // the optional params as B2453's request takes them, in serde_json's object shape
-    #[must_use]
-    pub fn optional_params_object(&self) -> Object {
-        object_from_params(&self.optional_params)
-    }
-
-    // litellm_params as get_litellm_params hands them to B2453
-    #[must_use]
-    pub fn litellm_params_object(&self) -> Object {
-        object_from_params(&self.litellm_params)
-    }
-}
-
-// a closed JSON tree converts to serde_json's object without naming its value type
-fn object_from_params(params: &Params) -> Object {
-    let mut object = Object::new();
-    for (name, value) in params {
-        let converted = serde_json::to_value(value).unwrap_or_default();
-        object.insert(name.clone(), converted);
-    }
-    object
 }
 
 // openai_audio_transcriptions.audio_transcriptions over B515, for openai and its compatibles
@@ -94,11 +72,6 @@ pub enum TranscriptionTarget<'call> {
     Bedrock(InjectedTranscription<'call>),
     Native(InjectedTranscription<'call>),
     Watsonx(InjectedTranscription<'call>),
-}
-
-// litellm_params.timeout is the signature's 600 unless the caller named one
-pub(super) fn timeout_seconds(timeout: Option<f64>) -> f64 {
-    timeout.unwrap_or(super::DEFAULT_TIMEOUT_SECONDS)
 }
 
 // the OpenAI SDK compares its attempt count against max_retries, so a negative value behaves as zero

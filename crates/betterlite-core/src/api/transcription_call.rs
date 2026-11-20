@@ -30,19 +30,23 @@ const NATIVE_ENDPOINT_CONFIGS: [AudioTranscriptionConfigTag; 2] = [
 
 #[must_use]
 pub fn is_native_endpoint(config: Option<AudioTranscriptionConfigTag>) -> bool {
-    config.is_some_and(|tag| NATIVE_ENDPOINT_CONFIGS.contains(&tag))
+    match config {
+        Some(tag) => NATIVE_ENDPOINT_CONFIGS.contains(&tag),
+        None => false,
+    }
 }
 
 // OPENAI_AUDIO_TRANSCRIPTION_PROVIDERS: "openai" plus every openai-compatible provider
 #[must_use]
 pub fn is_openai_audio_provider(provider: &str) -> bool {
-    provider == "openai" || is_openai_compatible_provider(provider)
+    match provider {
+        "openai" => true,
+        other => is_openai_compatible_provider(other),
+    }
 }
 
 // TranscriptionResponse(**cached_dict): the typed constructor, never a second provider decoder
-pub fn transcription_response_from_cached_dict(
-    value: Json,
-) -> Result<TranscriptionResponse, TranscriptionError> {
+pub fn cached_audio_response(value: Json) -> Result<TranscriptionResponse, TranscriptionError> {
     let Json::Object(fields) = value else {
         return Err(TranscriptionError::CachedResponseNotObject);
     };
@@ -70,7 +74,7 @@ pub fn transcription_response_from_cached_dict(
 
 // type(response)'s text in the final wrapper check
 #[must_use]
-pub fn python_type_name(value: &Json) -> &'static str {
+pub fn error_type_name(value: &Json) -> &'static str {
     match value {
         Json::Null => "<class 'NoneType'>",
         Json::Bool(_) => "<class 'bool'>",
@@ -116,22 +120,6 @@ pub(crate) fn decisions_json(value: &JsonValue) -> Json {
             fields
                 .iter()
                 .map(|(name, value)| (name.clone(), decisions_json(value)))
-                .collect(),
-        ),
-    }
-}
-
-pub(crate) fn json_value(value: &Json) -> JsonValue {
-    match value {
-        Json::Null => JsonValue::Null,
-        Json::Bool(flag) => JsonValue::Bool(*flag),
-        Json::Number(number) => JsonValue::Number(number.clone()),
-        Json::Text(text) => JsonValue::Text(text.clone()),
-        Json::List(items) => JsonValue::Array(items.iter().map(json_value).collect()),
-        Json::Object(fields) => JsonValue::Object(
-            fields
-                .iter()
-                .map(|(name, value)| (name.clone(), json_value(value)))
                 .collect(),
         ),
     }

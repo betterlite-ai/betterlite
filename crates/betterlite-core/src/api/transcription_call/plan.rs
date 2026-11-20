@@ -130,7 +130,10 @@ fn passed_params(kwargs: &Params, call: &TranscriptionCall) -> Params {
 }
 
 fn optional_text(value: Option<&str>) -> JsonValue {
-    value.map_or(JsonValue::Null, |text| JsonValue::Text(text.to_owned()))
+    match value {
+        Some(text) => JsonValue::Text(text.to_owned()),
+        None => JsonValue::Null,
+    }
 }
 
 fn bool_value(value: &JsonValue) -> Option<bool> {
@@ -144,6 +147,19 @@ fn bool_value(value: &JsonValue) -> Option<bool> {
     }
 }
 
+// the request scope both credential chains read; only these three fields ever come from the caller
+fn sdk_options(plan: &Plan, api_version: Option<String>) -> ResourceSdkRequestOptions {
+    ResourceSdkRequestOptions {
+        api_base: plan.api_base.clone(),
+        api_version,
+        api_key: plan.api_key.clone(),
+        organization: None,
+        vertex_project: None,
+        vertex_location: None,
+        vertex_credentials: None,
+    }
+}
+
 // the openai branch: api_base, key and organization, each through its own fallback chain
 pub(super) struct OpenAiCredentials {
     pub api_base: String,
@@ -153,11 +169,7 @@ pub(super) struct OpenAiCredentials {
 
 pub(super) fn openai_credentials(plan: &Plan, settings: &Settings) -> OpenAiCredentials {
     let resolved = ResourceSdkSettings::from(settings);
-    let options = ResourceSdkRequestOptions {
-        api_base: plan.api_base.clone(),
-        api_key: plan.api_key.clone(),
-        ..ResourceSdkRequestOptions::default()
-    };
+    let options = sdk_options(plan, None);
     OpenAiCredentials {
         api_base: resolved.openai_base(&options),
         api_key: resolved.openai_api_key(&options).cloned(),
@@ -182,12 +194,7 @@ pub(super) fn azure_credentials(
     settings: &Settings,
 ) -> AzureCredentials {
     let resolved = ResourceSdkSettings::from(settings);
-    let options = ResourceSdkRequestOptions {
-        api_base: plan.api_base.clone(),
-        api_version: call.api_version.clone(),
-        api_key: plan.api_key.clone(),
-        ..ResourceSdkRequestOptions::default()
-    };
+    let options = sdk_options(plan, call.api_version.clone());
     AzureCredentials {
         api_base: resolved.azure_base(&options).map(str::to_owned),
         api_version: resolved.azure_version(&options).map(str::to_owned),

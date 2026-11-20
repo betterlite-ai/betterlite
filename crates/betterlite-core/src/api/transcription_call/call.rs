@@ -35,13 +35,6 @@ pub struct TranscriptionCall {
     pub params: Params,
 }
 
-impl TranscriptionCall {
-    #[must_use]
-    pub fn asynchronous(&self) -> bool {
-        matches!(self.atranscription, Some(Json::Bool(true)))
-    }
-}
-
 // the OpenAI SDK client classes LiteLLM's handlers accept as a supplied client
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SuppliedClientKind {
@@ -51,12 +44,4 @@ pub enum SuppliedClientKind {
     AsyncAzureOpenAi,
     HttpHandler,
     AsyncHttpHandler,
-}
-
-impl SuppliedClientKind {
-    // Soniox and the generic native handler keep only the two HTTPHandler classes
-    #[must_use]
-    pub const fn is_http_handler(self) -> bool {
-        matches!(self, Self::HttpHandler | Self::AsyncHttpHandler)
-    }
 }

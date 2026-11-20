@@ -71,13 +71,21 @@ impl Section for Raw {
                 "litellm_settings.azure_key",
                 lookup,
             )?,
+            azure_ad_token: None,
             organization: optional_string(
                 self.settings.organization,
                 "litellm_settings.organization",
                 lookup,
             )?,
+            openai_base_url: None,
+            openai_api_base: None,
+            openai_api_key: None,
+            openai_organization: None,
+            azure_api_base: None,
+            azure_api_version: None,
+            azure_openai_api_key: None,
+            azure_api_key: None,
             drop_params: self.settings.drop_params,
-            ..Self::Settings::default()
         };
         settings.apply_environment(lookup);
         Ok(settings)

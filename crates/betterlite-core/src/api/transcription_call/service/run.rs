@@ -3,19 +3,21 @@ use std::time::Duration;
 use betterlite_context::media_config_selection::audio_transcription::AudioTranscriptionConfigTag;
 use betterlite_context::non_default_params::Params;
 use betterlite_models::controls::json_value::JsonValue;
+use betterlite_models::decisions::Json;
 use betterlite_openai::api::audio_file_input::ProcessedAudioFile;
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_openai::transcription::config::TranscriptionFamily;
 use secrecy::SecretString;
 
 use super::Transcriptions;
+use crate::api::transcription_call::DEFAULT_TIMEOUT_SECONDS;
 use crate::api::transcription_call::call::{SuppliedClientKind, TranscriptionCall};
 use crate::api::transcription_call::dispatch::{TranscriptionAnswer, TranscriptionDispatch};
 use crate::api::transcription_call::error::TranscriptionError;
 use crate::api::transcription_call::plan::{Plan, azure_credentials, openai_credentials, prepare};
 use crate::api::transcription_call::target::{
     AzureTranscription, InjectedTranscription, OpenAiTranscription, TranscriptionInput,
-    TranscriptionTarget, retry_count, timeout_seconds,
+    TranscriptionTarget, retry_count,
 };
 
 // what every provider branch reads off the call it is serving
@@ -26,6 +28,13 @@ struct BranchCall<'call> {
     input: &'call str,
     timeout: Duration,
     max_retries: u32,
+}
+
+// the two transports main selects while no provider config is needed
+#[derive(Clone, Copy)]
+enum Transport {
+    Azure,
+    OpenAi,
 }
 
 impl<Dispatch> Transcriptions<'_, Dispatch>
@@ -46,7 +55,7 @@ where
             &self.resolution,
             self.bundled,
         )?;
-        let seconds = timeout_seconds(call.timeout);
+        let seconds = call.timeout.unwrap_or(DEFAULT_TIMEOUT_SECONDS);
         let timeout = Duration::try_from_secs_f64(seconds)
             .map_err(|_invalid| TranscriptionError::InvalidTimeout { seconds })?;
         let branch = BranchCall {
@@ -59,10 +68,10 @@ where
         };
         self.log(call, &plan)?;
         if matches!(plan.slug.as_str(), "azure" | "azure_ai") && plan.config.is_none() {
-            return self.azure(&branch).await;
+            return self.provider(Transport::Azure, &branch).await;
         }
         if plan.openai_transport {
-            return self.openai(&branch).await;
+            return self.provider(Transport::OpenAi, &branch).await;
         }
         if plan.slug == "nvidia_riva" {
             return self.injected(InjectedTarget::Riva, None, &branch).await;
@@ -102,54 +111,54 @@ where
         Err(TranscriptionError::UnmappedProvider)
     }
 
-    async fn azure(
+    // the two transports main selects before its injected branches, each with its own credential chain
+    async fn provider(
         &self,
+        transport: Transport,
         branch: &BranchCall<'_>,
     ) -> Result<TranscriptionAnswer, TranscriptionError<Dispatch::Error>> {
-        let credentials = azure_credentials(branch.plan, branch.call, self.settings);
-        let mut optional_params = branch.plan.optional_params.clone();
-        // the Azure branch adds extra_headers to the options even when the caller passed none
-        optional_params.insert(
-            String::from("extra_headers"),
-            headers_value(branch.call.extra_headers.as_ref()),
-        );
-        let target = TranscriptionTarget::Azure(AzureTranscription {
-            input: self.base_input(
-                branch,
-                optional_params,
-                credentials.api_base.as_deref(),
-                credentials.api_key.as_ref(),
-                branch.call.client,
-            ),
-            api_version: credentials.api_version.as_deref(),
-            azure_ad_token: credentials.azure_ad_token.as_ref(),
-        });
-        self.dispatch
-            .transcribe(target)
-            .await
-            .map_err(TranscriptionError::Dispatch)
-    }
-
-    async fn openai(
-        &self,
-        branch: &BranchCall<'_>,
-    ) -> Result<TranscriptionAnswer, TranscriptionError<Dispatch::Error>> {
-        let credentials = openai_credentials(branch.plan, self.settings);
-        let target = TranscriptionTarget::OpenAi(OpenAiTranscription {
-            input: self.base_input(
-                branch,
-                branch.plan.optional_params.clone(),
-                Some(credentials.api_base.as_str()),
-                credentials.api_key.as_ref(),
-                branch.call.client,
-            ),
-            organization: credentials.organization.as_deref(),
-            family: transcription_family(branch.plan.config),
-        });
-        self.dispatch
-            .transcribe(target)
-            .await
-            .map_err(TranscriptionError::Dispatch)
+        match transport {
+            Transport::Azure => {
+                let credentials = azure_credentials(branch.plan, branch.call, self.settings);
+                let mut optional_params = branch.plan.optional_params.clone();
+                // the Azure branch adds extra_headers to the options even when the caller passed none
+                optional_params.insert(
+                    String::from("extra_headers"),
+                    headers_value(branch.call.extra_headers.as_ref()),
+                );
+                self.dispatch
+                    .transcribe(TranscriptionTarget::Azure(AzureTranscription {
+                        input: self.base_input(
+                            branch,
+                            optional_params,
+                            credentials.api_base.as_deref(),
+                            credentials.api_key.as_ref(),
+                            branch.call.client,
+                        ),
+                        api_version: credentials.api_version.as_deref(),
+                        azure_ad_token: credentials.azure_ad_token.as_ref(),
+                    }))
+                    .await
+                    .map_err(TranscriptionError::Dispatch)
+            }
+            Transport::OpenAi => {
+                let credentials = openai_credentials(branch.plan, self.settings);
+                self.dispatch
+                    .transcribe(TranscriptionTarget::OpenAi(OpenAiTranscription {
+                        input: self.base_input(
+                            branch,
+                            branch.plan.optional_params.clone(),
+                            Some(credentials.api_base.as_str()),
+                            credentials.api_key.as_ref(),
+                            branch.call.client,
+                        ),
+                        organization: credentials.organization.as_deref(),
+                        family: transcription_family(branch.plan.config),
+                    }))
+                    .await
+                    .map_err(TranscriptionError::Dispatch)
+            }
+        }
     }
 
     // Riva, Soniox, Bedrock and the generic native handler: same input, different headers and name
@@ -199,7 +208,7 @@ where
             file: branch.processed,
             optional_params,
             litellm_params: branch.plan.kwargs.clone(),
-            atranscription: branch.call.asynchronous(),
+            atranscription: matches!(branch.call.atranscription, Some(Json::Bool(true))),
             timeout: branch.timeout,
             max_retries: branch.max_retries,
             api_base,
@@ -231,9 +240,18 @@ impl InjectedTarget {
     }
 }
 
-// Soniox and the generic native handler keep only the HTTP handler clients
+// Soniox and the generic native handler keep only the two HTTPHandler classes
 fn http_client(client: Option<SuppliedClientKind>) -> Option<SuppliedClientKind> {
-    client.filter(SuppliedClientKind::is_http_handler)
+    match client {
+        Some(SuppliedClientKind::HttpHandler | SuppliedClientKind::AsyncHttpHandler) => client,
+        Some(
+            SuppliedClientKind::OpenAi
+            | SuppliedClientKind::AsyncOpenAi
+            | SuppliedClientKind::AzureOpenAi
+            | SuppliedClientKind::AsyncAzureOpenAi,
+        )
+        | None => None,
+    }
 }
 
 // the OpenAI branch's family is the provider config B157 selected

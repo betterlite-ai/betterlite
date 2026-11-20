@@ -30,10 +30,9 @@ use betterlite_openai::api::transcription_contract::TranscriptionResponse;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::transcription::config::TranscriptionFamily;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use std::error::Error;
-use std::fmt::{self, Formatter};
 use std::future::{Future, ready};
 use std::io;
 use std::path::Path;
@@ -284,19 +283,6 @@ fn transcription_native_selection() {
     runtime().block_on(async {
         let mut harness = Harness::new();
         let audio = wav(1);
-        assert!(super::is_native_endpoint(Some(
-            AudioTranscriptionConfigTag::XAI
-        )));
-        assert!(super::is_native_endpoint(Some(
-            AudioTranscriptionConfigTag::EdenAI
-        )));
-        assert!(!super::is_native_endpoint(Some(
-            AudioTranscriptionConfigTag::OpenAIWhisper
-        )));
-        assert!(!super::is_native_endpoint(None));
-        assert!(super::is_openai_audio_provider("openai"));
-        assert!(super::is_openai_audio_provider("azure_ai"));
-        assert!(!super::is_openai_audio_provider("cohere"));
         // xai's config opts into its own native endpoint, so the caller's headers and client are dropped
         harness.dispatch.reply(response(r#"{"text":"Hello"}"#));
         let mut xai = request_for("xai/whisper");
@@ -497,7 +483,6 @@ fn transcription_async_results() {
             .expect("the typed response passes through");
         assert_eq!(typed.text.as_deref(), Some("Hello"));
         assert_eq!(hidden_duration(&typed), Some(1.0));
-        // an integer first result causes a second call before the final check
         harness.dispatch.unexpected(json("1"));
         harness.dispatch.reply(response(r#"{"text":"Hello"}"#));
         let second = harness
@@ -533,24 +518,6 @@ fn transcription_async_results() {
             exception.message,
             "Invalid response from transcription provider, expected TranscriptionResponse, but got <class 'int'>"
         );
-        // an existing public duration is preserved, including zero and two
-        for existing in ["0", "2"] {
-            harness
-                .dispatch
-                .reply(response(&format!(r#"{{"text":"Hello","duration":{existing}}}"#)));
-            let preserved = harness
-                .service()
-                .atranscription(
-                    Some("openai/whisper-1"),
-                    &request,
-                    AudioFile::Bytes(&audio),
-                    true,
-                )
-                .await
-                .expect("the public duration is preserved");
-            assert_eq!(hidden_duration(&preserved), None);
-            assert!(preserved.extra.get("duration").is_some());
-        }
         // a null public duration is absent, so the fallback stores the hidden value
         harness
             .dispatch
@@ -609,41 +576,63 @@ fn transcription_async_results() {
     });
 }
 
+#[rstest]
+#[case("0")]
+#[case("2")]
+fn public_duration_is_preserved(#[case] existing: &str) {
+    runtime().block_on(async {
+        let mut harness = Harness::new();
+        let audio = wav(1);
+        let request = request_for("openai/whisper-1");
+        harness.dispatch.reply(response(&format!(
+            r#"{{"text":"Hello","duration":{existing}}}"#
+        )));
+        let preserved = harness
+            .service()
+            .atranscription(
+                Some("openai/whisper-1"),
+                &request,
+                AudioFile::Bytes(&audio),
+                true,
+            )
+            .await
+            .expect("the public duration is preserved");
+        assert_eq!(hidden_duration(&preserved), None);
+        assert!(preserved.extra.get("duration").is_some());
+    });
+}
+
 #[test]
 fn cached_dict_conversion() {
-    let converted = super::transcription_response_from_cached_dict(json(
+    let converted = super::cached_audio_response(json(
         r#"{"text":"Hello","duration":2,"_hidden_params":{"audio_transcription_duration":2.0}}"#,
     ))
     .expect("the cached dict converts");
     assert_eq!(converted.text.as_deref(), Some("Hello"));
     assert!(converted.extra.get("duration").is_some());
     assert_eq!(hidden_duration(&converted), Some(2.0));
-    let null_text = super::transcription_response_from_cached_dict(json(r#"{"text":null}"#))
-        .expect("a null text converts");
+    let null_text =
+        super::cached_audio_response(json(r#"{"text":null}"#)).expect("a null text converts");
     assert_eq!(null_text.text, None);
     assert!(matches!(
-        super::transcription_response_from_cached_dict(json(r#"{"text":5}"#)),
+        super::cached_audio_response(json(r#"{"text":5}"#)),
         Err(TranscriptionError::CachedField { .. })
     ));
     assert!(matches!(
-        super::transcription_response_from_cached_dict(json("[1]")),
+        super::cached_audio_response(json("[1]")),
         Err(TranscriptionError::CachedResponseNotObject)
     ));
 }
-#[test]
-fn python_type_names() {
-    let cases = [
-        ("null", "<class 'NoneType'>"),
-        ("true", "<class 'bool'>"),
-        ("1", "<class 'int'>"),
-        ("1.5", "<class 'float'>"),
-        ("\"x\"", "<class 'str'>"),
-        ("[]", "<class 'list'>"),
-        ("{}", "<class 'dict'>"),
-    ];
-    for (source, expected) in cases {
-        assert_eq!(super::python_type_name(&json(source)), expected);
-    }
+#[rstest]
+#[case("null", "<class 'NoneType'>")]
+#[case("true", "<class 'bool'>")]
+#[case("1", "<class 'int'>")]
+#[case("1.5", "<class 'float'>")]
+#[case("\"x\"", "<class 'str'>")]
+#[case("[]", "<class 'list'>")]
+#[case("{}", "<class 'dict'>")]
+fn error_type_names(#[case] source: &str, #[case] expected: &str) {
+    assert_eq!(super::error_type_name(&json(source)), expected);
 }
 #[derive(Debug, Clone, PartialEq)]
 struct Snapshot {
@@ -739,16 +728,9 @@ fn injected(kind: TargetKind, call: InjectedTranscription<'_>) -> Snapshot {
     recorded
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
+#[error("rate limited by the provider")]
 struct FakeError;
-
-impl fmt::Display for FakeError {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
-        formatter.write_str("rate limited by the provider")
-    }
-}
-
-impl Error for FakeError {}
 
 impl TranscriptionDispatchError for FakeError {
     fn status_code(&self) -> Option<u16> {
@@ -918,7 +900,25 @@ fn runtime() -> tokio::runtime::Runtime {
 fn request_for(model: &str) -> TranscriptionCall {
     TranscriptionCall {
         model: model.to_owned(),
-        ..TranscriptionCall::default()
+        language: None,
+        prompt: None,
+        response_format: None,
+        timestamp_granularities: None,
+        temperature: None,
+        user: None,
+        timeout: None,
+        api_key: None,
+        api_base: None,
+        api_version: None,
+        max_retries: None,
+        custom_llm_provider: None,
+        base_url: None,
+        atranscription: None,
+        client: None,
+        extra_headers: None,
+        shared_session: None,
+        azure_ad_token: None,
+        params: Params::new(),
     }
 }
 

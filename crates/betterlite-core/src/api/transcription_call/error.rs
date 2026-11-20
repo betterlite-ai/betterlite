@@ -79,29 +79,9 @@ pub struct TranscriptionException {
 
 // the async wrapper's failure: a missing model is a KeyError raised before the try, so never mapped
 #[derive(Debug)]
-pub enum AsyncTranscriptionError<OperationError = Infallible>
-where
-    OperationError: Error + 'static,
-{
+pub enum AsyncTranscriptionError {
     MissingModel,
     Exception(TranscriptionException),
-}
-
-impl<OperationError> std::fmt::Display for AsyncTranscriptionError<OperationError>
-where
-    OperationError: Error + 'static,
-{
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::MissingModel => formatter.write_str("model"),
-            Self::Exception(exception) => formatter.write_str(&exception.message),
-        }
-    }
-}
-
-impl<OperationError> Error for AsyncTranscriptionError<OperationError> where
-    OperationError: Error + 'static
-{
 }
 
 // the three facts exception_type reads off a failure, whatever operation error it carries
@@ -152,10 +132,7 @@ where
 // Infallible stands for a failure the cached converter raises itself
 impl TranscriptionDispatchError for Infallible {}
 
-impl<OperationError> AsyncTranscriptionError<OperationError>
-where
-    OperationError: Error + TranscriptionDispatchError,
-{
+impl AsyncTranscriptionError {
     pub(crate) fn mapped<SourceError>(
         error: &TranscriptionError<SourceError>,
         model: &str,
@@ -167,8 +144,13 @@ where
     {
         let facts = error.facts();
         Self::Exception(TranscriptionException {
-            class: project(
-                raw_exception(&facts.error_str, facts.status, model, provider),
+            class: dispatch(
+                &DispatchInput::Raw(Box::new(raw_exception(
+                    &facts.error_str,
+                    facts.status,
+                    model,
+                    provider,
+                ))),
                 redactor,
             ),
             message: facts.message,
@@ -193,9 +175,4 @@ pub(crate) fn raw_exception(
         body: None,
         exception_type: String::new(),
     }
-}
-
-// exception_type's full dispatch: the timeout preamble, every provider family, then _map_exception_by_status
-pub(crate) fn project(raw: RawException, redactor: &Redactor) -> ErrorClass {
-    dispatch(&DispatchInput::Raw(Box::new(raw)), redactor)
 }
