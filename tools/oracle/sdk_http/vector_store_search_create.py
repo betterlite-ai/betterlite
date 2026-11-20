@@ -270,7 +270,7 @@ def credentials_for(case: Registry, vector_store_id: str) -> dict[str, JsonValue
 
 def apply_registry(case: Registry) -> None:
     registry = VectorStoreRegistry()
-    registry.get_credentials_for_vector_store = partial(credentials_for, case)  # type: ignore[method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/vector_store_registry.py
+    registry.get_credentials_for_vector_store = partial(credentials_for, case)  # type: ignore[assignment, method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/vector_store_registry.py
     litellm.vector_store_registry = registry
 
 
