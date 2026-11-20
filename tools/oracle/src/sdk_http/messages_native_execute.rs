@@ -76,7 +76,7 @@ pub struct Call {
 }
 
 // What the cache hook, the pre-hooks and the prepared dispatch observed; api_base is masked
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct Outcome {
     pub cache: IndexMap<String, Json>,
@@ -97,19 +97,6 @@ pub struct Failure {
     pub error_type: Json,
     pub param: Json,
     pub code: Json,
-}
-
-impl Outcome {
-    fn empty() -> Self {
-        Self {
-            cache: IndexMap::new(),
-            hooks: Vec::new(),
-            dispatch: None,
-            response: None,
-            stream: Vec::new(),
-            failure: None,
-        }
-    }
 }
 
 impl CallKind for Call {

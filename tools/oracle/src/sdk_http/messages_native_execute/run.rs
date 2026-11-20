@@ -27,7 +27,7 @@ pub(super) async fn send(
     let scripts = Scripts::new(call);
     let redactor =
         Arc::new(Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(SdkHttpError::Redactor)?);
-    let mut outcome = Outcome::empty();
+    let mut outcome = Outcome::default();
     match run_entry(call, base, &scripts, redactor).await {
         Ok(MessagesEntryOutcome::Returned(result)) => fill_returned(&mut outcome, result).await?,
         Ok(MessagesEntryOutcome::Dispatch(continuation)) => {

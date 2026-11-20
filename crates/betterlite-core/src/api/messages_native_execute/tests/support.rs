@@ -154,9 +154,17 @@ impl CacheControlHook for Cache {
     }
 }
 
+// One resolution call's arguments, so a test can assert which of them the entry passed
+pub(super) struct LookupCall {
+    pub(super) model: Option<String>,
+    pub(super) custom_llm_provider: Option<String>,
+    pub(super) api_base: Option<String>,
+    pub(super) api_key: Option<String>,
+}
+
 pub(super) struct Resolver {
     provider: Option<&'static str>,
-    pub(super) lookups: Mutex<Vec<Option<String>>>,
+    pub(super) lookups: Mutex<Vec<LookupCall>>,
 }
 
 impl Resolver {
@@ -170,8 +178,14 @@ impl Resolver {
 
 impl ProviderResolution for Resolver {
     fn resolve(&self, lookup: &ProviderLookup<'_>) -> Option<ResolvedTarget> {
+        let call = LookupCall {
+            model: lookup.model.map(str::to_owned),
+            custom_llm_provider: lookup.custom_llm_provider.map(str::to_owned),
+            api_base: lookup.api_base.map(str::to_owned),
+            api_key: lookup.api_key.map(str::to_owned),
+        };
         let mut lookups = self.lookups.lock().unwrap_or_else(PoisonError::into_inner);
-        lookups.push(lookup.model.map(str::to_owned));
+        lookups.push(call);
         drop(lookups);
         self.provider.map(|name| ResolvedTarget {
             model: lookup.model.unwrap_or_default().to_owned(),

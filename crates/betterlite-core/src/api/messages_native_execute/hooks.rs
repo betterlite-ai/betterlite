@@ -6,7 +6,6 @@ use betterlite_anthropic::web_replay::flatten_web_search_results;
 use betterlite_models::decisions::Json;
 use betterlite_prompts::arguments::json::Json as PromptJson;
 use indexmap::IndexMap;
-use secrecy::ExposeSecret as _;
 
 use super::entry::MessagesEntryRequest;
 use super::error::MessagesExecuteError;
@@ -180,20 +179,17 @@ pub(super) async fn run_pre_request_hooks(
     Ok(hook_map)
 }
 
-// B174's provider resolution, called again after the hooks when no provider is set yet
+// B174's get_llm_provider(model=model), called when no provider is set yet; LiteLLM passes no api_base or key
 pub(super) fn resolve_provider(
     request: &MessagesEntryRequest,
     seams: &MessagesEntrySeams<'_>,
 ) -> Option<String> {
-    let mut lookup = ProviderLookup {
+    let lookup = ProviderLookup {
         model: Some(request.model.as_str()),
-        custom_llm_provider: request.custom_llm_provider.as_deref(),
-        api_base: request.api_base.as_deref(),
+        custom_llm_provider: None,
+        api_base: None,
         api_key: None,
     };
-    if let Some(secret) = request.api_key.as_ref() {
-        lookup.api_key = Some(secret.expose_secret());
-    }
     seams
         .provider_resolution
         .resolve(&lookup)

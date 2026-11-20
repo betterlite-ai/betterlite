@@ -32,7 +32,7 @@ call:
           system: hook system
           thinking: {type: enabled, budget_tokens: 2048}
           tool_choice: {type: none}
-          tools: []
+          tools: null
           top_k: 0
           top_p: 0.25
     searches: []

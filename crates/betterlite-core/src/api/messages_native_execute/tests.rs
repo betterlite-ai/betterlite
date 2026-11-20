@@ -73,6 +73,8 @@ async fn cache_hook_replaces_messages_and_system() {
         vec![json(r#"{"role":"user","content":"hi"}"#)],
     );
     entry.system = Some(json(r#""original""#));
+    entry.custom_llm_provider = Some("anthropic".to_owned());
+    entry.api_base = Some("https://api.example".to_owned());
     let prepared = continuation(execute(entry, &seams).await.unwrap());
     assert_eq!(
         prepared.dispatch.messages,
@@ -91,6 +93,11 @@ async fn cache_hook_replaces_messages_and_system() {
         .lock()
         .unwrap_or_else(PoisonError::into_inner);
     assert_eq!(cache_calls[0].system, Some(json(r#""original""#)));
+    assert_eq!(cache_calls[0].provider, Some("anthropic".to_owned()));
+    assert_eq!(
+        cache_calls[0].api_base,
+        Some("https://api.example".to_owned())
+    );
 }
 
 #[tokio::test]
@@ -191,6 +198,62 @@ async fn provider_resolution_failure_is_ignored() {
     );
 }
 
+// LiteLLM calls litellm.get_llm_provider(model=model): the caller's api_base and key never reach it
+#[tokio::test]
+async fn provider_resolution_sees_only_the_model() {
+    let mut harness = Harness::new(Resolver::new(Some("anthropic")));
+    let seams = harness.seams();
+    let mut entry = request(
+        "deepseek-chat",
+        vec![json(r#"{"role":"user","content":"hi"}"#)],
+    );
+    entry.api_base = Some("https://api.deepseek.com/v1".to_owned());
+    entry.api_key = Some(SecretString::from("sk-alias".to_owned()));
+    let prepared = continuation(execute(entry, &seams).await.unwrap());
+    assert_eq!(
+        prepared.dispatch.custom_llm_provider,
+        Some("anthropic".to_owned())
+    );
+    let lookups = harness
+        .resolver
+        .lookups
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    assert_eq!(lookups.len(), 1_usize);
+    assert_eq!(lookups[0].model.as_deref(), Some("deepseek-chat"));
+    assert_eq!(lookups[0].custom_llm_provider, None);
+    assert_eq!(lookups[0].api_base, None);
+    assert_eq!(lookups[0].api_key, None);
+    drop(lookups);
+
+    let mut replaced = Harness::new(Resolver::new(Some("anthropic")));
+    replaced
+        .hooks
+        .push(Arc::new(Hook::new(HookEffect::Replace(map(
+            r#"{"litellm_params":{"custom_llm_provider":""}}"#,
+        )))));
+    let replaced_seams = replaced.seams();
+    let mut replaced_entry = request(
+        "deepseek-chat",
+        vec![json(r#"{"role":"user","content":"hi"}"#)],
+    );
+    replaced_entry.api_base = Some("https://api.deepseek.com/v1".to_owned());
+    replaced_entry.api_key = Some(SecretString::from("sk-alias".to_owned()));
+    let replaced_prepared = continuation(execute(replaced_entry, &replaced_seams).await.unwrap());
+    assert_eq!(
+        replaced_prepared.dispatch.custom_llm_provider,
+        Some("anthropic".to_owned())
+    );
+    let replaced_lookups = replaced
+        .resolver
+        .lookups
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    assert_eq!(replaced_lookups.len(), 2_usize);
+    assert_eq!(replaced_lookups[1].api_base, None);
+    assert_eq!(replaced_lookups[1].api_key, None);
+}
+
 #[tokio::test]
 async fn hook_named_overrides() {
     let hook = Arc::new(Hook::new(HookEffect::Replace(map(
@@ -229,6 +292,27 @@ async fn hook_named_overrides() {
         prepared.dispatch.custom_llm_provider,
         Some("bedrock".to_owned())
     );
+}
+
+// request_kwargs.pop("tools", tools): an explicit null in the hook map drops the caller's tools and stream
+#[tokio::test]
+async fn explicit_null_hook_clears_tools_and_stream() {
+    let mut harness = Harness::new(Resolver::new(Some("anthropic")));
+    harness
+        .hooks
+        .push(Arc::new(Hook::new(HookEffect::Replace(map(
+            r#"{"tools":null,"stream":null}"#,
+        )))));
+    let seams = harness.seams();
+    let mut entry = request(
+        "claude-sonnet-4-20250514",
+        vec![json(r#"{"role":"user","content":"hi"}"#)],
+    );
+    entry.tools = Some(vec![json(r#"{"name":"Bash"}"#)]);
+    entry.stream = Some(true);
+    let prepared = continuation(execute(entry, &seams).await.unwrap());
+    assert_eq!(prepared.dispatch.tools, None);
+    assert_eq!(prepared.dispatch.stream, None);
 }
 
 #[tokio::test]
@@ -405,6 +489,57 @@ async fn original_stream_survives_websearch_conversion() {
     );
 }
 
+// interceptor.handle(stream=original_stream): the hook's false changes the dispatch's stream, not this one
+#[tokio::test]
+async fn interceptor_sees_original_stream_after_hook() {
+    let interceptor = Arc::new(Interceptor::new(
+        true,
+        InterceptorAnswer::Response(json(r#"{"handled":true}"#)),
+    ));
+    let mut harness = Harness::new(Resolver::new(Some("anthropic")));
+    harness.hooks.push(Arc::new(Hook::new(HookEffect::Mutate(
+        "stream",
+        Json::Bool(false),
+    ))));
+    harness.searchers.push(Arc::new(Searcher::new(None, None)));
+    harness.interceptors.push(interceptor.clone());
+    let seams = harness.seams();
+    let mut entry = request(
+        "claude-sonnet-4-20250514",
+        vec![json(r#"{"role":"user","content":"hi"}"#)],
+    );
+    entry.stream = Some(true);
+    let result = returned(execute(entry, &seams).await.unwrap());
+    let MessagesEntryResult::Response(value) = result else {
+        panic!("the interceptor's response must be returned");
+    };
+    assert_eq!(value, json(r#"{"handled":true}"#));
+    let handled = interceptor
+        .handled
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    assert_eq!(
+        handled[0]["stream"],
+        Json::Bool(true),
+        "the interceptor sees the caller's stream, not the hook's false"
+    );
+    drop(handled);
+
+    let mut plain = Harness::new(Resolver::new(Some("anthropic")));
+    plain.hooks.push(Arc::new(Hook::new(HookEffect::Mutate(
+        "stream",
+        Json::Bool(false),
+    ))));
+    let plain_seams = plain.seams();
+    let mut plain_entry = request(
+        "claude-sonnet-4-20250514",
+        vec![json(r#"{"role":"user","content":"hi"}"#)],
+    );
+    plain_entry.stream = Some(true);
+    let prepared = continuation(execute(plain_entry, &plain_seams).await.unwrap());
+    assert_eq!(prepared.dispatch.stream, Some(false));
+}
+
 #[tokio::test]
 async fn websearch_marker_streams_without_request_stream() {
     let response = json(
@@ -482,6 +617,55 @@ async fn search_result_skips_interceptors() {
     );
     assert_eq!(first_calls[0].tools, None);
     assert_eq!(first_calls[0].provider, Some("anthropic".to_owned()));
+}
+
+// The short circuit and the interceptors see the sanitized history, the hook's tools and its metadata
+#[tokio::test]
+async fn search_and_interceptor_see_the_hooks_result() {
+    let searcher = Arc::new(Searcher::new(None, None));
+    let interceptor = Arc::new(Interceptor::new(
+        true,
+        InterceptorAnswer::Response(json(r#"{"handled":true}"#)),
+    ));
+    let mut harness = Harness::new(Resolver::new(Some("anthropic")));
+    harness
+        .hooks
+        .push(Arc::new(Hook::new(HookEffect::Replace(map(
+            r#"{"tools":[{"name":"Lookup"}],"metadata":{"trace":"hooked"},"litellm_params":{"custom_llm_provider":"anthropic"}}"#,
+        )))));
+    harness.searchers.push(searcher.clone());
+    harness.interceptors.push(interceptor.clone());
+    let seams = harness.seams();
+    let mut entry = request("claude-sonnet-4-20250514", {
+        let raw: Vec<Json> = serde_json::from_str(RAW_HISTORY).unwrap();
+        raw
+    });
+    entry.tools = Some(vec![json(
+        r#"{"name":"Bash","input_schema":{"type":"object"}}"#,
+    )]);
+    entry.metadata = Some(json(r#"{"user_id":"u1"}"#));
+    let result = returned(execute(entry, &seams).await.unwrap());
+    assert!(matches!(result, MessagesEntryResult::Response(_)));
+    let expected: Vec<Json> = serde_json::from_str(SANITIZED_HISTORY).unwrap();
+    let rewritten_tools = vec![json(r#"{"name":"Lookup"}"#)];
+    let rewritten_metadata = json(r#"{"trace":"hooked"}"#);
+    let search_calls = searcher
+        .calls
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    assert_eq!(search_calls.len(), 1_usize);
+    assert_eq!(search_calls[0].messages, expected);
+    assert_eq!(search_calls[0].tools, Some(rewritten_tools.clone()));
+    assert_eq!(search_calls[0].kwargs["metadata"], rewritten_metadata);
+    drop(search_calls);
+    let handled = interceptor
+        .handled
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    assert_eq!(handled.len(), 1_usize);
+    assert_eq!(handled[0]["messages"], Json::List(expected));
+    assert_eq!(handled[0]["tools"], Json::List(rewritten_tools));
+    assert_eq!(handled[0]["metadata"], rewritten_metadata);
 }
 
 #[tokio::test]
