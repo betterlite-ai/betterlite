@@ -100,10 +100,10 @@ impl ResponsesEventSource for Scripted {
         if let Some(event) = self.events.pop_front() {
             return Ok(Some(event));
         }
-        match self.failure.take() {
-            Some(failure) => Err(failure),
-            None => Ok(None),
-        }
+        let Some(failure) = self.failure.take() else {
+            return Ok(None);
+        };
+        Err(failure)
     }
 }
 
