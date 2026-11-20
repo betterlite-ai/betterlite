@@ -22,9 +22,10 @@ const ALIAS_ROWS_SQL: &str = r#"SELECT alias_row.id::BIGINT, alias_row.aliases::
 const UPDATE_ALIASES_SQL: &str = r#"UPDATE "LiteLLM_ModelTable"
     SET aliases = $2::TEXT::JSONB, updated_at = CURRENT_TIMESTAMP
     WHERE id = $1"#;
+// starts_with, not LIKE: an underscore in the prefix is a literal, as in Prisma's startswith.
 const DEPLOYMENT_ROWS_SQL: &str = r#"SELECT model_name, model_info::TEXT
     FROM "LiteLLM_ProxyModelTable"
-    WHERE model_name LIKE $1
+    WHERE starts_with(model_name, $1)
     ORDER BY model_id"#;
 const TEAM_MODELS_SQL: &str =
     r#"SELECT COALESCE(models, '{}') FROM "LiteLLM_TeamTable" WHERE team_id = $1"#;
@@ -86,10 +87,9 @@ impl DeploymentRows for PostgresTeamModels<'_> {
         &self,
         prefix: &str,
     ) -> Result<Vec<DeploymentRow>, CleanupError> {
-        let pattern = format!("{prefix}%");
         let access = self.access()?;
         let client = access.read.session().await?;
-        let parameters: [&(dyn ToSql + Sync); 1] = [&pattern];
+        let parameters: [&(dyn ToSql + Sync); 1] = [&prefix];
         let rows = client
             .query(DEPLOYMENT_ROWS_SQL, &parameters)
             .await

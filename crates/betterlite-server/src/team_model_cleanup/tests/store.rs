@@ -166,7 +166,8 @@ async fn deployments_with_prefix_returns_the_matching_rows() {
                 VALUES
                 ('id-a', 'model_name_t1_a', '{}', '{"team_id":"t1"}', 'creator', 'editor'),
                 ('id-b', 'model_name_t10_b', '{}', '{"team_id":"t1"}', 'creator', 'editor'),
-                ('id-c', 'model_name_t1_c', '{}', NULL, 'creator', 'editor')"#,
+                ('id-c', 'model_name_t1_c', '{}', NULL, 'creator', 'editor'),
+                ('id-d', 'modelXnameXt1Xwild', '{}', '{"team_id":"t1"}', 'creator', 'editor')"#,
         )
         .await
         .unwrap();
