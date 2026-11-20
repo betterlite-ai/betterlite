@@ -25,9 +25,11 @@ use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::catalog::BundledCatalog;
+use betterlite_models::decisions::Json;
 use reqwest::header::HeaderMap;
 use secrecy::SecretString;
-use serde_json::{Value, json};
+use serde::Serialize;
+use serde_json::json;
 
 use super::*;
 use crate::bedrock_checks::request::ChecksEnvironment;
@@ -52,32 +54,38 @@ const ENVIRONMENT: ChecksEnvironment<'static> = ChecksEnvironment {
 
 struct Reply {
     status: u16,
-    body: Value,
-    raw: Option<String>,
+    body: Vec<u8>,
 }
 
 impl Reply {
-    fn ok(body: Value) -> Self {
-        Self {
-            status: 200,
-            body,
-            raw: None,
-        }
+    fn ok<T>(body: &T) -> Self
+    where
+        T: Serialize,
+    {
+        Self::encoded(200, body)
     }
 
-    fn failed(status: u16, body: Value) -> Self {
+    fn failed<T>(status: u16, body: &T) -> Self
+    where
+        T: Serialize,
+    {
+        Self::encoded(status, body)
+    }
+
+    fn encoded<T>(status: u16, body: &T) -> Self
+    where
+        T: Serialize,
+    {
         Self {
             status,
-            body,
-            raw: None,
+            body: serde_json::to_vec(body).expect("the reply body encodes"),
         }
     }
 
     fn text(status: u16, text: &str) -> Self {
         Self {
             status,
-            body: Value::Null,
-            raw: Some(text.to_owned()),
+            body: text.as_bytes().to_vec(),
         }
     }
 }
@@ -85,20 +93,20 @@ impl Reply {
 fn too_large() -> Reply {
     Reply::failed(
         429,
-        json!({ "message": "Input is too long for requested model." }),
+        &json!({ "message": "Input is too long for requested model." }),
     )
 }
 
 fn passing(text_units: i64) -> Reply {
-    Reply::ok(json!({ "action": "NONE", "usage": { "textUnits": text_units } }))
+    Reply::ok(&json!({ "action": "NONE", "usage": { "textUnits": text_units } }))
 }
 
 fn masked(text: &str) -> Reply {
-    Reply::ok(json!({ "action": "NONE", "outputs": [{ "text": text }] }))
+    Reply::ok(&json!({ "action": "NONE", "outputs": [{ "text": text }] }))
 }
 
 fn blocking() -> Reply {
-    Reply::ok(json!({
+    Reply::ok(&json!({
         "action": "GUARDRAIL_INTERVENED",
         "assessments": [{
             "topicPolicy": { "topics": [{ "name": "denied", "type": "DENY", "action": "BLOCKED" }] },
@@ -133,7 +141,7 @@ impl Scripted {
         sent.iter().map(|request| request.url.to_string()).collect()
     }
 
-    fn bodies(&self) -> Vec<Value> {
+    fn bodies(&self) -> Vec<Json> {
         let sent = self.sent.lock().unwrap_or_else(PoisonError::into_inner);
         sent.iter().map(body_of).collect()
     }
@@ -144,11 +152,11 @@ impl Scripted {
     }
 }
 
-fn body_of(request: &OutboundRequest) -> Value {
+fn body_of(request: &OutboundRequest) -> Json {
     match &request.body {
         RequestBody::Json(bytes) => serde_json::from_slice(bytes).expect("the body is JSON"),
         RequestBody::Empty | RequestBody::Bytes { .. } | RequestBody::Multipart { .. } => {
-            Value::Null
+            Json::Null
         }
     }
 }
@@ -174,16 +182,10 @@ impl GuardrailTransport for Scripted {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(request);
-        let outcome = reply.map(|reply| {
-            let body = match reply.raw {
-                Some(text) => text.into_bytes(),
-                None => serde_json::to_vec(&reply.body).expect("the reply body encodes"),
-            };
-            UpstreamResponse {
-                status: reply.status,
-                headers: HeaderMap::new(),
-                body,
-            }
+        let outcome = reply.map(|reply| UpstreamResponse {
+            status: reply.status,
+            headers: HeaderMap::new(),
+            body: reply.body,
         });
         ready(outcome.ok_or(TransportError::Closed))
     }
@@ -318,7 +320,10 @@ fn fixed_now() -> SystemTime {
         .unwrap_or(UNIX_EPOCH)
 }
 
-fn message(role: &str, content: Value) -> Message {
+fn message<T>(role: &str, content: &T) -> Message
+where
+    T: Serialize,
+{
     let wire = json!({ "role": role, "content": content }).to_string();
     serde_json::from_str(&wire).expect("the message parses")
 }
@@ -373,25 +378,37 @@ where
     make_bedrock_api_request(&mut invocation, scan, &credentials, transport).await
 }
 
-fn records_of(data: &BTreeMap<String, GuardrailValue>) -> Vec<Value> {
+fn records_of(data: &BTreeMap<String, GuardrailValue>) -> Vec<Json> {
     let Some(GuardrailValue::Object(metadata)) = data.get("metadata") else {
         return Vec::new();
     };
     let Some(records) = metadata.get(RECORDS_KEY) else {
         return Vec::new();
     };
-    let encoded = serde_json::to_value(records).expect("the records encode");
-    encoded.as_array().cloned().unwrap_or_default()
+    let text = serde_json::to_string(records).expect("the records encode");
+    serde_json::from_str(&text).expect("the records are a list")
 }
 
-fn record_field(record: &Value, key: &str) -> Value {
-    record.get(key).cloned().unwrap_or(Value::Null)
+fn expected<T>(value: &T) -> Json
+where
+    T: Serialize,
+{
+    let text = serde_json::to_string(value).expect("the expected value encodes");
+    serde_json::from_str(&text).expect("the expected value parses")
 }
 
-fn usage_units(record: &Value, counter: &str) -> Value {
-    record
-        .get("guardrail_usage")
-        .and_then(|usage| usage.get(counter))
-        .cloned()
-        .unwrap_or(Value::Null)
+fn field_of(value: &Json, key: &str) -> Json {
+    let Json::Object(fields) = value else {
+        return Json::Null;
+    };
+    fields.get(key).cloned().unwrap_or(Json::Null)
+}
+
+fn has_field(value: &Json, key: &str) -> bool {
+    matches!(value, Json::Object(fields) if fields.contains_key(key))
+}
+
+fn usage_units(record: &Json, counter: &str) -> Json {
+    let usage = field_of(record, "guardrail_usage");
+    field_of(&usage, counter)
 }

@@ -1,19 +1,19 @@
 use std::collections::BTreeMap;
 
 use betterlite_http::proxy::transport_error::TransportError;
-use serde_json::{Value, json};
+use serde_json::json;
 
 use super::{
     Closed, GUARDRAIL_NAME, IDENTIFIER, Reply, Scripted, VERSION, anonymous_guardrail, blocking,
-    guardrail, guardrail_without_block_exception, input_scan, message, record_field, records_of,
-    run, usage_units,
+    expected, field_of, guardrail, guardrail_without_block_exception, has_field, input_scan,
+    message, records_of, run, usage_units,
 };
 use crate::guardrail_base::failure::GuardrailFailure;
 
 #[tokio::test]
 async fn a_passing_probe_returns_the_parsed_response() {
-    let messages = vec![message("user", json!("hello"))];
-    let transport = Scripted::new(vec![Reply::ok(json!({
+    let messages = vec![message("user", &json!("hello"))];
+    let transport = Scripted::new(vec![Reply::ok(&json!({
         "action": "NONE",
         "usage": { "textUnits": 3 },
     }))]);
@@ -25,26 +25,26 @@ async fn a_passing_probe_returns_the_parsed_response() {
     let records = records_of(&data);
     assert_eq!(records.len(), 1);
     assert_eq!(
-        record_field(&records[0], "guardrail_status"),
-        json!("success")
+        field_of(&records[0], "guardrail_status"),
+        expected(&json!("success"))
     );
     assert_eq!(
-        record_field(&records[0], "guardrail_provider"),
-        json!("bedrock")
+        field_of(&records[0], "guardrail_provider"),
+        expected(&json!("bedrock"))
     );
     assert_eq!(
-        record_field(&records[0], "guardrail_name"),
-        json!(GUARDRAIL_NAME)
+        field_of(&records[0], "guardrail_name"),
+        expected(&json!(GUARDRAIL_NAME))
     );
-    assert_eq!(usage_units(&records[0], "textUnits"), json!(3));
+    assert_eq!(usage_units(&records[0], "textUnits"), expected(&json!(3)));
 }
 
 #[tokio::test]
 async fn a_non_200_reply_is_an_error_with_the_parsed_message() {
-    let messages = vec![message("user", json!("hello"))];
+    let messages = vec![message("user", &json!("hello"))];
     let transport = Scripted::new(vec![Reply::failed(
         400,
-        json!({ "message": "invalid content" }),
+        &json!({ "message": "invalid content" }),
     )]);
     let mut data = BTreeMap::new();
     let outcome = run(&guardrail(), &mut data, input_scan(&messages), &transport).await;
@@ -57,18 +57,21 @@ async fn a_non_200_reply_is_an_error_with_the_parsed_message() {
     let records = records_of(&data);
     assert_eq!(records.len(), 1);
     assert_eq!(
-        record_field(&records[0], "guardrail_status"),
-        json!("guardrail_failed_to_respond")
+        field_of(&records[0], "guardrail_status"),
+        expected(&json!("guardrail_failed_to_respond"))
     );
-    let response = record_field(&records[0], "guardrail_response");
-    assert_eq!(response["error"], json!("invalid content"));
-    assert_eq!(records[0].get("guardrail_usage"), None);
+    let response = field_of(&records[0], "guardrail_response");
+    assert_eq!(
+        field_of(&response, "error"),
+        expected(&json!("invalid content"))
+    );
+    assert!(!has_field(&records[0], "guardrail_usage"));
 }
 
 #[tokio::test]
 async fn a_non_200_reply_without_a_message_uses_the_default_text() {
-    let messages = vec![message("user", json!("hello"))];
-    let transport = Scripted::new(vec![Reply::failed(502, json!({}))]);
+    let messages = vec![message("user", &json!("hello"))];
+    let transport = Scripted::new(vec![Reply::failed(502, &json!({}))]);
     let mut data = BTreeMap::new();
     let outcome = run(&guardrail(), &mut data, input_scan(&messages), &transport).await;
     let failure = outcome.expect_err("a 502 is a failure");
@@ -81,8 +84,8 @@ async fn a_non_200_reply_without_a_message_uses_the_default_text() {
 
 #[tokio::test]
 async fn a_two_hundred_four_reply_is_parsed_as_an_error() {
-    let messages = vec![message("user", json!("hello"))];
-    let transport = Scripted::new(vec![Reply::failed(204, Value::Null)]);
+    let messages = vec![message("user", &json!("hello"))];
+    let transport = Scripted::new(vec![Reply::failed(204, &json!(null))]);
     let mut data = BTreeMap::new();
     let outcome = run(&guardrail(), &mut data, input_scan(&messages), &transport).await;
     let failure = outcome.expect_err("a 204 is not the 200 ApplyGuardrail returns");
@@ -96,7 +99,7 @@ async fn a_two_hundred_four_reply_is_parsed_as_an_error() {
 
 #[tokio::test]
 async fn a_block_is_a_four_hundred_with_the_policy_detail() {
-    let messages = vec![message("user", json!("hello"))];
+    let messages = vec![message("user", &json!("hello"))];
     let transport = Scripted::new(vec![blocking()]);
     let mut data = BTreeMap::new();
     let outcome = run(&guardrail(), &mut data, input_scan(&messages), &transport).await;
@@ -113,17 +116,17 @@ async fn a_block_is_a_four_hundred_with_the_policy_detail() {
     let records = records_of(&data);
     assert_eq!(records.len(), 1);
     assert_eq!(
-        record_field(&records[0], "guardrail_status"),
-        json!("guardrail_intervened")
+        field_of(&records[0], "guardrail_status"),
+        expected(&json!("guardrail_intervened"))
     );
-    assert_eq!(usage_units(&records[0], "textUnits"), json!(7));
+    assert_eq!(usage_units(&records[0], "textUnits"), expected(&json!(7)));
     assert_eq!(transport.count(), 1);
 }
 
 #[tokio::test]
 async fn a_block_without_the_exception_returns_a_modify_failure() {
-    let messages = vec![message("user", json!("hello"))];
-    let transport = Scripted::new(vec![Reply::ok(blocking_body())]);
+    let messages = vec![message("user", &json!("hello"))];
+    let transport = Scripted::new(vec![blocking()]);
     let mut data = BTreeMap::new();
     let outcome = run(
         &guardrail_without_block_exception(),
@@ -144,8 +147,8 @@ async fn a_block_without_the_exception_returns_a_modify_failure() {
 
 #[tokio::test]
 async fn an_exception_marker_in_a_two_hundred_body_allows_the_request() {
-    let messages = vec![message("user", json!("hello"))];
-    let transport = Scripted::new(vec![Reply::ok(json!({
+    let messages = vec![message("user", &json!("hello"))];
+    let transport = Scripted::new(vec![Reply::ok(&json!({
         "action": "NONE",
         "Output": { "__type": "ValidationException" },
     }))]);
@@ -156,14 +159,14 @@ async fn an_exception_marker_in_a_two_hundred_body_allows_the_request() {
     let records = records_of(&data);
     assert_eq!(records.len(), 1);
     assert_eq!(
-        record_field(&records[0], "guardrail_status"),
-        json!("guardrail_failed_to_respond")
+        field_of(&records[0], "guardrail_status"),
+        expected(&json!("guardrail_failed_to_respond"))
     );
 }
 
 #[tokio::test]
 async fn a_malformed_two_hundred_body_is_a_server_error_without_a_record() {
-    let messages = vec![message("user", json!("hello"))];
+    let messages = vec![message("user", &json!("hello"))];
     let transport = Scripted::new(vec![Reply::text(200, "not json")]);
     let mut data = BTreeMap::new();
     let outcome = run(&guardrail(), &mut data, input_scan(&messages), &transport).await;
@@ -178,7 +181,7 @@ async fn a_malformed_two_hundred_body_is_a_server_error_without_a_record() {
 
 #[tokio::test]
 async fn a_transport_error_is_a_server_error_with_one_record() {
-    let messages = vec![message("user", json!("hello"))];
+    let messages = vec![message("user", &json!("hello"))];
     let mut data = BTreeMap::new();
     let outcome = run(&guardrail(), &mut data, input_scan(&messages), &Closed).await;
     let failure = outcome.expect_err("a closed transport fails the call");
@@ -190,17 +193,20 @@ async fn a_transport_error_is_a_server_error_with_one_record() {
     let records = records_of(&data);
     assert_eq!(records.len(), 1);
     assert_eq!(
-        record_field(&records[0], "guardrail_status"),
-        json!("guardrail_failed_to_respond")
+        field_of(&records[0], "guardrail_status"),
+        expected(&json!("guardrail_failed_to_respond"))
     );
-    let response = record_field(&records[0], "guardrail_response");
-    assert_eq!(response["error"], json!(TransportError::Closed.to_string()));
+    let response = field_of(&records[0], "guardrail_response");
+    assert_eq!(
+        field_of(&response, "error"),
+        expected(&json!(TransportError::Closed.to_string()))
+    );
 }
 
 #[tokio::test]
 async fn a_missing_guardrail_identity_fails_before_the_request() {
-    let messages = vec![message("user", json!("hello"))];
-    let transport = Scripted::new(vec![Reply::ok(json!({ "action": "NONE" }))]);
+    let messages = vec![message("user", &json!("hello"))];
+    let transport = Scripted::new(vec![Reply::ok(&json!({ "action": "NONE" }))]);
     let mut data = BTreeMap::new();
     let outcome = run(
         &anonymous_guardrail(),
