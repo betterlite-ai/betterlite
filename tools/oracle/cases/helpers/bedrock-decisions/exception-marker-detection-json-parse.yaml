@@ -1,0 +1,14 @@
+kind: helper
+name: exception-marker-detection-json-parse
+call:
+  b3722:
+    bedrock_decisions:
+      has_exception:
+        view:
+          kind: json
+          payload:
+            Output:
+              __type: ValidationException
+            action: NONE
+env: {}
+compare: {ignore: []}

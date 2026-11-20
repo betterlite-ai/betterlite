@@ -12,12 +12,12 @@ description: 'Implement POST /auto_router/validate_complexity_router_config and 
   (L286-L302), _authorize_models_this_test_can_call (L305-L351), validate_complexity_router_config (L361-L387),
   get_auto_router_availability (L395-L435). Implement these behaviors through the typed Rust services
   above; synchronous facades and structural accessors reuse the same primitive instead of separate ports.
-  Function coverage in litellm/proxy/management_helpers/auto_router_availability.py: _catalog_field (L47-L50),
-  build_auto_router_catalog (L53-L80), auto_router_availability (L83-L148). Implement these behaviors
+  Function coverage in litellm/proxy/management_helpers/auto_router_availability.py: auto_router_availability
+  (L83-L148); B10021 built the catalog it reads (L29-L80). Implement these behaviors
   through the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
   instead of separate ports. Bound the preview_config outside-byte parser to 1048576 bytes before decoding;
   on excess use its typed invalid-input outcome (classifier/observation consumers keep their pinned warning/fallback
-  path). B1100 registers routes/router_preview_validation.rs as a stub, so fill only crates/betterlite-server/src/routes/router_preview_validation.rs and leave routes.rs and state.rs as they are. The availability route reads saved routers through `AutoRouterCatalog`, a trait this task declares in crates/betterlite-server/src/router_preview_validation.rs: `trait AutoRouterCatalog: Send + Sync { fn catalog(&self) -> Option<Arc<Vec<AutoRouterCatalogEntry>>>; }`, where the row is the type build_auto_router_catalog returns (LiteLLM''s AutoRouterCatalogEntry). None is LiteLLM''s proxy_config.auto_router_db_catalog being None, so the route answers 503 "Auto-router availability is unavailable", the same answer it gives without a router. The handler takes an injected `Arc<dyn AutoRouterCatalog>` from state; B8381 implements it, and B8676 puts that implementation in state. Until then routes() passes a catalog whose catalog() always answers None, so availability answers the 503.
+  path). B1100 registers routes/router_preview_validation.rs as a stub, so fill only crates/betterlite-server/src/routes/router_preview_validation.rs and leave routes.rs and state.rs as they are. The availability route reads saved routers through B10021''s `AutoRouterCatalog` trait in router_preview_validation::catalog: `fn catalog(&self) -> Option<Arc<Vec<AutoRouterCatalogEntry>>>`, the entries B10021''s build_auto_router_catalog made (LiteLLM''s AutoRouterCatalogEntry, with model_id, team_id, created_by and the deployment). None is LiteLLM''s proxy_config.auto_router_db_catalog being None, so the route answers 503 "Auto-router availability is unavailable", the same answer it gives without a router. routes() hands the handler `state.shared.auto_router_catalog`, B8610''s `Arc<dyn AutoRouterCatalog>` field, which B8613 fills at startup with B8381''s DeploymentSync; without a database the catalog stays None and availability answers the 503.
 
   Booted case from B9691: ui/model-forms/availability-and-validation replays the auto-router form requests POST /auto_router/availability with a missing tier model and POST /auto_router/validate_complexity_router_config with a failing and a passing config, with the request shapes from the B9691 task file.'
 scope:
@@ -44,7 +44,7 @@ scope:
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L211-L435
   why: Implementation boundary verified against the pinned checkout.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/auto_router_availability.py#L29-L148
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/auto_router_availability.py#L83-L148
   why: Implementation boundary verified against the pinned checkout.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/management_endpoints/auto_router_endpoints.py#L18-L96
   why: Implementation boundary verified against the pinned checkout.
@@ -120,6 +120,9 @@ deviations:
     and team authorization.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L395-L435
 out_of_scope:
+- 'litellm/proxy/management_helpers/auto_router_availability.py: B10021 owns _CatalogModelInfo, _CatalogSource,
+  AutoRouterCatalogEntry (L29-L45), _catalog_field (L47-L50), build_auto_router_catalog (L53-L80) and the AutoRouterCatalog
+  trait, in router_preview_validation::catalog. Holding and rebuilding the catalog: B8381.'
 - B349 owns final integration and the remaining functions listed in its implementation boundary.
 - 'litellm/proxy/management_endpoints/auto_router_endpoints.py: B051 owns: _TeamTable.find_unique (L97-L97),
   _VerificationTokenRow.token (L102-L102), _VerificationTokenRow.key_alias (L105-L105), _VerificationTokenRow.key_name

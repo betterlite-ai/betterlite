@@ -12,7 +12,7 @@ description: >-
   guardrails (B3683's poll_database), policies (B3243: sync policies, then attachments), then the vector_stores,
   vector_store_indexes and mcp positions, which stay empty here: MCP and vector stores are deferred until the core is
   done (Max, 11-19), and B9998 and B9997 add those three loaders at these positions when they build the registries.
-  Then agents (B4776's reconcile lock around B4777's get_all_agents_from_db
+  Then agents (B4776's reconcile lock around B10012's get_all_agents_from_db
   and B4776's load_agents_from_db_and_config), pass_through_endpoints (B8520's initialize_pass_through_endpoints_in_db, into the route table of B8614's PassThroughState),
   prompts (`load_prompts`, into the one prompt registry B8613 makes and Shared holds), search_tools (`load_search_tools`), tools (B1606's tool policy registry refresh),
   anthropic_beta_headers (B8385's beta header reload, on the one PeriodicReloads B8613 makes), sso_settings (B8383), cache_settings (B8502's
@@ -43,7 +43,7 @@ description: >-
   (_merge_config_and_db_search_tools), log "Loading {n} search tool(s) into router ({c} from config, {d} from
   database)", and when the router exists set its search tools with B3273 and log "Successfully loaded {n} search
   tool(s) into router"; without a router log at debug and stop. `reload_search_tools_from_db` gates on search_tools,
-  does nothing without a database, and runs load_search_tools under B836's MODEL_RECONCILE_LOCK; it implements B3275's
+  does nothing without a database, and runs load_search_tools under B836's MODEL_RECONCILE_LOCK; it implements B10013's
   RouterSearchRefresh trait.
 
   Tests use in-memory repositories and recording fakes for each registry. Helper cases (operation b8384 with an

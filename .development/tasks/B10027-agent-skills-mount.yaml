@@ -1,0 +1,56 @@
+id: B10027
+title: Mount the agent skills discovery routes with the stored-skill reader
+description: >-
+  B8274's `agent_skills_routes::routes()` serves GET `/.well-known/agent-skills/index.json`, its alias GET `/.well-known/skills/index.json` and GET `/v1/skills/{skill_id}/archive` with no key check, since discovery clients send none. LiteLLM includes agent_skills_discovery_router at startup (proxy_server.py L20008). The module takes its collaborators in its route state and left the real reader and the mount to the wiring, so none of the three paths answers yet. This task builds that state and mounts the routes. B8648 keeps the A2A mount.
+
+
+  Where. Module `app::agents::skills`: crates/betterlite-server/src/app/agents/skills.rs, with tests in skills/tests.rs. The skeleton declares the module in app/agents.rs as an empty file. Then add one merge line to `mount_public` in crates/betterlite-server/src/app/agents.rs (the stub B8610 wrote; touch nothing else there, since B8647 and B8648 add their own lines). Read crates/betterlite-server/src/agent_skills_routes.rs first and use its state type and constructor names. No statics, no trait objects, native async fn.
+
+
+  1. Skills state. Build B8274's route state once per mount with index_enabled from `config.sections.public_skills_index`, B3212's stored-skill reader over `shared.db` (up to 1000 skills, newest first, get by id answering None for an unknown id) and B3210's build_skill_archive. Without a database the reader answers what B3212 answers for no database; do not invent an empty list.
+
+
+  2. Mount. `pub fn mount_public(router: Router, state: &Arc<ServerState>) -> Router` in skills.rs merges `agent_skills_routes::routes(...)` with the state from item 1, and app/agents.rs `mount_public` calls it, since LiteLLM checks no key on those three paths. The alias /.well-known/skills/index.json stays out of the OpenAPI document as B8274 built it.
+
+
+  Tests in app::agents::skills::tests: the state reads index_enabled from the section, off by default, and with the index on and no database the mounted index path answers a request without a key with neither 401 nor 404.
+
+
+  HTTP oracle cases through the booted proxy, with a master key and no database. B8274 tests its handlers with tower's oneshot only, and its three HTTP cases moved here from B8648; write each from B8274's text: index-disabled, legacy-index-disabled and archive-disabled, all without a key and with public_skills_index off (404 "Not Found").
+scope:
+  paths:
+    - crates/betterlite-server/src/app/agents.rs
+    - crates/betterlite-server/src/app/agents/skills.rs
+    - crates/betterlite-server/src/app/agents/skills/**
+    - tools/oracle/cases/agent-skills/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/discovery_endpoints/agent_skills_endpoints.py#L45-L131
+    why: The router, ensure_index_enabled, the stored skill readers and the three skills routes, none of them behind a key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L20007-L20008
+    why: The skills discovery router is included at startup.
+dod:
+  - text: The skills route state takes index_enabled from public_skills_index and the stored skill reader over the database, built once per mount.
+    proof: [skills-tests]
+  - text: The three skills paths are merged once through mount_public and answer through the booted proxy without a key as LiteLLM does.
+    proof: [skills-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: skills-tests
+      why: the state ignores the section, the reader is a fake or an empty list, or the routes are merged behind the key check
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::agents::skills::/)'
+oracle_cases:
+  - tools/oracle/cases/agent-skills/index-disabled.yaml
+  - tools/oracle/cases/agent-skills/legacy-index-disabled.yaml
+  - tools/oracle/cases/agent-skills/archive-disabled.yaml
+deviations: []
+out_of_scope:
+  - "The handlers and the route state: B8274. The stored-skill reader: B3212. The archive builder: B3210."
+  - "The A2A mount: B8648. The agents API routes: B8647. The enabled-index comparisons over a seeded database: B078."
+pitfalls:
+  - The skills routes go through mount_public; merged in mount they demand a key and break `npx skills add <proxy url>`.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,61 @@
+kind: helper
+name: parse-message-cases
+call:
+  responses_ws_history:
+    setup:
+      model: openai/gpt-4o-mini
+      custom_llm_provider: null
+      api_key: null
+      api_base: null
+      timeout: null
+      first_message: null
+      litellm_metadata: null
+      kwargs: {}
+    credentials: []
+    proxy: []
+    frames:
+    - kind: parse
+      payload: not-json
+      error_type: null
+      fail: false
+    - kind: parse
+      payload: ''
+      error_type: null
+      fail: false
+    - kind: parse
+      payload: not-json
+      error_type: null
+      fail: true
+    - kind: parse
+      payload: '{"type": "ping"}'
+      error_type: null
+      fail: false
+    - kind: parse
+      payload: '{"type": "response.create", "input": "hi", "model": "openai/gpt-4o-mini"}'
+      error_type: null
+      fail: false
+    - kind: parse
+      payload: '{"type": "response.create", "generate": 0}'
+      error_type: null
+      fail: false
+    - kind: parse
+      payload: '{"type": 7}'
+      error_type: null
+      fail: false
+    warmup: []
+    warmup_ids: []
+    case:
+      inputs: []
+      completions: []
+      store: []
+      first: resp_missing
+      append:
+        type: message
+        role: assistant
+        content: []
+      missing: resp_missing
+      applied: []
+      base_kwargs: []
+env: {}
+compare:
+  ignore: []

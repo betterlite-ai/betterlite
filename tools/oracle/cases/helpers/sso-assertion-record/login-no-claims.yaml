@@ -1,0 +1,16 @@
+kind: helper
+name: login-no-claims
+call:
+  b10003:
+    function: login
+    id_token: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyLTEifQ.c2lnbmF0dXJl"
+env: {}
+compare: {ignore: []}
+calls:
+  - b10003:
+      function: login
+      id_token: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOm51bGwsImlzcyI6bnVsbH0.c2lnbmF0dXJl"
+  - b10003:
+      function: login
+      id_token: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIiLCJleHAiOjB9.c2lnbmF0dXJl"
+      refresh_token: refresh-1

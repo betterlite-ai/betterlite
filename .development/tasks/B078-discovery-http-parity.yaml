@@ -2,8 +2,8 @@ id: B078
 title: Prove populated skill discovery and UI settings through the running proxy
 description: >-
   Discovery's handlers and mounts already have owners. B8274 builds the public skill
-  index and archive handlers, B8648 supplies their real stored-skill reader and mounts
-  them, and B8670 mounts B3211's UI document. B8648 compares only the disabled skill
+  index and archive handlers, B10027 supplies their real stored-skill reader and mounts
+  them, and B8670 mounts B3211's UI document. B10027 compares only the disabled skill
   routes over HTTP. Complete the missing enabled-path comparisons against independently
   seeded Postgres databases, using B9942's booted LiteLLM environment and the existing
   betterlite binary. Add the UI settings combinations below that B3211 currently proves
@@ -112,7 +112,7 @@ description: >-
   error.type internal_server_error and no param or code, ignoring only /error/message.
   discovery-method-not-allowed sends POST to the canonical index without a key and
   compares 405, the detail object and Allow header; this needs B8680's installed error
-  mapping, not a new handler here. The existing B8648 disabled cases remain where they
+  mapping, not a new handler here. The existing B10027 disabled cases remain where they
   are and are not copied here.
 
   index-request-root uses catalog, PROXY_BASE_URL https://skills.example.test,
@@ -156,7 +156,7 @@ scope:
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/discovery_endpoints/agent_skills_endpoints.py#L74-L129
-    why: HTTP parity ownership for both index decorators and the archive decorator through the real stored-skill dependencies; B8274 implements the handlers and B8648 mounts them.
+    why: HTTP parity ownership for both index decorators and the archive decorator through the real stored-skill dependencies; B8274 implements the handlers and B10027 mounts them.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/discovery_endpoints/agent_skills_endpoints.py#L31-L71
     why: The index limit, archive response type, disabled gate and stored_skill ValueError mapping exercised by the cases.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/discovery_endpoints/agent_skills_endpoints.py#L132-L200
@@ -176,7 +176,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8310-L8356
     why: B7323's custom URLs use the matched request root while the UI document reads B4200's scalar root and the raw proxy base URL.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/discovery_endpoints/__init__.py#L1-L4
-    why: Router re-exports only; B8648 and B8670 already supply the corresponding application composition.
+    why: Router re-exports only; B10027 and B8670 already supply the corresponding application composition.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1913-L1919
     why: B8591's HTTPException handler retains the normal detail object outside OTLP routes; B8680 installs shared method-error mapping.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2049-L2080
@@ -242,13 +242,13 @@ deviations: []
 out_of_scope:
   - "ZipArchiveResponse, ensure_index_enabled, stored_skills, stored_skill, agent_skills_index, agent_skills_archive, _installable, _archive_for, _base_name, _slugify, _deduplicated, _with_ordinal and _description in agent_skills_endpoints.py are implemented by B8274; this task adds their missing HTTP comparisons."
   - "AgentSkillsIndexEntry, AgentSkillsIndex and their constants are consumed by B8274's Rust handlers and ported as Python public types by B7949, whose covers include the type file."
-  - "The discovery package __init__.py re-exports the two routers and defines __all__; its skill export is B8274's and its UI export is B3211's, with application mounts already owned by B8648 and B8670 and aggregation by B8610."
+  - "The discovery package __init__.py re-exports the two routers and defines __all__; its skill export is B8274's and its UI export is B3211's, with application mounts already owned by B10027 and B8670 and aggregation by B8610."
   - "All agent_skills_archive.py functions belong to B3210, with B5096's completed archive fixes; row conversion, list/get and cache reads belong to B3212, and the cache implementation belongs to B2226."
   - "get_ui_config and its response model belong to B3211; B8670 owns UI startup inputs and existing HTTP defaults/flags cases; get_custom_url and join_paths belong to B7323 and request/scalar root resolution to B4200."
   - "The HTTPException and unhandled-error response implementations belong to B8591 and their edge composition to B8680; this task only compares discovery requests passing through them."
   - "Skill writes, deletion and authenticated /v1/skills CRUD are B1502/B1503 and their route owners; this task seeds private test databases directly and requires none of those routes."
   - "Shared module declarations, FixtureSeed's optional attachment and existing literals, FixtureError's source variant, seed_sql's call and http::parse_body's call are architect changes before dispatch, not worker scope."
-  - "The disabled public-index cases remain with B8648; no second route mount, helper registry entry, enterprise worker registry or custom archive codec is added."
+  - "The disabled public-index cases remain with B10027; no second route mount, helper registry entry, enterprise worker registry or custom archive codec is added."
 pitfalls:
   - "Publishing a skill index intentionally bypasses owner filtering when no principal is supplied, so catalog rows from two owners must both appear without Authorization."
   - "list_skills takes the newest 1000 before _installable reverses them, so truncating an already oldest-first list returns the wrong boundary row."
