@@ -25,6 +25,7 @@ pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
 const REQUEST_TIMEOUT_STATUS: u16 = 408;
 const SERVER_ERROR_STATUS: u16 = 500;
 // B3363's container fetch carries no body and no deadline, so a collection call sends through its own request
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CollectionRequest {
     pub method: transport::ContainerMethod,
     pub url: String,
@@ -109,7 +110,7 @@ pub fn container_create_handler<Source: CollectionClientSource>(
     let params = request::read_params(call.litellm_params)?;
     let ssl_verify = params.ssl_verify.as_ref();
     let client = Selected::choose(supplied, || source.blocking_client(ssl_verify))?;
-    poll_once(create_body(client.get(), &params, call, hook))
+    poll_once(create_body(client.get(), &params, call, hook))?
 }
 
 pub async fn acontainer_create_handler<Source: CollectionClientSource>(
@@ -133,7 +134,7 @@ pub fn container_list_handler<Source: CollectionClientSource>(
     let params = request::read_params(call.litellm_params)?;
     let ssl_verify = params.ssl_verify.as_ref();
     let client = Selected::choose(supplied, || source.blocking_client(ssl_verify))?;
-    poll_once(list_body(client.get(), &params, call, hook))
+    poll_once(list_body(client.get(), &params, call, hook))?
 }
 
 pub async fn acontainer_list_handler<Source: CollectionClientSource>(

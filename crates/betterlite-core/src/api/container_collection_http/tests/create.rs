@@ -1,0 +1,298 @@
+#![cfg(test)]
+
+use std::collections::BTreeMap;
+use std::time::Duration;
+
+use betterlite_logging::logging_pre_post::args::RawBody;
+use betterlite_models::decisions::Json;
+use betterlite_openai::containers::container_file_http::request::SslVerify;
+use betterlite_openai::containers::container_file_http::transport::ContainerMethod;
+use serde_json::{Map, Value, json};
+
+use super::tests::{
+    BASE, BlockingFake, CREATE_BODY, FakeClient, Fixture, REQUEST_HEADERS, REQUEST_ID,
+    RecordingHook, deadline_failure, provider_error, url_failure,
+};
+use super::{
+    ContainerCollectionError, DEFAULT_TIMEOUT, acontainer_create_handler, container_create_handler,
+};
+
+fn api_key_params(value: &str) -> Map<String, Value> {
+    let mut params = Map::new();
+    params.insert(String::from("api_key"), Value::String(value.to_owned()));
+    params
+}
+
+#[test]
+fn create_posts_the_transformed_body_with_the_default_timeout() {
+    let mut fixture = Fixture::new(200, CREATE_BODY);
+    fixture.params = api_key_params("sk-1");
+    fixture.create_params.insert(
+        String::from("expires_after"),
+        json!({"anchor": "last_active_at", "minutes": 20}),
+    );
+    let call = fixture.create_call("box", None);
+    let object = container_create_handler(&call, &fixture.source, None, &fixture.hook).unwrap();
+    let sent = fixture.sent();
+    assert_eq!(sent.len(), 1);
+    let request = &sent[0];
+    assert_eq!(request.method, ContainerMethod::Post);
+    assert_eq!(request.url, BASE);
+    assert!(request.query.is_empty());
+    assert_eq!(request.timeout, Some(Duration::from_secs(600)));
+    assert_eq!(
+        request.headers.get("Authorization").map(String::as_str),
+        Some("Bearer sk-1")
+    );
+    assert_eq!(
+        request.headers.get("Content-Type").map(String::as_str),
+        Some("application/json")
+    );
+    let body: Value = serde_json::from_slice(request.body.as_deref().unwrap()).unwrap();
+    assert_eq!(
+        body,
+        json!({"name": "box", "expires_after": {"anchor": "last_active_at", "minutes": 20}})
+    );
+    assert_eq!(object.id, "cntr_abc");
+    assert_eq!(object.name.as_deref(), Some("box"));
+    assert_eq!(object.status, "running");
+    assert_eq!(
+        fixture.config.creates.lock().unwrap().clone(),
+        vec![(
+            String::from("box"),
+            fixture.create_params.clone(),
+            request.headers.clone(),
+        )]
+    );
+}
+
+#[test]
+fn create_validates_the_environment_before_the_content_type_goes_in() {
+    let mut fixture = Fixture::new(200, CREATE_BODY);
+    fixture.params = api_key_params("sk-1");
+    fixture.extra_headers = Some(BTreeMap::from([(
+        String::from("X-Extra"),
+        String::from("1"),
+    )]));
+    let call = fixture.create_call("box", None);
+    container_create_handler(&call, &fixture.source, None, &fixture.hook).unwrap();
+    let environment = fixture.config.environment.lock().unwrap().clone();
+    assert_eq!(environment.len(), 1);
+    let (seen, key) = &environment[0];
+    assert!(
+        !seen.contains_key("Content-Type"),
+        "the JSON content type is inserted after validate_environment"
+    );
+    assert_eq!(key.as_deref(), Some("sk-1"));
+    assert_eq!(
+        fixture.sent()[0]
+            .headers
+            .get("Content-Type")
+            .map(String::as_str),
+        Some("application/json")
+    );
+}
+
+#[test]
+fn create_overlays_extra_headers_after_validation_and_its_auth_mutation() {
+    let mut fixture = Fixture::new(200, CREATE_BODY);
+    fixture.params = api_key_params("sk-1");
+    let extra = BTreeMap::from([
+        (
+            String::from("Authorization"),
+            String::from("Bearer overlay"),
+        ),
+        (String::from("X-Extra"), String::from("1")),
+    ]);
+    fixture.extra_headers = Some(extra.clone());
+    let call = fixture.create_call("box", None);
+    container_create_handler(&call, &fixture.source, None, &fixture.hook).unwrap();
+    let environment = fixture.config.environment.lock().unwrap().clone();
+    assert_eq!(environment[0].0, extra);
+    let sent = fixture.sent();
+    let headers = &sent[0].headers;
+    assert_eq!(
+        headers.get("Authorization").map(String::as_str),
+        Some("Bearer overlay")
+    );
+    assert_eq!(headers.get("X-Extra").map(String::as_str), Some("1"));
+}
+
+#[test]
+fn create_lets_an_extra_content_type_win_over_the_json_one() {
+    let mut fixture = Fixture::new(200, CREATE_BODY);
+    fixture.extra_headers = Some(BTreeMap::from([(
+        String::from("Content-Type"),
+        String::from("text/custom"),
+    )]));
+    let call = fixture.create_call("box", None);
+    container_create_handler(&call, &fixture.source, None, &fixture.hook).unwrap();
+    let sent = fixture.sent();
+    assert_eq!(
+        sent[0].headers.get("Content-Type").map(String::as_str),
+        Some("text/custom")
+    );
+}
+
+#[test]
+fn create_passes_the_given_timeout_to_the_post() {
+    let fixture = Fixture::new(200, CREATE_BODY);
+    let call = fixture.create_call("box", Some(Duration::from_secs(5)));
+    container_create_handler(&call, &fixture.source, None, &fixture.hook).unwrap();
+    assert_eq!(fixture.sent()[0].timeout, Some(Duration::from_secs(5)));
+}
+
+#[test]
+fn create_logs_the_name_and_the_body_before_the_post() {
+    let mut fixture = Fixture::new(201, CREATE_BODY);
+    fixture.params = api_key_params("sk-1");
+    let call = fixture.create_call("box", None);
+    let object = container_create_handler(&call, &fixture.source, None, &fixture.hook).unwrap();
+    assert_eq!(object.id, "cntr_abc");
+    assert_eq!(fixture.order(), vec!["log", "send"]);
+    let calls = fixture.hook.calls();
+    assert_eq!(calls.len(), 1);
+    let (input, args) = &calls[0];
+    assert_eq!(input, &Json::Text(String::from("box")));
+    assert_eq!(args.api_base.as_deref(), Some(BASE));
+    assert!(args.passthrough.is_empty());
+    let complete = args.complete_input_dict.clone().unwrap();
+    let RawBody::Object(fields) = complete else {
+        panic!("the complete input is the JSON object");
+    };
+    assert_eq!(fields.get("name"), Some(&Json::Text(String::from("box"))));
+    assert_eq!(
+        fields.get("expires_after"),
+        None,
+        "the fixture sends no optional params"
+    );
+    let logged = args.headers.clone().unwrap();
+    assert_eq!(
+        logged.get("Content-Type"),
+        Some(&Json::Text(String::from("application/json")))
+    );
+}
+
+#[test]
+fn create_sends_nothing_when_the_pre_call_hook_fails() {
+    let mut fixture = Fixture::new(200, CREATE_BODY);
+    fixture.hook = RecordingHook::failing(&fixture.events);
+    let call = fixture.create_call("box", None);
+    let failure =
+        container_create_handler(&call, &fixture.source, None, &fixture.hook).unwrap_err();
+    assert!(matches!(failure, ContainerCollectionError::Logging(_)));
+    assert!(fixture.sent().is_empty());
+    assert_eq!(fixture.order(), vec!["log"]);
+}
+
+#[test]
+fn create_sends_through_the_supplied_client_and_builds_none() {
+    let fixture = Fixture::new(200, CREATE_BODY);
+    let supplied = FakeClient::answering(&fixture.events, 200, CREATE_BODY);
+    let call = fixture.create_call("box", None);
+    let client = BlockingFake(supplied.clone());
+    let object =
+        container_create_handler(&call, &fixture.source, Some(&client), &fixture.hook).unwrap();
+    assert_eq!(object.id, "cntr_abc");
+    assert_eq!(supplied.seen().len(), 1);
+    assert!(fixture.source.blocking.seen().is_empty());
+    assert!(fixture.source.blocking_made.lock().unwrap().is_empty());
+}
+
+#[test]
+fn create_builds_the_blocking_client_with_the_ssl_verify_param() {
+    let mut fixture = Fixture::new(200, CREATE_BODY);
+    fixture
+        .params
+        .insert(String::from("ssl_verify"), Value::Bool(false));
+    let call = fixture.create_call("box", None);
+    container_create_handler(&call, &fixture.source, None, &fixture.hook).unwrap();
+    assert_eq!(
+        fixture.source.blocking_made.lock().unwrap().clone(),
+        vec![Some(SslVerify::Enabled(false))]
+    );
+    assert!(fixture.source.async_made.lock().unwrap().is_empty());
+}
+
+#[test]
+fn create_maps_a_url_failure_through_the_provider_exception() {
+    let fixture = Fixture::failing(url_failure());
+    let call = fixture.create_call("box", None);
+    let failure =
+        container_create_handler(&call, &fixture.source, None, &fixture.hook).unwrap_err();
+    let provider = provider_error(&failure);
+    assert_eq!(provider.status_code, 500);
+    assert_eq!(provider.message, "the request URL :: is not valid");
+    assert!(provider.headers.is_empty());
+}
+
+#[tokio::test]
+async fn create_maps_a_timed_out_post_to_408() {
+    let fixture = Fixture::failing(deadline_failure().await);
+    let call = fixture.create_call("box", None);
+    let failure =
+        container_create_handler(&call, &fixture.source, None, &fixture.hook).unwrap_err();
+    let provider = provider_error(&failure);
+    assert_eq!(provider.status_code, 408);
+}
+
+#[test]
+fn create_reports_the_whole_body_for_an_error_status() {
+    let body = r#"{"error":{"message":"bad name","type":"invalid_request_error","param":"name","code":"x"}}"#;
+    let fixture = Fixture::new(400, body);
+    let call = fixture.create_call("box", None);
+    let failure =
+        container_create_handler(&call, &fixture.source, None, &fixture.hook).unwrap_err();
+    let provider = provider_error(&failure);
+    assert_eq!(provider.status_code, 400);
+    assert_eq!(
+        provider.message, body,
+        "a POST error keeps the whole body text, not the error message inside it"
+    );
+    assert_eq!(
+        provider.headers.get(REQUEST_HEADERS).map(String::as_str),
+        Some(REQUEST_ID)
+    );
+}
+
+#[test]
+fn create_reports_a_redirect_as_an_error() {
+    let fixture = Fixture::new(300, "moved");
+    let call = fixture.create_call("box", None);
+    let failure =
+        container_create_handler(&call, &fixture.source, None, &fixture.hook).unwrap_err();
+    let provider = provider_error(&failure);
+    assert_eq!(provider.status_code, 300);
+    assert_eq!(provider.message, "moved");
+}
+
+#[test]
+fn create_rejects_a_bad_param_before_it_asks_for_a_client() {
+    let mut fixture = Fixture::new(200, CREATE_BODY);
+    fixture.params.insert(String::from("api_key"), json!(5));
+    let call = fixture.create_call("box", None);
+    let failure =
+        container_create_handler(&call, &fixture.source, None, &fixture.hook).unwrap_err();
+    assert!(matches!(failure, ContainerCollectionError::Params(_)));
+    assert!(fixture.source.blocking_made.lock().unwrap().is_empty());
+    assert!(fixture.sent().is_empty());
+}
+
+#[tokio::test]
+async fn create_async_sends_through_the_async_client() {
+    let mut fixture = Fixture::new(200, CREATE_BODY);
+    fixture.params = api_key_params("sk-1");
+    let call = fixture.create_call("box", None);
+    let object = acontainer_create_handler(&call, &fixture.source, None, &fixture.hook)
+        .await
+        .unwrap();
+    assert_eq!(object.id, "cntr_abc");
+    assert_eq!(
+        fixture.source.async_made.lock().unwrap().clone(),
+        vec![None]
+    );
+    assert!(fixture.source.blocking_made.lock().unwrap().is_empty());
+    assert_eq!(fixture.sent().len(), 1);
+    assert_eq!(fixture.order(), vec!["log", "send"]);
+    assert_eq!(fixture.sent()[0].timeout, Some(DEFAULT_TIMEOUT));
+}
