@@ -37,7 +37,7 @@ class WriteFacade(Protocol):
     ) -> Coroutine[object, object, Mapping[str, object]]: ...
 
 
-# LiteLLM declares metadata as dict[str, str] and the extra fields as dict[str, object] but forwards the JSON it gets
+# LiteLLM annotates metadata and the extra fields more narrowly than the JSON it forwards
 WRITES: WriteFacade = vector_store_main  # pyright: ignore[reportAssignmentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L841-L846
 
 
