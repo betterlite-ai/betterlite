@@ -1,6 +1,6 @@
 kind: helper
 name: anthropic-guardrail-write-back-responses-to-input-system-string-only-over-string
 call:
-  b3674: {"function": "responses_to_input", "scenarios": [{"data": {"system": [{"type": "text", "text": "x"}], "messages": []}, "responses": ["SYS"], "scanned": [{"text": "x", "target": {"kind": "system_string"}}]}, {"data": {"system": [{"type": "text", "text": "x"}, {"type": "text", "text": "y"}], "messages": [{"role": "user", "content": "a"}, {"role": "user", "content": "b"}]}, "responses": ["SYS", "MSG"], "scanned": [{"text": "x", "target": {"kind": "system_block_text", "block_idx": 1}}, {"text": "b", "target": {"kind": "message_content", "msg_idx": 1}}]}, {"data": {"system": "plain", "messages": []}, "responses": ["NEW"], "scanned": [{"text": "plain", "target": {"kind": "system_string"}}]}]}
+  b3674: {"function": "responses_to_input", "scenarios": [{"data": {"system": [{"type": "text", "text": "x"}], "messages": []}, "responses": ["SYS"], "scanned_texts": [{"text": "x", "target": {"kind": "system_string"}}]}, {"data": {"system": [{"type": "text", "text": "x"}, {"type": "text", "text": "y"}], "messages": [{"role": "user", "content": "a"}, {"role": "user", "content": "b"}]}, "responses": ["SYS", "MSG"], "scanned_texts": [{"text": "x", "target": {"kind": "system_block_text", "block_idx": 1}}, {"text": "b", "target": {"kind": "message_content", "msg_idx": 1}}]}, {"data": {"system": "plain", "messages": []}, "responses": ["NEW"], "scanned_texts": [{"text": "plain", "target": {"kind": "system_string"}}]}]}
 env: {}
 compare: {ignore: []}

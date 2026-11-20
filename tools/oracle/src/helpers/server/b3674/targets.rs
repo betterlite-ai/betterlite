@@ -1,9 +1,23 @@
+use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_server::guardrails::anthropic_translation::scan_targets::{
-    InputWriteBackTarget, MessageTextTarget,
+    InputWriteBackTarget, MessageTextTarget, ToolUseInputTarget,
 };
 use serde::Deserialize;
 
-#[derive(Deserialize)]
+macro_rules! value_error {
+    ($message:literal) => {
+        Box::new(HelperError {
+            class: "ValueError".to_owned(),
+            status: None,
+            error_type: Some(None),
+            param: Some(None),
+            code: Some(None),
+            message: $message.to_owned(),
+        })
+    };
+}
+
+#[derive(Default, Deserialize)]
 pub(crate) struct ToolUseTargetRequest {
     pub(crate) msg_idx: usize,
     pub(crate) content_idx: usize,
@@ -11,61 +25,7 @@ pub(crate) struct ToolUseTargetRequest {
 
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub(crate) enum MessageTargetRequest {
-    MessageContent {
-        msg_idx: usize,
-    },
-    ContentBlockText {
-        msg_idx: usize,
-        content_idx: usize,
-    },
-    ToolResultString {
-        msg_idx: usize,
-        content_idx: usize,
-    },
-    ToolResultBlockText {
-        msg_idx: usize,
-        content_idx: usize,
-        block_idx: usize,
-    },
-}
-
-impl From<&MessageTargetRequest> for MessageTextTarget {
-    fn from(request: &MessageTargetRequest) -> Self {
-        match request {
-            MessageTargetRequest::MessageContent { msg_idx } => {
-                Self::MessageContent { msg_idx: *msg_idx }
-            }
-            MessageTargetRequest::ContentBlockText {
-                msg_idx,
-                content_idx,
-            } => Self::ContentBlockText {
-                msg_idx: *msg_idx,
-                content_idx: *content_idx,
-            },
-            MessageTargetRequest::ToolResultString {
-                msg_idx,
-                content_idx,
-            } => Self::ToolResultString {
-                msg_idx: *msg_idx,
-                content_idx: *content_idx,
-            },
-            MessageTargetRequest::ToolResultBlockText {
-                msg_idx,
-                content_idx,
-                block_idx,
-            } => Self::ToolResultBlockText {
-                msg_idx: *msg_idx,
-                content_idx: *content_idx,
-                block_idx: *block_idx,
-            },
-        }
-    }
-}
-
-#[derive(Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub(crate) enum InputTargetRequest {
+pub(crate) enum TargetRequest {
     SystemString,
     SystemBlockText {
         block_idx: usize,
@@ -88,31 +48,31 @@ pub(crate) enum InputTargetRequest {
     },
 }
 
-impl From<&InputTargetRequest> for InputWriteBackTarget {
-    fn from(request: &InputTargetRequest) -> Self {
+impl From<&TargetRequest> for InputWriteBackTarget {
+    fn from(request: &TargetRequest) -> Self {
         match request {
-            InputTargetRequest::SystemString => Self::SystemString,
-            InputTargetRequest::SystemBlockText { block_idx } => Self::SystemBlockText {
+            TargetRequest::SystemString => Self::SystemString,
+            TargetRequest::SystemBlockText { block_idx } => Self::SystemBlockText {
                 block_idx: *block_idx,
             },
-            InputTargetRequest::MessageContent { msg_idx } => {
+            TargetRequest::MessageContent { msg_idx } => {
                 Self::Message(MessageTextTarget::MessageContent { msg_idx: *msg_idx })
             }
-            InputTargetRequest::ContentBlockText {
+            TargetRequest::ContentBlockText {
                 msg_idx,
                 content_idx,
             } => Self::Message(MessageTextTarget::ContentBlockText {
                 msg_idx: *msg_idx,
                 content_idx: *content_idx,
             }),
-            InputTargetRequest::ToolResultString {
+            TargetRequest::ToolResultString {
                 msg_idx,
                 content_idx,
             } => Self::Message(MessageTextTarget::ToolResultString {
                 msg_idx: *msg_idx,
                 content_idx: *content_idx,
             }),
-            InputTargetRequest::ToolResultBlockText {
+            TargetRequest::ToolResultBlockText {
                 msg_idx,
                 content_idx,
                 block_idx,
@@ -121,6 +81,25 @@ impl From<&InputTargetRequest> for InputWriteBackTarget {
                 content_idx: *content_idx,
                 block_idx: *block_idx,
             }),
+        }
+    }
+}
+
+pub(crate) fn message_target(
+    request: Option<&TargetRequest>,
+) -> Result<MessageTextTarget, Box<HelperError>> {
+    match request.map(InputWriteBackTarget::from) {
+        Some(InputWriteBackTarget::Message(target)) => Ok(target),
+        Some(InputWriteBackTarget::SystemString | InputWriteBackTarget::SystemBlockText { .. })
+        | None => Err(value_error!("message scenario needs a message target")),
+    }
+}
+
+impl From<&ToolUseTargetRequest> for ToolUseInputTarget {
+    fn from(request: &ToolUseTargetRequest) -> Self {
+        Self {
+            msg_idx: request.msg_idx,
+            content_idx: request.content_idx,
         }
     }
 }

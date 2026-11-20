@@ -1,49 +1,40 @@
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_server::guardrails::anthropic_translation::structured_write_back::{
-    defer_systems_inside_tool_exchanges, fold_leading_systems_into_top_level,
-    hoisted_top_level_system_message, openai_system_message_to_anthropic,
+    fold_leading_systems, hoisted_system_message, system_row_to_anthropic,
     write_back_structured_messages,
 };
 use serde_json::{Map, Value, json};
-use tokio::runtime::Builder;
+use tokio::runtime::{Builder, Runtime};
 
-use super::requests::{
-    DeferScenario, FoldScenario, HoistedScenario, StructuredScenario, SystemConversionScenario,
-};
+use super::requests::Scenario;
 
-pub(super) fn hoisted_answer(scenario: &HoistedScenario) -> Result<Value, Box<HelperError>> {
-    let runtime = Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .or_config_error()?;
-    let message = runtime
-        .block_on(hoisted_top_level_system_message(&scenario.data))
-        .or_value_error()?;
+fn current_runtime() -> Result<Runtime, Box<HelperError>> {
+    let mut builder = Builder::new_current_thread();
+    builder.enable_all();
+    builder.build().or_config_error()
+}
+
+pub(super) fn hoisted_answer(scenario: &Scenario) -> Result<Value, Box<HelperError>> {
+    let runtime = current_runtime()?;
+    let read = hoisted_system_message(&scenario.data);
+    let message = runtime.block_on(read).or_value_error()?;
     Ok(json!({"message": message.unwrap_or(Value::Null)}))
 }
 
-pub(super) fn system_conversion_answer(
-    scenario: &SystemConversionScenario,
-) -> Result<Value, Box<HelperError>> {
-    let row = openai_system_message_to_anthropic(&scenario.message);
+pub(super) fn system_conversion_answer(scenario: &Scenario) -> Result<Value, Box<HelperError>> {
+    let message = Value::Object(scenario.message.clone());
+    let row = system_row_to_anthropic(&message);
     Ok(json!({"row": row.map_or(Value::Null, Value::Object)}))
 }
 
-pub(super) fn fold_answer(scenario: &FoldScenario) -> Result<Value, Box<HelperError>> {
+pub(super) fn fold_answer(scenario: &Scenario) -> Result<Value, Box<HelperError>> {
     let mut data = scenario.data.clone();
-    fold_leading_systems_into_top_level(&mut data, &scenario.leading, scenario.include_existing);
+    fold_leading_systems(&mut data, &scenario.leading, scenario.include_existing);
     Ok(json!({"data": data}))
 }
 
-pub(super) fn defer_answer(scenario: &DeferScenario) -> Result<Value, Box<HelperError>> {
-    Ok(json!({"messages": defer_systems_inside_tool_exchanges(&scenario.messages)}))
-}
-
-pub(super) fn structured_answer(scenario: &StructuredScenario) -> Result<Value, Box<HelperError>> {
-    let runtime = Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .or_config_error()?;
+pub(super) fn structured_answer(scenario: &Scenario) -> Result<Value, Box<HelperError>> {
+    let runtime = current_runtime()?;
     let mut data = scenario.data.clone();
     runtime.block_on(write_structured(&mut data, scenario))?;
     Ok(json!({"data": data}))
@@ -51,12 +42,10 @@ pub(super) fn structured_answer(scenario: &StructuredScenario) -> Result<Value, 
 
 async fn write_structured(
     data: &mut Map<String, Value>,
-    scenario: &StructuredScenario,
+    scenario: &Scenario,
 ) -> Result<(), Box<HelperError>> {
     let hoisted = if scenario.compute_hoisted {
-        hoisted_top_level_system_message(data)
-            .await
-            .or_value_error()?
+        hoisted_system_message(data).await.or_value_error()?
     } else {
         None
     };
