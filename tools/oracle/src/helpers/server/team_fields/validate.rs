@@ -179,19 +179,16 @@ pub(super) fn validate_answer(call: &ValidateCall<'_>) -> HelperResult {
         request, &registry, &settings,
     ));
     let payload = fake.as_ref().and_then(|fake| fake.recorded());
-    validation_answer(outcome, payload)
+    Ok(validation_answer(outcome, payload))
 }
 
-fn validation_answer(
-    outcome: Result<(), TeamMetadataError>,
-    payload: Option<Value>,
-) -> HelperResult {
+fn validation_answer(outcome: Result<(), TeamMetadataError>, payload: Option<Value>) -> Value {
     match outcome {
-        Ok(()) => Ok(json!({"status": null, "error": null, "payload": payload})),
-        Err(error) => Ok(json!({
+        Ok(()) => json!({"status": null, "error": null, "payload": payload}),
+        Err(error) => json!({
             "status": error.status(),
             "error": error.message(),
             "payload": payload,
-        })),
+        }),
     }
 }
