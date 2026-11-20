@@ -217,7 +217,7 @@ fn a_restarted_dispatch_goes_on_from_the_saved_rung() {
         "ERROR: You've hit your usage limit.",
     )
     .unwrap();
-    mark(folder.path(), "anthropic-2", "You've hit your limit").unwrap();
+    mark(folder.path(), "anthropic", "You've hit your limit").unwrap();
     let places = Places {
         worktree: folder.path(),
         journal: folder.path(),
@@ -357,7 +357,7 @@ fn a_rung_pauses_without_a_run_while_every_vendor_it_can_use_is_at_its_limit() {
         "ERROR: You've hit your usage limit.",
     )
     .unwrap();
-    mark(folder.path(), "anthropic-2", "You've hit your limit").unwrap();
+    mark(folder.path(), "anthropic", "You've hit your limit").unwrap();
     let places = Places {
         worktree: folder.path(),
         journal: folder.path(),
@@ -395,7 +395,7 @@ fn a_limited_vendor_sends_the_start_to_the_other_vendor_at_the_same_level() {
     .unwrap();
     assert_eq!(pick(0).as_deref(), Some("claude-sonnet-5-5"));
     assert_eq!(pick(3).as_deref(), Some("claude-opus-5-5"));
-    mark(folder.path(), "anthropic-2", "You've hit your limit").unwrap();
+    mark(folder.path(), "anthropic", "You've hit your limit").unwrap();
     assert_eq!(pick(3), None);
 }
 
@@ -403,7 +403,7 @@ fn a_limited_vendor_sends_the_start_to_the_other_vendor_at_the_same_level() {
 fn a_limited_claude_rung_runs_on_the_open_codex_rung_at_its_level() {
     let (agents, _) = fixtures();
     let folder = tempfile::tempdir().unwrap();
-    mark(folder.path(), "anthropic-2", "You've hit your limit").unwrap();
+    mark(folder.path(), "anthropic", "You've hit your limit").unwrap();
     let chain = Chain::new(&agents).unwrap();
     let mut progress = progress();
     progress.fit(&agents.roles.worker.ladder);
@@ -489,7 +489,7 @@ fn a_dispatch_stopped_by_a_usage_limit_keeps_its_place() {
         "ERROR: You've hit your usage limit.",
     )
     .unwrap();
-    mark(folder.path(), "anthropic-2", "You've hit your limit").unwrap();
+    mark(folder.path(), "anthropic", "You've hit your limit").unwrap();
     let places = Places {
         worktree: folder.path(),
         journal: folder.path(),
@@ -509,7 +509,7 @@ fn a_dispatch_stopped_by_a_usage_limit_keeps_its_place() {
     let error = run_ladder(&agents, &brief, &places, &mut loaded, 0).unwrap_err();
     assert!(matches!(error, GateError::Unavailable { .. }));
     assert!(error.to_string().contains(
-        "every runner left on the worker ladder is unavailable (openai is at its usage limit: ERROR: You've hit your usage limit.; anthropic-2 is at its usage limit: You've hit your limit); last feedback: the saved findings"
+        "every runner left on the worker ladder is unavailable (openai is at its usage limit: ERROR: You've hit your usage limit.; anthropic is at its usage limit: You've hit your limit); last feedback: the saved findings"
     ));
     saved.limited = true;
     assert_eq!(loaded, saved);
@@ -527,7 +527,7 @@ fn a_task_with_only_limited_vendors_left_waits_while_another_vendor_is_up() {
         "ERROR: You've hit your usage limit.",
     )
     .unwrap();
-    mark(folder.path(), "anthropic-2", "You've hit your limit").unwrap();
+    mark(folder.path(), "anthropic", "You've hit your limit").unwrap();
     ladder_available(folder.path(), &agents, folder.path(), "B000").unwrap();
     let mut saved = progress();
     saved.used = 3;
@@ -686,13 +686,13 @@ fn no_start_moves_while_the_other_vendor_is_full_or_at_its_limit() {
     let writers = agents
         .vendors
         .iter()
-        .find(|vendor| vendor.id == "anthropic-2")
+        .find(|vendor| vendor.id == "anthropic")
         .and_then(|vendor| vendor.max_writers)
         .unwrap();
-    let anthropic = hold_seats(folder.path(), "anthropic-2-writer", writers);
+    let anthropic = hold_seats(folder.path(), "anthropic-writer", writers);
     assert_eq!(pick().as_deref(), Some("gpt-6-luna"));
     drop(anthropic);
-    mark(folder.path(), "anthropic-2", "You've hit your limit").unwrap();
+    mark(folder.path(), "anthropic", "You've hit your limit").unwrap();
     assert_eq!(pick().as_deref(), Some("gpt-6-luna"));
     drop(openai);
 }

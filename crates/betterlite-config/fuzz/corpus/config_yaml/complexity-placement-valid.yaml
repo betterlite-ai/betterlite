@@ -1,0 +1,10 @@
+model_list:
+  - model_name: tiered-router
+    litellm_params:
+      model: openai/gpt-4o
+      complexity_router_config:
+        return_raw_model_name: true
+        max_tokens_from_tier_model: false
+        tiers:
+          SIMPLE: [gpt-4o-mini, gpt-4.1-mini]
+          MEDIUM: {model_name: gpt-4o, litellm_params: {temperature: 0.2}}

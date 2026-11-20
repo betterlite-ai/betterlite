@@ -1,0 +1,28 @@
+kind: probe
+name: unsupported-tier-param
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_placement:
+        return_raw_model_name: false
+        max_tokens_from_tier_model: true
+        tiers:
+          SIMPLE: {model_name: narrow, litellm_params: {temperature: 1, top_p: 1, seed: 7}}
+          MEDIUM: {model_name: bare, litellm_params: {top_p: 1}}
+          COMPLEX: {model_name: open, litellm_params: {top_p: 1}}
+        default_model: null
+        deployment_pin: false
+        deployments:
+          - {group: narrow, model: openai/gpt-4o-mini, custom_llm_provider: null, max_output_tokens: null, allowed_openai_params: []}
+          - {group: open, model: openai/gpt-4o, custom_llm_provider: null, max_output_tokens: null, allowed_openai_params: [top_p]}
+        supported_params:
+          gpt-4o-mini: [temperature]
+          gpt-4o: [temperature]
+        steps:
+          - {tier: SIMPLE, allowed_models: null, responses_call: false, request_kwargs: {}}
+          - {tier: SIMPLE, allowed_models: null, responses_call: false, request_kwargs: {allowed_openai_params: [seed]}}
+          - {tier: MEDIUM, allowed_models: null, responses_call: false, request_kwargs: {}}
+          - {tier: COMPLEX, allowed_models: null, responses_call: false, request_kwargs: {}}
+compare:
+  ignore: []
