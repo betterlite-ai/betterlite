@@ -1,0 +1,9 @@
+model_list:
+  - model_name: tiered-router
+    litellm_params:
+      model: openai/gpt-4o
+      complexity_router_config:
+        return_raw_model_name: sometimes
+        max_tokens_from_tier_model: true
+        tiers:
+          SIMPLE: [gpt-4o-mini]

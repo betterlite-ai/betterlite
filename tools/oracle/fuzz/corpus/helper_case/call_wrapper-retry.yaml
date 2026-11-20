@@ -1,0 +1,19 @@
+kind: helper
+name: call-wrapper-retry-seed
+call:
+  b5368:
+    mode: async
+    request: {model: gpt-4o, num_retries: 2, timeout: 30}
+    outcomes:
+      - {kind: error, error_class: APIError, message: boom}
+      - {kind: response, value: {id: chat-1}}
+    observe: {values: [num_retries, retry_strategy, timeout]}
+calls:
+  - b5368:
+      mode: sync
+      request: {model: gpt-4o, retry_policy: {BadRequestErrorRetries: 1}}
+      outcomes:
+        - {kind: error, error_class: BadRequestError, message: bad}
+        - {kind: response, value: {id: chat-1}}
+env: {}
+compare: {ignore: []}
