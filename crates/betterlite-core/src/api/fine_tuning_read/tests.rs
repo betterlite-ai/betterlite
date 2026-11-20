@@ -1,10 +1,13 @@
 #![cfg(test)]
 
+use std::fs;
 use std::future::{Future, ready};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use betterlite_config::sections::resource_sdk_settings::Settings as ConfiguredSettings;
 use betterlite_openai::fine_tuning::job::{FineTuneJob, JobStatus};
+use rstest::rstest;
 use secrecy::zeroize::Zeroize as _;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::json;
@@ -14,7 +17,7 @@ use crate::api::resource_sdk_settings::timeout::{
     FineTuningTimeout, StructuredTimeout, TimeoutError,
 };
 
-use super::page::FineTuningPage;
+use super::page::{FineTuningPage, decode_page};
 use super::service::FineTuningRead;
 use super::{
     ApiKeyText, FineTuningReadDispatch, FineTuningReadError, FineTuningReadInput,
@@ -185,8 +188,9 @@ fn azure(calls: &[RecordedTarget]) -> RecordedCall {
 // every fine-tuning job field the fixtures share; each fixture changes what its call reads
 const JOB: &str = r#"{"id": "ft_a", "object": "fine_tuning.job", "created_at": 1700000000, "model": "gpt-4o-mini-2024-07-18", "organization_id": "org_1", "result_files": ["file_r"], "status": "succeeded", "training_file": "file_1", "hyperparameters": {"n_epochs": 3}, "seed": 42}"#;
 
-// the page carries the fields list doesn't normalize and one key the job shape never declares
-const PAGE: &str = r#"{"object": "list", "has_more": true, "data": [{"id": "ft_a", "object": "fine_tuning.job", "created_at": 1700000000, "model": "gpt-4o-mini-2024-07-18", "organization_id": null, "result_files": null, "status": "canceling", "training_file": "file_1", "hyperparameters": {"n_epochs": 3}, "seed": 42, "method": {"type": "supervised", "hyperparameters": {"n_epochs": "auto"}}, "unknown_top": 1}]}"#;
+// the page carries the fields list doesn't normalize, one key the job shape never declares, and a
+// reinforcement job whose python grader leaves out the optional image_tag
+const PAGE: &str = r#"{"object": "list", "has_more": true, "data": [{"id": "ft_a", "object": "fine_tuning.job", "created_at": 1700000000, "model": "gpt-4o-mini-2024-07-18", "organization_id": null, "result_files": null, "status": "canceling", "training_file": "file_1", "hyperparameters": {"n_epochs": 3}, "seed": 42, "method": {"type": "supervised", "hyperparameters": {"n_epochs": "auto"}}, "unknown_top": 1}, {"id": "ft_r", "object": "fine_tuning.job", "created_at": 1700000001, "model": "gpt-4o-mini-2024-07-18", "organization_id": "org_1", "result_files": ["file_r"], "status": "running", "training_file": "file_2", "hyperparameters": {"n_epochs": 2}, "seed": 7, "method": {"type": "reinforcement", "reinforcement": {"grader": {"type": "python", "name": "grade", "source": "def grade(): return 1"}}}}]}"#;
 
 // the azure answer differs in the fields its normalization reads
 const AZURE_JOB: &str = r#"{"id": "ft_a", "object": "fine_tuning.job", "created_at": 1700000000, "model": "gpt-4o-mini", "organization_id": null, "result_files": null, "status": "canceled", "training_file": "file_1", "hyperparameters": {"n_epochs": 3}, "seed": 42}"#;
@@ -300,6 +304,60 @@ async fn list_page_preserves_metadata_and_jobs() {
     assert_eq!(fields.len(), 3);
     assert_eq!(job["method"]["hyperparameters"]["n_epochs"], json!("auto"));
     assert_eq!(job.as_object().expect("a job object").len(), 20);
+    let method = &page_json["data"][1]["method"];
+    assert_eq!(method["type"], json!("reinforcement"));
+    assert_eq!(method["dpo"], json!(null));
+    assert_eq!(method["supervised"], json!(null));
+    assert_eq!(method["reinforcement"]["hyperparameters"], json!(null));
+    let grader = method["reinforcement"]["grader"]
+        .as_object()
+        .expect("a python grader object");
+    assert_eq!(grader.len(), 4);
+    assert_eq!(grader.get("image_tag"), Some(&json!(null)));
+    assert_eq!(grader.get("source"), Some(&json!("def grade(): return 1")));
+}
+
+// the SDK's Grader union finds no member that accepts a multi grader's list, so it writes its first
+// member's keys and keeps calculate_output and graders as extras
+#[tokio::test]
+async fn page_shapes_a_multi_grader_as_the_sdk_falls_back() {
+    let fake = Fake::answering(
+        br#"{"data": [{"id": "ft_m", "method": {"type": "reinforcement", "reinforcement": {"grader": {"type": "multi", "name": "both", "calculate_output": "a + b", "graders": [{"type": "string_check", "name": "s", "input": "i", "operation": "eq", "reference": "r"}]}}}}], "has_more": false}"#,
+    );
+    let outcome = run(
+        &fake,
+        &ConfiguredSettings::default(),
+        &input(r#"{"list": {}}"#),
+    )
+    .await
+    .expect("a listed page");
+    let FineTuningReadOutcome::Page(FineTuningPage(page)) = outcome else {
+        panic!("list answered a job");
+    };
+    let page_json = serde_json::to_value(page).expect("a page serializes");
+    let grader = page_json["data"][0]["method"]["reinforcement"]["grader"]
+        .as_object()
+        .expect("a multi grader object");
+    assert_eq!(grader.get("input"), Some(&json!(null)));
+    assert_eq!(grader.get("operation"), Some(&json!(null)));
+    assert_eq!(grader.get("reference"), Some(&json!(null)));
+    assert_eq!(grader.get("type"), Some(&json!("multi")));
+    assert_eq!(grader.get("calculate_output"), Some(&json!("a + b")));
+    assert_eq!(
+        grader.get("graders"),
+        Some(
+            &json!([{"type": "string_check", "name": "s", "input": "i", "operation": "eq", "reference": "r"}])
+        )
+    );
+}
+
+// every corpus seed reaches the page decoder, which answers a page or a JSON error and never panics
+#[rstest]
+fn replays_the_fine_tuning_read_page_corpus(
+    #[files("fuzz/corpus/fine_tuning_read_page/*")] path: PathBuf,
+) {
+    let bytes = fs::read(path).expect("a corpus file");
+    drop(decode_page(&bytes));
 }
 
 // a page with a missing object key omits it, while data and has_more stay present as null

@@ -16,20 +16,30 @@ pub fn decode_page(bytes: &[u8]) -> Result<FineTuningPage, serde_json::Error> {
 // a declared key is always written with its shape, and an undeclared one stays as the provider wrote it
 enum Shape {
     Any,
+    Fields(&'static [&'static str]),
     Object(&'static [(&'static str, Self)]),
     Objects(&'static Self),
+    Tagged(&'static [(&'static str, Self)], &'static Self),
 }
 
 fn normalize(value: &Json, shape: &Shape) -> Json {
     match shape {
         Shape::Any => value.clone(),
+        Shape::Fields(names) => normalize_fields(value, names),
         Shape::Object(fields) => normalize_object(value, fields),
         Shape::Objects(element) => normalize_list(value, element),
+        Shape::Tagged(variants, unsupported) => normalize_tagged(value, variants, unsupported),
     }
 }
 
+// a fields object writes every declared key as given, which is an object whose keys have no shape
+fn normalize_fields(value: &Json, names: &'static [&'static str]) -> Json {
+    let fields: Vec<(&'static str, Shape)> = names.iter().map(|name| (*name, Shape::Any)).collect();
+    normalize_object(value, &fields)
+}
+
 // an object writes every declared key in its shape's order and appends the keys the shape never names
-fn normalize_object(value: &Json, fields: &'static [(&'static str, Shape)]) -> Json {
+fn normalize_object(value: &Json, fields: &[(&'static str, Shape)]) -> Json {
     let Json::Object(source) = value else {
         return value.clone();
     };
@@ -38,12 +48,17 @@ fn normalize_object(value: &Json, fields: &'static [(&'static str, Shape)]) -> J
         let normalized = normalize(source.get(*name).unwrap_or(&Json::Null), field);
         object.insert((*name).to_owned(), normalized);
     }
+    append_extras(&mut object, source);
+    Json::Object(object)
+}
+
+// the keys no shape names stay as the provider wrote them, after the declared ones
+fn append_extras(object: &mut IndexMap<String, Json>, source: &IndexMap<String, Json>) {
     for (name, extra) in source {
         if !object.contains_key(name) {
             object.insert(name.clone(), extra.clone());
         }
     }
-    Json::Object(object)
 }
 
 // a list is normalized element by element, and any other value stays as the provider wrote it
@@ -54,45 +69,118 @@ fn normalize_list(value: &Json, element: &Shape) -> Json {
     Json::List(items.iter().map(|item| normalize(item, element)).collect())
 }
 
-const ERROR: Shape = Shape::Object(&[
-    ("code", Shape::Any),
-    ("message", Shape::Any),
-    ("param", Shape::Any),
+// a tagged value takes its type's shape, item by item for a list, and the union's first member's shape
+// for any type it doesn't name
+fn normalize_tagged(
+    value: &Json,
+    variants: &'static [(&'static str, Shape)],
+    unsupported: &'static Shape,
+) -> Json {
+    if let Json::List(items) = value {
+        let normalized = items
+            .iter()
+            .map(|item| normalize_tagged(item, variants, unsupported));
+        return Json::List(normalized.collect());
+    }
+    let Json::Object(source) = value else {
+        return value.clone();
+    };
+    let Some(Json::Text(tag)) = source.get("type") else {
+        return normalize(value, unsupported);
+    };
+    variants
+        .iter()
+        .find(|(name, _)| *name == tag.as_str())
+        .map_or_else(
+            || normalize(value, unsupported),
+            |(_, shape)| normalize(value, shape),
+        )
+}
+
+const ERROR: Shape = Shape::Fields(&["code", "message", "param"]);
+
+const HYPERPARAMETERS: Shape =
+    Shape::Fields(&["batch_size", "learning_rate_multiplier", "n_epochs"]);
+
+const DPO_HYPERPARAMETERS: Shape =
+    Shape::Fields(&["batch_size", "beta", "learning_rate_multiplier", "n_epochs"]);
+
+const REINFORCEMENT_HYPERPARAMETERS: Shape = Shape::Fields(&[
+    "batch_size",
+    "compute_multiplier",
+    "eval_interval",
+    "eval_samples",
+    "learning_rate_multiplier",
+    "n_epochs",
+    "reasoning_effort",
 ]);
 
-const HYPERPARAMETERS: Shape = Shape::Object(&[
-    ("batch_size", Shape::Any),
-    ("learning_rate_multiplier", Shape::Any),
-    ("n_epochs", Shape::Any),
-]);
-
-const DPO_HYPERPARAMETERS: Shape = Shape::Object(&[
-    ("batch_size", Shape::Any),
-    ("beta", Shape::Any),
-    ("learning_rate_multiplier", Shape::Any),
-    ("n_epochs", Shape::Any),
-]);
-
-const REINFORCEMENT_HYPERPARAMETERS: Shape = Shape::Object(&[
-    ("batch_size", Shape::Any),
-    ("compute_multiplier", Shape::Any),
-    ("eval_interval", Shape::Any),
-    ("eval_samples", Shape::Any),
-    ("learning_rate_multiplier", Shape::Any),
-    ("n_epochs", Shape::Any),
-    ("reasoning_effort", Shape::Any),
-]);
-
-const WANDB: Shape = Shape::Object(&[
-    ("project", Shape::Any),
-    ("entity", Shape::Any),
-    ("name", Shape::Any),
-    ("tags", Shape::Any),
-]);
+const WANDB: Shape = Shape::Fields(&["project", "entity", "name", "tags"]);
 
 const INTEGRATION: Shape = Shape::Object(&[("type", Shape::Any), ("wandb", WANDB)]);
 
-// a method object writes its four declared keys and keeps hyperparameters as an extra
+// an Input's content block writes the keys its member declares
+const CONTENT_TEXT: Shape = Shape::Fields(&["text", "type", "prompt_cache_breakpoint"]);
+const CONTENT_OUTPUT_TEXT: Shape = Shape::Fields(&["text", "type"]);
+const CONTENT_IMAGE: Shape = Shape::Fields(&["image_url", "type", "detail"]);
+const AUDIO_DATA: Shape = Shape::Fields(&["data", "format"]);
+const CONTENT_AUDIO: Shape = Shape::Object(&[("input_audio", AUDIO_DATA), ("type", Shape::Any)]);
+
+// a content string, image, audio or grader list that names no block stays as the provider wrote it
+const CONTENT: Shape = Shape::Tagged(
+    &[
+        ("input_text", CONTENT_TEXT),
+        ("output_text", CONTENT_OUTPUT_TEXT),
+        ("input_image", CONTENT_IMAGE),
+        ("input_audio", CONTENT_AUDIO),
+    ],
+    &Shape::Any,
+);
+
+const GRADER_INPUT: Shape = Shape::Object(&[
+    ("content", CONTENT),
+    ("role", Shape::Any),
+    ("type", Shape::Any),
+]);
+
+const STRING_CHECK_GRADER: Shape =
+    Shape::Fields(&["input", "name", "operation", "reference", "type"]);
+
+const TEXT_SIMILARITY_GRADER: Shape =
+    Shape::Fields(&["evaluation_metric", "input", "name", "reference", "type"]);
+
+const PYTHON_GRADER: Shape = Shape::Fields(&["name", "source", "type", "image_tag"]);
+
+const SAMPLING_PARAMS: Shape = Shape::Fields(&[
+    "max_completions_tokens",
+    "reasoning_effort",
+    "seed",
+    "temperature",
+    "top_p",
+]);
+
+const SCORE_MODEL_GRADER: Shape = Shape::Object(&[
+    ("input", Shape::Objects(&GRADER_INPUT)),
+    ("model", Shape::Any),
+    ("name", Shape::Any),
+    ("type", Shape::Any),
+    ("range", Shape::Any),
+    ("sampling_params", SAMPLING_PARAMS),
+]);
+
+// the union validates these four types and constructs its first member for every other type, since
+// MultiGrader's graders field rejects each list before the union reaches it
+const GRADER: Shape = Shape::Tagged(
+    &[
+        ("python", PYTHON_GRADER),
+        ("score_model", SCORE_MODEL_GRADER),
+        ("string_check", STRING_CHECK_GRADER),
+        ("text_similarity", TEXT_SIMILARITY_GRADER),
+    ],
+    &STRING_CHECK_GRADER,
+);
+
+// a method object writes its four declared keys, and a reinforcement method its grader and hyperparameters
 const METHOD: Shape = Shape::Object(&[
     ("type", Shape::Any),
     (
@@ -102,7 +190,7 @@ const METHOD: Shape = Shape::Object(&[
     (
         "reinforcement",
         Shape::Object(&[
-            ("grader", Shape::Any),
+            ("grader", GRADER),
             ("hyperparameters", REINFORCEMENT_HYPERPARAMETERS),
         ]),
     ),
