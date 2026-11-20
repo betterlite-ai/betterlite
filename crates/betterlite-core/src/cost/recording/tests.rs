@@ -798,7 +798,7 @@ fn vertex_location_defaults_only_for_vertex_ai_providers() {
     );
     assert!(fakes.regions().is_empty());
     let other_observed = fakes.observe();
-    assert_eq!(other_observed[0].vertex_location, None);
+    assert_eq!(other_observed[1].vertex_location, None);
 }
 
 #[test]
@@ -817,7 +817,8 @@ fn the_mantle_region_is_resolved_only_for_bedrock_mantle() {
         typed(typed_response(&usage, &hidden)),
     );
     let calls = fakes.mantle_calls();
-    assert_eq!(calls.len(), 1);
+    // LiteLLM resolves the region once for the calculator kwargs and again for the zero-cost diagnostic
+    assert_eq!(calls.len(), 2);
     assert_eq!(
         calls[0].get("aws_region_name"),
         Some(&Json::Text("eu-central-1".to_owned()))
