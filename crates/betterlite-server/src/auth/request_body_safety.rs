@@ -6,7 +6,7 @@ use betterlite_auth::request_body_safety::{
     FormMetadataExtractor, RequestBodySafety, SafetyError, is_request_body_safe,
 };
 use betterlite_core::api::api_boundaries::ApiLimits;
-use betterlite_core::api::request_body::{MediaTypeKind, classify_media_type, parse_binary_body};
+use betterlite_core::api::request_body::{MediaTypeKind, classify_media_type};
 use betterlite_core::api::request_form::metadata::extract_nested_form_metadata;
 use betterlite_core::api::request_form::values::{FormFields, FormValue, PartValue};
 use betterlite_error::proxy_exception::ProxyException;
@@ -69,9 +69,7 @@ fn scan(slot: &Slot, stage: &RequestBodySafetyStageInput) -> Result<(), SafetyEr
 fn request_object(bytes: &[u8], content_type: &str) -> Option<JsonObject> {
     match classify_media_type(content_type) {
         MediaTypeKind::Form => form_object(bytes, content_type),
-        // _parse_binary_body: JSON sent under a binary content type still parses, real binary carries no params
-        MediaTypeKind::Binary => Some(parse_binary_body(bytes)),
-        MediaTypeKind::Json | MediaTypeKind::Other => json_object(bytes),
+        MediaTypeKind::Json | MediaTypeKind::Binary | MediaTypeKind::Other => json_object(bytes),
     }
 }
 
