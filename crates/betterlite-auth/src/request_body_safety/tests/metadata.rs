@@ -70,6 +70,13 @@ fn metadata_depth_limit() {
         decode_request_metadata(after_string.as_bytes()),
         Err(DecodeError::TooDeep { .. })
     ));
+    // a doubled backslash is one escaped backslash, so the quote after it still closes the string
+    let escaped_backslash = format!(
+        r#"{{"value": "a\\", "note": "{}"}}"#,
+        "[".repeat(MAX_METADATA_DEPTH + 1)
+    );
+    decode_request_metadata(escaped_backslash.as_bytes())
+        .expect("a doubled backslash ends the string at its closing quote");
     // sibling containers do not accumulate: every closing bracket lowers the depth again
     let siblings = format!("[{}]", ["[]"; MAX_METADATA_DEPTH + 1].join(","));
     decode_request_metadata(siblings.as_bytes()).expect("sibling arrays stay at depth two");
