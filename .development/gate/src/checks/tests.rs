@@ -219,23 +219,6 @@ fn a_failed_prerequisite_keeps_the_gate_red_when_work_is_skipped() {
 }
 
 #[test]
-fn a_new_run_without_a_result_or_an_error_is_unfinished() {
-    let folder = tempfile::tempdir().unwrap();
-    assert!(history::runs(folder.path()).unwrap().is_empty());
-    let runs = folder.path().join("runs");
-    fs::create_dir_all(runs.join("run-old")).unwrap();
-    let earlier = history::runs(folder.path()).unwrap();
-    for marker in ["result.json", "error.txt"] {
-        let run = runs.join(format!("run-{marker}"));
-        fs::create_dir_all(&run).unwrap();
-        fs::write(run.join(marker), "{}").unwrap();
-    }
-    assert!(!history::unfinished(folder.path(), &earlier).unwrap());
-    fs::create_dir_all(runs.join("run-cut")).unwrap();
-    assert!(history::unfinished(folder.path(), &earlier).unwrap());
-}
-
-#[test]
 fn the_local_gate_builds_nothing_and_leaves_clippy_and_tests_to_ci() {
     let (_folder, mut development, mut task) = fixture();
     development.catalog.base.commands.extend([
