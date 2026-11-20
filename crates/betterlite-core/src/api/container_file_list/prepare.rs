@@ -39,11 +39,14 @@ pub(crate) struct ReadyCall<'deps> {
 }
 
 impl ReadyCall<'_> {
-    pub(crate) fn handler_call<'call, Source: ClientSource>(
+    pub(crate) fn handler_call<'call, Source>(
         &'call self,
         request: &'call ContainerFileListRequest<'_>,
         logging: &'call Mutex<LoggingState>,
-    ) -> ContainerFileListCall<'call, Source> {
+    ) -> ContainerFileListCall<'call, Source>
+    where
+        Source: ClientSource,
+    {
         ContainerFileListCall {
             config: self.config,
             litellm_params: &self.litellm_params,

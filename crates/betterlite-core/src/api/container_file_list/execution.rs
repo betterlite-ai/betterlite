@@ -3,6 +3,7 @@ pub mod blocking;
 use std::collections::BTreeMap;
 use std::sync::{Mutex, PoisonError};
 
+use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_openai::api::container_contracts::config::{
@@ -61,7 +62,7 @@ where
         .get()
         .send(&request)
         .await
-        .map_err(|error| transport_error(call.config, error))?;
+        .map_err(|error| transport_error(call.config, &error))?;
     finish(call.config, &reply)
 }
 
@@ -191,14 +192,20 @@ pub(crate) fn finish(
         .map_err(FileListHandlerError::Config)
 }
 
-// _handle_error: a transport failure has no provider status, so the config's exception carries a synthesized 500
+// _handle_error: a transport failure has no provider status, and LiteLLM's read timeout becomes a 408 Timeout
 pub(crate) fn transport_error(
     config: &dyn BaseContainerConfig,
-    error: TransferError,
+    error: &TransferError,
 ) -> FileListHandlerError {
+    let status = match error {
+        TransferError::Transport(TransportError::Deadline(_)) => 408,
+        TransferError::Transport(_)
+        | TransferError::Url { .. }
+        | TransferError::HeaderName { .. } => 500,
+    };
     FileListHandlerError::Transport(config.get_error_class(
         &error.to_string(),
-        500,
+        status,
         &BTreeMap::new(),
     ))
 }

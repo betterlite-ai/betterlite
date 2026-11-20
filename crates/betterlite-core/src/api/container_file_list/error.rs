@@ -105,7 +105,7 @@ pub fn failure(
 fn handler_class(error: &FileListHandlerError, provider: &str, redactor: &Redactor) -> ErrorClass {
     let (exception, synthesized) = match error {
         FileListHandlerError::Params(ContainerFileHttpError::ParamType { field, .. }) => {
-            return named_field_class(error.to_string(), *field, provider);
+            return named_field_class(error.to_string(), field, provider);
         }
         FileListHandlerError::Provider(provider_error) => (provider_error, false),
         FileListHandlerError::Transport(transport_error) => (transport_error, true),

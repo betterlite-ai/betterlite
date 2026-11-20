@@ -26,6 +26,6 @@ where
     let reply = client
         .get()
         .send(&request)
-        .map_err(|error| transport_error(call.config, error))?;
+        .map_err(|error| transport_error(call.config, &error))?;
     finish(call.config, &reply)
 }
