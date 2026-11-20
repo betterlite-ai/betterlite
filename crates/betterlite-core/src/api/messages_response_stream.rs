@@ -14,14 +14,18 @@ use indexmap::IndexMap;
 
 use crate::api::api_boundaries::ApiLimits;
 use crate::api::messages_options::INCOMPLETE_STREAM_MESSAGE;
+use crate::api::messages_options::refusal::OutputItem;
 use crate::api::messages_response_events::MessageStreamState;
 use crate::api::messages_response_events::error::MessagesResponseEventError;
 use crate::api::messages_response_events::failure::fail_with;
-use crate::api::messages_response_events::input::{EventAttributes, ParsedEvent};
+use crate::api::messages_response_events::input::{
+    ErrorAttribute, EventAttributes, ParsedEvent, ResponseAttribute, ResponseAttributes,
+};
 use crate::api::responses_stream_errors::failure::{FailureCause, FailureKind};
+use crate::api::responses_stream_primitives::error_fields::StreamErrorAttributes;
 
 use error::MessagesResponseStreamError;
-use source::ResponsesEventSource;
+use source::{ProviderEvent, ProviderResponse, ResponsesEvent, ResponsesEventSource};
 
 // The wrapper's constructor arguments: the model it stamps on every chunk, the redactor B1119 applies and the wire bounds B1087 resolved.
 pub struct MessagesResponseStreamInput {
@@ -111,43 +115,40 @@ impl<S> MessagesResponseStream<S> {
         S: ResponsesEventSource,
     {
         loop {
-            match self.source.next_event().await {
-                Ok(Some(event)) => {
-                    self.process(&event)?;
-                    self.collect();
-                    if !self.pending.is_empty() {
-                        return Ok(());
-                    }
-                }
+            let event = match self.source.next_event().await {
+                Ok(Some(event)) => event,
                 Ok(None) => return self.exhausted(),
-                Err(failure) => {
-                    tracing::error!(
-                        "AnthropicResponsesStreamWrapper: upstream Responses stream for {} failed",
-                        self.model
-                    );
-                    fail_with(&mut self.state, &failure)?;
-                    self.collect();
-                    return Ok(());
-                }
+                Err(failure) => return self.failed_pull(&failure),
+            };
+            self.process(&event)?;
+            self.collect();
+            if !self.pending.is_empty() {
+                return Ok(());
             }
         }
     }
 
-    // One pulled event: a mapping is handed to B1119 as Python passes the dict through, any other value as an event without fields.
-    fn process(&mut self, event: &Json) -> Result<(), MessagesResponseStreamError> {
-        let mapping = match event {
-            Json::Object(fields) => Some(fields),
-            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
-        };
-        if let Err(failure) = self.state.process_event(ParsedEvent {
-            attributes: EventAttributes::default(),
-            mapping,
-        }) {
+    // One pulled event: the attributes getattr reads decide a provider event, and a dict-shaped event also passes its mapping through.
+    fn process(&mut self, event: &ResponsesEvent) -> Result<(), MessagesResponseStreamError> {
+        let output = event
+            .attributes
+            .response
+            .as_ref()
+            .map_or_else(Vec::new, |response| output_items(&response.output));
+        let attributes = provider_attributes(&event.attributes, &output);
+        let failure = self
+            .state
+            .process_event(ParsedEvent {
+                attributes,
+                mapping: event.mapping.as_ref(),
+            })
+            .err();
+        if let Some(error) = failure {
             tracing::error!(
                 "AnthropicResponsesStreamWrapper: upstream Responses stream for {} failed",
                 self.model
             );
-            fail_with(&mut self.state, &cause_from(failure))?;
+            fail_with(&mut self.state, &cause_from(&error))?;
             self.collect();
         }
         Ok(())
@@ -174,6 +175,17 @@ impl<S> MessagesResponseStream<S> {
             original_exception: None,
         };
         fail_with(&mut self.state, &failure)?;
+        self.collect();
+        Ok(())
+    }
+
+    // An upstream exception is logged and becomes the terminal error chunk with its status and message.
+    fn failed_pull(&mut self, failure: &FailureCause) -> Result<(), MessagesResponseStreamError> {
+        tracing::error!(
+            "AnthropicResponsesStreamWrapper: upstream Responses stream for {} failed",
+            self.model
+        );
+        fail_with(&mut self.state, failure)?;
         self.collect();
         Ok(())
     }
@@ -209,8 +221,50 @@ impl<S> MessagesResponseStream<S> {
     }
 }
 
+// A provider response's output items as B1119 reads them, each one still the JSON form of the SDK item.
+fn output_items(output: &[Json]) -> Vec<OutputItem<'_>> {
+    output.iter().map(OutputItem::Raw).collect()
+}
+
+// The attributes of a provider event, whose response borrows the output items handed to B1119 alongside it.
+fn provider_attributes<'event>(
+    prepared: &'event ProviderEvent,
+    output: &'event [OutputItem<'event>],
+) -> EventAttributes<'event> {
+    EventAttributes {
+        event_type: prepared.event_type.as_ref(),
+        item: prepared.item.as_ref(),
+        item_id: prepared.item_id.as_ref(),
+        delta: prepared.delta.as_ref(),
+        summary_index: prepared.summary_index.as_ref(),
+        response: prepared
+            .response
+            .as_ref()
+            .map(|response| provider_response(response, output)),
+    }
+}
+
+fn provider_response<'event>(
+    response: &'event ProviderResponse,
+    output: &'event [OutputItem<'event>],
+) -> ResponseAttribute<'event> {
+    let error = response.error.as_ref().map(|failure| {
+        ErrorAttribute::Attributes(StreamErrorAttributes {
+            message: failure.message.as_ref(),
+            error_type: failure.error_type.as_ref(),
+            code: failure.code.as_ref(),
+        })
+    });
+    ResponseAttribute::Object(ResponseAttributes {
+        output,
+        status: response.status.as_deref(),
+        usage: response.usage.as_ref(),
+        error,
+    })
+}
+
 // A rejected event is an exception in __anext__, so its text becomes the status-500 failure message.
-fn cause_from(error: MessagesResponseEventError) -> FailureCause {
+fn cause_from(error: &MessagesResponseEventError) -> FailureCause {
     FailureCause {
         kind: FailureKind::Plain,
         text: error.to_string(),

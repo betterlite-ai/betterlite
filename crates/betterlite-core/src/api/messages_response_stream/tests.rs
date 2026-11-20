@@ -16,10 +16,12 @@ use betterlite_logging::logging_state::types::{
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::decisions::Json;
+use betterlite_openai::api::responses_objects::ResponseApiUsage;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::DateTime;
 use indexmap::IndexMap;
 use rstest::rstest;
+use serde_json::Number;
 use tracing::field::{Field, Visit};
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing::{Event, Level, Subscriber};
@@ -29,7 +31,9 @@ use uuid::Uuid;
 use crate::api::api_boundaries::ApiLimits;
 use crate::api::responses_stream_errors::failure::FailureCause;
 
-use super::source::ResponsesEventSource;
+use super::source::{
+    ProviderError, ProviderEvent, ProviderResponse, ResponsesEvent, ResponsesEventSource,
+};
 use super::{MessagesResponseStream, MessagesResponseStreamInput, MessagesResponseStreamResult};
 
 const MODEL: &str = "model_a";
@@ -37,8 +41,12 @@ const MESSAGE_ID: &str = "msg_00000000-0000-0000-0000-000000000007";
 const MESSAGE_ITEM: &str =
     r#"{"type":"response.output_item.added","item":{"type":"message","id":"item_a"}}"#;
 const TEXT_DELTA: &str = r#"{"type":"response.output_text.delta","item_id":"item_a","delta":"hi"}"#;
-const NON_ASCII_DELTA: &str =
-    r#"{"type":"response.output_text.delta","item_id":"item_a","delta":"é"}"#;
+// The JSON escape for the non-ASCII delta, written split so the fixture holds no non-ASCII literal.
+const NON_ASCII_DELTA: &str = concat!(
+    r#"{"type":"response.output_text.delta","item_id":"item_a","delta":""#,
+    "\\u00e9",
+    r#""}"#,
+);
 const TOOL_ITEM: &str = r#"{"type":"response.output_item.added","item":{"type":"function_call","id":"item_tool","call_id":"call_a","name":"lookup"}}"#;
 const ARGS_DELTA: &str =
     r#"{"type":"response.function_call_arguments.delta","item_id":"item_tool","delta":"1}"}"#;
@@ -70,7 +78,7 @@ impl IdSource for FixedIds {
 
 #[derive(Clone)]
 struct Scripted {
-    events: VecDeque<Json>,
+    events: VecDeque<ResponsesEvent>,
     failure: Option<FailureCause>,
     pulls: Arc<AtomicUsize>,
     closed: Arc<AtomicBool>,
@@ -84,15 +92,12 @@ impl Drop for Scripted {
 
 #[async_trait]
 impl ResponsesEventSource for Scripted {
-    async fn next_event(&mut self) -> Result<Option<Json>, FailureCause> {
+    async fn next_event(&mut self) -> Result<Option<ResponsesEvent>, FailureCause> {
         self.pulls.fetch_add(1, Ordering::SeqCst);
         if let Some(event) = self.events.pop_front() {
             return Ok(Some(event));
         }
-        match self.failure.take() {
-            Some(failure) => Err(failure),
-            None => Ok(None),
-        }
+        self.failure.take().map_or_else(|| Ok(None), Err)
     }
 }
 
@@ -146,13 +151,43 @@ fn cause(source: &str) -> FailureCause {
     serde_json::from_str(source).expect("a valid failure fixture")
 }
 
+fn event(source: &str) -> ResponsesEvent {
+    match json(source) {
+        Json::Object(fields) => ResponsesEvent {
+            mapping: Some(fields),
+            ..ResponsesEvent::default()
+        },
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+            ResponsesEvent::default()
+        }
+    }
+}
+
 fn scripted(events: &[&str]) -> Scripted {
+    scripted_events(events.iter().copied().map(event).collect())
+}
+
+fn scripted_events(events: Vec<ResponsesEvent>) -> Scripted {
     Scripted {
-        events: events.iter().map(|source| json(source)).collect(),
+        events: events.into_iter().collect(),
         failure: None,
         pulls: Arc::default(),
         closed: Arc::default(),
     }
+}
+
+fn provider_event(event_type: &str) -> ProviderEvent {
+    ProviderEvent {
+        event_type: Some(Json::Text(event_type.to_owned())),
+        ..ProviderEvent::default()
+    }
+}
+
+fn usage_fixture() -> ResponseApiUsage {
+    serde_json::from_str(
+        r#"{"input_tokens":10,"input_tokens_details":{"cached_tokens":3},"output_tokens":2,"total_tokens":12}"#,
+    )
+    .expect("a valid usage fixture")
 }
 
 fn stream_with(
@@ -246,7 +281,7 @@ async fn sse_frames(stream: &mut MessagesResponseStream<Scripted>) -> Vec<String
 // The wrapper returns its pre-sent message_start before it reads any upstream event.
 #[tokio::test]
 async fn message_start_comes_before_the_first_pull() {
-    let mut source = scripted(&[TEXT_DELTA]);
+    let source = scripted(&[TEXT_DELTA]);
     let pulls = Arc::clone(&source.pulls);
     let mut stream = stream(source);
     let first = next(&mut stream).await;
@@ -273,7 +308,7 @@ async fn the_message_id_is_recorded_on_the_logging_state() {
 // Two chunks queued by one event: the second is returned from the queue without another pull.
 #[tokio::test]
 async fn queued_chunks_are_returned_before_the_next_pull() {
-    let mut source = scripted(&[COMPLETED]);
+    let source = scripted(&[COMPLETED]);
     let pulls = Arc::clone(&source.pulls);
     let mut stream = stream(source);
     assert_eq!(next(&mut stream).await, message_start());
@@ -290,7 +325,7 @@ async fn queued_chunks_are_returned_before_the_next_pull() {
 // A failed event queues its error chunk, and the next call ends the iteration without a pull.
 #[tokio::test]
 async fn a_failed_event_ends_the_iteration() {
-    let mut source = scripted(&[
+    let source = scripted(&[
         r#"{"type":"response.failed","response":{"error":{"type":"rate_limit_error","message":"busy"}}}"#,
     ]);
     let pulls = Arc::clone(&source.pulls);
@@ -424,6 +459,131 @@ async fn duplicate_completed_events_are_reemitted() {
     assert_eq!(chunks, doubled);
 }
 
+// A provider event carries its typed response, so status, output items and usage decide the terminal pair.
+#[tokio::test]
+async fn attribute_response_decides_the_terminal_pair() {
+    let completed = ResponsesEvent {
+        attributes: ProviderEvent {
+            response: Some(ProviderResponse {
+                output: vec![json(
+                    r#"{"type":"function_call","call_id":"call_a","name":"lookup","arguments":"{}"}"#,
+                )],
+                status: Some("incomplete".to_owned()),
+                usage: Some(usage_fixture()),
+                error: None,
+            }),
+            ..provider_event("response.completed")
+        },
+        ..ResponsesEvent::default()
+    };
+    let mut stream = stream(scripted_events(vec![completed]));
+    assert_eq!(next(&mut stream).await, message_start());
+    assert_eq!(
+        drain(&mut stream).await,
+        vec![
+            json(
+                r#"{"type":"message_delta","delta":{"stop_reason":"max_tokens","stop_sequence":null},"usage":{"input_tokens":7,"output_tokens":2,"cache_read_input_tokens":3}}"#
+            ),
+            json(MESSAGE_STOP),
+        ]
+    );
+    assert!(stream.state.snapshot().sent_message_stop.0);
+}
+
+// A provider event's item, id, delta and summary index attributes drive the blocks a mapping event would have driven.
+#[tokio::test]
+async fn attribute_events_carry_the_item_fields() {
+    let thinking = ResponsesEvent {
+        attributes: ProviderEvent {
+            item_id: Some(Json::Text("item_r".to_owned())),
+            delta: Some(Json::Text("why".to_owned())),
+            ..provider_event("response.reasoning_summary_text.delta")
+        },
+        ..ResponsesEvent::default()
+    };
+    let part = ResponsesEvent {
+        attributes: ProviderEvent {
+            item_id: Some(Json::Text("item_r".to_owned())),
+            summary_index: Some(Json::Number(Number::from(1_u8))),
+            ..provider_event("response.reasoning_summary_part.added")
+        },
+        ..ResponsesEvent::default()
+    };
+    let tool = ResponsesEvent {
+        attributes: ProviderEvent {
+            item: Some(json(
+                r#"{"type":"function_call","id":"item_tool","call_id":"call_a","name":"lookup"}"#,
+            )),
+            ..provider_event("response.output_item.added")
+        },
+        ..ResponsesEvent::default()
+    };
+    let arguments = ResponsesEvent {
+        attributes: ProviderEvent {
+            item_id: Some(Json::Text("item_tool".to_owned())),
+            delta: Some(Json::Text("1}".to_owned())),
+            ..provider_event("response.function_call_arguments.delta")
+        },
+        ..ResponsesEvent::default()
+    };
+    let events = vec![thinking, part, tool, arguments, event(COMPLETED)];
+    let mut stream = stream(scripted_events(events));
+    assert_eq!(next(&mut stream).await, message_start());
+    assert_eq!(
+        drain(&mut stream).await,
+        vec![
+            json(
+                r#"{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}}"#
+            ),
+            json(
+                r#"{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"why"}}"#
+            ),
+            json(
+                r#"{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"\n\n"}}"#
+            ),
+            json(TOOL_BLOCK_START),
+            json(ARGS_BLOCK_DELTA),
+            json(MESSAGE_DELTA),
+            json(MESSAGE_STOP),
+        ]
+    );
+}
+
+// A failed provider event carries its error by attribute, so its status and message reach the error chunk.
+#[tokio::test]
+async fn attribute_failed_events_carry_their_error() {
+    let (guard, captured) = capture();
+    let failed = ResponsesEvent {
+        attributes: ProviderEvent {
+            response: Some(ProviderResponse {
+                error: Some(ProviderError {
+                    message: Some(Json::Text("busy".to_owned())),
+                    error_type: Some(Json::Text("rate_limit_error".to_owned())),
+                    code: None,
+                }),
+                ..ProviderResponse::default()
+            }),
+            ..provider_event("response.failed")
+        },
+        ..ResponsesEvent::default()
+    };
+    let mut stream = stream(scripted_events(vec![failed]));
+    assert_eq!(next(&mut stream).await, message_start());
+    assert_eq!(
+        next(&mut stream).await,
+        json(r#"{"type":"error","error":{"type":"rate_limit_error","message":"busy"}}"#)
+    );
+    ended(&mut stream).await;
+    drop(guard);
+    assert_eq!(
+        lines(&captured),
+        vec![
+            "AnthropicResponsesStreamWrapper: upstream Responses stream for model_a failed (429): busy"
+                .to_owned(),
+        ]
+    );
+}
+
 // Text, tool arguments, the block stop and the terminal pair keep their order and block indexes.
 #[tokio::test]
 async fn block_indexes_survive_the_queue() {
@@ -479,7 +639,7 @@ async fn frames_escape_non_ascii() {
 // Dropping the wrapper releases the upstream it was given, which cancels the provider stream.
 #[tokio::test]
 async fn dropping_the_stream_drops_the_upstream() {
-    let mut source = scripted(&[]);
+    let source = scripted(&[]);
     let closed = Arc::clone(&source.closed);
     let mut stream = stream(source);
     assert_eq!(next(&mut stream).await, message_start());
