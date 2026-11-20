@@ -1,0 +1,22 @@
+task: B2489
+deviations:
+  - what: >-
+      A nonempty assistant_settings mapping without litellm_params fails the config load with a
+      missing-field error naming litellm_params, and a litellm_params key whose value is null is
+      reported the same way.
+    why: >-
+      LiteLLM's proxy startup reads assistant_settings["litellm_params"] and crashes with a
+      KeyError, or with an AttributeError when the key is null, before any router exists. A
+      configuration that can start in LiteLLM always carries the key, so betterlite reports the
+      same broken mapping as a typed config error instead of reproducing the crash.
+    litellm: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6932-L6941
+  - what: >-
+      A "client" key inside the assistant body's JSON is not forwarded to the installed wrapper;
+      the supplied client comes only from the typed AssistantRequest.client field.
+    why: >-
+      The JSON body's declared fields are the route's documented parameters, and client is not one
+      of them. LiteLLM passes **data through, so a body client key would bind the wrapper's client
+      argument; betterlite keeps the client argument out of the body's type domain, as
+      docs/compatibility.md allows for values outside the declared type.
+    litellm: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7175-L7191
+kept_bugs: []
