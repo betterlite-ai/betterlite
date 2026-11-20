@@ -92,6 +92,22 @@ async fn a_lookup_past_its_deadline_returns_none() {
     assert_eq!(reader.from_db("spend:key:k1").await, None);
 }
 
+#[tokio::test(start_paused = true)]
+async fn a_primary_read_waits_for_the_lookup_gate() {
+    let rows = Arc::new(FakeRows::with_rows(BTreeMap::from([(
+        "key:k1".to_owned(),
+        Some(decimal("2.5")),
+    )])));
+    let reader = reader_with(
+        Some(Arc::clone(&rows)),
+        Arc::new(FixedDurations),
+        services(0),
+        0.05,
+    );
+    assert_eq!(reader.from_db("spend:key:k1").await, None);
+    assert!(rows.calls().is_empty());
+}
+
 #[rstest]
 #[case::key("spend:key:k1:window:1h")]
 #[case::team("spend:team:t1:window:30d")]
@@ -183,6 +199,24 @@ async fn the_floor_reader_accepts_only_end_user_counters() {
     assert_eq!(
         rows.calls(),
         vec!["end_user:e1".to_owned(), "end_user:e1:window:1h".to_owned()]
+    );
+}
+
+#[tokio::test]
+async fn the_floor_reader_opens_no_lookup_gate() {
+    let rows = Arc::new(FakeRows::with_rows(BTreeMap::from([(
+        "end_user:e1".to_owned(),
+        Some(decimal("7.25")),
+    )])));
+    let reader = reader_with(
+        Some(Arc::clone(&rows)),
+        Arc::new(FixedDurations),
+        services(0),
+        0.05,
+    );
+    assert_eq!(
+        reader.end_user_from_db("spend:end_user:e1").await,
+        Some(decimal("7.25"))
     );
 }
 
