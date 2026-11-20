@@ -404,7 +404,7 @@ impl Logs {
             },
             &redactor,
             || String::from("generated"),
-            || Duration::default(),
+            Duration::default,
         )
         .expect("the logging state builds");
         Self {
