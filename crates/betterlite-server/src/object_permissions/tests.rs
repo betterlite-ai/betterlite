@@ -365,6 +365,27 @@ async fn update_pop_before_parse() {
     database.close().await;
 }
 
+#[tokio::test]
+async fn update_string_permission_fields() {
+    let database = TestDatabase::start().await;
+    let mut data = fields(
+        r#"{"team_id": "t", "object_permission": "{\"mcp_servers\": [\"srv-a\"], \"models\": [\"m\"]}"}"#,
+    );
+    let returned =
+        handle_update_object_permission_common(&mut data, None, Some(database.prisma()), &[])
+            .await
+            .unwrap();
+    let Some(id) = returned else {
+        panic!("a JSON string permission is decoded and stored");
+    };
+    let row = database.permission_row(&id).await.unwrap();
+    assert_eq!(row.get("mcp_servers"), Some(&json(r#"["srv-a"]"#)));
+    assert_eq!(row.get("models"), Some(&json(r#"["m"]"#)));
+    assert_eq!(data.get("team_id"), Some(&string("t")));
+    assert!(!data.contains_key("object_permission"));
+    database.close().await;
+}
+
 #[rstest]
 #[case::number("7")]
 #[case::boolean("true")]
