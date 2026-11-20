@@ -1,6 +1,6 @@
 task: B8560
 deviations:
-  - what: The compatible-callback factory, the prompt manager list and the global callback list are passed in through PromptHookDispatch instead of read from litellm globals; the manager list holds only the prompt-management loggers selection walks, and the vector store hook joins the callback list, where LiteLLM detects the duplicate by scanning litellm.callbacks.
+  - what: The compatible-callback factory, the prompt manager list, the vector store registry and the global callback list are passed in through PromptHookDispatch and the gate function instead of read from litellm globals; the manager list holds only the prompt-management loggers selection walks, and the vector store hook joins the callback list, where LiteLLM detects the duplicate by scanning litellm.callbacks.
     why: Constructor wiring; module-level state is banned, and the server supplies the registered callback order LiteLLM's callback manager keeps and owns the global list it runs itself.
     link: ""
   - what: When a vector store registry is configured but the factory has no vector_store_pre_call_hook, step 5 selects nothing and writes no prompt_integration stamp, where LiteLLM writes the class name of None, "NoneType", and returns None.
