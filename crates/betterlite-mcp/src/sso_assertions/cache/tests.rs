@@ -169,6 +169,20 @@ fn a_write_drops_every_expired_entry() {
 }
 
 #[rstest]
+fn a_write_at_the_expiry_drops_the_entry() {
+    let (cache, clock) = cache_with(Duration::from_secs(60), 8);
+    cache.set_if_unchanged("alice", &assertion("first-token"), 0);
+    clock.advance(Duration::from_secs(60));
+    cache.set_if_unchanged("bravo", &assertion("second-token"), cache.epoch());
+    assert_eq!(cache.state.lock().unwrap().entries.len(), 1);
+    assert!(cache.get("alice").is_none());
+    assert_eq!(
+        token_of(cache.get("bravo")).as_deref(),
+        Some("second-token")
+    );
+}
+
+#[rstest]
 fn a_full_cache_evicts_the_earliest_expiry() {
     let (cache, clock) = cache_with(Duration::from_secs(60), 2);
     cache.set_if_unchanged("alice", &assertion("first-token"), 0);
