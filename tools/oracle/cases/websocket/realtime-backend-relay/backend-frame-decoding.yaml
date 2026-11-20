@@ -1,0 +1,15 @@
+kind: helper
+name: backend-frame-decoding
+call:
+  realtime_backend_relay_websocket:
+    provider: null
+    frames:
+      - '{"type":"session.created","session":{"id":"s1"}}'
+      - '{"type":"conversation.item.added","item":{"id":"i"}}'
+      - not json
+      - '[]'
+    close:
+      code: 1008
+      reason: policy
+    pending: []
+    force_transcription_model: null

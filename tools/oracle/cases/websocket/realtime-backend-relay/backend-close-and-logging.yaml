@@ -1,0 +1,35 @@
+kind: helper
+name: backend-close-and-logging
+call:
+  realtime_backend_relay_websocket:
+    provider: null
+    frames: []
+    close:
+      code: 1008
+      reason: policy
+    pending: []
+    force_transcription_model: null
+calls:
+- realtime_backend_relay_websocket:
+    provider: null
+    frames: []
+    close:
+      code: 1000
+      reason: ''
+    pending: []
+    force_transcription_model: null
+- realtime_backend_relay_websocket:
+    provider: null
+    frames:
+      - not json
+    close:
+      code: 1008
+      reason: policy
+    pending: []
+    force_transcription_model: null
+- realtime_backend_relay_websocket:
+    provider: null
+    frames: []
+    close: null
+    pending: []
+    force_transcription_model: null

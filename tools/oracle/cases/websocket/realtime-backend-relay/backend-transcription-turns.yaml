@@ -1,0 +1,12 @@
+kind: helper
+name: backend-transcription-turns
+call:
+  realtime_backend_relay_websocket:
+    provider: null
+    frames:
+      - '{"type":"conversation.item.input_audio_transcription.completed","transcript":"hello","item_id":"i","usage":{"type":"duration","seconds":1}}'
+    close:
+      code: 1000
+      reason: ''
+    pending: []
+    force_transcription_model: null
