@@ -42,45 +42,46 @@ pub trait ContainerHandler: Send + Sync {
     -> impl Future<Output = DeleteResult> + Send;
 }
 
+// B3365 answers the finished record or a future for it; the blocking form keeps only the finished record
+macro_rules! blocking_endpoint {
+    ($($method:ident, $handler:ident, $reply:ty;)+) => { $(
+        fn $method(&self, call: &ContainerHandlerCall<'_>) -> $reply {
+            match Self::$handler(self, &http_call::<Source>(call), false) {
+                Ok(Handled::Done(answer)) => Ok(answer),
+                Ok(Handled::Pending(_)) => Err(ContainerResourceHttpError::Call(
+                    ContainerFileHttpError::Suspended,
+                )),
+                Err(error) => Err(error),
+            }
+        }
+    )+ };
+}
+
+macro_rules! asynchronous_endpoint {
+    ($($method:ident, $handler:ident, $reply:ty;)+) => { $(
+        fn $method(
+            &self,
+            call: &ContainerHandlerCall<'_>,
+        ) -> impl Future<Output = $reply> + Send {
+            let request = http_call::<Source>(call);
+            async move { Self::$handler(self, &request).await }
+        }
+    )+ };
+}
+
 impl<Source, Hook> ContainerHandler for ContainerResourceHandler<Source, Hook>
 where
     Source: ClientSource,
     Hook: PreCallHook,
 {
-    fn retrieve(&self, call: &ContainerHandlerCall<'_>) -> RetrieveResult {
-        match Self::container_retrieve_handler(self, &http_call::<Source>(call), false) {
-            Ok(Handled::Done(object)) => Ok(object),
-            Ok(Handled::Pending(_)) => Err(ContainerResourceHttpError::Call(
-                ContainerFileHttpError::Suspended,
-            )),
-            Err(error) => Err(error),
-        }
+    blocking_endpoint! {
+        retrieve, container_retrieve_handler, RetrieveResult;
+        delete, container_delete_handler, DeleteResult;
     }
 
-    fn delete(&self, call: &ContainerHandlerCall<'_>) -> DeleteResult {
-        match Self::container_delete_handler(self, &http_call::<Source>(call), false) {
-            Ok(Handled::Done(deleted)) => Ok(deleted),
-            Ok(Handled::Pending(_)) => Err(ContainerResourceHttpError::Call(
-                ContainerFileHttpError::Suspended,
-            )),
-            Err(error) => Err(error),
-        }
-    }
-
-    fn aretrieve(
-        &self,
-        call: &ContainerHandlerCall<'_>,
-    ) -> impl Future<Output = RetrieveResult> + Send {
-        let request = http_call::<Source>(call);
-        async move { Self::acontainer_retrieve_handler(self, &request).await }
-    }
-
-    fn adelete(
-        &self,
-        call: &ContainerHandlerCall<'_>,
-    ) -> impl Future<Output = DeleteResult> + Send {
-        let request = http_call::<Source>(call);
-        async move { Self::acontainer_delete_handler(self, &request).await }
+    asynchronous_endpoint! {
+        aretrieve, acontainer_retrieve_handler, RetrieveResult;
+        adelete, acontainer_delete_handler, DeleteResult;
     }
 }
 

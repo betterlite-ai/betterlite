@@ -1,33 +1,24 @@
 use betterlite_models::decisions::Json;
-use betterlite_openai::api::container_contracts::records::{
-    ContainerObject, DeleteContainerResult,
-};
 use serde::de::DeserializeOwned;
 
 use super::error::ContainerOpError;
 
 // the two model names LiteLLM's mock path builds, and the error names the one that did not decode
-const RETRIEVE_TYPE: &str = "ContainerObject";
-const DELETE_TYPE: &str = "DeleteContainerResult";
+pub(crate) const RETRIEVE_TYPE: &str = "ContainerObject";
+pub(crate) const DELETE_TYPE: &str = "DeleteContainerResult";
 
-// LiteLLM's mock short circuit: a string is JSON-decoded first, then ContainerObject(**mock_response)
-pub(crate) fn mock_retrieve(
+// LiteLLM's mock short circuit: a string is JSON-decoded first, then the record is built from the body
+pub(crate) fn mock_reply<T>(
     mock: Option<&Json>,
-) -> Result<Option<ContainerObject>, ContainerOpError> {
+    response_type: &str,
+) -> Result<Option<T>, ContainerOpError>
+where
+    T: DeserializeOwned,
+{
     let Some(body) = mock_body(mock)? else {
         return Ok(None);
     };
-    decode(&body, RETRIEVE_TYPE).map(Some)
-}
-
-// adelete_container and delete_container build DeleteContainerResult from the same mock body
-pub(crate) fn mock_delete(
-    mock: Option<&Json>,
-) -> Result<Option<DeleteContainerResult>, ContainerOpError> {
-    let Some(body) = mock_body(mock)? else {
-        return Ok(None);
-    };
-    decode(&body, DELETE_TYPE).map(Some)
+    decode(&body, response_type).map(Some)
 }
 
 // kwargs.get("mock_response") is None for an absent key and for an explicit null, and both skip the mock

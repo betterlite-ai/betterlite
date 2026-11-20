@@ -1,5 +1,6 @@
 pub mod error;
 pub mod handler;
+mod kind;
 mod mock;
 mod prepare;
 
@@ -20,12 +21,9 @@ use secrecy::SecretString;
 
 use self::error::{ContainerOpError, ContainerOpFailure, failure};
 use self::handler::ContainerHandler;
-use self::mock::{mock_delete, mock_retrieve};
-use self::prepare::caller_provider;
+use self::kind::{Delete, Kind, Retrieve};
+use self::prepare::{DEFAULT_PROVIDER, Prepared};
 use crate::api::container_file_endpoints::handler::{ContainerConfigLookup, ContainerIdDecoder};
-
-const RETRIEVE_CALL_TYPE: &str = "retrieve_container";
-const DELETE_CALL_TYPE: &str = "delete_container";
 
 // the named arguments retrieve_container and delete_container take, which LiteLLM declares once and shares
 pub struct ContainerOperationRequest<'request> {
@@ -57,98 +55,87 @@ pub struct ContainerOperations<'deps, Handler, Decoder, Configs> {
     pub request_timeout_seconds: f64,
 }
 
+// the mock answer, or the prepared call the handler still has to make
+enum Begin<'deps, Reply> {
+    Mock(Reply),
+    Call(Prepared<'deps>),
+}
+
+// LiteLLM spells the blocking and async form of each operation out twice; one body pair serves both
+macro_rules! operations {
+    ($($sync:ident, $asynchronous:ident, $kind:ident, $reply:ty;)+) => { $(
+        // LiteLLM's operation: the mock short circuit, then the blocking handler and the id re-encoding
+        pub fn $sync(
+            &self,
+            request: &ContainerOperationRequest<'_>,
+        ) -> Result<$reply, ContainerOpFailure> {
+            let prepared = match self.begin::<$kind>(request)? {
+                Begin::Mock(reply) => return Ok(reply),
+                Begin::Call(prepared) => prepared,
+            };
+            let call = prepared.handler_call(request, self.logging);
+            let mut reply = $kind::call(self.handler, &call).map_err(|error| {
+                failure(
+                    ContainerOpError::Handler(error),
+                    &prepared.provider,
+                    self.redactor,
+                )
+            })?;
+            let id = prepared.encoded_id($kind::id(&reply), request, self.redactor)?;
+            $kind::replace_id(&mut reply, id);
+            Ok(reply)
+        }
+
+        // the async form awaits B3365's async handler and keeps the provider's own id instead of re-encoding
+        pub async fn $asynchronous(
+            &self,
+            request: &ContainerOperationRequest<'_>,
+        ) -> Result<$reply, ContainerOpFailure> {
+            let prepared = match self.begin::<$kind>(request)? {
+                Begin::Mock(reply) => return Ok(reply),
+                Begin::Call(prepared) => prepared,
+            };
+            let call = prepared.handler_call(request, self.logging);
+            $kind::call_async(self.handler, &call)
+                .await
+                .map_err(|error| {
+                    failure(
+                        ContainerOpError::Handler(error),
+                        request.custom_llm_provider.unwrap_or(DEFAULT_PROVIDER),
+                        self.redactor,
+                    )
+                })
+        }
+    )+ };
+}
+
 impl<'deps, Handler, Decoder, Configs> ContainerOperations<'deps, Handler, Decoder, Configs>
 where
     Handler: ContainerHandler,
     Decoder: ContainerIdDecoder,
     Configs: ContainerConfigLookup,
 {
-    // LiteLLM's retrieve_container: the mock short circuit, then the blocking handler and the id re-encoding
-    pub fn retrieve_container(
+    // LiteLLM checks the mock first: only a real call decodes the id, looks up the config and updates the logging
+    fn begin<Operation: Kind<Handler>>(
         &self,
         request: &ContainerOperationRequest<'_>,
-    ) -> Result<ContainerObject, ContainerOpFailure> {
-        if let Some(object) = mock_retrieve(request.mock_response)
-            .map_err(|error| failure(error, caller_provider(request), self.redactor))?
-        {
-            return Ok(object);
-        }
-        let prepared = self.prepare(request, RETRIEVE_CALL_TYPE)?;
-        let call = prepared.handler_call(request, self.logging);
-        let mut object = self.handler.retrieve(&call).map_err(|error| {
+    ) -> Result<Begin<'deps, Operation::Reply>, ContainerOpFailure> {
+        if let Some(reply) = Operation::mock(request.mock_response).map_err(|error| {
             failure(
-                ContainerOpError::Handler(error),
-                &prepared.provider,
+                error,
+                request.custom_llm_provider.unwrap_or(DEFAULT_PROVIDER),
                 self.redactor,
             )
-        })?;
-        object.id = prepared.encoded_id(&object.id, request, self.redactor)?;
-        Ok(object)
+        })? {
+            return Ok(Begin::Mock(reply));
+        }
+        let prepared = self.prepare(request, Operation::CALL_TYPE)?;
+        Ok(Begin::Call(prepared))
     }
 
-    // LiteLLM's delete_container, with the same steps and the DeleteContainerResult mock
-    pub fn delete_container(
-        &self,
-        request: &ContainerOperationRequest<'_>,
-    ) -> Result<DeleteContainerResult, ContainerOpFailure> {
-        if let Some(deleted) = mock_delete(request.mock_response)
-            .map_err(|error| failure(error, caller_provider(request), self.redactor))?
-        {
-            return Ok(deleted);
-        }
-        let prepared = self.prepare(request, DELETE_CALL_TYPE)?;
-        let call = prepared.handler_call(request, self.logging);
-        let mut deleted = self.handler.delete(&call).map_err(|error| {
-            failure(
-                ContainerOpError::Handler(error),
-                &prepared.provider,
-                self.redactor,
-            )
-        })?;
-        deleted.id = prepared.encoded_id(&deleted.id, request, self.redactor)?;
-        Ok(deleted)
-    }
-
-    // LiteLLM's aretrieve_container: the async flag on, the awaited handler, and the raw provider id back
-    pub async fn aretrieve_container(
-        &self,
-        request: &ContainerOperationRequest<'_>,
-    ) -> Result<ContainerObject, ContainerOpFailure> {
-        if let Some(object) = mock_retrieve(request.mock_response)
-            .map_err(|error| failure(error, caller_provider(request), self.redactor))?
-        {
-            return Ok(object);
-        }
-        let prepared = self.prepare(request, RETRIEVE_CALL_TYPE)?;
-        let call = prepared.handler_call(request, self.logging);
-        self.handler.aretrieve(&call).await.map_err(|error| {
-            failure(
-                ContainerOpError::Handler(error),
-                caller_provider(request),
-                self.redactor,
-            )
-        })
-    }
-
-    // LiteLLM's adelete_container, which keeps the id the provider sent
-    pub async fn adelete_container(
-        &self,
-        request: &ContainerOperationRequest<'_>,
-    ) -> Result<DeleteContainerResult, ContainerOpFailure> {
-        if let Some(deleted) = mock_delete(request.mock_response)
-            .map_err(|error| failure(error, caller_provider(request), self.redactor))?
-        {
-            return Ok(deleted);
-        }
-        let prepared = self.prepare(request, DELETE_CALL_TYPE)?;
-        let call = prepared.handler_call(request, self.logging);
-        self.handler.adelete(&call).await.map_err(|error| {
-            failure(
-                ContainerOpError::Handler(error),
-                caller_provider(request),
-                self.redactor,
-            )
-        })
+    operations! {
+        retrieve_container, aretrieve_container, Retrieve, ContainerObject;
+        delete_container, adelete_container, Delete, DeleteContainerResult;
     }
 }
 

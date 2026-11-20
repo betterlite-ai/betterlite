@@ -24,12 +24,8 @@ use crate::containers::container_request_parameters::encode_container_id_in_resp
 
 // the declared default for the timeout argument, before `timeout or DEFAULT_REQUEST_TIMEOUT`
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
-const DEFAULT_PROVIDER: &str = "openai";
-
-// the caller's named arguments after their declared default: the openai provider
-pub(crate) fn caller_provider(request: &ContainerOperationRequest<'_>) -> &str {
-    request.custom_llm_provider.unwrap_or(DEFAULT_PROVIDER)
-}
+// the declared default for custom_llm_provider, shared with the mock error path in the module root
+pub(crate) const DEFAULT_PROVIDER: &str = "openai";
 
 pub(crate) struct Prepared<'deps> {
     pub(crate) container_id: String,
@@ -96,7 +92,7 @@ where
         request: &ContainerOperationRequest<'_>,
         call_type: &str,
     ) -> Result<Prepared<'deps>, ContainerOpFailure> {
-        let caller = caller_provider(request);
+        let caller = request.custom_llm_provider.unwrap_or(DEFAULT_PROVIDER);
         let params = call_params(request)
             .map_err(|error| failure(ContainerOpError::Params(error), caller, self.redactor))?;
         let decoded = self
