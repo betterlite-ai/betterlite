@@ -154,7 +154,7 @@ fn text_parts(fields: Vec<(String, String)>) -> Vec<MultipartPart> {
         .collect()
 }
 
-fn text_part(name: String, text: String) -> MultipartPart {
+const fn text_part(name: String, text: String) -> MultipartPart {
     MultipartPart {
         name,
         file_name: None,

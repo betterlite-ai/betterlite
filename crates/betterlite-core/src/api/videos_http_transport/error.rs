@@ -1,4 +1,3 @@
-use std::error::Error as StdError;
 use std::time::Duration;
 
 use betterlite_http::proxy::transport_error::TransportError;
@@ -33,8 +32,9 @@ pub(crate) enum SendFailure {
     },
 }
 
+// thiserror puts ConfigError's error bound on each generated impl, so naming it in the declaration duplicates it
 #[derive(Debug, Error)]
-pub enum VideoTransportError<ConfigError: StdError> {
+pub enum VideoTransportError<ConfigError> {
     #[error("{}", .0.message)]
     Provider(Box<ProviderError>),
     #[error(transparent)]
@@ -94,10 +94,10 @@ pub(crate) fn elapsed_text(elapsed: Duration) -> String {
 
 // Python writes a whole second as 600.0, and Rust writes the same Duration as 600
 fn format_timeout(timeout: Option<Duration>) -> String {
-    match timeout {
-        None => "None".to_owned(),
-        Some(value) => value.as_secs_f64().to_string(),
-    }
+    timeout.map_or_else(
+        || "None".to_owned(),
+        |value| value.as_secs_f64().to_string(),
+    )
 }
 
 // _handle_error: a status keeps its code and headers, a timeout keeps 408, and anything else becomes a synthesized 500
