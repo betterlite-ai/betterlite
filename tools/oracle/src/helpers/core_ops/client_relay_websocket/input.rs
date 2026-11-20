@@ -43,7 +43,7 @@ pub(crate) struct SetupDocument {
 pub(crate) enum DirectionWait {
     None,
     Cancel,
-    Notify,
+    Signal,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]

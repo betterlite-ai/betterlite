@@ -13,15 +13,24 @@ pub(crate) enum ScriptedFailure {
     Backend,
 }
 
+#[derive(Clone, Copy)]
+enum Side {
+    Client,
+    Backend,
+}
+
 // Both directions LiteLLM spawns share one script: signal, wait for cancellation, or finish at once
 async fn wait_for_turn(
-    label: &str,
-    wait: DirectionWait,
-    signals: bool,
+    side: Side,
+    lifetime: &LifetimeDocument,
     timeline: &Frames,
     cancellation: &CancellationToken,
     notification: &Notify,
 ) -> bool {
+    let (wait, signals, label) = match side {
+        Side::Client => (lifetime.client_wait, lifetime.client_signals, "client"),
+        Side::Backend => (lifetime.backend_wait, lifetime.backend_signals, "backend"),
+    };
     if wait == DirectionWait::Cancel {
         cancellation.cancelled().await;
         timeline.locked().push(format!("{label}-cancel"));
@@ -45,19 +54,17 @@ pub(crate) async fn run_client_direction(
     notification: Arc<Notify>,
     lifetime: &LifetimeDocument,
 ) -> ClientLoopExit {
-    if wait_for_turn(
-        "client",
-        lifetime.client_wait,
-        lifetime.client_signals,
+    if !wait_for_turn(
+        Side::Client,
+        lifetime,
         &timeline,
         &cancellation,
         &notification,
     )
     .await
     {
-        return client_exit(lifetime.client_outcome);
+        timeline.locked().push(String::from("client-finish"));
     }
-    timeline.locked().push(String::from("client-finish"));
     client_exit(lifetime.client_outcome)
 }
 
@@ -69,27 +76,22 @@ pub(crate) async fn run_backend_direction(
     lifetime: &LifetimeDocument,
     close: BackendClose,
 ) -> Result<BackendClose, ScriptedFailure> {
-    if wait_for_turn(
-        "backend",
-        lifetime.backend_wait,
-        lifetime.backend_signals,
+    let cancelled = wait_for_turn(
+        Side::Backend,
+        lifetime,
         &timeline,
         &cancellation,
         &notification,
     )
-    .await
-    {
-        return match lifetime.backend_outcome {
-            BackendOutcome::Close => Ok(close),
-            BackendOutcome::Error => Err(ScriptedFailure::Backend),
-        };
-    }
-    match lifetime.backend_outcome {
-        BackendOutcome::Close => {
+    .await;
+    match (cancelled, lifetime.backend_outcome) {
+        (true, BackendOutcome::Close) => Ok(close),
+        (true, BackendOutcome::Error) => Err(ScriptedFailure::Backend),
+        (false, BackendOutcome::Close) => {
             timeline.locked().push(String::from("backend-finish"));
             Ok(close)
         }
-        BackendOutcome::Error => {
+        (false, BackendOutcome::Error) => {
             timeline.locked().push(String::from("backend-error"));
             Err(ScriptedFailure::Backend)
         }

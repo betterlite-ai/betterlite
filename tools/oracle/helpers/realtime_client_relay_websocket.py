@@ -5,7 +5,6 @@ from typing import Literal, Self, TypedDict
 
 import litellm
 from litellm.integrations.custom_guardrail import CustomGuardrail
-from litellm.integrations.custom_logger import CustomLogger
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.litellm_core_utils.realtime_streaming import (
     BackendClose,
@@ -18,51 +17,44 @@ from litellm.types.utils import GenericGuardrailAPIInputs
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from typing_extensions import override
 
+Wait = Literal["none", "cancel", "signal"]
+CloseDocument = TypedDict("CloseDocument", {"code": int, "reason": str})
+GuardrailDocument = TypedDict("GuardrailDocument", {"hooks": list[str], "block_on": str | None})
+SetupDocument = TypedDict(
+    "SetupDocument",
+    {
+        "pending": list[str], "backend_setup_complete": bool | None,
+        "flushing": bool, "turn_detection_sent": bool,
+        "pending_guardrail_message": str | None, "session_configuration_request": str | None,
+    },
+)
+LifetimeDocument = TypedDict(
+    "LifetimeDocument",
+    {
+        "client_wait": Wait, "client_signals": bool,
+        "client_outcome": Literal["client_disconnected", "backend_closed"],
+        "backend_wait": Wait, "backend_signals": bool,
+        "backend_outcome": Literal["close", "error"],
+    },
+)
+Input = TypedDict(
+    "Input",
+    {
+        "mode": Literal["ack", "lifetime"], "messages": list[str], "setup": SetupDocument,
+        "guardrails": list[GuardrailDocument], "beta_backend": bool,
+        "close": CloseDocument | None, "lifetime": LifetimeDocument | None,
+        "client_send_failures": list[int], "client_close_failures": list[int],
+    },
+)
+
 WIRE: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 MAX_FRAMES, MAX_TEXT_BYTES, MAX_TOTAL_BYTES = 32, 16 * 1024, 256 * 1024
 
 
-class CloseDocument(TypedDict):
-    code: int
-    reason: str
-
-
-class GuardrailDocument(TypedDict):
-    hooks: list[str]
-    block_on: str | None
-
-
-class SetupDocument(TypedDict):
-    pending: list[str]
-    backend_setup_complete: bool | None
-    flushing: bool
-    turn_detection_sent: bool
-    pending_guardrail_message: str | None
-    session_configuration_request: str | None
-
-
-class LifetimeDocument(TypedDict):
-    client_wait: Literal["none", "cancel", "signal"]
-    client_signals: bool
-    client_outcome: Literal["client_disconnected", "backend_closed"]
-    backend_wait: Literal["none", "cancel", "signal"]
-    backend_signals: bool
-    backend_outcome: Literal["close", "error"]
-
-
-class Input(TypedDict):
-    mode: Literal["ack", "lifetime"]
-    messages: list[str]
-    setup: SetupDocument
-    guardrails: list[GuardrailDocument]
-    beta_backend: bool
-    close: CloseDocument | None
-    lifetime: LifetimeDocument | None
-    client_send_failures: list[int]
-    client_close_failures: list[int]
-
-
 class ScriptedError(Exception): ...
+
+
+class _RelayMeta(type): ...
 
 
 def recorded(text: str) -> JsonValue:
@@ -77,8 +69,7 @@ class ScriptedClient:
         self.incoming: list[str] = list(input_value["messages"])
         self.sent: list[str] = []
         self.closes: list[JsonValue] = []
-        self.attempts = 0
-        self.close_attempts = 0
+        self.attempts = self.close_attempts = 0
         self.failures = list(input_value["client_send_failures"])
         self.close_failures = list(input_value["client_close_failures"])
 
@@ -92,19 +83,16 @@ class ScriptedClient:
         return self.incoming.pop(0)
 
     async def send_text(self, data: str) -> None:
-        attempt = self.attempts
         self.attempts += 1
-        if attempt in self.failures:
-            raise ScriptedError(f"the scripted client send {attempt} failed")
+        if self.attempts - 1 in self.failures:
+            raise ScriptedError(f"the scripted client send {self.attempts - 1} failed")
         self.sent.append(data)
 
     async def close(self, code: int = 1000, reason: str | None = None) -> None:
-        attempt = self.close_attempts
         self.close_attempts += 1
-        record: JsonValue = [code, reason]
-        self.closes.append(record)
-        if attempt in self.close_failures:
-            raise ScriptedError(f"the scripted client close {attempt} failed")
+        self.closes.append(WIRE.validate_python([code, reason]))
+        if self.close_attempts - 1 in self.close_failures:
+            raise ScriptedError(f"the scripted client close {self.close_attempts - 1} failed")
 
 
 class ScriptedBackend(RealtimeBackend):
@@ -117,8 +105,7 @@ class ScriptedBackend(RealtimeBackend):
 
     @override
     async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None, exc_value: BaseException | None,
+        self, exc_type: type[BaseException] | None, exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None: ...
 
@@ -138,9 +125,9 @@ class ScriptedBackend(RealtimeBackend):
     async def close(self) -> None: ...
 
 
-class ScriptedGuardrail(CustomGuardrail):  # type: ignore[misc]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L190
+class ScriptedGuardrail(CustomGuardrail, metaclass=_RelayMeta):
     def __init__(self, document: GuardrailDocument, applied: list[JsonValue]) -> None:
-        super().__init__(  # pyright: ignore[reportUnknownMemberType]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L190
+        super().__init__(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L190
             guardrail_name="scripted",
             event_hook=[GuardrailEventHooks(name) for name in document["hooks"]],
             default_on=True,
@@ -150,24 +137,27 @@ class ScriptedGuardrail(CustomGuardrail):  # type: ignore[misc]  # noqa: E501  #
         self.applied = applied
 
     @override
-    def should_run_guardrail(self, data: dict[str, JsonValue], event_type: GuardrailEventHooks) -> bool:
+    def should_run_guardrail(
+        self, data: dict[str, JsonValue], event_type: GuardrailEventHooks,
+    ) -> bool:
         del data
         return event_type.value in self.hooks
 
     @override
     async def apply_guardrail(
-        self,
-        inputs: GenericGuardrailAPIInputs,
-        request_data: dict[str, JsonValue],
+        self, inputs: GenericGuardrailAPIInputs, request_data: dict[str, JsonValue],
         input_type: Literal["request", "response"], logging_obj: Logging | None = None,
     ) -> GenericGuardrailAPIInputs:
         del request_data, input_type, logging_obj
-        texts = inputs.get("texts")  # type: ignore[misc]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4536
+        return self.check(inputs)
+
+    def check(self, inputs: GenericGuardrailAPIInputs) -> GenericGuardrailAPIInputs:
+        texts = inputs.get("texts")  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4536
         checked: list[str] = [] if texts is None else texts
         self.applied.append(WIRE.validate_python(checked))
         if self.block_on is not None and checked[:1] == [self.block_on]:
             raise ValueError("blocked")
-        return {"texts": checked}  # type: ignore[misc]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4536
+        return {"texts": checked}  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4536
 
 
 class Probe(RealTimeStreaming):
@@ -176,22 +166,19 @@ class Probe(RealTimeStreaming):
         self.backend = ScriptedBackend()
         self.applied: list[JsonValue] = []
         self.timeline: list[JsonValue] = []
-        super().__init__(  # pyright: ignore[reportUnknownMemberType]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L127
+        super().__init__(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L127
             websocket=self.client,
             backend_ws=self.backend,
             logging_obj=Logging(
-                model="scripted", messages=[],  # type: ignore[misc]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L576
+                model="scripted", messages=[],  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L576
                 stream=False,
                 call_type="realtime",
                 start_time=dt.datetime.now(tz=dt.UTC),
                 litellm_call_id="scripted",
                 function_id="scripted",
             ),
-            provider_config=None,
             model="scripted",
-            request_data={},  # type: ignore[misc]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L127
             backend_uses_beta_protocol=input_value["beta_backend"],
-            event_normalizer=None,
         )
         setup = input_value["setup"]
         if setup["backend_setup_complete"] is not None:
@@ -200,11 +187,12 @@ class Probe(RealTimeStreaming):
         self._guardrail_turn_detection_update_sent = setup["turn_detection_sent"]
         self._pending_guardrail_message = setup["pending_guardrail_message"]
         self.session_configuration_request = setup["session_configuration_request"]
-        self._pending_messages_until_setup = list(setup["pending"])
-        self._pending_messages_byte_total = sum(len(message.encode("utf-8")) for message in setup["pending"])
+        pending = setup["pending"]
+        self._pending_messages_until_setup = list(pending)
+        self._pending_messages_byte_total = sum(len(text.encode("utf-8")) for text in pending)
 
     def snapshot(self, mode: str, exit_name: str | None, result: JsonValue) -> JsonValue:
-        document: dict[str, JsonValue] = {
+        return WIRE.validate_python({
             "mode": mode,
             "exit": exit_name,
             "result": result,
@@ -220,8 +208,7 @@ class Probe(RealTimeStreaming):
                 "flushing": self._flushing_pending_messages_until_setup,
                 "pending_guardrail": self._pending_guardrail_message,
             },
-        }
-        return WIRE.validate_python(document)
+        })
 
 
 class LifetimeProbe(Probe):
@@ -232,10 +219,9 @@ class LifetimeProbe(Probe):
             raise ScriptedError("a lifetime run needs both a lifetime script and a close document")
         self.lifetime = lifetime
         self.close_document = close
-        self.cancellation = asyncio.Event()
-        self.signal = asyncio.Event()
+        self.cancellation, self.signal = asyncio.Event(), asyncio.Event()
 
-    async def wait_for_turn(self, wait: Literal["none", "cancel", "signal"], signals: bool, label: str) -> None:
+    async def wait_for_turn(self, wait: Wait, label: str, *, signals: bool) -> None:
         if wait == "cancel":
             try:
                 await self.cancellation.wait()
@@ -251,15 +237,22 @@ class LifetimeProbe(Probe):
 
     @override
     async def client_ack_messages(self) -> ClientLoopExit:
-        await self.wait_for_turn(self.lifetime["client_wait"], self.lifetime["client_signals"], "client")
+        wait = self.lifetime["client_wait"]
+        await self.wait_for_turn(wait, "client", signals=self.lifetime["client_signals"])
         self.timeline.append("client-finish")
         if self.lifetime["client_outcome"] == "client_disconnected":
             return ClientLoopExit.CLIENT_DISCONNECTED
         return ClientLoopExit.BACKEND_CLOSED
 
     @override
-    async def backend_to_client_send_messages(self) -> BackendClose:  # ast-grep-ignore: no-long-names
-        await self.wait_for_turn(self.lifetime["backend_wait"], self.lifetime["backend_signals"], "backend")
+    async def backend_to_client_send_messages(  # ast-grep-ignore: no-long-names
+        self,
+    ) -> BackendClose:
+        wait = self.lifetime["backend_wait"]
+        await self.wait_for_turn(wait, "backend", signals=self.lifetime["backend_signals"])
+        return self.backend_close()
+
+    def backend_close(self) -> BackendClose:
         if self.lifetime["backend_outcome"] == "error":
             self.timeline.append("backend-error")
             raise ScriptedError("the scripted backend direction failed")
@@ -269,8 +262,10 @@ class LifetimeProbe(Probe):
 
 async def session(input_value: Input) -> JsonValue:
     probe = LifetimeProbe(input_value) if input_value["mode"] == "lifetime" else Probe(input_value)
-    previous = litellm.callbacks  # type: ignore[misc]  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L181
-    litellm.callbacks = [ScriptedGuardrail(document, probe.applied) for document in input_value["guardrails"]]  # type: ignore[assignment]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L181
+    previous = litellm.callbacks  # type: ignore[misc]  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L181
+    litellm.callbacks = [
+        ScriptedGuardrail(document, probe.applied) for document in input_value["guardrails"]
+    ]
     try:
         if input_value["mode"] == "lifetime":
             try:
@@ -279,7 +274,11 @@ async def session(input_value: Input) -> JsonValue:
             except ScriptedError:
                 return probe.snapshot("lifetime", None, {"error": "backend"})
         exit_value = await probe.client_ack_messages()
-        exit_name = "client_disconnected" if exit_value is ClientLoopExit.CLIENT_DISCONNECTED else "backend_closed"
+        exit_name = (
+            "client_disconnected"
+            if exit_value is ClientLoopExit.CLIENT_DISCONNECTED
+            else "backend_closed"
+        )
         return probe.snapshot("ack", exit_name, None)
     finally:
         litellm.callbacks = previous
@@ -294,6 +293,7 @@ def run(input_value: Input) -> JsonValue:
         or sum(sizes) > MAX_TOTAL_BYTES
     ):
         raise ValueError("the scripted client relay input is past its limits")
-    if input_value["mode"] == "lifetime" and (input_value["lifetime"] is None or input_value["close"] is None):
+    lifetime, close = input_value["lifetime"], input_value["close"]
+    if input_value["mode"] == "lifetime" and (lifetime is None or close is None):
         raise ValueError("a lifetime run needs both a lifetime script and a close document")
     return asyncio.run(asyncio.wait_for(session(input_value), 120.0))
