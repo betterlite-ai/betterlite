@@ -37,11 +37,13 @@ sha1 = "0.11.0"
 sha2.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["time"] }
+tokio-util = { version = "0.7.20", default-features = false, features = ["rt"] }
 tracing.workspace = true
 url = "2.5.8"
 uuid.workspace = true
 
 [dev-dependencies]
+async-trait = "0.1.92"
 futures-util = { version = "0.3.34", default-features = false, features = ["std"] }
 rstest = "=0.27.0"
 tokio = { workspace = true, features = ["test-util"] }
