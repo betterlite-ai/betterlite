@@ -178,7 +178,7 @@ async fn an_async_unary_call_sends_the_authenticated_request() {
     let mut fixture = Fixture::new("agenerate_content");
 
     let outcome = fixture
-        .async_call(&deps, &target, &events)
+        .async_call(events.clone(), &deps, &target)
         .await
         .expect("the call succeeds");
 
@@ -427,7 +427,7 @@ async fn an_async_stream_returns_the_iterator_and_its_metadata_before_the_first_
     let mut fixture = Fixture::new("agenerate_content");
 
     let outcome = fixture
-        .async_call(&deps, &target, &events)
+        .async_call(events.clone(), &deps, &target)
         .await
         .expect("the stream starts");
 
@@ -487,7 +487,7 @@ async fn an_async_stream_over_a_buffered_reply_still_yields_its_events() {
     let mut fixture = Fixture::new("agenerate_content");
 
     let outcome = fixture
-        .async_call(&deps, &target, &events)
+        .async_call(events.clone(), &deps, &target)
         .await
         .expect("the stream starts");
 
@@ -595,7 +595,7 @@ async fn a_supplied_client_of_the_other_mode_is_ignored() {
     let mut fixture = Fixture::new("agenerate_content");
 
     fixture
-        .async_call(&deps, &target, &events)
+        .async_call(events.clone(), &deps, &target)
         .await
         .expect("the call succeeds");
 
@@ -823,7 +823,7 @@ async fn an_async_timeout_carries_408_and_the_client_timeout() {
     let target = call(&contents, &generation, &params, false, None);
     let mut fixture = Fixture::new("agenerate_content");
 
-    let outcome = fixture.async_call(&deps, &target, &Events::new()).await;
+    let outcome = fixture.async_call(Events::new(), &deps, &target).await;
 
     let Err(GenAiHttpError::Provider(error)) = outcome else {
         panic!("a timeout is a provider error");

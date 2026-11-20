@@ -1,15 +1,10 @@
-use std::future::ready;
-use std::sync::Arc;
-
-use betterlite_http::error::HttpError;
 use betterlite_logging::logging_service_events::clock::SystemClock;
 use betterlite_logging::logging_success::ports::SuccessClock;
 use betterlite_models::call_helpers::headers::{HeaderSource, process_response_headers};
 use betterlite_models::decisions::{HiddenParams, Json as DecisionJson};
 use betterlite_prompts::arguments::json::{Json, Object};
-use futures_util::StreamExt as _;
-use futures_util::stream::{self, BoxStream};
 use indexmap::IndexMap;
+use std::sync::Arc;
 
 use crate::api::vector_store_http_write::error::header_text;
 use crate::genai_setup::params::GenerateContentLiteLLMParams;
@@ -19,8 +14,7 @@ use crate::google_genai::provider::GenAiProvider;
 
 const DEFAULT_LINE_LIMIT: usize = 0x0010_0000;
 
-// The pieces an async iterator's EOF logging takes: the injected clock, the pass-through logging wiring and the
-// per-line size bound B3487 enforces.
+// The pieces an async iterator's EOF logging takes: the injected clock, the logging wiring and the per-line bound.
 pub struct StreamSettings {
     pub line_limit: usize,
     pub clock: Arc<dyn SuccessClock>,
@@ -99,11 +93,6 @@ pub(super) fn header_index(headers: &http::HeaderMap) -> IndexMap<String, String
         .iter()
         .map(|(name, value)| (name.as_str().to_owned(), header_text(value)))
         .collect()
-}
-
-// A buffered reply feeds one chunk to an iterator that splits lines itself
-pub(super) fn buffered_source(body: Vec<u8>) -> BoxStream<'static, Result<Vec<u8>, HttpError>> {
-    stream::once(ready(Ok(body))).boxed()
 }
 
 pub(super) fn decision_object(object: &Object) -> IndexMap<String, DecisionJson> {

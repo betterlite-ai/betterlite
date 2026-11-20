@@ -11,8 +11,7 @@ use crate::api::vector_store_http_write::error::{
 };
 use crate::api::vector_store_http_write::service::ClientKind;
 
-// What the timeout message needs from the send that just failed: the timeout the caller passed, the one httpx used,
-// and how long the send took
+// What the timeout message needs: the caller's timeout, the one httpx used and how long the send took
 pub(super) struct Attempt {
     pub(super) mode: ClientKind,
     pub(super) timeout: Option<Duration>,
@@ -20,8 +19,7 @@ pub(super) struct Attempt {
     pub(super) elapsed: Duration,
 }
 
-// An httpx.HTTPStatusError carries the masked response: its text and its headers less content-encoding, with
-// content-length recomputed
+// An httpx.HTTPStatusError carries the masked response: its text and headers less content-encoding
 pub(super) fn status_facts(reply: &UpstreamResponse) -> FailureFacts {
     let text = from_utf8(&reply.body).map_or_else(
         |_| format!("{} bytes that are not UTF-8", reply.body.len()),
@@ -55,8 +53,7 @@ fn error_headers(headers: &http::HeaderMap) -> HeaderMap {
         .collect()
 }
 
-// A timeout carries 408 and the timeout message; anything else the transport raises carries no status and is
-// synthesized into a 500
+// A timeout carries 408 and its message; anything else the transport raises is synthesized into a 500
 pub(super) fn transport_facts(error: &TransportError, attempt: &Attempt) -> FailureFacts {
     if timed_out(error) {
         return FailureFacts {
@@ -85,8 +82,7 @@ fn timed_out(error: &TransportError) -> bool {
     )
 }
 
-// HTTPHandler.post catches httpx.TimeoutException in both forms: the sync one echoes the caller's timeout, the async
-// one echoes the client's after substituting its own
+// post catches httpx.TimeoutException in both forms: sync echoes the caller's timeout, async the client's
 fn timeout_message(attempt: &Attempt) -> String {
     if attempt.mode == ClientKind::Sync {
         return match attempt.timeout {

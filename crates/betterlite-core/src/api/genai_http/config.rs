@@ -20,8 +20,7 @@ pub struct AuthTarget {
     pub headers: IndexMap<String, String>,
 }
 
-// The BaseGoogleGenAIGenerateContentConfig members the handler calls beside B3483's request transform; the adapter
-// that owns a provider config implements this, since this crate cannot name a betterlite-vertex type.
+// The BaseGoogleGenAIGenerateContentConfig members beside B3483's transform, implemented by the provider adapter
 pub trait GenerateContentHttpConfig: GenerateContentProviderConfig + Send + Sync {
     type Response;
 

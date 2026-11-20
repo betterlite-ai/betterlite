@@ -70,6 +70,25 @@ impl LogSink for Sink {
     fn emit(&self, _record: LogRecord) {}
 }
 
+macro_rules! recorded_call {
+    ($fixture:expr, $events:expr, $entry:path, $deps:expr, $call:expr) => {{
+        let logger = |_details: &DecisionJson| -> Result<(), PrePostError> {
+            $events.push("log");
+            Ok(())
+        };
+        let env = pre_post_env(&$fixture.redactor, &$fixture.sink, $fixture.now, &logger);
+        $entry(
+            $deps,
+            $call,
+            &mut LogContext {
+                state: &mut $fixture.state,
+                env: &env,
+            },
+        )
+        .await
+    }};
+}
+
 pub(crate) struct Fixture {
     redactor: Redactor,
     sink: Sink,
@@ -115,46 +134,16 @@ impl Fixture {
         C: GenerateContentHttpConfig,
         S: ClientSource,
     {
-        let logger = |_details: &DecisionJson| -> Result<(), PrePostError> {
-            events.push("log");
-            Ok(())
-        };
-        let env = pre_post_env(&self.redactor, &self.sink, self.now, &logger);
-        generate_content(
-            deps,
-            call,
-            &mut LogContext {
-                state: &mut self.state,
-                env: &env,
-            },
-        )
-        .await
+        recorded_call!(self, events, generate_content, deps, call)
     }
 
-    pub(crate) async fn async_call<'deps, C, S>(
+    pub(crate) async fn async_call<'deps, C: GenerateContentHttpConfig, S: ClientSource>(
         &mut self,
+        events: Events,
         deps: &GenerateContentDeps<'deps, C, S>,
         call: &GenerateContentCall<'_>,
-        events: &Events,
-    ) -> Result<AsyncGenerateContentOutcome<C::Response>, GenAiHttpError<C::Error>>
-    where
-        C: GenerateContentHttpConfig,
-        S: ClientSource,
-    {
-        let logger = |_details: &DecisionJson| -> Result<(), PrePostError> {
-            events.push("log");
-            Ok(())
-        };
-        let env = pre_post_env(&self.redactor, &self.sink, self.now, &logger);
-        async_generate_content(
-            deps,
-            call,
-            &mut LogContext {
-                state: &mut self.state,
-                env: &env,
-            },
-        )
-        .await
+    ) -> Result<AsyncGenerateContentOutcome<C::Response>, GenAiHttpError<C::Error>> {
+        recorded_call!(self, events, async_generate_content, deps, call)
     }
 
     pub(crate) fn logged(&self, name: &str) -> Option<&DecisionJson> {
@@ -366,8 +355,7 @@ pub(crate) struct AuthRecord {
 #[error("the test provider config cannot build the call")]
 pub(crate) struct TestConfigError;
 
-// The provider config the handler talks to: it records the auth call, builds a Gemini-shaped body, and answers a
-// transform or decode failure when a case asks for one
+// The provider config the handler talks to: it records auth, builds a body and fails on request
 pub(crate) struct TestConfig {
     pub(crate) base: String,
     auth_failure: bool,
