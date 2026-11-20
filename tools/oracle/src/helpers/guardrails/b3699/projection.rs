@@ -24,14 +24,11 @@ fn tool_call(call: &GuardrailValue) -> Value {
     let Some(GuardrailValue::Object(function)) = entries.get("function") else {
         return value_or_null(Some(call));
     };
-    let id = value_or_null(entries.get("id"));
-    let kind = value_or_null(entries.get("type"));
-    let name = value_or_null(function.get("name"));
     json!({
-        "id": id,
-        "type": kind,
+        "id": value_or_null(entries.get("id")),
+        "type": value_or_null(entries.get("type")),
         "function": {
-            "name": name,
+            "name": value_or_null(function.get("name")),
             "arguments": function.get("arguments").map_or(Value::Null, parsed_arguments),
         },
     })
@@ -52,15 +49,13 @@ pub(super) fn output(
     request_data: &BTreeMap<String, GuardrailValue>,
     error: Value,
 ) -> Value {
-    let mcp_arguments = value_or_null(request_data.get("mcp_arguments"));
-    let modified_arguments = value_or_null(request_data.get("modified_arguments"));
     json!({
         "texts": Value::Array(texts.iter().map(|text| Value::String(text.clone())).collect()),
         "detections": Value::Array(detections.iter().map(detection).collect()),
         "tool_calls": Value::Array(tool_calls.iter().map(tool_call).collect()),
         "request_data": {
-            "mcp_arguments": mcp_arguments,
-            "modified_arguments": modified_arguments,
+            "mcp_arguments": value_or_null(request_data.get("mcp_arguments")),
+            "modified_arguments": value_or_null(request_data.get("modified_arguments")),
         },
         "error": error,
     })
@@ -103,8 +98,5 @@ pub(super) fn action_failure(error: &ContentFilterActionError) -> Value {
 }
 
 fn value_or_null(entry: Option<&GuardrailValue>) -> Value {
-    let Some(entry) = entry else {
-        return Value::Null;
-    };
     serde_json::to_value(entry).unwrap_or(Value::Null)
 }

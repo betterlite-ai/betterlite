@@ -23,7 +23,6 @@ use betterlite_guardrails::content_filter_inputs::images::{
 use betterlite_guardrails::content_filter_inputs::mcp::scan_mcp_tool_call_arguments;
 use serde_json::Value;
 
-use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::projection;
@@ -58,9 +57,7 @@ fn filtered_error(outcome: Result<(), ArgumentFilterError>) -> Value {
     }
 }
 
-fn scan_images(
-    input: &ImagesInput,
-) -> Result<(Vec<ContentFilterDetection>, Value), Box<HelperError>> {
+pub(super) fn run_images(input: &ImagesInput) -> HelperResult {
     let completion = ScriptedDescriptions(input.image_description.clone());
     let mut detections = Vec::new();
     let fixture = Fixture::new(&input.patterns, &input.blocked_words)?;
@@ -77,11 +74,6 @@ fn scan_images(
         Ok(()) => Value::Null,
         Err(failure) => projection::failure(&failure.into_failure()),
     };
-    Ok((detections, error))
-}
-
-pub(super) fn run_images(input: &ImagesInput) -> HelperResult {
-    let (detections, error) = scan_images(input)?;
     Ok(output(&[], &detections, &[], &BTreeMap::new(), error))
 }
 
@@ -98,8 +90,7 @@ fn airline_settings(config: &CompetitorConfigInput) -> AirlineSettings {
             threshold_low: config.threshold_low.unwrap_or(0.30_f64),
             reframe_message_template: config.reframe_message_template.clone(),
             refuse_message_template: config.refuse_message_template.clone(),
-            comparison_words: CompetitorSettings::default().comparison_words,
-            domain_words: Vec::new(),
+            ..CompetitorSettings::default()
         },
         other_meaning_signals: Vec::new(),
         competitor_signals: Vec::new(),
@@ -162,12 +153,13 @@ pub(super) fn run_tool_calls(input: &ToolCallsInput) -> HelperResult {
     let mut calls = input.tool_calls.clone();
     let fixture = Fixture::new(&input.patterns, &input.blocked_words)?;
     let source = fixture.source();
+    let filter = ArgumentFilter {
+        source: &source,
+        max_depth: DEFAULT_RECURSE_DEPTH,
+    };
     let mut detections = Vec::new();
     let error = filtered_error(scan_tool_call_arguments(
-        &ArgumentFilter {
-            source: &source,
-            max_depth: DEFAULT_RECURSE_DEPTH,
-        },
+        &filter,
         &mut calls,
         &mut detections,
     ));

@@ -1,6 +1,6 @@
 kind: helper
 name: tool-call-json-parsing
 call:
-  b3699: {"operation": "tool_calls", "patterns": [{"pattern_type": "regex", "pattern_name": null, "pattern": "secret", "name": "secret", "action": "MASK"}], "blocked_words": [], "tool_calls": [{"id": "call-1", "type": "function", "function": {"name": "lookup", "arguments": "{\"query\": \"a secret value\", \"n\": 3, \"ok\": true, \"gone\": null, \"items\": [\"secret\", {\"deep\": \"secret\"}]}"}}]}
+  b3699: {"operation": "tool_calls", "patterns": [{"pattern_type": "regex", "pattern_name": null, "pattern": "secret", "name": "secret", "action": "MASK"}], "blocked_words": [], "tool_calls": [{"id": "call-1", "type": "function", "function": {"name": "lookup", "arguments": "{\"query\": \"a secret value\", \"n\": 3, \"ok\": true, \"gone\": null, \"temperature\": 0.5, \"items\": [\"secret\", {\"deep\": \"secret\"}]}"}}]}
 env: {}
 compare: {ignore: []}

@@ -50,15 +50,10 @@ class CompetitorInput(TypedDict):
     blocked_words: list[BlockedWord]
 
 
-class ToolCallFunction(TypedDict):
-    name: str
-    arguments: str
-
-
 class ToolCallInput(TypedDict):
     id: str
     type: str
-    function: ToolCallFunction
+    function: dict[str, str]
 
 
 class ToolCallsInput(TypedDict):
