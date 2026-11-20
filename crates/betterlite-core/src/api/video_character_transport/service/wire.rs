@@ -25,7 +25,7 @@ pub(crate) fn body_text(body: &[u8]) -> String {
     text
 }
 
-// a header value reads as UTF-8 or, failing that, as iso-8859-1, the way httpx decodes one
+// a header value reads as UTF-8 or, failing that, as iso-8859-1; httpx picks one encoding for the whole set
 fn header_text(value: &HeaderValue) -> String {
     from_utf8(value.as_bytes()).map_or_else(
         |_invalid| {

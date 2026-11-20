@@ -51,4 +51,12 @@ deviations:
     why: >-
       Every provider reply goes through the shared bounded reader, so one answer cannot grow without bound.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L7812
+  - what: >-
+      An error reply's headers decode as UTF-8 per value, falling back to iso-8859-1 for that value alone;
+      httpx picks one encoding for the whole header set, so one value that is not UTF-8 makes every value read
+      as iso-8859-1.
+    why: >-
+      Each header is decoded once as it is read, so a provider that mixes a UTF-8 value with a latin-1 one keeps
+      both readable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6090-L6091
 kept_bugs: []
