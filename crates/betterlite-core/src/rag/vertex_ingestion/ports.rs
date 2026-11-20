@@ -18,6 +18,8 @@ pub trait VertexTokenPort: Send + Sync {
 }
 
 // every call carries the bearer token and its own timeout; a non-2xx status is an HttpReply, not a port failure
+// post_json sends Content-Type: application/json, get sends only Authorization, and post_multipart sends
+// X-Goog-Upload-Protocol: multipart with the metadata part typed application/json
 #[async_trait]
 pub trait VertexRagHttp: Send + Sync {
     async fn post_json(&self, request: JsonRequest<'_>) -> Result<HttpReply, PortError>;
