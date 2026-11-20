@@ -221,7 +221,7 @@ enum ConfigError {
     Response,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct SeenArgs {
     model: String,
     api_key: Option<String>,
@@ -641,7 +641,7 @@ impl Payload {
         let base = format!("http://{}/v1/rerank", serving.address);
         Self {
             config: RecordingConfig::new(&base, &events),
-            optional: params(r#"{"query": "é", "documents": ["a"]}"#),
+            optional: params(r#"{"query": "\u00e9", "documents": ["a"]}"#),
             key: SecretString::from(String::from("sk-caller")),
             model_response: response(
                 r#"{"id": "caller", "results": [{"index": 3, "relevance_score": 0.25}]}"#,
@@ -756,7 +756,7 @@ fn assert_payload_transform(config: &RecordingConfig, events: &Events) {
     assert_eq!(seen.api_key.as_deref(), Some("sk-caller"));
     assert_eq!(
         seen.request_data,
-        params(r#"{"query": "é", "documents": ["a"]}"#)
+        params(r#"{"query": "\u00e9", "documents": ["a"]}"#)
     );
     assert_eq!(seen.optional_params, Params::new());
     assert_eq!(seen.litellm_params, Params::new());
@@ -774,8 +774,8 @@ fn assert_payload_transform(config: &RecordingConfig, events: &Events) {
 }
 
 fn assert_payload_callback(fixture: &Fixture, logging: &RerankLogging, api_base: &str) {
-    let expected = params(r#"{"query": "é", "documents": ["a"]}"#);
-    assert_eq!(fixture.input(), Some(&Json::Text(String::from("é"))));
+    let expected = params(r#"{"query": "\u00e9", "documents": ["a"]}"#);
+    assert_eq!(fixture.input(), Some(&Json::Text(String::from("\u{e9}"))));
     assert_eq!(fixture.logged_body(), Some(&object(&expected)));
     let args = fixture
         .additional_args()
