@@ -781,6 +781,12 @@ async fn transaction_accessor() {
     let mut client = pool.get().await.unwrap();
     let session = client.transaction().await.unwrap();
     let transaction = team_transaction(&session);
+    let members = transaction
+        .members_with_roles("team-1")
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(members.is_empty());
     assert_eq!(
         transaction
             .execute_raw(INSERT_USER_SQL, &[&"user-1", &"u@example.com"])
