@@ -483,11 +483,8 @@ fn a_ssl_verify_kwarg_reaches_the_transform_and_the_client_builder() {
     );
     let transforms = fixture.config().transforms();
     assert_eq!(
-        transforms[0]
-            .params
-            .get("ssl_verify")
-            .and_then(serde_json::Value::as_bool),
-        Some(true)
+        transforms[0].params.get("ssl_verify").cloned(),
+        Some(serde_json::json!(true))
     );
 }
 
