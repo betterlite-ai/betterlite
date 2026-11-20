@@ -1,0 +1,6 @@
+task: B4442
+deviations:
+  - what: A router whose dependency resolves to no deployment, through a missing alias or an unknown model name, fails at once with the dependency named; no partial evidence keeps it green.
+    why: A dependency that vanishes is a configuration error that stops the router serving any request, unlike a probe that never ran, so the verdict is taken from the dependency's own resolution rather than from what happened to be probed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L348-L364
+kept_bugs: []
