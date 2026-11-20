@@ -140,22 +140,10 @@ class FineTuningReadCall(BaseModel):
     steps: list[Step]
 
 
-class Steps(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    steps: list[StepOutcome]
-
-
-class ReadValue(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    value: Steps
-
-
 class Result(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    fine_tuning_read: ReadValue
+    fine_tuning_read: dict[str, dict[str, list[StepOutcome]]]
 
 
 class FineTuningReadRequest(BaseModel):
@@ -165,7 +153,7 @@ class FineTuningReadRequest(BaseModel):
 
     def serialize(self, api_base: str) -> str:
         steps = [run_step(step, api_base) for step in self.fine_tuning_read.steps]
-        result = Result(fine_tuning_read=ReadValue(value=Steps(steps=steps)))
+        result = Result(fine_tuning_read={"value": {"steps": steps}})
         return result.model_dump_json(by_alias=True, exclude_unset=True)
 
 
