@@ -289,7 +289,7 @@ impl CacheActivityStore for FakeStore {
 }
 
 fn fake_store(handle: &Arc<FakeStore>) -> Arc<dyn CacheActivityStore> {
-    Arc::clone(handle)
+    Arc::<FakeStore>::clone(handle)
 }
 
 #[tokio::test]
