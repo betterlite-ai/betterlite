@@ -24,10 +24,11 @@ fn pre_call_records_the_documented_payload() {
     let records = pre_calls(&run.events());
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].input, Json::Text(String::new()));
+    // the logging pipeline scrubs the Authorization value before the logger fn sees the payload
     assert_eq!(
         records[0].additional_args,
         json(
-            r#"{"api_base":"https://built/videos/video_1","headers":{"x-caller":"given","authorization":"provider","x-provider":"default"},"video_id":"video_1","data":{"operationName":"projects/p/operations/o"}}"#
+            r#"{"api_base":"https://built/videos/video_1","headers":{"x-caller":"given","authorization":"REDACTED","x-provider":"default"},"video_id":"video_1","data":{"operationName":"projects/p/operations/o"}}"#
         )
     );
 }

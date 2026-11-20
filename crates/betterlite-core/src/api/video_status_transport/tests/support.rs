@@ -127,7 +127,7 @@ impl Journal {
     // the kind and its payload land under the one lock, so an observer never sees half a record
     fn note<Update>(&mut self, kind: Kind, update: Update)
     where
-        Update: FnOnce(&mut Journal),
+        Update: FnOnce(&mut Self),
     {
         self.kinds.push(kind);
         update(self);
