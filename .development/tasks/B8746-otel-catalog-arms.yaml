@@ -89,6 +89,8 @@ description: >-
   CatalogError::Init.
 scope:
   paths:
+    - "crates/betterlite-logging/src/otel/plumbing/exporters/tests.rs"
+    - "crates/betterlite-logging/src/otel/legacy_exporters/build.rs"
     - crates/betterlite-logging/src/registry/catalog.rs
     - crates/betterlite-logging/src/registry/catalog/tests.rs
     - crates/betterlite-logging/src/registry/catalog/otel.rs
