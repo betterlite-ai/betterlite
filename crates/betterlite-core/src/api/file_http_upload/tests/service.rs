@@ -146,10 +146,10 @@ async fn two_step_upload_invalid_method_names_the_method() {
 
 // A provider error as the service reports it, failing the test when another error came back
 fn provider_failure(error: UploadError) -> BaseLlmException {
-    match error {
-        UploadError::Provider(provider) => provider,
-        other => panic!("expected a provider error, found {other}"),
-    }
+    let UploadError::Provider(provider) = error else {
+        panic!("expected a provider error");
+    };
+    provider
 }
 
 // a 4xx initial answer is the provider's status, raised before the location decode, in both modes
