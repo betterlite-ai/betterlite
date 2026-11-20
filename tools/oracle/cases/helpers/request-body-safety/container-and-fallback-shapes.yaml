@@ -1,0 +1,52 @@
+kind: helper
+name: request-body-safety-container-and-fallback-shapes
+call:
+  request_body_safety:
+    request_body:
+      model: gpt-4o
+      extra_body:
+        input_cost_per_token: 0.1
+    general_settings: {}
+    model: gpt-4o
+    model_list: []
+calls:
+  - request_body_safety:
+      request_body:
+        model: gpt-4o
+        litellm_embedding_config:
+          user_config:
+            mode: proxy
+      general_settings: {}
+      model: gpt-4o
+      model_list: []
+  - request_body_safety:
+      request_body:
+        model: gpt-4o
+        fallbacks:
+          - model: gpt-4o
+            langfuse_host: https://evil.example
+      general_settings: {}
+      model: gpt-4o
+      model_list: []
+  - request_body_safety:
+      request_body:
+        model: gpt-4o
+        fallbacks:
+          - groups: [gpt-4o]
+            others: [more]
+      general_settings: {}
+      model: gpt-4o
+      model_list: []
+  - request_body_safety:
+      request_body:
+        model: gpt-4o
+        router_settings_override:
+          fallbacks:
+            - model: gpt-4o
+              aws_role_name: admin
+      general_settings: {}
+      model: gpt-4o
+      model_list: []
+env: {}
+compare:
+  ignore: []
