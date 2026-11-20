@@ -54,13 +54,13 @@ pub(super) async fn execute(
         source: &origin,
         supplied: None,
     };
-    let mut logger = Logger { fixture: &fixture };
+    let mut logger = Logger {
+        recorded: &fixture.recorded,
+    };
     let prepared = prepare(&deps, call.mode.client_kind(), &generation, &mut logger)
         .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
-    let answer = send(prepared).await;
-    let value = outcome(answer, fixture.effects()?)?;
     Ok(SdkResult::ImageGenerationHttp {
-        value: Box::new(value),
+        value: Box::new(outcome(send(prepared).await, fixture.effects()?)?),
     })
 }
 
@@ -71,12 +71,7 @@ fn outcome(
 ) -> Result<Outcome, SdkHttpError> {
     match answer {
         Ok(outcome) => Ok(Outcome {
-            result: Some(
-                serde_json::from_value(
-                    serde_json::to_value(&outcome.response).map_err(SdkHttpError::Serialize)?,
-                )
-                .map_err(SdkHttpError::Serialize)?,
-            ),
+            result: Some(reply_json(&outcome.response)?),
             failure: None,
             provider_headers: Some(outcome.provider_headers.headers.into_iter().collect()),
             effects,
@@ -89,6 +84,11 @@ fn outcome(
         }),
         Err(other) => Err(SdkHttpError::Invalid(other.to_string())),
     }
+}
+
+fn reply_json(reply: &ImageResponse) -> Result<Json, SdkHttpError> {
+    serde_json::from_value(serde_json::to_value(reply).map_err(SdkHttpError::Serialize)?)
+        .map_err(SdkHttpError::Serialize)
 }
 
 // The deployment map a caller hands the handler: the mock base, then the key and certificate setting when set
@@ -150,13 +150,10 @@ impl Fixture {
 
     fn effects(&self) -> Result<Effects, SdkHttpError> {
         let recorded = self.recorded.lock().unwrap_or_else(PoisonError::into_inner);
-        let validation = required(recorded.validate.as_ref(), "validate_environment")?;
-        let url = required(recorded.url.as_ref(), "get_complete_url")?;
-        let pre_call = required(recorded.pre_call.as_ref(), "pre_call")?;
         Ok(Effects {
-            validation,
-            url,
-            pre_call,
+            validation: required(recorded.validate.as_ref(), "validate_environment")?,
+            url: required(recorded.url.as_ref(), "get_complete_url")?,
+            pre_call: required(recorded.pre_call.as_ref(), "pre_call")?,
         })
     }
 }
@@ -255,17 +252,13 @@ fn fill_from_reply(target: &mut ImageResponse, body: &[u8]) -> Result<ImageRespo
     Ok(target.clone())
 }
 
-struct Logger<'fixture> {
-    fixture: &'fixture Fixture,
+struct Logger<'recorded> {
+    recorded: &'recorded Mutex<Recorded>,
 }
 
 impl ImageGenerationLogger for Logger<'_> {
     fn pre_call(&mut self, record: PreCallRecord<'_>) {
-        let mut recorded = self
-            .fixture
-            .recorded
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
+        let mut recorded = self.recorded.lock().unwrap_or_else(PoisonError::into_inner);
         recorded.pre_call = Some(PreCallEffect {
             input: record.input.to_owned(),
             api_key: record.api_key.to_owned(),
