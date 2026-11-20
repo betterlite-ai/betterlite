@@ -1,0 +1,9 @@
+kind: helper
+name: key-policy-fields-empty-model-budget-map
+call:
+  key_policy_fields:
+    calls:
+      - {function: model_budget, budgets: null}
+      - {function: model_budget, budgets: {}}
+env: {}
+compare: {ignore: []}

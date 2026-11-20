@@ -7,7 +7,7 @@ description: >-
   API.
 
 
-  The dispatcher anthropic_messages_handler calls B1118 native execution. get_messages_interceptors (B987) and anthropic_messages_with_mcp
+  The dispatcher anthropic_messages_handler calls B1118 native execution. The interceptor slice (B1118's get_messages_interceptors, empty until B987 adds the advisor) and anthropic_messages_with_mcp
   (B988) are injected seams composed by B081 in pinned order; neither lower native execution nor this dispatcher
   imports the parent routes. Validate metadata before transport.
 

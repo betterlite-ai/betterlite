@@ -1,0 +1,29 @@
+kind: helper
+name: json-native-api-policy-responses-transform-seed
+call:
+  json_native_api_policy:
+    calls:
+      - kind: responses_transform
+        model: parasail/any
+        environment: {}
+        input: hi
+        params: {store: true}
+      - kind: responses_transform
+        model: pinstripes/any
+        environment: {}
+        descriptor:
+          base_url: "https://keep.invalid/v1"
+          api_key_env: PROBE_KEY
+        input: hi
+        params: {store: true}
+      - kind: responses_transform
+        model: cognition/any
+        environment: {}
+        descriptor:
+          base_url: "https://force.invalid/v1"
+          api_key_env: PROBE_KEY
+          special_handling: {force_store_false: true}
+        input: hello
+        params: {store: true, max_output_tokens: 8}
+env: {}
+compare: {ignore: []}

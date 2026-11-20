@@ -1,0 +1,23 @@
+kind: sdk_http
+name: vector-store-transport-write-headers
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  vector_store_transport:
+    operation: update
+    mode: sync
+    vector_store_id: vs_a
+    optional_params: {name: notes}
+    extra_headers:
+      Authorization: "Bearer sk-caller"
+      Content-Type: text/plain
+      OpenAI-Beta: assistants=v1
+      X-Trace: trace-a
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: vs_a, object: vector_store, name: notes}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type, openai-beta, x-trace]
+  ignore: []

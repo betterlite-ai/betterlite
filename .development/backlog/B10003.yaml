@@ -1,0 +1,14 @@
+id: B10003
+milestone: M9 agents and mcp
+title: SSO identity assertion record and its login decode
+status: todo
+depends_on: [B760]
+file: tasks/B10003-sso-assertion-record.yaml
+covers:
+  - "litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_store.py"
+parent: B137
+split_from: B4663
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
