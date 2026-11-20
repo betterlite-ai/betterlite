@@ -1,0 +1,23 @@
+kind: helper
+name: sail-wire-service-tier-windows
+call:
+  b6411:
+    function: window
+    model: llama-3-70b
+    steps:
+      - {service_tier: null, drop_params: false, global_drop_params: false}
+      - {service_tier: auto, drop_params: false, global_drop_params: false}
+      - {service_tier: DEFAULT, drop_params: false, global_drop_params: false}
+      - {service_tier: Priority, drop_params: false, global_drop_params: false}
+      - {service_tier: flex, drop_params: false, global_drop_params: false}
+      - {service_tier: Balanced, drop_params: false, global_drop_params: false}
+      - {service_tier: flash, drop_params: false, global_drop_params: false}
+      - {service_tier: flash, drop_params: true, global_drop_params: false}
+      - {service_tier: flash, drop_params: false, global_drop_params: true}
+      - {service_tier: 5, drop_params: false, global_drop_params: false}
+      - {service_tier: 5, drop_params: false, global_drop_params: true}
+      - {service_tier: [flex], drop_params: false, global_drop_params: false}
+      - {service_tier: {tier: flex}, drop_params: true, global_drop_params: false}
+      - {service_tier: "", drop_params: false, global_drop_params: false}
+env: {}
+compare: {ignore: []}
