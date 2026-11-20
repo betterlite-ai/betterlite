@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import Coroutine
+from collections.abc import Coroutine, Mapping
 from datetime import UTC, datetime
 from typing import Final, Literal, Protocol, TypedDict, Unpack
 
@@ -25,23 +25,29 @@ JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 OBJECTS: Final = TypeAdapter(dict[str, object] | None)
 PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
 
+# the file object's last_error holds Any, so the handlers answer the JSON mapping shape this adapter validates
+Answer = Mapping[str, object]
+AsyncAnswer = Coroutine[object, object, Answer]
+Work = Answer | AsyncAnswer
+ExtraBody = dict[str, object] | None
+
 class UpdateKwargs(TypedDict):
     vector_store_id: str
     file_id: str
     update_request: VectorStoreFileUpdateRequest
-    vector_store_files_provider_config: BaseVectorStoreFilesConfig
+    vector_store_files_provider_config: BaseVectorStoreFilesConfig  # ast-grep-ignore: no-long-names
     custom_llm_provider: str
     litellm_params: GenericLiteLLMParams
     logging_obj: Logging
     extra_headers: dict[str, str] | None
-    extra_body: dict[str, object] | None
+    extra_body: ExtraBody
     timeout: float | httpx.Timeout | None
 
 
 class DeleteKwargs(TypedDict):
     vector_store_id: str
     file_id: str
-    vector_store_files_provider_config: BaseVectorStoreFilesConfig
+    vector_store_files_provider_config: BaseVectorStoreFilesConfig  # ast-grep-ignore: no-long-names
     custom_llm_provider: str
     litellm_params: GenericLiteLLMParams
     logging_obj: Logging
@@ -50,33 +56,33 @@ class DeleteKwargs(TypedDict):
 
 
 class UpdateHandler(Protocol):
-    def __call__(self, **kwargs: Unpack[UpdateKwargs]) -> object: ...
+    def __call__(self, **kwargs: Unpack[UpdateKwargs]) -> Work: ...
 
 
 class AsyncUpdateHandler(Protocol):
-    def __call__(self, **kwargs: Unpack[UpdateKwargs]) -> Coroutine[object, object, object]: ...
+    def __call__(self, **kwargs: Unpack[UpdateKwargs]) -> AsyncAnswer: ...
 
 
 class DeleteHandler(Protocol):
-    def __call__(self, **kwargs: Unpack[DeleteKwargs]) -> object: ...
+    def __call__(self, **kwargs: Unpack[DeleteKwargs]) -> Work: ...
 
 
 class AsyncDeleteHandler(Protocol):
-    def __call__(self, **kwargs: Unpack[DeleteKwargs]) -> Coroutine[object, object, object]: ...
+    def __call__(self, **kwargs: Unpack[DeleteKwargs]) -> AsyncAnswer: ...
 
 
 class Handlers(Protocol):
     @property
-    def vector_store_file_update_handler(self) -> UpdateHandler: ...
+    def vector_store_file_update_handler(self) -> UpdateHandler: ...  # ast-grep-ignore: no-long-names
 
     @property
-    def async_vector_store_file_update_handler(self) -> AsyncUpdateHandler: ...
+    def async_vector_store_file_update_handler(self) -> AsyncUpdateHandler: ...  # ast-grep-ignore: no-long-names
 
     @property
-    def vector_store_file_delete_handler(self) -> DeleteHandler: ...
+    def vector_store_file_delete_handler(self) -> DeleteHandler: ...  # ast-grep-ignore: no-long-names
 
     @property
-    def async_vector_store_file_delete_handler(self) -> AsyncDeleteHandler: ...
+    def async_vector_store_file_delete_handler(self) -> AsyncDeleteHandler: ...  # ast-grep-ignore: no-long-names
 
 
 HANDLER: Handlers = BaseLLMHTTPHandler()
