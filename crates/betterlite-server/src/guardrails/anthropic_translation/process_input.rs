@@ -14,9 +14,7 @@
 pub mod error;
 mod inputs;
 mod request;
-#[cfg(test)]
-pub(crate) mod testing;
-mod tests;
+pub(crate) mod tests;
 mod tools;
 mod write_back;
 

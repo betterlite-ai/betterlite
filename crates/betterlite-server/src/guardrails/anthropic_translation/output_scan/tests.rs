@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 
 use super::error::ProcessOutputError;
 use super::{apply_responses_to_output, extract_from_content_blocks, process_output_response};
-use crate::guardrails::anthropic_translation::process_input::testing::{
+use crate::guardrails::anthropic_translation::process_input::tests::{
     NO_INPUTS, ScriptedGuardrail,
 };
 
