@@ -90,7 +90,7 @@ fn a_week_row_becomes_its_labelled_period(
 #[case::beyond_the_calendar(i64::MAX)]
 fn an_impossible_week_offset_reports_an_offset_error(#[case] offset: i64) {
     let error = weekly_result(&window(), row(offset)).expect_err("the offset is impossible");
-    assert!(matches!(error, AnalyticsError::WeekOffset { .. }));
+    assert!(matches!(error, AnalyticsError::Offset { .. }));
 }
 
 #[test]
@@ -98,5 +98,5 @@ fn a_week_bucket_that_is_not_an_offset_reports_a_bucket_error() {
     let mut week_row = row(0);
     week_row.date = "not-a-week".to_owned();
     let error = weekly_result(&window(), week_row).expect_err("the bucket is impossible");
-    assert!(matches!(error, AnalyticsError::WeekBucket { bucket } if bucket == "not-a-week"));
+    assert!(matches!(error, AnalyticsError::Bucket { bucket } if bucket == "not-a-week"));
 }

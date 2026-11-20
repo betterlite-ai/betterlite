@@ -4,7 +4,6 @@ use axum::extract::RawQuery;
 use axum::extract::State;
 use axum::response::IntoResponse as _;
 use axum::response::Response;
-use betterlite_db::gateway_request_tracking::GatewayRequestClock;
 
 use crate::auth::auth_identity::AuthContext;
 use crate::tracing_routes::router::unauthenticated;
@@ -12,30 +11,34 @@ use crate::tracing_routes::router::unauthenticated;
 use super::error::AnalyticsError;
 use super::error::db_not_connected;
 use super::error::query_failed;
-use super::query::ActiveUsersQuery;
-use super::query::TagFilter;
+use super::per_user;
+use super::query::AnalyticsQuery;
 use super::responses::ActiveUsersAnalyticsResponse;
 use super::responses::DistinctTagResponse;
 use super::responses::DistinctTagsResponse;
 use super::responses::TagActiveUsersResponse;
 use super::rows::ActiveUsersReport;
 use super::state::UserAgentAnalyticsState;
-use super::store::UserAgentAnalyticsStore;
+use super::summary;
+use super::window::MAU_SPAN_DAYS;
 use super::window::MAX_DAYS;
 use super::window::WAU_SPAN_DAYS;
 use super::window::Window;
 use super::window::active_users_result;
+
+const DISTINCT_FAILURE: &str = "Failed to fetch distinct user agent tags";
+const DAU_FAILURE: &str = "Failed to fetch DAU analytics";
+const WAU_FAILURE: &str = "Failed to fetch WAU analytics";
+const MAU_FAILURE: &str = "Failed to fetch MAU analytics";
 
 #[derive(Clone, Copy)]
 pub(super) enum AnalyticsReport {
     Distinct,
     Daily,
     Weekly,
-}
-
-struct ActiveUsersRequest {
-    window: Window,
-    filter: Option<TagFilter>,
+    Monthly,
+    Summary,
+    PerUser,
 }
 
 pub(super) async fn respond(
@@ -47,32 +50,21 @@ pub(super) async fn respond(
     if caller.is_none() {
         return unauthenticated();
     }
-    let Some(store) = state.store.as_deref() else {
-        return db_not_connected();
-    };
-    let query = raw_query.as_deref().unwrap_or_default();
+    let query = AnalyticsQuery::decode(raw_query.as_deref().unwrap_or_default());
     match report {
-        AnalyticsReport::Distinct => distinct(store).await,
-        AnalyticsReport::Daily => {
-            active_users(&state, store, query, ActiveUsersReport::Daily).await
-        }
-        AnalyticsReport::Weekly => {
-            active_users(&state, store, query, ActiveUsersReport::Weekly).await
-        }
+        AnalyticsReport::Distinct => distinct(&state).await,
+        AnalyticsReport::Daily => active_users(&state, &query, ActiveUsersReport::Daily).await,
+        AnalyticsReport::Weekly => active_users(&state, &query, ActiveUsersReport::Weekly).await,
+        AnalyticsReport::Monthly => active_users(&state, &query, ActiveUsersReport::Monthly).await,
+        AnalyticsReport::Summary => summary::tag_summary(&state, &query).await,
+        AnalyticsReport::PerUser => per_user::per_user_analytics(&state, &query).await,
     }
 }
 
-fn active_users_request(
-    clock: &dyn GatewayRequestClock,
-    raw_query: &str,
-    span_days: u64,
-) -> Result<ActiveUsersRequest, AnalyticsError> {
-    let window = Window::ending_tomorrow(clock, span_days)?;
-    let filter = ActiveUsersQuery::decode(raw_query).filter();
-    Ok(ActiveUsersRequest { window, filter })
-}
-
-async fn distinct(store: &dyn UserAgentAnalyticsStore) -> Response {
+async fn distinct(state: &UserAgentAnalyticsState) -> Response {
+    let Some(store) = state.store.as_deref() else {
+        return db_not_connected();
+    };
     match store.distinct_tags().await {
         Ok(rows) => Json(DistinctTagsResponse {
             results: rows
@@ -81,30 +73,34 @@ async fn distinct(store: &dyn UserAgentAnalyticsStore) -> Response {
                 .collect(),
         })
         .into_response(),
-        Err(source) => query_failed("Failed to fetch distinct user agent tags", &source),
+        Err(source) => query_failed(DISTINCT_FAILURE, &source),
     }
 }
 
 async fn active_users(
     state: &UserAgentAnalyticsState,
-    store: &dyn UserAgentAnalyticsStore,
-    raw_query: &str,
+    query: &AnalyticsQuery,
     report: ActiveUsersReport,
 ) -> Response {
     let (span_days, failure) = match report {
-        ActiveUsersReport::Daily => (MAX_DAYS, "Failed to fetch DAU analytics"),
-        ActiveUsersReport::Weekly => (WAU_SPAN_DAYS, "Failed to fetch WAU analytics"),
+        ActiveUsersReport::Daily => (MAX_DAYS, DAU_FAILURE),
+        ActiveUsersReport::Weekly => (WAU_SPAN_DAYS, WAU_FAILURE),
+        ActiveUsersReport::Monthly => (MAU_SPAN_DAYS, MAU_FAILURE),
     };
-    let request = match active_users_request(state.clock.as_ref(), raw_query, span_days) {
-        Ok(request) => request,
+    let Some(store) = state.store.as_deref() else {
+        return db_not_connected();
+    };
+    let window = match Window::ending_tomorrow(state.clock.as_ref(), span_days) {
+        Ok(window) => window,
         Err(source) => return query_failed(failure, &source),
     };
+    let filter = query.filter();
     let rows = match store
         .active_users(
             report,
-            &request.window.start_date,
-            &request.window.end_date,
-            request.filter.as_ref(),
+            &window.start_date,
+            &window.end_date,
+            filter.as_ref(),
         )
         .await
     {
@@ -113,7 +109,7 @@ async fn active_users(
     };
     let results = match rows
         .into_iter()
-        .map(|row| active_users_result(&request.window, report, row))
+        .map(|row| active_users_result(&window, report, row))
         .collect::<Result<Vec<TagActiveUsersResponse>, AnalyticsError>>()
     {
         Ok(results) => results,

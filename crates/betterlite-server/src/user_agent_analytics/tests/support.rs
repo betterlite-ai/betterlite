@@ -45,11 +45,15 @@ use crate::user_agent_analytics::routes;
 use crate::user_agent_analytics::rows::ActiveUsersReport;
 use crate::user_agent_analytics::rows::ActiveUsersRow;
 use crate::user_agent_analytics::rows::DistinctTagRow;
+use crate::user_agent_analytics::rows::TagSpendRecord;
+use crate::user_agent_analytics::rows::TagSummaryRow;
+use crate::user_agent_analytics::rows::TokenOwnerRow;
+use crate::user_agent_analytics::rows::UserEmailRow;
 use crate::user_agent_analytics::state::UserAgentAnalyticsState;
 use crate::user_agent_analytics::store::PostgresAnalyticsStore;
 use crate::user_agent_analytics::store::UserAgentAnalyticsStore;
 
-pub(super) fn at(year: i32, month: u32, day: u32, hour: u32, minute: u32) -> DateTime<Utc> {
+pub(crate) fn at(year: i32, month: u32, day: u32, hour: u32, minute: u32) -> DateTime<Utc> {
     Utc.with_ymd_and_hms(year, month, day, hour, minute, 0)
         .single()
         .expect("the fixed instant")
@@ -72,42 +76,98 @@ pub(super) fn fixed_clock(instant: DateTime<Utc>) -> Arc<dyn GatewayRequestClock
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct ActiveUsersCall {
-    pub(super) report: ActiveUsersReport,
-    pub(super) start_date: String,
-    pub(super) end_date: String,
-    pub(super) filter: Option<TagFilter>,
+pub(crate) struct ActiveUsersCall {
+    pub(crate) report: ActiveUsersReport,
+    pub(crate) start_date: String,
+    pub(crate) end_date: String,
+    pub(crate) filter: Option<TagFilter>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct RangeCall {
+    pub(crate) start_date: String,
+    pub(crate) end_date: String,
+    pub(crate) filter: Option<TagFilter>,
 }
 
 #[derive(Default)]
-pub(super) struct FakeStore {
+pub(crate) struct FakeStore {
     pub(super) distinct: Vec<DistinctTagRow>,
     pub(super) active: Vec<ActiveUsersRow>,
+    summary: Vec<TagSummaryRow>,
+    records: Vec<TagSpendRecord>,
+    owners: Vec<TokenOwnerRow>,
+    users: Vec<UserEmailRow>,
     pub(super) failure: Mutex<Option<AnalyticsError>>,
     pub(super) calls: Mutex<Vec<ActiveUsersCall>>,
+    summary_calls: Mutex<Vec<RangeCall>>,
+    record_calls: Mutex<Vec<RangeCall>>,
+    token_calls: Mutex<Vec<Vec<String>>>,
+    user_calls: Mutex<Vec<Vec<String>>>,
     pub(super) distinct_calls: AtomicUsize,
 }
 
 impl FakeStore {
-    pub(super) fn empty() -> Self {
+    pub(crate) fn empty() -> Self {
         Self::default()
     }
 
-    pub(super) fn failing() -> Self {
+    pub(crate) fn failing() -> Self {
         Self {
             failure: Mutex::new(Some(AnalyticsError::Database(DbError::NoDbConnected))),
             ..Self::empty()
         }
     }
 
+    pub(crate) fn with_active(mut self, rows: Vec<ActiveUsersRow>) -> Self {
+        self.active = rows;
+        self
+    }
+
+    pub(crate) fn with_summary(mut self, rows: Vec<TagSummaryRow>) -> Self {
+        self.summary = rows;
+        self
+    }
+
+    pub(crate) fn with_records(mut self, records: Vec<TagSpendRecord>) -> Self {
+        self.records = records;
+        self
+    }
+
+    pub(crate) fn with_owners(mut self, owners: Vec<TokenOwnerRow>) -> Self {
+        self.owners = owners;
+        self
+    }
+
+    pub(crate) fn with_users(mut self, users: Vec<UserEmailRow>) -> Self {
+        self.users = users;
+        self
+    }
+
     pub(super) fn calls(&self) -> Vec<ActiveUsersCall> {
         self.calls.lock().expect("the recorded calls").clone()
     }
 
-    pub(super) fn only_call(&self) -> ActiveUsersCall {
+    pub(crate) fn only_call(&self) -> ActiveUsersCall {
         let mut calls = self.calls();
         assert_eq!(calls.len(), 1, "the store records exactly one call");
         calls.remove(0)
+    }
+
+    pub(crate) fn only_summary(&self) -> RangeCall {
+        only(&self.summary_calls)
+    }
+
+    pub(crate) fn only_records(&self) -> RangeCall {
+        only(&self.record_calls)
+    }
+
+    pub(crate) fn token_calls(&self) -> Vec<Vec<String>> {
+        self.token_calls.lock().expect("the key lookups").clone()
+    }
+
+    pub(crate) fn user_calls(&self) -> Vec<Vec<String>> {
+        self.user_calls.lock().expect("the user lookups").clone()
     }
 
     pub(super) fn distinct_calls(&self) -> usize {
@@ -117,6 +177,12 @@ impl FakeStore {
     fn take_failure(&self) -> Option<AnalyticsError> {
         self.failure.lock().expect("the recorded failure").take()
     }
+}
+
+fn only<Record: Clone>(calls: &Mutex<Vec<Record>>) -> Record {
+    let mut records = calls.lock().expect("the recorded calls").clone();
+    assert_eq!(records.len(), 1, "the store records exactly one call");
+    records.remove(0)
 }
 
 #[async_trait]
@@ -150,9 +216,71 @@ impl UserAgentAnalyticsStore for FakeStore {
         }
         Ok(self.active.clone())
     }
+
+    async fn tag_summary(
+        &self,
+        start_date: &str,
+        end_date: &str,
+        filter: Option<&TagFilter>,
+    ) -> Result<Vec<TagSummaryRow>, AnalyticsError> {
+        self.summary_calls
+            .lock()
+            .expect("the recorded calls")
+            .push(RangeCall {
+                start_date: start_date.to_owned(),
+                end_date: end_date.to_owned(),
+                filter: filter.cloned(),
+            });
+        if let Some(error) = self.take_failure() {
+            return Err(error);
+        }
+        Ok(self.summary.clone())
+    }
+
+    async fn tag_records(
+        &self,
+        start_date: &str,
+        end_date: &str,
+        filter: Option<&TagFilter>,
+    ) -> Result<Vec<TagSpendRecord>, AnalyticsError> {
+        self.record_calls
+            .lock()
+            .expect("the recorded calls")
+            .push(RangeCall {
+                start_date: start_date.to_owned(),
+                end_date: end_date.to_owned(),
+                filter: filter.cloned(),
+            });
+        if let Some(error) = self.take_failure() {
+            return Err(error);
+        }
+        Ok(self.records.clone())
+    }
+
+    async fn token_owners(&self, tokens: &[String]) -> Result<Vec<TokenOwnerRow>, AnalyticsError> {
+        self.token_calls
+            .lock()
+            .expect("the key lookups")
+            .push(tokens.to_vec());
+        if let Some(error) = self.take_failure() {
+            return Err(error);
+        }
+        Ok(self.owners.clone())
+    }
+
+    async fn user_emails(&self, user_ids: &[String]) -> Result<Vec<UserEmailRow>, AnalyticsError> {
+        self.user_calls
+            .lock()
+            .expect("the user lookups")
+            .push(user_ids.to_vec());
+        if let Some(error) = self.take_failure() {
+            return Err(error);
+        }
+        Ok(self.users.clone())
+    }
 }
 
-pub(super) fn app(store: Option<Arc<FakeStore>>) -> Router {
+pub(crate) fn app(store: Option<Arc<FakeStore>>) -> Router {
     app_at(store, now())
 }
 
@@ -160,14 +288,14 @@ fn erased(store: Arc<FakeStore>) -> Arc<dyn UserAgentAnalyticsStore> {
     store
 }
 
-pub(super) fn app_at(store: Option<Arc<FakeStore>>, instant: DateTime<Utc>) -> Router {
+pub(crate) fn app_at(store: Option<Arc<FakeStore>>, instant: DateTime<Utc>) -> Router {
     routes(UserAgentAnalyticsState {
         store: store.map(erased),
         clock: fixed_clock(instant),
     })
 }
 
-pub(super) fn postgres_app(pool: &Pool) -> Router {
+pub(crate) fn postgres_app(pool: &Pool) -> Router {
     let store: Arc<dyn UserAgentAnalyticsStore> = Arc::new(postgres_store(pool));
     routes(UserAgentAnalyticsState {
         store: Some(store),
@@ -189,7 +317,7 @@ pub(super) fn pool_less_store() -> PostgresAnalyticsStore {
     }
 }
 
-pub(super) fn caller() -> AuthContext {
+pub(crate) fn caller() -> AuthContext {
     AuthContext {
         principal: Principal {
             principal_type: PrincipalType::Human,
@@ -211,7 +339,7 @@ pub(super) fn caller() -> AuthContext {
     }
 }
 
-pub(super) async fn get(app: Router, identity: Option<&AuthContext>, uri: &str) -> Reply {
+pub(crate) async fn get(app: Router, identity: Option<&AuthContext>, uri: &str) -> Reply {
     let mut request = Request::builder()
         .method(Method::GET)
         .uri(uri)
@@ -231,20 +359,20 @@ pub(super) async fn get(app: Router, identity: Option<&AuthContext>, uri: &str) 
     }
 }
 
-pub(super) struct Reply {
-    pub(super) status: StatusCode,
+pub(crate) struct Reply {
+    pub(crate) status: StatusCode,
     pub(super) body: Vec<u8>,
 }
 
 impl Reply {
-    pub(super) fn json<T>(&self) -> T
+    pub(crate) fn json<T>(&self) -> T
     where
         T: DeserializeOwned,
     {
         serde_json::from_slice(&self.body).expect("the response is JSON")
     }
 
-    pub(super) fn text(&self) -> String {
+    pub(crate) fn text(&self) -> String {
         str::from_utf8(&self.body)
             .expect("the response is UTF-8")
             .to_owned()
@@ -252,18 +380,18 @@ impl Reply {
 }
 
 #[derive(Debug, Deserialize)]
-pub(super) struct DetailBody {
-    pub(super) detail: String,
+pub(crate) struct DetailBody {
+    pub(crate) detail: String,
 }
 
 #[derive(Debug, Deserialize)]
-pub(super) struct NestedBody {
-    pub(super) detail: NestedDetail,
+pub(crate) struct NestedBody {
+    pub(crate) detail: NestedDetail,
 }
 
 #[derive(Debug, Deserialize)]
-pub(super) struct NestedDetail {
-    pub(super) error: String,
+pub(crate) struct NestedDetail {
+    pub(crate) error: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -314,7 +442,7 @@ struct Environment {
     url: Option<String>,
 }
 
-pub(super) async fn database() -> (PostgresFixture, Pool) {
+pub(crate) async fn database() -> (PostgresFixture, Pool) {
     let url = Environment::parse_from(["user-agent-analytics-tests"])
         .url
         .map(SecretString::from);
@@ -339,7 +467,7 @@ pub(super) async fn database() -> (PostgresFixture, Pool) {
     (fixture, pool)
 }
 
-pub(super) async fn seed(pool: &Pool, statements: &str) {
+pub(crate) async fn seed(pool: &Pool, statements: &str) {
     pool.get()
         .await
         .expect("a pooled client")
@@ -348,7 +476,7 @@ pub(super) async fn seed(pool: &Pool, statements: &str) {
         .expect("the seeded rows");
 }
 
-pub(super) async fn close(fixture: PostgresFixture, pool: Pool) {
+pub(crate) async fn close(fixture: PostgresFixture, pool: Pool) {
     pool.close();
     fixture.close_async().await.expect("the fixture closes");
 }
