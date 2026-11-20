@@ -265,7 +265,7 @@ fn pricing_json(priced: &PricedModel) -> IndexMap<String, Json> {
             tier.input_cost_per_query.as_ref(),
         ]
     });
-    let values = rates.flatten().flatten().map(scalar_json).collect();
+    let values = rates.flatten().map(scalar_json).collect();
     entry.insert("tiered_pricing".to_owned(), Json::List(values));
     if let Some(block) = &priced.off_peak_pricing {
         let block_rates = [
