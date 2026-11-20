@@ -19,7 +19,7 @@ use betterlite_openai::{
 };
 use chrono::Utc;
 use http::header::{AUTHORIZATION, HeaderName, HeaderValue};
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::ExposeSecret as _;
 
 // LiteLLM's ValueError carries no status of its own and its BaseLLMException carries one
 const MISSING_KEY: &str = "Missing xAI API Key. Pass api_key, set litellm.xai_key or XAI_API_KEY";
@@ -122,8 +122,7 @@ impl MetadataConfig for XaiFilesConfig<'_> {
         &self,
         request: EnvironmentRequest<'_>,
     ) -> Result<Headers, BaseLlmException> {
-        let supplied = request.api_key.map(SecretString::from);
-        let Some(key) = get_api_key(supplied.as_ref(), KeyOrder::Chat, self.settings) else {
+        let Some(key) = get_api_key(request.api_key, KeyOrder::Chat, self.settings) else {
             return Err(BaseLlmException {
                 status_code: 401,
                 message: MISSING_KEY.to_owned(),
