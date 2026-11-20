@@ -36,12 +36,12 @@ pub(crate) async fn deliver(
 
 // One failed attempt ends this method: a failed notice send skips the close, exactly as LiteLLM's single try does
 pub(crate) async fn relay(
-    socket: Option<&mut (dyn ClientWebSocket + '_)>,
+    socket: &mut Option<Box<dyn ClientWebSocket>>,
     code: u16,
     message: &str,
     reason: &str,
 ) {
-    let Some(socket) = socket else {
+    let Some(socket) = socket.as_mut() else {
         tracing::debug!(
             "Could not relay the upstream close to the client: the realtime client websocket is not connected"
         );

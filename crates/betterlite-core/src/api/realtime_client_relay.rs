@@ -78,13 +78,7 @@ where
     pub async fn close_client(&mut self, close: &BackendClose) {
         let message = self.redact(&close.message());
         let reason = self.redact(&close.reason);
-        close_client::relay(
-            self.state.client.as_deref_mut(),
-            close.code,
-            &message,
-            &reason,
-        )
-        .await;
+        close_client::relay(&mut self.state.client, close.code, &message, &reason).await;
     }
 
     // LiteLLM's bidirectional_forward: wait for the first direction, close on either completion, then cancel and join both
