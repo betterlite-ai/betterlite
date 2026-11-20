@@ -267,7 +267,10 @@ fn overwrite_credentials(params: &mut Object, branch: &BranchCall<'_, '_>) {
 }
 
 // the options extra_body token wins over AZURE_AD_TOKEN, and an empty one falls back
-fn take_azure_ad_token(optional_params: &mut Object, settings: &Settings) -> Option<SecretString> {
+pub(super) fn take_azure_ad_token(
+    optional_params: &mut Object,
+    settings: &Settings,
+) -> Option<SecretString> {
     let popped = optional_params
         .get_mut("extra_body")
         .and_then(Value::as_object_mut)

@@ -7,4 +7,5 @@ mod openai;
 pub mod operations;
 mod providers;
 pub mod service;
+mod tests;
 mod values;
