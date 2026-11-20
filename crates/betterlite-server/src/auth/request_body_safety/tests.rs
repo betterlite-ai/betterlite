@@ -368,4 +368,14 @@ async fn form_fields_are_scanned() {
     .await;
     assert_eq!(broken_status, StatusCode::OK);
     assert!(broken_reached);
+
+    // a form metadata value that is not JSON is left to the route too, where LiteLLM's pre-read raises
+    let (metadata_status, _metadata_body, metadata_reached) = run_request_with(
+        &config(""),
+        "application/x-www-form-urlencoded",
+        "model=gpt-4o&metadata=not-json",
+    )
+    .await;
+    assert_eq!(metadata_status, StatusCode::OK);
+    assert!(metadata_reached);
 }

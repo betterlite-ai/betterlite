@@ -43,8 +43,8 @@ fn fallback_allowlisted_host_denied() {
         hosts: allowlisted(),
         ..Fixture::default()
     };
-    assert!(matches!(
-        denied(&fixture, r#"{"fallbacks": ["https://evil.example/v1"]}"#),
-        SafetyError::FallbackDestination
-    ));
+    let error = denied(&fixture, r#"{"fallbacks": ["https://evil.example/v1"]}"#);
+    assert!(matches!(&error, SafetyError::FallbackDestination));
+    // the refusal names the policy, never the caller-supplied destination
+    assert!(!error.to_string().contains("evil.example"), "{error}");
 }
