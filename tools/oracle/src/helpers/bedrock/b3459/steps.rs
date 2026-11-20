@@ -100,10 +100,10 @@ impl StepSource for StoreStep {
     }
 }
 
-fn build_workflow<S: StepSource>(
-    source: &S,
-    failing: bool,
-) -> Result<BuiltWorkflow, Box<HelperError>> {
+fn build_workflow<S>(source: &S, failing: bool) -> Result<BuiltWorkflow, Box<HelperError>>
+where
+    S: StepSource,
+{
     let recorder = Recorder::default();
     let settings = S3VectorsSettings::from_vector_store_config(
         source.vector(),
@@ -123,12 +123,12 @@ fn build_workflow<S: StepSource>(
     Ok((workflow, recorder))
 }
 
-pub(super) fn settings(cases: &[SettingsCase]) -> HelperResult {
+pub(super) fn settings(cases: &[SettingsCase]) -> Value {
     let mut results: Vec<Value> = Vec::with_capacity(cases.len());
     for case in cases {
         results.push(settings_for(case));
     }
-    Ok(json!({"settings": results}))
+    json!({"settings": results})
 }
 
 fn settings_for(case: &SettingsCase) -> Value {
@@ -193,13 +193,13 @@ fn flow_for(runtime: &Runtime, case: &FlowCase) -> HelperResult {
 pub(super) fn embed(runtime: &Runtime, step: &EmbedStep) -> HelperResult {
     let (workflow, recorder) = build_workflow(step, false)?;
     let results = embed_chunks(&workflow, runtime, &step.chunk_sets)?;
-    results_value(results, &recorder)
+    Ok(results_value(&results, &recorder))
 }
 
 pub(super) fn store(runtime: &Runtime, step: &StoreStep) -> HelperResult {
     let (workflow, recorder) = build_workflow(step, false)?;
     let results = store_calls(&workflow, runtime, &step.calls)?;
-    results_value(results, &recorder)
+    Ok(results_value(&results, &recorder))
 }
 
 fn embed_chunks(
@@ -226,11 +226,11 @@ fn store_calls(
         .collect()
 }
 
-fn results_value(results: Vec<Value>, recorder: &Recorder) -> HelperResult {
-    Ok(json!({
+fn results_value(results: &[Value], recorder: &Recorder) -> Value {
+    json!({
         "results": results,
         "operations": recorder.operations(),
-    }))
+    })
 }
 
 fn store_call(

@@ -102,7 +102,7 @@ impl Helper for Op {
             .build()
             .or_value_error()?;
         match input {
-            Input::Settings { cases } => settings(cases),
+            Input::Settings { cases } => Ok(settings(cases)),
             Input::Dimension { cases } => dimension(&runtime, cases),
             Input::Flow { cases } => flow(&runtime, cases),
             Input::Embed(step) => embed(&runtime, step),
