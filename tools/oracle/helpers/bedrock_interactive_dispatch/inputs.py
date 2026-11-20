@@ -19,13 +19,13 @@ class UrlView(TypedDict):
     streaming: bool
 
 
+class Condensed(TypedDict):
+    content: JsonValue
+    finish_reason: JsonValue
+
+
 class CollectView(TypedDict):
-    decoded: bool
-
-
-class LoggedView(TypedDict):
-    logged: bool
-    raised: bool
+    view: Condensed | None
 
 
 class MappedParams(TypedDict):
@@ -76,6 +76,7 @@ class ResponsesRun(TypedDict):
 
 class PassthroughRun(TypedDict):
     endpoint: str
+    method: NotRequired[str]
     data: JsonObject
     region: NotRequired[str | None]
     status: int
@@ -134,7 +135,6 @@ Case = ResponsesCase | PassthroughCase | SearchCase | VectorCase | RealtimeCase
 
 URL_VIEW: Final[TypeAdapter[UrlView]] = TypeAdapter(UrlView)
 COLLECT_VIEW: Final[TypeAdapter[CollectView]] = TypeAdapter(CollectView)
-LOGGED_VIEW: Final[TypeAdapter[LoggedView]] = TypeAdapter(LoggedView)
 MAPPED_RESULT: Final[TypeAdapter[MappedResult]] = TypeAdapter(MappedResult)
 VECTOR_CALLS: Final[TypeAdapter[VectorCalls]] = TypeAdapter(VectorCalls)
 VECTOR_RESULT: Final[TypeAdapter[VectorResult]] = TypeAdapter(VectorResult)
@@ -160,9 +160,4 @@ def authorization_view(headers: dict[str, str]) -> JsonValue:
 
 
 def request_view(method: str, url: str, headers: dict[str, str], body: JsonValue) -> JsonValue:
-    return {
-        "method": method,
-        "url": url,
-        "auth": authorization_view(headers),
-        "body": body,
-    }
+    return {"method": method, "url": url, "auth": authorization_view(headers), "body": body}

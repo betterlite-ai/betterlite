@@ -5,6 +5,7 @@ os.environ["LITELLM_RUST"] = "false"
 import asyncio
 from typing import Final
 
+import httpx
 from litellm.llms.bedrock.common_utils import BedrockError
 from litellm.llms.bedrock.responses.transformation import BedrockOpenAIResponsesConfig
 from litellm.llms.bedrock.vector_stores.transformation import BedrockVectorStoreConfig
@@ -12,8 +13,9 @@ from litellm.types.router import GenericLiteLLMParams
 from pydantic import JsonValue, TypeAdapter
 
 from agentcore_search_reply import run as search_reply
+from bedrock_services_passthrough import CONFIG as PASSTHROUGH_CONFIG
 from bedrock_services_passthrough import SIGNER as PASSTHROUGH_SIGNER
-from bedrock_services_passthrough import collect_run, reply_run, url_run
+from bedrock_services_passthrough import collect_run, logging_fixture, url_run
 from bedrock_services_realtime_transport import run as realtime_transport_run
 from bedrock_services_realtime_transport.models import Input as RealtimeTransportInput
 from bedrock_services_realtime_transport.models import Run as RealtimeTransportRun
@@ -54,28 +56,23 @@ def error_row(kind: str, status: int | None) -> inputs.JsonObject:
 
 def responses_row(run: inputs.ResponsesRun) -> JsonValue:
     fixture = Fixture({})
-    config = BedrockOpenAIResponsesConfig(
+    calls: Calls = BedrockOpenAIResponsesConfig(
         fetch_image=fixture.fetch, async_fetch_image=fixture.fetch_async
     )
-    return responses_request(config, run)
-
-
-def responses_request(calls: Calls, run: inputs.ResponsesRun) -> JsonValue:
-    api_key = run.get("api_key")
     try:
         source = inputs.RESPONSES_SOURCE.validate_python(run["input"])
         payload: JsonValue = [{"params": run["params"], "drop_params": False}]
         validated = inputs.MAPPED_RESULT.validate_python(option_cases(calls, payload))
         mapped = validated["results"][0]["params"]
         url = calls.get_complete_url(RESPONSES_HOST, {})
-        params = GenericLiteLLMParams(api_key=api_key)
+        params = GenericLiteLLMParams(api_key=run.get("api_key"))
         headers = calls.validate_environment({}, run["model"], params)
         body = asyncio.run(
             calls.async_transform_responses_api_request(run["model"], source, mapped, params, {})
         )
     except (KeyError, TypeError, ValueError):
         return error_row("leaf", None)
-    signed, _body = calls.sign_request(dict(headers), {}, body, url, api_key=api_key)
+    signed, _body = calls.sign_request(dict(headers), {}, body, url, api_key=run.get("api_key"))
     row: inputs.JsonObject = dict[str, JsonValue].fromkeys(inputs.KEYS)
     row["request"] = inputs.request_view("POST", url, signed, body)
     row["status"] = run["status"]
@@ -85,8 +82,7 @@ def responses_request(calls: Calls, run: inputs.ResponsesRun) -> JsonValue:
 
 def passthrough_row(run: inputs.PassthroughRun) -> JsonValue:
     region = run.get("region")
-    if region is None:
-        region = "us-east-1"
+    region = "us-east-1" if region is None else region
     try:
         view = inputs.URL_VIEW.validate_python(
             url_run({"model": PASSTHROUGH_MODEL, "endpoint": run["endpoint"], "region": region})
@@ -94,37 +90,45 @@ def passthrough_row(run: inputs.PassthroughRun) -> JsonValue:
     except ValueError:
         return error_row("leaf", None)
     params: inputs.JsonObject = {
-        "aws_region_name": region,
-        "aws_access_key_id": ACCESS,
-        "aws_secret_access_key": SEED,
+        "aws_region_name": region, "aws_access_key_id": ACCESS, "aws_secret_access_key": SEED
     }
     signed, body = PASSTHROUGH_SIGNER.sign_request(
-        headers={},
-        litellm_params=params,
-        request_data=run["data"],
-        api_base=view["url"],
+        headers={}, litellm_params=params, request_data=run["data"], api_base=view["url"],
         model=PASSTHROUGH_MODEL,
     )
     text = b"{}" if body is None else body
     row: inputs.JsonObject = dict[str, JsonValue].fromkeys(inputs.KEYS)
     row["request"] = inputs.request_view(
-        "POST", view["url"], signed, JsonAdapter.validate_json(text)
+        run.get("method", "POST"), view["url"], signed, JsonAdapter.validate_json(text)
     )
     row["endpoint_url"] = view["endpoint_url"]
     row["streaming"] = view["streaming"]
     row["status"] = run["status"]
     chunks = run.get("chunks")
     if chunks:
-        data = bytes.fromhex("".join(chunks))
         collected = inputs.COLLECT_VIEW.validate_python(
-            collect_run({"model": PASSTHROUGH_MODEL, "endpoint": run["endpoint"]}, data)
+            collect_run({"model": PASSTHROUGH_MODEL, "endpoint": run["endpoint"]},
+                        bytes.fromhex("".join(chunks)))
         )
-        row["logged"] = collected["decoded"]
+        decoded = collected["view"]
+        if decoded is not None:
+            row["logged"] = {
+                "content": decoded["content"], "finish_reason": decoded["finish_reason"]
+            }
     else:
-        logged = inputs.LOGGED_VIEW.validate_python(
-            reply_run({"provider": "bedrock", "endpoint": run["endpoint"], "body": run["reply"]})
-        )
-        row["logged"] = logged["logged"]
+        reply: inputs.JsonObject = {
+            "status_code": run["status"], "body": run["reply"], "request_data": run["data"]
+        }
+        try:
+            _logged = PASSTHROUGH_CONFIG.logging_non_streaming_response(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/transformation.py#L234-L275
+                model=PASSTHROUGH_MODEL, custom_llm_provider="bedrock",
+                httpx_response=httpx.Response(run["status"], content=run["reply"].encode()),
+                request_data=run["data"], logging_obj=logging_fixture(PASSTHROUGH_MODEL),
+                endpoint=run["endpoint"],
+            )
+        except (ValueError, BedrockError):
+            return error_row("leaf", None)
+        row["logged"] = reply
     return row
 
 
@@ -159,16 +163,11 @@ def search_row(run: inputs.SearchRun) -> JsonValue:
 def vector_row(run: inputs.VectorRun) -> JsonValue:
     supplied = VectorInput(
         operation="retrieval_configuration",
-        requests=[
-            RequestScenario(
-                vector_store_id=VECTOR_ID,
-                query=run["query"],
-                api_base=VECTOR_ENDPOINT,
-                optional_params=run["optional"],
-                litellm_params={"aws_region_name": "us-east-1"},
-                extra_body=run.get("extra_body"),
-            )
-        ],
+        requests=[RequestScenario(
+            vector_store_id=VECTOR_ID, query=run["query"], api_base=VECTOR_ENDPOINT,
+            optional_params=run["optional"], litellm_params={"aws_region_name": "us-east-1"},
+            extra_body=run.get("extra_body"),
+        )],
     )
     try:
         calls = inputs.VECTOR_CALLS.validate_python(
@@ -184,15 +183,12 @@ def vector_row(run: inputs.VectorRun) -> JsonValue:
         "POST", call["url"], {}, JsonAdapter.validate_python(call["body"])
     )
     decoded = inputs.VECTOR_RESULT.validate_python(
-        decoded_responses(
-            BedrockVectorStoreConfig(),
-            VectorInput(
-                operation="attributes_and_scores",
-                responses=[
-                    ResponseScenario(status=run["status"], body=run["reply"], query=call["query"])
-                ],
-            ),
-        )
+        decoded_responses(BedrockVectorStoreConfig(), VectorInput(
+            operation="attributes_and_scores",
+            responses=[
+                ResponseScenario(status=run["status"], body=run["reply"], query=call["query"])
+            ],
+        ))
     )
     row["response"] = decoded["responses"][0]["value"]
     return row
@@ -200,31 +196,17 @@ def vector_row(run: inputs.VectorRun) -> JsonValue:
 
 def realtime_row(run: inputs.RealtimeRun) -> JsonValue:
     region = run.get("region")
-    if region is None:
-        region = "us-east-1"
+    region = "us-east-1" if region is None else region
     scenario = RealtimeTransportInput(
         runs=[
             RealtimeTransportRun(
-                model=REALTIME_MODEL,
-                pending=run["pending"],
-                frames=[],
-                chunks=[],
-                block="client",
-                receive_failure=None,
-                send_failure=None,
-                open_error=True,
-                client_send_failure=None,
-                credentials=MODE,
+                model=REALTIME_MODEL, pending=run["pending"], frames=[], chunks=[],
+                block="client", receive_failure=None, send_failure=None, open_error=True,
+                client_send_failure=None, credentials=MODE, api_base=None, endpoint=None,
+                region=region, committed=False, failure=None,
                 auth={
-                    "access_key_id": ACCESS,
-                    "secret_access_key": SEED,
-                    "session_token": None,
+                    "access_key_id": ACCESS, "secret_access_key": SEED, "session_token": None
                 },
-                api_base=None,
-                endpoint=None,
-                region=region,
-                committed=False,
-                failure=None,
             )
         ]
     )
@@ -232,10 +214,8 @@ def realtime_row(run: inputs.RealtimeRun) -> JsonValue:
     seen = result["runs"][0]
     row: inputs.JsonObject = dict[str, JsonValue].fromkeys(inputs.KEYS)
     row["response"] = {
-        "outcome": seen["outcome"],
-        "error_kind": seen["error_kind"],
-        "status_code": seen["status_code"],
-        "committed": seen["committed"],
+        "outcome": seen["outcome"], "error_kind": seen["error_kind"],
+        "status_code": seen["status_code"], "committed": seen["committed"],
     }
     return row
 

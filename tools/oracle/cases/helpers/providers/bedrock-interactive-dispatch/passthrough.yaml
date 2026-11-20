@@ -19,5 +19,10 @@ call:
         region: US_EAST_1
         status: 200
         reply: '{}'
+      - endpoint: model/anthropic.claude-3/invoke
+        method: GET
+        data: {input: hi}
+        status: 200
+        reply: '{"model":"anthropic.claude-3","content":[{"type":"text","text":"hi"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}'
 env: {}
 compare: {ignore: []}
