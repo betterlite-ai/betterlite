@@ -1,7 +1,7 @@
 import asyncio
-from collections.abc import Callable, Coroutine
+from collections.abc import Coroutine
 from datetime import UTC, datetime
-from typing import Final, Literal, Protocol
+from typing import Final, Literal, Protocol, TypeAlias
 
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.base_llm.chat.transformation import BaseLLMException
@@ -30,29 +30,68 @@ JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 OBJECTS: Final = TypeAdapter(dict[str, object] | None)
 PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
 
-# the file objects carry Any, so the handlers are read through a view that returns object
-SyncHandler = Callable[..., object]
-AsyncHandler = Callable[..., Coroutine[object, object, object]]
+# keyword-only handlers reply with Any-carrying objects, so each signature is spelled out here
+HandlerResult: TypeAlias = object
+AsyncHandlerResult: TypeAlias = Coroutine[HandlerResult, HandlerResult, HandlerResult]
+ExtraValues: TypeAlias = dict[str, object] | None
 
 
 class Handlers(Protocol):
-    @property
     def vector_store_file_create_handler(  # ast-grep-ignore: no-long-names
         self,
-    ) -> SyncHandler: ...
+        *,
+        vector_store_id: str,
+        create_request: VectorStoreFileCreateRequest,
+        vector_store_files_provider_config: BaseVectorStoreFilesConfig,  # ast-grep-ignore
+        custom_llm_provider: str,
+        litellm_params: GenericLiteLLMParams,
+        logging_obj: Logging,
+        extra_headers: dict[str, str] | None = None,
+        extra_body: ExtraValues = None,
+        timeout: float | None = None,
+    ) -> HandlerResult: ...
 
-    @property
     def async_vector_store_file_create_handler(  # ast-grep-ignore: no-long-names
         self,
-    ) -> AsyncHandler: ...
+        *,
+        vector_store_id: str,
+        create_request: VectorStoreFileCreateRequest,
+        vector_store_files_provider_config: BaseVectorStoreFilesConfig,  # ast-grep-ignore
+        custom_llm_provider: str,
+        litellm_params: GenericLiteLLMParams,
+        logging_obj: Logging,
+        extra_headers: dict[str, str] | None = None,
+        extra_body: ExtraValues = None,
+        timeout: float | None = None,
+    ) -> AsyncHandlerResult: ...
 
-    @property
-    def vector_store_file_list_handler(self) -> SyncHandler: ...
+    def vector_store_file_list_handler(
+        self,
+        *,
+        vector_store_id: str,
+        query_params: VectorStoreFileListQueryParams,
+        vector_store_files_provider_config: BaseVectorStoreFilesConfig,  # ast-grep-ignore
+        custom_llm_provider: str,
+        litellm_params: GenericLiteLLMParams,
+        logging_obj: Logging,
+        extra_headers: dict[str, str] | None = None,
+        extra_query: ExtraValues = None,
+        timeout: float | None = None,
+    ) -> HandlerResult: ...
 
-    @property
     def async_vector_store_file_list_handler(  # ast-grep-ignore: no-long-names
         self,
-    ) -> AsyncHandler: ...
+        *,
+        vector_store_id: str,
+        query_params: VectorStoreFileListQueryParams,
+        vector_store_files_provider_config: BaseVectorStoreFilesConfig,  # ast-grep-ignore
+        custom_llm_provider: str,
+        litellm_params: GenericLiteLLMParams,
+        logging_obj: Logging,
+        extra_headers: dict[str, str] | None = None,
+        extra_query: ExtraValues = None,
+        timeout: float | None = None,
+    ) -> AsyncHandlerResult: ...
 
 
 HANDLERS: Handlers = BaseLLMHTTPHandler()
