@@ -1,0 +1,23 @@
+kind: helper
+name: dimension_probe
+call:
+  b3459:
+    step: dimension
+    cases:
+      - vector: {vector_bucket_name: probe-bucket, index_name: probe-index, litellm_embedding_model: vendor/model}
+        environment: {}
+        answer: [[0.1, 0.2, 0.3]]
+        failing: false
+      - vector: {vector_bucket_name: probe-bucket, index_name: probe-index, litellm_embedding_model: vendor/model}
+        environment: {}
+        answer: []
+        failing: false
+      - vector: {vector_bucket_name: probe-bucket, index_name: probe-index, litellm_embedding_model: vendor/model}
+        environment: {}
+        answer: [[]]
+        failing: false
+      - vector: {vector_bucket_name: probe-bucket, index_name: probe-index}
+        environment: {}
+        failing: false
+env: {}
+compare: {ignore: []}

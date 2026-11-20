@@ -1,0 +1,24 @@
+task: B3459
+deviations:
+  - what: Signing and sending go through B3456's signed_request_with and the injected AwsRagTransport, not LiteLLM's requests plus botocore SigV4Auth and its pooled httpx client. Oracle cases compare the operation order and AWS-named parameters from a recording fake on the Python side.
+    why: One signing path for every AWS call, and the rules forbid hand-rolled SigV4.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/s3_vectors_ingestion.py#L238-L262
+  - what: The per-store ssl_verify value is parsed and kept but does not change TLS checks. The deployment's pooled client decides them.
+    why: B173's client is shared and built once, so a request cannot lower or replace its trust store.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/s3_vectors_ingestion.py#L113-L118
+  - what: The embedding call is made through an injected RagEmbedder trait instead of choosing between router.aembedding and litellm.aembedding here.
+    why: This crate cannot import the router; B3460 supplies one implementation that does the same choice.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/s3_vectors_ingestion.py#L423-L426
+  - what: A non-integer dimension, or a distance metric that is not text, is a typed SettingsError at construction.
+    why: Python would fail later with TypeError or send the value on to AWS; the declared types make it an input error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/s3_vectors_ingestion.py#L158-L167
+  - what: A store call with no chunks or no embeddings fails with WorkflowError::NoContent carrying LiteLLM's text; LiteLLM raises ValueError with the same text.
+    why: The error type is betterlite's own and the message stays identical, so callers match the variant instead of parsing a Python exception.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/s3_vectors_ingestion.py#L462-L472
+  - what: A failing embedding call surfaces as WorkflowError::Embed carrying the model and the error message; LiteLLM lets the provider exception propagate unchanged.
+    why: The injected RagEmbedder reports EmbedError, and the workflow keeps the failure typed instead of erasing it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/s3_vectors_ingestion.py#L423-L428
+kept_bugs:
+  - what: A probe answer whose first embedding is empty resolves the dimension to 0, and the index is created with dimension 0, which AWS refuses.
+    why: LiteLLM takes len() of whatever vector comes back, and no embedding provider in a working setup returns an empty vector here; the resolved value stays the one LiteLLM reports.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/s3_vectors_ingestion.py#L145-L148
