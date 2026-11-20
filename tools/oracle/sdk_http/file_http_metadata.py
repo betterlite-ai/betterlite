@@ -7,9 +7,8 @@ from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.base_llm.chat.transformation import BaseLLMException
 from litellm.llms.base_llm.files.transformation import BaseFilesConfig
 from litellm.llms.custom_httpx.llm_http_handler import BaseLLMHTTPHandler
-from litellm.llms.xai.files.transformation import XAIFilesConfig
-from litellm.types.llms.openai import OpenAIFileObject
-from openai.types.file_deleted import FileDeleted
+from litellm.types.utils import LlmProviders
+from litellm.utils import ProviderConfigManager
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
 Operation = Literal["retrieve", "delete", "list"]
@@ -90,7 +89,7 @@ def execute(
     file_id = "" if call.file_id is None else call.file_id
     if call.operation == "retrieve" and call.mode == "sync":
         retrieved = HANDLER.retrieve_file(
-            file_id, config, litellm_params, headers, logging_obj, False, None, timeout
+            file_id, config, litellm_params, headers, logging_obj, timeout=timeout
         )
         return JSON.validate_json(settled(retrieved).model_dump_json(exclude_none=True))
     if call.operation == "retrieve":
@@ -102,7 +101,7 @@ def execute(
         return JSON.validate_json(fetched.model_dump_json(exclude_none=True))
     if call.operation == "delete" and call.mode == "sync":
         removed = HANDLER.delete_file(
-            file_id, config, litellm_params, headers, logging_obj, False, None, timeout
+            file_id, config, litellm_params, headers, logging_obj, timeout=timeout
         )
         return JSON.validate_json(settled(removed).model_dump_json(exclude_none=True))
     if call.operation == "delete":
@@ -114,9 +113,10 @@ def execute(
         return JSON.validate_json(deleted.model_dump_json(exclude_none=True))
     if call.mode == "sync":
         listed = HANDLER.list_files(
-            call.purpose, config, litellm_params, headers, logging_obj, False, None, timeout
+            call.purpose, config, litellm_params, headers, logging_obj, timeout=timeout
         )
-        return [JSON.validate_json(entry.model_dump_json(exclude_none=True)) for entry in settled(listed)]
+        files = settled(listed)
+        return [JSON.validate_json(entry.model_dump_json(exclude_none=True)) for entry in files]
     listed_async = asyncio.run(
         HANDLER.async_list_files(
             call.purpose, config, litellm_params, headers, logging_obj, None, timeout
@@ -126,7 +126,9 @@ def execute(
 
 
 def run_metadata(call: MetadataCall, api_base: str) -> Outcome:
-    config: BaseFilesConfig = XAIFilesConfig()
+    config = ProviderConfigManager.get_provider_files_config(model="", provider=LlmProviders.XAI)
+    if config is None:
+        raise ValueError("no xAI files config")
     timeout = None if call.timeout_seconds is None else float(call.timeout_seconds)
     try:
         result = execute(call, config, timeout, api_base)
