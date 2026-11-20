@@ -161,9 +161,12 @@ async def _accept_function(  # ast-grep-ignore: no-one-line-functions
     return TeamMetadataValidationResult(valid=True)
 
 
-REJECTIONS: Final[dict[ValidatorKind, TeamMetadataValidationResult]] = {
+VALIDATION_RESULTS: Final[dict[ValidatorKind, TeamMetadataValidationResult]] = {
+    "accept": TeamMetadataValidationResult(valid=True),
     "reject": TeamMetadataValidationResult(valid=False, error_message="alias must be set"),
     "reject_empty": TeamMetadataValidationResult(valid=False, error_message=""),
+    "raises": TeamMetadataValidationResult(valid=True),
+    "sleep": TeamMetadataValidationResult(valid=True),
 }
 
 
@@ -182,7 +185,7 @@ def build_validator(
         recorder = Recording(raw)
     else:
         recorder = Recording(
-            REJECTIONS.get(kind, TeamMetadataValidationResult(valid=True)),
+            VALIDATION_RESULTS[kind],
             error=ValueError("database exploded secret-token-123") if kind == "raises" else None,
             sleep=0.2 if kind == "sleep" else 0.0,
         )

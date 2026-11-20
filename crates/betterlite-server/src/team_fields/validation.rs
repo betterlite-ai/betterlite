@@ -140,8 +140,10 @@ pub struct TeamMetadataSchemaRegistry {
 
 impl TeamMetadataSchemaRegistry {
     pub fn set(&self, fields: Vec<TeamMetadataFieldSchema>) {
-        let mut current = self.fields.write().unwrap_or_else(PoisonError::into_inner);
-        *current = fields;
+        match self.fields.write() {
+            Ok(mut current) => *current = fields,
+            Err(poisoned) => *poisoned.into_inner() = fields,
+        }
     }
 
     #[must_use]
