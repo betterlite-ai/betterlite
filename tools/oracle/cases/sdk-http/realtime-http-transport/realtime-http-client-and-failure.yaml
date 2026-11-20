@@ -16,4 +16,6 @@ compare:
   headers: []
   headers_present: []
   upstream_headers: [authorization, content-type]
-  ignore: []
+  ignore:
+    - pointer: /upstream/0/body
+      why: LiteLLM writes the session part through json.dumps spacing and this side through standard JSON, and each side picks its own boundary
