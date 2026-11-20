@@ -51,8 +51,8 @@ pub(super) fn update_logging(
     )
 }
 
-fn insert_slot(kwargs: &mut IndexMap<String, Json>, name: &str, value: Option<&Json>) {
-    if let Some(value) = value {
+fn insert_slot(kwargs: &mut IndexMap<String, Json>, name: &str, slot: Option<&Json>) {
+    if let Some(value) = slot {
         kwargs.insert(name.to_owned(), value.clone());
     }
 }

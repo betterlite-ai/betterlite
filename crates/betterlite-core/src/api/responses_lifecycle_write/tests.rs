@@ -48,10 +48,10 @@ fn configured(environment: &[(&str, &str)]) -> RequestTimeout {
 }
 
 fn injected_timeout(injected: Option<&str>) -> RequestTimeout {
-    match injected {
-        Some(seconds) => configured(&[("REQUEST_TIMEOUT", seconds)]),
-        None => configured(&[]),
-    }
+    injected.map_or_else(
+        || configured(&[]),
+        |seconds| configured(&[("REQUEST_TIMEOUT", seconds)]),
+    )
 }
 
 fn writing<'deps, 'settings>(
@@ -136,8 +136,8 @@ fn configured_call(
     prepared
 }
 
-fn assert_wire(request: &WriteRequest, method: Method, path: &str) {
-    assert_eq!(request.method, method);
+fn assert_wire(request: &WriteRequest, method: &Method, path: &str) {
+    assert_eq!(&request.method, method);
     assert_eq!(request.url.as_str(), format!("{BASE}/responses/{path}"));
     assert!(request.url.query().is_none());
 }
@@ -183,11 +183,9 @@ async fn delete_and_cancel_encoded_provider(#[case] asynchronous: bool) {
         state.litellm_params.get("litellm_metadata"),
         Some(&metadata)
     );
-    let delete_requests = wire.requests();
-    assert_eq!(delete_requests.len(), 1);
-    assert_wire(&delete_requests[0], Method::DELETE, "resp%2Fa");
-    assert!(matches!(&delete_requests[0].body, RequestBody::Empty));
-    drop(delete_requests);
+    assert_eq!(wire.requests().len(), 1);
+    assert_wire(&wire.requests()[0], &Method::DELETE, "resp%2Fa");
+    assert!(matches!(&wire.requests()[0].body, RequestBody::Empty));
 
     let cancel_wire = Wire::returning(200, CANCELLED);
     let cancel_source = Source::new(cancel_wire.clone());
@@ -209,11 +207,9 @@ async fn delete_and_cancel_encoded_provider(#[case] asynchronous: bool) {
     assert_eq!(reply.response.id, "resp_a");
     assert_eq!(reply.response.status.as_deref(), Some("cancelled"));
     assert_eq!(reply.response.model.as_deref(), Some("gpt-5"));
-    let cancel_requests = cancel_wire.requests();
-    assert_eq!(cancel_requests.len(), 1);
-    assert_wire(&cancel_requests[0], Method::POST, "resp%2Fa/cancel");
-    assert_eq!(body_json(&cancel_requests[0]), json("{}"));
-    drop(cancel_requests);
+    assert_eq!(cancel_wire.requests().len(), 1);
+    assert_wire(&cancel_wire.requests()[0], &Method::POST, "resp%2Fa/cancel");
+    assert_eq!(body_json(&cancel_wire.requests()[0]), json("{}"));
 
     let plain_wire = Wire::returning(200, DELETED);
     let plain_source = Source::new(plain_wire.clone());
@@ -232,7 +228,7 @@ async fn delete_and_cancel_encoded_provider(#[case] asynchronous: bool) {
     .await
     .expect("a raw id with an explicit openai provider succeeds")
     .into_deleted();
-    assert_wire(&plain_wire.requests()[0], Method::DELETE, "resp_a");
+    assert_wire(&plain_wire.requests()[0], &Method::DELETE, "resp_a");
     let empty_provider = build_response_id(Some(""), Some("model-a"), "resp_b");
     let mut provider_call = configured_call(LifecycleOperation::Delete, &empty_provider);
     provider_call.custom_llm_provider = Some(String::from("openai"));
@@ -246,7 +242,7 @@ async fn delete_and_cancel_encoded_provider(#[case] asynchronous: bool) {
     .await
     .expect("an empty decoded provider falls back to the argument")
     .into_deleted();
-    assert_wire(&plain_wire.requests()[1], Method::DELETE, "resp_b");
+    assert_wire(&plain_wire.requests()[1], &Method::DELETE, "resp_b");
     let empty_id = build_response_id(Some("openai"), Some("model-a"), "");
     let mut id_call = configured_call(LifecycleOperation::Delete, &empty_id);
     id_call.custom_llm_provider = Some(String::from("openai"));
@@ -270,8 +266,8 @@ async fn delete_and_cancel_encoded_provider(#[case] asynchronous: bool) {
 }
 
 #[rstest]
-#[case::unset(None, None, Duration::from_secs(6000))]
-#[case::zero(None, Some(0.0_f64), Duration::from_secs(6000))]
+#[case::unset(None, None, Duration::from_mins(100))]
+#[case::zero(None, Some(0.0_f64), Duration::from_mins(100))]
 #[case::seven(None, Some(7.0_f64), Duration::from_secs(7))]
 #[case::negative(None, Some(-3.0_f64), Duration::ZERO)]
 #[case::injected_unset(Some("17"), None, Duration::from_secs(17))]
@@ -285,9 +281,8 @@ async fn lifecycle_write_ignored_extras(
     let settings = credentials();
     let config = openai_config(&settings);
     let harness = Harness::new();
-    let trace: BTreeMap<String, String> = [("X-Trace".to_owned(), "kept".to_owned())]
-        .into_iter()
-        .collect();
+    let trace: BTreeMap<String, String> =
+        BTreeMap::from([("X-Trace".to_owned(), "kept".to_owned())]);
     let mut delete_call = configured_call(LifecycleOperation::Delete, "resp_a");
     delete_call.custom_llm_provider = Some(String::from("openai"));
     delete_call.extra_headers = Some(trace.clone());
@@ -303,16 +298,14 @@ async fn lifecycle_write_ignored_extras(
         .await
         .expect("the extras are accepted and dropped")
         .into_deleted();
-    let delete_requests = wire.requests();
-    assert_eq!(delete_requests.len(), 1);
-    assert_wire(&delete_requests[0], Method::DELETE, "resp_a");
+    assert_eq!(wire.requests().len(), 1);
+    assert_wire(&wire.requests()[0], &Method::DELETE, "resp_a");
     assert_eq!(
-        header(&delete_requests[0], "x-trace").as_deref(),
+        header(&wire.requests()[0], "x-trace").as_deref(),
         Some("kept")
     );
-    assert!(matches!(&delete_requests[0].body, RequestBody::Empty));
-    assert_eq!(delete_requests[0].timeout, Some(expected));
-    drop(delete_requests);
+    assert!(matches!(&wire.requests()[0].body, RequestBody::Empty));
+    assert_eq!(wire.requests()[0].timeout, Some(expected));
 
     let cancel_wire = Wire::returning(200, CANCELLED);
     let cancel_source = Source::new(cancel_wire.clone());
@@ -327,16 +320,14 @@ async fn lifecycle_write_ignored_extras(
         .await
         .expect("the cancel extras are accepted and dropped")
         .into_cancelled();
-    let cancel_requests = cancel_wire.requests();
-    assert_eq!(cancel_requests.len(), 1);
-    assert_wire(&cancel_requests[0], Method::POST, "resp_a/cancel");
-    assert_eq!(body_json(&cancel_requests[0]), json("{}"));
+    assert_eq!(cancel_wire.requests().len(), 1);
+    assert_wire(&cancel_wire.requests()[0], &Method::POST, "resp_a/cancel");
+    assert_eq!(body_json(&cancel_wire.requests()[0]), json("{}"));
     assert_eq!(
-        header(&cancel_requests[0], "x-trace").as_deref(),
+        header(&cancel_wire.requests()[0], "x-trace").as_deref(),
         Some("kept")
     );
-    assert_eq!(cancel_requests[0].timeout, Some(expected));
-    drop(cancel_requests);
+    assert_eq!(cancel_wire.requests()[0].timeout, Some(expected));
 }
 
 #[rstest]

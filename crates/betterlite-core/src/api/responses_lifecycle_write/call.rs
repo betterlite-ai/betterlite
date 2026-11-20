@@ -122,10 +122,10 @@ impl ResponsesLifecycleWriteCall {
 
 pub(super) fn resolve(call: &ResponsesLifecycleWriteCall) -> Resolved<'_> {
     let decoded = decode_response_id(&call.response_id);
-    let response_id = match decoded.response_id.filter(|id| !id.is_empty()) {
-        Some(id) => Cow::Owned(id),
-        None => Cow::Borrowed(call.response_id.as_str()),
-    };
+    let response_id = decoded
+        .response_id
+        .filter(|id| !id.is_empty())
+        .map_or(Cow::Borrowed(call.response_id.as_str()), Cow::Owned);
     Resolved {
         response_id,
         provider: decoded
