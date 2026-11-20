@@ -5,16 +5,12 @@ pub mod upload;
 
 mod tests;
 
-use betterlite_config::loader::EnvironmentLookup;
 use betterlite_openai::api::image_contracts::records::ImageHeaders;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use self::error::TopazError;
 
 pub const DEFAULT_API_BASE: &str = "https://api.topazlabs.com";
-
-const API_KEY_VARIABLE: &str = "TOPAZ_API_KEY";
-const API_BASE_VARIABLE: &str = "TOPAZ_API_BASE";
 
 // get_models answers the five pinned names behind the provider prefix; get_base_model returns its argument
 pub const MODELS: [&str; 5] = [
@@ -25,23 +21,11 @@ pub const MODELS: [&str; 5] = [
     "topaz/Text Refine",
 ];
 
-// TopazModelInfo's credential settings; get_api_base falls back to the default host after TOPAZ_API_BASE
+// TopazModelInfo's credential settings, read from the environment by B002's RoutingStrategy::topaz_image_settings
 #[derive(Debug, Clone)]
 pub struct TopazSettings {
     pub api_key: Option<SecretString>,
     pub api_base: String,
-}
-
-impl TopazSettings {
-    // get_secret_str reads an absent or empty variable as unset, so the loader does the same
-    #[must_use]
-    pub fn from_environment(lookup: &dyn EnvironmentLookup) -> Self {
-        let present = |name: &str| lookup.lookup(name).filter(|value| !value.is_empty());
-        Self {
-            api_key: present(API_KEY_VARIABLE).map(SecretString::from),
-            api_base: present(API_BASE_VARIABLE).unwrap_or_else(|| DEFAULT_API_BASE.to_owned()),
-        }
-    }
 }
 
 // TopazModelInfo.get_api_key takes a truthy explicit key before TOPAZ_API_KEY

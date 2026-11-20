@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
+use betterlite_config::types::RoutingStrategy;
 use betterlite_core::api::topaz::params::{
     SUPPORTED_OPENAI_PARAMS, get_complete_url, map_openai_params,
 };
@@ -39,7 +40,8 @@ pub(super) fn credential_answer(
     value: Option<&str>,
     environment: &BTreeMap<String, String>,
 ) -> Value {
-    let settings = TopazSettings::from_environment(environment);
+    let (api_key, api_base) = RoutingStrategy::topaz_image_settings(environment);
+    let settings = TopazSettings { api_key, api_base };
     match field {
         CredentialField::ApiKey => {
             let explicit = value.map(SecretString::from);

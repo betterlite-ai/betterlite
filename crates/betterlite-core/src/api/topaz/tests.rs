@@ -1,6 +1,5 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
 use std::time::Duration;
 
 use betterlite_models::decisions::Json;
@@ -19,13 +18,6 @@ use super::{
     DEFAULT_API_BASE, MODELS, TopazSettings, get_api_base, get_api_key, validate_environment,
 };
 
-fn lookup(entries: &[(&str, &str)]) -> BTreeMap<String, String> {
-    entries
-        .iter()
-        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
-        .collect()
-}
-
 fn params(entries: &[(&str, Json)]) -> ImageParams {
     entries
         .iter()
@@ -35,40 +27,6 @@ fn params(entries: &[(&str, Json)]) -> ImageParams {
 
 fn text(value: &str) -> Json {
     Json::Text(value.to_owned())
-}
-
-fn settings(entries: &[(&str, &str)]) -> TopazSettings {
-    TopazSettings::from_environment(&lookup(entries))
-}
-
-#[rstest]
-#[case::unset(&[], None, DEFAULT_API_BASE)]
-#[case::read_the_environment(
-    &[
-        ("TOPAZ_API_KEY", "server-key"),
-        ("TOPAZ_API_BASE", "https://proxy.test/v1"),
-    ],
-    Some("server-key"),
-    "https://proxy.test/v1"
-)]
-#[case::empty_variables_are_unset(
-    &[("TOPAZ_API_KEY", ""), ("TOPAZ_API_BASE", "")],
-    None,
-    DEFAULT_API_BASE
-)]
-fn topaz_settings(
-    #[case] entries: &[(&str, &str)],
-    #[case] api_key: Option<&str>,
-    #[case] api_base: &str,
-) {
-    let loaded = settings(entries);
-    let found_key = loaded
-        .api_key
-        .as_ref()
-        .map(|key| key.expose_secret().to_owned());
-
-    assert_eq!(found_key.as_deref(), api_key);
-    assert_eq!(loaded.api_base, api_base);
 }
 
 #[test]

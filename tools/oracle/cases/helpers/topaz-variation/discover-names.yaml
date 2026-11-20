@@ -22,6 +22,14 @@ call:
         value: ""
         environment: {}
       - function: credential
+        field: api_key
+        value: null
+        environment: {TOPAZ_API_KEY: "true"}
+      - function: credential
+        field: api_key
+        value: null
+        environment: {TOPAZ_API_KEY: " TRUE "}
+      - function: credential
         field: api_base
         value: null
         environment: {TOPAZ_API_BASE: "https://server.test/v1"}
@@ -29,6 +37,10 @@ call:
         field: api_base
         value: ""
         environment: {TOPAZ_API_BASE: "https://server.test/v1"}
+      - function: credential
+        field: api_base
+        value: null
+        environment: {TOPAZ_API_BASE: "false"}
       - function: credential
         field: api_base
         value: null
