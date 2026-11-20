@@ -33,9 +33,10 @@ pub(crate) struct WireRequest<'call> {
 
 // client.client.build_request: signed bytes win over content, and both silence data, files and json
 pub(crate) fn build(request: &WireRequest<'_>) -> Result<OutboundRequest, ConfigError> {
-    let method = Method::from_bytes(request.method.as_bytes()).map_err(|error| {
-        ConfigError::value_error(format!("method {} is not valid: {error}", request.method))
-    })?;
+    let method =
+        Method::from_bytes(request.method.as_bytes()).map_err(|error| ConfigError::ValueError {
+            message: format!("method {} is not valid: {error}", request.method),
+        })?;
     let mut headers = header_map(request.headers)?;
     if let Some(cookie) = cookie_header(request.cookies)? {
         headers.insert(COOKIE, cookie);
@@ -71,7 +72,9 @@ fn body(request: &WireRequest<'_>) -> Result<RequestBody, ConfigError> {
         None => match request.json {
             Some(json) => serde_json::to_vec(json)
                 .map(RequestBody::Json)
-                .map_err(|error| ConfigError::value_error(error.to_string())),
+                .map_err(|error| ConfigError::ValueError {
+                    message: error.to_string(),
+                }),
             None => Ok(RequestBody::Empty),
         },
     }
@@ -80,12 +83,14 @@ fn body(request: &WireRequest<'_>) -> Result<RequestBody, ConfigError> {
 fn header_map(headers: &Headers) -> Result<HeaderMap, ConfigError> {
     let mut map = HeaderMap::new();
     for (name, value) in headers {
-        let header_name = HeaderName::from_bytes(name.as_bytes()).map_err(|error| {
-            ConfigError::value_error(format!("header name {name} is not valid: {error}"))
-        })?;
-        let header_value = HeaderValue::from_str(value).map_err(|error| {
-            ConfigError::value_error(format!("header {name} is not valid: {error}"))
-        })?;
+        let header_name =
+            HeaderName::from_bytes(name.as_bytes()).map_err(|error| ConfigError::ValueError {
+                message: format!("header name {name} is not valid: {error}"),
+            })?;
+        let header_value =
+            HeaderValue::from_str(value).map_err(|error| ConfigError::ValueError {
+                message: format!("header {name} is not valid: {error}"),
+            })?;
         map.insert(header_name, header_value);
     }
     Ok(map)
@@ -101,9 +106,11 @@ fn cookie_header(cookies: Option<&[(String, String)]>) -> Result<Option<HeaderVa
         .map(|(name, value)| format!("{name}={value}"))
         .collect::<Vec<_>>()
         .join("; ");
-    HeaderValue::from_str(&joined).map(Some).map_err(|error| {
-        ConfigError::value_error(format!("cookies are not a valid header value: {error}"))
-    })
+    HeaderValue::from_str(&joined)
+        .map(Some)
+        .map_err(|error| ConfigError::ValueError {
+            message: format!("cookies are not a valid header value: {error}"),
+        })
 }
 
 // encode_multipart_data: data fields keep their form order, then every upload becomes a file part
@@ -160,9 +167,9 @@ fn primitive_text(name: &str, value: &JsonValue) -> Result<String, ConfigError> 
         JsonValue::Bool(flag) => Ok(String::from(if *flag { "true" } else { "false" })),
         JsonValue::Number(number) => Ok(number.to_string()),
         JsonValue::String(text) => Ok(text.clone()),
-        JsonValue::Array(_) | JsonValue::Object(_) => Err(ConfigError::value_error(format!(
-            "form field {name} must be a string, a number or a boolean"
-        ))),
+        JsonValue::Array(_) | JsonValue::Object(_) => Err(ConfigError::ValueError {
+            message: format!("form field {name} must be a string, a number or a boolean"),
+        }),
     }
 }
 

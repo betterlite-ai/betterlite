@@ -16,10 +16,9 @@ use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_models::resolution::{ProviderIdentity, ResolvedModel};
 use betterlite_openai::openai_base_config::Object;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
-use bytes::Bytes;
 use secrecy::SecretString;
 
-use super::super::{PassthroughCallArgs, PassthroughClient, PassthroughReply, PassthroughUpload};
+use super::super::{PassthroughCallArgs, PassthroughClient};
 
 pub(crate) const MODEL: &str = "my-model";
 pub(crate) const ENDPOINT: &str = "chat/completions";
@@ -47,7 +46,7 @@ pub(crate) fn logging_state() -> LoggingState {
         },
         &redactor,
         || String::from("generated"),
-        Duration::default(),
+        Duration::default,
     )
     .unwrap()
 }
@@ -95,32 +94,17 @@ pub(crate) fn bedrock_args(api_base: &str) -> PassthroughCallArgs {
     args
 }
 
-pub(crate) fn bedrock_resolved() -> ResolvedModel {
+pub(crate) fn resolved(
+    model: &str,
+    provider: ProviderId,
+    api_base: Option<&str>,
+    api_key: Option<&str>,
+) -> ResolvedModel {
     ResolvedModel {
-        model: String::from("anthropic.claude"),
-        provider: ProviderIdentity::Known(ProviderId::Bedrock),
-        api_base: None,
-        api_key: None,
-    }
-}
-
-pub(crate) fn bedrock_credentialed() -> ResolvedModel {
-    ResolvedModel {
-        model: String::from("anthropic.claude"),
-        provider: ProviderIdentity::Known(ProviderId::Bedrock),
-        api_base: Some(String::from(
-            "https://bedrock-runtime.us-east-1.amazonaws.com",
-        )),
-        api_key: Some(SecretString::from("bedrock-key")),
-    }
-}
-
-pub(crate) fn vllm_resolved() -> ResolvedModel {
-    ResolvedModel {
-        model: String::from(MODEL),
-        provider: ProviderIdentity::Known(ProviderId::Vllm),
-        api_base: Some(String::from("http://127.0.0.1:1")),
-        api_key: None,
+        model: model.to_owned(),
+        provider: ProviderIdentity::Known(provider),
+        api_base: api_base.map(str::to_owned),
+        api_key: api_key.map(SecretString::from),
     }
 }
 
@@ -132,15 +116,6 @@ pub(crate) fn object(pairs: &[(&str, JsonValue)]) -> Object {
     object
 }
 
-pub(crate) fn upload() -> PassthroughUpload {
-    PassthroughUpload {
-        field: String::from("file"),
-        filename: String::from("a.txt"),
-        content_type: Some(String::from("text/plain")),
-        bytes: Bytes::from_static(b"hello"),
-    }
-}
-
 pub(crate) fn client_timeouts() -> PassthroughClient {
     PassthroughClient {
         timeout: Duration::from_secs(30),
@@ -148,7 +123,7 @@ pub(crate) fn client_timeouts() -> PassthroughClient {
     }
 }
 
-pub(crate) fn header(reply: &PassthroughReply, name: &str) -> Option<String> {
+pub(crate) fn header(reply: &super::super::PassthroughReply, name: &str) -> Option<String> {
     let found = reply
         .headers
         .iter()

@@ -14,7 +14,7 @@ use betterlite_openai::watsonx_passthrough::WatsonxPassthroughConfig;
 use regex::{NoExpand, Regex};
 use url::Url;
 
-use super::config::{ConfigError, PassthroughCallConfig};
+use super::config::{ConfigError, PassthroughCallConfig, foundry_plan};
 
 // VLLM's ValueError text, braces and all: LiteLLM never formats the placeholder
 const VLLM_MISSING_BASE: &str = "VLLM_API_BASE is not set. Please set the environment variable, to use VLLM's pass-through - `{LITELLM_API_BASE}/vllm/{endpoint}`.";
@@ -28,40 +28,51 @@ pub(crate) fn complete_url(
     request: &PassthroughUrlRequest<'_>,
 ) -> Result<(Url, String), ConfigError> {
     match config.tag {
-        PassthroughConfigTag::VLLM => vllm_url(config, request),
+        PassthroughConfigTag::VLLM => {
+            let base = request.api_base.filter(|base| !base.is_empty()).ok_or(
+                ConfigError::ValueError {
+                    message: VLLM_MISSING_BASE.to_owned(),
+                },
+            )?;
+            let url =
+                config.format_url(request.target.endpoint, base, request.request_query_params)?;
+            Ok((url, base.to_owned()))
+        }
         PassthroughConfigTag::Bedrock => bedrock_url(config, request, false),
         PassthroughConfigTag::BedrockMantle => bedrock_url(config, request, true),
-        PassthroughConfigTag::Azure => azure_url(request),
-        PassthroughConfigTag::AzureAI => azure_ai_url(request),
-        PassthroughConfigTag::GigaChat => gigachat_url(request),
+        PassthroughConfigTag::Azure => {
+            let azure: AzurePassthroughConfig = AzurePassthroughConfig::default();
+            merged_url(&azure, request)
+        }
+        PassthroughConfigTag::AzureAI => {
+            let plan: FoundryPassthroughPlan = foundry_plan(request.litellm_params.clone());
+            merged_url(&plan, request)
+        }
+        PassthroughConfigTag::GigaChat => {
+            let gigachat: GigachatPassthroughConfig = GigachatPassthroughConfig::default();
+            merged_url(&gigachat, request)
+        }
         PassthroughConfigTag::Watsonx => watsonx_url(request),
-        PassthroughConfigTag::NvidiaNim => nvidia_nim_url(request),
+        PassthroughConfigTag::NvidiaNim => {
+            let nim: NvidiaNimPassthroughConfig = NvidiaNimPassthroughConfig::default();
+            merged_url(&nim, request)
+        }
     }
 }
 
 // the merged per-provider configs own their URL rules, so this call only hands them the resolved request
-fn azure_url(request: &PassthroughUrlRequest<'_>) -> Result<(Url, String), ConfigError> {
-    let config: AzurePassthroughConfig = AzurePassthroughConfig::default();
-    BasePassthroughConfig::get_complete_url(&config, request)
-        .map_err(|error| ConfigError::message(500, error.to_string()))
-}
-
-fn azure_ai_url(request: &PassthroughUrlRequest<'_>) -> Result<(Url, String), ConfigError> {
-    let plan: FoundryPassthroughPlan = FoundryPassthroughPlan {
-        global_api_base: None,
-        global_api_key: None,
-        azure: AzurePassthroughConfig::default(),
-        ocr: None,
-        litellm_params: request.litellm_params.clone(),
-    };
-    BasePassthroughConfig::get_complete_url(&plan, request)
-        .map_err(|error| ConfigError::message(500, error.to_string()))
-}
-
-fn gigachat_url(request: &PassthroughUrlRequest<'_>) -> Result<(Url, String), ConfigError> {
-    let config = GigachatPassthroughConfig::default();
-    BasePassthroughConfig::get_complete_url(&config, request)
-        .map_err(|error| ConfigError::message(500, error.to_string()))
+fn merged_url<Config>(
+    config: &Config,
+    request: &PassthroughUrlRequest<'_>,
+) -> Result<(Url, String), ConfigError>
+where
+    Config: BasePassthroughConfig,
+    Config::Error: ToString,
+{
+    BasePassthroughConfig::get_complete_url(config, request).map_err(|error| ConfigError::Message {
+        status: 500,
+        message: error.to_string(),
+    })
 }
 
 fn watsonx_url(request: &PassthroughUrlRequest<'_>) -> Result<(Url, String), ConfigError> {
@@ -69,26 +80,17 @@ fn watsonx_url(request: &PassthroughUrlRequest<'_>) -> Result<(Url, String), Con
     let config = WatsonxPassthroughConfig {
         environment: &environment,
     };
-    BasePassthroughConfig::get_complete_url(&config, request)
-        .map_err(|error| ConfigError::from_status(error.status(), error.to_string()))
-}
-
-fn nvidia_nim_url(request: &PassthroughUrlRequest<'_>) -> Result<(Url, String), ConfigError> {
-    let config = NvidiaNimPassthroughConfig::default();
-    BasePassthroughConfig::get_complete_url(&config, request)
-        .map_err(|error| ConfigError::message(500, error.to_string()))
-}
-
-// VLLM has no merged config in core's dependency graph; its rule is api base + the native endpoint
-fn vllm_url(
-    config: &PassthroughCallConfig,
-    request: &PassthroughUrlRequest<'_>,
-) -> Result<(Url, String), ConfigError> {
-    let Some(base) = request.api_base.filter(|base| !base.is_empty()) else {
-        return Err(ConfigError::value_error(VLLM_MISSING_BASE.to_owned()));
-    };
-    let url = config.format_url(request.target.endpoint, base, request.request_query_params)?;
-    Ok((url, base.to_owned()))
+    BasePassthroughConfig::get_complete_url(&config, request).map_err(|error| {
+        match error.status() {
+            Some(status) => ConfigError::Message {
+                status,
+                message: error.to_string(),
+            },
+            None => ConfigError::ValueError {
+                message: error.to_string(),
+            },
+        }
+    })
 }
 
 // Bedrock and Bedrock Mantle share the runtime hop; Mantle only lends its region and its bearer token
@@ -98,11 +100,7 @@ fn bedrock_url(
     mantle: bool,
 ) -> Result<(Url, String), ConfigError> {
     let params = request.litellm_params;
-    let region = if mantle {
-        mantle_region(params)?
-    } else {
-        bedrock_region(params, request.target.model)?
-    };
+    let region = region(params, request.target.model, mantle)?;
     let configured = text_param(params, "aws_bedrock_runtime_endpoint")?;
     let base = runtime_endpoint(request.api_base, configured, &region, mantle);
     let endpoint = match text_param(params, "model_id")? {
@@ -131,32 +129,25 @@ fn default_runtime_endpoint(region: &str) -> String {
     format!("https://bedrock-runtime.{region}.{suffix}")
 }
 
-// _get_aws_region_name: the explicit region is validated, then the model ARN lends one, then us-west-2
-fn bedrock_region(params: &Object, model: &str) -> Result<String, ConfigError> {
+// _get_aws_region_name for Bedrock and resolve_mantle_region for Mantle, in LiteLLM's order
+fn region(params: &Object, model: &str, mantle: bool) -> Result<String, ConfigError> {
     let explicit = text_param(params, "aws_region_name")?;
     validate_region(explicit)?;
     if let Some(region) = explicit {
         return Ok(region.to_owned());
+    }
+    if mantle {
+        let base = text_param(params, "api_base")?.filter(|base| !base.is_empty());
+        if let Some(region) = base.and_then(mantle_region_from_host) {
+            return Ok(region);
+        }
+        return Ok(DEFAULT_MANTLE_REGION.to_owned());
     }
     let model_id = text_param(params, "model_id")?;
     if let Some(region) = region_from_model_arn(model_id.unwrap_or(model)) {
         return Ok(region);
     }
     Ok(DEFAULT_BEDROCK_REGION.to_owned())
-}
-
-// resolve_mantle_region: the explicit region, then the region in the Mantle api base, then us-east-1
-fn mantle_region(params: &Object) -> Result<String, ConfigError> {
-    let explicit = text_param(params, "aws_region_name")?;
-    validate_region(explicit)?;
-    if let Some(region) = explicit {
-        return Ok(region.to_owned());
-    }
-    let base = text_param(params, "api_base")?.filter(|base| !base.is_empty());
-    if let Some(region) = base.and_then(mantle_region_from_host) {
-        return Ok(region);
-    }
-    Ok(DEFAULT_MANTLE_REGION.to_owned())
 }
 
 fn validate_region(explicit: Option<&str>) -> Result<(), ConfigError> {
@@ -166,9 +157,11 @@ fn validate_region(explicit: Option<&str>) -> Result<(), ConfigError> {
     if is_region(region) {
         return Ok(());
     }
-    Err(ConfigError::value_error(format!(
-        "Invalid AWS region format: '{region}'. Region names must contain only lowercase letters, digits, and hyphens."
-    )))
+    Err(ConfigError::ValueError {
+        message: format!(
+            "Invalid AWS region format: '{region}'. Region names must contain only lowercase letters, digits, and hyphens."
+        ),
+    })
 }
 
 fn is_region(text: &str) -> bool {
@@ -220,8 +213,8 @@ fn text_param<'params>(
         Some(JsonValue::String(text)) => Ok(Some(text)),
         Some(
             JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Array(_) | JsonValue::Object(_),
-        ) => Err(ConfigError::value_error(format!(
-            "litellm_params.{name} must be a string"
-        ))),
+        ) => Err(ConfigError::ValueError {
+            message: format!("litellm_params.{name} must be a string"),
+        }),
     }
 }

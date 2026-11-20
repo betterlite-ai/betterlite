@@ -84,6 +84,20 @@ deviations:
       Those derivations belong to the logging and pricing tasks that own metadata; this call copies
       the keys the caller passed.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_litellm_params.py#L188-L193
+  - what: >-
+      The Bedrock, Bedrock Mantle and VLLM passthrough configs are rebuilt inside this module instead
+      of calling B658's, B625's and B8153's merged configs.
+    why: >-
+      betterlite-bedrock and betterlite-provider depend on betterlite-core, so core cannot import
+      them; the local configs implement the BasePassthroughConfig steps the call needs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9344-L9397
+  - what: >-
+      litellm_params are built here rather than by B176's get_litellm_params, which is not on main
+      yet.
+    why: >-
+      The call needs the params now; the local builder sets the same keys from the same arguments,
+      and this can be replaced when B176 merges.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_litellm_params.py#L1-L200
 kept_bugs:
   - what: >-
       The signed body is built before the model swap, so a Bedrock Mantle request signs, and sends,

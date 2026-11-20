@@ -10,62 +10,15 @@ use betterlite_models::passthrough_policies::sdk_timeout::{
 use betterlite_models::resolution::ResolvedModel;
 use betterlite_openai::openai_base_config::Object;
 use indexmap::IndexMap;
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use super::PassthroughCallArgs;
-use super::config::{ConfigError, truthy};
+use super::config::ConfigError;
 use super::logging::json_object;
 
 // DEFAULT_PASS_THROUGH_REQUEST_TIMEOUT_SECONDS, reached when no level sets a timeout
 const PASS_THROUGH_TIMEOUT_SECONDS: f64 = 600.0;
 const DEFAULT_FORCE_TIMEOUT: i64 = 600;
-
-// get_litellm_params copies these from kwargs only when the caller passed them
-const OPTIONAL_KEYS: [&str; 43] = [
-    "azure_ad_token",
-    "tenant_id",
-    "client_id",
-    "client_secret",
-    "azure_username",
-    "azure_password",
-    "azure_scope",
-    "timeout",
-    "client_side_timeout",
-    "gcs_bucket_name",
-    "bucket_name",
-    "s3_endpoint_url",
-    "s3_region_name",
-    "s3_access_key_id",
-    "s3_secret_access_key",
-    "vertex_credentials",
-    "vertex_project",
-    "vertex_location",
-    "vertex_ai_project",
-    "vertex_ai_location",
-    "vertex_ai_credentials",
-    "gigachat_scope",
-    "gigachat_auth_url",
-    "gigachat_access_token",
-    "tpm",
-    "rpm",
-    "itpm",
-    "otpm",
-    "use_xai_oauth",
-    "provider_affinity_header",
-    "aws_region_name",
-    "aws_access_key_id",
-    "aws_secret_access_key",
-    "aws_session_token",
-    "aws_session_name",
-    "aws_profile_name",
-    "aws_role_name",
-    "aws_web_identity_token",
-    "aws_sts_endpoint",
-    "aws_external_id",
-    "aws_session_tags",
-    "aws_bedrock_runtime_endpoint",
-    "aws_bedrock_project_id",
-];
 
 pub(crate) struct CallParams {
     pub params: Object,
@@ -77,11 +30,10 @@ pub(crate) struct Timeouts {
     pub connect: Duration,
 }
 
-// get_litellm_params(api_key, api_base, **kwargs): the fixed keys, then the sparse optional copy
+// get_litellm_params(api_key, api_base, **kwargs): the kwargs, then the keys the call itself sets
 pub(crate) fn build(args: &PassthroughCallArgs, resolved: &ResolvedModel) -> CallParams {
     let extra = &args.extra;
-    let mut params = Object::new();
-    copy(&mut params, extra, &["acompletion"]);
+    let mut params = extra.clone();
     params.insert(
         "allm_passthrough_route".to_owned(),
         extra
@@ -93,6 +45,14 @@ pub(crate) fn build(args: &PassthroughCallArgs, resolved: &ResolvedModel) -> Cal
         "api_key".to_owned(),
         secret_value(resolved.api_key.as_ref()),
     );
+    params.insert(
+        "api_base".to_owned(),
+        resolved
+            .api_base
+            .as_ref()
+            .map_or(JsonValue::Null, |base| JsonValue::String(base.clone())),
+    );
+    params.insert("custom_llm_provider".to_owned(), JsonValue::Null);
     params.insert(
         "force_timeout".to_owned(),
         extra
@@ -107,81 +67,9 @@ pub(crate) fn build(args: &PassthroughCallArgs, resolved: &ResolvedModel) -> Cal
             .cloned()
             .unwrap_or(JsonValue::Bool(false)),
     );
-    params.insert("custom_llm_provider".to_owned(), JsonValue::Null);
-    params.insert(
-        "api_base".to_owned(),
-        resolved
-            .api_base
-            .as_ref()
-            .map_or(JsonValue::Null, |base| JsonValue::String(base.clone())),
-    );
-    params.insert("data_residency".to_owned(), JsonValue::Null);
-    copy(
-        &mut params,
-        extra,
-        &[
-            "litellm_call_id",
-            "model_alias_map",
-            "completion_call_id",
-            "aembedding",
-        ],
-    );
     params.insert("metadata".to_owned(), resolved_metadata(extra));
-    copy(
-        &mut params,
-        extra,
-        &["model_info", "proxy_server_request", "preset_cache_key"],
-    );
     params.insert("no-log".to_owned(), no_log(extra));
-    params.insert(
-        "stream_response".to_owned(),
-        JsonValue::Object(Object::new()),
-    );
-    copy(
-        &mut params,
-        extra,
-        &[
-            "cost_per_second",
-            "input_cost_per_token",
-            "input_cost_per_second",
-            "output_cost_per_token",
-            "output_cost_per_second",
-            "cost_per_query",
-            "cooldown_time",
-            "text_completion",
-            "azure_ad_token_provider",
-            "user_continue_message",
-        ],
-    );
     params.insert("base_model".to_owned(), base_model(extra));
-    copy(
-        &mut params,
-        extra,
-        &[
-            "litellm_trace_id",
-            "litellm_session_id",
-            "hf_model_name",
-            "custom_prompt_dict",
-            "litellm_metadata",
-            "disable_add_transform_inline_image_block",
-            "drop_params",
-            "prompt_id",
-            "prompt_variables",
-            "async_call",
-            "ssl_verify",
-            "merge_reasoning_content_in_choices",
-            "api_version",
-            "max_retries",
-            "use_litellm_proxy",
-            "litellm_request_debug",
-            "logger_fn",
-        ],
-    );
-    for name in OPTIONAL_KEYS {
-        if let Some(value) = extra.get(name) {
-            params.insert(name.to_owned(), value.clone());
-        }
-    }
     // llm_passthrough_route re-adds model_id after get_litellm_params dropped it
     if let Some(model_id) = extra.get("model_id") {
         params.insert("model_id".to_owned(), model_id.clone());
@@ -190,25 +78,17 @@ pub(crate) fn build(args: &PassthroughCallArgs, resolved: &ResolvedModel) -> Cal
     CallParams { params, logged }
 }
 
-fn copy(params: &mut Object, extra: &Object, names: &[&str]) {
-    for name in names {
-        let value = extra.get(*name).cloned().unwrap_or(JsonValue::Null);
-        params.insert((*name).to_owned(), value);
-    }
-}
-
-fn secret_value(api_key: Option<&secrecy::SecretString>) -> JsonValue {
+fn secret_value(api_key: Option<&SecretString>) -> JsonValue {
     api_key.map_or(JsonValue::Null, |key| {
-        JsonValue::String(key.expose_secret().clone())
+        JsonValue::String(key.expose_secret().to_owned())
     })
 }
 
-// resolved_metadata: litellm_metadata wins when metadata is absent or empty, then metadata is copied
+// resolved_metadata: litellm_metadata wins when metadata is absent or null, then metadata is copied
 fn resolved_metadata(extra: &Object) -> JsonValue {
     let metadata = extra.get("metadata");
-    let litellm_metadata = extra.get("litellm_metadata");
-    if metadata.is_none_or(|value| !truthy(value)) {
-        if let Some(JsonValue::Object(fields)) = litellm_metadata {
+    if metadata.is_none_or(JsonValue::is_null) {
+        if let Some(JsonValue::Object(fields)) = extra.get("litellm_metadata") {
             return JsonValue::Object(fields.clone());
         }
     }
@@ -217,22 +97,26 @@ fn resolved_metadata(extra: &Object) -> JsonValue {
 
 // no_log or kwargs["no-log"]: the hyphenated key never binds the named parameter
 fn no_log(extra: &Object) -> JsonValue {
-    match extra.get("no_log") {
-        Some(value) if truthy(value) => value.clone(),
-        _ => extra.get("no-log").cloned().unwrap_or(JsonValue::Null),
+    let named = matches!(extra.get("no_log"), Some(JsonValue::Bool(true)));
+    if named {
+        return JsonValue::Bool(true);
     }
+    extra.get("no-log").cloned().unwrap_or(JsonValue::Null)
 }
 
 // base_model, or metadata.model_info.base_model
 fn base_model(extra: &Object) -> JsonValue {
-    if let Some(value) = extra.get("base_model").filter(|value| truthy(*value)) {
-        return value.clone();
+    if let Some(value) = extra.get("base_model") {
+        if !value.is_null() {
+            return value.clone();
+        }
     }
-    let derived = extra
+    extra
         .get("metadata")
         .and_then(|metadata| metadata.get("model_info"))
-        .and_then(|model_info| model_info.get("base_model"));
-    derived.cloned().unwrap_or(JsonValue::Null)
+        .and_then(|model_info| model_info.get("base_model"))
+        .cloned()
+        .unwrap_or(JsonValue::Null)
 }
 
 // resolve_llm_passthrough_timeout: kwargs, then litellm_params, then the 600 second default
@@ -247,7 +131,7 @@ pub(crate) fn timeouts(
         });
     }
     let request = RequestTimeouts {
-        stream: args.extra.get("stream").is_some_and(truthy),
+        stream: matches!(args.extra.get("stream"), Some(JsonValue::Bool(true))),
         stream_timeout: timeout_value(args.extra.get("stream_timeout")),
         timeout: timeout_value(args.extra.get("timeout")),
         request_timeout: timeout_value(args.extra.get("request_timeout")),
@@ -264,11 +148,11 @@ pub(crate) fn timeouts(
         None,
         PASS_THROUGH_TIMEOUT_SECONDS,
     )
-    .map_err(|error| ConfigError::value_error(error.to_string()))?;
-    let read = Duration::try_from_secs_f64(seconds).map_err(|error| {
-        ConfigError::value_error(format!(
-            "the resolved timeout is not a usable number of seconds: {error}"
-        ))
+    .map_err(|error| ConfigError::ValueError {
+        message: error.to_string(),
+    })?;
+    let read = Duration::try_from_secs_f64(seconds).map_err(|error| ConfigError::ValueError {
+        message: format!("the resolved timeout is not a usable number of seconds: {error}"),
     })?;
     Ok(Timeouts {
         read,
@@ -301,6 +185,9 @@ pub(crate) fn client(
         read_timeout: timeouts.read,
         ..http.limits
     };
-    ProxiedClient::build(base_builder().http1_only(), &http.policy, limits)
-        .map_err(|error| ConfigError::value_error(error.to_string()))
+    ProxiedClient::build(base_builder().http1_only(), &http.policy, limits).map_err(|error| {
+        ConfigError::ValueError {
+            message: error.to_string(),
+        }
+    })
 }

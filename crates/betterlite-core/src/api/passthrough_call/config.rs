@@ -1,14 +1,19 @@
-use betterlite_config::sections::settings::JsonValue;
+use betterlite_azure::passthrough::config::AzurePassthroughConfig;
 use betterlite_context::resource_config_selection::passthrough::PassthroughConfigTag;
+use betterlite_foundry::passthrough::plan::FoundryPassthroughPlan;
 use betterlite_http::interactions::base::{ErrorClasses, ResponseHeaders};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::error::{ProviderError, ProviderErrorParts};
+use betterlite_openai::gigachat_passthrough::GigachatPassthroughConfig;
+use betterlite_openai::nvidia_nim_passthrough::NvidiaNimPassthroughConfig;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::passthrough::transformation::BasePassthroughConfig;
 use betterlite_openai::passthrough::transformation::types::{
     PassthroughError, PassthroughSigning, PassthroughStreamCollector, PassthroughTarget,
     PassthroughUrlRequest,
 };
+use betterlite_openai::watsonx_auth::environment::WatsonxEnvironment;
+use betterlite_openai::watsonx_passthrough::WatsonxPassthroughConfig;
 use thiserror::Error;
 use url::Url;
 
@@ -29,28 +34,6 @@ pub enum ConfigError {
     Provider(Box<ProviderError>),
 }
 
-impl ConfigError {
-    // an exception that carries status_code: _handle_error keeps that status and its origin
-    #[must_use]
-    pub const fn message(status: u16, message: String) -> Self {
-        Self::Message { status, message }
-    }
-
-    // a Python ValueError or TypeError: _handle_error synthesizes 500 for it
-    #[must_use]
-    pub const fn value_error(message: String) -> Self {
-        Self::ValueError { message }
-    }
-
-    #[must_use]
-    pub const fn from_status(status: Option<u16>, message: String) -> Self {
-        match status {
-            Some(status) => Self::message(status, message),
-            None => Self::value_error(message),
-        }
-    }
-}
-
 impl From<ProviderError> for ConfigError {
     fn from(error: ProviderError) -> Self {
         Self::Provider(Box::new(error))
@@ -69,27 +52,29 @@ pub(crate) enum Fault {
     Send(Box<TransportError>),
 }
 
-impl Fault {
-    pub(crate) fn message(status: u16, synthesized: bool, message: String) -> Self {
-        Self::Failure(Box::new(FaultDetail {
-            status,
-            synthesized,
-            message,
-        }))
-    }
-}
-
 impl From<ConfigError> for Fault {
     fn from(error: ConfigError) -> Self {
         match error {
-            ConfigError::Message { status, message } => Self::message(status, false, message),
-            ConfigError::ValueError { message } => Self::message(500, true, message),
-            ConfigError::Passthrough(error) => Self::message(500, true, error.to_string()),
-            ConfigError::Provider(error) => Self::message(
-                error.status_code,
-                error.status_code_is_synthesized,
-                error.message,
-            ),
+            ConfigError::Message { status, message } => Self::Failure(Box::new(FaultDetail {
+                status,
+                synthesized: false,
+                message,
+            })),
+            ConfigError::ValueError { message } => Self::Failure(Box::new(FaultDetail {
+                status: 500,
+                synthesized: true,
+                message,
+            })),
+            ConfigError::Passthrough(source) => Self::Failure(Box::new(FaultDetail {
+                status: 500,
+                synthesized: true,
+                message: source.to_string(),
+            })),
+            ConfigError::Provider(provider) => Self::Failure(Box::new(FaultDetail {
+                status: provider.status_code,
+                synthesized: provider.status_code_is_synthesized,
+                message: provider.message,
+            })),
         }
     }
 }
@@ -99,56 +84,14 @@ pub struct PassthroughCallConfig {
     pub tag: PassthroughConfigTag,
 }
 
-impl PassthroughCallConfig {
-    #[must_use]
-    pub const fn new(tag: PassthroughConfigTag) -> Self {
-        Self { tag }
-    }
-}
-
-// LiteLLM: "stream" in endpoint for Bedrock, "stream" in request_data for VLLM, bool(request_data.get("stream"))
-// for Azure and Azure AI, bool(request_data["stream"] is True) for GigaChat, Watsonx and NVIDIA NIM
-pub(crate) fn streaming_request(
-    tag: PassthroughConfigTag,
-    endpoint: &str,
-    request_data: &Object,
-) -> bool {
-    match tag {
-        PassthroughConfigTag::Bedrock | PassthroughConfigTag::BedrockMantle => {
-            endpoint.contains("stream")
-        }
-        PassthroughConfigTag::VLLM => request_data.contains_key("stream"),
-        PassthroughConfigTag::Azure => request_data.get("stream").is_some_and(filled),
-        PassthroughConfigTag::AzureAI => request_data.get("stream").is_some_and(truthy),
-        PassthroughConfigTag::GigaChat
-        | PassthroughConfigTag::Watsonx
-        | PassthroughConfigTag::NvidiaNim => {
-            matches!(request_data.get("stream"), Some(JsonValue::Bool(true)))
-        }
-    }
-}
-
-fn filled(value: &JsonValue) -> bool {
-    match value {
-        JsonValue::Null => false,
-        JsonValue::Bool(flag) => *flag,
-        JsonValue::Number(number) => number.as_f64().is_none_or(|magnitude| magnitude != 0.0_f64),
-        JsonValue::String(text) => !text.is_empty(),
-        JsonValue::Array(items) => !items.is_empty(),
-        JsonValue::Object(fields) => !fields.is_empty(),
-    }
-}
-
-pub(crate) fn truthy(value: &JsonValue) -> bool {
-    match value {
-        JsonValue::Null | JsonValue::Bool(false) => false,
-        JsonValue::Bool(true) => true,
-        JsonValue::Number(number) => number
-            .as_f64()
-            .is_some_and(|magnitude| magnitude != 0.0_f64),
-        JsonValue::String(text) => !text.is_empty(),
-        JsonValue::Array(items) => !items.is_empty(),
-        JsonValue::Object(fields) => !fields.is_empty(),
+// the Foundry plan the azure_ai tag reads, built over its merged config
+pub(crate) fn foundry_plan(litellm_params: Object) -> FoundryPassthroughPlan {
+    FoundryPassthroughPlan {
+        global_api_base: None,
+        global_api_key: None,
+        azure: AzurePassthroughConfig::default(),
+        ocr: None,
+        litellm_params,
     }
 }
 
@@ -157,7 +100,35 @@ impl BasePassthroughConfig for PassthroughCallConfig {
     type Logged = ();
 
     fn is_streaming_request(&self, endpoint: &str, request_data: &Object) -> bool {
-        streaming_request(self.tag, endpoint, request_data)
+        match self.tag {
+            PassthroughConfigTag::VLLM => request_data.contains_key("stream"),
+            PassthroughConfigTag::Bedrock | PassthroughConfigTag::BedrockMantle => {
+                endpoint.contains("stream")
+            }
+            PassthroughConfigTag::Azure => {
+                let config: AzurePassthroughConfig = AzurePassthroughConfig::default();
+                config.is_streaming_request(endpoint, request_data)
+            }
+            PassthroughConfigTag::AzureAI => {
+                let plan: FoundryPassthroughPlan = foundry_plan(Object::new());
+                plan.is_streaming_request(endpoint, request_data)
+            }
+            PassthroughConfigTag::GigaChat => {
+                let config: GigachatPassthroughConfig = GigachatPassthroughConfig::default();
+                config.is_streaming_request(endpoint, request_data)
+            }
+            PassthroughConfigTag::Watsonx => {
+                let environment = WatsonxEnvironment::default();
+                let config = WatsonxPassthroughConfig {
+                    environment: &environment,
+                };
+                config.is_streaming_request(endpoint, request_data)
+            }
+            PassthroughConfigTag::NvidiaNim => {
+                let config: NvidiaNimPassthroughConfig = NvidiaNimPassthroughConfig::default();
+                config.is_streaming_request(endpoint, request_data)
+            }
+        }
     }
 
     fn get_complete_url(
@@ -210,6 +181,6 @@ impl ErrorClasses for PassthroughCallConfig {
             body: None,
             status_code_is_synthesized: false,
         };
-        ConfigError::from(ProviderError::from(parts))
+        ConfigError::Provider(Box::new(ProviderError::from(parts)))
     }
 }

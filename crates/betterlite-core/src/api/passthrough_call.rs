@@ -8,7 +8,7 @@ mod wire;
 
 mod tests;
 
-pub use config::PassthroughCallConfig;
+pub use config::{ConfigError, PassthroughCallConfig};
 pub use logging::RelayLogging;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -132,12 +132,11 @@ pub async fn allm_passthrough_route(
 ) -> Result<PassthroughReply, PassthroughCallError> {
     args.extra
         .insert("allm_passthrough_route".to_owned(), JsonValue::Bool(true));
-    let resolved = match resolve_provider(&args) {
-        Ok(resolved) => resolved,
-        Err(error) => return Err(PassthroughCallError::Resolution(error)),
-    };
+    let resolved = resolve_provider(&args)?;
     let Some(tag) = config_tag(&resolved) else {
-        return Err(not_found(&resolved));
+        return Err(PassthroughCallError::ProviderNotFound(
+            resolved.provider.slug().to_owned(),
+        ));
     };
     match run(&args, &resolved, tag, logging, http).await {
         Ok(reply) => Ok(reply),
@@ -148,10 +147,6 @@ pub async fn allm_passthrough_route(
         }),
         Err(Failure::Fault(fault)) => Err(map_fault(&args, fault)),
     }
-}
-
-fn not_found(resolved: &ResolvedModel) -> PassthroughCallError {
-    PassthroughCallError::ProviderNotFound(resolved.provider.slug().to_owned())
 }
 
 // get_llm_provider: the catalog, the registered names and the credentials all come from outside the call
@@ -196,7 +191,9 @@ fn map_fault(args: &PassthroughCallArgs, fault: Fault) -> PassthroughCallError {
     let Some(tag) = config_tag(&resolved) else {
         return match fault {
             Fault::Send(error) => PassthroughCallError::Transport(*error),
-            Fault::Failure(_) => not_found(&resolved),
+            Fault::Failure(_) => {
+                PassthroughCallError::ProviderNotFound(resolved.provider.slug().to_owned())
+            }
         };
     };
     let (status, synthesized, message) = match fault {
@@ -208,34 +205,40 @@ fn map_fault(args: &PassthroughCallArgs, fault: Fault) -> PassthroughCallError {
         headers: ResponseHeaders::default(),
         body: message,
     };
-    let config = PassthroughCallConfig::new(tag);
+    let config = PassthroughCallConfig { tag };
     match handle_error(&config, failure) {
         CallFailure::Provider(error) => {
-            PassthroughCallError::Mapped(Box::new(provider_error(error, synthesized)))
+            PassthroughCallError::Mapped(Box::new(mapped_error(error, synthesized)))
         }
-        CallFailure::PassedThrough(failure) => PassthroughCallError::Mapped(Box::new(
-            provider_error(ConfigError::value_error(failure.to_string()), synthesized),
-        )),
+        CallFailure::PassedThrough(failure) => {
+            let error = ConfigError::ValueError {
+                message: failure.to_string(),
+            };
+            PassthroughCallError::Mapped(Box::new(mapped_error(error, synthesized)))
+        }
     }
 }
 
 // _handle_error's provider_error: ProviderError's own flag is overwritten when the status was synthesized
-fn provider_error(error: ConfigError, synthesized: bool) -> ProviderError {
-    let (status, message) = match error {
+fn mapped_error(error: ConfigError, synthesized: bool) -> ProviderError {
+    match error {
         ConfigError::Provider(mut provider) => {
             if synthesized {
                 provider.status_code_is_synthesized = true;
             }
-            return *provider;
+            *provider
         }
-        ConfigError::Message { status, message } => (status, message),
-        ConfigError::ValueError { message } => (500, message),
-        ConfigError::Passthrough(error) => (500, error.to_string()),
-    };
+        ConfigError::Message { status, message } => provider_error(status, message, synthesized),
+        ConfigError::ValueError { message } => provider_error(500, message, synthesized),
+        ConfigError::Passthrough(source) => provider_error(500, source.to_string(), synthesized),
+    }
+}
+
+fn provider_error(status: u16, message: String, synthesized: bool) -> ProviderError {
     ProviderError::from(ProviderErrorParts {
         status_code: status,
         message,
-        headers: Some(ResponseHeaders::new()),
+        headers: Some(ResponseHeaders::default()),
         request: None,
         response: None,
         body: None,
