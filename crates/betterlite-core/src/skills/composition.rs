@@ -14,8 +14,7 @@ use crate::skills::search::{
 use crate::skills::store::repository::SkillRepository;
 use crate::skills::store::{HostedSkillStore, SkillIdSource, StoreError};
 
-// The hosted skill services B1502-B1506 built, assembled once for the server that injects their collaborators.
-// B1504's prompt and tool functions are free functions, so they have no service to hold here.
+// The hosted skill services B1502-B1506 built; B1504's prompt and tool functions are free functions, so no service to hold here.
 pub struct HostedSkills<R, S> {
     pub ops: HostedSkillOps<R>,
     pub search: SkillSearchIndex,

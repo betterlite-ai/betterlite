@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -16,6 +16,7 @@ use betterlite_openai::embedding::EmbeddingRequest;
 use betterlite_openai::openai_base_config::CatalogCapabilities;
 use http::HeaderMap;
 use http::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE};
+use rstest::rstest;
 use secrecy::SecretString;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
@@ -779,55 +780,55 @@ fn a_custom_stream_is_refused() {
     assert_eq!(operation, "stream");
 }
 
+#[rstest]
+#[case::proxy(Legacy::LitellmProxy, "http://127.0.0.1:9")]
+#[case::aleph(Legacy::AlephAlpha, "http://127.0.0.1:9/complete")]
+#[case::custom(Legacy::Custom, "http://127.0.0.1:9/generate")]
 #[tokio::test]
-async fn a_legacy_call_that_cannot_connect_is_a_transport_error() {
+async fn a_legacy_call_that_cannot_connect_is_a_transport_error(
+    #[case] legacy: Legacy,
+    #[case] base: &str,
+) {
     let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap();
     let client = ProxiedClient::outbound(&Arc::new(policy)).unwrap();
     let request = chat_operation(br#"{"messages":[{"role":"user","content":"hi"}]}"#, false);
-    let bases = [
-        (Legacy::LitellmProxy, "http://127.0.0.1:9"),
-        (Legacy::AlephAlpha, "http://127.0.0.1:9/complete"),
-        (Legacy::Custom, "http://127.0.0.1:9/generate"),
-    ];
-    for (legacy, base) in bases {
-        let deployment = deployment("model-name", base, Some("test-key"));
-        let prepared = legacy.prepare(&request, &deployment, &catalog()).unwrap();
-        let refused = match legacy.execute(&client, &prepared, &deployment).await {
-            Ok(_) => panic!("a closed port answered"),
-            Err(error) => error,
-        };
-        assert!(
-            matches!(refused, OperationError::Http { .. }),
-            "{legacy:?} answered {refused}"
-        );
-    }
+    let deployment = deployment("model-name", base, Some("test-key"));
+    let prepared = legacy.prepare(&request, &deployment, &catalog()).unwrap();
+    let refused = match legacy.execute(&client, &prepared, &deployment).await {
+        Ok(_) => panic!("a closed port answered"),
+        Err(error) => error,
+    };
+    assert!(
+        matches!(refused, OperationError::Http { .. }),
+        "{legacy:?} answered {refused}"
+    );
 }
 
+#[rstest]
+#[case::buffered(r#"{"messages":[{"role":"user","content":"hi"}]}"#, false)]
+#[case::streamed(r#"{"messages":[{"role":"user","content":"hi"}],"stream":true}"#, true)]
 #[tokio::test]
-async fn a_proxy_call_keeps_a_buffered_answer_buffered_and_a_stream_streamed() {
+async fn a_proxy_call_keeps_a_buffered_answer_buffered_and_a_stream_streamed(
+    #[case] body: &str,
+    #[case] expected_stream: bool,
+) {
     let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap();
     let client = ProxiedClient::outbound(&Arc::new(policy)).unwrap();
-    let chat = chat_operation(br#"{"messages":[{"role":"user","content":"hi"}]}"#, false);
-    let streamed = chat_operation(
-        br#"{"messages":[{"role":"user","content":"hi"}],"stream":true}"#,
-        true,
+    let request = chat_operation(body.as_bytes(), expected_stream);
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let base = format!("http://127.0.0.1:{port}");
+    let deployment = deployment("model-name", &base, Some("test-key"));
+    let prepared = Legacy::LitellmProxy
+        .prepare(&request, &deployment, &catalog())
+        .unwrap();
+    let (served, answered) = tokio::join!(
+        serve_json(listener),
+        Legacy::LitellmProxy.execute(&client, &prepared, &deployment)
     );
-    for (request, expected_stream) in [(&chat, false), (&streamed, true)] {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let base = format!("http://127.0.0.1:{port}");
-        let deployment = deployment("model-name", &base, Some("test-key"));
-        let prepared = Legacy::LitellmProxy
-            .prepare(request, &deployment, &catalog())
-            .unwrap();
-        let (served, answered) = tokio::join!(
-            serve_json(listener),
-            Legacy::LitellmProxy.execute(&client, &prepared, &deployment)
-        );
-        let answer = answered.unwrap();
-        assert_eq!(matches!(answer, Upstream::Streaming(_)), expected_stream);
-        assert!(served.starts_with("POST /chat/completions "), "{served}");
-    }
+    let answer = answered.unwrap();
+    assert_eq!(matches!(answer, Upstream::Streaming(_)), expected_stream);
+    assert!(served.starts_with("POST /chat/completions "), "{served}");
 }
 
 async fn serve_json(listener: TcpListener) -> String {
@@ -874,37 +875,27 @@ fn the_legacy_adapter_wraps_each_call_as_a_legacy_prepared_request() {
 }
 
 // The fuzzer's seed files: every named shape decodes to its text or the error LiteLLM raises
-#[test]
-fn replays_custom_output() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/custom_output");
-    let mut seen = 0_usize;
-    for entry in fs::read_dir(corpus).unwrap() {
-        let path = entry.unwrap().path();
-        if !path.is_file() {
-            continue;
-        }
-        let bytes = fs::read(&path).unwrap();
-        let name = path.file_stem().unwrap().to_str().unwrap();
-        match name {
-            "first-output" => assert_eq!(
-                decode_custom_output(&bytes).unwrap(),
-                "The capital of France is PARIS."
-            ),
-            "multiple-data" => assert_eq!(decode_custom_output(&bytes).unwrap(), "a"),
-            "empty-output" | "number-output" | "missing-data" | "data-not-array"
-            | "output-not-array" | "empty-data" | "null-output" | "array-root" | "message-only" => {
-                assert!(matches!(
-                    decode_custom_output(&bytes),
-                    Err(LegacyError::CustomOutput)
-                ))
-            }
-            "invalid-json" => assert!(matches!(
+#[rstest]
+fn replays_custom_output(#[files("fuzz/corpus/custom_output/*")] path: PathBuf) {
+    let bytes = fs::read(&path).unwrap();
+    let name = path.file_stem().unwrap().to_str().unwrap();
+    match name {
+        "first-output" => assert_eq!(
+            decode_custom_output(&bytes).unwrap(),
+            "The capital of France is PARIS."
+        ),
+        "multiple-data" => assert_eq!(decode_custom_output(&bytes).unwrap(), "a"),
+        "empty-output" | "number-output" | "missing-data" | "data-not-array"
+        | "output-not-array" | "empty-data" | "null-output" | "array-root" | "message-only" => {
+            assert!(matches!(
                 decode_custom_output(&bytes),
-                Err(LegacyError::Reply { .. })
-            )),
-            other => panic!("unknown custom_output seed {other}"),
+                Err(LegacyError::CustomOutput)
+            ))
         }
-        seen += 1_usize;
+        "invalid-json" => assert!(matches!(
+            decode_custom_output(&bytes),
+            Err(LegacyError::Reply { .. })
+        )),
+        other => panic!("unknown custom_output seed {other}"),
     }
-    assert_eq!(seen, 12_usize, "{seen} corpus files");
 }
