@@ -1,14 +1,14 @@
 id: B3099
 milestone: M4 keys, spend and management
 title: Report cache activity, errors and available filters
-status: in-progress
+status: done
 depends_on: [B003, B700, B868]
 file: tasks/B3099-cache-activity-report.yaml
 covers:
   - "litellm/proxy/analytics_endpoints/**"
 parent: B074
 split_from: B074
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2694
