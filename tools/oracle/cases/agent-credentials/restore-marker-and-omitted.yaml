@@ -1,0 +1,22 @@
+kind: helper
+name: agent-credential-restore-marker-and-omitted
+call:
+  b4775:
+    op: restore
+    incoming:
+      api_key: REDACTED_BY_LITELM
+      model: gpt-new
+      temperature: 0.5
+      config:
+        api_key: REDACTED_BY_LITELM
+        model: new
+    existing:
+      api_key: sk-live
+      model: gpt-old
+      old_setting: true
+      config:
+        api_key: sk-nested
+        model: old
+        extra: x
+env: {}
+compare: {ignore: []}

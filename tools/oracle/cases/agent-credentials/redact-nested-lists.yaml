@@ -1,0 +1,24 @@
+kind: helper
+name: agent-credential-redact-nested-lists
+call:
+  b4775:
+    op: redact
+    params:
+      model: gpt-4o
+      providers:
+        - name: one
+          api_key: sk-one
+          limits: {access_token: token-one}
+        - name: two
+      headers:
+        authorization: "Bearer x"
+        x-trace: "on"
+      api_key: {nested: value}
+calls:
+  - b4775:
+      op: redact
+      params:
+        - {name: one, api_key: sk-one}
+        - [authorization-header-value]
+env: {}
+compare: {ignore: []}

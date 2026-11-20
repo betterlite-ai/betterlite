@@ -1,0 +1,18 @@
+kind: helper
+name: agent-credential-restore-nested-by-position
+call:
+  b4775:
+    op: restore
+    incoming:
+      providers:
+        - {api_key: REDACTED_BY_LITELM, model: new}
+        - {api_key: sk-second}
+        - {name: third}
+        - REDACTED_BY_LITELM
+    existing:
+      providers:
+        - {api_key: sk-first, model: old}
+        - {api_key: sk-stored-second}
+        - {name: stored-third}
+env: {}
+compare: {ignore: []}

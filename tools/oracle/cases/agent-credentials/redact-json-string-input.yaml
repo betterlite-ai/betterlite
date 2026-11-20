@@ -1,0 +1,27 @@
+kind: helper
+name: agent-credential-redact-json-string-input
+call:
+  b4775:
+    op: redact_text
+    text: '{"api_key":"sk-live","model":"gpt"}'
+calls:
+  - b4775:
+      op: redact_text
+      text: '[1]'
+  - b4775:
+      op: redact_text
+      text: '42'
+  - b4775:
+      op: redact_text
+      text: 'not json'
+  - b4775:
+      op: redact_text
+      text: '{"k":{"k":{"k":{"k":{"k":{"k":{"k":{"k":"value"}}}}}}}}'
+  - b4775:
+      op: redact_text
+      text: '{"k":{"k":{"k":{"k":{"k":{"k":{"k":{"k":{"k":"value"}}}}}}}}}'
+  - b4775:
+      op: redact_text
+      text: '{"providers":[{"access_token":"token-one"}]}'
+env: {}
+compare: {ignore: []}

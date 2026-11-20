@@ -1,0 +1,15 @@
+kind: helper
+name: agent-credential-restore-clear-with-empty-string
+call:
+  b4775:
+    op: restore
+    incoming:
+      api_key: ""
+      access_token: new-token
+      password: {nested: value}
+    existing:
+      api_key: sk-live
+      access_token: old-token
+      password: stored-password
+env: {}
+compare: {ignore: []}

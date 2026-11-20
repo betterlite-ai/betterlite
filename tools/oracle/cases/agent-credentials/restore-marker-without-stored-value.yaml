@@ -1,0 +1,13 @@
+kind: helper
+name: agent-credential-restore-marker-without-stored-value
+call:
+  b4775:
+    op: restore
+    incoming:
+      api_key: REDACTED_BY_LITELM
+      config: REDACTED_BY_LITELM
+      corrupt: REDACTED_BY_LITELM
+    existing:
+      corrupt: REDACTED_BY_LITELM
+env: {}
+compare: {ignore: []}

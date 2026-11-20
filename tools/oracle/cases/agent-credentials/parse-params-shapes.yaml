@@ -1,0 +1,39 @@
+kind: helper
+name: agent-credential-parse-params-shapes
+call:
+  b4775:
+    op: parse
+    value:
+      api_key: sk-live
+      model: gpt-4o
+      nested: {max_tokens: 12}
+calls:
+  - b4775:
+      op: parse
+      value: '{"model":"gpt-4o","max_tokens":12}'
+  - b4775:
+      op: parse
+      value: null
+  - b4775:
+      op: parse
+      value: [1, 2]
+  - b4775:
+      op: parse
+      value: 7
+  - b4775:
+      op: parse
+      value: true
+  - b4775:
+      op: parse
+      value: "not json"
+  - b4775:
+      op: parse
+      value: "null"
+  - b4775:
+      op: parse
+      value: "[1]"
+  - b4775:
+      op: parse
+      value: '{"api_key":"sk-live"'
+env: {}
+compare: {ignore: []}
