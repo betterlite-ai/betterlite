@@ -1,0 +1,28 @@
+kind: sdk_http
+name: sdk-http-assistant-create-azure-token
+env:
+  AZURE_AD_TOKEN: env-token
+  AZURE_OPENAI_AD_TOKEN: env-token
+  AZURE_API_VERSION: 2024-02-15-preview
+call:
+  assistant_create:
+    provider: azure
+    model: gpt-4o-mini
+    entry: async
+    api_base: mock
+    extra_body: null
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: asst_a
+      object: assistant
+      model: gpt-4o-mini
+      created_at: 1
+      name: null
+      tools: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, openai-beta, content-type, accept]
+  ignore: []

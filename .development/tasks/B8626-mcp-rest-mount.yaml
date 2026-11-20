@@ -38,6 +38,8 @@ description: >-
   /mcp-rest/test/connection with the master key and a NewMCPServerRequest whose url is "ftp://example.invalid").
 
   Booted cases from B124. Add the HTTP cases local-tool-call, local-tool-failure and local-tool-no-key under tools/oracle/cases/http/proxy-remainder: mcp_tools with name serialize, a description, handler json.dumps and an object input_schema, and an allowed HTTP MCP server toolsrv against the mock provider whose initialize and tools/list replies advertise serialize. POST /mcp-rest/tools/call with server_id toolsrv, name serialize and arguments {"obj": {"answer": 42}} and the master key returns 200 with the JSON string as text content; an unsupported keyword reaches the Python exception and returns the 200 error-tool result with isError true; no key gives the 401 auth error (compare type, param and code). No upstream tools/call is sent, since the authorized server selects the local handler (B8871's loader, which B9997's BootRegistries runs). Do not remove the server authorization check to make a local tool callable without a server.
+
+  Content filter over MCP arguments. B105 builds the built-in content filter and its pre_mcp_call masking; the booted case is this task's, since it mounts the route. Add tools/oracle/cases/guardrails/builtin-content-http/mcp-argument-mask.yaml. It calls POST /mcp-rest/tools/call with server_id, name and arguments, one mcp_servers entry with transport http, url {{upstream}} and a pinned server_id, and a default-on pre_mcp_call content filter. Compare the tools/call arguments observed by the MCP mock, including nested string redaction and unchanged bool/numeric fields. The mock captures six requests: LiteLLM's startup listing of the server (initialize, notifications/initialized, tools/list), then the call's own session (initialize, notifications/initialized, tools/call). Script the replies in that order with the existing upstream answer queue: initialization returns no Mcp-Session-Id, notifications return 202, and each JSON-RPC reply echoes its request's id, counted from 1 in each session. Do not assume an OpenAI completion response is an MCP reply. Each initialize body carries its own side's clientInfo, so name B9850's `/upstream/0/body` and `/upstream/3/body` in compare.ignore with that reason. Keep protocol methods, ids and arguments in the other four bodies compared. Do not build a transport or mount /mcp, /mcp/proxy, /toolset/{toolset_name}/mcp or /{mcp_server_name}/mcp; B8728 owns those.
 scope:
   paths:
     - crates/betterlite-server/src/app/mcp.rs
@@ -48,6 +50,7 @@ scope:
     - tools/oracle/cases/http/proxy-remainder/local-tool-call.yaml
     - tools/oracle/cases/http/proxy-remainder/local-tool-failure.yaml
     - tools/oracle/cases/http/proxy-remainder/local-tool-no-key.yaml
+    - tools/oracle/cases/guardrails/builtin-content-http/mcp-argument-mask.yaml
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L97-L110
@@ -56,6 +59,10 @@ references:
     why: GET /mcp-rest/tools/list and the start of POST /mcp-rest/tools/call with their key dependency.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L1686-L1760
     why: The two preview routes and their key dependency.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L6671-L6714
+    why: Config load lists the server's tools at startup, the first MCP session the mock captures in mcp-argument-mask.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L543-L570
+    why: Each MCP session opens with initialize, whose clientInfo differs per side, then notifications/initialized.
 dod:
   - text: The routers of B4727, B4728 and B4729 are merged once each under /mcp-rest, inside the auth layers.
     proof: [rest-tests, oracle]
@@ -64,6 +71,8 @@ dod:
   - text: The moved B4729 cases and the five REST cases match LiteLLM through the booted proxy.
     proof: [rest-cases, oracle]
   - text: "Configured local tools keep server authorization through POST /mcp-rest/tools/call and tell handler failures from auth failures as LiteLLM does."
+    proof: [oracle]
+  - text: "A default-on pre_mcp_call content filter masks nested string arguments of an MCP tools/call and leaves bool and numeric fields unchanged, as LiteLLM does through the booted proxy."
     proof: [oracle]
 checks:
   optional: []
@@ -90,6 +99,7 @@ oracle_cases:
   - tools/oracle/cases/http/proxy-remainder/local-tool-call.yaml
   - tools/oracle/cases/http/proxy-remainder/local-tool-failure.yaml
   - tools/oracle/cases/http/proxy-remainder/local-tool-no-key.yaml
+  - tools/oracle/cases/guardrails/builtin-content-http/mcp-argument-mask.yaml
 deviations: []
 out_of_scope:
   - "Route behavior: B4727, B4728, B4729 and B4730."
@@ -97,6 +107,8 @@ out_of_scope:
 pitfalls:
   - A preview with a key of role PROXY_ADMIN_VIEW_ONLY must reach the handler, which answers 403; the auth layers check only that the key is valid.
   - Mount these through mount, not mount_public; outside the auth layers B4729 finds no caller extension and answers 500 instead of 401.
+  - "compare.ignore reaches a captured MCP request only through B9850's whole-body selector, so a pointer to a JSON-RPC id inside a body is refused; the dispatcher of mcp 2.3.0 (the version tools/oracle/litellm/uv.lock installs) numbers ids from 1 in each session (jsonrpc_dispatcher.py _allocate_id), so they need no ignore."
+  - "LiteLLM lists every mcp_servers entry's tools at startup (mcp_server_manager.py L6683-L6714), so mcp-argument-mask's first three captures come before its own request; run it with --self-check first and take the selector indices from that capture."
 review_level: security
 budget:
   max_changed_lines: 1500

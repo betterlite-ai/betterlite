@@ -1,0 +1,88 @@
+id: B10022
+title: Decisions provider list
+description: >-
+  The guardrail form settings route sends `decision_model_providers`, the providers that can serve LiteLLM's Decisions API, and the decision call preparation names the same providers in its "Unknown Decisions provider" error. LiteLLM computes the list in supported_decisions_providers (decisions/call.py L88-L93): every LlmProviders member, in enum order, for which ProviderConfigManager.get_provider_decisions_config (utils.py L8911-L8928) returns a config. This task builds only that list, so B3684 (guardrail list projections) waits on it and not on B3513, which keeps the decision call preparation and the config dispatch.
+
+
+  Layout. Code goes in betterlite-openai, module decisions::providers: crates/betterlite-openai/src/decisions/providers.rs, with tests in decisions/providers/tests.rs. The parent decisions.rs is on main and the skeleton adds the module line. betterlite-server already depends on betterlite-openai, so B3684 calls it with no new dependency.
+
+
+  The type. `DecisionsProvider` is an enum with one variant per provider that has a decisions config at the pin: Openai, Openrouter, AzureAi, Perplexity, Typesafe, StrandsDecider, Cloudflare and HostedVllm. `DecisionsProvider::ALL` lists them in LlmProviders declaration order (types/utils.py L4013-L4180), which is not the order of the dispatch in utils.py. `as_str()` gives LiteLLM's provider value: "openai", "openrouter", "azure_ai", "perplexity", "typesafe", "strands_decider", "cloudflare" and "hosted_vllm". `from_provider_name(&str) -> Option<Self>` is the reverse, exact and case-sensitive, and None for every other provider name. B3513's get_provider_decisions_config matches a DecisionsProvider to its config exhaustively, so the list here is the one place that says which providers serve decisions.
+
+
+  The read. `supported_decisions_providers() -> Vec<&'static str>`: as_str of every DecisionsProvider::ALL entry, in that order. B3684 copies it into decision_model_providers, and B3513 joins it with ", " for the unknown provider error.
+
+
+  Tests in decisions/providers/tests.rs, names starting with `providers_`: the eight values in order, from_provider_name round-tripping each value, and None for "anthropic", "OpenAI" and the empty string.
+
+
+  Oracle. One helper case on the b10022 operation; no route reaches the list until B3684's settings route. Input is {}, and the answer is {"providers": [...]}. The Python adapter returns list(supported_decisions_providers()) from litellm.decisions.call.
+
+scope:
+  paths:
+    - crates/betterlite-openai/src/decisions/providers.rs
+    - crates/betterlite-openai/src/decisions/providers/**
+    - tools/oracle/src/helpers/openai/b10022.rs
+    - tools/oracle/src/helpers/openai/b10022/**
+    - tools/oracle/helpers/b10022.py
+    - tools/oracle/helpers/b10022/**
+    - tools/oracle/cases/helpers/decisions-providers/**
+    - tools/oracle/fuzz/corpus/helper_case/decisions-providers-*
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/decisions/call.py#L88-L93
+    why: Owned. supported_decisions_providers walks LlmProviders and keeps the members with a decisions config.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L8911-L8928
+    why: The eight providers that have a decisions config (B3513 builds this dispatch).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4013-L4180
+    why: LlmProviders, whose declaration order is the order of the list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/decisions/call.py#L96-L108
+    why: Caller. The unknown provider error joins the list with ", " (B3513).
+
+dod:
+  - text: supported_decisions_providers returns openai, openrouter, azure_ai, perplexity, typesafe, strands_decider, cloudflare and hosted_vllm in that order, as LiteLLM does.
+    proof: [providers-tests, oracle, helper-python]
+  - text: DecisionsProvider round-trips each provider value and has no variant for any other provider name.
+    proof: [providers-tests]
+  - text: The b10022 adapter passes the strict Python checks and a new helper seed names the operation.
+    proof: [helper-python, helper-case-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: providers-tests
+      why: the provider list or its name lookup is missing or differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^decisions::providers::tests::providers_/)'
+    - id: helper-python
+      why: the b10022 adapter is missing or fails the strict Python checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10022.py tools/oracle/helpers/b10022)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: no new b10022 seed reaches the shared helper case parser
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/decisions-providers-*")" &&
+        grep -lE 'b10022"?:' tools/oracle/fuzz/corpus/helper_case/decisions-providers-* &&
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-openai --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/decisions-providers/supported-providers.yaml
+
+deviations: []
+
+out_of_scope:
+  - "DecisionsCall, _provider_config, _ir_request, _provider_ir_request, prepare_call and reject_other_format in decisions/call.py, and get_provider_decisions_config in utils.py: B3513."
+  - "Sending a decision call: B3514. The provider configs themselves: B3510, B3511, B3512 and the provider tasks."
+  - "The guardrail settings route that returns the list: B3684."
+
+pitfalls:
+  - "The list follows LlmProviders declaration order, so openai comes first and perplexity fourth, even though get_provider_decisions_config checks perplexity first."
+  - "The provider value is strands_decider, not strands, and hosted_vllm, not vllm."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

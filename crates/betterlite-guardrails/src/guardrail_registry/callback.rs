@@ -4,6 +4,8 @@ use crate::guardrail_initializers::lakera::LakeraArgs;
 use crate::guardrail_initializers::lakera_v2::LakeraV2Args;
 use crate::guardrail_initializers::presidio::PresidioArgs;
 use crate::guardrail_initializers::tool_permission::ToolPermissionArgs;
+use crate::hook_registry::kind::HookKind;
+use crate::hook_registry::spec::HookSpec;
 use crate::tool_policy::ToolPolicyGuardrail;
 
 use super::integrations::CompressionKind;
@@ -29,6 +31,7 @@ pub enum CallbackSpec {
     ToolPermission(ToolPermissionArgs),
     ToolPolicy(ToolPolicyGuardrail),
     Compression(CompressionKind),
+    Hook(Box<HookSpec>),
 }
 
 impl GuardrailCallback {
@@ -41,12 +44,13 @@ impl GuardrailCallback {
         )
     }
 
-    // Prisma AIRS and Prompt Security callbacks also return false, but their specs are B8521's
+    // Prisma AIRS and Prompt Security callbacks also return false, but Prompt Security's spec is deferred
     #[must_use]
     // ast-grep-ignore: no-long-names
-    pub const fn supports_scan_only_tool_results(&self) -> bool {
+    pub fn supports_scan_only_tool_results(&self) -> bool {
         match &self.spec {
             CallbackSpec::Bedrock(args) => !args.latest_role_message_only,
+            CallbackSpec::Hook(spec) => !matches!(&spec.kind, HookKind::PanwPrismaAirs(_)),
             CallbackSpec::Lakera(_)
             | CallbackSpec::LakeraV2(_)
             | CallbackSpec::Presidio(_)

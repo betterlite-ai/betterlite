@@ -36,8 +36,8 @@ description: >-
   which can hold at most one here.
   - `callback(&self) -> Option<Arc<dyn ProxyCallback>>` gives a SemanticFilterCallback over the held hook, or None
   while the slot is empty, so a proxy without the filter lists no extra callback.
-  - The slot implements B8399's `ProxyCallbackSource`, answering with callback() as a list of at most one. B8610 holds
-  the one Arc<SemanticFilterSlot> and passes it to ProxyLogging::add_proxy_callbacks, so ProxyLogging asks it every time
+  - The slot implements B8399's `ProxyCallbackSource`, answering with callback() as a list of at most one. This task adds
+  the one Arc<SemanticFilterSlot> to B8610's Shared as a `semantic_filter` field (crates/betterlite-server/src/state/shared.rs) and passes it to ProxyLogging::add_proxy_callbacks where Shared is built, so ProxyLogging asks it every time
   it lists callbacks and a reload that empties or refills the slot shows at once.
 
 
@@ -71,8 +71,7 @@ description: >-
 
   The caller passes the typed litellm_settings.mcp_semantic_tool_filter block (B1663 parses it) converted into B8201's
   SemanticToolFilterConfig, with the router the proxy built. That call sits in the proxy lifespan (B8374) after the mock
-  testing warning and before JWT setup, and ProxyLogging (B8399) lists slot.callback() after its registered callbacks.
-  Neither is in this task's scope; the architect wires them.
+  testing warning and before JWT setup. B8374 lands first with its `semantic_filter: Option<Arc<dyn SemanticFilterStartup>>` port empty, so an enabled block fails startup with NotBuilt; fill that port in crates/betterlite/src/lifespan.rs with an impl over this function and Shared's slot. ProxyLogging (B8399) lists slot.callback() after its registered callbacks. Add tools/oracle/cases/server/semantic-filter-startup/plain-tools-enabled-no-servers.yaml: litellm_settings.mcp_semantic_tool_filter {enabled: true} and no MCP servers, POST /v1/chat/completions with plain function tools to a mock upstream, expecting 200, the tools forwarded unchanged and no x-litellm-semantic-filter header.
 
 
   Oracle helper. The skeleton registers this task's helper operation b138 in the server group and adds its files to the
@@ -104,6 +103,9 @@ scope:
     - tools/oracle/src/helpers/server/b138/**
     - crates/betterlite-server/src/db_settings_reload.rs
     - crates/betterlite-server/src/db_settings_reload/**
+    - crates/betterlite/src/lifespan.rs
+    - crates/betterlite-server/src/state/shared.rs
+    - tools/oracle/cases/server/semantic-filter-startup/plain-tools-enabled-no-servers.yaml
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10323-L10355
@@ -139,6 +141,8 @@ dod:
     proof: [proxy-callback]
   - text: Every mutant in the module is caught by a test.
     proof: [mutants]
+  - text: "With mcp_semantic_tool_filter enabled and no MCP servers, the booted proxy starts and passes plain function tools through unchanged with no x-litellm-semantic-filter header."
+    proof: [oracle]
 checks:
   optional: [mutants]
   commands:
@@ -173,6 +177,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/semantic-filter-startup/enabled-defaults.yaml
   - tools/oracle/cases/helpers/semantic-filter-startup/enabled-custom-values.yaml
   - tools/oracle/cases/helpers/semantic-filter-startup/enabled-without-router.yaml
+  - tools/oracle/cases/server/semantic-filter-startup/plain-tools-enabled-no-servers.yaml
 deviations:
   - what: The hook lives in a SemanticFilterSlot that ProxyLogging lists next to its callbacks, not in the module list litellm.callbacks.
     why: The repository forbids module-level state. The add, remove and lookup rules for this class are LiteLLM's, so the hooks that run are the same.

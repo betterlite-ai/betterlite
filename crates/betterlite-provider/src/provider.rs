@@ -7,6 +7,7 @@ use betterlite_openai::openai_base_config::CatalogCapabilities;
 
 use crate::aiohttp_openai_dispatch::AiohttpOpenAi;
 use crate::anthropic_dispatch::Anthropic;
+use crate::anthropic_dispatch::base::Surface;
 use crate::azure_dispatch::Azure;
 use crate::bedrock_dispatch_contract::Bedrock;
 use crate::compatible_providers::Compatible;
@@ -153,7 +154,12 @@ impl Provider {
             "aiohttp_openai" => Ok(Self::AiohttpOpenAi(AiohttpOpenAi)),
             "azure" | "azure_text" => Ok(Self::Azure(Azure)),
             "azure_ai" => Ok(Self::AzureAi(AzureAi)),
-            "anthropic" | "anthropic_text" => Ok(Self::Anthropic(Anthropic)),
+            "anthropic" => Ok(Self::Anthropic(Anthropic {
+                surface: Surface::Messages,
+            })),
+            "anthropic_text" => Ok(Self::Anthropic(Anthropic {
+                surface: Surface::Legacy,
+            })),
             "bedrock" => Ok(Self::Bedrock(Bedrock)),
             "vertex_ai" | "vertex_ai_beta" => Ok(Self::VertexAi(VertexAi)),
             "gemini" => Ok(Self::Gemini(Gemini)),
