@@ -1,0 +1,6 @@
+task: B8614
+deviations:
+  - what: A config that sets mcp_tools, mcp_servers or vector_store_registry stops startup with "{key} is set in the config, but its support is not built yet"; LiteLLM loads them.
+    why: MCP and vector stores are deferred until the core is done (Max, 11-19). Skipping the key would drop configured MCP servers, their tools and the guardrails that name them without a trace. B9997 and B9998 remove the error for their keys.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7046-L7090
+kept_bugs: []
