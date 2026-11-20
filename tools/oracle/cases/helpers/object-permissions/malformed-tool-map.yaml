@@ -1,0 +1,20 @@
+kind: helper
+name: malformed_tool_map
+call:
+  object_permissions:
+    raw: '{'
+calls:
+  - object_permissions:
+      raw: 'null'
+  - object_permissions:
+      raw: '[1, 2]'
+  - object_permissions:
+      raw: '"text"'
+  - object_permissions:
+      raw: '{"srv-a": "not-a-list"}'
+  - object_permissions:
+      raw: '{"srv-a": [1]}'
+  - object_permissions:
+      raw: '{"srv-a": null, "srv-b": "x"}'
+env: {}
+compare: {ignore: []}
