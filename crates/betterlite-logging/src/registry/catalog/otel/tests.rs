@@ -177,6 +177,23 @@ fn otel_with_v2_reads_the_message_flags_from_the_callback_settings() {
     assert!(logger.turn_off_message_logging());
 }
 
+// a value betterlite_env cannot read as a bool fails the logger init instead of guessing
+#[test]
+fn otel_with_v2_refuses_an_unreadable_message_flag() {
+    let fixture = fixture();
+    let yaml = "callback_settings:\n  otel:\n    message_logging: maybe\n";
+    let catalog =
+        catalog(yaml, &[("LITELLM_OTEL_V2", "true")]).with_runtime(Arc::new(fixture.runtime));
+    assert!(
+        catalog
+            .resolve_logger("otel")
+            .expect("the name is available")
+            .is_none()
+    );
+    assert!(catalog.in_memory_loggers().is_empty());
+    assert!(fixture.constructor.records().is_empty());
+}
+
 #[test]
 fn otel_with_v2_and_no_runtime_is_unavailable() {
     let catalog = catalog("", &[("LITELLM_OTEL_V2", "true")]);
