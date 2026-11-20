@@ -9,6 +9,7 @@ from litellm.llms.base_llm.chat.transformation import BaseLLMException
 from litellm.llms.base_llm.containers.transformation import BaseContainerConfig
 from litellm.llms.custom_httpx.http_handler import HTTPHandler
 from litellm.llms.custom_httpx.llm_http_handler import BaseLLMHTTPHandler
+from litellm.types.containers.main import ContainerListResponse, ContainerObject
 from litellm.types.router import GenericLiteLLMParams
 from litellm.types.utils import LlmProviders
 from litellm.utils import ProviderConfigManager
@@ -46,30 +47,20 @@ class TimeoutView(TypedDict):
     pool: float | None
 
 
-class CommonCall(TypedDict):
-    api_key: str | None
-    api_base: str | None
-    timeout: int | None
+class Call(TypedDict):
+    operation: Literal["create", "list"]
+    name: NotRequired[str]
+    create_params: NotRequired[dict[str, JsonValue]]
+    after: NotRequired[str | None]
+    limit: NotRequired[int | None]
+    order: NotRequired[str | None]
+    api_key: NotRequired[str | None]
+    api_base: NotRequired[str | None]
+    timeout: NotRequired[int | None]
     status: int
     reply_headers: dict[str, str]
     body: str
     failure: Literal["timeout"] | None
-
-
-class CreateCall(CommonCall):
-    operation: Literal["create"]
-    name: str
-    create_params: dict[str, JsonValue]
-
-
-class ListCall(CommonCall):
-    operation: Literal["list"]
-    after: str | None
-    limit: int | None
-    order: str | None
-
-
-Call = CreateCall | ListCall
 
 
 class CallArgs(TypedDict):
@@ -87,8 +78,24 @@ EXTENSIONS: Final = TypeAdapter(dict[str, JsonValue])
 TIMEOUT: Final = TypeAdapter(TimeoutView)
 
 
+def settled_object(
+    outcome: ContainerObject | Coroutine[object, object, ContainerObject],
+) -> ContainerObject:
+    if asyncio.iscoroutine(outcome):
+        return asyncio.run(outcome)
+    return outcome
+
+
+def settled_page(
+    outcome: ContainerListResponse | Coroutine[object, object, ContainerListResponse],
+) -> ContainerListResponse:
+    if asyncio.iscoroutine(outcome):
+        return asyncio.run(outcome)
+    return outcome
+
+
 class Wire:
-    def __init__(self, call: CommonCall) -> None:
+    def __init__(self, call: Call) -> None:
         self.call = call
         self.requests: list[httpx.Request] = []
 
@@ -114,7 +121,7 @@ class RecordingLogging(Logging):
         self.calls.append({"input": logged, "additional_args": values["additional_args"]})
 
 
-def wanted_headers(sent: httpx.Request) -> dict[str, str]:
+def wanted_headers(sent: httpx.Request) -> dict[str, JsonValue]:
     names = ["authorization", "content-type"] if sent.method == "POST" else ["authorization"]
     return {name.lower(): value for name, value in sent.headers.items() if name.lower() in names}
 
@@ -122,7 +129,7 @@ def wanted_headers(sent: httpx.Request) -> dict[str, str]:
 def timeout_fields(sent: httpx.Request) -> JsonValue:
     if sent.method != "POST":
         return None
-    extensions = EXTENSIONS.validate_python(sent.extensions)
+    extensions: dict[str, JsonValue] = sent.extensions
     view = TIMEOUT.validate_python(extensions.get("timeout"))
     read = view["read"]
     return None if read is None else int(read)
@@ -140,17 +147,12 @@ def request_fields(wire: Wire) -> JsonValue:
         }
     sent = wire.requests[0]
     parts = urlsplit(str(sent.url))
-    query: dict[str, JsonValue] = {}
-    for name, value in parse_qsl(parts.query, keep_blank_values=True):
-        query[name] = value
-    headers: dict[str, JsonValue] = {}
-    for name, value in wanted_headers(sent).items():
-        headers[name] = value
+    query: dict[str, JsonValue] = dict(parse_qsl(parts.query, keep_blank_values=True))
     content = sent.content
     return {
         "method": sent.method,
         "url": urlunsplit((parts.scheme, parts.netloc, parts.path, "", "")),
-        "headers": headers,
+        "headers": wanted_headers(sent),
         "body": None if content == b"" else JSON.validate_json(content),
         "query": query,
         "timeout": timeout_fields(sent),
@@ -211,7 +213,7 @@ def container_config() -> BaseContainerConfig:
 
 def handler_client(wire: Wire) -> HTTPHandler:
     transport = httpx.MockTransport(wire.handle)
-    return HTTPHandler(client=httpx.Client(transport=transport, timeout=None))
+    return HTTPHandler(client=httpx.Client(transport=transport))
 
 
 def answer_fields(wire: Wire, log: RecordingLogging, payload: dict[str, JsonValue]) -> JsonValue:
@@ -222,74 +224,56 @@ def answer_fields(wire: Wire, log: RecordingLogging, payload: dict[str, JsonValu
     }
 
 
-def create_answer(call: CreateCall) -> JsonValue:
-    config = container_config()
-    log = RecordingLogging()
-    wire = Wire(call)
-    handler = BaseLLMHTTPHandler()
-    timeout = 600 if call["timeout"] is None else call["timeout"]
-    try:
-        outcome = handler.container_create_handler(
-            name=call["name"],
-            container_create_request_params=call["create_params"],
-            container_provider_config=config,
-            litellm_params=GenericLiteLLMParams(
-                api_key=call["api_key"],
-                api_base=call["api_base"],
-            ),
-            logging_obj=log,
-            timeout=float(timeout),
-            client=handler_client(wire),
-        )
-        match outcome:
-            case Coroutine() as pending:
-                container = asyncio.run(pending)
-            case object() as settled:
-                container = settled
-        view = CONTAINER.validate_json(container.model_dump_json())
-    except BaseLLMException as failure:
-        error: dict[str, JsonValue] = {
-            "status_code": failure.status_code,
-            "message": failure.message,
-        }
-        return answer_fields(wire, log, {"error": error})
-    return answer_fields(wire, log, {"response": container_fields(view)})
-
-
-def list_answer(call: ListCall) -> JsonValue:
-    config = container_config()
-    log = RecordingLogging()
-    wire = Wire(call)
-    handler = BaseLLMHTTPHandler()
-    try:
-        outcome = handler.container_list_handler(
-            container_provider_config=config,
-            litellm_params=GenericLiteLLMParams(
-                api_key=call["api_key"],
-                api_base=call["api_base"],
-            ),
-            logging_obj=log,
-            after=call["after"],
-            limit=call["limit"],
-            order=call["order"],
-            client=handler_client(wire),
-        )
-        match outcome:
-            case Coroutine() as pending:
-                page = asyncio.run(pending)
-            case object() as settled:
-                page = settled
-        view = PAGE.validate_json(page.model_dump_json())
-    except BaseLLMException as failure:
-        error: dict[str, JsonValue] = {
-            "status_code": failure.status_code,
-            "message": failure.message,
-        }
-        return answer_fields(wire, log, {"error": error})
-    return answer_fields(wire, log, {"response": page_fields(view)})
+def answer(
+    handler: BaseLLMHTTPHandler,
+    call: Call,
+    config: BaseContainerConfig,
+    log: RecordingLogging,
+    wire: Wire,
+) -> dict[str, JsonValue]:
+    litellm_params = GenericLiteLLMParams(
+        api_key=call.get("api_key"), api_base=call.get("api_base")
+    )
+    match call["operation"]:
+        case "create":
+            timeout = call.get("timeout")
+            seconds = 600 if timeout is None else timeout
+            outcome = handler.container_create_handler(  # pyright: ignore[reportUnknownMemberType]  # LiteLLM types the create params as a bare dict, so the handler's type is partially unknown  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L8801-L8888
+                name=call["name"],
+                container_create_request_params=call["create_params"],
+                container_provider_config=config,
+                litellm_params=litellm_params,
+                logging_obj=log,
+                timeout=float(seconds),
+                client=handler_client(wire),
+            )
+            created = settled_object(outcome)
+            view = CONTAINER.validate_json(created.model_dump_json())
+            return {"response": container_fields(view)}
+        case "list":
+            outcome = handler.container_list_handler(
+                container_provider_config=config,
+                litellm_params=litellm_params,
+                logging_obj=log,
+                after=call.get("after"),
+                limit=call.get("limit"),
+                order=call.get("order"),
+                client=handler_client(wire),
+            )
+            page = PAGE.validate_json(settled_page(outcome).model_dump_json())
+            return {"response": page_fields(page)}
 
 
 def run(input_value: Call) -> JsonValue:
-    if input_value["operation"] == "create":
-        return create_answer(input_value)
-    return list_answer(input_value)
+    config = container_config()
+    log = RecordingLogging()
+    wire = Wire(input_value)
+    try:
+        payload = answer(BaseLLMHTTPHandler(), input_value, config, log, wire)
+    except BaseLLMException as failure:  # type: ignore[misc]  # LiteLLM's class annotates headers and body as bare dicts, so the type carries Any  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L41-L51
+        error: dict[str, JsonValue] = {
+            "status_code": failure.status_code,
+            "message": failure.message,
+        }
+        payload = {"error": error}
+    return answer_fields(wire, log, payload)
