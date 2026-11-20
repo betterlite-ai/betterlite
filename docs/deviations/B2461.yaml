@@ -43,7 +43,7 @@ deviations:
       that names the method.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L3689-L3695
   - what: >-
-      A 4xx or 5xx answer to a presigned request, a traditional text or bytes upload or a multipart
+      A non-2xx answer to a presigned request, a traditional text or bytes upload or a multipart
       upload (a post in either mode, a put only in async mode) becomes the shared provider error
       carrying the answer's status, body and headers; LiteLLM lets httpx's masked HTTPStatusError
       propagate out of create_file.
@@ -52,6 +52,15 @@ deviations:
       headers are the ones the masked httpx error carries, so a caller sees the same answer facts
       through the shared error type.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1514-L1524
+  - what: >-
+      A streaming media upload sends its body in one piece, so the provider sees a content-length
+      instead of httpx's chunked transfer-encoding, and the whole body is held in memory before the
+      request starts.
+    why: >-
+      B173's outbound request has no streaming body variant and betterlite-core is not one of the
+      HTTP client crate's wrappers, so the transport gathers the blocks under the request deadline
+      and sends them as one body; the blocks themselves are still produced four mebibytes at a time.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L3805-L3808
 kept_bugs:
   - what: >-
       A sync upload whose transform returns raw bytes decodes them as UTF-8 before sending, so a
@@ -77,8 +86,9 @@ kept_bugs:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L3789-L3792
   - what: >-
       A sync upload sent with put (a presigned request, a traditional upload whose config asks for
-      PUT, or a two-step second request whose method is PUT) hands a 4xx/5xx answer to
-      transform_create_file_response as a successful reply; only the async put raises.
+      PUT, or a two-step second request whose method is PUT) hands a non-2xx answer, an unfollowed
+      3xx included, to transform_create_file_response as a successful reply; only the async put
+      raises.
     why: >-
       The sync HTTPHandler.put never calls raise_for_status, so a sync setup relies on the answer
       reaching its transform as is, and betterlite keeps the sync/async difference instead of
