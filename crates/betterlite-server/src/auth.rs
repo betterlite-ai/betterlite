@@ -22,6 +22,7 @@ pub mod auth_request_policy;
 pub mod auth_resource_grants;
 pub mod auth_route_patterns;
 pub mod auth_route_policy;
+pub mod auth_stage_loop;
 pub mod auth_tag_budgets;
 pub mod auth_tenant_budgets;
 pub mod body_buffering;
@@ -52,7 +53,6 @@ pub mod trusted_network;
 pub mod virtual_key_routes;
 
 use std::collections::BTreeSet;
-use std::mem;
 use std::sync::Arc;
 
 use betterlite_auth::auth_request_models::MODEL_ROUTING_HEADER_NAME;
@@ -60,19 +60,13 @@ use betterlite_auth::auth_request_models::catalog::{EmptyCatalog, RequestModelRe
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
-use crate::auth::auth_identity::{
-    AuthBackend, AuthContext, INSTALLED_STAGES, StageFailure, StageInput, dispatch,
-};
+use crate::auth::auth_identity::{AuthBackend, AuthContext, StageFailure, StageInput};
 use crate::auth::auth_model_patterns::{
     ModelPatternStageInput, max_recurse_depth_for_request, rule_for_request,
 };
 use crate::auth::auth_request_models::{CoreDecoders, RequestModelStageInput, resolve};
 use crate::auth::auth_resource_grants::{
     ResourceGrantStageInput, database_for_request, rule_for_request as grant_rule_for_request,
-};
-use crate::auth::body_buffering::{BufferError, max_body_bytes, read_body};
-use crate::auth::failures::{
-    body_too_large_response, stage_failure_response, unreadable_body_response,
 };
 use crate::auth::request_body_safety::RequestBodySafetyStageInput;
 use crate::error_body::AuthenticationFailure;
@@ -98,89 +92,12 @@ pub(crate) async fn authenticate(
     let Some(master_key) = master_key_state.as_ref() else {
         return next.run(request).await;
     };
-    match run_stages(request, master_key).await {
-        Ok((staged, authenticated, body)) => forward(staged, authenticated, body, next).await,
+    match auth_stage_loop::run_stages(request, master_key).await {
+        Ok((staged, authenticated, body)) => {
+            auth_stage_loop::forward(staged, authenticated, body, next).await
+        }
         Err(response) => response,
     }
-}
-
-// The stages borrow the request only while building their input, so the loop owns it across every await.
-async fn run_stages(
-    mut request: Request<Body>,
-    master_key: &SecretString,
-) -> Result<(Request<Body>, Option<AuthContext>, Option<Bytes>), Response> {
-    let resolver = resolver_for(&request);
-    let mut authenticated: Option<AuthContext> = None;
-    let mut body: Option<Bytes> = None;
-    for backend in INSTALLED_STAGES {
-        // the safety stage is the one body reader; only an authenticated caller makes it buffer anything
-        if *backend == AuthBackend::RequestBodySafety && body.is_none() {
-            let limit = max_body_bytes(&request);
-            let stream = mem::replace(request.body_mut(), Body::empty());
-            body = Some(match read_body(stream, limit).await {
-                Ok(bytes) => bytes,
-                Err(error) => return Err(buffer_failure_response(error, limit)),
-            });
-        }
-        let input = match stage_input(
-            *backend,
-            &request,
-            authenticated.as_ref(),
-            &resolver,
-            body.as_ref(),
-        ) {
-            Ok(input) => input,
-            Err(failure) => return Err(stage_failure_response(&failure)),
-        };
-        match run_stage(*backend, input, master_key).await {
-            Ok(context) => authenticated = Some(context),
-            Err(response) => return Err(response),
-        }
-    }
-    Ok((request, authenticated, body))
-}
-
-fn buffer_failure_response(error: BufferError, limit: usize) -> Response {
-    match error {
-        BufferError::TooLarge { observed } => {
-            tracing::debug!(
-                observed,
-                limit,
-                "the request body exceeds the auth-time buffering bound"
-            );
-            body_too_large_response(observed, limit)
-        }
-        BufferError::Unreadable(error) => {
-            tracing::debug!(error = %error, "the request body could not be buffered");
-            unreadable_body_response()
-        }
-    }
-}
-
-async fn forward(
-    mut request: Request<Body>,
-    authenticated: Option<AuthContext>,
-    body: Option<Bytes>,
-    next: Next,
-) -> Response {
-    if let Some(context) = authenticated {
-        request.extensions_mut().insert(context);
-    }
-    if let Some(bytes) = body {
-        *request.body_mut() = Body::from(bytes);
-    }
-    next.run(request).await
-}
-
-async fn run_stage(
-    backend: AuthBackend,
-    input: StageInput,
-    master_key: &SecretString,
-) -> Result<AuthContext, Response> {
-    let prefetched = prefetch_tag_budgets(input)
-        .await
-        .map_err(|failure| stage_failure_response(&failure))?;
-    dispatch(backend, &prefetched, master_key).map_err(|failure| stage_failure_response(&failure))
 }
 
 fn stage_input(
