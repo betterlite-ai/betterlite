@@ -1,4 +1,5 @@
 use std::convert::Infallible;
+use std::error::Error as StdError;
 
 use betterlite_db::sso_assertion_rows::{
     ASSERTION_DECRYPT_FIELD, ASSERTION_DECRYPT_POLICY, AssertionRow, AssertionRows,
@@ -11,7 +12,10 @@ use thiserror::Error;
 
 // The store's failure type belongs to the caller, so it is carried rather than boxed.
 #[derive(Debug, Error)]
-pub enum RotationError<Store> {
+pub enum RotationError<Store>
+where
+    Store: StdError + Send + Sync + 'static,
+{
     #[error("the SSO identity assertion could not be re-encrypted: {0}")]
     Cipher(#[from] SecretError),
     #[error("the SSO identity assertion rows failed: {0}")]
