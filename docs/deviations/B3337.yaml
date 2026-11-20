@@ -1,0 +1,9 @@
+task: B3337
+deviations:
+  - what: An unknown custom_llm_provider on the async path fails as a typed UnknownProvider error, where LiteLLM's LlmProviders(custom_llm_provider) raises ValueError.
+    why: betterlite names providers with the closed ProviderId enum, so the lookup reports an unknown name without the Python lookup; both fail while the async client is being chosen, before the try block, so the shared converter never sees this error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L8727-L8728
+  - what: litellm_params.ssl_verify is read as a boolean and any other JSON type is a typed error naming the field, where LiteLLM hands the value to its httpx client, which also accepts a CA bundle path string.
+    why: betterlite's pooled clients take the TLS decision from the TLS policy B173 resolves, and a CA bundle path reaches them through litellm_settings.ssl_verify or SSL_CERT_FILE; the handler passes only the boolean on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L8636-L8640
+kept_bugs: []
