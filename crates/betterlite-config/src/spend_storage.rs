@@ -87,16 +87,7 @@ impl Section for Raw {
             )?,
             missing_session_id: missing_session_id(&general.missing_session_id)?,
             spend_updates: spend_updates(&general.disable_spend_updates),
-            max_budget: resolve_number(
-                self.litellm_settings
-                    .max_budget
-                    .map(budget_number)
-                    .transpose()?,
-                MAX_BUDGET_PATH,
-                lookup,
-                parse_money,
-            )?
-            .unwrap_or(Decimal::ZERO),
+            max_budget: max_budget(self.litellm_settings.max_budget, lookup)?,
             disable_end_user_cost_tracking: optional_flag(
                 &self.litellm_settings.disable_end_user_cost_tracking,
                 DISABLE_END_USER_PATH,
@@ -121,6 +112,19 @@ impl Section for Raw {
             )?,
         })
     }
+}
+// litellm takes max_budget as a number or an os.environ reference; an absent one leaves zero
+fn max_budget<L>(configured: Option<JsonValue>, lookup: &L) -> Result<Decimal, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    let amount = resolve_number(
+        configured.map(budget_number).transpose()?,
+        MAX_BUDGET_PATH,
+        lookup,
+        parse_money,
+    )?;
+    Ok(amount.unwrap_or(Decimal::ZERO))
 }
 pub fn load_spend_storage_policy<L>(source: &str, lookup: &L) -> Result<Settings, ConfigError>
 where
