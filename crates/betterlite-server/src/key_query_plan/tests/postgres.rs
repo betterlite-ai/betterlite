@@ -11,10 +11,9 @@ use tokio_postgres::NoTls;
 
 use crate::key_query_plan::filters::KeyFilters;
 use crate::key_query_plan::list::list_keys;
-use crate::key_query_plan::plan::KeyListQuery;
 use crate::key_query_plan::response::KeyListEntry;
 
-use super::now;
+use super::{key_filters, query};
 
 const KEY_TABLE_SQL: &str = r#"
 CREATE TABLE "LiteLLM_BudgetTable" (
@@ -115,9 +114,9 @@ async fn database(sql: &str) -> (PostgresFixture, Pool) {
 }
 
 async fn tokens(client: PrismaClient<'_>, filters: KeyFilters) -> Vec<String> {
-    let mut query = KeyListQuery::new(now(), 1, 50);
-    query.filters = filters;
-    let response = list_keys(Some(client), &query).await.unwrap();
+    let mut request = query(1, 50);
+    request.filters = filters;
+    let response = list_keys(Some(client), &request).await.unwrap();
     let mut found: Vec<String> = response
         .keys
         .into_iter()
@@ -145,7 +144,7 @@ async fn postgres_visibility_matrix() {
         availability: &availability,
     };
 
-    let all = tokens(client, KeyFilters::default()).await;
+    let all = tokens(client, key_filters()).await;
     assert_eq!(
         all,
         vec![
@@ -164,15 +163,13 @@ async fn postgres_visibility_matrix() {
         ]
     );
 
-    let own_admin_member = KeyFilters {
-        user_id: Some(String::from("alice")),
-        admin_team_ids: Some(vec![String::from("team-a")]),
-        member_team_ids: Some(vec![String::from("team-a"), String::from("team-b")]),
-        ..KeyFilters::default()
-    };
-    let found = tokens(client, own_admin_member).await;
+    let mut own_admin_member = key_filters();
+    own_admin_member.user_id = Some(String::from("alice"));
+    own_admin_member.admin_team_ids = Some(vec![String::from("team-a")]);
+    own_admin_member.member_team_ids = Some(vec![String::from("team-a"), String::from("team-b")]);
+    let own_found = tokens(client, own_admin_member).await;
     assert_eq!(
-        found,
+        own_found,
         vec![
             "blocked-key",
             "expired-key",
@@ -186,14 +183,12 @@ async fn postgres_visibility_matrix() {
         "own keys, all admin-team keys and member-team service accounts; another member's team-b key stays hidden"
     );
 
-    let unscoped_creator = KeyFilters {
-        user_id: Some(String::from("alice")),
-        include_created_by_keys: true,
-        ..KeyFilters::default()
-    };
-    let found = tokens(client, unscoped_creator).await;
+    let mut unscoped_creator = key_filters();
+    unscoped_creator.user_id = Some(String::from("alice"));
+    unscoped_creator.include_created_by_keys = true;
+    let unscoped_found = tokens(client, unscoped_creator).await;
     assert_eq!(
-        found,
+        unscoped_found,
         vec![
             "created-personal",
             "created-team-a",
@@ -204,24 +199,20 @@ async fn postgres_visibility_matrix() {
         ]
     );
 
-    let personal_creator = KeyFilters {
-        user_id: Some(String::from("alice")),
-        member_team_ids: Some(Vec::new()),
-        include_created_by_keys: true,
-        ..KeyFilters::default()
-    };
-    let found = tokens(client, personal_creator).await;
-    assert_eq!(found, vec!["created-personal", "own-alice"]);
+    let mut personal_creator = key_filters();
+    personal_creator.user_id = Some(String::from("alice"));
+    personal_creator.member_team_ids = Some(Vec::new());
+    personal_creator.include_created_by_keys = true;
+    let personal_found = tokens(client, personal_creator).await;
+    assert_eq!(personal_found, vec!["created-personal", "own-alice"]);
 
-    let current_teams_creator = KeyFilters {
-        user_id: Some(String::from("alice")),
-        member_team_ids: Some(vec![String::from("team-a")]),
-        include_created_by_keys: true,
-        ..KeyFilters::default()
-    };
-    let found = tokens(client, current_teams_creator).await;
+    let mut current_teams_creator = key_filters();
+    current_teams_creator.user_id = Some(String::from("alice"));
+    current_teams_creator.member_team_ids = Some(vec![String::from("team-a")]);
+    current_teams_creator.include_created_by_keys = true;
+    let current_found = tokens(client, current_teams_creator).await;
     assert_eq!(
-        found,
+        current_found,
         vec![
             "created-personal",
             "created-team-a",
@@ -230,20 +221,16 @@ async fn postgres_visibility_matrix() {
         ]
     );
 
-    let service_accounts = KeyFilters {
-        member_team_ids: Some(vec![String::from("team-b")]),
-        ..KeyFilters::default()
-    };
-    let found = tokens(client, service_accounts).await;
-    assert_eq!(found, vec!["team-b-sa"]);
+    let mut service_accounts = key_filters();
+    service_accounts.member_team_ids = Some(vec![String::from("team-b")]);
+    let service_found = tokens(client, service_accounts).await;
+    assert_eq!(service_found, vec!["team-b-sa"]);
 
-    let global_team = KeyFilters {
-        team_id: Some(String::from("team-a")),
-        ..KeyFilters::default()
-    };
-    let found = tokens(client, global_team).await;
+    let mut global_team = key_filters();
+    global_team.team_id = Some(String::from("team-a"));
+    let team_found = tokens(client, global_team).await;
     assert_eq!(
-        found,
+        team_found,
         vec![
             "blocked-key",
             "created-team-a",
@@ -256,45 +243,31 @@ async fn postgres_visibility_matrix() {
         "a global team filter narrows every visibility arm"
     );
 
-    let globals = KeyFilters {
-        project_id: Some(String::from("project-1")),
-        access_group_id: Some(String::from("group-1")),
-        agent_id: Some(String::from("agent-1")),
-        ..KeyFilters::default()
-    };
-    let found = tokens(client, globals).await;
-    assert_eq!(found, vec!["project-key"]);
+    let mut globals = key_filters();
+    globals.project_id = Some(String::from("project-1"));
+    globals.access_group_id = Some(String::from("group-1"));
+    globals.agent_id = Some(String::from("agent-1"));
+    let globals_found = tokens(client, globals).await;
+    assert_eq!(globals_found, vec!["project-key"]);
 
-    let active = KeyFilters {
-        status_filter: Some(String::from("active")),
-        ..KeyFilters::default()
-    };
+    let mut active = key_filters();
+    active.status_filter = Some(String::from("active"));
     let active_tokens = tokens(client, active).await;
     assert!(!active_tokens.contains(&String::from("expired-key")));
     assert!(!active_tokens.contains(&String::from("blocked-key")));
     assert!(active_tokens.contains(&String::from("own-alice")));
 
-    let revoked = KeyFilters {
-        status_filter: Some(String::from("revoked")),
-        ..KeyFilters::default()
-    };
+    let mut revoked = key_filters();
+    revoked.status_filter = Some(String::from("revoked"));
     assert_eq!(tokens(client, revoked).await, vec!["blocked-key"]);
 
-    let search = KeyFilters {
-        search: Some(String::from("alpha")),
-        ..KeyFilters::default()
-    };
+    let mut search = key_filters();
+    search.search = Some(String::from("alpha"));
     assert_eq!(tokens(client, search).await, vec!["searchable"]);
 
-    let archived = tokens(
-        client,
-        KeyFilters {
-            status_filter: Some(String::from("deleted")),
-            ..KeyFilters::default()
-        },
-    )
-    .await;
-    assert_eq!(archived, vec!["gone-1", "gone-2"]);
+    let mut archived = key_filters();
+    archived.status_filter = Some(String::from("deleted"));
+    assert_eq!(tokens(client, archived).await, vec!["gone-1", "gone-2"]);
 
     pool.close();
     fixture.close_async().await.unwrap();
@@ -313,30 +286,24 @@ async fn postgres_contains_metacharacters() {
         availability: &availability,
     };
 
-    let percent = KeyFilters {
-        search: Some(String::from("a%b")),
-        ..KeyFilters::default()
-    };
+    let mut percent = key_filters();
+    percent.search = Some(String::from("a%b"));
     assert_eq!(
         tokens(client, percent).await,
         vec!["t-pct", "t-plain", "t-slash", "t-underscore", "t-x"],
         "Prisma's contains leaves % as a wildcard"
     );
 
-    let underscore = KeyFilters {
-        search: Some(String::from("a_b")),
-        ..KeyFilters::default()
-    };
+    let mut underscore = key_filters();
+    underscore.search = Some(String::from("a_b"));
     assert_eq!(
         tokens(client, underscore).await,
         vec!["t-pct", "t-slash", "t-underscore", "t-x"],
         "Prisma's contains leaves _ matching exactly one character"
     );
 
-    let escaped = KeyFilters {
-        search: Some(String::from("a\\%b")),
-        ..KeyFilters::default()
-    };
+    let mut escaped = key_filters();
+    escaped.search = Some(String::from("a\\%b"));
     assert_eq!(
         tokens(client, escaped).await,
         vec!["t-pct"],
