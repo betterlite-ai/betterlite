@@ -20,7 +20,7 @@ class Store(TypedDict, total=False):
     vector_store_description: str | None
     vector_store_metadata: dict[str, JsonValue] | str | None
     litellm_credential_name: str | None
-    litellm_params: dict[str, JsonValue] | None
+    litellm_params: JsonValue
     team_id: str | None
     user_id: str | None
     is_config: bool
