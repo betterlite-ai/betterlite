@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::error::Error;
 
 use betterlite_config::sections::budget_reset::BudgetResetSettings;
 use betterlite_db::budget_permission_rows::JsonData;
@@ -29,7 +30,7 @@ struct Call {
 struct CallFailed;
 
 // the oracle reports one failed outcome per call, so every error collapses into this marker
-impl<E: std::error::Error> From<E> for CallFailed {
+impl<E: Error> From<E> for CallFailed {
     fn from(_: E) -> Self {
         Self
     }
