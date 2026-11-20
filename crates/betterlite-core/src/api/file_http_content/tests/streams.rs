@@ -244,7 +244,7 @@ async fn streaming_error_body_is_lossy_and_closed_once() {
 async fn streaming_error_body_reads_at_most_64_kib() {
     let drops = Arc::new(AtomicUsize::new(0));
     let (sender, body) = gated(&drops, 100);
-    for _ in 0..100 {
+    for _ in 0..100_u32 {
         sender
             .send(Ok(vec![b'a'; 1024]))
             .await
