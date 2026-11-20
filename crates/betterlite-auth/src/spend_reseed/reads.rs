@@ -3,18 +3,24 @@ use std::future::Future;
 
 use betterlite_db::database_failures::deadline::{DbLookupError, LookupRequest, bounded_db_lookup};
 use betterlite_db::database_failures::gate::LoopBoundSemaphore;
+use betterlite_db::spend_rows::key::{
+    SpendCounterKey, WindowDurationValidity, decode_spend_counter_key,
+};
+use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use tokio_util::task::TaskTracker;
 
+use crate::budget_primitives::window_start::DurationParser;
+use crate::spend_reseed::cache::ReseedCache;
+
 use super::reseed::{CoalescedError, CoalescedError::Cache as cache_failure};
-use super::rows::{LookupAnswer, SpendCounterRows, SpendRow, SpendRowLookup};
+use super::rows::{LookupAnswer, OwnedLookup, SpendCounterRows, SpendRow, SpendRowLookup};
 use super::values::cache_amount;
-use crate::spend_reseed::cache::{ActiveSpendBatch, ReseedCache};
 
 pub(super) async fn gated_primary<Rows>(
     gate: &LoopBoundSemaphore,
     rows: &Rows,
-    counter_key: &str,
+    lookup: OwnedLookup,
 ) -> LookupAnswer<SpendRow, Rows::Error>
 where
     Rows: SpendCounterRows,
@@ -23,36 +29,66 @@ where
         Some(semaphore) => semaphore.acquire_owned().await.ok(),
         None => None,
     };
-    let Some(lookup) = primary_lookup(counter_key) else {
-        return LookupAnswer::Row(None);
-    };
-    match rows.spend_row(lookup).await {
+    match rows.spend_row(lookup.borrowed()).await {
         Ok(row) => LookupAnswer::Row(row),
         Err(error) => LookupAnswer::Failed(error),
     }
 }
 
-// _counter_row's prefix order: key, team_member, team, user, org, project, and no end-user reseed
-pub(super) fn primary_lookup(counter_key: &str) -> Option<SpendRowLookup<'_>> {
-    if let Some(token) = counter_key.strip_prefix("spend:key:") {
-        return Some(SpendRowLookup::Key(token));
+// B199's duration parser decides which suffixes make a key/team counter a window counter
+struct CounterDurations<'durations> {
+    durations: &'durations (dyn DurationParser + Send + Sync),
+    now: DateTime<Utc>,
+}
+
+impl WindowDurationValidity for CounterDurations<'_> {
+    fn is_valid(&self, spec: &str) -> bool {
+        self.durations.seconds(spec, self.now).is_some()
     }
-    if let Some(suffix) = counter_key.strip_prefix("spend:team_member:") {
-        let (user_id, team_id) = suffix.rsplit_once(':')?;
-        return Some(SpendRowLookup::TeamMember { user_id, team_id });
+}
+
+// _counter_row's prefix order and _is_key_or_team_window_counter both live in B1735's decoder
+pub(super) fn primary_lookup<'key>(
+    counter_key: &'key str,
+    durations: &dyn DurationParser,
+    now: DateTime<Utc>,
+) -> Option<SpendRowLookup<'key>> {
+    let windows = CounterDurations { durations, now };
+    match decode_spend_counter_key(counter_key.as_bytes(), &windows).ok()? {
+        SpendCounterKey::Key(token) => Some(SpendRowLookup::Key(token)),
+        SpendCounterKey::TeamMember { user_id, team_id } => {
+            Some(SpendRowLookup::TeamMember { user_id, team_id })
+        }
+        SpendCounterKey::Team(team_id) => Some(SpendRowLookup::Team(team_id)),
+        SpendCounterKey::User(user_id) => Some(SpendRowLookup::User(user_id)),
+        SpendCounterKey::Organization(organization_id) => {
+            Some(SpendRowLookup::Organization(organization_id))
+        }
+        SpendCounterKey::Project(project_id) => Some(SpendRowLookup::Project(project_id)),
+        SpendCounterKey::EndUser(_)
+        | SpendCounterKey::Window { .. }
+        | SpendCounterKey::Unknown(_) => None,
     }
-    if let Some(team_id) = counter_key.strip_prefix("spend:team:") {
-        return Some(SpendRowLookup::Team(team_id));
+}
+
+// the floor reader accepts only the end-user prefix; every other counter shape reads no row
+pub(super) fn end_user_lookup<'key>(
+    counter_key: &'key str,
+    durations: &dyn DurationParser,
+    now: DateTime<Utc>,
+) -> Option<SpendRowLookup<'key>> {
+    let windows = CounterDurations { durations, now };
+    match decode_spend_counter_key(counter_key.as_bytes(), &windows).ok()? {
+        SpendCounterKey::EndUser(user_id) => Some(SpendRowLookup::EndUser(user_id)),
+        SpendCounterKey::Key(_)
+        | SpendCounterKey::TeamMember { .. }
+        | SpendCounterKey::Team(_)
+        | SpendCounterKey::User(_)
+        | SpendCounterKey::Organization(_)
+        | SpendCounterKey::Project(_)
+        | SpendCounterKey::Window { .. }
+        | SpendCounterKey::Unknown(_) => None,
     }
-    if let Some(user_id) = counter_key.strip_prefix("spend:user:") {
-        return Some(SpendRowLookup::User(user_id));
-    }
-    if let Some(organization_id) = counter_key.strip_prefix("spend:org:") {
-        return Some(SpendRowLookup::Organization(organization_id));
-    }
-    counter_key
-        .strip_prefix("spend:project:")
-        .map(SpendRowLookup::Project)
 }
 
 pub(super) async fn bounded_row<Failure, Lookup>(
@@ -107,81 +143,4 @@ where
         return Ok(Some(cache_amount(&value)?));
     }
     Ok(None)
-}
-
-pub(super) async fn warm<Cache, Batch>(
-    cache: &Cache,
-    batch: &Batch,
-    counter_key: &str,
-    db_spend: Decimal,
-    require_cache_warm: bool,
-) -> Result<Option<Decimal>, CoalescedError<Cache::Error>>
-where
-    Cache: ReseedCache + ?Sized,
-    Batch: ActiveSpendBatch + ?Sized,
-{
-    let mut current = db_spend;
-    let result = if cache.redis_configured() {
-        warm_redis(cache, batch, counter_key, db_spend, &mut current).await
-    } else {
-        warm_memory(cache, counter_key, db_spend, &mut current).await
-    };
-    if let Err(error) = result {
-        tracing::error!(%error, counter_key, "SpendCounterReseed.coalesced: failed to warm the counter");
-        if require_cache_warm {
-            return Err(error);
-        }
-    }
-    Ok(Some(current))
-}
-
-async fn warm_redis<Cache, Batch>(
-    cache: &Cache,
-    batch: &Batch,
-    counter_key: &str,
-    db_spend: Decimal,
-    current: &mut Decimal,
-) -> Result<(), CoalescedError<Cache::Error>>
-where
-    Cache: ReseedCache + ?Sized,
-    Batch: ActiveSpendBatch + ?Sized,
-{
-    let seeded = cache
-        .redis_set_nx(counter_key, db_spend)
-        .await
-        .map_err(cache_failure)?;
-    if seeded != Some(true) {
-        let stored = cache.redis_get(counter_key).await.map_err(cache_failure)?;
-        *current = match stored {
-            Some(value) => cache_amount(&value)?,
-            None => db_spend,
-        };
-    }
-    cache
-        .memory_set(counter_key, *current)
-        .await
-        .map_err(cache_failure)?;
-    batch.record(counter_key, *current);
-    Ok(())
-}
-
-async fn warm_memory<Cache>(
-    cache: &Cache,
-    counter_key: &str,
-    db_spend: Decimal,
-    current: &mut Decimal,
-) -> Result<(), CoalescedError<Cache::Error>>
-where
-    Cache: ReseedCache + ?Sized,
-{
-    let stored = cache.memory_get(counter_key).await.map_err(cache_failure)?;
-    let seeded = match stored {
-        Some(value) => db_spend.max(cache_amount(&value)?),
-        None => db_spend,
-    };
-    if let Err(error) = cache.memory_set(counter_key, seeded).await {
-        return Err(cache_failure(error));
-    }
-    *current = seeded;
-    Ok(())
 }

@@ -16,7 +16,7 @@ use thiserror::Error;
 use crate::model_budget_values::amount_text::amount_from_text;
 
 use super::super::values::ReseedCacheValue;
-use super::ReseedCache;
+use super::{ReseedCache, WindowReseedCache};
 
 #[derive(Debug, Error)]
 pub enum ReseedCacheError {
@@ -28,6 +28,8 @@ pub enum ReseedCacheError {
     Memory(#[from] BackendError),
     #[error("the spend {0} does not fit a float cache value")]
     OutOfRange(Decimal),
+    #[error("the cache has no Redis tier to increment")]
+    Unavailable,
 }
 
 impl<Memory: MemoryCacheOps> ReseedCache for DualCache<Memory> {
@@ -100,6 +102,26 @@ impl<Memory: MemoryCacheOps> ReseedCache for DualCache<Memory> {
             .async_increment_cache(counter_key, amount, options)
             .await;
         Ok(counted.and_then(Decimal::from_f64))
+    }
+}
+
+impl<Memory: MemoryCacheOps> WindowReseedCache for DualCache<Memory> {
+    async fn redis_increment(
+        &self,
+        counter_key: &str,
+        amount: Decimal,
+    ) -> Result<Decimal, ReseedCacheError> {
+        let Some(redis) = redis_of(self) else {
+            return Err(ReseedCacheError::Unavailable);
+        };
+        let increment = amount
+            .to_f64()
+            .ok_or(ReseedCacheError::OutOfRange(amount))?;
+        // LiteLLM's bare async_increment(key, value): the default TTL, no refresh
+        let counted = redis
+            .async_increment(counter_key, increment, None, false)
+            .await?;
+        Decimal::from_f64(counted).ok_or(ReseedCacheError::OutOfRange(amount))
     }
 }
 
