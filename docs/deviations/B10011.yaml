@@ -1,0 +1,18 @@
+task: B10011
+deviations:
+  - what: The cache is one instance the store shares, not the module-global _ASSERTION_CACHE, so the epoch lives on that instance instead of the process.
+    why: betterlite keeps no module state; a reader sees the same behavior as long as B8620 builds the one cache and every store shares the one Arc.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_store.py#L119
+  - what: An explicit MCP_SSO_ASSERTION_CACHE_TTL_SECONDS=0 expires every entry at once, while LiteLLM's InMemoryCache runs `default_ttl or 600` and turns the 0 into ten minutes.
+    why: docs/compatibility.md says an explicit 0 is used as given; a zero TTL is the cache-disabled setup, not a ten-minute cache.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L46
+  - what: An entry whose TTL has elapsed exactly reads as a miss, while InMemoryCache's `_is_key_expired` uses `clock() > expiry` and still returns it at that instant.
+    why: Rust compares `elapsed < ttl` on a monotonic Instant, so an entry never outlives its TTL; LiteLLM's own `evict_cache` already treats `expiry <= now` as expired, and no working setup can land on an exact float boundary.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L93
+  - what: A negative MCP_SSO_ASSERTION_CACHE_TTL_SECONDS or MCP_OAUTH2_TOKEN_CACHE_MAX_SIZE fails the config load naming the variable. LiteLLM's int() takes it, a negative TTL then expires entries at once, and a negative size makes eviction pop an empty heap.
+    why: Neither value has a meaning below zero, so the mistake surfaces at startup instead of in a login.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L180-L182
+kept_bugs:
+  - what: The epoch is one counter for the whole cache, so an invalidate for one user also stops another user's in-flight fetch from caching its assertion.
+    why: LiteLLM's epoch is process-wide by design; keying it by user would differ from it, and the cost of the copy is a repeated database read, never a wrong assertion.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_store.py#L110

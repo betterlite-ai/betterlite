@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::io::Error;
+use std::io::{self, Error, Write as _};
 use std::path::Path;
 
 use crate::OracleError;
@@ -26,8 +26,28 @@ pub(crate) fn start(input: &GatewayInput<'_>, first: bool) -> Result<Gateway, Or
         }
         (false, false) => {}
     }
-    let mut gateway = Gateway::start(spec(input, first, free_port()?)?)?;
+    let gateway_spec = spec(input, first, free_port()?)?;
+    // a failing capture names the gateway it ran against, and the ready line proves the requests began
+    let gateway_name = if first || input.options.self_check {
+        "LiteLLM"
+    } else {
+        "betterlite"
+    };
+    writeln!(
+        io::stdout().lock(),
+        "oracle: starting {gateway_name} on port {} with {}",
+        gateway_spec.port,
+        gateway_spec.command.display()
+    )
+    .map_err(OracleError::Output)?;
+    let mut gateway = Gateway::start(gateway_spec)?;
     gateway.wait_ready(&http::client()?)?;
+    writeln!(
+        io::stdout().lock(),
+        "oracle: {gateway_name} is ready at {}",
+        gateway.base_url
+    )
+    .map_err(OracleError::Output)?;
     Ok(gateway)
 }
 
