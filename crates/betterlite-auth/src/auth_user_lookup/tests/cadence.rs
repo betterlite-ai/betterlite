@@ -66,7 +66,6 @@ fn read_does_not_refresh() {
 #[case::zero(0)]
 #[case::negative_one(-1)]
 #[case::negative_sixty(-60)]
-#[test]
 fn zero_negative_ttl_expired(#[case] expiry: i64) {
     let (clock, cadence) = cadence_with(100);
     clock.set(Duration::from_secs(100));
