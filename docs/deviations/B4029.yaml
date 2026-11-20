@@ -27,4 +27,7 @@ deviations:
   - what: The monthly report's catch-all logs "Error sending monthly spend report", where LiteLLM logs the weekly wording from the monthly handler.
     why: LiteLLM's message is a copy-paste slip; an operator reading the log of a failed monthly report needs the monthly name, and no working setup matches on the text.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1960-L1961
+  - what: A user spend row whose daily, monthly or baseline value is an infinity fails the whole pass with an error and sends nothing, where LiteLLM keeps the float and alerts with `$inf` in the text.
+    why: betterlite keeps the row's spend as rust_decimal::Decimal, which cannot hold an infinity or a NaN, and a spend line of `$inf` tells an operator nothing about the user. A NaN never reaches either implementation, since the query's `> 0` filter leaves it out.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/user_spend_alerts.py#L31-L36
 kept_bugs: []
