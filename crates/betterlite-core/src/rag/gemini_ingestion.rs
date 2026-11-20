@@ -104,19 +104,19 @@ impl RagStore for GeminiIngestion {
             Some(identified) => identified,
             None => self.create_store(&api_key, &base_url).await?,
         };
-        let mut file_id = None;
-        if let Some((content, filename)) = upload_form(&request, &store_id) {
-            let site = UploadSite {
-                base_url: &base_url,
-                store_id: &store_id,
-                filename,
-            };
-            let upload_url = self
-                .initiate(&site, &api_key, content.len(), request.content_type)
-                .await?;
-            file_id = Some(self.finalize(&upload_url, content).await?);
-        }
-        Ok((Some(store_id), file_id))
+        let Some((content, filename)) = upload_form(&request, &store_id) else {
+            return Ok((Some(store_id), None));
+        };
+        let site = UploadSite {
+            base_url: &base_url,
+            store_id: &store_id,
+            filename,
+        };
+        let upload_url = self
+            .initiate(&site, &api_key, content.len(), request.content_type)
+            .await?;
+        let file_id = self.finalize(&upload_url, content).await?;
+        Ok((Some(store_id), Some(file_id)))
     }
 }
 
@@ -140,15 +140,15 @@ impl GeminiIngestion {
             .as_deref()
             .filter(|value| !value.is_empty())
             .unwrap_or(DEFAULT_INGEST_NAME);
-        let mut body = IndexMap::new();
-        body.insert("displayName".to_owned(), Json::Text(name.to_owned()));
+        let mut payload = IndexMap::new();
+        payload.insert("displayName".to_owned(), Json::Text(name.to_owned()));
         let reply = self
             .transport
             .send(TransportRequest {
                 method: TransportMethod::Post,
                 url: format!("{base_url}/fileSearchStores"),
                 headers: json_headers(api_key)?,
-                body: TransportBody::Json(Json::Object(body)),
+                body: TransportBody::Json(Json::Object(payload)),
                 timeout: CREATE_TIMEOUT,
             })
             .await?;
@@ -167,7 +167,7 @@ impl GeminiIngestion {
         file_size: usize,
         content_type: Option<&str>,
     ) -> Result<String, GeminiIngestionError> {
-        let body = initiate_body(
+        let payload = initiate_body(
             site.filename,
             self.state.chunking_strategy.as_ref(),
             &self.state.vector_store_config,
@@ -178,7 +178,7 @@ impl GeminiIngestion {
                 method: TransportMethod::Post,
                 url: initiate_url(site.base_url, site.store_id),
                 headers: initiate_headers(api_key, file_size, content_type)?,
-                body: TransportBody::Json(body),
+                body: TransportBody::Json(payload),
                 timeout: CREATE_TIMEOUT,
             })
             .await?;

@@ -31,7 +31,6 @@ pub(super) fn initiate_headers(
     content_type: Option<&str>,
 ) -> Result<HeaderMap, GeminiIngestionError> {
     let mut headers = HeaderMap::new();
-    let content_type = content_type.filter(|value| !value.is_empty());
     insert(&mut headers, "x-goog-upload-protocol", "resumable")?;
     insert(&mut headers, "x-goog-upload-command", "start")?;
     insert(
@@ -42,7 +41,9 @@ pub(super) fn initiate_headers(
     insert(
         &mut headers,
         "x-goog-upload-header-content-type",
-        content_type.unwrap_or(DEFAULT_CONTENT_TYPE),
+        content_type
+            .filter(|value| !value.is_empty())
+            .unwrap_or(DEFAULT_CONTENT_TYPE),
     )?;
     insert(&mut headers, "content-type", "application/json")?;
     insert(&mut headers, "x-goog-api-key", api_key)?;
@@ -142,7 +143,7 @@ pub(super) fn body_text(body: &[u8]) -> String {
     )
 }
 
-fn not_json(source: serde_json::Error) -> GeminiIngestionError {
+const fn not_json(source: serde_json::Error) -> GeminiIngestionError {
     GeminiIngestionError::BadReply {
         source: ReplyError::NotJson(source),
     }

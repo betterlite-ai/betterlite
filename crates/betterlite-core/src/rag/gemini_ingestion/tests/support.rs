@@ -86,7 +86,7 @@ pub(super) fn fixtures(
         },
     )
     .unwrap();
-    let port: Arc<dyn GeminiTransport> = Arc::clone(&transport);
+    let port: Arc<dyn GeminiTransport> = Arc::<Scripted>::clone(&transport);
     Fixture {
         ingestion: GeminiIngestion {
             state,
@@ -179,11 +179,11 @@ pub(super) fn body_json(request: &Sent) -> Json {
     serde_json::from_slice(&request.body).unwrap()
 }
 
-pub(super) fn gemini_only() -> &'static str {
+pub(super) const fn gemini_only() -> &'static str {
     r#"{"custom_llm_provider":"gemini"}"#
 }
 
-pub(super) fn with_store_id() -> &'static str {
+pub(super) const fn with_store_id() -> &'static str {
     r#"{"custom_llm_provider":"gemini","vector_store_id":"fileSearchStores/s"}"#
 }
 

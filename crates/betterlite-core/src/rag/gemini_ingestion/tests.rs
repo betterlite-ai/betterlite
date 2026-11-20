@@ -24,8 +24,10 @@ use crate::rag::ingestion::store::{RagStore as _, StoreRequest};
 
 #[test]
 fn flags_supports_existing_file_id_is_false() {
-    assert!(!GeminiIngestion::SUPPORTS_EXISTING_FILE_ID);
-    assert!(!IngestionState::SUPPORTS_EXISTING_FILE_ID);
+    let supported = GeminiIngestion::SUPPORTS_EXISTING_FILE_ID;
+    let state_supported = IngestionState::SUPPORTS_EXISTING_FILE_ID;
+    assert!(!supported);
+    assert!(!state_supported);
 }
 
 #[test]
@@ -321,7 +323,10 @@ fn create_store_logs_the_failure_at_error_level() {
         vec![reply(500, &[], b"boom")],
     );
     let (result, logs) = capture(|| block_on(store(&fixture, None, None, None)));
-    assert!(result.is_err());
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "Failed to create File Search store: boom"
+    );
     assert!(logs.iter().any(|(level, message)| *level == Level::ERROR
         && message == "Failed to create File Search store: boom"));
 }

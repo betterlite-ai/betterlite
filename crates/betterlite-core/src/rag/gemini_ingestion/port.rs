@@ -64,13 +64,12 @@ pub struct TransportRequest {
 
 // The headers carry the API key, so a request prints their names and a body size, never a value
 impl Debug for TransportRequest {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         let body_bytes = match &self.body {
             TransportBody::Json(value) => serde_json::to_vec(value).ok().map(|bytes| bytes.len()),
             TransportBody::Bytes(bytes) => Some(bytes.len()),
         };
-        formatter
-            .debug_struct("TransportRequest")
+        f.debug_struct("TransportRequest")
             .field("method", &self.method)
             .field("url", &self.url)
             .field("header_names", &self.headers.keys().collect::<Vec<_>>())

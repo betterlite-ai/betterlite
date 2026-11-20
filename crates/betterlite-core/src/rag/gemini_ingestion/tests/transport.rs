@@ -20,9 +20,8 @@ pub(super) struct Sent {
 }
 
 impl Debug for Sent {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
-        formatter
-            .debug_struct("Sent")
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("Sent")
             .field("method", &self.method)
             .field("url", &self.url)
             .field("body_bytes", &self.body.len())

@@ -104,7 +104,7 @@ impl CredentialLookup for NoCredentials {
 fn store(input: &Input) -> HelperResult {
     let content = decode_content(input.file_content_base64.as_deref())?;
     let transport = Arc::new(Scripted::new(input.script.clone()));
-    let port: Arc<dyn GeminiTransport> = Arc::clone(&transport);
+    let port: Arc<dyn GeminiTransport> = Arc::<Scripted>::clone(&transport);
     let ingestion = GeminiIngestion {
         state: state(&input.options)?,
         defaults: defaults(&input.environment),
