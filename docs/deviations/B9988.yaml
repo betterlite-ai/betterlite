@@ -1,0 +1,6 @@
+task: B9988
+deviations:
+- what: A second 422 after the dropped fields were resent reaches the client as the provider's own error. LiteLLM's two-iteration loop drops the newly named fields and then falls out of the function, returning None, so the caller receives no completion at all instead of an error.
+  why: A null completion reported as a success is a bug no working setup can rely on, so rule owned-behavior-is-built keeps the provider error, which carries the status and the rejected fields.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L709-L842
+kept_bugs: []
