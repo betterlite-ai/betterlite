@@ -91,6 +91,10 @@ where
                 response: Box::new(response),
                 parser: chunk_parser,
             }),
+            Upstream::Anthropic(_) => Err(Failure::Http(OperationError::UnsupportedOperation {
+                provider: String::from("anthropic"),
+                operation: String::from("provider endpoint"),
+            })),
             Upstream::Buffered(response) => {
                 let input = ResponseInput {
                     model: &call.model,

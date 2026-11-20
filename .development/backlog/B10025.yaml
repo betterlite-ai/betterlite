@@ -1,0 +1,13 @@
+id: B10025
+milestone: M8 platform
+title: Mount the usage AI chat route with its production factory
+status: todo
+depends_on: [B8610, B8271, B5656, B3103, B729, B7324, B10023]
+file: tasks/B10025-usage-chat-mount.yaml
+covers: []
+parent: null
+split_from: B8673
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

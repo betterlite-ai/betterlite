@@ -1,0 +1,15 @@
+kind: helper
+name: no-intervention-returns-false
+call:
+  b3722:
+    bedrock_decisions:
+      should_raise:
+        response:
+          action: NONE
+          assessments:
+            - topicPolicy:
+                topics:
+                  - name: finance
+                    action: BLOCKED
+env: {}
+compare: {ignore: []}

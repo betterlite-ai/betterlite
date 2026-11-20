@@ -13,6 +13,7 @@ betterlite = { path = "../../crates/betterlite" }
 betterlite-a2a = { path = "../../crates/betterlite-a2a" }
 betterlite-anthropic = { path = "../../crates/betterlite-anthropic" }
 betterlite-auth = { path = "../../crates/betterlite-auth" }
+betterlite-azure = { path = "../../crates/betterlite-azure" }
 betterlite-cli = { path = "../../crates/betterlite-cli" }
 betterlite-compression = { path = "../../crates/betterlite-compression" }
 betterlite-config = { path = "../../crates/betterlite-config" }
@@ -38,15 +39,18 @@ betterlite-redact = { path = "../../crates/betterlite-redact" }
 betterlite-redis = { path = "../../crates/betterlite-redis" }
 betterlite-router = { path = "../../crates/betterlite-router", features = ["testing"] }
 betterlite-sdk = { path = "../../crates/betterlite-sdk" }
+betterlite-secret-managers = { path = "../../crates/betterlite-secret-managers" }
 betterlite-server = { path = "../../crates/betterlite-server" }
 betterlite-streaming = { path = "../../crates/betterlite-streaming" }
 betterlite-tokenizer = { path = "../../crates/betterlite-tokenizer" }
 betterlite-transcribe = { path = "../../crates/betterlite-transcribe" }
+betterlite-vertex = { path = "../../crates/betterlite-vertex" }
 betterlite-websearch = { path = "../../crates/betterlite-websearch" }
 bytes = "1.12.1"
 chrono.workspace = true
 clap = { version = "4.6.7", features = ["derive", "env"] }
 cookie_store = "0.22.0"
+futures-executor = "0.3.34"
 futures-util = { version = "0.3.34", default-features = false }
 hex = "0.4.3"
 http = "1.5.0"
