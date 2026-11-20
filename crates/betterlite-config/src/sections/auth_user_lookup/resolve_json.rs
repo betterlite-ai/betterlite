@@ -62,9 +62,9 @@ fn to_json(value: RawValue, path: &str, resolve: Resolve<'_>) -> Result<JsonData
         RawValue::Text(text) => Ok(JsonData::String(text)),
         RawValue::Object(fields) => {
             let mut resolved = BTreeMap::new();
-            for (key, value) in fields {
+            for (key, field) in fields {
                 let child_path = format!("{path}.{key}");
-                let kept = to_json(value, &child_path, resolve.child(resolve.place))?;
+                let kept = to_json(field, &child_path, resolve.child(resolve.place))?;
                 resolved.insert(key, kept);
             }
             Ok(JsonData::Object(resolved))

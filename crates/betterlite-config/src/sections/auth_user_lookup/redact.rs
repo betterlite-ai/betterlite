@@ -15,7 +15,7 @@ const EXTRA_SECRET_FIELDS: [&str; 4] = [
 
 // proxy_server.py's _redact_secret_values_in_obj: a sensitive key's value becomes REDACTED, deeper fails closed
 #[must_use]
-pub fn redacted_params(values: &IndexMap<String, JsonData>) -> JsonData {
+pub(super) fn redacted_params(values: &IndexMap<String, JsonData>) -> JsonData {
     let masker = SensitiveDataMasker::default();
     let mut redacted = BTreeMap::new();
     for (key, value) in values {

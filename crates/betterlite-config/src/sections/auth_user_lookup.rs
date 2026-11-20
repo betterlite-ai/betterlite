@@ -45,9 +45,8 @@ pub struct DefaultUserParams {
 }
 
 impl fmt::Debug for DefaultUserParams {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("DefaultUserParams")
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DefaultUserParams")
             .field("values", &redact::redacted_params(&self.values))
             .finish()
     }
@@ -184,7 +183,7 @@ fn budget_number(value: &JsonData, path: &str) -> Result<JsonData, ConfigError> 
     let decimal = decimal_text(text.trim()).ok_or_else(|| invalid(path, false))?;
     let float = decimal
         .to_f64()
-        .filter(|value| value.is_finite())
+        .filter(|candidate| candidate.is_finite())
         .ok_or_else(|| invalid(path, false))?;
     serde_json::Number::from_f64(float)
         .map(JsonData::Number)

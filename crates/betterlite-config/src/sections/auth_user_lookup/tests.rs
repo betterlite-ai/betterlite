@@ -22,7 +22,11 @@ fn load(source: &str, environment: &[(&str, &str)]) -> Result<Settings, ConfigEr
 fn scalar(value: &JsonData) -> Option<f64> {
     match value {
         JsonData::Number(number) => number.as_f64(),
-        _ => None,
+        JsonData::Null
+        | JsonData::Bool(_)
+        | JsonData::String(_)
+        | JsonData::Array(_)
+        | JsonData::Object(_) => None,
     }
 }
 
@@ -76,7 +80,7 @@ fn loads_scalar_user_defaults() {
     );
     assert_eq!(
         scalar(defaults.values.get("max_budget").unwrap()),
-        Some(12.0)
+        Some(12.0_f64)
     );
     match defaults.values.get("metadata") {
         Some(JsonData::Object(fields)) => {
@@ -122,7 +126,7 @@ litellm_settings:
     );
     assert_eq!(
         scalar(defaults.values.get("max_budget").unwrap()),
-        Some(42.5)
+        Some(42.5_f64)
     );
     match load(
         "litellm_settings:
@@ -167,12 +171,12 @@ fn falsey_defaults_empty(#[case] value: &str) {
 }
 
 #[rstest]
-#[case::integer("12", 12.0)]
-#[case::fractional("12.5", 12.5)]
-#[case::numeric_text("\"7.25\"", 7.25)]
-#[case::source_true("true", 1.0)]
-#[case::source_false("false", 0.0)]
-#[case::zero("0", 0.0)]
+#[case::integer("12", 12.0_f64)]
+#[case::fractional("12.5", 12.5_f64)]
+#[case::numeric_text("\"7.25\"", 7.25_f64)]
+#[case::source_true("true", 1.0_f64)]
+#[case::source_false("false", 0.0_f64)]
+#[case::zero("0", 0.0_f64)]
 fn defaults_numeric_budget_conversion(#[case] written: &str, #[case] expected: f64) {
     let source =
         format!("litellm_settings:\n  default_internal_user_params:\n    max_budget: {written}\n");
