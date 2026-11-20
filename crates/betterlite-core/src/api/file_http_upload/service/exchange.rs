@@ -16,7 +16,9 @@ use tokio_util::task::TaskTracker;
 
 use crate::api::api_boundaries::ApiLimits;
 use crate::api::file_http_upload::config::{FileParams, FileUploadConfig, Headers};
-use crate::api::file_http_upload::decoder::{decode_file_upload_location, upload_url_from_headers};
+use crate::api::file_http_upload::decoder::{
+    LocatedUpload, decode_file_upload_location, upload_url_from_headers,
+};
 use crate::api::file_http_upload::error::{UploadError, failure_facts, status_failure};
 use crate::api::file_http_upload::media::BlockIter;
 use crate::api::file_http_upload::plan::{MediaPlan, PresignedPlan, TwoStepPlan, encoded_body};
@@ -81,7 +83,10 @@ where
                 UploadBody::Bytes(body),
             )
             .await?;
-        let (located_url, data) = located_upload(&initial.response, plan, self.limits)?;
+        let LocatedUpload {
+            url: located_url,
+            data,
+        } = located_upload(&initial.response, plan, self.limits)?;
         let Some(url) = located_url else {
             let facts = failure_facts(
                 Some(String::from(
@@ -265,19 +270,17 @@ fn located_upload(
     response: &UpstreamResponse,
     plan: &TwoStepPlan,
     limits: ApiLimits,
-) -> Result<(Option<String>, Option<IndexMap<String, Json>>), UploadError> {
+) -> Result<LocatedUpload, UploadError> {
     match plan.url_location {
-        Some(UploadUrlLocation::Body) => {
-            let located = decode_file_upload_location(
-                &response.body,
-                UploadUrlLocation::Body,
-                plan.url_key.as_deref().unwrap_or("upload_url"),
-                limits,
-            )?;
-            Ok((located.url, located.data))
-        }
-        Some(UploadUrlLocation::Headers) | None => {
-            Ok((upload_url_from_headers(&response.headers), None))
-        }
+        Some(UploadUrlLocation::Body) => Ok(decode_file_upload_location(
+            &response.body,
+            UploadUrlLocation::Body,
+            plan.url_key.as_deref().unwrap_or("upload_url"),
+            limits,
+        )?),
+        Some(UploadUrlLocation::Headers) | None => Ok(LocatedUpload {
+            url: upload_url_from_headers(&response.headers),
+            data: None,
+        }),
     }
 }

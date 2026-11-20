@@ -107,7 +107,7 @@ fn masked_request(value: Json) -> Json {
             }
             Json::Object(fields)
         }
-        other => other,
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => value,
     }
 }
 

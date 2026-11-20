@@ -47,9 +47,10 @@ impl FileUploadConfig for PlainConfig {
     fn transform_create_file_response(
         &self,
         response: &FileResponse,
-        params: &FileParams,
+        litellm_params: &FileParams,
     ) -> Result<Json, BaseLlmException> {
-        self.inner.transform_create_file_response(response, params)
+        self.inner
+            .transform_create_file_response(response, litellm_params)
     }
 }
 
@@ -77,17 +78,17 @@ async fn supplied_client_is_used_only_for_its_own_mode() {
     assert_eq!(supplied.wire.seen().len(), 1);
     assert!(harness.seen().is_empty());
 
-    let supplied = FakeTransport {
+    let async_supplied = FakeTransport {
         wire: Wire::with(vec![answer(200, &[], b"{}"), answer(200, &[], b"{}")]),
     };
-    let mut harness = Harness::new(text_plan(), API_BASE, vec![answer(200, &[], b"{}")])
-        .with_supplied(Mode::Asynchronous, supplied.clone());
-    harness
+    let mut async_harness = Harness::new(text_plan(), API_BASE, vec![answer(200, &[], b"{}")])
+        .with_supplied(Mode::Asynchronous, async_supplied.clone());
+    async_harness
         .run(Mode::Sync, &create_call(), &params())
         .await
         .unwrap();
-    assert!(supplied.wire.seen().is_empty());
-    assert_eq!(harness.seen().len(), 1);
+    assert!(async_supplied.wire.seen().is_empty());
+    assert_eq!(async_harness.seen().len(), 1);
 }
 
 // a multipart plan always posts, as LiteLLM's files= argument is a POST whatever the config asks

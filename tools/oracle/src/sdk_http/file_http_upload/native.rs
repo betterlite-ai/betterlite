@@ -154,7 +154,7 @@ fn file_create(call: &Call) -> FileCreate {
     }
 }
 
-fn upload_params<'params>(
+const fn upload_params<'params>(
     api_base: &'params str,
     params: &'params FileParams,
 ) -> UploadParams<'params> {

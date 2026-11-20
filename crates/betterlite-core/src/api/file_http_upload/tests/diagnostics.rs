@@ -55,15 +55,18 @@ async fn upload_diagnostics_leave_requests_without_a_headers_dict_alone() {
     let body = field(field(&details, "additional_args"), "complete_input_dict");
     assert_eq!(field(body, "headers"), &text("not a dict"));
 
-    let plan = UploadPlan::Unsupported(Box::new(text("plain body")));
-    let mut harness = Harness::new(plan, API_BASE, Vec::new());
-    harness
+    let plain_plan = UploadPlan::Unsupported(Box::new(text("plain body")));
+    let mut plain_harness = Harness::new(plain_plan, API_BASE, Vec::new());
+    plain_harness
         .run(Mode::Asynchronous, &create_call(), &params())
         .await
         .unwrap_err();
-    let details = harness.details();
-    let body = field(field(&details, "additional_args"), "complete_input_dict");
-    assert_eq!(body, &text("plain body"));
+    let plain_details = plain_harness.details();
+    let plain_body = field(
+        field(&plain_details, "additional_args"),
+        "complete_input_dict",
+    );
+    assert_eq!(plain_body, &text("plain body"));
 }
 
 // a two-step plan logs both requests as LiteLLM would build them, with the location and key it read

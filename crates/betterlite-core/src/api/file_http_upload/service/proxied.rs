@@ -29,9 +29,7 @@ impl UploadTransport for ProxiedClient {
                     .await;
             }
             UploadBody::Bytes(data) => Body::from(data),
-            UploadBody::Blocks(blocks) => {
-                Body::wrap_stream(blocks.map(|block| Ok::<Vec<u8>, io::Error>(block)))
-            }
+            UploadBody::Blocks(blocks) => Body::wrap_stream(blocks.map(Ok::<Vec<u8>, io::Error>)),
         };
         let built = self
             .client

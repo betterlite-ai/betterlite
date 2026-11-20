@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, VecDeque};
 use std::str::from_utf8;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_anthropic::files::request::create_file_parts;
@@ -67,7 +67,9 @@ fn field<'json>(value: &'json Json, name: &str) -> &'json Json {
 fn lookup<'json>(value: &'json Json, name: &str) -> Option<&'json Json> {
     match value {
         Json::Object(fields) => fields.get(name),
-        other => panic!("expected an object, found {other:?}"),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+            panic!("expected an object, found {value:?}")
+        }
     }
 }
 
@@ -232,7 +234,7 @@ impl FileUploadConfig for Config {
     ) -> Result<Option<String>, UrlFailure> {
         self.calls
             .lock()
-            .expect("the config is not poisoned")
+            .unwrap_or_else(PoisonError::into_inner)
             .push("get_complete_file_url");
         Ok(self.base.clone())
     }
@@ -248,12 +250,12 @@ impl FileUploadConfig for Config {
     ) -> Result<UploadPlan, TransformFailure> {
         self.calls
             .lock()
-            .expect("the config is not poisoned")
+            .unwrap_or_else(PoisonError::into_inner)
             .push("transform_create_file_request");
         let plan = self
             .plan
             .lock()
-            .expect("the config is not poisoned")
+            .unwrap_or_else(PoisonError::into_inner)
             .take()
             .expect("one transform per call");
         Ok(plan)
@@ -262,11 +264,11 @@ impl FileUploadConfig for Config {
     fn transform_create_file_response(
         &self,
         response: &FileResponse,
-        params: &FileParams,
+        litellm_params: &FileParams,
     ) -> Result<Json, BaseLlmException> {
         self.calls
             .lock()
-            .expect("the config is not poisoned")
+            .unwrap_or_else(PoisonError::into_inner)
             .push("transform_create_file_response");
         let headers = response
             .headers
@@ -284,7 +286,7 @@ impl FileUploadConfig for Config {
             ),
             ("body".to_owned(), bytes_json(&response.body)),
             ("headers".to_owned(), Json::Object(headers)),
-            ("params".to_owned(), Json::Object(params.clone())),
+            ("params".to_owned(), Json::Object(litellm_params.clone())),
         ])))
     }
 }
@@ -382,12 +384,15 @@ impl Harness {
     }
 
     // The same call over a caller-chosen client source, so a test can watch a transport other than the fake
-    async fn run_against<S: ClientSource>(
+    async fn run_against<S>(
         &mut self,
         source: &S,
         supplied: Option<(Mode, S::Client)>,
         run_call: RunCall<'_>,
-    ) -> Result<Json, UploadError> {
+    ) -> Result<Json, UploadError>
+    where
+        S: ClientSource,
+    {
         let RunCall { mode, call, params } = run_call;
         let upload_params = UploadParams {
             api_base: Some(API_BASE),
@@ -903,9 +908,9 @@ async fn upload_body_modes_result_context() {
     let mut params = params();
     params.insert(String::from("upload_url"), Json::Null);
     let mut sync = Harness::new(text_plan(), API_BASE, vec![answer(200, &[], b"{}")]);
-    let result = sync.run(Mode::Sync, &create_call(), &params).await.unwrap();
+    let sync_result = sync.run(Mode::Sync, &create_call(), &params).await.unwrap();
     assert_eq!(
-        lookup(field(&result, "params"), "upload_url"),
+        lookup(field(&sync_result, "params"), "upload_url"),
         Some(&Json::Null)
     );
 }
@@ -972,20 +977,20 @@ async fn upload_diagnostics_media_placeholder_and_error_log() {
     assert!(messages[0].starts_with("Error creating file: "));
 
     // a sync two-step failure logs nothing at that level
-    let mut harness = Harness::new(manus_plan(), API_BASE, vec![answer(200, &[], b"{}")]);
-    harness
+    let mut sync_harness = Harness::new(manus_plan(), API_BASE, vec![answer(200, &[], b"{}")]);
+    sync_harness
         .run(Mode::Sync, &create_call(), &params())
         .await
         .unwrap_err();
-    assert!(harness.sink.messages(LogLevel::Error).is_empty());
+    assert!(sync_harness.sink.messages(LogLevel::Error).is_empty());
 
     // the async two-step failure does
-    let mut harness = Harness::new(manus_plan(), API_BASE, vec![answer(200, &[], b"{}")]);
-    harness
+    let mut async_harness = Harness::new(manus_plan(), API_BASE, vec![answer(200, &[], b"{}")]);
+    async_harness
         .run(Mode::Asynchronous, &create_call(), &params())
         .await
         .unwrap_err();
-    let messages = harness.sink.messages(LogLevel::Error);
-    assert_eq!(messages.len(), 1);
-    assert!(messages[0].contains("Failed to get upload URL from initial request"));
+    let error_messages = async_harness.sink.messages(LogLevel::Error);
+    assert_eq!(error_messages.len(), 1);
+    assert!(error_messages[0].contains("Failed to get upload URL from initial request"));
 }

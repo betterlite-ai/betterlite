@@ -1,3 +1,4 @@
+use std::future::{Future, ready};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -38,16 +39,19 @@ impl Drop for Endless {
 struct Dropper;
 
 impl UploadTransport for Dropper {
-    async fn send(&self, request: UploadRequest) -> Result<UpstreamResponse, TransportError> {
+    fn send(
+        &self,
+        request: UploadRequest,
+    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> {
         let UploadBody::Blocks(blocks) = request.body else {
             panic!("a media upload sends blocks");
         };
         drop(blocks);
-        Ok(UpstreamResponse {
+        ready(Ok(UpstreamResponse {
             status: 200,
             headers: HeaderMap::new(),
             body: b"{}".to_vec(),
-        })
+        }))
     }
 }
 
