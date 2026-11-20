@@ -1,0 +1,38 @@
+task: B3013
+deviations:
+  - what: >-
+      Window carry-over is Decimal arithmetic: the counter read, the cap and the value written to both cache levels stay exact Decimals, where LiteLLM reads the counter as float and computes max(0.0, current - cap) in floating point.
+    why: >-
+      betterlite keeps spend and budgets in rust_decimal from the row read (docs/compatibility.md), so the carried overage and the counter it overwrites have no binary rounding, while the counter key and the overage formula are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L1451-L1469
+  - what: >-
+      A window whose budget_duration is not a string is rejected before its counter is touched. LiteLLM builds the counter key from whatever the field holds, resets that counter, and only then fails inside compute_budget_reset_at, leaving a counter no reader keys on and skipping the rest of the source.
+    why: >-
+      docs/compatibility.md makes a value of the wrong type an error that names the field; checking every window field before the reset means a corrupt window aborts the source without a cache entry nothing will ever read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L1400-L1402
+  - what: >-
+      The failure event's error text lists each failed team by id with its error, where LiteLLM json-dumps the whole failed team model beside its error string.
+    why: >-
+      RowFailures is B3009's typed collection shared by every reset phase; it names the row and its error, and dumping the full ORM row would put row values into the log line and the event.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L1327-L1332
+  - what: >-
+      The team phase's success and failure events are handed to the injected PhaseSuccessSink and PhaseFailureSink, where LiteLLM schedules async_service_success_hook and async_service_failure_hook on detached asyncio tasks and returns at once.
+    why: >-
+      betterlite bans detached tasks because they outlive shutdown and lose their errors; the sinks are B012's service-logging hook, and the phase still reports the same call_type and counts before it returns no progress.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L1341-L1354
+  - what: >-
+      The error text a failed team read or write hands to the failure hook is the repo's typed DbError display or the schedule error's source chain, where LiteLLM passes the raw exception object and its traceback.
+    why: >-
+      DbError and DriverError keep the fields typed and stop the source chain before driver diagnostics can expose parameter or row values; the event still names the failure and the phase returns no progress the same way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L1355-L1369
+kept_bugs:
+  - what: >-
+      The offset of a reset_at timestamp is dropped, not converted: its wall-clock digits are compared with UTC now, because LiteLLM calls fromisoformat(...).replace(tzinfo=None) and never converts an aware value.
+    why: >-
+      Every reset_at LiteLLM or betterlite writes comes from isoformat() in UTC, so no working setup stores a non-UTC offset; a hand-edited offset keeps the wall time on both sides rather than moving the window's expiry.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L1390
+  - what: >-
+      budget_limits is written back as a JSON string holding the serialized list, not as a JSON array, and the read path accepts either form.
+    why: >-
+      LiteLLM passes json.dumps(windows) into the Json? column, so every row it has written holds the string form and its own page read decodes both; rewriting rows as arrays would make existing string rows and array rows diverge for other readers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L1550-L1554
