@@ -19,6 +19,7 @@ use betterlite_core::api::vector_store_http_write::error::ClientError;
 use betterlite_core::api::vector_store_http_write::service::{ClientKind, LogContext};
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::pool::ClientPool;
+use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
@@ -77,6 +78,10 @@ impl RealtimeClientSource for Source {
 }
 
 fn test_source() -> Source {
+    source_with(TransportLimits::DEFAULT)
+}
+
+fn source_with(limits: TransportLimits) -> Source {
     let environment = BTreeMap::new();
     let config = ConfigLoader {
         lookup: environment.clone(),
@@ -86,7 +91,7 @@ fn test_source() -> Source {
     let routing = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &environment).unwrap());
     let tls = TlsPolicy::resolve(&config, &environment, None).unwrap();
     Source {
-        pool: ClientPool::new(1, TransportLimits::DEFAULT),
+        pool: ClientPool::new(1, limits),
         tls,
         routing,
         created: AtomicUsize::new(0),
@@ -656,6 +661,39 @@ fn a_bad_request_status_is_rejected() {
     };
     assert_eq!(failure.status_code, 400);
     assert_eq!(failure.message, "bad");
+}
+
+// The transport's body cap: a reply past the limit is a transport error, never a silently cut answer
+#[test]
+fn a_reply_body_over_the_transport_limit_is_a_transport_error() {
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
+    let mut state = logging_state(&redactor);
+    let envelope = logging_env(&redactor);
+    let source = source_with(TransportLimits {
+        body_bytes: 4,
+        ..TransportLimits::DEFAULT
+    });
+    let data = session_request();
+    let replies = [Reply {
+        status: 200,
+        headers: "content-type: text/plain",
+        body: b"12345",
+    }];
+    let (_, _, answers) = exchange(&replies, |api_base| {
+        runtime().block_on(async {
+            let deps = fallback_deps(&source, None, ApiLimits::default());
+            let call = session_call(SessionEndpoint::ClientSecrets, api_base, &data);
+            let mut log = LogContext {
+                state: &mut state,
+                env: &envelope,
+            };
+            session_post(&deps, &call, &mut log).await
+        })
+    });
+    let Err(RealtimeHttpError::Transport(TransportError::BodyTooLarge { limit })) = answers else {
+        panic!("a reply past the body cap is a transport error");
+    };
+    assert_eq!(limit, 4);
 }
 
 #[test]
