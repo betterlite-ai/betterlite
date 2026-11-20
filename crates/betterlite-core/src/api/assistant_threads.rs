@@ -1,5 +1,5 @@
 pub mod error;
-mod params;
+pub mod params;
 mod runtime;
 mod target;
 mod tests;

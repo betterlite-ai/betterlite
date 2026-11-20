@@ -87,41 +87,6 @@ fn deadline(timeout: ThreadTimeout) -> Result<Duration, ThreadError> {
         .map_err(|_source| ThreadError::Timeout(TimeoutError::NonFinite))
 }
 
-// the OpenAI client's options from B2487's shared chain and the caller's kwargs
-fn openai_options(
-    resources: &ResourceSdkSettings,
-    params: &ThreadParams,
-    options: &ResourceSdkRequestOptions,
-    timeout: ThreadTimeout,
-) -> Result<ClientOptions, ThreadError> {
-    Ok(ClientOptions {
-        api_key: resources.openai_api_key(options).cloned(),
-        api_base: Some(resources.openai_base(options)),
-        timeout: Some(deadline(timeout)?),
-        max_retries: params
-            .max_retries
-            .and_then(|value| u32::try_from(value).ok()),
-        organization: resources.openai_organization(options).map(str::to_owned),
-    })
-}
-
-// B176's litellm_params: the caller's azure_ad_token, the auth fields and the forwarded timeout
-fn azure_params(params: &ThreadParams) -> Result<LiteLlmParams, ThreadError> {
-    Ok(LiteLlmParams {
-        azure_ad_token: params.azure_ad_token.clone(),
-        auth: AuthParams {
-            tenant_id: params.tenant_id.clone(),
-            client_id: params.client_id.clone(),
-            client_secret: params.client_secret.clone(),
-            azure_username: params.azure_username.clone(),
-            azure_password: params.azure_password.clone(),
-            azure_scope: params.azure_scope.clone(),
-        },
-        max_retries: params.max_retries,
-        timeout: forwarded_azure_timeout(params)?,
-    })
-}
-
 fn openai_client<'call, T>(
     transport: Arc<T>,
     resources: &ResourceSdkSettings,
@@ -131,14 +96,21 @@ fn openai_client<'call, T>(
 where
     T: AssistantsTransport,
 {
-    let options = openai_options(
-        resources,
-        &resolved.params,
-        &resolved.options,
-        resolved.timeout,
-    )?;
+    let kind = client_kind(flag);
+    let options = ClientOptions {
+        api_key: resources.openai_api_key(&resolved.options).cloned(),
+        api_base: Some(resources.openai_base(&resolved.options)),
+        timeout: Some(deadline(resolved.timeout)?),
+        max_retries: resolved
+            .params
+            .max_retries
+            .and_then(|value| u32::try_from(value).ok()),
+        organization: resources
+            .openai_organization(&resolved.options)
+            .map(str::to_owned),
+    };
     Ok(Target::Openai(
-        OpenAiAssistantsApi { transport }.get_openai_client(client_kind(flag), options, None),
+        OpenAiAssistantsApi { transport }.get_openai_client(kind, options, None),
     ))
 }
 
@@ -261,8 +233,20 @@ where
         'deps: 'call,
     {
         let params = &resolved.params;
-        Ok(ClientRequest {
-            params: azure_params(params)?,
+        let request = ClientRequest {
+            params: LiteLlmParams {
+                azure_ad_token: params.azure_ad_token.clone(),
+                auth: AuthParams {
+                    tenant_id: params.tenant_id.clone(),
+                    client_id: params.client_id.clone(),
+                    client_secret: params.client_secret.clone(),
+                    azure_username: params.azure_username.clone(),
+                    azure_password: params.azure_password.clone(),
+                    azure_scope: params.azure_scope.clone(),
+                },
+                max_retries: params.max_retries,
+                timeout: forwarded_azure_timeout(params)?,
+            },
             provider: None,
             api_key: self.resources.azure_api_key(&resolved.options).cloned(),
             api_base: self
@@ -282,6 +266,7 @@ where
             settings: self.azure,
             environment: self.environment,
             sources: self.sources,
-        })
+        };
+        Ok(request)
     }
 }

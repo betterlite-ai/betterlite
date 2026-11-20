@@ -15,36 +15,57 @@ pub(super) const DEFAULT_TIMEOUT_SECONDS: f64 = 600.0;
 // both thread providers keep an httpx.Timeout instead of reading its read phase
 const OPENAI: &str = "openai";
 
-// GenericLiteLLMParams.timeout declares float | str | httpx.Timeout
+// GenericLiteLLMParams.timeout declares float | str | httpx.Timeout; serde_json buffers a float as a private number map that only serde_json::Number reads, so the value is taken as Json and converted
 #[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(untagged)]
+#[serde(try_from = "Json")]
 pub(super) enum ThreadTimeoutValue {
     Seconds(f64),
     Text(String),
     Phases(StructuredTimeout),
 }
 
+#[derive(Debug, Error)]
+#[error("timeout must be a number, a string or an object of phases")]
+pub(super) struct InvalidTimeout;
+
+impl TryFrom<Json> for ThreadTimeoutValue {
+    type Error = InvalidTimeout;
+
+    fn try_from(value: Json) -> Result<Self, Self::Error> {
+        match value {
+            Json::Number(number) => Ok(Self::Seconds(number.as_f64().ok_or(InvalidTimeout)?)),
+            Json::Text(text) => Ok(Self::Text(text)),
+            Json::Object(object) => Ok(Self::Phases(StructuredTimeout {
+                connect: phase(object.get("connect"))?,
+                read: phase(object.get("read"))?,
+                write: phase(object.get("write"))?,
+                pool: phase(object.get("pool"))?,
+            })),
+            Json::Null | Json::Bool(_) | Json::List(_) => Err(InvalidTimeout),
+        }
+    }
+}
+
+// httpx.Timeout takes each phase as a number; a null or missing phase keeps the client default
+fn phase(value: Option<&Json>) -> Result<Option<f64>, InvalidTimeout> {
+    match value {
+        None | Some(Json::Null) => Ok(None),
+        Some(Json::Number(number)) => number.as_f64().map(Some).ok_or(InvalidTimeout),
+        Some(Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
+            Err(InvalidTimeout)
+        }
+    }
+}
+
 impl ThreadTimeoutValue {
     // Python's `x or default`: a zero number, an empty string and an empty phase map are absent, and any other value is used
-    const fn is_absent(&self) -> bool {
+    fn is_absent(&self) -> bool {
         match self {
             Self::Seconds(seconds) => *seconds == 0.0,
             Self::Text(text) => text.is_empty(),
-            Self::Phases(phases) => {
-                phases.connect.is_none()
-                    && phases.read.is_none()
-                    && phases.write.is_none()
-                    && phases.pool.is_none()
-            }
-        }
-    }
-
-    // the kwargs value B2487's resolver reads, for the two shapes that are not structured
-    fn as_raw(&self) -> Option<TimeoutValue> {
-        match self {
-            Self::Seconds(seconds) => Some(TimeoutValue::Number(*seconds)),
-            Self::Text(text) => Some(TimeoutValue::String(text.clone())),
-            Self::Phases(_) => None,
+            Self::Phases(phases) => [phases.connect, phases.read, phases.write, phases.pool]
+                .iter()
+                .all(Option::is_none),
         }
     }
 }
@@ -72,21 +93,6 @@ pub(super) enum ThreadExtraBody {
     Absent,
     Null,
     Body(BTreeMap<String, Json>),
-}
-
-impl ThreadExtraBody {
-    fn from_kwarg(value: Option<&Json>) -> Result<Self, ThreadParamsError> {
-        match value {
-            None => Ok(Self::Absent),
-            Some(Json::Null) => Ok(Self::Null),
-            Some(Json::Object(body)) => Ok(Self::Body(body.clone().into_iter().collect())),
-            Some(other) => Err(ThreadParamsError {
-                field: Some(String::from("extra_body")),
-                message: format!("extra_body must be an object or null, found {other:?}"),
-                source: None,
-            }),
-        }
-    }
 }
 
 // The kwargs create_thread and get_thread read: GenericLiteLLMParams' credential and retry fields plus extra_body.
@@ -129,14 +135,25 @@ impl ThreadParams {
                 source: Some(source),
             }
         })?;
-        params.extra_body = ThreadExtraBody::from_kwarg(kwargs.get("extra_body"))?;
+        params.extra_body = match kwargs.get("extra_body") {
+            None => ThreadExtraBody::Absent,
+            Some(Json::Null) => ThreadExtraBody::Null,
+            Some(Json::Object(body)) => ThreadExtraBody::Body(body.clone().into_iter().collect()),
+            Some(other) => {
+                return Err(ThreadParamsError {
+                    field: Some(String::from("extra_body")),
+                    message: format!("extra_body must be an object or null, found {other:?}"),
+                    source: None,
+                });
+            }
+        };
         Ok(params)
     }
 }
 
 #[derive(Debug, Error)]
 #[error("{message}")]
-pub(super) struct ThreadParamsError {
+pub struct ThreadParamsError {
     pub field: Option<String>,
     pub message: String,
     #[source]
@@ -157,12 +174,14 @@ pub(super) fn resolve_timeout(params: &ThreadParams) -> Result<ThreadTimeout, Ti
     if let Some(ThreadTimeoutValue::Phases(phases)) = selected {
         return resolve_fine_tuning_timeout(None, OPENAI, Some(*phases)).map(seconds_of);
     }
-    let raw = selected.and_then(ThreadTimeoutValue::as_raw).or_else(|| {
-        params
+    let raw = match selected {
+        Some(ThreadTimeoutValue::Seconds(seconds)) => Some(TimeoutValue::Number(*seconds)),
+        Some(ThreadTimeoutValue::Text(text)) => Some(TimeoutValue::String(text.clone())),
+        Some(ThreadTimeoutValue::Phases(_)) | None => params
             .request_timeout
             .filter(|seconds| *seconds != 0.0_f64)
-            .map(TimeoutValue::Number)
-    });
+            .map(TimeoutValue::Number),
+    };
     resolve_fine_tuning_timeout(raw.as_ref(), OPENAI, None).map(seconds_of)
 }
 
@@ -170,9 +189,7 @@ pub(super) fn resolve_timeout(params: &ThreadParams) -> Result<ThreadTimeout, Ti
 pub(super) fn forwarded_azure_timeout(params: &ThreadParams) -> Result<Option<f64>, TimeoutError> {
     let seconds = match params.timeout.as_ref() {
         None => return Ok(None),
-        Some(ThreadTimeoutValue::Phases(phases)) => {
-            return Ok(phases.read.filter(|seconds| *seconds > 0.0_f64));
-        }
+        Some(ThreadTimeoutValue::Phases(phases)) => phases.read.unwrap_or(0.0_f64),
         Some(ThreadTimeoutValue::Seconds(seconds)) if !seconds.is_finite() => {
             return Err(TimeoutError::NonFinite);
         }
