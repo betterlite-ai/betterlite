@@ -25,6 +25,7 @@ use crate::azure_stream_errors::records::{
     ChatStreamTransport, GetStreamClient, PreCallRecord, StreamAnswer, StreamCall, StreamClient,
     StreamHooks, StreamRuntime, StreamSource,
 };
+use crate::azure_urls::AuthParams;
 use crate::credentials::source::{
     CallableTokenProvider, CredentialSources, ProviderFailure, SourceFailure, TokenReply,
 };
@@ -419,7 +420,12 @@ impl Default for CallFixture {
             max_retries: 0,
             azure_ad_token: None,
             provider: None,
-            litellm_params: LiteLlmParams::default(),
+            litellm_params: LiteLlmParams {
+                azure_ad_token: None,
+                auth: AuthParams::default(),
+                max_retries: Some(2),
+                timeout: None,
+            },
             supplied: None,
         }
     }
@@ -442,6 +448,19 @@ impl CallFixture {
             supplied: self.supplied.as_ref(),
         }
     }
+}
+
+// A fixture whose credentials are exactly the ones the test passes
+pub(super) fn credential_fixture(
+    mut fixture: CallFixture,
+    api_key: Option<&str>,
+    token: Option<&str>,
+    provider: Option<&CallableProvider>,
+) -> CallFixture {
+    fixture.api_key = api_key.map(SecretString::from);
+    fixture.azure_ad_token = token.map(SecretString::from);
+    fixture.provider = provider.cloned();
+    fixture
 }
 
 pub(super) const SSE_EVENTS: &str = concat!(

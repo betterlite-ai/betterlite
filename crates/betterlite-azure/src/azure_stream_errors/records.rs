@@ -93,8 +93,7 @@ pub struct PreCallRecord {
     pub additional_args: AdditionalArgs,
 }
 
-// The logging object the streaming paths hold; production implements it over betterlite-logging.
-// Send because the streaming futures hold it across the transport await.
+// The logging object the streaming paths hold, Send because the futures hold it across awaits
 pub trait StreamHooks: Send {
     fn pre_call(&mut self, record: PreCallRecord) -> Result<(), PrePostError>;
 

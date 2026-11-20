@@ -12,7 +12,8 @@ use crate::endpoints::projection::ClientKind;
 
 use super::fixture::{
     CallFixture, Recorder, ScriptedSource, ScriptedSources, azure_failure, block_on,
-    failing_source, raised_with, runtime, scripted_source, secret_headers, sse_payload,
+    credential_fixture, failing_source, raised_with, runtime, scripted_source, secret_headers,
+    sse_payload,
 };
 
 fn open_identity_stream(
@@ -58,18 +59,20 @@ fn azure_chat_streams_credential_identity_isolation() {
     let sources = ScriptedSources::echoing(identity_assertions());
     let source = scripted_source(ClientKind::AzureOpenAi, &[], sse_payload());
 
-    let first = CallFixture {
-        api_key: None,
-        azure_ad_token: Some(SecretString::from("oidc/env/ASSERTION-A")),
-        ..CallFixture::default()
-    };
+    let first = credential_fixture(
+        CallFixture::default(),
+        None,
+        Some("oidc/env/ASSERTION-A"),
+        None,
+    );
     let first_call = first.call();
 
-    let second = CallFixture {
-        api_key: None,
-        azure_ad_token: Some(SecretString::from("oidc/env/ASSERTION-B")),
-        ..CallFixture::default()
-    };
+    let second = credential_fixture(
+        CallFixture::default(),
+        None,
+        Some("oidc/env/ASSERTION-B"),
+        None,
+    );
     let second_call = second.call();
 
     let mut recorder = Recorder::default();

@@ -19,7 +19,8 @@ use crate::endpoints::projection::{ClientKind, LiteLlmParams};
 
 use super::fixture::{
     CallFixture, Recorder, ScriptedSource, ScriptedSources, azure_failure, block_on,
-    callable_provider, gets_of, requests_of, runtime, scripted_source, sse_payload,
+    callable_provider, chat_data, credential_fixture, gets_of, requests_of, runtime,
+    scripted_source, sse_payload,
 };
 use super::stream_failure_variants::{
     assert_asked_stream_options, assert_async_refuses_sync, assert_response_fallback,
@@ -111,13 +112,7 @@ fn stream_request() {
         sse_payload(),
     );
     let sources = plain_sources();
-    let fixture = CallFixture {
-        litellm_params: LiteLlmParams {
-            max_retries: Some(2),
-            ..LiteLlmParams::default()
-        },
-        ..CallFixture::default()
-    };
+    let fixture = CallFixture::default();
     let call = fixture.call();
     let mut recorder = Recorder::default();
     let stream = block_on(streaming(
@@ -246,9 +241,17 @@ fn stream_header_difference() {
 fn assert_unused_map(sources: &ScriptedSources) {
     let fixture = CallFixture {
         api_base: "https://unit.test/openai/deployments/deployment".to_owned(),
-        max_retries: 3,
+        api_key: Some(SecretString::from("call-key")),
+        api_version: "2024-02-01".to_owned(),
+        dynamic_params: false,
+        data: chat_data(),
+        model: "deployment".to_owned(),
         timeout: Some(12.5_f64),
-        ..CallFixture::default()
+        max_retries: 3,
+        azure_ad_token: None,
+        provider: None,
+        litellm_params: LiteLlmParams::default(),
+        supplied: None,
     };
     let call = fixture.call();
     let params = unused_client_params(&call, sources).expect("map builds");
@@ -268,11 +271,7 @@ fn assert_unused_map(sources: &ScriptedSources) {
 }
 
 fn assert_plain_token(sources: &ScriptedSources) {
-    let token_call = CallFixture {
-        api_key: None,
-        azure_ad_token: Some(SecretString::from("plain-token")),
-        ..CallFixture::default()
-    };
+    let token_call = credential_fixture(CallFixture::default(), None, Some("plain-token"), None);
     let token_fixture = token_call.call();
     let params = unused_client_params(&token_fixture, sources).expect("token map builds");
     assert!(matches!(
@@ -298,11 +297,12 @@ fn oidc_sources() -> ScriptedSources {
 }
 
 fn assert_oidc_exchange() {
-    let oidc_call = CallFixture {
-        api_key: None,
-        azure_ad_token: Some(SecretString::from("oidc/env/ASSERTION")),
-        ..CallFixture::default()
-    };
+    let oidc_call = credential_fixture(
+        CallFixture::default(),
+        None,
+        Some("oidc/env/ASSERTION"),
+        None,
+    );
     let oidc = oidc_sources();
     let oidc_fixture = oidc_call.call();
     let source = scripted_source(ClientKind::AzureOpenAi, &[], sse_payload());
@@ -339,11 +339,12 @@ fn assert_oidc_exchange() {
 }
 
 fn assert_provider(sources: &ScriptedSources) {
-    let provider_call = CallFixture {
-        api_key: None,
-        provider: Some(callable_provider(42)),
-        ..CallFixture::default()
-    };
+    let provider_call = credential_fixture(
+        CallFixture::default(),
+        None,
+        None,
+        Some(&callable_provider(42)),
+    );
     let provider_fixture = provider_call.call();
     let params = unused_client_params(&provider_fixture, sources).expect("provider map builds");
     assert!(matches!(
@@ -353,11 +354,12 @@ fn assert_provider(sources: &ScriptedSources) {
 }
 
 fn assert_oidc_failure() {
-    let oidc_call = CallFixture {
-        api_key: None,
-        azure_ad_token: Some(SecretString::from("oidc/env/ASSERTION")),
-        ..CallFixture::default()
-    };
+    let oidc_call = credential_fixture(
+        CallFixture::default(),
+        None,
+        Some("oidc/env/ASSERTION"),
+        None,
+    );
     let failing_sources = ScriptedSources::new(
         400,
         "{\"error\":\"invalid_client\",\"error_description\":\"bad assertion\"}",
@@ -385,11 +387,12 @@ fn assert_oidc_failure() {
 }
 
 fn assert_malformed_exchange() {
-    let oidc_call = CallFixture {
-        api_key: None,
-        azure_ad_token: Some(SecretString::from("oidc/env/ASSERTION")),
-        ..CallFixture::default()
-    };
+    let oidc_call = credential_fixture(
+        CallFixture::default(),
+        None,
+        Some("oidc/env/ASSERTION"),
+        None,
+    );
     let oidc_fixture = oidc_call.call();
     let malformed = ScriptedSources::new(200, "{}", BTreeMap::new());
     let mut recorder = Recorder::default();
@@ -470,11 +473,12 @@ fn assert_async_pre_refusal(source: &ScriptedSource, call: &StreamCall<'_>) {
 fn stream_logging() {
     let sources = plain_sources();
     let source = scripted_source(ClientKind::AzureOpenAi, &[], sse_payload());
-    let fixture = CallFixture {
-        api_key: None,
-        azure_ad_token: Some(SecretString::from("oidc/env/ASSERTION")),
-        ..CallFixture::default()
-    };
+    let fixture = credential_fixture(
+        CallFixture::default(),
+        None,
+        Some("oidc/env/ASSERTION"),
+        None,
+    );
     let call = fixture.call();
     assert_oidc_pre(&source, &call);
     assert_sync_pre_refusal(&source, &sources, &call);

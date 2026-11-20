@@ -25,7 +25,10 @@ pub(super) fn calls(values: Vec<Json>) -> Json {
     Json::Object(fields)
 }
 
-fn text_map<'fields>(fields: impl IntoIterator<Item = (&'fields String, &'fields String)>) -> Json {
+fn text_map<'fields, Fields>(fields: Fields) -> Json
+where
+    Fields: IntoIterator<Item = (&'fields String, &'fields String)>,
+{
     Json::Object(
         fields
             .into_iter()

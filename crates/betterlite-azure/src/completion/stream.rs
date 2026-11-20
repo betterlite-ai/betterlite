@@ -22,8 +22,7 @@ pub struct StreamInput<'stream> {
     pub next_id: fn() -> Uuid,
 }
 
-// CustomStreamWrapper(completion_stream=response, model=model, custom_llm_provider="azure_text"):
-// the Azure text adapter reads an explicit empty object as include_usage off, so that is its fallback.
+// The Azure text adapter reads an explicit empty object as include_usage off, so that is its fallback.
 pub(super) fn requested_stream_options(
     data: &Extra,
     defaults: Option<StreamOptions>,
