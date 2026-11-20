@@ -467,8 +467,8 @@ fn scanned_pair() -> ([ScannedToolCall; 2], [ToolCallShape; 2], Vec<Value>) {
         ScannedToolCall {
             tool_call: json!({"id": "t2", "function": {"name": "two", "arguments": "{}"}}),
             target: ToolUseInputTarget {
-                msg_idx: 0,
-                content_idx: 1,
+                msg_idx: 1,
+                content_idx: 0,
             },
         },
     ];
@@ -482,10 +482,14 @@ fn scanned_pair() -> ([ScannedToolCall; 2], [ToolCallShape; 2], Vec<Value>) {
             arguments: "{}".to_owned(),
         },
     ];
-    let messages = vec![json!({"role": "assistant", "content": [
-        {"type": "tool_use", "id": "t1", "name": "one", "input": {}},
-        {"type": "tool_use", "id": "t2", "name": "two", "input": {"kept": true}}
-    ]})];
+    let messages = vec![
+        json!({"role": "assistant", "content": [
+            {"type": "tool_use", "id": "t1", "name": "one", "input": {}}
+        ]}),
+        json!({"role": "assistant", "content": [
+            {"type": "tool_use", "id": "t2", "name": "two", "input": {"kept": true}}
+        ]}),
+    ];
     (scanned, pre, messages)
 }
 
@@ -506,8 +510,35 @@ fn tool_calls_rewrites_only_changed_shapes() {
     .unwrap();
     assert_eq!(messages[0]["content"][0]["input"], json!({"q": "new"}));
     assert_eq!(messages[0]["content"][0]["name"], "renamed");
-    assert_eq!(messages[0]["content"][1]["input"], json!({"kept": true}));
-    assert_eq!(messages[0]["content"][1]["name"], "two");
+    assert_eq!(messages[1]["content"][0]["input"], json!({"kept": true}));
+    assert_eq!(messages[1]["content"][0]["name"], "two");
+}
+
+#[test]
+fn tool_calls_writes_into_the_message_the_scan_target_names() {
+    let scanned = [ScannedToolCall {
+        tool_call: json!({"id": "t2", "function": {"name": "two", "arguments": "{}"}}),
+        target: ToolUseInputTarget {
+            msg_idx: 1,
+            content_idx: 0,
+        },
+    }];
+    let pre = [ToolCallShape {
+        name: Some("two".to_owned()),
+        arguments: "{}".to_owned(),
+    }];
+    let returned = vec![json!({"function": {"name": "two", "arguments": "{\"q\":\"new\"}"}})];
+    let mut messages = vec![
+        json!({"role": "assistant", "content": [
+            {"type": "tool_use", "id": "t1", "name": "one", "input": {"kept": true}}
+        ]}),
+        json!({"role": "assistant", "content": [
+            {"type": "tool_use", "id": "t2", "name": "two", "input": {}}
+        ]}),
+    ];
+    apply_tool_calls_to_input(&mut messages, &scanned, &pre, Some(&returned), None).unwrap();
+    assert_eq!(messages[0]["content"][0]["input"], json!({"kept": true}));
+    assert_eq!(messages[1]["content"][0]["input"], json!({"q": "new"}));
 }
 
 #[test]
@@ -536,7 +567,7 @@ fn tool_calls_ignores_a_returned_list_of_the_wrong_length() {
     .unwrap();
     assert_eq!(absent_answer[0]["content"][0]["input"], json!({}));
     assert_eq!(
-        absent_answer[0]["content"][1]["input"],
+        absent_answer[1]["content"][0]["input"],
         json!({"kept": true})
     );
 }
@@ -548,7 +579,7 @@ fn tool_calls_stops_at_the_shortest_list() {
     apply_tool_calls_to_input(&mut messages, &scanned, &pre[..1], Some(&returned), None).unwrap();
     assert_eq!(messages[0]["content"][0]["input"], json!({"q": "new"}));
     assert_eq!(messages[0]["content"][0]["name"], "renamed");
-    assert_eq!(messages[0]["content"][1]["input"], json!({"kept": true}));
+    assert_eq!(messages[1]["content"][0]["input"], json!({"kept": true}));
 }
 
 #[test]
@@ -566,7 +597,7 @@ fn tool_calls_rejects_an_array_argument_whole() {
     );
     assert_eq!(messages[0]["content"][0]["input"], json!({}));
     assert_eq!(messages[0]["content"][0]["name"], "one");
-    assert_eq!(messages[0]["content"][1]["input"], json!({"kept": true}));
+    assert_eq!(messages[1]["content"][0]["input"], json!({"kept": true}));
 }
 
 #[test]
