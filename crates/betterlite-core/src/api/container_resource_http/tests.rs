@@ -185,7 +185,7 @@ pub(super) fn param_field(error: ContainerResourceHttpError) -> &'static str {
     let ContainerFileHttpError::ParamType { field, .. } = &failed else {
         panic!("the call failed: {failed}");
     };
-    *field
+    field
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
