@@ -197,8 +197,16 @@ async fn the_floor_reader_accepts_only_end_user_counters() {
         None
     );
     assert_eq!(
+        reader.end_user_from_db("spend:end_user:missing").await,
+        None
+    );
+    assert_eq!(
         rows.calls(),
-        vec!["end_user:e1".to_owned(), "end_user:e1:window:1h".to_owned()]
+        vec![
+            "end_user:e1".to_owned(),
+            "end_user:e1:window:1h".to_owned(),
+            "end_user:missing".to_owned(),
+        ]
     );
 }
 
