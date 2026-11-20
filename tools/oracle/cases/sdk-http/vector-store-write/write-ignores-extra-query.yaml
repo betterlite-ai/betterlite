@@ -1,0 +1,31 @@
+kind: sdk_http
+name: vector-store-write-ignores-extra-query
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  vector_store_write:
+    runs:
+      - operation: update
+        mode: sync
+        vector_store_id: vs_a
+        name: notes
+        extra_query: {trace: lost}
+        extra_headers: {X-Trace: kept}
+        extra_body: {name: replacement}
+      - operation: delete
+        mode: sync
+        vector_store_id: vs_a
+        extra_query: {trace: lost}
+        extra_headers: {X-Trace: kept}
+        extra_body: {name: replacement}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: vs_a, object: vector_store, name: replacement}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: vs_a, object: vector_store.deleted, deleted: true}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, x-trace]
+  ignore: []
