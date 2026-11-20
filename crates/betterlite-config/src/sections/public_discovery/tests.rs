@@ -146,6 +146,10 @@ fn a_missing_environment_reference_names_the_variable() {
         other: IndexMap::from([("note".to_owned(), json!("keep me"))]),
     })
 )]
+#[case::environment_reference_stays_text(
+    "litellm_settings:\n  public_model_groups_links:\n    Docs: os.environ/DOCS_URL\n",
+    UsefulLink::Url("os.environ/DOCS_URL".to_owned())
+)]
 fn useful_link_variants(#[case] source: &str, #[case] expected: UsefulLink) {
     let settings = load(source, &[]).unwrap();
     assert_eq!(

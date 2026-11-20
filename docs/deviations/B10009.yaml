@@ -6,4 +6,10 @@ deviations:
       LiteLLM reads DOCS_TITLE only when premium_user is true, which checks an enterprise license key.
       betterlite has no paid tier, so the MIT branding branch applies unconditionally, as the task text records.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1043-L1044
+  - what: >-
+      An os.environ/ reference inside a public_model_groups_links value stays the literal text instead of being read from the environment.
+    why: >-
+      The section keeps every member of a useful link as written, so a link string or an entry member that spells an os.environ/ reference is stored unchanged.
+      LiteLLM resolves such references anywhere in the loaded config, these strings included, so a setup that relied on one there would serve the literal text instead of the value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5782-L5786
 kept_bugs: []
