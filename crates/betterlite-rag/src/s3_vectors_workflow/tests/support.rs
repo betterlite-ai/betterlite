@@ -167,20 +167,41 @@ impl Clock for FixedClock {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub(super) struct StaticResolver;
+#[derive(Debug, Clone, Default)]
+pub(super) struct StaticResolver {
+    seen: Arc<Mutex<Vec<(AwsSettings, String)>>>,
+}
+
+impl StaticResolver {
+    pub(super) fn calls(&self) -> Vec<(AwsSettings, String)> {
+        self.seen
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+}
 
 #[async_trait]
 impl RagCredentialResolver for StaticResolver {
     async fn credentials(
         &self,
-        _settings: &AwsSettings,
-        _region: &str,
+        settings: &AwsSettings,
+        region: &str,
     ) -> Result<Credentials, CredentialError> {
+        self.seen
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((settings.clone(), region.to_owned()));
         Ok(Credentials {
-            access_key_id: SecretString::from(TEST_KEY.to_owned()),
-            secret_access_key: SecretString::from("vectors-example-secret".to_owned()),
-            session_token: None,
+            access_key_id: settings
+                .access_key_id
+                .clone()
+                .unwrap_or_else(|| SecretString::from(TEST_KEY.to_owned())),
+            secret_access_key: settings
+                .secret_access_key
+                .clone()
+                .unwrap_or_else(|| SecretString::from("vectors-example-secret".to_owned())),
+            session_token: settings.session_token.clone(),
         })
     }
 }
