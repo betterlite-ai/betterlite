@@ -14,6 +14,10 @@ from litellm.llms.openai.vector_store_files.transformation import (
     OpenAIVectorStoreFilesConfig,
 )
 from litellm.types.router import GenericLiteLLMParams
+from litellm.types.vector_store_files import (
+    VectorStoreFileContentResponse,
+    VectorStoreFileStatus,
+)
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
 Operation = Literal["retrieve", "content"]
@@ -21,9 +25,22 @@ Mode = Literal["sync", "async"]
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
-# the handlers' TypedDicts carry Any, so the call's type comes from its result, not the handler
-ReadResult: TypeAlias = object
-AsyncReadResult: TypeAlias = Coroutine[object, object, object]
+# VectorStoreFileObject's last_error is dict[str, Any] | None, and mypy rejects every expression
+# of a TypedDict carrying Any, so the retrieve result names its other fields instead
+class ReadFileObject(TypedDict, total=False):
+    id: str
+    created_at: int
+    usage_bytes: int | None
+    vector_store_id: str
+    status: VectorStoreFileStatus
+    attributes: dict[str, str | int | float | bool] | None
+
+RetrieveResult: TypeAlias = ReadFileObject | Coroutine[object, object, ReadFileObject]
+AsyncRetrieveResult: TypeAlias = Coroutine[object, object, ReadFileObject]
+ContentResult: TypeAlias = (
+    VectorStoreFileContentResponse | Coroutine[object, object, VectorStoreFileContentResponse]
+)
+AsyncContentResult: TypeAlias = Coroutine[object, object, VectorStoreFileContentResponse]
 Result_co = TypeVar("Result_co", covariant=True)
 
 
@@ -47,22 +64,22 @@ class ReadHandlers(Protocol):
     @property
     def vector_store_file_retrieve_handler(  # ast-grep-ignore: no-long-names
         self,
-    ) -> ReadHandler[ReadResult]: ...
+    ) -> ReadHandler[RetrieveResult]: ...
 
     @property
     def async_vector_store_file_retrieve_handler(  # ast-grep-ignore: no-long-names
         self,
-    ) -> ReadHandler[AsyncReadResult]: ...
+    ) -> ReadHandler[AsyncRetrieveResult]: ...
 
     @property
     def vector_store_file_content_handler(  # ast-grep-ignore: no-long-names
         self,
-    ) -> ReadHandler[ReadResult]: ...
+    ) -> ReadHandler[ContentResult]: ...
 
     @property
     def async_vector_store_file_content_handler(  # ast-grep-ignore: no-long-names
         self,
-    ) -> ReadHandler[AsyncReadResult]: ...
+    ) -> ReadHandler[AsyncContentResult]: ...
 
 
 HANDLER: ReadHandlers = BaseLLMHTTPHandler()
@@ -138,13 +155,13 @@ def read_arguments(call: ReadCall, operation: Operation, api_base: str) -> ReadA
     }
 
 
-def sync_handler(operation: Operation) -> ReadHandler[ReadResult]:
+def sync_handler(operation: Operation) -> ReadHandler[RetrieveResult | ContentResult]:
     if operation == "retrieve":
         return HANDLER.vector_store_file_retrieve_handler
     return HANDLER.vector_store_file_content_handler
 
 
-def async_handler(operation: Operation) -> ReadHandler[AsyncReadResult]:
+def async_handler(operation: Operation) -> ReadHandler[AsyncRetrieveResult | AsyncContentResult]:
     if operation == "retrieve":
         return HANDLER.async_vector_store_file_retrieve_handler
     return HANDLER.async_vector_store_file_content_handler
