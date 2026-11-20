@@ -21,10 +21,13 @@ impl RouterSearchRefresh for SucceedingRefresh {
     }
 }
 
-struct FailingRefresh;
+struct FailingRefresh {
+    calls: AtomicUsize,
+}
 
 impl RouterSearchRefresh for FailingRefresh {
     fn refresh(&self) -> impl Future<Output = Result<(), SearchRefreshError>> + Send {
+        self.calls.store(1, Ordering::SeqCst);
         ready(Err(SearchRefreshError {
             source: Box::new(TableUnreachable),
         }))
@@ -42,7 +45,11 @@ async fn refresh_succeeds_when_the_router_reloads() {
 
 #[tokio::test]
 async fn refresh_reports_the_cause_of_a_failed_reload() {
-    let error = FailingRefresh.refresh().await.unwrap_err();
+    let refresh = FailingRefresh {
+        calls: AtomicUsize::new(0),
+    };
+    let error = refresh.refresh().await.unwrap_err();
+    assert_eq!(refresh.calls.load(Ordering::SeqCst), 1);
     assert_eq!(error.to_string(), "the search tools table is unreachable");
 }
 
