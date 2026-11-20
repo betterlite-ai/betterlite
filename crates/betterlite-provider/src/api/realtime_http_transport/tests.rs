@@ -43,7 +43,7 @@ use tokio::time::sleep;
 use super::TransportDeps;
 use super::client::{RealtimeClientSource, SuppliedClient};
 use super::decode::decode_realtime_sdp;
-use super::error::{RealtimeHttpError, StatusFailure};
+use super::error::{RealtimeHttpError, StatusFailure, timeout_failure};
 use super::session::{SessionCall, SessionEndpoint, session_post};
 
 mod calls;
@@ -586,6 +586,21 @@ fn the_supplied_timeout_reaches_the_deadline() {
         panic!("the deadline ends the send");
     };
     assert!(failure.message.contains("Timeout passed=0.05"));
+}
+
+// The handler's own timeout text: a whole-second timeout prints as its integer, a fractional one as typed
+#[test]
+fn a_whole_second_timeout_prints_as_an_integer() {
+    let whole = timeout_failure(Duration::from_secs(1), Duration::from_millis(1500));
+    assert_eq!(
+        whole.message,
+        "litellm.Timeout: Connection timed out. Timeout passed=1, time taken=1.500 seconds"
+    );
+    let fractional = timeout_failure(Duration::from_millis(1500), Duration::from_millis(1500));
+    assert_eq!(
+        fractional.message,
+        "litellm.Timeout: Connection timed out. Timeout passed=1.5, time taken=1.500 seconds"
+    );
 }
 
 #[test]
