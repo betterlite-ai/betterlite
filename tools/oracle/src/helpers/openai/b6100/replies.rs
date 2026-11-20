@@ -76,7 +76,12 @@ pub(super) fn reply_value(input: &Input) -> Result<Option<Value>, Box<HelperErro
         return Ok(Some(steps(&input.chunks, chunk_cost)?));
     }
     if !input.embedding_replies.is_empty() {
-        return Ok(Some(steps(&input.embedding_replies, embedding_cost)?));
+        let mut values = Vec::with_capacity(input.embedding_replies.len());
+        for body in &input.embedding_replies {
+            let reply = embedding_transform_response(body.as_bytes()).map_err(embedding_failure)?;
+            values.push(json!({"cost": hidden_cost(&reply.hidden_params)}));
+        }
+        return Ok(Some(json!({"steps": values})));
     }
     if !input.responses_replies.is_empty() {
         return Ok(Some(fixture_steps(
@@ -156,11 +161,6 @@ fn chunk_cost(chunk: &Value) -> Result<Value, Box<HelperError>> {
         | None => None,
     };
     Ok(json!({"cost": cost}))
-}
-
-fn embedding_cost(body: &String) -> Result<Value, Box<HelperError>> {
-    let reply = embedding_transform_response(body.as_bytes()).map_err(embedding_failure)?;
-    Ok(json!({"cost": hidden_cost(&reply.hidden_params)}))
 }
 
 fn messages_cost(body: &String) -> Result<Value, Box<HelperError>> {

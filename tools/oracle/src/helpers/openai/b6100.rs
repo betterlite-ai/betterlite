@@ -21,6 +21,9 @@ type Step<Case> = fn(&Case) -> Result<Value, Box<HelperError>>;
 
 // every family answers its cases as steps in the input's order, and supplies the one step it takes
 fn steps<Case>(items: &[Case], step: Step<Case>) -> Result<Value, Box<HelperError>> {
-    let values: Vec<Value> = items.iter().map(step).collect::<Result<_, _>>()?;
+    let mut values = Vec::with_capacity(items.len());
+    for item in items {
+        values.push(step(item)?);
+    }
     Ok(json!({"steps": values}))
 }

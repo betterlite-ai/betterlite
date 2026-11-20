@@ -59,7 +59,12 @@ pub(super) fn run(input: &Input) -> HelperResult {
         return Ok(call_value(input));
     }
     if !input.chat_requests.is_empty() {
-        return steps(&input.chat_requests, chat_request_step);
+        let mut values = Vec::with_capacity(input.chat_requests.len());
+        for case in &input.chat_requests {
+            let body = transform_request(&chat_input(case), Mode::Sync).or_value_error()?;
+            values.push(serde_json::to_value(body).or_value_error()?);
+        }
+        return Ok(json!({"steps": values}));
     }
     if !input.models.is_empty() {
         return steps(&input.models, model_step);
@@ -132,12 +137,6 @@ fn call_value(input: &Input) -> Value {
         steps.push(json!(supported_params(&lookup, &case.model, &catalog)));
     }
     json!({"steps": steps})
-}
-
-// the request bodies are the one family whose transform can fail
-fn chat_request_step(case: &ChatRequest) -> Result<Value, Box<HelperError>> {
-    let body = transform_request(&chat_input(case), Mode::Sync).or_value_error()?;
-    serde_json::to_value(body).or_value_error()
 }
 
 fn chat_input(case: &ChatRequest) -> TransformInput<'_> {
