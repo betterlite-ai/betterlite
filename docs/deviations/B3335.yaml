@@ -15,10 +15,11 @@ deviations:
       Every betterlite HTTP client bounds a request (B173); the transport never sends an unbounded call.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L799-L830
   - what: >-
-      Every send failure other than a timed-out create POST reaches the caller as CharacterError::Request with its
-      typed reason: a create POST's non-timeout fault, a lookup GET timeout or other fault, an unreadable reply body
-      and a reply over the response cap. LiteLLM's _handle_error turns each of those caught exceptions into the
-      provider's error class, with a synthesized 500 when the exception carries no status code.
+      Every failure other than a timed-out create POST reaches the caller as CharacterError::Request with its typed
+      reason: a create POST's non-timeout fault, a lookup GET timeout or other fault, an unreadable reply body, a
+      reply over the response cap, and a request the transport cannot build (an unparsable URL or an illegal header
+      value). LiteLLM's _handle_error turns each of those caught exceptions into the provider's error class, with a
+      synthesized 500 when the exception carries no status code.
     why: >-
       The shared handle_error (B2402) passes a failure without a status through typed, so a network fault is not
       reported as a provider 500 with the fault's text as its message; a timed-out create POST is the one failure
