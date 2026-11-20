@@ -78,7 +78,7 @@ impl<Rows: SpendCounterRows> SpendCounterReseed<Rows> {
         counter_key: &str,
         read: CounterRead,
     ) -> Result<Option<Decimal>, SpendValueError> {
-        let (lookup, gate, name) = match read {
+        let (decoded, gate, name) = match read {
             CounterRead::Primary => (
                 primary_lookup(counter_key, self.durations.as_ref(), self.clock.now()),
                 Some(Arc::clone(&self.gate)),
@@ -90,7 +90,7 @@ impl<Rows: SpendCounterRows> SpendCounterReseed<Rows> {
                 END_USER_SPEND_LOOKUP,
             ),
         };
-        let Some(lookup) = lookup else {
+        let Some(lookup) = decoded else {
             return Ok(None);
         };
         let owned = OwnedLookup::from(lookup);
@@ -147,31 +147,13 @@ impl<Rows: SpendCounterRows> SpendCounterReseed<Rows> {
         Batch: ActiveSpendBatch + ?Sized,
     {
         let _guard = self.locks.hold(counter_key).await;
-        if let Some(amount) = self.cached_answer(cache, batch, counter_key).await? {
+        if let Some(amount) = cached_answer(cache, batch, counter_key).await? {
             return Ok(Some(amount));
         }
         let Some(db_spend) = self.from_db(counter_key).await? else {
             return Ok(None);
         };
         warm(cache, batch, counter_key, db_spend, require_cache_warm).await
-    }
-
-    // a batched amount answers first, and a batched null keeps the per-pod memory from answering
-    async fn cached_answer<Cache, Batch>(
-        &self,
-        cache: &Cache,
-        batch: &Batch,
-        counter_key: &str,
-    ) -> Result<Option<Decimal>, CoalescedError<Cache::Error>>
-    where
-        Cache: ReseedCache + ?Sized,
-        Batch: ActiveSpendBatch + ?Sized,
-    {
-        match batch.read(counter_key).await? {
-            Some(CounterValue::Amount(amount)) => Ok(Some(amount)),
-            Some(CounterValue::Missing) => cached_amount(cache, true, counter_key).await,
-            None => cached_amount(cache, false, counter_key).await,
-        }
     }
 
     // same read precedence as coalesced, but a vanished winner's amount is added and warm failures propagate
@@ -190,7 +172,7 @@ impl<Rows: SpendCounterRows> SpendCounterReseed<Rows> {
         Batch: ActiveSpendBatch + ?Sized,
     {
         let _guard = self.locks.hold(counter_key).await;
-        if let Some(amount) = self.cached_answer(cache, batch, counter_key).await? {
+        if let Some(amount) = cached_answer(cache, batch, counter_key).await? {
             return Ok(Some(amount));
         }
         match self
@@ -287,5 +269,22 @@ impl<Rows: SpendCounterRows> SpendCounterReseed<Rows> {
         let rows = self.rows.as_deref()?;
         let entity = WindowEntity::from_counter_type(entity_type)?;
         Some((rows, entity))
+    }
+}
+
+// a batched amount answers first, and a batched null keeps the per-pod memory from answering
+async fn cached_answer<Cache, Batch>(
+    cache: &Cache,
+    batch: &Batch,
+    counter_key: &str,
+) -> Result<Option<Decimal>, CoalescedError<Cache::Error>>
+where
+    Cache: ReseedCache + ?Sized,
+    Batch: ActiveSpendBatch + ?Sized,
+{
+    match batch.read(counter_key).await? {
+        Some(CounterValue::Amount(amount)) => Ok(Some(amount)),
+        Some(CounterValue::Missing) => cached_amount(cache, true, counter_key).await,
+        None => cached_amount(cache, false, counter_key).await,
     }
 }
