@@ -28,7 +28,12 @@ pub struct Call {
     pub top_n: Option<i64>,
     #[serde(default)]
     pub rank_fields: Option<Vec<String>>,
-    #[serde(default, with = "double_option")]
+    // absent is the Python default True, null is an explicit None: the adapter needs both on the wire
+    #[serde(
+        default,
+        with = "double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub return_documents: Option<Option<bool>>,
     #[serde(default)]
     pub max_chunks_per_doc: Option<i64>,
@@ -61,13 +66,13 @@ pub struct Settings {
 #[serde(deny_unknown_fields)]
 pub struct Failure {
     pub class: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub status: Option<u16>,
-    #[serde(default, rename = "type", skip_serializing_if = "Option::is_none")]
+    #[serde(default, rename = "type")]
     pub kind: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub param: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub code: Option<String>,
     pub message: String,
 }
