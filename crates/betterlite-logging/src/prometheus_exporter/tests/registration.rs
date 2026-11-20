@@ -84,7 +84,7 @@ impl<'builder, 'settings> Builder<'builder, 'settings> {
                     labelnames,
                     Vec::new(),
                 )
-            })(name, &label_names);
+            })(name, label_names.as_slice());
         self.store(handle)
     }
 
@@ -106,7 +106,7 @@ impl<'builder, 'settings> Builder<'builder, 'settings> {
                     labelnames,
                     Vec::new(),
                 )
-            })(name, &label_names);
+            })(name, label_names.as_slice());
         self.store(handle)
     }
 
@@ -130,7 +130,7 @@ impl<'builder, 'settings> Builder<'builder, 'settings> {
                     labelnames,
                     prepared.clone(),
                 )
-            })(name, &label_names);
+            })(name, label_names.as_slice());
         self.store(handle)
     }
 
@@ -620,7 +620,8 @@ impl PrometheusCollectors {
         label_settings: &PrometheusLabelSettings,
         registry: &CollectorRegistry,
     ) -> Result<Self, PrometheusExporterError> {
-        validate_caller_identity(Some(label_settings.caller_identity.as_str()))?;
+        let _caller_identity =
+            validate_caller_identity(Some(label_settings.caller_identity.as_str()))?;
         let mut factory = CollectorFactory::new(LabelSchemaAdapter {
             settings: label_settings,
         });
@@ -653,8 +654,7 @@ impl RemovableMetric for MetricLike<PrometheusMetric> {
 
     fn remove_child(&self, label_values: &[Option<String>]) -> Result<ChildRemoval, Self::Error> {
         match self {
-            Self::NoOp(_) => Ok(ChildRemoval::Unsupported),
-            Self::Excluded(_) => Ok(ChildRemoval::Unsupported),
+            Self::NoOp(_) | Self::Excluded(_) => Ok(ChildRemoval::Unsupported),
             Self::Real(metric) => Ok(match metric.remove_series(label_values) {
                 SeriesRemoval::Removed => ChildRemoval::Removed,
                 SeriesRemoval::Absent => ChildRemoval::Absent,

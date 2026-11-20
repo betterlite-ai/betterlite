@@ -182,7 +182,7 @@ fn every_field_holds_the_collector_named_for_its_attribute() {
     );
     assert_eq!(
         description(&collectors.litellm_guardrail_latency_metric).name,
-        "litellm_guardrail_latency_metric"
+        "litellm_guardrail_latency_seconds"
     );
     assert_eq!(
         description(&collectors.litellm_guardrail_errors_total).name,
