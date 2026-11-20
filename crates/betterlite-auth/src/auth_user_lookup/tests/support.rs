@@ -445,7 +445,7 @@ impl Harness {
     pub(crate) fn new(expiry: i64) -> Self {
         let events = events();
         let clock = Arc::new(ManualClock::default());
-        let cadence = Arc::new(Cadence::new(100, clock.clone()));
+        let cadence = Arc::new(Cadence::new(100, Arc::<ManualClock>::clone(&clock)));
         let store = Arc::new(FakeStore {
             calls: Mutex::new(Vec::new()),
             events: Arc::clone(&events),
@@ -486,15 +486,16 @@ impl Harness {
     }
 
     pub(crate) fn lookup(&self) -> UserLookup {
-        let cache: Arc<dyn UserCache> = Arc::clone(&self.cache);
+        let cache: Arc<dyn UserCache> = Arc::<FakeCache>::clone(&self.cache);
         let store: Option<Arc<dyn UserStore>> = if self.with_store {
-            let handle: Arc<dyn UserStore> = Arc::clone(&self.store);
+            let handle: Arc<dyn UserStore> = Arc::<FakeStore>::clone(&self.store);
             Some(handle)
         } else {
             None
         };
-        let reset: Arc<dyn BudgetResetCalculator> = Arc::clone(&self.reset);
-        let enrollment: Arc<dyn DefaultTeamEnrollment> = Arc::clone(&self.enrollment);
+        let reset: Arc<dyn BudgetResetCalculator> = Arc::<FakeReset>::clone(&self.reset);
+        let enrollment: Arc<dyn DefaultTeamEnrollment> =
+            Arc::<FakeEnrollment>::clone(&self.enrollment);
         let redactor =
             Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the built-in patterns compile");
         UserLookup {

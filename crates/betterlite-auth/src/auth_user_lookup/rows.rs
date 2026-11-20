@@ -33,6 +33,9 @@ const USER_COUNT_SQL: &str = "SELECT count(*) FROM \"LiteLLM_UserTable\"";
 const USER_COUNT_SSO_SQL: &str =
     "SELECT count(*) FROM \"LiteLLM_UserTable\" AS entry WHERE entry.\"sso_user_id\" = $1";
 
+const USER_COUNT_EMAIL_SQL: &str =
+    "SELECT count(*) FROM \"LiteLLM_UserTable\" AS entry WHERE entry.\"user_email\" = $1";
+
 const USER_COUNT_EMAIL_CASE_SQL: &str = "SELECT count(*) FROM \"LiteLLM_UserTable\" AS entry WHERE LOWER(entry.\"user_email\") = LOWER($1)";
 
 const USER_UPDATE_SQL: &str = "UPDATE \"LiteLLM_UserTable\" AS entry SET \"user_id\" = entry.\"user_id\" WHERE entry.\"user_id\" = $1 RETURNING row_to_json(entry)::text";
@@ -63,10 +66,10 @@ pub enum UserFilter {
 // The user columns a create writes; a merged create supplies only the ones its defaults name.
 #[derive(Clone, Debug, PartialEq)]
 pub struct UserCreateData {
-    pub fields: BTreeMap<String, JsonData>,
-    json: String,
-    members_sql: String,
-    plain_sql: String,
+    pub(crate) fields: BTreeMap<String, JsonData>,
+    pub(crate) json: String,
+    pub(crate) members_sql: String,
+    pub(crate) plain_sql: String,
 }
 
 impl UserCreateData {
@@ -80,7 +83,7 @@ impl UserCreateData {
         })
     }
 
-    const fn statement(&self, memberships: bool) -> &str {
+    fn statement(&self, memberships: bool) -> &str {
         if memberships {
             return &self.members_sql;
         }
@@ -166,9 +169,19 @@ impl Table for UserRows {
                 sql: USER_COUNT_SSO_SQL,
                 parameters: vec![sso_user_id],
             },
-            Some([UserFilter::Email(email), ..]) => Query {
-                sql: USER_COUNT_EMAIL_CASE_SQL,
-                parameters: vec![email.address.as_deref().unwrap_or("")],
+            Some([UserFilter::Email(email), ..]) => match email.address.as_ref() {
+                Some(address) => Query {
+                    sql: if email.insensitive {
+                        USER_COUNT_EMAIL_CASE_SQL
+                    } else {
+                        USER_COUNT_EMAIL_SQL
+                    },
+                    parameters: vec![address],
+                },
+                None => Query {
+                    sql: USER_COUNT_SQL,
+                    parameters: Vec::new(),
+                },
             },
             Some([]) | None => Query {
                 sql: USER_COUNT_SQL,

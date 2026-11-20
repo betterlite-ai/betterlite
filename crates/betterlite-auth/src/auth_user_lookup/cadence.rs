@@ -69,13 +69,13 @@ impl Cadence {
 
 // current_time - last_db_access_time[key][1] >= db_cache_expiry, without losing a backward clock's sign
 fn expired(now: Duration, checked_at: Duration, expiry: i64) -> bool {
-    match now.checked_duration_since(checked_at) {
+    match now.checked_sub(checked_at) {
         Some(elapsed) => {
             elapsed.as_secs_f64() >= Decimal::from(expiry).to_f64().unwrap_or(f64::INFINITY)
         }
         None => {
-            expiry.is_negative()
-                && checked_at.duration_since(now).as_secs_f64() <= magnitude_seconds(expiry)
+            let moved_back = checked_at.saturating_sub(now);
+            expiry.is_negative() && moved_back.as_secs_f64() <= magnitude_seconds(expiry)
         }
     }
 }

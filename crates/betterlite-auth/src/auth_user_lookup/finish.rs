@@ -2,9 +2,7 @@ use betterlite_db::budget_permission_rows::{JsonData, OrganizationMembership};
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use betterlite_db::user_repository::projection::user_record_to_model;
 
-use super::cache::UserCache as _;
 use super::lookup::{BlockFailure, UserLookup};
-use super::store::UserStore as _;
 
 // LiteLLM_UserTable.model_validate(dict(response)), then the null-email backfill, cache and cadence
 pub(super) async fn finish(

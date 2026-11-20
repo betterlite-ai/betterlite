@@ -51,7 +51,7 @@ struct Capture {
 }
 
 impl<S: Subscriber> Layer<S> for Capture {
-    fn on_event(&self, event: &Event<'_>, _context: Context<'_, S>) {
+    fn on_event(&self, event: &Event<'_>, _: Context<'_, S>) {
         let mut visitor = Captured::default();
         event.record(&mut visitor);
         let message = visitor.fields.get("message").cloned().unwrap_or_default();

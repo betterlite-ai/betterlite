@@ -8,7 +8,7 @@ use crate::auth_user_lookup::cadence::{Cadence, CadenceClock, WallClock};
 
 fn cadence_with(max_size: usize) -> (Arc<ManualClock>, Cadence) {
     let clock = Arc::new(ManualClock::default());
-    let hook: Arc<dyn CadenceClock> = Arc::clone(&clock);
+    let hook: Arc<dyn CadenceClock> = Arc::<ManualClock>::clone(&clock);
     (clock, Cadence::new(max_size, hook))
 }
 
