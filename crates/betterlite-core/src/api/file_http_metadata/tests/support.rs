@@ -26,11 +26,12 @@ use betterlite_openai::files::records::{
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
 use http::header::HeaderMap as HttpHeaders;
+use indexmap::IndexMap;
 use serde_json::{Number, Value};
 
 use crate::api::file_http_metadata::config::{
     EnvironmentRequest, FileParams, FileRequest, FileResponse, Headers, ListRequest,
-    MetadataConfig, NextPageRequest, PreparedRequest,
+    MetadataConfig, NextPageRequest, PreparedRequest, ReplyContext,
 };
 use crate::api::file_http_metadata::error::MetadataError;
 use crate::api::file_http_metadata::service::{
@@ -214,7 +215,7 @@ pub(crate) struct Wire {
 impl Wire {
     pub(crate) fn new(answers: Vec<Answer>, events: &Events) -> Self {
         Self {
-            answers: Arc::new(Mutex::new(answers.into())),
+            answers: Arc::new(Mutex::new(VecDeque::from(answers))),
             requests: Arc::default(),
             events: events.clone(),
         }
@@ -452,11 +453,11 @@ impl RecordingConfig {
     }
 
     pub(crate) fn set_pages(&self, pages: Vec<Vec<FileObject>>) {
-        *self.pages.lock().unwrap_or_else(PoisonError::into_inner) = pages.into();
+        *self.pages.lock().unwrap_or_else(PoisonError::into_inner) = VecDeque::from(pages);
     }
 
     pub(crate) fn set_nexts(&self, nexts: Vec<Option<NextPageRequest>>) {
-        *self.nexts.lock().unwrap_or_else(PoisonError::into_inner) = nexts.into();
+        *self.nexts.lock().unwrap_or_else(PoisonError::into_inner) = VecDeque::from(nexts);
     }
 
     pub(crate) fn set_number_query(&self) {
@@ -541,19 +542,15 @@ impl RecordingConfig {
         Ok(())
     }
 
-    fn observe(&self, logging_obj: &mut FileLogging<'_>) {
+    fn observe(&self, model_call_details: &mut IndexMap<String, Json>) {
         let mut observed = self.observed.lock().unwrap_or_else(PoisonError::into_inner);
         let index = observed.len();
         observed.push(Observed {
-            additional_args: logging_obj
-                .model_call_details
-                .contains_key("additional_args"),
-            previous_page: logging_obj.model_call_details.get("page").cloned(),
+            additional_args: model_call_details.contains_key("additional_args"),
+            previous_page: model_call_details.get("page").cloned(),
         });
         drop(observed);
-        logging_obj
-            .model_call_details
-            .insert("page".to_owned(), Json::Number(Number::from(index)));
+        model_call_details.insert("page".to_owned(), Json::Number(Number::from(index)));
     }
 
     fn check_response(&self, response: &FileResponse) -> Result<(), BaseLlmException> {
@@ -589,6 +586,66 @@ impl RecordingConfig {
         query.insert(name.to_owned(), chosen);
         query
     }
+
+    fn recorded(&self, request: RequestItem<'_>) -> Result<PreparedRequest, BaseLlmException> {
+        match request {
+            RequestItem::File(request) => {
+                let file_id = request.file_id.to_owned();
+                let prepared = (
+                    format!("{}/files/{file_id}", self.base),
+                    self.query("view", "full"),
+                );
+                self.record_request(
+                    Some(file_id),
+                    None,
+                    request.optional_params,
+                    request.litellm_params,
+                )?;
+                Ok(prepared)
+            }
+            RequestItem::List(request) => {
+                let purpose = request.purpose.map(str::to_owned);
+                let query = request
+                    .purpose
+                    .map_or_else(FileParams::new, |name| self.query("purpose", name));
+                self.record_request(
+                    None,
+                    purpose,
+                    request.optional_params,
+                    request.litellm_params,
+                )?;
+                Ok((format!("{}/files", self.base), query))
+            }
+        }
+    }
+
+    fn respond<T, F>(
+        &self,
+        raw_response: &FileResponse,
+        context: ReplyContext<'_>,
+        answer: F,
+    ) -> Result<T, BaseLlmException>
+    where
+        F: FnOnce() -> T,
+    {
+        self.events.push("response");
+        self.observe(context.model_call_details);
+        self.check_response(raw_response)?;
+        Ok(answer())
+    }
+
+    fn pop_page(&self) -> Vec<FileObject> {
+        self.pages
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .pop_front()
+            .unwrap_or_default()
+    }
+}
+
+enum RequestItem<'call> {
+    File(FileRequest<'call>),
+    List(ListRequest<'call>),
 }
 
 impl MetadataConfig for RecordingConfig {
@@ -627,72 +684,39 @@ impl MetadataConfig for RecordingConfig {
 
     fn transform_retrieve_file_request(
         &self,
-        request: FileRequest<'_>,
+        call: FileRequest<'_>,
     ) -> Result<PreparedRequest, BaseLlmException> {
-        self.record_request(
-            Some(request.file_id.to_owned()),
-            None,
-            request.optional_params,
-            request.litellm_params,
-        )?;
-        Ok((
-            format!("{}/files/{}", self.base, request.file_id),
-            self.query("view", "full"),
-        ))
+        self.recorded(RequestItem::File(call))
     }
 
     fn transform_retrieve_file_response(
         &self,
         raw_response: &FileResponse,
-        logging_obj: &mut FileLogging<'_>,
-        _litellm_params: &FileParams,
+        context: ReplyContext<'_>,
     ) -> Result<FileObject, BaseLlmException> {
-        self.events.push("response");
-        self.observe(logging_obj);
-        self.check_response(raw_response)?;
-        Ok(file_object(FILE_ID))
+        self.respond(raw_response, context, || file_object(FILE_ID))
     }
 
     fn transform_delete_file_request(
         &self,
-        request: FileRequest<'_>,
+        call: FileRequest<'_>,
     ) -> Result<PreparedRequest, BaseLlmException> {
-        self.record_request(
-            Some(request.file_id.to_owned()),
-            None,
-            request.optional_params,
-            request.litellm_params,
-        )?;
-        let query = self.query("view", "full");
-        Ok((format!("{}/files/{}", self.base, request.file_id), query))
+        self.recorded(RequestItem::File(call))
     }
 
     fn transform_delete_file_response(
         &self,
         raw_response: &FileResponse,
-        logging_obj: &mut FileLogging<'_>,
-        _litellm_params: &FileParams,
+        context: ReplyContext<'_>,
     ) -> Result<FileDeleted, BaseLlmException> {
-        self.events.push("response");
-        self.observe(logging_obj);
-        self.check_response(raw_response)?;
-        Ok(deleted())
+        self.respond(raw_response, context, deleted)
     }
 
     fn transform_list_files_request(
         &self,
-        request: ListRequest<'_>,
+        call: ListRequest<'_>,
     ) -> Result<PreparedRequest, BaseLlmException> {
-        self.record_request(
-            None,
-            request.purpose.map(str::to_owned),
-            request.optional_params,
-            request.litellm_params,
-        )?;
-        let query = request
-            .purpose
-            .map_or_else(FileParams::new, |purpose| self.query("purpose", purpose));
-        Ok((format!("{}/files", self.base), query))
+        self.recorded(RequestItem::List(call))
     }
 
     fn transform_list_files_next_request(
@@ -715,18 +739,9 @@ impl MetadataConfig for RecordingConfig {
     fn transform_list_files_response(
         &self,
         raw_response: &FileResponse,
-        logging_obj: &mut FileLogging<'_>,
-        _litellm_params: &FileParams,
+        context: ReplyContext<'_>,
     ) -> Result<Vec<FileObject>, BaseLlmException> {
-        self.events.push("response");
-        self.observe(logging_obj);
-        self.check_response(raw_response)?;
-        Ok(self
-            .pages
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .pop_front()
-            .unwrap_or_default())
+        self.respond(raw_response, context, || self.pop_page())
     }
 
     fn error_class(&self, message: &str, status_code: u16, headers: HeaderMap) -> BaseLlmException {
