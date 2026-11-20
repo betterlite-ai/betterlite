@@ -1,0 +1,19 @@
+kind: sdk_http
+name: responses-write-transport-delete-omits-empty-body
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  responses_write_transport:
+    operation: delete
+    mode: sync
+    response_id: resp/a
+    timeout_seconds: 7
+    extra_body: {ignored: true}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: resp_a, object: response, deleted: true}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore: []

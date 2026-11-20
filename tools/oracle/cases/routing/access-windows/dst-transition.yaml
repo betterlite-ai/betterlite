@@ -1,0 +1,55 @@
+kind: probe
+name: dst-transition
+probes:
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      access_windows:
+        model: gpt
+        mode: reserved
+        team_id: t1
+        now_unix_millis: 1774663200000
+        deployments:
+          - {model_name: gpt, id: d, access_windows: [{start: "02:30", end: "03:30", timezone: Europe/Berlin, team_ids: [t2]}]}
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      access_windows:
+        model: gpt
+        mode: reserved
+        team_id: t1
+        now_unix_millis: 1774745999999
+        deployments:
+          - {model_name: gpt, id: d, access_windows: [{start: "02:30", end: "03:30", timezone: Europe/Berlin, team_ids: [t2]}]}
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      access_windows:
+        model: gpt
+        mode: reserved
+        team_id: t1
+        now_unix_millis: 1774746000000
+        deployments:
+          - {model_name: gpt, id: d, access_windows: [{start: "02:30", end: "03:30", timezone: Europe/Berlin, team_ids: [t2]}]}
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      access_windows:
+        model: gpt
+        mode: reserved
+        team_id: t1
+        now_unix_millis: 1774747799999
+        deployments:
+          - {model_name: gpt, id: d, access_windows: [{start: "02:30", end: "03:30", timezone: Europe/Berlin, team_ids: [t2]}]}
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      access_windows:
+        model: gpt
+        mode: reserved
+        team_id: t1
+        now_unix_millis: 1774747800000
+        deployments:
+          - {model_name: gpt, id: d, access_windows: [{start: "02:30", end: "03:30", timezone: Europe/Berlin, team_ids: [t2]}]}
+compare:
+  ignore: []

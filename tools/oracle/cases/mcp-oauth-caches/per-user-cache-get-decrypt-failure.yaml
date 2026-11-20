@@ -1,0 +1,11 @@
+kind: helper
+name: per-user-cache-get-decrypt-failure
+call:
+  b4662:
+    function: per_user_get
+    user_id: user-1
+    server_id: srv-1
+    seed: tok
+    garbage: true
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,28 @@
+kind: helper
+name: list-successful
+call:
+  b3364:
+    operation: list
+    after: cntr_a
+    limit: 2
+    order: asc
+    api_key: sk-test
+    api_base: https://api.example.com/v1
+    status: 200
+    reply_headers: {}
+    body: '{"object":"list","data":[{"id":"cntr_a","object":"container","created_at":1,"status":"running","expires_after":null,"last_active_at":1730000000,"name":null}],"first_id":"cntr_a","last_id":"cntr_a","has_more":false}'
+    failure: null
+calls:
+  - b3364:
+      operation: list
+      after: null
+      limit: null
+      order: null
+      api_key: sk-test
+      api_base: https://api.example.com/v1
+      status: 200
+      reply_headers: {}
+      body: '{"object":"list","data":[],"first_id":null,"last_id":null,"has_more":false}'
+      failure: null
+env: {}
+compare: {ignore: []}

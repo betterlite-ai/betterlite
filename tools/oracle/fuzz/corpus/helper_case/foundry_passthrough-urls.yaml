@@ -1,0 +1,17 @@
+kind: helper
+name: foundry-passthrough-urls
+call:
+  foundry_passthrough:
+    roots:
+      - {api_base: https://res.services.ai.azure.com/accounts/x/models/dep}
+      - {api_base: https://res.services.ai.azure.com/Models/dep}
+    prefixes:
+      - {root: https://res.services.ai.azure.com/openai, native_endpoint: openai/v1}
+      - {root: https://res.services.ai.azure.com/providers/mistral, native_endpoint: providers/mistral/azure}
+    queries:
+      - {api_base: "https://res.services.ai.azure.com?api-version=2025-01-01", request_query_params: {api-version: caller}}
+      - {api_base: "https://res.services.ai.azure.com?api-version=2025-01-01", deployment_api_version: dep}
+    bases:
+      - {model: mistral-ocr-latest, endpoint: providers/mistral/azure/ocr, api_base: https://res.services.ai.azure.com}
+env: {}
+compare: {ignore: []}
