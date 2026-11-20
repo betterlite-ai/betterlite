@@ -47,7 +47,7 @@ pub struct Outcome {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub enum OperationError {
     #[error(transparent)]
     Leaf(#[from] SearchError),
     #[error(transparent)]
@@ -56,7 +56,8 @@ pub enum Error {
     Transport(#[from] TransportError),
 }
 
-pub type RunFuture<'call> = Pin<Box<dyn Future<Output = Result<Outcome, Error>> + Send + 'call>>;
+pub type RunFuture<'call> =
+    Pin<Box<dyn Future<Output = Result<Outcome, OperationError>> + Send + 'call>>;
 
 // Everything the AgentCore signer reads, captured once the URL, headers and JSON-RPC body exist
 struct Signing<'call> {
@@ -73,7 +74,7 @@ struct Signing<'call> {
 }
 
 impl Operation<'_> {
-    pub async fn run(self, transport: &dyn LeafTransport) -> Result<Outcome, Error> {
+    pub async fn run(self, transport: &dyn LeafTransport) -> Result<Outcome, OperationError> {
         let url = complete_url(self.api_base, self.configured_gateway_url)?;
         let api_headers = validate_environment(self.headers, self.configured_protocol_version);
         let request_data =
@@ -97,32 +98,20 @@ impl Operation<'_> {
     }
 }
 
-async fn sign(signing: Signing<'_>) -> Result<LeafRequest, Error> {
-    let Signing {
-        headers,
-        optional_params,
-        request_data,
-        url,
-        api_key,
-        session_region,
-        credentials,
-        lookup,
-        now,
-        deadline,
-    } = signing;
+async fn sign(signing: Signing<'_>) -> Result<LeafRequest, OperationError> {
     let signed = sign_request(
         &SignRequest {
-            headers: &headers,
-            optional_params,
-            request_data,
-            api_base: url,
-            api_key,
-            session_region,
-            now,
+            headers: &signing.headers,
+            optional_params: signing.optional_params,
+            request_data: signing.request_data,
+            api_base: signing.url,
+            api_key: signing.api_key,
+            session_region: signing.session_region,
+            now: signing.now,
         },
-        lookup,
+        signing.lookup,
         move |_settings: &AwsSettings, _region: &str| {
-            ready(Ok::<Credentials, CredentialError>(credentials))
+            ready(Ok::<Credentials, CredentialError>(signing.credentials))
         },
     )
     .await?;
@@ -135,6 +124,6 @@ async fn sign(signing: Signing<'_>) -> Result<LeafRequest, Error> {
             .map(|(name, value)| (name, Some(value)))
             .collect(),
         body: signed.body,
-        deadline,
+        deadline: signing.deadline,
     })
 }

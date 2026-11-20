@@ -283,7 +283,7 @@ fn passthrough_streaming() {
 // Two adds split a frame, so the collector has to keep the partial event across them
 fn converse_transport() -> RecordingTransport {
     let frames = hex::decode(CONVERSE_FRAMES).unwrap();
-    let (head, tail) = frames.split_at(frames.len() / 2);
+    let (head, tail) = frames.split_at(frames.len() >> 1);
     RecordingTransport::new(LeafReply {
         status: 200,
         headers: Vec::new(),
@@ -376,8 +376,12 @@ fn passthrough_missing_credentials() {
     });
     let error = dispatched!(Passthrough, operation.run(&transport)).unwrap_err();
     match error {
-        passthrough::Error::Leaf(PassthroughFailure::Signing(_)) => {}
-        other => panic!("expected a signing failure, got {other}"),
+        passthrough::OperationError::Leaf(PassthroughFailure::Signing(_)) => {}
+        other @ passthrough::OperationError::Leaf(_)
+        | other @ passthrough::OperationError::Transport(_)
+        | other @ passthrough::OperationError::Collector { .. } => {
+            panic!("expected a signing failure, got {other}")
+        }
     }
     assert!(transport.requests().is_empty());
 }

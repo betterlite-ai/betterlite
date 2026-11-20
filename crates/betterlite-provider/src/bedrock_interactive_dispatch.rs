@@ -76,9 +76,9 @@ where
         BedrockInteractiveOperation::RealtimeBridge(future) => {
             Box::pin(async move { Ok(BedrockInteractiveResult::RealtimeBridge(future.await?)) })
         }
-        BedrockInteractiveOperation::Unsupported { operation } => {
+        BedrockInteractiveOperation::Unsupported { operation: name } => {
             Box::pin(ready(Err(BedrockInteractiveError::Unsupported {
-                operation,
+                operation: name,
             })))
         }
     }

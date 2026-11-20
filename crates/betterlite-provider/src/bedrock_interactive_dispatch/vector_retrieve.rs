@@ -54,14 +54,15 @@ pub struct Outcome {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub enum OperationError {
     #[error(transparent)]
     Leaf(#[from] VectorStoreError),
     #[error(transparent)]
     Transport(#[from] TransportError),
 }
 
-pub type RunFuture<'call> = Pin<Box<dyn Future<Output = Result<Outcome, Error>> + Send + 'call>>;
+pub type RunFuture<'call> =
+    Pin<Box<dyn Future<Output = Result<Outcome, OperationError>> + Send + 'call>>;
 
 // Everything the knowledge-base signer reads, captured once the URL, headers and body exist
 struct Signing<'call> {
@@ -78,7 +79,7 @@ struct Signing<'call> {
 }
 
 impl Operation<'_> {
-    pub async fn run(self, transport: &dyn LeafTransport) -> Result<Outcome, Error> {
+    pub async fn run(self, transport: &dyn LeafTransport) -> Result<Outcome, OperationError> {
         let base = base_url(&self)?;
         let call = build_search_request(&SearchRequest {
             vector_store_id: self.vector_store_id,
@@ -108,7 +109,7 @@ impl Operation<'_> {
     }
 }
 
-fn base_url(operation: &Operation<'_>) -> Result<String, Error> {
+fn base_url(operation: &Operation<'_>) -> Result<String, OperationError> {
     complete_url(&CompleteUrl {
         api_base: operation.api_base,
         configured_endpoint: operation.configured_endpoint,
@@ -117,36 +118,24 @@ fn base_url(operation: &Operation<'_>) -> Result<String, Error> {
         environment_region_name: operation.environment_region_name,
         environment_region: operation.environment_region,
     })
-    .map_err(Error::Leaf)
+    .map_err(OperationError::Leaf)
 }
 
-async fn sign(signing: Signing<'_>) -> Result<LeafRequest, Error> {
-    let Signing {
-        headers,
-        optional_params,
-        request_data,
-        api_base,
-        api_key,
-        configured_bearer,
-        credentials,
-        region_inputs,
-        now,
-        deadline,
-    } = signing;
-    let pairs: Vec<(String, Option<String>)> = headers.into_iter().collect();
+async fn sign(signing: Signing<'_>) -> Result<LeafRequest, OperationError> {
+    let pairs: Vec<(String, Option<String>)> = signing.headers.into_iter().collect();
     let signed = sign_request(
         SignRequest {
             headers: &pairs,
-            optional_params,
-            request_data,
-            api_base,
-            api_key,
-            configured_bearer,
-            region_inputs,
-            now,
+            optional_params: signing.optional_params,
+            request_data: signing.request_data,
+            api_base: signing.api_base,
+            api_key: signing.api_key,
+            configured_bearer: signing.configured_bearer,
+            region_inputs: signing.region_inputs,
+            now: signing.now,
         },
         move |_settings: &AwsSettings, _region: &str| {
-            ready(Ok::<Credentials, CredentialError>(credentials))
+            ready(Ok::<Credentials, CredentialError>(signing.credentials))
         },
     )
     .await?;
@@ -159,6 +148,6 @@ async fn sign(signing: Signing<'_>) -> Result<LeafRequest, Error> {
             .map(|(name, value)| (name, Some(value)))
             .collect(),
         body: signed.body,
-        deadline,
+        deadline: signing.deadline,
     })
 }

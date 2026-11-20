@@ -30,6 +30,8 @@ use betterlite_prompts::media_fetch::error::ImageFetchError;
 use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::SecretString;
+use serde::de::DeserializeOwned;
+use tokio::runtime::Builder;
 
 use super::error::BedrockInteractiveError;
 use super::http::{LeafReply, LeafRequest, LeafTransport};
@@ -67,7 +69,7 @@ fn block_on<F>(future: F) -> F::Output
 where
     F: Future,
 {
-    tokio::runtime::Builder::new_current_thread()
+    Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap()
@@ -84,17 +86,19 @@ fn json(source: &str) -> Json {
 
 fn pjson<T>(source: &str) -> T
 where
-    T: serde::de::DeserializeOwned,
+    T: DeserializeOwned,
 {
     serde_json::from_str(source).unwrap()
 }
 
 fn text_field<'body>(object: &'body Object, name: &str) -> Option<&'body str> {
-    object.get(name).and_then(|value| value.as_str())
+    let value = object.get(name)?;
+    value.as_str()
 }
 
 fn object_field<'body>(object: &'body Object, name: &str) -> Option<&'body Object> {
-    object.get(name).and_then(|value| value.as_object())
+    let value = object.get(name)?;
+    value.as_object()
 }
 
 fn from_serialized<T>(value: &T) -> Json
@@ -109,10 +113,10 @@ fn body_object(body: &[u8]) -> Object {
 }
 
 fn header<'text>(headers: &'text [(String, Option<String>)], name: &str) -> Option<&'text str> {
-    headers
+    let (_, value) = headers
         .iter()
-        .find(|(key, _)| key.eq_ignore_ascii_case(name))
-        .and_then(|(_, value)| value.as_deref())
+        .find(|(key, _)| key.eq_ignore_ascii_case(name))?;
+    value.as_deref()
 }
 
 struct RecordingTransport {
@@ -230,7 +234,7 @@ fn responses_operation<'call>(
     params: &'call ResponsesParams,
     model_cost: &'call ParamMap,
     capabilities: &'call mut Capabilities,
-    invocation: Invocation<'call>,
+    invocation: &Invocation<'call>,
 ) -> responses::Operation<'call, MapFetcher, Capabilities> {
     responses::Operation {
         aws: responses::AwsRequest {
@@ -283,7 +287,7 @@ fn responses_body() -> Object {
         &params,
         &model_cost,
         &mut capabilities,
-        Invocation {
+        &Invocation {
             model: Some(RESPONSES_MODEL),
             api_key: Some(&bearer),
         },
@@ -333,7 +337,7 @@ fn responses_rejected_reply() {
         &params,
         &model_cost,
         &mut capabilities,
-        Invocation {
+        &Invocation {
             model: Some(RESPONSES_MODEL),
             api_key: None,
         },
@@ -346,13 +350,18 @@ fn responses_rejected_reply() {
     });
     let error = dispatched!(Responses, operation.run(&transport)).unwrap_err();
     match error {
-        responses::Error::Rejected {
+        responses::OperationError::Rejected {
             status, message, ..
         } => {
             assert_eq!(status, 400);
             assert_eq!(message, "bad \u{FFFD} body");
         }
-        other => panic!("expected a rejected reply, got {other}"),
+        other @ responses::OperationError::Leaf(_)
+        | other @ responses::OperationError::UnsupportedModel { .. }
+        | other @ responses::OperationError::Transport(_)
+        | other @ responses::OperationError::Headers { .. } => {
+            panic!("expected a rejected reply, got {other}")
+        }
     }
 }
 
@@ -369,7 +378,7 @@ fn responses_remote_image() {
         &params,
         &model_cost,
         &mut capabilities,
-        Invocation {
+        &Invocation {
             model: Some(RESPONSES_MODEL),
             api_key: None,
         },
@@ -382,7 +391,7 @@ fn responses_remote_image() {
     };
     let transport = RecordingTransport::new(reply);
     let error = dispatched!(Responses, operation.run(&transport)).unwrap_err();
-    assert!(matches!(error, responses::Error::Leaf(_)));
+    assert!(matches!(error, responses::OperationError::Leaf(_)));
     assert!(transport.requests().is_empty());
 }
 
@@ -396,7 +405,7 @@ fn responses_unsupported_model() {
         &params,
         &model_cost,
         &mut capabilities,
-        Invocation {
+        &Invocation {
             model: Some("mystery.model"),
             api_key: None,
         },
@@ -409,8 +418,13 @@ fn responses_unsupported_model() {
     });
     let error = dispatched!(Responses, operation.run(&transport)).unwrap_err();
     match error {
-        responses::Error::UnsupportedModel { model } => assert_eq!(model, "mystery.model"),
-        other => panic!("expected an unsupported model, got {other}"),
+        responses::OperationError::UnsupportedModel { model } => assert_eq!(model, "mystery.model"),
+        other @ responses::OperationError::Leaf(_)
+        | other @ responses::OperationError::Transport(_)
+        | other @ responses::OperationError::Rejected { .. }
+        | other @ responses::OperationError::Headers { .. } => {
+            panic!("expected an unsupported model, got {other}")
+        }
     }
 }
 
@@ -497,10 +511,14 @@ fn search_leaf_failure() {
     });
     let error = dispatched!(Search, operation.run(&transport)).unwrap_err();
     match error {
-        search::Error::Leaf(SearchError::ToolName { tool_name }) => {
+        search::OperationError::Leaf(SearchError::ToolName { tool_name }) => {
             assert_eq!(tool_name, "other-tool");
         }
-        other => panic!("expected a tool name failure, got {other}"),
+        other @ search::OperationError::Leaf(_)
+        | other @ search::OperationError::Reply(_)
+        | other @ search::OperationError::Transport(_) => {
+            panic!("expected a tool name failure, got {other}")
+        }
     }
     assert!(transport.requests().is_empty());
 }
@@ -518,8 +536,10 @@ fn search_reply_error() {
     });
     let error = dispatched!(Search, operation.run(&transport)).unwrap_err();
     match error {
-        search::Error::Reply(reply) => assert_eq!(reply.status(), Some(502)),
-        other => panic!("expected a reply error, got {other}"),
+        search::OperationError::Reply(reply) => assert_eq!(reply.status(), Some(502)),
+        other @ search::OperationError::Leaf(_) | other @ search::OperationError::Transport(_) => {
+            panic!("expected a reply error, got {other}")
+        }
     }
 }
 
@@ -646,8 +666,11 @@ fn vector_leaf_failure() {
     });
     let error = dispatched!(VectorRetrieve, operation.run(&transport)).unwrap_err();
     match error {
-        vector_retrieve::Error::Leaf(VectorStoreError::RetrievalConfigNotObject) => {}
-        other => panic!("expected a retrieval configuration failure, got {other}"),
+        vector_retrieve::OperationError::Leaf(VectorStoreError::RetrievalConfigNotObject) => {}
+        other @ vector_retrieve::OperationError::Leaf(_)
+        | other @ vector_retrieve::OperationError::Transport(_) => {
+            panic!("expected a retrieval configuration failure, got {other}")
+        }
     }
     assert!(transport.requests().is_empty());
 }
@@ -670,7 +693,7 @@ fn bedrock_interactive_dispatch_leaf_request_debug_names_headers_without_values(
     let rendered = format!("{request:?}");
     assert_eq!(
         rendered,
-        r#"LeafRequest { method: "POST", url: "https://bedrock-runtime.example/model/x/invoke", header_names: ["Authorization", "X-Trace"], body_length: 5 }"#
+        r#"LeafRequest { method: "POST", url: "https://bedrock-runtime.example/model/x/invoke", headers: ["Authorization", "X-Trace"], body: 5, deadline: 600s }"#
     );
     assert!(!rendered.contains("AWS4-HMAC-SHA256"));
 }
@@ -721,6 +744,12 @@ fn bedrock_interactive_dispatch_unsupported_operation() {
     );
     match error {
         BedrockInteractiveError::Unsupported { operation } => assert_eq!(operation, "embedding"),
-        other => panic!("expected an unsupported operation, got {other}"),
+        other @ BedrockInteractiveError::Responses(_)
+        | other @ BedrockInteractiveError::Passthrough(_)
+        | other @ BedrockInteractiveError::Search(_)
+        | other @ BedrockInteractiveError::VectorRetrieve(_)
+        | other @ BedrockInteractiveError::RealtimeBridge(_) => {
+            panic!("expected an unsupported operation, got {other}")
+        }
     }
 }

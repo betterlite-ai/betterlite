@@ -13,7 +13,7 @@ pub struct Outcome;
 
 // The transport error stays typed, so a caller matches its variant instead of downcasting
 #[derive(Debug, thiserror::Error)]
-pub enum Error<Transport>
+pub enum OperationError<Transport>
 where
     Transport: StdError + 'static,
 {
@@ -25,7 +25,7 @@ where
 }
 
 pub type RunFuture<'call, Transport> =
-    Pin<Box<dyn Future<Output = Result<Outcome, Error<Transport>>> + Send + 'call>>;
+    Pin<Box<dyn Future<Output = Result<Outcome, OperationError<Transport>>> + Send + 'call>>;
 
 // B666 owns prepare, credentials, connect, the pumps and the close; this only names its session opener
 #[must_use]
@@ -45,7 +45,7 @@ where
             .await;
         match outcome {
             Ok(()) => Ok(Outcome),
-            Err(source) => Err(Error::Session { source }),
+            Err(source) => Err(OperationError::Session { source }),
         }
     })
 }

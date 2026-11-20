@@ -17,14 +17,14 @@ pub struct LeafRequest {
 
 // A signed header carries the credential, so Debug names the headers and prints no value
 impl fmt::Debug for LeafRequest {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let names: Vec<&str> = self.headers.iter().map(|(name, _)| name.as_str()).collect();
-        formatter
-            .debug_struct("LeafRequest")
+        f.debug_struct("LeafRequest")
             .field("method", &self.method)
             .field("url", &self.url)
-            .field("header_names", &names)
-            .field("body_length", &self.body.len())
+            .field("headers", &names)
+            .field("body", &self.body.len())
+            .field("deadline", &self.deadline)
             .finish()
     }
 }

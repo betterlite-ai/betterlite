@@ -37,7 +37,7 @@ pub struct Outcome {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub enum OperationError {
     #[error(transparent)]
     Leaf(#[from] PassthroughFailure),
     #[error(transparent)]
@@ -49,10 +49,11 @@ pub enum Error {
     },
 }
 
-pub type RunFuture<'call> = Pin<Box<dyn Future<Output = Result<Outcome, Error>> + Send + 'call>>;
+pub type RunFuture<'call> =
+    Pin<Box<dyn Future<Output = Result<Outcome, OperationError>> + Send + 'call>>;
 
 impl Operation<'_> {
-    pub async fn run(self, transport: &dyn LeafTransport) -> Result<Outcome, Error> {
+    pub async fn run(self, transport: &dyn LeafTransport) -> Result<Outcome, OperationError> {
         let target = self.url_request.target;
         let (url, endpoint_url) = self.plan.get_complete_url(&self.url_request)?;
         let empty = Object::new();
@@ -79,7 +80,7 @@ impl Operation<'_> {
             }
             collector
                 .build_logged_response(self.logging)
-                .map_err(|source| Error::Collector { source })?
+                .map_err(|source| OperationError::Collector { source })?
         } else {
             buffered(&self.plan, target, &self.signing, &reply, self.logging)
         };

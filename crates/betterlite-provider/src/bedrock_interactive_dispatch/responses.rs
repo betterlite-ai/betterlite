@@ -74,7 +74,7 @@ pub struct Outcome {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub enum OperationError {
     #[error(transparent)]
     Leaf(#[from] ResponsesError),
     #[error("the model {model} is not served by the Bedrock Runtime Responses API")]
@@ -94,14 +94,15 @@ pub enum Error {
     },
 }
 
-pub type RunFuture<'call> = Pin<Box<dyn Future<Output = Result<Outcome, Error>> + Send + 'call>>;
+pub type RunFuture<'call> =
+    Pin<Box<dyn Future<Output = Result<Outcome, OperationError>> + Send + 'call>>;
 
 impl<Fetcher, Capabilities> Operation<'_, Fetcher, Capabilities>
 where
     Fetcher: RemoteMediaFetcher + Sync + Send,
     Capabilities: ResponsesCapabilities + Send,
 {
-    pub async fn run(mut self, transport: &dyn LeafTransport) -> Result<Outcome, Error> {
+    pub async fn run(mut self, transport: &dyn LeafTransport) -> Result<Outcome, OperationError> {
         let Some(model) = self.model else {
             return Err(unsupported(""));
         };
@@ -143,13 +144,13 @@ where
     }
 }
 
-fn unsupported(model: &str) -> Error {
-    Error::UnsupportedModel {
+fn unsupported(model: &str) -> OperationError {
+    OperationError::UnsupportedModel {
         model: model.to_owned(),
     }
 }
 
-fn request_url(aws: &AwsRequest<'_>) -> Result<String, Error> {
+fn request_url(aws: &AwsRequest<'_>) -> Result<String, OperationError> {
     complete_url(CompleteUrlParams {
         api_base: aws.api_base,
         aws_region_name: aws.aws_region_name,
@@ -157,7 +158,7 @@ fn request_url(aws: &AwsRequest<'_>) -> Result<String, Error> {
         environment_endpoint: aws.environment_endpoint,
         region_inputs: aws.region_inputs,
     })
-    .map_err(Error::Leaf)
+    .map_err(OperationError::Leaf)
 }
 
 fn header_pairs(headers: &IndexMap<String, String>) -> Vec<(String, Option<String>)> {
@@ -173,7 +174,7 @@ async fn sign(
     url: &str,
     signing_data: IndexMap<String, Json>,
     deadline: Duration,
-) -> Result<LeafRequest, Error> {
+) -> Result<LeafRequest, OperationError> {
     let mut headers = aws.headers;
     validate_environment(&mut headers, aws.api_key, aws.environment_token);
     let pairs = header_pairs(&headers);
@@ -218,7 +219,10 @@ fn replaced_text(body: &[u8]) -> String {
     text
 }
 
-async fn deliver(transport: &dyn LeafTransport, request: LeafRequest) -> Result<Outcome, Error> {
+async fn deliver(
+    transport: &dyn LeafTransport,
+    request: LeafRequest,
+) -> Result<Outcome, OperationError> {
     let reply = transport.send(request.clone()).await?;
     if reply.status < 400 {
         return Ok(Outcome {
@@ -229,8 +233,8 @@ async fn deliver(transport: &dyn LeafTransport, request: LeafRequest) -> Result<
     }
     let message = replaced_text(&reply.body);
     let error = error_from_reply(reply.status, &message, &reply.headers)
-        .map_err(|source| Error::Headers { source })?;
-    Err(Error::Rejected {
+        .map_err(|source| OperationError::Headers { source })?;
+    Err(OperationError::Rejected {
         status: reply.status,
         message,
         error: Box::new(error),

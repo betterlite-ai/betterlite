@@ -399,7 +399,7 @@ fn realtime_connect_failure() {
     )
     .unwrap_err();
     let source = match error {
-        realtime_bridge::Error::Session { source } => source,
+        realtime_bridge::OperationError::Session { source } => source,
     };
     assert!(matches!(&source, RealtimeTransportError::Stream(_)));
     assert_eq!(source.status_code(), None);
