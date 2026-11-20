@@ -348,8 +348,11 @@ fn transform_response_raises_a_meaningful_error_object(
     assert_eq!(error.to_string(), message);
 }
 
-#[test]
-fn transform_response_ignores_an_empty_error_object() {
-    let reply = transform_response(br#"{"data":[],"error":{}}"#).unwrap();
+#[rstest]
+#[case::empty_object(br#"{"data":[],"error":{}}"#)]
+#[case::empty_string(br#"{"data":[],"error":""}"#)]
+#[case::null(br#"{"data":[],"error":null}"#)]
+fn transform_response_ignores_an_empty_error_object(#[case] body: &[u8]) {
+    let reply = transform_response(body).unwrap();
     assert!(reply.response.data.is_empty());
 }
