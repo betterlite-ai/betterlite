@@ -5,13 +5,14 @@ use http::Method;
 use crate::api::file_http_upload::config::{
     FileParams, FileResponse, FileUploadConfig, Headers, UploadParams,
 };
-use crate::api::file_http_upload::error::{TransformFailure, UrlFailure};
+use crate::api::file_http_upload::error::{TransformFailure, UploadError, UrlFailure};
 use crate::api::file_http_upload::plan::UploadPlan;
 use crate::api::file_http_upload::service::Mode;
 use crate::api::vector_store_http_write::error::BaseLlmException;
 
 use super::{
-    API_BASE, Config, FakeTransport, Harness, Wire, answer, create_call, params, text_plan,
+    API_BASE, Config, FakeTransport, Harness, Wire, answer, create_call, manus_config, params,
+    text_plan, two_step_plan,
 };
 
 // A provider config that keeps the trait's own file_upload_http_method, the way a plain provider does
@@ -83,5 +84,38 @@ async fn supplied_client_is_used_only_for_its_own_mode() {
         .await
         .unwrap();
     assert!(supplied.wire.seen().is_empty());
+    assert_eq!(harness.seen().len(), 1);
+}
+
+// a verb the HTTP client has no method for fails naming it, where LiteLLM raises AttributeError
+#[tokio::test]
+async fn two_step_upload_invalid_method_names_the_method() {
+    let mut config = manus_config();
+    config.upload_request.method = String::from("FROB");
+    let mut harness = Harness::new(
+        two_step_plan(config),
+        API_BASE,
+        vec![answer(
+            200,
+            &[],
+            b"{\"upload_url\":\"http://uploads.example.test/manus/1\"}",
+        )],
+    );
+    let error = harness
+        .run(Mode::Sync, &create_call(), &params())
+        .await
+        .unwrap_err();
+    match error {
+        UploadError::Provider(provider) => {
+            assert_eq!(provider.status_code, 500);
+            assert!(provider.status_code_is_synthesized);
+            assert_eq!(
+                provider.message,
+                "the upload method FROB is not an HTTP method"
+            );
+        }
+        other => panic!("expected a provider error, found {other}"),
+    }
+    // the initial request went out and the failure stopped the second one
     assert_eq!(harness.seen().len(), 1);
 }

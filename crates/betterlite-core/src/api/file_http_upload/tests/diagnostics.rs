@@ -5,7 +5,9 @@ use indexmap::IndexMap;
 use crate::api::file_http_upload::plan::{MultipartPlan, UploadPlan};
 use crate::api::file_http_upload::service::Mode;
 
-use super::{API_BASE, Harness, answer, bytes_json, create_call, field, manus_plan, params, text};
+use super::{
+    API_BASE, Harness, answer, bytes_json, create_call, field, lookup, manus_plan, params, text,
+};
 
 // an unsupported request is logged before it fails, and its top-level headers are masked like any request
 #[tokio::test]
@@ -131,4 +133,20 @@ async fn upload_diagnostics_logs_the_multipart_form() {
         ]),
     )]));
     assert_eq!(body, &expected);
+}
+
+// a raw-bytes plan has no JSON form, so its async log records no complete_input_dict at all
+#[tokio::test]
+async fn upload_diagnostics_omit_a_raw_bytes_body() {
+    let plan = UploadPlan::Bytes(b"\xff\x00".to_vec());
+    let mut harness = Harness::new(plan, API_BASE, vec![answer(200, &[], b"{}")]);
+    harness
+        .run(Mode::Asynchronous, &create_call(), &params())
+        .await
+        .unwrap();
+    let details = harness.details();
+    assert_eq!(
+        lookup(field(&details, "additional_args"), "complete_input_dict"),
+        None
+    );
 }
