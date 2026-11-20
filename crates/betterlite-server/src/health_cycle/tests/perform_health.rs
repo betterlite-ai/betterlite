@@ -1,3 +1,4 @@
+use betterlite_models::decisions::Json;
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
 
 use super::dispatch::{DispatchSettings, perform_health_checks};
@@ -6,7 +7,7 @@ use super::ports::{ProbeFailure, ProbeResponse};
 use super::probe::ProbeOutcome;
 use super::support::{
     FakeModels, FakeProvider, capture_logs, context, cycle, deployment, deployment_with_info,
-    failure, number, plain_request, policy, prepare_all, text,
+    failure, number, object, plain_request, policy, prepare_all, text,
 };
 
 fn leaf_with_secret() -> DeploymentSpec {
@@ -193,10 +194,11 @@ async fn a_probe_that_raises_before_the_provider_keeps_its_params_only() {
 
 #[test]
 fn a_failure_row_keeps_the_raw_request_when_the_probe_logged_one() {
+    let raw = Json::Object(object(vec![("model", text("openai/leaf"))]));
     let exception = ProbeFailure {
         message: "bad request".to_owned(),
         status_code: 400,
-        raw_request_typed_dict: Some(super::support::object(vec![("model", text("openai/leaf"))])),
+        raw_request_typed_dict: Some(raw.clone()),
     };
     let result = separate_results(
         &[deployment("leaf", "leaf-id", r#"{"model":"openai/leaf"}"#)],
@@ -207,11 +209,5 @@ fn a_failure_row_keeps_the_raw_request_when_the_probe_logged_one() {
         .unhealthy_endpoints
         .first()
         .expect("the failed probe is reported");
-    assert_eq!(
-        endpoint.get("raw_request_typed_dict"),
-        Some(&super::support::object(vec![(
-            "model",
-            text("openai/leaf")
-        )]))
-    );
+    assert_eq!(endpoint.get("raw_request_typed_dict"), Some(&raw));
 }
