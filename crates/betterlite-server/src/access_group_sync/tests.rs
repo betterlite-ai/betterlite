@@ -278,7 +278,10 @@ async fn regeneration_live_groups() {
     let groups = database.groups.lock().expect("groups");
     assert_eq!(groups.get("g1"), Some(&vec!["new".to_owned()]));
     assert_eq!(groups.get("g2"), Some(&Vec::new()));
-    assert_eq!(groups.get("g3"), Some(&vec!["new".to_owned()]));
+    assert_eq!(
+        groups.get("g3"),
+        Some(&vec!["other".to_owned(), "new".to_owned()])
+    );
 }
 
 #[tokio::test]
