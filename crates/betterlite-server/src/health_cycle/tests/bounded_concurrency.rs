@@ -12,8 +12,7 @@ fn answered_model(outcome: &ProbeOutcome) -> String {
             .remaining_requests
             .clone()
             .unwrap_or_else(|| "no header".to_owned()),
-        ProbeOutcome::Failed(failure) => failure.message.clone(),
-        ProbeOutcome::Raised(failure) => failure.message.clone(),
+        ProbeOutcome::Failed(failure) | ProbeOutcome::Raised(failure) => failure.message.clone(),
     }
 }
 

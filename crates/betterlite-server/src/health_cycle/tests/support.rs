@@ -15,7 +15,7 @@ use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use betterlite_router::model_catalog_lookup::alias::AliasMap;
 use betterlite_router::routing_groups::index::RoutingGroupIndex;
 use betterlite_router::routing_value_store::Clock;
-use rand::SeedableRng;
+use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use serde_json::Number;
 use tokio::time::sleep;
@@ -181,16 +181,8 @@ pub(crate) fn plain_request(model_list: &[DeploymentSpec]) -> HealthCheckRequest
 #[derive(Clone, Debug)]
 pub(crate) enum Reply {
     Success,
-    Failure {
-        status: u16,
-        message: &'static str,
-    },
+    Failure { status: u16, message: &'static str },
     DelayedSuccess(Duration),
-    DelayedFailure {
-        delay: Duration,
-        status: u16,
-        message: &'static str,
-    },
 }
 
 #[derive(Default)]
@@ -293,14 +285,6 @@ impl ProviderHealth for FakeProvider {
             Reply::DelayedSuccess(delay) => {
                 sleep(delay).await;
                 Ok(success(&model))
-            }
-            Reply::DelayedFailure {
-                delay,
-                status,
-                message,
-            } => {
-                sleep(delay).await;
-                Err(failure(status, message))
             }
         };
         self.leave();

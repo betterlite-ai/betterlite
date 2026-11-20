@@ -13,8 +13,8 @@ use crate::health_cycle::rss::{
 #[rstest]
 #[case::linux_kilobytes(2048, RssUnit::Kilobytes, 2.0_f64)]
 #[case::linux_fractional(1536, RssUnit::Kilobytes, 1.5_f64)]
-#[case::macos_bytes(2_097_152, RssUnit::Bytes, 2.0_f64)]
-#[case::macos_fractional(1_048_576, RssUnit::Bytes, 1.0_f64)]
+#[case::macos_bytes(0x0020_0000, RssUnit::Bytes, 2.0_f64)]
+#[case::macos_fractional(0x0010_0000, RssUnit::Bytes, 1.0_f64)]
 fn scaling_uses_the_getrusage_unit(#[case] raw: u64, #[case] unit: RssUnit, #[case] expected: f64) {
     assert_eq!(rss_mb(raw, unit).to_bits(), expected.to_bits());
 }
