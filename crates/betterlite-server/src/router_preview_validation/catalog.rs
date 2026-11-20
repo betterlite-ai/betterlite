@@ -112,14 +112,14 @@ fn catalog_entry(
 }
 
 fn catalog_field(value: Option<&JsonData>, field: &str, cipher: &DbCipher) -> JsonData {
-    let Some(value) = value else {
+    let Some(stored) = value else {
         return JsonData::Null;
     };
-    let JsonData::String(text) = value else {
-        return value.clone();
+    let JsonData::String(text) = stored else {
+        return JsonData::clone(stored);
     };
-    let stored = StoredValue::Text(SecretString::from(text.clone()));
-    match cipher.decrypt_value(stored, field, KEEP_ORIGINAL) {
+    let sealed = StoredValue::Text(SecretString::from(text.clone()));
+    match cipher.decrypt_value(sealed, field, KEEP_ORIGINAL) {
         Some(StoredValue::Text(plain)) => JsonData::String(plain.expose_secret().to_owned()),
         Some(StoredValue::Other(other)) => other,
         None => JsonData::Null,
