@@ -13,7 +13,7 @@ _DUMP: Final = TypeAdapter(dict[str, JsonValue])
 _TEXT: Final = TypeAdapter(str)
 
 
-# the case supplies the request time, so every LiteLLM datetime.now in the reset policy has one answer
+# the case supplies the request time, so LiteLLM datetime.now in the reset policy has one answer
 class FrozenClock(datetime):
     fixed: datetime = datetime(1970, 1, 1, tzinfo=UTC)
 
@@ -40,7 +40,8 @@ def _reset_answer(call: ResetCall) -> JsonValue:
     timezone_utils.datetime = FrozenClock  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/timezone_utils.py#L64-L68
     _set_budget_reset_at(data, updated)
     if data.budget_limits:
-        updated["budget_limits"] = _JSON.validate_json(_TEXT.validate_python(updated["budget_limits"]))
+        window_text = _TEXT.validate_python(updated["budget_limits"])
+        updated["budget_limits"] = _JSON.validate_json(window_text)
     return _JSON.validate_json(to_json(updated))
 
 
