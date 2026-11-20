@@ -15,10 +15,8 @@ use indexmap::IndexMap;
 use serde::Serialize;
 
 use super::error::{VectorStoreWriteError, VectorStoreWriteFailure, failure};
-use super::service::Operation;
-use super::{
-    DEFAULT_PROVIDER, DELETE_FLAG, DeleteRequest, UPDATE_FLAG, UpdateRequest, VectorStoreWriteDeps,
-};
+use super::service::{DELETE_FLAG, Operation, UPDATE_FLAG};
+use super::{DEFAULT_PROVIDER, TransportRequest, VectorStoreWriteDeps, VectorStoreWriteRequest};
 use crate::api::vector_store_http_write::params::UpdateParams;
 
 // VectorStoreCreateOptionalRequestParams: the only keys an update may carry, named or through kwargs
@@ -39,10 +37,10 @@ pub(crate) struct Target {
 // the provider the call resolves to and the vector stores configuration B010 selects for it
 pub(crate) fn target(
     operation: Operation,
-    declaration: Option<&str>,
+    transport: &TransportRequest<'_>,
     deps: VectorStoreWriteDeps<'_>,
 ) -> Result<Target, VectorStoreWriteFailure> {
-    let name = declaration.unwrap_or(DEFAULT_PROVIDER);
+    let name = transport.custom_llm_provider.unwrap_or(DEFAULT_PROVIDER);
     let declared = resolve_provider(name, deps.resolution)
         .map_err(|error| failure(error, name, deps.redactor))?;
     let Some(config) = select_vector_stores_config(declared.id, declared.api_type.as_deref())
@@ -104,7 +102,7 @@ fn resolve_provider(
 
 // local_vars.update(kwargs), then get_requested_vector_store_create_optional_param's non-None filter
 pub(crate) fn update_options(
-    request: &UpdateRequest<'_>,
+    request: &VectorStoreWriteRequest<'_>,
     deps: VectorStoreWriteDeps<'_>,
     provider: &str,
 ) -> Result<UpdateParams, VectorStoreWriteFailure> {
@@ -131,7 +129,7 @@ pub(crate) fn update_options(
         )
     })?;
     for field in CREATE_FIELDS {
-        if let Some(value) = request.kwargs.get(field) {
+        if let Some(value) = request.transport.kwargs.get(field) {
             candidates.insert(field.to_owned(), value.clone());
         }
     }
@@ -154,23 +152,32 @@ pub(crate) fn update_options(
         })
 }
 
+// delete logs the id alone; the parameters B2402 sends are the empty create-parameter filter output
 pub(crate) fn log_delete(
-    logging: &Mutex<LoggingState>,
-    request: &DeleteRequest<'_>,
+    request: &VectorStoreWriteRequest<'_>,
+    deps: VectorStoreWriteDeps<'_>,
     provider: &str,
-) -> Result<(), LoggingStateError> {
+) -> Result<UpdateParams, VectorStoreWriteFailure> {
     let mut optional_params = IndexMap::new();
     optional_params.insert(
         "vector_store_id".to_owned(),
-        Json::Text(request.vector_store_id.to_owned()),
+        Json::Text(request.transport.vector_store_id.to_owned()),
     );
     log_call(
-        logging,
-        request.kwargs,
+        deps.logging,
+        request.transport.kwargs,
         DELETE_FLAG,
         optional_params,
         provider,
     )
+    .map_err(|error| {
+        failure(
+            VectorStoreWriteError::Logging(error),
+            provider,
+            deps.redactor,
+        )
+    })?;
+    Ok(UpdateParams::default())
 }
 
 // `timeout or request_timeout`: an explicit zero is falsy, and the module constant is never absent
@@ -205,14 +212,14 @@ where
 // update_from_kwargs(kwargs, model=None, optional_params={"vector_store_id": ..., "name": name, **filtered}, ...)
 fn log_update(
     logging: &Mutex<LoggingState>,
-    request: &UpdateRequest<'_>,
+    request: &VectorStoreWriteRequest<'_>,
     filtered: &IndexMap<String, Json>,
     provider: &str,
 ) -> Result<(), LoggingStateError> {
     let mut optional_params = IndexMap::new();
     optional_params.insert(
         "vector_store_id".to_owned(),
-        Json::Text(request.vector_store_id.to_owned()),
+        Json::Text(request.transport.vector_store_id.to_owned()),
     );
     optional_params.insert(
         "name".to_owned(),
@@ -225,7 +232,7 @@ fn log_update(
     }
     log_call(
         logging,
-        request.kwargs,
+        request.transport.kwargs,
         UPDATE_FLAG,
         optional_params,
         provider,

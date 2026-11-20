@@ -1,7 +1,7 @@
 use super::super::service::Operation;
 use super::support::{
-    Fixture, REQUEST_TIMEOUT, Resolution, Spy, call_delete, call_update, deleted, kept_headers,
-    lost_query, replacement_body, success,
+    Fixture, REQUEST_TIMEOUT, Resolution, Spy, Which, call, deleted, kept_headers, lost_query,
+    replacement_body, success,
 };
 use crate::api::vector_store_http_write::params::UpdateParams;
 
@@ -11,10 +11,10 @@ async fn write_ignores_extra_query() {
     let spy = Spy::replying(success());
     let resolution = Resolution::new();
     let mut fixture = Fixture::new();
-    fixture.extra_query = Some(lost_query());
-    fixture.extra_headers = Some(kept_headers());
-    fixture.extra_body = Some(replacement_body());
-    let value = call_update(&spy, &fixture, &resolution, REQUEST_TIMEOUT)
+    fixture.arguments.extra_query = Some(lost_query());
+    fixture.arguments.extra_headers = Some(kept_headers());
+    fixture.arguments.extra_body = Some(replacement_body());
+    let value = call(Which::Update, &spy, &fixture, &resolution, REQUEST_TIMEOUT)
         .await
         .expect("the mock answer is returned");
     assert_eq!(value, success());
@@ -30,9 +30,9 @@ async fn delete_ignores_extra_query_and_update_parameters() {
     let spy = Spy::replying(deleted());
     let resolution = Resolution::new();
     let mut fixture = Fixture::new();
-    fixture.extra_query = Some(lost_query());
-    fixture.extra_headers = Some(kept_headers());
-    let value = call_delete(&spy, &fixture, &resolution, REQUEST_TIMEOUT)
+    fixture.arguments.extra_query = Some(lost_query());
+    fixture.arguments.extra_headers = Some(kept_headers());
+    let value = call(Which::Delete, &spy, &fixture, &resolution, REQUEST_TIMEOUT)
         .await
         .expect("the mock answer is returned");
     assert_eq!(value, deleted());

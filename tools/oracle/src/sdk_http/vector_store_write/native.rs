@@ -15,7 +15,7 @@ use betterlite_core::api::vector_store_write::service::{
     Operation as CoreOperation, WriteCall as CoreWriteCall, WriteService,
 };
 use betterlite_core::api::vector_store_write::{
-    DeleteRequest, UpdateRequest, VectorStoreWriteDeps, adelete, aupdate, delete, update,
+    TransportRequest, VectorStoreWriteDeps, VectorStoreWriteRequest, VectorStoreWrites,
 };
 use betterlite_error::envelope::WireField;
 use betterlite_logging::logging_pre_post::env::{DebugSettings, GlobalFlags, PrePostEnv};
@@ -100,10 +100,7 @@ async fn execute_run(
         request_timeout_seconds,
     };
     let kwargs = run.kwargs();
-    let written = match run.operation {
-        Operation::Update => update_run(run, service, deps, &kwargs).await,
-        Operation::Delete => delete_run(run, service, deps, &kwargs).await,
-    };
+    let written = write_run(run, service, deps, &kwargs).await;
     Ok(match written {
         Ok(value) => RunOutcome {
             value: Some(value),
@@ -116,50 +113,33 @@ async fn execute_run(
     })
 }
 
-async fn update_run(
+async fn write_run(
     run: &Run,
     service: &Service<'_>,
     deps: VectorStoreWriteDeps<'_>,
     kwargs: &IndexMap<String, Json>,
 ) -> Result<Json, VectorStoreWriteFailure> {
-    let request = UpdateRequest {
-        vector_store_id: &run.vector_store_id,
+    let request = VectorStoreWriteRequest {
+        transport: TransportRequest {
+            vector_store_id: &run.vector_store_id,
+            extra_headers: run.extra_headers.as_ref(),
+            extra_query: run.extra_query.as_ref(),
+            extra_body: run.extra_body.as_ref(),
+            timeout: run.timeout,
+            custom_llm_provider: run.custom_llm_provider.as_deref(),
+            params: &service.params,
+            kwargs,
+        },
         name: run.name.as_deref(),
         expires_after: run.expires_after.as_ref(),
         metadata: run.metadata.as_ref(),
-        extra_headers: run.extra_headers.as_ref(),
-        extra_query: run.extra_query.as_ref(),
-        extra_body: run.extra_body.as_ref(),
-        timeout: run.timeout,
-        custom_llm_provider: run.custom_llm_provider.as_deref(),
-        params: &service.params,
-        kwargs,
     };
-    match run.mode {
-        Mode::Sync => update(service, deps, &request).await,
-        Mode::Asynchronous => aupdate(service, deps, &request).await,
-    }
-}
-
-async fn delete_run(
-    run: &Run,
-    service: &Service<'_>,
-    deps: VectorStoreWriteDeps<'_>,
-    kwargs: &IndexMap<String, Json>,
-) -> Result<Json, VectorStoreWriteFailure> {
-    let request = DeleteRequest {
-        vector_store_id: &run.vector_store_id,
-        extra_headers: run.extra_headers.as_ref(),
-        extra_query: run.extra_query.as_ref(),
-        extra_body: run.extra_body.as_ref(),
-        timeout: run.timeout,
-        custom_llm_provider: run.custom_llm_provider.as_deref(),
-        params: &service.params,
-        kwargs,
-    };
-    match run.mode {
-        Mode::Sync => delete(service, deps, &request).await,
-        Mode::Asynchronous => adelete(service, deps, &request).await,
+    let writes = VectorStoreWrites { service, deps };
+    match (run.operation, run.mode) {
+        (Operation::Update, Mode::Sync) => writes.update(&request).await,
+        (Operation::Update, Mode::Asynchronous) => writes.aupdate(&request).await,
+        (Operation::Delete, Mode::Sync) => writes.delete(&request).await,
+        (Operation::Delete, Mode::Asynchronous) => writes.adelete(&request).await,
     }
 }
 

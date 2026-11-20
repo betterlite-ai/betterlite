@@ -3,68 +3,12 @@ use betterlite_error::envelope::WireField;
 use betterlite_models::identity::provider_id::ProviderId;
 
 use super::super::error::VectorStoreWriteFailure;
-use super::support::{
-    Fixture, REQUEST_TIMEOUT, Recorded, Resolution, Spy, call_adelete, call_aupdate, call_delete,
-    call_update, success,
-};
+use super::support::{Fixture, REQUEST_TIMEOUT, Resolution, Spy, Which, call, recorded, success};
 
 fn provider_fixture(provider: &str) -> Fixture {
     let mut fixture = Fixture::new();
-    fixture.provider = Some(provider.to_owned());
+    fixture.arguments.provider = Some(provider.to_owned());
     fixture
-}
-
-async fn seen_update(spy: &Spy, provider: Option<&str>, resolution: &Resolution) -> Recorded {
-    let mut fixture = Fixture::new();
-    fixture.provider = provider.map(str::to_owned);
-    call_update(spy, &fixture, resolution, REQUEST_TIMEOUT)
-        .await
-        .expect("the write succeeds");
-    spy.seen().expect("the service saw the write")
-}
-
-async fn refused_update(
-    spy: &Spy,
-    provider: &str,
-    resolution: &Resolution,
-) -> VectorStoreWriteFailure {
-    let fixture = provider_fixture(provider);
-    call_update(spy, &fixture, resolution, REQUEST_TIMEOUT)
-        .await
-        .expect_err("the provider is refused before the write")
-}
-
-async fn refused_aupdate(
-    spy: &Spy,
-    provider: &str,
-    resolution: &Resolution,
-) -> VectorStoreWriteFailure {
-    let fixture = provider_fixture(provider);
-    call_aupdate(spy, &fixture, resolution, REQUEST_TIMEOUT)
-        .await
-        .expect_err("the provider is refused before the write")
-}
-
-async fn refused_delete(
-    spy: &Spy,
-    provider: &str,
-    resolution: &Resolution,
-) -> VectorStoreWriteFailure {
-    let fixture = provider_fixture(provider);
-    call_delete(spy, &fixture, resolution, REQUEST_TIMEOUT)
-        .await
-        .expect_err("the provider is refused before the write")
-}
-
-async fn refused_adelete(
-    spy: &Spy,
-    provider: &str,
-    resolution: &Resolution,
-) -> VectorStoreWriteFailure {
-    let fixture = provider_fixture(provider);
-    call_adelete(spy, &fixture, resolution, REQUEST_TIMEOUT)
-        .await
-        .expect_err("the provider is refused before the write")
 }
 
 // exception_type maps a local ValueError to APIConnectionError with its 500 and no wire fields
@@ -83,14 +27,43 @@ fn assert_connection_failure(failure: &VectorStoreWriteFailure) {
 async fn write_provider_selection() {
     let resolution = Resolution::new();
     let spy = Spy::replying(success());
-    let absent = seen_update(&spy, None, &resolution).await;
-    let named = seen_update(&spy, Some("openai"), &resolution).await;
+    let absent = recorded(
+        Which::Update,
+        &spy,
+        &Fixture::new(),
+        &resolution,
+        REQUEST_TIMEOUT,
+    )
+    .await;
+    let named = recorded(
+        Which::Update,
+        &spy,
+        &provider_fixture("openai"),
+        &resolution,
+        REQUEST_TIMEOUT,
+    )
+    .await;
     assert_eq!(absent, named);
-    let qualified = seen_update(&spy, Some("openai/gpt-4o"), &resolution).await;
+    let qualified = recorded(
+        Which::Update,
+        &spy,
+        &provider_fixture("openai/gpt-4o"),
+        &resolution,
+        REQUEST_TIMEOUT,
+    )
+    .await;
     assert_eq!(qualified.provider, ProviderId::Openai);
     assert_eq!(qualified.config, VectorStoresConfigTag::OpenAI);
     let refused = Spy::replying(success());
-    let unknown = refused_update(&refused, "not_a_provider", &resolution).await;
+    let unknown = call(
+        Which::Update,
+        &refused,
+        &provider_fixture("not_a_provider"),
+        &resolution,
+        REQUEST_TIMEOUT,
+    )
+    .await
+    .expect_err("the provider is refused before the write");
     assert!(
         unknown
             .error
@@ -105,7 +78,15 @@ async fn write_provider_selection() {
 async fn unsupported_provider_reports_the_operation() {
     let resolution = Resolution::new();
     let spy = Spy::replying(success());
-    let update_refusal = refused_update(&spy, "anthropic", &resolution).await;
+    let update_refusal = call(
+        Which::Update,
+        &spy,
+        &provider_fixture("anthropic"),
+        &resolution,
+        REQUEST_TIMEOUT,
+    )
+    .await
+    .expect_err("the provider is refused before the write");
     assert!(
         update_refusal
             .error
@@ -113,7 +94,15 @@ async fn unsupported_provider_reports_the_operation() {
             .contains("Vector store update is not supported for anthropic")
     );
     assert_connection_failure(&update_refusal);
-    let delete_refusal = refused_delete(&spy, "anthropic", &resolution).await;
+    let delete_refusal = call(
+        Which::Delete,
+        &spy,
+        &provider_fixture("anthropic"),
+        &resolution,
+        REQUEST_TIMEOUT,
+    )
+    .await
+    .expect_err("the provider is refused before the write");
     assert!(
         delete_refusal
             .error
@@ -128,9 +117,25 @@ async fn unsupported_provider_reports_the_operation() {
 async fn async_refusals_are_mapped_too() {
     let resolution = Resolution::new();
     let spy = Spy::replying(success());
-    let update_refusal = refused_aupdate(&spy, "anthropic", &resolution).await;
+    let update_refusal = call(
+        Which::Aupdate,
+        &spy,
+        &provider_fixture("anthropic"),
+        &resolution,
+        REQUEST_TIMEOUT,
+    )
+    .await
+    .expect_err("the provider is refused before the write");
     assert_connection_failure(&update_refusal);
-    let delete_refusal = refused_adelete(&spy, "anthropic", &resolution).await;
+    let delete_refusal = call(
+        Which::Adelete,
+        &spy,
+        &provider_fixture("anthropic"),
+        &resolution,
+        REQUEST_TIMEOUT,
+    )
+    .await
+    .expect_err("the provider is refused before the write");
     assert_connection_failure(&delete_refusal);
     assert_eq!(spy.call_count(), 0);
 }
@@ -140,13 +145,35 @@ async fn async_refusals_are_mapped_too() {
 async fn api_type_selects_the_vector_store_config() {
     let resolution = Resolution::new();
     let spy = Spy::replying(success());
-    let rag = seen_update(&spy, Some("vertex_ai/rag_api"), &resolution).await;
+    let rag = recorded(
+        Which::Update,
+        &spy,
+        &provider_fixture("vertex_ai/rag_api"),
+        &resolution,
+        REQUEST_TIMEOUT,
+    )
+    .await;
     assert_eq!(rag.provider, ProviderId::VertexAi);
     assert_eq!(rag.config, VectorStoresConfigTag::Vertex);
-    let search = seen_update(&spy, Some("vertex_ai/search_api"), &resolution).await;
+    let search = recorded(
+        Which::Update,
+        &spy,
+        &provider_fixture("vertex_ai/search_api"),
+        &resolution,
+        REQUEST_TIMEOUT,
+    )
+    .await;
     assert_eq!(search.config, VectorStoresConfigTag::VertexSearchAPI);
     let refused = Spy::replying(success());
-    let unknown_type = refused_update(&refused, "vertex_ai/embedding", &resolution).await;
+    let unknown_type = call(
+        Which::Update,
+        &refused,
+        &provider_fixture("vertex_ai/embedding"),
+        &resolution,
+        REQUEST_TIMEOUT,
+    )
+    .await
+    .expect_err("the provider is refused before the write");
     assert!(
         unknown_type
             .error

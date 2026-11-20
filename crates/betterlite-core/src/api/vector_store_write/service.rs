@@ -14,6 +14,10 @@ use crate::api::vector_store_http_write::error::WriteError;
 use crate::api::vector_store_http_write::params::UpdateParams;
 use crate::api::vector_store_http_write::service::ClientKind;
 
+// the kwargs key each operation's async façade sets, and its sync form's caller may set
+pub(crate) const UPDATE_FLAG: &str = "aupdate";
+pub(crate) const DELETE_FLAG: &str = "adelete";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Operation {
     Update,
@@ -53,7 +57,11 @@ pub trait WriteService: Send + Sync {
 }
 
 // LiteLLM's `kwargs.pop("aupdate", False) is True`: only a boolean true selects the async handler
-pub(crate) fn mode(flag: &str, kwargs: &IndexMap<String, Json>) -> ClientKind {
+pub(crate) fn mode(operation: Operation, kwargs: &IndexMap<String, Json>) -> ClientKind {
+    let flag = match operation {
+        Operation::Update => UPDATE_FLAG,
+        Operation::Delete => DELETE_FLAG,
+    };
     if matches!(kwargs.get(flag), Some(Json::Bool(true))) {
         ClientKind::Asynchronous
     } else {

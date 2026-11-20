@@ -32,7 +32,7 @@ use serde_json::Number;
 use super::super::error::VectorStoreWriteFailure;
 use super::super::service::{Operation, WriteCall, WriteService};
 use super::super::{
-    DeleteRequest, UpdateRequest, VectorStoreWriteDeps, adelete, aupdate, delete, update,
+    TransportRequest, VectorStoreWriteDeps, VectorStoreWriteRequest, VectorStoreWrites,
 };
 use crate::api::vector_store_http_write::config::WriteParams;
 use crate::api::vector_store_http_write::error::{BaseLlmException, HeaderMap, WriteError};
@@ -113,18 +113,6 @@ impl Resolution {
             environment: BTreeMap::new(),
         }
     }
-
-    pub(crate) fn context(&self) -> ResolutionContext<'_> {
-        ResolutionContext {
-            catalog: &self.catalog,
-            known_model_names: &self.names,
-            custom_providers: &self.names,
-            environment: &self.environment,
-            registry: JSONProviderRegistry::default(),
-            policies: ProviderPolicies::default(),
-            globals: GlobalCredentials::default(),
-        }
-    }
 }
 
 pub(crate) fn expires_after() -> VectorStoreExpirationPolicy {
@@ -164,8 +152,9 @@ pub(crate) fn replacement_body() -> IndexMap<String, Json> {
     )])
 }
 
-// one public write call's named arguments and kwargs, as the SDK would pass them
-pub(crate) struct Fixture {
+// the SDK's named arguments and kwargs, with every optional one at its declared default of null
+#[derive(Default)]
+pub(crate) struct Arguments {
     pub(crate) name: Option<String>,
     pub(crate) expires_after: Option<VectorStoreExpirationPolicy>,
     pub(crate) metadata: Option<IndexMap<String, Json>>,
@@ -175,59 +164,49 @@ pub(crate) struct Fixture {
     pub(crate) timeout: Option<f64>,
     pub(crate) provider: Option<String>,
     pub(crate) kwargs: IndexMap<String, Json>,
+}
+
+// one public write call's arguments and the collaborators the production service would receive
+pub(crate) struct Fixture {
+    pub(crate) arguments: Arguments,
     pub(crate) params: WriteParams,
     pub(crate) logging: Mutex<LoggingState>,
     pub(crate) redactor: Redactor,
 }
 
+fn write_params() -> WriteParams {
+    WriteParams {
+        api_base: Some(String::from(API_BASE)),
+        api_key: None,
+        ssl_verify: None,
+    }
+}
+
 impl Fixture {
     pub(crate) fn new() -> Self {
         Self {
-            name: None,
-            expires_after: None,
-            metadata: None,
-            extra_headers: None,
-            extra_query: None,
-            extra_body: None,
-            timeout: None,
-            provider: None,
-            kwargs: IndexMap::new(),
-            params: WriteParams {
-                api_base: Some(String::from(API_BASE)),
-                api_key: None,
-                ssl_verify: None,
-            },
+            arguments: Arguments::default(),
+            params: write_params(),
             logging: Mutex::new(logging()),
             redactor: redactor(),
         }
     }
 
-    pub(crate) fn update(&self) -> UpdateRequest<'_> {
-        UpdateRequest {
-            vector_store_id: VECTOR_STORE_ID,
-            name: self.name.as_deref(),
-            expires_after: self.expires_after.as_ref(),
-            metadata: self.metadata.as_ref(),
-            extra_headers: self.extra_headers.as_ref(),
-            extra_query: self.extra_query.as_ref(),
-            extra_body: self.extra_body.as_ref(),
-            timeout: self.timeout,
-            custom_llm_provider: self.provider.as_deref(),
-            params: &self.params,
-            kwargs: &self.kwargs,
-        }
-    }
-
-    pub(crate) fn delete(&self) -> DeleteRequest<'_> {
-        DeleteRequest {
-            vector_store_id: VECTOR_STORE_ID,
-            extra_headers: self.extra_headers.as_ref(),
-            extra_query: self.extra_query.as_ref(),
-            extra_body: self.extra_body.as_ref(),
-            timeout: self.timeout,
-            custom_llm_provider: self.provider.as_deref(),
-            params: &self.params,
-            kwargs: &self.kwargs,
+    pub(crate) fn request(&self) -> VectorStoreWriteRequest<'_> {
+        VectorStoreWriteRequest {
+            transport: TransportRequest {
+                vector_store_id: VECTOR_STORE_ID,
+                extra_headers: self.arguments.extra_headers.as_ref(),
+                extra_query: self.arguments.extra_query.as_ref(),
+                extra_body: self.arguments.extra_body.as_ref(),
+                timeout: self.arguments.timeout,
+                custom_llm_provider: self.arguments.provider.as_deref(),
+                params: &self.params,
+                kwargs: &self.arguments.kwargs,
+            },
+            name: self.arguments.name.as_deref(),
+            expires_after: self.arguments.expires_after.as_ref(),
+            metadata: self.arguments.metadata.as_ref(),
         }
     }
 }
@@ -245,48 +224,53 @@ pub(crate) fn write_deps<'deps>(
     }
 }
 
-pub(crate) async fn call_update(
-    spy: &Spy,
-    fixture: &Fixture,
-    resolution: &Resolution,
-    request_timeout_seconds: f64,
-) -> Result<Json, VectorStoreWriteFailure> {
-    let context = resolution.context();
-    let deps = write_deps(fixture, &context, request_timeout_seconds);
-    update(spy, deps, &fixture.update()).await
+// which public entry point runs; the sync forms still let an aupdate/adelete flag in kwargs select async
+#[derive(Clone, Copy)]
+pub(crate) enum Which {
+    Update,
+    Aupdate,
+    Delete,
+    Adelete,
 }
 
-pub(crate) async fn call_aupdate(
+pub(crate) async fn call(
+    which: Which,
     spy: &Spy,
     fixture: &Fixture,
     resolution: &Resolution,
     request_timeout_seconds: f64,
 ) -> Result<Json, VectorStoreWriteFailure> {
-    let context = resolution.context();
+    let context = ResolutionContext {
+        catalog: &resolution.catalog,
+        known_model_names: &resolution.names,
+        custom_providers: &resolution.names,
+        environment: &resolution.environment,
+        registry: JSONProviderRegistry::default(),
+        policies: ProviderPolicies::default(),
+        globals: GlobalCredentials::default(),
+    };
     let deps = write_deps(fixture, &context, request_timeout_seconds);
-    aupdate(spy, deps, &fixture.update()).await
+    let writes = VectorStoreWrites { service: spy, deps };
+    let request = fixture.request();
+    match which {
+        Which::Update => writes.update(&request).await,
+        Which::Aupdate => writes.aupdate(&request).await,
+        Which::Delete => writes.delete(&request).await,
+        Which::Adelete => writes.adelete(&request).await,
+    }
 }
 
-pub(crate) async fn call_delete(
+pub(crate) async fn recorded(
+    which: Which,
     spy: &Spy,
     fixture: &Fixture,
     resolution: &Resolution,
     request_timeout_seconds: f64,
-) -> Result<Json, VectorStoreWriteFailure> {
-    let context = resolution.context();
-    let deps = write_deps(fixture, &context, request_timeout_seconds);
-    delete(spy, deps, &fixture.delete()).await
-}
-
-pub(crate) async fn call_adelete(
-    spy: &Spy,
-    fixture: &Fixture,
-    resolution: &Resolution,
-    request_timeout_seconds: f64,
-) -> Result<Json, VectorStoreWriteFailure> {
-    let context = resolution.context();
-    let deps = write_deps(fixture, &context, request_timeout_seconds);
-    adelete(spy, deps, &fixture.delete()).await
+) -> Recorded {
+    call(which, spy, fixture, resolution, request_timeout_seconds)
+        .await
+        .expect("the write succeeds");
+    spy.seen().expect("the service saw the write")
 }
 
 // what the service saw: the call's fields and the logging state the write left behind

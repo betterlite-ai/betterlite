@@ -6,8 +6,8 @@ use serde_json::Number;
 
 use super::super::service::Operation;
 use super::support::{
-    Fixture, REQUEST_TIMEOUT, Resolution, Spy, VECTOR_STORE_ID, auto_chunking, call_update,
-    expires_after, metadata, success,
+    Fixture, REQUEST_TIMEOUT, Resolution, Spy, VECTOR_STORE_ID, Which, auto_chunking, call,
+    expires_after, metadata, recorded, success,
 };
 use crate::api::vector_store_http_write::params::UpdateParams;
 use crate::api::vector_store_http_write::service::ClientKind;
@@ -32,10 +32,10 @@ fn create_fields_kwargs() -> IndexMap<String, Json> {
 
 fn full_fixture() -> Fixture {
     let mut fixture = Fixture::new();
-    fixture.name = Some(String::from("notes"));
-    fixture.expires_after = Some(expires_after());
-    fixture.metadata = Some(metadata());
-    fixture.kwargs = create_fields_kwargs();
+    fixture.arguments.name = Some(String::from("notes"));
+    fixture.arguments.expires_after = Some(expires_after());
+    fixture.arguments.metadata = Some(metadata());
+    fixture.arguments.kwargs = create_fields_kwargs();
     fixture
 }
 
@@ -55,7 +55,7 @@ async fn update_accepts_create_fields() {
     let spy = Spy::replying(success());
     let resolution = Resolution::new();
     let fixture = full_fixture();
-    let value = call_update(&spy, &fixture, &resolution, REQUEST_TIMEOUT)
+    let value = call(Which::Update, &spy, &fixture, &resolution, REQUEST_TIMEOUT)
         .await
         .expect("the mock answer is returned");
     assert_eq!(value, success());
@@ -74,9 +74,10 @@ async fn update_accepts_create_fields_asynchronously() {
     let resolution = Resolution::new();
     let mut fixture = full_fixture();
     fixture
+        .arguments
         .kwargs
         .insert(String::from("aupdate"), Json::Bool(true));
-    let value = call_update(&spy, &fixture, &resolution, REQUEST_TIMEOUT)
+    let value = call(Which::Update, &spy, &fixture, &resolution, REQUEST_TIMEOUT)
         .await
         .expect("the mock answer is returned");
     assert_eq!(value, success());
@@ -90,9 +91,9 @@ async fn update_keeps_empty_name_and_metadata() {
     let spy = Spy::replying(success());
     let resolution = Resolution::new();
     let mut fixture = Fixture::new();
-    fixture.name = Some(String::new());
-    fixture.metadata = Some(IndexMap::new());
-    call_update(&spy, &fixture, &resolution, REQUEST_TIMEOUT)
+    fixture.arguments.name = Some(String::new());
+    fixture.arguments.metadata = Some(IndexMap::new());
+    call(Which::Update, &spy, &fixture, &resolution, REQUEST_TIMEOUT)
         .await
         .expect("the mock answer is returned");
     let seen = spy.seen().expect("the service saw the write");
@@ -113,11 +114,14 @@ async fn update_drops_null_fields() {
     let spy = Spy::replying(success());
     let resolution = Resolution::new();
     let mut fixture = Fixture::new();
-    fixture.kwargs.insert(String::from("name"), Json::Null);
-    fixture.kwargs.insert(String::from("metadata"), Json::Null);
-    call_update(&spy, &fixture, &resolution, REQUEST_TIMEOUT)
-        .await
-        .expect("the mock answer is returned");
-    let seen = spy.seen().expect("the service saw the write");
+    fixture
+        .arguments
+        .kwargs
+        .insert(String::from("name"), Json::Null);
+    fixture
+        .arguments
+        .kwargs
+        .insert(String::from("metadata"), Json::Null);
+    let seen = recorded(Which::Update, &spy, &fixture, &resolution, REQUEST_TIMEOUT).await;
     assert_eq!(seen.optional_params, UpdateParams::default());
 }
