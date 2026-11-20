@@ -9,7 +9,7 @@ use serde_json::json;
 
 use super::super::deferral::{DeferralContext, defer_post_call_pipelines};
 use super::super::slots::post_call_pipelines;
-use super::{capture_warnings, object, pipeline, pipeline_pairs};
+use super::{capture_warnings, json_object, object, pipeline, pipeline_pairs};
 
 struct FakeContext {
     resolved: BTreeMap<String, Vec<String>>,
@@ -63,23 +63,9 @@ fn metadata_of(request: &JsonMap) -> &JsonMap {
     request.get("metadata").unwrap().as_object().unwrap()
 }
 
-#[test]
-fn deferring_without_post_call_pipelines_leaves_the_request_alone() {
-    let mut request = deferral_data(&[], vec![("applied_guardrails", json!(["pii"]))]);
-    let expected = request.clone();
-    let policies = post_call_pipelines(&request);
-    let deferred = context(&[], &[]);
-    let (_, log) = capture_warnings(|| {
-        defer_post_call_pipelines(&mut request, "resp_1", "queued", &policies, &deferred)
-    });
-    assert_eq!(request, expected);
-    assert!(!log.contains("WARN"), "{log}");
-}
-
-#[test]
-fn deferring_warns_for_tag_and_body_matches_and_withdraws_claims() {
+fn tag_and_body_request() -> JsonMap {
     let guardrails: &[&str] = &["pii", "block"];
-    let mut request = deferral_data(
+    deferral_data(
         &[
             ("policy-tag", pipeline(PipelineMode::PostCall, guardrails)),
             ("policy-body", pipeline(PipelineMode::PostCall, guardrails)),
@@ -92,21 +78,44 @@ fn deferring_warns_for_tag_and_body_matches_and_withdraws_claims() {
             ("applied_guardrails", json!(["pii", "block", "keep"])),
             (
                 "policy_sources",
-                json!({"policy-tag": "tag:team-a", "policy-keep": "key"}),
+                json_object(vec![
+                    ("policy-tag", json!("tag:team-a")),
+                    ("policy-keep", json!("key")),
+                ]),
             ),
         ],
-    );
+    )
+}
+
+#[test]
+fn deferring_without_post_call_pipelines_leaves_the_request_alone() {
+    let mut request = deferral_data(&[], vec![("applied_guardrails", json!(["pii"]))]);
+    let expected = request.clone();
     let policies = post_call_pipelines(&request);
+    let deferred = context(&[], &[]);
+    let ((), log) = capture_warnings(|| {
+        defer_post_call_pipelines(&mut request, "resp_1", "queued", &policies, &deferred);
+    });
+    assert_eq!(request, expected);
+    assert!(!log.contains("WARN"), "{log}");
+}
+
+#[test]
+fn deferring_warns_for_tag_and_body_matches() {
+    let mut request = tag_and_body_request();
+    let policies = post_call_pipelines(&request);
+    let guardrails: &[&str] = &["pii", "block"];
     let deferred = context(
         &[("policy-tag", guardrails), ("policy-body", guardrails)],
         &[],
     );
-    let (_, log) = capture_warnings(|| {
-        defer_post_call_pipelines(&mut request, "resp_1", "queued", &policies, &deferred)
+    let ((), log) = capture_warnings(|| {
+        defer_post_call_pipelines(&mut request, "resp_1", "queued", &policies, &deferred);
     });
-    assert!(log.contains("DEBUG"), "{log}");
-    assert!(log.contains("resp_1"), "{log}");
-    assert!(log.contains("WARN"), "{log}");
+    assert!(
+        log.contains("DEBUG") && log.contains("resp_1") && log.contains("WARN"),
+        "{log}"
+    );
     let tag_line = log
         .lines()
         .find(|line| line.contains("request tag"))
@@ -117,6 +126,18 @@ fn deferring_warns_for_tag_and_body_matches_and_withdraws_claims() {
         .find(|line| line.contains("request body's policies"))
         .unwrap();
     assert!(body_line.contains("policy-body"), "{log}");
+}
+
+#[test]
+fn deferring_withdraws_claims_for_matched_policies() {
+    let mut request = tag_and_body_request();
+    let policies = post_call_pipelines(&request);
+    let guardrails: &[&str] = &["pii", "block"];
+    let deferred = context(
+        &[("policy-tag", guardrails), ("policy-body", guardrails)],
+        &[],
+    );
+    defer_post_call_pipelines(&mut request, "resp_1", "queued", &policies, &deferred);
     let metadata = metadata_of(&request);
     assert_eq!(
         metadata.get("applied_policies"),
@@ -125,7 +146,7 @@ fn deferring_warns_for_tag_and_body_matches_and_withdraws_claims() {
     assert_eq!(metadata.get("applied_guardrails"), Some(&json!(["keep"])));
     assert_eq!(
         metadata.get("policy_sources"),
-        Some(&json!({"policy-keep": "key"}))
+        Some(&json_object(vec![("policy-keep", json!("key"))]))
     );
 }
 
@@ -135,13 +156,16 @@ fn deferring_treats_a_non_string_policy_source_as_not_a_tag_match() {
         &[("policy-a", pipeline(PipelineMode::PostCall, &["pii"]))],
         vec![
             ("applied_policies", json!(["policy-a"])),
-            ("policy_sources", json!({"policy-a": ["tag:team-a"]})),
+            (
+                "policy_sources",
+                json_object(vec![("policy-a", json!(["tag:team-a"]))]),
+            ),
         ],
     );
     let policies = post_call_pipelines(&request);
     let deferred = context(&[("policy-a", &["pii"])], &[]);
-    let (_, log) = capture_warnings(|| {
-        defer_post_call_pipelines(&mut request, "resp_1", "queued", &policies, &deferred)
+    let ((), log) = capture_warnings(|| {
+        defer_post_call_pipelines(&mut request, "resp_1", "queued", &policies, &deferred);
     });
     assert!(!log.contains("request tag"), "{log}");
     assert!(!log.contains("request body's policies"), "{log}");
@@ -157,7 +181,10 @@ fn deferring_keeps_a_policy_with_a_guardrail_outside_the_pipeline() {
         vec![
             ("applied_policies", json!(["policy-a"])),
             ("applied_guardrails", json!(["pii"])),
-            ("policy_sources", json!({"policy-a": "key"})),
+            (
+                "policy_sources",
+                json_object(vec![("policy-a", json!("key"))]),
+            ),
         ],
     );
     let policies = post_call_pipelines(&request);
@@ -167,7 +194,7 @@ fn deferring_keeps_a_policy_with_a_guardrail_outside_the_pipeline() {
     assert_eq!(metadata.get("applied_policies"), Some(&json!(["policy-a"])));
     assert_eq!(
         metadata.get("policy_sources"),
-        Some(&json!({"policy-a": "key"}))
+        Some(&json_object(vec![("policy-a", json!("key"))]))
     );
     assert!(metadata.get("applied_guardrails").is_none());
 }
@@ -199,13 +226,13 @@ fn deferring_keeps_step_guardrails_that_run_elsewhere() {
 fn deferring_keeps_a_claim_entry_it_cannot_name() {
     let mut request = deferral_data(
         &[("policy-a", pipeline(PipelineMode::PostCall, &["pii"]))],
-        vec![("applied_guardrails", json!(["pii", 7]))],
+        vec![("applied_guardrails", json!(["pii", 7_i64]))],
     );
     let policies = post_call_pipelines(&request);
     let deferred = context(&[("policy-a", &["pii"])], &[]);
     defer_post_call_pipelines(&mut request, "resp_1", "queued", &policies, &deferred);
     let metadata = metadata_of(&request);
-    assert_eq!(metadata.get("applied_guardrails"), Some(&json!([7])));
+    assert_eq!(metadata.get("applied_guardrails"), Some(&json!([7_i64])));
 }
 
 #[test]
@@ -234,7 +261,10 @@ fn deferring_pops_policy_sources_when_every_policy_is_withdrawn() {
         &[("policy-a", pipeline(PipelineMode::PostCall, &["pii"]))],
         vec![
             ("applied_policies", json!(["policy-a"])),
-            ("policy_sources", json!({"policy-a": "body"})),
+            (
+                "policy_sources",
+                json_object(vec![("policy-a", json!("body"))]),
+            ),
         ],
     );
     let policies = post_call_pipelines(&request);
@@ -255,7 +285,7 @@ fn deferring_writes_into_the_litellm_metadata_bucket_when_present() {
     let policies = post_call_pipelines(&request);
     let deferred = context(&[("policy-a", &["pii"])], &[]);
     defer_post_call_pipelines(&mut request, "resp_1", "queued", &policies, &deferred);
-    assert_eq!(request.get("litellm_metadata"), Some(&json!({})));
+    assert_eq!(request.get("litellm_metadata"), Some(&json_object(vec![])));
     assert_eq!(
         metadata_of(&request).get("applied_policies"),
         Some(&json!(["policy-a"]))
@@ -271,5 +301,5 @@ fn deferring_creates_the_metadata_bucket_when_absent() {
     )];
     let deferred = context(&[("policy-a", &["pii"])], &[]);
     defer_post_call_pipelines(&mut request, "resp_1", "queued", &policies, &deferred);
-    assert_eq!(request.get("metadata"), Some(&json!({})));
+    assert_eq!(request.get("metadata"), Some(&json_object(vec![])));
 }

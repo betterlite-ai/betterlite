@@ -10,7 +10,7 @@ use serde_json::json;
 use super::super::model_guardrails::{
     Deployment, DeploymentGuardrails, merge_guardrails_with_existing, merge_model_level_guardrails,
 };
-use super::object;
+use super::{json_object, object};
 
 struct FakeDeployments {
     by_id: BTreeMap<String, Deployment>,
@@ -47,6 +47,17 @@ fn deployments_by_name(
     BTreeMap::from([((model_name.to_owned(), team_id.map(str::to_owned)), entries)])
 }
 
+fn model_info(id: JsonValue) -> JsonValue {
+    json_object(vec![("model_info", json_object(vec![("id", id)]))])
+}
+
+fn guarded_metadata(id: &str, guardrails: JsonValue) -> JsonValue {
+    json_object(vec![
+        ("model_info", json_object(vec![("id", json!(id))])),
+        ("guardrails", guardrails),
+    ])
+}
+
 #[test]
 fn model_guardrails_without_a_router_return_the_data_unchanged() {
     let request = object(vec![("metadata", json!("broken"))]);
@@ -58,7 +69,7 @@ fn model_guardrails_without_a_router_return_the_data_unchanged() {
 fn model_guardrails_from_a_trusted_deployment_id_merge_into_a_copy() {
     let request = object(vec![(
         "metadata",
-        json!({"model_info": {"id": "dep-1"}, "guardrails": ["pii"]}),
+        guarded_metadata("dep-1", json!(["pii"])),
     )]);
     let lookup = FakeDeployments {
         by_id: deployments_by_id("dep-1", json!(["block"])),
@@ -68,20 +79,17 @@ fn model_guardrails_from_a_trusted_deployment_id_merge_into_a_copy() {
     let merged = merge_model_level_guardrails(&request, Some(finder), true, None).unwrap();
     assert_eq!(
         merged.get("metadata"),
-        Some(&json!({
-            "model_info": {"id": "dep-1"},
-            "guardrails": ["pii", "block"],
-        }))
+        Some(&guarded_metadata("dep-1", json!(["pii", "block"])))
     );
     assert_eq!(
         request.get("metadata"),
-        Some(&json!({"model_info": {"id": "dep-1"}, "guardrails": ["pii"]}))
+        Some(&guarded_metadata("dep-1", json!(["pii"])))
     );
 }
 
 #[test]
 fn model_guardrails_wrap_a_bare_string_from_the_deployment() {
-    let request = object(vec![("metadata", json!({"model_info": {"id": "dep-1"}}))]);
+    let request = object(vec![("metadata", model_info(json!("dep-1")))]);
     let lookup = FakeDeployments {
         by_id: deployments_by_id("dep-1", json!("block")),
         by_name: BTreeMap::new(),
@@ -90,7 +98,7 @@ fn model_guardrails_wrap_a_bare_string_from_the_deployment() {
     let merged = merge_model_level_guardrails(&request, Some(finder), true, None).unwrap();
     assert_eq!(
         merged.get("metadata"),
-        Some(&json!({"model_info": {"id": "dep-1"}, "guardrails": ["block"]}))
+        Some(&guarded_metadata("dep-1", json!(["block"])))
     );
 }
 
@@ -105,13 +113,13 @@ fn model_guardrails_wrap_a_bare_string_from_the_alias_group() {
     let merged = merge_model_level_guardrails(&request, Some(finder), true, None).unwrap();
     assert_eq!(
         merged.get("metadata"),
-        Some(&json!({"guardrails": ["pii", "block"]}))
+        Some(&json_object(vec![("guardrails", json!(["pii", "block"]))]))
     );
 }
 
 #[test]
 fn model_guardrails_without_a_deployment_setting_leave_the_data() {
-    let request = object(vec![("metadata", json!({"model_info": {"id": "dep-1"}}))]);
+    let request = object(vec![("metadata", model_info(json!("dep-1")))]);
     let lookup = FakeDeployments {
         by_id: BTreeMap::from([("dep-1".to_owned(), Deployment { guardrails: None })]),
         by_name: BTreeMap::new(),
@@ -123,10 +131,7 @@ fn model_guardrails_without_a_deployment_setting_leave_the_data() {
 
 #[test]
 fn model_guardrails_with_an_empty_list_still_normalize_the_metadata() {
-    let request = object(vec![(
-        "metadata",
-        json!({"model_info": {"id": "dep-1"}, "guardrails": "pii"}),
-    )]);
+    let request = object(vec![("metadata", guarded_metadata("dep-1", json!("pii")))]);
     let lookup = FakeDeployments {
         by_id: deployments_by_id("dep-1", json!([])),
         by_name: BTreeMap::new(),
@@ -135,7 +140,7 @@ fn model_guardrails_with_an_empty_list_still_normalize_the_metadata() {
     let merged = merge_model_level_guardrails(&request, Some(finder), true, None).unwrap();
     assert_eq!(
         merged.get("metadata"),
-        Some(&json!({"model_info": {"id": "dep-1"}, "guardrails": ["pii"]}))
+        Some(&guarded_metadata("dep-1", json!(["pii"])))
     );
 }
 
@@ -143,7 +148,7 @@ fn model_guardrails_with_an_empty_list_still_normalize_the_metadata() {
 fn model_guardrails_with_an_unknown_id_leave_the_data() {
     let request = object(vec![
         ("model", json!("alias")),
-        ("metadata", json!({"model_info": {"id": "missing"}})),
+        ("metadata", model_info(json!("missing"))),
     ]);
     let lookup = FakeDeployments {
         by_id: BTreeMap::new(),
@@ -158,7 +163,7 @@ fn model_guardrails_with_an_unknown_id_leave_the_data() {
 fn model_guardrails_treat_a_non_string_id_as_an_unknown_deployment() {
     let request = object(vec![
         ("model", json!("alias")),
-        ("metadata", json!({"model_info": {"id": 7}})),
+        ("metadata", model_info(json!(7_i64))),
     ]);
     let lookup = FakeDeployments {
         by_id: BTreeMap::new(),
@@ -173,7 +178,7 @@ fn model_guardrails_treat_a_non_string_id_as_an_unknown_deployment() {
 fn model_guardrails_ignore_the_id_when_client_model_info_is_untrusted() {
     let request = object(vec![
         ("model", json!("alias")),
-        ("metadata", json!({"model_info": {"id": "dep-1"}})),
+        ("metadata", model_info(json!("dep-1"))),
     ]);
     let lookup = FakeDeployments {
         by_id: deployments_by_id("dep-1", json!(["block"])),
@@ -183,7 +188,7 @@ fn model_guardrails_ignore_the_id_when_client_model_info_is_untrusted() {
     let merged = merge_model_level_guardrails(&request, Some(finder), false, None).unwrap();
     assert_eq!(
         merged.get("metadata"),
-        Some(&json!({"model_info": {"id": "dep-1"}, "guardrails": ["pii"]}))
+        Some(&guarded_metadata("dep-1", json!(["pii"])))
     );
 }
 
@@ -191,7 +196,10 @@ fn model_guardrails_ignore_the_id_when_client_model_info_is_untrusted() {
 fn model_guardrails_union_the_alias_group_for_the_team() {
     let request = object(vec![
         ("model", json!("ignored")),
-        ("metadata", json!({"user_api_key_team_id": "team-a"})),
+        (
+            "metadata",
+            json_object(vec![("user_api_key_team_id", json!("team-a"))]),
+        ),
     ]);
     let lookup = FakeDeployments {
         by_id: BTreeMap::new(),
@@ -205,10 +213,10 @@ fn model_guardrails_union_the_alias_group_for_the_team() {
     let merged = merge_model_level_guardrails(&request, Some(finder), true, Some("alias")).unwrap();
     assert_eq!(
         merged.get("metadata"),
-        Some(&json!({
-            "user_api_key_team_id": "team-a",
-            "guardrails": ["pii", "block"],
-        }))
+        Some(&json_object(vec![
+            ("user_api_key_team_id", json!("team-a")),
+            ("guardrails", json!(["pii", "block"])),
+        ]))
     );
 }
 
@@ -218,7 +226,7 @@ fn model_guardrails_read_the_team_from_litellm_metadata() {
         ("model", json!("alias")),
         (
             "litellm_metadata",
-            json!({"user_api_key_team_id": "team-b"}),
+            json_object(vec![("user_api_key_team_id", json!("team-b"))]),
         ),
     ]);
     let distinct = deployments_by_name("alias", Some("team-b"), vec![json!(["pii"])]);
@@ -232,7 +240,7 @@ fn model_guardrails_read_the_team_from_litellm_metadata() {
     let merged = merge_model_level_guardrails(&request, Some(finder), true, None).unwrap();
     assert_eq!(
         merged.get("metadata"),
-        Some(&json!({"guardrails": ["pii"]}))
+        Some(&json_object(vec![("guardrails", json!(["pii"]))]))
     );
 }
 
@@ -240,7 +248,10 @@ fn model_guardrails_read_the_team_from_litellm_metadata() {
 fn model_guardrails_treat_a_non_string_team_id_as_unset() {
     let request = object(vec![
         ("model", json!("alias")),
-        ("metadata", json!({"user_api_key_team_id": 7})),
+        (
+            "metadata",
+            json_object(vec![("user_api_key_team_id", json!(7_i64))]),
+        ),
     ]);
     let lookup = FakeDeployments {
         by_id: BTreeMap::new(),
@@ -250,13 +261,16 @@ fn model_guardrails_treat_a_non_string_team_id_as_unset() {
     let merged = merge_model_level_guardrails(&request, Some(finder), true, None).unwrap();
     assert_eq!(
         merged.get("metadata"),
-        Some(&json!({"user_api_key_team_id": 7, "guardrails": ["pii"]}))
+        Some(&json_object(vec![
+            ("user_api_key_team_id", json!(7_i64)),
+            ("guardrails", json!(["pii"])),
+        ]))
     );
 }
 
 #[rstest]
 #[case::missing_model(object(vec![]))]
-#[case::non_string_model(object(vec![("model", json!(7))]))]
+#[case::non_string_model(object(vec![("model", json!(7_i64))]))]
 #[case::empty_model(object(vec![("model", json!(""))]))]
 fn model_guardrails_without_an_alias_leave_the_data(#[case] request: JsonMap) {
     let lookup = FakeDeployments {
@@ -284,9 +298,15 @@ fn model_guardrails_leave_the_data_when_the_alias_group_carries_none() {
 }
 
 #[rstest]
-#[case::metadata(object(vec![("metadata", json!([1, 2]))]), "metadata")]
+#[case::metadata(object(vec![("metadata", json!([1_i64, 2_i64]))]), "metadata")]
 #[case::litellm_metadata(object(vec![("litellm_metadata", json!("text"))]), "litellm_metadata")]
-#[case::model_info(object(vec![("metadata", json!({"model_info": 5}))]), "metadata.model_info")]
+#[case::model_info(
+    object(vec![(
+        "metadata",
+        json_object(vec![("model_info", json!(5_i64))]),
+    )]),
+    "metadata.model_info"
+)]
 fn model_guardrails_name_the_misplaced_object(#[case] request: JsonMap, #[case] field: &str) {
     let lookup = FakeDeployments {
         by_id: BTreeMap::new(),
@@ -301,7 +321,7 @@ fn model_guardrails_name_the_misplaced_object(#[case] request: JsonMap, #[case] 
 fn guardrail_merge_creates_metadata_and_unions_names() {
     let request = object(vec![
         ("model", json!("gpt-4o")),
-        ("metadata", json!({"team": "acme"})),
+        ("metadata", json_object(vec![("team", json!("acme"))])),
     ]);
     let merged = merge_guardrails_with_existing(&request, &json!(["pii", "block"])).unwrap();
     assert_eq!(
@@ -310,7 +330,10 @@ fn guardrail_merge_creates_metadata_and_unions_names() {
             ("model", json!("gpt-4o")),
             (
                 "metadata",
-                json!({"team": "acme", "guardrails": ["pii", "block"]}),
+                json_object(vec![
+                    ("team", json!("acme")),
+                    ("guardrails", json!(["pii", "block"])),
+                ]),
             ),
         ])
     );
@@ -318,11 +341,14 @@ fn guardrail_merge_creates_metadata_and_unions_names() {
 
 #[test]
 fn guardrail_merge_wraps_scalars_on_both_sides() {
-    let request = object(vec![("metadata", json!({"guardrails": "pii"}))]);
+    let request = object(vec![(
+        "metadata",
+        json_object(vec![("guardrails", json!("pii"))]),
+    )]);
     let merged = merge_guardrails_with_existing(&request, &json!("block")).unwrap();
     assert_eq!(
         merged.get("metadata"),
-        Some(&json!({"guardrails": ["pii", "block"]}))
+        Some(&json_object(vec![("guardrails", json!(["pii", "block"]))]))
     );
 }
 
@@ -330,27 +356,40 @@ fn guardrail_merge_wraps_scalars_on_both_sides() {
 fn guardrail_merge_deduplicates_names() {
     let request = object(vec![(
         "metadata",
-        json!({"guardrails": ["pii", "block"], "team": "acme"}),
+        json_object(vec![
+            ("guardrails", json!(["pii", "block"])),
+            ("team", json!("acme")),
+        ]),
     )]);
     let merged =
         merge_guardrails_with_existing(&request, &json!(["block", "pii", "moderation"])).unwrap();
     assert_eq!(
         merged.get("metadata"),
-        Some(&json!({
-            "guardrails": ["pii", "block", "moderation"],
-            "team": "acme",
-        }))
+        Some(&json_object(vec![
+            ("guardrails", json!(["pii", "block", "moderation"])),
+            ("team", json!("acme")),
+        ]))
     );
 }
 
 #[test]
 fn guardrail_merge_keeps_a_nested_entry_once() {
-    let request = object(vec![("metadata", json!({"guardrails": [{"name": "pii"}]}))]);
-    let merged =
-        merge_guardrails_with_existing(&request, &json!([{"name": "pii"}, "block"])).unwrap();
+    let nested = json_object(vec![("name", json!("pii"))]);
+    let request = object(vec![(
+        "metadata",
+        json_object(vec![("guardrails", JsonValue::Array(vec![nested.clone()]))]),
+    )]);
+    let extra = JsonValue::Array(vec![nested, json!("block")]);
+    let merged = merge_guardrails_with_existing(&request, &extra).unwrap();
     assert_eq!(
         merged.get("metadata"),
-        Some(&json!({"guardrails": [{"name": "pii"}, "block"]}))
+        Some(&json_object(vec![(
+            "guardrails",
+            JsonValue::Array(vec![
+                json_object(vec![("name", json!("pii"))]),
+                json!("block"),
+            ]),
+        )]))
     );
 }
 
@@ -360,7 +399,10 @@ fn guardrail_merge_treats_a_null_model_level_list_as_empty() {
     let merged = merge_guardrails_with_existing(&request, &JsonValue::Null).unwrap();
     assert_eq!(
         merged,
-        object(vec![("metadata", json!({"guardrails": []}))])
+        object(vec![(
+            "metadata",
+            json_object(vec![("guardrails", json!([]))]),
+        )])
     );
 }
 
@@ -370,27 +412,33 @@ fn guardrail_merge_treats_a_null_metadata_as_absent() {
     let merged = merge_guardrails_with_existing(&request, &json!(["pii"])).unwrap();
     assert_eq!(
         merged,
-        object(vec![("metadata", json!({"guardrails": ["pii"]}))])
+        object(vec![(
+            "metadata",
+            json_object(vec![("guardrails", json!(["pii"]))]),
+        )])
     );
 }
 
 #[test]
 fn guardrail_merge_never_changes_the_given_request() {
-    let request = object(vec![("metadata", json!({"guardrails": ["pii"]}))]);
+    let request = object(vec![(
+        "metadata",
+        json_object(vec![("guardrails", json!(["pii"]))]),
+    )]);
     let merged = merge_guardrails_with_existing(&request, &json!(["block"])).unwrap();
     assert_eq!(
         merged.get("metadata"),
-        Some(&json!({"guardrails": ["pii", "block"]}))
+        Some(&json_object(vec![("guardrails", json!(["pii", "block"]))]))
     );
     assert_eq!(
         request.get("metadata"),
-        Some(&json!({"guardrails": ["pii"]}))
+        Some(&json_object(vec![("guardrails", json!(["pii"]))]))
     );
 }
 
 #[test]
 fn guardrail_merge_rejects_a_non_object_metadata() {
-    let request = object(vec![("metadata", json!(7))]);
+    let request = object(vec![("metadata", json!(7_i64))]);
     let error = merge_guardrails_with_existing(&request, &json!(["pii"])).unwrap_err();
     assert_eq!(error.to_string(), "'metadata' must be an object");
 }

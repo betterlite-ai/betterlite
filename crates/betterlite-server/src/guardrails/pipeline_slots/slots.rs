@@ -33,12 +33,13 @@ pub fn policy_pipelines(data: &JsonMap) -> Vec<(String, GuardrailPipeline)> {
     };
     let mut pipelines = Vec::with_capacity(entries.len());
     for entry in entries {
-        match pipeline_pair(entry) {
-            Some(pair) => pipelines.push(pair),
-            None => tracing::warn!(
+        let Some(pair) = pipeline_pair(entry) else {
+            tracing::warn!(
                 "Policy engine: ignoring a stored guardrail pipeline that is not a [policy name, pipeline] pair"
-            ),
-        }
+            );
+            continue;
+        };
+        pipelines.push(pair);
     }
     pipelines
 }
