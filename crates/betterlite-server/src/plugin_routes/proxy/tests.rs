@@ -26,8 +26,9 @@ fn plugin_state(upstream: Arc<FakeUpstream>) -> PluginState {
 }
 
 fn key_header(source: &Arc<KeyHeaderSource>) -> Option<Arc<dyn KeyHeaderName>> {
-    let shared: Arc<dyn KeyHeaderName> = Arc::clone(source);
-    Some(shared)
+    let concrete: Arc<KeyHeaderSource> = Arc::clone(source);
+    let erased: Arc<dyn KeyHeaderName> = concrete;
+    Some(erased)
 }
 
 fn get_request(uri: &str) -> Request<Body> {
@@ -242,7 +243,8 @@ async fn answers_502_when_a_forwarded_header_is_invalid() {
     let plugins = registry(
         r#"{"plugins":[{"name":"litellm-platform-plugin","url":"http://plugin.local","plugin_key":"sk\nplugin"}]}"#,
     );
-    let app = router(state(plugins, Arc::clone(&upstream), None));
+    let concrete: Arc<FakeUpstream> = Arc::clone(&upstream);
+    let app = router(state(plugins, concrete, None));
     let request = authorized(
         get_request("/plugin-proxy/litellm-platform-plugin/path"),
         master_key(),
@@ -335,11 +337,8 @@ async fn drops_unsafe_response_headers_and_forces_the_sandbox() {
 async fn reads_the_custom_key_header_on_every_request() {
     let upstream = FakeUpstream::answering(reply(StatusCode::OK, ""));
     let source = KeyHeaderSource::named("X-Custom-Key");
-    let app = router(state(
-        platform_registry(),
-        Arc::clone(&upstream),
-        key_header(&source),
-    ));
+    let concrete: Arc<FakeUpstream> = Arc::clone(&upstream);
+    let app = router(state(platform_registry(), concrete, key_header(&source)));
     let mut first = authorized(
         get_request("/plugin-proxy/litellm-platform-plugin/path"),
         master_key(),
@@ -401,7 +400,8 @@ async fn forwards_the_plugin_name_from_the_path() {
     let plugins = registry(
         r#"{"plugins":[{"name":"one","url":"http://one.local"},{"name":"two","url":"http://two.local"}]}"#,
     );
-    let app = router(state(plugins, Arc::clone(&upstream), None));
+    let concrete: Arc<FakeUpstream> = Arc::clone(&upstream);
+    let app = router(state(plugins, concrete, None));
     let request = authorized(get_request("/plugin-proxy/two/deep/path"), master_key());
     let (_status, _headers, _body) = send(app, request).await;
     let sent = upstream.sent();
