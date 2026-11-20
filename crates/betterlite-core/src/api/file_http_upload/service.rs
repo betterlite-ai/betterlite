@@ -209,7 +209,7 @@ where
         .map_err(UploadError::Provider)
 }
 
-// The plan's shape picks the branch; only a sync byte body is decoded before the traditional send
+// The plan's shape picks the branch; only a sync byte body is decoded before it is sent
 async fn run_plan<C, S>(
     exchange: &mut Exchange<'_, '_, C, S>,
     plan: UploadPlan,
@@ -222,10 +222,14 @@ where
         UploadPlan::TwoStep(two_step) => exchange.two_step(&two_step).await,
         UploadPlan::Presigned(presigned) => exchange.presigned(&presigned).await,
         UploadPlan::Media(media) => exchange.media(*media).await,
-        UploadPlan::Text(text) => exchange.traditional(text.into_bytes()).await,
+        UploadPlan::Text(text) => {
+            exchange
+                .base_body(UploadBody::Bytes(text.into_bytes()))
+                .await
+        }
         UploadPlan::Bytes(bytes) => {
             let body = traditional_body(exchange.mode, &bytes)?;
-            exchange.traditional(body).await
+            exchange.base_body(UploadBody::Bytes(body)).await
         }
         UploadPlan::Multipart(multipart) => exchange.multipart(multipart.parts).await,
         UploadPlan::Unsupported(_) => Err(UploadError::UnsupportedPlan),

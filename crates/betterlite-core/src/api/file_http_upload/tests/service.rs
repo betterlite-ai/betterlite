@@ -1,17 +1,19 @@
+use betterlite_anthropic::files::request::create_file_parts;
 use betterlite_models::decisions::Json;
 use betterlite_openai::files::records::FileCreate;
+use betterlite_prompts::media_metadata::{FileBody, FileData};
 use http::Method;
 
 use crate::api::file_http_upload::config::{
     FileParams, FileResponse, FileUploadConfig, Headers, UploadParams,
 };
 use crate::api::file_http_upload::error::{TransformFailure, UploadError, UrlFailure};
-use crate::api::file_http_upload::plan::UploadPlan;
+use crate::api::file_http_upload::plan::{MultipartPlan, UploadPlan};
 use crate::api::file_http_upload::service::Mode;
 use crate::api::vector_store_http_write::error::BaseLlmException;
 
 use super::{
-    API_BASE, Config, FakeTransport, Harness, Wire, answer, create_call, manus_config, params,
+    API_BASE, Config, FakeTransport, Harness, NOW, Wire, answer, create_call, manus_config, params,
     text_plan, two_step_plan,
 };
 
@@ -85,6 +87,25 @@ async fn supplied_client_is_used_only_for_its_own_mode() {
         .unwrap();
     assert!(supplied.wire.seen().is_empty());
     assert_eq!(harness.seen().len(), 1);
+}
+
+// a multipart plan always posts, as LiteLLM's files= argument is a POST whatever the config asks
+#[tokio::test]
+async fn multipart_upload_is_post_even_when_the_config_asks_put() {
+    let file = FileData::Tuple3 {
+        filename: Some(String::from("rows.jsonl")),
+        content: FileBody::Bytes(b"{\"row\":1}\n".to_vec()),
+        content_type: Some(String::from("application/jsonl")),
+    };
+    let parts = create_file_parts(Some(&file), Some("batch"), NOW).expect("anthropic parts");
+    let plan = UploadPlan::Multipart(Box::new(MultipartPlan { parts }));
+    let config = Config::with_method(plan, API_BASE, Method::PUT);
+    let mut harness = Harness::build(config, vec![answer(200, &[], b"{}")]);
+    harness
+        .run(Mode::Sync, &create_call(), &params())
+        .await
+        .unwrap();
+    assert_eq!(harness.seen()[0].method, Method::POST);
 }
 
 // a verb the HTTP client has no method for fails naming it, where LiteLLM raises AttributeError

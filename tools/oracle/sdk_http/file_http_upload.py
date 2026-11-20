@@ -86,7 +86,7 @@ class RequestValue(TypedDict):
     url: NotRequired[str]
 
 
-TwoStepValue = dict[str, RequestValue | Literal["headers", "body"] | str]
+TwoStepValue = dict[str, RequestValue | str]
 MediaValue = dict[str, dict[str, BaseFileUploadStream | str | None]]
 Transformed = TwoStepValue | RequestValue | MediaValue | MultipartValue | str | bytes
 
