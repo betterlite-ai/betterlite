@@ -1,6 +1,5 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
 use std::mem;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
@@ -270,6 +269,7 @@ struct JsonRun {
     outcome: ImageGenerationOutcome,
     fixture: Fixture,
     recorder: Recorder,
+    base: String,
 }
 
 async fn json_generation() -> JsonRun {
@@ -309,6 +309,7 @@ async fn json_generation() -> JsonRun {
         outcome: outcome.expect("the image response"),
         fixture,
         recorder,
+        base,
     }
 }
 
@@ -317,7 +318,7 @@ async fn generation_json_transport() {
     let run = json_generation().await;
     assert_json_request(&run.captured);
     assert_json_response(&run.outcome);
-    assert_json_effects(&run.fixture, &run.recorder);
+    assert_json_effects(&run.fixture, &run.recorder, &run.base);
 }
 
 // The body is the request transform's dict alone: extra_body is accepted by the handler and never merged
@@ -362,26 +363,28 @@ fn assert_json_response(outcome: &ImageGenerationOutcome) {
 }
 
 // The handler hands the explicit key to validation and the stored one to the URL, and only extra_headers overlays
-fn assert_json_effects(fixture: &Fixture, recorder: &Recorder) {
-    let recorded = fixture.recorded();
-    assert_eq!(recorded.validate_api_key.as_deref(), Some("direct"));
+fn assert_json_effects(fixture: &Fixture, recorder: &Recorder, base: &str) {
+    let config_calls = fixture.recorded();
+    assert_eq!(config_calls.validate_api_key.as_deref(), Some("direct"));
     assert_eq!(
-        recorded.validate_headers,
+        config_calls.validate_headers,
         Some(header_map(&[("x", "option")]))
     );
-    assert_eq!(recorded.validate_messages, Some(0));
-    assert_eq!(recorded.url_api_key.as_deref(), Some("stored"));
+    assert_eq!(config_calls.validate_messages, Some(0));
+    assert_eq!(config_calls.url_api_key.as_deref(), Some("stored"));
     assert_eq!(
-        recorded.transform_headers,
+        config_calls.transform_headers,
         Some(header_map(&[("x", "explicit")]))
     );
     assert_eq!(recorder.api_key.as_deref(), Some(""));
     assert_eq!(recorder.input.as_deref(), Some("cat"));
+    assert_eq!(recorder.api_base.as_deref(), Some(base));
     assert_eq!(recorder.headers, Some(header_map(&[("x", "explicit")])));
     let expected = fields(&[
         ("model", Json::Text(String::from("image-model"))),
         ("prompt", Json::Text(String::from("cat"))),
     ]);
+    assert_eq!(config_calls.request_data, Some(expected.clone()));
     assert_eq!(recorder.complete_input_dict, Some(expected));
 }
 
@@ -527,6 +530,38 @@ async fn generation_multipart_fields() {
     assert!(body.contains("name=\"quality\"\r\n\r\n80\r\n"));
     assert!(body.contains("name=\"style\"\r\n\r\na\r\n"));
     assert!(body.contains("name=\"style\"\r\n\r\nb\r\n"));
+}
+
+// A form field cannot hold an object or a list holding one, so the assembly names the field instead of sending
+#[test]
+fn generation_refuses_object_form_fields() {
+    let mut object = multipart_fixture();
+    object.echo = fields(&[(
+        "image",
+        Json::Object(fields(&[("url", Json::Text(String::from("a")))])),
+    )]);
+    let mut nested = multipart_fixture();
+    nested.echo = fields(&[(
+        "images",
+        Json::List(vec![Json::Object(fields(&[(
+            "url",
+            Json::Text(String::from("a")),
+        )]))]),
+    )]);
+    for (fixture, expected) in [(&object, "image"), (&nested, "images")] {
+        let params = litellm_params("http://127.0.0.1:9/v1", None, None);
+        let error = prepare_error(
+            fixture,
+            &params,
+            &caller_options(None),
+            &mut Recorder::default(),
+        )
+        .expect_err("the form value failure");
+        match error {
+            ImageGenerationError::FormValue { field } => assert_eq!(field, expected),
+            other => panic!("expected the form value failure, got {other}"),
+        }
+    }
 }
 
 struct FailureRun {
@@ -779,8 +814,10 @@ fn assert_assembly_failures() {
         source: &source,
         supplied: None,
     };
-    let error =
-        prepare(&deps, ClientKind::Sync, &call, &mut recorder).expect_err("the client failure");
+    let error = match prepare(&deps, ClientKind::Sync, &call, &mut recorder) {
+        Ok(_prepared) => panic!("the client failure must fail the prepare"),
+        Err(error) => error,
+    };
     assert!(matches!(error, ImageGenerationError::Client(_)));
 }
 
