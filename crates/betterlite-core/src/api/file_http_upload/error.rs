@@ -124,14 +124,14 @@ pub fn status_failure(status: u16, body: &[u8], headers: &http::HeaderMap) -> Fa
     }
 }
 
-// httpx raises on every 4xx/5xx answer except the sync client's put, which hands its answer back unjudged
+// httpx raises on every answer outside 200..=299 except the sync client's put, which hands its answer back unjudged
 pub(super) fn raise_for_status(
     mode: Mode,
     method: &Method,
     response: &UpstreamResponse,
 ) -> Result<(), UploadError> {
     let unjudged = mode == Mode::Sync && *method == Method::PUT;
-    if unjudged || !(400..600).contains(&response.status) {
+    if unjudged || (200..=299).contains(&response.status) {
         return Ok(());
     }
     Err(UploadError::Provider(handle_error(

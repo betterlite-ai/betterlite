@@ -6,6 +6,7 @@ use betterlite_openai::api::file_type_records::{UploadData, UploadUrlLocation};
 use betterlite_openai::files::records::FileCreate;
 use betterlite_prompts::media_metadata::{FileBody, FileData};
 use http::Method;
+use http::header::CONTENT_TYPE;
 use rstest::rstest;
 
 use crate::api::file_http_upload::config::{
@@ -189,17 +190,51 @@ async fn two_step_initial_status_failure_keeps_the_provider_status(#[case] mode:
     );
 }
 
-// a redirect is not an error for httpx, so the two-step still reads the upload URL from it
+// httpx raises on every status outside 200..=299, so an unfollowed 3xx fails before the location decode
+#[rstest]
+#[case::multiple_choices(300)]
+#[case::found(302)]
+#[case::not_modified(304)]
 #[tokio::test]
-async fn two_step_redirect_answer_still_reads_the_location() {
+async fn two_step_redirect_answer_is_a_provider_error(#[case] status_code: u16) {
     let mut harness = Harness::new(
         manus_plan(),
         API_BASE,
         vec![
             answer(
-                302,
+                status_code,
                 &[("content-type", "application/json")],
                 b"{\"upload_url\":\"http://uploads.example.test/manus/2\"}",
+            ),
+            answer(200, &[], b"{\"id\":\"file-1\"}"),
+        ],
+    );
+    let error = provider_failure(
+        harness
+            .run(Mode::Sync, &create_call(), &params())
+            .await
+            .unwrap_err(),
+    );
+    assert_eq!(error.status_code, status_code);
+    assert!(!error.status_code_is_synthesized);
+    assert_eq!(
+        error.headers.get("content-type"),
+        Some(&text("application/json"))
+    );
+    assert_eq!(harness.seen().len(), 1);
+}
+
+// 299 is the last status httpx treats as a success, so the two-step reads the URL and sends its second request
+#[tokio::test]
+async fn two_step_accepts_a_299_answer() {
+    let mut harness = Harness::new(
+        manus_plan(),
+        API_BASE,
+        vec![
+            answer(
+                299,
+                &[],
+                b"{\"upload_url\":\"http://uploads.example.test/manus/299\"}",
             ),
             answer(200, &[], b"{\"id\":\"file-1\"}"),
         ],
@@ -208,7 +243,10 @@ async fn two_step_redirect_answer_still_reads_the_location() {
         .run(Mode::Sync, &create_call(), &params())
         .await
         .unwrap();
-    assert_eq!(harness.seen()[1].url, "http://uploads.example.test/manus/2");
+    assert_eq!(
+        harness.seen()[1].url,
+        "http://uploads.example.test/manus/299"
+    );
     assert_eq!(field(&result, "status"), &status(200));
 }
 
@@ -423,5 +461,42 @@ async fn two_step_upload_default_url_key() {
     assert_eq!(
         harness.seen()[1].url,
         "http://uploads.example.test/default/1"
+    );
+}
+
+// a text plan uses PUT only when the provider config asks for it
+#[rstest]
+#[case::post(Method::POST, Method::POST)]
+#[case::put(Method::PUT, Method::PUT)]
+#[tokio::test]
+async fn upload_text_method(#[case] method: Method, #[case] expected: Method) {
+    let mut harness = Harness::build(
+        Config::with_method(text_plan(), API_BASE, method),
+        vec![answer(200, &[], b"{}")],
+    );
+    harness
+        .run(Mode::Sync, &create_call(), &params())
+        .await
+        .unwrap();
+    assert_eq!(harness.seen()[0].method, expected);
+}
+
+// httpx sends a str or bytes data= body under application/octet-stream when the plan names no type
+#[tokio::test]
+async fn raw_upload_defaults_to_octet_stream() {
+    let mut harness = Harness::build(
+        Config::with_method(text_plan(), API_BASE, Method::PUT),
+        vec![answer(200, &[], b"{}")],
+    );
+    harness
+        .run(Mode::Sync, &create_call(), &params())
+        .await
+        .unwrap();
+    assert_eq!(
+        harness.seen()[0]
+            .headers
+            .get(CONTENT_TYPE)
+            .expect("the octet-stream default"),
+        "application/octet-stream"
     );
 }
