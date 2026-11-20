@@ -36,14 +36,9 @@ use super::transport::{ClientSink, Frames, Locked as _, RecordingBackend, Script
 
 const DEADLINE: Duration = Duration::from_secs(120);
 
-#[derive(Debug, Default)]
-struct Recorded {
-    details: Vec<(String, Json)>,
-}
-
 #[derive(Debug, Clone, Default)]
 struct Recorder {
-    recorded: Arc<Mutex<Recorded>>,
+    details: Arc<Mutex<Vec<(String, Json)>>>,
 }
 
 // LiteLLM's logging object only reports the two completion flags, and the queue admits every success work
@@ -51,7 +46,7 @@ impl RealtimeLogging for Recorder {
     fn pre_call(&self, _input: &SessionInput<'_>, _api_key: &str) {}
 
     fn record_model_call_detail(&self, key: &str, value: Json) {
-        self.recorded.locked().details.push((key.to_owned(), value));
+        self.details.locked().push((key.to_owned(), value));
     }
 
     fn dispatch_success_handlers(&self, _messages: &[IndexMap<String, Json>]) -> SuccessWork {
@@ -95,7 +90,11 @@ impl Probe {
         let mut state =
             RealtimeStreaming::new(connection(input, provider, &client, &backend, &recorder));
         state.setup.pending_messages_until_setup = input.pending.clone();
-        state.setup.pending_messages_byte_total = byte_total(&input.pending);
+        state.setup.pending_messages_byte_total = input
+            .pending
+            .iter()
+            .map(String::len)
+            .fold(0_usize, usize::saturating_add);
         Self {
             state,
             source: ScriptedSource {
@@ -111,7 +110,7 @@ impl Probe {
     }
 
     fn snapshot(&self, close: &BackendClose) -> Value {
-        let recorded = self.recorder.recorded.locked();
+        let details = self.recorder.details.locked();
         json!({
             "close": {"code": close.code, "reason": close.reason},
             "client": frames(&self.client),
@@ -120,8 +119,8 @@ impl Probe {
             "messages": records(&self.state.messages),
             "input_messages": records(&self.state.input_messages),
             "logged": {
-                "success": detail(&recorded, SUCCESS_LOGGED_KEY),
-                "failure": detail(&recorded, FAILURE_LOGGED_KEY),
+                "success": detail(&details, SUCCESS_LOGGED_KEY),
+                "failure": detail(&details, FAILURE_LOGGED_KEY),
             },
         })
     }
@@ -157,12 +156,6 @@ fn connection(
     }
 }
 
-fn byte_total(pending: &[String]) -> usize {
-    pending.iter().fold(0_usize, |total, message| {
-        total.saturating_add(message.len())
-    })
-}
-
 fn records(messages: &[IndexMap<String, Json>]) -> Vec<Json> {
     messages
         .iter()
@@ -170,15 +163,15 @@ fn records(messages: &[IndexMap<String, Json>]) -> Vec<Json> {
         .collect()
 }
 
-fn detail(recorded: &Recorded, key: &str) -> Option<bool> {
-    recorded.details.iter().find_map(|(name, value)| {
-        if name != key {
-            return None;
-        }
-        match value {
-            Json::Bool(flag) => Some(*flag),
-            Json::Null | Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => None,
-        }
+fn detail(details: &[(String, Json)], key: &str) -> Option<bool> {
+    details.iter().find_map(|(name, value)| match value {
+        Json::Bool(flag) if name == key => Some(*flag),
+        Json::Bool(_)
+        | Json::Null
+        | Json::Number(_)
+        | Json::Text(_)
+        | Json::List(_)
+        | Json::Object(_) => None,
     })
 }
 

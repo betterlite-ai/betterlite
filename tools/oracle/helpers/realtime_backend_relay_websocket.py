@@ -8,19 +8,17 @@ from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.litellm_core_utils.realtime_streaming import BackendClose, RealTimeStreaming
 from litellm.llms.base_llm.realtime.transformation import BaseRealtimeConfig, RealtimeBackend
 from litellm.types.llms.openai import OpenAIRealtimeOutputItemDone, OpenAIRealtimeResponseDelta
-from litellm.types.realtime import (
-    RealtimeInputAudioTranscriptionUsage as InputUsage,
-    RealtimeResponseTransformInput as TransformInput,
-)
+from litellm.types.realtime import RealtimeInputAudioTranscriptionUsage as InputUsage
+from litellm.types.realtime import RealtimeResponseTransformInput as TransformInput
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
 from typing_extensions import override
 from websockets.exceptions import ConnectionClosed
 from websockets.frames import Close
 
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
-MAX_FRAMES = 32
-MAX_TEXT_BYTES = 16 * 1024
-MAX_TOTAL_BYTES = 256 * 1024
+MAX_FRAMES: Final = 32
+MAX_TEXT_BYTES: Final = 16 * 1024
+MAX_TOTAL_BYTES: Final = 256 * 1024
 
 
 class CloseDocument(TypedDict):
@@ -64,10 +62,7 @@ class LoggedDetails(BaseModel):
 
 class ProviderMethods(Protocol):
     def transform_realtime_request(
-        self,
-        message: str,
-        _model: str,
-        _session_configuration_request: str | None = None,
+        self, message: str, _model: str, _session_configuration_request: str | None = None
     ) -> Sequence[str | bytes]: ...
 
     def transform_realtime_response(
@@ -97,43 +92,13 @@ class BackendMethods(Protocol):
     async def close(self) -> None: ...
 
 
-def checked(input_value: Input) -> None:
-    texts = [*input_value["frames"], *input_value["pending"]]
-    if (
-        len(input_value["frames"]) > MAX_FRAMES
-        or len(input_value["pending"]) > MAX_FRAMES
-        or any(len(text.encode("utf-8")) > MAX_TEXT_BYTES for text in texts)
-        or sum(len(text.encode("utf-8")) for text in texts) > MAX_TOTAL_BYTES
-    ):
-        raise ValueError("the scripted relay input is past its limits")
-
-
-def closed(document: CloseDocument | None) -> ConnectionClosed:
-    if document is None:
-        return ConnectionClosed(None, None)
-    return ConnectionClosed(Close(document["code"], document["reason"]), None)
-
-
-def frame(text: str) -> JsonValue:
-    try:
-        value = JSON.validate_json(text)
-    except ValidationError:
-        text_frame: dict[str, JsonValue] = {"kind": "text", "text": text}
-        return text_frame
-    json_frame: dict[str, JsonValue] = {"kind": "json", "value": value}
-    return json_frame
-
-
 class ScriptedProvider(ProviderMethods):
     def __init__(self, document: ProviderDocument) -> None:
         self._document = document
 
     @override
     def transform_realtime_request(
-        self,
-        message: str,
-        _model: str,
-        _session_configuration_request: str | None = None,
+        self, message: str, _model: str, _session_configuration_request: str | None = None
     ) -> Sequence[str | bytes]:
         return [message]
 
@@ -193,7 +158,10 @@ class ScriptedBackend(BackendMethods):
     async def recv(self, *, decode: bool | None = None) -> str:
         self.decode_calls.append(decode)
         if not self._frames:
-            raise closed(self._close)
+            document = self._close
+            if document is None:
+                raise ConnectionClosed(None, None)
+            raise ConnectionClosed(Close(document["code"], document["reason"]), None)
         return self._frames.pop(0)
 
     @override
@@ -223,9 +191,15 @@ class Probe(RealTimeStreaming):
 
     def pending(self, messages: list[str]) -> None:
         self._pending_messages_until_setup = messages
-        self._pending_messages_byte_total = sum(
-            len(message.encode("utf-8")) for message in messages
-        )
+        self._pending_messages_byte_total = sum(len(message.encode()) for message in messages)
+
+
+def frame(text: str) -> JsonValue:
+    try:
+        value = JSON.validate_json(text)
+    except ValidationError:
+        return {"kind": "text", "text": text}
+    return {"kind": "json", "value": value}
 
 
 def snapshot(
@@ -236,10 +210,11 @@ def snapshot(
     logging_obj: Logging,
 ) -> JsonValue:
     flags = LoggedDetails.model_validate(logging_obj).model_call_details
+    close_frame: dict[str, JsonValue] = {"code": close.code, "reason": close.reason}
     client_frames: list[JsonValue] = [frame(text) for text in client.sent]
     backend_frames: list[JsonValue] = [frame(text) for text in backend.sent]
     payload: dict[str, JsonValue] = {
-        "close": {"code": close.code, "reason": close.reason},
+        "close": JSON.validate_python(close_frame),
         "client": JSON.validate_python(client_frames),
         "backend": JSON.validate_python(backend_frames),
         "decode_calls": JSON.validate_python(backend.decode_calls),
@@ -251,7 +226,14 @@ def snapshot(
 
 
 def run(input_value: Input) -> JsonValue:
-    checked(input_value)
+    texts = [*input_value["frames"], *input_value["pending"]]
+    if (
+        len(input_value["frames"]) > MAX_FRAMES
+        or len(input_value["pending"]) > MAX_FRAMES
+        or any(len(text.encode()) > MAX_TEXT_BYTES for text in texts)
+        or sum(len(text.encode()) for text in texts) > MAX_TOTAL_BYTES
+    ):
+        raise ValueError("the scripted relay input is past its limits")
     litellm.logged_real_time_event_types = "*"
     logging_obj = Logging(
         model="scripted",
@@ -266,12 +248,11 @@ def run(input_value: Input) -> JsonValue:
     client = ProbeClient()
     backend = ScriptedBackend(input_value["frames"], input_value["close"])
     document = input_value["provider"]
-    provider = None if document is None else ScriptedProvider(document)
     streaming = Probe(
         client,
         backend,
         logging_obj,
-        provider,
+        None if document is None else ScriptedProvider(document),
         input_value["force_transcription_model"],
     )
     streaming.pending(input_value["pending"])

@@ -3,7 +3,7 @@ name: transformed-session-ready
 call:
   realtime_backend_relay_websocket:
     provider:
-      requires_session_configuration: true
+      requires_session_configuration: false
     frames:
       - '{"type":"session.created","session":{"id":"s1"}}'
       - '{"type":"session.created","session":{"id":"s2"}}'
