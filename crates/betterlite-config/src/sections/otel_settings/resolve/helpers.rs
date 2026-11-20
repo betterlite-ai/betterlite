@@ -35,6 +35,26 @@ pub(super) fn normalized_exclusions(value: Option<ExclusionInput>) -> Vec<String
         .collect()
 }
 
+// the explicit list exactly as written: absent and null stay None, an empty list stays Some(empty)
+pub(super) fn configured_exclusions(value: Option<ExclusionInput>) -> Option<Vec<String>> {
+    match value {
+        None | Some(ExclusionInput::Ignored(_)) => None,
+        Some(ExclusionInput::Csv(text)) => Some(csv_values(&text)),
+        Some(ExclusionInput::List(items)) => Some(
+            items
+                .into_iter()
+                .filter_map(|item| match item {
+                    ExclusionInput::Csv(text) => Some(text),
+                    ExclusionInput::List(_) | ExclusionInput::Ignored(_) => {
+                        tracing::warn!("excluded_services entries must be strings; ignoring entry");
+                        None
+                    }
+                })
+                .collect(),
+        ),
+    }
+}
+
 pub(super) fn environment_or<L, T, F>(
     lookup: &L,
     names: &[&str],

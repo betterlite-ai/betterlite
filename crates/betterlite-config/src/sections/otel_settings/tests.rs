@@ -523,3 +523,79 @@ fn baggage_team_metadata_keys_env_var_takes_effect(#[case] name: &str) {
         ["region:zone", "team.id"]
     );
 }
+
+#[test]
+fn metric_attributes_load_include_and_exclude_lists() {
+    let config = load(
+        "callback_settings:\n  otel:\n    attributes:\n      include_list: [gen_ai.request.model]\n      exclude_list: [hidden_params]\n",
+        &[],
+    );
+    let attributes = config
+        .sections
+        .otel_settings
+        .attributes
+        .expect("the attributes mapping loads");
+    assert_eq!(
+        attributes.include_list.as_deref(),
+        Some(["gen_ai.request.model".to_owned()].as_slice())
+    );
+    assert_eq!(
+        attributes.exclude_list.as_deref(),
+        Some(["hidden_params".to_owned()].as_slice())
+    );
+}
+
+#[test]
+fn metric_attributes_absent_leave_none() {
+    let config = load("callback_settings: {otel: {service_name: api}}", &[]);
+    assert!(config.sections.otel_settings.attributes.is_none());
+}
+
+#[rstest::rstest]
+#[case::scalar("attributes: readable")]
+#[case::unknown_key("attributes: {include: [gen_ai.request.model]}")]
+#[case::nested_value("attributes: {include_list: {name: gen_ai.request.model}}")]
+fn metric_attributes_reject_a_shape_the_filter_cannot_read(#[case] attributes: &str) {
+    let yaml = format!("callback_settings:\n  otel:\n    {attributes}\n");
+    let error = ConfigLoader {
+        lookup: BTreeMap::<String, String>::new(),
+    }
+    .load(&yaml)
+    .expect_err("the attributes shape is refused");
+    assert!(
+        error
+            .to_string()
+            .contains("callback_settings.otel.attributes"),
+        "{error}"
+    );
+}
+
+#[rstest::rstest]
+#[case::absent("", None)]
+#[case::empty_list("    excluded_services: []\n", Some(&[][..]))]
+#[case::csv("    excluded_services: postgres,redis\n", Some(&["postgres", "redis"][..]))]
+#[case::list("    excluded_services: [postgres]\n", Some(&["postgres"][..]))]
+#[case::null("    excluded_services: null\n", None)]
+fn configured_exclusions_keep_absent_apart_from_empty(
+    #[case] body: &str,
+    #[case] expected: Option<&[&str]>,
+) {
+    let config = load(&format!("callback_settings:\n  otel:\n{body}"), &[]);
+    let settings = &config.sections.otel_settings;
+    let named: Option<Vec<String>> = expected.map(|names| {
+        names
+            .iter()
+            .map(|name| (*name).to_owned())
+            .collect::<Vec<_>>()
+    });
+    assert_eq!(settings.configured_excluded_services, named);
+    assert_eq!(settings.excluded_services, named.unwrap_or_default());
+}
+
+#[test]
+fn configured_exclusions_do_not_merge_the_environment() {
+    let config = load("", &[("LITELLM_OTEL_EXCLUDED_SERVICES", "postgres")]);
+    let settings = &config.sections.otel_settings;
+    assert!(settings.configured_excluded_services.is_none());
+    assert_eq!(settings.excluded_services, ["postgres"]);
+}

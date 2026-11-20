@@ -57,6 +57,22 @@ struct RawOtel {
     baggage_metadata_keys: Option<ListSetting>,
     #[serde(alias = "LITELLM_OTEL_BAGGAGE_TEAM_METADATA_KEYS")]
     baggage_team_metadata_keys: Option<ListSetting>,
+    attributes: Option<AttributesInput>,
+}
+
+// LiteLLM's OTELMetricAttributeFilter: a mapping whose only keys are the two lists
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct OtelAttributes {
+    pub include_list: Option<Vec<String>>,
+    pub exclude_list: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+enum AttributesInput {
+    Fields(OtelAttributes),
+    Other(IgnoredAny),
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -102,6 +118,8 @@ pub struct Settings {
     pub legacy_compat: bool,
     pub langfuse_span_scope: String,
     pub excluded_services: Vec<String>,
+    pub configured_excluded_services: Option<Vec<String>>,
+    pub attributes: Option<OtelAttributes>,
     pub exporters: Vec<ExporterSpec>,
     pub mapper_names: Vec<String>,
     pub resource_attributes: BTreeMap<String, String>,

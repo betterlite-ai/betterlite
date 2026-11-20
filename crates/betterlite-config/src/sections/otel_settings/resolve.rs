@@ -1,7 +1,6 @@
-use super::{ExporterSpec, ListSetting, Raw, RawOtel, Settings};
+use super::{AttributesInput, ExporterSpec, ListSetting, OtelAttributes, Raw, RawOtel, Settings};
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
-
 impl Section for Raw {
     type Settings = Settings;
 
@@ -28,6 +27,7 @@ impl Section for Raw {
             baggage_metadata_keys,
             baggage_team_metadata_keys,
         ] = resolve_baggage(&raw, lookup);
+        let attributes = resolve_attributes(raw.attributes.take())?;
         Ok(Settings {
             exporter: core.exporter,
             endpoint: core.endpoint,
@@ -41,6 +41,8 @@ impl Section for Raw {
             legacy_compat: core.legacy_compat,
             langfuse_span_scope: core.langfuse_span_scope,
             excluded_services: core.excluded_services,
+            configured_excluded_services: core.configured_excluded_services,
+            attributes,
             exporters,
             mapper_names,
             resource_attributes: raw.resource_attributes.unwrap_or_default(),
@@ -65,6 +67,7 @@ struct CoreSettings {
     legacy_compat: bool,
     langfuse_span_scope: String,
     excluded_services: Vec<String>,
+    configured_excluded_services: Option<Vec<String>>,
 }
 
 impl CoreSettings {
@@ -81,6 +84,7 @@ impl CoreSettings {
             deployment_environment,
         ] = string_settings(raw, lookup);
         let excluded_services = resolve_exclusions(raw, lookup);
+        let configured_excluded_services = configured_exclusions(raw.excluded_services.clone());
         let features = FeatureSettings::resolve(raw, lookup)?;
         let shorthand_explicit = configured_exporter.is_some()
             || endpoint.is_some()
@@ -101,6 +105,7 @@ impl CoreSettings {
             legacy_compat: features.legacy_compat,
             langfuse_span_scope: features.langfuse_span_scope,
             excluded_services,
+            configured_excluded_services,
         })
     }
 }
@@ -216,6 +221,19 @@ where
     names
 }
 
+// the proxy carries otel.attributes typed, so a shape no metric filter accepts fails the load, not a request
+fn resolve_attributes(
+    input: Option<AttributesInput>,
+) -> Result<Option<OtelAttributes>, ConfigError> {
+    match input {
+        None => Ok(None),
+        Some(AttributesInput::Fields(attributes)) => Ok(Some(attributes)),
+        Some(AttributesInput::Other(_)) => Err(ConfigError::Unsupported {
+            paths: vec!["callback_settings.otel.attributes".to_owned()],
+        }),
+    }
+}
+
 fn resolve_exporters(raw: &RawOtel, core: &CoreSettings) -> Vec<ExporterSpec> {
     if let Some(exporters) = raw
         .exporters
@@ -249,8 +267,9 @@ fn resolve_exporters(raw: &RawOtel, core: &CoreSettings) -> Vec<ExporterSpec> {
 mod helpers;
 pub(super) use helpers::csv_values;
 use helpers::{
-    DEFAULT_BAGGAGE_METADATA_KEYS, DEFAULT_BAGGAGE_PROMOTED_KEYS, default_baggage_keys,
-    environment_or, resolve_exclusions, setting_bool, string_settings, structured_setting,
+    DEFAULT_BAGGAGE_METADATA_KEYS, DEFAULT_BAGGAGE_PROMOTED_KEYS, configured_exclusions,
+    default_baggage_keys, environment_or, resolve_exclusions, setting_bool, string_settings,
+    structured_setting,
 };
 
 mod references;
