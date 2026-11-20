@@ -1,22 +1,46 @@
 from collections.abc import Callable, Sequence
-from typing import TypeVar
+from typing import TypeAlias, TypeVar
 
 import litellm
 from pydantic import JsonValue
 
-from .answers import (
+from .structured_write_back import (
+    DeferRequest,
+    FoldRequest,
+    HoistedRequest,
+    StructuredRequest,
+    SystemConversionRequest,
     defer_answer,
     fold_answer,
     hoisted_answer,
+    structured_answer,
+    system_conversion_answer,
+)
+from .write_back import (
+    MessageTextRequest,
+    ResponsesToInputRequest,
+    SystemBlockRequest,
+    ToolCallsRequest,
+    ToolUseRequest,
     message_text_answer,
     responses_answer,
-    structured_answer,
     system_block_answer,
-    system_conversion_answer,
     tool_calls_answer,
     tool_use_answer,
 )
-from .inputs import Input
+
+Input: TypeAlias = (
+    DeferRequest
+    | FoldRequest
+    | HoistedRequest
+    | MessageTextRequest
+    | ResponsesToInputRequest
+    | StructuredRequest
+    | SystemBlockRequest
+    | SystemConversionRequest
+    | ToolCallsRequest
+    | ToolUseRequest
+)
 
 Case = TypeVar("Case")
 

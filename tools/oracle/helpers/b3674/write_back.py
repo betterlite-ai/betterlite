@@ -1,7 +1,7 @@
 import asyncio
-from collections.abc import Callable, Coroutine, Mapping, Sequence
+from collections.abc import Callable, Coroutine, Sequence
 from dataclasses import dataclass
-from typing import Protocol, TypeAlias, cast
+from typing import Literal, Protocol, TypeAlias, TypedDict, cast
 
 from litellm.llms.anthropic.chat.guardrail_translation.handler import (
     AnthropicMessagesHandler,
@@ -24,20 +24,122 @@ from litellm.llms.anthropic.chat.guardrail_translation.handler import (
 from litellm.llms.base_llm.guardrail_translation.utils import UnappliableRequestRewrite
 from pydantic import JsonValue
 
-from .inputs import (
-    DataScenario,
-    DeferScenario,
-    FoldScenario,
-    MessageTextScenario,
-    MessageTextTargetInput,
-    ResponsesToInputScenario,
-    StructuredScenario,
-    SystemBlockScenario,
-    SystemConversionScenario,
-    TargetInput,
-    ToolCallsScenario,
-    ToolUseScenario,
+
+class SystemStringTargetInput(TypedDict):
+    kind: Literal["system_string"]
+
+
+class SystemBlockTextTargetInput(TypedDict):
+    kind: Literal["system_block_text"]
+    block_idx: int
+
+
+class MessageContentTargetInput(TypedDict):
+    kind: Literal["message_content"]
+    msg_idx: int
+
+
+class ContentBlockTextTargetInput(TypedDict):
+    kind: Literal["content_block_text"]
+    msg_idx: int
+    content_idx: int
+
+
+class ToolResultStringTargetInput(TypedDict):
+    kind: Literal["tool_result_string"]
+    msg_idx: int
+    content_idx: int
+
+
+class ToolResultBlockTextTargetInput(TypedDict):
+    kind: Literal["tool_result_block_text"]
+    msg_idx: int
+    content_idx: int
+    block_idx: int
+
+
+MessageTextTargetInput: TypeAlias = (
+    ContentBlockTextTargetInput
+    | MessageContentTargetInput
+    | ToolResultBlockTextTargetInput
+    | ToolResultStringTargetInput
 )
+TargetInput: TypeAlias = (
+    MessageTextTargetInput | SystemBlockTextTargetInput | SystemStringTargetInput
+)
+
+
+class ToolTarget(TypedDict):
+    msg_idx: int
+    content_idx: int
+
+
+class ScannedTextItem(TypedDict):
+    text: str
+    target: TargetInput
+
+
+class ScannedCallItem(TypedDict):
+    tool_call: dict[str, JsonValue]
+    tool_target: ToolTarget
+
+
+class SystemBlockScenario(TypedDict):
+    system: JsonValue
+    block_idx: int
+    response: str
+
+
+class MessageTextScenario(TypedDict):
+    message: dict[str, JsonValue]
+    target: MessageTextTargetInput
+    response: str
+
+
+class ResponsesToInputScenario(TypedDict):
+    data: dict[str, JsonValue]
+    responses: list[str]
+    scanned_texts: list[ScannedTextItem]
+
+
+class ToolUseScenario(TypedDict):
+    message: dict[str, JsonValue]
+    tool_target: ToolTarget
+    shape_name: str | None
+    arguments: str
+
+
+class ToolCallsScenario(TypedDict):
+    messages: list[JsonValue]
+    scanned_calls: list[ScannedCallItem]
+    pre: list[JsonValue]
+    returned: list[JsonValue] | None
+    guardrail_name: str | None
+
+
+class SystemBlockRequest(TypedDict):
+    function: Literal["system_block"]
+    scenarios: list[SystemBlockScenario]
+
+
+class MessageTextRequest(TypedDict):
+    function: Literal["message_text"]
+    scenarios: list[MessageTextScenario]
+
+
+class ResponsesToInputRequest(TypedDict):
+    function: Literal["responses_to_input"]
+    scenarios: list[ResponsesToInputScenario]
+
+
+class ToolUseRequest(TypedDict):
+    function: Literal["tool_use"]
+    scenarios: list[ToolUseScenario]
+
+
+class ToolCallsRequest(TypedDict):
+    function: Literal["tool_calls"]
+    scenarios: list[ToolCallsScenario]
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,14 +159,6 @@ class ToolCallShapeView(Protocol):
 WriteResponses: TypeAlias = Callable[
     [dict[str, JsonValue], Sequence[str], tuple[ScannedText, ...]],
     Coroutine[JsonValue, JsonValue, None],
-]
-ReadHoisted: TypeAlias = Callable[[Mapping[str, JsonValue]], dict[str, JsonValue] | None]
-ConvertSystemRow: TypeAlias = Callable[[Mapping[str, JsonValue]], dict[str, JsonValue] | None]
-FoldLeading: TypeAlias = Callable[[dict[str, JsonValue], Sequence[JsonValue], bool], None]
-DeferSystems: TypeAlias = Callable[[Sequence[JsonValue]], list[JsonValue]]
-WriteStructured: TypeAlias = Callable[
-    [dict[str, JsonValue], Sequence[JsonValue], Mapping[str, JsonValue] | None, bool],
-    None,
 ]
 ApplyToolCalls: TypeAlias = Callable[
     [
@@ -98,11 +192,6 @@ def input_target(target: TargetInput) -> InputWriteBackTarget:
     if target["kind"] == "system_block_text":
         return SystemBlockTextTarget(block_idx=target["block_idx"])
     return message_target(target)
-
-
-def hoisted_reader() -> ReadHoisted:
-    handler = AnthropicMessagesHandler()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L302-L304
-    return cast(ReadHoisted, handler._hoisted_top_level_system_message)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L686-L699
 
 
 def system_block_answer(scenario: SystemBlockScenario) -> dict[str, JsonValue]:
@@ -164,33 +253,3 @@ def tool_calls_answer(scenario: ToolCallsScenario) -> dict[str, JsonValue]:
     except UnappliableRequestRewrite:
         outcome = "unappliable"
     return {"messages": messages, "outcome": outcome}
-
-
-def hoisted_answer(scenario: DataScenario) -> dict[str, JsonValue]:
-    message = hoisted_reader()(scenario["data"])
-    return {"message": message}
-
-
-def system_conversion_answer(scenario: SystemConversionScenario) -> dict[str, JsonValue]:
-    convert = cast(ConvertSystemRow, AnthropicMessagesHandler._openai_system_message_to_anthropic)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L714-L739
-    row = convert(scenario["message"])
-    return {"row": row}
-
-
-def fold_answer(scenario: FoldScenario) -> dict[str, JsonValue]:
-    fold = cast(FoldLeading, AnthropicMessagesHandler._fold_leading_systems_into_top_level)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L741-L772
-    fold(scenario["data"], scenario["leading"], scenario["include_existing"])
-    return {"data": scenario["data"]}
-
-
-def defer_answer(scenario: DeferScenario) -> dict[str, JsonValue]:
-    defer = cast(DeferSystems, AnthropicMessagesHandler._defer_systems_inside_tool_exchanges)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L790-L820
-    return {"messages": defer(scenario["messages"])}
-
-
-def structured_answer(scenario: StructuredScenario) -> dict[str, JsonValue]:
-    data = scenario["data"]
-    hoisted = hoisted_reader()(data) if scenario["compute_hoisted"] else None
-    write = cast(WriteStructured, AnthropicMessagesHandler._write_back_structured_messages)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L822-L891
-    write(data, scenario["messages"], hoisted, scenario["preserve_system_messages"])
-    return {"data": data}
