@@ -30,6 +30,7 @@ upstream:
 compare:
   headers:
     - content-type
+    - llm_provider-x-request-id
     - x-litellm-model-group
     - x-litellm-model-id
     - x-litellm-model-name
