@@ -1,0 +1,120 @@
+kind: helper
+name: vector-tool-selection-selection-order-and-overrides
+call:
+  vector_tool_selection:
+    operation: selection
+    stores:
+      - vector_store_id: vs_a
+        custom_llm_provider: openai
+        litellm_params:
+          max_num_results: 9
+          filters:
+            stored: y
+          api_key: k
+      - vector_store_id: vs_b
+        custom_llm_provider: openai
+    non_default_params:
+      model: gpt-4o
+      vector_store_ids: [vs_b, vs_a, vs_b, unknown]
+    tools:
+      - type: file_search
+        vector_store_ids: [vs_a]
+        max_num_results: 2
+        filters:
+          tool: x
+calls:
+  - vector_tool_selection:
+      operation: selection
+      stores:
+        - vector_store_id: vs_a
+          custom_llm_provider: openai
+      non_default_params:
+        model: gpt-4o
+      tools:
+        - type: file_search
+          vector_store_ids: [vs_a]
+          max_num_results: 2
+  - vector_tool_selection:
+      operation: selection
+      stores:
+        - vector_store_id: vs_a
+          custom_llm_provider: openai
+      non_default_params:
+        model: gpt-4o
+        vector_store_ids: null
+      tools:
+        - type: file_search
+          vector_store_ids: [vs_a]
+          max_num_results: 2
+  - vector_tool_selection:
+      operation: selection
+      stores:
+        - vector_store_id: vs_a
+          custom_llm_provider: openai
+      non_default_params:
+        model: gpt-4o
+        vector_store_ids: []
+      tools:
+        - type: file_search
+          vector_store_ids: [vs_a]
+          max_num_results: 2
+  - vector_tool_selection:
+      operation: selection
+      stores:
+        - vector_store_id: vs_a
+          custom_llm_provider: openai
+        - vector_store_id: vs_b
+          custom_llm_provider: openai
+          litellm_params:
+            api_key: k
+      non_default_params:
+        vector_store_ids: [vs_a, vs_b]
+      tools:
+        - type: file_search
+          vector_store_ids: [vs_a]
+          max_num_results: 2
+          filters:
+            tool: x
+          ranking_options:
+            ranker: default
+  - vector_tool_selection:
+      operation: selection
+      stores:
+        - vector_store_id: vs_a
+          custom_llm_provider: openai
+          litellm_params: null
+      non_default_params:
+        model: gpt-4o
+        vector_store_ids: [vs_a]
+      tools:
+        - type: file_search
+          vector_store_ids: [vs_a]
+          max_num_results: 2
+  - vector_tool_selection:
+      operation: selection
+      stores:
+        - vector_store_id: vs_a
+          custom_llm_provider: openai
+      non_default_params:
+        vector_store_ids: [vs_a]
+      tools:
+        - type: file_search
+          vector_store_ids: [vs_a]
+  - vector_tool_selection:
+      operation: selection
+      stores:
+        - vector_store_id: vs_a
+          custom_llm_provider: openai
+          litellm_params: 5
+      non_default_params:
+        model: gpt-4o
+        vector_store_ids: [vs_a]
+      tools:
+        - type: file_search
+          vector_store_ids: [vs_a]
+          max_num_results: 2
+env: {}
+compare:
+  ignore:
+    - pointer: /value/raised
+      why: betterlite writes its own message

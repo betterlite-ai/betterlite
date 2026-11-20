@@ -1,0 +1,27 @@
+kind: sdk_http
+name: file-http-metadata-eager-file-pages-async
+env: {}
+call:
+  file_http_metadata:
+    operation: list
+    mode: async
+    api_key: sk-xai
+    timeout_seconds: 5
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      data:
+        - {id: fd, bytes: 5, created_at: 1700000005}
+      pagination_token: t2
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      data:
+        - {id: fe, bytes: 6, created_at: 1700000006}
+      pagination_token: null
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization]
+  ignore: []
