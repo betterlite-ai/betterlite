@@ -55,7 +55,7 @@ pub(crate) struct ScriptedAllowlists {
 }
 
 impl ScriptedAllowlists {
-    pub(crate) fn new(rows: Vec<ScriptedRow>, events: EventLog) -> Self {
+    pub(crate) const fn new(rows: Vec<ScriptedRow>, events: EventLog) -> Self {
         Self {
             rows: Mutex::new(rows),
             calls: Mutex::new(Vec::new()),
@@ -68,7 +68,7 @@ impl ScriptedAllowlists {
     fn apply(&self, rewrite: &AllowlistRewrite) -> Vec<TouchedRow> {
         let mut rows = self.rows.lock().expect("rows");
         let mut touched = Vec::new();
-        for row in rows.iter_mut() {
+        for row in &mut *rows {
             let Some(models) = row.models.as_mut() else {
                 continue;
             };
@@ -96,30 +96,22 @@ impl ScriptedAllowlists {
 fn rewrite_array(models: &mut Vec<String>, rewrite: &AllowlistRewrite) -> bool {
     match rewrite {
         AllowlistRewrite::Append { old_name, new_name } => {
-            let holds_old = models.iter().any(|name| name == old_name);
-            let holds_new = models.iter().any(|name| name == new_name);
-            let append = holds_old && !holds_new;
+            let append = models.contains(old_name) && !models.contains(new_name);
             if append {
-                models.push(new_name.to_owned());
+                models.push(new_name.clone());
             }
             append
         }
         AllowlistRewrite::Replace { old_name, new_name } => {
-            if !models.iter().any(|name| name == old_name) {
-                return false;
+            let holds_old = models.contains(old_name);
+            if holds_old {
+                models.retain(|name| name != new_name);
+                models
+                    .iter_mut()
+                    .filter(|name| name.as_str() == old_name.as_str())
+                    .for_each(|name| name.clone_from(new_name));
             }
-            let mut kept = Vec::with_capacity(models.len());
-            for name in models.drain(..) {
-                if name != *new_name {
-                    kept.push(if name == *old_name {
-                        new_name.clone()
-                    } else {
-                        name
-                    });
-                }
-            }
-            *models = kept;
-            true
+            holds_old
         }
     }
 }
@@ -146,7 +138,7 @@ pub(crate) struct ScriptedAllowlistCache {
 }
 
 impl ScriptedAllowlistCache {
-    pub(crate) fn recording(events: EventLog) -> Self {
+    pub(crate) const fn recording(events: EventLog) -> Self {
         Self {
             calls: Mutex::new(Vec::new()),
             events,
@@ -154,7 +146,7 @@ impl ScriptedAllowlistCache {
         }
     }
 
-    pub(crate) fn failing(events: EventLog, code: i64) -> Self {
+    pub(crate) const fn failing(events: EventLog, code: i64) -> Self {
         Self {
             calls: Mutex::new(Vec::new()),
             events,
@@ -182,8 +174,8 @@ impl AllowlistCache for ScriptedAllowlistCache {
 }
 
 // Delegates to the real statement so the event log records the SQL completing, not a substitute for it.
-pub(crate) struct ObservedAllowlists<'a> {
-    pub(crate) inner: PostgresAllowlists<'a>,
+pub(crate) struct ObservedAllowlists<'db> {
+    pub(crate) inner: PostgresAllowlists<'db>,
     pub(crate) events: EventLog,
 }
 

@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use betterlite_db::postgres_store::errors::DbError;
 
@@ -22,7 +23,10 @@ fn names(values: &[&str]) -> Vec<String> {
     values.iter().map(|value| (*value).to_owned()).collect()
 }
 
-fn rename<'request>(old_name: &'request str, new_name: &'request str) -> ModelRename<'request> {
+const fn rename<'request>(
+    old_name: &'request str,
+    new_name: &'request str,
+) -> ModelRename<'request> {
     ModelRename {
         model_id: "dep-1",
         old_name,
@@ -80,8 +84,8 @@ const ENTITY_KEYS: [&str; 7] = [
 #[tokio::test]
 async fn all_entity_allowlists() {
     let events = EventLog::default();
-    let database = ScriptedAllowlists::new(entity_rows(), events.clone());
-    let cache = ScriptedAllowlistCache::recording(events.clone());
+    let database = ScriptedAllowlists::new(entity_rows(), Arc::clone(&events));
+    let cache = ScriptedAllowlistCache::recording(Arc::clone(&events));
     let request = rename("old", "new");
     sync_renamed_model_allowlists(&grant_counts(0), &database, &cache, None, &request)
         .await
@@ -145,9 +149,9 @@ async fn exact_name_only() {
             row(AllowlistKind::Key, "k-exact", None, Some(&["old"])),
             row(AllowlistKind::User, "u-case", None, Some(&["OLD"])),
         ],
-        events.clone(),
+        Arc::clone(&events),
     );
-    let first = ScriptedAllowlistCache::recording(events.clone());
+    let first = ScriptedAllowlistCache::recording(Arc::clone(&events));
     let request = rename("old", "new");
     sync_renamed_model_allowlists(&grant_counts(0), &database, &first, None, &request)
         .await
@@ -221,7 +225,7 @@ async fn rename_same_no_io() {
     let mut model_grants = ScriptedModelGrants::new(BTreeMap::new());
     model_grants.failure = Some(ScriptedFailure::Count);
     let events = EventLog::default();
-    let cache = ScriptedAllowlistCache::recording(events.clone());
+    let cache = ScriptedAllowlistCache::recording(Arc::clone(&events));
     let request = rename("same", "same");
     sync_renamed_model_allowlists(
         &model_grants,
@@ -279,7 +283,7 @@ async fn sibling_query_failure_stops_before_statement() {
     let events = EventLog::default();
     let database = ScriptedAllowlists::new(
         vec![row(AllowlistKind::Key, "k-1", None, Some(&["old"]))],
-        events.clone(),
+        Arc::clone(&events),
     );
     let cache = ScriptedAllowlistCache::recording(events);
     let request = rename("old", "new");
@@ -302,7 +306,7 @@ async fn statement_failure_stops_before_cache() {
     );
     database.failure = true;
     let events = EventLog::default();
-    let cache = ScriptedAllowlistCache::recording(events.clone());
+    let cache = ScriptedAllowlistCache::recording(Arc::clone(&events));
     let request = rename("old", "new");
     let error = sync_renamed_model_allowlists(&grant_counts(0), &database, &cache, None, &request)
         .await
@@ -319,13 +323,13 @@ async fn statement_failure_stops_before_cache() {
 #[tokio::test]
 async fn empty_rewrite_evicts_empty_tuple() {
     let events = EventLog::default();
-    let database = ScriptedAllowlists::new(Vec::new(), events.clone());
-    let cache = ScriptedAllowlistCache::recording(events.clone());
+    let database = ScriptedAllowlists::new(Vec::new(), Arc::clone(&events));
+    let cache = ScriptedAllowlistCache::recording(Arc::clone(&events));
     let request = rename("absent", "new");
     sync_renamed_model_allowlists(&grant_counts(0), &database, &cache, None, &request)
         .await
         .unwrap();
-    assert_eq!(calls(&cache), vec![Vec::new()]);
+    assert_eq!(calls(&cache), vec![Vec::<String>::new()]);
     assert_eq!(
         events.lock().expect("events").clone(),
         vec![
@@ -340,9 +344,9 @@ async fn cache_failure_follows_committed_statement() {
     let events = EventLog::default();
     let database = ScriptedAllowlists::new(
         vec![row(AllowlistKind::Team, "t-1", None, Some(&["old"]))],
-        events.clone(),
+        Arc::clone(&events),
     );
-    let cache = ScriptedAllowlistCache::failing(events.clone(), 3);
+    let cache = ScriptedAllowlistCache::failing(Arc::clone(&events), 3);
     let request = rename("old", "new");
     let error = sync_renamed_model_allowlists(&grant_counts(0), &database, &cache, None, &request)
         .await

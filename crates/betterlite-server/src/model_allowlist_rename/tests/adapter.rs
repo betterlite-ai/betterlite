@@ -107,12 +107,13 @@ impl InvalidationTransport for RecordingTransport {
 
 #[tokio::test]
 async fn auth_invalidation_adapter() {
-    let transport = Arc::new(RecordingTransport::default());
+    let recorder = Arc::new(RecordingTransport::default());
+    let transport: Arc<dyn InvalidationTransport> = Arc::clone(&recorder);
     let invalidation = AuthInvalidation {
         auth: Arc::new(NoopAuth),
         usage: None,
         spend: Arc::new(NoopSpend),
-        transport: Arc::clone(&transport),
+        transport,
         clock: Arc::new(SystemClock),
         access_group_ttl: 60.0,
     };
@@ -120,5 +121,5 @@ async fn auth_invalidation_adapter() {
     <AuthInvalidation as AllowlistCache>::evict_and_broadcast(&invalidation, &keys)
         .await
         .unwrap();
-    assert_eq!(transport.calls(), vec![keys]);
+    assert_eq!(recorder.calls(), vec![keys]);
 }

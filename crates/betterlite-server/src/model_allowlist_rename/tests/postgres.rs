@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use betterlite_db::auxiliary_repository::repository::PrismaClient;
@@ -226,7 +227,7 @@ impl Harness {
     }
 
     fn cache(&self) -> ScriptedAllowlistCache {
-        ScriptedAllowlistCache::recording(self.events.clone())
+        ScriptedAllowlistCache::recording(Arc::clone(&self.events))
     }
 
     async fn run(
@@ -247,13 +248,13 @@ impl Harness {
             inner: PostgresAllowlists {
                 client: Some(client),
             },
-            events: self.events.clone(),
+            events: Arc::clone(&self.events),
         };
         sync_renamed_model_allowlists(&grants, &allowlists, cache, catalog, rename).await
     }
 }
 
-fn request<'request>(
+const fn request<'request>(
     model_id: &'request str,
     old_name: &'request str,
     new_name: &'request str,
@@ -699,13 +700,24 @@ async fn eviction_failure(pool: &Pool) {
     )
     .await;
     let harness = Harness::new(pool);
-    let cache = ScriptedAllowlistCache::failing(harness.events.clone(), 3);
+    let cache = ScriptedAllowlistCache::failing(Arc::clone(&harness.events), 3);
     let rename = request("dep-1", "evict-old", "evict-new");
     let error = harness
         .run(&rename, &cache, None)
         .await
         .expect_err("the eviction reports an error");
     assert!(matches!(error, ModelAllowlistError::Cache(_)));
+    assert_eviction_committed(pool).await;
+    let mut keys = recorded_keys(&cache);
+    keys.sort();
+    assert_eq!(
+        keys,
+        expected(&["k-evict", "team_alias:evict-alias", "team_id:t-evict"])
+    );
+    assert_single_cache_call(&harness);
+}
+
+async fn assert_eviction_committed(pool: &Pool) {
     assert_eq!(
         stored(pool, TEAM_TABLE, "team_id", "t-evict").await,
         array(&["evict-new"])
@@ -714,12 +726,9 @@ async fn eviction_failure(pool: &Pool) {
         stored(pool, KEY_TABLE, "token", "k-evict").await,
         array(&["evict-new"])
     );
-    let mut keys = recorded_keys(&cache);
-    keys.sort();
-    assert_eq!(
-        keys,
-        expected(&["k-evict", "team_alias:evict-alias", "team_id:t-evict"])
-    );
+}
+
+fn assert_single_cache_call(harness: &Harness) {
     let recorded = harness.events.lock().expect("events").clone();
     assert_eq!(recorded.first(), Some(&AllowlistEvent::SqlCompleted));
     assert_eq!(

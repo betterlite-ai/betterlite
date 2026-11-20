@@ -25,23 +25,21 @@ impl AllowlistDatabase for PostgresAllowlists<'_> {
         };
         let sql = rewrite.sql();
         let rows = writer_rows(self.client, &sql, &parameters).await?;
-        rows.iter().map(TouchedRow::from_row).collect()
+        rows.iter().map(touched_row).collect()
     }
 }
 
-impl TouchedRow {
-    fn from_row(row: &Row) -> Result<Self, ModelAllowlistError> {
-        let kind: String = row
-            .try_get("kind")
-            .map_err(|source| ModelAllowlistError::Database(backend(source)))?;
-        let object_id: String = row
-            .try_get("object_id")
-            .map_err(|source| ModelAllowlistError::Database(backend(source)))?;
-        let team_alias: Option<String> = row
-            .try_get("team_alias")
-            .map_err(|source| ModelAllowlistError::Database(backend(source)))?;
-        Self::from_values(&kind, object_id, team_alias)
-    }
+fn touched_row(row: &Row) -> Result<TouchedRow, ModelAllowlistError> {
+    let kind: String = row
+        .try_get("kind")
+        .map_err(|source| ModelAllowlistError::Database(backend(source)))?;
+    let object_id: String = row
+        .try_get("object_id")
+        .map_err(|source| ModelAllowlistError::Database(backend(source)))?;
+    let team_alias: Option<String> = row
+        .try_get("team_alias")
+        .map_err(|source| ModelAllowlistError::Database(backend(source)))?;
+    TouchedRow::from_values(&kind, object_id, team_alias)
 }
 
 async fn writer_rows(
