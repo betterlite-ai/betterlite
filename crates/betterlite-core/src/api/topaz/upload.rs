@@ -96,8 +96,7 @@ fn text_or_default(value: Option<&str>, fallback: &str) -> String {
 // the multipart field the one image rides under
 pub const IMAGE_FIELD: &str = "image";
 
-// transform_request_image_variation's fields: the one image file part under its wire name and the mapped
-// data, never the model
+// transform_request_image_variation's fields: the one image file part under its wire name and the mapped data, never the model
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TopazFormFields {
     pub files: Vec<(String, PreparedFile)>,

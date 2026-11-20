@@ -29,8 +29,7 @@ pub struct TopazReply {
     pub response_ms: f64,
 }
 
-// _common_transform_response_image_variation: base64 of the bytes as received, with a null url and revised
-// prompt; the source's ImageResponse constructor fills usage with zeros
+// _common_transform_response_image_variation: base64 of the bytes as received, with a null url, revised prompt and the constructor's zero usage
 #[must_use]
 pub fn transform_response(body: &[u8], timing: TopazTiming, created: i64) -> TopazReply {
     let data = vec![ImageData {

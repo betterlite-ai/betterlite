@@ -290,4 +290,7 @@ def call_value(call: Call) -> JsonValue:
 
 
 def run(input_value: Input) -> JsonValue:
-    return [call_value(call) for call in input_value["calls"]]
+    return [
+        call_value(call)
+        for call in input_value["calls"]
+    ]
