@@ -11,6 +11,8 @@ const TEXT_FRAME: &str = r#"{"type":"conversation.item.create","item":{"type":"m
 async fn client_buffer_and_logging_order() {
     pre_setup_audio_is_buffered().await;
     the_setup_update_goes_before_the_backlog().await;
+    an_update_after_setup_flushes_the_backlog_first().await;
+    a_backlog_waits_for_setup().await;
     unrelated_frames_flush_once_setup_is_complete().await;
     arrivals_during_flushing_are_buffered().await;
     a_failed_flush_retains_the_queue().await;
@@ -55,6 +57,43 @@ async fn the_setup_update_goes_before_the_backlog() {
     assert_eq!(
         outcome.state.setup.pending_messages_until_setup,
         vec![String::from(AUDIO_APPEND)]
+    );
+}
+
+async fn an_update_after_setup_flushes_the_backlog_first() {
+    let update = r#"{"type":"session.update","session":{"instructions":"hi"}}"#;
+    let outcome = ack(Fixture::default()
+        .with_provider(ScriptedProvider {
+            requires_session_configuration: false,
+            delivers: true,
+        })
+        .with_setup_complete(true)
+        .with_pending_messages(&[AUDIO_APPEND])
+        .with_client_message(update))
+    .await;
+    assert_eq!(
+        outcome.backend.parsed(),
+        vec![
+            json(AUDIO_APPEND),
+            json(r#"{"type":"session.update","session":{"type":"realtime","instructions":"hi"}}"#),
+        ]
+    );
+    assert!(outcome.state.setup.pending_messages_until_setup.is_empty());
+}
+
+async fn a_backlog_waits_for_setup() {
+    let outcome = ack(Fixture::default()
+        .with_provider(ScriptedProvider {
+            requires_session_configuration: false,
+            delivers: true,
+        })
+        .with_pending_messages(&[AUDIO_APPEND])
+        .with_client_message(TEXT_FRAME))
+    .await;
+    assert!(outcome.backend.frames().is_empty());
+    assert_eq!(
+        outcome.state.setup.pending_messages_until_setup,
+        vec![String::from(AUDIO_APPEND), String::from(TEXT_FRAME)]
     );
 }
 

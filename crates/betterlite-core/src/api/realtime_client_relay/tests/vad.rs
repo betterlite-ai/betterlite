@@ -36,6 +36,7 @@ async fn client_guardrail_vad_cannot_be_reenabled() {
     without_transcription_guardrails_values_survive().await;
     the_flag_is_marked_only_after_a_delivery().await;
     the_provider_patch_runs_last().await;
+    the_patch_refreshes_a_beta_session().await;
 }
 
 async fn first_update_injects_before_the_ga_remap() {
@@ -143,6 +144,18 @@ async fn the_flag_is_marked_only_after_a_delivery() {
     .await;
     assert_eq!(failed.exit, ClientLoopExit::BackendClosed);
     assert!(!failed.state.setup.turn_detection_update_sent.0);
+}
+
+async fn the_patch_refreshes_a_beta_session() {
+    let outcome = ack(Fixture::default()
+        .with_beta_backend()
+        .with_normalizer()
+        .with_client_message(&session_update(r#"{"instructions":"hi"}"#)))
+    .await;
+    assert_eq!(
+        backend_sessions(&outcome),
+        vec![json(r#"{"instructions":"hi","xai_patch":true}"#)]
+    );
 }
 
 async fn the_provider_patch_runs_last() {
