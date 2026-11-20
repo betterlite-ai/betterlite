@@ -156,7 +156,8 @@ class AssistantReadDeleteRequest(Strict):
 
 
 def run_once(run: Run, api_base: str) -> RunOutcome:
-    litellm.api_base = base_of(run.module_globals.api_base, api_base)
+    global_base = run.module_globals.api_base
+    litellm.api_base = api_base if global_base == SENTINEL else global_base
     litellm.api_version = run.module_globals.api_version
     litellm.api_key = run.module_globals.api_key
     litellm.openai_key = run.module_globals.openai_key
@@ -169,14 +170,10 @@ def run_once(run: Run, api_base: str) -> RunOutcome:
     return RunOutcome(sync=sync, asynchronous=asynchronous)
 
 
-def base_of(value: str | None, api_base: str) -> str | None:
-    return api_base if value == SENTINEL else value
-
-
 def supplied_client(spec: SuppliedClient | None, api_base: str) -> Supplied | None:
     if spec is None:
         return None
-    endpoint = base_of(spec.api_base, api_base)
+    endpoint = api_base if spec.api_base == SENTINEL else spec.api_base
     if spec.kind == "openai":
         return OpenAI(api_key=spec.api_key, base_url=endpoint)
     if spec.kind == "async_openai":
@@ -197,7 +194,7 @@ def call_args(invocation: Input, client: AsyncOpenAI | None, api_base: str) -> C
         "custom_llm_provider": cast("Literal['openai', 'azure']", invocation.provider),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L73-L80
         "client": client,
         "api_key": params.api_key,
-        "api_base": base_of(params.api_base, api_base),
+        "api_base": api_base if params.api_base == SENTINEL else params.api_base,
         "api_version": params.api_version,
         "max_retries": params.max_retries,
         "request_timeout": params.request_timeout,
