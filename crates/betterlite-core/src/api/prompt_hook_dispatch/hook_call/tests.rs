@@ -68,12 +68,7 @@ fn kwargs(deployment: &str) -> JsonObject {
 
 #[tokio::test]
 async fn the_sync_hook_receives_the_call_values() {
-    let fake = Arc::new(FakeManager::new(
-        "explicit_manager",
-        Ok(false),
-        HookBehavior::Echo,
-    ));
-    let manager = backend(&fake);
+    let fake = Arc::new(FakeManager::new("manager", Ok(false), HookBehavior::Echo));
     let mut state = logging_state();
     let mut lists = Lists::default();
     let factory = FakeFactory::new(Vec::new(), Vec::new());
@@ -85,7 +80,7 @@ async fn the_sync_hook_receives_the_call_values() {
         .insert("user_id".to_owned(), text("u-1"));
     let dynamic = Json::Object(state.callback_dynamic_params.clone());
     let mut request = request("gpt-4", messages.as_slice(), &params);
-    request.manager = Some(Arc::clone(&manager));
+    request.manager = Some(backend(&fake));
     request.prompt_variables = Some(&variables);
     request.prompt_id = Some("prompt-1");
     request.prompt_label = Some("prod");

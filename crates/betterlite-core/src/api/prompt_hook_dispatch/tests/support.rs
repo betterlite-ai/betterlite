@@ -277,9 +277,10 @@ pub(crate) fn logging_state() -> LoggingState {
 }
 
 pub(crate) fn registry(stores: Vec<LiteLlmManagedVectorStore>) -> VectorStoreRegistry {
-    let mut registry = VectorStoreRegistry::default();
-    registry.stores = stores;
-    registry
+    VectorStoreRegistry {
+        stores,
+        ..VectorStoreRegistry::default()
+    }
 }
 
 pub(crate) fn store(id: &str) -> LiteLlmManagedVectorStore {
