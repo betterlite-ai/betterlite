@@ -39,8 +39,9 @@ pub enum ValidatorFailure {
 impl From<CallError> for ValidatorFailure {
     fn from(source: CallError) -> Self {
         match source {
-            CallError::TimedOut { after } => Self::TimedOut { after },
-            CallError::Work(WorkError::TimedOut { after }) => Self::TimedOut { after },
+            CallError::TimedOut { after } | CallError::Work(WorkError::TimedOut { after }) => {
+                Self::TimedOut { after }
+            }
             CallError::Python(cause) => Self::Raised {
                 source: CallError::Python(cause),
             },
@@ -117,7 +118,7 @@ impl TeamMetadataValidator for PythonValidator {
 }
 
 // CPython refuses a Future.result timeout at or above PY_TIMEOUT_MAX, 2^63 - 1 nanoseconds.
-const MAX_CALLBACK_TIMEOUT: Duration = Duration::from_secs(9_000_000_000);
+const MAX_CALLBACK_TIMEOUT: Duration = Duration::from_hours(2_500_000);
 
 fn deadline(timeout: ValidationTimeout) -> Duration {
     match timeout {
@@ -184,20 +185,20 @@ fn simple_namespace<'py>(
 }
 
 fn optional_text<'py>(py: Python<'py>, value: Option<&str>) -> PyResult<PythonObject<'py>> {
-    match value {
-        Some(text) => text.into_bound_py_any(py),
-        None => Ok(py.None().into_bound(py)),
-    }
+    value.map_or_else(
+        || Ok(py.None().into_bound(py)),
+        |text| text.into_bound_py_any(py),
+    )
 }
 
 fn optional_metadata<'py>(
     py: Python<'py>,
     value: Option<&MetadataMap>,
 ) -> PyResult<PythonObject<'py>> {
-    match value {
-        Some(entries) => json_tree(py, entries),
-        None => Ok(py.None().into_bound(py)),
-    }
+    value.map_or_else(
+        || Ok(py.None().into_bound(py)),
+        |entries| json_tree(py, entries),
+    )
 }
 
 fn json_tree<'py>(py: Python<'py>, value: &MetadataMap) -> PyResult<PythonObject<'py>> {

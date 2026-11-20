@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::fmt;
 use std::fs::write;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -574,9 +575,9 @@ fn sanitize_crlf() {
 
 struct NewlineDebug;
 
-impl std::fmt::Debug for NewlineDebug {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("first\nsecond\rthird")
+impl fmt::Debug for NewlineDebug {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("first\nsecond\rthird")
     }
 }
 
@@ -609,7 +610,7 @@ impl TeamObjectCache for RecordingCache {
         team_id: &str,
         team: &mut LiteLLMTeamTableCachedObj,
     ) -> Result<(), InvalidationError> {
-        team.last_refreshed_at = Some(42.5);
+        team.last_refreshed_at = Some(42.5_f64);
         self.stored
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -788,12 +789,17 @@ async fn count(pool: &Pool, sql: &str, key: &str) -> i64 {
     row.get(0)
 }
 
-#[tokio::test]
-async fn transaction_accessor() {
+async fn seeded_pool() -> (PostgresFixture, Pool) {
     let (fixture, pool) = database().await;
     let seeded = pool.get().await.unwrap();
     seeded.execute(INSERT_TEAM_SQL, &[&"team-1"]).await.unwrap();
     drop(seeded);
+    (fixture, pool)
+}
+
+#[tokio::test]
+async fn transaction_accessor() {
+    let (fixture, pool) = seeded_pool().await;
     let mut client = pool.get().await.unwrap();
     let session = client.transaction().await.unwrap();
     let transaction = team_transaction(&session);
@@ -803,13 +809,6 @@ async fn transaction_accessor() {
         .unwrap()
         .unwrap();
     assert!(members.is_empty());
-    assert_eq!(
-        transaction
-            .execute_raw(INSERT_USER_SQL, &[&"user-1", &"u@example.com"])
-            .await
-            .unwrap(),
-        1
-    );
     assert_eq!(
         transaction
             .execute_raw(DELETE_TEAM_SQL, &[&"team-1"])
@@ -831,6 +830,27 @@ async fn transaction_accessor() {
         record.fields.get("team_id").cloned(),
         Some(JsonData::String("team-2".to_owned()))
     );
+    session.rollback().await.unwrap();
+    drop(client);
+    assert_eq!(count(&pool, COUNT_TEAM_SQL, "team-1").await, 1);
+    assert_eq!(count(&pool, COUNT_TEAM_SQL, "team-2").await, 0);
+    pool.close();
+    fixture.close_async().await.unwrap();
+}
+
+#[tokio::test]
+async fn transaction_user_accessor() {
+    let (fixture, pool) = seeded_pool().await;
+    let mut client = pool.get().await.unwrap();
+    let session = client.transaction().await.unwrap();
+    let transaction = team_transaction(&session);
+    assert_eq!(
+        transaction
+            .execute_raw(INSERT_USER_SQL, &[&"user-1", &"u@example.com"])
+            .await
+            .unwrap(),
+        1
+    );
     let user = transaction
         .user_table()
         .find_by_id("user-1")
@@ -841,8 +861,6 @@ async fn transaction_accessor() {
     assert_eq!(user.user_email.as_deref(), Some("u@example.com"));
     session.rollback().await.unwrap();
     drop(client);
-    assert_eq!(count(&pool, COUNT_TEAM_SQL, "team-1").await, 1);
-    assert_eq!(count(&pool, COUNT_TEAM_SQL, "team-2").await, 0);
     assert_eq!(count(&pool, COUNT_USER_SQL, "user-1").await, 0);
     pool.close();
     fixture.close_async().await.unwrap();

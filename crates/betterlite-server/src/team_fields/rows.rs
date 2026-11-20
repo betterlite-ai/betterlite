@@ -12,7 +12,7 @@ use betterlite_db::team_repository::decoder::{TeamRecord, TeamRecordError, decod
 use betterlite_db::team_rows::archived::LiteLLMTeamTableCachedObj;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GeneralSettingsMap {
     pub entries: BTreeMap<String, JsonValue>,
 }

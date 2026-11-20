@@ -25,7 +25,7 @@ pub enum InstallError {
     NotCallable {
         value: String,
         #[source]
-        source: CallError,
+        source: Box<CallError>,
     },
 }
 
@@ -63,7 +63,7 @@ async fn load_validator(
         })?;
     let validator = PythonValidator::load(hook).map_err(|source| InstallError::NotCallable {
         value: value.to_owned(),
-        source,
+        source: Box::new(source),
     })?;
     Ok(Arc::new(validator))
 }

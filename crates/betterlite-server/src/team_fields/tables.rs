@@ -56,7 +56,9 @@ fn read_store(client: PrismaClient<'_>) -> &PostgresStore {
 
 #[must_use]
 // ast-grep-ignore: no-one-line-functions - LiteLLM's _raw_team_db exposes the same raw team table
-pub fn raw_team_table<'database>(repository: &TeamRepository<'database>) -> TeamTable<'database> {
+pub const fn raw_team_table<'database>(
+    repository: &TeamRepository<'database>,
+) -> TeamTable<'database> {
     repository.table()
 }
 
@@ -132,7 +134,7 @@ pub fn access_group_table(
 
 #[must_use]
 // ast-grep-ignore: no-one-line-functions - LiteLLM's _verification_token_db reads litellm_verificationtoken
-pub fn tokens_table<C>(
+pub const fn tokens_table<C>(
     database: Option<WriterPinnedClient<'_, C>>,
 ) -> VerificationTokenRepository<'_, C>
 where
