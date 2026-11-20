@@ -1,0 +1,50 @@
+kind: sdk_http
+name: responses-lifecycle-read-ignored-extras-and-context
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  responses_lifecycle_read:
+    steps:
+      - get_responses:
+          call:
+            response_id: resp_a
+            custom_llm_provider: openai
+            extra_headers: {x-trace: trace-a}
+            extra_query: {after: ignored}
+            extra_body: {ignored: true}
+            timeout: 7
+            metadata: {request_id: r1}
+            litellm_metadata:
+              model_info: {id: deployment-a}
+      - get_responses:
+          call:
+            response_id: resp_a
+            custom_llm_provider: openai
+            extra_body: {ignored: true}
+      - aget_responses:
+          call:
+            response_id: resp_a
+            custom_llm_provider: openai
+      - list_input_items:
+          call:
+            response_id: resp_a
+            custom_llm_provider: openai
+            extra_headers: {x-trace: trace-b}
+            timeout: {read: 9}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: resp_a, created_at: 9, status: completed, model: gpt-4o, output: []}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: resp_a, created_at: 9, status: completed, model: gpt-4o, output: []}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: resp_a, created_at: 9, status: completed, model: gpt-4o, output: []}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [{id: item_a, type: message}], has_more: false}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, x-trace]
+  ignore: []
