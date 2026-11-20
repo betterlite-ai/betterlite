@@ -32,6 +32,17 @@ pub(super) struct ImageField {
     text: String,
 }
 
+#[derive(Clone, Copy)]
+enum Kind {
+    Flux2,
+    Mai,
+}
+
+enum Uploads {
+    Flux2(Option<Vec<ImageSource>>),
+    Mai(Option<Vec<Option<ImageEditFile>>>),
+}
+
 pub(super) fn run(input: &Input) -> HelperResult {
     let runtime = runtime()?;
     let mut logging = Recorder;
@@ -41,63 +52,100 @@ pub(super) fn run(input: &Input) -> HelperResult {
 fn edit_row(input: &Input, runtime: &Runtime, logging: &mut Recorder) -> HelperResult {
     let variant =
         ImageEditVariant::select(&input.model).map_err(|error| failure("LeafFailure", error))?;
+    let kind = kind_of(variant)?;
+    let options = options_for(input, kind, runtime, logging)?;
+    let mut uploads = uploads_of(input, kind);
+    let (call, name) = form_call(input, &options, &mut uploads);
+    form_of(run_call(call, runtime, logging), name)
+}
+
+fn kind_of(variant: ImageEditVariant) -> Result<Kind, Box<HelperError>> {
     match variant {
-        ImageEditVariant::Flux2 => {
-            let mapped = match run_call(
-                Call::Flux2Params {
-                    options: &input.options,
-                    model: &input.model,
-                    drop_params: false,
-                },
-                runtime,
-                logging,
-            ) {
-                Ok(Outcome::Params(params)) => params,
-                Ok(_) => return Err(failure("Variant", OTHER)),
-                Err(error) => return Err(error),
-            };
-            let mut images = sources(input);
-            form_of(
-                run_call(
-                    Call::Flux2Form(Flux2EditRequest {
-                        model: &input.model,
-                        prompt: input.prompt.as_deref(),
-                        images: images.as_deref_mut(),
-                        options: &mapped,
-                    }),
-                    runtime,
-                    logging,
-                ),
-                "flux2",
-            )
-        }
-        ImageEditVariant::Mai => {
-            let images = input.images.as_ref().map(|fields| {
-                fields
-                    .iter()
-                    .map(|field| {
-                        field.as_ref().map(|present| ImageEditFile {
-                            content: present.text.clone().into_bytes(),
-                            name: None,
-                        })
-                    })
-                    .collect::<Vec<_>>()
-            });
-            form_of(
-                run_call(
-                    Call::MaiForm(MaiEditRequest {
-                        model: &input.model,
-                        prompt: input.prompt.as_deref(),
-                        image: images.as_deref(),
-                        options: &input.options,
-                    }),
-                    runtime,
-                    logging,
-                ),
-                "mai",
-            )
-        }
+        ImageEditVariant::Flux2 => Ok(Kind::Flux2),
+        ImageEditVariant::Mai => Ok(Kind::Mai),
         ImageEditVariant::Flux1 => Err(failure("Variant", OTHER)),
+    }
+}
+
+fn options_for(
+    input: &Input,
+    kind: Kind,
+    runtime: &Runtime,
+    logging: &mut Recorder,
+) -> Result<ImageParams, Box<HelperError>> {
+    match kind {
+        Kind::Flux2 => match run_call(
+            Call::Flux2Params {
+                options: &input.options,
+                model: &input.model,
+                drop_params: false,
+            },
+            runtime,
+            logging,
+        )? {
+            Outcome::Params(params) => Ok(params),
+            Outcome::Variant(_) | Outcome::Url(_) | Outcome::Form(_) | Outcome::Reply(_) => {
+                Err(failure("Variant", OTHER))
+            }
+        },
+        Kind::Mai => Ok(input.options.clone()),
+    }
+}
+
+fn form_call<'call>(
+    input: &'call Input,
+    options: &'call ImageParams,
+    uploads: &'call mut Uploads,
+) -> (Call<'call>, &'static str) {
+    match uploads {
+        Uploads::Flux2(images) => (
+            Call::Flux2Form(Flux2EditRequest {
+                model: &input.model,
+                prompt: input.prompt.as_deref(),
+                images: images.as_deref_mut(),
+                options,
+            }),
+            "flux2",
+        ),
+        Uploads::Mai(files) => (
+            Call::MaiForm(MaiEditRequest {
+                model: &input.model,
+                prompt: input.prompt.as_deref(),
+                image: files.as_deref(),
+                options,
+            }),
+            "mai",
+        ),
+    }
+}
+
+fn uploads_of(input: &Input, kind: Kind) -> Uploads {
+    let bytes = bytes_of(input);
+    match kind {
+        Kind::Flux2 => Uploads::Flux2(bytes.map(|fields| {
+            fields
+                .into_iter()
+                .map(|field| {
+                    field.map_or_else(
+                        || ImageSource::Unsupported {
+                            kind: String::from("NoneType"),
+                        },
+                        ImageSource::Bytes,
+                    )
+                })
+                .collect()
+        })),
+        Kind::Mai => Uploads::Mai(bytes.map(|fields| {
+            fields
+                .into_iter()
+                .map(|field| {
+                    field.map(|content| ImageEditFile {
+                        content,
+                        name: None,
+                    })
+                })
+                .collect()
+        })),
     }
 }
 
@@ -117,26 +165,23 @@ fn run_call(
     }
 }
 
-fn form_of(outcome: Result<Outcome, Box<HelperError>>, kind: &str) -> HelperResult {
+fn form_of(outcome: Result<Outcome, Box<HelperError>>, name: &str) -> HelperResult {
     match outcome {
-        Ok(Outcome::Form(form)) => Ok(project(kind, &form)),
+        Ok(Outcome::Form(form)) => Ok(project(name, &form)),
         Ok(_) => Err(failure("Variant", OTHER)),
         Err(error) => Err(error),
     }
 }
 
-fn sources(input: &Input) -> Option<Vec<ImageSource>> {
+fn bytes_of(input: &Input) -> Option<Vec<Option<Vec<u8>>>> {
     let fields = input.images.as_ref()?;
     Some(
         fields
             .iter()
             .map(|field| {
-                field.as_ref().map_or_else(
-                    || ImageSource::Unsupported {
-                        kind: String::from("NoneType"),
-                    },
-                    |present| ImageSource::Bytes(present.text.clone().into_bytes()),
-                )
+                field
+                    .as_ref()
+                    .map(|present| present.text.clone().into_bytes())
             })
             .collect(),
     )

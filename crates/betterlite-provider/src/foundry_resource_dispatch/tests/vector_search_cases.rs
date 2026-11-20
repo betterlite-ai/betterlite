@@ -102,6 +102,24 @@ async fn auth_rows() {
     ));
 }
 
+fn search_request<'call>(
+    query: &'call SearchQuery,
+    optional: &'call Params,
+    litellm: &'call Params,
+    logging: &'call mut SearchLogging,
+    embedder: &'call FixtureEmbedder,
+) -> AzureSearchStoreRequest<'call> {
+    AzureSearchStoreRequest {
+        vector_store_id: "store-1",
+        query,
+        optional_params: optional,
+        api_base: "https://svc.search.windows.net",
+        litellm_params: litellm,
+        logging,
+        embedding_executor: embedder,
+    }
+}
+
 async fn search_rows() {
     let litellm: Params = parse(
         r#"{"litellm_embedding_model":"openai/text-embedding-3-small","azure_search_vector_field":"vec"}"#,
@@ -112,15 +130,7 @@ async fn search_rows() {
         vector: vec![0.5, 1.0],
     };
     let query = SearchQuery::Text(String::from("hello world"));
-    let request = AzureSearchStoreRequest {
-        vector_store_id: "store-1",
-        query: &query,
-        optional_params: &optional,
-        api_base: "https://svc.search.windows.net",
-        litellm_params: &litellm,
-        logging: &mut logging,
-        embedding_executor: &embedder,
-    };
+    let request = search_request(&query, &optional, &litellm, &mut logging, &embedder);
     let Outcome::Search(call) = outcome(Call::Search(request)).await else {
         panic!("the search call returns the upstream request");
     };
@@ -144,17 +154,17 @@ async fn search_rows() {
         }),
         Some("hello world")
     );
+}
 
+async fn search_missing_model_row() {
     let no_model: Params = parse(r#"{"azure_search_vector_field":"vec"}"#);
-    let request = AzureSearchStoreRequest {
-        vector_store_id: "store-1",
-        query: &query,
-        optional_params: &optional,
-        api_base: "https://svc.search.windows.net",
-        litellm_params: &no_model,
-        logging: &mut SearchLogging::default(),
-        embedding_executor: &embedder,
+    let optional: Params = parse(r#"{"top_k":3}"#);
+    let mut logging = SearchLogging::default();
+    let embedder = FixtureEmbedder {
+        vector: vec![0.5, 1.0],
     };
+    let query = SearchQuery::Text(String::from("hello world"));
+    let request = search_request(&query, &optional, &no_model, &mut logging, &embedder);
     let missing = leaf_error(Call::Search(request)).await;
     assert!(matches!(
         missing,
@@ -206,5 +216,6 @@ pub(super) async fn check() {
     url_rows().await;
     auth_rows().await;
     search_rows().await;
+    search_missing_model_row().await;
     reply_rows().await;
 }

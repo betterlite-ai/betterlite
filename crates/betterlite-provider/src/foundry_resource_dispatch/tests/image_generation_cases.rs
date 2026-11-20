@@ -1,4 +1,4 @@
-use betterlite_foundry::image_generation::error::FoundryImageError;
+use betterlite_foundry::image_generation::error::FoundryImageError as FoundryError;
 use betterlite_foundry::image_generation::params::ImageParams;
 use betterlite_foundry::mai_images::error::MaiImageError;
 use betterlite_foundry::mai_images::reply::MaiImageReply;
@@ -7,6 +7,7 @@ use betterlite_prompts::arguments::json::Object;
 use secrecy::SecretString;
 
 use super::fixture::{RecordingImageLogging, parse};
+use crate::foundry_resource_dispatch::image_generation::Error as ImageError;
 use crate::foundry_resource_dispatch::image_generation::{self, Call, Dispatch, Outcome};
 use crate::foundry_resource_dispatch::{
     FoundryResourceError, FoundryResourceOperation, FoundryResourceResult, dispatch,
@@ -99,7 +100,7 @@ async fn flux2_rows() {
     .await;
     assert!(matches!(
         missing,
-        image_generation::Error::Image(FoundryImageError::ApiBaseRequired)
+        ImageError::Image(FoundryError::ApiBaseRequired)
     ));
 }
 
@@ -136,26 +137,28 @@ async fn mai_rows() {
     }
 }
 
+async fn flux_params_of(call: Call<'_>, logging: &mut RecordingImageLogging) -> ImageParams {
+    let Outcome::FluxParams(found) = outcome(call, logging).await else {
+        panic!("the FLUX params call returns the mapped params");
+    };
+    found
+}
+
 async fn flux2_params_rows() {
     let mut logging = RecordingImageLogging::default();
-    let non_default: ImageParams =
-        parse(r#"{"size":"1024x1024","n":2,"seed":"7","quality":"high"}"#);
-    let Outcome::FluxParams(mapped) = outcome(
+    let options: ImageParams = parse(r#"{"size":"1024x1024","n":2,"seed":"7","quality":"high"}"#);
+    let mapped = flux_params_of(
         Call::Flux2Params {
-            non_default: &non_default,
+            non_default: &options,
             optional: &ImageParams::new(),
             model: "flux.2-pro",
             drop_params: false,
         },
         &mut logging,
     )
-    .await
-    else {
-        panic!("the FLUX 2 params call returns the mapped params");
-    };
+    .await;
     let expected: ImageParams = parse(r#"{"width":1024,"height":1024,"num_images":2,"seed":7}"#);
     assert_eq!(mapped, expected);
-
     let unsupported: ImageParams = parse(r#"{"style":"vivid"}"#);
     let error = leaf_error(
         Call::Flux2Params {
@@ -169,9 +172,9 @@ async fn flux2_params_rows() {
     .await;
     assert!(matches!(
         error,
-        image_generation::Error::Image(FoundryImageError::UnsupportedParams { .. })
+        ImageError::Image(FoundryError::UnsupportedParams { .. })
     ));
-    let Outcome::FluxParams(dropped) = outcome(
+    let dropped = flux_params_of(
         Call::Flux2Params {
             non_default: &unsupported,
             optional: &ImageParams::new(),
@@ -180,10 +183,7 @@ async fn flux2_params_rows() {
         },
         &mut logging,
     )
-    .await
-    else {
-        panic!("a dropped parameter still returns the mapped params");
-    };
+    .await;
     assert!(dropped.is_empty());
 }
 
@@ -191,7 +191,7 @@ async fn mai_params_rows() {
     let mut logging = RecordingImageLogging::default();
     let cases = [
         (r#"{"size":"1792x1024"}"#, r#"{"width":1792,"height":1024}"#),
-        (r#"{}"#, r#"{"width":1024,"height":1024}"#),
+        ("{}", r#"{"width":1024,"height":1024}"#),
     ];
     for (request, expected) in cases {
         let non_default: Object = parse(request);
@@ -254,7 +254,10 @@ async fn mai_reply_rows() {
     );
     assert_eq!(reply.body, expected);
     assert_eq!(logging.inputs, [String::from("draw a cat")]);
+}
 
+async fn mai_reply_error_row() {
+    let mut logging = RecordingImageLogging::default();
     let empty = Object::new();
     let error = leaf_error(
         Call::MaiReply(MaiImageReply {
@@ -280,4 +283,5 @@ pub(super) async fn check() {
     flux2_params_rows().await;
     mai_params_rows().await;
     mai_reply_rows().await;
+    mai_reply_error_row().await;
 }

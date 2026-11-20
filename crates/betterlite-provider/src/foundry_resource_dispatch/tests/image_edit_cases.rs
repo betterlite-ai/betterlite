@@ -8,6 +8,7 @@ use betterlite_foundry::image_edits::selection::ImageEditVariant;
 use betterlite_foundry::image_edits::url::CompleteUrlRequest;
 use betterlite_foundry::image_generation::params::ImageParams;
 use betterlite_openai::image_edits::file::ImageEditFile;
+use betterlite_openai::image_edits::request::ImageEditForm;
 
 use super::fixture::{RecordingImageLogging, parse};
 use crate::foundry_resource_dispatch::image_edit::{self, Call, Dispatch, Outcome};
@@ -93,117 +94,80 @@ async fn variant_rows() {
     ));
 }
 
-async fn url_rows() {
+async fn url_of(request: CompleteUrlRequest<'_>, logging: &mut RecordingImageLogging) -> String {
+    let Outcome::Url(url) = outcome(Call::Url(request), logging).await else {
+        panic!("the url call returns a url");
+    };
+    url
+}
+
+async fn flux1_url_rows() {
+    let mut logging = RecordingImageLogging::default();
+    let environment = VersionSettings {
+        api_version: Some(String::from("2024-11-01")),
+    };
+    let cases = [
+        (
+            Some("2024-05-01-preview"),
+            Some("2024-10-01"),
+            "https://res.test/openai/deployments/flux-1.1-pro/images/edits?api-version=2024-05-01-preview",
+        ),
+        (
+            None,
+            Some("2024-10-01"),
+            "https://res.test/openai/deployments/flux-1.1-pro/images/edits?api-version=2024-10-01",
+        ),
+        (
+            None,
+            None,
+            "https://res.test/openai/deployments/flux-1.1-pro/images/edits?api-version=2024-11-01",
+        ),
+    ];
+    for (api_version, global_version, expected) in cases {
+        let request = url_request(
+            "flux-1.1-pro",
+            Some("https://res.test"),
+            api_version,
+            global_version,
+            &environment,
+        );
+        assert_eq!(url_of(request, &mut logging).await, expected);
+    }
+    let empty = VersionSettings { api_version: None };
+    let request = url_request("flux-1.1-pro", Some("https://res.test"), None, None, &empty);
+    let missing_version = leaf_error(Call::Url(request), &mut logging).await;
+    assert!(matches!(
+        missing_version,
+        image_edit::Error::Edit(ImageEditError::ApiVersionRequired)
+    ));
+}
+
+async fn variant_url_rows() {
     let mut logging = RecordingImageLogging::default();
     let empty = VersionSettings { api_version: None };
     let environment = VersionSettings {
         api_version: Some(String::from("2024-11-01")),
     };
-    let Outcome::Url(explicit) = outcome(
-        Call::Url(url_request(
-            "flux-1.1-pro",
-            Some("https://res.test"),
-            Some("2024-05-01-preview"),
-            Some("2024-10-01"),
-            &environment,
-        )),
-        &mut logging,
-    )
-    .await
-    else {
-        panic!("the FLUX 1 url call returns a url");
-    };
-    assert_eq!(
-        explicit,
-        "https://res.test/openai/deployments/flux-1.1-pro/images/edits?api-version=2024-05-01-preview"
+    let request = url_request(
+        "flux.2-pro",
+        Some("https://res.test"),
+        None,
+        Some("2024-10-01"),
+        &empty,
     );
-    let Outcome::Url(global) = outcome(
-        Call::Url(url_request(
-            "flux-1.1-pro",
-            Some("https://res.test"),
-            None,
-            Some("2024-10-01"),
-            &environment,
-        )),
-        &mut logging,
-    )
-    .await
-    else {
-        panic!("the FLUX 1 url call returns a url");
-    };
     assert_eq!(
-        global,
-        "https://res.test/openai/deployments/flux-1.1-pro/images/edits?api-version=2024-10-01"
-    );
-    let Outcome::Url(from_environment) = outcome(
-        Call::Url(url_request(
-            "flux-1.1-pro",
-            Some("https://res.test"),
-            None,
-            None,
-            &environment,
-        )),
-        &mut logging,
-    )
-    .await
-    else {
-        panic!("the FLUX 1 url call returns a url");
-    };
-    assert_eq!(
-        from_environment,
-        "https://res.test/openai/deployments/flux-1.1-pro/images/edits?api-version=2024-11-01"
-    );
-    let missing_version = leaf_error(
-        Call::Url(url_request(
-            "flux-1.1-pro",
-            Some("https://res.test"),
-            None,
-            None,
-            &empty,
-        )),
-        &mut logging,
-    )
-    .await;
-    assert!(matches!(
-        missing_version,
-        image_edit::Error::Edit(ImageEditError::ApiVersionRequired)
-    ));
-
-    let Outcome::Url(flux2) = outcome(
-        Call::Url(url_request(
-            "flux.2-pro",
-            Some("https://res.test"),
-            None,
-            Some("2024-10-01"),
-            &empty,
-        )),
-        &mut logging,
-    )
-    .await
-    else {
-        panic!("the FLUX 2 url call returns a url");
-    };
-    assert_eq!(
-        flux2,
+        url_of(request, &mut logging).await,
         "https://res.test/providers/blackforestlabs/v1/flux-2-pro?api-version=2024-10-01"
     );
-
-    let Outcome::Url(mai) = outcome(
-        Call::Url(url_request(
-            "MAI-Image-2.5",
-            Some("https://res.test"),
-            None,
-            Some("2024-10-01"),
-            &environment,
-        )),
-        &mut logging,
-    )
-    .await
-    else {
-        panic!("the MAI url call returns a url");
-    };
+    let request = url_request(
+        "MAI-Image-2.5",
+        Some("https://res.test"),
+        None,
+        Some("2024-10-01"),
+        &environment,
+    );
     assert_eq!(
-        mai,
+        url_of(request, &mut logging).await,
         "https://res.test/mai/v1/images/edits?api-version=2024-11-01"
     );
     let missing_base = leaf_error(
@@ -292,6 +256,13 @@ async fn flux2_form_rows() {
     ));
 }
 
+async fn form_of(call: Call<'_>, logging: &mut RecordingImageLogging) -> ImageEditForm {
+    let Outcome::Form(form) = outcome(call, logging).await else {
+        panic!("the form call returns the form");
+    };
+    form
+}
+
 async fn mai_form_rows() {
     let mut logging = RecordingImageLogging::default();
     let options: ImageParams = parse(r#"{"image":"stale","n":1}"#);
@@ -299,41 +270,36 @@ async fn mai_form_rows() {
         content: vec![1, 2, 3],
         name: Some(String::from("cat.png")),
     };
-    let images = [Some(upload), None];
-    let Outcome::Form(form) = outcome(
+    let form = form_of(
         Call::MaiForm(MaiEditRequest {
             model: "MAI-Image-2.5",
             prompt: Some("make it blue"),
-            image: Some(&images),
+            image: Some(&[Some(upload), None]),
             options: &options,
         }),
         &mut logging,
     )
-    .await
-    else {
-        panic!("the MAI form call returns the form");
-    };
+    .await;
     let expected: ImageParams = parse(r#"{"model":"MAI-Image-2.5","n":1,"prompt":"make it blue"}"#);
     assert_eq!(form.data, expected);
     assert_eq!(form.files.len(), 1);
     assert_eq!(form.files[0].0, "image");
+}
 
-    let no_image = [None, None];
-    let Outcome::Form(empty) = outcome(
+async fn mai_empty_form_row() {
+    let mut logging = RecordingImageLogging::default();
+    let form = form_of(
         Call::MaiForm(MaiEditRequest {
             model: "MAI-Image-2.5",
             prompt: None,
-            image: Some(&no_image),
+            image: Some(&[None, None]),
             options: &ImageParams::new(),
         }),
         &mut logging,
     )
-    .await
-    else {
-        panic!("a MAI form without an upload still returns the form");
-    };
-    assert!(empty.files.is_empty());
-    assert!(empty.data.contains_key("model"));
+    .await;
+    assert!(form.files.is_empty());
+    assert!(form.data.contains_key("model"));
 }
 
 async fn mai_reply_rows() {
@@ -374,9 +340,11 @@ async fn mai_reply_rows() {
 
 pub(super) async fn check() {
     variant_rows().await;
-    url_rows().await;
+    flux1_url_rows().await;
+    variant_url_rows().await;
     flux2_params_rows().await;
     flux2_form_rows().await;
     mai_form_rows().await;
+    mai_empty_form_row().await;
     mai_reply_rows().await;
 }

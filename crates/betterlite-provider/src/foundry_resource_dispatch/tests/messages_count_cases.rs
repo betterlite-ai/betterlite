@@ -64,7 +64,7 @@ async fn policy_row() {
     assert!(strips_billing_metadata);
 }
 
-async fn url_rows() {
+async fn messages_url_rows() {
     let handler = handler(200, Vec::new());
     let Outcome::MessagesUrl(messages) = outcome(
         run_with(
@@ -92,21 +92,19 @@ async fn url_rows() {
         panic!("the messages url call returns its endpoint");
     };
     assert_eq!(from_environment, "https://env.test/anthropic/v1/messages");
-    let error = leaf_error(
-        run_with(
-            &handler,
-            Call::MessagesUrl {
-                api_base: None,
-                environment_api_base: None,
-            },
-        )
-        .await,
-    );
+    let call = Call::MessagesUrl {
+        api_base: None,
+        environment_api_base: None,
+    };
+    let error = leaf_error(run_with(&handler, call).await);
     assert!(matches!(
         error,
         messages_count::Error::Url(UrlError::MissingApiBase)
     ));
+}
 
+async fn count_url_rows() {
+    let handler = handler(200, Vec::new());
     let Outcome::CountUrl(count) = outcome(
         run_with(
             &handler,
@@ -156,8 +154,9 @@ async fn transform_rows() {
     assert_eq!(request, expected);
 }
 
-async fn count_rows() {
-    let handler = handler(200, br#"{"input_tokens":7}"#.to_vec());
+async fn count_outcome(
+    handler: &FoundryCountHandler<CountTransport>,
+) -> Result<FoundryResourceResult, FoundryResourceError> {
     let messages: Json = parse(r#"[{"role":"user","content":"hi"}]"#);
     let optional = IndexMap::new();
     let key = SecretString::from("sk-azure");
@@ -183,28 +182,20 @@ async fn count_rows() {
         token: &token,
         timeout: None,
     };
-    let Outcome::Count(reply) = outcome(run_with(&handler, Call::Count(request)).await) else {
+    run_with(handler, Call::Count(request)).await
+}
+
+async fn count_rows() {
+    let handler = handler(200, br#"{"input_tokens":7}"#.to_vec());
+    let Outcome::Count(reply) = outcome(count_outcome(&handler).await) else {
         panic!("the count call returns the decoded reply");
     };
-    let expected: Json = parse(r#"{"input_tokens":7}"#);
-    assert_eq!(reply.document, expected);
+    assert_eq!(reply.document, parse::<Json>(r#"{"input_tokens":7}"#));
+}
 
+async fn count_failure_row() {
     let failing = handler(500, b"boom".to_vec());
-    let request = CountTokensRequest {
-        body: CountTokensBody {
-            model: "claude-sonnet-4-5",
-            messages: &messages,
-            tools: None,
-            system: None,
-            optional_params: &optional,
-        },
-        api_key: &key,
-        api_base: "https://res.test",
-        params_key: ParamsKey::DictAbsent,
-        token: &token,
-        timeout: None,
-    };
-    let error = leaf_error(run_with(&failing, Call::Count(request)).await);
+    let error = leaf_error(count_outcome(&failing).await);
     assert!(matches!(
         error,
         messages_count::Error::Count(ApiError::Upstream {
@@ -216,7 +207,9 @@ async fn count_rows() {
 
 pub(super) async fn check() {
     policy_row().await;
-    url_rows().await;
+    messages_url_rows().await;
+    count_url_rows().await;
     transform_rows().await;
     count_rows().await;
+    count_failure_row().await;
 }

@@ -92,9 +92,12 @@ async fn url_rows() {
         with_version,
         "https://res.test/openai/v1/responses?api-version=2024-10-21"
     );
+}
 
+async fn missing_base_row() {
     let mut bare = passthrough_plan(Object::new());
     bare.azure.api_base_env = None;
+    let params = Object::new();
     let mut logging = RecordingPassthrough::default();
     let request = PassthroughUrlRequest {
         api_base: None,
@@ -125,27 +128,30 @@ fn logged<'call>(
     }
 }
 
+async fn relayed_of(
+    plan: &FoundryPassthroughPlan,
+    logging: &mut RecordingPassthrough,
+    input: FoundryLogInput<'_>,
+) -> Option<Box<FoundryRelayedLog>> {
+    let Ok(Outcome::Relayed(found)) = answer(Call::Relayed(input), plan, logging).await else {
+        panic!("the relayed call returns its projection");
+    };
+    found
+}
+
 async fn relay_rows() {
     let plan = passthrough_plan(Object::new());
     let mut logging = RecordingPassthrough::default();
     let headers = Headers::new();
     let params = Object::new();
-    let unknown = target("gpt-x", "unknown/route");
     let body = br#"{"ok":true}"#;
     let reply = ResponseReply {
         status: 200,
         headers: &headers,
         body: &body[..],
     };
-    let Ok(Outcome::Relayed(found)) = answer(
-        Call::Relayed(logged(&unknown, &reply, &params)),
-        &plan,
-        &mut logging,
-    )
-    .await
-    else {
-        panic!("the relayed call returns its projection");
-    };
+    let unknown = target("gpt-x", "unknown/route");
+    let found = relayed_of(&plan, &mut logging, logged(&unknown, &reply, &params)).await;
     let Some(log) = found else {
         panic!("an unknown route still projects its standard response");
     };
@@ -155,8 +161,6 @@ async fn relay_rows() {
     let expected: Json = parse(r#"{"ok":true}"#);
     assert_eq!(standard.response, expected);
     assert!(logging.call_types.is_empty());
-
-    let rerank = target("gpt-x", "v1/rerank");
     let rerank_body =
         br#"{"id":"r1","results":[{"index":0,"relevance_score":0.5,"document":{"text":"a"}}]}"#;
     let rerank_reply = ResponseReply {
@@ -164,15 +168,8 @@ async fn relay_rows() {
         headers: &headers,
         body: &rerank_body[..],
     };
-    let Ok(Outcome::Relayed(projected)) = answer(
-        Call::Relayed(logged(&rerank, &rerank_reply, &params)),
-        &plan,
-        &mut logging,
-    )
-    .await
-    else {
-        panic!("the relayed call returns its projection");
-    };
+    let rerank = target("gpt-x", "v1/rerank");
+    let projected = relayed_of(&plan, &mut logging, logged(&rerank, &rerank_reply, &params)).await;
     let Some(shape) = projected else {
         panic!("a known relay shape projects its body");
     };
@@ -185,5 +182,6 @@ async fn relay_rows() {
 
 pub(super) async fn check() {
     url_rows().await;
+    missing_base_row().await;
     relay_rows().await;
 }
