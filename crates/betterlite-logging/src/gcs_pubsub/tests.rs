@@ -608,9 +608,9 @@ fn cleaned(body: &Json) -> Json {
     json(metadata)
 }
 
-fn oauth_stamp() -> IndexMap<String, Json> {
+fn oauth_stamp(sent: bool) -> IndexMap<String, Json> {
     let mut merged = IndexMap::new();
-    merged.insert("used_client_oauth_token".to_owned(), Json::Bool(true));
+    merged.insert("used_client_oauth_token".to_owned(), Json::Bool(sent));
     merged
 }
 
@@ -655,7 +655,7 @@ async fn a_missing_request_id_falls_back_to_the_missing_marker() {
 async fn the_client_oauth_token_is_kept_only_for_anthropic() {
     let fixture = open(&v1_environment(), Overrides::default(), 1);
     let mut openai_event = event();
-    openai_event.litellm_metadata = Arc::new(oauth_stamp());
+    openai_event.litellm_metadata = Arc::new(oauth_stamp(true));
     let openai_body = projected(&fixture, openai_event).await;
     assert_eq!(
         member(&cleaned(&openai_body), "used_client_oauth_token"),
@@ -666,11 +666,18 @@ async fn the_client_oauth_token_is_kept_only_for_anthropic() {
         "\"custom_llm_provider\": \"anthropic\"",
     );
     let mut anthropic_event = event_from(&anthropic_payload);
-    anthropic_event.litellm_metadata = Arc::new(oauth_stamp());
+    anthropic_event.litellm_metadata = Arc::new(oauth_stamp(true));
     let anthropic_body = projected(&fixture, anthropic_event).await;
     assert_eq!(
         member(&cleaned(&anthropic_body), "used_client_oauth_token"),
         &json("true")
+    );
+    let mut unstamped = event_from(&anthropic_payload);
+    unstamped.litellm_metadata = Arc::new(oauth_stamp(false));
+    let unstamped_body = projected(&fixture, unstamped).await;
+    assert_eq!(
+        member(&cleaned(&unstamped_body), "used_client_oauth_token"),
+        &json("false")
     );
 }
 
