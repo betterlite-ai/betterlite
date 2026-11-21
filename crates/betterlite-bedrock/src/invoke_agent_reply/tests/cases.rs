@@ -56,7 +56,8 @@ fn chunk_event(payload: Json) -> AgentEvent {
     AgentEvent {
         headers: EventHeaders {
             event_type: "chunk".to_owned(),
-            ..EventHeaders::default()
+            content_type: String::new(),
+            message_type: String::new(),
         },
         payload,
     }
@@ -115,8 +116,8 @@ fn agent_event_stream_content() {
 
 fn chunk_parse_and_decode() {
     assert_eq!(
-        content(&completed(200, &join(&[chunk("Hel"), chunk("lo")]))),
-        "Hello"
+        content(&completed(200, &join(&[chunk("ab"), chunk("cd")]))),
+        "abcd"
     );
     for body in [
         "{}",

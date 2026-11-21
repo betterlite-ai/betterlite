@@ -49,7 +49,13 @@ pub fn decode_frame(
     headers: &EventHeaders,
 ) -> Option<AgentEvent> {
     let payload = match headers.event_type.as_str() {
-        CHUNK => chunk_payload(&message_text(shape, frame)?),
+        CHUNK => {
+            let text = message_text(shape, frame)?;
+            Json::Object(IndexMap::from([(
+                "bytes".to_owned(),
+                Json::Text(STANDARD.encode(text.as_bytes())),
+            )]))
+        }
         TRACE => trace_payload(&message_text(shape, frame)?)?,
         _ => {
             tracing::debug!("Unknown event type: {}", headers.event_type);
@@ -82,11 +88,6 @@ fn message_text(shape: &ResponseStreamShape, frame: &AwsEvent) -> Option<String>
             None
         }
     }
-}
-
-fn chunk_payload(text: &str) -> Json {
-    let bytes = STANDARD.encode(text.as_bytes());
-    Json::Object(IndexMap::from([("bytes".to_owned(), Json::Text(bytes))]))
 }
 
 fn trace_payload(text: &str) -> Option<Json> {

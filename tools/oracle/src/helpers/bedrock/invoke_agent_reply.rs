@@ -2,7 +2,7 @@ use betterlite_bedrock::agentcore_response::transform::RawResponse;
 use betterlite_bedrock::invoke_agent_reply::error::InvokeAgentReplyError;
 use betterlite_bedrock::invoke_agent_reply::events::{AgentEvent, EventHeaders};
 use betterlite_bedrock::invoke_agent_reply::extract::response_content;
-use betterlite_bedrock::invoke_agent_reply::reply::transform_invoke_agent_response;
+use betterlite_bedrock::invoke_agent_reply::reply::transform_response;
 use betterlite_bedrock::invoke_agent_reply::wire::ModelResponse;
 use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::HelperError;
@@ -71,7 +71,7 @@ fn transform_case(case: &TransformCase) -> Result<Value, Box<HelperError>> {
         body,
     };
     let mut response = case.supplied.clone();
-    match transform_invoke_agent_response(&raw, &mut response) {
+    match transform_response(&raw, &mut response) {
         Ok(()) => Ok(json!({ "response": response })),
         Err(InvokeAgentReplyError::Bedrock { status, .. }) => {
             Ok(json!({ "failure": { "status": status } }))

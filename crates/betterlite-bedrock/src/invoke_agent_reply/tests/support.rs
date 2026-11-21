@@ -10,7 +10,7 @@ use crate::agentcore_response::transform::RawResponse;
 use crate::invoke_agent_reply::decode_agent_trace;
 use crate::invoke_agent_reply::error::InvokeAgentReplyError;
 use crate::invoke_agent_reply::events::AgentEvent;
-use crate::invoke_agent_reply::reply::transform_invoke_agent_response;
+use crate::invoke_agent_reply::reply::transform_response;
 use crate::invoke_agent_reply::wire::ModelResponse;
 
 const TEXT_HEADER: u8 = 7;
@@ -98,7 +98,7 @@ pub(super) fn raw(status: u16, body: &[u8]) -> RawResponse {
 
 pub(super) fn run(status: u16, body: &[u8]) -> (Result<(), InvokeAgentReplyError>, ModelResponse) {
     let mut response = supplied();
-    let outcome = transform_invoke_agent_response(&raw(status, body), &mut response);
+    let outcome = transform_response(&raw(status, body), &mut response);
     (outcome, response)
 }
 

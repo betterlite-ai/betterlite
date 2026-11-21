@@ -18,7 +18,7 @@ from pydantic import BaseModel, JsonValue, TypeAdapter
 os.environ["LITELLM_RUST"] = "false"
 litellm.suppress_debug_info = True
 
-CONFIG = AmazonInvokeAgentConfig()
+CONFIG = AmazonInvokeAgentConfig()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_agent/transformation.py#L48
 EMPTY: dict[str, JsonValue] = {}
 MODEL_RESPONSE: TypeAdapter[ModelResponse] = TypeAdapter(ModelResponse)
 JSON_VALUE: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
@@ -128,13 +128,13 @@ def _reply(case: TransformCase) -> httpx.Response:
 
 def _transform(case: TransformCase) -> JsonValue:
     try:
-        result = CONFIG.transform_response(
+        result = CONFIG.transform_response(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_agent/transformation.py#L430
             model=MODEL,
             raw_response=_reply(case),
             model_response=_supplied(case["supplied"]),
             logging_obj=_logging(),
             request_data=EMPTY,
-            messages=[],
+            messages=[],  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L998
             optional_params=EMPTY,
             litellm_params=EMPTY,
             encoding=None,
@@ -151,14 +151,14 @@ def _event(case: EventCase) -> InvokeAgentEvent:
         "content_type": case["content_type"],
         "message_type": case["message_type"],
     }
-    payload = cast(InvokeAgentEventPayload, case["payload"])  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/bedrock_invoke_agents.py#L93-L106
-    return {"headers": headers, "payload": payload}
+    payload = cast(InvokeAgentEventPayload, case["payload"])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/bedrock_invoke_agents.py#L103-L118
+    return {"headers": headers, "payload": payload}  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/bedrock_invoke_agents.py#L119-L123
 
 
 def _content(case: ContentCase) -> JsonValue:
-    events = [_event(event) for event in case["events"]]
+    events = [_event(event) for event in case["events"]]  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/bedrock_invoke_agents.py#L119-L123
     try:
-        content = CONFIG._extract_response_content(events)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_agent/transformation.py#L287-L308
+        content = CONFIG._extract_response_content(events)  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_agent/transformation.py#L287-L308
     except (AttributeError, KeyError, TypeError):
         return {"failure": "structural"}
     return {"content": content}

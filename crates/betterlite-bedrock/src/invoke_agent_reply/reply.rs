@@ -6,7 +6,7 @@ use crate::invoke_agent_reply::extract::{ExtractError, UsageInfo, response_conte
 use crate::invoke_agent_reply::wire::{Choice, Message, ModelResponse, Usage};
 
 // transform_response: decode the whole buffered stream, then overwrite the supplied response's choices, model and usage.
-pub fn transform_invoke_agent_response(
+pub fn transform_response(
     raw: &RawResponse,
     response: &mut ModelResponse,
 ) -> Result<(), InvokeAgentReplyError> {

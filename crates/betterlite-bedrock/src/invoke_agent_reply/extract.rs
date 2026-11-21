@@ -143,11 +143,10 @@ fn usable_object<'value>(
     value: Option<&'value Json>,
     field: &'static str,
 ) -> Result<Option<&'value IndexMap<String, Json>>, ExtractError> {
-    match value {
-        None => Ok(None),
-        Some(value) if !non_empty(value) => Ok(None),
-        Some(value) => object(value, field).map(Some),
-    }
+    value
+        .filter(|value| non_empty(value))
+        .map(|value| object(value, field))
+        .transpose()
 }
 
 const fn object<'value>(
