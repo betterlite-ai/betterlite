@@ -48,9 +48,11 @@ where
         .map(observation)
         .collect::<Vec<_>>();
     let (advanced, estimates) = advance_baseline_history(&previous.0, &observations)?;
-    let first_at = advanced
-        .first_at
-        .unwrap_or_else(|| observations.first().map_or(0.0, |value| value.started_at));
+    let first_at = advanced.first_at.unwrap_or_else(|| {
+        observations
+            .first()
+            .map_or(0.0_f64, |value| value.started_at)
+    });
     let mut changes = previous.1.clone();
     for ((record, row), estimate) in records.iter().zip(stored).zip(&estimates) {
         let publication = baseline_publication(pricing, record, estimate, first_at);

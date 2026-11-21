@@ -39,7 +39,7 @@ fn with_daily(daily: &str) -> String {
 
 fn invalid(json: &str) -> RecordError {
     match decode_baseline_record(json.as_bytes()) {
-        Err(RecordDecodeError::Invalid(error)) => error,
+        Err(RecordDecodeError::Invalid(error)) => *error,
         Err(RecordDecodeError::Json(error)) => panic!("fixture is not valid JSON: {error}"),
         Ok(_) => panic!("fixture should have been rejected"),
     }

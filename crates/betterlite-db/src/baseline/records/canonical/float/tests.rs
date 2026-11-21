@@ -25,14 +25,14 @@ fn uses_fixed_notation_inside_pythons_window() {
     assert_eq!(format(1.2345_f64), "1.2345");
     assert_eq!(format(0.1_f64), "0.1");
     assert_eq!(format(1e15_f64), "1000000000000000.0");
-    assert_eq!(format(1234567890123456.0_f64), "1234567890123456.0");
+    assert_eq!(format(1_234_567_890_123_456.0_f64), "1234567890123456.0");
 }
 
 #[test]
 fn switches_to_scientific_outside_pythons_window() {
-    assert_eq!(format(0.00001_f64), "1e-05");
-    assert_eq!(format(0.000025_f64), "2.5e-05");
-    assert_eq!(format(0.0000001_f64), "1e-07");
+    assert_eq!(format(0.000_01_f64), "1e-05");
+    assert_eq!(format(0.000_025_f64), "2.5e-05");
+    assert_eq!(format(0.000_000_1_f64), "1e-07");
     assert_eq!(format(1e16_f64), "1e+16");
     assert_eq!(format(1e17_f64), "1e+17");
     assert_eq!(format(1e20_f64), "1e+20");
@@ -40,12 +40,12 @@ fn switches_to_scientific_outside_pythons_window() {
 
 #[test]
 fn keeps_the_shortest_round_tripping_digits() {
-    assert_eq!(
-        format(1.7976931348623157e308_f64),
-        "1.7976931348623157e+308"
-    );
+    assert_eq!(format(f64::MAX), "1.7976931348623157e+308");
     assert_eq!(format(5e-324_f64), "5e-324");
-    assert_eq!(format(1.2345678901234568e16_f64), "1.2345678901234568e+16");
+    assert_eq!(
+        format(12_345_678_901_234_568.0_f64),
+        "1.2345678901234568e+16"
+    );
 }
 
 #[test]

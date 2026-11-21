@@ -63,10 +63,10 @@ impl From<Option<i64>> for Canonical {
 
 fn number_from_json(number: &Number) -> Canonical {
     let lexeme = number.to_string();
-    if let Some(whole) = number.as_i64() {
-        if !lexeme.contains(['.', 'e', 'E']) {
-            return Canonical::Integer(whole);
-        }
+    if let Some(whole) = number.as_i64()
+        && !lexeme.contains(['.', 'e', 'E'])
+    {
+        return Canonical::Integer(whole);
     }
     Canonical::Float(number.as_f64().unwrap_or_default())
 }

@@ -208,29 +208,20 @@ fn consistent_turn(record: &BaselineAccountingRecord, turn: &AutoRouterTurnTrans
 #[derive(Debug, thiserror::Error)]
 pub enum RecordDecodeError {
     #[error("baseline record is not valid JSON of the required shape")]
-    Json(#[from] serde_json::Error),
+    Json(#[source] Box<serde_json::Error>),
     #[error(transparent)]
-    Invalid(RecordError),
+    Invalid(Box<RecordError>),
+}
+
+impl From<serde_json::Error> for RecordDecodeError {
+    fn from(source: serde_json::Error) -> Self {
+        Self::Json(Box::new(source))
+    }
 }
 
 // Stored data is the canonical text B1699 writes, so a retry decodes to the same record.
 pub fn decode_baseline_record(data: &[u8]) -> Result<BaselineAccountingRecord, RecordDecodeError> {
     let raw: types::RawRecord = serde_json::from_slice(data)?;
-    if !valid_scope(&raw.scope) {
-        return Err(RecordDecodeError::Invalid(RecordError::InvalidScope));
-    }
-    if raw.api_key.is_empty() {
-        return Err(RecordDecodeError::Invalid(RecordError::EmptyApiKey));
-    }
-    if !(1..=256).contains(&raw.session_id.chars().count()) {
-        return Err(RecordDecodeError::Invalid(RecordError::InvalidSessionId));
-    }
-    if raw.router_name.is_empty() {
-        return Err(RecordDecodeError::Invalid(RecordError::EmptyRouterName));
-    }
-    if raw.baseline_model.is_empty() {
-        return Err(RecordDecodeError::Invalid(RecordError::EmptyBaselineModel));
-    }
     let record = BaselineAccountingRecord {
         scope: raw.scope,
         api_key: raw.api_key,
@@ -242,12 +233,44 @@ pub fn decode_baseline_record(data: &[u8]) -> Result<BaselineAccountingRecord, R
         turn: raw.turn,
         daily: raw.daily.map(types::RawDailyAttribution::into_attribution),
     };
-    if let Some(turn) = &record.turn {
-        if !consistent_turn(&record, turn) {
-            return Err(RecordDecodeError::Invalid(RecordError::InconsistentTurn));
-        }
-    }
+    validate_record(&record)?;
     Ok(record)
+}
+
+fn validate_record(record: &BaselineAccountingRecord) -> Result<(), RecordDecodeError> {
+    if !valid_scope(&record.scope) {
+        return Err(RecordDecodeError::Invalid(Box::new(
+            RecordError::InvalidScope,
+        )));
+    }
+    if record.api_key.is_empty() {
+        return Err(RecordDecodeError::Invalid(Box::new(
+            RecordError::EmptyApiKey,
+        )));
+    }
+    if !(1..=256).contains(&record.session_id.chars().count()) {
+        return Err(RecordDecodeError::Invalid(Box::new(
+            RecordError::InvalidSessionId,
+        )));
+    }
+    if record.router_name.is_empty() {
+        return Err(RecordDecodeError::Invalid(Box::new(
+            RecordError::EmptyRouterName,
+        )));
+    }
+    if record.baseline_model.is_empty() {
+        return Err(RecordDecodeError::Invalid(Box::new(
+            RecordError::EmptyBaselineModel,
+        )));
+    }
+    if let Some(turn) = &record.turn
+        && !consistent_turn(record, turn)
+    {
+        return Err(RecordDecodeError::Invalid(Box::new(
+            RecordError::InconsistentTurn,
+        )));
+    }
+    Ok(())
 }
 
 mod tests;

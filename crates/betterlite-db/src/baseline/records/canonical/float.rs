@@ -53,7 +53,11 @@ fn scientific(digits: &str, exponent: i32) -> String {
     }
     out.push('e');
     out.push(if exponent.is_negative() { '-' } else { '+' });
-    out.push_str(&format!("{:02}", exponent.unsigned_abs()));
+    let magnitude = exponent.unsigned_abs();
+    if magnitude < 10_u32 {
+        out.push('0');
+    }
+    out.push_str(&magnitude.to_string());
     out
 }
 
@@ -64,14 +68,14 @@ fn fixed(digits: &str, point: i32) -> String {
             format!("0.{}{digits}", "0".repeat(zeros))
         }
         Ok(0) => format!("0.{digits}"),
-        Ok(point) if point >= digits.len() => {
+        Ok(width) if width >= digits.len() => {
             let mut body = digits.to_owned();
-            body.push_str(&"0".repeat(point.saturating_sub(digits.len())));
+            body.push_str(&"0".repeat(width.saturating_sub(digits.len())));
             body.push_str(".0");
             body
         }
-        Ok(point) => {
-            let (whole, fraction) = digits.split_at(point);
+        Ok(split) => {
+            let (whole, fraction) = digits.split_at(split);
             format!("{whole}.{fraction}")
         }
     }

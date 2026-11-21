@@ -7,9 +7,9 @@ use crate::baseline::publication::model::BaselinePublication;
 // The three stored baseline texts, tagged by the leading marker byte a fuzz seed or a replay row carries.
 #[derive(Clone)]
 pub enum BaselineJson {
-    Record(BaselineAccountingRecord),
-    Publication(BaselinePublication),
-    History(BaselineHistory),
+    Record(Box<BaselineAccountingRecord>),
+    Publication(Box<BaselinePublication>),
+    History(Box<BaselineHistory>),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -30,11 +30,15 @@ pub fn decode_baseline_json(data: &[u8]) -> Result<BaselineJson, BaselineJsonErr
         return Err(BaselineJsonError::UnknownKind);
     };
     match marker {
-        b'R' => Ok(BaselineJson::Record(decode_baseline_record(rest)?)),
-        b'P' => Ok(BaselineJson::Publication(decode_baseline_publication(
+        b'R' => Ok(BaselineJson::Record(Box::new(decode_baseline_record(
             rest,
-        )?)),
-        b'H' => Ok(BaselineJson::History(serde_json::from_slice(rest)?)),
+        )?))),
+        b'P' => Ok(BaselineJson::Publication(Box::new(
+            decode_baseline_publication(rest)?,
+        ))),
+        b'H' => Ok(BaselineJson::History(Box::new(serde_json::from_slice(
+            rest,
+        )?))),
         _ => Err(BaselineJsonError::UnknownKind),
     }
 }

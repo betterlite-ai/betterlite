@@ -68,7 +68,7 @@ fn observation(value: &BaselineObservation) -> Canonical {
         "minimum_cache_tokens",
         Canonical::Integer(value.minimum_cache_tokens),
     );
-    root.insert("reason", option_text(&value.reason));
+    root.insert("reason", option_text(value.reason.as_ref()));
     root
 }
 
@@ -84,16 +84,16 @@ fn daily_projection(value: &DailyBaselineAttribution) -> Canonical {
     let mut root = Canonical::Object(BTreeMap::new());
     root.insert("date", Canonical::Text(value.date.clone()));
     root.insert("api_key", Canonical::Text(value.api_key.clone()));
-    root.insert("model", option_text(&value.model));
+    root.insert("model", option_text(value.model.as_ref()));
     root.insert(
         "custom_llm_provider",
-        option_text(&value.custom_llm_provider),
+        option_text(value.custom_llm_provider.as_ref()),
     );
-    root.insert("model_group", option_text(&value.model_group));
-    root.insert("endpoint", option_text(&value.endpoint));
+    root.insert("model_group", option_text(value.model_group.as_ref()));
+    root.insert("endpoint", option_text(value.endpoint.as_ref()));
     root.insert(
         "mcp_namespaced_tool_name",
-        option_text(&value.mcp_namespaced_tool_name),
+        option_text(value.mcp_namespaced_tool_name.as_ref()),
     );
     root.insert(
         "targets",
@@ -108,7 +108,7 @@ fn target(value: &DailyBaselineTarget) -> Canonical {
         "entity",
         Canonical::Text(value.entity.names().name.to_owned()),
     );
-    root.insert("entity_id", option_text(&value.entity_id));
+    root.insert("entity_id", option_text(value.entity_id.as_ref()));
     root
 }
 
@@ -134,8 +134,8 @@ fn turn_projection(value: &AutoRouterTurnTransaction) -> Canonical {
         Canonical::from(value.cache_ttl_seconds),
     );
     root.insert("cache_touched", Canonical::Bool(value.cache_touched.0));
-    root.insert("tier", option_text(&value.tier));
-    root.insert("baseline_model", option_text(&value.baseline_model));
+    root.insert("tier", option_text(value.tier.as_ref()));
+    root.insert("baseline_model", option_text(value.baseline_model.as_ref()));
     root.insert(
         "savings_estimated_turns",
         Canonical::Integer(value.savings_estimated_turns),
@@ -152,8 +152,6 @@ fn turn_projection(value: &AutoRouterTurnTransaction) -> Canonical {
     root
 }
 
-fn option_text(value: &Option<String>) -> Canonical {
-    value
-        .as_ref()
-        .map_or(Canonical::Null, |text| Canonical::Text(text.clone()))
+fn option_text(value: Option<&String>) -> Canonical {
+    value.map_or(Canonical::Null, |text| Canonical::Text(text.clone()))
 }

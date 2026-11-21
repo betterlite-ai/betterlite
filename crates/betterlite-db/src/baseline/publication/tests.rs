@@ -619,7 +619,7 @@ fn history_decoder_keeps_the_source_dataclass_defaults() {
     let BaselineJson::History(decoded) = decode_baseline_json(b"H{}").unwrap() else {
         panic!("history marker");
     };
-    assert_eq!(decoded, BaselineHistory::default());
+    assert_eq!(*decoded, BaselineHistory::default());
 }
 
 #[test]

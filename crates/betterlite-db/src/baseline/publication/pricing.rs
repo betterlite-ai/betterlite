@@ -20,16 +20,16 @@ use super::model::{BaselinePublication, PublicationProvenance, PublicationStatus
 use crate::baseline::records::BaselineAccountingRecord;
 
 // Everything the source's comparison pricing reads: the injected price side, the tz database and the pricing moment.
-pub struct PublicationPricing<'a, C> {
-    pub context: &'a C,
+pub struct PublicationPricing<'ctx, C> {
+    pub context: &'ctx C,
     pub database: TimeZoneDatabase,
     pub moment: DateTime<Utc>,
 }
 
-impl<'a, C> PublicationPricing<'a, C> {
+impl<'ctx, C> PublicationPricing<'ctx, C> {
     // The process-wide zone database is what the source's price call reads when no caller supplies one.
     #[must_use]
-    pub fn new(context: &'a C, moment: DateTime<Utc>) -> Self {
+    pub fn new(context: &'ctx C, moment: DateTime<Utc>) -> Self {
         Self {
             context,
             database: TimeZoneDatabase::from_env(),
@@ -146,7 +146,7 @@ fn prompt_details(value: &BaselinePromptDetails) -> PromptTokensDetails {
     }
 }
 
-fn ttl_details(value: &BaselineCreationDetails) -> CacheCreationTokenDetails {
+const fn ttl_details(value: &BaselineCreationDetails) -> CacheCreationTokenDetails {
     CacheCreationTokenDetails {
         ephemeral_5m_input_tokens: value.ephemeral_5m_input_tokens,
         ephemeral_1h_input_tokens: value.ephemeral_1h_input_tokens,

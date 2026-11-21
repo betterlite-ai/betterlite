@@ -20,6 +20,10 @@ pub(super) fn write(out: &mut String, text: &str) {
 fn write_escaped(out: &mut String, character: char) {
     let mut units = [0_u16; 2];
     for unit in character.encode_utf16(&mut units) {
-        out.push_str(&format!("\\u{unit:04x}"));
+        out.push_str("\\u");
+        for shift in [12_u32, 8, 4, 0] {
+            let digit = (*unit >> shift) & 0xf;
+            out.push(char::from_digit(u32::from(digit), 16).unwrap_or('0'));
+        }
     }
 }
