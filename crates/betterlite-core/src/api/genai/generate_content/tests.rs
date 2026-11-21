@@ -170,16 +170,16 @@ async fn dispatch_adapter_call_forwards_metadata_headers_and_proxy_request() {
 }
 
 #[tokio::test]
-async fn dispatch_adapter_call_forwards_params_and_narrows_a_negative_retry_count() {
+async fn dispatch_adapter_call_forwards_the_typed_params() {
     let harness = Harness::new();
     let contents = contents();
     let kwargs = object(
         r#"{"api_base":"https://proxy.test","api_key":"sk-test","api_version":"v1beta","max_retries":3,"organization":"org-1"}"#,
     );
-    let positive_request = request(ADAPTER_MODEL, &contents, None, &kwargs);
+    let request = request(ADAPTER_MODEL, &contents, None, &kwargs);
 
     harness
-        .call(Entry::Generate, &positive_request)
+        .call(Entry::Generate, &request)
         .await
         .answer
         .expect("the call succeeds");
@@ -203,22 +203,28 @@ async fn dispatch_adapter_call_forwards_params_and_narrows_a_negative_retry_coun
     assert_eq!(params.custom_llm_provider.as_deref(), Some("openai"));
     assert_eq!(params.max_retries, Some(3_u32));
     assert_eq!(params.organization.as_deref(), Some("org-1"));
+}
 
-    let negative = Harness::new();
-    let negative_kwargs = object(r#"{"max_retries":-1}"#);
-    let negative_request = request(ADAPTER_MODEL, &contents, None, &negative_kwargs);
-    negative
-        .call(Entry::Generate, &negative_request)
+#[tokio::test]
+async fn dispatch_adapter_call_narrows_a_negative_retry_count() {
+    let harness = Harness::new();
+    let contents = contents();
+    let kwargs = object(r#"{"max_retries":-1}"#);
+    let request = request(ADAPTER_MODEL, &contents, None, &kwargs);
+
+    harness
+        .call(Entry::Generate, &request)
         .await
         .answer
         .expect("the call succeeds");
-    let negative_seen = negative.executor.seen();
-    let negative_params = negative_seen[0]
+
+    let seen = harness.executor.seen();
+    let params = seen[0]
         .1
         .litellm_params
         .as_ref()
         .expect("the adapter call carries the params");
-    assert_eq!(negative_params.max_retries, Some(0_u32));
+    assert_eq!(params.max_retries, Some(0_u32));
 }
 
 #[tokio::test]

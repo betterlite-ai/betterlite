@@ -513,31 +513,15 @@ impl Harness {
         entry: Entry,
         request: &GenerateContentRequest<'_>,
     ) -> Dispatch {
-        let configs = GenerateContentProviderConfigs {
-            gemini: &self.config,
-            vertex: &self.config,
-            is_vertex_partner_model: |_model| false,
-        };
-        let resolution = ResolutionContext {
-            catalog: &self.catalog,
-            known_model_names: &self.names,
-            custom_providers: &self.names,
-            environment: &self.environment,
-            registry: JSONProviderRegistry::default(),
-            policies: ProviderPolicies::default(),
-            globals: GlobalCredentials::default(),
-        };
-        let supplied_client = self.supplied.as_ref().map(|source| SuppliedClient {
-            kind: ClientKind::Sync,
-            transport: &source.wire,
-        });
+        let configs = self.configs();
+        let resolution = self.resolution();
         let deps = GenerateContentDeps {
             configs: &configs,
             resolution: &resolution,
             capabilities: &self.capabilities,
             limits: SchemaLimits::default(),
             source: &self.source,
-            supplied_client,
+            supplied_client: self.supplied_client(),
             executor: &self.executor,
             stream: StreamSettings::default(),
             request_timeout: self.timeout,
@@ -554,6 +538,36 @@ impl Harness {
             run_entry(&deps, entry, request, &mut log).await
         };
         Dispatch { answer, state }
+    }
+
+    // the provider config pairs the entry points dispatch over
+    fn configs(&self) -> GenerateContentProviderConfigs<'_, TestConfig> {
+        GenerateContentProviderConfigs {
+            gemini: &self.config,
+            vertex: &self.config,
+            is_vertex_partner_model: |_model| false,
+        }
+    }
+
+    // the models, names and credentials every entry point resolves against
+    fn resolution(&self) -> ResolutionContext<'_> {
+        ResolutionContext {
+            catalog: &self.catalog,
+            known_model_names: &self.names,
+            custom_providers: &self.names,
+            environment: &self.environment,
+            registry: JSONProviderRegistry::default(),
+            policies: ProviderPolicies::default(),
+            globals: GlobalCredentials::default(),
+        }
+    }
+
+    // the client a case supplies instead of the source's own
+    fn supplied_client(&self) -> Option<SuppliedClient<'_, Wire>> {
+        self.supplied.as_ref().map(|source| SuppliedClient {
+            kind: ClientKind::Sync,
+            transport: &source.wire,
+        })
     }
 }
 
