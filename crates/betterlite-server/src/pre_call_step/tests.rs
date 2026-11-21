@@ -145,14 +145,14 @@ fn text_at<'data>(data: &'data JsonMap, field: &str) -> &'data str {
         .unwrap_or_default()
 }
 
-fn call_input<'input>(
-    data: JsonMap,
+fn input_for<'input>(
+    fixture: &str,
     request: &'input Parts,
     key: &'input TestKey,
     route_type: RouteType,
 ) -> PreCallInput<'input, TestKey> {
     PreCallInput {
-        data,
+        data: data_from(fixture),
         request,
         key,
         route_type,
@@ -160,16 +160,6 @@ fn call_input<'input>(
         model: None,
         skip_guardrails: false,
     }
-}
-
-fn input_for<'input>(
-    fixture: &str,
-    request: &'input Parts,
-    key: &'input TestKey,
-    route_type: RouteType,
-) -> PreCallInput<'input, TestKey> {
-    let data = data_from(fixture);
-    call_input(data, request, key, route_type)
 }
 
 fn ports(fake: &Arc<Fake>, tracer: Arc<dyn Tracer + Send + Sync>) -> PreCallPorts<TestKey> {
@@ -260,16 +250,29 @@ fn access_calls(calls: &[Call]) -> Vec<Call> {
         .collect()
 }
 
-async fn stores_for(route_type: RouteType) -> Vec<Call> {
-    let fake = Arc::new(Fake::new(behavior()));
+async fn events_after(
+    script: Behavior,
+    path: &str,
+    fixture: &str,
+    route_type: RouteType,
+    rate_limited_model: Option<&str>,
+) -> Vec<Call> {
+    let fake = Arc::new(Fake::new(script));
     let step = step_for(&fake);
-    let request = parts("/v1/responses", None);
+    let request = parts(path, None);
     let key = TestKey::default();
+    let input = input_for(fixture, &request, &key, route_type);
+    step.run(input.data.clone(), &input, rate_limited_model)
+        .await
+        .unwrap();
+    fake.events()
+}
+
+async fn stores_for(route_type: RouteType) -> Vec<Call> {
     let fixture =
         r#"{"model": "gpt", "tools": [{"type": "file_search", "vector_store_ids": ["b", "a"]}]}"#;
-    let input = input_for(fixture, &request, &key, route_type);
-    step.run(input.data.clone(), &input, None).await.unwrap();
-    access_calls(&fake.events())
+    let events = events_after(behavior(), "/v1/responses", fixture, route_type, None).await;
+    access_calls(&events)
 }
 
 async fn stream_data(supports: bool) -> JsonMap {
@@ -288,16 +291,16 @@ async fn stream_data(supports: bool) -> JsonMap {
 }
 
 async fn merges_for(rate_limited_model: Option<&str>) -> Vec<Call> {
-    let fake = Arc::new(Fake::new(behavior()));
-    let step = step_for(&fake);
-    let request = parts("/chat/completions", None);
-    let key = TestKey::default();
     let fixture = r#"{"model": "gpt"}"#;
-    let input = input_for(fixture, &request, &key, RouteType::Completion);
-    step.run(input.data.clone(), &input, rate_limited_model)
-        .await
-        .unwrap();
-    merge_calls(&fake.events())
+    let events = events_after(
+        behavior(),
+        "/chat/completions",
+        fixture,
+        RouteType::Completion,
+        rate_limited_model,
+    )
+    .await;
+    merge_calls(&events)
 }
 
 async fn tag_events(skip_budget: bool) -> Vec<Call> {
@@ -306,25 +309,15 @@ async fn tag_events(skip_budget: bool) -> Vec<Call> {
         hook_tags: vec![String::from("added")],
         ..behavior()
     };
-    let fake = Arc::new(Fake::new(script));
-    let step = step_for(&fake);
-    let request = parts("/chat/completions", None);
-    let key = TestKey::default();
     let fixture = r#"{"model": "gpt", "metadata": {"tags": ["first"]}}"#;
-    let input = input_for(fixture, &request, &key, RouteType::Completion);
-    step.run(input.data.clone(), &input, None).await.unwrap();
-    fake.events()
-}
-
-async fn attach_events(route_type: RouteType) -> Vec<Call> {
-    let fake = Arc::new(Fake::new(behavior()));
-    let step = step_for(&fake);
-    let request = parts("/v1/responses/resp_1", None);
-    let key = TestKey::default();
-    let fixture = r#"{"model": "gpt"}"#;
-    let input = input_for(fixture, &request, &key, route_type);
-    step.run(input.data.clone(), &input, None).await.unwrap();
-    fake.events()
+    events_after(
+        script,
+        "/chat/completions",
+        fixture,
+        RouteType::Completion,
+        None,
+    )
+    .await
 }
 
 async fn fallback_run(
@@ -374,9 +367,9 @@ async fn step_rejects_a_non_string_model_before_any_port() {
     let step = step_for(&fake);
     let request = parts("/chat/completions", None);
     let key = TestKey::default();
-    let expected = data_from(r#"{"model": 7}"#);
-    let input = call_input(expected.clone(), &request, &key, RouteType::Completion);
-    let result = step.run(input.data.clone(), &input, None).await;
+    let input = input_for(r#"{"model": 7}"#, &request, &key, RouteType::Completion);
+    let expected = input.data.clone();
+    let result = step.run(expected.clone(), &input, None).await;
     let error = match result {
         Ok(_) => panic!("a non-string model must fail"),
         Err(error) => error,
@@ -580,16 +573,25 @@ async fn step_returns_a_store_access_failure_with_the_data() {
 
 #[tokio::test]
 async fn step_attaches_retrieval_only_for_get_responses() {
-    assert!(
-        attach_events(RouteType::GetResponses)
-            .await
-            .contains(&Call::Attach)
-    );
-    assert!(
-        !attach_events(RouteType::Completion)
-            .await
-            .contains(&Call::Attach)
-    );
+    let fixture = r#"{"model": "gpt"}"#;
+    let attached = events_after(
+        behavior(),
+        "/v1/responses/resp_1",
+        fixture,
+        RouteType::GetResponses,
+        None,
+    )
+    .await;
+    let skipped = events_after(
+        behavior(),
+        "/v1/responses/resp_1",
+        fixture,
+        RouteType::Completion,
+        None,
+    )
+    .await;
+    assert!(attached.contains(&Call::Attach));
+    assert!(!skipped.contains(&Call::Attach));
 }
 
 #[tokio::test]
@@ -809,6 +811,8 @@ async fn step_splits_the_callback_lists() {
     let fixture = r#"{"model": "gpt", "success_callback": ["dynamodb", "langfuse"], "failure_callback": ["langfuse2"], "callbacks": ["test-logger", "test-logger"]}"#;
     let input = input_for(fixture, &request, &key, RouteType::Completion);
     let output = step.run(input.data.clone(), &input, None).await.unwrap();
+    assert_eq!(output.data.get("callbacks"), None);
+    assert_eq!(output.data.get("success_callback"), None);
     let dynamic = &output.logging.dynamic_callbacks;
     assert_eq!(
         dynamic.success,
@@ -876,10 +880,10 @@ async fn step_rejects_a_url_valued_model_argument() {
     let step = step_for(&fake);
     let request = parts("/v1/images/edits", None);
     let key = TestKey::default();
-    let data = data_from(r#"{"model": "gpt"}"#);
-    let mut input = call_input(data.clone(), &request, &key, RouteType::ImageEdit);
+    let mut input = input_for(r#"{"model": "gpt"}"#, &request, &key, RouteType::ImageEdit);
     input.model = Some("https://example.com/model");
-    let result = step.run(input.data.clone(), &input, None).await;
+    let data = input.data.clone();
+    let result = step.run(data.clone(), &input, None).await;
     let error = match result {
         Ok(_) => panic!("a URL-valued model argument must fail"),
         Err(error) => error,

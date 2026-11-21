@@ -10,33 +10,35 @@ use betterlite_openai::openai_base_config::Object as JsonMap;
 
 use super::json::{from_request_data, to_request_data};
 use super::router_branch::apply_router_settings;
-use super::{PreCallError, PreCallInput, PreCallStep};
+use super::{PreCallError, PreCallInput, PreCallSettings, PreCallStep, held_error};
 use crate::pre_call::failure::PreCallFailure;
 use crate::pre_call::key::PreCallKey;
+use crate::pre_call::ports::RequestPreparer;
 use crate::pre_call::rewrites::{apply_aliases, apply_overrides, file_search_store_ids};
 use crate::pre_call::route_type::RouteType;
 use crate::stream_cleanup::fallback_flag::drop_fallback_errors_flag;
 
 pub(super) async fn prepare<K: PreCallKey>(
-    step: &PreCallStep<K>,
+    preparer: &dyn RequestPreparer<K>,
     data: JsonMap,
     input: &PreCallInput<'_, K>,
 ) -> Result<JsonMap, PreCallError> {
     let arrival = data.clone();
-    step.ports
-        .preparer
+    let prepared = preparer
         .prepare(data, input.request, input.key, input.version)
-        .await
-        .map_err(|failure| PreCallError {
-            failure,
-            data: arrival,
-        })
+        .await;
+    held_error(arrival, prepared)
 }
 
-pub(super) fn drop_flag<K: PreCallKey>(step: &PreCallStep<K>, data: &mut JsonMap) {
+pub(super) fn drop_flag<K: PreCallKey>(
+    step: &PreCallStep<K>,
+    data: &mut JsonMap,
+) -> Result<(), PreCallError> {
     let mut request_body = to_request_data(data);
     drop_fallback_errors_flag(&step.settings.fallback_errors, &mut request_body);
-    *data = from_request_data(request_body);
+    let held = data.clone();
+    *data = held_error(held, from_request_data(request_body))?;
+    Ok(())
 }
 
 pub(super) async fn authorize_stores<K: PreCallKey>(
@@ -50,35 +52,27 @@ pub(super) async fn authorize_stores<K: PreCallKey>(
     ) {
         return Ok(());
     }
-    let store_ids = file_search_store_ids(data).map_err(|failure| PreCallError {
-        failure,
-        data: data.clone(),
-    })?;
+    let store_ids = held_error(data.clone(), file_search_store_ids(data))?;
     for store_id in store_ids {
-        step.ports
+        let granted = step
+            .ports
             .vector_stores
             .assert_access(&store_id, input.key)
-            .await
-            .map_err(|failure| PreCallError {
-                failure,
-                data: data.clone(),
-            })?;
+            .await;
+        held_error(data.clone(), granted)?;
     }
     Ok(())
 }
 
 pub(super) fn rewrite_model<K: PreCallKey>(
-    step: &PreCallStep<K>,
+    settings: &PreCallSettings,
     data: &mut JsonMap,
     input: &PreCallInput<'_, K>,
 ) -> Result<(), PreCallError> {
     if let Some(endpoint_model) = input.model {
-        reject_url_valued_destination(DestinationField::Model, endpoint_model, &[]).map_err(
-            |error| PreCallError {
-                failure: destination_failure(&error),
-                data: data.clone(),
-            },
-        )?;
+        let checked = reject_url_valued_destination(DestinationField::Model, endpoint_model, &[])
+            .map_err(|error| destination_failure(&error));
+        held_error(data.clone(), checked)?;
     }
     let kind = if input.route_type == RouteType::ImageEdit {
         InferenceModelKind::ImageEdit
@@ -87,8 +81,8 @@ pub(super) fn rewrite_model<K: PreCallKey>(
     };
     let resolved = resolve_inference_model(
         data.get("model").and_then(JsonValue::as_str),
-        &step.settings.model_defaults,
-        step.settings.user_model.as_deref(),
+        &settings.model_defaults,
+        settings.user_model.as_deref(),
         input.model,
         kind,
     );
@@ -96,8 +90,8 @@ pub(super) fn rewrite_model<K: PreCallKey>(
         String::from("model"),
         resolved.map_or(JsonValue::Null, JsonValue::String),
     );
-    apply_overrides(data, &step.settings.overrides);
-    apply_aliases(data, &step.settings.pre_call.model_alias_map, input.key);
+    apply_overrides(data, &settings.overrides);
+    apply_aliases(data, &settings.pre_call.model_alias_map, input.key);
     Ok(())
 }
 
@@ -109,25 +103,13 @@ pub(super) async fn router_phase<K: PreCallKey>(
     let Some(router) = step.ports.router.as_deref() else {
         return Ok(());
     };
-    let settings = step
-        .ports
-        .router_settings
-        .router_settings(input.key)
-        .await
-        .map_err(|failure| PreCallError {
-            failure,
-            data: data.clone(),
-        })?;
-    let Some(settings) = settings else {
+    let settings = step.ports.router_settings.router_settings(input.key).await;
+    let Some(settings) = held_error(data.clone(), settings)? else {
         return Ok(());
     };
     let held = data.clone();
-    apply_router_settings(data, &settings, router, input.key)
-        .await
-        .map_err(|failure| PreCallError {
-            failure,
-            data: held,
-        })
+    let applied = apply_router_settings(data, &settings, router, input.key).await;
+    held_error(held, applied)
 }
 
 fn destination_failure(error: &RequestDestinationError) -> PreCallFailure {

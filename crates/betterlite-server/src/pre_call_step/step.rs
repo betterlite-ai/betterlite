@@ -40,7 +40,7 @@ impl<K: PreCallKey> PreCallStep<K> {
             ports,
             settings,
             loggers,
-            redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(|error| error.to_string()),
+            redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH),
         }
     }
 
@@ -91,7 +91,7 @@ impl<K: PreCallKey> PreCallStep<K> {
         final_data = hook(self, final_data, input).await?;
         check_added_tags(self, &final_data, input, tags_before).await?;
         attach(self, &mut final_data, input).await;
-        finish(&mut final_data, &mut logging);
+        finish(&mut final_data, &mut logging)?;
         Ok(PreCallOutput {
             data: final_data,
             logging,
@@ -107,17 +107,17 @@ impl<K: PreCallKey> PreCallStep<K> {
         if let Some(failure) = reject_model(&data) {
             return Err(PreCallError { failure, data });
         }
-        data = prepare(self, data, input).await?;
-        drop_flag(self, &mut data);
+        data = prepare(self.ports.preparer.as_ref(), data, input).await?;
+        drop_flag(self, &mut data)?;
         authorize_stores(self, &data, input).await?;
         let route = request_route(input.request);
         // ast-grep-ignore: no-long-names
         let bucket = metadata::metadata_variable_name_for_route(&route);
         write_queue_time(&mut data, bucket.as_str(), started_seconds(started));
-        rewrite_model(self, &mut data, input)?;
+        rewrite_model(&self.settings, &mut data, input)?;
         router_phase(self, &mut data, input).await?;
         let call_id = identify(self, &mut data, input);
-        stream_usage(self, &mut data, input);
+        stream_usage(self, &mut data, input.route_type, input.key.team_id());
         let wall_clock = DateTime::<Utc>::from(started).fixed_offset();
         let logging = build_logging(self, &mut data, input, &call_id, wall_clock)?;
         Ok((data, logging))

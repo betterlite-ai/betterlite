@@ -19,6 +19,7 @@ use betterlite_error::proxy_error_types::ProxyErrorTypes;
 use betterlite_logging::callback_logger::resolver::LoggerResolver;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_openai::openai_base_config::Object as JsonMap;
+use betterlite_redact::error::RedactionError;
 use betterlite_redact::secret::Redactor;
 use http::request::Parts;
 
@@ -63,8 +64,8 @@ pub struct PreCallStep<K: PreCallKey> {
     ports: PreCallPorts<K>,
     settings: PreCallSettings,
     loggers: Arc<dyn LoggerResolver>,
-    // a bad pattern is a programming error, so the message waits here until the first call reports it
-    redactor: Result<Redactor, String>,
+    // a bad pattern is a programming error, so the error waits here until the first call reports it
+    redactor: Result<Redactor, RedactionError>,
 }
 
 fn internal(message: String) -> PreCallFailure {
@@ -73,5 +74,13 @@ fn internal(message: String) -> PreCallFailure {
         error_type: ProxyErrorTypes::InternalServerError.to_string(),
         param: None,
         code: 500,
+    })
+}
+
+// a stage that fails mid-way reports the data as it stood when the stage was entered
+fn held_error<T>(held: JsonMap, result: Result<T, PreCallFailure>) -> Result<T, PreCallError> {
+    result.map_err(|failure| PreCallError {
+        failure,
+        data: held,
     })
 }

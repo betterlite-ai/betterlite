@@ -156,18 +156,18 @@ fn take_dynamic_callbacks(
     loggers: &dyn LoggerResolver,
 ) -> Result<DynamicCallbacks, PreCallFailure> {
     let mut dynamic = DynamicCallbacks::default();
-    if let Some(listed) = take_list(data, "success_callback") {
+    if let Some(listed) = take_names(data, "success_callback") {
         let (success, asynchronous) = split_success(listed);
         dynamic.success = Some(success);
         if !asynchronous.is_empty() {
             dynamic.async_success = Some(asynchronous);
         }
     }
-    if let Some(listed) = take_list(data, "failure_callback") {
+    if let Some(listed) = take_names(data, "failure_callback") {
         dynamic.failure = Some(listed);
     }
     // function_setup registers a per-request callback for every event, so each resolved name joins every list
-    for name in take_request_callbacks(data) {
+    for name in take_named(data, "callbacks") {
         let resolved = resolve_callback_string(&name, &TrustedCallbacks::default(), loggers)
             .map_err(|error| internal(error.to_string()))?;
         for logger in resolved {
@@ -202,25 +202,15 @@ fn split_success(listed: Vec<String>) -> (Vec<String>, Vec<String>) {
     (success, asynchronous)
 }
 
-fn take_list(data: &mut JsonMap, field: &str) -> Option<Vec<String>> {
+fn take_names(data: &mut JsonMap, field: &str) -> Option<Vec<String>> {
     if !matches!(data.get(field), Some(JsonValue::Array(_))) {
         return None;
     }
-    match data.remove(field) {
-        Some(JsonValue::Array(items)) => Some(names_of(&items)),
-        Some(
-            JsonValue::Null
-            | JsonValue::Bool(_)
-            | JsonValue::Number(_)
-            | JsonValue::String(_)
-            | JsonValue::Object(_),
-        )
-        | None => None,
-    }
+    Some(take_named(data, field))
 }
 
-fn take_request_callbacks(data: &mut JsonMap) -> Vec<String> {
-    match data.remove("callbacks") {
+fn take_named(data: &mut JsonMap, field: &str) -> Vec<String> {
+    match data.remove(field) {
         Some(JsonValue::Array(items)) => names_of(&items),
         Some(
             JsonValue::Null

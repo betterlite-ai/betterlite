@@ -8,6 +8,7 @@ use super::logging::{LoggingRequest, build_state};
 use super::{PreCallError, PreCallInput, PreCallStep, internal};
 use crate::pre_call::key::PreCallKey;
 use crate::pre_call::rewrites::{resolve_call_id, stream_usage_updates, streamable_models};
+use crate::pre_call::route_type::RouteType;
 
 pub(super) fn identify<K: PreCallKey>(
     step: &PreCallStep<K>,
@@ -25,39 +26,42 @@ pub(super) fn identify<K: PreCallKey>(
         String::from("litellm_call_id"),
         JsonValue::String(call_id.clone()),
     );
+    tag_call(step, data, call_id.as_str());
+    call_id
+}
+
+fn tag_call<K: PreCallKey>(step: &PreCallStep<K>, data: &JsonMap, call_id: &str) {
     let tracer = step.ports.tracer.as_ref();
-    tag_call_id(tracer, Some(call_id.as_str()));
+    tag_call_id(tracer, Some(call_id));
     tag_request(
         tracer,
         None,
         None,
         data.get("model").and_then(JsonValue::as_str),
     );
-    call_id
 }
 
 pub(super) fn stream_usage<K: PreCallKey>(
     step: &PreCallStep<K>,
     data: &mut JsonMap,
-    input: &PreCallInput<'_, K>,
+    route_type: RouteType,
+    team_id: Option<&str>,
 ) {
     let target_model = data.get("model").cloned().unwrap_or(JsonValue::Null);
     let updates = stream_usage_updates(
         data,
         step.settings.pre_call.always_include_stream_usage,
-        input.route_type,
+        route_type,
         || {
             streamable_models(
                 &target_model,
                 step.ports.router.as_deref(),
-                input.key.team_id(),
+                team_id,
                 step.ports.stream_options.as_ref(),
             )
         },
     );
-    for (name, value) in updates {
-        data.insert(name, value);
-    }
+    data.extend(updates);
 }
 
 pub(super) fn build_logging<K: PreCallKey>(
@@ -67,13 +71,10 @@ pub(super) fn build_logging<K: PreCallKey>(
     call_id: &str,
     start_time: DateTime<FixedOffset>,
 ) -> Result<LoggingState, PreCallError> {
-    let Ok(redactor) = step.redactor.as_ref() else {
-        let reason = step.redactor.as_ref().err().cloned().unwrap_or_default();
-        return Err(PreCallError {
-            failure: internal(reason),
-            data: data.clone(),
-        });
-    };
+    let redactor = step.redactor.as_ref().map_err(|error| PreCallError {
+        failure: internal(error.to_string()),
+        data: data.clone(),
+    })?;
     let held = data.clone();
     build_state(LoggingRequest {
         data,

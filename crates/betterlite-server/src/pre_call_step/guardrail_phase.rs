@@ -9,7 +9,7 @@ use betterlite_openai::openai_base_config::Object as JsonMap;
 
 use super::json::{from_request_data, to_decision, to_request_data};
 use super::step::request_route;
-use super::{PreCallError, PreCallInput, PreCallStep};
+use super::{PreCallError, PreCallInput, PreCallStep, held_error};
 use crate::pre_call::key::PreCallKey;
 use crate::pre_call::rewrites::request_model;
 use crate::pre_call::route_type::RouteType;
@@ -94,7 +94,7 @@ pub(super) async fn attach<K: PreCallKey>(
     }
 }
 
-pub(super) fn finish(data: &mut JsonMap, logging: &mut LoggingState) {
+pub(super) fn finish(data: &mut JsonMap, logging: &mut LoggingState) -> Result<(), PreCallError> {
     let mut request_body = to_request_data(data);
     // ast-grep-ignore: no-long-names
     snapshot::refresh_proxy_server_request_body_snapshot(
@@ -102,9 +102,11 @@ pub(super) fn finish(data: &mut JsonMap, logging: &mut LoggingState) {
         Some(&mut *logging),
         true,
     );
-    *data = from_request_data(request_body);
+    let held = data.clone();
+    *data = held_error(held, from_request_data(request_body))?;
     tracing::debug!("receiving data: {data:?}");
     if let Some(JsonValue::Array(messages)) = data.get("messages") {
         update_messages(logging, messages.iter().map(to_decision).collect());
     }
+    Ok(())
 }
