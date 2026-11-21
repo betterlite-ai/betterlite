@@ -1,7 +1,7 @@
 id: B698
 milestone: M3 providers
 title: Foundry resource operation composition
-status: todo
+status: done
 depends_on: [B553, B554, B555, B556, B557, B558, B564, B565, B566, B171]
 file: tasks/B698-foundry-resource-dispatch.yaml
 covers:
@@ -16,7 +16,7 @@ covers:
   - "litellm/llms/azure_ai/passthrough/transformation.py"
 parent: B026
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2766
