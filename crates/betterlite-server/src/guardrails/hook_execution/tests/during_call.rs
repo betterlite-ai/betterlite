@@ -15,10 +15,10 @@ use crate::guardrails::callback_caps::traits::{GuardrailEvent, ProxyCallback};
 use crate::guardrails::hook_execution::during_call::during_call_hook;
 
 fn capabilities(callbacks: Vec<Fake>) -> CallbackCapabilities {
-    let listed: Vec<Arc<dyn ProxyCallback>> = callbacks
-        .into_iter()
-        .map(|callback| -> Arc<dyn ProxyCallback> { Arc::new(callback) })
-        .collect();
+    let mut listed: Vec<Arc<dyn ProxyCallback>> = Vec::new();
+    for callback in callbacks {
+        listed.push(Arc::new(callback));
+    }
     CallbackCapabilities::from_callbacks(&listed)
 }
 
