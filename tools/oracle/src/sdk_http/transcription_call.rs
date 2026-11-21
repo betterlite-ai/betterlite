@@ -7,7 +7,7 @@ use betterlite_core::api::transcription_call::dispatch::TranscriptionAnswer;
 use betterlite_core::api::transcription_call::error::{
     AsyncTranscriptionError, TranscriptionError,
 };
-use betterlite_core::api::transcription_call::service::Transcriptions;
+use betterlite_core::api::transcription_call::service::{DurationDecoder, Transcriptions};
 use betterlite_models::catalog::BundledCatalog;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
@@ -15,7 +15,6 @@ use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
-use betterlite_openai::api::audio_file_input::decoder::AudioDecoder;
 use betterlite_openai::api::audio_file_input::{AudioFile, AudioTuple, TupleContent};
 use betterlite_openai::api::transcription_contract::TranscriptionResponse;
 use betterlite_openai::openai_base_config::Headers;
@@ -174,7 +173,7 @@ async fn execute(
         resolution,
         bundled: &catalog,
         files: &files,
-        decoder: AudioDecoder::Unavailable,
+        decoder: DurationDecoder::Unavailable,
         redactor: &redactor,
         logging: None,
         identify: uuid::Uuid::new_v4,

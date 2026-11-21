@@ -128,11 +128,11 @@ fn invalid_timeout_is_refused_before_dispatch() {
         let harness = Harness::new();
         let mut request = request_for("openai/whisper-1");
         request.timeout = Some(-1.0);
-        let error = harness
+        let refused = harness
             .service()
             .transcription(&request, AudioFile::Bytes(&wav(1)))
             .await;
-        let Err(error) = error else {
+        let Err(error) = refused else {
             panic!("a negative timeout is refused");
         };
         assert!(matches!(error, TranscriptionError::InvalidTimeout { .. }));

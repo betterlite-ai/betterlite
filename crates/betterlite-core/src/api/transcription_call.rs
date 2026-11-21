@@ -7,7 +7,6 @@ pub mod target;
 
 mod tests;
 
-use betterlite_context::media_config_selection::audio_transcription::AudioTranscriptionConfigTag;
 use betterlite_context::non_default_params::names::is_openai_compatible_provider;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
@@ -21,20 +20,6 @@ use self::error::TranscriptionError;
 // transcription's timeout default, and OpenAI's own retry default, which litellm.num_retries never replaces
 pub const DEFAULT_TIMEOUT_SECONDS: f64 = 600.0;
 pub const DEFAULT_MAX_RETRIES: u32 = 2;
-
-// has_native_transcription_endpoint is true only for these two provider configs
-const NATIVE_ENDPOINT_CONFIGS: [AudioTranscriptionConfigTag; 2] = [
-    AudioTranscriptionConfigTag::XAI,
-    AudioTranscriptionConfigTag::EdenAI,
-];
-
-#[must_use]
-pub fn is_native_endpoint(config: Option<AudioTranscriptionConfigTag>) -> bool {
-    match config {
-        Some(tag) => NATIVE_ENDPOINT_CONFIGS.contains(&tag),
-        None => false,
-    }
-}
 
 // OPENAI_AUDIO_TRANSCRIPTION_PROVIDERS: "openai" plus every openai-compatible provider
 #[must_use]
@@ -52,11 +37,11 @@ pub fn cached_audio_response(value: Json) -> Result<TranscriptionResponse, Trans
     };
     let mut extra = Object::new();
     let mut text = None;
-    for (name, value) in fields {
+    for (name, field) in fields {
         if name == "text" {
-            text = match value {
+            text = match field {
                 Json::Null => None,
-                Json::Text(text) => Some(text),
+                Json::Text(content) => Some(content),
                 Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
                     return Err(TranscriptionError::CachedField {
                         field: String::from("text"),
@@ -65,7 +50,7 @@ pub fn cached_audio_response(value: Json) -> Result<TranscriptionResponse, Trans
             };
             continue;
         }
-        let converted = serde_json::to_value(&value)
+        let converted = serde_json::to_value(&field)
             .map_err(|source| TranscriptionError::CachedValue { source })?;
         extra.insert(name, converted);
     }
@@ -103,10 +88,10 @@ pub(crate) fn store_hidden_duration(response: &mut TranscriptionResponse, durati
 
 // a public duration that is present and not null suppresses the fallback, including an explicit zero
 pub(crate) fn public_duration_is_absent(response: &TranscriptionResponse) -> bool {
-    response
-        .extra
-        .get("duration")
-        .is_none_or(|value| value.is_null())
+    let Some(duration) = response.extra.get("duration") else {
+        return true;
+    };
+    duration.is_null()
 }
 
 pub(crate) fn decisions_json(value: &JsonValue) -> Json {
@@ -119,7 +104,7 @@ pub(crate) fn decisions_json(value: &JsonValue) -> Json {
         JsonValue::Object(fields) => Json::Object(
             fields
                 .iter()
-                .map(|(name, value)| (name.clone(), decisions_json(value)))
+                .map(|(name, field)| (name.clone(), decisions_json(field)))
                 .collect(),
         ),
     }

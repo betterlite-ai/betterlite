@@ -21,8 +21,13 @@ use crate::api::resource_sdk_settings::{ResourceSdkRequestOptions, ResourceSdkSe
 use super::call::TranscriptionCall;
 use super::dispatch::TranscriptionDispatch;
 use super::error::TranscriptionError;
-use super::is_native_endpoint;
 use super::is_openai_audio_provider;
+
+// has_native_transcription_endpoint is true for exactly these two provider configs
+const NATIVE_ENDPOINT_CONFIGS: [AudioTranscriptionConfigTag; 2] = [
+    AudioTranscriptionConfigTag::XAI,
+    AudioTranscriptionConfigTag::EdenAI,
+];
 
 // everything the provider branches share: the resolved identity, the selected config and the mapped options
 pub(super) struct Plan {
@@ -62,18 +67,15 @@ where
         }
         ProviderIdentity::Anyscale | ProviderIdentity::Custom(_) => None,
     };
-    let openai_transport = is_openai_audio_provider(&slug) && !is_native_endpoint(config);
+    let openai_transport = is_openai_audio_provider(&slug)
+        && !config.is_some_and(|tag| NATIVE_ENDPOINT_CONFIGS.contains(&tag));
     let kwargs = popped_kwargs(call);
     let passed = passed_params(&kwargs, call);
-    let drop_policy = DropPolicy {
-        drop_params: call.params.get("drop_params").and_then(bool_value),
-        litellm_drop_params: settings.drop_params.unwrap_or(false),
-    };
     let optional_params = transcription_optional_params(&TranscriptionRequest {
         model: &resolved.model,
         custom_llm_provider: &slug,
         params: &passed,
-        drop_policy,
+        drop_policy: drop_policy(settings, call),
         mapper: dispatch.mapper(&slug, config),
     })?;
     Ok(Plan {
@@ -102,15 +104,21 @@ fn passed_params(kwargs: &Params, call: &TranscriptionCall) -> Params {
     let mut passed = non_default_kwargs(kwargs, Endpoint::Transcription);
     passed.insert(
         String::from("language"),
-        optional_text(call.language.as_deref()),
+        call.language
+            .as_deref()
+            .map_or(JsonValue::Null, |text| JsonValue::Text(text.to_owned())),
     );
     passed.insert(
         String::from("prompt"),
-        optional_text(call.prompt.as_deref()),
+        call.prompt
+            .as_deref()
+            .map_or(JsonValue::Null, |text| JsonValue::Text(text.to_owned())),
     );
     passed.insert(
         String::from("response_format"),
-        optional_text(call.response_format.as_deref()),
+        call.response_format
+            .as_deref()
+            .map_or(JsonValue::Null, |text| JsonValue::Text(text.to_owned())),
     );
     passed.insert(
         String::from("timestamp_granularities"),
@@ -129,14 +137,15 @@ fn passed_params(kwargs: &Params, call: &TranscriptionCall) -> Params {
     passed
 }
 
-fn optional_text(value: Option<&str>) -> JsonValue {
-    match value {
-        Some(text) => JsonValue::Text(text.to_owned()),
-        None => JsonValue::Null,
+// get_non_default_transcription_params' drop policy: the kwargs bool first, then litellm_settings
+fn drop_policy(settings: &Settings, call: &TranscriptionCall) -> DropPolicy {
+    DropPolicy {
+        drop_params: call.params.get("drop_params").and_then(bool_value),
+        litellm_drop_params: settings.drop_params.unwrap_or(false),
     }
 }
 
-pub(super) fn bool_value(value: &JsonValue) -> Option<bool> {
+pub(super) const fn bool_value(value: &JsonValue) -> Option<bool> {
     match value {
         JsonValue::Bool(flag) => Some(*flag),
         JsonValue::Null

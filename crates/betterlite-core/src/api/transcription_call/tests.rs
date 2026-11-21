@@ -10,7 +10,7 @@ use self::support::request_for;
 use super::call::SuppliedClientKind;
 use super::dispatch::{TranscriptionAnswer, TranscriptionDispatch, TranscriptionProviderReply};
 use super::error::{AsyncTranscriptionError, TranscriptionDispatchError, TranscriptionError};
-use super::service::Transcriptions;
+use super::service::{DurationDecoder, Transcriptions};
 use super::target::{InjectedTranscription, TranscriptionInput, TranscriptionTarget};
 use betterlite_config::sections::transcription_call::Settings;
 use betterlite_context::media_config_selection::audio_transcription::AudioTranscriptionConfigTag;
@@ -29,7 +29,7 @@ use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
 use betterlite_openai::api::audio_file_input::decoder::{
-    AudioDecodeLimits, AudioDecoder, NativeAudioDecoder,
+    AudioDecodeLimits, AudioDurationDecoder, NativeAudioDecoder,
 };
 use betterlite_openai::api::audio_file_input::{
     AudioFile, AudioTuple, AuthorizedAudioFiles, TupleContent,
@@ -48,11 +48,10 @@ use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 use uuid::Uuid;
 const INIT: &str = r#"{"model":"whisper-1","call_type":"transcription","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
-
 #[test]
 fn transcription_openai_form() {
     runtime().block_on(async {
-        let mut harness = Harness::new();
+        let harness = Harness::new();
         harness.dispatch.reply(response(
             r#"{"text":"Hello","words":[{"word":"Hello","start":0,"end":1}]}"#,
         ));
@@ -138,7 +137,7 @@ fn transcription_openai_form() {
 #[test]
 fn transcription_openai_retry_defaults() {
     runtime().block_on(async {
-        let mut harness = Harness::new();
+        let harness = Harness::new();
         let audio = wav(1);
         harness.dispatch.reply(response(r#"{"text":"Hello"}"#));
         let mut zero = request_for("openai/whisper-1");
@@ -181,10 +180,10 @@ fn transcription_credential_precedence() {
             .transcription(&openai, AudioFile::Bytes(&audio))
             .await
             .expect("the transcription succeeds");
-        let first = harness.dispatch.last();
-        assert_eq!(first.api_base.as_deref(), Some("https://call.test/v1"));
-        assert_eq!(first.api_key.as_deref(), Some("call-key"));
-        assert_eq!(first.organization.as_deref(), Some("global-org"));
+        let call_base = harness.dispatch.last();
+        assert_eq!(call_base.api_base.as_deref(), Some("https://call.test/v1"));
+        assert_eq!(call_base.api_key.as_deref(), Some("call-key"));
+        assert_eq!(call_base.organization.as_deref(), Some("global-org"));
         // a dynamic empty key replaces the call key, and the branch chain then skips it
         harness.dispatch.reply(response(r#"{"text":"Hello"}"#));
         let mut empty = request_for("openai/whisper-1");
@@ -223,10 +222,13 @@ fn transcription_credential_precedence() {
             .transcription(&plain, AudioFile::Bytes(&audio))
             .await
             .expect("the transcription succeeds");
-        let fourth = harness.dispatch.last();
-        assert_eq!(fourth.api_key.as_deref(), Some("env-key"));
-        assert_eq!(fourth.api_base.as_deref(), Some("https://env-base.test/v1"));
-        assert_eq!(fourth.organization.as_deref(), Some("env-org"));
+        let env_choice = harness.dispatch.last();
+        assert_eq!(env_choice.api_key.as_deref(), Some("env-key"));
+        assert_eq!(
+            env_choice.api_base.as_deref(),
+            Some("https://env-base.test/v1")
+        );
+        assert_eq!(env_choice.organization.as_deref(), Some("env-org"));
         // azure: base, version, token and key each take their own call/global/env order
         let mut azure = Harness::new();
         azure.settings.api_base = Some(String::from("https://litellm-base.test"));
@@ -593,7 +595,7 @@ fn transcription_async_results() {
 #[case("2")]
 fn public_duration_is_preserved(#[case] existing: &str) {
     runtime().block_on(async {
-        let mut harness = Harness::new();
+        let harness = Harness::new();
         let audio = wav(1);
         let request = request_for("openai/whisper-1");
         harness.dispatch.reply(response(&format!(
@@ -646,7 +648,7 @@ fn cached_dict_conversion() {
 fn error_type_names(#[case] source: &str, #[case] expected: &str) {
     assert_eq!(super::error_type_name(&json(source)), expected);
 }
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 struct Snapshot {
     kind: TargetKind,
     model: String,
@@ -662,7 +664,6 @@ struct Snapshot {
     timeout: Duration,
     max_retries: u32,
     shared_session: bool,
-    boundary: Uuid,
     organization: Option<String>,
     family: Option<TranscriptionFamily>,
     api_version: Option<String>,
@@ -698,7 +699,6 @@ impl Snapshot {
             timeout: input.timeout,
             max_retries: input.max_retries,
             shared_session: input.shared_session.is_some(),
-            boundary: input.boundary,
             organization: None,
             family: None,
             api_version: None,
@@ -728,8 +728,9 @@ fn snapshot(target: TranscriptionTarget<'_>) -> Snapshot {
         TranscriptionTarget::NvidiaRiva(call) => injected(TargetKind::NvidiaRiva, call),
         TranscriptionTarget::Soniox(call) => injected(TargetKind::Soniox, call),
         TranscriptionTarget::Bedrock(call) => injected(TargetKind::Bedrock, call),
-        TranscriptionTarget::Native(call) => injected(TargetKind::Native, call),
-        TranscriptionTarget::Watsonx(call) => injected(TargetKind::Native, call),
+        TranscriptionTarget::Native(call) | TranscriptionTarget::Watsonx(call) => {
+            injected(TargetKind::Native, call)
+        }
     }
 }
 
@@ -823,10 +824,16 @@ struct Files;
 
 impl AuthorizedAudioFiles for Files {
     fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
-        Err(io::Error::new(io::ErrorKind::NotFound, path.to_owned()))
+        Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            path.display().to_string(),
+        ))
     }
     fn open(&self, path: &Path) -> io::Result<Box<dyn io::Read + Send>> {
-        Err(io::Error::new(io::ErrorKind::NotFound, path.to_owned()))
+        Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            path.display().to_string(),
+        ))
     }
 }
 
@@ -837,7 +844,7 @@ struct Harness {
     bundled: ModelCatalog,
     names: BTreeSet<String>,
     files: Files,
-    decoder: Option<NativeAudioDecoder>,
+    decoder: Option<Box<dyn AudioDurationDecoder + Sync>>,
     redactor: Redactor,
     logging: Mutex<LoggingState>,
     dispatch: Recorder,
@@ -864,9 +871,9 @@ impl Harness {
             bundled: ModelCatalog::default(),
             names: BTreeSet::new(),
             files: Files,
-            decoder: Some(NativeAudioDecoder {
+            decoder: Some(Box::new(NativeAudioDecoder {
                 limits: AudioDecodeLimits::default(),
-            }),
+            })),
             redactor,
             logging: Mutex::new(logging),
             dispatch: Recorder::default(),
@@ -887,10 +894,10 @@ impl Harness {
             },
             bundled: &self.bundled,
             files: &self.files,
-            decoder: match &self.decoder {
-                Some(decoder) => AudioDecoder::Available(decoder),
-                None => AudioDecoder::Unavailable,
-            },
+            decoder: self
+                .decoder
+                .as_deref()
+                .map_or(DurationDecoder::Unavailable, DurationDecoder::Available),
             redactor: &self.redactor,
             logging: Some(&self.logging),
             identify: fixed_boundary,
@@ -898,7 +905,7 @@ impl Harness {
     }
 }
 
-fn fixed_boundary() -> Uuid {
+const fn fixed_boundary() -> Uuid {
     Uuid::from_u128(7)
 }
 
@@ -964,24 +971,31 @@ fn hidden_duration(body: &TranscriptionResponse) -> Option<f64> {
 // a canonical 16-bit mono PCM WAV, so the duration decoder measures exactly the requested seconds
 fn wav(seconds: u32) -> Vec<u8> {
     const SAMPLE_RATE: u32 = 8000;
-    let frames = SAMPLE_RATE * seconds;
-    let data_len = frames * 2;
+    let frames = seconds.checked_mul(SAMPLE_RATE).expect("the fixture fits");
+    let data_len = frames.checked_mul(2).expect("the fixture fits");
+    let byte_rate = SAMPLE_RATE.checked_mul(2).expect("the fixture fits");
     let mut bytes = Vec::new();
     bytes.extend_from_slice(b"RIFF");
-    bytes.extend_from_slice(&(36 + data_len).to_le_bytes());
+    bytes.extend_from_slice(
+        &data_len
+            .checked_add(36)
+            .expect("the fixture fits")
+            .to_le_bytes(),
+    );
     bytes.extend_from_slice(b"WAVEfmt ");
     bytes.extend_from_slice(&16_u32.to_le_bytes());
     bytes.extend_from_slice(&1_u16.to_le_bytes());
     bytes.extend_from_slice(&1_u16.to_le_bytes());
     bytes.extend_from_slice(&SAMPLE_RATE.to_le_bytes());
-    bytes.extend_from_slice(&(SAMPLE_RATE * 2).to_le_bytes());
+    bytes.extend_from_slice(&byte_rate.to_le_bytes());
     bytes.extend_from_slice(&2_u16.to_le_bytes());
     bytes.extend_from_slice(&16_u16.to_le_bytes());
     bytes.extend_from_slice(b"data");
     bytes.extend_from_slice(&data_len.to_le_bytes());
-    bytes.resize(
-        bytes.len() + usize::try_from(data_len).expect("the data length"),
-        0,
-    );
+    let zeroed = bytes
+        .len()
+        .checked_add(usize::try_from(data_len).expect("the data length fits"))
+        .expect("the fixture fits");
+    bytes.resize(zeroed, 0);
     bytes
 }
