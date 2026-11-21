@@ -73,39 +73,29 @@ async fn run_case(input: &Input) -> HelperResult {
             "status": request_status(payload.metadata.as_deref().map(str::as_bytes)),
             "raised": false,
         })),
-        Operation::Common => common_answer(&payload, input.entity, &pricing, &endpoints).await,
-        Operation::Baseline => baseline_answer(&payload, &pricing, &endpoints).await,
+        Operation::Common => {
+            let Some(entity) = input.entity else {
+                return Err(failure("a common operation needs an entity"));
+            };
+            let answer =
+                match common_daily_transaction(&payload, entity, &pricing, &endpoints).await {
+                    Ok(Some(projection)) => {
+                        json!({"base": base_spend_row(&projection.base), "raised": false})
+                    }
+                    Ok(None) => json!({"base": null, "raised": false}),
+                    Err(_) => json!({"base": null, "raised": true}),
+                };
+            Ok(answer)
+        }
+        Operation::Baseline => {
+            let answer = match baseline_daily_attribution(&payload, &pricing, &endpoints).await {
+                Ok(Some(attribution)) => json!({"attribution": attribution, "raised": false}),
+                Ok(None) => json!({"attribution": null, "raised": false}),
+                Err(_) => json!({"attribution": null, "raised": true}),
+            };
+            Ok(answer)
+        }
     }
-}
-
-async fn common_answer(
-    payload: &DailyPayload,
-    entity: Option<DailySpendEntity>,
-    pricing: &DailyPricing<'_, CasePrices>,
-    endpoints: &CaseEndpoints,
-) -> HelperResult {
-    let Some(entity) = entity else {
-        return Err(failure("a common operation needs an entity"));
-    };
-    let answer = match common_daily_transaction(payload, entity, pricing, endpoints).await {
-        Ok(Some(projection)) => json!({"base": base_spend_row(&projection.base), "raised": false}),
-        Ok(None) => json!({"base": null, "raised": false}),
-        Err(_) => json!({"base": null, "raised": true}),
-    };
-    Ok(answer)
-}
-
-async fn baseline_answer(
-    payload: &DailyPayload,
-    pricing: &DailyPricing<'_, CasePrices>,
-    endpoints: &CaseEndpoints,
-) -> HelperResult {
-    let answer = match baseline_daily_attribution(payload, pricing, endpoints).await {
-        Ok(Some(attribution)) => json!({"attribution": attribution, "raised": false}),
-        Ok(None) => json!({"attribution": null, "raised": false}),
-        Err(_) => json!({"attribution": null, "raised": true}),
-    };
-    Ok(answer)
 }
 
 // The case's catalog: one exact "provider/model" record, with no deployment registry behind it.
@@ -114,44 +104,30 @@ struct CasePrices {
 }
 
 impl PriceLookup for CasePrices {
-    fn effective_model_info(
-        &self,
-        model: &str,
-        custom_llm_provider: Option<&str>,
-    ) -> Option<PriceRecord> {
-        self.prices
-            .get(&price_key(model, custom_llm_provider))
-            .cloned()
+    fn effective_model_info(&self, model: &str, provider: Option<&str>) -> Option<PriceRecord> {
+        self.prices.get(&price_key(model, provider)).cloned()
     }
 
     fn raw_cost_map_entry(&self, key: &str) -> Option<PriceRecord> {
         self.prices.get(key).cloned()
     }
 
-    fn effective_priced_model(
-        &self,
-        model: &str,
-        custom_llm_provider: Option<&str>,
-    ) -> Option<PricedModel> {
-        self.effective_model_info(model, custom_llm_provider)
-            .map(|record| PricedModel {
-                record,
-                tiered_pricing: Vec::new(),
-                off_peak_pricing: None,
-                off_peak_cache_read_present: false,
-            })
+    fn effective_priced_model(&self, model: &str, provider: Option<&str>) -> Option<PricedModel> {
+        let record = self.effective_model_info(model, provider)?;
+        Some(PricedModel {
+            record,
+            tiered_pricing: Vec::new(),
+            off_peak_pricing: None,
+            off_peak_cache_read_present: false,
+        })
     }
 }
 
 impl SavingsPricingContext for CasePrices {
-    fn resolve_model(
-        &self,
-        model: &str,
-        custom_llm_provider: Option<&str>,
-    ) -> Option<ModelIdentity> {
+    fn resolve_model(&self, model: &str, provider: Option<&str>) -> Option<ModelIdentity> {
         Some(ModelIdentity {
             model: model.to_owned(),
-            provider: custom_llm_provider.unwrap_or_default().to_owned(),
+            provider: provider.unwrap_or_default().to_owned(),
         })
     }
 
