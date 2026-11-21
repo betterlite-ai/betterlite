@@ -130,6 +130,10 @@ pub(super) fn pre_call(
     for (name, value) in headers {
         logged_headers.insert(name.clone(), Json::Text(value.clone()));
     }
+    // _pre_call's model_call_details["api_key"], which this handler always calls with ""
+    log.state
+        .model_call_details
+        .insert(String::from("api_key"), Json::Text(String::new()));
     let record = PreCall {
         input: logged_input(input),
         model: None,
