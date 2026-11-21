@@ -582,6 +582,58 @@ async fn status_error_is_a_provider_error() {
     );
 }
 
+async fn get_status_error_is_a_provider_error() {
+    let served = serve(
+        reply(
+            "503 Service Unavailable",
+            &[("content-encoding", "identity")],
+            "try later",
+        ),
+        Duration::ZERO,
+    )
+    .expect("the fixture serves");
+    let base = format!("http://{}/search?q=rust", served.address);
+    let tls = default_tls();
+    let routing = proxy_policy();
+    let pool = ClientPool::new(4, TransportLimits::DEFAULT);
+    let provider = TestProvider {
+        method: HttpMethod::Get,
+        ..test_provider(&base)
+    };
+    let query = SearchQuery::Single(String::from("rust"));
+    let params = Object::new();
+    let mut fixture = Fixture::new();
+    let rejection = fixture
+        .execute(
+            search_call(&query, &params, &base, &tls, &routing),
+            &provider,
+            &pool,
+            false,
+        )
+        .await
+        .expect_err("the status fails the call");
+    let error = provider_error(&rejection);
+    assert_eq!(
+        (error.status_code, error.status_code_is_synthesized),
+        (503, false)
+    );
+    assert_eq!(error.message, "try later");
+    let errors = recorded_errors(&provider);
+    let (_, _, sent_headers) = errors.first().expect("one http_error call");
+    assert_eq!(
+        sent_headers.get("content-encoding").map(String::as_str),
+        Some("identity")
+    );
+    assert_eq!(
+        sent_headers.get("content-length").map(String::as_str),
+        Some("9")
+    );
+    assert_eq!(
+        served.finish().expect("the fixture answers").line,
+        "GET /search?q=rust HTTP/1.1"
+    );
+}
+
 async fn transform_error_is_not_converted() {
     let served =
         serve(reply("200 OK", &[], NOT_AN_ANSWER), Duration::ZERO).expect("the fixture serves");
@@ -623,6 +675,7 @@ async fn transform_error_is_not_converted() {
 #[tokio::test]
 async fn status_failure() {
     status_error_is_a_provider_error().await;
+    get_status_error_is_a_provider_error().await;
     transform_error_is_not_converted().await;
 }
 
@@ -724,11 +777,98 @@ async fn closed_pool_is_converted() {
     assert!(recorded_errors(&provider).is_empty());
 }
 
+async fn body_too_large_is_converted() {
+    let served = serve(reply("200 OK", &[], ANSWER), Duration::ZERO).expect("the fixture serves");
+    let base = format!("http://{}/search", served.address);
+    let tls = default_tls();
+    let routing = proxy_policy();
+    let pool = ClientPool::new(4, TransportLimits::DEFAULT);
+    let provider = test_provider(&base);
+    let query = SearchQuery::Single(String::from("rust"));
+    let params = Object::new();
+    let mut fixture = Fixture::new();
+    let call = SearchHttpCall {
+        client: Some(proxied(
+            TransportLimits {
+                body_bytes: 5,
+                ..TransportLimits::DEFAULT
+            },
+            &routing,
+        )),
+        ..search_call(&query, &params, &base, &tls, &routing)
+    };
+    let rejection = fixture
+        .execute(call, &provider, &pool, false)
+        .await
+        .expect_err("the body is too large");
+    let error = provider_error(&rejection);
+    assert_eq!(
+        (error.status_code, error.status_code_is_synthesized),
+        (500, true)
+    );
+    assert_eq!(error.message, "the response body is larger than 5 bytes");
+    assert!(recorded_errors(&provider).is_empty());
+    served.finish().expect("the fixture answers");
+}
+
+async fn request_failure(provider: &TestProvider, expected: &str) {
+    let tls = default_tls();
+    let routing = proxy_policy();
+    let pool = ClientPool::new(4, TransportLimits::DEFAULT);
+    let base = provider.complete.clone();
+    let query = SearchQuery::Single(String::from("rust"));
+    let params = Object::new();
+    let mut fixture = Fixture::new();
+    let rejection = fixture
+        .execute(
+            search_call(&query, &params, &base, &tls, &routing),
+            provider,
+            &pool,
+            false,
+        )
+        .await
+        .expect_err("the request cannot be built");
+    let error = provider_error(&rejection);
+    assert_eq!(
+        (error.status_code, error.status_code_is_synthesized),
+        (500, true)
+    );
+    assert_eq!(error.message, expected);
+    assert!(recorded_errors(provider).is_empty());
+}
+
+async fn request_failure_is_converted() {
+    let no_url = String::from("not a url");
+    let url_provider = test_provider(&no_url);
+    request_failure(
+        &url_provider,
+        "the search request URL not a url is not a URL",
+    )
+    .await;
+    let base = String::from("http://127.0.0.1:1/search");
+    let bad_name = TestProvider {
+        signed: BTreeMap::from([(String::from("bad header"), String::from("1"))]),
+        ..test_provider(&base)
+    };
+    request_failure(&bad_name, "the bad header header name is not a header name").await;
+    let bad_value = TestProvider {
+        signed: BTreeMap::from([(String::from("x-signature"), String::from("bad\nvalue"))]),
+        ..test_provider(&base)
+    };
+    request_failure(
+        &bad_value,
+        "the x-signature header value is not a header value",
+    )
+    .await;
+}
+
 #[tokio::test]
 async fn transport_failure() {
     connection_failure_is_converted().await;
     deadline_failure_is_a_timeout().await;
     closed_pool_is_converted().await;
+    body_too_large_is_converted().await;
+    request_failure_is_converted().await;
 }
 
 async fn supplied_client_wins() {
