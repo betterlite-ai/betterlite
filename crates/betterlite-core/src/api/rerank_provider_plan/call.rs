@@ -109,7 +109,7 @@ fn timeout_arg(value: &Json) -> Result<Option<TimeoutArg>, CallError> {
         Json::Bool(_) | Json::List(_) | Json::Object(_) => Err(CallError::FieldTimeout { field }),
     }
 }
-fn drop_flag(value: &Json) -> Result<Option<bool>, CallError> {
+const fn drop_flag(value: &Json) -> Result<Option<bool>, CallError> {
     if let Json::Bool(flag) = value {
         return Ok(Some(*flag));
     }

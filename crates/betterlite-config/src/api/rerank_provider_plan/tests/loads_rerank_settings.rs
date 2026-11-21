@@ -24,27 +24,34 @@ fn unset_settings_take_their_defaults() {
     assert_eq!(settings.headers, None);
     assert_eq!(text(settings.togetherai_api_key.as_ref()), None);
     assert!(!settings.drop_params);
-    let environment = &settings.environment;
+    assert_default_environment_bases(&settings.environment);
+    assert_default_environment_secrets(&settings.environment);
+}
+
+fn assert_default_environment_bases(environment: &Environment) {
     assert_eq!(environment.cohere_api_base, None);
     assert_eq!(environment.azure_ai_api_base, None);
     assert_eq!(environment.infinity_api_base, None);
     assert_eq!(environment.bedrock_api_base, None);
+    assert_eq!(environment.nvidia_nim_api_base, None);
+    assert_eq!(environment.hosted_vllm_api_base, None);
+    assert_eq!(environment.deepinfra_api_base, None);
+    assert_eq!(environment.fireworks_ai_api_base, None);
+    assert_eq!(environment.voyage_api_base, None);
+}
+
+fn assert_default_environment_secrets(environment: &Environment) {
     assert_eq!(text(environment.togetherai_api_key.as_ref()), None);
     assert_eq!(text(environment.jina_ai_api_key.as_ref()), None);
     assert_eq!(text(environment.nvidia_nim_api_key.as_ref()), None);
-    assert_eq!(environment.nvidia_nim_api_base, None);
     assert_eq!(text(environment.hosted_vllm_api_key.as_ref()), None);
-    assert_eq!(environment.hosted_vllm_api_base, None);
     assert_eq!(text(environment.deepinfra_api_key.as_ref()), None);
-    assert_eq!(environment.deepinfra_api_base, None);
     assert_eq!(text(environment.fireworks_api_key.as_ref()), None);
     assert_eq!(text(environment.fireworks_ai_api_key.as_ref()), None);
     assert_eq!(text(environment.fireworksai_api_key.as_ref()), None);
     assert_eq!(text(environment.fireworks_ai_token.as_ref()), None);
-    assert_eq!(environment.fireworks_ai_api_base, None);
     assert_eq!(text(environment.voyage_api_key.as_ref()), None);
     assert_eq!(text(environment.voyage_ai_api_key.as_ref()), None);
-    assert_eq!(environment.voyage_api_base, None);
 }
 
 #[test]

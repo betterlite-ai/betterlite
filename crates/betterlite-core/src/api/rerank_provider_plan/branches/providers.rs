@@ -153,10 +153,10 @@ impl Branches<'_> {
     }
     fn keyed(&self, chain: Chain, error: &str) -> Result<Chain, Box<RawException>> {
         let (key, base) = chain;
-        match key {
-            Some(api_key) => Ok((Some(api_key), base)),
-            None => Err(Box::new(value_failure(error, self.model, self.provider))),
-        }
+        key.map_or_else(
+            || Err(Box::new(value_failure(error, self.model, self.provider))),
+            |api_key| Ok((Some(api_key), base)),
+        )
     }
     fn required_base(
         &self,

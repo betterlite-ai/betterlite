@@ -1,4 +1,9 @@
-use super::*;
+use betterlite_config::api::rerank_provider_plan::RerankSettings;
+use betterlite_models::resolution::ProviderIdentity;
+use secrecy::SecretString;
+
+use super::super::{FakeIdentity, FakeOps, SelectedConfig, defaults, rerank_call, with};
+use super::{Scenario, last, raises_without_sending, run_one, text};
 
 #[test]
 fn rerank_local_and_hosted_credentials() {

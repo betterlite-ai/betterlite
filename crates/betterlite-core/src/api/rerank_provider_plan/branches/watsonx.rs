@@ -24,7 +24,7 @@ pub(super) fn watsonx_credentials(
 ) -> Result<Credentials, Box<RawException>> {
     let mut params = WatsonxParams::new();
     for (name, value) in request.generic_params {
-        if let Some(converted) = serde_json::to_value(value).ok() {
+        if let Ok(converted) = serde_json::to_value(value) {
             params.insert(name.clone(), converted);
         }
     }
