@@ -87,14 +87,14 @@ async fn a_future_entered_with_the_captured_slot_sees_it() {
         inherited.is_none(),
         "a spawned task does not inherit the task_local slot"
     );
-    let sync = enter_request_slot_sync(Some(Arc::clone(&slot)), || current_request_slot());
+    let sync = enter_request_slot_sync(Some(Arc::clone(&slot)), current_request_slot);
     assert!(sync.is_some_and(|held| Arc::ptr_eq(&held, &slot)));
     assert!(
         enter_request_slot(None, async { current_request_slot() })
             .await
             .is_none()
     );
-    assert!(enter_request_slot_sync(None, || current_request_slot()).is_none());
+    assert!(enter_request_slot_sync(None, current_request_slot).is_none());
 }
 
 #[tokio::test]
@@ -106,8 +106,11 @@ async fn code_outside_any_slot_reads_the_empty_context() {
     request_slot_scope(async {
         let slot = current_request_slot().expect("a fresh scope holds its slot");
         let held = slot.trace();
-        assert!(held.root.is_none());
-        assert!(held.destinations.is_empty());
+        let root = held.root.clone();
+        let destinations = held.destinations.clone();
+        drop(held);
+        assert!(root.is_none());
+        assert!(destinations.is_empty());
     })
     .await;
 }

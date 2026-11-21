@@ -129,9 +129,13 @@ async fn anchored_request() -> AnchoredRequest {
 
 fn assert_handler_kept_the_root(seen: &Mutex<Observation>, root_context: &SpanContext) {
     let observed = seen.lock().unwrap();
-    assert_eq!(observed.root, Some(root_context.clone()));
-    assert!(observed.recording, "the handler reaches the live root span");
-    assert!(observed.stamped, "the handler stamps the live root span");
+    let root = observed.root.clone();
+    let recording = observed.recording;
+    let stamped = observed.stamped;
+    drop(observed);
+    assert_eq!(root, Some(root_context.clone()));
+    assert!(recording, "the handler reaches the live root span");
+    assert!(stamped, "the handler stamps the live root span");
 }
 
 fn assert_root_exported(exporter: &InMemorySpanExporter, root_context: &SpanContext) {
