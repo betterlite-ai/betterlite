@@ -43,6 +43,7 @@ struct BackendLog {
 struct FakeBackend {
     log: Arc<Mutex<BackendLog>>,
     send_error: Option<String>,
+    close_error: Option<String>,
 }
 
 #[async_trait]
@@ -65,7 +66,12 @@ impl RealtimeBackend for FakeBackend {
 
     async fn close(&mut self) -> Result<(), WebSocketError> {
         self.log.lock().unwrap().closed = true;
-        Ok(())
+        match &self.close_error {
+            Some(error) => Err(WebSocketError {
+                message: error.clone(),
+            }),
+            None => Ok(()),
+        }
     }
 }
 
@@ -150,6 +156,7 @@ struct ScriptedDialer {
     backend_log: Arc<Mutex<BackendLog>>,
     source_frames: Vec<RealtimeMessage>,
     send_error: Option<String>,
+    close_error: Option<String>,
 }
 
 #[async_trait]
@@ -180,6 +187,7 @@ impl RealtimeWebSocketDialer for ScriptedDialer {
                 sender: Box::new(FakeBackend {
                     log: Arc::clone(&self.backend_log),
                     send_error: self.send_error.clone(),
+                    close_error: self.close_error.clone(),
                 }),
                 source: Some(if self.source_frames.is_empty() {
                     Box::new(ClosedSource)
@@ -240,6 +248,7 @@ struct TestProvider {
     validate_error: Option<String>,
     backend_log: Arc<Mutex<BackendLog>>,
     send_error: Option<String>,
+    close_error: Option<String>,
 }
 
 #[async_trait]
@@ -291,6 +300,7 @@ impl BaseRealtimeConfig for TestProvider {
             return Ok(Some(FakeBackend {
                 log: Arc::clone(&self.backend_log),
                 send_error: self.send_error.clone(),
+                close_error: self.close_error.clone(),
             }));
         }
         Ok(None)
@@ -441,6 +451,7 @@ pub(super) struct HarnessOptions {
     pub(super) max_message_size_bytes: usize,
     pub(super) source_frames: Vec<RealtimeMessage>,
     pub(super) backend_send_error: Option<String>,
+    pub(super) backend_close_error: Option<String>,
 }
 
 impl Default for HarnessOptions {
@@ -461,6 +472,7 @@ impl Default for HarnessOptions {
             max_message_size_bytes: 1024,
             source_frames: Vec::new(),
             backend_send_error: None,
+            backend_close_error: None,
         }
     }
 }
@@ -500,6 +512,7 @@ pub(super) fn harness<'callback>(
         outcomes.push_back(dial);
     }
     let backend_send_error = options.backend_send_error;
+    let backend_close_error = options.backend_close_error;
     Harness {
         provider: Arc::new(TestProvider {
             requires_setup: options.requires_setup,
@@ -509,6 +522,7 @@ pub(super) fn harness<'callback>(
             validate_error: options.validate_error,
             backend_log: Arc::clone(&backend_log),
             send_error: backend_send_error.clone(),
+            close_error: backend_close_error.clone(),
         }),
         dialer: ScriptedDialer {
             outcomes: Mutex::new(outcomes),
@@ -516,6 +530,7 @@ pub(super) fn harness<'callback>(
             backend_log: Arc::clone(&backend_log),
             source_frames: options.source_frames,
             send_error: backend_send_error,
+            close_error: backend_close_error,
         },
         callback_refs,
         client: ClientHandle {

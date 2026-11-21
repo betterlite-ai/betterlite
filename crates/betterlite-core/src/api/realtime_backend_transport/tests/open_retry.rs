@@ -90,4 +90,37 @@ async fn realtime_backend_open_retry() {
     assert!(setup_failed.sent().is_empty());
     assert!(setup_failed.closed());
     assert_eq!(setup_failed.close().map(|close| close.0), Some(1011));
+
+    let mut options = HarnessOptions::default();
+    options.requires_setup = true;
+    options.setup = Some("{\"setup\":{}}".to_owned());
+    options.backend_close_error = Some("the backend close failed".to_owned());
+    let mut close_failed = harness(options, Vec::new());
+    close_failed.run().await.unwrap();
+    assert_eq!(close_failed.close().map(|close| close.0), Some(1011));
+    assert!(
+        close_failed
+            .texts()
+            .iter()
+            .any(|text| text.contains("the backend close failed"))
+    );
+
+    let mut options = HarnessOptions::default();
+    options.requires_setup = true;
+    options.setup = Some("{\"setup\":{}}".to_owned());
+    options.backend_send_error = Some("the backend is gone".to_owned());
+    options.backend_close_error = Some("the backend close failed".to_owned());
+    let mut both_failed = harness(options, Vec::new());
+    both_failed.run().await.unwrap();
+    let texts = both_failed.texts();
+    assert!(
+        texts
+            .iter()
+            .any(|text| text.contains("the backend close failed"))
+    );
+    assert!(
+        !texts
+            .iter()
+            .any(|text| text.contains("the backend is gone"))
+    );
 }
