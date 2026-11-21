@@ -3,7 +3,7 @@
 use std::fs;
 use std::path::Path;
 
-use betterlite_oracle_helper_api::helper::Helper;
+use betterlite_oracle_helper_api::helper::Helper as _;
 use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
 use betterlite_oracle_runner::helpers::ORACLE_DIR;
 use serde_json::json;

@@ -11,7 +11,7 @@ use super::{client, deployment, serve};
 use crate::foundry_dispatch::{AzureAi, AzureAiPrepared};
 use crate::operation::OperationError;
 use crate::prepared::{PreparedChat, PreparedHttp, PreparedRequest, Upstream};
-use crate::transform_retry::{TransformOnUnprocessable, TransformRetry, send_with_retry};
+use crate::transform_retry::{TransformOnUnprocessable as _, TransformRetry, send_with_retry};
 
 const CHAT: &str = r#"{"model":"deployment","messages":[{"role":"user","content":"hi"}],"temperature":2,"top_p":0.5}"#;
 const TOOLS_CHAT: &str = r#"{"model":"deployment","messages":[{"role":"user","content":"hi"}],"tools":[{"type":"function","extra":1},{"type":"function","extra":2}]}"#;

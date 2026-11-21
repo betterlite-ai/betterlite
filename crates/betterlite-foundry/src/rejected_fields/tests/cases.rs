@@ -80,6 +80,17 @@ pub(super) fn remove_tool_call_index() {
 }
 
 pub(super) fn extra_parameters_list() {
+    drops_every_named_parameter();
+    reads_only_the_first_bracket_pair();
+    names_nothing_without_a_bracket();
+    strips_a_json_escaped_quote_once();
+    drops_names_from_a_sibling_list();
+    skips_a_bracket_open_at_the_end_of_its_line();
+    ignores_an_empty_bracket_pair();
+    drops_parameters_alongside_messages();
+}
+
+fn drops_every_named_parameter() {
     let request = support::body(
         r#"{"model":"deployment","stream_options":{"include_usage":true},"extra-parameters":"error","top_p":0.5}"#,
     );
@@ -94,7 +105,9 @@ pub(super) fn extra_parameters_list() {
         repaired,
         support::body(r#"{"model":"deployment","top_p":0.5}"#)
     );
-    // only the first bracket pair is read
+}
+
+fn reads_only_the_first_bracket_pair() {
     let repaired = repair(
         &support::pass_through("Extra parameters [top_p] are not allowed. Also [temperature]."),
         &support::body(r#"{"model":"deployment","top_p":0.5,"temperature":2,"n":2}"#),
@@ -104,7 +117,9 @@ pub(super) fn extra_parameters_list() {
         repaired,
         support::body(r#"{"model":"deployment","temperature":2,"n":2}"#)
     );
-    // no bracket names nothing
+}
+
+fn names_nothing_without_a_bracket() {
     let repaired = repair(
         &support::pass_through("Extra parameters are not allowed."),
         &support::body(r#"{"model":"deployment","top_p":0.5}"#),
@@ -114,7 +129,9 @@ pub(super) fn extra_parameters_list() {
         repaired,
         support::body(r#"{"model":"deployment","top_p":0.5}"#)
     );
-    // a double quote inside a JSON message keeps its backslash, so only the single-quoted name strips cleanly
+}
+
+fn strips_a_json_escaped_quote_once() {
     let repaired = repair(
         &support::pass_through("Extra parameters [ \"n\" , 'top_p' ,, ] are not allowed."),
         &support::body(r#"{"model":"deployment","n":2,"top_p":0.5,"temperature":2}"#),
@@ -124,7 +141,9 @@ pub(super) fn extra_parameters_list() {
         repaired,
         support::body(r#"{"model":"deployment","n":2,"temperature":2}"#)
     );
-    // quotes that are JSON syntax rather than string content strip cleanly
+}
+
+fn drops_names_from_a_sibling_list() {
     let sibling = serde_json::json!({
         "error": {"message": PASS_THROUGH_HINT},
         "params": ["n", "top_p"],
@@ -139,7 +158,9 @@ pub(super) fn extra_parameters_list() {
         repaired,
         support::body(r#"{"model":"deployment","temperature":2}"#)
     );
-    // a bracket still open at the end of its line is skipped by the dot in the pattern
+}
+
+fn skips_a_bracket_open_at_the_end_of_its_line() {
     let multiline = "{\n  \"error\": {\"message\": \"Set extra-parameters to 'pass-through'.\"},\n  \"fields\": [\n    \"top_p\"\n  ]\n}";
     let repaired = repair(
         multiline,
@@ -150,7 +171,9 @@ pub(super) fn extra_parameters_list() {
         repaired,
         support::body(r#"{"model":"deployment","top_p":0.5}"#)
     );
-    // an empty bracket pair names nothing
+}
+
+fn ignores_an_empty_bracket_pair() {
     let repaired = repair(
         &support::pass_through("Extra parameters [] are not allowed."),
         &support::body(r#"{"model":"deployment","top_p":0.5}"#),
@@ -160,7 +183,10 @@ pub(super) fn extra_parameters_list() {
         repaired,
         support::body(r#"{"model":"deployment","top_p":0.5}"#)
     );
-    // a pass-through hint drops the parameters even when messages are present, since only the invalid-index marker takes the first branch
+}
+
+fn drops_parameters_alongside_messages() {
+    // only the invalid-index marker takes the first branch, so the hint drops parameters even with messages present
     let repaired = repair(
         &support::pass_through("Extra parameters [top_p] are not allowed."),
         &support::body(
@@ -231,6 +257,13 @@ pub(super) fn two_repairs_only() {
 }
 
 pub(super) fn repair_trigger_literals() {
+    extra_inputs_need_a_drop_policy_or_a_tool_field();
+    tool_level_markers_decide_a_retry();
+    the_other_two_markers_always_retry();
+    other_text_does_not_retry();
+}
+
+fn extra_inputs_need_a_drop_policy_or_a_tool_field() {
     let plain = support::wrapped("Extra inputs are not permitted");
     assert!(
         !FoundryRepair {
@@ -262,6 +295,9 @@ pub(super) fn repair_trigger_literals() {
             "Extra inputs are not permitted tools[12].x"
         ))
     );
+}
+
+fn tool_level_markers_decide_a_retry() {
     assert!(
         !FoundryRepair {
             call: false,
@@ -280,6 +316,9 @@ pub(super) fn repair_trigger_literals() {
             "Extra inputs are not permitted tools[0]x"
         ))
     );
+}
+
+fn the_other_two_markers_always_retry() {
     assert!(
         FoundryRepair {
             call: false,
@@ -303,6 +342,9 @@ pub(super) fn repair_trigger_literals() {
             "{INVALID_TOOL_CALL_INDEX_MARKER} {PASS_THROUGH_HINT}"
         )))
     );
+}
+
+fn other_text_does_not_retry() {
     assert!(
         !FoundryRepair {
             call: false,
