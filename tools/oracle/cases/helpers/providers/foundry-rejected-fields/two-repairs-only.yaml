@@ -1,0 +1,23 @@
+kind: helper
+name: foundry-rejected-fields-two-repairs-only
+call:
+  foundry_rejected_fields:
+    # max_retry_on_unprocessable_entity_error is 2, so the second send has no repair left
+    bounds: true
+    repairs:
+      - error: |-
+          {"error":{"message":"{\"detail\":[{\"loc\":[\"body\",\"temperature\"],\"type\":\"extra_forbidden\"}],\"msg\":\"Extra inputs are not permitted\"}","type":"invalid_request_error"}}
+        body:
+          model: deployment
+          messages: [{role: user, content: hi}]
+          temperature: 2
+          top_p: 0.5
+      # the same error text repairs the already repaired body to itself
+      - error: |-
+          {"error":{"message":"{\"detail\":[{\"loc\":[\"body\",\"temperature\"],\"type\":\"extra_forbidden\"}],\"msg\":\"Extra inputs are not permitted\"}","type":"invalid_request_error"}}
+        body:
+          model: deployment
+          messages: [{role: user, content: hi}]
+          top_p: 0.5
+env: {}
+compare: {ignore: []}
