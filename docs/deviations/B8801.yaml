@@ -13,5 +13,5 @@ deviations:
     why: LiteLLM fills it from the global litellm.callbacks registry, which belongs to the logging state owner B247 and is not on the step's ports.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1275-L1296
   - what: The logging state's messages come from the data's messages field only, not from function_setup's per-call-type extraction.
-    why: That extraction reads a route-specific argument or field (input, prompt, contents, a file checksum) that the generic step does not receive; finish still hands update_messages the non-empty messages array.
+    why: That extraction reads a route-specific argument or field (input, prompt, contents, a file checksum) that the generic step does not receive; finish hands update_messages the data's messages array.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1200-L1296
