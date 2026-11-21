@@ -30,7 +30,7 @@ class Input(TypedDict):
     bounds: NotRequired[bool]
 
 
-# LiteLLM's three config members enter through their own names as aliases, re-typed here so their Any stays out
+# LiteLLM's three config members bind through their own names as aliases, typed here without Any
 class RepairConfig(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     max_retry: int = Field(validation_alias="max_retry_on_unprocessable_entity_error")
