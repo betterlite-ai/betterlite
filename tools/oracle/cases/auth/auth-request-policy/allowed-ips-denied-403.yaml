@@ -1,0 +1,28 @@
+name: auth-request-policy-allowed-ips-denied
+native_feature_eligibility: true
+config: |
+  general_settings:
+    master_key: oracle-master
+    allowed_ips: [10.0.0.1]
+    use_x_forwarded_for: true
+  model_list:
+    - model_name: policy-model
+      litellm_params:
+        model: openai/policy-upstream
+        api_base: "{{upstream}}"
+        api_key: oracle-key
+env: {}
+request:
+  method: POST
+  path: /v1/chat/completions
+  headers:
+    content-type: application/json
+    authorization: Bearer oracle-master
+    x-forwarded-for: 203.0.113.9
+  body:
+    model: policy-model
+    messages:
+      - {role: user, content: Say hello.}
+    stream: false
+upstream: []
+compare: {headers: [content-type], headers_present: [], upstream_headers: [], ignore: []}

@@ -1,0 +1,8 @@
+kind: helper
+name: jwt-settings-issuer-first-exact-match
+call:
+  jwt_settings:
+    scenarios:
+      - {"settings": {"issuers": [{"issuer": "https://idp.example.com", "audience": "first", "virtual_key_claim_field": "first"}, {"issuer": "https://idp.example.com", "audience": "second", "virtual_key_claim_field": "second"}, {"issuer": "https://IDP.example.com", "audience": "upper", "virtual_key_claim_field": "upper"}]}, "references": {}, "environment": {}, "issuers": ["https://idp.example.com", "https://IDP.example.com", "https://idp.example.com/", "https://*.example.com", null]}
+env: {}
+compare: {ignore: []}

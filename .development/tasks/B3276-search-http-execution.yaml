@@ -55,8 +55,18 @@ scope:
   paths:
     - crates/betterlite-core/src/api/search_http.rs
     - crates/betterlite-core/src/api/search_http/**
+    - crates/betterlite-core/src/api/search_providers/**
     - crates/betterlite-openai/src/search/provider.rs
     - crates/betterlite-openai/src/search/provider/tests.rs
+    - tools/oracle/src/helpers/core_ops/apiserpent_search.rs
+    - tools/oracle/src/helpers/core_ops/brave_search.rs
+    - tools/oracle/src/helpers/core_ops/dataforseo_search.rs
+    - tools/oracle/src/helpers/core_ops/duckduckgo_search.rs
+    - tools/oracle/src/helpers/core_ops/b8020.rs
+    - tools/oracle/src/helpers/core_ops/b8021.rs
+    - tools/oracle/src/helpers/core_ops/b8022.rs
+    - tools/oracle/src/helpers/core_ops/b8023.rs
+    - tools/oracle/src/helpers/core_ops/b8025.rs
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L1800-L1907

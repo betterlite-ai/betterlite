@@ -1,0 +1,126 @@
+kind: helper
+name: auth-team-lookup-alias-cache-order
+call:
+  auth_team_lookup:
+    row: alias_cache_hit
+    function: alias
+    target: alpha
+    flags: []
+    in_memory_ttl: 9
+    throttled_at: null
+    cached_teams: {"team_alias:alpha": {team_id: t1, team_alias: alpha, models: [gpt-4o]}}
+    cached_groups: {}
+    teams: [{team_id: t1, team_alias: alpha, models: [gpt-4o], object_permission_id: null}]
+    groups: []
+    permissions: []
+    created: null
+    steps: [{now: 100, fail: []}]
+calls:
+  - auth_team_lookup:
+      row: alias_missing_404
+      function: alias
+      target: alpha
+      flags: []
+      in_memory_ttl: 9
+      throttled_at: null
+      cached_teams: {}
+      cached_groups: {}
+      teams: [{team_id: t1, team_alias: beta, models: [gpt-4o], object_permission_id: null}]
+      groups: []
+      permissions: []
+      created: null
+      steps: [{now: 100, fail: []}]
+  - auth_team_lookup:
+      row: alias_duplicate_400
+      function: alias
+      target: alpha
+      flags: []
+      in_memory_ttl: 9
+      throttled_at: null
+      cached_teams: {}
+      cached_groups: {}
+      teams:
+        - {team_id: t1, team_alias: alpha, models: [gpt-4o], object_permission_id: null}
+        - {team_id: t2, team_alias: alpha, models: [gpt-4o], object_permission_id: null}
+      groups: []
+      permissions: []
+      created: null
+      steps: [{now: 100, fail: []}]
+  - auth_team_lookup:
+      row: alias_permission_debug_drop
+      function: alias
+      target: alpha
+      flags: []
+      in_memory_ttl: 9
+      throttled_at: null
+      cached_teams: {}
+      cached_groups: {}
+      teams: [{team_id: t1, team_alias: alpha, models: [gpt-4o], object_permission_id: p1}]
+      groups: []
+      permissions: [{object_permission_id: p1, mcp_servers: [s1]}]
+      created: null
+      steps: [{now: 100, fail: [permission]}]
+  - auth_team_lookup:
+      row: alias_then_id_cache
+      function: alias
+      target: alpha
+      flags: []
+      in_memory_ttl: 9
+      throttled_at: null
+      cached_teams: {}
+      cached_groups: {}
+      teams:
+        - team_id: t1
+          team_alias: alpha
+          models: [gpt-4o]
+          object_permission_id: p1
+          litellm_model_table: {id: 7, model_aliases: {fast: gpt-4o}, created_by: admin, updated_by: admin}
+      groups: []
+      permissions: [{object_permission_id: p1, mcp_servers: [s1]}]
+      created: null
+      steps: [{now: 100, fail: []}, {now: 101, fail: []}]
+  - auth_team_lookup:
+      row: alias_second_write_failure_500
+      function: alias
+      target: alpha
+      flags: []
+      in_memory_ttl: 9
+      throttled_at: null
+      cached_teams: {}
+      cached_groups: {}
+      teams: [{team_id: t1, team_alias: alpha, models: [gpt-4o], object_permission_id: null}]
+      groups: []
+      permissions: []
+      created: null
+      steps: [{now: 100, fail: ["write team_id:t1"]}, {now: 101, fail: []}]
+  - auth_team_lookup:
+      row: alias_read_failure_500
+      function: alias
+      target: alpha
+      flags: []
+      in_memory_ttl: 9
+      throttled_at: null
+      cached_teams: {}
+      cached_groups: {}
+      teams: [{team_id: t1, team_alias: alpha, models: [gpt-4o], object_permission_id: null}]
+      groups: []
+      permissions: []
+      created: null
+      steps: [{now: 100, fail: [litellm_teamtable]}]
+  - auth_team_lookup:
+      row: alias_no_database
+      function: alias
+      target: alpha
+      flags: [no_database]
+      in_memory_ttl: 9
+      throttled_at: null
+      cached_teams: {"team_alias:alpha": {team_id: t1, team_alias: alpha, models: [gpt-4o]}}
+      cached_groups: {}
+      teams: []
+      groups: []
+      permissions: []
+      created: null
+      steps: [{now: 100, fail: []}]
+env:
+  DEFAULT_IN_MEMORY_TTL: "9"
+compare: {ignore: []}

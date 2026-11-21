@@ -1,0 +1,121 @@
+kind: helper
+name: model_ceiling_matrix
+call:
+  team_limits:
+    function: model_cap
+    request: {"team_id": "team-a", "model_max_budget": {"gpt-4o": {"max_budget": 10.0, "budget_duration": "1d"}}}
+    user_role: internal_user
+    existing: {"gpt-4o": {"max_budget": 10.0, "budget_duration": "1d"}}
+calls:
+  - team_limits:
+      function: model_cap
+      request: {"team_id": "team-a"}
+      user_role: internal_user
+      existing: {"gpt-4o": {"max_budget": 10.0, "budget_duration": "1d"}}
+  - team_limits:
+      function: model_cap
+      request: {"team_id": "team-a", "model_max_budget": null}
+      user_role: internal_user
+      existing: {"gpt-4o": {"max_budget": 10.0, "budget_duration": "1d"}}
+  - team_limits:
+      function: model_cap
+      request: {"team_id": "team-a", "model_max_budget": {}}
+      user_role: internal_user
+      existing: {"gpt-4o": {"max_budget": 10.0, "budget_duration": "1d"}}
+  - team_limits:
+      function: model_cap
+      request: {"team_id": "team-a", "model_max_budget": {"my-custom-model": {"max_budget": 1.0, "budget_duration": "1d"}}}
+      user_role: internal_user
+      existing: {"gpt-4o": {"max_budget": 10.0, "budget_duration": "1d"}}
+  - team_limits:
+      function: model_cap
+      request: {"team_id": "team-a", "model_max_budget": {"gpt-4o": {"max_budget": 5.0, "budget_duration": "1d"}}}
+      user_role: internal_user
+      existing: {"gpt-4o": {"max_budget": 10.0, "budget_duration": "1d"}}
+  - team_limits:
+      function: model_cap
+      request: {"team_id": "team-a", "model_max_budget": {"gpt-4o": {"max_budget": 20.0, "budget_duration": "1d"}}}
+      user_role: internal_user
+      existing: {"gpt-4o": {"max_budget": 10.0, "budget_duration": "1d"}}
+  - team_limits:
+      function: model_cap
+      request: {"team_id": "team-a", "model_max_budget": {"gpt-4o": {"max_budget": 10.0, "budget_duration": "2d"}}}
+      user_role: internal_user
+      existing: {"gpt-4o": {"max_budget": 10.0, "budget_duration": "1d"}}
+  - team_limits:
+      function: model_cap
+      request: {"team_id": "team-a", "model_max_budget": {"gpt-4o": {"max_budget": 20.0, "budget_duration": "2d"}}}
+      user_role: internal_user
+      existing: {"gpt-4o": {"max_budget": 10.0, "budget_duration": "1d"}}
+  - team_limits:
+      function: model_cap
+      request: {"team_id": "team-a", "model_max_budget": {"gpt-4o": {"max_budget": 10.0}}}
+      user_role: internal_user
+      existing: {"gpt-4o": {"max_budget": 10.0, "budget_duration": "1d"}}
+  - team_limits:
+      function: model_cap
+      request: {"team_id": "team-a", "model_max_budget": {"gpt-4o": {"max_budget": 20.0, "budget_duration": "1d"}}}
+      user_role: internal_user
+      existing: {"gpt-4o": {"max_budget": 10.0}}
+  - team_limits:
+      function: model_cap
+      request: {"team_id": "team-a", "model_max_budget": {"gpt-4o": {"max_budget": 20.0, "budget_duration": "1d"}}}
+      user_role: internal_user
+      existing: {"gpt-4o": {"max_budget": null, "budget_duration": "1d"}}
+  - team_limits:
+      function: model_cap
+      request: {"team_id": "team-a", "model_max_budget": {}}
+      user_role: internal_user
+      existing: {"gpt-4o": {"max_budget": null, "budget_duration": "1d"}}
+  - team_limits:
+      function: model_cap
+      request: {"team_id": "team-a", "model_max_budget": {}}
+      user_role: internal_user
+      existing: {"gpt-4o": "broken"}
+  - team_limits:
+      function: model_cap
+      request: {"team_id": "team-a", "model_max_budget": {"my-custom-model": {"max_budget": 1.0, "budget_duration": "1d"}}}
+      user_role: internal_user
+      existing: {"gpt-4o": "broken"}
+  - team_limits:
+      function: model_cap
+      request: {"team_id": "team-a", "model_max_budget": {}}
+      user_role: internal_user
+      existing: {}
+  - team_limits:
+      function: model_cap
+      request: {"team_id": "team-a", "model_max_budget": {"gpt-4o": {"max_budget": 20.0, "budget_duration": "1d"}}}
+      user_role: internal_user
+      existing: null
+  - team_limits:
+      function: model_cap
+      request: {"team_id": "team-a", "model_max_budget": {"gpt-4o": {"max_budget": 10.0, "budget_duration": "1d"}, "openai/gpt-4o": {"max_budget": 20.0, "budget_duration": "1d"}}}
+      user_role: internal_user
+      existing: {"gpt-4o": {"max_budget": 10.0, "budget_duration": "1d"}}
+  - team_limits:
+      function: model_cap
+      request: {"team_id": "team-a", "model_max_budget": {"gpt-4o": {"max_budget": 10.0, "budget_duration": "1d"}, "openai/gpt-4o": {"max_budget": 5.0, "budget_duration": "1d"}}}
+      user_role: internal_user
+      existing: {"gpt-4o": {"max_budget": 10.0, "budget_duration": "1d"}}
+  - team_limits:
+      function: model_cap
+      request: {"team_id": "team-a", "model_max_budget": {"gpt-4o": {"max_budget": 10.0, "budget_duration": "1d"}, "my-custom-model": {"max_budget": 999.0, "budget_duration": "1d"}}}
+      user_role: internal_user
+      existing: {"gpt-4o": {"max_budget": 10.0, "budget_duration": "1d"}}
+  - team_limits:
+      function: model_cap
+      request: {"team_id": "team-a", "model_max_budget": {"gpt-4o": {"max_budget": 20.0, "budget_duration": "1d"}}}
+      user_role: proxy_admin
+      existing: {"gpt-4o": {"max_budget": 10.0, "budget_duration": "1d"}}
+  - team_limits:
+      function: model_cap
+      request: {"team_id": "team-a", "model_max_budget": {}}
+      user_role: proxy_admin
+      existing: {"gpt-4o": {"max_budget": 10.0, "budget_duration": "1d"}}
+  - team_limits:
+      function: model_cap
+      request: {"team_id": "team-a", "model_max_budget": {"gpt-4o": {"max_budget": 20.0, "budget_duration": "1d"}}}
+      user_role: null
+      existing: {"gpt-4o": {"max_budget": 10.0, "budget_duration": "1d"}}
+env: {}
+compare: {ignore: []}

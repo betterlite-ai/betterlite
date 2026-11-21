@@ -39,12 +39,7 @@ fn scan(slot: &Slot, stage: &RequestBodySafetyStageInput) -> Result<(), SafetyEr
     let Some(body) = request_object(&stage.body, content_type) else {
         return Ok(());
     };
-    // request_data.get("model", ""): absent or non-text answers the empty name, which no group matches
-    let model = match body.get("model") {
-        Some(Json::Text(model)) => model.as_str(),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
-        | None => "",
-    };
+    let model = request_model(&body);
     is_request_body_safe(&RequestBodySafety {
         body: &body,
         model,
@@ -56,7 +51,16 @@ fn scan(slot: &Slot, stage: &RequestBodySafetyStageInput) -> Result<(), SafetyEr
     })
 }
 
-fn request_object(bytes: &[u8], content_type: &str) -> Option<JsonObject> {
+// request_data.get("model", ""): absent or non-text answers the empty name, which no group matches
+pub(crate) fn request_model(body: &JsonObject) -> &str {
+    match body.get("model") {
+        Some(Json::Text(model)) => model.as_str(),
+        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
+        | None => "",
+    }
+}
+
+pub(crate) fn request_object(bytes: &[u8], content_type: &str) -> Option<JsonObject> {
     match classify_media_type(content_type) {
         MediaTypeKind::Form => form_object(bytes, content_type),
         MediaTypeKind::Json | MediaTypeKind::Binary | MediaTypeKind::Other => json_object(bytes),
@@ -89,7 +93,7 @@ fn form_object(bytes: &[u8], content_type: &str) -> Option<JsonObject> {
 
 // Only the extractor's top-level names matter: a URL-valued field is refused by name, not by value.
 #[derive(Debug)]
-struct CoreMetadata;
+pub(crate) struct CoreMetadata;
 
 impl FormMetadataExtractor for CoreMetadata {
     fn top_level_names(&self, form_data: &JsonObject, prefix: &str) -> Vec<String> {

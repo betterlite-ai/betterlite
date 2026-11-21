@@ -1,0 +1,2 @@
+litellm_settings:
+  azure_realtime_unrelated_key: 1

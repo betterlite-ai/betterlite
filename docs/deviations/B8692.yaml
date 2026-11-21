@@ -1,0 +1,20 @@
+task: B8692
+deviations:
+  - what: >-
+      A request whose data carries user_config is refused with 400 invalid_request_error
+      "user_config is not supported on pass-through routes"; LiteLLM filters that config, builds a
+      Router from it and routes the call through that Router.
+    why: >-
+      LiteLLM creates and discards a Router per request from client-supplied config; betterlite's
+      router arrives as a port the pipeline builds once, so there is nothing here to build from the
+      config. The task text asks for this answer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L513-L514
+  - what: >-
+      When the plan picks a deployment name, a request data key named specific_deployment is
+      overwritten with true; LiteLLM passes specific_deployment=True next to the data's own key, so
+      the call raises TypeError and the proxy answers with a 500.
+    why: >-
+      That 500 comes from a duplicate keyword rather than from behavior a setup can rely on. The
+      route chose the deployment, so the planned flag is the one that reaches the call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L657-L659
+kept_bugs: []

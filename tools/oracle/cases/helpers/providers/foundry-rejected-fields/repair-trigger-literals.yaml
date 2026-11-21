@@ -1,0 +1,64 @@
+kind: helper
+name: foundry-rejected-fields-repair-trigger-literals
+call:
+  foundry_rejected_fields:
+    triggers:
+      # the extra-inputs marker needs a truthy per-call or global drop policy
+      - error: |-
+          {"error":{"message":"Extra inputs are not permitted","type":"invalid_request_error"}}
+        request_drop_params: false
+        global_drop_params: false
+      - error: |-
+          {"error":{"message":"Extra inputs are not permitted","type":"invalid_request_error"}}
+        request_drop_params: true
+        global_drop_params: false
+      - error: |-
+          {"error":{"message":"Extra inputs are not permitted","type":"invalid_request_error"}}
+        request_drop_params: false
+        global_drop_params: true
+      # or a tool-level field, whose index is a run of decimal digits
+      - error: |-
+          {"error":{"message":"Extra inputs are not permitted tools[12].x","type":"invalid_request_error"}}
+        request_drop_params: false
+        global_drop_params: false
+      - error: |-
+          {"error":{"message":"Extra inputs are not permitted tools[٣].x","type":"invalid_request_error"}}
+        request_drop_params: false
+        global_drop_params: false
+      - error: |-
+          {"error":{"message":"Extra inputs are not permitted tools[x].x","type":"invalid_request_error"}}
+        request_drop_params: false
+        global_drop_params: false
+      - error: |-
+          {"error":{"message":"Extra inputs are not permitted tools[0]x","type":"invalid_request_error"}}
+        request_drop_params: false
+        global_drop_params: false
+      # a superscript two is not a decimal digit
+      - error: |-
+          {"error":{"message":"Extra inputs are not permitted tools[²].x","type":"invalid_request_error"}}
+        request_drop_params: false
+        global_drop_params: false
+      # the invalid index and the pass-through hint always retry
+      - error: |-
+          {"error":{"message":"unknown field: parameter index is not a valid field","type":"invalid_request_error"}}
+        request_drop_params: false
+        global_drop_params: false
+      - error: |-
+          {"error":{"message":"Set extra-parameters to 'pass-through'","type":"invalid_request_error"}}
+        request_drop_params: false
+        global_drop_params: false
+      - error: |-
+          {"error":{"message":"unknown field: parameter index is not a valid field Set extra-parameters to 'pass-through'","type":"invalid_request_error"}}
+        request_drop_params: false
+        global_drop_params: false
+      # the marker is case sensitive, and an unrelated text falls back to the base policy
+      - error: |-
+          {"error":{"message":"extra inputs are not permitted","type":"invalid_request_error"}}
+        request_drop_params: false
+        global_drop_params: false
+      - error: |-
+          {"error":{"message":"a field the model does not know","type":"invalid_request_error"}}
+        request_drop_params: true
+        global_drop_params: true
+env: {}
+compare: {ignore: []}

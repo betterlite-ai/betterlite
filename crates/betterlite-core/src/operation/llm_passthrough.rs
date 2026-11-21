@@ -1,5 +1,17 @@
-#[derive(Debug, Clone, Copy)]
-pub struct LlmPassthroughRequest;
+use std::sync::Arc;
 
-#[derive(Debug, Clone, Copy)]
-pub struct LlmPassthroughResult;
+use crate::api::passthrough_call::{PassthroughCallArgs, PassthroughReply};
+use crate::api::video_router_calls::route::VideoRouteView;
+use crate::dispatch::llm_passthrough::ports::{BlockedModels, PassthroughCallPort};
+use crate::dispatch::llm_passthrough::route::PassthroughRouteInput;
+
+pub type LlmPassthroughResult = PassthroughReply;
+
+pub struct LlmPassthroughRequest {
+    pub args: Box<PassthroughCallArgs>,
+    pub route: PassthroughRouteInput,
+    pub router: Option<Arc<dyn PassthroughCallPort>>,
+    pub view: Option<Arc<dyn VideoRouteView + Send + Sync>>,
+    pub blocked: Arc<dyn BlockedModels>,
+    pub direct: Arc<dyn PassthroughCallPort>,
+}
