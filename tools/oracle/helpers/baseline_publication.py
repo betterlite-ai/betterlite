@@ -4,7 +4,10 @@ from litellm.proxy.db import baseline_accounting as accounting
 from litellm.proxy.spend_tracking.baseline_accounting import BaselineEstimate, BaselineHistory
 from pydantic import JsonValue, TypeAdapter
 
-serialized, changed, project_group, StoredRecord = accounting._serialized, accounting._change, accounting._project_group, accounting._StoredRecord  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/baseline_accounting.py#L313-L365
+serialized = accounting._serialized  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/baseline_accounting.py#L313
+changed = accounting._change  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/baseline_accounting.py#L317
+project_group = accounting._project_group  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/baseline_accounting.py#L337
+StoredRecord = accounting._StoredRecord  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/baseline_accounting.py#L163
 
 _JSON: Final = TypeAdapter(JsonValue)
 _OBJECT: Final = TypeAdapter(dict[str, JsonValue])
@@ -14,8 +17,13 @@ _HISTORY: Final = TypeAdapter(BaselineHistory)
 _ENTITY: Final = TypeAdapter(Literal["user", "team", "org", "tag", "end_user", "agent"])
 
 
-class RecordInput(TypedDict):
-    function: Literal["validate", "canonical"]
+class ValidateInput(TypedDict):
+    function: Literal["validate"]
+    record: str
+
+
+class CanonicalInput(TypedDict):
+    function: Literal["canonical"]
     record: str
 
 
@@ -55,7 +63,9 @@ class AdjustmentInput(TypedDict):
     request_id: str
 
 
-Input: TypeAlias = RecordInput | PublicationInput | ChangeInput | ProjectInput | AdjustmentInput
+Input: TypeAlias = (
+    ValidateInput | CanonicalInput | PublicationInput | ChangeInput | ProjectInput | AdjustmentInput
+)
 
 
 def run(input_value: Input) -> JsonValue:
@@ -92,4 +102,4 @@ def run(input_value: Input) -> JsonValue:
         entity_id=input_value["entity_id"],
     )
     row = daily.adjustment(target, input_value["savings_delta"], input_value["request_id"])
-    return _OBJECT.validate_python(dict(row))
+    return _OBJECT.validate_python(dict(row))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/baseline_accounting.py#L59-L72

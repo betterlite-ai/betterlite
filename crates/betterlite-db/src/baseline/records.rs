@@ -24,27 +24,40 @@ pub enum BaselineEntity {
 }
 
 impl BaselineEntity {
-    const fn name(self) -> &'static str {
+    const fn names(self) -> EntityNames {
         match self {
-            Self::User => "user",
-            Self::Team => "team",
-            Self::Org => "org",
-            Self::Tag => "tag",
-            Self::EndUser => "end_user",
-            Self::Agent => "agent",
+            Self::User => EntityNames {
+                name: "user",
+                column: "user_id",
+            },
+            Self::Team => EntityNames {
+                name: "team",
+                column: "team_id",
+            },
+            Self::Org => EntityNames {
+                name: "org",
+                column: "organization_id",
+            },
+            Self::Tag => EntityNames {
+                name: "tag",
+                column: "tag",
+            },
+            Self::EndUser => EntityNames {
+                name: "end_user",
+                column: "end_user_id",
+            },
+            Self::Agent => EntityNames {
+                name: "agent",
+                column: "agent_id",
+            },
         }
     }
+}
 
-    const fn column(self) -> &'static str {
-        match self {
-            Self::User => "user_id",
-            Self::Team => "team_id",
-            Self::Org => "organization_id",
-            Self::Tag => "tag",
-            Self::EndUser => "end_user_id",
-            Self::Agent => "agent_id",
-        }
-    }
+// The payload name and the daily rollup column one entity is written under.
+struct EntityNames {
+    name: &'static str,
+    column: &'static str,
 }
 
 impl From<BaselineEntity> for DailySpendEntity {
@@ -111,7 +124,7 @@ impl DailyBaselineAttribution {
             optional_text(self.mcp_namespaced_tool_name.as_ref()),
         );
         row.insert(
-            target.entity.column().to_owned(),
+            target.entity.names().column.to_owned(),
             optional_text(target.entity_id.as_ref()),
         );
         row.insert(
@@ -237,5 +250,4 @@ pub fn decode_baseline_record(data: &[u8]) -> Result<BaselineAccountingRecord, R
     Ok(record)
 }
 
-#[cfg(test)]
 mod tests;

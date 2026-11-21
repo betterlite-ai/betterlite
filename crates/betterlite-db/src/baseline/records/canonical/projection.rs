@@ -104,7 +104,10 @@ fn daily_projection(value: &DailyBaselineAttribution) -> Canonical {
 
 fn target(value: &DailyBaselineTarget) -> Canonical {
     let mut root = Canonical::Object(BTreeMap::new());
-    root.insert("entity", Canonical::Text(value.entity.name().to_owned()));
+    root.insert(
+        "entity",
+        Canonical::Text(value.entity.names().name.to_owned()),
+    );
     root.insert("entity_id", option_text(&value.entity_id));
     root
 }

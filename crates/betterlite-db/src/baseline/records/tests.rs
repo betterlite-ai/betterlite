@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::fs;
 use std::path::PathBuf;
 
@@ -280,7 +282,7 @@ fn assert_adjustment_targets(entity: BaselineEntity, column: &str) {
 }
 
 #[test]
-fn adjustment_targets_each_entitys_own_id_column() {
+fn adjustment_uses_each_entity_id_column() {
     assert_adjustment_targets(BaselineEntity::User, "user_id");
     assert_adjustment_targets(BaselineEntity::Team, "team_id");
     assert_adjustment_targets(BaselineEntity::Org, "organization_id");

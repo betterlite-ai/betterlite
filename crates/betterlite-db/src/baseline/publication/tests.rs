@@ -735,35 +735,27 @@ async fn assert_spend_log(client: &Client, request_id: &str, expected: Option<&s
     assert_eq!(kept.as_deref(), Some("value"));
 }
 
-async fn assert_key_session(client: &Client) {
-    let row = client
-        .query_one(
-            "SELECT saved_spend::text, savings_estimated_turns, savings_estimated_actual_spend::text, savings_estimated_saved_spend::text, savings_estimated_baseline_models::text FROM \"LiteLLM_AutoRouterSession\"",
-            &[],
-        )
-        .await
-        .unwrap();
-    assert_eq!(row.get::<_, String>(0), "0.75");
-    assert_eq!(row.get::<_, i32>(1), 2);
-    assert_eq!(row.get::<_, String>(2), "0.65");
-    assert_eq!(row.get::<_, String>(3), "0");
-    assert_eq!(row.get::<_, String>(4), "{\"claude-sonnet-4-20250514\": 3}");
+async fn session_row(client: &Client, table: &str) -> tokio_postgres::Row {
+    let statement = format!(
+        "SELECT saved_spend::text, savings_estimated_turns, savings_estimated_actual_spend::text, savings_estimated_saved_spend::text, savings_estimated_baseline_models::text FROM \"{table}\""
+    );
+    client.query_one(&statement, &[]).await.unwrap()
 }
 
-async fn assert_user_session(client: &Client) {
-    let row = client
-        .query_one(
-            "SELECT saved_spend::text, savings_estimated_turns, savings_estimated_actual_spend::text, savings_estimated_saved_spend::text, savings_estimated_baseline_models::text FROM \"LiteLLM_AutoRouterUserSession\"",
-            &[],
-        )
-        .await
-        .unwrap();
-    assert_eq!(row.get::<_, String>(0), "1.95");
-    assert_eq!(row.get::<_, i32>(1), 6);
-    assert_eq!(row.get::<_, String>(2), "1.25");
-    assert_eq!(row.get::<_, String>(3), "0.45");
+async fn assert_sessions(client: &Client) {
+    let key = session_row(client, "LiteLLM_AutoRouterSession").await;
+    assert_eq!(key.get::<_, String>(0), "0.75");
+    assert_eq!(key.get::<_, i32>(1), 2);
+    assert_eq!(key.get::<_, String>(2), "0.65");
+    assert_eq!(key.get::<_, String>(3), "0");
+    assert_eq!(key.get::<_, String>(4), "{\"claude-sonnet-4-20250514\": 3}");
+    let user = session_row(client, "LiteLLM_AutoRouterUserSession").await;
+    assert_eq!(user.get::<_, String>(0), "1.95");
+    assert_eq!(user.get::<_, i32>(1), 6);
+    assert_eq!(user.get::<_, String>(2), "1.25");
+    assert_eq!(user.get::<_, String>(3), "0.45");
     assert_eq!(
-        row.get::<_, String>(4),
+        user.get::<_, String>(4),
         "{\"claude-sonnet-4-20250514\": 5, \"retired\": 2}"
     );
 }
@@ -844,8 +836,7 @@ async fn postgres_publish_updates_logs_sessions_daily_rows_and_publications() {
     transaction.commit().await.unwrap();
     assert_spend_log(&client, "req-1", Some("-0.05")).await;
     assert_spend_log(&client, "req-2", None).await;
-    assert_key_session(&client).await;
-    assert_user_session(&client).await;
+    assert_sessions(&client).await;
     assert_daily_savings(&client).await;
     assert_stored_publications(&client).await;
     drop(client);
@@ -888,16 +879,8 @@ async fn postgres_publish_skips_the_user_session_statement_for_empty_user_ids() 
 
 async fn seed_failure_trigger(client: &Client) {
     client
-        .execute(
-            "CREATE OR REPLACE FUNCTION baseline_publication_failure() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'injected publication failure'; END; $$ LANGUAGE plpgsql",
-            &[],
-        )
-        .await
-        .unwrap();
-    client
-        .execute(
-            "CREATE TRIGGER baseline_publication_failure BEFORE UPDATE ON \"LiteLLM_AutoRouterBaselineObservation\" FOR EACH ROW EXECUTE FUNCTION baseline_publication_failure()",
-            &[],
+        .batch_execute(
+            "CREATE OR REPLACE FUNCTION baseline_publication_failure() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'injected publication failure'; END; $$ LANGUAGE plpgsql; CREATE TRIGGER baseline_publication_failure BEFORE UPDATE ON \"LiteLLM_AutoRouterBaselineObservation\" FOR EACH ROW EXECUTE FUNCTION baseline_publication_failure()",
         )
         .await
         .unwrap();

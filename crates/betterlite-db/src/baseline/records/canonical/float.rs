@@ -1,5 +1,5 @@
-// CPython's json float repr: shortest round-tripping digits, fixed notation only while the decimal point sits in (-3, 16], two exponent digits, and a ".0" tail on an integral fixed value.
 pub(super) fn format(value: f64) -> String {
+    // CPython's json float repr: shortest round-tripping digits, fixed notation only while the decimal point sits in (-3, 16], two exponent digits, and a ".0" tail on an integral fixed value.
     if value.is_nan() {
         return "NaN".to_owned();
     }
@@ -77,5 +77,4 @@ fn fixed(digits: &str, point: i32) -> String {
     }
 }
 
-#[cfg(test)]
 mod tests;

@@ -1,4 +1,3 @@
-// _UPDATE_LOGS: drop the raw observation, then store the publication and its signed savings or JSON null.
 pub const UPDATE_LOGS: &str = r#"
 WITH changes AS (
     SELECT request_id, publication::jsonb AS publication

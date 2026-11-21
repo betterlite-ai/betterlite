@@ -1,5 +1,5 @@
-// json.dumps(ensure_ascii=True): short escapes for the named controls, lowercase \uXXXX for the rest of the control range, DEL and every non-ASCII code point.
 pub(super) fn write(out: &mut String, text: &str) {
+    // json.dumps(ensure_ascii=True): short escapes for the named controls, lowercase \uXXXX for the rest of the control range, DEL and every non-ASCII code point.
     out.push('"');
     for character in text.chars() {
         match character {
