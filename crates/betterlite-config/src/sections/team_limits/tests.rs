@@ -6,9 +6,9 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 
 use crate::loader::{ConfigError, ConfigLoader};
+use crate::sections::auth_user_lookup::DefaultUserParams;
 use crate::sections::team_limits::{
-    DefaultInternalUserParams, DefaultTeamParams, INTERNAL_USER_PARAMS_PATH, Settings,
-    TEAM_PARAMS_PATH,
+    AVAILABLE_TEAMS_PATH, DefaultTeamParams, Settings, TEAM_PARAMS_PATH, available_teams,
 };
 
 fn loaded_with(source: &str, lookup: BTreeMap<String, String>) -> Settings {
@@ -28,6 +28,18 @@ fn failed(source: &str) -> ConfigError {
     failed_with(source, BTreeMap::new())
 }
 
+fn user_params(source: &str) -> Option<DefaultUserParams> {
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(source)
+    .unwrap();
+    config
+        .sections
+        .auth_user_lookup
+        .default_internal_user_params
+}
+
 fn yaml_message(error: ConfigError) -> String {
     let ConfigError::Yaml { source: yaml } = error else {
         panic!("the setting fails the config load as malformed YAML");
@@ -44,7 +56,6 @@ fn default_params_absent() {
     let settings = loaded("litellm_settings: {}\ngeneral_settings: {}\n");
     assert_eq!(settings, Settings::default());
     assert!(settings.default_team_params.is_none());
-    assert!(settings.default_internal_user_params.is_none());
     assert!(!settings.disable_admin_auto_add);
     let explicit_null = loaded("litellm_settings:\n  default_team_params: null\n");
     assert!(explicit_null.default_team_params.is_none());
@@ -138,7 +149,7 @@ litellm_settings:
 
 #[test]
 fn available_teams_loaded() {
-    let settings = loaded(
+    let params = user_params(
         "\
 litellm_settings:
   default_internal_user_params:
@@ -149,28 +160,28 @@ litellm_settings:
 ",
     );
     assert_eq!(
-        settings.default_internal_user_params,
-        Some(DefaultInternalUserParams {
-            available_teams: Some(vec!["team-a".to_owned(), "team-b".to_owned()]),
-        })
+        available_teams(params.as_ref()).unwrap(),
+        Some(vec!["team-a".to_owned(), "team-b".to_owned()])
     );
-    let absent_key = loaded(
+    let absent_key = user_params(
         "litellm_settings:\n  default_internal_user_params:\n    user_role: internal_user\n",
     );
-    assert_eq!(
-        absent_key.default_internal_user_params,
-        Some(DefaultInternalUserParams {
-            available_teams: None,
-        })
+    assert_eq!(available_teams(absent_key.as_ref()).unwrap(), None);
+    let null_value = user_params(
+        "litellm_settings:\n  default_internal_user_params:\n    available_teams: null\n",
     );
-    let null_value =
-        loaded("litellm_settings:\n  default_internal_user_params:\n    available_teams: null\n");
-    assert_eq!(
-        null_value.default_internal_user_params,
-        Some(DefaultInternalUserParams {
-            available_teams: None,
-        })
+    assert_eq!(available_teams(null_value.as_ref()).unwrap(), None);
+    let empty_list = user_params(
+        "litellm_settings:\n  default_internal_user_params:\n    available_teams: []\n",
     );
+    assert_eq!(
+        available_teams(empty_list.as_ref()).unwrap(),
+        Some(Vec::new())
+    );
+    let null_record = user_params("litellm_settings:\n  default_internal_user_params: null\n");
+    assert_eq!(available_teams(null_record.as_ref()).unwrap(), None);
+    let without_params = user_params("litellm_settings: {}\n");
+    assert_eq!(available_teams(without_params.as_ref()).unwrap(), None);
 }
 
 #[test]
@@ -183,14 +194,28 @@ fn available_teams_are_read_from_settings() {
         panic!("a default_internal_user_params key outside litellm_settings stays unsupported");
     };
     assert_eq!(paths, ["general_settings.default_internal_user_params"]);
-    let error = failed(
+    // auth_user_lookup keeps the record's values as written, so a non-list is rejected when this task reads it
+    let params = user_params(
         "litellm_settings:\n  default_internal_user_params:\n    available_teams: everywhere\n",
     );
-    let message = yaml_message(error);
-    assert!(message.contains(INTERNAL_USER_PARAMS_PATH));
-    assert!(message.contains("available_teams"));
+    let message = yaml_message(available_teams(params.as_ref()).unwrap_err());
+    assert!(message.contains(AVAILABLE_TEAMS_PATH));
+    let listed = user_params(
+        "litellm_settings:\n  default_internal_user_params:\n    available_teams:\n      - team-a\n      - 7\n",
+    );
+    let entry_message = yaml_message(available_teams(listed.as_ref()).unwrap_err());
+    assert!(entry_message.contains(AVAILABLE_TEAMS_PATH));
+    let mapping_value = user_params(
+        "litellm_settings:\n  default_internal_user_params:\n    available_teams:\n      team-a: team-b\n",
+    );
+    let mapping_message = yaml_message(available_teams(mapping_value.as_ref()).unwrap_err());
+    assert!(mapping_message.contains(AVAILABLE_TEAMS_PATH));
+    // a scalar whole value is already invalid for auth_user_lookup's record
     let not_a_mapping = failed("litellm_settings:\n  default_internal_user_params: later\n");
-    assert!(yaml_message(not_a_mapping).contains(INTERNAL_USER_PARAMS_PATH));
+    let ConfigError::InvalidScalar { path, .. } = not_a_mapping else {
+        panic!("a scalar default_internal_user_params is invalid");
+    };
+    assert_eq!(path, "litellm_settings.default_internal_user_params");
 }
 
 #[rstest]

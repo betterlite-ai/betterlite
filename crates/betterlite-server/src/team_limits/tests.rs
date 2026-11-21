@@ -7,9 +7,7 @@ use betterlite_auth::budget_primitives::window_start::DurationParser as _;
 use betterlite_auth::model_budget_values::budget_config::BudgetRuntime;
 use betterlite_auth::model_budget_values::candidates::BedrockCatalog;
 use betterlite_auth::user_roles::UserRole;
-use betterlite_config::sections::team_limits::{
-    DefaultInternalUserParams, DefaultTeamParams, Settings,
-};
+use betterlite_config::sections::team_limits::{DefaultTeamParams, Settings};
 use betterlite_db::budget_permission_rows::{JsonData, Timestamp};
 use betterlite_db::key_repository::table::TokenValue;
 use betterlite_db::postgres_store::session::PostgresStore;
@@ -73,7 +71,6 @@ fn request(text: &str) -> UpdateTeamRequest {
 fn team_params(params: DefaultTeamParams) -> Settings {
     Settings {
         default_team_params: Some(params),
-        default_internal_user_params: None,
         disable_admin_auto_add: false,
     }
 }
@@ -195,32 +192,16 @@ fn default_permissions_projection() {
 #[case::org_admin(Some(UserRole::OrgAdmin))]
 #[case::internal_user_viewer(Some(UserRole::InternalUserViewer))]
 fn availability_ignores_caller(#[case] role: Option<UserRole>) {
-    let settings = Settings {
-        default_team_params: None,
-        default_internal_user_params: Some(DefaultInternalUserParams {
-            available_teams: Some(vec!["team-a".to_owned(), "team-b".to_owned()]),
-        }),
-        disable_admin_auto_add: false,
-    };
+    let teams: &[String] = &["team-a".to_owned(), "team-b".to_owned()];
     let caller = Caller {
         user_id: None,
         user_role: role,
     };
-    assert!(is_available_team("team-a", &caller, &settings));
-    assert!(!is_available_team("team-z", &caller, &settings));
-    let no_list = Settings {
-        default_team_params: None,
-        default_internal_user_params: Some(DefaultInternalUserParams {
-            available_teams: None,
-        }),
-        disable_admin_auto_add: false,
-    };
-    assert!(!is_available_team("team-a", &member(), &no_list));
-    assert!(!is_available_team(
-        "team-a",
-        &member(),
-        &Settings::default()
-    ));
+    assert!(is_available_team("team-a", &caller, Some(teams)));
+    assert!(!is_available_team("team-z", &caller, Some(teams)));
+    assert!(!is_available_team("team-a", &member(), None));
+    let no_teams: &[String] = &[];
+    assert!(!is_available_team("team-a", &member(), Some(no_teams)));
 }
 
 #[test]
@@ -260,7 +241,6 @@ fn creator_empty_id() {
 fn creator_auto_add_disabled() {
     let disabled = Settings {
         default_team_params: None,
-        default_internal_user_params: None,
         disable_admin_auto_add: true,
     };
     let admin = caller(Some(UserRole::ProxyAdmin));

@@ -1,12 +1,13 @@
 task: B803
 deviations:
   - what: >-
-      The three settings are read with the types their projections consume. A default_team_params or
-      default_internal_user_params value that is not a mapping, or a models, team_member_permissions or
-      available_teams value that is not a list of strings, fails the config load with an error naming the
-      path. LiteLLM stores whatever the YAML holds: _get_default_team_param returns a non-list value for
-      every field and a list for every field, and _is_available_team tests team_id against the raw value,
-      which for a string is a substring test.
+      The defaults are read with the types their projections consume. A default_team_params value that is
+      not a mapping, a models or team_member_permissions value that is not a list of strings, and an
+      available_teams value that is not a list of strings fail with an error naming the path; the last is
+      raised when this component reads auth_user_lookup's default_internal_user_params record. LiteLLM
+      stores whatever the YAML holds: _get_default_team_param returns a non-list value for every field and
+      a list for every field, and _is_available_team tests team_id against the raw value, which for a
+      string is a substring test.
     why: >-
       docs/compatibility.md says a config value of the wrong type is an error that names the field, and the
       typed projection replaces LiteLLM's truthiness and duck typing with the declared shapes; every value a

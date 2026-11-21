@@ -4,9 +4,7 @@ use axum::http::StatusCode;
 use betterlite_auth::model_budget_values::budget_config::BudgetRuntime;
 use betterlite_auth::model_budget_values::candidates::BedrockCatalog;
 use betterlite_auth::user_roles::UserRole;
-use betterlite_config::sections::team_limits::{
-    DefaultInternalUserParams, DefaultTeamParams, Settings,
-};
+use betterlite_config::sections::team_limits::{DefaultTeamParams, Settings};
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
@@ -102,7 +100,6 @@ impl Helper for Op {
 fn default_team_param_answer(field: TeamParamField, params: Option<&DefaultTeamParams>) -> Value {
     let settings = Settings {
         default_team_params: params.cloned(),
-        default_internal_user_params: None,
         disable_admin_auto_add: false,
     };
     json!({"value": default_team_param(&settings, field)})
@@ -114,18 +111,11 @@ fn available_team_answer(
     user_id: Option<&str>,
     user_role: Option<UserRole>,
 ) -> Value {
-    let settings = Settings {
-        default_team_params: None,
-        default_internal_user_params: available_teams.map(|teams| DefaultInternalUserParams {
-            available_teams: Some(teams.to_vec()),
-        }),
-        disable_admin_auto_add: false,
-    };
     let caller = Caller {
         user_id: user_id.map(str::to_owned),
         user_role,
     };
-    json!({"available": is_available_team(team_id, &caller, &settings)})
+    json!({"available": is_available_team(team_id, &caller, available_teams)})
 }
 
 fn creator_auto_add_answer(
@@ -135,7 +125,6 @@ fn creator_auto_add_answer(
 ) -> Value {
     let settings = Settings {
         default_team_params: None,
-        default_internal_user_params: None,
         disable_admin_auto_add: disable,
     };
     let caller = Caller {

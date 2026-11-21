@@ -56,11 +56,12 @@ pub fn default_team_param(settings: &Settings, field: TeamParamField) -> Option<
 
 // LiteLLM accepts the caller here and never reads it: availability depends only on the configured list.
 #[must_use]
-pub fn is_available_team(team_id: &str, _caller: &Caller, settings: &Settings) -> bool {
-    let Some(params) = settings.default_internal_user_params.as_ref() else {
-        return false;
-    };
-    let Some(teams) = params.available_teams.as_ref() else {
+pub fn is_available_team(
+    team_id: &str,
+    _caller: &Caller,
+    available_teams: Option<&[String]>,
+) -> bool {
+    let Some(teams) = available_teams else {
         return false;
     };
     teams.iter().any(|team| team == team_id)

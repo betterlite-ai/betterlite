@@ -3,6 +3,7 @@ mod tests;
 
 use std::fmt::Display;
 
+use betterlite_db::budget_permission_rows::JsonData;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde::de::{DeserializeOwned, Error as DeserializeError, IgnoredAny};
@@ -11,10 +12,12 @@ use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::raw::RawNumber;
 use crate::resolve::{parse_money, resolve_number, resolve_string};
 use crate::sections::Section;
+use crate::sections::auth_user_lookup::DefaultUserParams;
 use crate::sections::settings::JsonValue;
 
 pub const TEAM_PARAMS_PATH: &str = "litellm_settings.default_team_params";
-pub const INTERNAL_USER_PARAMS_PATH: &str = "litellm_settings.default_internal_user_params";
+pub const AVAILABLE_TEAMS_PATH: &str =
+    "litellm_settings.default_internal_user_params.available_teams";
 pub const AUTO_ADD_SWITCH_PATH: &str = "general_settings.disable_auto_add_proxy_admin_to_teams";
 
 #[derive(Debug, Default, Deserialize)]
@@ -28,7 +31,6 @@ pub struct Raw {
 #[derive(Debug, Default, Deserialize)]
 struct RawLiteLlm {
     default_team_params: Option<JsonValue>,
-    default_internal_user_params: Option<JsonValue>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -64,14 +66,8 @@ pub struct DefaultTeamParams {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct DefaultInternalUserParams {
-    pub available_teams: Option<Vec<String>>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Settings {
     pub default_team_params: Option<DefaultTeamParams>,
-    pub default_internal_user_params: Option<DefaultInternalUserParams>,
     pub disable_admin_auto_add: bool,
 }
 
@@ -87,11 +83,6 @@ impl Section for Raw {
                 .litellm_settings
                 .default_team_params
                 .map(|value| team_params(&value, lookup))
-                .transpose()?,
-            default_internal_user_params: self
-                .litellm_settings
-                .default_internal_user_params
-                .map(|value| internal_user_params(&value))
                 .transpose()?,
             // only the literal boolean disables the proxy admin; 1 and "true" leave the default on
             disable_admin_auto_add: matches!(
@@ -165,18 +156,35 @@ struct RawTeamParams {
     organization_id: Option<String>,
 }
 
-fn internal_user_params(value: &JsonValue) -> Result<DefaultInternalUserParams, ConfigError> {
-    let raw: RawInternalUserParams = mapping(value, INTERNAL_USER_PARAMS_PATH)?;
-    Ok(DefaultInternalUserParams {
-        available_teams: raw.available_teams,
-    })
-}
-
-// the dict carries other defaults beside the one this task reads, so only its own key is typed
-#[derive(Debug, Default, Deserialize)]
-struct RawInternalUserParams {
-    #[serde(default)]
-    available_teams: Option<Vec<String>>,
+// litellm.default_internal_user_params is auth_user_lookup's record; this task reads only its available_teams key
+pub fn available_teams(
+    params: Option<&DefaultUserParams>,
+) -> Result<Option<Vec<String>>, ConfigError> {
+    let Some(record) = params else {
+        return Ok(None);
+    };
+    let Some(value) = record.values.get("available_teams") else {
+        return Ok(None);
+    };
+    match value {
+        JsonData::Null => Ok(None),
+        JsonData::Array(entries) => {
+            let mut teams = Vec::with_capacity(entries.len());
+            for entry in entries {
+                let JsonData::String(team) = entry else {
+                    return Err(yaml_error(
+                        AVAILABLE_TEAMS_PATH,
+                        "an entry must be a string",
+                    ));
+                };
+                teams.push(team.clone());
+            }
+            Ok(Some(teams))
+        }
+        JsonData::Bool(_) | JsonData::Number(_) | JsonData::String(_) | JsonData::Object(_) => Err(
+            yaml_error(AVAILABLE_TEAMS_PATH, "the value must be a list of strings"),
+        ),
+    }
 }
 
 fn mapping<T>(value: &JsonValue, path: &str) -> Result<T, ConfigError>
