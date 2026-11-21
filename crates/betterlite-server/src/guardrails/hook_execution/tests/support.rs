@@ -35,7 +35,8 @@ use crate::guardrails::callback_caps::traits::{
     ProxyCallback, RequestHooks, StreamingHooks,
 };
 use crate::guardrails::hook_execution::execute::{
-    BalanceError, CallContext, GuardrailBalancer, GuardrailBases, HookExecution, UnifiedHooks,
+    BalanceError, GuardrailBalancer, GuardrailBases, GuardrailHook, HookAnswer, HookExecution,
+    UnifiedCall, UnifiedHooks,
 };
 use crate::guardrails::hook_execution::metrics::GuardrailMetrics;
 use crate::guardrails::hook_execution::sensitive_route::SensitiveRouting;
@@ -73,25 +74,33 @@ pub(crate) enum Answer {
     Fail(ProxyHookError),
 }
 
-pub(crate) struct FakeGuardrail {
-    pub(crate) name: Option<&'static str>,
+#[derive(Clone, Debug, Default)]
+pub(crate) enum Gate {
+    #[default]
+    Run,
+    Skip,
+    Fail(GuardrailGateError),
+}
+
+#[derive(Default)]
+pub(crate) struct GuardrailKnobs {
     pub(crate) scan_raw_request: bool,
     pub(crate) native_during_call: bool,
-    pub(crate) event_hook_set: bool,
+    pub(crate) event_hook_unset: bool,
     pub(crate) moderation_check: Option<&'static str>,
-    pub(crate) gate: Result<bool, GuardrailGateError>,
+    pub(crate) gate: Gate,
     pub(crate) events: Mutex<Vec<GuardrailEvent>>,
+}
+
+pub(crate) struct FakeGuardrail {
+    pub(crate) name: Option<&'static str>,
+    pub(crate) knobs: GuardrailKnobs,
 }
 
 pub(crate) fn guardrail(name: Option<&'static str>) -> FakeGuardrail {
     FakeGuardrail {
         name,
-        scan_raw_request: false,
-        native_during_call: false,
-        event_hook_set: true,
-        moderation_check: None,
-        gate: Ok(true),
-        events: Mutex::new(Vec::new()),
+        knobs: GuardrailKnobs::default(),
     }
 }
 
@@ -105,19 +114,19 @@ impl GuardrailCallback for FakeGuardrail {
     }
 
     fn scan_raw_request(&self) -> bool {
-        self.scan_raw_request
+        self.knobs.scan_raw_request
     }
 
     fn use_native_during_call_hook(&self) -> bool {
-        self.native_during_call
+        self.knobs.native_during_call
     }
 
     fn event_hook_is_set(&self) -> bool {
-        self.event_hook_set
+        !self.knobs.event_hook_unset
     }
 
     fn moderation_check(&self) -> Option<&str> {
-        self.moderation_check
+        self.knobs.moderation_check
     }
 
     fn should_run_guardrail(
@@ -125,11 +134,16 @@ impl GuardrailCallback for FakeGuardrail {
         _data: &JsonMap,
         event: GuardrailEvent,
     ) -> Result<bool, GuardrailGateError> {
-        self.events
+        self.knobs
+            .events
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(event);
-        self.gate.clone()
+        match &self.knobs.gate {
+            Gate::Run => Ok(true),
+            Gate::Skip => Ok(false),
+            Gate::Fail(error) => Err(error.clone()),
+        }
     }
 
     // B3666's marker: a list in the metadata bucket
@@ -277,7 +291,8 @@ impl ProxyCallback for Fake {
         _response: JsonValue,
     ) -> Result<Option<JsonValue>, ProxyHookError> {
         self.act("post_call", data).await?;
-        Ok(Some(JsonValue::String("checked".to_owned())))
+        let checked = JsonValue::String("checked".to_owned());
+        Ok(Some(checked))
     }
 }
 
@@ -287,38 +302,19 @@ pub(crate) struct FakeUnified {
 
 #[async_trait]
 impl UnifiedHooks for FakeUnified {
-    async fn pre_call(
-        &self,
-        guardrail: &dyn ProxyCallback,
-        _data: &mut JsonMap,
-        _context: CallContext<'_>,
-    ) -> Result<(), ProxyHookError> {
+    async fn run(&self, call: UnifiedCall<'_>) -> Result<HookAnswer, ProxyHookError> {
+        let label = match &call.hook {
+            GuardrailHook::PreCall => "pre_call",
+            GuardrailHook::DuringCall => "moderation",
+            GuardrailHook::PostCall(_) => "post_call",
+        };
         self.log
-            .push(format!("unified:pre_call:{}", guardrail.class_name()));
-        Ok(())
-    }
-
-    async fn moderation(
-        &self,
-        guardrail: &dyn ProxyCallback,
-        _data: &mut JsonMap,
-        _context: CallContext<'_>,
-    ) -> Result<(), ProxyHookError> {
-        self.log
-            .push(format!("unified:moderation:{}", guardrail.class_name()));
-        Ok(())
-    }
-
-    async fn post_call_success(
-        &self,
-        guardrail: &dyn ProxyCallback,
-        _data: &mut JsonMap,
-        _user_api_key_dict: Option<&UserAPIKeyAuth>,
-        response: JsonValue,
-    ) -> Result<Option<JsonValue>, ProxyHookError> {
-        self.log
-            .push(format!("unified:post_call:{}", guardrail.class_name()));
-        Ok(Some(response))
+            .push(format!("unified:{label}:{}", call.guardrail.class_name()));
+        match call.hook {
+            GuardrailHook::PreCall => Ok(HookAnswer::PreCall(PreCallReturn::Unchanged)),
+            GuardrailHook::DuringCall => Ok(HookAnswer::DuringCall),
+            GuardrailHook::PostCall(response) => Ok(HookAnswer::PostCall(Some(response))),
+        }
     }
 }
 
@@ -418,26 +414,23 @@ impl GuardrailMetrics for FakeMetrics {
 }
 
 #[derive(Default)]
-pub(crate) struct FakeSeries(pub(crate) Mutex<Vec<String>>);
+pub(crate) struct FakeSeries(pub(crate) CallLog);
+
+fn label_values(labels: &[(&str, &str)]) -> String {
+    let values: Vec<&str> = labels.iter().map(|(_key, value)| *value).collect();
+    values.join(",")
+}
 
 impl GuardrailSeries for FakeSeries {
     type Error = Infallible;
 
     fn observe(&self, labels: &[(&str, &str)], seconds: Decimal) -> Result<(), Self::Error> {
-        let names: Vec<&str> = labels.iter().map(|(_key, value)| *value).collect();
-        self.0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(format!("{}={seconds}", names.join(",")));
+        self.0.push(format!("{}={seconds}", label_values(labels)));
         Ok(())
     }
 
     fn increment(&self, labels: &[(&str, &str)]) -> Result<(), Self::Error> {
-        let names: Vec<&str> = labels.iter().map(|(_key, value)| *value).collect();
-        self.0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(names.join(","));
+        self.0.push(label_values(labels));
         Ok(())
     }
 }

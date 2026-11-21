@@ -40,7 +40,7 @@ enum Class {
 
 fn shaped(class: Class, answer: Answer, harness: &Harness) -> Fake {
     let mut held = guardrail(Some(NAME));
-    held.native_during_call = matches!(class, Class::NativeDuringCall);
+    held.knobs.native_during_call = matches!(class, Class::NativeDuringCall);
     let mut callback = fake(CLASS, Some(held), answer, &harness.log);
     callback.apply_guardrail = !matches!(class, Class::Plain);
     callback.native_lifecycle = matches!(class, Class::NativeLifecycle);
@@ -130,7 +130,9 @@ fn hook_path_follows_the_litellm_rule(
 ) {
     let harness = harness();
     let callback = shaped(class, Answer::Pass, &harness);
-    assert_eq!(hook_path(&callback, &hook), expected);
+    let user = auth();
+    let scope = context(Some(&user), CallType::Acompletion);
+    assert_eq!(hook_path(&callback, &hook, scope), expected);
 }
 
 #[test]
@@ -138,9 +140,22 @@ fn a_unified_callback_without_a_guardrail_keeps_the_unified_during_call() {
     let harness = harness();
     let mut callback = fake(CLASS, None, Answer::Pass, &harness.log);
     callback.apply_guardrail = true;
+    let user = auth();
+    let scope = context(Some(&user), CallType::Acompletion);
     assert_eq!(
-        hook_path(&callback, &GuardrailHook::DuringCall),
+        hook_path(&callback, &GuardrailHook::DuringCall, scope),
         HookPath::Unified
+    );
+}
+
+#[test]
+fn a_unified_during_call_without_the_callers_key_takes_the_own_hook() {
+    let harness = harness();
+    let callback = shaped(Class::Unified, Answer::Pass, &harness);
+    let scope = context(None, CallType::Acompletion);
+    assert_eq!(
+        hook_path(&callback, &GuardrailHook::DuringCall, scope),
+        HookPath::Own
     );
 }
 

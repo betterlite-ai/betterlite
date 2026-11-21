@@ -7,7 +7,9 @@ use betterlite_logging::prometheus_latency::guardrail_series::GuardrailStatus;
 use rstest::rstest;
 use rust_decimal::Decimal;
 
-use super::support::{Answer, CLASS, Fake, Harness, Observed, auth, fake, guardrail, harness, map};
+use super::support::{
+    Answer, CLASS, Fake, Gate, Harness, Observed, auth, fake, guardrail, harness, map,
+};
 use super::{Class, NAME, context, http, metadata_field, shaped, strings};
 use crate::guardrails::callback_caps::caps::{CallbackCapabilities, GuardrailCapabilities};
 use crate::guardrails::callback_caps::errors::{GuardrailGateError, ProxyHookError};
@@ -59,24 +61,24 @@ async fn no_guardrail_and_no_moderation_override_returns_at_once(
 }
 
 #[rstest]
-#[case::v1_pre_call_check(false, Some("pre_call"), Ok(true), &[], &[])]
-#[case::v1_during_call_check(false, Some("during_call"), Ok(false), &["TestGuardrail:moderation"], &[])]
-#[case::v1_without_check(false, None, Ok(true), &["TestGuardrail:moderation"], &[GuardrailEvent::DuringCall])]
-#[case::event_hook_gate_false(true, Some("pre_call"), Ok(false), &[], &[GuardrailEvent::DuringCall])]
-#[case::event_hook_gate_true(true, Some("pre_call"), Ok(true), &["TestGuardrail:moderation"], &[GuardrailEvent::DuringCall])]
+#[case::v1_pre_call_check(false, Some("pre_call"), Gate::Run, &[], &[])]
+#[case::v1_during_call_check(false, Some("during_call"), Gate::Skip, &["TestGuardrail:moderation"], &[])]
+#[case::v1_without_check(false, None, Gate::Run, &["TestGuardrail:moderation"], &[GuardrailEvent::DuringCall])]
+#[case::event_hook_gate_false(true, Some("pre_call"), Gate::Skip, &[], &[GuardrailEvent::DuringCall])]
+#[case::event_hook_gate_true(true, Some("pre_call"), Gate::Run, &["TestGuardrail:moderation"], &[GuardrailEvent::DuringCall])]
 #[tokio::test]
 async fn the_during_call_selection_follows_litellm(
     #[case] event_hook_set: bool,
     #[case] moderation_check: Option<&'static str>,
-    #[case] gate: Result<bool, GuardrailGateError>,
+    #[case] gate: Gate,
     #[case] expected_calls: &[&str],
     #[case] expected_events: &[GuardrailEvent],
 ) {
     let harness = harness();
     let mut held = guardrail(Some(NAME));
-    held.event_hook_set = event_hook_set;
-    held.moderation_check = moderation_check;
-    held.gate = gate;
+    held.knobs.event_hook_unset = !event_hook_set;
+    held.knobs.moderation_check = moderation_check;
+    held.knobs.gate = gate;
     let callback = Arc::new(fake(CLASS, Some(held), Answer::Pass, &harness.log));
     let listed: Arc<dyn ProxyCallback> = Arc::<Fake>::clone(&callback);
     let selected = CallbackCapabilities::from_callbacks(&[listed]);
@@ -86,6 +88,7 @@ async fn the_during_call_selection_follows_litellm(
     assert_eq!(harness.log.entries(), expected_calls);
     let asked = callback.guardrail.as_ref().map(|gated| {
         gated
+            .knobs
             .events
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -98,7 +101,7 @@ async fn the_during_call_selection_follows_litellm(
 async fn a_during_call_gate_error_fails_the_call() {
     let harness = harness();
     let mut held = guardrail(Some(NAME));
-    held.gate = Err(GuardrailGateError::RequestedNotList);
+    held.knobs.gate = Gate::Fail(GuardrailGateError::RequestedNotList);
     let listed = capabilities(vec![fake(CLASS, Some(held), Answer::Pass, &harness.log)]);
     let user = auth();
     let outcome = run(&harness, &listed, Some(&user), CallType::Acompletion).await;
@@ -125,6 +128,7 @@ async fn the_during_call_gate_hears_the_mcp_event_only_for_tool_calls(
     assert_eq!(outcome, Ok(()));
     let asked = callback.guardrail.as_ref().map(|gated| {
         gated
+            .knobs
             .events
             .lock()
             .unwrap_or_else(PoisonError::into_inner)

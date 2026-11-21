@@ -9,8 +9,8 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 
 use super::support::{
-    Answer, CLASS, Fake, FakeBalancer, Harness, Observed, auth, capture_logs, fake, guardrail,
-    harness, map,
+    Answer, CLASS, Fake, FakeBalancer, Gate, Harness, Observed, auth, capture_logs, fake,
+    guardrail, harness, map,
 };
 use super::{Class, NAME, context, http, metadata_field, rerouted, shaped, strings};
 use crate::guardrails::callback_caps::errors::{
@@ -33,7 +33,8 @@ fn observed(name: &str, status: GuardrailStatus, error_type: Option<&str>) -> Ob
 
 fn events(callback: &Fake) -> Vec<GuardrailEvent> {
     callback.guardrail.as_ref().map_or_else(Vec::new, |held| {
-        held.events
+        held.knobs
+            .events
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
@@ -51,13 +52,14 @@ fn proxy_exception() -> ProxyHookError {
 }
 
 fn modified() -> ProxyHookError {
-    ProxyHookError::ModifyResponse(Box::new(ModifiedResponseError {
+    let response = ModifiedResponseError {
         message: "masked".to_owned(),
         model: "gpt".to_owned(),
         guardrail_name: Some(NAME.to_owned()),
         detection_info: BTreeMap::new(),
         original_response: None,
-    }))
+    };
+    ProxyHookError::ModifyResponse(Box::new(response))
 }
 
 fn raised() -> ProxyHookError {
@@ -170,16 +172,16 @@ async fn the_pre_call_gate_hears_the_mcp_event_for_mcp_calls(
 }
 
 #[rstest]
-#[case::gate_false(Ok(false), Ok(CallbackRun::Skipped))]
-#[case::gate_error(Err(GuardrailGateError::TagMode), Err(ProxyHookError::Other(GuardrailGateError::TagMode.to_string())))]
+#[case::gate_skip(Gate::Skip, Ok(CallbackRun::Skipped))]
+#[case::gate_error(Gate::Fail(GuardrailGateError::TagMode), Err(ProxyHookError::Other(GuardrailGateError::TagMode.to_string())))]
 #[tokio::test]
 async fn a_gate_that_is_not_true_skips_without_metrics(
-    #[case] gate: Result<bool, GuardrailGateError>,
+    #[case] gate: Gate,
     #[case] expected: Result<CallbackRun, ProxyHookError>,
 ) {
     let harness = harness();
     let mut held = guardrail(Some(NAME));
-    held.gate = gate;
+    held.knobs.gate = gate;
     let callback = fake(CLASS, Some(held), Answer::Pass, &harness.log);
     let user = auth();
     let mut data = map("{}");
@@ -337,7 +339,7 @@ async fn a_scan_raw_request_guardrail_reads_the_snapshot_and_its_edits_are_dropp
     let harness = harness();
     let mut callback = shaped(Class::Plain, answer, &harness);
     if let Some(held) = callback.guardrail.as_mut() {
-        held.scan_raw_request = true;
+        held.knobs.scan_raw_request = true;
     }
     let raw = snapshot.map(map);
     let user = auth();
@@ -364,8 +366,8 @@ async fn a_scan_raw_request_guardrail_reads_the_snapshot_and_its_edits_are_dropp
 async fn a_skipped_scan_raw_request_guardrail_leaves_no_mark() {
     let harness = harness();
     let mut held = guardrail(Some(NAME));
-    held.scan_raw_request = true;
-    held.gate = Ok(false);
+    held.knobs.scan_raw_request = true;
+    held.knobs.gate = Gate::Skip;
     let callback = fake(CLASS, Some(held), Answer::Pass, &harness.log);
     let user = auth();
     let mut data = map("{}");
@@ -412,7 +414,7 @@ async fn a_sequential_raise_records_the_guardrail_but_a_reroute_does_not(
     let harness = harness();
     let mut callback = shaped(Class::Plain, Answer::Fail(error.clone()), &harness);
     if let Some(held) = callback.guardrail.as_mut() {
-        held.scan_raw_request = scan_raw_request;
+        held.knobs.scan_raw_request = scan_raw_request;
     }
     let user = auth();
     let mut data = map("{}");
@@ -466,7 +468,7 @@ async fn parallel_guardrails_merge_their_marks_and_drop_their_edits() {
         &harness.log,
     ));
     let mut held = guardrail(Some("raw"));
-    held.scan_raw_request = true;
+    held.knobs.scan_raw_request = true;
     let scanner = Arc::new(fake("Scanner", Some(held), Answer::Edit, &harness.log));
     let guardrails: Vec<Arc<dyn ProxyCallback>> =
         vec![Arc::<Fake>::clone(&first), Arc::<Fake>::clone(&scanner)];

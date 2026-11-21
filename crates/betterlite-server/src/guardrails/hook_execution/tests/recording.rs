@@ -1,5 +1,3 @@
-use std::sync::PoisonError;
-
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_core::routes::CallType;
 use betterlite_logging::prometheus_latency::guardrail_series::{
@@ -15,7 +13,7 @@ use super::support::{
 use super::{NAME, context, http, metadata_field, reroute, rerouted};
 use crate::guardrails::callback_caps::errors::ProxyHookError;
 use crate::guardrails::callback_caps::traits::{PreCallReturn, ProxyCallback};
-use crate::guardrails::hook_execution::execute::{GuardrailHook, HookAnswer, HookCall, HookPath};
+use crate::guardrails::hook_execution::execute::{GuardrailHook, HookAnswer, HookCall};
 use crate::guardrails::hook_execution::metrics::{
     GuardrailMetrics as _, PrometheusGuardrails, run_guardrail_with_metrics,
 };
@@ -222,23 +220,16 @@ fn the_prometheus_logger_gets_the_three_series() {
         error_type: Some("HTTPException"),
         hook_type: "pre_call",
     });
-    let read = |series: &FakeSeries| {
-        series
-            .0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    };
     assert_eq!(
-        read(&metrics.latency),
+        metrics.latency.0.entries(),
         vec!["pii,error,HTTPException,pre_call=1".to_owned()]
     );
     assert_eq!(
-        read(&metrics.requests),
+        metrics.requests.0.entries(),
         vec!["pii,error,pre_call".to_owned()]
     );
     assert_eq!(
-        read(&metrics.errors),
+        metrics.errors.0.entries(),
         vec!["pii,HTTPException,pre_call".to_owned()]
     );
 }
@@ -254,8 +245,7 @@ async fn a_post_call_without_a_guardrail_reports_under_its_class() {
         context: context(Some(&user), CallType::Acompletion),
     };
     let mut data = map("{}");
-    let answer =
-        run_guardrail_with_metrics(&harness.execution, call, HookPath::Own, &mut data).await;
+    let answer = run_guardrail_with_metrics(&harness.execution, call, &mut data).await;
     assert_eq!(answer, Ok(HookAnswer::PostCall(Some(text("checked")))));
     let expected = Observed {
         name: CLASS.to_owned(),
@@ -279,8 +269,7 @@ async fn a_raise_under_metrics_is_named_and_recorded() {
         context: context(Some(&user), CallType::Acompletion),
     };
     let mut data = map(r#"{"metadata": {"count": 1}}"#);
-    let answer =
-        run_guardrail_with_metrics(&harness.execution, call, HookPath::Own, &mut data).await;
+    let answer = run_guardrail_with_metrics(&harness.execution, call, &mut data).await;
     let detail =
         r#"{"code":7,"error":"blocked","guardrail_mode":"pre_call","guardrail_name":"pii"}"#;
     assert_eq!(answer, Err(http(detail)));
