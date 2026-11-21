@@ -114,6 +114,8 @@ fn counter_services_register_latency_and_two_counters(
     let total = registered(&registry, &format!("litellm_{name}_total_requests"));
     assert_eq!(total.description.kind, CollectorKind::Counter);
     assert_eq!(total.description.label_names, vec![name.to_owned()]);
+    assert_eq!(logger.payload_to_prometheus_map[name].len(), 3);
+    assert!(registry.get(&format!("litellm_{name}_size")).is_none());
 }
 
 #[rstest]
@@ -503,7 +505,14 @@ fn service_success_hook_observes_latency_and_counts_requests() {
 #[test]
 fn service_success_hook_leaves_a_gauge_service_alone() {
     let (registry, logger) = build(None);
-    logger.service_success_hook(&success(ServiceType::PodLockManager, 1.0));
+    let payload = ServiceLoggerPayload {
+        event_metadata: Some(ServiceEventMetadata {
+            gauge_labels: Some("queue_a".to_owned()),
+            gauge_value: Some(3.0),
+        }),
+        ..success(ServiceType::PodLockManager, 1.0)
+    };
+    logger.service_success_hook(&payload);
     assert_eq!(
         series_count(&registered(&registry, "litellm_pod_lock_manager_size")),
         0
@@ -541,7 +550,14 @@ fn service_failure_hook_increments_every_counter() {
 #[test]
 fn service_failure_hook_leaves_a_gauge_service_alone() {
     let (registry, logger) = build(None);
-    logger.service_failure_hook(&failure(ServiceType::PodLockManager, 1.0));
+    let payload = ServiceLoggerPayload {
+        event_metadata: Some(ServiceEventMetadata {
+            gauge_labels: Some("queue_a".to_owned()),
+            gauge_value: Some(3.0),
+        }),
+        ..failure(ServiceType::PodLockManager, 1.0)
+    };
+    logger.service_failure_hook(&payload);
     assert_eq!(
         series_count(&registered(&registry, "litellm_pod_lock_manager_size")),
         0
@@ -551,7 +567,14 @@ fn service_failure_hook_leaves_a_gauge_service_alone() {
 #[test]
 fn async_service_failure_hook_leaves_a_gauge_service_alone() {
     let (registry, logger) = build(None);
-    logger.async_service_failure_hook(&failure(ServiceType::PodLockManager, 1.0), "TimeoutError");
+    let payload = ServiceLoggerPayload {
+        event_metadata: Some(ServiceEventMetadata {
+            gauge_labels: Some("queue_a".to_owned()),
+            gauge_value: Some(3.0),
+        }),
+        ..failure(ServiceType::PodLockManager, 1.0)
+    };
+    logger.async_service_failure_hook(&payload, "TimeoutError");
     assert_eq!(
         series_count(&registered(&registry, "litellm_pod_lock_manager_size")),
         0

@@ -235,7 +235,7 @@ impl PrometheusServicesLogger {
         let labels = metadata.gauge_labels.as_deref().unwrap_or_default();
         for metric in service_metrics {
             if matches!(metric.description.kind, CollectorKind::Gauge) {
-                Self::update_gauge(metric, labels, metadata.gauge_value.unwrap_or(0.0));
+                Self::update_gauge(metric, labels, metadata.gauge_value.unwrap_or(0.0_f64));
             }
         }
     }
