@@ -442,8 +442,7 @@ async fn anthropic_case() {
     assert_eq!(logger.calls.len(), 1);
     assert!(logger.calls[0].headers.is_none());
 
-    // a provider failure reaches the caller without a post_call on this branch
-    // a valid reply body behind the failing status proves the transport reports the status, not the body
+    // a provider failure stays unlogged, and the valid body behind the status proves the transport reads the status
     let failing = Wire::new(500, ANTHROPIC_REPLY);
     let mut state = harness.state().expect("the logging state");
     let env_values = harness.env();
