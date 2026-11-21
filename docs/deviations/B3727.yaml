@@ -1,0 +1,18 @@
+task: B3727
+deviations:
+  - what: The incremental scan cache is resolved by the caller; apply_guardrail takes the session store and TTL on its invocation instead of a module-level DualCache singleton created inside _apply_incremental_request_scan.
+    why: betterlite forbids global state, so incremental_scan_cache(shared, process_local) picks the proxy's shared cache when one exists and the caller-owned local store otherwise; state sharing matches whenever the proxy supplies a shared cache, and an offline caller keeps its own store.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L3063-L3081
+  - what: scan_only_tool_results reaches message selection as a field on BatchInvocation instead of being read from the guardrail object.
+    why: BedrockGuardrail carries only transport settings, and scan_only_tool_results is parsed into the base guardrail params, so the code that builds the invocation passes the flag in.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L672
+  - what: Every typed guardrail failure escapes apply_guardrail unchanged, not only the HTTP and modify-response failures LiteLLM re-raises.
+    why: betterlite carries typed failures instead of Python exceptions, and re-wrapping one would drop the status and structured detail the proxy acts on; today's Bedrock apply path produces only the HTTP, structured-HTTP and modify-response failures.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L3276-L3286
+  - what: A masked incremental scan records no session progress and falls back to a full-context scan, so the next request scans the whole context again.
+    why: A masked result cannot be applied to the skipped context, and recording a partial scan would corrupt the session state a later write-back reads.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L3128-L3143
+  - what: A structured or request message whose role or content the typed wire model cannot represent is left out and the flat texts are selected instead; LiteLLM keeps the arbitrary dict and compares roles as strings.
+    why: betterlite's wire messages are typed, so an unknown role cannot be carried; on the OpenAI roles LiteLLM declares, selection is identical.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L655-L658
+kept_bugs: []
