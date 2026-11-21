@@ -1205,6 +1205,7 @@ dependencies = [
 name = "betterlite-azure"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "base64 0.23.1",
  "betterlite-config",
  "betterlite-context",
@@ -1238,6 +1239,7 @@ dependencies = [
  "sha2 0.11.1",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
  "url",
@@ -1545,6 +1547,7 @@ dependencies = [
  "betterlite-env",
  "betterlite-models",
  "betterlite-postgres-fixture",
+ "betterlite-redact",
  "betterlite-redis",
  "betterlite-secret-managers",
  "betterlite-secrets",
@@ -1664,6 +1667,7 @@ dependencies = [
  "betterlite-streaming",
  "betterlite-test-ports",
  "betterlite-tokenizer",
+ "bytes",
  "caseless",
  "chrono",
  "clap",
@@ -1891,6 +1895,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "betterlite-redact",
+ "chrono",
  "regex",
  "rstest",
  "rust_decimal",
@@ -2610,6 +2615,7 @@ dependencies = [
  "betterlite-postgres-fixture",
  "betterlite-prompts",
  "betterlite-provider",
+ "betterlite-rate-limit",
  "betterlite-redact",
  "betterlite-redis",
  "betterlite-router",
@@ -2767,6 +2773,7 @@ dependencies = [
 name = "betterlite-oracle-azure"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "base64 0.23.1",
  "betterlite-azure",
  "betterlite-config",
@@ -2790,6 +2797,7 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
  "uuid",
@@ -4222,6 +4230,7 @@ dependencies = [
  "betterlite-context",
  "betterlite-core",
  "betterlite-db",
+ "betterlite-error",
  "betterlite-http",
  "betterlite-models",
  "betterlite-openai",
