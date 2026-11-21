@@ -2,7 +2,9 @@ use std::ops::Div as _;
 
 use num_traits::cast::cast;
 
-use crate::limiter_records::{CacheCounterValue, RateLimitType, create_rate_limit_keys};
+use crate::limiter_records::{
+    CacheCounterValue, RateLimitType, WindowRateLimitType, create_rate_limit_keys,
+};
 use crate::provider_attribution::ModelGroupLimits;
 
 use super::cache::{SaturationCache, saturation_value_from_cache};
@@ -26,7 +28,7 @@ pub async fn check_model_saturation(
         let counter_key =
             create_rate_limit_keys(SATURATION_DESCRIPTOR_KEY, model, RateLimitType::Requests);
         if let Some(value) = saturation_value_from_cache(cache, &counter_key, local_ttl).await {
-            let Some(current) = whole_counter(&value) else {
+            let Some(current) = counter_number(&value, WindowRateLimitType::Requests) else {
                 tracing::error!(
                     "Error checking saturation for {model}: the requests counter is not whole"
                 );
@@ -40,7 +42,7 @@ pub async fn check_model_saturation(
         let counter_key =
             create_rate_limit_keys(SATURATION_DESCRIPTOR_KEY, model, RateLimitType::Tokens);
         if let Some(value) = saturation_value_from_cache(cache, &counter_key, local_ttl).await {
-            let Some(current) = float_counter(&value) else {
+            let Some(current) = counter_number(&value, WindowRateLimitType::Tokens) else {
                 tracing::error!(
                     "Error checking saturation for {model}: the tokens counter is not a number"
                 );
@@ -53,25 +55,21 @@ pub async fn check_model_saturation(
     saturation
 }
 
-// int(counter_value): a float counter truncates toward zero, and text has to spell a whole number
-fn whole_counter(value: &CacheCounterValue) -> Option<f64> {
-    let current = match value {
-        CacheCounterValue::Int(current) => *current,
-        CacheCounterValue::Float(current) => cast::<f64, i64>(current.trunc())?,
-        CacheCounterValue::Text(text) => text.trim().parse::<i64>().ok()?,
-        CacheCounterValue::Bytes(bytes) => {
-            str::from_utf8(bytes).ok()?.trim().parse::<i64>().ok()?
+// int() reads the requests counter and float() the tokens one, so only tokens keep a fraction
+fn counter_number(value: &CacheCounterValue, counter: WindowRateLimitType) -> Option<f64> {
+    let text = match value {
+        CacheCounterValue::Int(current) => return cast::<i64, f64>(*current),
+        CacheCounterValue::Float(current) if counter == WindowRateLimitType::Tokens => {
+            return Some(*current);
         }
+        CacheCounterValue::Float(current) => {
+            return cast::<f64, i64>(current.trunc()).and_then(cast);
+        }
+        CacheCounterValue::Text(text) => text,
+        CacheCounterValue::Bytes(bytes) => str::from_utf8(bytes).ok()?,
     };
-    cast::<i64, f64>(current)
-}
-
-// float(counter_value): text keeps its fraction, so a token counter that is not whole still counts
-fn float_counter(value: &CacheCounterValue) -> Option<f64> {
-    match value {
-        CacheCounterValue::Int(current) => cast::<i64, f64>(*current),
-        CacheCounterValue::Float(current) => Some(*current),
-        CacheCounterValue::Text(text) => text.trim().parse::<f64>().ok(),
-        CacheCounterValue::Bytes(bytes) => str::from_utf8(bytes).ok()?.trim().parse::<f64>().ok(),
+    match counter {
+        WindowRateLimitType::Requests => cast::<i64, f64>(text.trim().parse::<i64>().ok()?),
+        WindowRateLimitType::Tokens => text.trim().parse::<f64>().ok(),
     }
 }
