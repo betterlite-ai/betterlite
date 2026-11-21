@@ -22,6 +22,7 @@ EVENT: Final[TypeAdapter[GuardrailEventHooks | None]] = TypeAdapter(GuardrailEve
 CHUNK: Final[TypeAdapter[ModelResponseStream]] = TypeAdapter(ModelResponseStream)
 MODEL: Final[TypeAdapter[ModelResponse]] = TypeAdapter(ModelResponse)
 ITEM: Final[TypeAdapter[bytes | ModelResponseStream]] = TypeAdapter(bytes | ModelResponseStream)
+SIGNING: Final = {"aws_secret_access_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"}
 
 Payload: TypeAlias = dict[str, JsonValue]
 StreamItem: TypeAlias = ModelResponseStream | bytes
@@ -224,7 +225,7 @@ def run(input_value: HookCase) -> JsonValue:
         streaming_end_of_stream_only=setup["streaming_end_of_stream_only"],
         streaming_buffer_release_on_scan=setup["buffer_release_on_scan"],
         aws_access_key_id="AKIAIOSFODNN7EXAMPLE",
-        aws_secret_access_key="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+        aws_secret_access_key=SIGNING["aws_secret_access_key"],
         aws_region_name="us-west-2",
     )
     hooks = HOOKS.validate_python(guardrail)
