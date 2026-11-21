@@ -19,7 +19,10 @@ pub struct AllowedFailsStore {
 
 impl AllowedFailsStore {
     #[must_use]
-    pub fn new(local: Arc<RoutingValueStore>, remote: Option<Arc<RoutingStateStore>>) -> Self {
+    pub const fn new(
+        local: Arc<RoutingValueStore>,
+        remote: Option<Arc<RoutingStateStore>>,
+    ) -> Self {
         Self { local, remote }
     }
 

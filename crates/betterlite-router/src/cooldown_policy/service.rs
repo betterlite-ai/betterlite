@@ -1,18 +1,17 @@
+use std::future::Future;
 use std::sync::Arc;
 
 use crate::cooldown_decisions::decision::{
     CooldownDecision, CooldownRequest, DeploymentFacts, MinuteSamples, decide,
 };
-use crate::cooldown_decisions::failure::{
-    FailureFacts, Seconds, is_background_cost_poll_404, is_caller_timeout_408,
-};
+use crate::cooldown_decisions::failure::{FailureFacts, Seconds};
 use crate::cooldown_decisions::policy::CooldownPolicy;
 use crate::cooldown_policy::counter::AllowedFailsStore;
 use crate::cooldown_policy::error::CooldownPolicyError;
-use crate::cooldown_policy::event::{CooldownObserver, notify};
-use crate::cooldown_policy::facts::{
-    cooldown_event, deployment_facts, error_status_code, error_status_text,
-    resolve_time_to_cooldown,
+use crate::cooldown_policy::event::{CooldownEvent, CooldownObserver, notify};
+use crate::cooldown_policy::facts::error_status_code;
+use crate::cooldown_policy::prepared::{
+    PreparedCooldown, prepare_callback, prepare_fallback, prepare_set,
 };
 use crate::cooldown_state::cooldown::{ActiveCooldown, CooldownCache};
 use crate::cooldown_state::record::CooldownRecord;
@@ -39,6 +38,15 @@ pub struct FallbackFailure<'failure> {
     pub header_retry_after: Option<Seconds>,
 }
 
+// one _set_cooldown_deployments call: the deployment, its failed attempt and the cooldown time already resolved
+pub struct CooldownCall<'failure> {
+    pub deployment_id: &'failure str,
+    pub failure: &'failure FailureFacts,
+    pub exception: &'failure str,
+    pub time_to_cooldown: Option<Seconds>,
+    pub requested_model_group: Option<&'failure str>,
+}
+
 // Router's cooldown services: the cache B307 keeps entries in, the minute counters B304 keeps, the shared
 // allowed-fails counters and the observers a cooldown event reaches
 pub struct CooldownPolicyService<S: DeltaStore + 'static> {
@@ -51,7 +59,7 @@ pub struct CooldownPolicyService<S: DeltaStore + 'static> {
 
 impl<S: DeltaStore + 'static> CooldownPolicyService<S> {
     #[must_use]
-    pub fn new(
+    pub const fn new(
         settings: CooldownPolicy,
         cooldowns: CooldownCache,
         counters: RouterCounters<S>,
@@ -69,134 +77,96 @@ impl<S: DeltaStore + 'static> CooldownPolicyService<S> {
 
     // the minute counters the decision reads, so a test or caller can record a success the success callback would
     #[must_use]
-    pub fn counters(&self) -> &RouterCounters<S> {
+    pub const fn counters(&self) -> &RouterCounters<S> {
         &self.counters
     }
 
     // Router.deployment_callback_on_failure: the minute failure lands first, then the cooldown decision runs
-    pub async fn deployment_callback_on_failure(
-        &self,
+    pub fn deployment_callback_on_failure<'call>(
+        &'call self,
         lookup: &CatalogLookup<'_>,
         attempt: &CooldownAttempt<'_>,
-    ) -> Result<bool, CooldownPolicyError> {
-        let Some(deployment) = lookup.get_deployment(attempt.deployment_id)? else {
-            return Ok(false);
-        };
-        let failure = attempt.failure;
-        if failure.advisor_orchestration
-            || is_background_cost_poll_404(&failure.status, failure.background_response_cost_poll)
-            || is_caller_timeout_408(&failure.status, failure.caller_timeout.as_ref())
-        {
-            return Ok(false);
-        }
-        let time_to_cooldown = resolve_time_to_cooldown(
-            deployment,
-            attempt.header_retry_after,
-            self.settings.cooldown_time,
-        )?;
-        self.increment_failures(attempt.deployment_id)?;
-        self.set_cooldown_deployments(
-            lookup,
-            attempt.deployment_id,
-            failure,
-            attempt.exception,
-            Some(time_to_cooldown),
-            attempt.requested_model_group,
-        )
-        .await
-    }
-
-    // _trigger_cooldown_for_failed_deployment: best effort, so a failure here never breaks the fallback response itself
-    pub async fn trigger_for_failed_deployment(
-        &self,
-        lookup: &CatalogLookup<'_>,
-        failure: &FallbackFailure<'_>,
-    ) -> bool {
-        match self.try_trigger(lookup, failure).await {
-            Ok(cooled) => cooled,
-            Err(error) => {
-                tracing::debug!("Error triggering cooldown for fallback deployment: {error}");
-                false
+    ) -> impl Future<Output = Result<bool, CooldownPolicyError>> + Send + 'call {
+        let prepared = prepare_callback(&self.counters, &self.settings, lookup, attempt);
+        async move {
+            match prepared? {
+                Some(prepared) => self.finish_cooldown(&prepared).await,
+                None => Ok(false),
             }
         }
     }
 
-    async fn try_trigger(
-        &self,
+    // _trigger_cooldown_for_failed_deployment: best effort, so a failure here never breaks the fallback response itself
+    pub fn trigger_for_failed_deployment<'call>(
+        &'call self,
         lookup: &CatalogLookup<'_>,
         failure: &FallbackFailure<'_>,
-    ) -> Result<bool, CooldownPolicyError> {
-        let facts = failure.failure;
-        if facts.advisor_orchestration {
-            return Ok(false);
+    ) -> impl Future<Output = bool> + Send + 'call {
+        let prepared = prepare_fallback(&self.counters, &self.settings, lookup, failure);
+        async move {
+            let cooled = match prepared {
+                Ok(Some(prepared)) => self.finish_cooldown(&prepared).await,
+                Ok(None) => return false,
+                Err(error) => Err(error),
+            };
+            match cooled {
+                Ok(cooled) => cooled,
+                Err(error) => {
+                    tracing::debug!("Error triggering cooldown for fallback deployment: {error}");
+                    false
+                }
+            }
         }
-        // a generic API call's caller-supplied id can 404 on its own, so that status is not a health signal
-        if failure.original_generic_function && error_status_code(&facts.status) == 404 {
-            return Ok(false);
-        }
-        if is_caller_timeout_408(&facts.status, facts.caller_timeout.as_ref()) {
-            return Ok(false);
-        }
-        let Some(deployment_id) = failure.deployment_id else {
-            return Ok(false);
-        };
-        let Some(deployment) = lookup.get_deployment(deployment_id)? else {
-            return Ok(false);
-        };
-        let time_to_cooldown = resolve_time_to_cooldown(
-            deployment,
-            failure.header_retry_after,
-            self.settings.cooldown_time,
-        )?;
-        self.increment_failures(deployment_id)?;
-        self.set_cooldown_deployments(
-            lookup,
-            deployment_id,
-            facts,
-            failure.exception,
-            Some(time_to_cooldown),
-            None,
-        )
-        .await
     }
 
     // _set_cooldown_deployments: B369 decides, the entry lands in B307's cache, and the event fires once per cooldown
-    pub async fn set_cooldown_deployments(
-        &self,
+    pub fn set_cooldown_deployments<'call>(
+        &'call self,
         lookup: &CatalogLookup<'_>,
-        deployment_id: &str,
-        failure: &FailureFacts,
-        exception: &str,
-        time_to_cooldown: Option<Seconds>,
-        requested_model_group: Option<&str>,
+        call: &CooldownCall<'_>,
+    ) -> impl Future<Output = Result<bool, CooldownPolicyError>> + Send + 'call {
+        let prepared = prepare_set(&self.counters, lookup, call);
+        async move {
+            match prepared? {
+                Some(prepared) => self.finish_cooldown(&prepared).await,
+                None => Ok(false),
+            }
+        }
+    }
+
+    async fn finish_cooldown(
+        &self,
+        prepared: &PreparedCooldown,
     ) -> Result<bool, CooldownPolicyError> {
-        let Some(deployment) = lookup.get_deployment(deployment_id)? else {
-            return Ok(false);
-        };
-        let facts = deployment_facts(lookup, deployment, deployment_id, requested_model_group)?;
-        let minute = MinuteSamples {
-            successes: minute_count(self.counters.successes_for_minute(deployment_id)),
-            failures: minute_count(self.counters.failures_for_minute(deployment_id)),
-        };
         let decision = self
-            .decide_with_counter(&facts, failure, minute, time_to_cooldown)
+            .decide_with_counter(
+                &prepared.facts,
+                &prepared.failure,
+                prepared.minute,
+                prepared.time_to_cooldown,
+            )
             .await;
         if !decision.cooldown {
             return Ok(false);
         }
         self.cooldowns
             .add(
-                deployment_id,
-                exception,
-                error_status_code(&failure.status),
-                time_to_cooldown.map(|seconds| seconds.0),
+                &prepared.deployment_id,
+                &prepared.exception,
+                error_status_code(&prepared.failure.status),
+                prepared.time_to_cooldown.map(|seconds| seconds.0),
             )
             .map_err(|source| CooldownPolicyError::Cooldown {
-                model_id: deployment_id.to_owned(),
+                model_id: prepared.deployment_id.clone(),
                 source,
             })?;
-        let status_text = error_status_text(&failure.status);
-        let event = cooldown_event(deployment, deployment_id, &status_text);
+        let event = CooldownEvent {
+            model_name: &prepared.event.model_name,
+            model_id: &prepared.event.model_id,
+            api_base: &prepared.event.api_base,
+            provider: &prepared.event.provider,
+            exception_status: &prepared.event.exception_status,
+        };
         notify(&self.observers, &event);
         Ok(true)
     }
@@ -228,20 +198,15 @@ impl<S: DeltaStore + 'static> CooldownPolicyService<S> {
             .increment(&counter.key, counter.ttl_seconds.0)
             .await;
         let counted = CooldownRequest {
+            policy: request.policy,
+            deployment: request.deployment,
+            failure: request.failure,
+            minute: request.minute,
             allowed_fails_before: observed.fails.saturating_sub(1),
             local_fails: observed.local_only.then_some(observed.fails),
-            ..request
+            time_to_cooldown: request.time_to_cooldown,
         };
         decide(&counted)
-    }
-
-    fn increment_failures(&self, deployment_id: &str) -> Result<(), CooldownPolicyError> {
-        self.counters
-            .increment_failures_for_minute(deployment_id)
-            .map_err(|source| CooldownPolicyError::Counter {
-                model_id: deployment_id.to_owned(),
-                source,
-            })
     }
 
     // _async_get_cooldown_deployments_with_debug_info: today's ids and the entries behind them
@@ -269,8 +234,4 @@ impl<S: DeltaStore + 'static> CooldownPolicyService<S> {
             .map(|cooldown| cooldown.model_id)
             .collect())
     }
-}
-
-fn minute_count(value: i64) -> u64 {
-    u64::try_from(value).unwrap_or(0)
 }

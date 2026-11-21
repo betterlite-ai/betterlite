@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use betterlite_config::sections::routing_state_store::connection::Connection;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
@@ -10,7 +11,9 @@ use crate::cooldown_decisions::failure::{ErrorStatus, FailureClass, FailureFacts
 use crate::cooldown_decisions::policy::{CooldownPolicy, FailureThresholds};
 use crate::cooldown_policy::counter::AllowedFailsStore;
 use crate::cooldown_policy::event::{CooldownEvent, CooldownObservationError, CooldownObserver};
-use crate::cooldown_policy::service::{CooldownAttempt, CooldownPolicyService, FallbackFailure};
+use crate::cooldown_policy::service::{
+    CooldownAttempt, CooldownCall, CooldownPolicyService, FallbackFailure,
+};
 use crate::cooldown_state::cooldown::CooldownCache;
 use crate::cooldown_state::record::CooldownRecord;
 use crate::cooldown_state::settings::Settings as CacheSettings;
@@ -18,12 +21,15 @@ use crate::cooldown_state::shared::SharedCooldowns;
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::model_catalog_lookup::alias::AliasMap;
 use crate::model_catalog_lookup::lookup::CatalogLookup;
+use crate::redis_failure_policy::Settings as BreakerSettings;
 use crate::routing_groups::group::RoutingGroup;
 use crate::routing_groups::index::RoutingGroupIndex;
 use crate::routing_read_batch::store::{BatchRead, BatchReadFuture};
 use crate::routing_state::Settings as CounterSettings;
 use crate::routing_state::counter::RouterCounters;
-use crate::routing_state_store::RoutingStateStore;
+use crate::routing_state_store::Settings as RedisStoreSettings;
+use crate::routing_state_store::test_support::FakeRedis;
+use crate::routing_state_store::{BreakerClock, RedisSettings, RoutingStateStore};
 use crate::routing_value_store::{Clock, RouteKey, RoutingValueStore, StoreSettings};
 
 pub(super) type SharedClock = Arc<Mutex<f64>>;
@@ -181,6 +187,49 @@ pub(super) fn harness_with(
     policy: CooldownPolicy,
     extras: Vec<Arc<dyn CooldownObserver>>,
 ) -> Harness {
+    harness_built(fixture, policy, extras, None)
+}
+
+// a harness whose allowed-fails counters also live in the shared store the fake redis serves
+pub(super) fn harness_sharing(
+    fixture: Fixture,
+    policy: CooldownPolicy,
+    server: &FakeRedis,
+) -> Harness {
+    let breaker_clock: BreakerClock = Arc::new(|| Duration::from_millis(0));
+    let remote = Arc::new(RoutingStateStore::new(&shared_settings(server), breaker_clock).unwrap());
+    harness_built(fixture, policy, Vec::new(), Some(remote))
+}
+
+fn shared_settings(server: &FakeRedis) -> RedisStoreSettings {
+    RedisStoreSettings {
+        redis: RedisSettings {
+            url: None,
+            host: Some("127.0.0.1".to_owned()),
+            port: Some(i64::from(server.port())),
+            password: None,
+            namespace: Some("b308".to_owned()),
+            connection: Connection::default(),
+            socket_timeout: 2.0_f64,
+            pool_timeout_seconds: 5,
+            environment: BTreeMap::new(),
+        },
+        breaker: BreakerSettings {
+            enabled: true,
+            failure_threshold: 3,
+            recovery_timeout: Duration::ZERO,
+            timeout_min_duration: Duration::from_millis(5_000),
+            timeout_log_interval: Duration::from_millis(1_000),
+        },
+    }
+}
+
+fn harness_built(
+    fixture: Fixture,
+    policy: CooldownPolicy,
+    extras: Vec<Arc<dyn CooldownObserver>>,
+    remote: Option<Arc<RoutingStateStore>>,
+) -> Harness {
     let clock: SharedClock = Arc::new(Mutex::new(1000.0_f64));
     let handle = Arc::clone(&clock);
     let clock_fn: Clock = Arc::new(move || *handle.lock().unwrap_or_else(PoisonError::into_inner));
@@ -220,7 +269,7 @@ pub(super) fn harness_with(
         policy,
         cooldowns,
         counters,
-        AllowedFailsStore::new(local, None),
+        AllowedFailsStore::new(local, remote),
         observers,
     );
     Harness {
@@ -282,14 +331,14 @@ fn generated_id() -> String {
     "generated".to_owned()
 }
 
-pub(super) fn attempt<'case>(
+pub(super) const fn attempt<'case>(
     deployment_id: &'case str,
     failure: &'case FailureFacts,
 ) -> CooldownAttempt<'case> {
     attempt_with(deployment_id, failure, None, None)
 }
 
-pub(super) fn attempt_with<'case>(
+pub(super) const fn attempt_with<'case>(
     deployment_id: &'case str,
     failure: &'case FailureFacts,
     header_retry_after: Option<Seconds>,
@@ -304,7 +353,20 @@ pub(super) fn attempt_with<'case>(
     }
 }
 
-pub(super) fn fallback<'case>(
+pub(super) const fn call<'case>(
+    deployment_id: &'case str,
+    failure: &'case FailureFacts,
+) -> CooldownCall<'case> {
+    CooldownCall {
+        deployment_id,
+        failure,
+        exception: "probe failure",
+        time_to_cooldown: None,
+        requested_model_group: None,
+    }
+}
+
+pub(super) const fn fallback<'case>(
     deployment_id: Option<&'case str>,
     failure: &'case FailureFacts,
 ) -> FallbackFailure<'case> {
@@ -317,7 +379,7 @@ pub(super) fn fallback<'case>(
     }
 }
 
-pub(super) fn failure(class: FailureClass, status: ErrorStatus) -> FailureFacts {
+pub(super) const fn failure(class: FailureClass, status: ErrorStatus) -> FailureFacts {
     FailureFacts {
         class,
         status,
@@ -328,7 +390,7 @@ pub(super) fn failure(class: FailureClass, status: ErrorStatus) -> FailureFacts 
     }
 }
 
-pub(super) fn rate_limit(status: i64) -> FailureFacts {
+pub(super) const fn rate_limit(status: i64) -> FailureFacts {
     failure(FailureClass::RateLimit, ErrorStatus::Code(status))
 }
 

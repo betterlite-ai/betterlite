@@ -12,7 +12,7 @@ pub struct CooldownObservers {
 
 impl CooldownObservers {
     #[must_use]
-    pub fn new(
+    pub const fn new(
         success: Vec<Arc<dyn CooldownObserver>>,
         global: Vec<Arc<dyn CooldownObserver>>,
     ) -> Self {

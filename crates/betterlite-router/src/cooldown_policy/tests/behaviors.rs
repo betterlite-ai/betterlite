@@ -4,11 +4,12 @@ use betterlite_models::decisions::Json;
 
 use crate::cooldown_decisions::failure::{ErrorStatus, FailureClass, Seconds, TimeoutFacts};
 use crate::routing_read_batch::{RequestReads, RoutingReadBatch};
+use crate::routing_state_store::test_support::FakeRedis;
 
 use super::support::{
-    FailingObserver, Fixture, attempt, attempt_with, deployment, deployment_with, failure,
-    fallback, float, harness, harness_with, number, policy, rate_limit, ratio_policy,
-    stored_record, text,
+    FailingObserver, Fixture, attempt, attempt_with, call, deployment, deployment_with, failure,
+    fallback, float, harness, harness_sharing, harness_with, number, policy, rate_limit,
+    ratio_policy, stored_record, text,
 };
 
 pub(super) async fn strict_threshold_and_one_event() {
@@ -98,6 +99,15 @@ pub(super) async fn generic_404_and_caller_timeout_never_cool() {
         !harness
             .service
             .trigger_for_failed_deployment(&lookup, &generic_fallback)
+            .await
+    );
+    // the 404 guard covers only the generic calls a caller-supplied id can 404 on its own
+    let direct = harness(Fixture::new(vec![deployment("gpt", "a")]), policy(0_u32));
+    let direct_lookup = direct.fixture.lookup();
+    assert!(
+        direct
+            .service
+            .trigger_for_failed_deployment(&direct_lookup, &fallback(Some("a"), &generic))
             .await
     );
     let timed_out = failure(FailureClass::Timeout, ErrorStatus::Code(408));
@@ -297,7 +307,7 @@ pub(super) async fn team_siblings_lift_the_single_deployment_net() {
 pub(super) async fn provider_default_deployments_never_cool() {
     let failure = rate_limit(429);
     let fixture = Fixture::new(vec![deployment("gpt", "a")]).with_provider_default("a");
-    let harness = harness(fixture, ratio_policy());
+    let harness = harness(fixture, policy(0_u32));
     let lookup = harness.fixture.lookup();
     assert!(
         !harness
@@ -388,7 +398,11 @@ pub(super) async fn an_explicit_policy_cools_without_a_status() {
             .await
             .unwrap()
     );
-    assert_eq!(stored_record(&harness.shared, "a").unwrap().status_code, "");
+    // the record carries cast_exception_status_to_int's 500, while the event carries the raw status
+    assert_eq!(
+        stored_record(&harness.shared, "a").unwrap().status_code,
+        "500"
+    );
     assert_eq!(harness.events.recorded()[0].exception_status, "");
 }
 
@@ -414,13 +428,39 @@ pub(super) async fn a_team_id_without_a_public_name_does_not_lift_the_net() {
     );
 }
 
+pub(super) async fn shared_fail_counts_answer_across_workers() {
+    let server = FakeRedis::try_start().await.unwrap();
+    let failure = rate_limit(429);
+    let harness = harness_sharing(
+        Fixture::new(vec![deployment("gpt", "a")]),
+        policy(1_u32),
+        &server,
+    );
+    let lookup = harness.fixture.lookup();
+    let attempt = attempt("a", &failure);
+    assert!(
+        !harness
+            .service
+            .deployment_callback_on_failure(&lookup, &attempt)
+            .await
+            .unwrap()
+    );
+    assert!(
+        harness
+            .service
+            .deployment_callback_on_failure(&lookup, &attempt)
+            .await
+            .unwrap()
+    );
+}
+
 pub(super) async fn unknown_deployments_never_cool() {
     let failure = rate_limit(429);
     let harness = harness(Fixture::new(vec![deployment("gpt", "a")]), policy(0_u32));
     let lookup = harness.fixture.lookup();
     let cooled = harness
         .service
-        .set_cooldown_deployments(&lookup, "missing", &failure, "probe failure", None, None)
+        .set_cooldown_deployments(&lookup, &call("missing", &failure))
         .await
         .unwrap();
     assert!(!cooled);

@@ -47,6 +47,9 @@ mod support;
 #[case::team_id_without_a_public_name_does_not_lift_the_net(
     behaviors::a_team_id_without_a_public_name_does_not_lift_the_net()
 )]
+#[case::shared_fail_counts_answer_across_workers(
+    behaviors::shared_fail_counts_answer_across_workers()
+)]
 #[case::unknown_deployments_never_cool(behaviors::unknown_deployments_never_cool())]
 #[tokio::test]
 async fn cooldown_policy_behaviors<Fut>(#[case] case: Fut)
