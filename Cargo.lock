@@ -4445,6 +4445,7 @@ dependencies = [
  "betterlite-redact",
  "betterlite-streaming",
  "chrono",
+ "futures-util",
  "hex",
  "http 1.5.0",
  "indexmap 2.14.2",
@@ -4459,6 +4460,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "uuid",
 ]
 
 [[package]]
