@@ -35,7 +35,7 @@ pub fn production<
 >(
     inputs: SweepInputs<Lock, Schedule, Cache, Failures, Successes, Reconnect, Clock, Durations>,
     snapshot: &Snapshot,
-) -> BudgetSweep<Lock, SweepPhases<Schedule, Cache, Failures, Successes, Reconnect, Clock, Durations>>
+) -> ProductionSweep<Lock, Schedule, Cache, Failures, Successes, Reconnect, Clock, Durations>
 where
     Lock: LockCache,
     Snapshot: ResetSettingsSource,
@@ -56,3 +56,10 @@ where
         tasks: inputs.tasks,
     }
 }
+
+// clippy's type_complexity threshold rejects the nested BudgetSweep<..., SweepPhases<...>> spelled out in a signature.
+pub type ProductionSweep<Lock, Schedule, Cache, Failures, Successes, Reconnect, Clock, Durations> =
+    BudgetSweep<
+        Lock,
+        SweepPhases<Schedule, Cache, Failures, Successes, Reconnect, Clock, Durations>,
+    >;

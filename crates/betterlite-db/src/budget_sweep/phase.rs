@@ -137,7 +137,7 @@ where
             ResetPhase::Teams => {
                 sweep_service!(self, hooks TeamBudgetReset)
                     .reset_teams()
-                    .await
+                    .await;
             }
             ResetPhase::Tiers => {
                 sweep_service!(
