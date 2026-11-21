@@ -1,14 +1,14 @@
 id: B5659
 milestone: M12 python
 title: Native completion calls in the Python crate
-status: todo
+status: done
 depends_on: [B5369, B5656, B549]
 file: tasks/B5659-native-completion.yaml
 covers:
   - "litellm/main.py"
 parent: B158
 split_from: B158
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2865
