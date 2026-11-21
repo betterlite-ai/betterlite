@@ -9,8 +9,8 @@ from litellm.exceptions import RateLimitError
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.responses.streaming_iterator import (
-    RESPONSES_WS_LOGGED_EVENT_TYPES,
-    RESPONSES_WS_MASKABLE_TEXT_BLOCK_TYPES,
+    RESPONSES_WS_LOGGED_EVENT_TYPES as LOGGED,
+    RESPONSES_WS_MASKABLE_TEXT_BLOCK_TYPES as MASKABLE,
     ProjectQuotaCallback,
     ResponsesWebSocketStreaming,
 )
@@ -124,13 +124,14 @@ class Quota(ProjectQuotaCallback):
         self.calls = calls
 
     @override
-    async def enforce_project_io_token_quota_for_frame(
+    async def enforce_project_io_token_quota_for_frame(  # ast-grep-ignore: no-long-names
         self,
         user_api_key_dict: UserAPIKeyAuth | None,
         requested_model: str | None,
         estimated_input_tokens: int,
         estimated_output_tokens: int,
     ) -> None:
+        await asyncio.sleep(0)
         user = None if user_api_key_dict is None else user_api_key_dict.user_id
         # a bool max_output_tokens reaches the callback as True, which a quota counts as 1
         self.calls.append(
@@ -164,7 +165,9 @@ class Guard(PresidioGuardrailCallback):
         self._unmask_pii_text = Unmask(index, calls)
 
     @override
-    def get_presidio_settings_from_request_data(self, data: Container[str]) -> PresidioPerRequestConfig | None:
+    def get_presidio_settings_from_request_data(  # ast-grep-ignore: no-long-names
+        self, data: Container[str]
+    ) -> PresidioPerRequestConfig | None:
         return None
 
     @override
@@ -175,6 +178,7 @@ class Guard(PresidioGuardrailCallback):
         presidio_config: PresidioPerRequestConfig | None,
         request_data: Container[str],
     ) -> str:
+        await asyncio.sleep(0)
         self.calls.append([self.index, text, output_parse_pii, "metadata" in request_data])
         masked = text
         for found, replacement in self.replacements.items():
@@ -189,6 +193,7 @@ class Socket(ResponsesClientWebSocket):
 
     @override
     async def send_text(self, data: str) -> None:
+        await asyncio.sleep(0)
         self.sent.append(data)
         if self.refuse:
             raise RuntimeError("the case asks the socket to refuse the frame")
@@ -275,8 +280,7 @@ class Probe(ResponsesWebSocketStreaming):
         failure = [kind for kind in candidates if self.failure_status({"type": kind}) is not None]
         item: dict[str, JsonValue] = {"encrypted_content": "x"}
         output_item = [kind for kind in candidates if self.wrap_view({"type": kind, "item": item}) is not None]
-        return JSON.validate_python({"logged": RESPONSES_WS_LOGGED_EVENT_TYPES,
-                                     "maskable": sorted(RESPONSES_WS_MASKABLE_TEXT_BLOCK_TYPES),
+        return JSON.validate_python({"logged": LOGGED, "maskable": sorted(MASKABLE),
                                      "failure": failure, "output_item": output_item,
                                      "delta": sorted(self._DELTA_EVENT_TYPES),
                                      "done": sorted(self._OUTPUT_DONE_EVENT_TYPES)})
