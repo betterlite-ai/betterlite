@@ -1,0 +1,28 @@
+kind: helper
+name: modeled-baseline-keeps-nontoken-costs
+call:
+  savings_pricing:
+    operation: price_baseline_comparison
+    snapshot:
+      model: claude-sonnet-4-5
+      provider: anthropic
+      prices:
+        key: claude-sonnet-4-5
+        max_tokens: null
+        max_input_tokens: null
+        max_output_tokens: null
+        input_cost_per_token: 0.5
+        output_cost_per_token: 2.0
+        litellm_provider: anthropic
+        mode: chat
+        supported_openai_params: null
+      actual_spend: 10.0
+      actual_token_cost: 3.0
+      classifier_cost: 1.0
+    baseline_usage:
+      prompt_tokens: 10
+      completion_tokens: 4
+      total_tokens: 14
+    provenance: modeled
+compare: {ignore: []}
+env: {}

@@ -1,0 +1,44 @@
+task: B3040
+deviations:
+  - what: >-
+      The deployment health check reads the router's model list and each deployment's failure count through an
+      injected DeploymentHealthSource instead of reaching proxy_server.llm_router and the router callbacks directly.
+    why: >-
+      The limiter crate has no proxy-server or router dependency, and the pre-call hook owns the router. The source
+      port keeps LiteLLM's decisions exactly: no router or an empty deployment list means healthy, a missing or empty
+      deployment id is skipped, the comparison is strict, and any read failure enforces limits.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3282-L3336
+  - what: >-
+      DYNAMIC_RATE_LIMIT_ERROR_THRESHOLD_PER_MINUTE is read once into the rate-limit settings when the config loads,
+      and a value that is not a base-ten integer is a typed configuration error; an empty value counts as unset and
+      takes the default 1.
+    why: >-
+      LiteLLM evaluates int(os.getenv("DYNAMIC_RATE_LIMIT_ERROR_THRESHOLD_PER_MINUTE", 1)) at import time, so a
+      non-integer crashes the process before any config error can name the variable, and an empty value crashes the
+      same way. The compatibility policy reads an env string into the field's type with an empty one counting as
+      unset, and a wrong type is an error that names the field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L77
+  - what: >-
+      A request body whose model member is not a string reads as no model for the per-key and per-team model
+      descriptors.
+    why: >-
+      LiteLLM's assembly normalizes the model to None for the organization and project scopes but passes the raw
+      member into _create_rate_limit_descriptors, where the per-key model descriptor formats it into the counter name.
+      A non-string model is invalid request input, and betterlite reads it once as absent so every descriptor sees the
+      same model.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3118-L3136
+kept_bugs:
+  - what: >-
+      A team-member descriptor for a key without a team keeps the literal text None as its team prefix, so the
+      counter is named "None:<user>".
+    why: >-
+      LiteLLM builds the value with f"{user_api_key_dict.team_id}:{user_api_key_dict.user_id}", and a setup that
+      already carries those counters relies on the name; rewriting it to a bare user id would change bucket identity.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3199
+  - what: >-
+      The failure threshold is a strict greater-than: a deployment whose failure count for the current minute equals
+      DYNAMIC_RATE_LIMIT_ERROR_THRESHOLD_PER_MINUTE does not enforce the dynamic limits.
+    why: >-
+      Setups tune the variable against this comparison, and turning it into a greater-or-equal test would enforce
+      limits a working configuration expects to stay relaxed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3319-L3326
