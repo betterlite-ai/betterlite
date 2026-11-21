@@ -5,11 +5,12 @@ use rstest::rstest;
 
 use super::support::{Fake, rate_limited};
 use super::{
-    Behavior, Call, PreCallError, PreCallOutput, TestKey, behavior, boom, data_from, hook_count,
-    input_for, parts, step_for, step_without_router, text_at,
+    Behavior, Call, TestKey, behavior, boom, data_from, hook_count, input_for, parts, step_for,
+    step_without_router, text_at,
 };
+use crate::pre_call::failure::PreCallError;
 use crate::pre_call::route_type::RouteType;
-use crate::pre_call_step::PreCall as _;
+use crate::pre_call_step::{PreCall as _, PreCallOutput};
 
 fn fallback_script(models: &[&str], limited: &[&str]) -> Behavior {
     Behavior {
