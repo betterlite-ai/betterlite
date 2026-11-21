@@ -1,0 +1,172 @@
+import asyncio
+from typing import Final, Literal, TypedDict, cast
+
+import httpx
+from litellm.exceptions import ModifyResponseException
+from litellm.proxy import proxy_server
+from litellm.proxy.guardrails.guardrail_hooks.bedrock_guardrails import BedrockGuardrail
+from litellm.types.guardrails import GuardrailEventHooks
+from litellm.types.llms.openai import AllMessageValues
+from litellm.types.utils import ModelResponse
+from pydantic import JsonValue, TypeAdapter
+from starlette.exceptions import HTTPException
+
+JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
+DICT: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
+LIST: TypeAdapter[list[JsonValue]] = TypeAdapter(list[JsonValue])
+GUARDRAIL_NAME = "bedrock-apply"
+SIGNING: Final = {
+    "aws_access_key_id": "AKIAIOSFODNN7EXAMPLE",
+    "aws_secret_access_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+    "aws_region_name": "us-west-2",
+}
+PROJECTED = (
+    "guardrail_name",
+    "guardrail_provider",
+    "guardrail_mode",
+    "guardrail_status",
+    "guardrail_response",
+    "violation_categories",
+    "guardrail_action",
+)
+
+
+class Reply(TypedDict):
+    status: int
+    body: JsonValue
+    raw: str | None
+
+
+class Apply(TypedDict):
+    source: Literal["INPUT", "OUTPUT"]
+    messages: list[dict[str, JsonValue]] | None
+    response: dict[str, JsonValue] | None
+    logging_event_type: Literal["pre_call", "post_call", "during_call"] | None
+    guardrail_identifier: str | None
+    guardrail_version: str | None
+    checks: dict[str, JsonValue] | None
+    chunk_budget_chars: int
+    contextual_grounding: bool
+    disable_exception_on_block: bool
+    data: dict[str, JsonValue]
+    replies: list[Reply]
+
+
+class Captured(TypedDict):
+    url: str
+    authorization: str | None
+    content_type: str | None
+    body: JsonValue
+
+
+class ScriptedReplies:
+    def __init__(self, replies: list[Reply], captured: list[Captured]) -> None:
+        self.replies = replies
+        self.captured = captured
+        self.used = 0
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        self.captured.append(capture(request))
+        if self.used >= len(self.replies):
+            raise AssertionError("ApplyGuardrail sent more requests than the case scripts")
+        reply = self.replies[self.used]
+        self.used += 1
+        if reply["raw"] is not None:
+            return httpx.Response(reply["status"], content=reply["raw"])
+        return httpx.Response(reply["status"], json=reply["body"])
+
+
+def capture(request: httpx.Request) -> Captured:
+    headers: dict[str, str] = dict(request.headers.items())
+    return {
+        "url": str(request.url),
+        "authorization": headers.get("authorization"),
+        "content_type": headers.get("content-type"),
+        "body": JSON.validate_json(request.content),
+    }
+
+
+def build_guardrail(input_value: Apply) -> BedrockGuardrail:
+    return BedrockGuardrail(
+        guardrail_name=GUARDRAIL_NAME,
+        guardrailIdentifier=input_value["guardrail_identifier"],
+        guardrailVersion=input_value["guardrail_version"],
+        checks=input_value["checks"],
+        chunk_budget_chars=input_value["chunk_budget_chars"],
+        contextual_grounding_from_messages=input_value["contextual_grounding"],
+        disable_exception_on_block=input_value["disable_exception_on_block"],
+        aws_access_key_id=SIGNING["aws_access_key_id"],
+        aws_secret_access_key=SIGNING["aws_secret_access_key"],
+        aws_region_name=SIGNING["aws_region_name"],
+    )
+
+
+def response_of(value: dict[str, JsonValue] | None) -> ModelResponse | None:
+    if value is None:
+        return None
+    return ModelResponse.model_validate(value)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2181
+
+
+def event_of(input_value: Apply) -> GuardrailEventHooks | None:
+    configured = input_value["logging_event_type"]
+    if configured is None:
+        return None
+    return GuardrailEventHooks(configured)
+
+
+async def invoke(
+    guardrail: BedrockGuardrail, input_value: Apply, data: dict[str, JsonValue]
+) -> JsonValue:
+    try:
+        result = await guardrail.make_bedrock_api_request(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L863-L870
+            source=input_value["source"],
+            messages=cast("list[AllMessageValues] | None", input_value["messages"]),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L998
+            response=response_of(input_value["response"]),
+            request_data=data,
+            logging_event_type=event_of(input_value),
+        )
+    except HTTPException as error:
+        return {
+            "kind": "rejected",
+            "status_code": error.status_code,
+            "detail": JSON.validate_python(error.detail),
+        }
+    except ModifyResponseException as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L1201-L1233
+        return {"kind": "modify", "message": error.message, "model": error.model}
+    return {"kind": "allowed", "result": JSON.validate_python(result)}
+
+
+def records_of(data: dict[str, JsonValue]) -> list[JsonValue]:
+    metadata = data.get("metadata")
+    if metadata is None:
+        return []
+    bucket = DICT.validate_python(metadata)
+    stored = bucket.get("standard_logging_guardrail_information")
+    if stored is None:
+        return []
+    return LIST.validate_python(stored)
+
+
+def project_record(value: JsonValue) -> dict[str, JsonValue]:
+    record = DICT.validate_python(value)
+    return {key: record.get(key) for key in PROJECTED}
+
+
+def run(input_value: Apply) -> JsonValue:
+    guardrail = build_guardrail(input_value)
+    captured: list[Captured] = []
+    handler = ScriptedReplies(input_value["replies"], captured)
+    guardrail.async_handler.client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    data: dict[str, JsonValue] = dict(input_value["data"])
+    premium = proxy_server.premium_user
+    proxy_server.premium_user = True
+    try:
+        outcome = asyncio.run(invoke(guardrail, input_value, data))
+        records = [project_record(record) for record in records_of(data)]
+        return {
+            "outcomes": [outcome],
+            "records": JSON.validate_python(records),
+            "requests": JSON.validate_python(captured),
+        }
+    finally:
+        proxy_server.premium_user = premium

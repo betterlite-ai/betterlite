@@ -1,0 +1,75 @@
+kind: helper
+name: first-row-limit-asymmetry
+call:
+  model_group_info:
+    {
+      "model_group": "g",
+      "model_list": [
+        {
+          "model_name": "g",
+          "litellm_params": {
+            "model": "openai/b846-alpha"
+          },
+          "model_info": {
+            "id": "a"
+          }
+        }
+      ],
+      "model_group_alias": {},
+      "deployment_info": {
+        "a": {
+          "mode": "chat",
+          "tpm": 77,
+          "rpm": 88
+        }
+      },
+      "model_cost": {},
+      "parameters": {},
+      "lookup_error": false,
+      "provider_error": "none",
+      "missing_ids": []
+    }
+calls:
+  - model_group_info:
+      {
+        "model_group": "g",
+        "model_list": [
+          {
+            "model_name": "g",
+            "litellm_params": {
+              "model": "openai/b846-alpha"
+            },
+            "model_info": {
+              "id": "a"
+            }
+          },
+          {
+            "model_name": "g",
+            "litellm_params": {
+              "model": "anthropic/b846-beta"
+            },
+            "model_info": {
+              "id": "b"
+            },
+            "tpm": 20
+          }
+        ],
+        "model_group_alias": {},
+        "deployment_info": {
+          "a": {
+            "mode": "chat",
+            "tpm": 77
+          },
+          "b": {
+            "mode": "chat",
+            "tpm": 999
+          }
+        },
+        "model_cost": {},
+        "parameters": {},
+        "lookup_error": false,
+        "provider_error": "none",
+        "missing_ids": []
+      }
+env: {}
+compare: {ignore: []}

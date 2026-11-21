@@ -1,0 +1,24 @@
+task: B3455
+deviations:
+  - what: Token creation and the corpus and upload HTTP calls run through two injected ports, and a port failure surfaces as a typed error that carries the lower message.
+    why: The module stays testable without HTTP and keeps the crate graph acyclic. B3460 builds the ports on B1302 and B173, so the message a user sees is the lower layer's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L207-L210
+  - what: The operation JSON in the "Operation failed" and "No corpus name in operation response" messages is compact JSON text, not Python's dict repr.
+    why: docs/compatibility.md leaves Python repr text out of scope. The prefix text is identical.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L298-L307
+  - what: The multipart metadata part is compact JSON text, not json.dumps with spaces after its separators, and the "Request body", "Create corpus response" and "Metadata" debug lines print compact or as-received JSON instead of json.dumps text with indentation.
+    why: Only the parsed JSON is observable to Google, the oracle compares the parsed value, and docs/compatibility.md leaves json.dumps formatting out of scope. The message prefixes are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L370-L375
+  - what: A response whose ragFile name is null or not a string counts as missing, and so does a top-level name that is not a string, so the file id falls through to the next source and then to an empty string.
+    why: Python would return None or a non-string through its untyped dict. The declared type is str, so betterlite keeps types real.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L406-L407
+  - what: betterlite-core resolves the project, location and credential aliases and builds the Vertex host itself instead of calling betterlite-vertex's VertexBase getters and get_vertex_base_url.
+    why: betterlite-vertex depends on betterlite-core, so core cannot call it. The rules and results match the mirrored functions, and B1301, B1305 and B1302 keep owning the shared ones.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L444-L459
+kept_bugs:
+  - what: The poll loop sleeps for the retry delay after its last attempt and only then raises the timeout, so a timed-out operation takes 60 seconds instead of 58.
+    why: A setup that tuned its timeouts against LiteLLM's real timing keeps the same timing after the switch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L309-L312
+  - what: A create operation that reports done without a corpus name yields an empty corpus id and no error, and the upload is then skipped because the id is empty.
+    why: The task keeps LiteLLM's split between create and poll, and whether a deployment relies on the empty success is not knowable, so the store returns what LiteLLM returns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L231-L244

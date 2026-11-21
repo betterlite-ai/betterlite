@@ -1,0 +1,6 @@
+kind: helper
+name: anthropic-guardrail-scan-post-call-hook-model-response-translated
+call:
+  b3675: {"function": "post_call_hook", "scenarios": [{"response": {"id": "chatcmpl-1", "created": 1, "model": "gpt-4o", "object": "chat.completion", "choices": [{"index": 0, "message": {"role": "assistant", "content": "hello"}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5}}}, {"response": {"id": "chatcmpl-2", "model": "", "choices": [{"message": {"role": "assistant", "content": "hi"}}], "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}}}]}
+env: {}
+compare: {ignore: []}
