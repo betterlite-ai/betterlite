@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::future::Future;
+use std::future::{Future, ready};
 use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -31,8 +31,8 @@ pub(super) fn deployment_json(model_name: &str, param: Json, id: Option<Json>) -
     let mut litellm_params = JsonObject::new();
     litellm_params.insert("model".to_owned(), param);
     let mut model_info = JsonObject::new();
-    if let Some(id) = id {
-        model_info.insert("id".to_owned(), id);
+    if let Some(model_info_id) = id {
+        model_info.insert("id".to_owned(), model_info_id);
     }
     DeploymentSpec {
         model_name: model_name.to_owned(),
@@ -43,15 +43,15 @@ pub(super) fn deployment_json(model_name: &str, param: Json, id: Option<Json>) -
 }
 
 pub(super) fn deployment(model_name: &str, param: &str, id: Option<&str>) -> DeploymentSpec {
-    let id = id.map(|value| Json::Text(value.to_owned()));
-    deployment_json(model_name, Json::Text(param.to_owned()), id)
+    let model_info_id = id.map(|value| Json::Text(value.to_owned()));
+    deployment_json(model_name, Json::Text(param.to_owned()), model_info_id)
 }
 
 pub(super) fn endpoint(model: &str, error: Option<&str>) -> JsonObject {
     let mut result = JsonObject::new();
     result.insert("model".to_owned(), Json::Text(model.to_owned()));
-    if let Some(error) = error {
-        result.insert("error".to_owned(), Json::Text(error.to_owned()));
+    if let Some(message) = error {
+        result.insert("error".to_owned(), Json::Text(message.to_owned()));
     }
     result
 }
@@ -186,7 +186,7 @@ impl FakeStore {
     }
 
     pub(super) fn failing_for(mut self, names: &[&str]) -> Self {
-        self.fail_for = names.iter().map(|name| (*name).to_owned()).collect();
+        self.fail_for = names.iter().copied().map(String::from).collect();
         self
     }
 
@@ -209,7 +209,7 @@ impl FakeStore {
         self.in_flight.load(Ordering::SeqCst)
     }
 
-    async fn latest_rows(&self) -> Result<Vec<HealthCheckRow>, HealthCheckRowsError> {
+    fn latest_rows(&self) -> Result<Vec<HealthCheckRow>, HealthCheckRowsError> {
         self.latest_calls.fetch_add(1, Ordering::SeqCst);
         if self.latest_fails {
             return Err(broken_error());
@@ -217,18 +217,18 @@ impl FakeStore {
         Ok(self.latest.clone())
     }
 
-    async fn record_save(&self, new: NewHealthCheck) -> Option<HealthCheckRow> {
+    async fn record_save(&self, new: &NewHealthCheck) -> Option<HealthCheckRow> {
         let current = self
             .in_flight
             .fetch_add(1, Ordering::SeqCst)
             .saturating_add(1);
         self.max_in_flight.fetch_max(current, Ordering::SeqCst);
         let failed = self.fail_for.iter().any(|name| *name == new.model_name);
-        let stored = stored_row(&new);
+        let stored = stored_row(new);
         self.saved
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(new);
+            .push(new.clone());
         tokio::task::yield_now().await;
         self.in_flight.fetch_sub(1, Ordering::SeqCst);
         if failed { None } else { Some(stored) }
@@ -236,15 +236,15 @@ impl FakeStore {
 }
 
 impl HealthCheckStore for FakeStore {
-    fn query_latest(
+    fn stored_checks(
         &self,
     ) -> impl Future<Output = Result<Vec<HealthCheckRow>, HealthCheckRowsError>> + Send {
-        self.latest_rows()
+        ready(self.latest_rows())
     }
 
-    fn save_result(
+    fn persist_result(
         &self,
-        new: NewHealthCheck,
+        new: &NewHealthCheck,
     ) -> impl Future<Output = Option<HealthCheckRow>> + Send {
         self.record_save(new)
     }

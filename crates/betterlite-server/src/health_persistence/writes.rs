@@ -26,7 +26,7 @@ pub(super) fn elapsed_ms(now: DateTime<Utc>, start: DateTime<Utc>) -> f64 {
 }
 
 // _save_health_check_to_db's status: any healthy endpoint makes the model healthy
-pub(super) fn endpoint_status(healthy: &[JsonObject]) -> &'static str {
+pub(super) const fn endpoint_status(healthy: &[JsonObject]) -> &'static str {
     if healthy.is_empty() {
         return "unhealthy";
     }

@@ -149,13 +149,13 @@ fn decision(result: &ResultInput, latest: &[RowInput], now: &str) -> HelperResul
         error_message: result.error_message.clone(),
     };
     let rows = latest.iter().map(row).collect::<Result<Vec<_>, _>>()?;
-    let now = DateTime::parse_from_rfc3339(now)
+    let instant = DateTime::parse_from_rfc3339(now)
         .map_err(|error| invalid(error.to_string()))?
         .with_timezone(&Utc);
     Ok(Value::Bool(should_persist(
         &aggregated,
         &latest_by_key(rows),
-        now,
+        instant,
     )))
 }
 

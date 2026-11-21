@@ -175,17 +175,17 @@ impl HealthCheckRows {
         limit: i64,
         offset: i64,
     ) -> Result<Vec<HealthCheckRow>, HealthCheckRowsError> {
-        let model_name = model_name.filter(|name| !name.is_empty());
-        let status_filter = status_filter.filter(|status| !status.is_empty());
+        let name_filter = model_name.filter(|name| !name.is_empty());
+        let status_value = status_filter.filter(|status| !status.is_empty());
         let mut parameters: Vec<&(dyn ToSql + Sync)> = Vec::new();
         let mut conditions: Vec<String> = Vec::new();
-        if model_name.is_some() {
-            parameters.push(&model_name);
+        if name_filter.is_some() {
+            parameters.push(&name_filter);
             let index = parameters.len();
             conditions.push(format!("\"model_name\" = ${index}"));
         }
-        if status_filter.is_some() {
-            parameters.push(&status_filter);
+        if status_value.is_some() {
+            parameters.push(&status_value);
             let index = parameters.len();
             conditions.push(format!("\"status\" = ${index}"));
         }
@@ -206,14 +206,12 @@ impl HealthCheckRows {
     }
 
     // save_health_check_result: the row it inserted, or None with the error logged
-    pub async fn save_result(&self, new: NewHealthCheck) -> Option<HealthCheckRow> {
-        match self.insert(&new).await {
+    pub async fn save_result(&self, new: &NewHealthCheck) -> Option<HealthCheckRow> {
+        match self.insert(new).await {
             Ok(row) => row,
             Err(error) => {
-                tracing::error!(
-                    "Error saving health check result for model {}: {error}",
-                    new.model_name
-                );
+                let model_name = new.model_name.as_str();
+                tracing::error!("Error saving health check result for model {model_name}: {error}");
                 None
             }
         }

@@ -7,7 +7,7 @@ use chrono::{DateTime, TimeZone as _, Utc};
 use rstest::rstest;
 use support::{Seed, capture_logs, insert_seed, unconnected};
 
-use crate::health_check_rows::{HealthCheckRow, HealthCheckRowsError, NewHealthCheck};
+use crate::health_check_rows::{HealthCheckRowsError, NewHealthCheck};
 
 const NO_DATABASE: &str = "No DB Connected. See - https://docs.litellm.ai/docs/proxy/virtual_keys";
 
@@ -60,6 +60,7 @@ async fn latest_returns_the_newest_row_per_pair_in_sql_order() {
         .map(|row| row.health_check_id.as_str())
         .collect();
     assert_eq!(ids, ["new", "none"]);
+    assert_eq!(rows.len(), 2);
     assert_eq!(rows[0].status, "unhealthy");
     database.finish().await;
 }
@@ -101,6 +102,7 @@ async fn latest_reads_naive_timestamps_as_utc() {
     )
     .await;
     let rows = database.rows().fetch_latest().await;
+    assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].checked_at, instant("2026-01-01T10:00:00.123Z"));
     assert_eq!(rows[0].created_at, instant("2026-01-01T10:00:00.123Z"));
     assert_eq!(rows[0].updated_at, instant("2026-01-01T10:00:00.123Z"));
@@ -119,6 +121,7 @@ async fn latest_decodes_details_json_text() {
     )
     .await;
     let rows = database.rows().fetch_latest().await;
+    assert_eq!(rows.len(), 1);
     let expected: Json = serde_json::from_str(r#"{"inner": 1}"#).unwrap();
     assert_eq!(rows[0].details, Some(expected));
     database.finish().await;
@@ -210,15 +213,15 @@ async fn save_writes_the_row_and_returns_it() {
     let database = support::start().await;
     let row = database
         .rows_with_id("fixed-id")
-        .save_result(check("gpt-4o"))
+        .save_result(&check("gpt-4o"))
         .await
         .unwrap();
     assert_eq!(row.health_check_id, "fixed-id");
     assert_eq!(row.model_name, "gpt-4o");
     assert_eq!(row.model_id.as_deref(), Some("dep-1"));
     assert_eq!(row.status, "healthy");
-    assert_eq!(row.healthy_count, 2);
-    assert_eq!(row.unhealthy_count, 1);
+    assert_eq!(row.healthy_count, 2_i32);
+    assert_eq!(row.unhealthy_count, 1_i32);
     assert_eq!(row.error_message.as_deref(), Some("boom"));
     assert_eq!(row.response_time_ms, Some(12.5_f64));
     assert_eq!(row.checked_by.as_deref(), Some("user-1"));
@@ -234,7 +237,7 @@ async fn save_truncates_the_error_to_500_chars() {
     let long = "x".repeat(600);
     let row = database
         .rows()
-        .save_result(NewHealthCheck {
+        .save_result(&NewHealthCheck {
             error_message: Some(long),
             ..check("gpt-4o")
         })
@@ -249,10 +252,10 @@ async fn save_truncates_the_error_to_500_chars() {
 #[tokio::test]
 async fn save_truncates_the_error_by_characters() {
     let database = support::start().await;
-    let long = "é".repeat(600);
+    let long = "\u{e9}".repeat(600);
     let row = database
         .rows()
-        .save_result(NewHealthCheck {
+        .save_result(&NewHealthCheck {
             error_message: Some(long),
             ..check("gpt-4o")
         })
@@ -269,7 +272,7 @@ async fn save_stores_empty_optional_fields_as_null() {
     let database = support::start().await;
     let row = database
         .rows()
-        .save_result(NewHealthCheck {
+        .save_result(&NewHealthCheck {
             model_id: Some(String::new()),
             checked_by: Some(String::new()),
             error_message: Some(String::new()),
@@ -292,7 +295,7 @@ async fn save_stores_a_non_finite_time_as_null(#[case] value: f64) {
     let database = support::start().await;
     let row = database
         .rows()
-        .save_result(NewHealthCheck {
+        .save_result(&NewHealthCheck {
             response_time_ms: Some(value),
             ..check("gpt-4o")
         })
@@ -305,7 +308,7 @@ async fn save_stores_a_non_finite_time_as_null(#[case] value: f64) {
 #[tokio::test]
 async fn save_returns_none_and_logs_when_the_insert_fails() {
     let (logs, _guard) = capture_logs();
-    let row = unconnected().save_result(check("gpt-4o")).await;
+    let row = unconnected().save_result(&check("gpt-4o")).await;
     assert!(row.is_none());
     assert!(logs.text().contains(&format!(
         "Error saving health check result for model gpt-4o: {NO_DATABASE}"
@@ -441,7 +444,8 @@ async fn history_reads_naive_timestamps_as_utc() {
         &Seed::new("a", "gpt-4o", "2026-01-01 10:00:00"),
     )
     .await;
-    let rows: Vec<HealthCheckRow> = database.rows().history(None, None, 100, 0).await;
+    let rows = database.rows().history(None, None, 100, 0).await;
+    assert_eq!(rows.len(), 1);
     assert_eq!(
         rows[0].checked_at,
         Utc.with_ymd_and_hms(2026, 1, 1, 10, 0, 0).unwrap()

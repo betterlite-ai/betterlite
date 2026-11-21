@@ -81,13 +81,19 @@ fn index_treats_a_non_text_or_empty_model_id_as_missing() {
         deployment("text", "p5", Some("dep-1")),
     ];
     let index = model_param_index(&deployments);
-    assert!(index.get("p1").unwrap()[0].model_id.is_none());
-    assert!(index.get("p2").unwrap()[0].model_id.is_none());
-    assert!(index.get("p3").unwrap()[0].model_id.is_none());
-    assert!(index.get("p4").unwrap()[0].model_id.is_none());
+    let listed: Vec<(&str, Option<&str>)> = index
+        .iter()
+        .map(|(param, models)| (param.as_str(), models.first().unwrap().model_id.as_deref()))
+        .collect();
     assert_eq!(
-        index.get("p5").unwrap()[0].model_id.as_deref(),
-        Some("dep-1")
+        listed,
+        [
+            ("p1", None),
+            ("p2", None),
+            ("p3", None),
+            ("p4", None),
+            ("p5", Some("dep-1")),
+        ]
     );
 }
 
@@ -176,7 +182,8 @@ fn aggregate_counts_every_unhealthy_endpoint_and_keeps_the_first_error() {
         endpoint("param", Some("third")),
     ];
     let results = aggregate_results(&index, &[], &unhealthy);
-    assert_eq!(results[0].unhealthy_count, 3);
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].unhealthy_count, 3_i32);
     assert_eq!(results[0].error_message.as_deref(), Some("second"));
 }
 
@@ -193,6 +200,7 @@ fn aggregate_cuts_the_error_to_500_chars() {
     let long = "x".repeat(600);
     let unhealthy = vec![endpoint("param", Some(&long))];
     let results = aggregate_results(&index, &[], &unhealthy);
+    assert_eq!(results.len(), 1);
     let error = results[0].error_message.as_deref().unwrap();
     assert_eq!(error.len(), 500);
 }
@@ -213,6 +221,7 @@ fn aggregate_writes_a_non_text_error_as_json() {
     detail.insert("detail".to_owned(), Json::Text(String::from("boom")));
     failure.insert("error".to_owned(), Json::Object(detail));
     let results = aggregate_results(&index, &[], &[failure]);
+    assert_eq!(results.len(), 1);
     assert_eq!(
         results[0].error_message.as_deref(),
         Some(r#"{"detail":"boom"}"#)
@@ -448,11 +457,12 @@ async fn changed_copies_the_request_into_every_write() {
     let saved = save_changed(&store, &results, &latest, &request, &FixedClock(at(1001))).await;
     assert!(saved);
     let written = store.saved();
+    assert_eq!(written.len(), 1);
     assert_eq!(written[0].model_name, "model-a");
     assert_eq!(written[0].model_id.as_deref(), Some("dep-a"));
     assert_eq!(written[0].status, "healthy");
-    assert_eq!(written[0].healthy_count, 2);
-    assert_eq!(written[0].unhealthy_count, 1);
+    assert_eq!(written[0].healthy_count, 2_i32);
+    assert_eq!(written[0].unhealthy_count, 1_i32);
     assert_eq!(written[0].error_message.as_deref(), Some("boom"));
     assert_eq!(written[0].checked_by.as_deref(), Some("user-7"));
     assert_eq!(written[0].response_time_ms, Some(1000.0_f64));
@@ -520,8 +530,8 @@ async fn background_writes_a_first_seen_model() {
     assert_eq!(written[0].model_name, "gpt-4o");
     assert_eq!(written[0].model_id.as_deref(), Some("dep-1"));
     assert_eq!(written[0].status, "healthy");
-    assert_eq!(written[0].healthy_count, 1);
-    assert_eq!(written[0].unhealthy_count, 0);
+    assert_eq!(written[0].healthy_count, 1_i32);
+    assert_eq!(written[0].unhealthy_count, 0_i32);
     assert!(written[0].error_message.is_none());
     assert_eq!(written[0].checked_by.as_deref(), Some("health-cycle"));
     assert_eq!(written[0].response_time_ms, Some(1000.0_f64));
@@ -591,8 +601,8 @@ async fn single_writes_one_row_from_the_healthy_list() {
     assert_eq!(written[0].model_name, "gpt-4o");
     assert_eq!(written[0].model_id.as_deref(), Some("dep-1"));
     assert_eq!(written[0].status, "healthy");
-    assert_eq!(written[0].healthy_count, 1);
-    assert_eq!(written[0].unhealthy_count, 0);
+    assert_eq!(written[0].healthy_count, 1_i32);
+    assert_eq!(written[0].unhealthy_count, 0_i32);
     assert!(written[0].error_message.is_none());
     assert_eq!(written[0].checked_by.as_deref(), Some("user-1"));
     assert_eq!(written[0].response_time_ms, Some(1000.0_f64));
@@ -612,9 +622,10 @@ async fn single_writes_unhealthy_counts_and_the_first_error() {
     };
     save_single(&store, &check, &FixedClock(at(1001))).await;
     let written = store.saved();
+    assert_eq!(written.len(), 1);
     assert_eq!(written[0].status, "unhealthy");
-    assert_eq!(written[0].healthy_count, 0);
-    assert_eq!(written[0].unhealthy_count, 2);
+    assert_eq!(written[0].healthy_count, 0_i32);
+    assert_eq!(written[0].unhealthy_count, 2_i32);
     assert_eq!(written[0].error_message.as_deref(), Some("first"));
     assert!(written[0].checked_by.is_none());
 }
@@ -632,9 +643,10 @@ async fn single_writes_unhealthy_without_any_endpoint() {
     };
     save_single(&store, &check, &FixedClock(at(1001))).await;
     let written = store.saved();
+    assert_eq!(written.len(), 1);
     assert_eq!(written[0].status, "unhealthy");
-    assert_eq!(written[0].healthy_count, 0);
-    assert_eq!(written[0].unhealthy_count, 0);
+    assert_eq!(written[0].healthy_count, 0_i32);
+    assert_eq!(written[0].unhealthy_count, 0_i32);
     assert!(written[0].error_message.is_none());
 }
 
@@ -653,6 +665,7 @@ async fn single_cuts_the_error_to_500_chars() {
     };
     save_single(&store, &check, &FixedClock(at(1001))).await;
     let written = store.saved();
+    assert_eq!(written.len(), 1);
     assert_eq!(written[0].error_message.as_deref().unwrap().len(), 500);
 }
 

@@ -66,28 +66,28 @@ pub type LatestChecks = BTreeMap<String, HealthCheckRow>;
 
 // the two health check table calls the persistence makes; the port lets a test fake record them
 pub trait HealthCheckStore: Send + Sync {
-    fn query_latest(
+    fn stored_checks(
         &self,
     ) -> impl Future<Output = Result<Vec<HealthCheckRow>, HealthCheckRowsError>> + Send;
 
-    fn save_result(
+    fn persist_result(
         &self,
-        new: NewHealthCheck,
+        new: &NewHealthCheck,
     ) -> impl Future<Output = Option<HealthCheckRow>> + Send;
 }
 
 impl HealthCheckStore for HealthCheckRows {
-    fn query_latest(
+    fn stored_checks(
         &self,
     ) -> impl Future<Output = Result<Vec<HealthCheckRow>, HealthCheckRowsError>> + Send {
-        HealthCheckRows::query_latest(self)
+        Self::query_latest(self)
     }
 
-    fn save_result(
+    fn persist_result(
         &self,
-        new: NewHealthCheck,
+        new: &NewHealthCheck,
     ) -> impl Future<Output = Option<HealthCheckRow>> + Send {
-        HealthCheckRows::save_result(self, new)
+        Self::save_result(self, new)
     }
 }
 
@@ -135,7 +135,7 @@ pub fn aggregate_results(
         .flat_map(|endpoint| endpoint_models(endpoint, index))
     {
         let entry = aggregate_entry(&mut aggregates, model);
-        entry.healthy_count = entry.healthy_count.saturating_add(1);
+        entry.healthy_count = entry.healthy_count.saturating_add(1_i32);
     }
     // every unhealthy endpoint raises the count, but only the first non-empty error is kept for the key
     for endpoint in unhealthy {
@@ -143,7 +143,7 @@ pub fn aggregate_results(
             .map(|text| text.chars().take(MAX_ERROR_CHARS).collect::<String>());
         for model in endpoint_models(endpoint, index) {
             let entry = aggregate_entry(&mut aggregates, model);
-            entry.unhealthy_count = entry.unhealthy_count.saturating_add(1);
+            entry.unhealthy_count = entry.unhealthy_count.saturating_add(1_i32);
             if entry.error_message.is_none() {
                 entry.error_message.clone_from(&error);
             }
@@ -154,8 +154,8 @@ pub fn aggregate_results(
 
 // _new_health_status: any healthy endpoint makes the model healthy
 #[must_use]
-pub fn new_status(result: &AggregatedHealthResult) -> &'static str {
-    if result.healthy_count > 0 {
+pub const fn new_status(result: &AggregatedHealthResult) -> &'static str {
+    if result.healthy_count > 0_i32 {
         return "healthy";
     }
     "unhealthy"
@@ -182,20 +182,23 @@ pub fn should_persist(
 }
 
 // _save_health_check_results_if_changed: every picked write is built with its own clock reading, then all are awaited together
-pub async fn save_changed<Store: HealthCheckStore>(
+pub async fn save_changed<Store>(
     rows: &Store,
     results: &[AggregatedHealthResult],
     latest: &LatestChecks,
     request: &SaveRequest<'_>,
     clock: &dyn UtcClock,
-) -> bool {
-    let mut writes = Vec::new();
+) -> bool
+where
+    Store: HealthCheckStore,
+{
+    let mut pending = Vec::new();
     for result in results {
         if !should_persist(result, latest, clock.now()) {
             continue;
         }
         let response_time_ms = elapsed_ms(clock.now(), request.start_time);
-        writes.push(rows.save_result(NewHealthCheck {
+        pending.push(NewHealthCheck {
             model_name: result.model_name.clone(),
             model_id: result.model_id.clone(),
             status: new_status(result).to_owned(),
@@ -204,41 +207,44 @@ pub async fn save_changed<Store: HealthCheckStore>(
             error_message: result.error_message.clone(),
             response_time_ms: Some(response_time_ms),
             checked_by: request.checked_by.map(str::to_owned),
-        }));
+        });
     }
+    let writes = pending.iter().map(|new| rows.persist_result(new));
     let saved = futures_util::future::join_all(writes).await;
     saved.iter().all(Option::is_some)
 }
 
 // _save_background_health_checks_to_db: a cycle's result, written only where the stored status changed or is an hour old
-pub async fn save_background<Store: HealthCheckStore>(
+pub async fn save_background<Store>(
     rows: Option<&Store>,
     cycle: HealthCycle<'_>,
     request: &SaveRequest<'_>,
     clock: &dyn UtcClock,
-) -> bool {
-    let Some(rows) = rows else {
+) -> bool
+where
+    Store: HealthCheckStore,
+{
+    let Some(store) = rows else {
         return false;
     };
     let index = model_param_index(cycle.deployments);
     let results = aggregate_results(&index, cycle.healthy, cycle.unhealthy);
-    let latest = match rows.query_latest().await {
-        Ok(latest) => latest,
+    let stored = match store.stored_checks().await {
+        Ok(stored) => stored,
         Err(error) => {
             tracing::warn!("Failed to save background health checks to database: {error}");
             return false;
         }
     };
-    let latest = latest_by_key(latest);
-    save_changed(rows, &results, &latest, request, clock).await
+    let latest = latest_by_key(stored);
+    save_changed(store, &results, &latest, request, clock).await
 }
 
 // _save_health_check_to_db: the /health route's one row for one model, whether or not the write succeeds
-pub async fn save_single<Store: HealthCheckStore>(
-    rows: &Store,
-    check: &SingleHealthCheck<'_>,
-    clock: &dyn UtcClock,
-) {
+pub async fn save_single<Store>(rows: &Store, check: &SingleHealthCheck<'_>, clock: &dyn UtcClock)
+where
+    Store: HealthCheckStore,
+{
     let new = NewHealthCheck {
         model_name: check.model_name.to_owned(),
         model_id: check.model_id.map(str::to_owned),
@@ -249,7 +255,7 @@ pub async fn save_single<Store: HealthCheckStore>(
         response_time_ms: Some(elapsed_ms(clock.now(), check.start_time)),
         checked_by: check.user_id.map(str::to_owned),
     };
-    drop(rows.save_result(new).await);
+    drop(rows.persist_result(&new).await);
 }
 
 mod aggregate;

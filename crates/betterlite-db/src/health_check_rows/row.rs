@@ -19,8 +19,7 @@ where
 
 // the validator on details: a JSON text value is parsed once more, and text that is not JSON fails the row
 fn details_value(row: &Row) -> Result<Option<Json>, HealthCheckRowsError> {
-    let text: Option<String> = column(row, "details")?;
-    let Some(text) = text else {
+    let Some(text) = column::<Option<String>>(row, "details")? else {
         return Ok(None);
     };
     let value: Json =
