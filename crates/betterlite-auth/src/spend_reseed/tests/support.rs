@@ -153,6 +153,13 @@ pub(crate) struct FakeRows {
 
 impl Default for FakeRows {
     fn default() -> Self {
+        Self::with_window_delay(Duration::ZERO)
+    }
+}
+
+impl FakeRows {
+    // every field is named here, so the one fake constructor also holds the default values
+    pub(crate) fn with_window_delay(window_delay: Duration) -> Self {
         Self {
             row: Mutex::new(None),
             window: Mutex::new(None),
@@ -164,15 +171,13 @@ impl Default for FakeRows {
             window_fails: AtomicBool::new(false),
             logs_fail: AtomicBool::new(false),
             delay: Duration::ZERO,
-            window_delay: Duration::ZERO,
+            window_delay,
             hold_reads: AtomicBool::new(false),
             read_started: Semaphore::new(0),
             read_release: Notify::new(),
         }
     }
-}
 
-impl FakeRows {
     pub(crate) fn with_row(row: SpendRow) -> Self {
         let rows = Self::default();
         *rows.row.lock().expect("the fake row lock") = Some(row);

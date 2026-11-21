@@ -44,7 +44,7 @@ pub struct SpendCounterReseed<Rows: SpendCounterRows> {
 
 impl<Rows: SpendCounterRows> SpendCounterReseed<Rows> {
     // B1735's reader owns both reads: the primary entity row and the end-user budget floor
-    fn reader(&self) -> SpendCounterReader<Rows>
+    pub(crate) fn reader(&self) -> SpendCounterReader<Rows>
     where
         Rows: DbSpendCounterRows,
     {
@@ -59,20 +59,6 @@ impl<Rows: SpendCounterRows> SpendCounterReseed<Rows> {
             stall_tracker: Arc::clone(&self.stall_tracker),
             deadline_seconds: self.deadline_seconds,
         }
-    }
-
-    pub async fn from_db(&self, counter_key: &str) -> Option<Decimal>
-    where
-        Rows: DbSpendCounterRows,
-    {
-        self.reader().from_db(counter_key).await
-    }
-
-    pub async fn end_user_from_db(&self, counter_key: &str) -> Option<Decimal>
-    where
-        Rows: DbSpendCounterRows,
-    {
-        self.reader().end_user_from_db(counter_key).await
     }
 
     pub async fn increment_in_memory<Cache>(
@@ -104,7 +90,7 @@ impl<Rows: SpendCounterRows> SpendCounterReseed<Rows> {
         if let Some(amount) = cached_answer(cache, batch, counter_key).await? {
             return Ok(Some(amount));
         }
-        let Some(db_spend) = self.from_db(counter_key).await else {
+        let Some(db_spend) = self.reader().from_db(counter_key).await else {
             return Ok(None);
         };
         warm(cache, batch, counter_key, db_spend, require_cache_warm).await

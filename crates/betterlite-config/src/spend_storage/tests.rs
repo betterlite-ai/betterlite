@@ -161,31 +161,25 @@ fn a_malformed_redis_dequeue_count_fails_loading(#[case] value: &str) {
 }
 
 // B2322's spend_reseed section owns the variable: unset keeps 10000, and int() rejects empty text
-#[test]
-fn loads_reseed_lock_limit() {
-    let defaults = ConfigLoader {
-        lookup: environment(&[]),
+const LOCK_LIMIT_VARIABLE: &str = "SPEND_COUNTER_RESEED_LOCKS_MAX_SIZE";
+
+#[rstest]
+#[case::unset(&[], Some(10_000))]
+#[case::configured(&[(LOCK_LIMIT_VARIABLE, "16")], Some(16))]
+#[case::empty_text(&[(LOCK_LIMIT_VARIABLE, "")], None)]
+#[case::spaces(&[(LOCK_LIMIT_VARIABLE, "  ")], None)]
+#[case::text(&[(LOCK_LIMIT_VARIABLE, "many")], None)]
+fn loads_reseed_lock_limit(#[case] pairs: &[(&str, &str)], #[case] expected: Option<i64>) {
+    let outcome = ConfigLoader {
+        lookup: environment(pairs),
     }
     .load("")
-    .unwrap();
-    assert_eq!(defaults.sections.spend_reseed.locks_max_size, 10_000);
-    let configured = ConfigLoader {
-        lookup: environment(&[("SPEND_COUNTER_RESEED_LOCKS_MAX_SIZE", "16")]),
-    }
-    .load("")
-    .unwrap();
-    assert_eq!(configured.sections.spend_reseed.locks_max_size, 16);
-    for value in ["", "  ", "many"] {
-        let error = ConfigLoader {
-            lookup: environment(&[("SPEND_COUNTER_RESEED_LOCKS_MAX_SIZE", value)]),
-        }
-        .load("")
-        .unwrap_err();
-        assert!(
-            error
-                .to_string()
-                .contains("SPEND_COUNTER_RESEED_LOCKS_MAX_SIZE")
-        );
+    .map(|config| config.sections.spend_reseed.locks_max_size);
+    match (outcome, expected) {
+        (Ok(bound), Some(wanted)) => assert_eq!(bound, wanted),
+        (Err(error), None) => assert!(error.to_string().contains(LOCK_LIMIT_VARIABLE)),
+        (Ok(bound), None) => panic!("the lock limit load accepted {bound}"),
+        (Err(error), Some(wanted)) => panic!("the lock limit load failed for {wanted}: {error}"),
     }
 }
 

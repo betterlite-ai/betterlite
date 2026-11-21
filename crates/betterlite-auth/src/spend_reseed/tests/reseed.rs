@@ -45,10 +45,13 @@ async fn all_primary_prefixes_and_empty_ids(
     let rows = Arc::new(FakeRows::with_row(spend_row("2.5")));
     let counter = reseed_with(Some(Arc::clone(&rows)), services(25), 5.0);
     if let Some(lookup) = expected {
-        assert_eq!(counter.from_db(counter_key).await, Some(decimal("2.5")));
+        assert_eq!(
+            counter.reader().from_db(counter_key).await,
+            Some(decimal("2.5"))
+        );
         assert_eq!(rows.lookups(), vec![lookup]);
     } else {
-        assert_eq!(counter.from_db(counter_key).await, None);
+        assert_eq!(counter.reader().from_db(counter_key).await, None);
         assert!(rows.lookups().is_empty());
     }
 }
@@ -58,6 +61,7 @@ async fn member_last_colon_split() {
     let rows = Arc::new(FakeRows::with_row(spend_row("1.25")));
     let counter = reseed_with(Some(Arc::clone(&rows)), services(25), 5.0);
     let outcome = counter
+        .reader()
         .from_db("spend:team_member:user:with:colon:team")
         .await;
     assert_eq!(outcome, Some(decimal("1.25")));
@@ -68,10 +72,13 @@ async fn member_last_colon_split() {
             team_id: "team".to_owned(),
         }]
     );
-    assert_eq!(counter.from_db("spend:team_member:user").await, None);
-    assert_eq!(counter.from_db("spend:team_member:").await, None);
+    assert_eq!(
+        counter.reader().from_db("spend:team_member:user").await,
+        None
+    );
+    assert_eq!(counter.reader().from_db("spend:team_member:").await, None);
     assert_eq!(rows.lookups().len(), 1);
-    let empty_ids = counter.from_db("spend:team_member::").await;
+    let empty_ids = counter.reader().from_db("spend:team_member::").await;
     assert_eq!(empty_ids, Some(decimal("1.25")));
     assert_eq!(
         rows.lookups().last(),
@@ -104,10 +111,13 @@ async fn valid_window_only_suppresses_key_team(
     let rows = Arc::new(FakeRows::with_row(spend_row("3")));
     let counter = reseed_with(Some(Arc::clone(&rows)), services(25), 5.0);
     if suppressed {
-        assert_eq!(counter.from_db(counter_key).await, None);
+        assert_eq!(counter.reader().from_db(counter_key).await, None);
         assert!(rows.lookups().is_empty());
     } else {
-        assert_eq!(counter.from_db(counter_key).await, Some(decimal("3")));
+        assert_eq!(
+            counter.reader().from_db(counter_key).await,
+            Some(decimal("3"))
+        );
         assert_eq!(rows.lookups().len(), 1);
     }
 }
@@ -117,7 +127,7 @@ async fn primary_query_bound_gate_error_log_and_none() {
     let logs = Logs::capture();
     let blocked_rows = Arc::new(FakeRows::with_row(spend_row("9")));
     let blocked = reseed_with(Some(Arc::clone(&blocked_rows)), services(0), 0.05);
-    assert_eq!(blocked.from_db("spend:key:token").await, None);
+    assert_eq!(blocked.reader().from_db("spend:key:token").await, None);
     assert!(blocked_rows.lookups().is_empty());
     assert!(blocked.stall_tracker.stalled_within(60.0));
     assert!(logs.contains("the bounded lookup failed"));
@@ -125,7 +135,7 @@ async fn primary_query_bound_gate_error_log_and_none() {
     let failing_rows = Arc::new(FakeRows::with_row(spend_row("9")));
     failing_rows.rows_fail.store(true, Ordering::Relaxed);
     let failing = reseed_with(Some(Arc::clone(&failing_rows)), services(25), 5.0);
-    assert_eq!(failing.from_db("spend:key:token").await, None);
+    assert_eq!(failing.reader().from_db("spend:key:token").await, None);
     assert_eq!(
         failing_rows.lookups(),
         vec![LookupRecord::Key("token".to_owned())]
@@ -134,7 +144,7 @@ async fn primary_query_bound_gate_error_log_and_none() {
 
     let empty_rows = Arc::new(FakeRows::default());
     let empty = reseed_with(Some(Arc::clone(&empty_rows)), services(25), 5.0);
-    assert_eq!(empty.from_db("spend:key:token").await, None);
+    assert_eq!(empty.reader().from_db("spend:key:token").await, None);
     assert_eq!(empty_rows.lookups().len(), 1);
 }
 
@@ -146,7 +156,7 @@ async fn primary_query_bound_gate_error_log_and_none() {
 #[tokio::test]
 async fn an_unreadable_stored_spend_answers_none(#[case] spend: &str) {
     let counter = reseed(FakeRows::with_row(spend_row(spend)));
-    assert_eq!(counter.from_db("spend:key:token").await, None);
+    assert_eq!(counter.reader().from_db("spend:key:token").await, None);
 }
 
 #[rstest]
@@ -161,21 +171,27 @@ async fn an_unreadable_stored_spend_answers_none(#[case] spend: &str) {
 #[tokio::test]
 async fn conversion_after_query_catch(#[case] spend: &str, #[case] expected: Decimal) {
     let counter = reseed(FakeRows::with_row(spend_row(spend)));
-    assert_eq!(counter.from_db("spend:key:token").await, Some(expected));
+    assert_eq!(
+        counter.reader().from_db("spend:key:token").await,
+        Some(expected)
+    );
 }
 
 #[tokio::test]
 async fn absent_rows_answer_none_for_both_reads() {
     let counter = reseed_with(None, services(25), 5.0);
-    assert_eq!(counter.from_db("spend:key:token").await, None);
-    assert_eq!(counter.end_user_from_db("spend:end_user:u1").await, None);
+    assert_eq!(counter.reader().from_db("spend:key:token").await, None);
+    assert_eq!(
+        counter.reader().end_user_from_db("spend:end_user:u1").await,
+        None
+    );
 }
 
 #[tokio::test]
 async fn absent_stored_spend_reads_zero() {
     let absent_field = reseed(FakeRows::with_row(SpendRow { spend: None }));
     assert_eq!(
-        absent_field.from_db("spend:key:token").await,
+        absent_field.reader().from_db("spend:key:token").await,
         Some(Decimal::ZERO)
     );
 }
@@ -185,25 +201,25 @@ async fn enduser_prefix_floor_read_and_no_tag_reseed() {
     let logs = Logs::capture();
     let rows = Arc::new(FakeRows::with_row(spend_row("4.25")));
     let floor = reseed_with(Some(Arc::clone(&rows)), services(0), 0.05);
-    let floor_spend = floor.end_user_from_db("spend:end_user:u1").await;
+    let floor_spend = floor.reader().end_user_from_db("spend:end_user:u1").await;
     assert_eq!(floor_spend, Some(decimal("4.25")));
     assert_eq!(rows.lookups(), vec![LookupRecord::EndUser("u1".to_owned())]);
 
     let ungated = reseed_with(Some(Arc::clone(&rows)), services(25), 5.0);
-    assert_eq!(ungated.end_user_from_db("spend:key:t").await, None);
-    let empty_floor = ungated.end_user_from_db("spend:end_user:").await;
+    assert_eq!(ungated.reader().end_user_from_db("spend:key:t").await, None);
+    let empty_floor = ungated.reader().end_user_from_db("spend:end_user:").await;
     assert_eq!(empty_floor, Some(decimal("4.25")));
     assert_eq!(
         rows.lookups().last(),
         Some(&LookupRecord::EndUser(String::new()))
     );
-    assert_eq!(ungated.from_db("spend:tag:t").await, None);
-    assert_eq!(ungated.from_db("spend:end_user:u1").await, None);
-    assert_eq!(ungated.end_user_from_db("spend:tag:t").await, None);
+    assert_eq!(ungated.reader().from_db("spend:tag:t").await, None);
+    assert_eq!(ungated.reader().from_db("spend:end_user:u1").await, None);
+    assert_eq!(ungated.reader().end_user_from_db("spend:tag:t").await, None);
     assert_eq!(rows.lookups().len(), 2);
 
     rows.rows_fail.store(true, Ordering::Relaxed);
-    let failed = ungated.end_user_from_db("spend:end_user:u2").await;
+    let failed = ungated.reader().end_user_from_db("spend:end_user:u2").await;
     assert_eq!(failed, None);
     assert!(logs.contains("the counter row read failed"));
 }

@@ -622,10 +622,7 @@ async fn window_future_reset_row_is_trusted_and_null_duration_warms_zero() {
 
 #[tokio::test]
 async fn one_window_db_load_per_lock() {
-    let delayed = FakeRows {
-        window_delay: Duration::from_millis(20),
-        ..Default::default()
-    };
+    let delayed = FakeRows::with_window_delay(Duration::from_millis(20));
     *delayed.window.lock().expect("the fake window row lock") =
         Some(window_spend_row(naive("2026-11-18T00:00:00"), "2.5"));
     let rows = Arc::new(delayed);
