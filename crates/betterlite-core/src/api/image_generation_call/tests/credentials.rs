@@ -102,8 +102,18 @@ fn azure_ad_tokens() {
     let ops = FakeOps::new(Some(ImageGenerationConfigTag::Azure(String::from("dep"))));
     let identity = azure_identity("dep");
     let settings = Settings {
+        api_base: None,
+        api_version: None,
+        api_key: None,
+        azure_key: None,
+        azure_api_type: String::from("azure"),
+        azure_api_base: None,
+        azure_api_version: None,
+        azure_openai_api_key: None,
+        azure_api_key: None,
         azure_ad_token: Some(SecretString::from("env-token")),
-        ..Settings::default()
+        azure_ai_api_base: None,
+        azure_ai_api_key: None,
     };
     let case = Case::new(&ops, &identity, settings);
     for (value, expected) in [

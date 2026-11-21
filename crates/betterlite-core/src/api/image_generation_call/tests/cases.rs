@@ -208,7 +208,17 @@ fn generation_provider_selection(
     let identity = FakeIdentity::new(Some("image-model"), ProviderIdentity::Known(provider));
     let settings = Settings {
         api_base: Some(String::from("https://global.example")),
-        ..Settings::default()
+        api_version: None,
+        api_key: None,
+        azure_key: None,
+        azure_api_type: String::from("azure"),
+        azure_api_base: None,
+        azure_api_version: None,
+        azure_openai_api_key: None,
+        azure_api_key: None,
+        azure_ad_token: None,
+        azure_ai_api_base: None,
+        azure_ai_api_key: None,
     };
     let case = Case::new(&ops, &identity, settings);
     let mut selected = call(Some("image-model"), Some(slug));
