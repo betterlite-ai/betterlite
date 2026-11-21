@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::io;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -10,6 +11,8 @@ use betterlite_prompts::message_content::{Content, Message};
 use rust_decimal::Decimal;
 use serde_json::Number;
 use tokio::time::sleep;
+use tracing::subscriber::DefaultGuard;
+use tracing::subscriber::set_default;
 
 use crate::cache_cost_routing::{
     CacheAwareChoice, CacheCostRequest, CacheCostRouting, CachedModelChooser, ChooseCached,
@@ -203,6 +206,47 @@ impl CachedModelChooser for CancelledChooser {
         sleep(Duration::from_secs(30)).await;
         None
     }
+}
+
+#[derive(Clone)]
+pub(super) struct Captured(Arc<Mutex<Vec<u8>>>);
+
+impl io::Write for Captured {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl Captured {
+    // each log line without its level and target
+    pub(super) fn messages(&self) -> String {
+        let text = String::from_utf8(self.0.lock().unwrap().clone()).unwrap();
+        let lines: Vec<&str> = text
+            .lines()
+            .map(|line| line.split_once(": ").map_or(line, |(_, message)| message))
+            .collect();
+        lines.join("|")
+    }
+}
+
+pub(super) fn capture_logs() -> (Captured, DefaultGuard) {
+    let captured = Captured(Arc::new(Mutex::new(Vec::new())));
+    let writer = captured.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .without_time()
+        .with_ansi(false)
+        .with_writer(move || writer.clone())
+        .finish();
+    (captured, set_default(subscriber))
 }
 
 pub(super) struct Fixture {

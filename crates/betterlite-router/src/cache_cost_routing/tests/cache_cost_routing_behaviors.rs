@@ -3,7 +3,7 @@ use std::time::Duration;
 use betterlite_models::decisions::Json;
 
 use super::support::{
-    FixedChooser, FixedParams, Fixture, Seen, choice, fit, message, params, response,
+    FixedChooser, FixedParams, Fixture, Seen, capture_logs, choice, fit, message, params, response,
 };
 use crate::complexity_scoring::tier::ComplexityTier;
 
@@ -187,6 +187,24 @@ async fn the_chooser_receives_the_request_kwargs() {
     assert_eq!(
         chooser.seen().map(|seen| seen.kwargs_keys),
         Some(vec!["temperature".to_owned()])
+    );
+}
+
+#[tokio::test]
+async fn the_choice_is_logged_with_both_costs() {
+    let (captured, _guard) = capture_logs();
+    let fixture = Fixture::new();
+    let chooser = FixedChooser::new(Some(choice("0.001", "0.004")), Duration::ZERO);
+    let _applied = fixture
+        .apply(&chooser, Some(response()), None)
+        .await
+        .unwrap();
+    let messages = captured.messages();
+    assert!(
+        messages.contains(
+            "cache-aware choice model=medium original=small estimated_cost=0.001 original_cost=0.004"
+        ),
+        "{messages}"
     );
 }
 
