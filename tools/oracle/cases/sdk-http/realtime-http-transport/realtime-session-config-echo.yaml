@@ -17,4 +17,10 @@ compare:
   headers: []
   headers_present: []
   upstream_headers: [api-key, content-type]
-  ignore: []
+  ignore:
+    - pointer: /realtime_http_transport/value/result/headers/date
+      why: each side answers from its own mock, so a server-stamped date differs while answering nothing
+    - pointer: /realtime_http_transport/value/logged/api_base
+      why: each side answers from its own mock, so the complete URL the pre-call logs differs
+    - pointer: /realtime_http_transport/value/logged/litellm_api_base
+      why: each side answers from its own mock, so the masked api_base the logger records differs

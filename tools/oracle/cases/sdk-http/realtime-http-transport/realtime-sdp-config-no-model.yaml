@@ -19,3 +19,9 @@ compare:
   ignore:
     - pointer: /upstream/0/body
       why: each side picks its own multipart boundary, so the encoded body cannot match byte for byte
+    - pointer: /realtime_http_transport/value/result/headers/date
+      why: each side answers from its own mock, so a server-stamped date differs while answering nothing
+    - pointer: /realtime_http_transport/value/logged/api_base
+      why: each side answers from its own mock, so the complete URL the pre-call logs differs
+    - pointer: /realtime_http_transport/value/logged/litellm_api_base
+      why: each side answers from its own mock, so the masked api_base the logger records differs
