@@ -1,0 +1,66 @@
+kind: sdk_http
+name: sdk-http-speech-call-plan-async-bridged-speech-calls-twice
+env:
+  GEMINI_API_BASE: '$API_BASE'
+call:
+  speech_call_plan:
+    steps:
+      - speech:
+          model: gemini/gemini-2.5-flash-preview-tts
+          voice: Kore
+          api_key: sk-oracle
+# LiteLLM reads the Gemini candidates and betterlite's bridge reads the chat choices, so each answer carries both
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: chat_a
+      object: chat.completion
+      created: 1
+      model: gemini-2.5-flash-preview-tts
+      choices:
+        - index: 0
+          message:
+            role: assistant
+            content: null
+            audio: {id: audio_a, data: AAA=, expires_at: 0, transcript: ""}
+          finish_reason: stop
+      usage: {prompt_tokens: 0, completion_tokens: 0, total_tokens: 0}
+      candidates:
+        - content:
+            role: model
+            parts:
+              - inlineData: {mimeType: 'audio/L16;codec=pcm;rate=24000', data: AAA=}
+          finishReason: STOP
+      usageMetadata: {promptTokenCount: 0, candidatesTokenCount: 0, totalTokenCount: 0}
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: chat_b
+      object: chat.completion
+      created: 1
+      model: gemini-2.5-flash-preview-tts
+      choices:
+        - index: 0
+          message:
+            role: assistant
+            content: null
+            audio: {id: audio_b, data: AQE=, expires_at: 0, transcript: ""}
+          finish_reason: stop
+      usage: {prompt_tokens: 0, completion_tokens: 0, total_tokens: 0}
+      candidates:
+        - content:
+            role: model
+            parts:
+              - inlineData: {mimeType: 'audio/L16;codec=pcm;rate=24000', data: AQE=}
+          finishReason: STOP
+      usageMetadata: {promptTokenCount: 0, candidatesTokenCount: 0, totalTokenCount: 0}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore:
+    - {pointer: /upstream/0/path, why: "LiteLLM's Gemini completion posts generateContent and betterlite's bridge posts an OpenAI-compatible chat completion; this case compares how many requests each side sends"}
+    - {pointer: /upstream/0/body, why: "the Gemini and OpenAI-compatible chat bodies have different shapes; this case compares how many requests each side sends"}
+    - {pointer: /upstream/1/path, why: "LiteLLM's Gemini completion posts generateContent and betterlite's bridge posts an OpenAI-compatible chat completion; this case compares how many requests each side sends"}
+    - {pointer: /upstream/1/body, why: "the Gemini and OpenAI-compatible chat bodies have different shapes; this case compares how many requests each side sends"}

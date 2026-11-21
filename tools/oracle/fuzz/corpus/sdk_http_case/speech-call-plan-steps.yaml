@@ -1,0 +1,32 @@
+kind: sdk_http
+name: sdk-http-speech-call-plan-steps-seed
+env:
+  GEMINI_API_BASE: '$API_BASE'
+call:
+  speech_call_plan:
+    steps:
+      - {}
+      - speech:
+          model: openai/tts-1
+          voice: alloy
+          api_base: '$API_BASE'
+          api_key: sk-seed
+          kwargs: {aspeech: false}
+      - speech:
+          model: gemini/gemini-2.5-flash-preview-tts
+          voice: Kore
+          api_key: sk-seed
+          timeout_seconds: 30
+upstream:
+  - status: 200
+    headers: {}
+    body: {body_kind: bytes, fixture: binary-response.bin, content_type: audio/wav}
+  - status: 429
+    headers: {content-type: application/json}
+    body:
+      error: {message: slow down, type: rate_limit_error, param: model, code: rate_limit}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore: []
