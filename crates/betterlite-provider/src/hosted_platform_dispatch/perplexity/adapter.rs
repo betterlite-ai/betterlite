@@ -129,7 +129,9 @@ fn prepared_embedding(
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
     let http = PreparedHttp {
         method: Method::POST,
-        url: Url::parse(&url).map_err(|_| unsupported())?,
+        url: Url::parse(&url).map_err(|source| OperationError::Encode {
+            source: serde_json::Error::custom(source),
+        })?,
         headers,
         body: serde_json::to_vec(&body).map_err(|source| OperationError::Encode { source })?,
         deadline: resolved.timeout,

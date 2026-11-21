@@ -227,10 +227,10 @@ fn reaches_config_embedding_and_refuses_other_operations() {
             &catalog(),
         )
         .unwrap_err();
-    assert!(matches!(
-        refused,
-        OperationError::UnsupportedOperation { ref provider, .. } if provider == "perplexity"
-    ));
+    let OperationError::UnsupportedOperation { provider, .. } = refused else {
+        panic!("only an embedding runs through perplexity");
+    };
+    assert_eq!(provider, "perplexity");
     let other = PreparedRequest::AiohttpOpenAi(AiohttpOpenAiPrepared);
     let decoded = Perplexity.decode(&other, buffered(200, "{}")).unwrap_err();
     assert!(matches!(

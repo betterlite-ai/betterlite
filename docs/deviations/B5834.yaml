@@ -21,6 +21,9 @@ deviations:
   - what: Through the proxy, a Perplexity embedding reply whose data items lack object or index fails with a decode error instead of passing the items through.
     why: The proxy's embedding response type requires object, embedding and index on every record. The config's own transform keeps every key, as the helper cases show; only the proxy's typed response drops the reply that misses them.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/perplexity/embedding/transformation.py#L156-L162
+  - what: Through the proxy, a perplexity/ embedding deployment without an api_base is sent to the OpenAI base the shared deployment settings fill in, https://api.openai.com/v1/v1/embeddings, and one without an api_key sends the OpenAI default key, not https://api.perplexity.ai/v1/embeddings with Bearer None.
+    why: The shared chat deployment resolves a missing base and key to the OpenAI defaults before any adapter runs, and that resolution belongs to the config and deployment crates outside this task. A deployment that sets api_base and api_key, as the documented Perplexity setup does, gets LiteLLM's request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/perplexity/embedding/transformation.py#L67
 kept_bugs:
   - what: A Perplexity embedding or Responses base that already ends in /v1 gets a second /v1, so https://host/v1 becomes https://host/v1/v1/embeddings and https://host/v1/v1/responses.
     why: LiteLLM appends the full /v1 suffix without trimming, and deployments that set the bare host (the documented form) depend on the suffix being added.
