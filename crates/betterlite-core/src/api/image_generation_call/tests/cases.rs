@@ -823,7 +823,7 @@ fn unsupported_params_keep_their_prefix() {
     );
     let case = Case::new(&ops, &identity, Settings::default());
     let mut extra = call(Some("recraft-v3"), Some("recraft"));
-    extra.kwargs = kwargs(vec![("unknown_option", Json::Text(String::from("x")))]);
+    extra.kwargs = kwargs(vec![("imageConfig", Json::Text(String::from("x")))]);
     match case.run(extra).0 {
         Err(ImageGenerationException::Mapped {
             class: ErrorClass::UnsupportedParams(context),
@@ -950,23 +950,22 @@ fn generic_kwargs_reach_their_consumers() {
         ("drop_params", Json::Bool(true)),
         (
             "additional_drop_params",
-            Json::List(vec![Json::Text(String::from("unknown_option"))]),
+            Json::List(vec![Json::Text(String::from("imageConfig"))]),
         ),
     ] {
         let mut dropped = call(Some("recraft-v3"), Some("recraft"));
         dropped.kwargs = kwargs(vec![
-            ("unknown_option", Json::Text(String::from("x"))),
+            ("imageConfig", Json::Text(String::from("x"))),
+            ("tenant_id", Json::Text(String::from("t"))),
             dropping,
         ]);
         recraft_case.run(dropped).0.unwrap();
     }
     let recraft_sent = recraft_ops.sends();
     assert_eq!(recraft_sent.len(), 2);
-    assert!(
-        recraft_sent
-            .iter()
-            .all(|sent_call| sent_call.option("unknown_option").is_none())
-    );
+    assert!(recraft_sent.iter().all(|sent_call| {
+        sent_call.option("imageConfig").is_none() && sent_call.option("tenant_id").is_none()
+    }));
 }
 
 #[test]
