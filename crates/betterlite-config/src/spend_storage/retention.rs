@@ -34,9 +34,7 @@ fn number<Lookup: EnvironmentLookup, Value: FromStr>(
     lookup: &Lookup,
     name: &str,
 ) -> Result<Option<Value>, ConfigError> {
-    let Some(text) = lookup.lookup(name) else {
-        return Ok(None);
-    };
+    let text = lookup.lookup(name).unwrap_or_default();
     Ok(betterlite_env::number::<Value>(name, &text)?)
 }
 
@@ -45,13 +43,12 @@ fn seconds<Lookup: EnvironmentLookup>(
     lookup: &Lookup,
     name: &str,
 ) -> Result<Option<Duration>, ConfigError> {
-    number::<Lookup, f64>(lookup, name)?
-        .map(|parsed| {
-            Duration::try_from_secs_f64(parsed.max(0.0_f64)).map_err(|_overflow| {
-                ConfigError::from(EnvError::Number {
-                    name: name.to_owned(),
-                })
-            })
-        })
-        .transpose()
+    let Some(parsed) = number::<Lookup, f64>(lookup, name)? else {
+        return Ok(None);
+    };
+    let overflow = EnvError::Number {
+        name: name.to_owned(),
+    };
+    let duration = Duration::try_from_secs_f64(parsed.max(0.0_f64)).map_err(|_error| overflow)?;
+    Ok(Some(duration))
 }
