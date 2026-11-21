@@ -61,6 +61,16 @@ impl LegacyRateLimitHandler {
                 .await
                 .map_err(global_failed)?;
         }
+        self.release_key_slot(counters, api_key, span).await
+    }
+
+    // the key counter gets its request back; tokens and rpm stay as the call left them
+    async fn release_key_slot(
+        &self,
+        counters: &dyn CounterCache,
+        api_key: &str,
+        span: Option<&ParentOtelSpan>,
+    ) -> Result<(), AccountingError> {
         let key = format!("{api_key}::{}::request_count", self.precise_minute());
         let current = read_counter(counters, &key, span)
             .await?
