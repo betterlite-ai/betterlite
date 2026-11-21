@@ -1,0 +1,43 @@
+kind: sdk_http
+name: responses-lifecycle-write-lifecycle-write-ignored-extras
+env: {OPENAI_API_KEY: sk-provider, REQUEST_TIMEOUT: "17"}
+call:
+  responses_lifecycle_write:
+    runs:
+      - operation: delete
+        mode: sync
+        response_id: resp_a
+        custom_llm_provider: openai
+        timeout: 0
+        extra_headers: {X-Trace: trace-a}
+        extra_query: {api-version: "2"}
+        extra_body: {ignored: true}
+        params:
+          litellm_call_id: call-a
+          metadata: {trace: a}
+          litellm_metadata: {model_info: {id: deployment_a}}
+      - operation: cancel
+        mode: sync
+        response_id: resp_a
+        custom_llm_provider: openai
+        timeout: 7.5
+        extra_query: {api-version: "2"}
+        extra_body: {ignored: true}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: resp_a, object: response, deleted: true}
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: resp_a
+      created_at: 1735689600
+      object: response
+      status: cancelled
+      model: gpt-5
+      output: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type, x-trace]
+  ignore: []

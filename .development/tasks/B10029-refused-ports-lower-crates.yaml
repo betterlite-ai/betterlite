@@ -22,6 +22,27 @@ description: >-
   crate lists betterlite-test-ports under [dev-dependencies].
 scope:
   paths:
+  - "crates/betterlite-guardrails/src/grayswan/grayswan_monitoring/tests.rs"
+  - "crates/betterlite-redis/src/redis_live_client/tests/sentinel.rs"
+  - "crates/betterlite-redis/src/redis_live_client/tests/secrets.rs"
+  - "crates/betterlite-redis/src/redis_cache_admin/tests/health.rs"
+  - "crates/betterlite-logging/src/zerobus/client/tests/zerobus/token.rs"
+  - "crates/betterlite-logging/src/zerobus/client/tests/zerobus/ingest_status.rs"
+  - "crates/betterlite-http/src/interactions/lifecycle/tests/delete.rs"
+  - "crates/betterlite-http/src/interactions/lifecycle/tests/cancel.rs"
+  - "crates/betterlite-http/src/interactions/create/tests/synchronous.rs"
+  - "crates/betterlite-http/src/interactions/create/tests/asynchronous.rs"
+  - "crates/betterlite-http/src/interactions/agents_delete_versions/tests/versions.rs"
+  - "crates/betterlite-http/src/interactions/agents_delete_versions/tests/delete.rs"
+  - "crates/betterlite-http/src/interactions/agents_delete_versions/tests/client.rs"
+  - "crates/betterlite-http/src/interactions/agents_create_read/tests/create_tests.rs"
+  - "crates/betterlite-http/src/interactions/agents_create_read/tests/client_tests.rs"
+  - "crates/betterlite-guardrails/src/singulr/tests/call.rs"
+  - "crates/betterlite-guardrails/src/repello_lifecycle/tests/repello_lifecycle/transient_error.rs"
+  - "crates/betterlite-guardrails/src/noma_v2/tests/errors.rs"
+  - "crates/betterlite-guardrails/src/model_armor/hooks/logging_only/tests.rs"
+  - "crates/betterlite-core/src/api/eval_http/tests.rs"
+  - "crates/betterlite-cache/src/configuration/tests/cache_lifecycle.rs"
   - crates/betterlite-anthropic/src/anthropic_http_stream/tests/ownership.rs
   - crates/betterlite-cache/src/configuration/tests/support.rs
   - crates/betterlite-core/src/api/container_file_endpoints/tests/support.rs
