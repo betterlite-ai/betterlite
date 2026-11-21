@@ -361,6 +361,19 @@ async fn floor_lower_only_marks_verified() {
     assert_eq!(spend, Decimal::from(5));
     assert_eq!(scene.cache.stored(KEY), Some(number("5")));
     assert!(entries(&scene.journal).is_empty());
+    // a floor equal to the Redis counter only verifies it: nothing is forgotten or set-maxed
+    let equal = Scene::new(
+        redis(Some(number("5")), Script::Answer(Some(money("5")))),
+        &[],
+        rows(Some("5")),
+    );
+    let verified = equal
+        .spend(true, &query("6", Some("10"), NO_WINDOW))
+        .await
+        .unwrap();
+    assert_eq!(verified, Decimal::from(5));
+    assert!(entries(&equal.journal).is_empty());
+    assert_eq!(equal.cache.stored(MARKER), Some(number("5")));
 }
 
 #[tokio::test]
