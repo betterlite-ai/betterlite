@@ -26,7 +26,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/guardrail_translation/handler.py#L193-L198
   - what: build_registry takes the pass-through guardrail name and config from RegistryConfig and builds every adapter once, instead of instantiating the handler class on each call.
     why: Rust adapters hold their settings; LiteLLM reads the same values from the logging object at call time, and B8399 builds the registry per pass-through endpoint.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_translation_registry.py
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L220-L228
   - what: The pre-call and moderation hooks look the adapter up by the hook's call type, as LiteLLM does, not through resolve_endpoint_translation as the task text says.
     why: LiteLLM's two input hooks index the mappings with call_type; resolve_endpoint_translation resolves from the route and the first stream item, which is the streaming hook's order.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L220-L228
