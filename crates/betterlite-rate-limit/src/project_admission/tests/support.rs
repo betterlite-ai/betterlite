@@ -235,6 +235,35 @@ pub(crate) struct Fixture {
     clock: Arc<Clock>,
 }
 
+fn adjustments_over(recorder: &Arc<Recorder>) -> TokenAdjustments {
+    TokenAdjustments {
+        windows: WindowStore {
+            cache: Arc::<Recorder>::clone(recorder),
+            rate_limiter_script: None,
+            counter_read_script: None,
+            request_batch: None,
+            check_and_increment_lock: AsyncMutex::new(()),
+        },
+        usage: Arc::<Recorder>::clone(recorder),
+        post_call_batch: None,
+        token_increment_script: None,
+        guarded_token_script: None,
+    }
+}
+
+fn gauges_over(recorder: &Arc<Recorder>, clock: &Arc<Clock>) -> ConcurrencyGauges {
+    ConcurrencyGauges {
+        cache: Arc::<Recorder>::clone(recorder),
+        clock: Arc::<Clock>::clone(clock),
+        acquire_script: None,
+        release_script: None,
+        count_script: None,
+        release_batch: None,
+        fail_closed: FailClosedPolicy { enabled: false },
+        check_and_increment_lock: AsyncMutex::new(()),
+    }
+}
+
 impl Fixture {
     pub(crate) fn new(
         entries: &[(String, CacheCounterValue)],
@@ -249,38 +278,15 @@ impl Fixture {
         let clock = Arc::new(Clock(
             UNIX_EPOCH.checked_add(elapsed).expect("a valid clock"),
         ));
-        let adjustments = TokenAdjustments {
-            windows: WindowStore {
-                cache: Arc::<Recorder>::clone(&recorder),
-                rate_limiter_script: None,
-                counter_read_script: None,
-                request_batch: None,
-                check_and_increment_lock: AsyncMutex::new(()),
-            },
-            usage: Arc::<Recorder>::clone(&recorder),
-            post_call_batch: None,
-            token_increment_script: None,
-            guarded_token_script: None,
-        };
-        let gauges = ConcurrencyGauges {
-            cache: Arc::<Recorder>::clone(&recorder),
-            clock: Arc::<Clock>::clone(&clock),
-            acquire_script: None,
-            release_script: None,
-            count_script: None,
-            release_batch: None,
-            fail_closed: FailClosedPolicy { enabled: false },
-            check_and_increment_lock: AsyncMutex::new(()),
-        };
         Self {
+            adjustments: adjustments_over(&recorder),
+            gauges: gauges_over(&recorder, &clock),
             recorder,
             counter: Counter {
                 tokens: counted_tokens,
                 models: Mutex::new(Vec::new()),
             },
             slot: RequestStashSlot::default(),
-            adjustments,
-            gauges,
             clock,
         }
     }

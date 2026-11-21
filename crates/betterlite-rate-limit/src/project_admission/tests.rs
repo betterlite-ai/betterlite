@@ -46,6 +46,26 @@ fn local_window(key: &str, value: &str) -> ReservationWindowIdentity {
     }
 }
 
+fn stored_windows(
+    fixture: &Fixture,
+) -> (
+    BTreeSet<ReservationWindowIdentity>,
+    BTreeSet<ReservationWindowIdentity>,
+) {
+    let stash = fixture.slot.get().expect("the admission claimed the stash");
+    let state = stash.state.lock().unwrap_or_else(PoisonError::into_inner);
+    (
+        state.itpm_reserved_windows.clone(),
+        state.otpm_reserved_windows.clone(),
+    )
+}
+
+fn stored_response(fixture: &Fixture) -> Option<RateLimitResponse> {
+    let stash = fixture.slot.get().expect("the admission claimed the stash");
+    let state = stash.state.lock().unwrap_or_else(PoisonError::into_inner);
+    state.rate_limit_response.clone()
+}
+
 fn seeded(
     windows: &[[(String, CacheCounterValue); 2]],
     extra: &[(String, CacheCounterValue)],
@@ -118,20 +138,16 @@ async fn an_itpm_reservation_stores_its_tokens_scopes_windows_and_response() {
             slot_held: false,
         }
     );
-    let stash = fixture.slot.get().unwrap();
-    let state = stash.state.lock().unwrap();
     let windows = BTreeSet::from([local_window(ITPM, PROJECT)]);
-    assert_eq!(state.itpm_reserved_windows, windows);
-    assert!(state.otpm_reserved_windows.is_empty());
+    assert_eq!(stored_windows(&fixture), (windows.clone(), BTreeSet::new()));
     assert_eq!(
-        state.rate_limit_response,
+        stored_response(&fixture),
         Some(RateLimitResponse {
             overall_code: "OK".to_owned(),
             statuses: vec![status(ITPM, PROJECT, "OK", 1000, 858)],
             reservation_windows: Some(windows),
         })
     );
-    drop(state);
     assert_eq!(
         fixture.recorder.effects(),
         vec![
@@ -147,17 +163,12 @@ async fn an_itpm_reservation_stores_its_tokens_scopes_windows_and_response() {
 #[tokio::test]
 async fn the_smallest_otpm_limit_sets_the_output_estimate_and_the_written_cap() {
     let other = "p2:gpt-4";
-    let fixture = Fixture::new(
-        &seeded(
-            &[
-                window(ITPM, PROJECT, 0),
-                window(OTPM, PROJECT, 0),
-                window(OTPM, other, 0),
-            ],
-            &[],
-        ),
-        Some(42),
-    );
+    let seeded_windows = [
+        window(ITPM, PROJECT, 0),
+        window(OTPM, PROJECT, 0),
+        window(OTPM, other, 0),
+    ];
+    let fixture = Fixture::new(&seeded(&seeded_windows, &[]), Some(42));
     let descriptors = [
         limit(ITPM, PROJECT, 100_000),
         limit(OTPM, PROJECT, 1000),
@@ -176,17 +187,13 @@ async fn the_smallest_otpm_limit_sets_the_output_estimate_and_the_written_cap() 
         snapshot.otpm,
         (100, scopes(&[(OTPM, PROJECT), (OTPM, other)]))
     );
-    let stash = fixture.slot.get().unwrap();
-    let state = stash.state.lock().unwrap();
     assert_eq!(
-        state.otpm_reserved_windows,
-        BTreeSet::from([local_window(OTPM, PROJECT), local_window(OTPM, other)])
+        stored_windows(&fixture),
+        (
+            BTreeSet::from([local_window(ITPM, PROJECT)]),
+            BTreeSet::from([local_window(OTPM, PROJECT), local_window(OTPM, other)]),
+        )
     );
-    assert_eq!(
-        state.itpm_reserved_windows,
-        BTreeSet::from([local_window(ITPM, PROJECT)])
-    );
-    drop(state);
     assert_eq!(
         body,
         data(
