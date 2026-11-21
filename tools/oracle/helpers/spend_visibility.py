@@ -55,7 +55,9 @@ class UserInput(TypedDict):
     teams: list[str]
 
 
-OwnerRow = TypedDict("OwnerRow", {"user": str | None, "team_id": str | None})
+class OwnerRow(TypedDict):
+    user: str | None
+    team_id: str | None
 
 
 class SpendRow(TypedDict):
@@ -107,7 +109,8 @@ class ManyTeams(TypedDict):
     team_id: TeamIds
 
 
-Refusal = TypedDict("Refusal", {"detail": dict[str, str]})
+class Refusal(TypedDict):
+    detail: dict[str, str]
 
 
 BODY: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
@@ -214,15 +217,12 @@ class Overrides(dict[AuthCheck, AuthAnswer]):
         super().__init__()
         self.answer = answer
 
-    def __bool__(self) -> bool:
-        return True
+    def __bool__(self) -> bool: return True
 
     @overload
     def get(self, key: AuthCheck, default: None = None, /) -> AuthAnswer | None: ...
-
     @overload
     def get(self, key: AuthCheck, default: AuthAnswer, /) -> AuthAnswer: ...
-
     @overload
     def get(self, key: AuthCheck, default: _Default, /) -> AuthAnswer | _Default: ...
 
