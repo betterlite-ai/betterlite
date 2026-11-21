@@ -150,9 +150,7 @@ impl CompletionTarget<'_> {
         let mut entries = call.deployments.into_iter();
         let mut attempts = FuturesUnordered::new();
         for entry in entries.by_ref().take(MODEL_LIST_CONCURRENCY) {
-            for (name, value) in entry {
-                base.insert(name, value);
-            }
+            base.extend(entry);
             attempts.push(self.call(base.clone(), logging));
         }
         let mut last_failure: Option<CompletionCallError> = None;
@@ -163,9 +161,7 @@ impl CompletionTarget<'_> {
                 Err(error) => last_failure = Some(CompletionCallError::Call(error)),
             }
             if let Some(entry) = entries.next() {
-                for (name, value) in entry {
-                    base.insert(name, value);
-                }
+                base.extend(entry);
                 attempts.push(self.call(base.clone(), logging));
             }
         }
