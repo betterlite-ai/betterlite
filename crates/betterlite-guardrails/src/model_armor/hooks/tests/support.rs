@@ -14,6 +14,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_prompts::message_content::Message;
+use betterlite_test_ports::refused_port::RefusedPort;
 use indexmap::IndexMap;
 use reqwest::Client;
 use secrecy::SecretString;
@@ -191,6 +192,7 @@ pub(crate) struct Armor {
     pub(crate) transport: ModelArmorTransport<StubTokens>,
     recorded: Arc<Mutex<Vec<Recorded>>>,
     _server: Server,
+    _refused: Option<RefusedPort>,
 }
 
 pub(crate) async fn armor(replies: Vec<(StatusCode, String)>) -> Armor {
@@ -210,14 +212,14 @@ pub(crate) async fn armor_with(
         guardrail,
         recorded,
         _server: server,
+        _refused: None,
     }
 }
 
 // A guardrail whose endpoint refused the connection, so the transport reports a request failure
 pub(crate) async fn offline_armor() -> Armor {
-    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
-    let endpoint = format!("http://{}", listener.local_addr().expect("address"));
-    drop(listener);
+    let refused = RefusedPort::bind().expect("a refused port");
+    let endpoint = format!("http://{}", refused.address);
     let guardrail =
         ModelArmorGuardrail::new(params(&endpoint, settings(), false)).expect("guardrail");
     Armor {
@@ -225,6 +227,7 @@ pub(crate) async fn offline_armor() -> Armor {
         guardrail,
         recorded: Arc::new(Mutex::new(Vec::new())),
         _server: JoinSet::new(),
+        _refused: Some(refused),
     }
 }
 

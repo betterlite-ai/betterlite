@@ -3,9 +3,10 @@
 use std::sync::Arc;
 
 use betterlite_redis::redis_connection_settings::model::scalars::IntOrText;
+use betterlite_test_ports::refused_port::RefusedPort;
 
 use super::support::{
-    FakeRedis, closed_port, dependencies, environment, redis_settings, settings, test_backend,
+    FakeRedis, dependencies, environment, redis_settings, settings, test_backend,
 };
 use crate::backend::CacheBackend;
 use crate::configuration::cache::{AsyncCacheSupport as _, Cache, CacheLifecycleError};
@@ -44,10 +45,10 @@ async fn open_injected(backend: Arc<dyn CacheBackend>) -> Cache {
         .expect("an injected cache")
 }
 
-async fn open_unreachable_redis() -> Cache {
+async fn open_unreachable_redis(refused: &RefusedPort) -> Cache {
     let mut unreachable = settings(LiteLlmCacheType::Redis);
     unreachable.redis.host = Some("127.0.0.1".to_owned());
-    unreachable.redis.port = Some(IntOrText::Value(i64::from(closed_port().await)));
+    unreachable.redis.port = Some(IntOrText::Value(i64::from(refused.address.port())));
     let mut callbacks = CacheCallbacks::default();
     Cache::open(unreachable, &mut callbacks, &environment(), &dependencies())
         .await
@@ -110,7 +111,8 @@ async fn ping_delegates_to_the_redis_backend() {
 
 #[tokio::test]
 async fn ping_reports_a_redis_connection_failure() {
-    let cache = open_unreachable_redis().await;
+    let refused = RefusedPort::bind().unwrap();
+    let cache = open_unreachable_redis(&refused).await;
     let Err(error) = cache.ping().await else {
         panic!("a ping failure");
     };
