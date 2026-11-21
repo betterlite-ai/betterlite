@@ -40,7 +40,12 @@ class Item(TypedDict):
 
 class RaisedItem(Item):
     kind: Literal[
-        "guardrail_raised", "blocked_pii", "modify_response", "sensitive_data_route", "http", "other"
+        "guardrail_raised",
+        "blocked_pii",
+        "modify_response",
+        "sensitive_data_route",
+        "http",
+        "other",
     ]
 
 
@@ -196,8 +201,8 @@ def report(call: ReportCall) -> JsonValue:
 def public_failure(item: FailureItem) -> JsonValue:
     line_number = item["line_number"]
     custom_id = item["custom_id"]
-    # Both raise by contract, so a 500 here means one returned instead
-    error = HTTPException(status_code=500)
+    status: int | None = None
+    detail: JsonValue = None
     try:
         if item["kind"] == "unparseable":
             raise_public(UnparseableRecord(line_number))
@@ -206,6 +211,7 @@ def public_failure(item: FailureItem) -> JsonValue:
         if item["kind"] == "unroutable":
             raise_public(UnroutableRecord(line_number, custom_id, item["guardrail_name"]))
         raise_nothing_to_submit()
-    except HTTPException as raised:
-        error = raised
-    return {"status": error.status_code, "detail": JSON.validate_python(error.detail)}
+    except HTTPException as error:
+        status = error.status_code
+        detail = JSON.validate_python(error.detail)
+    return {"status": status, "detail": detail}

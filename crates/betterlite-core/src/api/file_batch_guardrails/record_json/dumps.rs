@@ -8,7 +8,7 @@ use super::text::RecordText;
 pub enum Rendering {
     // Every key and number as it was read
     AsRead,
-    // json.dumps(sort_keys=True) of what json.loads built: keys in code point order, numbers as the int or float they became
+    // For comparison only, as _fingerprint compares: keys in code point order, numbers as str() of the int or float json.loads made
     Canonical,
 }
 
