@@ -5,6 +5,7 @@ from typing import Final, Literal, TypeAlias, TypedDict, final
 import litellm
 from litellm.integrations.additional_logging_utils import AdditionalLoggingUtils
 from litellm.integrations.custom_logger import CustomLogger
+from litellm.litellm_core_utils.logging_callback_manager import LoggingCallbackManager
 from litellm.proxy import proxy_server
 from litellm.proxy._types import LiteLLM_UserTable, LitellmUserRoles, UserAPIKeyAuth
 from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache
@@ -188,14 +189,26 @@ class Recorder(CustomLogger, AdditionalLoggingUtils):
         return self.board.step["payload"]
 
 
+# the callback manager the detail route asks for its cold-storage loggers
+class Loggers(LoggingCallbackManager):
+    def __init__(self, recorder: Recorder) -> None:
+        self.recorder = recorder
+
+    @override
+    def get_active_additional_logging_utils_from_custom_logger(self) -> set[AdditionalLoggingUtils]:
+        return {self.recorder}
+
+
 def run(input_value: Input) -> list[StepAnswer]:
     client = proxy_server.prisma_client
     cache = proxy_server.user_api_key_cache
+    loggers = litellm.logging_callback_manager
     try:
         return [asyncio.run(run_step(step)) for step in input_value["steps"]]
     finally:
         proxy_server.prisma_client = client
         proxy_server.user_api_key_cache = cache
+        litellm.logging_callback_manager = loggers
 
 
 async def run_step(step: Step) -> StepAnswer:
@@ -206,12 +219,8 @@ async def run_step(step: Step) -> StepAnswer:
         await cache.async_set_cache(key=user["user_id"], value=stored)
     proxy_server.prisma_client = Client(board)
     proxy_server.user_api_key_cache = cache
-    recorder = Recorder(board)
-    litellm.callbacks.append(recorder)
-    try:
-        return await view(step, board)
-    finally:
-        litellm.callbacks.remove(recorder)
+    litellm.logging_callback_manager = Loggers(Recorder(board))
+    return await view(step, board)
 
 
 async def view(step: Step, board: Board) -> StepAnswer:
