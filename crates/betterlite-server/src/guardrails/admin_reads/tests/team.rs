@@ -252,6 +252,11 @@ async fn team_labels_db_and_config_entries() {
         text(field(field(database_entry, "litellm_params"), "api_key")),
         "sk****34"
     );
+    assert_eq!(
+        field(field(database_entry, "litellm_params"), "default_on"),
+        &JsonValue::Bool(false),
+        "the typed decode fills the absent default_on"
+    );
     let config_entry = &listed[1];
     assert_eq!(
         text(field(config_entry, "guardrail_definition_location")),

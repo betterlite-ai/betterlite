@@ -32,6 +32,14 @@ async fn list_reads_the_config_guardrails_with_masked_params() {
     assert_eq!(text(field(params, "api_key")), "sk****34");
     assert_eq!(text(field(params, "guardrail")), "bedrock");
     assert_eq!(text(field(params, "mode")), "pre_call");
+    assert!(
+        params
+            .as_object()
+            .expect("the params object")
+            .get("disable_exception_on_block")
+            .is_none(),
+        "a config entry carries no provider mixin defaults"
+    );
 }
 
 #[tokio::test]
