@@ -48,7 +48,7 @@ fn safe_json_text_keeps_a_value_at_the_cap() {
     1,
     r#"{"outer":{"inner":"MaxDepthExceeded"}}"#
 )]
-#[case::array("[[[1]]]", 1, r#"[[["MaxDepthExceeded"]]]"#)]
+#[case::array("[[[1]]]", 1, r#"[["MaxDepthExceeded"]]"#)]
 fn safe_json_text_replaces_a_value_past_the_cap(
     #[case] source: &str,
     #[case] max_depth: usize,

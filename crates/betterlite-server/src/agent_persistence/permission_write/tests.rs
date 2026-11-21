@@ -122,12 +122,11 @@ async fn permission_keeps_a_stored_column_the_update_leaves_out() {
         .expect("the same row is prepared again")
         .expect("the permission is present");
     assert_eq!(updated.object_permission_id, prepared.object_permission_id);
-    let mut updating = store.session().await.expect("a session");
-    let updating_tx = updating.transaction().await.expect("a transaction");
-    write_permission(&updating_tx, &updated)
+    let reuse_tx = client.transaction().await.expect("a transaction");
+    write_permission(&reuse_tx, &updated)
         .await
         .expect("the permission row is updated");
-    updating_tx.commit().await.expect("the transaction commits");
+    reuse_tx.commit().await.expect("the transaction commits");
     let permission_id = prepared.object_permission_id.as_str();
     let servers = database.json(SERVERS_SQL, &[&permission_id]).await;
     assert_eq!(
