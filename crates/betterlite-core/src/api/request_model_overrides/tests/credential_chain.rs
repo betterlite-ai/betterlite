@@ -227,6 +227,70 @@ fn client_api_version_survives_and_does_not_gate() {
 }
 
 #[test]
+fn credential_override_skips_a_request_without_a_model() {
+    let principal = principal_with(&[("defaultconfig", "azure", Some("team-azure"))]);
+    let input = RequestModelOverridesInput {
+        data: request(&[("user", "someone")]),
+        principal,
+        premium_user: true,
+    };
+    let result = build_service(credential_settings(), None, team_credentials())
+        .apply(&input)
+        .unwrap();
+    assert_eq!(text_field(&result.data, "api_key"), None);
+    assert_eq!(result.diagnostics, Vec::new());
+}
+
+#[test]
+fn project_model_config_of_the_wrong_type_names_the_field() {
+    let principal = OverridesPrincipal {
+        team_id: None,
+        team_model_aliases: alias_map(&[]),
+        aliases: alias_map(&[]),
+        metadata: None,
+        team_metadata: None,
+        project_metadata: Some(JsonObject::from([(
+            "model_config".to_owned(),
+            Json::Text("gpt-4o".to_owned()),
+        )])),
+    };
+    let service = build_service(credential_settings(), None, team_credentials());
+    let error = service.apply(&input(principal, "gpt-4o")).unwrap_err();
+    assert_eq!(
+        error,
+        RequestModelOverridesError::InvalidField {
+            field: "project_metadata.model_config".to_owned(),
+            expected: "an object",
+        }
+    );
+}
+
+#[test]
+fn model_entry_of_the_wrong_type_names_the_field() {
+    let providers = Json::Object(JsonObject::from([(
+        "gpt-4o".to_owned(),
+        Json::Text("azure".to_owned()),
+    )]));
+    let principal = OverridesPrincipal {
+        team_id: None,
+        team_model_aliases: alias_map(&[]),
+        aliases: alias_map(&[]),
+        metadata: None,
+        team_metadata: Some(JsonObject::from([("model_config".to_owned(), providers)])),
+        project_metadata: None,
+    };
+    let service = build_service(credential_settings(), None, team_credentials());
+    let error = service.apply(&input(principal, "gpt-4o")).unwrap_err();
+    assert_eq!(
+        error,
+        RequestModelOverridesError::InvalidField {
+            field: "team_metadata.model_config.gpt-4o".to_owned(),
+            expected: "an object",
+        }
+    );
+}
+
+#[test]
 fn model_config_of_the_wrong_type_names_the_field() {
     let principal = OverridesPrincipal {
         team_id: None,
