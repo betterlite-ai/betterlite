@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use tracing::Level;
 
 use super::support::{
@@ -113,6 +114,22 @@ async fn tool_results_only_warns_when_the_filter_leaves_nothing() {
         "{}",
         captured.text()
     );
+}
+
+#[tokio::test]
+async fn an_empty_batch_never_reaches_bedrock() {
+    let mut harness = Harness::new(vec![]);
+    harness
+        .data
+        .insert("api_key".to_owned(), GuardrailValue::UnsignedInteger(1));
+
+    let result = harness
+        .apply(inputs(&[]), GuardrailInputType::Request)
+        .await
+        .expect("an empty batch builds no Bedrock request");
+
+    assert_eq!(harness.transport.count(), 0);
+    assert_eq!(result.texts, Some(Vec::new()));
 }
 
 #[tokio::test]
