@@ -97,6 +97,11 @@ impl ModelGroupInfo {
             let value = amount.map(Number::from).map_or(Json::Null, Json::Number);
             fields.insert(field.to_owned(), value);
         }
+        self.insert_group_wide(&mut fields);
+        fields
+    }
+
+    fn insert_group_wide(&self, fields: &mut JsonObject) {
         fields.insert(
             "supports_fast_mode".to_owned(),
             Json::Bool(self.supports_fast_mode),
@@ -121,7 +126,6 @@ impl ModelGroupInfo {
             "configurable_clientside_auth_params".to_owned(),
             json_list(self.clientside_auth.as_deref(), ClientsideAuth::to_json),
         );
-        fields
     }
 }
 
