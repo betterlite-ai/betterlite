@@ -127,7 +127,7 @@ impl Helper for Op {
                 };
                 let resolver = AgentAccessGroups { reads };
                 let ceiling = runtime
-                    .block_on(resolver.resolve_agent_access_group_ceiling(agent_id, false))
+                    .block_on(resolver.resolve_agent_ceiling(agent_id, false))
                     .or_value_error()?;
                 Ok(ceiling.as_ref().map_or(Value::Null, ceiling_view))
             }

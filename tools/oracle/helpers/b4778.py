@@ -3,7 +3,8 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import Final, Literal, TypeAlias, TypedDict
 
 from litellm.models.access_group import LiteLLM_AccessGroupTable
-from litellm.proxy._types import LiteLLM_ObjectPermissionTable, UserAPIKeyAuth
+from litellm.models.object_permission import LiteLLM_ObjectPermissionTable
+from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.agent_endpoints.agent_registry import global_agent_registry
 from litellm.proxy.agent_endpoints.auth.agent_access_groups import (
     AgentAccessGroupCeiling,

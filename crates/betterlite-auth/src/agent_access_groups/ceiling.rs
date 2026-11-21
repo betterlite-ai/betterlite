@@ -23,7 +23,7 @@ pub struct AgentAccessGroups<Reads> {
 
 impl<Reads: AccessGroupReads> AgentAccessGroups<Reads> {
     // None only when the agent lists no group, so nothing is capped
-    pub async fn resolve_agent_access_group_ceiling(
+    pub async fn resolve_agent_ceiling(
         &self,
         agent_id: &str,
         check_db_only: bool,
@@ -42,7 +42,7 @@ impl<Reads: AccessGroupReads> AgentAccessGroups<Reads> {
         agent_id: &str,
     ) -> Result<Option<Vec<String>>, AccessGroupsError> {
         Ok(self
-            .resolve_agent_access_group_ceiling(agent_id, false)
+            .resolve_agent_ceiling(agent_id, false)
             .await?
             .map(|ceiling| ceiling.mcp_server_ids.into_iter().collect()))
     }

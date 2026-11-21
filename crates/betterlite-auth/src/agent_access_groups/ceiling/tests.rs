@@ -176,10 +176,7 @@ fn two_groups() -> Vec<(&'static str, Stored)> {
 #[tokio::test]
 async fn no_attached_group_caps_nothing_and_reads_no_group(#[case] agent_id: &str) {
     let access = groups(true, &[], &two_groups());
-    let ceiling = access
-        .resolve_agent_access_group_ceiling(agent_id, false)
-        .await
-        .unwrap();
+    let ceiling = access.resolve_agent_ceiling(agent_id, false).await.unwrap();
     assert_eq!(ceiling, None);
     assert!(reads(&access).is_empty());
 }
@@ -188,7 +185,7 @@ async fn no_attached_group_caps_nothing_and_reads_no_group(#[case] agent_id: &st
 async fn attached_groups_union_their_lists_and_keep_the_agent_order() {
     let access = groups(true, &["g2", "g1", "g2"], &two_groups());
     let ceiling = access
-        .resolve_agent_access_group_ceiling("agent-1", false)
+        .resolve_agent_ceiling("agent-1", false)
         .await
         .unwrap();
     let expected = AgentAccessGroupCeiling {
@@ -219,7 +216,7 @@ async fn a_group_that_does_not_load_is_dropped_but_stays_listed(#[case] failure:
         &[two_groups().remove(0), ("gone", failure)],
     );
     let ceiling = access
-        .resolve_agent_access_group_ceiling("agent-1", false)
+        .resolve_agent_ceiling("agent-1", false)
         .await
         .unwrap()
         .unwrap();
@@ -239,7 +236,7 @@ async fn a_group_that_does_not_load_is_dropped_but_stays_listed(#[case] failure:
 async fn an_agent_whose_only_group_vanished_gets_empty_sets_that_deny() {
     let access = groups(true, &["gone"], &[("gone", Stored::Missing)]);
     let ceiling = access
-        .resolve_agent_access_group_ceiling("agent-1", false)
+        .resolve_agent_ceiling("agent-1", false)
         .await
         .unwrap();
     let expected = AgentAccessGroupCeiling {
@@ -260,7 +257,7 @@ async fn without_a_database_every_group_is_dropped_with_a_warning(#[case] check_
     let _guard = warnings.install();
     let access = groups(false, &["g1", "g2"], &two_groups());
     let ceiling = access
-        .resolve_agent_access_group_ceiling("agent-1", check_db_only)
+        .resolve_agent_ceiling("agent-1", check_db_only)
         .await
         .unwrap()
         .unwrap();
@@ -282,7 +279,7 @@ async fn without_a_database_every_group_is_dropped_with_a_warning(#[case] check_
 async fn the_writer_path_reads_every_group_with_check_db_only() {
     let access = groups(true, &["g1", "g2"], &two_groups());
     let ceiling = access
-        .resolve_agent_access_group_ceiling("agent-1", true)
+        .resolve_agent_ceiling("agent-1", true)
         .await
         .unwrap()
         .unwrap();
@@ -302,7 +299,7 @@ async fn the_writer_path_returns_a_failed_read(#[case] failure: Stored, #[case] 
     let _guard = warnings.install();
     let access = groups(true, &["gone"], &[("gone", failure)]);
     let error = access
-        .resolve_agent_access_group_ceiling("agent-1", true)
+        .resolve_agent_ceiling("agent-1", true)
         .await
         .unwrap_err();
     let AccessGroupsError::Read {
@@ -322,7 +319,7 @@ async fn a_failure_that_is_not_an_http_error_is_returned_even_when_lenient() {
         &[two_groups().remove(0), ("broken", Stored::Plain)],
     );
     let error = access
-        .resolve_agent_access_group_ceiling("agent-1", false)
+        .resolve_agent_ceiling("agent-1", false)
         .await
         .unwrap_err();
     let AccessGroupsError::Read {
