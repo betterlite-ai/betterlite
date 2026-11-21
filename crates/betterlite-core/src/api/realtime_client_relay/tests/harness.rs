@@ -275,11 +275,11 @@ impl RealtimeEventNormalizer for ScriptedNormalizer {
                 fields.insert("xai_patch".to_owned(), Json::Bool(true));
                 Json::Object(fields)
             }
-            other @ Json::Null
-            | other @ Json::Bool(_)
-            | other @ Json::Number(_)
-            | other @ Json::Text(_)
-            | other @ Json::List(_) => other,
+            other @ (Json::Null
+            | Json::Bool(_)
+            | Json::Number(_)
+            | Json::Text(_)
+            | Json::List(_)) => other,
         };
         lock(&self.sessions).push(patched.clone());
         patched
