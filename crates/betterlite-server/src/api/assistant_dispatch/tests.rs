@@ -328,7 +328,7 @@ async fn dispatch_all_assistant_operations() {
         Route {
             thread_id: Some("thread_a"),
             assistant_id: None,
-            client: None,
+            client: Some(supplied("sk-supplied")),
         },
         &[(200, THREAD)],
     )
@@ -340,6 +340,11 @@ async fn dispatch_all_assistant_operations() {
     };
     assert_eq!(fetched_record.id, "thread_a");
     assert_eq!(fetched.seen[0].url, "https://mock.test/v1/threads/thread_a");
+    // a supplied client's own key reaches the thread facade unchanged
+    assert_eq!(
+        fetched.seen[0].authorization.as_deref(),
+        Some("Bearer sk-supplied")
+    );
 
     let message = dispatch(
         &settings,
@@ -565,6 +570,32 @@ async fn a_configured_keyword_collides_with_the_installed_function(#[case] name:
     assert_eq!(
         message,
         format!("acreate_assistants() got multiple values for keyword argument '{name}'")
+    );
+    assert!(outcome.seen.is_empty());
+}
+
+// the route passes the path id as a keyword beside **data, so a body copy of that key collides
+#[tokio::test]
+async fn a_body_key_collides_with_the_route_argument() {
+    let settings = configured("openai", &[]);
+    let outcome = dispatch(
+        &settings,
+        AssistantOperation::DeleteAssistant,
+        data(&[("assistant_id", text("asst_body"))]),
+        Route {
+            thread_id: None,
+            assistant_id: Some("asst_a"),
+            client: None,
+        },
+        &[],
+    )
+    .await;
+    let Err(AssistantDispatchError::TypeError { message }) = outcome.result else {
+        panic!("the body assistant id did not collide");
+    };
+    assert_eq!(
+        message,
+        "litellm.router.Router.factory_function.<locals>.async_wrapper() got multiple values for keyword argument 'assistant_id'"
     );
     assert!(outcome.seen.is_empty());
 }
