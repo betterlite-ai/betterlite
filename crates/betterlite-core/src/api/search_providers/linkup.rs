@@ -4,7 +4,7 @@ use betterlite_config::loader::EnvironmentLookup;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::search::credentials::{CredentialError, ServerCredential};
 use betterlite_openai::search::provider::{
-    PERPLEXITY_PARAMS, ProviderResponse, SearchProvider, SearchQuery,
+    PERPLEXITY_PARAMS, ProviderResponse, RequestInput, SearchProvider, SearchQuery,
 };
 use betterlite_openai::search::records::{SearchObject, SearchResponse, SearchResult};
 use secrecy::{ExposeSecret as _, SecretString};
@@ -112,6 +112,7 @@ impl SearchProvider for LinkupSearchConfig {
         api_base: Option<&str>,
         _optional_params: &Object,
         _body: Option<&LinkupSearchRequest>,
+        _api_key: Option<&SecretString>,
     ) -> Result<String, LinkupSearchError> {
         let base = api_base
             .filter(|base| !base.is_empty())
@@ -121,10 +122,9 @@ impl SearchProvider for LinkupSearchConfig {
 
     fn transform_search_request(
         &self,
-        query: &SearchQuery,
-        optional_params: &Object,
+        input: &RequestInput<'_>,
     ) -> Result<LinkupSearchRequest, LinkupSearchError> {
-        build_request(query, optional_params)
+        build_request(input.query, input.optional_params)
     }
 
     fn transform_search_response(

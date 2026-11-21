@@ -4,6 +4,7 @@ use crate::raw::RawNumber;
 use crate::resolve::{parse_money, resolve_number};
 use crate::sections::Section;
 use crate::sections::settings::JsonValue;
+use betterlite_db::spend_partitions::calendar::PartitionInterval;
 use betterlite_secret_managers::secret_lookup::text_to_bool;
 use rust_decimal::Decimal;
 use serde::Deserialize;
@@ -13,6 +14,9 @@ pub const ENV_MAX_PROMPT_LENGTH: &str = "MAX_STRING_LENGTH_PROMPT_IN_DB";
 pub const DEFAULT_MAX_PROMPT_LENGTH: i64 = 2048;
 pub const ENV_DEQUEUE_COUNT: &str = "MAX_REDIS_BUFFER_DEQUEUE_COUNT";
 pub const DEFAULT_DEQUEUE_COUNT: i64 = 100;
+pub const ENV_PARTITION_INTERVAL: &str = "SPEND_LOG_PARTITION_INTERVAL";
+pub const ENV_PRECREATE_AHEAD: &str = "SPEND_LOG_PARTITION_PRECREATE_AHEAD";
+pub const DEFAULT_PRECREATE_AHEAD: i64 = 7;
 const MISSING_SESSION_ID_PATH: &str = "general_settings.missing_session_id";
 const USE_REDIS_BUFFER_PATH: &str = "general_settings.use_redis_transaction_buffer";
 const MAX_BUDGET_PATH: &str = "litellm_settings.max_budget";
@@ -64,6 +68,8 @@ pub struct Settings {
     pub enable_prometheus_only: Option<bool>,
     pub use_redis_transaction_buffer: bool,
     pub max_redis_buffer_dequeue_count: i64,
+    pub partition_interval: PartitionInterval,
+    pub precreate_ahead: i64,
 }
 impl Section for Raw {
     type Settings = Settings;
@@ -72,6 +78,13 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         let general = self.general_settings;
+        let litellm = self.litellm_settings;
+        let configured_budget = litellm.max_budget.map(budget_number).transpose()?;
+        let budget = resolve_number(configured_budget, MAX_BUDGET_PATH, lookup, parse_money)?;
+        let use_redis = redis_transaction_buffer(&general.use_redis_transaction_buffer)?;
+        let dequeue_count = initial_dequeue_count(lookup.lookup(ENV_DEQUEUE_COUNT).as_deref())?;
+        let interval = partition_interval(lookup.lookup(ENV_PARTITION_INTERVAL).as_deref());
+        let ahead = initial_precreate_ahead(lookup.lookup(ENV_PRECREATE_AHEAD).as_deref())?;
         Ok(Settings {
             store_prompts_in_spend_logs: store_prompts(
                 &general.store_prompts_in_spend_logs,
@@ -82,30 +95,19 @@ impl Section for Raw {
             )?,
             missing_session_id: missing_session_id(&general.missing_session_id)?,
             spend_updates: spend_updates(&general.disable_spend_updates),
-            max_budget: resolve_number(
-                self.litellm_settings
-                    .max_budget
-                    .map(budget_number)
-                    .transpose()?,
-                MAX_BUDGET_PATH,
-                lookup,
-                parse_money,
-            )?
-            .unwrap_or(Decimal::ZERO),
+            max_budget: budget.unwrap_or(Decimal::ZERO),
             disable_end_user_cost_tracking: optional_flag(
-                &self.litellm_settings.disable_end_user_cost_tracking,
+                &litellm.disable_end_user_cost_tracking,
                 DISABLE_END_USER_PATH,
             )?,
             enable_prometheus_only: optional_flag(
-                &self.litellm_settings.enable_prometheus_only,
+                &litellm.enable_prometheus_only,
                 ENABLE_PROMETHEUS_PATH,
             )?,
-            use_redis_transaction_buffer: redis_transaction_buffer(
-                &general.use_redis_transaction_buffer,
-            )?,
-            max_redis_buffer_dequeue_count: initial_dequeue_count(
-                lookup.lookup(ENV_DEQUEUE_COUNT).as_deref(),
-            )?,
+            use_redis_transaction_buffer: use_redis,
+            max_redis_buffer_dequeue_count: dequeue_count,
+            partition_interval: interval,
+            precreate_ahead: ahead,
         })
     }
 }
@@ -225,6 +227,28 @@ fn optional_flag(configured: &JsonValue, path: &str) -> Result<Option<bool>, Con
             value: false,
         }),
     }
+}
+
+// an unrecognized SPEND_LOG_PARTITION_INTERVAL warns and uses day, as SpendLogsPartitionManager.__init__ does
+fn partition_interval(value: Option<&str>) -> PartitionInterval {
+    let Some(text) = value.filter(|text| !text.is_empty()) else {
+        return PartitionInterval::Day;
+    };
+    let Some(interval) = PartitionInterval::from_name(text) else {
+        tracing::warn!(
+            "Invalid SPEND_LOG_PARTITION_INTERVAL {text:?}, falling back to 'day'; supported values are day, week and month"
+        );
+        return PartitionInterval::Day;
+    };
+    interval
+}
+
+fn initial_precreate_ahead(value: Option<&str>) -> Result<i64, ConfigError> {
+    value.map_or(Ok(DEFAULT_PRECREATE_AHEAD), |text| {
+        let ahead = betterlite_env::number::<i64>(ENV_PRECREATE_AHEAD, text)
+            .map_err(|source| ConfigError::Environment { source })?;
+        Ok(ahead.unwrap_or(DEFAULT_PRECREATE_AHEAD))
+    })
 }
 
 fn budget_number(configured: JsonValue) -> Result<RawNumber, ConfigError> {

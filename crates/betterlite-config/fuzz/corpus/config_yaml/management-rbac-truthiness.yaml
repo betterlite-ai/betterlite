@@ -1,0 +1,5 @@
+general_settings:
+  disable_agents_for_internal_users: "false"
+  allow_agents_for_team_admins: 0
+  disable_vector_stores_for_internal_users: os.environ/VECTOR_STORES_OFF
+  allow_vector_stores_for_team_admins: [1]

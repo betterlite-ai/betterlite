@@ -35,6 +35,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "assistant_body"
+path = "fuzz_targets/assistant_body.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "key_header"
 path = "fuzz_targets/key_header.rs"
 test = false

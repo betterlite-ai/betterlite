@@ -1,0 +1,15 @@
+task: B3051
+deviations:
+  - what: When LITELLM_LICENSE is unset, betterlite still applies convert_priority_to_percent and computes the configured priority weight; it does not gate priority allocation behind the license check.
+    why: Betterlite has no paid tier, so priority allocation works without an enterprise license. LiteLLM (lines 131-138) only logs an error and keeps default_priority when the license is absent, and applies the reservation only in the else branch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L131-L138
+  - what: A priority reservation or priority_reservation_settings value that is not finite (nan or infinity) fails config loading with an error naming the field; LiteLLM reads it and divides by it at request time.
+    why: A nan weight makes every normalized weight and every reserved limit nan, so the pool silently stops limiting; failing at load names the bad key instead. docs/compatibility.md holds only for values of the declared type, and a non-finite float is a different failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/rate_limiter_utils.py#L139-L154
+  - what: A reserved limit that multiplies past i64 saturates at i64::MIN or i64::MAX; LiteLLM computes the product in Python, where int() raises OverflowError on an infinite float and the pre-call hook fails open.
+    why: Python integers have no bound and a float product that overflows becomes inf, so LiteLLM either raises or hands the limiter an unbounded int; betterlite clamps to the largest counter its i64 records can hold rather than overflow or panic.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L334-L339
+  - what: The model tracking descriptor multiplies rpm and tpm with saturating i64 arithmetic, so a limit past i64::MAX stops at i64::MAX instead of growing.
+    why: LiteLLM multiplies Python ints, which never overflow; betterlite keeps the descriptor in i64 and saturates so the counter keeps working instead of wrapping to a negative limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L375-L376
+kept_bugs: []

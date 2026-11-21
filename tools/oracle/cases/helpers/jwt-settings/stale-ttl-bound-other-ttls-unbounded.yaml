@@ -1,0 +1,12 @@
+kind: helper
+name: jwt-settings-stale-ttl-bound-other-ttls-unbounded
+call:
+  jwt_settings:
+    scenarios:
+      - {"settings": {"public_key_stale_ttl": 0}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"public_key_stale_ttl": 0.5, "public_key_ttl": -5, "oidc_userinfo_cache_ttl": 0, "virtual_key_mapping_cache_ttl": -1}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"public_key_stale_ttl": -1}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"public_key_stale_ttl": -0.25}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"public_key_ttl": "soon"}, "references": {}, "environment": {}, "issuers": []}
+env: {}
+compare: {ignore: []}

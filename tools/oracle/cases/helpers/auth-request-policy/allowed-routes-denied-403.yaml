@@ -1,0 +1,46 @@
+kind: helper
+name: auth-request-policy-allowed-routes-denied
+call:
+  auth_request_policy:
+    calls:
+      - function: pre_db
+        requests:
+          - allowed_ips: null
+            allowed_routes: [/v1/embeddings]
+            use_x_forwarded_for: false
+            route: /v1/chat/completions
+            forwarded_for: null
+            client_host: null
+            content_length: "2"
+            max_request_size_mb: null
+            body: {model: gpt-4o}
+          - allowed_ips: null
+            allowed_routes: [/v1/chat/completions, /v1/embeddings]
+            use_x_forwarded_for: false
+            route: /v1/chat/completions
+            forwarded_for: null
+            client_host: null
+            content_length: "2"
+            max_request_size_mb: null
+            body: {model: gpt-4o}
+          - allowed_ips: null
+            allowed_routes: []
+            use_x_forwarded_for: false
+            route: /v1/chat/completions
+            forwarded_for: null
+            client_host: null
+            content_length: "2"
+            max_request_size_mb: null
+            body: {model: gpt-4o}
+          - allowed_ips: null
+            allowed_routes: null
+            use_x_forwarded_for: false
+            route: /v1/chat/completions
+            forwarded_for: null
+            client_host: null
+            content_length: "2"
+            max_request_size_mb: null
+            body: {model: gpt-4o}
+env: {}
+compare:
+  ignore: []

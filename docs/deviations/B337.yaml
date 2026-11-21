@@ -1,0 +1,6 @@
+task: B337
+deviations:
+  - what: The cache-aware stamp writes tier_litellm_params with credential values masked, the same masking betterlite's classified routing decision applies, where LiteLLM copies the tier entry's litellm_params into the decision unmasked; response.litellm_params still carries the raw params, so the chosen model still receives its key.
+    why: A tier entry's litellm_params can carry an api_key, and the routing decision is copied into spend logs and response metadata, so writing it raw puts the operator's credential where every log reader can see it; betterlite already masks the same key on the classified decision, and no working setup depends on reading a secret back out of a decision record.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L4455
+kept_bugs: []

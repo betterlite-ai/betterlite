@@ -1,0 +1,41 @@
+kind: helper
+name: azure-realtime-client-beta-protocol
+call:
+  azure_realtime:
+    kind: protocol
+    model: realtime-a
+    scope_headers:
+      - [OpenAI-Beta, "realtime=v1"]
+    ssl_verification: enabled
+    max_message_size_bytes: 4096
+    azure_api_base: null
+    azure_api_key: null
+    azure_api_version: null
+    queries: []
+    protocols:
+      - {configured_protocol: null, query_params: null}
+      - {configured_protocol: "", query_params: null}
+      - {configured_protocol: "v2", query_params: null}
+      - {configured_protocol: null, query_params: {intent: "transcription"}}
+      - {configured_protocol: " ", query_params: null}
+      - {configured_protocol: "GA", query_params: {intent: "transcription"}}
+    failures: []
+    http_setups: []
+calls:
+  - azure_realtime:
+      kind: protocol
+      model: realtime-a
+      scope_headers: []
+      ssl_verification: enabled
+      max_message_size_bytes: 4096
+      azure_api_base: null
+      azure_api_key: null
+      azure_api_version: null
+      queries: []
+      protocols:
+        - {configured_protocol: null, query_params: null}
+        - {configured_protocol: "", query_params: {intent: "chat"}}
+      failures: []
+      http_setups: []
+env: {}
+compare: {ignore: []}

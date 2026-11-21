@@ -1,7 +1,7 @@
 id: B018
 title: Fallback management API and persistent configuration
-description: 'Serve POST /fallback and GET/DELETE /fallback/{model} using B309''s typed plans and B066''s
-  settings persistence. Reuse B003''s key auth middleware and B051''s existing schema; no new schema or table is
+description: 'Serve POST /fallback and GET/DELETE /fallback/{model} using B309''s typed plans and B725''s
+  ConfigRepository (betterlite-db resource_repository::config) for the router_settings upsert. Reuse B003''s key auth middleware and B051''s existing schema; no new schema or table is
   needed. Persist before publishing the new immutable router snapshot, and retain the old snapshot when
   the write fails. Use B300 scenarios for create/read/replace/delete sequences and B301 adapters with
   a typed repository fixture when database setup is not expressible as an HTTP case. Keep the three fallback
@@ -120,7 +120,7 @@ pitfalls:
 - A write requires STORE_MODEL_IN_DB and a database; an in-memory-only API would not match the pin.
 - Do not assume every error uses the inference error envelope; management detail bodies have their own
   cases.
-- Scope is limited to server adapters over the B051/B066 repository interfaces.
+- Scope is limited to server adapters over the B051/B725 repository interfaces.
 - Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
   a hard request error.
 - The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
