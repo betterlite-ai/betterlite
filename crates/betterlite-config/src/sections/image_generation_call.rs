@@ -83,36 +83,47 @@ impl Section for Raw {
                 "litellm_settings.azure_key",
                 lookup,
             )?,
-            // get_secret_str answers the raw string, and a later `or` treats an empty one as unset
-            azure_api_type: lookup
-                .lookup("AZURE_API_TYPE")
-                .filter(|value| !value.is_empty())
-                .unwrap_or_else(|| DEFAULT_AZURE_API_TYPE.to_owned()),
-            azure_api_base: lookup
-                .lookup("AZURE_API_BASE")
-                .filter(|value| !value.is_empty()),
-            azure_api_version: lookup
-                .lookup("AZURE_API_VERSION")
-                .filter(|value| !value.is_empty()),
-            azure_openai_api_key: lookup
-                .lookup("AZURE_OPENAI_API_KEY")
-                .filter(|value| !value.is_empty())
-                .map(SecretString::from),
-            azure_api_key: lookup
-                .lookup("AZURE_API_KEY")
-                .filter(|value| !value.is_empty())
-                .map(SecretString::from),
-            azure_ad_token: lookup
-                .lookup("AZURE_AD_TOKEN")
-                .filter(|value| !value.is_empty())
-                .map(SecretString::from),
-            azure_ai_api_base: lookup
-                .lookup("AZURE_AI_API_BASE")
-                .filter(|value| !value.is_empty()),
-            azure_ai_api_key: lookup
-                .lookup("AZURE_AI_API_KEY")
-                .filter(|value| !value.is_empty())
-                .map(SecretString::from),
+            ..azure_environment(lookup)
         })
+    }
+}
+
+// the Azure environment variables the fallback chains read; an empty one counts as unset
+fn azure_environment<L>(lookup: &L) -> Settings
+where
+    L: EnvironmentLookup,
+{
+    Settings {
+        // get_secret_str answers the raw string, and a later `or` treats an empty one as unset
+        azure_api_type: lookup
+            .lookup("AZURE_API_TYPE")
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| DEFAULT_AZURE_API_TYPE.to_owned()),
+        azure_api_base: lookup
+            .lookup("AZURE_API_BASE")
+            .filter(|value| !value.is_empty()),
+        azure_api_version: lookup
+            .lookup("AZURE_API_VERSION")
+            .filter(|value| !value.is_empty()),
+        azure_openai_api_key: lookup
+            .lookup("AZURE_OPENAI_API_KEY")
+            .filter(|value| !value.is_empty())
+            .map(SecretString::from),
+        azure_api_key: lookup
+            .lookup("AZURE_API_KEY")
+            .filter(|value| !value.is_empty())
+            .map(SecretString::from),
+        azure_ad_token: lookup
+            .lookup("AZURE_AD_TOKEN")
+            .filter(|value| !value.is_empty())
+            .map(SecretString::from),
+        azure_ai_api_base: lookup
+            .lookup("AZURE_AI_API_BASE")
+            .filter(|value| !value.is_empty()),
+        azure_ai_api_key: lookup
+            .lookup("AZURE_AI_API_KEY")
+            .filter(|value| !value.is_empty())
+            .map(SecretString::from),
+        ..Settings::default()
     }
 }

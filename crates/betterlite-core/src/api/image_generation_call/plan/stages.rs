@@ -58,8 +58,29 @@ where
             ),
         )
     })?;
-    // `if model is not None or custom_llm_provider is not None: get_llm_provider(...)` else dall-e-2 on openai
-    let resolved = if call.model.is_some() || call.custom_llm_provider.is_some() {
+    let resolved = resolve_model(identity, redactor, call)?;
+    let provider_slug = resolved.provider.slug().to_owned();
+    Ok(PreparedCall {
+        model: resolved.model,
+        provider: resolved.provider,
+        provider_slug,
+        api_base: resolved.api_base,
+        api_key: resolved.api_key,
+        timeout,
+        generic,
+    })
+}
+
+// `if model is not None or custom_llm_provider is not None: get_llm_provider(...)` else dall-e-2 on openai
+fn resolve_model<Identity>(
+    identity: &Identity,
+    redactor: &Redactor,
+    call: &ImageGenerationCall,
+) -> Result<ResolvedImageModel, ImageGenerationException>
+where
+    Identity: ImageIdentity,
+{
+    if call.model.is_some() || call.custom_llm_provider.is_some() {
         identity
             .resolve(&ImageResolutionRequest {
                 model: call.model.as_deref(),
@@ -72,25 +93,15 @@ where
                     redactor,
                     resolution_failure(&error.to_string(), call.model.as_deref()),
                 )
-            })?
+            })
     } else {
-        ResolvedImageModel {
+        Ok(ResolvedImageModel {
             model: Some(DEFAULT_MODEL.to_owned()),
             provider: ProviderIdentity::Known(ProviderId::Openai),
             api_base: call.api_base.clone(),
             api_key: call.api_key.clone(),
-        }
-    };
-    let provider_slug = resolved.provider.slug().to_owned();
-    Ok(PreparedCall {
-        model: resolved.model,
-        provider: resolved.provider,
-        provider_slug,
-        api_base: resolved.api_base,
-        api_key: resolved.api_key,
-        timeout,
-        generic,
-    })
+        })
+    }
 }
 
 pub(super) fn map_options<Identity, Operations>(

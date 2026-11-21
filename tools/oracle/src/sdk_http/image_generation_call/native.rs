@@ -2,12 +2,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use betterlite_config::loader::ConfigLoader;
+use betterlite_config::sections::image_generation_call::Settings;
 use betterlite_core::api::image_generation_call::call::{DEFAULT_TIMEOUT, ImageGenerationCall};
 use betterlite_core::api::image_generation_call::error::ImageGenerationException;
 use betterlite_core::api::image_generation_call::operations::CustomProviderSlot;
 use betterlite_core::api::image_generation_call::plan::{
     CatalogIdentity, ImageGenerationAnswer, ImageGenerationPlan, image_generation,
 };
+use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::catalog::BundledCatalog;
 use betterlite_models::decisions::Json;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
@@ -32,28 +34,13 @@ pub(super) async fn execute(
     env: &BTreeMap<String, String>,
 ) -> Result<SdkResult, SdkHttpError> {
     let environment = substituted(env, api_base);
-    let document = settings_document(call, api_base)?;
-    let config = ConfigLoader {
-        lookup: environment.clone(),
-    }
-    .load(&document)
-    .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?;
-    let settings = config.sections.image_generation_call.clone();
+    let settings = load_settings(call, api_base, &environment)?;
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(SdkHttpError::Redactor)?;
     let source = outbound_client(&environment)?;
     let catalog = BundledCatalog::default().get();
     let known_model_names = BTreeSet::new();
     let custom_providers: BTreeSet<String> = call.custom_providers.iter().cloned().collect();
-    let slots: Vec<CustomProviderSlot> = call
-        .custom_providers
-        .iter()
-        .map(|provider| CustomProviderSlot {
-            provider: provider.clone(),
-            handler: Some(Arc::new(CustomImage {
-                source: source.clone(),
-            })),
-        })
-        .collect();
+    let slots = custom_slots(&call.custom_providers, &source);
     let resolution = ResolutionContext {
         catalog: &catalog,
         known_model_names: &known_model_names,
@@ -79,10 +66,23 @@ pub(super) async fn execute(
         redactor: &redactor,
     };
     let mut state = logging_state(&redactor)?;
-    let answer = image_generation(&plan, core_call(call, api_base)?, &mut state).await;
+    let answer = image_generation(&plan, core_call(call, api_base), &mut state).await;
     Ok(SdkResult::ImageGenerationCall {
         value: Box::new(to_outcome(answer)?),
     })
+}
+
+// every custom provider the case registers answers through the same mock-bound handler
+fn custom_slots(providers: &[String], source: &ProxiedClient) -> Vec<CustomProviderSlot> {
+    providers
+        .iter()
+        .map(|provider| CustomProviderSlot {
+            provider: provider.clone(),
+            handler: Some(Arc::new(CustomImage {
+                source: source.clone(),
+            })),
+        })
+        .collect()
 }
 
 fn substituted(env: &BTreeMap<String, String>, api_base: &str) -> BTreeMap<String, String> {
@@ -91,13 +91,46 @@ fn substituted(env: &BTreeMap<String, String>, api_base: &str) -> BTreeMap<Strin
         .collect()
 }
 
-fn settings_document(call: &Call, api_base: &str) -> Result<String, SdkHttpError> {
-    let settings =
+// the case's litellm module globals, read through the same config section the proxy loads
+fn load_settings(
+    call: &Call,
+    api_base: &str,
+    environment: &BTreeMap<String, String>,
+) -> Result<Settings, SdkHttpError> {
+    let litellm_settings =
         serde_json::to_string(&call.litellm_settings).map_err(SdkHttpError::Serialize)?;
-    Ok(format!("{{\"litellm_settings\":{settings}}}").replace(MOCK, api_base))
+    let document = format!("{{\"litellm_settings\":{litellm_settings}}}").replace(MOCK, api_base);
+    let config = ConfigLoader {
+        lookup: environment.clone(),
+    }
+    .load(&document)
+    .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?;
+    Ok(config.sections.image_generation_call.clone())
 }
 
-fn core_call(call: &Call, api_base: &str) -> Result<ImageGenerationCall, SdkHttpError> {
+fn core_call(call: &Call, api_base: &str) -> ImageGenerationCall {
+    ImageGenerationCall {
+        model: call.model.clone(),
+        prompt: call.prompt.clone(),
+        n: call.n,
+        quality: call.quality.clone(),
+        response_format: call.response_format.clone(),
+        size: call.size.clone(),
+        style: call.style.clone(),
+        user: call.user.clone(),
+        timeout: call.timeout.unwrap_or(DEFAULT_TIMEOUT),
+        api_key: call.api_key.clone().map(SecretString::from),
+        api_base: Some(api_base.to_owned()),
+        api_version: call.api_version.clone(),
+        custom_llm_provider: call.custom_llm_provider.clone(),
+        client_kind: None,
+        now_seconds: 0,
+        kwargs: call_kwargs(call),
+    }
+}
+
+// the kwargs the Python side passes only when the case sets them
+fn call_kwargs(call: &Call) -> IndexMap<String, Json> {
     let mut kwargs = IndexMap::new();
     if !call.headers.is_empty() {
         kwargs.insert(String::from("headers"), headers_json(&call.headers));
@@ -123,24 +156,7 @@ fn core_call(call: &Call, api_base: &str) -> Result<ImageGenerationCall, SdkHttp
     if call.aimg_generation {
         kwargs.insert(String::from("aimg_generation"), Json::Bool(true));
     }
-    Ok(ImageGenerationCall {
-        model: call.model.clone(),
-        prompt: call.prompt.clone(),
-        n: call.n,
-        quality: call.quality.clone(),
-        response_format: call.response_format.clone(),
-        size: call.size.clone(),
-        style: call.style.clone(),
-        user: call.user.clone(),
-        timeout: call.timeout.unwrap_or(DEFAULT_TIMEOUT),
-        api_key: call.api_key.clone().map(SecretString::from),
-        api_base: Some(api_base.to_owned()),
-        api_version: call.api_version.clone(),
-        custom_llm_provider: call.custom_llm_provider.clone(),
-        client_kind: None,
-        now_seconds: 0,
-        kwargs,
-    })
+    kwargs
 }
 
 fn headers_json(headers: &BTreeMap<String, String>) -> Json {

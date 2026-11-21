@@ -13,23 +13,7 @@ pub(in crate::sdk_http::image_generation_call) async fn send(
     client: &ProxiedClient,
 ) -> Result<BranchAnswer, Box<RawException>> {
     let resolved_model = request.model.unwrap_or_default();
-    let api_base = match request.litellm_params.get("api_base") {
-        Some(Json::Text(text)) => text.clone(),
-        None | Some(Json::Null) => {
-            return Err(plain(
-                "No api_base provided for the image generation request",
-                resolved_model,
-                request.provider,
-            ));
-        }
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            return Err(plain(
-                "api_base must be a string",
-                resolved_model,
-                request.provider,
-            ));
-        }
-    };
+    let api_base = generic_api_base(&request, resolved_model)?;
     let Some(key) = request.api_key else {
         return Err(plain(
             &format!("{}_API_KEY is not set", request.provider.to_uppercase()),
@@ -60,4 +44,24 @@ pub(in crate::sdk_http::image_generation_call) async fn send(
         },
     )
     .await
+}
+
+// the api_base the generic branch put in litellm_params, which must be a string
+fn generic_api_base(
+    request: &GenericRequest<'_>,
+    resolved_model: &str,
+) -> Result<String, Box<RawException>> {
+    match request.litellm_params.get("api_base") {
+        Some(Json::Text(text)) => Ok(text.clone()),
+        None | Some(Json::Null) => Err(plain(
+            "No api_base provided for the image generation request",
+            resolved_model,
+            request.provider,
+        )),
+        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => Err(plain(
+            "api_base must be a string",
+            resolved_model,
+            request.provider,
+        )),
+    }
 }
