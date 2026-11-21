@@ -46,15 +46,15 @@ impl LegacyAdmission {
         self.handler
             .print_verbose("Inside Max Parallel Request Pre-Call Hook");
         let facts = AdmissionFacts::read(principal);
-        let cap = request.metadata.get(GLOBAL_KEY).and_then(JsonValue::as_i64);
-        if let Some(cap) = cap {
-            checks::global(&self.handler, cap, request.model.as_deref()).await?;
+        let global_cap = request.metadata.get(GLOBAL_KEY).and_then(JsonValue::as_i64);
+        if let Some(limit) = global_cap {
+            checks::global(&self.handler, limit, request.model.as_deref()).await?;
         }
         let minute = self.handler.precise_minute();
         let ids = counter_ids(&facts, request.model.as_deref(), &minute);
         let objects = self
             .handler
-            .get_all_cache_objects(ids.read_keys(cap.is_some()), None)
+            .get_all_cache_objects(ids.read_keys(global_cap.is_some()), None)
             .await;
         let mut call = Call {
             principal,

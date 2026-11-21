@@ -881,7 +881,9 @@ async fn order_accumulates_every_pair_into_the_final_write() {
     assert!(
         sets[..6]
             .iter()
-            .all(|(_, ttl, local_only)| *ttl == 60 && *local_only),
+            .all(|(_, written_ttl, written_local_only)| {
+                *written_ttl == 60 && *written_local_only
+            }),
         "every check writes the accumulated list locally under ttl 60"
     );
 }

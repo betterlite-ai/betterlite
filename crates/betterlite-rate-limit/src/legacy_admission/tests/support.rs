@@ -325,7 +325,11 @@ pub(crate) fn rejection(result: Result<(), LegacyAdmissionError>) -> ProxyRateLi
 pub(crate) fn detail_text(error: &ProxyRateLimitError) -> String {
     match &error.detail {
         Payload::String(text) => text.clone(),
-        other => panic!("expected a string detail, got {other:?}"),
+        other @ Payload::Null
+        | other @ Payload::Bool(_)
+        | other @ Payload::Number(_)
+        | other @ Payload::Array(_)
+        | other @ Payload::Object(_) => panic!("expected a string detail, got {other:?}"),
     }
 }
 

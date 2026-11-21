@@ -124,10 +124,9 @@ fn requested_limits(call: &Call<'_>) -> Option<(Option<i64>, Option<i64>)> {
 // Python's `if map:` then `map.get(model)`: a missing model or map entry is unlimited
 #[must_use]
 fn limit_for(limits: Option<&ModelLimits>, model: Option<&str>) -> Option<i64> {
-    let model = model?;
-    limits
-        .filter(|limits| !limits.is_empty())
-        .and_then(|limits| limits.get(model).copied())
+    let requested_model = model?;
+    let per_model = limits.filter(|entries| !entries.is_empty())?;
+    per_model.get(requested_model).copied()
 }
 
 // Python's `limit or sys.maxsize`: an absent or zero per-model limit is unlimited
@@ -142,8 +141,8 @@ const fn enforced(limit: Option<i64>) -> i64 {
 // the remaining-limit math uses is-not-None, so a zero limit still yields `0 - current`
 #[must_use]
 fn remaining(limit: Option<i64>, current: i64) -> JsonValue {
-    limit.map_or(JsonValue::Null, |limit| {
-        JsonValue::from(limit.saturating_sub(current))
+    limit.map_or(JsonValue::Null, |configured| {
+        JsonValue::from(configured.saturating_sub(current))
     })
 }
 
@@ -206,7 +205,7 @@ pub(super) fn key_dimension(call: &Call<'_>) -> Option<Dimension> {
 }
 
 // steps 7-9 carry no parallel cap: only the scope's own tpm and rpm are enforced
-fn uncapped(tpm_limit: i64, rpm_limit: i64) -> DimensionLimits {
+const fn uncapped(tpm_limit: i64, rpm_limit: i64) -> DimensionLimits {
     DimensionLimits {
         max_parallel_requests: UNLIMITED,
         tpm_limit,

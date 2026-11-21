@@ -137,7 +137,9 @@ pub(super) fn counter_ids(facts: &AdmissionFacts, model: Option<&str>, minute: &
             .api_key
             .as_ref()
             .zip(model)
-            .map(|(api_key, model)| format!("{api_key}::{model}::{minute}::request_count")),
+            .map(|(api_key, model_name)| {
+                format!("{api_key}::{model_name}::{minute}::request_count")
+            }),
         key_model_text: format!("{api_key_text}::{model_text}::{minute}::request_count"),
         user: facts
             .user_id
