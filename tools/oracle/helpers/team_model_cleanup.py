@@ -220,7 +220,7 @@ def deployment_answer(call: TeamDeploymentsCall | TeamPublicNamesCall) -> JsonVa
                 prisma_client=client,
             )
         )
-        report: dict[str, JsonValue] = {"names": sorted(names)}
+        report: dict[str, list[str]] = {"names": sorted(names)}
     else:
         rows = asyncio.run(
             model_management_endpoints._get_team_deployments(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L1734-L1766
