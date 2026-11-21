@@ -1,0 +1,10 @@
+kind: helper
+name: azure_chat_call-completion-seed
+call:
+  azure_chat_call:
+    function: completion
+    cases:
+      - {model: gpt-4o-deployment, messages: [{role: user, content: hi}], api_key: key}
+      - {model: null, messages: null, api_key: null, optional_params: {max_retries: two}}
+env: {}
+compare: {ignore: []}

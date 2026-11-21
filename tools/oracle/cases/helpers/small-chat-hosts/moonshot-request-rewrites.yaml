@@ -1,0 +1,107 @@
+kind: helper
+name: small-chat-hosts-moonshot-request-rewrites
+call:
+  b6410:
+    supported: []
+    params: []
+    moonshot_urls: []
+    moonshot_requests:
+      - model: moonshot/moonshot-v1-8k
+        reasoning: false
+        messages:
+          - {role: user, content: hi}
+        optional_params: {tool_choice: required}
+      - model: moonshot/moonshot-v1-8k
+        reasoning: false
+        messages:
+          - {role: user, content: look it up}
+        optional_params:
+          tool_choice: required
+          tools:
+            - type: function
+              function:
+                name: lookup
+                description: Find a record
+                parameters: {type: object, properties: {q: {type: string}}}
+      - model: moonshot/moonshot-v1-8k
+        reasoning: false
+        messages:
+          - {role: user, content: hi}
+        optional_params: {tool_choice: auto}
+      - model: moonshot/moonshot-v1-8k
+        reasoning: false
+        messages:
+          - {role: user, content: look it up}
+        optional_params:
+          tool_choice: {type: function, function: {name: lookup}}
+          tools:
+            - {type: function, function: {name: lookup}}
+      - model: moonshot/kimi-k2.5
+        reasoning: true
+        messages:
+          - role: assistant
+            content: ""
+            tool_calls:
+              - {id: call-1, type: function, function: {name: lookup, arguments: "{}"}}
+            provider_specific_fields: {reasoning_content: stored, kept: true}
+        optional_params: {}
+      - model: moonshot/kimi-k2.5
+        reasoning: true
+        messages:
+          - role: assistant
+            content: ""
+            tool_calls:
+              - {id: call-1, type: function, function: {name: lookup, arguments: "{}"}}
+        optional_params: {}
+      - model: moonshot/kimi-k2.5
+        reasoning: true
+        messages:
+          - role: assistant
+            content: ""
+            tool_calls:
+              - {id: call-1, type: function, function: {name: lookup, arguments: "{}"}}
+            reasoning_content: given
+            provider_specific_fields: {reasoning_content: other, kept: true}
+        optional_params: {}
+      - model: moonshot/moonshot-v1-8k
+        reasoning: false
+        messages:
+          - role: assistant
+            content: ""
+            tool_calls:
+              - {id: call-1, type: function, function: {name: lookup, arguments: "{}"}}
+            provider_specific_fields: {reasoning_content: stored}
+        optional_params: {}
+      - model: moonshot/kimi-k2.5
+        reasoning: true
+        messages:
+          - role: assistant
+            content: ""
+            tool_calls:
+              - {id: call-1, type: function, function: {name: lookup, arguments: "{}"}}
+            reasoning_content: ""
+            provider_specific_fields: {reasoning_content: stored, kept: true}
+        optional_params: {}
+      - model: moonshot/kimi-k2.5
+        reasoning: true
+        messages:
+          - role: assistant
+            content: ""
+            tool_calls:
+              - {id: call-1, type: function, function: {name: lookup, arguments: "{}"}}
+            reasoning_content: ""
+            provider_specific_fields: {reasoning_content: ""}
+        optional_params: {}
+      - model: moonshot/kimi-k2.5
+        reasoning: true
+        messages:
+          - role: assistant
+            content: ""
+            tool_calls: []
+        optional_params: {}
+    nadir_cost: []
+    novita_headers: []
+    zai_cache: []
+    maritalk_errors: []
+env: {}
+compare: {ignore: []}

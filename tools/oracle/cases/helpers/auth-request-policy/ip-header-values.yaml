@@ -1,0 +1,16 @@
+kind: helper
+name: auth-request-policy-ip-header-values
+call:
+  auth_request_policy:
+    calls:
+      - function: ip
+        requests:
+          - {forwarded_for: "10.0.0.1, 203.0.113.7", client_host: 10.0.0.9, use_x_forwarded_for: true, allowed_ips: ["10.0.0.1, 203.0.113.7"]}
+          - {forwarded_for: " 10.0.0.1 ", client_host: 10.0.0.9, use_x_forwarded_for: true, allowed_ips: ["10.0.0.1"]}
+          - {forwarded_for: "", client_host: 10.0.0.9, use_x_forwarded_for: true, allowed_ips: [""]}
+          - {forwarded_for: 203.0.113.7, client_host: 10.0.0.9, use_x_forwarded_for: false, allowed_ips: [10.0.0.9]}
+          - {forwarded_for: 203.0.113.7, client_host: null, use_x_forwarded_for: false, allowed_ips: [""]}
+          - {forwarded_for: null, client_host: null, use_x_forwarded_for: true, allowed_ips: null}
+env: {}
+compare:
+  ignore: []

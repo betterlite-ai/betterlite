@@ -1,0 +1,8 @@
+kind: helper
+name: provider_attribution-map-concurrent-type
+call:
+  b3030:
+    function: map_type
+    value: max_parallel_requests
+env: {}
+compare: {ignore: []}

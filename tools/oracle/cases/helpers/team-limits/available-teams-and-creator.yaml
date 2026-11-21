@@ -1,0 +1,64 @@
+kind: helper
+name: available_teams_and_creator
+call:
+  team_limits:
+    function: available_team
+    team_id: "team-a"
+    available_teams: ["team-a", "team-b"]
+    user_id: "u1"
+    user_role: internal_user
+calls:
+  - team_limits:
+      function: available_team
+      team_id: "team-c"
+      available_teams: ["team-a", "team-b"]
+      user_id: "u1"
+      user_role: internal_user
+  - team_limits:
+      function: available_team
+      team_id: "team-a"
+      available_teams: null
+      user_id: "u1"
+      user_role: internal_user
+  - team_limits:
+      function: available_team
+      team_id: "team-a"
+      available_teams: []
+      user_id: "u1"
+      user_role: internal_user
+  - team_limits:
+      function: available_team
+      team_id: "team-a"
+      available_teams: ["team-a"]
+      user_id: "u1"
+      user_role: proxy_admin
+  - team_limits:
+      function: available_team
+      team_id: "team-a"
+      available_teams: ["team-a"]
+      user_id: null
+      user_role: internal_user
+  - team_limits:
+      function: available_team
+      team_id: ""
+      available_teams: [""]
+      user_id: ""
+      user_role: internal_user
+  - team_limits:
+      function: available_team
+      team_id: "team-a"
+      available_teams: ["team-b"]
+      user_id: ""
+      user_role: internal_user
+  - team_limits:
+      function: creator_auto_add
+      user_id: "u1"
+      user_role: internal_user
+      disable: true
+  - team_limits:
+      function: creator_auto_add
+      user_id: ""
+      user_role: proxy_admin
+      disable: true
+env: {}
+compare: {ignore: []}

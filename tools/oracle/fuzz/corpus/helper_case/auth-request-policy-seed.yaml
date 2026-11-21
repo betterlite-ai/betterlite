@@ -1,0 +1,27 @@
+kind: helper
+name: auth_request_policy_seed
+call:
+  auth_request_policy:
+    calls:
+      - function: bytes_to_mb
+        values: [0, 1048576, 1048577]
+      - function: ip
+        requests:
+          - {forwarded_for: 203.0.113.9, client_host: 10.0.0.1, use_x_forwarded_for: true, allowed_ips: [203.0.113.9]}
+      - function: classify
+        rows:
+          - {kind: proxy, code: "401", status_code: 401, marker: exact_true, message: Invalid proxy server token passed.}
+      - function: pre_db
+        requests:
+          - allowed_ips: [10.0.0.1]
+            allowed_routes: null
+            use_x_forwarded_for: true
+            route: /v1/chat/completions
+            forwarded_for: 203.0.113.9
+            client_host: null
+            content_length: "2"
+            max_request_size_mb: null
+            body: {model: seed-model}
+env: {}
+compare:
+  ignore: []

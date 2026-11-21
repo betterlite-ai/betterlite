@@ -1,0 +1,8 @@
+kind: helper
+name: health-persistence-response-time-seed
+call:
+  b7640:
+    function: response_time
+    values: [1.5, null, "nan", "-inf"]
+env: {}
+compare: {ignore: []}
