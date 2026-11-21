@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_models::decisions::Json;
+use rstest::rstest;
 
 use crate::loader::{ConfigError, ConfigLoader};
 use crate::sections::assistant_settings::{Config, Settings};
@@ -26,30 +27,26 @@ fn params(settings: Settings) -> BTreeMap<String, Json> {
         .expect("the parameters are configured")
 }
 
-#[test]
-fn loads_assistant_settings() {
-    for source in [
-        "model_list: []",
-        "assistant_settings:",
-        "assistant_settings: null",
-        "assistant_settings: {}",
-    ] {
-        let loaded = settings(source, &[]).expect("an unconfigured assistant loads");
+#[rstest]
+#[case::absent("model_list: []", None)]
+#[case::blank("assistant_settings:", None)]
+#[case::null("assistant_settings: null", None)]
+#[case::empty("assistant_settings: {}", None)]
+#[case::configured(
+    "assistant_settings:\n  custom_llm_provider: openai\n  litellm_params:\n    api_key: sk-config\n    model: gpt-4o-mini\n",
+    Some(("openai", "sk-config", "gpt-4o-mini"))
+)]
+fn loads_assistant_settings(#[case] source: &str, #[case] expected: Option<(&str, &str, &str)>) {
+    let loaded = settings(source, &[]).expect("the source loads");
+    let Some((provider, api_key, model)) = expected else {
         assert_eq!(loaded, Settings::default(), "{source}");
-    }
-    let source = "assistant_settings:\n  custom_llm_provider: openai\n  litellm_params:\n    api_key: sk-config\n    model: gpt-4o-mini\n";
-    let loaded = settings(source, &[]).expect("a configured assistant loads");
+        return;
+    };
     let config: Config = loaded.config.expect("the assistant is configured");
-    assert_eq!(config.custom_llm_provider.as_deref(), Some("openai"));
+    assert_eq!(config.custom_llm_provider.as_deref(), Some(provider));
     let params = config.litellm_params.expect("the parameters are loaded");
-    assert_eq!(
-        params.get("api_key"),
-        Some(&Json::Text("sk-config".to_owned()))
-    );
-    assert_eq!(
-        params.get("model"),
-        Some(&Json::Text("gpt-4o-mini".to_owned()))
-    );
+    assert_eq!(params.get("api_key"), Some(&Json::Text(api_key.to_owned())));
+    assert_eq!(params.get("model"), Some(&Json::Text(model.to_owned())));
 }
 
 #[test]

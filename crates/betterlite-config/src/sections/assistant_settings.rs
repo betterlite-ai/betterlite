@@ -3,8 +3,8 @@ mod tests;
 use std::collections::BTreeMap;
 
 use betterlite_models::decisions::Json;
-use serde::de;
-use serde::{Deserialize, Deserializer};
+use serde::Deserialize;
+use thiserror::Error;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
@@ -18,75 +18,47 @@ pub struct Raw {
     pub assistant_settings: Option<RawSettings>,
 }
 
-// AssistantsTypedDict is a runtime dict, so the loader keeps the parameters as written and checks only
-// the two keys the startup block itself reads.
-#[derive(Debug, Default)]
+// AssistantsTypedDict is a runtime dict, so the loader keeps the parameters as written and checks only the two keys startup reads.
+#[derive(Debug, Default, Deserialize)]
+#[serde(try_from = "Fields")]
 pub struct RawSettings {
-    custom_llm_provider: Setting<String>,
+    custom_llm_provider: Option<String>,
     litellm_params: Option<BTreeMap<String, Json>>,
 }
+
+// a provider's three YAML states: absent (None), present with null (Some(None)), present with a value
+type OptionalProvider = Option<Option<String>>;
 
 #[derive(Deserialize)]
 struct Fields {
-    #[serde(default)]
-    custom_llm_provider: Setting<String>,
+    #[serde(default, with = "serde_with::rust::double_option")]
+    custom_llm_provider: OptionalProvider,
     #[serde(default)]
     litellm_params: Option<BTreeMap<String, Json>>,
 }
 
-impl<'de> Deserialize<'de> for RawSettings {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let fields = Fields::deserialize(deserializer)?;
+// the one key the startup block reads once the mapping is nonempty
+#[derive(Debug, Error)]
+#[error("missing field `litellm_params`")]
+struct MissingParams;
+
+impl TryFrom<Fields> for RawSettings {
+    type Error = MissingParams;
+
+    fn try_from(fields: Fields) -> Result<Self, Self::Error> {
+        let custom_llm_provider = fields.custom_llm_provider;
         // `if assistant_settings:` is false for an empty mapping, so it configures no assistant at all
-        if fields.custom_llm_provider.is_absent() && fields.litellm_params.is_none() {
+        if custom_llm_provider.is_none() && fields.litellm_params.is_none() {
             return Ok(Self::default());
         }
         // once the mapping is nonempty, startup reads assistant_settings["litellm_params"]
         let Some(litellm_params) = fields.litellm_params else {
-            return Err(de::Error::missing_field("litellm_params"));
+            return Err(MissingParams);
         };
         Ok(Self {
-            custom_llm_provider: fields.custom_llm_provider,
+            custom_llm_provider: custom_llm_provider.flatten(),
             litellm_params: Some(litellm_params),
         })
-    }
-}
-
-// A field's three YAML states: absent, present with null, present with a value. Serde's Option already
-// folds null into absent, but the startup block tests the mapping, not the value, for emptiness.
-#[derive(Debug, Default)]
-enum Setting<T> {
-    #[default]
-    Absent,
-    Null,
-    Value(T),
-}
-
-impl<'de, T> Deserialize<'de> for Setting<T>
-where
-    T: Deserialize<'de>,
-{
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        Option::<T>::deserialize(deserializer).map_or(Self::Null, Self::Value)
-    }
-}
-
-impl<T> Setting<T> {
-    const fn is_absent(&self) -> bool {
-        matches!(self, Self::Absent)
-    }
-
-    fn into_option(self) -> Option<T> {
-        match self {
-            Self::Absent | Self::Null => None,
-            Self::Value(value) => Some(value),
-        }
     }
 }
 
@@ -121,24 +93,18 @@ impl Section for Raw {
         let Some(litellm_params) = litellm_params else {
             return Ok(Settings::default());
         };
-        let config = Config {
-            custom_llm_provider: custom_llm_provider.into_option(),
-            litellm_params: Some(expand(litellm_params, lookup)),
-        };
         Ok(Settings {
-            config: Some(config),
+            config: Some(Config {
+                custom_llm_provider,
+                litellm_params: Some(
+                    litellm_params
+                        .into_iter()
+                        .map(|(name, value)| (name, expand_value(value, lookup)))
+                        .collect(),
+                ),
+            }),
         })
     }
-}
-
-fn expand<L>(params: BTreeMap<String, Json>, lookup: &L) -> BTreeMap<String, Json>
-where
-    L: EnvironmentLookup,
-{
-    params
-        .into_iter()
-        .map(|(name, value)| (name, expand_value(value, lookup)))
-        .collect()
 }
 
 // only a top-level string is expanded; a missing variable becomes null and an empty one stays ""
