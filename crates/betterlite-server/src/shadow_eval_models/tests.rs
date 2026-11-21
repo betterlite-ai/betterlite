@@ -109,9 +109,9 @@ fn job(targets: Vec<ShadowLeg>) -> ShadowJob {
 )]
 fn shadow_eval_models_behaviors(#[case] job: ShadowJob, #[case] expected: ShadowEvalStatus) {
     let response = job.response(clock()).unwrap();
-    assert_eq!(response.status(), expected);
-    assert_eq!(response.router_name(), "router-a");
-    assert_eq!(response.job(), &job);
+    assert_eq!(response.status, expected);
+    assert_eq!(response.router_name, "router-a");
+    assert_eq!(response.job, job);
     let wire = serde_json::to_value(&response).unwrap();
     assert_eq!(wire["job_id"], "job-1");
     assert_eq!(wire["router_name"], "router-a");
@@ -229,16 +229,16 @@ fn shadow_eval_models_boundaries(
     assert_eq!(budget_spent, spent);
     match (job.response(now), expected) {
         (Ok(response), Ok(status)) => {
-            assert_eq!(response.status(), status);
-            assert_eq!(response.router_name(), "router-a");
-            assert_eq!(response.job(), &job);
+            assert_eq!(response.status, status);
+            assert_eq!(response.router_name, "router-a");
+            assert_eq!(response.job, job);
         }
         (Err(error), Err((wanted, message))) => {
             assert_eq!(error, wanted);
             assert_eq!(error.to_string(), message);
         }
         (Ok(response), Err((wanted, _))) => {
-            panic!("expected {wanted:?}, got {:?}", response.status())
+            panic!("expected {wanted:?}, got {:?}", response.status)
         }
         (Err(error), Ok(status)) => panic!("expected {status:?}, got {error}"),
     }

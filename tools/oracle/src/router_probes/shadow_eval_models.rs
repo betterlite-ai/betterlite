@@ -77,9 +77,9 @@ fn response(job: &Job) -> Result<Response, OperationError> {
         .response(Utc::now())
         .map_err(|error| invalid(&error.to_string()))?;
     Ok(Response {
-        job_id: built.job().job_id.clone(),
-        router_name: built.router_name().to_owned(),
-        status: built.status(),
+        job_id: built.job.job_id.clone(),
+        router_name: built.router_name.clone(),
+        status: built.status,
         budget_spent: model.targets.iter().map(ShadowLeg::budget_spent).collect(),
     })
 }

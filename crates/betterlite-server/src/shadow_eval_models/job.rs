@@ -88,24 +88,7 @@ const fn default_direction() -> ShadowEvalDirection {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct ShadowJobResponse {
     #[serde(flatten)]
-    job: ShadowJob,
-    router_name: String,
-    status: ShadowEvalStatus,
-}
-
-impl ShadowJobResponse {
-    #[must_use]
-    pub const fn job(&self) -> &ShadowJob {
-        &self.job
-    }
-
-    #[must_use]
-    pub fn router_name(&self) -> &str {
-        &self.router_name
-    }
-
-    #[must_use]
-    pub const fn status(&self) -> ShadowEvalStatus {
-        self.status
-    }
+    pub job: ShadowJob,
+    pub router_name: String,
+    pub status: ShadowEvalStatus,
 }
