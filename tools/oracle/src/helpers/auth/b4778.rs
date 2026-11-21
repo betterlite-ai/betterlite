@@ -13,9 +13,9 @@ use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::resource_rows::access_group::AccessGroupTable;
 use betterlite_models::decisions::Json;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use tokio::runtime::Builder;
+use tokio::runtime::{Builder, Runtime};
 
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
@@ -49,9 +49,20 @@ pub(crate) enum Input {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct GroupLists {
-    access_model_names: Vec<String>,
-    access_mcp_server_ids: Vec<String>,
-    access_agent_ids: Vec<String>,
+    #[serde(rename = "access_model_names")]
+    model_names: Vec<String>,
+    #[serde(rename = "access_mcp_server_ids")]
+    mcp_server_ids: Vec<String>,
+    #[serde(rename = "access_agent_ids")]
+    agent_ids: Vec<String>,
+}
+
+#[derive(Deserialize, Serialize)]
+struct StandInView {
+    user_id: Option<String>,
+    team_id: Option<String>,
+    agent_id: Option<String>,
+    models: Vec<JsonData>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -125,25 +136,10 @@ impl Helper for Op {
                     access_group_ids: agent_access_group_ids.as_slice(),
                     groups,
                 };
-                let resolver = AgentAccessGroups { reads };
-                let ceiling = runtime
-                    .block_on(resolver.resolve_agent_ceiling(agent_id, false))
-                    .or_value_error()?;
-                Ok(ceiling.as_ref().map_or(Value::Null, ceiling_view))
+                agent_ceiling(&runtime, reads)
             }
             Input::ManagedCeilings { access_group_ids } => {
-                let groups = BTreeMap::new();
-                let reads = CaseReads {
-                    database: false,
-                    agent_id: "",
-                    access_group_ids: &[],
-                    groups: &groups,
-                };
-                let resolver = AgentAccessGroups { reads };
-                let ceilings = runtime
-                    .block_on(resolver.resolve_managed_agent_ceilings(access_group_ids))
-                    .or_value_error()?;
-                Ok(Value::Array(ceilings.iter().map(ceiling_view).collect()))
+                managed_ceilings(&runtime, access_group_ids)
             }
             Input::CallerAuth {
                 agent_id,
@@ -165,14 +161,38 @@ impl Helper for Op {
     }
 }
 
+fn agent_ceiling(runtime: &Runtime, reads: CaseReads<'_>) -> HelperResult {
+    let agent_id = reads.agent_id;
+    let resolver = AgentAccessGroups { reads };
+    let ceiling = runtime
+        .block_on(resolver.resolve_agent_ceiling(agent_id, false))
+        .or_value_error()?;
+    Ok(ceiling.as_ref().map_or(Value::Null, ceiling_view))
+}
+
+fn managed_ceilings(runtime: &Runtime, access_group_ids: &[String]) -> HelperResult {
+    let groups = BTreeMap::new();
+    let reads = CaseReads {
+        database: false,
+        agent_id: "",
+        access_group_ids: &[],
+        groups: &groups,
+    };
+    let resolver = AgentAccessGroups { reads };
+    let ceilings = runtime
+        .block_on(resolver.resolve_managed_agent_ceilings(access_group_ids))
+        .or_value_error()?;
+    Ok(Value::Array(ceilings.iter().map(ceiling_view).collect()))
+}
+
 fn group_row(access_group_id: &str, lists: GroupLists) -> AccessGroupTable {
     AccessGroupTable {
         access_group_id: access_group_id.to_owned(),
         access_group_name: access_group_id.to_owned(),
         description: None,
-        access_model_names: lists.access_model_names,
-        access_mcp_server_ids: lists.access_mcp_server_ids,
-        access_agent_ids: lists.access_agent_ids,
+        access_model_names: lists.model_names,
+        access_mcp_server_ids: lists.mcp_server_ids,
+        access_agent_ids: lists.agent_ids,
         assigned_team_ids: Vec::new(),
         assigned_key_ids: Vec::new(),
         created_at: None,
@@ -217,12 +237,8 @@ fn caller_auth(
         return Ok(Value::Null);
     };
     let dumped = serde_json::to_value(&stand_in).or_value_error()?;
-    Ok(json!({
-        "user_id": dumped["user_id"],
-        "team_id": dumped["team_id"],
-        "agent_id": dumped["agent_id"],
-        "models": dumped["models"],
-    }))
+    let view: StandInView = serde_json::from_value(dumped).or_value_error()?;
+    serde_json::to_value(view).or_value_error()
 }
 
 fn intersect_access(config_agents: &[Json], key_access: &Side, team_access: &Side) -> HelperResult {

@@ -18,7 +18,7 @@ use crate::auth_team_lookup::error::{TeamFailure, TeamLookupError};
 
 #[derive(Clone)]
 enum Stored {
-    Row(AccessGroupTable),
+    Row(Box<AccessGroupTable>),
     Missing,
     PolicyDown,
     Plain,
@@ -51,7 +51,7 @@ impl AccessGroupReads for FakeReads {
             .push((access_group_id.to_owned(), check_db_only));
         let id = access_group_id.to_owned();
         ready(match self.groups.get(access_group_id).cloned() {
-            Some(Stored::Row(table)) => Ok(table),
+            Some(Stored::Row(table)) => Ok(*table),
             Some(Stored::Missing) | None => Err(TeamLookupError::AccessGroupNotFound {
                 access_group_id: id,
             }),
@@ -119,7 +119,7 @@ fn set(values: &[&str]) -> BTreeSet<String> {
 }
 
 fn row(id: &str, models: &[&str], servers: &[&str], agents: &[&str]) -> Stored {
-    Stored::Row(AccessGroupTable {
+    Stored::Row(Box::new(AccessGroupTable {
         access_group_id: id.to_owned(),
         access_group_name: format!("{id} name"),
         description: None,
@@ -132,7 +132,7 @@ fn row(id: &str, models: &[&str], servers: &[&str], agents: &[&str]) -> Stored {
         created_by: None,
         updated_at: None,
         updated_by: None,
-    })
+    }))
 }
 
 fn groups(
