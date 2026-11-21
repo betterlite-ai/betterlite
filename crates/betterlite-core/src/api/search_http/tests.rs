@@ -1,11 +1,13 @@
 #![cfg(test)]
 
+mod step_order;
 mod support;
 
 use std::collections::BTreeMap;
 use std::io::Read as _;
 use std::net::TcpListener;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 use std::time::Duration;
 
@@ -15,13 +17,10 @@ use betterlite_http::proxy::pool::ClientPool;
 use betterlite_http_fixture::error::FixtureError;
 use betterlite_http_fixture::reply::reply;
 use betterlite_http_fixture::server::{Serving, serve};
-use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::Object;
 use betterlite_openai::search::provider::{HttpMethod, SearchQuery};
 use betterlite_openai::search::records::SearchResponse;
 use betterlite_test_ports::refused_port::RefusedPort;
-use indexmap::IndexMap;
-use secrecy::SecretString;
 use tokio::time::sleep;
 
 use self::support::{
@@ -136,70 +135,6 @@ async fn signed_body_verbatim() {
     );
 }
 
-#[tokio::test]
-async fn step_order() {
-    let served = serve(reply("200 OK", &[], ANSWER), Duration::ZERO).expect("the fixture serves");
-    let base = format!("http://{}/search", served.address);
-    let tls = default_tls();
-    let routing = proxy_policy();
-    let pool = ClientPool::new(4, TransportLimits::DEFAULT);
-    let provider = TestProvider {
-        signed: BTreeMap::from([("x-signature".to_owned(), "abc".to_owned())]),
-        ..test_provider(&base)
-    };
-    let query = SearchQuery::Single(String::from("rust"));
-    let params = Object::new();
-    let credential = SecretString::from("sk-search");
-    let mut fixture = Fixture::new();
-    let call = SearchHttpCall {
-        api_key: Some(&credential),
-        headers: BTreeMap::from([("x-caller".to_owned(), "1".to_owned())]),
-        ..search_call(&query, &params, &base, &tls, &routing)
-    };
-    fixture
-        .execute(call, &provider, &pool, false)
-        .await
-        .expect("the search succeeds");
-    assert_eq!(
-        recorded(&provider.events),
-        vec!["validate", "transform", "url", "sign"]
-    );
-    let validated = BTreeMap::from([
-        ("x-caller".to_owned(), "1".to_owned()),
-        ("x-validated".to_owned(), "yes".to_owned()),
-    ]);
-    let hooks = seen_values(&provider);
-    assert_eq!(hooks.transform_api_key.as_deref(), Some("sk-search"));
-    assert_eq!(hooks.transform_api_base.as_deref(), Some(base.as_str()));
-    assert_eq!(hooks.transform_headers, validated);
-    assert_eq!(hooks.sign_api_base, base);
-    assert_eq!(hooks.sign_api_key.as_deref(), Some("sk-search"));
-    assert_eq!(hooks.sign_headers, validated);
-    assert_eq!(hooks.sign_body, br#"{"q":"rust"}"#.to_vec());
-    assert_eq!(hooks.sign_params, Object::new());
-    assert_eq!(fixture.input(), Some(&Json::Text(String::from("rust"))));
-    assert_eq!(fixture.logged("api_base"), Some(&Json::Text(base.clone())));
-    assert_eq!(
-        fixture.logged("complete_input_dict"),
-        Some(&Json::Object(IndexMap::from([(
-            "q".to_owned(),
-            Json::Text(String::from("rust")),
-        )])))
-    );
-    assert_eq!(
-        fixture.logged("headers"),
-        Some(&Json::Object(IndexMap::from([
-            ("x-caller".to_owned(), Json::Text(String::from("1"))),
-            ("x-validated".to_owned(), Json::Text(String::from("yes"))),
-        ])))
-    );
-    assert_eq!(
-        served.finish().expect("the fixture answers").line,
-        "POST /search HTTP/1.1"
-    );
-    list_query_logs_as_json_text().await;
-}
-
 async fn reject_with_429() -> (SearchHttpError<TestError>, TestProvider, Serving) {
     let served = serve(
         reply(
@@ -262,7 +197,7 @@ async fn status_error_is_a_provider_error() {
     );
 }
 
-async fn get_status_error_is_a_provider_error() {
+async fn reject_get_with_503() -> (SearchHttpError<TestError>, TestProvider, Serving) {
     let served = serve(
         reply(
             "503 Service Unavailable",
@@ -292,6 +227,11 @@ async fn get_status_error_is_a_provider_error() {
         )
         .await
         .expect_err("the status fails the call");
+    (rejection, provider, served)
+}
+
+async fn get_status_error_is_a_provider_error() {
+    let (rejection, provider, served) = reject_get_with_503().await;
     let error = provider_error(&rejection);
     assert_eq!(
         (error.status_code, error.status_code_is_synthesized),
@@ -542,22 +482,28 @@ async fn request_failure_is_converted() {
     .await;
 }
 
-async fn dropped_connection_is_not_retried() {
+fn dropping_listener() -> (String, Arc<AtomicUsize>) {
     let listener = TcpListener::bind("127.0.0.1:0").expect("the listener binds");
     let address = listener.local_addr().expect("the listener address reads");
-    let attempts = Arc::new(Mutex::new(Vec::new()));
+    let attempts = Arc::new(AtomicUsize::new(0));
     let seen = Arc::clone(&attempts);
-    let _server = thread::spawn(move || {
-        for _ in 0..2_u8 {
-            let Ok((mut stream, _peer)) = listener.accept() else {
-                return;
-            };
-            seen.lock().unwrap_or_else(PoisonError::into_inner).push(());
-            let mut buffer = [0_u8; 1024];
-            let _read = stream.read(&mut buffer);
-        }
-    });
-    let base = format!("http://{address}/search");
+    thread::Builder::new()
+        .spawn(move || {
+            for _ in 0..2_u8 {
+                let Ok((mut stream, _peer)) = listener.accept() else {
+                    return;
+                };
+                seen.fetch_add(1, Ordering::SeqCst);
+                let mut buffer = [0_u8; 1024];
+                let _read = stream.read(&mut buffer);
+            }
+        })
+        .expect("the listener thread starts");
+    (format!("http://{address}/search"), attempts)
+}
+
+async fn dropped_connection_is_not_retried() {
+    let (base, attempts) = dropping_listener();
     let tls = default_tls();
     let routing = proxy_policy();
     let pool = ClientPool::new(4, TransportLimits::DEFAULT);
@@ -580,11 +526,7 @@ async fn dropped_connection_is_not_retried() {
         (500, true)
     );
     sleep(Duration::from_millis(100)).await;
-    let arrived = attempts
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .len();
-    assert_eq!(arrived, 1);
+    assert_eq!(attempts.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]
@@ -742,30 +684,4 @@ async fn client_selection() {
     network_mock_answers_before_the_pool().await;
     post_uses_the_call_timeout().await;
     get_uses_the_client_timeout().await;
-}
-
-async fn list_query_logs_as_json_text() {
-    let served = serve(reply("200 OK", &[], ANSWER), Duration::ZERO).expect("the fixture serves");
-    let base = format!("http://{}/search", served.address);
-    let tls = default_tls();
-    let routing = proxy_policy();
-    let pool = ClientPool::new(4, TransportLimits::DEFAULT);
-    let provider = test_provider(&base);
-    let query = SearchQuery::Multiple(vec![String::from("rust"), String::from("search")]);
-    let params = Object::new();
-    let mut fixture = Fixture::new();
-    fixture
-        .execute(
-            search_call(&query, &params, &base, &tls, &routing),
-            &provider,
-            &pool,
-            false,
-        )
-        .await
-        .expect("the list query succeeds");
-    assert_eq!(
-        fixture.input(),
-        Some(&Json::Text(String::from(r#"["rust","search"]"#)))
-    );
-    served.finish().expect("the fixture answers");
 }
