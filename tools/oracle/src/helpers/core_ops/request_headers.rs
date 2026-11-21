@@ -50,7 +50,6 @@ impl Helper for Op {
         }))
     }
 }
-
 fn configured<F>(change: F) -> Settings
 where
     F: FnOnce(&mut Settings),
@@ -59,14 +58,12 @@ where
     change(&mut settings);
     settings
 }
-
 fn plain(headers: &Pairs) -> ForwardedHeaders {
     headers
         .iter()
         .map(|(name, value)| (name.clone(), HeaderValue::Plain(value.clone())))
         .collect()
 }
-
 fn exposed(headers: &ForwardedHeaders) -> Value {
     let pairs: Map<String, Value> = headers
         .iter()
@@ -74,7 +71,6 @@ fn exposed(headers: &ForwardedHeaders) -> Value {
         .collect();
     Value::Object(pairs)
 }
-
 fn slot(name: &str) -> MetadataField {
     if name == "litellm_metadata" {
         MetadataField::LitellmMetadata
@@ -82,7 +78,6 @@ fn slot(name: &str) -> MetadataField {
         MetadataField::Metadata
     }
 }
-
 fn clean_value(call: &CleanCall) -> Value {
     let auth = HeaderAuth {
         litellm_key_header_name: call.litellm_key_header_name.clone(),
@@ -93,7 +88,6 @@ fn clean_value(call: &CleanCall) -> Value {
     let cleaned = clean_headers(&headers, &auth);
     json!({ "forwarded": exposed(&cleaned), "logged": logged_headers(&cleaned) })
 }
-
 fn backend_value(call: &BackendCall) -> Value {
     let settings = configured(|chosen| {
         chosen.add_user_information = call.add_user_information;
@@ -131,7 +125,6 @@ fn backend_json(arguments: &BackendCallArguments) -> Value {
             .collect(),
     )
 }
-
 fn model_group_value(call: &ModelGroupCall) -> Value {
     let settings = configured(|chosen| {
         chosen.add_user_information = call.add_user_information;
