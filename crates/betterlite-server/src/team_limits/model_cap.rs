@@ -13,6 +13,7 @@ use crate::team_limits::field_supplied;
 use crate::team_request_contracts::update::UpdateTeamRequest;
 use crate::team_request_contracts::values::BudgetConfig;
 
+// the message-only strings are boxed to keep the error under result_large_err's 128-byte limit
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ModelBudgetUpdateError {
     #[error(
@@ -25,10 +26,10 @@ pub enum ModelBudgetUpdateError {
     RaiseDenied {
         model: String,
         max_budget: Decimal,
-        duration: String,
+        duration: Box<str>,
         entry: String,
-        requested: String,
-        requested_duration: String,
+        requested: Box<str>,
+        requested_duration: Box<str>,
     },
 }
 
@@ -96,10 +97,9 @@ fn check_governing_cap(
     let Some(max_budget) = cap.max_budget else {
         return Ok(());
     };
-    let raised = match proposed.max_budget {
-        None => true,
-        Some(amount) => amount.0 > max_budget,
-    };
+    let raised = proposed
+        .max_budget
+        .is_none_or(|amount| amount.0 > max_budget);
     let rewound = proposed.budget_duration.as_deref() != Some(cap.budget_duration.as_str());
     if !raised && !rewound {
         return Ok(());
@@ -107,15 +107,16 @@ fn check_governing_cap(
     Err(ModelBudgetUpdateError::RaiseDenied {
         model: model.to_owned(),
         max_budget,
-        duration: cap.budget_duration,
+        duration: cap.budget_duration.into_boxed_str(),
         entry: governing.budget_model,
         // LiteLLM prints the requested values with Python's None for an absent one
-        requested: proposed
-            .max_budget
-            .map_or_else(|| "None".to_owned(), |value| value.0.to_string()),
+        requested: proposed.max_budget.map_or_else(
+            || Box::<str>::from("None"),
+            |value| value.0.to_string().into_boxed_str(),
+        ),
         requested_duration: proposed
             .budget_duration
             .as_deref()
-            .map_or_else(|| "None".to_owned(), str::to_owned),
+            .map_or_else(|| Box::<str>::from("None"), Box::<str>::from),
     })
 }

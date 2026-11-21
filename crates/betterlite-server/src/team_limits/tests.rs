@@ -443,9 +443,9 @@ fn model_verdict(text: &str, existing: &str) -> Result<(), ModelBudgetUpdateErro
 #[test]
 fn malformed_model_cap() {
     let existing = caps(r#"{"m":{"max_budget":"not-a-number","budget_duration":"1d"}}"#);
-    assert_eq!(existing_model_cap(existing.get("m").unwrap()), None);
+    assert_eq!(existing_model_cap(&existing["m"]), None);
     let without_duration = caps(r#"{"m":{"max_budget":10.0}}"#);
-    assert!(existing_model_cap(without_duration.get("m").unwrap()).is_some());
+    assert!(existing_model_cap(&without_duration["m"]).is_some());
     assert_eq!(
         model_verdict(
             r#"{"team_id":"t","model_max_budget":{}}"#,
