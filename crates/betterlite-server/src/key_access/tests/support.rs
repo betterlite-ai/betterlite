@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::fmt::{Debug, Write as _};
+use std::fmt::Debug;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -65,19 +65,20 @@ pub(super) struct ListedTeams {
 impl TeamDirectory for ListedTeams {
     async fn team_exists(&self, team_id: &str) -> Result<bool, TeamQueryError> {
         self.asked.lock().unwrap().push(team_id.to_owned());
-        Ok(self.teams.iter().any(|known| *known == team_id))
+        Ok(self.teams.contains(&team_id))
     }
 }
 
 #[derive(Clone, Default)]
 pub(super) struct Warnings(Arc<Mutex<Vec<String>>>);
 
-struct Message<'text>(&'text mut String);
+#[derive(Default)]
+struct Message(String);
 
-impl Visit for Message<'_> {
+impl Visit for Message {
     fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
         if field.name() == "message" {
-            write!(self.0, "{value:?}").unwrap();
+            self.0 = format!("{value:?}");
         }
     }
 }
@@ -85,9 +86,9 @@ impl Visit for Message<'_> {
 impl<Inner: Subscriber> Layer<Inner> for Warnings {
     fn on_event(&self, event: &Event<'_>, _context: Context<'_, Inner>) {
         if *event.metadata().level() == Level::WARN {
-            let mut text = String::new();
-            event.record(&mut Message(&mut text));
-            self.0.lock().unwrap().push(text);
+            let mut message = Message::default();
+            event.record(&mut message);
+            self.0.lock().unwrap().push(message.0);
         }
     }
 }
