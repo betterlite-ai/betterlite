@@ -128,13 +128,6 @@ fn record_dial(records: &Mutex<Vec<DialRecord>>, request: &DialRequest<'_>) {
 }
 
 impl ScriptedDialer {
-    fn next_attempt(&self) -> DialDocument {
-        let attempt = self.attempts.locked().pop_front();
-        attempt.unwrap_or_else(|| DialDocument::Os {
-            message: String::from("the dial script ran out"),
-        })
-    }
-
     fn attempt_result(
         &self,
         request: &DialRequest<'_>,
@@ -173,7 +166,13 @@ impl ScriptedDialer {
 impl RealtimeWebSocketDialer for ScriptedDialer {
     async fn connect(&self, request: &DialRequest<'_>) -> Result<ConnectedBackend, DialError> {
         record_dial(&self.records, request);
-        let attempt = self.next_attempt();
+        let attempt = self
+            .attempts
+            .locked()
+            .pop_front()
+            .unwrap_or_else(|| DialDocument::Os {
+                message: String::from("the dial script ran out"),
+            });
         self.attempt_result(request, attempt)
     }
 }
