@@ -87,26 +87,29 @@ pub(super) async fn watsonx_headers(
     let config = WatsonxPassthroughConfig {
         environment: &environment,
     };
-    let provider_key = config
-        .get_api_key(api_key)
-        .map_err(|error| status_error(error.status(), error.to_string()))?;
-    let auth = WatsonxAuth::new(environment, http.clone(), Arc::new(epoch_seconds))
-        .map_err(watsonx_error)?;
+    let provider_key = config.get_api_key(api_key)?;
+    let auth = WatsonxAuth::new(environment, http.clone(), Arc::new(epoch_seconds))?;
     let mut params = WatsonxParams::new();
     let headers = auth
         .validate_environment(HeaderMap::new(), &mut params, Some(&provider_key))
-        .await
-        .map_err(watsonx_error)?;
+        .await?;
     Ok(headers
         .iter()
         .map(|(name, value)| (name.as_str().to_owned(), header_text(value)))
         .collect())
 }
 
-// an IAM token minted from the key carries its upstream status; a pre-flight failure does not
-fn watsonx_error(error: WatsonxError) -> ConfigError {
-    let failure = WatsonxPassthroughError::from(error);
-    status_error(failure.status(), failure.to_string())
+// an IAM failure keeps its upstream status; a pre-flight failure maps to a ValueError
+impl From<WatsonxPassthroughError> for ConfigError {
+    fn from(error: WatsonxPassthroughError) -> Self {
+        status_error(error.status(), error.to_string())
+    }
+}
+
+impl From<WatsonxError> for ConfigError {
+    fn from(error: WatsonxError) -> Self {
+        Self::from(WatsonxPassthroughError::from(error))
+    }
 }
 
 // the wall clock only seeds the IAM token cache, whose TTL no test in this module can read
