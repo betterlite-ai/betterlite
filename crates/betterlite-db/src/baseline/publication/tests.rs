@@ -673,7 +673,7 @@ fn stored_statements_replace_the_observation_and_write_the_signed_savings() {
 async fn seed_log(client: &Client, request_id: &str) {
     client
         .execute(
-            "INSERT INTO \"LiteLLM_SpendLogs\" (request_id, call_type, api_key, \"startTime\", \"endTime\", metadata) VALUES ($1, 'acompletion', 'key', NOW(), NOW(), $2::jsonb)",
+            "INSERT INTO \"LiteLLM_SpendLogs\" (request_id, call_type, api_key, \"startTime\", \"endTime\", metadata) VALUES ($1, 'acompletion', 'key', NOW(), NOW(), $2::text::jsonb)",
             &[
                 &request_id,
                 &r#"{"autorouter_baseline_observation":{"request_id":"seed"},"keep":"value"}"#,
@@ -721,9 +721,16 @@ fn retraction_change(record: &BaselineAccountingRecord) -> Change {
     change(record, Some(&old), &new)
 }
 
+// The retraction names the seeded retired model, so the merge drops its zeroed count.
+fn retracted_record() -> BaselineAccountingRecord {
+    let mut record = accounting_record(incomplete_observation("req-2", 2.0), None, None);
+    record.baseline_model = "retired".to_owned();
+    record
+}
+
 fn correction_changes(record: &BaselineAccountingRecord) -> Vec<Change> {
     let published = publication(record, &identical_estimate(record), 2.0);
-    let retracted = accounting_record(incomplete_observation("req-2", 2.0), None, None);
+    let retracted = retracted_record();
     vec![
         change(record, None, &published),
         retraction_change(&retracted),
@@ -838,7 +845,7 @@ async fn seeded_publication_surfaces(record: &BaselineAccountingRecord) -> (Post
     seed_log(&client, "req-2").await;
     seed_sessions(&client).await;
     seed_observation(&client, record).await;
-    let retracted = accounting_record(incomplete_observation("req-2", 2.0), None, None);
+    let retracted = retracted_record();
     seed_observation(&client, &retracted).await;
     drop(client);
     (fixture, pool)

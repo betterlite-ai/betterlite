@@ -31,12 +31,12 @@ fn record_with(marker: &str, replacement: &str) -> String {
     VALID_RECORD.replace(marker, replacement)
 }
 
-fn with_turn(turn: &str) -> String {
-    VALID_RECORD.replace("\"turn\":null", turn)
+fn with_turn(record: &str, turn: &str) -> String {
+    record.replace("\"turn\":null", &format!("\"turn\":{turn}"))
 }
 
-fn with_daily(daily: &str) -> String {
-    VALID_RECORD.replace("\"daily\":null", daily)
+fn with_daily(record: &str, daily: &str) -> String {
+    record.replace("\"daily\":null", &format!("\"daily\":{daily}"))
 }
 
 fn invalid(json: &str) -> RecordError {
@@ -145,7 +145,7 @@ fn bounds_session_id_by_characters_not_bytes() {
 }
 
 fn assert_inconsistent_turn(turn: &str) {
-    let json = with_turn(turn);
+    let json = with_turn(VALID_RECORD, turn);
     assert!(matches!(invalid(&json), RecordError::InconsistentTurn));
 }
 
@@ -179,7 +179,7 @@ fn rejects_turns_that_disagree_with_the_record() {
         "\"user_id\":\"user\"",
         "\"user_id\":\"user\",\"savings_estimated_saved_spend\":1.0",
     ));
-    decode_baseline_record(with_turn(TURN).as_bytes()).unwrap();
+    decode_baseline_record(with_turn(VALID_RECORD, TURN).as_bytes()).unwrap();
 }
 
 #[test]
@@ -188,7 +188,7 @@ fn compares_turn_spend_against_actual_plus_classifier() {
         "\"actual_spend\":0.5,\"classifier_cost\":0.0",
         "\"actual_spend\":0.4,\"classifier_cost\":0.1",
     );
-    let json = priced.replace("\"turn\":null", TURN);
+    let json = with_turn(&priced, TURN);
     let record = decode_baseline_record(json.as_bytes()).unwrap();
     let turn = record.turn.as_ref().unwrap();
     assert_eq!(turn.spend, Decimal::new(5, 1));
@@ -196,7 +196,7 @@ fn compares_turn_spend_against_actual_plus_classifier() {
         "\"actual_spend\":0.5,\"classifier_cost\":0.0",
         "\"actual_spend\":0.4,\"classifier_cost\":0.2",
     );
-    let rejected = missing_classifier.replace("\"turn\":null", TURN);
+    let rejected = with_turn(&missing_classifier, TURN);
     assert!(matches!(invalid(&rejected), RecordError::InconsistentTurn));
 }
 
@@ -207,13 +207,10 @@ fn compares_the_turn_spend_as_an_exact_decimal_sum() {
         "\"actual_spend\":0.5,\"classifier_cost\":0.0",
         "\"actual_spend\":0.1,\"classifier_cost\":0.2",
     );
-    let exact = priced.replace(
-        "\"turn\":null",
-        &TURN.replace("\"spend\":0.5", "\"spend\":0.3"),
-    );
+    let exact = with_turn(&priced, &TURN.replace("\"spend\":0.5", "\"spend\":0.3"));
     decode_baseline_record(exact.as_bytes()).unwrap();
-    let rounded = priced.replace(
-        "\"turn\":null",
+    let rounded = with_turn(
+        &priced,
         &TURN.replace("\"spend\":0.5", "\"spend\":0.30000000000000004"),
     );
     assert!(matches!(invalid(&rounded), RecordError::InconsistentTurn));
@@ -224,13 +221,13 @@ fn rejects_unknown_keys_on_the_record_daily_and_target() {
     let record = record_with("\"scope\"", "\"extra\":1,\"scope\"");
     assert!(matches!(unreadable(&record), RecordDecodeError::Json(_)));
     let daily = DAILY.replace("{\"date\"", "{\"extra\":1,\"date\"");
-    let attributed = with_daily(&daily);
+    let attributed = with_daily(VALID_RECORD, &daily);
     assert!(matches!(
         unreadable(&attributed),
         RecordDecodeError::Json(_)
     ));
     let target = DAILY.replace("{\"entity\":\"tag\"", "{\"entity\":\"tag\",\"extra\":1");
-    let with_extra_target = with_daily(&target);
+    let with_extra_target = with_daily(VALID_RECORD, &target);
     assert!(matches!(
         unreadable(&with_extra_target),
         RecordDecodeError::Json(_)
@@ -239,7 +236,7 @@ fn rejects_unknown_keys_on_the_record_daily_and_target() {
 
 #[test]
 fn decodes_daily_attribution_targets_in_order() {
-    let json = with_daily(DAILY);
+    let json = with_daily(VALID_RECORD, DAILY);
     let record = decode_baseline_record(json.as_bytes()).unwrap();
     let daily = record.daily.unwrap();
     assert_eq!(daily.date, "2026-01-02");
@@ -267,7 +264,7 @@ fn decodes_daily_attribution_targets_in_order() {
 #[test]
 fn defaults_missing_daily_targets_to_an_empty_tuple() {
     let minimal = r#"{"date":"2026-01-02","api_key":"key"}"#;
-    let json = with_daily(minimal);
+    let json = with_daily(VALID_RECORD, minimal);
     let record = decode_baseline_record(json.as_bytes()).unwrap();
     assert!(record.daily.unwrap().targets.is_empty());
 }
