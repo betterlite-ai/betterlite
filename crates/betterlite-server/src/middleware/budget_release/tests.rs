@@ -237,7 +237,7 @@ fn a_second_stamp_replaces_the_first_and_warns() {
         callback_bound: false,
     });
     assert_eq!(logged(&records), "", "the first stamp is not a replacement");
-    slot.clone().set(Stamp {
+    slot.set(Stamp {
         id: 2,
         callback_bound: false,
     });

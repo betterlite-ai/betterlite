@@ -112,10 +112,7 @@ impl Service<Request<Body>> for Handler {
             if let Some(waiting) = barrier {
                 waiting.wait().await;
             }
-            let label = match stamped {
-                Some(id) => id.to_string(),
-                None => "none".to_owned(),
-            };
+            let label = stamped.map_or_else(|| "none".to_owned(), u32::to_string);
             events
                 .lock()
                 .unwrap()
@@ -128,10 +125,11 @@ impl Service<Request<Body>> for Handler {
 fn respond(reply: Reply) -> Result<Response<Body>, InnerFailed> {
     match reply {
         Reply::Plain => Ok(Response::new(Body::from("ok"))),
-        Reply::ServerError => Ok(Response::builder()
-            .status(StatusCode::INTERNAL_SERVER_ERROR)
-            .body(Body::from("upstream broke"))
-            .unwrap()),
+        Reply::ServerError => {
+            let mut broken = Response::new(Body::from("upstream broke"));
+            *broken.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+            Ok(broken)
+        }
         Reply::Failed => Err(InnerFailed),
         Reply::Streaming => Ok(Response::new(Body::from_stream(stream::pending::<
             Result<Bytes, io::Error>,
