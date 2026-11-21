@@ -16,7 +16,7 @@ call:
         client_host: 203.0.113.7
       # a callback that turns a quiet malformed-key 401 into a 403 adds an error line
       - step: handle
-        failure: {kind: http, message: Invalid proxy server token passed., type: auth_error, param: null, status_code: 401, marked: true, internal_message: ""}
+        failure: {kind: proxy, message: Invalid proxy server token passed., type: auth_error, param: null, status_code: 401, marked: true, internal_message: ""}
         reply: replace
         replacement: {kind: http, message: Access denied by policy, type: auth_error, param: null, status_code: 403, marked: false, internal_message: ""}
         switches: []

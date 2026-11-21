@@ -1,34 +1,28 @@
 import asyncio
 import logging
-from typing import Final, Literal, TypeAlias, TypedDict
-from unittest import mock
+import sys
+from types import ModuleType
+from typing import Final, Literal, TypedDict
 
 import httpx
 import litellm
 from fastapi import HTTPException
-from litellm.constants import INVALID_VIRTUAL_KEY_ERROR_MARKER
-from litellm.proxy import proxy_server
-from litellm.proxy._types import (
-    ModelAccessDeniedProxyException,
-    ProxyErrorTypes,
-    ProxyException,
-    UserAPIKeyAuth,
-)
-from litellm.proxy.auth import auth_exception_handler, user_api_key_auth
+from litellm.proxy._types import ModelAccessDeniedProxyException as DeniedError
+from litellm.proxy._types import ProxyErrorTypes, ProxyException, UserAPIKeyAuth
+from litellm.proxy.auth import user_api_key_auth
 from litellm.proxy.auth.auth_exception_handler import UserAPIKeyAuthExceptionHandler
+from litellm.proxy.auth.auth_utils import mark_invalid_virtual_key_error
 from litellm.proxy.auth.model_access_denied import ModelAccessDeniedHTTPException
+from litellm.types.services import ServiceTypes
 from pydantic import JsonValue, TypeAdapter
 from starlette.requests import Request
 from starlette.types import Scope
+from typing_extensions import override
 
-_JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
+PROXY_MODULE: Final = "litellm.proxy.proxy_server"
 CLIENT_PORT: Final = 1234
-OUTAGE: Final = "allow_requests_on_db_unavailable"
-TRACEBACKS: Final = "log_client_error_tracebacks"
-KEY_IDENTITY: Final = "log_auth_failure_key_identity"
-Switch: TypeAlias = Literal[
-    "allow_requests_on_db_unavailable", "log_client_error_tracebacks", "log_auth_failure_key_identity"
-]
+IDENTITY_FIELDS: Final = {"user_id", "key_name", "user_role", "request_route"}
+_JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 
 
 class Failure(TypedDict):
@@ -46,7 +40,13 @@ class Row(TypedDict):
     failure: Failure
     reply: Literal["original", "replace", "raise"]
     replacement: Failure | None
-    switches: list[Switch]
+    switches: list[
+        Literal[
+            "allow_requests_on_db_unavailable",
+            "log_client_error_tracebacks",
+            "log_auth_failure_key_identity",
+        ]
+    ]
     identity: dict[str, str] | None
     request_data: dict[str, JsonValue]
     route: str
@@ -62,15 +62,15 @@ class CallbackFailedError(Exception):
     pass
 
 
+# stands in for proxy_logging_obj, its service logger and the proxy's log handler
 class Recorder(logging.Handler):
-    """Stands in for proxy_logging_obj and the proxy logger, recording each call in order."""
-
     def __init__(self, row: Row) -> None:
         super().__init__(logging.DEBUG)
         self.row: Final = row
         self.events: Final[list[JsonValue]] = []
         self.service_logging_obj: Final = self
 
+    @override
     def emit(self, record: logging.LogRecord) -> None:
         self.events.append(
             {
@@ -82,97 +82,102 @@ class Recorder(logging.Handler):
             }
         )
 
-    def service_failure_hook(self, call_type: str, duration: float, **_details: object) -> None:
+    def service_failure_hook(
+        self, service: ServiceTypes, call_type: str, error: Exception, duration: float
+    ) -> None:
+        del service, error
         self.events.append({"event": "service", "call_type": call_type, "duration": duration})
-
-    def seed(self, user_api_key_dict: UserAPIKeyAuth, model: object = None) -> None:
-        self.events.append(
-            {
-                "event": "seed",
-                "request_route": user_api_key_dict.request_route,
-                "model": _JSON.validate_python(model),
-            }
-        )
 
     async def post_call_failure_hook(
         self,
-        request_data: dict[str, object],
+        request_data: dict[str, JsonValue],
         user_api_key_dict: UserAPIKeyAuth,
         error_type: ProxyErrorTypes,
         route: str,
-        **_details: object,
+        **_original_exception: Exception,
     ) -> Exception | None:
         self.events.append(
             {
                 "event": "hook",
                 "error_type": error_type.value,
                 "route": route,
-                "metadata": _JSON.validate_python(request_data.get("metadata")),
+                "metadata": request_data.get("metadata"),
                 "user_id": user_api_key_dict.user_id,
+                "request_route": user_api_key_dict.request_route,
             }
         )
-        replacement = self.row["replacement"]
         match self.row["reply"]:
             case "original":
                 return None
             case "replace":
+                replacement = self.row["replacement"]
                 return None if replacement is None else build(replacement)
             case "raise":
                 raise CallbackFailedError("a post-call failure callback raised")
 
 
+class ProxyServer(ModuleType):
+    general_settings: dict[str, JsonValue]
+    proxy_logging_obj: Recorder
+
+
 def run(input_value: Input) -> JsonValue:
-    return [answer(row) for row in input_value["rows"]]
+    proxy_logger = logging.getLogger("LiteLLM Proxy")
+    answers: list[JsonValue] = []
+    for row in input_value["rows"]:
+        recorder = Recorder(row)
+        # the proxy's handler redacts secrets, so the capture applies its filters too
+        for installed in proxy_logger.handlers:
+            for check in installed.filters:
+                recorder.addFilter(check)
+        proxy_logger.addHandler(recorder)
+        try:
+            outcome = answer(row, recorder)
+        finally:
+            proxy_logger.removeHandler(recorder)
+        answers.append({"outcome": outcome, "events": recorder.events})
+    return answers
 
 
 def build(failure: Failure) -> Exception:
-    error: Exception
     message = failure["message"]
     status_code = failure["status_code"]
     match failure["kind"]:
         case "http":
-            error = HTTPException(status_code=status_code, detail=message)
+            return HTTPException(status_code=status_code, detail=message)
         case "proxy":
-            error = ProxyException(message, failure["type"], failure["param"], status_code)
+            raised = ProxyException(message, failure["type"], failure["param"], status_code)
+            return mark_invalid_virtual_key_error(raised, is_invalid_virtual_key=failure["marked"])
         case "model_denial":
-            error = ModelAccessDeniedHTTPException(failure["internal_message"], status_code, message)
+            internal = failure["internal_message"]
+            return ModelAccessDeniedHTTPException(internal, status_code, message)
         case "connect":
-            error = httpx.ConnectError(message)
-    if failure["marked"]:
-        setattr(error, INVALID_VIRTUAL_KEY_ERROR_MARKER, True)
-    return error
+            return httpx.ConnectError(message)
 
 
-def answer(row: Row) -> JsonValue:
-    recorder = Recorder(row)
-    proxy_logger = logging.getLogger("LiteLLM Proxy")
-    # the proxy's own handler redacts secrets before writing, so the capture applies its filters too
-    for installed in proxy_logger.handlers:
-        for check in installed.filters:
-            recorder.addFilter(check)
+def answer(row: Row, recorder: Recorder) -> JsonValue:
+    # dispatch runs one call per process, so the fake module and the switches need no restore
     switches = row["switches"]
-    proxy_logger.addHandler(recorder)
+    proxy_server = ProxyServer(PROXY_MODULE)
+    outage = "allow_requests_on_db_unavailable" in switches
+    proxy_server.general_settings = {"allow_requests_on_db_unavailable": outage}
+    proxy_server.proxy_logging_obj = recorder
+    sys.modules[PROXY_MODULE] = proxy_server
+    litellm.log_client_error_tracebacks = "log_client_error_tracebacks" in switches
+    litellm.log_auth_failure_key_identity = "log_auth_failure_key_identity" in switches
     try:
-        with (
-            mock.patch.object(proxy_server, "general_settings", {OUTAGE: OUTAGE in switches}),
-            mock.patch.object(proxy_server, "proxy_logging_obj", recorder),
-            mock.patch.object(auth_exception_handler, "seed_request_identity", recorder.seed),
-            mock.patch.object(litellm, TRACEBACKS, TRACEBACKS in switches),
-            mock.patch.object(litellm, KEY_IDENTITY, KEY_IDENTITY in switches),
-        ):
-            outcome = unparsable(row) if row["step"] == "unparsable" else handled(row)
-    except ProxyException as raised:
-        outcome = {"raised": wire(raised)}
+        return unparsable(row) if row["step"] == "unparsable" else handled(row)
+    except DeniedError as denied:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4374
+        return {"raised": wire(denied, denied.sanitized_internal_message())}
+    except ProxyException as raised:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325
+        return {"raised": wire(raised, None)}
     except CallbackFailedError:
-        outcome = {"hook_error": True}
-    finally:
-        proxy_logger.removeHandler(recorder)
-    return {"outcome": outcome, "events": recorder.events}
+        return {"hook_error": True}
 
 
 def caller(row: Row) -> UserAPIKeyAuth | None:
     identity = row["identity"]
-    return None if identity is None else UserAPIKeyAuth.model_validate(identity)
+    return None if identity is None else UserAPIKeyAuth.model_validate(identity)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3356
 
 
 def handled(row: Row) -> JsonValue:
@@ -191,15 +196,7 @@ def handled(row: Row) -> JsonValue:
             resolved_identity=caller(row),
         )
     )
-    role = granted.user_role
-    return {
-        "identity": {
-            "user_id": granted.user_id,
-            "key_name": granted.key_name,
-            "user_role": None if role is None else role.value,
-            "request_route": granted.request_route,
-        }
-    }
+    return {"identity": _JSON.validate_json(granted.model_dump_json(include=IDENTITY_FIELDS))}
 
 
 def unparsable(row: Row) -> JsonValue:
@@ -217,14 +214,11 @@ def unparsable(row: Row) -> JsonValue:
     return {"recorded": True}
 
 
-def wire(raised: ProxyException) -> JsonValue:
-    error_type = raised.type
+def wire(raised: ProxyException, internal_message: str | None) -> JsonValue:
     return {
         "message": raised.message,
-        "type": error_type.value if isinstance(error_type, ProxyErrorTypes) else error_type,
+        "type": raised.type,
         "param": raised.param,
-        "code": str(raised.code),
-        "internal_message": raised.internal_message
-        if isinstance(raised, ModelAccessDeniedProxyException)
-        else None,
+        "code": raised.code,
+        "internal_message": internal_message,
     }

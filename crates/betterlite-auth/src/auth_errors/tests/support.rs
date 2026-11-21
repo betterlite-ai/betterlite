@@ -29,6 +29,10 @@ use crate::resolved_key::auth::{AuthInput, ParentOtelSpan, UserAPIKeyAuth};
 
 pub(super) const CLIENT_IP: &str = "203.0.113.7";
 pub(super) const RESPONSE_ROUTE: &str = "/v1/responses/resp_123";
+const PROVENANCE: RequestProvenance<'static> = RequestProvenance {
+    forwarded_for: None,
+    client_host: Some(CLIENT_IP),
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum Event {
@@ -99,13 +103,13 @@ impl Recorder {
     }
 
     pub(super) fn logs(&self) -> Vec<AuthLog> {
-        self.events()
-            .into_iter()
-            .filter_map(|event| match event {
-                Event::Log(entry) => Some(entry),
-                Event::Service { .. } | Event::Seed { .. } | Event::Hook { .. } => None,
-            })
-            .collect()
+        let mut logs = Vec::new();
+        for event in self.events() {
+            if let Event::Log(entry) = event {
+                logs.push(entry);
+            }
+        }
+        logs
     }
 
     pub(super) fn hook_calls(&self) -> Vec<(JsonObject, AuthFailure, ProxyErrorTypes, String)> {
@@ -180,8 +184,6 @@ impl AuthErrorPorts for Recorder {
 }
 
 pub(super) struct Fixture {
-    routes: RouteNormalizer,
-    redactor: Redactor,
     api_key: SecretString,
     pub(super) request_data: JsonObject,
     headers: HeaderMap,
@@ -189,14 +191,10 @@ pub(super) struct Fixture {
 
 impl Fixture {
     pub(super) fn new() -> Self {
-        let mut headers = HeaderMap::new();
-        headers.insert(USER_AGENT, HeaderValue::from_static("curl/8.5"));
         Self {
-            routes: RouteNormalizer::new().unwrap(),
-            redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap(),
             api_key: SecretString::from("sk-presented".to_owned()),
             request_data: object(&[("model", Json::Text("gpt-4o".to_owned()))]),
-            headers,
+            headers: HeaderMap::from_iter([(USER_AGENT, HeaderValue::from_static("curl/8.5"))]),
         }
     }
 
@@ -207,39 +205,25 @@ impl Fixture {
             parent_span: Some(ParentOtelSpan::Json(JsonData::String("server".to_owned()))),
             api_key: &self.api_key,
             resolved_identity: None,
-            provenance: RequestProvenance {
-                forwarded_for: None,
-                client_host: Some(CLIENT_IP),
-            },
+            provenance: PROVENANCE,
             scope_headers: Some(&self.headers),
         }
     }
+}
 
-    pub(super) async fn handle(
-        &self,
-        ports: &Recorder,
-        settings: AuthErrorSettings,
-        error: AuthFailure,
-    ) -> Result<UserAPIKeyAuth, HandlerError> {
-        self.handle_request(ports, settings, error, self.request())
-            .await
-    }
-
-    pub(super) async fn handle_request(
-        &self,
-        ports: &Recorder,
-        settings: AuthErrorSettings,
-        error: AuthFailure,
-        request: FailedRequest<'_>,
-    ) -> Result<UserAPIKeyAuth, HandlerError> {
-        let handler = AuthErrorHandler {
-            ports,
-            settings,
-            routes: &self.routes,
-            redactor: &self.redactor,
-        };
-        handler.handle(error, request).await
-    }
+pub(super) async fn handle(
+    ports: &Recorder,
+    settings: AuthErrorSettings,
+    error: AuthFailure,
+    request: FailedRequest<'_>,
+) -> Result<UserAPIKeyAuth, HandlerError> {
+    let handler = AuthErrorHandler {
+        ports,
+        settings,
+        routes: &RouteNormalizer::new().unwrap(),
+        redactor: &Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap(),
+    };
+    handler.handle(error, request).await
 }
 
 pub(super) fn object(fields: &[(&str, Json)]) -> JsonObject {
@@ -255,7 +239,7 @@ pub(super) const fn settings(tracebacks: bool) -> AuthErrorSettings {
             client_error_tracebacks: tracebacks,
             key_identity: false,
         },
-        allow_requests_on_db_unavailable: false,
+        allow_on_outage: false,
         use_x_forwarded_for: false,
     }
 }
@@ -265,7 +249,7 @@ pub(super) const OUTAGE_ALLOWED: AuthErrorSettings = AuthErrorSettings {
         client_error_tracebacks: false,
         key_identity: false,
     },
-    allow_requests_on_db_unavailable: true,
+    allow_on_outage: true,
     use_x_forwarded_for: false,
 };
 

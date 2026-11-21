@@ -5,6 +5,7 @@ use betterlite_db::database_availability::classification::is_service_unavailable
 use betterlite_db::database_availability::projection::service_unavailable_error;
 use betterlite_db::database_faults::{DbError, is_database_connection_error};
 use betterlite_error::proxy_error_types::ProxyErrorTypes;
+// ast-grep-ignore: no-long-names
 use betterlite_error::proxy_exception::model_access_denied::ModelAccessDeniedProxyException;
 use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
 use betterlite_models::call_helpers::expected_error::ClientErrorFacts;
@@ -17,7 +18,7 @@ use crate::auth_request_policy::invalid_key::{ErrorClass, ErrorFacts, Marker};
 const ABSENT_PARAM: &str = "None";
 const UNAUTHORIZED: u16 = 401;
 // getattr(e, "status_code", 429) when a BudgetExceededError lost its status_code attribute
-const BUDGET_STATUS_WITHOUT_ATTRIBUTE: u16 = 429;
+const BUDGET_FALLBACK_STATUS: u16 = 429;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum AuthFailure {
@@ -174,13 +175,14 @@ pub fn as_proxy_exception(failure: &AuthFailure) -> ClientFailure {
             message.clone(),
             ProxyErrorTypes::BudgetExceeded,
             None,
-            status_code.unwrap_or(BUDGET_STATUS_WITHOUT_ATTRIBUTE),
+            status_code.unwrap_or(BUDGET_FALLBACK_STATUS),
         ),
         AuthFailure::ModelAccessDenied {
             detail,
             internal_message,
             status_code,
         } => {
+            // ast-grep-ignore: no-long-names
             return ClientFailure::ModelAccessDenied(ModelAccessDeniedProxyException::new(
                 detail.clone(),
                 internal_message.clone(),

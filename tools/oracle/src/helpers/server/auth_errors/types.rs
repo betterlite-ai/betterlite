@@ -73,18 +73,6 @@ pub(crate) struct Input {
     pub(super) rows: Vec<Row>,
 }
 
-pub(super) fn proxy_exception(spec: &Failure) -> ProxyException {
-    ProxyException::new(ProxyExceptionInit {
-        message: spec.message.clone(),
-        error_type: spec.error_type.clone(),
-        param: spec.param.clone(),
-        code: ExceptionCode::Status(i64::from(spec.status_code)),
-        headers: BTreeMap::new(),
-        openai_code: None,
-        provider_specific_fields: BTreeMap::new(),
-    })
-}
-
 pub(super) fn auth_failure(spec: &Failure) -> AuthFailure {
     let message = spec.message.clone();
     match spec.kind {
@@ -95,7 +83,15 @@ pub(super) fn auth_failure(spec: &Failure) -> AuthFailure {
             invalid_virtual_key: spec.marked,
         },
         Kind::Proxy => AuthFailure::Proxy {
-            exception: proxy_exception(spec),
+            exception: ProxyException::new(ProxyExceptionInit {
+                message,
+                error_type: spec.error_type.clone(),
+                param: spec.param.clone(),
+                code: ExceptionCode::Status(i64::from(spec.status_code)),
+                headers: BTreeMap::new(),
+                openai_code: None,
+                provider_specific_fields: BTreeMap::new(),
+            }),
             invalid_virtual_key: spec.marked,
         },
         Kind::ModelDenial => AuthFailure::ModelAccessDenied {

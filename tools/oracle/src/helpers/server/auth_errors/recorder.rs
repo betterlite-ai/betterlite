@@ -11,7 +11,6 @@ use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use betterlite_models::decisions::Json;
 use serde_json::{Value, json};
 
-use super::field;
 use super::types::Reply;
 
 // every port call becomes one event, in the order the handler makes them
@@ -49,10 +48,8 @@ impl AuthErrorPorts for Recorder {
             "traceback": entry.traceback, "message": entry.message}));
     }
 
-    fn seed_identity(&self, identity: &UserAPIKeyAuth, model: Option<&Json>) {
-        let route = field(identity, "request_route");
-        self.push(json!({"event": "seed", "request_route": route, "model": model}));
-    }
+    // LiteLLM's seed_request_identity does nothing without OpenTelemetry V2, so neither side records it
+    fn seed_identity(&self, _identity: &UserAPIKeyAuth, _model: Option<&Json>) {}
 
     fn native_resolution(&self) -> &dyn ProviderResolution {
         &NoNativeProvider
@@ -66,10 +63,11 @@ impl AuthErrorPorts for Recorder {
         &self,
         call: FailureHookCall<'_>,
     ) -> Result<Option<AuthFailure>, HookError> {
+        let identity = serde_json::to_value(call.identity).unwrap_or_default();
         self.push(
             json!({"event": "hook", "error_type": call.error_type.to_string(),
             "route": call.route, "metadata": call.request_data.get("metadata"),
-            "user_id": field(call.identity, "user_id")}),
+            "user_id": identity.get("user_id"), "request_route": identity.get("request_route")}),
         );
         match self.reply {
             Reply::Original => Ok(None),

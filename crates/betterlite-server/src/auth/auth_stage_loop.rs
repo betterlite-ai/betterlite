@@ -9,7 +9,7 @@ use secrecy::SecretString;
 use super::{prefetch_tag_budgets, resolver_for, stage_input};
 use crate::auth::auth_errors::FailureContext;
 use crate::auth::auth_identity::{
-    AuthBackend, AuthContext, INSTALLED_STAGES, StageFailure, StageInput, dispatch,
+    AuthBackend, AuthContext, INSTALLED_STAGES, StageFailure, dispatch,
 };
 use crate::auth::body_buffering::{BufferError, max_body_bytes, read_body};
 use crate::auth::failures::{body_too_large_response, unreadable_body_response};
@@ -45,13 +45,12 @@ pub(crate) async fn run_stages(
             &resolver,
             body.as_ref(),
         );
-        match run_stage(*backend, staged, master_key).await {
+        match async { dispatch(*backend, &prefetch_tag_budgets(staged?).await?, master_key) }.await
+        {
             Ok(context) => authenticated = Some(context),
             Err(failure) => {
-                let rejection = FailureContext::of(&request, body.as_ref());
-                return Err(Box::new(
-                    rejection.respond(&failure, failure_response).await,
-                ));
+                let context = FailureContext::of(&request, body.as_ref());
+                return Err(Box::new(context.respond(&failure, failure_response).await));
             }
         }
     }
@@ -88,13 +87,4 @@ pub(crate) async fn forward(
         *request.body_mut() = Body::from(bytes);
     }
     next.run(request).await
-}
-
-async fn run_stage(
-    backend: AuthBackend,
-    staged: Result<StageInput, StageFailure>,
-    master_key: &SecretString,
-) -> Result<AuthContext, StageFailure> {
-    let prefetched = prefetch_tag_budgets(staged?).await?;
-    dispatch(backend, &prefetched, master_key)
 }

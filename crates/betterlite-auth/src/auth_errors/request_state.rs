@@ -127,7 +127,7 @@ pub fn ensure_parent_span<State>(
 }
 
 // _read_request_body_deferring_parse_failure: only the reader's ProxyException waits for identity seeding
-pub async fn read_body_deferring_parse_failure<Source>(
+pub async fn read_body_deferred<Source>(
     source: &mut Source,
 ) -> Result<DeferredBody, DeferredBodyError>
 where

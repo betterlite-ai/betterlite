@@ -132,7 +132,7 @@ impl FailureContext {
             },
             // the gateway reads no key from a database, so a rejected key never earns the outage identity
             settings: AuthErrorSettings {
-                allow_requests_on_db_unavailable: false,
+                allow_on_outage: false,
                 ..slot.settings
             },
             routes,

@@ -4,7 +4,7 @@ use std::sync::Mutex;
 
 use axum::http::header::USER_AGENT;
 use axum::http::{HeaderMap, HeaderValue};
-use betterlite_auth::auth_errors::conversion::ClientFailure;
+use betterlite_auth::auth_errors::conversion::{ClientFailure, as_proxy_exception};
 use betterlite_auth::auth_errors::handler::{
     AuthErrorHandler, AuthErrorSettings, FailedRequest, HandlerError, LogSwitches,
 };
@@ -21,7 +21,7 @@ use serde_json::{Value, json};
 use tokio::runtime::Builder;
 
 use self::recorder::Recorder;
-use self::types::{Input, Row, Step, Switch, auth_failure, proxy_exception};
+use self::types::{Input, Row, Step, Switch, auth_failure};
 
 mod recorder;
 mod tests;
@@ -91,17 +91,21 @@ async fn unparsable(row: &Row, ports: Recorder, resolved: Option<UserAPIKeyAuth>
         Some(known) => known,
         None => identity(&BTreeMap::new())?,
     };
-    let exception = proxy_exception(&row.failure);
-    record_unparsable_body_failure(&ports, &caller, &exception, &row.route).await;
+    // an unparsable row carries a proxy failure, so the conversion hands it back unchanged
+    let converted = as_proxy_exception(&auth_failure(&row.failure));
+    record_unparsable_body_failure(&ports, &caller, converted.exception(), &row.route).await;
     let events = ports.events.into_inner().unwrap_or_default();
     Ok(json!({"outcome": {"recorded": true}, "events": events}))
 }
 
 fn outcome(handled: Result<UserAPIKeyAuth, HandlerError>) -> HelperResult {
     Ok(match handled {
-        Ok(granted) => json!({"identity": {"user_id": field(&granted, "user_id"),
-            "key_name": field(&granted, "key_name"), "user_role": field(&granted, "user_role"),
-            "request_route": field(&granted, "request_route")}}),
+        // the identity's fields are crate-private, so the answer reads them from its serialized form
+        Ok(granted) => {
+            let whole = serde_json::to_value(&granted).unwrap_or_default();
+            json!({"identity": {"user_id": whole.get("user_id"), "key_name": whole.get("key_name"),
+                "user_role": whole.get("user_role"), "request_route": whole.get("request_route")}})
+        }
         Err(HandlerError::Rejected(raised)) => json!({"raised": wire(&raised.failure)}),
         Err(HandlerError::Hook(_)) => json!({"hook_error": true}),
         Err(HandlerError::Identity(error)) => return Err(failure("AuthError", &error)),
@@ -114,7 +118,7 @@ fn settings(switches: &[Switch]) -> AuthErrorSettings {
             client_error_tracebacks: switches.contains(&Switch::LogClientErrorTracebacks),
             key_identity: switches.contains(&Switch::LogAuthFailureKeyIdentity),
         },
-        allow_requests_on_db_unavailable: switches.contains(&Switch::AllowRequestsOnDbUnavailable),
+        allow_on_outage: switches.contains(&Switch::AllowRequestsOnDbUnavailable),
         use_x_forwarded_for: false,
     }
 }
@@ -125,12 +129,6 @@ fn identity(given: &BTreeMap<String, String>) -> Result<UserAPIKeyAuth, Box<Help
         .map(|(name, value)| (name.clone(), JsonData::String(value.clone())))
         .collect();
     UserAPIKeyAuth::construct(AuthInput::Dict(dict)).map_err(|error| failure("AuthError", &error))
-}
-
-// the identity's fields are crate-private, so the answer reads them from its serialized form
-fn field(identity: &UserAPIKeyAuth, name: &str) -> Value {
-    let whole = serde_json::to_value(identity).unwrap_or_default();
-    whole.get(name).cloned().unwrap_or_default()
 }
 
 fn wire(raised: &ClientFailure) -> Value {

@@ -37,10 +37,7 @@ impl Slot {
                     client_error_tracebacks: switches.log_client_error_tracebacks,
                     key_identity: switches.log_auth_failure_key_identity,
                 },
-                allow_requests_on_db_unavailable: matches!(
-                    allows_requests_during_outage(outage),
-                    Ok(true)
-                ),
+                allow_on_outage: matches!(allows_requests_during_outage(outage), Ok(true)),
                 use_x_forwarded_for: config.sections.auth_request_policy.use_x_forwarded_for,
             },
             routes: RouteNormalizer::new().ok(),

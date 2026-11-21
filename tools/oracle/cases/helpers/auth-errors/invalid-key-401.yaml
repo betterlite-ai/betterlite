@@ -5,7 +5,7 @@ call:
     rows:
       # a marked malformed key logs a quiet stdout warning without a traceback
       - step: handle
-        failure: {kind: http, message: Invalid proxy server token passed., type: auth_error, param: null, status_code: 401, marked: true, internal_message: ""}
+        failure: {kind: proxy, message: Invalid proxy server token passed., type: auth_error, param: null, status_code: 401, marked: true, internal_message: ""}
         reply: original
         replacement: null
         switches: []
@@ -16,7 +16,7 @@ call:
         client_host: 203.0.113.7
       # log_client_error_tracebacks turns the same rejection into an error with its traceback
       - step: handle
-        failure: {kind: http, message: Invalid proxy server token passed., type: auth_error, param: null, status_code: 401, marked: true, internal_message: ""}
+        failure: {kind: proxy, message: Invalid proxy server token passed., type: auth_error, param: null, status_code: 401, marked: true, internal_message: ""}
         reply: original
         replacement: null
         switches: [log_client_error_tracebacks]

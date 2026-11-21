@@ -12,10 +12,10 @@ use serde_json::Number;
 
 use super::support::{
     CLIENT_IP, Event, Fixture, OUTAGE_ALLOWED, RESPONSE_ROUTE, Recorder, Reply, budget, database,
-    http, identity_with, object, rejected, seeded, settings,
+    handle, http, identity_with, object, rejected, seeded, settings,
 };
 use crate::auth_errors::conversion::AuthFailure;
-use crate::auth_errors::handler::{DB_UNAVAILABLE_FALLBACK_USER_ID, HandlerError};
+use crate::auth_errors::handler::{HandlerError, OUTAGE_USER_ID};
 use crate::auth_errors::ports::{AuthLog, HookError, Level, Logger, NoNativeProvider};
 use crate::rejection_provider::ProviderResolution as _;
 use crate::resolved_key::auth::{ApiKeySecret, user_api_key_has_admin_view};
@@ -27,8 +27,7 @@ async fn outage_connection_only_service_hook_then_warning_then_restricted_identi
     let fixture = Fixture::new();
     let ports = Recorder::replying(Reply::Original);
     let outage = database(ErrorType::Connect, "refused");
-    let identity = fixture
-        .handle(&ports, OUTAGE_ALLOWED, outage)
+    let identity = handle(&ports, OUTAGE_ALLOWED, outage, fixture.request())
         .await
         .unwrap();
     let service = Event::Service {
@@ -59,12 +58,7 @@ async fn outage_connection_only_service_hook_then_warning_then_restricted_identi
         identity.extra.request_route.as_deref(),
     );
     let failed = Some("failed-to-connect-to-db");
-    let expected = (
-        Some(DB_UNAVAILABLE_FALLBACK_USER_ID),
-        failed,
-        failed,
-        Some(RESPONSE_ROUTE),
-    );
+    let expected = (Some(OUTAGE_USER_ID), failed, failed, Some(RESPONSE_ROUTE));
     assert_eq!(fields, expected);
     assert_eq!(identity.extra.user_role, Some(UserRole::InternalUser));
     assert!(!user_api_key_has_admin_view(&identity));
@@ -75,7 +69,7 @@ async fn outage_bypass_requires_a_connection_error() {
     let fixture = Fixture::new();
     let ports = Recorder::replying(Reply::Original);
     let data_error = database(ErrorType::UniqueViolation, "dup");
-    let outcome = fixture.handle(&ports, OUTAGE_ALLOWED, data_error).await;
+    let outcome = handle(&ports, OUTAGE_ALLOWED, data_error, fixture.request()).await;
     assert_eq!(rejected(outcome).failure.exception().code, "401");
     let services = ports
         .events()
@@ -102,16 +96,12 @@ async fn no_database_proxy_rejection_takes_the_outage_bypass() {
         invalid_virtual_key: false,
     };
     let allowed = Recorder::replying(Reply::Original);
-    let identity = fixture
-        .handle(&allowed, OUTAGE_ALLOWED, failure.clone())
+    let identity = handle(&allowed, OUTAGE_ALLOWED, failure.clone(), fixture.request())
         .await
         .unwrap();
-    assert_eq!(
-        identity.view.token.user_id.as_deref(),
-        Some(DB_UNAVAILABLE_FALLBACK_USER_ID)
-    );
+    assert_eq!(identity.view.token.user_id.as_deref(), Some(OUTAGE_USER_ID));
     let refused = Recorder::replying(Reply::Original);
-    let outcome = fixture.handle(&refused, settings(false), failure).await;
+    let outcome = handle(&refused, settings(false), failure, fixture.request()).await;
     assert_eq!(rejected(outcome).failure.exception().code, "400");
 }
 
@@ -119,13 +109,13 @@ async fn no_database_proxy_rejection_takes_the_outage_bypass() {
 async fn outage_disabled_no_bypass() {
     let fixture = Fixture::new();
     let ports = Recorder::replying(Reply::Original);
-    let outcome = fixture
-        .handle(
-            &ports,
-            settings(false),
-            database(ErrorType::Connect, "refused"),
-        )
-        .await;
+    let outcome = handle(
+        &ports,
+        settings(false),
+        database(ErrorType::Connect, "refused"),
+        fixture.request(),
+    )
+    .await;
     assert_eq!(rejected(outcome).failure.exception().code, "503");
     let events = ports.events();
     assert!(
@@ -146,13 +136,9 @@ async fn missing_scope_headers_no_user_agent() {
     let without = Recorder::replying(Reply::Original);
     let mut request = fixture.request();
     request.scope_headers = None;
-    let _outcome = fixture
-        .handle_request(&without, settings(false), http(401, false), request)
-        .await;
+    let _outcome = handle(&without, settings(false), http(401, false), request).await;
     let with = Recorder::replying(Reply::Original);
-    let _stamped = fixture
-        .handle(&with, settings(false), http(401, false))
-        .await;
+    let _stamped = handle(&with, settings(false), http(401, false), fixture.request()).await;
     let metadata = |ports: &Recorder| {
         ports
             .hook_calls()
@@ -172,9 +158,7 @@ async fn missing_scope_headers_no_user_agent() {
 async fn log_before_raising_callback() {
     let fixture = Fixture::new();
     let ports = Recorder::replying(Reply::Raise);
-    let outcome = fixture
-        .handle(&ports, settings(false), http(401, false))
-        .await;
+    let outcome = handle(&ports, settings(false), http(401, false), fixture.request()).await;
     assert!(matches!(
         outcome,
         Err(HandlerError::Hook(HookError::Raised))
@@ -208,7 +192,7 @@ async fn invalid_key_warning_stdout_and_traceback_matrix(
 ) {
     let fixture = Fixture::new();
     let ports = Recorder::replying(Reply::Original);
-    let _outcome = fixture.handle(&ports, settings(tracebacks), error).await;
+    let _outcome = handle(&ports, settings(tracebacks), error, fixture.request()).await;
     let logs = ports.logs();
     let first = logs.first().unwrap();
     assert_eq!(
@@ -232,10 +216,12 @@ async fn failure_log_prints_the_exception_and_redacts_secrets() {
     if let AuthFailure::Http { detail, .. } = &mut leaky {
         *detail = "bad key sk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned();
     }
-    let _outcome = fixture.handle(&ports, settings(false), leaky).await;
+    let _outcome = handle(&ports, settings(false), leaky, fixture.request()).await;
     let logs = ports.logs();
-    let expected = "litellm.proxy.proxy_server.user_api_key_auth(): Exception occured - \
-                    401: bad key REDACTED\nRequester IP Address:203.0.113.7";
+    let expected = concat!(
+        "litellm.proxy.proxy_server.user_api_key_auth(): Exception occ",
+        "ured - 401: bad key REDACTED\nRequester IP Address:203.0.113.7"
+    );
     assert_eq!(
         logs.first().map(|entry| entry.message.as_str()),
         Some(expected)
@@ -246,9 +232,7 @@ async fn failure_log_prints_the_exception_and_redacts_secrets() {
 async fn identity_copy_api_key_route_and_model_seed() {
     let fixture = Fixture::new();
     let fresh = Recorder::replying(Reply::Original);
-    let _anonymous = fixture
-        .handle(&fresh, settings(false), http(401, false))
-        .await;
+    let _anonymous = handle(&fresh, settings(false), http(401, false), fixture.request()).await;
     let (route, api_key, model, has_span) = seeded(&fresh);
     assert_eq!(route.as_deref(), Some("/v1/responses/{response_id}"));
     assert_eq!(api_key, Some(safe_hash_api_key("sk-presented")));
@@ -261,9 +245,7 @@ async fn identity_copy_api_key_route_and_model_seed() {
     let mut request = fixture.request();
     request.resolved_identity = Some(&resolved);
     request.parent_span = None;
-    let _known = fixture
-        .handle_request(&kept, settings(false), http(401, false), request)
-        .await;
+    let _known = handle(&kept, settings(false), http(401, false), request).await;
     let (_, kept_key, _, kept_span) = seeded(&kept);
     assert_eq!(
         (kept_key.as_deref(), kept_span),
@@ -295,9 +277,7 @@ async fn budget_missing_provider_resolved_before_hook(
     let mut fixture = Fixture::new();
     fixture.request_data = object(&[("model", model)]);
     let ports = Recorder::replying(Reply::Original);
-    let outcome = fixture
-        .handle(&ports, settings(false), budget(preset))
-        .await;
+    let outcome = handle(&ports, settings(false), budget(preset), fixture.request()).await;
     assert_eq!(rejected(outcome).failure.exception().code, "422");
     assert_eq!(*ports.resolver.calls.lock().unwrap(), resolved);
     let calls = ports.hook_calls();
@@ -321,9 +301,7 @@ async fn transformed_exception_marker_and_non401_error_escalation(
 ) {
     let fixture = Fixture::new();
     let ports = Recorder::replying(Reply::Replace(replacement));
-    let outcome = fixture
-        .handle(&ports, settings(false), http(401, true))
-        .await;
+    let outcome = handle(&ports, settings(false), http(401, true), fixture.request()).await;
     let raised = rejected(outcome);
     assert_eq!(raised.failure.exception().code, code);
     assert_eq!(raised.invalid_virtual_key, marked);
@@ -358,13 +336,13 @@ fn no_native_provider_never_resolves() {
 async fn normal_hook_error_propagates() {
     let fixture = Fixture::new();
     let ports = Recorder::replying(Reply::Raise);
-    let outcome = fixture
-        .handle(
-            &ports,
-            settings(false),
-            database(ErrorType::Connect, "refused"),
-        )
-        .await;
+    let outcome = handle(
+        &ports,
+        settings(false),
+        database(ErrorType::Connect, "refused"),
+        fixture.request(),
+    )
+    .await;
     let Err(HandlerError::Hook(error)) = outcome else {
         panic!("a raising failure hook reaches the caller");
     };

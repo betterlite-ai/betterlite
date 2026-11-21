@@ -16,7 +16,7 @@ use crate::auth_errors::ports::{Level, Logger};
 use crate::auth_errors::request_state::{
     BodyReadError, BodySource, DeferredBodyError, PathParamsError, ReceivedClock, RequestState,
     RequestTelemetry, SpanRequest, StateRejected, ensure_parent_span, ensure_received_at,
-    read_body_deferring_parse_failure, record_unparsable_body_failure,
+    read_body_deferred, record_unparsable_body_failure,
 };
 use crate::resolved_key::auth::ParentOtelSpan;
 
@@ -233,9 +233,7 @@ fn parse_failure() -> ProxyException {
 async fn opaque_audio_empty_cache_without_read() {
     let mut source = Source::reading(Ok(object(&[("model", Json::Null)])));
     source.opaque = true;
-    let deferred = read_body_deferring_parse_failure(&mut source)
-        .await
-        .unwrap();
+    let deferred = read_body_deferred(&mut source).await.unwrap();
     assert!(deferred.body.is_empty());
     assert_eq!(deferred.parse_failure, None);
     assert_eq!(source.log, vec!["cache 0".to_owned()]);
@@ -244,13 +242,11 @@ async fn opaque_audio_empty_cache_without_read() {
 #[tokio::test]
 async fn proxy_parse_error_deferred_other_errors_escape() {
     let mut failing = Source::reading(Err(BodyReadError::Proxy(Box::new(parse_failure()))));
-    let deferred = read_body_deferring_parse_failure(&mut failing)
-        .await
-        .unwrap();
+    let deferred = read_body_deferred(&mut failing).await.unwrap();
     assert!(deferred.body.is_empty());
     assert_eq!(deferred.parse_failure, Some(parse_failure()));
     let mut broken = Source::reading(Err(BodyReadError::Unreadable));
-    let escaped = read_body_deferring_parse_failure(&mut broken).await;
+    let escaped = read_body_deferred(&mut broken).await;
     assert!(matches!(escaped, Err(DeferredBodyError::Unreadable)));
     assert_eq!(broken.log, vec!["read".to_owned()]);
 }
@@ -258,9 +254,7 @@ async fn proxy_parse_error_deferred_other_errors_escape() {
 #[tokio::test]
 async fn path_population_error_not_deferred() {
     let mut populated = Source::reading(Ok(object(&[("model", Json::Null)])));
-    let deferred = read_body_deferring_parse_failure(&mut populated)
-        .await
-        .unwrap();
+    let deferred = read_body_deferred(&mut populated).await.unwrap();
     assert_eq!(
         deferred.body.get("file_id"),
         Some(&Json::Text("f1".to_owned()))
@@ -268,7 +262,7 @@ async fn path_population_error_not_deferred() {
     assert_eq!(deferred.parse_failure, None);
     let mut failing = Source::reading(Ok(JsonObject::new()));
     failing.path_params = Err(PathParamsError);
-    let escaped = read_body_deferring_parse_failure(&mut failing).await;
+    let escaped = read_body_deferred(&mut failing).await;
     assert!(matches!(
         escaped,
         Err(DeferredBodyError::PathParams(PathParamsError))

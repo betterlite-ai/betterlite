@@ -130,7 +130,7 @@ fn stage_is_registered() {
             client_error_tracebacks: true,
             key_identity: true,
         },
-        allow_requests_on_db_unavailable: true,
+        allow_on_outage: true,
         use_x_forwarded_for: true,
     };
     assert_eq!(slot.settings, expected);
@@ -138,7 +138,7 @@ fn stage_is_registered() {
     assert!(slot.hook.get().is_none());
     let defaults = &state_for(&config("")).auth_errors.settings;
     assert_eq!(
-        (defaults.log, defaults.allow_requests_on_db_unavailable),
+        (defaults.log, defaults.allow_on_outage),
         (LogSwitches::default(), false)
     );
 }
@@ -211,8 +211,10 @@ async fn without_a_hook_the_raised_failure_is_answered_and_logged() {
     assert_eq!((status, reached), (StatusCode::FORBIDDEN, false));
     assert!(text.contains(r#""code":"403""#), "{text}");
     let output = read_to_string(log.path()).unwrap();
-    let line = "ERROR LiteLLM Proxy: litellm.proxy.proxy_server.user_api_key_auth(): \
-                Exception occured - Access forbidden: IP address 203.0.113.9";
+    let line = concat!(
+        "ERROR LiteLLM Proxy: litellm.proxy.proxy_server.user_api_key_auth(): Exception occ",
+        "ured - Access forbidden: IP address 203.0.113.9"
+    );
     assert!(output.contains(line), "{output}");
     assert!(output.contains("requester_ip=\"203.0.113.9\""), "{output}");
     assert!(!output.contains(MASTER_KEY), "{output}");
