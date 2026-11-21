@@ -71,7 +71,10 @@ checks:
     - id: reseed-config-corpus
       why: Reseed lock settings have no newly added parser input.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/reseed-lock-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-oracle_cases: []
+oracle_cases:
+  - tools/oracle/cases/helpers/spend-reseed/primary-counter-routing.yaml
+  - tools/oracle/cases/helpers/spend-reseed/singleflight-nx-and-partial-warm.yaml
+  - tools/oracle/cases/helpers/spend-reseed/window-freshness-and-aggregate.yaml
 deviations: []
 out_of_scope:
   - B1735 owns from_db, _counter_row, end_user_from_db and window-counter prefix recognition; this task owns every other function in spend_counter_reseed.py.
