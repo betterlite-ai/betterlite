@@ -1,0 +1,5 @@
+kind: helper
+name: team-limits-defaults-seed
+call: {team_limits: {function: default_team_param, field: models, params: {"models": ["gpt-4o"], "max_budget": 100.5}}}
+env: {}
+compare: {ignore: []}

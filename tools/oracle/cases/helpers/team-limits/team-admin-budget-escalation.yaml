@@ -1,0 +1,51 @@
+kind: helper
+name: team_admin_budget_escalation
+call:
+  team_limits:
+    function: budget_guard
+    request: {"team_id": "team-a"}
+    user_role: internal_user
+    existing: 100.0
+calls:
+  - team_limits:
+      function: budget_guard
+      request: {"team_id": "team-a", "max_budget": null}
+      user_role: internal_user
+      existing: 100.0
+  - team_limits:
+      function: budget_guard
+      request: {"team_id": "team-a", "max_budget": 150.0}
+      user_role: internal_user
+      existing: 100.0
+  - team_limits:
+      function: budget_guard
+      request: {"team_id": "team-a", "max_budget": 50.0}
+      user_role: internal_user
+      existing: 100.0
+  - team_limits:
+      function: budget_guard
+      request: {"team_id": "team-a", "max_budget": 100.0}
+      user_role: internal_user
+      existing: 100.0
+  - team_limits:
+      function: budget_guard
+      request: {"team_id": "team-a", "max_budget": 150.0}
+      user_role: proxy_admin
+      existing: 100.0
+  - team_limits:
+      function: budget_guard
+      request: {"team_id": "team-a", "max_budget": null}
+      user_role: proxy_admin
+      existing: 100.0
+  - team_limits:
+      function: budget_guard
+      request: {"team_id": "team-a", "max_budget": 150.0}
+      user_role: org_admin
+      existing: 100.0
+  - team_limits:
+      function: budget_guard
+      request: {"team_id": "team-a", "max_budget": 150.0}
+      user_role: null
+      existing: 100.0
+env: {}
+compare: {ignore: []}
