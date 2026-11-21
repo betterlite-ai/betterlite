@@ -1,0 +1,23 @@
+[package]
+name = "betterlite-proxy-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+license.workspace = true
+
+[lints]
+workspace = true
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+betterlite-proxy = { path = ".." }
+libfuzzer-sys = "0.4.13"
+
+[[bin]]
+name = "a2a_sse_lines"
+path = "fuzz_targets/a2a_sse_lines.rs"
+test = false
+doc = false
+bench = false
