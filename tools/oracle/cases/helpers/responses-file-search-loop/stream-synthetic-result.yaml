@@ -1,0 +1,46 @@
+kind: helper
+name: responses-file-search-stream-synthetic-result
+call:
+  responses_file_search_loop:
+    input: question
+    model: gpt-test
+    tools:
+      - {type: file_search, vector_store_ids: ["vs_1"]}
+    kwargs:
+      stream: true
+      include: ["file_search_call.results"]
+    provider:
+      - id: resp_first
+        created_at: 1700000000
+        model: gpt-test
+        status: completed
+        output:
+          - {type: function_call, name: litellm_file_search, arguments: '{"queries": ["alpha"]}', call_id: call_1, id: fc_1}
+      - id: resp_final
+        created_at: 1700000001
+        model: gpt-test
+        status: completed
+        output:
+          - type: message
+            id: msg_2
+            status: completed
+            role: assistant
+            content:
+              - {type: output_text, text: answer, annotations: []}
+    searches:
+      - kind: result
+        vector_store_id: vs_1
+        query: alpha
+        response:
+          object: vector_store.search_results.page
+          search_query: alpha
+          data:
+            - file_id: f1
+              filename: a.txt
+              score: 0.5
+              content: [{type: text, text: alpha text}]
+env: {}
+compare:
+  ignore:
+    - pointer: /response/output/0/id
+      reason: LiteLLM mints the file_search_call id from uuid.uuid4, so only the fields around it are comparable

@@ -1,0 +1,68 @@
+kind: helper
+name: responses-file-search-follow-up
+call:
+  responses_file_search_loop:
+    input:
+      - {role: user, content: question}
+    model: gpt-test
+    tools:
+      - {type: file_search, vector_store_ids: ["vs_1"]}
+    kwargs: {}
+    provider:
+      - id: resp_first
+        created_at: 1700000000
+        model: gpt-test
+        status: completed
+        output:
+          - {type: function_call, name: litellm_file_search, arguments: '{"queries": ["alpha"]}', call_id: call_1, id: fc_1}
+          - type: message
+            id: msg_1
+            status: completed
+            role: assistant
+            content:
+              - {type: output_text, text: before search, annotations: []}
+          - {type: file_search_call, id: fs_prev, queries: [old], status: completed, results: null}
+      - id: resp_final
+        created_at: 1700000001
+        model: gpt-test
+        status: completed
+        output:
+          - type: message
+            id: msg_2
+            status: completed
+            role: assistant
+            content:
+              - {type: output_text, text: The answer is 42., annotations: []}
+    searches:
+      - kind: result
+        vector_store_id: vs_1
+        query: alpha
+        response:
+          object: vector_store.search_results.page
+          search_query: alpha
+          data:
+            - {file_id: f1, filename: a.txt, content: [{type: text, text: alpha text}]}
+calls:
+  - responses_file_search_loop:
+      input: question
+      model: gpt-test
+      tools: null
+      kwargs: {}
+      provider:
+        - id: resp_direct
+          created_at: 1700000002
+          model: gpt-test
+          status: completed
+          output:
+            - type: message
+              id: msg_3
+              status: completed
+              role: assistant
+              content:
+                - {type: output_text, text: no tools needed, annotations: []}
+      searches: []
+env: {}
+compare:
+  ignore:
+    - pointer: /response/output/0/id
+      reason: LiteLLM mints the file_search_call id from uuid.uuid4, so only the fields around it are comparable
