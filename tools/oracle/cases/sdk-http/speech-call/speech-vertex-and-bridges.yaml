@@ -14,6 +14,8 @@ upstream:
     body:
       error: {message: slow down, type: rate_limit_error, param: model, code: rate_limit}
 compare:
+  headers: []
+  headers_present: []
   upstream_headers: [authorization, accept, content-type]
   ignore:
     - {pointer: /speech_call/value/steps/0/failure/type, why: betterlite's B011 envelope names a 429 throttling_error where the raw SDK keeps the provider body's type}

@@ -42,5 +42,7 @@ upstream:
     headers: {}
     body: {body_kind: bytes, fixture: binary-response.bin, content_type: audio/wav}
 compare:
+  headers: []
+  headers_present: []
   upstream_headers: [authorization, accept, content-type, x-ignored]
   ignore: []

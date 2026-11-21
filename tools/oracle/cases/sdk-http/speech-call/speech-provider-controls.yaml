@@ -44,6 +44,8 @@ upstream:
     headers: {}
     body: {body_kind: bytes, fixture: binary-response.bin, content_type: audio/wav}
 compare:
+  headers: []
+  headers_present: []
   upstream_headers: []
   ignore:
     - {pointer: /upstream, why: the injected B010 operations answer the native provider branches without an HTTP request, so only LiteLLM calls the mock}

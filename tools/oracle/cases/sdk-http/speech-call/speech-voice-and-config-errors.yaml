@@ -20,6 +20,8 @@ call:
         api_base: '$API_BASE'
 upstream: []
 compare:
+  headers: []
+  headers_present: []
   upstream_headers: []
   ignore:
     - {pointer: /speech_call/value/steps/0/failure/message, why: LiteLLM prefixes a raised litellm.BadRequestError with its class name and betterlite reports the source message}
