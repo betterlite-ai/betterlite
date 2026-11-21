@@ -92,6 +92,16 @@ impl Settings {
         L: EnvironmentLookup,
     {
         Self {
+            request_timeout_seconds: DEFAULT_REQUEST_TIMEOUT,
+            num_retries: None,
+            api_base: None,
+            api_key: None,
+            openai_key: None,
+            organization: None,
+            project: None,
+            azure_key: None,
+            api_version: None,
+            headers: None,
             openai_base_url: environment_text(lookup, "OPENAI_BASE_URL"),
             openai_api_base: environment_text(lookup, "OPENAI_API_BASE"),
             openai_api_key: environment_secret(lookup, "OPENAI_API_KEY"),
@@ -102,7 +112,6 @@ impl Settings {
             azure_openai_api_key: environment_secret(lookup, "AZURE_OPENAI_API_KEY"),
             azure_api_key: environment_secret(lookup, "AZURE_API_KEY"),
             azure_ad_token: environment_secret(lookup, "AZURE_AD_TOKEN"),
-            ..Self::default()
         }
     }
 }

@@ -131,6 +131,33 @@ fn reads_azure_environment_values() {
     );
 }
 
+#[test]
+fn empty_environment_values_are_unset() {
+    let variables = [
+        ("OPENAI_BASE_URL", ""),
+        ("OPENAI_API_BASE", ""),
+        ("OPENAI_API_KEY", ""),
+        ("OPENAI_ORGANIZATION", ""),
+        ("OPENAI_PROJECT", ""),
+        ("AZURE_API_BASE", ""),
+        ("AZURE_API_VERSION", ""),
+        ("AZURE_OPENAI_API_KEY", ""),
+        ("AZURE_API_KEY", ""),
+        ("AZURE_AD_TOKEN", ""),
+    ];
+    let settings = settings("litellm_settings: {}\n", &variables).expect("settings load");
+    assert!(settings.openai_base_url.is_none());
+    assert!(settings.openai_api_base.is_none());
+    assert!(settings.openai_api_key.is_none());
+    assert!(settings.openai_organization.is_none());
+    assert!(settings.openai_project.is_none());
+    assert!(settings.azure_api_base.is_none());
+    assert!(settings.azure_api_version.is_none());
+    assert!(settings.azure_openai_api_key.is_none());
+    assert!(settings.azure_api_key.is_none());
+    assert!(settings.azure_ad_token.is_none());
+}
+
 #[rstest]
 #[case::unset_defaults(6_000.0_f64, &[])]
 #[case::environment_value(7.0_f64, &[("REQUEST_TIMEOUT", "7")])]
