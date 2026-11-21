@@ -41,7 +41,9 @@ pub(super) async fn execute(
         api_key: None,
         ssl_verify: None,
     };
-    let create_body = create_params(call)?;
+    let encoded = serde_json::to_string(&call.create_request).map_err(SdkHttpError::Serialize)?;
+    let create_body: FileParams =
+        serde_json::from_str(&encoded).map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
     let transport_call = file_call(call, &files, &create_body);
     let deps = FileDeps {
         config: &provider,
@@ -78,12 +80,6 @@ fn file_call<'call>(
             extra_query: call.extra_query.as_ref(),
         }),
     }
-}
-
-// betterlite reads the create body into its sorted map, so the case's attribute order reaches LiteLLM alone
-fn create_params(call: &Call) -> Result<FileParams, SdkHttpError> {
-    let encoded = serde_json::to_value(&call.create_request).map_err(SdkHttpError::Serialize)?;
-    serde_json::from_value(encoded).map_err(|error| SdkHttpError::Invalid(error.to_string()))
 }
 
 // A provider failure is what both sides can observe; a betterlite-only failure is not a parity answer
