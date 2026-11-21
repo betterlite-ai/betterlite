@@ -1,5 +1,3 @@
-use std::fmt;
-
 use betterlite_secrets::error::SecretError;
 use thiserror::Error;
 
@@ -7,10 +5,13 @@ const UNMANAGED_DETAIL: &str = "Forbidden. This response id was not issued by th
 const USER_DETAIL: &str = "Forbidden. The response id is not associated with the user, who this key belongs to. To disable this security feature, set general_settings::disable_responses_id_security to True in the config.yaml file.";
 const TEAM_DETAIL: &str = "Forbidden. The response id is not associated with the team, who this key belongs to. To disable this security feature, set general_settings::disable_responses_id_security to True in the config.yaml file.";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub enum Forbidden {
+    #[error("{UNMANAGED_DETAIL}")]
     Unmanaged,
+    #[error("{USER_DETAIL}")]
     User,
+    #[error("{TEAM_DETAIL}")]
     Team,
 }
 
@@ -25,15 +26,9 @@ impl Forbidden {
     }
 }
 
-impl fmt::Display for Forbidden {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.detail())
-    }
-}
-
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("{0}")]
+    #[error(transparent)]
     Forbidden(Forbidden),
     #[error("the response id is not valid UTF-8")]
     NotUtf8,

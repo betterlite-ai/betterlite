@@ -28,11 +28,11 @@ pub(super) fn rewrite_response(
     response: &mut ResponsesApiResponse,
     rewrite: Rewrite<'_>,
 ) -> Result<(), Error> {
-    if response.id.starts_with(ADVERTISED_ID_PREFIX) {
-        response.id = rewrite(&response.id)?;
-        return Ok(());
+    if !response.id.starts_with(ADVERTISED_ID_PREFIX) {
+        return rewrite_nested_mapping(&mut response.extra, rewrite);
     }
-    rewrite_nested_mapping(&mut response.extra, rewrite)
+    response.id = rewrite(&response.id)?;
+    Ok(())
 }
 
 pub(super) fn rewrite_event(

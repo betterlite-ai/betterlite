@@ -12,8 +12,7 @@ const RESPONSE_MARKER: &str = "response_id:";
 const USER_MARKER: &str = "user_id:";
 const TEAM_MARKER: &str = "team_id:";
 
-// LiteLLM decrypts through decrypt_value_helper with return_original_value=True, so a failed
-// open yields the stored text and the managed-prefix check decides what it was
+// LiteLLM decrypts with return_original_value=True, so a failed open yields the stored text
 pub trait OwnedIdCipher {
     fn decrypt_id(&self, ciphertext: &str) -> Option<String>;
 }
