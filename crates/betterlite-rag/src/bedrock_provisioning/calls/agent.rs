@@ -58,7 +58,9 @@ pub fn ingestion_job_url(
     if let Some(id) = job_id {
         segments.push(utf8_percent_encode(id, super::UNRESERVED).to_string());
     }
-    format!("{}/{}", bedrock_agent_endpoint(region), segments.join("/"))
+    let path = segments.join("/");
+    let suffix = if job_id.is_some() { "" } else { "/" };
+    format!("{}/{path}{suffix}", bedrock_agent_endpoint(region))
 }
 
 // StartIngestionJob carries a client token in its body, GetIngestionJob only names the job

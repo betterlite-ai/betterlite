@@ -179,6 +179,7 @@ where
         self.ensure_config_initialized().await?;
         let configured_kb = self.clients.settings.knowledge_base_id.clone();
         let Some((content, filename)) = stored_file(request.file_content, request.filename) else {
+            tracing::warn!("No file content or filename provided for Bedrock ingestion");
             return Ok((configured_kb, None));
         };
         let bucket = self

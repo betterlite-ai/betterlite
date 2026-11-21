@@ -234,6 +234,12 @@ async fn index_looks_the_collection_up_by_name_and_creates_it() {
         "https://abc.us-west-2.aoss.amazonaws.com/bedrock-kb-index"
     );
     assert_eq!(create.method, "PUT");
+    let content_type = create
+        .headers
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case("Content-Type"))
+        .map(|(_, value)| value.as_str());
+    assert_eq!(content_type, Some("application/json"));
     let body = str::from_utf8(&create.body).unwrap();
     assert!(body.contains("\"knn.algo_param.ef_search\":512"));
 }

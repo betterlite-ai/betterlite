@@ -22,6 +22,7 @@ const TEXT_TYPE: &str = "text";
 #[serde(rename_all = "PascalCase")]
 pub struct EncryptionPolicy {
     pub rules: Vec<CollectionRule>,
+    #[serde(rename = "AWSOwnedKey")]
     pub aws_owned_key: bool,
 }
 

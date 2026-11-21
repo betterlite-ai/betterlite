@@ -17,6 +17,8 @@ pub(super) const INDEX_OPERATION: &str = "CreateIndex";
 const INDEX_ATTEMPTS: usize = 8;
 const INDEX_RETRY_DELAY: Duration = Duration::from_secs(20);
 const INDEX_NAME: &str = "bedrock-kb-index";
+// the collection endpoint takes the OpenSearch API media type, not the aoss control-plane one
+const INDEX_CONTENT_TYPE: &str = "application/json";
 const AUTHORIZATION_MARKERS: [&str; 2] = ["authorization_exception", "security_exception"];
 
 pub(super) async fn create_index<Transport>(
@@ -78,10 +80,7 @@ fn index_request(region: &str, url: &str, body: Vec<u8>) -> CallRequest {
         signing_region: region.to_owned(),
         method: "PUT",
         url: url.to_owned(),
-        headers: vec![(
-            "Content-Type".to_owned(),
-            aoss::JSON_CONTENT_TYPE.to_owned(),
-        )],
+        headers: vec![("Content-Type".to_owned(), INDEX_CONTENT_TYPE.to_owned())],
         body,
     }
 }
