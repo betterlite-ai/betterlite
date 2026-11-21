@@ -1,0 +1,12 @@
+kind: helper
+name: budget-gauges-team-members-count
+call:
+  b3882:
+    function: team_members
+    team_id: t1
+    team_alias: Alpha
+    member_count: 3
+    labels_by_metric:
+      litellm_team_members_metric: [team, team_alias]
+env: {}
+compare: {ignore: []}

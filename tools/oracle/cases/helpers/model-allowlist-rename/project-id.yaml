@@ -1,0 +1,8 @@
+kind: helper
+name: model-allowlist-rename-project-id
+call:
+  model_allowlist_rename:
+    kind: project
+    object_id: project-1
+env: {}
+compare: {ignore: []}

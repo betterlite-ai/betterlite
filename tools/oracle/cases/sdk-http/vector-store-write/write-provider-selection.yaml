@@ -1,0 +1,49 @@
+kind: sdk_http
+name: vector-store-write-provider-selection
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  vector_store_write:
+    runs:
+      - operation: update
+        mode: sync
+        vector_store_id: vs_a
+        name: notes
+      - operation: update
+        mode: sync
+        vector_store_id: vs_a
+        name: notes
+        custom_llm_provider: openai
+      - operation: update
+        mode: sync
+        vector_store_id: vs_a
+        name: notes
+        custom_llm_provider: openai/gpt-4o
+      - operation: update
+        mode: sync
+        vector_store_id: vs_a
+        name: notes
+        custom_llm_provider: not_a_provider
+      - operation: update
+        mode: sync
+        vector_store_id: vs_a
+        name: notes
+        custom_llm_provider: anthropic
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: vs_a, object: vector_store, name: notes}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: vs_a, object: vector_store, name: notes}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: vs_a, object: vector_store, name: notes}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization]
+  ignore:
+    - pointer: /vector_store_write/value/runs/3/failure/message
+      why: the ValueError text is wrapped with a LiteLLM traceback that only the Python side carries
+    - pointer: /vector_store_write/value/runs/4/failure/message
+      why: the ValueError text is wrapped with a LiteLLM traceback that only the Python side carries
