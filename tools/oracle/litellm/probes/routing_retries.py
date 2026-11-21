@@ -223,7 +223,7 @@ class RoutingRetries(Operation):
         return asyncio.run(self.execute())
 
     async def execute(self) -> Output:
-        router: RouterCompletions = Router(
+        router = Router(
             model_list=[model_list_entry(deployment) for deployment in self.deployments],
             num_retries=self.num_retries,
             retry_policy=self.retry_policy,
@@ -234,24 +234,28 @@ class RoutingRetries(Operation):
         provider = Provider(self.steps, stream=self.stream)
         # the switch raises before any provider call, so the backoff after it is the router's too
         provider.between_attempts = self.mock_testing_rate_limit_error
+        with patch.object(litellm, "acompletion", provider.acompletion), patch.object(asyncio, "sleep", provider.sleep):
+            return await self.route(router, provider)
+
+    # the router comes in through its protocol, so the call is typed without Router's untyped **kwargs
+    async def route(self, router: RouterCompletions, provider: Provider) -> Output:
         outcome: Outcome = "answered"
         answered: Headers | None = None
         failed: Failure | None = None
-        with patch.object(litellm, "acompletion", provider.acompletion), patch.object(asyncio, "sleep", provider.sleep):
-            try:
-                response = await router.acompletion(
-                    model=_GROUP,
-                    messages=_MESSAGES,
-                    stream=self.stream,
-                    num_retries=self.request_num_retries,
-                    mock_testing_rate_limit_error=self.mock_testing_rate_limit_error,
-                )
-                answered = headers(response)
-            except asyncio.CancelledError:
-                outcome = "cancelled"
-            except _CAUGHT as error:
-                outcome = "failed"
-                failed = failure(error)
+        try:
+            response = await router.acompletion(
+                model=_GROUP,
+                messages=_MESSAGES,
+                stream=self.stream,
+                num_retries=self.request_num_retries,
+                mock_testing_rate_limit_error=self.mock_testing_rate_limit_error,
+            )
+            answered = headers(response)
+        except asyncio.CancelledError:
+            outcome = "cancelled"
+        except _CAUGHT as error:
+            outcome = "failed"
+            failed = failure(error)
         return Output(
             outcome=outcome, calls=provider.calls, backoffs=provider.backoffs, headers=answered, error=failed
         )
