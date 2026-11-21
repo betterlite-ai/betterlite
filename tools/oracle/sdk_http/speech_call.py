@@ -21,30 +21,9 @@ SpeechAnswer: TypeAlias = (
 )
 
 
-# basedpyright sees litellm.main.speech as partially unknown, so the adapter calls it through the options this facade names
+# litellm.main.speech is partially unknown, so the call goes through this facade
 class SpeechEntry(Protocol):
-    def speech(
-        self,
-        model: str,
-        input: str,
-        voice: str | dict[str, Json] | None = None,
-        api_key: str | None = None,
-        api_base: str | None = None,
-        api_version: str | None = None,
-        organization: str | None = None,
-        project: str | None = None,
-        max_retries: int | None = None,
-        metadata: dict[str, Json] | None = None,
-        timeout: float | None = None,
-        response_format: str | None = None,
-        speed: int | None = None,
-        instructions: str | None = None,
-        client: None = None,
-        headers: dict[str, Json] | None = None,
-        custom_llm_provider: str | None = None,
-        base_url: str | None = None,
-        **kwargs: Json,
-    ) -> SpeechAnswer: ...
+    def speech(self, /, **kwargs: Json) -> SpeechAnswer: ...
 
 
 SPEECH = cast(SpeechEntry, speech_main)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8237-L8259
