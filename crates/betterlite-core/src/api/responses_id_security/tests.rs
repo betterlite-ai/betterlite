@@ -859,6 +859,31 @@ fn response_rewrite_routes() {
 }
 
 #[test]
+fn id_at_the_size_limit_still_decodes() {
+    let (_, cipher) = fixture(false, false, Some(FUZZ_SALT), 0);
+    let limits = ApiLimits::default();
+    let owned = managed_id(&cipher, "resp_test", "alice", "team-a");
+    let padding = limits.max_json_bytes - owned.len() - "resp_".len();
+    let wire = format!("{owned}resp_{}", "a".repeat(padding));
+    assert_eq!(wire.len(), limits.max_json_bytes);
+
+    // exactly at the limit the id is still decoded; one byte past it is unmanaged
+    assert_eq!(
+        decode_owned_response_id(wire.as_bytes(), &cipher, limits).unwrap(),
+        DecodedResponseId::Managed {
+            original_id: "resp_test".to_owned(),
+            user_id: "alice".to_owned(),
+            team_id: "team-a".to_owned(),
+        }
+    );
+    let over = format!("{wire}a");
+    assert_eq!(
+        decode_owned_response_id(over.as_bytes(), &cipher, limits).unwrap(),
+        DecodedResponseId::Unmanaged
+    );
+}
+
+#[test]
 fn replays_corpus() {
     let (_, cipher) = fixture(false, false, Some(FUZZ_SALT), 0);
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/owned_response_id");
