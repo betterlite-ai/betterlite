@@ -138,17 +138,15 @@ pub(super) struct Source {
 }
 
 impl Source {
-    fn new(tagged: Vec<(ImageEditConfigTag, Arc<Provider>)>) -> Self {
+    pub(super) fn new(tagged: Vec<(ImageEditConfigTag, Arc<Provider>)>) -> Self {
         Self { tagged }
     }
 }
 
 impl ImageEditProviderSource for Source {
     fn provider(&self, tag: &ImageEditConfigTag) -> Option<&dyn ImageEditProvider> {
-        self.tagged
-            .iter()
-            .find(|(candidate, _)| candidate == tag)
-            .map(|(_, provider)| provider.as_ref() as &dyn ImageEditProvider)
+        let (_, provider) = self.tagged.iter().find(|(candidate, _)| candidate == tag)?;
+        Some(&**provider)
     }
 }
 

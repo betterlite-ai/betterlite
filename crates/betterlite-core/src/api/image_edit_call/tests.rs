@@ -23,7 +23,6 @@ use super::call::{DEFAULT_MODEL, DEFAULT_REQUEST_TIMEOUT, ImageEditClientKind, I
 use super::entry::ImageEditEntry;
 use super::error::ImageEditError;
 use super::service::{ImageEdits, branch_timeout};
-use crate::api::image_input_options::options::{Quality, ResponseFormat};
 use crate::api::image_input_options::selection::OptionalParamsPolicy;
 
 mod support;

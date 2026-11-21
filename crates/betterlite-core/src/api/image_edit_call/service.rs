@@ -2,6 +2,7 @@ use betterlite_config::sections::image_edit_call::Settings;
 use betterlite_context::media_config_selection::image_edit::{
     ImageEditConfigTag, select_image_edit,
 };
+use betterlite_context::non_default_params::Params;
 use betterlite_context::non_default_params::filters::filter_out_litellm_params;
 use betterlite_context::non_default_params::names::is_openai_compatible_provider;
 use betterlite_models::decisions::Json;
@@ -43,6 +44,15 @@ struct ResolvedEdit {
     identity: ProviderIdentity,
 }
 
+// one call as both steps read it once resolution settled
+#[derive(Clone, Copy)]
+struct EditCall<'call> {
+    call: &'call ImageEditCall,
+    resolved: &'call ResolvedEdit,
+    images: &'call [ImageFile],
+    asynchronous: bool,
+}
+
 impl ImageEditOperation for ImageEdits<'_> {
     fn begin(
         &self,
@@ -52,10 +62,16 @@ impl ImageEditOperation for ImageEdits<'_> {
     ) -> Result<ImageEditStep<'_>, ImageEditError> {
         let resolved = self.resolve_call(call)?;
         let images = call.image.images();
-        if let Some(step) = self.custom_step(call, &resolved, &images, asynchronous)? {
+        let edit = EditCall {
+            call,
+            resolved: &resolved,
+            images: &images,
+            asynchronous,
+        };
+        if let Some(step) = self.custom_step(edit)? {
             return Ok(step);
         }
-        self.configured_step(call, &resolved, &images, asynchronous, logger)
+        self.configured_step(edit, logger)
     }
 
     // image_edit rebinds model and custom_llm_provider only when get_llm_provider returns
@@ -95,13 +111,13 @@ impl ImageEdits<'_> {
     }
 
     // a listed custom provider skips config lookup, option projection and logging entirely
-    fn custom_step<'this>(
-        &'this self,
-        call: &ImageEditCall,
-        resolved: &ResolvedEdit,
-        images: &[ImageFile],
-        asynchronous: bool,
-    ) -> Result<Option<ImageEditStep<'this>>, ImageEditError> {
+    fn custom_step(&self, edit: EditCall<'_>) -> Result<Option<ImageEditStep<'_>>, ImageEditError> {
+        let EditCall {
+            call,
+            resolved,
+            images,
+            asynchronous,
+        } = edit;
         let handler = match self.custom.lookup(&resolved.provider) {
             CustomEditLookup::Missing => return Ok(None),
             CustomEditLookup::Unmatched => {
@@ -125,31 +141,35 @@ impl ImageEdits<'_> {
         Ok(Some(handler.call(request, asynchronous)?))
     }
 
-    fn configured_step<'this>(
-        &'this self,
-        call: &ImageEditCall,
+    // B157 picks the config tag, and the composition has to hold a provider for it
+    fn select_provider(
+        &self,
         resolved: &ResolvedEdit,
-        images: &[ImageFile],
-        asynchronous: bool,
-        logger: &mut dyn ImageEditLogger,
-    ) -> Result<ImageEditStep<'this>, ImageEditError> {
+    ) -> Result<(ImageEditConfigTag, &dyn ImageEditProvider), ImageEditError> {
         let tag = provider_id(&resolved.identity)
-            .and_then(|provider| select_image_edit(&resolved.model, provider));
-        let Some(tag) = tag else {
-            return Err(ImageEditError::UnsupportedConfig {
+            .and_then(|provider| select_image_edit(&resolved.model, provider))
+            .ok_or_else(|| ImageEditError::UnsupportedConfig {
                 provider: resolved.provider.clone(),
-            });
-        };
+            })?;
         let provider =
             self.providers
                 .provider(&tag)
                 .ok_or_else(|| ImageEditError::UnsupportedConfig {
                     provider: resolved.provider.clone(),
                 })?;
-        let non_default =
-            filter_out_litellm_params(&control_params(&call.kwargs), &OPENAI_EDIT_PARAMS);
+        Ok((tag, provider))
+    }
+
+    // the provider maps the options, then OpenAI-shaped multipart providers add the form fields
+    fn edit_params(
+        &self,
+        edit: EditCall<'_>,
+        provider: &dyn ImageEditProvider,
+        non_default: &Params,
+    ) -> Result<ImageParams, ImageEditError> {
+        let EditCall { call, resolved, .. } = edit;
         let supported = provider.supported_openai_params(&resolved.model);
-        let extensions = supported_extensions(&call.kwargs, &non_default, &supported);
+        let extensions = supported_extensions(&call.kwargs, non_default, &supported);
         let options = requested_options(call, &extensions)?;
         let policy = params_policy(call, self.global_drop_params);
         let mut params = provider.map_edit_options(&options, &resolved.model, &policy)?;
@@ -158,9 +178,23 @@ impl ImageEdits<'_> {
                 || resolved.provider == "azure"
                 || is_openai_compatible_provider(&resolved.provider))
         {
-            let fields = form_fields(call, &non_default)?;
+            let fields = form_fields(call, non_default)?;
             merge_form_fields(&mut params, fields);
         }
+        Ok(params)
+    }
+
+    fn configured_step(
+        &self,
+        edit: EditCall<'_>,
+        logger: &mut dyn ImageEditLogger,
+    ) -> Result<ImageEditStep<'_>, ImageEditError> {
+        let call = edit.call;
+        let resolved = edit.resolved;
+        let (tag, provider) = self.select_provider(resolved)?;
+        let non_default =
+            filter_out_litellm_params(&control_params(&call.kwargs), &OPENAI_EDIT_PARAMS);
+        let mut params = self.edit_params(edit, provider, &non_default)?;
         // the record keeps the options as they stand here, before any branch-specific merge
         logger.update_from_kwargs(PreCallRecord {
             model: resolved.model.clone(),
@@ -177,7 +211,7 @@ impl ImageEdits<'_> {
         provider.send(ImageEditSendRequest {
             model: &resolved.model,
             prompt: call.prompt.as_deref(),
-            images,
+            images: edit.images,
             mask: call.mask.as_ref(),
             optional_params: &params,
             litellm_params: &call.kwargs,
@@ -187,8 +221,8 @@ impl ImageEdits<'_> {
             api_key: text_param(&call.kwargs, "api_key"),
             api_base: text_param(&call.kwargs, "api_base"),
             custom_llm_provider: &resolved.provider,
-            client: client_for(call, asynchronous),
-            asynchronous,
+            client: client_for(call, edit.asynchronous),
+            asynchronous: edit.asynchronous,
         })
     }
 }
