@@ -194,6 +194,15 @@ async fn the_configured_default_priority_fills_a_request_without_one() {
     assert_eq!(none.priority(None), None);
 }
 
+// Router.schedule_acompletion's str(uuid.uuid4()) comes from the injected source
+#[test]
+fn the_request_id_source_names_each_scheduled_request() {
+    assert_eq!(
+        scheduler(Settings::default()).next_request_id(),
+        "generated"
+    );
+}
+
 // polling_interval or DEFAULT_POLLING_INTERVAL, 0.03 seconds at the pin
 #[tokio::test]
 async fn polling_interval_defaults_to_thirty_milliseconds() {
