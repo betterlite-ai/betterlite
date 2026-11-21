@@ -100,6 +100,49 @@ async fn a_decorated_own_hook_writes_one_invocation_record(
 }
 
 #[rstest]
+#[case::post_call_answer(Answer::Pass, GuardrailHook::PostCall(JsonValue::Null), "\"checked\"")]
+#[case::masked_messages(
+    Answer::Replace(map(r#"{"messages": [{"role": "user", "content": "***"}]}"#)),
+    GuardrailHook::PreCall,
+    "\"mask\""
+)]
+#[case::same_messages(
+    Answer::Replace(map(r#"{"messages": [{"role": "user", "content": "hi"}], "extra": 1}"#)),
+    GuardrailHook::PreCall,
+    "\"allow\""
+)]
+#[case::text_answer(Answer::Text("no".to_owned()), GuardrailHook::PreCall, "\"no\"")]
+#[case::unchanged(Answer::Pass, GuardrailHook::PreCall, "{}")]
+#[tokio::test]
+async fn a_decorated_hook_records_what_it_returned(
+    #[case] answer: Answer,
+    #[case] hook: GuardrailHook,
+    #[case] expected: &str,
+) {
+    let harness = harness();
+    let callback = fake(
+        "myCustomGuardrail",
+        Some(guardrail(Some(NAME))),
+        answer,
+        &harness.log,
+    );
+    let mut data = map(r#"{"messages": [{"role": "user", "content": "hi"}]}"#);
+    let outcome = execute(&harness, &callback, hook, &mut data).await;
+    assert_eq!(outcome.map(|_answer| ()), Ok(()));
+    let Some(JsonValue::Array(entries)) =
+        metadata_field(&data, "standard_logging_guardrail_information")
+    else {
+        panic!("the hook wrote no record");
+    };
+    let responses: Vec<JsonValue> = entries
+        .iter()
+        .map(|entry| entry["guardrail_response"].clone())
+        .collect();
+    let parsed: JsonValue = serde_json::from_str(expected).unwrap();
+    assert_eq!(responses, vec![parsed]);
+}
+
+#[rstest]
 #[case::blocked(http("blocked"), "guardrail_intervened")]
 #[case::server_error(ProxyHookError::Http { status: 500, detail: "down".to_owned() }, "guardrail_failed_to_respond")]
 #[case::raised(ProxyHookError::GuardrailRaised { message: "no".to_owned(), guardrail_name: None, status: 400, blocked_content: false }, "guardrail_intervened")]
