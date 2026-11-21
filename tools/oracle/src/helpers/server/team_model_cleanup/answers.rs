@@ -23,10 +23,14 @@ pub(super) async fn answer(input: &Input) -> HelperResult {
 
 async fn answer_call(call: &Call) -> HelperResult {
     match call {
-        Call::DeleteTeamModelAlias(call) => alias_answer(call).await,
-        Call::GetTeamDeployments(call) => deployment_answer(call, false).await,
-        Call::GetTeamPublicModelNames(call) => deployment_answer(call, true).await,
-        Call::RemoveUnbackedTeamModels(call) => remove_answer(call).await,
+        Call::DeleteTeamModelAlias(alias_call) => alias_answer(alias_call).await,
+        Call::GetTeamDeployments(deployment_call) => {
+            deployment_answer(deployment_call, false).await
+        }
+        Call::GetTeamPublicModelNames(public_names_call) => {
+            deployment_answer(public_names_call, true).await
+        }
+        Call::RemoveUnbackedTeamModels(remove_call) => remove_answer(remove_call).await,
     }
 }
 
@@ -61,7 +65,7 @@ async fn deployment_answer(call: &DeploymentCall, public_names: bool) -> HelperR
 async fn remove_answer(call: &RemoveCall) -> HelperResult {
     let store = FakeStore::new(
         call.team_id.as_deref().unwrap_or_default(),
-        call.team_id.as_ref().and(call.team_models.clone()),
+        call.team_id.as_ref().and_then(|_| call.team_models.clone()),
         call.aliases.clone(),
         call.deployments.clone(),
     );

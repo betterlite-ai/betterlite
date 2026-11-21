@@ -13,7 +13,7 @@ use self::answers::answer;
 pub(crate) struct Op;
 
 #[derive(Debug, Deserialize)]
-struct Input {
+pub(crate) struct Input {
     calls: Vec<Call>,
 }
 
