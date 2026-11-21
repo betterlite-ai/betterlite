@@ -102,7 +102,7 @@ fn default_and_unbounded_bounds_are_unknown(#[case] expression: &str) {
 #[case::basic_date("FOR VALUES FROM ('2026-06-01') TO ('20260602')")]
 #[case::week_date("FOR VALUES FROM ('2026-06-01') TO ('2026-W23-1')")]
 #[case::arbitrary_separator("FOR VALUES FROM ('2026-06-01') TO ('2026-06-02X00:00:00')")]
-fn unparseable_bounds_are_unknown(#[case] expression: &str) {
+fn unparsable_bounds_are_unknown(#[case] expression: &str) {
     assert_eq!(
         parse_partition_upper_bound(expression),
         PartitionBound::Unknown
