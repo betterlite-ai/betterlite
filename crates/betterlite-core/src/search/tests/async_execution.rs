@@ -27,30 +27,28 @@ async fn async_execution_keeps_each_call_in_its_own_logging_state() {
     );
     first_result.unwrap();
     second_result.unwrap();
+    let logged = [&first_harness.state, &second_harness.state].map(|state| {
+        (
+            state.litellm_params.get("litellm_call_id").cloned(),
+            Json::Object(state.optional_params.clone()),
+        )
+    });
     assert_eq!(
-        first_harness.state.litellm_params.get("litellm_call_id"),
-        Some(&Json::Text("first".to_owned()))
+        logged,
+        [
+            (
+                Some(Json::Text("first".to_owned())),
+                json(r#"{"lang":"en"}"#)
+            ),
+            (
+                Some(Json::Text("second".to_owned())),
+                json(r#"{"lang":"de"}"#)
+            ),
+        ]
     );
-    assert_eq!(
-        Json::Object(first_harness.state.optional_params.clone()),
-        json(r#"{"lang":"en"}"#)
-    );
-    assert_eq!(
-        second_harness.state.litellm_params.get("litellm_call_id"),
-        Some(&Json::Text("second".to_owned()))
-    );
-    assert_eq!(
-        Json::Object(second_harness.state.optional_params.clone()),
-        json(r#"{"lang":"de"}"#)
-    );
-    assert_eq!(
-        first_server.finish().expect("the fixture answers").body,
-        r#""rust""#
-    );
-    assert_eq!(
-        second_server.finish().expect("the fixture answers").body,
-        r#""go""#
-    );
+    let bodies = [first_server, second_server]
+        .map(|served| served.finish().expect("the fixture answers").body);
+    assert_eq!(bodies, [r#""rust""#, r#""go""#]);
 }
 
 #[tokio::test(flavor = "current_thread")]

@@ -97,10 +97,6 @@ impl Recorder {
     }
 }
 
-fn exposed(api_key: Option<&SecretString>) -> Option<String> {
-    api_key.map(|key| key.expose_secret().to_owned())
-}
-
 impl SearchProvider for Recorder {
     type Body = SearchQuery;
     type Error = TestError;
@@ -113,7 +109,7 @@ impl SearchProvider for Recorder {
     ) -> Headers {
         self.record(Call::Validate {
             headers: headers.clone(),
-            api_key: exposed(api_key),
+            api_key: api_key.map(|key| key.expose_secret().to_owned()),
             api_base: api_base.map(str::to_owned),
         });
         headers.insert("x-validated".to_owned(), "yes".to_owned());
@@ -131,7 +127,7 @@ impl SearchProvider for Recorder {
             api_base: api_base.map(str::to_owned),
             params: optional_params.clone(),
             has_body: body.is_some(),
-            api_key: exposed(api_key),
+            api_key: api_key.map(|key| key.expose_secret().to_owned()),
         });
         if self.fail_url {
             return Err(TestError::Url);
@@ -214,24 +210,28 @@ pub(super) struct Harness {
     pub(super) core: CoreSettings,
 }
 
+fn logging_state(redactor: &Redactor) -> LoggingState {
+    let init: LoggingInit = serde_json::from_str(
+        r#"{"model":"unset","call_type":"search","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#,
+    )
+    .expect("the logging fixture is valid");
+    LoggingState::new(
+        init,
+        CorrelationSetup {
+            context: &mut CorrelationContext::default(),
+            settings: CorrelationSettings::default(),
+        },
+        redactor,
+        || String::from("generated"),
+        Duration::default,
+    )
+    .expect("the logging state builds")
+}
+
 impl Harness {
     pub(super) fn new() -> Self {
-        let init: LoggingInit = serde_json::from_str(
-            r#"{"model":"unset","call_type":"search","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#,
-        )
-        .expect("the logging fixture is valid");
         let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor builds");
-        let state = LoggingState::new(
-            init,
-            CorrelationSetup {
-                context: &mut CorrelationContext::default(),
-                settings: CorrelationSettings::default(),
-            },
-            &redactor,
-            || String::from("generated"),
-            Duration::default,
-        )
-        .expect("the logging state builds");
+        let state = logging_state(&redactor);
         Self {
             redactor,
             sink: Sink,
