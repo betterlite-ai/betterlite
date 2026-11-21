@@ -1,0 +1,66 @@
+task: B4678
+deviations:
+  - what: >-
+      A request under /.well-known/oauth-authorization-server/<prefix>/v1/mcp/oauth
+      whose prefix is not in SERVER_ROOT_PATHS gets the router's generic 404 body,
+      not {"detail": "Unknown proxy root path"}. The prefix list is read once at
+      startup.
+    why: >-
+      axum cannot put a literal segment after a catch-all, so betterlite registers
+      one static route per configured prefix, and LiteLLM's {root_path:path} route
+      and its per-request env read have no equivalent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L677-L684
+  - what: >-
+      The session token's header keys are written in the jsonwebtoken crate's order
+      (typ before alg), so the token text differs from PyJWT's for the same claims.
+    why: >-
+      Clients treat the token as opaque and the oracle compares the decoded header
+      and claims. PyJWT sorts header keys and the crate does not.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L944
+  - what: >-
+      The no-database warning says no database is configured instead of
+      "prisma_client is None".
+    why: betterlite has no Prisma client. It is a log line, not wire output.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L930-L931
+  - what: >-
+      A token request whose body is multipart/form-data is read as an empty form
+      and answered with the 422 missing-field body, where FastAPI decodes the
+      multipart fields and runs the exchange.
+    why: >-
+      Only application/x-www-form-urlencoded is parsed, as RFC 6749 section 4.1.3
+      requires of token clients; a multipart parser and its own limits are not
+      built here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L834-L842
+  - what: >-
+      A token request body over 1 MiB in total is rejected before parsing with 400
+      {"detail": "There was an error parsing the body"}, where LiteLLM caps a
+      single field at 1 MB (Starlette's max_part_size), has no total limit, and
+      answers 400 "Field exceeded maximum size of 1024KB." when one field is over.
+    why: >-
+      The total cap bounds the memory one request can make the parser hold; a
+      single 1 MiB field plus its name already crosses it.
+    link: ""
+  - what: >-
+      A base URL whose URL parse fails (an unterminated IPv6 bracket) makes the
+      protected-resource and prefixed discovery routes answer 500 with betterlite's
+      JSON error envelope, where LiteLLM's urlparse raises and Starlette answers a
+      plain-text 500.
+    why: >-
+      betterlite parses base URLs in the server layer and maps every parse failure
+      through its one error envelope; the status matches LiteLLM's 500.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L682-L684
+  - what: >-
+      A discovery or token path with a trailing slash gets the router's 404, where
+      Starlette redirects it (307, method preserved) to the path without the slash.
+    why: >-
+      axum serves the exact paths only; LiteLLM inherits FastAPI's redirect_slashes
+      default, and no OAuth client sends the slashed form.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L665-L696
+  - what: >-
+      issue_session_token rejects a negative or non-finite iat with
+      SessionTokenError::IssuedAt, where PyJWT would sign int(iat) as written.
+    why: >-
+      The route takes iat from the system clock after UNIX_EPOCH, so a working
+      setup never reaches the rejected values; the function rejects them instead of
+      casting through Rust's saturating float-to-integer rules.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L933
