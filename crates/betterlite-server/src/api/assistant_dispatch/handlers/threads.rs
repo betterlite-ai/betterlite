@@ -89,10 +89,10 @@ fn thread_id(kwargs: &mut BTreeMap<String, Json>) -> Result<String, AssistantDis
 }
 
 // the client object the caller handed reaches either installed wrapper unchanged
-fn supplied<'a, T: Deps, S: Sources>(
-    dispatcher: &'a AssistantDispatcher<'_, '_, T, S>,
-    request: &'a AssistantRequest<'_>,
-) -> Option<ThreadClient<'a, T>> {
+fn supplied<'dispatcher, T: Deps, S: Sources>(
+    dispatcher: &'dispatcher AssistantDispatcher<'_, '_, T, S>,
+    request: &'dispatcher AssistantRequest<'_>,
+) -> Option<ThreadClient<'dispatcher, T>> {
     request
         .client
         .as_ref()

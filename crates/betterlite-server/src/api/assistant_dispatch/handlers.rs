@@ -37,10 +37,11 @@ pub(super) async fn run<T: Deps, S: Sources>(
             assistants::create(dispatcher, merged, request).await
         }
         AssistantOperation::ListAssistants => {
-            assistants::read_or_delete(dispatcher, merged, ReadDeleteOperation::List, request).await
+            assistants::read_or_delete(dispatcher, &merged, ReadDeleteOperation::List, request)
+                .await
         }
         AssistantOperation::DeleteAssistant => {
-            assistants::read_or_delete(dispatcher, merged, ReadDeleteOperation::Delete, request)
+            assistants::read_or_delete(dispatcher, &merged, ReadDeleteOperation::Delete, request)
                 .await
         }
         AssistantOperation::CreateThread => {

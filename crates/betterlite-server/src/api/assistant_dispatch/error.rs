@@ -45,17 +45,18 @@ pub enum AssistantDispatchError {
     // the typed SDK input refused a value; the message names the field
     #[error("{message}")]
     Invalid { message: String },
+    // the SDK failures are boxed: each carries a whole exception, and an error stays cheap to return
     #[error("{}", failure.message)]
-    Failure { failure: AssistantFailure },
+    Failure { failure: Box<AssistantFailure> },
     #[error(transparent)]
-    ReadDelete(AssistantReadDeleteError<AssistantSdkError>),
+    ReadDelete(Box<AssistantReadDeleteError<AssistantSdkError>>),
     // get_thread reads the record's own error, not the class the facade reports
     #[error("{}", failure.error)]
     Thread { failure: Box<ThreadFailure> },
     #[error(transparent)]
-    Message(MessageFailure),
+    Message(Box<MessageFailure>),
     #[error(transparent)]
-    Run(AssistantRunError),
+    Run(Box<AssistantRunError>),
 }
 
 impl AssistantDispatchError {
@@ -109,11 +110,11 @@ impl AssistantDispatchError {
     #[must_use]
     pub fn read_delete(error: AssistantReadDeleteError<AssistantSdkError>) -> Self {
         let Some(fields) = error.fields() else {
-            return Self::ReadDelete(error);
+            return Self::ReadDelete(Box::new(error));
         };
         let text = error.to_string();
         Self::Failure {
-            failure: AssistantFailure {
+            failure: Box::new(AssistantFailure {
                 class: fields.class.to_owned(),
                 status: fields.status,
                 kind: fields
@@ -126,7 +127,7 @@ impl AssistantDispatchError {
                 } else {
                     text
                 },
-            },
+            }),
         }
     }
 }

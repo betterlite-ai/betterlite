@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use betterlite_core::api::assistant_messages::connection::MessageParams;
@@ -31,19 +32,7 @@ pub(super) async fn call<T: Deps, S: Sources>(
         MessageOperation::List => &["thread_id"],
     };
     require(&merged.kwargs, function, names)?;
-    let thread_id = text(&merged.kwargs, "thread_id")?
-        .ok_or_else(|| AssistantDispatchError::missing_arguments(function, &["thread_id"]))?;
-    let mut kwargs = merged.kwargs;
-    let data = match operation {
-        MessageOperation::Append => Some(parse_value::<MessageData>(&Json::Object(subset(
-            &kwargs, &NAMED,
-        )))?),
-        MessageOperation::List => None,
-    };
-    for name in ["thread_id", "role", "content", "attachments", "metadata"] {
-        kwargs.remove(name);
-    }
-    let params: MessageParams = parse_value(&Json::Object(kwargs))?;
+    let (thread_id, data, params) = prepare(merged.kwargs, operation, function)?;
     let resources = ResourceSdkSettings::from(dispatcher.resources);
     let context = MessageContext {
         settings: &resources,
@@ -57,8 +46,29 @@ pub(super) async fn call<T: Deps, S: Sources>(
     match message_call(&message_request, &context, operation, true).await {
         Ok(Reply::Message(message)) => Ok(AssistantOutcome::Message(message)),
         Ok(Reply::Page(page)) => Ok(AssistantOutcome::Messages(page)),
-        Err(failure) => Err(AssistantDispatchError::Message(failure)),
+        Err(failure) => Err(AssistantDispatchError::Message(Box::new(failure))),
     }
+}
+
+// the thread id the route passes, add_message's body, and the connection parameters left in kwargs
+fn prepare(
+    mut kwargs: BTreeMap<String, Json>,
+    operation: MessageOperation,
+    function: &str,
+) -> Result<(String, Option<MessageData>, MessageParams), AssistantDispatchError> {
+    let thread_id = text(&kwargs, "thread_id")?
+        .ok_or_else(|| AssistantDispatchError::missing_arguments(function, &["thread_id"]))?;
+    let data = match operation {
+        MessageOperation::Append => Some(parse_value::<MessageData>(&Json::Object(subset(
+            &kwargs, &NAMED,
+        )))?),
+        MessageOperation::List => None,
+    };
+    for name in ["thread_id", "role", "content", "attachments", "metadata"] {
+        kwargs.remove(name);
+    }
+    let params: MessageParams = parse_value(&Json::Object(kwargs))?;
+    Ok((thread_id, data, params))
 }
 
 // the installed function a missing argument names

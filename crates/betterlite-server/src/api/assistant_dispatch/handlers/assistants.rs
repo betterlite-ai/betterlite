@@ -61,18 +61,18 @@ pub(super) async fn create<T: Deps, S: Sources>(
     match records.acreate_assistants(&input).await {
         Ok(created) => Ok(AssistantOutcome::Assistant(Box::new(created.assistant))),
         Err(failure) => Err(AssistantDispatchError::Failure {
-            failure: AssistantFailure::from(*failure),
+            failure: Box::new(AssistantFailure::from(*failure)),
         }),
     }
 }
 
 pub(super) async fn read_or_delete<T: Deps, S: Sources>(
     dispatcher: &AssistantDispatcher<'_, '_, T, S>,
-    merged: Merged,
+    merged: &Merged,
     operation: ReadDeleteOperation,
     request: &AssistantRequest<'_>,
 ) -> Dispatched<T> {
-    let input = read_delete_input(&merged, operation, request.client.as_ref())?;
+    let input = read_delete_input(merged, operation, request.client.as_ref())?;
     let facade = AssistantReadDelete {
         dispatch: SdkDispatch {
             transport: Arc::clone(&dispatcher.transport),
