@@ -99,11 +99,16 @@ impl StubLimiter {
         }
     }
 
-    fn record(&self, call: RecordedCall) {
+    fn record(&self, call: RecordedCall) -> RateLimitResponse {
+        let answer = match &call {
+            RecordedCall::Atomic(_) => self.atomic.clone(),
+            RecordedCall::Tracking(_) => self.tracking.clone(),
+        };
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(call);
+        answer
     }
 }
 
@@ -128,11 +133,10 @@ impl AdmissionLimiter for StubLimiter {
                 },
             ));
         }
-        self.record(RecordedCall::Atomic(AtomicCall {
+        Ok(self.record(RecordedCall::Atomic(AtomicCall {
             descriptors: descriptors.to_vec(),
             increments: increments.to_vec(),
-        }));
-        Ok(self.atomic.clone())
+        })))
     }
 
     async fn should_rate_limit(
@@ -141,11 +145,11 @@ impl AdmissionLimiter for StubLimiter {
         _parent_span: Option<ParentOtelSpan>,
         read_only: bool,
     ) -> Result<RateLimitResponse, AdmissionLimiterError> {
-        self.record(RecordedCall::Tracking(TrackingCall {
+        let call = RecordedCall::Tracking(TrackingCall {
             descriptors: descriptors.to_vec(),
             read_only,
-        }));
-        Ok(self.tracking.clone())
+        });
+        Ok(self.record(call))
     }
 }
 

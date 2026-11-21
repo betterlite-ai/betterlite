@@ -135,7 +135,7 @@ class StubLimiter(_STUB_BASE):
         self.tracking_calls: list[TrackingCallJson] = []
 
     @override
-    async def atomic_check_and_increment_by_n(
+    async def atomic_check_and_increment_by_n(  # ast-grep-ignore: no-long-names
         self,
         descriptors: list[RateLimitDescriptor],
         increments: list[dict[Literal["requests", "tokens"], int]],

@@ -49,53 +49,41 @@ pub fn build_over_limit_error(
         .filter(|status| status.code == OVER_LIMIT_CODE)
     {
         match status.descriptor_key.as_str() {
-            SATURATION_DESCRIPTOR_KEY => return model_capacity_error(status, facts),
-            PRIORITY_DESCRIPTOR_KEY => return priority_limit_error(status, facts),
+            SATURATION_DESCRIPTOR_KEY => {
+                let detail = format!(
+                    "Model capacity reached for {}. Priority: {}, Rate limit type: {}, Model TPM: {}, Model RPM: {}, Remaining: {}",
+                    facts.model,
+                    facts.priority.unwrap_or(NO_PRIORITY),
+                    status.rate_limit_type.as_str(),
+                    configured_limit(facts.model_tpm),
+                    configured_limit(facts.model_rpm),
+                    status.limit_remaining,
+                );
+                return known_key_error(detail, None, status, facts);
+            }
+            PRIORITY_DESCRIPTOR_KEY => {
+                tracing::debug!(
+                    "Enforcing priority limits for {}, saturation: {:.1}%, priority: {}",
+                    facts.model,
+                    facts.saturation.mul(100.0_f64),
+                    facts.priority.unwrap_or(NO_PRIORITY),
+                );
+                let detail = format!(
+                    "Priority-based rate limit exceeded. Model: {}, Priority: {}, Rate limit type: {}, Model TPM: {}, Model RPM: {}, Remaining: {}, Model saturation: {:.1}%",
+                    facts.model,
+                    facts.priority.unwrap_or(NO_PRIORITY),
+                    status.rate_limit_type.as_str(),
+                    configured_limit(facts.model_tpm),
+                    configured_limit(facts.model_rpm),
+                    status.limit_remaining,
+                    facts.saturation.mul(100.0_f64),
+                );
+                return known_key_error(detail, Some(facts.saturation), status, facts);
+            }
             _ => {}
         }
     }
     unknown_descriptor_error(response, facts)
-}
-
-// the "Model capacity reached" 429: the model-wide counter is the one that overflowed
-fn model_capacity_error(
-    status: &RateLimitStatus,
-    facts: &OverLimitFacts<'_>,
-) -> Result<ProxyRateLimitError, DenialError> {
-    let detail = format!(
-        "Model capacity reached for {}. Priority: {}, Rate limit type: {}, Model TPM: {}, Model RPM: {}, Remaining: {}",
-        facts.model,
-        facts.priority.unwrap_or(NO_PRIORITY),
-        status.rate_limit_type.as_str(),
-        configured_limit(facts.model_tpm),
-        configured_limit(facts.model_rpm),
-        status.limit_remaining,
-    );
-    known_key_error(detail, None, status, facts)
-}
-
-// the "Priority-based rate limit exceeded" 429, which is also the only error that carries the saturation
-fn priority_limit_error(
-    status: &RateLimitStatus,
-    facts: &OverLimitFacts<'_>,
-) -> Result<ProxyRateLimitError, DenialError> {
-    tracing::debug!(
-        "Enforcing priority limits for {}, saturation: {:.1}%, priority: {}",
-        facts.model,
-        facts.saturation.mul(100.0_f64),
-        facts.priority.unwrap_or(NO_PRIORITY),
-    );
-    let detail = format!(
-        "Priority-based rate limit exceeded. Model: {}, Priority: {}, Rate limit type: {}, Model TPM: {}, Model RPM: {}, Remaining: {}, Model saturation: {:.1}%",
-        facts.model,
-        facts.priority.unwrap_or(NO_PRIORITY),
-        status.rate_limit_type.as_str(),
-        configured_limit(facts.model_tpm),
-        configured_limit(facts.model_rpm),
-        status.limit_remaining,
-        facts.saturation.mul(100.0_f64),
-    );
-    known_key_error(detail, Some(facts.saturation), status, facts)
 }
 
 // the shared tail of the two known-key 429s: the status headers, the optional saturation and the priority
