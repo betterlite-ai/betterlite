@@ -2,6 +2,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
+use crate::api::response_synthetic_events::python_value::has_content;
 use crate::api::responses_input_messages::{InputRequest, input_messages};
 use crate::api::responses_session_history::cold::stored_request;
 use crate::api::responses_session_history::error::SessionHistoryError;
@@ -103,10 +104,11 @@ where
             None
         }
     };
+    // LiteLLM reads a stored messages value only when Python would call it truthy
     let replayed = input.or_else(|| {
         request
             .get("messages")
-            .filter(|messages| is_truthy(messages))
+            .filter(|messages| has_content(messages))
             .cloned()
     });
     if let Some(chosen) = replayed {
@@ -135,17 +137,6 @@ where
         });
     }
     Ok(())
-}
-
-fn is_truthy(value: &Json) -> bool {
-    match value {
-        Json::Null => false,
-        Json::Bool(flag) => *flag,
-        Json::Number(number) => number.as_f64().is_none_or(|float| float.abs() > 0.0_f64),
-        Json::Text(text) => !text.is_empty(),
-        Json::List(items) => !items.is_empty(),
-        Json::Object(fields) => !fields.is_empty(),
-    }
 }
 
 // redaction stores the bare sentinel, which is not JSON, so a replayed call gets "{}" a provider can parse
