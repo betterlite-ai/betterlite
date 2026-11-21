@@ -33,6 +33,7 @@ const COLUMNS: [&str; 13] = [
     "skills",
 ];
 
+#[derive(Clone, Copy)]
 enum ColumnKind {
     List,
     Json,
@@ -104,10 +105,10 @@ pub(super) async fn prepare(
     permission: Option<&AgentObjectPermission>,
     existing_id: Option<&str>,
 ) -> Result<Option<PreparedUpsert>, AgentPersistenceError> {
-    let Some(permission) = permission else {
+    let Some(wanted) = permission else {
         return Ok(None);
     };
-    let fields = permission_fields(permission)?;
+    let fields = permission_fields(wanted)?;
     let availability = Availability::default();
     let client = PrismaClient {
         writer: store,
@@ -128,9 +129,9 @@ pub(super) async fn write_permission(
     list.push("object_permission_id", &prepared.object_permission_id, "");
     for (name, value) in &converted {
         match value {
-            PermissionValue::List(values) => list.push(*name, values, ""),
-            PermissionValue::Json(text) => list.push(*name, text, "::text::jsonb"),
-            PermissionValue::Flag(flag) => list.push(*name, flag, ""),
+            PermissionValue::List(values) => list.push(name, values, ""),
+            PermissionValue::Json(text) => list.push(name, text, "::text::jsonb"),
+            PermissionValue::Flag(flag) => list.push(name, flag, ""),
         }
     }
     let mut assignments: Vec<String> = list

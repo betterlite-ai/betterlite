@@ -20,7 +20,7 @@ use super::super::json_text::safe_json_text;
 use super::PlanContext;
 
 pub(super) fn managed_input(
-    identity: Option<Option<&EntraIdentityConfig>>,
+    identity: Option<&Option<EntraIdentityConfig>>,
     execution_mode: Option<&ExecutionMode>,
     enabled: Option<bool>,
 ) -> Result<ManagedWriteInput, AgentPersistenceError> {
@@ -48,7 +48,7 @@ pub(super) fn policy_agent(
     };
     let mut document: AgentJson = serde_json::to_value(&stored.agent)?;
     if let AgentJson::Object(fields) = &mut document {
-        _ = fields.remove("kill_switch");
+        drop(fields.remove("kill_switch"));
     }
     let text = serde_json::to_string(&document)?;
     let agent: PolicyAgent = serde_json::from_str(&text)?;

@@ -18,7 +18,8 @@ async fn permission_writes_the_present_columns() {
     let requested = permission(r#"{"mcp_servers": ["srv"], "models": ["gpt-4o"]}"#);
     let prepared = prepare(&store, Some(&requested), None)
         .await
-        .expect("the permission row is prepared");
+        .expect("the permission row is prepared")
+        .expect("the permission is present");
     let mut client = store.session().await.expect("a session");
     let tx = client.transaction().await.expect("a transaction");
     write_permission(&tx, &prepared)
@@ -57,7 +58,8 @@ async fn permission_stores_tool_permissions_as_a_json_string() {
     let requested = permission(r#"{"mcp_tool_permissions": {"srv": ["t1"]}}"#);
     let prepared = prepare(&store, Some(&requested), None)
         .await
-        .expect("the permission row is prepared");
+        .expect("the permission row is prepared")
+        .expect("the permission is present");
     let mut client = store.session().await.expect("a session");
     let tx = client.transaction().await.expect("a transaction");
     write_permission(&tx, &prepared)
@@ -84,7 +86,8 @@ async fn permission_keeps_a_stored_column_the_update_leaves_out() {
     let first = permission(r#"{"mcp_servers": ["old"], "mcp_access_groups": ["group"]}"#);
     let prepared = prepare(&store, Some(&first), None)
         .await
-        .expect("the permission row is prepared");
+        .expect("the permission row is prepared")
+        .expect("the permission is present");
     let mut client = store.session().await.expect("a session");
     let tx = client.transaction().await.expect("a transaction");
     write_permission(&tx, &prepared)
@@ -94,7 +97,8 @@ async fn permission_keeps_a_stored_column_the_update_leaves_out() {
     let second = permission(r#"{"mcp_servers": ["new"]}"#);
     let updated = prepare(&store, Some(&second), Some(&prepared.object_permission_id))
         .await
-        .expect("the same row is prepared again");
+        .expect("the same row is prepared again")
+        .expect("the permission is present");
     assert_eq!(updated.object_permission_id, prepared.object_permission_id);
     let mut updating = store.session().await.expect("a session");
     let updating_tx = updating.transaction().await.expect("a transaction");
@@ -134,7 +138,8 @@ async fn permission_write_rolls_back_with_the_transaction() {
     let requested = permission(r#"{"mcp_servers": ["srv"]}"#);
     let prepared = prepare(&store, Some(&requested), None)
         .await
-        .expect("the permission row is prepared");
+        .expect("the permission row is prepared")
+        .expect("the permission is present");
     let mut client = store.session().await.expect("a session");
     let tx = client.transaction().await.expect("a transaction");
     write_permission(&tx, &prepared)
@@ -160,7 +165,8 @@ async fn permission_writes_an_empty_record_twice() {
     let empty = permission("{}");
     let prepared = prepare(&store, Some(&empty), None)
         .await
-        .expect("the empty permission is prepared");
+        .expect("the empty permission is prepared")
+        .expect("the permission is present");
     let mut client = store.session().await.expect("a session");
     let tx = client.transaction().await.expect("a transaction");
     write_permission(&tx, &prepared)

@@ -15,12 +15,15 @@ use super::row::read_agent;
 use super::row::write_rows;
 use super::write_plan::AgentWritePlan;
 
-pub(super) async fn store_agent<P: AgentChangePublisher>(
+pub(super) async fn store_agent<P>(
     store: &AgentStore<P>,
     agent: &AgentConfig,
     plan: &AgentWritePlan,
     agent_id: Option<&str>,
-) -> Result<AgentResponse, AgentPersistenceError> {
+) -> Result<AgentResponse, AgentPersistenceError>
+where
+    P: AgentChangePublisher,
+{
     let permission = prepare(&store.store, agent.object_permission.as_ref(), None).await?;
     let insert = history_should_insert(&store.store, plan.history.as_ref(), None).await?;
     let target_id = agent_id.map_or_else(|| Uuid::new_v4().to_string(), String::from);

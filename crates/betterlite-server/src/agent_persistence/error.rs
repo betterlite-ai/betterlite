@@ -1,5 +1,3 @@
-use std::convert::Infallible;
-
 use betterlite_auth::identity::AgentIdentityFailure;
 use betterlite_db::postgres_store::errors::DbError;
 use betterlite_db::postgres_store::errors::backend;
@@ -35,8 +33,8 @@ pub enum AgentPersistenceError {
 }
 
 // a session error carries no record to decode, so its type widens to the one the row codec reports
-pub(super) fn open_failure(source: DbError) -> AgentPersistenceError {
-    let widened = match source {
+pub(super) fn open_failure(error: DbError) -> AgentPersistenceError {
+    let widened = match error {
         DbError::NoDbConnected => DbError::NoDbConnected,
         DbError::Pool { source } => DbError::Pool { source },
         DbError::Backend { source } => DbError::Backend { source },

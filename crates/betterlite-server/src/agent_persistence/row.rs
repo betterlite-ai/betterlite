@@ -132,7 +132,7 @@ pub(super) async fn read_agent(
         AgentSource::Session(tx) => tx.query(&statement, &[&agent_id]).await,
         AgentSource::Client(client) => client.query(&statement, &[&agent_id]).await,
     }
-    .map_err(|source| AgentPersistenceError::Database(backend(source)))?;
+    .map_err(|error| AgentPersistenceError::Database(backend(error)))?;
     decode_first(&rows)
 }
 

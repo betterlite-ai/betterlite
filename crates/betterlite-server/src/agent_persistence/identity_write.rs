@@ -20,12 +20,6 @@ const HISTORY_TABLE: &str = "LiteLLM_RetiredAgentIdentity";
 
 const HISTORY_LOOKUP_SQL: &str = r#"SELECT agent_id FROM "LiteLLM_RetiredAgentIdentity" WHERE provider = $1 AND tenant_id = $2 AND client_id = $3"#;
 
-fn timestamp_of(fields: &IdentityFields) -> Option<Option<NaiveDateTime>> {
-    fields
-        .last_authenticated_at
-        .map(|stamp| stamp.map(|instant| instant.naive_utc()))
-}
-
 fn push_identity_fields<'values>(
     columns: &mut ColumnList<'values>,
     fields: &'values IdentityFields,
@@ -44,8 +38,8 @@ fn push_identity_fields<'values>(
         "active" => active : "",
         "revision" => revision : "",
     );
-    if let Some(stamp) = stamp {
-        columns.push("last_authenticated_at", stamp, "");
+    if let Some(at) = stamp {
+        columns.push("last_authenticated_at", at, "");
     }
 }
 
@@ -55,19 +49,19 @@ pub(super) async fn history_should_insert(
     history: Option<&IdentityHistoryWrite>,
     existing_agent_id: Option<&str>,
 ) -> Result<bool, AgentPersistenceError> {
-    let Some(history) = history else {
+    let Some(pending) = history else {
         return Ok(false);
     };
-    let key = &history.create.key;
+    let key = &pending.create.key;
     let client = store.session().await.map_err(open_failure)?;
-    let row = client
+    let queried = client
         .query_opt(
             HISTORY_LOOKUP_SQL,
             &[&key.provider, &key.tenant_id, &key.client_id],
         )
         .await
         .map_err(|source| AgentPersistenceError::Database(backend(source)))?;
-    let Some(row) = row else {
+    let Some(row) = queried else {
         return Ok(true);
     };
     let prior: Option<String> = row
@@ -85,7 +79,7 @@ pub(super) async fn write_history(
     agent_id: &str,
     insert: bool,
 ) -> Result<(), AgentPersistenceError> {
-    let Some(history) = history else {
+    let Some(pending) = history else {
         return Ok(());
     };
     if !insert {
@@ -93,7 +87,7 @@ pub(super) async fn write_history(
     }
     let binding_id = Uuid::new_v4().to_string();
     let agent_key = String::from(agent_id);
-    let entry = &history.create;
+    let entry = &pending.create;
     let mut list = ColumnList::default();
     list.push("binding_id", &binding_id, "");
     list.push("agent_id", &agent_key, "");
@@ -131,7 +125,9 @@ async fn write_identity_row(
     insert: bool,
 ) -> Result<(), AgentPersistenceError> {
     let agent_key = String::from(agent_id);
-    let stamp = timestamp_of(fields);
+    let stamp = fields
+        .last_authenticated_at
+        .map(|value| value.map(|instant| instant.naive_utc()));
     let mut list = ColumnList::default();
     list.push("agent_id", &agent_key, "");
     push_identity_fields(&mut list, fields, stamp.as_ref());
@@ -152,8 +148,14 @@ async fn upsert_identity(
     upsert: &IdentityUpsert,
 ) -> Result<(), AgentPersistenceError> {
     let agent_key = String::from(agent_id);
-    let create_stamp = timestamp_of(&upsert.create);
-    let update_stamp = timestamp_of(&upsert.update);
+    let create_stamp = upsert
+        .create
+        .last_authenticated_at
+        .map(|value| value.map(|instant| instant.naive_utc()));
+    let update_stamp = upsert
+        .update
+        .last_authenticated_at
+        .map(|value| value.map(|instant| instant.naive_utc()));
     let mut list = ColumnList::default();
     list.push("agent_id", &agent_key, "");
     push_identity_fields(&mut list, &upsert.create, create_stamp.as_ref());

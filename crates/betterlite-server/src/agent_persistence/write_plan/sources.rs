@@ -24,8 +24,8 @@ use super::values::params_text;
 use super::values::stored_params;
 
 impl ColumnSource for ConfigSource<'_> {
-    fn identity(&self) -> Option<Option<&EntraIdentityConfig>> {
-        self.agent.identity.as_ref().map(Option::as_ref)
+    fn identity(&self) -> Option<&Option<EntraIdentityConfig>> {
+        Some(&self.agent.identity)
     }
 
     fn execution_mode(&self) -> Option<&ExecutionMode> {
@@ -115,8 +115,8 @@ impl ColumnSource for ConfigSource<'_> {
 }
 
 impl ColumnSource for PatchSource<'_> {
-    fn identity(&self) -> Option<Option<&EntraIdentityConfig>> {
-        self.agent.identity.as_ref().map(Option::as_ref)
+    fn identity(&self) -> Option<&Option<EntraIdentityConfig>> {
+        self.agent.identity.as_ref()
     }
 
     fn execution_mode(&self) -> Option<&ExecutionMode> {

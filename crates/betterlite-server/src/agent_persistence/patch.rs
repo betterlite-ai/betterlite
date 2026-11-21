@@ -35,10 +35,13 @@ pub(super) async fn existing_agent(
     Ok(existing)
 }
 
-pub(super) async fn commit_update<P: AgentChangePublisher>(
+pub(super) async fn commit_update<P>(
     store: &AgentStore<P>,
     update: &UpdateRequest<'_>,
-) -> Result<AgentResponse, AgentPersistenceError> {
+) -> Result<AgentResponse, AgentPersistenceError>
+where
+    P: AgentChangePublisher,
+{
     let prepared = prepare(&store.store, update.permission, update.existing_permission).await?;
     let link = match update.existing_permission {
         Some(_) => None,

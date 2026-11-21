@@ -70,8 +70,8 @@ pub(super) enum ConfigMode {
     Replace,
 }
 
-pub(super) trait ColumnSource {
-    fn identity(&self) -> Option<Option<&EntraIdentityConfig>>;
+pub(super) trait ColumnSource: Send + Sync {
+    fn identity(&self) -> Option<&Option<EntraIdentityConfig>>;
     fn execution_mode(&self) -> Option<&ExecutionMode>;
     fn enabled(&self) -> Option<bool>;
     fn permission(&self) -> Option<&AgentObjectPermission>;
@@ -117,7 +117,7 @@ pub(super) fn plan_write(
     let policy = policy_agent(row)?;
     let managed = managed_write_fields(&input, policy.as_ref(), Uuid::new_v4)
         .map_err(AgentPersistenceError::Identity)?;
-    let [tpm_limit, rpm_limit, session_tpm_limit, session_rpm_limit] = source.limits();
+    let [tokens, requests, session_tokens, session_requests] = source.limits();
     let mode = managed.execution_mode.as_ref();
     let execution_mode = mode.map(mode_text).map(String::from);
     let columns = AgentColumns {
@@ -128,10 +128,10 @@ pub(super) fn plan_write(
         extra_headers: source.extra(),
         kill_switch: source.kill_switch(row)?,
         access_group_ids: source.groups(),
-        tpm_limit,
-        rpm_limit,
-        session_tpm_limit,
-        session_rpm_limit,
+        tpm_limit: tokens,
+        rpm_limit: requests,
+        session_tpm_limit: session_tokens,
+        session_rpm_limit: session_requests,
         enabled: managed.enabled,
         execution_mode,
         identity_managed: managed.identity_managed,
