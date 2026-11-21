@@ -119,7 +119,7 @@ impl CompactConfig for OpenAiCompactConfig {
 impl ResponsesParamProvider for OpenAiCompactConfig {
     type Error = CompactParamError;
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "openai"
     }
 
