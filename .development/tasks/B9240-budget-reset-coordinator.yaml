@@ -63,6 +63,8 @@ scope:
     - "crates/betterlite-db/src/queues/pod_lock"
     - crates/betterlite-db/src/budget_sweep.rs
     - crates/betterlite-db/src/budget_sweep/**
+    - crates/betterlite-server/src/finops/focus/export_schedule.rs
+    - crates/betterlite-server/src/finops/mavvrik/schedule.rs
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L374-L379
