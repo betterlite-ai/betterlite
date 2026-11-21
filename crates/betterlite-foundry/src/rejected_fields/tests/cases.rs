@@ -79,6 +79,10 @@ pub(super) fn remove_tool_call_index() {
     )
     .expect("the repair runs");
     assert_eq!(absent_messages, support::body(r#"{"model":"deployment"}"#));
+    tool_field_drop_follows_the_earlier_repairs();
+}
+
+fn tool_field_drop_follows_the_earlier_repairs() {
     // the tool-level drop is not an elif: after the index branch it still removes tools[N].<field>
     let index_and_tool_field = support::wrapped(&format!(
         "{INVALID_TOOL_CALL_INDEX_MARKER}. Extra inputs are not permitted: tools[0].extra"
