@@ -35,10 +35,17 @@ WHERE p.relname = $1
 
 #[derive(Debug, thiserror::Error)]
 pub enum BoundedTransactionError {
-    #[error(transparent)]
+    #[error("{}", database_detail(.0))]
     Database(#[from] PostgresError),
     #[error("the spend-log partition statement did not finish within {millis} ms")]
     Deadline { millis: u64 },
+}
+
+// the driver prints only "db error"; the DbError Display carries the severity, message, detail and hint
+fn database_detail(source: &PostgresError) -> String {
+    source
+        .as_db_error()
+        .map_or_else(|| source.to_string(), ToString::to_string)
 }
 
 // _bounded_tx: prisma's transaction timeout is the caller's statement budget plus room for the commit
