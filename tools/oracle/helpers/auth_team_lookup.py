@@ -2,7 +2,7 @@ import asyncio
 import logging
 import time
 from collections.abc import Mapping
-from typing import Final, Literal, NoReturn, TypedDict
+from typing import Final, Literal, NoReturn, TypeAlias, TypedDict
 
 from fastapi import Request
 from litellm.caching.in_memory_cache import InMemoryCache
@@ -31,6 +31,8 @@ from typing_extensions import override
 
 JSON_VALUE: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 DETAIL: Final[TypeAdapter[str | dict[str, str]]] = TypeAdapter(str | dict[str, str])
+Rows: TypeAlias = list[dict[str, JsonValue]]
+Include: TypeAlias = Mapping[str, bool] | None
 LOGGING_FUNCTIONS: Final = frozenset(
     ("_get_team_object_from_user_api_key_cache", "get_access_object", "get_team_object_by_alias")
 )
@@ -50,9 +52,9 @@ class Call(TypedDict):
     throttled_at: int | None
     cached_teams: dict[str, dict[str, JsonValue]]
     cached_groups: dict[str, dict[str, JsonValue]]
-    teams: list[dict[str, JsonValue]]
-    groups: list[dict[str, JsonValue]]
-    permissions: list[dict[str, JsonValue]]
+    teams: Rows
+    groups: Rows
+    permissions: Rows
     created: dict[str, JsonValue] | None
     steps: list[Step]
 
@@ -141,23 +143,17 @@ class Row(BaseModel):
 
 
 class Table:
-    def __init__(
-        self, board: Board, name: str, handle: str, rows: list[dict[str, JsonValue]]
-    ) -> None:
+    def __init__(self, board: Board, name: str, handle: str, rows: Rows) -> None:
         self.board = board
         self.name = name
         self.handle = handle
         self.rows = rows
 
-    async def find_unique(
-        self, *, where: dict[str, str], include: Mapping[str, bool] | None = None
-    ) -> Row | None:
+    async def find_unique(self, *, where: dict[str, str], include: Include = None) -> Row | None:
         found = await self.find_many(where=where, include=include)
         return found.pop() if found else None
 
-    async def find_many(
-        self, *, where: dict[str, str], include: Mapping[str, bool] | None = None
-    ) -> list[Row]:
+    async def find_many(self, *, where: dict[str, str], include: Include = None) -> list[Row]:
         del include
         field, value = next(iter(where.items()))
         self.board.events.append(f"db {self.name} {self.handle} {value}")
@@ -212,9 +208,7 @@ class Provisioner:
 
 # get_object_permission catches its own read failures, so a failed load is scripted in its place
 class Refusal:
-    async def __call__(
-        self, **_kwargs: str | bool | PrismaClient | UserApiKeyCache | None
-    ) -> NoReturn:
+    async def __call__(self, **_kwargs: object) -> NoReturn:
         raise RuntimeError("permission")
 
 
@@ -264,32 +258,23 @@ async def answer(call: Call, board: Board) -> Answer:
             error = failure("http", raised)
         except Exception:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3275-L3276
             error = {"kind": "exception", "status": None, "detail": None}
-        events = list(board.events)
-        steps.append({"value": value, "error": error, "events": events, "logs": list(board.logs)})
+        steps.append({"value": value, "error": error, "events": board.events, "logs": board.logs})
     return {"row": call["row"], "steps": steps}
 
 
 async def lookup(call: Call, client: Client | None, cache: KeyCache) -> TeamView | GroupView:
     target = call["target"]
-    flags = call["flags"]
-    cache_only = "cache_only" in flags
-    db_only = "db_only" in flags
+    cache_only = "cache_only" in call["flags"]
+    db_only = "db_only" in call["flags"]
     match call["function"]:
         case "team":
-            upsert = "upsert" in flags
             team = await get_team_object(
-                target,
-                client,
-                cache,
-                check_cache_only=cache_only,
-                check_db_only=db_only,
-                team_id_upsert=upsert,
+                target, client, cache, check_cache_only=cache_only, check_db_only=db_only,
+                team_id_upsert="upsert" in call["flags"],
             )
             return team_view(team)
         case "alias":
-            named: LiteLLM_TeamTableCachedObj
-            named = await get_team_object_by_alias(target, client, cache)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3419-L3420
-            return team_view(named)
+            return team_view(await get_team_object_by_alias(target, client, cache))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3419-L3420
         case "access":
             group: LiteLLM_AccessGroupTable
             group = await get_access_object(target, client, cache, check_db_only=db_only)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3348-L3349
@@ -307,7 +292,6 @@ def team_view(team: LiteLLM_TeamTableCachedObj) -> TeamView:
     }
 
 
-# the exception class, status and detail shape; the message text is not compared
 def failure(kind: Literal["team_not_found", "http"], error: HTTPException) -> Failure:
     match DETAIL.validate_python(error.detail):
         case str():
