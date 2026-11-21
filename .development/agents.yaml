@@ -179,16 +179,16 @@ roles:
   reviewer:
     instructions: roles/reviewer.md
     ladder:
-      - runner: claude-reviewer
-        model: claude-sonnet-5-5
-        effort: high
-        attempts: 1
-        timeout_minutes: 30
       - runner: deepseek-reviewer
         model: deepseek-flash[1m]
         effort: max
         attempts: 1
         timeout_minutes: 45
+      - runner: claude-reviewer
+        model: claude-sonnet-5-5
+        effort: high
+        attempts: 1
+        timeout_minutes: 30
       - runner: codex-reviewer
         model: gpt-6-astra
         effort: high
@@ -197,14 +197,14 @@ roles:
   security_reviewer:
     instructions: roles/reviewer.md
     ladder:
-      - runner: claude-reviewer
-        model: claude-opus-5-5
-        effort: high
-        attempts: 1
-        timeout_minutes: 45
       - runner: deepseek-reviewer
         model: deepseek-flash[1m]
         effort: max
+        attempts: 1
+        timeout_minutes: 45
+      - runner: claude-reviewer
+        model: claude-opus-5-5
+        effort: high
         attempts: 1
         timeout_minutes: 45
       - runner: codex-reviewer
@@ -215,14 +215,14 @@ roles:
   parity_reviewer:
     instructions: roles/parity-reviewer.md
     ladder:
-      - runner: claude-reviewer
-        model: claude-opus-5-5
-        effort: high
-        attempts: 1
-        timeout_minutes: 45
       - runner: deepseek-reviewer
         model: deepseek-flash[1m]
         effort: max
+        attempts: 1
+        timeout_minutes: 45
+      - runner: claude-reviewer
+        model: claude-opus-5-5
+        effort: high
         attempts: 1
         timeout_minutes: 45
       - runner: codex-reviewer

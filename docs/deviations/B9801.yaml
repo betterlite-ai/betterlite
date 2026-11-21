@@ -1,0 +1,21 @@
+task: B9801
+deviations:
+  - what: When the stream fails after its first chunk went out, the body ends after the bytes already sent with a normal end of the chunked body, where LiteLLM's server drops the connection mid-body.
+    why: B7324's ByteStream carries betterlite-http's HttpError. That type has no variant for an aborted stream, and it belongs to another crate.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1097-L1107
+  - what: A string error code written in non-ASCII decimal digits, such as "٤٠٤", counts as a usable code in LiteLLM because Python's int() reads every Unicode decimal digit, while betterlite treats it as non-convertible and logs both warnings.
+    why: betterlite reuses its Python int() port from B633, which reads ASCII digits only; docs/compatibility.md fixes the declared type of the field as a string, and the task names whitespace, one sign and underscores as the spellings it keeps.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L754
+  - what: An error code string too long for a 64-bit integer, such as "99999999999999999999999999", logs both warnings in betterlite, where LiteLLM's int() converts it and only the out-of-range warning fires; both answer no code.
+    why: betterlite's Python int() port from B633 reports an i64 overflow as a non-integer, and Python's int() has no such limit, so LiteLLM's value reaches the range check instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L754
+  - what: "A first chunk that is not UTF-8 streams in both, and betterlite writes none of LiteLLM's debug line \"Error parsing first chunk value: ...\", whose text is Python's UnicodeDecodeError."
+    why: LiteLLM's decode raises and the inner except logs it before the chunk streams; betterlite's decoder reports no error code, and docs/compatibility.md keeps Python's exception text out of the port.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1050-L1051
+  - what: An Anthropic error frame whose JSON body B958 cannot re-encode answers the two SSE error frames with status 500, where LiteLLM's json_body only spreads dictionaries and cannot fail.
+    why: betterlite's json_body re-encodes the detail fields with serde_json and returns a WireDecodeError; the frame has no status of its own to send, so the SSE payload's fallback status is the only answer left.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_interface/exceptions/exception_mapping_utils.py#L203-L210
+kept_bugs:
+  - what: A bool error code is warned about and dropped instead of an integer never being considered, and a string code that Python cannot convert logs both the conversion warning and the invalid-code warning.
+    why: LiteLLM's isinstance(True, int) makes a bool pass as an integer before the range check rejects it, and its two warnings sit on paths that both run for a bad string; betterlite logs the same two lines for the same inputs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L750-L769

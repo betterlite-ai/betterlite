@@ -1,0 +1,13 @@
+id: B10029
+milestone: R2 bug fixes
+title: Lower crates hold the ports they expect to be refused
+status: todo
+depends_on: [B10028]
+file: tasks/B10029-refused-ports-lower-crates.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
