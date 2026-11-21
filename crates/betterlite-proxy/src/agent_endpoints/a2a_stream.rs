@@ -106,7 +106,7 @@ where
     };
     let frames = match hooks {
         Some(stream_hooks) => hooked_frames(stream_hooks.serve(events), request_id, sse_chunk),
-        None => unhooked_frames(events, request_id, sse_chunk),
+        None => hooked_frames(logged_failures(events), request_id, sse_chunk),
     };
     sse_response(frames, ping_interval)
 }
@@ -144,7 +144,7 @@ where
     sse_response(frames, ping_interval)
 }
 
-// the hooks already ran the failure hook and redacted the message, so Failed is sent as it is
+// a Failed message is final (the hooks redacted it), so it is framed as it is
 fn hooked_frames<F>(mut events: HookedStream, request_id: AgentJson, frame: F) -> FrameStream
 where
     F: Fn(AgentJson) -> String + Send + Sync + 'static,
@@ -168,25 +168,18 @@ where
     .boxed()
 }
 
-fn unhooked_frames<F>(mut events: JsonStream, request_id: AgentJson, frame: F) -> FrameStream
-where
-    F: Fn(AgentJson) -> String + Send + Sync + 'static,
-{
-    stream! {
-        while let Some(item) = events.next().await {
-            match item {
-                Ok(chunk) => yield Ok(frame(chunk)),
-                Err(error) => {
-                    tracing::error!("Error streaming A2A response: {error}");
-                    let message = format!("Streaming error: {error}");
-                    let event = error_event(&request_id, INTERNAL_ERROR, &message);
-                    yield Ok(format!("data: {event}\n\n"));
-                    return;
+// without hooks LiteLLM logs the error and frames it with a "Streaming error: " prefix
+fn logged_failures(events: JsonStream) -> HookedStream {
+    events
+        .map(|item| {
+            item.map_err(|error| {
+                tracing::error!("Error streaming A2A response: {error}");
+                StreamFailure::Failed {
+                    message: format!("Streaming error: {error}"),
                 }
-            }
-        }
-    }
-    .boxed()
+            })
+        })
+        .boxed()
 }
 
 mod tests;
