@@ -1,0 +1,23 @@
+kind: helper
+name: settings_dimension_set
+call:
+  b3459:
+    step: settings
+    cases:
+      - vector:
+          vector_store_id: "bucket:index"
+          dimension: 512
+          distance_metric: euclidean
+          non_filterable_metadata_keys: [source_text, page]
+          embedding_model: store/model
+        environment: {}
+        embedding: {model: request/model}
+      - vector: {vector_bucket_name: b, litellm_embedding_model: litellm/model}
+        environment: {}
+        embedding: {model: request/model}
+      - vector: {vector_bucket_name: b, non_filterable_metadata_keys: []}
+        environment: {}
+      - vector: {vector_bucket_name: b, dimension: 256, index_name: explicit-index}
+        environment: {}
+env: {}
+compare: {ignore: []}
