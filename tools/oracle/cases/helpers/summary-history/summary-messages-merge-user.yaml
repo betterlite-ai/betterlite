@@ -1,0 +1,89 @@
+kind: helper
+name: summary-history-summary-messages-merge-user
+call:
+  summary_history:
+    action: prompts
+    edit_spec: {instructions: P}
+    tools: null
+    system: sys
+    summary: null
+    messages:
+    - {role: assistant, content: a}
+    - {role: user, content: q}
+    translation: {messages: translated, tools: translated}
+calls:
+- summary_history:
+    action: prompts
+    edit_spec: {instructions: P}
+    tools: null
+    system: null
+    summary: null
+    messages:
+    - role: user
+      content:
+      - {type: text, text: one}
+      - {type: text, text: two}
+    translation: {messages: translated, tools: translated}
+- summary_history:
+    action: prompts
+    edit_spec: {instructions: P}
+    tools: null
+    system: null
+    summary: null
+    messages:
+    - {role: user, content: q}
+    - {role: assistant, content: a}
+    translation: {messages: translated, tools: translated}
+- summary_history:
+    action: prompts
+    edit_spec: {instructions: P}
+    tools: null
+    system: null
+    summary: null
+    messages:
+    - {role: user, content: q}
+    - {role: assistant, content: a}
+    - role: user
+      content:
+      - {type: compaction, content: prior}
+    translation: {messages: translated, tools: translated}
+- summary_history:
+    action: prompts
+    edit_spec: {instructions: P}
+    tools: null
+    system: null
+    summary: null
+    messages:
+    - {role: user, content: ""}
+    translation: {messages: broken, tools: translated}
+- summary_history:
+    action: prompts
+    edit_spec: {instructions: P}
+    tools: null
+    system: null
+    summary: null
+    messages:
+    - {role: user, name: n}
+    translation: {messages: broken, tools: translated}
+- summary_history:
+    action: prompts
+    edit_spec: {instructions: P}
+    tools: null
+    system: ""
+    summary: null
+    messages:
+    - role: user
+      content:
+      - {type: text, text: raw}
+      - {type: compaction, content: prior}
+    translation: {messages: broken, tools: translated}
+- summary_history:
+    action: prompts
+    edit_spec: {instructions: P}
+    tools: null
+    system: null
+    summary: null
+    messages: []
+    translation: {messages: translated, tools: translated}
+env: {}
+compare: {ignore: []}
