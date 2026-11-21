@@ -55,8 +55,7 @@ pub(super) fn upload_method(method: &str) -> Result<Method, UploadError> {
     })
 }
 
-// aiohttp labels a non-empty bytes body octet-stream whatever the method, and a bodyless request
-// only through its POST, PUT and PATCH send() fallback
+// aiohttp labels a non-empty bytes body octet-stream, and a bodyless POST, PUT or PATCH in send()
 pub(super) fn default_content_type(
     mut headers: HeaderMap,
     mode: Mode,
