@@ -43,8 +43,7 @@ impl<Router> DynamicRateLimitHandler<Router> {
         }
     }
 
-    // update_variables: LiteLLM stores the router so a hook can read a model group's capacity mid-request
-    // ast-grep-ignore: no-one-line-functions - the proxy calls update_variables by name
+    // ast-grep-ignore: no-one-line-functions - LiteLLM stores the router so a hook can read a model group's capacity mid-request
     pub fn update_variables(&mut self, llm_router: Arc<Router>) {
         self.llm_router = Some(llm_router);
     }

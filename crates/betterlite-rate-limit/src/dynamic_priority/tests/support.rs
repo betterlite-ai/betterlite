@@ -51,12 +51,14 @@ impl SaturationCache for RecordingCache {
         local_only: bool,
         local_ttl: i64,
     ) -> Option<CacheCounterValue> {
-        let mut reads = self.reads.lock().unwrap_or_else(PoisonError::into_inner);
-        reads.push(CacheRead {
-            key: key.to_owned(),
-            local_only,
-            local_ttl,
-        });
+        {
+            let mut reads = self.reads.lock().unwrap_or_else(PoisonError::into_inner);
+            reads.push(CacheRead {
+                key: key.to_owned(),
+                local_only,
+                local_ttl,
+            });
+        }
         self.values.get(key).cloned()
     }
 }
