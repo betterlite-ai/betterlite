@@ -4,8 +4,10 @@
     reason = "each named behavior test states one LiteLLM transcription scenario end to end"
 )]
 mod extra;
+mod support;
 
-use super::call::{SuppliedClientKind, TranscriptionCall};
+use self::support::request_for;
+use super::call::SuppliedClientKind;
 use super::dispatch::{TranscriptionAnswer, TranscriptionDispatch, TranscriptionProviderReply};
 use super::error::{AsyncTranscriptionError, TranscriptionDispatchError, TranscriptionError};
 use super::service::Transcriptions;
@@ -905,13 +907,6 @@ fn runtime() -> tokio::runtime::Runtime {
         .enable_all()
         .build()
         .expect("the test runtime")
-}
-
-fn request_for(model: &str) -> TranscriptionCall {
-    TranscriptionCall {
-        model: model.to_owned(),
-        ..TranscriptionCall::default()
-    }
 }
 
 fn secret(text: &str) -> SecretString {

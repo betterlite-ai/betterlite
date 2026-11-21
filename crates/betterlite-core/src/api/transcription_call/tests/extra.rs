@@ -6,7 +6,8 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::api::audio_file_input::{AudioFile, ProcessedAudioFile};
 use indexmap::IndexMap;
 
-use super::{Harness, fixed_boundary, json, params, request_for, response, runtime, value, wav};
+use super::support::request_for;
+use super::{Harness, fixed_boundary, json, params, response, runtime, value, wav};
 use crate::api::transcription_call::call::SuppliedClientKind;
 use crate::api::transcription_call::error::{TranscriptionDispatchError, TranscriptionError};
 use crate::api::transcription_call::plan::bool_value;
