@@ -23,6 +23,15 @@ description: >-
   [dev-dependencies].
 scope:
   paths:
+  - "crates/betterlite-server/src/spend_cache_update/tests/reads.rs"
+  - "crates/betterlite-server/src/redis_cache_wiring/tests/build.rs"
+  - "crates/betterlite-server/src/middleware/redis_request_batch/tests.rs"
+  - "crates/betterlite-server/src/coord_redis_boot/tests/init.rs"
+  - "crates/betterlite-server/src/coord_redis_boot/tests/build.rs"
+  - "crates/betterlite-server/src/cache_settings_test/route/tests.rs"
+  - "crates/betterlite-cli/src/cli/tests/version.rs"
+  - "crates/betterlite-cli/src/cli/tests/offline.rs"
+  - "crates/betterlite-cli/src/agent_setup/tests.rs"
   - crates/betterlite-cli/src/agent_setup/tests/listing.rs
   - crates/betterlite-cli/src/cli/tests/support.rs
   - crates/betterlite-cli/src/commands/chat/tests.rs
