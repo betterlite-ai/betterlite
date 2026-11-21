@@ -104,31 +104,8 @@ fn rejects_a_priority_that_is_a_list() {
     assert_eq!(error.category(), "yaml");
 }
 
-#[rstest]
-#[case::an_interval_from_the_environment(
-    "router_settings:\n  polling_interval: os.environ/SCHEDULER_INTERVAL\n",
-    &[("SCHEDULER_INTERVAL", "0.5")],
-    0.5_f64
-)]
-#[case::a_priority_from_the_environment(
-    "router_settings:\n  default_priority: os.environ/SCHEDULER_PRIORITY\n",
-    &[("SCHEDULER_PRIORITY", "7")],
-    DEFAULT_POLLING_INTERVAL
-)]
-fn resolves_environment(
-    #[case] source: &str,
-    #[case] variables: &[(&str, &str)],
-    #[case] expected_interval: f64,
-) {
-    let settings = load_with(source, variables).expect("the fixture config loads");
-    assert_eq!(
-        settings.polling_interval.to_bits(),
-        expected_interval.to_bits()
-    );
-}
-
 #[test]
-fn an_interval_from_the_environment_reads_the_priority_too() {
+fn a_priority_from_the_environment_is_kept() {
     let settings = load_with(
         "router_settings:\n  default_priority: os.environ/SCHEDULER_PRIORITY\n",
         &[("SCHEDULER_PRIORITY", "7")],
@@ -156,6 +133,11 @@ fn an_interval_from_the_environment_reads_the_priority_too() {
     DEFAULT_POLLING_INTERVAL
 )]
 #[case::no_environment_default("model_list: []\n", &[], DEFAULT_POLLING_INTERVAL)]
+#[case::a_configured_environment_reference(
+    "router_settings:\n  polling_interval: os.environ/SCHEDULER_INTERVAL\n",
+    &[("SCHEDULER_INTERVAL", "0.5")],
+    0.5_f64
+)]
 fn polling_interval_reads_the_environment_default(
     #[case] source: &str,
     #[case] variables: &[(&str, &str)],
@@ -165,14 +147,26 @@ fn polling_interval_reads_the_environment_default(
     assert_eq!(settings.polling_interval.to_bits(), expected.to_bits());
 }
 
-#[rstest]
-#[case::the_environment_ttl(&[("DEFAULT_IN_MEMORY_TTL", "2")], 2.0_f64)]
-#[case::an_empty_environment_ttl(&[("DEFAULT_IN_MEMORY_TTL", "")], DEFAULT_IN_MEMORY_TTL)]
-#[case::no_environment_ttl(&[], DEFAULT_IN_MEMORY_TTL)]
-fn local_ttl_reads_the_environment_default(
-    #[case] variables: &[(&str, &str)],
-    #[case] expected: f64,
-) {
-    let settings = load_with("model_list: []\n", variables).expect("the fixture config loads");
-    assert_eq!(settings.local_ttl_seconds.to_bits(), expected.to_bits());
+#[test]
+fn local_ttl_reads_the_environment_default() {
+    let configured = load_with("model_list: []\n", &[("DEFAULT_IN_MEMORY_TTL", "2")])
+        .expect("the fixture config loads");
+    assert_eq!(
+        configured.local_ttl_seconds.to_bits(),
+        2.0_f64.to_bits(),
+        "a configured ttl"
+    );
+    let empty = load_with("model_list: []\n", &[("DEFAULT_IN_MEMORY_TTL", "")])
+        .expect("the fixture config loads");
+    assert_eq!(
+        empty.local_ttl_seconds.to_bits(),
+        DEFAULT_IN_MEMORY_TTL.to_bits(),
+        "an empty ttl"
+    );
+    let absent = load_with("model_list: []\n", &[]).expect("the fixture config loads");
+    assert_eq!(
+        absent.local_ttl_seconds.to_bits(),
+        DEFAULT_IN_MEMORY_TTL.to_bits(),
+        "an absent ttl"
+    );
 }

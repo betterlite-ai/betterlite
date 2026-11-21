@@ -81,7 +81,9 @@ fn environment_number<L>(name: &str, fallback: f64, lookup: &L) -> Result<f64, C
 where
     L: EnvironmentLookup,
 {
-    let text = lookup.lookup(name).unwrap_or_default();
+    let Some(text) = lookup.lookup(name) else {
+        return Ok(fallback);
+    };
     Ok(betterlite_env::number::<f64>(name, &text)?.unwrap_or(fallback))
 }
 
