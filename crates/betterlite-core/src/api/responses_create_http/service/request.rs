@@ -115,7 +115,7 @@ where
     let Some(extra_body) = call.extra_body.filter(|body| !body.is_empty()) else {
         return Ok(data);
     };
-    let transformed = config
+    let normalized = config
         .transform_extra_body(&ExtraBodyRequest {
             extra_body,
             request: &data,
@@ -126,7 +126,7 @@ where
             stage: Stage::Normalize,
             source,
         })?;
-    data.extend(transformed);
+    data.extend(normalized);
     Ok(data)
 }
 
