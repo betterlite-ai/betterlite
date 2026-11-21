@@ -42,6 +42,8 @@ scope:
     - crates/betterlite-config/src/spend_storage.rs
     - crates/betterlite-config/src/spend_storage/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/reseed-lock-*
+    - tools/oracle/src/helpers/auth/spend_reseed.rs
+    - tools/oracle/src/helpers/auth/spend_reseed/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/spend_counter_reseed.py#L48-L117
@@ -78,6 +80,6 @@ pitfalls:
   - A successful Redis miss must ignore the per-pod value even when it is nonzero.
   - Window warm failures propagate unconditionally, unlike the default primary-counter warm path.
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 1800
   max_new_expects: 0
 review_level: security
