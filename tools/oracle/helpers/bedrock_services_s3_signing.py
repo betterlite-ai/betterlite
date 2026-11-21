@@ -21,6 +21,9 @@ JSON: Final = TypeAdapter(JsonValue)
 OBJECT_ID: Final = "11111111-2222-4333-8444-555555555555"
 SIGNING_SECONDS: Final = 1_704_067_200
 REAL_TIME: Final = time.time
+# boto3's environment provider hands this pair to LiteLLM when a signing names no keys
+ENV_ACCESS_KEY: Final = "AKIDEXAMPLE"
+ENV_KEY_VALUE: Final = "secret"
 
 Purpose = Literal["assistants", "batch", "fine-tune", "messages"]
 
@@ -163,8 +166,8 @@ def reset_environment(environment: dict[str, str]) -> None:
             "LITELLM_RUST": "false",
             "AWS_CONFIG_FILE": os.devnull,
             "AWS_SHARED_CREDENTIALS_FILE": os.devnull,
-            "AWS_ACCESS_KEY_ID": "AKIDEXAMPLE",
-            "AWS_SECRET_ACCESS_KEY": "secret",
+            "AWS_ACCESS_KEY_ID": ENV_ACCESS_KEY,
+            "AWS_SECRET_ACCESS_KEY": ENV_KEY_VALUE,
         }
     )
     os.environ.update(environment)

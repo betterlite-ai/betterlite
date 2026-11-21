@@ -169,6 +169,19 @@ fn s3_virtual_and_path_style() {
         ("s3x://h/b/k;v=1", "s3://b/k;v=1 | k;v=1"),
         ("  https://h/b/\tk", "s3://b/k | k"),
         ("b/k", "s3://b/k | k"),
+        // a key that starts with a newline gives the regexes nothing to capture
+        ("https://s3.r.amazonaws.com/b/\nx", "s3://b/x | x"),
+        ("https://bk.s3.r.amazonaws.com/\nx/y", "s3://x/y | y"),
+        // a scheme must start with a letter, so 1x: stays part of the path
+        ("1x://h/b/k", "s3://1x://h/b/k | k"),
+        (
+            "https://s3.r.amazonaws.com//k",
+            "error: Unable to parse S3 URL: https://s3.r.amazonaws.com//k",
+        ),
+        (
+            "https://.s3.r.amazonaws.com/k",
+            "error: Unable to parse S3 URL: https://.s3.r.amazonaws.com/k",
+        ),
         (
             "https://x/onlybucket",
             "error: Unable to parse S3 URL: https://x/onlybucket",
