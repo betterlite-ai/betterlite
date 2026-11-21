@@ -15,6 +15,7 @@ use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_models::resolution::{ProviderIdentity, ResolvedModel};
 use betterlite_openai::openai_base_config::Object;
+use betterlite_openai::watsonx_auth::environment::WatsonxEnvironment;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use secrecy::SecretString;
 
@@ -106,6 +107,32 @@ pub(crate) fn object(pairs: &[(&str, JsonValue)]) -> Object {
         object.insert((*name).to_owned(), value.clone());
     }
     object
+}
+
+// the Watsonx environment the call reads when nothing but the IAM endpoint is set
+pub(crate) fn watsonx_environment(iam_url: String) -> WatsonxEnvironment {
+    WatsonxEnvironment {
+        watsonx_iam_url: Some(iam_url),
+        wx_api_key: None,
+        watsonx_api_key: None,
+        watsonx_apikey: None,
+        watsonx_zenapikey: None,
+        watsonx_token: None,
+        watsonx_api_base: None,
+        watsonx_url: None,
+        wx_url: None,
+        wml_url: None,
+        watsonx_project_id: None,
+        wx_project_id: None,
+        project_id: None,
+        watsonx_region: None,
+        wx_region: None,
+        region: None,
+        watsonx_deployment_space_id: None,
+        watsonx_space_id: None,
+        wx_space_id: None,
+        space_id: None,
+    }
 }
 
 pub(crate) fn client_timeouts() -> PassthroughClient {

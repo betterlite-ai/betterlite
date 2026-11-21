@@ -16,7 +16,6 @@ use betterlite_openai::passthrough::transformation::BasePassthroughConfig as _;
 use betterlite_openai::passthrough::transformation::types::{
     PassthroughSigning, PassthroughTarget, PassthroughUrlRequest,
 };
-use betterlite_openai::watsonx_auth::environment::WatsonxEnvironment;
 use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::SecretString;
@@ -28,7 +27,9 @@ use super::super::config::{ConfigError, PassthroughCallConfig};
 use super::super::logging;
 use super::super::params;
 use super::MODEL_ARN;
-use super::support::{MODEL, logging_state, object, proxy_client, resolved, vllm_args};
+use super::support::{
+    MODEL, logging_state, object, proxy_client, resolved, vllm_args, watsonx_environment,
+};
 
 const EAST_ARN: &str = "arn:aws:bedrock:us-east-2:123456789012:application-inference-profile/abc";
 
@@ -357,10 +358,7 @@ async fn auth_watsonx_mints_the_iam_token_from_the_key() {
         Duration::ZERO,
     )
     .unwrap();
-    let environment = WatsonxEnvironment {
-        watsonx_iam_url: Some(format!("http://{}/identity/token", serving.address)),
-        ..WatsonxEnvironment::default()
-    };
+    let environment = watsonx_environment(format!("http://{}/identity/token", serving.address));
     let key = SecretString::from("watsonx-key");
     let http = proxy_client(1024);
     let headers = auth::watsonx_headers(environment, Some(&key), &http)
@@ -386,10 +384,7 @@ async fn auth_watsonx_mints_the_iam_token_from_the_key() {
 #[tokio::test]
 async fn auth_watsonx_reports_a_refused_iam_token() {
     let serving = serve(reply("401 fixture", &[], ""), Duration::ZERO).unwrap();
-    let environment = WatsonxEnvironment {
-        watsonx_iam_url: Some(format!("http://{}/identity/token", serving.address)),
-        ..WatsonxEnvironment::default()
-    };
+    let environment = watsonx_environment(format!("http://{}/identity/token", serving.address));
     let key = SecretString::from("watsonx-key");
     let http = proxy_client(1024);
     let Err(error) = auth::watsonx_headers(environment, Some(&key), &http).await else {
