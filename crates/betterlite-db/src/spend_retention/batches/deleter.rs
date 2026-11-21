@@ -66,7 +66,7 @@ where
 
     // the deadline is checked before the batch cap, so a spent run reports budget_exhausted
     async fn next_batch(&mut self, run: &mut TableRun) -> Option<StopReason> {
-        let name = run.table.name;
+        let name = run.table.name();
         if self.clock.now() >= run.deadline {
             tracing::info!(
                 "Run budget exhausted during {name} cleanup after {} rows; the next run resumes from here",
@@ -101,7 +101,7 @@ where
         deleted: u64,
         started: Instant,
     ) -> Option<StopReason> {
-        let name = run.table.name;
+        let name = run.table.name();
         run.failures = 0;
         let elapsed = self.clock.now().saturating_duration_since(started);
         self.metrics
@@ -127,7 +127,7 @@ where
         run: &mut TableRun,
         error: &BoundedTransactionError,
     ) -> Option<StopReason> {
-        let name = run.table.name;
+        let name = run.table.name();
         if self.clock.now() >= run.deadline {
             tracing::info!(
                 "Run budget exhausted mid-batch during {name} cleanup after {} rows; the next run resumes from here",
@@ -179,10 +179,12 @@ where
             timeout_ms,
         );
         match within_deadline(timeout_ms, probe).await {
-            Ok(Some(remaining)) => self.metrics.set_rows_remaining(run.table.name, remaining),
-            Ok(None) => {}
+            Ok(remaining) => self.metrics.set_rows_remaining(run.table.name(), remaining),
             Err(error) => {
-                tracing::warn!("Could not count remaining {} rows: {error}", run.table.name);
+                tracing::warn!(
+                    "Could not count remaining {} rows: {error}",
+                    run.table.name()
+                );
             }
         }
         result
@@ -214,16 +216,15 @@ async fn count_remaining(
     run: &TableRun,
     cap: i64,
     timeout_ms: u64,
-) -> Result<Option<i64>, PostgresError> {
+) -> Result<i64, PostgresError> {
     let transaction = client.transaction().await?;
     let statement_timeout = format!("SET LOCAL statement_timeout = {timeout_ms}");
     transaction.batch_execute(&statement_timeout).await?;
     let statement = remaining_statement(run.table, run.cutoff);
-    let rows = transaction.query(&statement, &[&run.cutoff, &cap]).await?;
-    let remaining = rows
-        .first()
-        .map(|row| row.try_get::<_, i32>(REMAINING_COLUMN))
-        .transpose()?;
+    let row = transaction
+        .query_one(&statement, &[&run.cutoff, &cap])
+        .await?;
+    let remaining = row.try_get::<_, i32>(REMAINING_COLUMN)?;
     transaction.commit().await?;
-    Ok(remaining.map(i64::from))
+    Ok(i64::from(remaining))
 }

@@ -177,13 +177,13 @@ async fn deletes_expired_rows_in_batches_until_exhausted() {
     let (result, batches) = run_table(
         &mut case,
         (BOUNDS, &clock, &metrics),
-        CleanupTable::SPEND_LOGS,
+        CleanupTable::SpendLogs,
         (cutoff(), deadline),
     )
     .await;
     assert_eq!(result.stop_reason, StopReason::Exhausted);
     assert_eq!(result.rows_deleted, 5);
-    assert_eq!(result.table, CleanupTable::SPEND_LOGS);
+    assert_eq!(result.table, CleanupTable::SpendLogs);
     assert_eq!(batches, vec![2, 2, 1]);
     assert_eq!(row_count(&case.client, SPEND_LOGS).await, 2);
     assert_eq!(series_total(&registry, ROWS_DELETED), Some(finite(5)));
@@ -216,7 +216,7 @@ async fn stops_at_the_batch_cap_and_probes_a_capped_backlog() {
     let (result, batches) = run_table(
         &mut case,
         (bounds, &clock, &metrics),
-        CleanupTable::SPEND_LOGS,
+        CleanupTable::SpendLogs,
         (cutoff(), deadline),
     )
     .await;
@@ -240,7 +240,7 @@ async fn deletes_daily_rows_strictly_before_the_cutoff_day() {
     let (result, _batches) = run_table(
         &mut case,
         (BOUNDS, &clock, &metrics),
-        CleanupTable::DAILY_TAG_SPEND,
+        CleanupTable::DailyTagSpend,
         (day, deadline),
     )
     .await;
@@ -274,7 +274,7 @@ async fn checks_the_deadline_before_the_batch_cap() {
     let (result, batches) = run_table(
         &mut case,
         (bounds, &clock, &metrics),
-        CleanupTable::SPEND_LOGS,
+        CleanupTable::SpendLogs,
         (cutoff(), deadline),
     )
     .await;
@@ -304,7 +304,7 @@ async fn aborts_after_consecutive_lock_timeouts_and_keeps_the_gauge() {
     let (result, batches) = run_table(
         &mut case,
         (bounds, &clock, &metrics),
-        CleanupTable::SPEND_LOGS,
+        CleanupTable::SpendLogs,
         (cutoff(), deadline),
     )
     .await;
@@ -339,7 +339,7 @@ async fn a_successful_batch_resets_consecutive_failures() {
     let (result, batches) = run_table(
         &mut case,
         (bounds, &clock, &metrics),
-        CleanupTable::SPEND_LOGS,
+        CleanupTable::SpendLogs,
         (cutoff(), deadline),
     )
     .await;
@@ -368,7 +368,7 @@ async fn failed_batches_do_not_consume_the_batch_cap() {
     let (result, batches) = run_table(
         &mut case,
         (bounds, &clock, &metrics),
-        CleanupTable::SPEND_LOGS,
+        CleanupTable::SpendLogs,
         (cutoff(), deadline),
     )
     .await;
@@ -397,7 +397,7 @@ async fn a_batch_cancelled_at_the_deadline_is_not_a_failure() {
     let (result, _batches) = run_table(
         &mut case,
         (bounds, &clock, &metrics),
-        CleanupTable::SPEND_LOGS,
+        CleanupTable::SpendLogs,
         (cutoff(), deadline),
     )
     .await;
