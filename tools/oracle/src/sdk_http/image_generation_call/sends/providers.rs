@@ -41,24 +41,23 @@ fn token_headers(
     model: &str,
     headers: &mut Headers,
 ) -> Result<(), Box<RawException>> {
-    match request.azure_ad_token {
-        Some(token) => inserts_bearer(headers, token),
-        None => match request.azure_ad_token_provider {
-            Some(provider) => match provider.token() {
-                Ok(TokenReply::Text(token)) => inserts_bearer(headers, &token),
-                Ok(TokenReply::NonText { type_name }) => {
-                    return Err(plain(
-                        &format!("the azure token provider answered a {type_name}"),
-                        model,
-                        "azure",
-                    ));
-                }
-                Err(failure) => {
-                    return Err(plain(&failure.message, model, "azure"));
-                }
-            },
-            None => {}
-        },
+    if let Some(token) = request.azure_ad_token {
+        inserts_bearer(headers, token);
+        return Ok(());
     }
-    Ok(())
+    let Some(provider) = request.azure_ad_token_provider else {
+        return Ok(());
+    };
+    match provider.token() {
+        Ok(TokenReply::Text(issued)) => {
+            inserts_bearer(headers, &issued);
+            Ok(())
+        }
+        Ok(TokenReply::NonText { type_name }) => Err(plain(
+            &format!("the azure token provider answered a {type_name}"),
+            model,
+            "azure",
+        )),
+        Err(failure) => Err(plain(&failure.message, model, "azure")),
+    }
 }

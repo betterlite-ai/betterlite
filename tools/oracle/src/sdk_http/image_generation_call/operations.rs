@@ -1,4 +1,3 @@
-use std::future::Future;
 use std::sync::Arc;
 
 use betterlite_azure::credentials::source::CallableTokenProvider;
@@ -56,42 +55,44 @@ impl ImageGenerationOperations for Operations<'_> {
         &self,
         request: FoundryAuthRequest<'_>,
     ) -> Result<Headers, Box<RawException>> {
-        match request.api_key {
-            Some(key) => Ok(Headers::from([(
-                String::from("api-key"),
-                key.expose_secret().to_owned(),
-            )])),
-            None => Err(sends::plain(
-                "Missing Azure AI credentials - set an API key (`api_key` or AZURE_AI_API_KEY), or Entra ID / OAuth credentials",
-                "",
-                "azure_ai",
-            )),
-        }
+        request.api_key.map_or_else(
+            || {
+                Err(sends::plain(
+                    "Missing Azure AI credentials - set an API key (`api_key` or AZURE_AI_API_KEY), or Entra ID / OAuth credentials",
+                    "",
+                    "azure_ai",
+                ))
+            },
+            |key| {
+                Ok(Headers::from([(
+                    String::from("api-key"),
+                    key.expose_secret().to_owned(),
+                )]))
+            },
+        )
     }
 
-    fn send(
+    async fn send(
         &self,
         branch: Branch<'_>,
         _logging: &mut LoggingState,
-    ) -> impl Future<Output = Result<BranchAnswer, Box<RawException>>> + Send {
-        async move {
-            match branch {
-                Branch::Azure(request) => sends::providers::azure(request, self.source).await,
-                Branch::Generic(request) => sends::generic::send(request, self.source).await,
-                Branch::Foundry(request) => sends::foundry::send(request, self.source).await,
-                Branch::OpenAi(request) => sends::openai::send(request, self.source).await,
-                Branch::Custom(request) => sends::custom::send(request, self.source).await,
-                Branch::BlackForestLabs(request) => Err(sends::plain(
-                    "the black_forest_labs image handler is not wired into the oracle adapter",
-                    request.model,
-                    "black_forest_labs",
-                )),
-                Branch::Bedrock(request) => Err(sends::plain(
-                    "the bedrock image handler is not wired into the oracle adapter",
-                    request.model.unwrap_or_default(),
-                    "bedrock",
-                )),
-            }
+    ) -> Result<BranchAnswer, Box<RawException>> {
+        match branch {
+            Branch::Azure(request) => sends::providers::azure(request, self.source).await,
+            Branch::Generic(request) => sends::generic::send(request, self.source).await,
+            Branch::Foundry(request) => sends::foundry::send(request, self.source).await,
+            Branch::OpenAi(request) => sends::openai::send(request, self.source).await,
+            Branch::Custom(request) => sends::custom::send(request, self.source).await,
+            Branch::BlackForestLabs(request) => Err(sends::plain(
+                "the black_forest_labs image handler is not wired into the oracle adapter",
+                request.model,
+                "black_forest_labs",
+            )),
+            Branch::Bedrock(request) => Err(sends::plain(
+                "the bedrock image handler is not wired into the oracle adapter",
+                request.model.unwrap_or_default(),
+                "bedrock",
+            )),
         }
     }
 }

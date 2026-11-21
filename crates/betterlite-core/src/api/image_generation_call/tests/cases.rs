@@ -105,7 +105,7 @@ fn explicit_options() {
 
 fn explicit_call() -> ImageGenerationCall {
     let mut explicit = call(Some("dall-e-3"), Some("openai"));
-    explicit.n = Some(1);
+    explicit.image_count = Some(1);
     explicit.quality = Some(String::from("hd"));
     explicit.response_format = Some(String::from("b64_json"));
     explicit.size = Some(String::from("1024x1024"));
@@ -322,7 +322,10 @@ fn custom_image_handler_selection() {
     let case = custom_case(
         &ops,
         &identity,
-        vec![Some(Arc::clone(&first)), Some(Arc::clone(&last))],
+        vec![
+            Some(Arc::<FixtureHandler>::clone(&first)),
+            Some(Arc::<FixtureHandler>::clone(&last)),
+        ],
     );
     case.run(custom_call(Some(CustomClientKind::Sync), false))
         .0
@@ -340,7 +343,11 @@ fn custom_image_handler_selection() {
 fn custom_client_kinds(identity: &FakeIdentity) {
     let ops = FakeOps::new(None);
     let wanted = Arc::new(FixtureHandler::default());
-    let case = custom_case(&ops, identity, vec![Some(Arc::clone(&wanted))]);
+    let case = custom_case(
+        &ops,
+        identity,
+        vec![Some(Arc::<FixtureHandler>::clone(&wanted))],
+    );
     for (client, asynchronous) in [
         (CustomClientKind::Asynchronous, true),
         (CustomClientKind::Sync, true),

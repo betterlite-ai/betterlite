@@ -105,7 +105,7 @@ fn call(model: Option<&str>, provider: Option<&str>) -> ImageGenerationCall {
     ImageGenerationCall {
         model: model.map(str::to_owned),
         prompt: String::from("cat"),
-        n: None,
+        image_count: None,
         quality: None,
         response_format: None,
         size: None,

@@ -172,7 +172,7 @@ fn to_outcome(
     answer: Result<ImageGenerationAnswer, ImageGenerationException>,
 ) -> Result<Outcome, SdkHttpError> {
     match answer {
-        Ok(answer) => result_json(&answer.response),
+        Ok(generated) => result_json(&generated.response),
         Err(ImageGenerationException::Mapped { class, message }) => Ok(Outcome {
             result: None,
             failure: Some(failure(&class, &message)?),
