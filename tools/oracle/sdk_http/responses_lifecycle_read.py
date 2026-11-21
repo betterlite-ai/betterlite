@@ -191,10 +191,8 @@ def timeout_value(timeout: float | StructuredTimeout | None) -> float | httpx.Ti
                 write=timeout.write,
                 pool=timeout.pool,
             )
-        case float() | int():
-            return float(timeout)
-        case None:
-            return timeout
+        case float() | int() | None:
+            return float(timeout) if timeout is not None else None
 
 
 # the common kwargs every call takes, then the ones only its own step carries
