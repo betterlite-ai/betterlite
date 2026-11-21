@@ -1,0 +1,17 @@
+kind: helper
+name: redis-fallback-to-memory
+call:
+  b3054:
+    redis: script_fails
+    memory:
+      "{session_iterations:s1}:count": 1
+    agents:
+      - agent_id: agent-1
+        agent_name: alpha
+        agent_card_params: {model: gpt-4o}
+        litellm_params: {max_iterations: 2}
+    calls:
+      - agent_id: agent-1
+        data: {model: gpt-4o, metadata: {session_id: s1}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,21 @@
+kind: helper
+name: mcp-hook-payloads-to-llm-with-description
+call:
+  b8401: {"scenarios": [
+    {"function": "to_llm", "premium": true, "request": {"tool_name": "search_docs", "arguments": {}}, "kwargs": {
+      "guardrail_context": {"model": "gpt-4o", "metadata": {"trace_id": "t-1", "guardrails": ["key-guard", "parent-guard", "parent-guard"], "headers": {"stale": "1"}}},
+      "name": "search_docs", "arguments": {}, "server_name": "docs", "mcp_rate_limit_server_name": "docs-alias",
+      "user_api_key_auth": {"metadata": {"guardrails": ["key-guard"]}, "team_metadata": {"guardrails": ["key-guard"], "tier": "gold"}},
+      "user_api_key_user_id": "u-1", "user_api_key_team_id": "t-1", "user_api_key_end_user_id": null, "user_api_key_hash": "hash-1",
+      "incoming_bearer_token": "inbound-token", "headers": {"x-request-id": "r-1"},
+      "mcp_tool_description": "Search the product docs", "mcp_input_schema": {"type": "object", "properties": {}}}},
+    {"function": "to_llm", "premium": false, "request": {"tool_name": "lookup", "arguments": {"ticket": "T-42", "verbose": true}}, "kwargs": {
+      "name": "lookup", "arguments": {"ticket": "T-42", "verbose": true}, "model": "kw-model", "mcp_tool_description": "",
+      "user_api_key_request_route": "/mcp/tools/call", "headers": {}}},
+    {"function": "to_llm", "premium": false, "request": {"tool_name": "ping", "arguments": {}}, "kwargs": {}}
+  ]}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/1/messages/0/content
+      why: LiteLLM prints the arguments with Python's repr and betterlite writes them as JSON, which docs/compatibility.md leaves out of parity; the first and third scenarios send empty arguments, where both texts agree

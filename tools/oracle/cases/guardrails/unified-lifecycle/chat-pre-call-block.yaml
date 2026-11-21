@@ -1,0 +1,38 @@
+name: unified-lifecycle-chat-pre-call-block
+config: |
+  model_list:
+    - model_name: guarded-model
+      litellm_params:
+        model: openai/guarded-upstream
+        api_base: "{{upstream}}"
+        api_key: oracle-key
+  guardrails:
+    - guardrail_name: word-filter
+      litellm_params:
+        guardrail: litellm_content_filter
+        mode: pre_call
+        default_on: true
+        blocked_words:
+          - keyword: forbidden
+            action: BLOCK
+env: {}
+request:
+  method: POST
+  path: /v1/chat/completions
+  headers:
+    content-type: application/json
+    authorization: Bearer oracle-master
+    x-litellm-call-id: oracle-call-unified-chat-pre-block
+  body:
+    model: guarded-model
+    messages:
+      - {role: user, content: Tell me the forbidden word.}
+    stream: false
+upstream: []
+compare:
+  headers: [content-type]
+  headers_present: []
+  upstream_headers: []
+  ignore:
+    - pointer: /error/message
+      why: LiteLLM puts the Python repr of the content filter's detail dict in the message, and docs/compatibility.md keeps repr text out of betterlite
