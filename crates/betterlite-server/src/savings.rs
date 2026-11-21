@@ -98,21 +98,8 @@ impl DeploymentPricing {
 
 // The savings side of the cost resource: B174 identities, its bound public lookup and a proxy's deployment prices.
 pub struct Context<'state> {
-    lookup: &'state CatalogLookup,
-    deployments: Option<DeploymentPricing>,
-}
-
-impl<'state> Context<'state> {
-    #[must_use]
-    pub const fn new(
-        lookup: &'state CatalogLookup,
-        deployments: Option<DeploymentPricing>,
-    ) -> Self {
-        Self {
-            lookup,
-            deployments,
-        }
-    }
+    pub lookup: &'state CatalogLookup,
+    pub deployments: Option<DeploymentPricing>,
 }
 
 impl SavingsPricingContext for Context<'_> {

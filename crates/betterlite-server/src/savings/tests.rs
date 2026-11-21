@@ -12,7 +12,7 @@ use betterlite_models::price_fields::decimal_lexeme::parse_decimal_lexeme;
 use betterlite_models::price_lookup::PriceRecord;
 use betterlite_models::provider_model_sets::ProviderModelSets;
 use betterlite_models::savings_pricing::caching::{RequestPricingInput, request_savings_pricing};
-use betterlite_models::savings_pricing::context::{ModelIdentity, SavingsPricingContext};
+use betterlite_models::savings_pricing::context::{ModelIdentity, SavingsPricingContext as _};
 use betterlite_models::tiered_pricing::Scalar;
 use betterlite_router::catalog_updates::catalog::DeploymentCatalog;
 use betterlite_router::deployment_model_info::cache::DiscoveryCache;
@@ -65,7 +65,10 @@ async fn deployment_price_reads_the_router_override() {
     let deployments = deployment_pricing(
         r#"{"dep-1": {"input_cost_per_token": 2.0, "litellm_provider": "openai"}}"#,
     );
-    let context = Context::new(&service.lookup, Some(deployments));
+    let context = Context {
+        lookup: &service.lookup,
+        deployments: Some(deployments),
+    };
     let priced = context
         .deployment_price(Some("dep-1"), "gpt-4o")
         .await
@@ -85,7 +88,10 @@ async fn deployment_price_falls_back_to_the_model_name() {
     let bytes = bundled_bytes();
     let service = service_from(&bytes).expect("the cost service builds");
     let deployments = DeploymentPricing::default();
-    let context = Context::new(&service.lookup, Some(deployments));
+    let context = Context {
+        lookup: &service.lookup,
+        deployments: Some(deployments),
+    };
     let priced = context
         .deployment_price(Some("no-such-deployment"), "gpt-4o")
         .await
@@ -120,7 +126,10 @@ async fn deployment_price_keeps_the_deployment_tables() {
             "tiered_pricing": [{"input_cost_per_token": 0.5, "range": [0, 1000]}],
             "off_peak_pricing": {"input_cost_per_token": 0.25, "cache_read_input_token_cost": 0.1}}}"#,
     );
-    let context = Context::new(&service.lookup, Some(deployments));
+    let context = Context {
+        lookup: &service.lookup,
+        deployments: Some(deployments),
+    };
     let priced = context
         .deployment_price(Some("dep-t"), "gpt-4o")
         .await
@@ -145,7 +154,10 @@ async fn deployment_price_without_an_id_has_no_deployment() {
     let bytes = bundled_bytes();
     let service = service_from(&bytes).expect("the cost service builds");
     let deployments = DeploymentPricing::default();
-    let context = Context::new(&service.lookup, Some(deployments));
+    let context = Context {
+        lookup: &service.lookup,
+        deployments: Some(deployments),
+    };
     assert!(context.deployment_price(None, "gpt-4o").await.is_none());
 }
 
@@ -153,7 +165,10 @@ async fn deployment_price_without_an_id_has_no_deployment() {
 async fn deployment_price_without_a_resolver_is_unavailable() {
     let bytes = bundled_bytes();
     let service = service_from(&bytes).expect("the cost service builds");
-    let context = Context::new(&service.lookup, None);
+    let context = Context {
+        lookup: &service.lookup,
+        deployments: None,
+    };
     assert!(
         context
             .deployment_price(Some("dep-1"), "gpt-4o")
@@ -167,7 +182,10 @@ fn context_resolves_the_canonical_identity() {
     let bytes = bundled_bytes();
     let service = service_from(&bytes).expect("the cost service builds");
     let deployments = DeploymentPricing::default();
-    let context = Context::new(&service.lookup, Some(deployments));
+    let context = Context {
+        lookup: &service.lookup,
+        deployments: Some(deployments),
+    };
     let identity = context
         .resolve_model("anthropic/claude-3-haiku-20240307", None)
         .expect("the prefixed name resolves");
@@ -185,7 +203,10 @@ fn context_keeps_the_custom_provider_decision() {
     let bytes = bundled_bytes();
     let service = service_from(&bytes).expect("the cost service builds");
     let deployments = DeploymentPricing::default();
-    let context = Context::new(&service.lookup, Some(deployments));
+    let context = Context {
+        lookup: &service.lookup,
+        deployments: Some(deployments),
+    };
     let identity = context
         .resolve_model("gpt-4o", Some("openai"))
         .expect("the supplied provider resolves");
@@ -198,7 +219,10 @@ async fn request_prices_fall_back_to_the_public_lookup() {
     let bytes = bundled_bytes();
     let service = service_from(&bytes).expect("the cost service builds");
     let deployments = DeploymentPricing::default();
-    let context = Context::new(&service.lookup, Some(deployments));
+    let context = Context {
+        lookup: &service.lookup,
+        deployments: Some(deployments),
+    };
     let pricing = request_savings_pricing(
         &context,
         &RequestPricingInput {

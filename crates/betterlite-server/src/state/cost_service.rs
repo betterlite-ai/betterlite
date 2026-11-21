@@ -44,7 +44,10 @@ impl Slot {
         let Ok(service) = &self.service else {
             return None;
         };
-        Some(Context::new(&service.lookup, None))
+        Some(Context {
+            lookup: &service.lookup,
+            deployments: None,
+        })
     }
 }
 
