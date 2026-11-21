@@ -1,7 +1,7 @@
 id: B017
 milestone: M2 routing
 title: Execute retries within the routing deadline
-status: todo
+status: done
 depends_on: [B016, B305, B306, B005, B301]
 file: tasks/B017-routing-retries.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/router_utils/add_retry_fallback_headers.py"
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2841
