@@ -1,0 +1,21 @@
+kind: helper
+name: caller-auth-user-and-team
+call:
+  b4778:
+    operation: caller_auth
+    agent_id: agent-1
+    models: [gpt-4o, claude]
+    agent_caller: {user_id: human, team_id: humans}
+    requires_fresh_policy: false
+calls:
+  - b4778:
+      operation: caller_auth
+      agent_id: agent-1
+      models: [gpt-4o]
+      agent_caller: {user_id: null, team_id: humans}
+      requires_fresh_policy: false
+env: {}
+compare:
+  ignore:
+    - pointer: /value/requires_fresh_policy
+      why: "betterlite keeps requires_fresh_policy inside betterlite-auth, so the helper cannot read it back; agent_caller::caller_auth::tests checks the copied value"
