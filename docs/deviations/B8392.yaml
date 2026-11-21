@@ -3,7 +3,7 @@ deviations:
   - what: The unified hooks get the guardrail to apply as an argument of the UnifiedHooks port, and execute_guardrail_hook does not write data["guardrail_to_apply"].
     why: B3680's unified hooks take the guardrail as a typed argument, so the callback never enters the request JSON; the guardrail that runs is the same.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L1832-L1833
-  - what: run_guardrail_with_metrics takes the typed hook call and the path to run it on, not a coroutine that was already built.
+  - what: run_guardrail_with_metrics takes the typed hook call and runs the hook itself, not a coroutine that was already built.
     why: The hook borrows the request data mutably while it runs, and the wrapper needs the same data afterwards to record a raising guardrail; the timing, status, enrichment and record are the same.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L2719-L2753
   - what: Parallel pre-call guardrails and during-call guardrails each run on their own copy of the request, and only what they write into the metadata and litellm_metadata buckets (markers, applied guardrails, invocation records) reaches the live request; an in-place edit outside those buckets is dropped.
