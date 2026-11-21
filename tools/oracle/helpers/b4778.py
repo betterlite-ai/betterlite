@@ -179,7 +179,8 @@ def managed_ceilings(call: ManagedCall) -> JsonValue:
     }
     agent = AGENT.validate_python(fields)
     ceilings = asyncio.run(resolve_managed_agent_ceilings(agent))
-    return JSON.validate_python([ceiling_view(found) for found in ceilings])
+    views: list[CeilingView] = [ceiling_view(found) for found in ceilings]
+    return JSON.validate_python(views)
 
 
 def caller_auth(call: CallerAuthCall) -> JsonValue:
@@ -244,7 +245,8 @@ def intersect_access(call: AccessCall) -> JsonValue:
         case UnrestrictedAgentAccess():
             return "unrestricted"
         case RestrictedAgentAccess(agent_ids=agent_ids):
-            return JSON.validate_python(sorted(agent_ids))
+            restricted: list[str] = sorted(agent_ids)
+            return JSON.validate_python(restricted)
 
 
 def run(input_value: Input) -> JsonValue:
