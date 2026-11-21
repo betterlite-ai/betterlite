@@ -523,7 +523,7 @@ async fn reject_with_429() -> (SearchHttpError<TestError>, TestProvider, Serving
     let served = serve(
         reply(
             "429 Too Many Requests",
-            &[("retry-after", "3")],
+            &[("retry-after", "3"), ("content-encoding", "identity")],
             "slow down",
         ),
         Duration::ZERO,
@@ -570,6 +570,11 @@ async fn status_error_is_a_provider_error() {
         sent_headers.get("retry-after").map(String::as_str),
         Some("3")
     );
+    assert_eq!(
+        sent_headers.get("content-length").map(String::as_str),
+        Some("9")
+    );
+    assert!(!sent_headers.contains_key("content-encoding"));
     assert_eq!(
         served.finish().expect("the fixture answers").line,
         "POST /search HTTP/1.1"
