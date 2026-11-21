@@ -1,0 +1,37 @@
+kind: helper
+name: jwt-role-claims-fnmatch-role-mapping
+env: {}
+compare: {ignore: []}
+call:
+  jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "viewer*", "litellm_role": "proxy_admin_viewer"}, {"jwt_role": "*", "litellm_role": "internal_user"}]}, "claims": {"roles": ["dev", "viewer-1"]}, "projection": {"kind": "litellm_role"}}
+calls:
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "viewer*", "litellm_role": "proxy_admin_viewer"}, {"jwt_role": "*", "litellm_role": "internal_user"}]}, "claims": {"roles": ["dev"]}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "a*", "litellm_role": "org_admin"}]}, "claims": {"roles": ["abc"]}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "A*", "litellm_role": "org_admin"}]}, "claims": {"roles": ["abc"]}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "a?c", "litellm_role": "org_admin"}]}, "claims": {"roles": ["abc"]}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "a?c", "litellm_role": "org_admin"}]}, "claims": {"roles": ["a/c"]}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "*", "litellm_role": "org_admin"}]}, "claims": {"roles": ["a/b"]}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "team/*", "litellm_role": "org_admin"}]}, "claims": {"roles": ["team/ops/admin"]}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "?", "litellm_role": "org_admin"}]}, "claims": {"roles": ["\n"]}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "[abc]", "litellm_role": "org_admin"}]}, "claims": {"roles": ["b"]}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "[!abc]", "litellm_role": "org_admin"}]}, "claims": {"roles": ["b"]}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "[a-c]x", "litellm_role": "org_admin"}]}, "claims": {"roles": ["bx"]}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "[z-a]", "litellm_role": "org_admin"}]}, "claims": {"roles": ["a"]}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "[!z-a]", "litellm_role": "org_admin"}]}, "claims": {"roles": ["q"]}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "[z-a!]", "litellm_role": "org_admin"}]}, "claims": {"roles": ["q"]}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "[", "litellm_role": "org_admin"}]}, "claims": {"roles": ["["]}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "a[b", "litellm_role": "org_admin"}]}, "claims": {"roles": ["a[b"]}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "[]]", "litellm_role": "org_admin"}]}, "claims": {"roles": ["]"]}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "[!]]", "litellm_role": "org_admin"}]}, "claims": {"roles": ["a"]}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "[!]]", "litellm_role": "org_admin"}]}, "claims": {"roles": ["]"]}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "[a-]", "litellm_role": "org_admin"}]}, "claims": {"roles": ["-"]}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "[a-c-e]", "litellm_role": "org_admin"}]}, "claims": {"roles": ["-"]}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "[a-c-e]", "litellm_role": "org_admin"}]}, "claims": {"roles": ["d"]}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "[^a]", "litellm_role": "org_admin"}]}, "claims": {"roles": ["^"]}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "[^a]", "litellm_role": "org_admin"}]}, "claims": {"roles": ["b"]}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "[\\]", "litellm_role": "org_admin"}]}, "claims": {"roles": ["\\"]}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "*a*b", "litellm_role": "org_admin"}]}, "claims": {"roles": ["xaxb"]}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "*a*b", "litellm_role": "org_admin"}]}, "claims": {"roles": ["xaxbc"]}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "", "litellm_role": "org_admin"}]}, "claims": {"roles": [""]}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "**", "litellm_role": "org_admin"}]}, "claims": {"roles": [""]}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "Admin", "litellm_role": "org_admin"}]}, "claims": {"roles": ["admin"]}, "projection": {"kind": "litellm_role"}}
