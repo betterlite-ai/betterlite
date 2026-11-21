@@ -45,8 +45,8 @@ where
         }
         let release = self.leader_release(lease);
         let outcome = self.run_phases().await;
-        if let Some(release) = release {
-            release.release().await;
+        if let Some(pending_release) = release {
+            pending_release.release().await;
         }
         outcome
     }
