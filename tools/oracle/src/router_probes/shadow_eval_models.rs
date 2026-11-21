@@ -72,26 +72,13 @@ pub(crate) fn run(
 }
 
 fn response(job: &Job) -> Result<Response, OperationError> {
-    let model = shadow_job(job)?;
-    let built = model
-        .response(Utc::now())
-        .map_err(|error| invalid(&error.to_string()))?;
-    Ok(Response {
-        job_id: built.job.job_id.clone(),
-        router_name: built.router_name.clone(),
-        status: built.status,
-        budget_spent: model.targets.iter().map(ShadowLeg::budget_spent).collect(),
-    })
-}
-
-fn shadow_job(job: &Job) -> Result<ShadowJob, OperationError> {
     let ends_at = time(&job.ends_at)?;
     let targets = job
         .targets
         .iter()
         .map(target)
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(ShadowJob {
+    let model = ShadowJob {
         job_id: job.job_id.clone(),
         targets,
         router_names: job.router_names.clone(),
@@ -108,6 +95,15 @@ fn shadow_job(job: &Job) -> Result<ShadowJob, OperationError> {
         judge_spend: None,
         last_error: None,
         results: None,
+    };
+    let built = model
+        .response(Utc::now())
+        .map_err(|error| invalid(&error.to_string()))?;
+    Ok(Response {
+        job_id: built.job.job_id.clone(),
+        router_name: built.router_name.clone(),
+        status: built.status,
+        budget_spent: model.targets.iter().map(ShadowLeg::budget_spent).collect(),
     })
 }
 
