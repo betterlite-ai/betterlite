@@ -20,46 +20,44 @@ pub struct PostCallHook<'call> {
     pub additional_headers: Option<&'call mut AdditionalHeaders>,
 }
 
-impl LegacyRateLimitHandler {
-    // async_post_call_success_hook: the key's remaining requests and tokens this minute, as response headers
-    pub async fn post_call_success_hook(
-        &self,
-        counters: &dyn CounterCache,
-        hook: PostCallHook<'_>,
-    ) -> Result<(), AccountingError> {
-        // LiteLLM formats a missing key into the f-string as None
-        let api_key = logged_api_key(hook.principal).unwrap_or("None");
-        let key = format!("{api_key}::{}::request_count", self.precise_minute());
-        let current = read_counter(counters, &key, hook.parent_otel_span).await?;
-        let (Some(headers), Some(counter)) = (hook.additional_headers, current) else {
-            return Ok(());
-        };
-        if let Some(rpm_limit) = hook.rpm_limit {
-            let remaining = rpm_limit
-                .checked_sub(counter.current_rpm)
-                .ok_or_else(|| AccountingError::Overflow { key: key.clone() })?;
-            headers.insert(
-                String::from("x-ratelimit-remaining-requests"),
-                Json::Number(Number::from(remaining)),
-            );
-            headers.insert(
-                String::from("x-ratelimit-limit-requests"),
-                Json::Number(Number::from(rpm_limit)),
-            );
-        }
-        if let Some(tpm_limit) = hook.tpm_limit {
-            let remaining = tpm_limit
-                .checked_sub(counter.current_tpm)
-                .ok_or(AccountingError::Overflow { key })?;
-            headers.insert(
-                String::from("x-ratelimit-remaining-tokens"),
-                Json::Number(Number::from(remaining)),
-            );
-            headers.insert(
-                String::from("x-ratelimit-limit-tokens"),
-                Json::Number(Number::from(tpm_limit)),
-            );
-        }
-        Ok(())
+// async_post_call_success_hook: the key's remaining requests and tokens this minute, as response headers
+pub async fn post_call_success_hook(
+    handler: &LegacyRateLimitHandler,
+    counters: &dyn CounterCache,
+    hook: PostCallHook<'_>,
+) -> Result<(), AccountingError> {
+    // LiteLLM formats a missing key into the f-string as None
+    let api_key = logged_api_key(hook.principal).unwrap_or("None");
+    let key = format!("{api_key}::{}::request_count", handler.precise_minute());
+    let current = read_counter(counters, &key, hook.parent_otel_span).await?;
+    let (Some(headers), Some(counter)) = (hook.additional_headers, current) else {
+        return Ok(());
+    };
+    if let Some(rpm_limit) = hook.rpm_limit {
+        let remaining = rpm_limit
+            .checked_sub(counter.current_rpm)
+            .ok_or_else(|| AccountingError::Overflow { key: key.clone() })?;
+        headers.insert(
+            String::from("x-ratelimit-remaining-requests"),
+            Json::Number(Number::from(remaining)),
+        );
+        headers.insert(
+            String::from("x-ratelimit-limit-requests"),
+            Json::Number(Number::from(rpm_limit)),
+        );
     }
+    if let Some(tpm_limit) = hook.tpm_limit {
+        let remaining = tpm_limit
+            .checked_sub(counter.current_tpm)
+            .ok_or(AccountingError::Overflow { key })?;
+        headers.insert(
+            String::from("x-ratelimit-remaining-tokens"),
+            Json::Number(Number::from(remaining)),
+        );
+        headers.insert(
+            String::from("x-ratelimit-limit-tokens"),
+            Json::Number(Number::from(tpm_limit)),
+        );
+    }
+    Ok(())
 }

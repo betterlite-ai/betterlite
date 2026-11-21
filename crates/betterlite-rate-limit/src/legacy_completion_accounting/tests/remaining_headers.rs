@@ -6,7 +6,9 @@ use serde_json::Number;
 
 use super::support::{Call, counter, fixture, minute_key};
 use crate::legacy_completion_accounting::error::AccountingError;
-use crate::legacy_completion_accounting::remaining_headers::PostCallHook;
+use crate::legacy_completion_accounting::remaining_headers::{
+    PostCallHook, post_call_success_hook,
+};
 use crate::rate_limiters::legacy_rate_limit_counters::usage_cache::LegacyCacheValue;
 
 fn principal(fields: &str) -> PrincipalFacts {
@@ -49,13 +51,12 @@ async fn headers_written_from_the_key_counter(
     let fixture = fixture(&[("sk-key::2026-11-21-09-05::request_count", stored)], &[]);
     let key = principal(r#"{"api_key": "sk-key"}"#);
     let mut response_headers = headers(&[("x-request-id", 7), ("x-ratelimit-limit-requests", 999)]);
-    let answer = fixture
-        .handler
-        .post_call_success_hook(
-            fixture.cache.as_ref(),
-            hook(&key, limits, Some(&mut response_headers)),
-        )
-        .await;
+    let answer = post_call_success_hook(
+        &fixture.handler,
+        fixture.cache.as_ref(),
+        hook(&key, limits, Some(&mut response_headers)),
+    )
+    .await;
     answer.unwrap();
     let mut expected = headers(&[("x-request-id", 7), ("x-ratelimit-limit-requests", 999)]);
     expected.extend(headers(written));
@@ -70,13 +71,12 @@ async fn headers_untouched_without_a_counter() {
     let fixture = fixture(&[], &[]);
     let key = principal(r#"{"api_key": "sk-key"}"#);
     let mut response_headers = headers(&[("x-request-id", 7)]);
-    let answer = fixture
-        .handler
-        .post_call_success_hook(
-            fixture.cache.as_ref(),
-            hook(&key, (Some(10), Some(100)), Some(&mut response_headers)),
-        )
-        .await;
+    let answer = post_call_success_hook(
+        &fixture.handler,
+        fixture.cache.as_ref(),
+        hook(&key, (Some(10), Some(100)), Some(&mut response_headers)),
+    )
+    .await;
     answer.unwrap();
     assert_eq!(response_headers, headers(&[("x-request-id", 7)]));
 }
@@ -88,13 +88,12 @@ async fn headers_skipped_without_hidden_params_after_the_read() {
         &[],
     );
     let key = principal(r#"{"api_key": "sk-key"}"#);
-    let answer = fixture
-        .handler
-        .post_call_success_hook(
-            fixture.cache.as_ref(),
-            hook(&key, (Some(10), Some(100)), None),
-        )
-        .await;
+    let answer = post_call_success_hook(
+        &fixture.handler,
+        fixture.cache.as_ref(),
+        hook(&key, (Some(10), Some(100)), None),
+    )
+    .await;
     answer.unwrap();
     assert_eq!(
         fixture.cache.calls(),
@@ -119,10 +118,12 @@ async fn headers_skipped_without_hidden_params_after_the_read() {
 async fn headers_read_under_the_logged_api_key(#[case] fields: &str, #[case] logged: &str) {
     let fixture = fixture(&[], &[]);
     let key = principal(fields);
-    let answer = fixture
-        .handler
-        .post_call_success_hook(fixture.cache.as_ref(), hook(&key, (None, None), None))
-        .await;
+    let answer = post_call_success_hook(
+        &fixture.handler,
+        fixture.cache.as_ref(),
+        hook(&key, (None, None), None),
+    )
+    .await;
     answer.unwrap();
     assert_eq!(
         fixture.cache.calls(),
@@ -144,13 +145,12 @@ async fn headers_cache_error_reaches_the_caller(
     let fixture = fixture(stored, failing);
     let key = principal(r#"{"api_key": "sk-key"}"#);
     let mut response_headers = headers(&[]);
-    let answer = fixture
-        .handler
-        .post_call_success_hook(
-            fixture.cache.as_ref(),
-            hook(&key, (Some(10), Some(100)), Some(&mut response_headers)),
-        )
-        .await;
+    let answer = post_call_success_hook(
+        &fixture.handler,
+        fixture.cache.as_ref(),
+        hook(&key, (Some(10), Some(100)), Some(&mut response_headers)),
+    )
+    .await;
     assert!(matches!(
         answer,
         Err(AccountingError::Cache { .. } | AccountingError::NotACounter { .. })
@@ -169,13 +169,12 @@ async fn headers_overflow_is_an_error(
     let fixture = fixture(&[("sk-key::2026-11-21-09-05::request_count", stored)], &[]);
     let key = principal(r#"{"api_key": "sk-key"}"#);
     let mut response_headers = headers(&[]);
-    let answer = fixture
-        .handler
-        .post_call_success_hook(
-            fixture.cache.as_ref(),
-            hook(&key, limits, Some(&mut response_headers)),
-        )
-        .await;
+    let answer = post_call_success_hook(
+        &fixture.handler,
+        fixture.cache.as_ref(),
+        hook(&key, limits, Some(&mut response_headers)),
+    )
+    .await;
     assert!(matches!(answer, Err(AccountingError::Overflow { .. })));
 }
 
@@ -187,13 +186,12 @@ async fn none_key_reads_the_none_text_key() {
     );
     let key = principal("{}");
     let mut response_headers = headers(&[]);
-    let answer = fixture
-        .handler
-        .post_call_success_hook(
-            fixture.cache.as_ref(),
-            hook(&key, (Some(10), None), Some(&mut response_headers)),
-        )
-        .await;
+    let answer = post_call_success_hook(
+        &fixture.handler,
+        fixture.cache.as_ref(),
+        hook(&key, (Some(10), None), Some(&mut response_headers)),
+    )
+    .await;
     answer.unwrap();
     assert_eq!(
         fixture.cache.calls(),

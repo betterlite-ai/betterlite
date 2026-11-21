@@ -10,7 +10,7 @@ use serde_json::Number;
 use super::support::{BATCH_WRITE, Call, Fixture, MINUTE, counter, fixture, minute_key};
 use crate::legacy_completion_accounting::response_tokens::{CompletionResponse, ResponseUsage};
 use crate::legacy_completion_accounting::success_event::{
-    SuccessEvent, SuccessMetadata, UserApiKeyField,
+    SuccessEvent, SuccessMetadata, UserApiKeyField, log_success_event,
 };
 use crate::rate_limiters::legacy_rate_limit_counters::usage_cache::LegacyCacheValue;
 
@@ -68,7 +68,7 @@ fn per_model(limit: i64) -> JsonData {
 
 async fn written(fixture: &Fixture, event: &SuccessEvent<'_>) -> Vec<(String, LegacyCacheValue)> {
     let counters = fixture.cache.as_ref();
-    fixture.handler.log_success_event(counters, event).await;
+    log_success_event(&fixture.handler, counters, event).await;
     let calls = fixture.cache.calls();
     let Some(Call::BatchSet { entries, .. }) = calls.last() else {
         panic!("the last call is not the batch write: {calls:?}");
@@ -88,10 +88,7 @@ async fn global_slot_released_local_only_when_the_limit_is_set(
     let fixture = fixture(&[], &[]);
     let mut success = metadata(key());
     success.global_max_parallel_requests = global_limit;
-    fixture
-        .handler
-        .log_success_event(fixture.cache.as_ref(), &event(success))
-        .await;
+    log_success_event(&fixture.handler, fixture.cache.as_ref(), &event(success)).await;
     let calls = fixture.cache.calls();
     let decrement = Call::Increment {
         key: String::from("global_max_parallel_requests"),
@@ -255,10 +252,7 @@ async fn batch_write_sends_every_counter_once_in_block_order() {
     let mut everything = event(success);
     everything.end_user = Some(String::from("end-1"));
     everything.model_group = Some(String::from("gpt-4o"));
-    fixture
-        .handler
-        .log_success_event(fixture.cache.as_ref(), &everything)
-        .await;
+    log_success_event(&fixture.handler, fixture.cache.as_ref(), &everything).await;
     let keys = [
         minute_key("sk-key"),
         String::from(GROUP_KEY),
@@ -290,13 +284,12 @@ async fn batch_write_sends_every_counter_once_in_block_order() {
 #[tokio::test]
 async fn batch_write_happens_with_an_empty_list() {
     let fixture = fixture(&[], &[]);
-    fixture
-        .handler
-        .log_success_event(
-            fixture.cache.as_ref(),
-            &event(metadata(UserApiKeyField::Null)),
-        )
-        .await;
+    log_success_event(
+        &fixture.handler,
+        fixture.cache.as_ref(),
+        &event(metadata(UserApiKeyField::Null)),
+    )
+    .await;
     assert_eq!(
         fixture.cache.calls(),
         vec![Call::BatchSet {
@@ -313,10 +306,7 @@ async fn swallowed_error_missing_key_writes_nothing() {
     let mut success = metadata(UserApiKeyField::Missing);
     success.global_max_parallel_requests = Some(10);
     success.user_api_key_user_id = Some(String::from("user-1"));
-    fixture
-        .handler
-        .log_success_event(fixture.cache.as_ref(), &event(success))
-        .await;
+    log_success_event(&fixture.handler, fixture.cache.as_ref(), &event(success)).await;
     assert_eq!(fixture.cache.calls(), Vec::new());
     assert_eq!(
         fixture.console.lines().last().map(String::as_str),
@@ -340,10 +330,7 @@ async fn swallowed_error_keeps_the_global_release(
     let mut success = metadata(key());
     success.global_max_parallel_requests = Some(10);
     success.user_api_key_user_id = Some(String::from("user-1"));
-    fixture
-        .handler
-        .log_success_event(fixture.cache.as_ref(), &event(success))
-        .await;
+    log_success_event(&fixture.handler, fixture.cache.as_ref(), &event(success)).await;
     let calls = fixture.cache.calls();
     assert_eq!(
         calls.first(),
@@ -373,10 +360,7 @@ async fn swallowed_error_from_the_limit_lookup_skips_later_blocks() {
     let mut grouped = event(success);
     grouped.model_group = Some(String::from("gpt-4o"));
     grouped.limit_catalog = Some(&catalog);
-    fixture
-        .handler
-        .log_success_event(fixture.cache.as_ref(), &grouped)
-        .await;
+    log_success_event(&fixture.handler, fixture.cache.as_ref(), &grouped).await;
     assert_eq!(
         fixture.cache.calls(),
         vec![Call::Get {

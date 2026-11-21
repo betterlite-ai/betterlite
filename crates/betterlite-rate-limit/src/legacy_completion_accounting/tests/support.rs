@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::io;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
 use betterlite_auth::rejection_provider::ProviderResolution;
@@ -78,7 +78,10 @@ impl RecordingCache {
             .failing
             .iter()
             .any(|failing| *failing == key || *failing == one_method);
-        self.log.lock().unwrap().push(call);
+        self.log
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(call);
         if fails {
             return Err(UsageCacheError::Transport(
                 DualCacheError::UnrepresentableValue,
@@ -100,8 +103,13 @@ impl CounterCache for RecordingCache {
             key: key.to_owned(),
             local_only,
         };
-        self.answer(read)
-            .map(|()| self.stored.lock().unwrap().get(key).copied())
+        self.answer(read).map(|()| {
+            self.stored
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .get(key)
+                .copied()
+        })
     }
 
     async fn set(
@@ -111,12 +119,16 @@ impl CounterCache for RecordingCache {
         ttl: u64,
         _parent_otel_span: Option<&ParentOtelSpan>,
     ) -> Result<(), UsageCacheError> {
-        self.answer(Call::Set {
-            key: key.to_owned(),
+        let stored_key = key.to_owned();
+        let write = Call::Set {
+            key: stored_key.clone(),
             value,
             ttl,
-        })?;
-        self.stored.lock().unwrap().insert(key.to_owned(), value);
+        };
+        self.answer(write)?;
+        let mut stored = self.stored.lock().unwrap_or_else(PoisonError::into_inner);
+        stored.insert(stored_key, value);
+        drop(stored);
         Ok(())
     }
 
@@ -132,11 +144,16 @@ impl CounterCache for RecordingCache {
             delta,
             local_only,
         })?;
-        let mut stored = self.stored.lock().unwrap();
+        let mut stored = self.stored.lock().unwrap_or_else(PoisonError::into_inner);
         let count = match stored.get(key) {
-            Some(LegacyCacheValue::Count(current)) => current.checked_add(delta).unwrap(),
-            Some(LegacyCacheValue::Counter(_)) => panic!("{key} holds a counter, not a count"),
+            Some(LegacyCacheValue::Count(current)) => current.saturating_add(delta),
             None => delta,
+            // DualCache's increment fails on a stored object
+            Some(LegacyCacheValue::Counter(_)) => {
+                return Err(UsageCacheError::Transport(
+                    DualCacheError::UnrepresentableValue,
+                ));
+            }
         };
         stored.insert(key.to_owned(), LegacyCacheValue::Count(count));
         drop(stored);
@@ -260,9 +277,12 @@ pub(crate) fn minute_key(id: &str) -> String {
 struct SharedBuffer(Arc<Mutex<Vec<u8>>>);
 
 impl io::Write for SharedBuffer {
-    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(bytes);
-        Ok(bytes.len())
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {

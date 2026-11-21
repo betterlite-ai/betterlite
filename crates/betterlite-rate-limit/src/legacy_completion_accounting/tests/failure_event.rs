@@ -1,7 +1,7 @@
 use rstest::rstest;
 
 use super::support::{Call, Logs, counter, fixture, minute_key};
-use crate::legacy_completion_accounting::failure_event::FailureEvent;
+use crate::legacy_completion_accounting::failure_event::{FailureEvent, log_failure_event};
 use crate::rate_limiters::legacy_rate_limit_counters::usage_cache::LegacyCacheValue;
 
 const GLOBAL: &str = "global_max_parallel_requests";
@@ -41,10 +41,12 @@ async fn skip_leaves_every_counter_alone(
     #[case] printed: &str,
 ) {
     let fixture = fixture(&[], &[]);
-    fixture
-        .handler
-        .log_failure_event(fixture.cache.as_ref(), &failure(user_api_key, exception))
-        .await;
+    log_failure_event(
+        &fixture.handler,
+        fixture.cache.as_ref(),
+        &failure(user_api_key, exception),
+    )
+    .await;
     assert_eq!(fixture.cache.calls(), Vec::new());
     assert_eq!(
         fixture.console.lines(),
@@ -64,10 +66,7 @@ async fn global_slot_read_then_decremented_local_only(#[case] global_limit: Opti
     let fixture = fixture(&[], &[]);
     let mut event = failure(Some("sk-key"), "litellm.APIError: upstream timed out");
     event.global_max_parallel_requests = global_limit;
-    fixture
-        .handler
-        .log_failure_event(fixture.cache.as_ref(), &event)
-        .await;
+    log_failure_event(&fixture.handler, fixture.cache.as_ref(), &event).await;
     let key = minute_key("sk-key");
     let mut expected = Vec::new();
     if global_limit.is_some() {
@@ -123,10 +122,7 @@ async fn key_counter_gives_back_one_request_only(
     let fixture = fixture(&stored_entries, &[]);
     let mut event = failure(Some("sk-key"), "litellm.APIError: upstream timed out");
     event.global_max_parallel_requests = None;
-    fixture
-        .handler
-        .log_failure_event(fixture.cache.as_ref(), &event)
-        .await;
+    log_failure_event(&fixture.handler, fixture.cache.as_ref(), &event).await;
     let calls = fixture.cache.calls();
     assert_eq!(
         calls.last(),
@@ -163,13 +159,12 @@ async fn logged_error_goes_to_the_error_log(
 ) {
     let logs = Logs::capture();
     let fixture = fixture(stored, failing);
-    fixture
-        .handler
-        .log_failure_event(
-            fixture.cache.as_ref(),
-            &failure(Some("sk-key"), "litellm.APIError: upstream timed out"),
-        )
-        .await;
+    log_failure_event(
+        &fixture.handler,
+        fixture.cache.as_ref(),
+        &failure(Some("sk-key"), "litellm.APIError: upstream timed out"),
+    )
+    .await;
     let text = logs.text();
     let expected = format!("Inside Parallel Request Limiter: An exception occurred - {message}");
     let logged = text.lines().find(|line| line.contains(&expected));
@@ -190,13 +185,12 @@ async fn logged_error_goes_to_the_error_log(
 async fn logged_error_stops_before_the_key_counter() {
     let _logs = Logs::capture();
     let fixture = fixture(&[], &[GLOBAL]);
-    fixture
-        .handler
-        .log_failure_event(
-            fixture.cache.as_ref(),
-            &failure(Some("sk-key"), "litellm.APIError: upstream timed out"),
-        )
-        .await;
+    log_failure_event(
+        &fixture.handler,
+        fixture.cache.as_ref(),
+        &failure(Some("sk-key"), "litellm.APIError: upstream timed out"),
+    )
+    .await;
     assert_eq!(
         fixture.cache.calls(),
         vec![Call::Get {

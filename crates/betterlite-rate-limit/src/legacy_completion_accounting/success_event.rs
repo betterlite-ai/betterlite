@@ -56,114 +56,117 @@ struct SuccessPass<'pass> {
     parent_otel_span: Option<&'pass ParentOtelSpan>,
 }
 
-impl LegacyRateLimitHandler {
-    // async_log_success_event: LiteLLM's catch-all turns every failure into a verbose print
-    pub async fn log_success_event(&self, counters: &dyn CounterCache, event: &SuccessEvent<'_>) {
-        if let Err(error) = self.account_success(counters, event).await {
-            self.print_verbose(&error.to_string());
-        }
+// async_log_success_event: LiteLLM's catch-all turns every failure into a verbose print
+pub async fn log_success_event(
+    handler: &LegacyRateLimitHandler,
+    counters: &dyn CounterCache,
+    event: &SuccessEvent<'_>,
+) {
+    if let Err(error) = account_success(handler, counters, event).await {
+        handler.print_verbose(&error.to_string());
     }
+}
 
-    async fn account_success(
-        &self,
-        counters: &dyn CounterCache,
-        event: &SuccessEvent<'_>,
-    ) -> Result<(), AccountingError> {
-        self.print_verbose("INSIDE parallel request limiter ASYNC SUCCESS LOGGING");
-        let metadata = &event.metadata;
-        let user_api_key = match &metadata.user_api_key {
-            UserApiKeyField::Missing => return Err(AccountingError::MissingUserApiKey),
-            UserApiKeyField::Null => None,
-            UserApiKeyField::Key(key) => Some(key.as_str()),
-        };
-        let span = event.parent_otel_span;
-        if metadata.global_max_parallel_requests.is_some() {
-            counters
-                .increment(GLOBAL_PARALLEL_KEY, -1, span, true)
-                .await
-                .map_err(|source| AccountingError::Cache {
-                    key: GLOBAL_PARALLEL_KEY.to_owned(),
-                    source,
-                })?;
-        }
-        let total_tokens = response_total_tokens(&event.response);
-        let pass = SuccessPass {
-            counters,
-            total_tokens,
-            precise_minute: self.precise_minute(),
-            parent_otel_span: span,
-        };
-        let values = self.settled_counters(&pass, user_api_key, event).await?;
-        self.internal_usage_cache
-            .batch_set(&values, COUNTER_TTL_SECONDS, span, false)
+async fn account_success(
+    handler: &LegacyRateLimitHandler,
+    counters: &dyn CounterCache,
+    event: &SuccessEvent<'_>,
+) -> Result<(), AccountingError> {
+    handler.print_verbose("INSIDE parallel request limiter ASYNC SUCCESS LOGGING");
+    let metadata = &event.metadata;
+    let user_api_key = match &metadata.user_api_key {
+        UserApiKeyField::Missing => return Err(AccountingError::MissingUserApiKey),
+        UserApiKeyField::Null => None,
+        UserApiKeyField::Key(key) => Some(key.as_str()),
+    };
+    let span = event.parent_otel_span;
+    if metadata.global_max_parallel_requests.is_some() {
+        counters
+            .increment(GLOBAL_PARALLEL_KEY, -1, span, true)
             .await
-            .map_err(AccountingError::BatchWrite)
+            .map_err(|source| AccountingError::Cache {
+                key: GLOBAL_PARALLEL_KEY.to_owned(),
+                source,
+            })?;
     }
+    let total_tokens = response_total_tokens(&event.response);
+    let pass = SuccessPass {
+        counters,
+        total_tokens,
+        precise_minute: handler.precise_minute(),
+        parent_otel_span: span,
+    };
+    let values = settled_counters(handler, &pass, user_api_key, event).await?;
+    handler
+        .internal_usage_cache
+        .batch_set(&values, COUNTER_TTL_SECONDS, span, false)
+        .await
+        .map_err(AccountingError::BatchWrite)
+}
 
-    // the new counters in LiteLLM's block order: key, model group, user, team, end user
-    async fn settled_counters(
-        &self,
-        pass: &SuccessPass<'_>,
-        user_api_key: Option<&str>,
-        event: &SuccessEvent<'_>,
-    ) -> Result<Vec<(String, LegacyCacheValue)>, AccountingError> {
-        let minute = &pass.precise_minute;
-        let key_fallback = MinuteCounter {
-            current_requests: 1,
-            current_tpm: 0,
-            current_rpm: 0,
-        };
-        let mut values = Vec::new();
-        if let Some(api_key) = user_api_key {
-            let key = format!("{api_key}::{minute}::request_count");
-            values.push(self.settled(pass, key, key_fallback).await?);
-        }
-        if let Some((api_key, group)) = model_counter_owner(user_api_key, event)? {
-            let key = format!("{api_key}::{group}::{minute}::request_count");
-            values.push(self.settled(pass, key, key_fallback).await?);
-        }
-        let metadata = &event.metadata;
-        let entities = [
-            metadata.user_api_key_user_id.as_deref(),
-            metadata.user_api_key_team_id.as_deref(),
-            event.end_user.as_deref(),
-        ];
-        // LiteLLM seeds a missing entity counter with the tokens and then adds them again
-        let entity_fallback = MinuteCounter {
-            current_requests: 1,
-            current_tpm: pass.total_tokens,
-            current_rpm: 1,
-        };
-        for entity in entities.into_iter().flatten() {
-            let key = format!("{entity}::{minute}::request_count");
-            values.push(self.settled(pass, key, entity_fallback).await?);
-        }
-        Ok(values)
+// the new counters in LiteLLM's block order: key, model group, user, team, end user
+async fn settled_counters(
+    handler: &LegacyRateLimitHandler,
+    pass: &SuccessPass<'_>,
+    user_api_key: Option<&str>,
+    event: &SuccessEvent<'_>,
+) -> Result<Vec<(String, LegacyCacheValue)>, AccountingError> {
+    let minute = &pass.precise_minute;
+    let key_fallback = MinuteCounter {
+        current_requests: 1,
+        current_tpm: 0,
+        current_rpm: 0,
+    };
+    let mut values = Vec::new();
+    if let Some(api_key) = user_api_key {
+        let key = format!("{api_key}::{minute}::request_count");
+        values.push(settled(handler, pass, key, key_fallback).await?);
     }
+    if let Some((api_key, group)) = model_counter_owner(user_api_key, event)? {
+        let key = format!("{api_key}::{group}::{minute}::request_count");
+        values.push(settled(handler, pass, key, key_fallback).await?);
+    }
+    let metadata = &event.metadata;
+    let entities = [
+        metadata.user_api_key_user_id.as_deref(),
+        metadata.user_api_key_team_id.as_deref(),
+        event.end_user.as_deref(),
+    ];
+    // LiteLLM seeds a missing entity counter with the tokens and then adds them again
+    let entity_fallback = MinuteCounter {
+        current_requests: 1,
+        current_tpm: pass.total_tokens,
+        current_rpm: 1,
+    };
+    for entity in entities.into_iter().flatten() {
+        let key = format!("{entity}::{minute}::request_count");
+        values.push(settled(handler, pass, key, entity_fallback).await?);
+    }
+    Ok(values)
+}
 
-    async fn settled(
-        &self,
-        pass: &SuccessPass<'_>,
-        key: String,
-        fallback: MinuteCounter,
-    ) -> Result<(String, LegacyCacheValue), AccountingError> {
-        let current = read_counter(pass.counters, &key, pass.parent_otel_span)
-            .await?
-            .unwrap_or(fallback);
-        let new_val = MinuteCounter {
-            current_requests: released_requests(current.current_requests, &key)?,
-            current_tpm: current
-                .current_tpm
-                .checked_add(pass.total_tokens)
-                .ok_or_else(|| AccountingError::Overflow { key: key.clone() })?,
-            current_rpm: current.current_rpm,
-        };
-        self.print_verbose(&format!(
-            "updated_value in success call: {{current_requests: {}, current_tpm: {}, current_rpm: {}}}, precise_minute: {}",
-            new_val.current_requests, new_val.current_tpm, new_val.current_rpm, pass.precise_minute
-        ));
-        Ok((key, LegacyCacheValue::Counter(new_val)))
-    }
+async fn settled(
+    handler: &LegacyRateLimitHandler,
+    pass: &SuccessPass<'_>,
+    key: String,
+    fallback: MinuteCounter,
+) -> Result<(String, LegacyCacheValue), AccountingError> {
+    let current = read_counter(pass.counters, &key, pass.parent_otel_span)
+        .await?
+        .unwrap_or(fallback);
+    let new_val = MinuteCounter {
+        current_requests: released_requests(current.current_requests, &key)?,
+        current_tpm: current
+            .current_tpm
+            .checked_add(pass.total_tokens)
+            .ok_or_else(|| AccountingError::Overflow { key: key.clone() })?,
+        current_rpm: current.current_rpm,
+    };
+    handler.print_verbose(&format!(
+        "updated_value in success call: {{current_requests: {}, current_tpm: {}, current_rpm: {}}}, precise_minute: {}",
+        new_val.current_requests, new_val.current_tpm, new_val.current_rpm, pass.precise_minute
+    ));
+    Ok((key, LegacyCacheValue::Counter(new_val)))
 }
 
 // the model group counter exists only for a key with some per-model limit; the lookups run whenever a group is set
