@@ -10,9 +10,9 @@ use opentelemetry_sdk::trace::SdkTracerProvider;
 use rstest::rstest;
 
 use crate::otel::content_projections::StreamOutputAssembler;
-use crate::otel::fan_out::scope::RequestScopeSource;
-use crate::otel::langfuse_root::RootSpanSource;
-use crate::otel::logger::v2::RequestTraceSource;
+use crate::otel::fan_out::scope::RequestScopeSource as _;
+use crate::otel::langfuse_root::RootSpanSource as _;
+use crate::otel::logger::v2::RequestTraceSource as _;
 use crate::otel::logger_runtime::LoggerRuntime;
 use crate::otel::logger_runtime::factory::build_otel_v2_logger;
 use crate::otel::logger_runtime::tests::support::{NoSettings, NullAssembler, destination};

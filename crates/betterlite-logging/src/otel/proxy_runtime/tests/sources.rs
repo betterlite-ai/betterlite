@@ -10,9 +10,9 @@ use opentelemetry_sdk::trace::InMemorySpanExporter;
 use rstest::rstest;
 
 use crate::langfuse_observations::attributes::keys::TRACE_NAME;
-use crate::otel::fan_out::scope::{RequestOtelScope, RequestScopeSource};
-use crate::otel::langfuse_root::{RootSpanSink, RootSpanSource};
-use crate::otel::logger::v2::RequestTraceSource;
+use crate::otel::fan_out::scope::{RequestOtelScope, RequestScopeSource as _};
+use crate::otel::langfuse_root::{RootSpanSink, RootSpanSource as _};
+use crate::otel::logger::v2::RequestTraceSource as _;
 use crate::otel::logger_runtime::tests::support::{destination, provider_exporting};
 use crate::otel::plumbing::context::context_slots::AnchoredSpan;
 use crate::otel::plumbing::context::destination_routing::TENANT_DESTINATION_MODE_ENV;
