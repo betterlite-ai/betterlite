@@ -6,10 +6,11 @@ use betterlite_anthropic::usage::{ReasoningTokenCounter, calculate_usage};
 use betterlite_logging::fields::usage::Usage;
 use betterlite_logging::fields::usage::parse::usage_from_mapping;
 use betterlite_logging::logging_state::LoggingState;
-use betterlite_models::cost_usage::{CompletionDetails, CostUsage, PromptDetails};
+use betterlite_models::cost_usage::CostUsage;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
+use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Number;
 
@@ -49,17 +50,19 @@ fn event_usage(
     fields: &IndexMap<String, Json>,
     usage: &IndexMap<String, Json>,
 ) -> Result<Option<Usage>, StreamCostError> {
-    if is_text(fields.get("type"), "message_delta") {
+    if matches!(
+        fields.get("type"),
+        Some(Json::Text(text)) if text == "message_delta"
+    ) {
         return anthropic_usage(usage).map(Some);
     }
-    if is_text(fields.get("object"), "chat.completion.chunk") {
+    if matches!(
+        fields.get("object"),
+        Some(Json::Text(text)) if text == "chat.completion.chunk"
+    ) {
         return openai_usage(usage).map(Some);
     }
     Ok(None)
-}
-
-fn is_text(value: Option<&Json>, expected: &str) -> bool {
-    matches!(value, Some(Json::Text(text)) if text == expected)
 }
 
 fn service_tier(fields: &IndexMap<String, Json>) -> Option<&str> {
@@ -74,39 +77,54 @@ fn anthropic_usage(usage: &IndexMap<String, Json>) -> Result<Usage, StreamCostEr
     let object = Json::Object(usage.clone());
     let calculated =
         calculate_usage(&object, None, None, None, &UnusedReasoningCounter).map_err(usage_error)?;
-    let text = serde_json::to_string(&calculated).map_err(|_error| StreamCostError::Serialize)?;
+    let mapping = json_object(&calculated)?;
+    usage_from_mapping(&mapping).map_err(usage_error)
+}
+
+fn openai_usage(counts: &IndexMap<String, Json>) -> Result<Usage, StreamCostError> {
+    let prompt = integer(counts.get("prompt_tokens"), "prompt_tokens")?.unwrap_or(0);
+    let completion = integer(counts.get("completion_tokens"), "completion_tokens")?.unwrap_or(0);
+    let cost = CostUsage {
+        prompt_tokens: prompt,
+        completion_tokens: completion,
+        total_tokens: streamed_total(counts, prompt, completion)?,
+        prompt_details: details(counts.get("prompt_tokens_details"), "prompt_tokens_details")?,
+        completion_details: details(
+            counts.get("completion_tokens_details"),
+            "completion_tokens_details",
+        )?,
+        cache_read_tokens: cached_tokens(counts.get("prompt_tokens_details"))?,
+        numeric_extras: BTreeMap::new(),
+    };
+    Ok(Usage::from(&cost))
+}
+
+fn streamed_total(
+    counts: &IndexMap<String, Json>,
+    prompt: i64,
+    completion: i64,
+) -> Result<i64, StreamCostError> {
+    match integer(counts.get("total_tokens"), "total_tokens")? {
+        Some(total) => Ok(total),
+        None => prompt
+            .checked_add(completion)
+            .ok_or(StreamCostError::Overflow {
+                field: "total_tokens",
+            }),
+    }
+}
+
+fn json_object<T>(value: &T) -> Result<IndexMap<String, Json>, StreamCostError>
+where
+    T: Serialize,
+{
+    let text = serde_json::to_string(value).map_err(|_error| StreamCostError::Serialize)?;
     let decoded =
         serde_json::from_str::<Json>(&text).map_err(|_error| StreamCostError::Serialize)?;
     let Json::Object(mapping) = decoded else {
         return Err(StreamCostError::Serialize);
     };
-    usage_from_mapping(&mapping).map_err(usage_error)
-}
-
-fn openai_usage(usage: &IndexMap<String, Json>) -> Result<Usage, StreamCostError> {
-    let prompt = integer(usage.get("prompt_tokens"), "prompt_tokens")?.unwrap_or(0);
-    let completion = integer(usage.get("completion_tokens"), "completion_tokens")?.unwrap_or(0);
-    let total = match integer(usage.get("total_tokens"), "total_tokens")? {
-        Some(total) => total,
-        None => prompt
-            .checked_add(completion)
-            .ok_or(StreamCostError::Overflow {
-                field: "total_tokens",
-            })?,
-    };
-    let cost = CostUsage {
-        prompt_tokens: prompt,
-        completion_tokens: completion,
-        total_tokens: total,
-        prompt_details: details(usage.get("prompt_tokens_details"), "prompt_tokens_details")?,
-        completion_details: details(
-            usage.get("completion_tokens_details"),
-            "completion_tokens_details",
-        )?,
-        cache_read_tokens: cached_tokens(usage.get("prompt_tokens_details"))?,
-        numeric_extras: BTreeMap::new(),
-    };
-    Ok(Usage::from(&cost))
+    Ok(mapping)
 }
 
 // Only a nonnull object carries details; any other declared value is the wrong type for the field.
@@ -115,7 +133,6 @@ where
     T: DeserializeOwned,
 {
     match value {
-        None | Some(Json::Null) => Ok(None),
         Some(Json::Object(_)) => {
             let text = serde_json::to_string(value).map_err(|_error| StreamCostError::Serialize)?;
             let decoded = serde_json::from_str(&text).map_err(|_error| StreamCostError::Usage {
@@ -126,6 +143,7 @@ where
         Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
             Err(StreamCostError::DetailsNotAnObject { field })
         }
+        None | Some(Json::Null) => Ok(None),
     }
 }
 
@@ -134,10 +152,13 @@ fn cached_tokens(value: Option<&Json>) -> Result<Option<i64>, StreamCostError> {
     let Some(Json::Object(found)) = value else {
         return Ok(None);
     };
-    match found.get("cached_tokens") {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Number(number)) => integer_number(number, "cached_tokens").map(Some),
-        Some(Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
+    let Some(count) = found.get("cached_tokens") else {
+        return Ok(None);
+    };
+    match count {
+        Json::Null => Ok(None),
+        Json::Number(number) => integer_number(number, "cached_tokens").map(Some),
+        Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => {
             Err(StreamCostError::NotAnInteger {
                 field: "cached_tokens",
             })
@@ -146,13 +167,13 @@ fn cached_tokens(value: Option<&Json>) -> Result<Option<i64>, StreamCostError> {
 }
 
 fn integer(value: Option<&Json>, field: &'static str) -> Result<Option<i64>, StreamCostError> {
-    match value {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Number(number)) => integer_number(number, field).map(Some),
-        Some(Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
-            Err(StreamCostError::NotAnInteger { field })
-        }
+    if let Some(Json::Number(number)) = value {
+        return integer_number(number, field).map(Some);
     }
+    if matches!(value, None | Some(Json::Null)) {
+        return Ok(None);
+    }
+    Err(StreamCostError::NotAnInteger { field })
 }
 
 fn integer_number(number: &Number, field: &'static str) -> Result<i64, StreamCostError> {
@@ -186,7 +207,10 @@ fn with_cost(
     Json::Object(updated)
 }
 
-fn usage_error(error: impl Display) -> StreamCostError {
+fn usage_error<E>(error: E) -> StreamCostError
+where
+    E: Display,
+{
     StreamCostError::Usage {
         reason: error.to_string(),
     }

@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::str::FromStr as _;
 use std::str::from_utf8;
 use std::sync::Mutex;
@@ -215,8 +216,25 @@ fn amount(text: &str) -> Decimal {
 
 fn breakdown(total: &str) -> CostBreakdown {
     CostBreakdown {
+        service_tier: None,
+        data_residency: None,
+        vertex_location: None,
+        input_cost: None,
+        cache_read_cost: None,
+        cache_creation_cost: None,
+        output_cost: None,
+        reasoning_cost: None,
         total_cost: Some(amount(total)),
-        ..CostBreakdown::default()
+        tool_usage_cost: None,
+        guardrail_cost: None,
+        additional_costs: None,
+        original_cost: None,
+        discount_percent: None,
+        discount_amount: None,
+        margin_percent: None,
+        margin_fixed_amount: None,
+        margin_total_amount: None,
+        extra: BTreeMap::new(),
     }
 }
 

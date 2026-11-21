@@ -14,8 +14,8 @@ pub struct Raw {
 
 #[derive(Debug, Default, Deserialize)]
 struct RawSettings {
-    #[serde(default)]
-    include_cost_in_streaming_usage: Option<RawFlag>,
+    #[serde(default, rename = "include_cost_in_streaming_usage")]
+    cost_in_streaming_usage: Option<RawFlag>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -40,7 +40,7 @@ impl Section for Raw {
     {
         Ok(Settings {
             enabled: configured_flag(
-                self.litellm_settings.include_cost_in_streaming_usage,
+                self.litellm_settings.cost_in_streaming_usage,
                 INCLUDE_COST_PATH,
                 lookup,
             )?,
