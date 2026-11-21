@@ -87,13 +87,8 @@ impl LegacyAdmission {
         if let Some(dimension) = checks::key_dimension(&call) {
             checks::enforce(&self.handler, &mut call, dimension).await?;
         }
-        checks::model(
-            &self.handler,
-            &mut call,
-            &mut request.metadata,
-            self.catalog.as_deref(),
-        )
-        .await?;
+        let catalog = self.catalog.as_deref();
+        checks::model(&self.handler, &mut call, &mut request.metadata, catalog).await?;
         for dimension in checks::other_dimensions(&call) {
             checks::enforce(&self.handler, &mut call, dimension).await?;
         }

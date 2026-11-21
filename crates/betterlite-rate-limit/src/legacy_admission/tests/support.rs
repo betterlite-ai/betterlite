@@ -330,7 +330,10 @@ impl DeploymentCatalog {
 
 impl DeploymentLimitCatalog for DeploymentCatalog {
     fn model_list(&self, model_name: &str) -> Option<Vec<DeploymentLimits>> {
-        (model_name == self.model).then(|| vec![self.limits.clone()])
+        if model_name == self.model {
+            return Some(vec![self.limits.clone()]);
+        }
+        None
     }
 }
 

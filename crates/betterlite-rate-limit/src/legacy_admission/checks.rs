@@ -213,7 +213,7 @@ pub(super) fn other_dimensions(call: &Call<'_>) -> Vec<Dimension> {
         .facts
         .end_user_id
         .as_deref()
-        .filter(|end_user_id| !end_user_id.is_empty());
+        .filter(|text| !text.is_empty());
     let mut dimensions = Vec::new();
     dimensions.extend(step(
         call.ids.user.as_deref(),
