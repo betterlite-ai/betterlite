@@ -21,7 +21,7 @@ use super::wire::{CallOutput, Input, Output, ResponseInput, ResponseOutput};
 use crate::router_probes::error::OperationError;
 
 pub(super) async fn run(input: &Input) -> Result<Output, OperationError> {
-    let world = World::parse(input)?;
+    let world = World::assemble(input, fit(input)?, choice(input)?);
     let chooser = ProbeChooser {
         choice: world.choice,
         delay: world.delay,
@@ -68,22 +68,25 @@ struct World {
 }
 
 impl World {
-    fn parse(input: &Input) -> Result<Self, OperationError> {
-        let config = section::Config {
-            enabled: input.enabled,
-            output_tokens: input.output_tokens,
-            timeout_ms: input.timeout_ms,
-        };
-        Ok(Self {
-            config,
+    fn assemble(input: &Input, fit: ContextFit, choice: Option<CacheAwareChoice>) -> Self {
+        Self {
+            config: config(input),
             labels: labels(&input.tier_labels),
             params: ProbeParams {
                 entries: params_map(input),
             },
-            fit: fit(input)?,
-            choice: choice(input)?,
+            fit,
+            choice,
             delay: Duration::from_millis(input.chooser_delay_ms),
-        })
+        }
+    }
+}
+
+fn config(input: &Input) -> section::Config {
+    section::Config {
+        enabled: input.enabled,
+        output_tokens: input.output_tokens,
+        timeout_ms: input.timeout_ms,
     }
 }
 
