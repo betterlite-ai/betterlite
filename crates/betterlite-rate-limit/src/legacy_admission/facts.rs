@@ -43,38 +43,7 @@ impl AdmissionFacts {
         let account = account_limits(principal);
         // B1106's logged_api_key reads these three facts; the auth record keeps them private
         let record = SessionRecord::from_auth(principal);
-        let facts = PrincipalFacts {
-            api_key_hash: account.hashed_api_key.map(str::to_owned),
-            is_session_token: record.is_session_token,
-            key_alias: record.key_alias,
-            spend: Decimal::ZERO,
-            max_budget: None,
-            user_spend: None,
-            user_max_budget: None,
-            team_spend: None,
-            team_max_budget: None,
-            end_user_max_budget: None,
-            budget_reset_at: None,
-            team_id: None,
-            team_alias: None,
-            project_id: None,
-            project_alias: None,
-            org_id: None,
-            organization_alias: None,
-            user_id: None,
-            user_email: None,
-            end_user_id: None,
-            request_route: None,
-            agent_id: None,
-            invoked_agent_id: None,
-            managed_agent_context: None,
-            budget_reservation: None,
-            matched_model_access_groups: Vec::new(),
-            metadata: IndexMap::new(),
-            team_metadata: None,
-            project_metadata: None,
-            organization_metadata: None,
-        };
+        let facts = principal_facts(account.hashed_api_key, record);
         Self {
             api_key: logged_api_key(&facts).map(str::to_owned),
             max_parallel_requests: view.max_parallel_requests.unwrap_or(UNLIMITED),
@@ -90,6 +59,43 @@ impl AdmissionFacts {
             end_user_tpm_limit: view.end_user_tpm_limit.unwrap_or(UNLIMITED),
             end_user_rpm_limit: view.end_user_rpm_limit.unwrap_or(UNLIMITED),
         }
+    }
+}
+
+// only the three facts logged_api_key reads are filled; every other budget field is irrelevant to the hook
+#[must_use]
+fn principal_facts(api_key_hash: Option<&str>, record: SessionRecord) -> PrincipalFacts {
+    PrincipalFacts {
+        api_key_hash: api_key_hash.map(str::to_owned),
+        is_session_token: record.is_session_token,
+        key_alias: record.key_alias,
+        spend: Decimal::ZERO,
+        max_budget: None,
+        user_spend: None,
+        user_max_budget: None,
+        team_spend: None,
+        team_max_budget: None,
+        end_user_max_budget: None,
+        budget_reset_at: None,
+        team_id: None,
+        team_alias: None,
+        project_id: None,
+        project_alias: None,
+        org_id: None,
+        organization_alias: None,
+        user_id: None,
+        user_email: None,
+        end_user_id: None,
+        request_route: None,
+        agent_id: None,
+        invoked_agent_id: None,
+        managed_agent_context: None,
+        budget_reservation: None,
+        matched_model_access_groups: Vec::new(),
+        metadata: IndexMap::new(),
+        team_metadata: None,
+        project_metadata: None,
+        organization_metadata: None,
     }
 }
 

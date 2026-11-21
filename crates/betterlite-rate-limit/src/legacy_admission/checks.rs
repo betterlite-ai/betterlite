@@ -73,17 +73,9 @@ pub(super) async fn model(
     call: &mut Call<'_>,
     metadata: &mut JsonMap,
 ) -> Result<(), LegacyAdmissionError> {
-    let query = LimitQuery {
-        model_name: call.model,
-        catalog: None,
-    };
-    let tpm_limits = get_key_model_tpm_limit(call.principal, &query).unwrap_or_default();
-    let rpm_limits = get_key_model_rpm_limit(call.principal, &query).unwrap_or_default();
-    if tpm_limits.is_none() && rpm_limits.is_none() {
+    let Some((tpm_for_model, rpm_for_model)) = requested_limits(call) else {
         return Ok(());
-    }
-    let tpm_for_model = limit_for(tpm_limits.as_ref(), call.model);
-    let rpm_for_model = limit_for(rpm_limits.as_ref(), call.model);
+    };
     let check = KeyLimitCheck {
         limits: DimensionLimits {
             max_parallel_requests: UNLIMITED,
@@ -109,6 +101,24 @@ pub(super) async fn model(
         remaining(rpm_for_model, counters.current_rpm),
     );
     Ok(())
+}
+
+// step 6's gate and lookup: both maps absent skips the check, and each map's entry for the model is its limit
+#[must_use]
+fn requested_limits(call: &Call<'_>) -> Option<(Option<i64>, Option<i64>)> {
+    let query = LimitQuery {
+        model_name: call.model,
+        catalog: None,
+    };
+    let tpm_limits = get_key_model_tpm_limit(call.principal, &query).unwrap_or_default();
+    let rpm_limits = get_key_model_rpm_limit(call.principal, &query).unwrap_or_default();
+    if tpm_limits.is_none() && rpm_limits.is_none() {
+        return None;
+    }
+    Some((
+        limit_for(tpm_limits.as_ref(), call.model),
+        limit_for(rpm_limits.as_ref(), call.model),
+    ))
 }
 
 // Python's `if map:` then `map.get(model)`: a missing model or map entry is unlimited
@@ -195,21 +205,13 @@ pub(super) fn key_dimension(call: &Call<'_>) -> Option<Dimension> {
     )
 }
 
-// steps 7-9 carry no parallel cap; each keeps its own tpm and rpm and is gated by its counter id
-fn push(
-    dimensions: &mut Vec<Dimension>,
-    counter_id: Option<&str>,
-    tpm_limit: i64,
-    rpm_limit: i64,
-    current: Option<LegacyCacheValue>,
-    scope: RateLimitScope,
-) {
-    let limits = DimensionLimits {
+// steps 7-9 carry no parallel cap: only the scope's own tpm and rpm are enforced
+fn uncapped(tpm_limit: i64, rpm_limit: i64) -> DimensionLimits {
+    DimensionLimits {
         max_parallel_requests: UNLIMITED,
         tpm_limit,
         rpm_limit,
-    };
-    dimensions.extend(step(counter_id, limits, current, scope));
+    }
 }
 
 // steps 7-9 in LiteLLM's order; the user and team gates are is-not-None, the end user's is truthiness
@@ -220,30 +222,24 @@ pub(super) fn other_dimensions(call: &Call<'_>) -> Vec<Dimension> {
         .as_deref()
         .filter(|end_user_id| !end_user_id.is_empty());
     let mut dimensions = Vec::new();
-    push(
-        &mut dimensions,
+    dimensions.extend(step(
         call.ids.user.as_deref(),
-        call.facts.user_tpm_limit,
-        call.facts.user_rpm_limit,
+        uncapped(call.facts.user_tpm_limit, call.facts.user_rpm_limit),
         call.objects.request_count_user_id,
         RateLimitScope::User,
-    );
-    push(
-        &mut dimensions,
+    ));
+    dimensions.extend(step(
         call.ids.team.as_deref(),
-        call.facts.team_tpm_limit,
-        call.facts.team_rpm_limit,
+        uncapped(call.facts.team_tpm_limit, call.facts.team_rpm_limit),
         call.objects.request_count_team_id,
         RateLimitScope::Team,
-    );
-    push(
-        &mut dimensions,
+    ));
+    dimensions.extend(step(
         end_user_id.and(call.ids.end_user.as_deref()),
-        call.facts.end_user_tpm_limit,
-        call.facts.end_user_rpm_limit,
+        uncapped(call.facts.end_user_tpm_limit, call.facts.end_user_rpm_limit),
         call.objects.request_count_end_user_id,
         RateLimitScope::Customer,
-    );
+    ));
     dimensions
 }
 
