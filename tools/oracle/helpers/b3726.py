@@ -166,7 +166,7 @@ def frames_json(text: str) -> JsonValue:
         parsed.append(frame)
     if not parsed:
         return {"raw": text}
-    return JSON.validate_python({"frames": parsed})
+    return {"frames": parsed}
 
 
 def item_json(item: StreamItem) -> JsonValue:
@@ -194,7 +194,10 @@ async def hook_outcome(
 ) -> tuple[JsonValue, list[JsonValue]]:
     match case["hook"]:
         case "pre_call":
-            return await attempt(hooks.async_pre_call_hook(user, DualCache(), data, case["call_type"])), []
+            call: Awaitable[JsonValue | Exception] = hooks.async_pre_call_hook(
+                user, DualCache(), data, case["call_type"]
+            )
+            return await attempt(call), []
         case "moderation":
             return await attempt(hooks.async_moderation_hook(data, user, case["call_type"])), []
         case "post_call":
