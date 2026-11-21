@@ -1,0 +1,36 @@
+task: B3680
+deviations:
+  - what: There are no HTTP cases for the speech, transcription, video, rerank, Google GenAI and MCP guardrail paths, and none for the applied-guardrails header.
+    why: The content filter cases cannot drive those provider mocks, and the applied-guardrails header case is B8399's (tools/oracle/cases/guardrails/proxy-logging/applied-guardrails-header.yaml). Unit tests in unified_guardrail cover the rerank, Google GenAI and MCP adapters.
+    link: ""
+  - what: The guardrail to apply is a typed argument of each hook (GuardrailToRun), not the "guardrail_to_apply" key that LiteLLM pops from the request data.
+    why: A typed argument keeps the guardrail out of the JSON body; clients see no difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L205-L207
+  - what: The applied-guardrail header call goes through the AppliedGuardrailRecorder trait; MetadataGuardrailRecorder is the real one.
+    why: Tests use a double through the trait; B8399's header case checks the real one through the booted proxy.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L591-L599
+  - what: The post-call hook takes the response kind as a typed argument (CallResponse.kind) instead of inspecting the response object's class.
+    why: betterlite carries the response as JSON, so the endpoint that produced it names its kind; infer_call_type maps the kind the way _infer_call_type maps the class.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L320-L321
+  - what: The logging object's call type reaches the post-call hook as HookRequest.logging_call_type instead of being read from data["litellm_logging_obj"].
+    why: The logging object is not part of the request JSON in betterlite; the accepted call types are the same four.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L323-L334
+  - what: An error from should_run_guardrail (an event_hook in tag mode) comes back from the hook as GuardrailFailure::Other with the error text.
+    why: LiteLLM raises out of the hook with its own exception; the guardrail failure type is what every hook returns, and the request still fails.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L213
+  - what: A failure of an adapter that is not a guardrail failure (bad JSON in the request, a stream that cannot be rebuilt) becomes GuardrailFailure::Other with the error text.
+    why: The registry holds every adapter behind one failure type, the one the incremental stream loop needs; LiteLLM raises the adapter's exception and the client gets a 500 in both.
+    link: ""
+  - what: The MCP adapter's guardrail calls get no logging object, and the Google GenAI adapter's guardrail calls do not write the guardrail's edits to request_data back to the request.
+    why: The MCP and Google GenAI handlers each speak their own guardrail trait with their own logging and request types, so the bridge passes the request through a copy; the scanned texts, the verdict and the rewrite are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/guardrail_translation/handler.py#L193-L198
+  - what: build_registry takes the pass-through guardrail name and config from RegistryConfig and builds every adapter once, instead of instantiating the handler class on each call.
+    why: Rust adapters hold their settings; LiteLLM reads the same values from the logging object at call time, and B8399 builds the registry per pass-through endpoint.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L220-L228
+  - what: The pre-call and moderation hooks look the adapter up by the hook's call type, as LiteLLM does, not through resolve_endpoint_translation as the task text says.
+    why: LiteLLM's two input hooks index the mappings with call_type; resolve_endpoint_translation resolves from the route and the first stream item, which is the streaming hook's order.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L220-L228
+  - what: MetadataGuardrailRecorder replaces an applied_guardrails value that is not a list with a list holding the name.
+    why: LiteLLM appends to whatever the key holds and fails on a value that is not a list; a broken metadata key must not turn a passing request into a 500.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L591-L599
+kept_bugs: []
