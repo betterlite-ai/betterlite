@@ -15,6 +15,7 @@ use crate::dispatch::llm_passthrough::{
     BlockedModels, PassthroughDirectCall, PassthroughRouterCall,
 };
 use crate::dispatch::tests::support::Trace;
+use crate::operation::llm_passthrough::LlmPassthroughRequest;
 
 pub(super) struct Ports {
     pub(super) router: Option<Arc<dyn PassthroughRouterCall>>,
@@ -252,6 +253,39 @@ pub(super) fn ports_with(
         router: Some(router),
         view: view.map(view_of),
         blocked: blocked_port,
+        direct,
+    }
+}
+
+pub(super) fn failing_router_request(
+    status: u16,
+    trace: &Trace,
+    calls: &Calls,
+) -> LlmPassthroughRequest {
+    let router: Arc<dyn PassthroughRouterCall> = Arc::new(RecordingRouter {
+        trace: trace.clone(),
+        outcome: Outcome::Fail(status),
+        calls: calls.clone(),
+    });
+    let view: Arc<dyn VideoRouteView> = Arc::new(FakeView {
+        recognized: RouteFlag(true),
+        ..FakeView::default()
+    });
+    let blocked: Arc<dyn BlockedModels> = Arc::new(RecordingBlocked {
+        blocked: Vec::new(),
+        trace: trace.clone(),
+    });
+    let direct: Arc<dyn PassthroughDirectCall> = Arc::new(RecordingDirect {
+        trace: trace.clone(),
+        outcome: Outcome::Reply,
+        calls: calls.clone(),
+    });
+    LlmPassthroughRequest {
+        args: call_args("gpt-upstream"),
+        route: route_input("gpt-upstream"),
+        router: Some(router),
+        view: Some(view),
+        blocked,
         direct,
     }
 }

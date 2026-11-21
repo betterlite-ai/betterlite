@@ -9,8 +9,8 @@ use betterlite_error::proxy_model_not_found::ProxyModelNotFoundError;
 use betterlite_openai::openai_base_config::Object;
 
 use self::support::{
-    Calls, FakeView, Outcome, Ports, RecordingBlocked, RecordingDirect, RecordingRouter, call_args,
-    ports_with, route_input, sdk_router,
+    Calls, FakeView, Outcome, Ports, RecordingBlocked, RecordingDirect, call_args,
+    failing_router_request, ports_with, route_input, sdk_router,
 };
 use super::entry;
 use super::route::{PassthroughRoute, PassthroughRouteInput, RouteFlag, plan_passthrough_route};
@@ -865,42 +865,27 @@ async fn entry_user_config_is_rejected() {
     );
 }
 
+async fn rejected_call(status: u16) -> (u16, String) {
+    let trace = Trace::default();
+    let calls = Calls::default();
+    let request = failing_router_request(status, &trace, &calls);
+    let Err(error) = entry::execute(request).await else {
+        panic!("a failed call reaches the caller");
+    };
+    let DispatchError::Rejected {
+        status, error_type, ..
+    } = error.rejected()
+    else {
+        panic!("the dispatch answer is a rejected call");
+    };
+    (status, error_type)
+}
+
 #[tokio::test]
 async fn entry_call_error_wraps() {
     let trace = Trace::default();
     let calls = Calls::default();
-    let router: Arc<dyn PassthroughRouterCall> = Arc::new(RecordingRouter {
-        trace: trace.clone(),
-        outcome: Outcome::Fail(418),
-        calls: calls.clone(),
-    });
-    let view: Arc<dyn VideoRouteView> = Arc::new(FakeView {
-        recognized: RouteFlag(true),
-        ..FakeView::default()
-    });
-    let blocked: Arc<dyn BlockedModels> = Arc::new(RecordingBlocked {
-        blocked: Vec::new(),
-        trace: trace.clone(),
-    });
-    let direct: Arc<dyn PassthroughDirectCall> = Arc::new(RecordingDirect {
-        trace: trace.clone(),
-        outcome: Outcome::Reply,
-        calls: calls.clone(),
-    });
-    let ports = Ports {
-        router: Some(router),
-        view: Some(view),
-        blocked,
-        direct,
-    };
-    let request = LlmPassthroughRequest {
-        args: call_args("gpt-upstream"),
-        route: route_input("gpt-upstream"),
-        router: ports.router,
-        view: ports.view,
-        blocked: ports.blocked,
-        direct: ports.direct,
-    };
+    let request = failing_router_request(418, &trace, &calls);
     let Err(LlmPassthroughError::Call(error)) = entry::execute(request).await else {
         panic!("a failed call reaches the caller");
     };
@@ -920,6 +905,22 @@ async fn entry_call_error_wraps() {
     assert_eq!(status, 418);
     assert_eq!(error_type, "invalid_request_error");
     assert_eq!(code, "418");
+}
+
+#[tokio::test]
+async fn entry_call_error_types_follow_status() {
+    assert_eq!(
+        rejected_call(401).await,
+        (401, String::from("authentication_error"))
+    );
+    assert_eq!(
+        rejected_call(403).await,
+        (403, String::from("permission_error"))
+    );
+    assert_eq!(
+        rejected_call(429).await,
+        (429, String::from("rate_limit_error"))
+    );
 }
 
 #[tokio::test]
@@ -964,7 +965,7 @@ async fn entry_router_missing() {
 async fn entry_router_uses_b8690_trait() {
     let trace = Trace::default();
     let calls = Calls::default();
-    let router = sdk_router(&trace);
+    let router: Arc<dyn PassthroughRouterCall> = sdk_router(&trace);
     let view: Arc<dyn VideoRouteView> = Arc::new(FakeView {
         recognized: RouteFlag(true),
         ..FakeView::default()

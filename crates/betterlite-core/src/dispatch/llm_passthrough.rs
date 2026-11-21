@@ -80,18 +80,16 @@ impl LlmPassthroughError {
     pub fn rejected(&self) -> DispatchError {
         match self {
             Self::Call(error) => call_rejected(error),
-            Self::Blocked(blocked) => route_error(
-                BlockedModel::STATUS.as_u16(),
-                "permission_error",
-                blocked.to_string(),
-            ),
-            Self::NotFound(error) => route_error(
-                ProxyModelNotFoundError::STATUS.as_u16(),
-                "invalid_request_error",
-                error.detail.error.clone(),
-            ),
-            Self::UserConfig => route_error(400_u16, "invalid_request_error", self.to_string()),
-            Self::RouterMissing => route_error(500_u16, "internal_server_error", self.to_string()),
+            Self::Blocked(blocked) => {
+                let status = BlockedModel::STATUS.as_u16();
+                route_error(status, error_type(status), blocked.to_string())
+            }
+            Self::NotFound(error) => {
+                let status = ProxyModelNotFoundError::STATUS.as_u16();
+                route_error(status, error_type(status), error.detail.error.clone())
+            }
+            Self::UserConfig => route_error(400_u16, error_type(400_u16), self.to_string()),
+            Self::RouterMissing => route_error(500_u16, error_type(500_u16), self.to_string()),
         }
     }
 }
