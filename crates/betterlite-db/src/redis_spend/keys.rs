@@ -17,7 +17,7 @@ pub struct SpendBufferNames {
     pub service: &'static str,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SpendBufferQueue {
     Entity,
     DailyUser,
