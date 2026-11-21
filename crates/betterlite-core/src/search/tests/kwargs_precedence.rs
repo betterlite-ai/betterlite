@@ -5,16 +5,11 @@ use std::time::Duration;
 use betterlite_http_fixture::reply::reply;
 use betterlite_http_fixture::server::serve;
 use betterlite_models::decisions::Json;
-use indexmap::IndexMap;
 use rstest::rstest;
 
 use super::SearchOptions;
 use super::params::{call_kwargs, merged_params};
-use super::support::{ANSWER, Call, Harness, Recorder, Registry, json, object, request};
-
-fn kwargs(text: &str) -> IndexMap<String, Json> {
-    serde_json::from_str(text).expect("the kwargs fixture parses")
-}
+use super::support::{ANSWER, Call, Harness, Recorder, Registry, json, kwargs, object, request};
 
 fn max_results(count: i64) -> SearchOptions {
     SearchOptions {

@@ -6,15 +6,10 @@ use betterlite_http_fixture::reply::reply;
 use betterlite_http_fixture::server::serve;
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::Object;
-use indexmap::IndexMap;
 
 use super::SearchOptions;
-use super::support::{ANSWER, Harness, Recorder, Registry, json, object, request};
+use super::support::{ANSWER, Harness, Recorder, Registry, json, kwargs, object, request};
 use crate::api::search_providers::parallel_ai::request::PARALLEL_AI_USAGE_PARAM;
-
-fn kwargs(text: &str) -> IndexMap<String, Json> {
-    serde_json::from_str(text).expect("the kwargs fixture parses")
-}
 
 #[tokio::test]
 async fn logging_records_the_search_call() {

@@ -300,6 +300,10 @@ pub(super) fn json(text: &str) -> Json {
     serde_json::from_str(text).expect("the JSON fixture parses")
 }
 
+pub(super) fn kwargs(text: &str) -> IndexMap<String, Json> {
+    serde_json::from_str(text).expect("the kwargs fixture parses")
+}
+
 pub(super) fn object(text: &str) -> Object {
     serde_json::from_str(text).expect("the object fixture parses")
 }

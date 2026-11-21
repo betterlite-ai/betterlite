@@ -81,15 +81,22 @@ async fn http_dispatch_times_out_on_the_resolved_timeout(
     served.finish().expect("the fixture answers");
 }
 
+#[rstest]
+#[case::explicit_over_a_short_default(Some(Duration::from_secs(5)), 0.1_f64)]
+#[case::zero_takes_a_long_default(Some(Duration::ZERO), 5.0_f64)]
+#[case::absent_takes_a_long_default(None, 5.0_f64)]
 #[tokio::test]
-async fn http_dispatch_prefers_an_explicit_timeout_over_the_default() {
+async fn http_dispatch_waits_for_the_resolved_timeout(
+    #[case] timeout: Option<Duration>,
+    #[case] default_seconds: f64,
+) {
     let served = serve(reply("200 OK", &[], ANSWER), Duration::from_millis(300))
         .expect("the fixture serves");
     let registry = Registry::new(Recorder::default());
     let mut search = request(r#""rust""#, &format!("http://{}", served.address));
-    search.timeout = Some(Duration::from_secs(5));
+    search.timeout = timeout;
     let mut harness = Harness::new();
-    harness.core.request_timeout_seconds = 0.1_f64;
+    harness.core.request_timeout_seconds = default_seconds;
     harness.search(&search, &registry).await.unwrap();
     served.finish().expect("the fixture answers");
 }

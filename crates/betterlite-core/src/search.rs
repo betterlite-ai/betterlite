@@ -13,6 +13,7 @@ use betterlite_openai::search::provider::{SearchProvider, SearchQuery};
 use betterlite_openai::search::records::SearchResponse;
 use indexmap::IndexMap;
 use secrecy::SecretString;
+use tracing::debug;
 
 use crate::api::search_http::{SearchHttpCall, execute_search};
 use crate::api::vector_store_http_write::service::LogContext;
@@ -139,6 +140,7 @@ where
         .ok_or_else(|| SearchCallError::Unsupported {
             provider: provider.clone(),
         })?;
+    debug!(provider = %provider, "Search call");
     let kwargs = call_kwargs(&request.kwargs);
     let merged = merged_params(&request.options, &kwargs);
     let params = provider_params(&merged).map_err(SearchCallError::Encode)?;
