@@ -45,10 +45,11 @@ pub(super) fn message() -> Message {
 }
 
 pub(super) fn response() -> PreRoutingResponse {
+    let classified = decision();
     PreRoutingResponse {
         model: "small".to_owned(),
         messages: Some(vec![message()]),
-        routing_decision: Some(decision()),
+        routing_decision: Some(classified),
         session_affinity_ttl_seconds: Some(3600),
         litellm_params: Some(params(&[("max_tokens", 512)])),
     }
