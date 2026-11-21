@@ -1,0 +1,12 @@
+task: B1739
+deviations:
+  - what: Catalog names containing quotes remain one quoted identifier, and a partition bound over 64 KiB is retained as unknown.
+    why: DDL identifier escaping and a bounded text decoder prevent a catalog value from changing the statement or allocation size.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/spend_logs_partition_manager.py#L231-L272
+  - what: A bound whose timestamp only Python's fromisoformat reads (a basic YYYYMMDD form, a week date, or an arbitrary date-time separator) is kept as unknown, where LiteLLM parses it.
+    why: decode_partition_bound reads the extended ISO forms pg_get_expr writes plus a bare date, so an unusual hand-written bound is never selected for dropping; treating it as unknown only keeps a partition. A fractional second is cut to Python's microsecond resolution, so a bound both read compares the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/spend_logs_partition_manager.py#L111-L114
+kept_bugs:
+  - what: A parsed upper bound carrying a UTC offset fails the whole drop pass with an error before any DROP, where every other per-partition failure only warns and continues.
+    why: LiteLLM raises a TypeError from the naive-versus-aware datetime comparison in select_partitions_to_drop, outside the per-DROP catch, so a setup with a timestamptz partition sees the entire pass fail; betterlite keeps that propagation as a typed error instead of guessing an offset or silently keeping the partition.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/spend_logs_partition_manager.py#L117-L123
