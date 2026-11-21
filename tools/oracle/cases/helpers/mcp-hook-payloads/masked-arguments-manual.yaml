@@ -1,0 +1,10 @@
+kind: helper
+name: mcp-hook-payloads-masked-arguments-manual
+call:
+  b8401: {"scenarios": [
+    {"function": "pre_call", "request": {"tool_name": "create_user", "arguments": {"email": "jo@example.com", "name": "Jo", "age": 41, "note": "keep me"}}, "result": {"data": {"messages": [{"role": "user", "content": "Tool: create_user\nArguments: {'email': '[EMAIL]', 'NAME': '[NAME]', 'age': 0, 'note': ''}"}]}}},
+    {"function": "pre_call", "request": {"tool_name": "create_user", "arguments": {"email": "jo@example.com", "name": "Jo"}}, "result": {"data": {"messages": [{"role": "user", "content": "Tool: create_user\nArguments: {email: [EMAIL] , name: J*}"}]}}},
+    {"function": "pre_call", "request": {"tool_name": "create_user", "arguments": {"email": "jo@example.com"}}, "result": {"data": {"messages": [{"role": "user", "content": "Tool: create_user\nArguments: email=[EMAIL]"}]}}}
+  ]}
+env: {}
+compare: {ignore: []}
