@@ -28,7 +28,7 @@ use uuid::Uuid;
 
 use super::maritalk::MaritalkConfig;
 use super::meta_llama::LlamaAPIConfig;
-use super::moonshot::{self, TransformInput, complete_url, map_openai_params};
+use super::moonshot::{self, MoonshotError, TransformInput, complete_url, map_openai_params};
 use super::morph::MorphChatConfig;
 use super::nadir::{self, NadirReply, ReplyRequest as NadirRequest, nadir_reported_cost};
 use super::nebius::NebiusConfig;
@@ -37,10 +37,10 @@ use super::nscale::NscaleConfig;
 use super::v0::V0ChatConfig;
 use super::wandb::WandbConfig;
 use super::zai::ZaiChatConfig;
-use super::{json_is_truthy, parent_supported_params};
+use super::{json_is_truthy, map_supported, parent_supported_params};
 use crate::chat::{ChatMessage, ContentPart, FunctionCall, MessageContent, Role, Tool, ToolCall};
 use crate::chat_choices::reply::{ResponseReply, TransformResponseError};
-use crate::chat_content::{Mode, RefuseDownloads};
+use crate::chat_content::{ChatContentError, MissingFileError, Mode, RefuseDownloads};
 use crate::compatible_wire::{LogInput, ReplyOptions};
 use crate::edenai_chat::ReasoningLookup;
 use crate::edenai_common::RESPONSE_COST_HEADER;
@@ -630,6 +630,13 @@ fn moonshot_caps_temperature_and_raises_the_low_pair() {
 }
 
 #[test]
+fn moonshot_keeps_a_temperature_exactly_at_the_floor() {
+    let at_floor: Json = serde_json::from_str("0.30").expect("a number");
+    let optional = mapped(vec![("temperature", at_floor.clone()), ("n", number(2.0))]);
+    assert_eq!(optional.get("temperature"), Some(&at_floor));
+}
+
+#[test]
 fn moonshot_rewrites_tool_choice_required_and_drops_the_key() {
     let messages = vec![message(Role::User, "hi")];
     let mut optional = Object::from_iter([(String::from("tool_choice"), text("required"))]);
@@ -755,6 +762,15 @@ fn moonshot_fills_nothing_for_a_model_that_does_not_reason() {
 }
 
 #[test]
+fn moonshot_leaves_an_assistant_message_with_empty_tool_calls_alone() {
+    let mut bare = message(Role::Assistant, "done");
+    bare.tool_calls = Some(Vec::new());
+    let body = moonshot_body(true, &[bare], &mut Object::new(), Mode::Sync);
+    let sent = serde_json::to_string(&only_message(&body)).expect("the message JSON");
+    assert!(!sent.contains("reasoning_content"));
+}
+
+#[test]
 fn moonshot_transforms_the_async_call_like_the_sync_one() {
     let messages = vec![message(Role::User, "hi")];
     let mut sync_optional = Object::new();
@@ -765,6 +781,19 @@ fn moonshot_transforms_the_async_call_like_the_sync_one() {
 }
 
 #[test]
+fn moonshot_error_status_follows_the_content_error() {
+    let file = MissingFileError {
+        provider: "openai",
+        model: None,
+    };
+    let missing = MoonshotError::Content(ChatContentError::MissingFile(file));
+    assert_eq!(missing.status_code(), 400);
+    let source = serde_json::from_str::<Value>("nope").expect_err("not JSON");
+    let shape = MoonshotError::Content(ChatContentError::MessageShape { source });
+    assert_eq!(shape.status_code(), 500);
+}
+
+#[test]
 fn json_truthiness_matches_the_python_read() {
     assert!(json_is_truthy(&Value::Bool(true)));
     assert!(!json_is_truthy(&Value::Bool(false)));
@@ -772,6 +801,16 @@ fn json_truthiness_matches_the_python_read() {
     assert!(!json_is_truthy(&Value::String(String::new())));
     assert!(json_is_truthy(&serde_json::json!([1])));
     assert!(!json_is_truthy(&serde_json::json!({})));
+    assert!(json_is_truthy(&serde_json::json!(1)));
+    assert!(!json_is_truthy(&serde_json::json!(0.0)));
+}
+
+#[test]
+fn map_supported_copies_only_a_listed_param() {
+    let mut optional = object(vec![("kept", text("old"))]);
+    let requested = object(vec![("kept", text("new")), ("unknown", Json::Bool(true))]);
+    map_supported(&requested, &mut optional, &["kept"]);
+    assert_eq!(optional, object(vec![("kept", text("new"))]));
 }
 
 #[test]
@@ -820,6 +859,14 @@ fn nadir_reports_an_integer_cost_as_a_float() {
     let cost = nadir_reported_cost(br#"{"nadir_metadata":{"cost":{"total_cost_usd":7}}}"#);
     assert_eq!(cost, Some(7.0_f64));
     assert_eq!(cost.map(|value| value.to_string()), Some(String::from("7")));
+}
+
+#[test]
+fn nadir_keeps_a_zero_cost_and_drops_a_negative_one() {
+    let zero = br#"{"nadir_metadata":{"cost":{"total_cost_usd":0}}}"#;
+    assert_eq!(nadir_reported_cost(zero), Some(0.0));
+    let negative = br#"{"nadir_metadata":{"cost":{"total_cost_usd":-1}}}"#;
+    assert_eq!(nadir_reported_cost(negative), None);
 }
 
 #[test]
