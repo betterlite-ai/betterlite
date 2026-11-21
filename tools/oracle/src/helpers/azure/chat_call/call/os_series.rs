@@ -117,7 +117,7 @@ fn report(
     recorder: &Recorder,
     outcome: Result<Value, OSeriesError<String>>,
 ) -> Value {
-    let outcome = match outcome {
+    let answer = match outcome {
         Ok(forward) => Outcome {
             name: "delegated",
             reply: Value::Null,
@@ -137,7 +137,7 @@ fn report(
             forward: Value::Null,
         },
     };
-    view::report(source, recorder, &outcome)
+    view::report(source, recorder, &answer)
 }
 
 pub(crate) fn run(case: &CallCase) -> Result<Value, Box<HelperError>> {
