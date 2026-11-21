@@ -1,0 +1,5 @@
+task: B1617
+deviations:
+  - what: A tenant or response id with hyphens outside the canonical 8-4-4-4-12 layout, or with a bare uuid: prefix instead of urn:uuid:, is rejected, while LiteLLM's UUID() deletes every hyphen, urn: and uuid: before parsing and accepts it.
+    why: betterlite parses with uuid's Uuid::parse_str, which accepts the simple, hyphenated, braced and urn:uuid: forms; Microsoft issues the canonical hyphenated identifiers, so a subject that came from the provider parses the same in both, and only a hand-typed identifier with unusual hyphen placement differs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/sso/agent_subject_enrollment.py#L16-L21

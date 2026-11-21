@@ -1,0 +1,61 @@
+kind: helper
+name: sso-identity-bridge-foreign-endpoint-suppresses-enrollment
+call:
+  sso_identity_bridge:
+    function: subject
+    environment: {}
+    tenant: aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee
+    response_id: 11111111-2222-4333-8444-555555555555
+    endpoints:
+      authorization: https://login.microsoftonline.com/common/oauth2/v2.0/authorize
+      token: null
+      userinfo: null
+calls:
+  - sso_identity_bridge:
+      function: subject
+      environment: {}
+      tenant: aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee
+      response_id: 11111111-2222-4333-8444-555555555555
+      endpoints:
+        authorization: null
+        token: https://login.microsoftonline.com/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee/oauth2/v2.0/token2
+        userinfo: null
+  - sso_identity_bridge:
+      function: subject
+      environment: {}
+      tenant: aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee
+      response_id: 11111111-2222-4333-8444-555555555555
+      endpoints:
+        authorization: null
+        token: null
+        userinfo: https://graph.microsoft.us/v1.0/me
+  - sso_identity_bridge:
+      function: subject
+      environment: {}
+      tenant: aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee
+      response_id: 11111111-2222-4333-8444-555555555555
+      endpoints:
+        authorization: https://login.microsoftonline.com/AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE/oauth2/v2.0/authorize
+        token: null
+        userinfo: null
+  - sso_identity_bridge:
+      function: subject
+      environment: {}
+      tenant: aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee
+      response_id: 11111111-2222-4333-8444-555555555555
+      endpoints:
+        authorization: ""
+        token: ""
+        userinfo: ""
+  - sso_identity_bridge:
+      function: subject
+      environment: {}
+      tenant: aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee
+      response_id: 11111111-2222-4333-8444-555555555555
+      endpoints:
+        authorization: https://login.microsoftonline.com/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee/oauth2/v2.0/authorize
+        token: https://login.microsoftonline.com/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee/oauth2/v2.0/token
+        userinfo: https://graph.microsoft.com/v1.0/me
+env: {}
+compare:
+  ignore: []
