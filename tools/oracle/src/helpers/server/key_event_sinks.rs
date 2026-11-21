@@ -128,21 +128,13 @@ impl Helper for Op {
         };
         let mut steps = Vec::with_capacity(input.steps.len());
         for step in &input.steps {
-            let raised = runtime.block_on(perform(&sink, &board, step))?;
+            let raised = match step {
+                Step::Secret(secret) => runtime.block_on(secret_step(&sink, secret)),
+                Step::Email(mail) => runtime.block_on(email_step(&settings, &board, mail))?,
+            };
             steps.push(board.close_step(raised));
         }
         Ok(json!({"steps": steps}))
-    }
-}
-
-async fn perform(
-    sink: &SecretSink<'_, ScriptedManager>,
-    board: &Arc<Board>,
-    step: &Step,
-) -> Result<bool, Box<HelperError>> {
-    match step {
-        Step::Secret(secret) => Ok(secret_step(sink, secret).await),
-        Step::Email(email) => email_step(&sink.settings.alerting, board, email).await,
     }
 }
 
@@ -183,13 +175,13 @@ async fn secret_step(sink: &SecretSink<'_, ScriptedManager>, step: &SecretStep) 
 }
 
 async fn email_step(
-    alerting: &[String],
+    settings: &Settings,
     board: &Arc<Board>,
     step: &EmailStep,
 ) -> Result<bool, Box<HelperError>> {
     let tasks = TaskTracker::new();
     let email = LegacyEmail {
-        alerting,
+        alerting: &settings.alerting,
         mailer: Arc::new(BoardMailer {
             board: Arc::clone(board),
         }),
