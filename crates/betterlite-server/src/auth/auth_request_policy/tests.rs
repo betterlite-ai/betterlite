@@ -142,8 +142,6 @@ async fn failure_stops_downstream() {
 
 #[tokio::test]
 async fn allowed_route_reaches_downstream() {
-    // the stage reads the request's own route and the configured list admits it; the body is not JSON
-    // so no later stage resolves a model
     let reached = Arc::new(AtomicBool::new(false));
     let allowed = Request::builder()
         .method("POST")
