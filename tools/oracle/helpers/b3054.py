@@ -79,6 +79,18 @@ class FakeRedis(RedisCache):
         return str(total)
 
 
+def redis_state(server: FakeRedis | None) -> dict[str, int]:
+    if server is None:
+        return {}
+    return server.store
+
+
+def redis_expiry(server: FakeRedis | None) -> dict[str, int]:
+    if server is None:
+        return {}
+    return server.expires
+
+
 class FakeUsageCache:
     def __init__(self, redis: RedisCache | None, memory: dict[str, int]) -> None:
         self.dual_cache = self
@@ -204,15 +216,14 @@ async def execute(parsed: Input) -> Output:
     if calls is None:
         calls = []
     outcomes = [await pre_call_outcome(handler, cache, call) for call in calls]
-    missing: dict[str, int] = {}
     return {
         "ttl": handler.ttl,
         "script_registered": handler.increment_script is not None,
         "calls": outcomes,
         "memory": cache.memory,
         "memory_ttls": cache.memory_ttls,
-        "redis": missing if server is None else server.store,
-        "redis_ttls": missing if server is None else server.expires,
+        "redis": redis_state(server),
+        "redis_ttls": redis_expiry(server),
     }
 
 

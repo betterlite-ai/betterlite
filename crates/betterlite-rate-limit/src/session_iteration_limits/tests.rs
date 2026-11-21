@@ -428,10 +428,8 @@ async fn script_count_wins_over_the_local_counter() {
         .unwrap();
 
     assert_eq!(handler.cache.redis_count(&memory_key("s1")), Some(5));
-    assert_eq!(
-        handler.cache.redis_ttl(&memory_key("s1")),
-        Some(Duration::from_secs(3600))
-    );
+    // the script expires only a counter it created, so a key that already existed keeps no new ttl
+    assert_eq!(handler.cache.redis_ttl(&memory_key("s1")), None);
     assert_eq!(handler.cache.memory(&memory_key("s1")), Some(1));
 }
 

@@ -157,10 +157,11 @@ impl SessionIterationCache for FakeCache {
         let mut state = self.state.lock().unwrap();
         let current = state.redis.get(key).copied().unwrap_or(0);
         let next = current.checked_add(1).unwrap_or(i64::MAX);
-        let existed = state.redis.insert(key.to_owned(), next).is_some();
-        if !existed {
+        state.redis.insert(key.to_owned(), next);
+        if next == 1 {
             state.redis_ttls.insert(key.to_owned(), ttl);
         }
+        drop(state);
         ready(Ok(next))
     }
 
@@ -184,6 +185,7 @@ impl SessionIterationCache for FakeCache {
             },
         );
         state.memory_ttls.insert(key.to_owned(), ttl);
+        drop(state);
         ready(())
     }
 }
