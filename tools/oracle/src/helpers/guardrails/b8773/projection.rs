@@ -30,6 +30,8 @@ pub(super) fn build<R: ImageDescriptionCompletion>(
     }
     let event_hook = serde_json::to_value(&guardrail.base.settings.event_hook)
         .map_err(|error| failure("JsonError", error.to_string()))?;
+    let supported_event_hooks = serde_json::to_value(guardrail.get_supported_event_hooks())
+        .map_err(|error| failure("JsonError", error.to_string()))?;
     Ok(json!({
         "guardrail_provider": guardrail.guardrail_provider,
         "config_guardrail_id": guardrail.config_guardrail_id,
@@ -42,7 +44,7 @@ pub(super) fn build<R: ImageDescriptionCompletion>(
         "image_model": guardrail.image_model,
         "patterns": patterns,
         "blocked_words": blocked_words,
-        "supported_event_hooks": supported_event_hooks(guardrail)?,
+        "supported_event_hooks": supported_event_hooks,
         "config_model": config_model(guardrail)?,
     }))
 }
@@ -85,25 +87,13 @@ pub(super) async fn apply<R: ImageDescriptionCompletion>(
     }
 }
 
-fn supported_event_hooks<R: ImageDescriptionCompletion>(
-    guardrail: &ContentFilterGuardrail<R>,
-) -> Result<Value, Box<HelperError>> {
-    let Some(hooks) = guardrail.get_supported_event_hooks() else {
-        return Ok(Value::Null);
-    };
-    serde_json::to_value(hooks).map_err(|error| failure("JsonError", error.to_string()))
-}
-
 // LiteLLM's get_config_model answers with a class, whose name the config endpoint reads
 fn config_model<R: ImageDescriptionCompletion>(
     guardrail: &ContentFilterGuardrail<R>,
 ) -> Result<Value, Box<HelperError>> {
-    let Some(model) = guardrail.get_config_model() else {
-        return Ok(Value::Null);
-    };
-    let value =
-        serde_json::to_value(model).map_err(|error| failure("JsonError", error.to_string()))?;
-    Ok(value.get("model").cloned().unwrap_or(Value::Null))
+    let model = serde_json::to_value(guardrail.get_config_model())
+        .map_err(|error| failure("JsonError", error.to_string()))?;
+    Ok(model.get("model").cloned().unwrap_or(Value::Null))
 }
 
 fn error_tag(outcome: &GuardrailFailure) -> Value {

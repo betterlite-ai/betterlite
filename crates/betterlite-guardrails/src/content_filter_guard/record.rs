@@ -71,7 +71,17 @@ impl<R> ContentFilterGuardrail<R> {
     ) -> Result<(), GuardrailRecordError> {
         let timing = RecordTiming::ending_at(trace.started, SystemTime::now());
         let detail = self.log_record(trace, &timing);
-        let input = self.record_input(trace, &timing, detail)?;
+        let input = GuardrailRecordInput {
+            guardrail_response: record_response(trace)?,
+            guardrail_status: record_status(trace.status),
+            start_time: Some(timing.start_time),
+            end_time: Some(timing.end_time),
+            duration: Some(timing.duration),
+            masked_entity_count: Some(masked_counts(trace.masked_entity_count)),
+            guardrail_provider: Some(self.guardrail_provider.clone()),
+            event_type: None,
+            tracing_detail: Some(record_tracing_detail(detail)?),
+        };
         let mut context = GuardrailRecordContext {
             base: &self.base,
             request_data,
@@ -105,25 +115,6 @@ impl<R> ContentFilterGuardrail<R> {
                 exception_str: trace.exception,
             },
         )
-    }
-
-    fn record_input(
-        &self,
-        trace: &RecordTrace<'_>,
-        timing: &RecordTiming,
-        detail: GuardrailTracingDetail,
-    ) -> Result<GuardrailRecordInput, GuardrailRecordError> {
-        Ok(GuardrailRecordInput {
-            guardrail_response: record_response(trace)?,
-            guardrail_status: record_status(trace.status),
-            start_time: Some(timing.start_time),
-            end_time: Some(timing.end_time),
-            duration: Some(timing.duration),
-            masked_entity_count: Some(masked_counts(trace.masked_entity_count)),
-            guardrail_provider: Some(self.guardrail_provider.clone()),
-            event_type: None,
-            tracing_detail: Some(record_tracing_detail(detail)?),
-        })
     }
 
     // LiteLLM's config_policy_template or the descriptions of the loaded categories

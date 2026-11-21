@@ -130,7 +130,7 @@ def build_tag(guardrail: ContentFilterGuardrail) -> Json:
         "patterns": patterns,
         "blocked_words": blocked_words,
         "supported_event_hooks": hooks,
-        "config_model": ConfigModel.__name__,
+        "config_model": ConfigModel.__name__,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L2155-L2161
     }
 
 
@@ -174,7 +174,7 @@ async def apply_output(guardrail: ContentFilterGuardrail, apply_input: ApplyInpu
                 "detail": JSON.validate_python(raised.detail),
             },
         }
-    except ModifyResponseException as raised:
+    except ModifyResponseException as raised:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L1201
         return {
             "texts": None,
             "tool_calls": None,
@@ -197,9 +197,7 @@ async def build_output(build_input: BuildInput) -> Json:
 
 
 async def run_builds(request: Input) -> Json:
-    builds: list[Json] = []
-    for build_input in request["builds"]:
-        builds.append(await build_output(build_input))
+    builds: list[Json] = [await build_output(build_input) for build_input in request["builds"]]
     return {"builds": builds}
 
 

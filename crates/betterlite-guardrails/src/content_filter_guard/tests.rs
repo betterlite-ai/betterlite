@@ -236,20 +236,11 @@ fn tool_call(arguments: &str) -> GuardrailValue {
 }
 
 fn mcp_request_data() -> BTreeMap<String, GuardrailValue> {
-    let arguments = BTreeMap::from([(
-        "query".to_owned(),
-        GuardrailValue::Text("secret stuff".to_owned()),
-    )]);
-    BTreeMap::from([
-        (
-            "mcp_tool_name".to_owned(),
-            GuardrailValue::Text("search".to_owned()),
-        ),
-        (
-            "mcp_arguments".to_owned(),
-            GuardrailValue::Object(arguments),
-        ),
-    ])
+    let data = serde_json::json!({
+        "mcp_tool_name": "search",
+        "mcp_arguments": {"query": "secret stuff"},
+    });
+    serde_json::from_value(data).unwrap()
 }
 
 fn intent(guardrail: &ContentFilterGuardrail<TestRouter>, text: &str) -> Option<String> {
