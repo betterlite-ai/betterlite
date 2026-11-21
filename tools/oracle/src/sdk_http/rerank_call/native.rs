@@ -62,19 +62,9 @@ pub(super) async fn execute(
     let identity = CatalogIdentity {
         context: &resolution,
     };
-    let plan = RerankPlan {
-        identity: &identity,
-        operations: &operations,
-        settings: &settings,
-        environment: &environment,
-        redactor: &operations.redactor,
-    };
+    let plan = build_plan(&identity, &operations, &settings, &environment);
     let entry = PlanEntry { plan: &plan };
-    let facade = AsyncRerankPlan {
-        identity: &identity,
-        entry: &entry,
-        redactor: &operations.redactor,
-    };
+    let facade = build_facade(&identity, &entry, &operations);
     let mut runs = Vec::with_capacity(call.runs.len());
     for run in &call.runs {
         let mut state = logging_state(&operations.redactor)?;
@@ -84,6 +74,33 @@ pub(super) async fn execute(
     Ok(SdkResult::RerankCall {
         value: Box::new(Outcome { runs }),
     })
+}
+
+fn build_plan<'borrow, Identity>(
+    identity: &'borrow Identity,
+    operations: &'borrow Operations<'borrow>,
+    settings: &'borrow RerankSettings,
+    environment: &'borrow BTreeMap<String, String>,
+) -> RerankPlan<'borrow, Identity, Operations<'borrow>> {
+    RerankPlan {
+        identity,
+        operations,
+        settings,
+        environment,
+        redactor: &operations.redactor,
+    }
+}
+
+fn build_facade<'borrow, Identity, Entry>(
+    identity: &'borrow Identity,
+    entry: &'borrow Entry,
+    operations: &'borrow Operations<'borrow>,
+) -> AsyncRerankPlan<'borrow, Identity, Entry> {
+    AsyncRerankPlan {
+        identity,
+        entry,
+        redactor: &operations.redactor,
+    }
 }
 
 fn substituted_environment(
