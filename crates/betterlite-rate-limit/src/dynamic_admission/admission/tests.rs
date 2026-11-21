@@ -8,8 +8,8 @@ use super::{AdmissionKey, CheckRateLimitError, RateLimitCheck};
 use crate::atomic_counter::payload::IncrementAmounts;
 use crate::dynamic_admission::limiter_port::AdmissionLimiterError;
 use crate::dynamic_admission::tests::support::{
-    AdmissionSetup, Canned, Harness, MODEL, WINDOW, header, key, key_with_span, limits, ok,
-    over_limit, percent, policy, response, settlement_failure, stored_response,
+    AdmissionSetup, Canned, Harness, MODEL, WINDOW, capture, header, key, key_with_span, limits,
+    ok, over_limit, percent, policy, response, settlement_failure, stored_response,
     unverifiable_failure,
 };
 use crate::dynamic_priority::descriptors::{PRIORITY_DESCRIPTOR_KEY, SATURATION_DESCRIPTOR_KEY};
@@ -122,6 +122,34 @@ async fn admission_model_wide_descriptor_uses_multiplier_one() {
             max_parallel_requests: None,
             window_size: Some(WINDOW),
         }
+    );
+}
+
+#[test]
+fn admission_logs_the_atomic_response() {
+    let harness = Harness::build(setup(
+        reserved_policy(),
+        Ok(response(
+            "OK",
+            vec![ok(SATURATION_DESCRIPTOR_KEY, RateLimitType::Requests)],
+        )),
+        empty_tracking(),
+    ));
+    let metadata = BTreeMap::new();
+    let admission_key = key(&metadata);
+    let stash = RequestStashSlot::default();
+    let request = check(&admission_key, &stash, Some("default"), 0.3);
+    let logs = capture(|| {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("the test runtime starts");
+        runtime
+            .block_on(harness.admission.check_rate_limits(&request))
+            .expect("the atomic answer allows the request");
+    });
+    assert!(
+        logs.contains("Atomic check+increment response:"),
+        "logs: {logs}"
     );
 }
 
