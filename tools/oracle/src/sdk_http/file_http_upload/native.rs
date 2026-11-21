@@ -43,9 +43,20 @@ pub(super) async fn execute(
     _env: &BTreeMap<String, String>,
 ) -> Result<SdkResult, SdkHttpError> {
     let origin = api_base.strip_suffix("/v1").unwrap_or(api_base).to_owned();
+    let mut answer = run_one(call, api_base, &origin).await?;
+    for extra in &call.also {
+        answer.also.push(run_one(extra, api_base, &origin).await?);
+    }
+    Ok(SdkResult::FileHttpUpload {
+        value: Box::new(answer),
+    })
+}
+
+// One upload over the shared mock, so a case can run several scenarios in a row
+async fn run_one(call: &Call, api_base: &str, origin: &str) -> Result<Outcome, SdkHttpError> {
     let config = FixtureConfig {
         call,
-        origin: origin.clone(),
+        origin: origin.to_owned(),
     };
     let source = Source::new();
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(SdkHttpError::Redactor)?;
@@ -76,10 +87,7 @@ pub(super) async fn execute(
     let prepared = prepare(&deps, mode(call.mode), &upload_call, &mut log)
         .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
     let result = send(prepared).await;
-    let answer = finish(call, &state, result, &origin)?;
-    Ok(SdkResult::FileHttpUpload {
-        value: Box::new(answer),
-    })
+    finish(call, &state, result, origin)
 }
 
 // Only the async handler logs, so only it reports diagnostics; a provider error becomes the case's outcome

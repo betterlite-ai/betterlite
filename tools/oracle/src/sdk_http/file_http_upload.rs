@@ -62,6 +62,9 @@ pub struct Call {
     #[serde(default)]
     pub timeout_seconds: Option<u64>,
     pub plan: Plan,
+    // Uploads the case runs after this one, over the same mock script
+    #[serde(default)]
+    pub also: Vec<Call>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -184,6 +187,9 @@ pub struct Outcome {
     pub result: Option<Json>,
     pub failure: Option<Failure>,
     pub diagnostics: Option<Diagnostics>,
+    // The outcomes of the uploads this case ran after the first, in order
+    #[serde(default)]
+    pub also: Vec<Outcome>,
 }
 
 impl CallKind for Call {

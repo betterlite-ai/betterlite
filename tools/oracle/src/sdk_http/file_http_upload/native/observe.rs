@@ -65,11 +65,13 @@ pub(super) fn outcome(
             result: Some(unalias(value, origin)),
             failure: None,
             diagnostics,
+            also: Vec::new(),
         }),
         Err(UploadError::Provider(error)) => Ok(Outcome {
             result: None,
             failure: Some(failure(error, origin)),
             diagnostics,
+            also: Vec::new(),
         }),
         Err(other) => Err(SdkHttpError::Invalid(other.to_string())),
     }

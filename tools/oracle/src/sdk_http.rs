@@ -292,6 +292,12 @@ fn validate(case: &SdkHttpCase, limits: &OracleLimits) -> Result<(), SdkHttpErro
         return invalid(&format!("the case env may not set {name}"));
     }
     validate_call(&case.call, limits)?;
+    // An extra upload runs after the first one only, so a case never nests its extras
+    if let SdkHttpCall::FileHttpUpload(upload) = &case.call
+        && upload.also.iter().any(|extra| !extra.also.is_empty())
+    {
+        return invalid("a file upload case runs one level of extra uploads");
+    }
     if case.upstream.len() > limits.max_requests {
         return invalid("the case scripts more provider answers than the request limit");
     }

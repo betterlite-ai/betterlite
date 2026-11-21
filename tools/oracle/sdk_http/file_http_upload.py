@@ -77,6 +77,7 @@ class UploadCall(BaseModel):
     headers: dict[str, str] = Field(default_factory=dict)
     litellm_params: dict[str, JsonValue] = Field(default_factory=dict)
     timeout_seconds: int | None = None
+    also: list["UploadCall"] = Field(default_factory=list)
 
 
 class RequestValue(TypedDict):
@@ -245,10 +246,7 @@ class Outcome(BaseModel):
     result: JsonValue = None
     failure: Failure | None = None
     diagnostics: JsonValue = None
-
-
-class UploadEnvelope(BaseModel):
-    file_http_upload: dict[str, Outcome]
+    also: list["Outcome"] = Field(default_factory=list)
 
 
 def run_upload(case: UploadCall, api_base: str) -> Outcome:
@@ -276,15 +274,17 @@ def run_upload(case: UploadCall, api_base: str) -> Outcome:
                 result = work
             case Coroutine():
                 result = asyncio.run(work)
+        outcome = Outcome(
+            result=TypeAdapter(JsonValue).validate_json(result.model_dump_json(exclude_unset=True)),
+            diagnostics=diagnostics_view(case, logging_obj),
+        )
     except PROVIDER_ERROR as error:
-        return Outcome(
+        outcome = Outcome(
             failure=Failure.model_validate(error),
             diagnostics=diagnostics_view(case, logging_obj),
         )
-    return Outcome(
-        result=TypeAdapter(JsonValue).validate_json(result.model_dump_json(exclude_unset=True)),
-        diagnostics=diagnostics_view(case, logging_obj),
-    )
+    outcome.also = [run_upload(extra, api_base) for extra in case.also]
+    return outcome
 
 
 class FileHttpUploadRequest(BaseModel):
@@ -294,6 +294,6 @@ class FileHttpUploadRequest(BaseModel):
 
     def serialize(self, api_base: str) -> str:
         outcome = run_upload(self.file_http_upload, api_base)
-        envelope = UploadEnvelope(file_http_upload={"value": outcome})
-        text = envelope.model_dump_json(by_alias=True)
+        payload: dict[str, dict[str, Outcome]] = {"file_http_upload": {"value": outcome}}
+        text = TypeAdapter(dict[str, dict[str, Outcome]]).dump_json(payload, by_alias=True).decode()
         return text.replace(api_base.removesuffix("/v1"), "{{upstream}}")
