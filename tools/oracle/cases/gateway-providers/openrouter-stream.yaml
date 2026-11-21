@@ -1,0 +1,20 @@
+kind: helper
+name: openrouter-stream
+call:
+  b8311:
+    op: chat
+    provider: openrouter
+    model: anthropic/claude-3.5-sonnet
+    messages: [{role: user, content: hi}]
+    api_base: "{{upstream}}/passed"
+    api_key: "sk-passed"
+    stream: true
+    answer:
+      status: 200
+      body: |
+        data: {"id":"chatcmpl-1","object":"chat.completion.chunk","created":1700000000,"model":"oracle","choices":[{"index":0,"delta":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}
+
+        data: [DONE]
+
+env: {}
+compare: {ignore: []}

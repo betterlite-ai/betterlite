@@ -1,0 +1,15 @@
+kind: helper
+name: vercel-embedding-oidc
+call:
+  b8311:
+    op: embedding
+    provider: vercel_ai_gateway
+    model: openai/text-embedding-3-small
+    input: hello
+    api_base: "{{upstream}}/passed"
+    env: {VERCEL_OIDC_TOKEN: "oidc-token"}
+    answer:
+      status: 200
+      body: '{"object":"list","data":[{"object":"embedding","embedding":[0.1,0.2],"index":0}],"model":"oracle","usage":{"prompt_tokens":2,"total_tokens":2}}'
+env: {}
+compare: {ignore: []}
