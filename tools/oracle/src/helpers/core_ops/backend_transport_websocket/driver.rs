@@ -30,7 +30,7 @@ use tokio_util::sync::CancellationToken;
 use super::input::{Input, ProviderDocument};
 use super::provider::{ScriptedError, ScriptedProvider};
 use super::transport::{
-    DialRecord, Frames, Locked as _, ScriptedClient, ScriptedDialer, ssl_name_of,
+    CloseRecord, DialRecord, Frames, Locked as _, ScriptedClient, ScriptedDialer, ssl_name_of,
 };
 use super::{Failure, failure};
 
@@ -71,7 +71,7 @@ struct Probe {
     backend_sent: Frames,
     backend_closed: Arc<Mutex<bool>>,
     client_sent: Frames,
-    client_close: Arc<Mutex<Option<(u16, Option<String>)>>>,
+    client_close: Arc<Mutex<Option<CloseRecord>>>,
 }
 
 impl Probe {
@@ -117,7 +117,7 @@ impl Probe {
             "backend": backend,
             "backend_closed": *self.backend_closed.locked(),
             "client": client,
-            "client_close": close_value(&self.client_close.locked()),
+            "client_close": close_value(self.client_close.locked().as_ref()),
         })
     }
 }
@@ -137,7 +137,7 @@ fn dial_value(record: &DialRecord) -> Value {
     })
 }
 
-fn close_value(close: &Option<(u16, Option<String>)>) -> Value {
+fn close_value(close: Option<&CloseRecord>) -> Value {
     match close {
         Some((code, reason)) => json!({"code": code, "reason": reason}),
         None => Value::Null,
@@ -166,18 +166,19 @@ fn connection_failure(
 ) -> Failure {
     match error {
         RealtimeConnectionError::Config(source) => failure(&source.class, source.message),
-        RealtimeConnectionError::Dial(source) => failure("Exception", source.to_string()),
-        RealtimeConnectionError::Guardrail(source) => failure("Exception", source.to_string()),
-        RealtimeConnectionError::Session(source) => failure("Exception", source.to_string()),
-        RealtimeConnectionError::Contract(source) => failure("Exception", source.to_string()),
-        RealtimeConnectionError::Relay(source) => failure("Exception", source.to_string()),
-        RealtimeConnectionError::Backend(source) => failure("Exception", source.to_string()),
-        RealtimeConnectionError::Client(source) => failure("Exception", source.to_string()),
         RealtimeConnectionError::Close(source) => close_failure(input, &source),
         RealtimeConnectionError::UnexpectedClose { close_error } => failure(
             "Exception",
             format!("Unexpected error while closing WebSocket: {close_error}"),
         ),
+        RealtimeConnectionError::Dial(source) => failure("Exception", source.to_string()),
+        RealtimeConnectionError::Guardrail(source) => failure("Exception", source.to_string()),
+        RealtimeConnectionError::Session(source) => failure("Exception", source.to_string()),
+        RealtimeConnectionError::Contract(source) => failure("Exception", source.to_string()),
+        RealtimeConnectionError::Relay(source) => failure("Exception", source.to_string()),
+        RealtimeConnectionError::Backend(source) | RealtimeConnectionError::Client(source) => {
+            failure("Exception", source.to_string())
+        }
     }
 }
 

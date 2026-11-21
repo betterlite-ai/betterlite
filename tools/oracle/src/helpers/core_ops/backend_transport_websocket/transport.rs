@@ -20,6 +20,8 @@ use super::input::{CloseErrorDocument, DialDocument};
 
 pub(crate) type Frames = Arc<Mutex<Vec<String>>>;
 
+pub(crate) type CloseRecord = (u16, Option<String>);
+
 // A poisoned lock is recovered instead of panicking, since no code here can leave the guarded data inconsistent
 pub(crate) trait Locked<T> {
     fn locked(&self) -> MutexGuard<'_, T>;
@@ -179,7 +181,7 @@ impl RealtimeWebSocketDialer for ScriptedDialer {
 
 pub(crate) struct ScriptedClient {
     pub(crate) sent: Frames,
-    pub(crate) closed: Arc<Mutex<Option<(u16, Option<String>)>>>,
+    pub(crate) closed: Arc<Mutex<Option<CloseRecord>>>,
     pub(crate) send_error: Option<String>,
     pub(crate) close_error: Option<CloseErrorDocument>,
 }
@@ -187,15 +189,13 @@ pub(crate) struct ScriptedClient {
 #[async_trait]
 impl RealtimeClientSocket for ScriptedClient {
     async fn send_text(&mut self, data: &str) -> Result<(), WebSocketError> {
-        match &self.send_error {
-            Some(message) => Err(WebSocketError {
+        if let Some(message) = &self.send_error {
+            return Err(WebSocketError {
                 message: message.clone(),
-            }),
-            None => {
-                self.sent.locked().push(data.to_owned());
-                Ok(())
-            }
+            });
         }
+        self.sent.locked().push(data.to_owned());
+        Ok(())
     }
 
     async fn receive_text(&mut self) -> Result<String, WebSocketError> {

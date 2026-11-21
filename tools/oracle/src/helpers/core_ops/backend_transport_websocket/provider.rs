@@ -53,13 +53,15 @@ impl BaseRealtimeConfig for ScriptedProvider {
         &self,
         environment: &Environment<'_>,
     ) -> Result<HeaderMap, ScriptedError> {
-        match &self.document.error {
-            Some(error) => Err(ScriptedError {
-                class: error.error_class.clone(),
-                message: error.message.clone(),
-            }),
-            None => Ok(environment.headers.clone()),
-        }
+        self.document.error.as_ref().map_or_else(
+            || Ok(environment.headers.clone()),
+            |error| {
+                Err(ScriptedError {
+                    class: error.error_class.clone(),
+                    message: error.message.clone(),
+                })
+            },
+        )
     }
 
     fn get_complete_url(
