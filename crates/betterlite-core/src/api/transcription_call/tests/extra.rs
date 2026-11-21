@@ -4,6 +4,7 @@ use std::time::Duration;
 use betterlite_context::non_default_params::Params;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::audio_file_input::{AudioFile, ProcessedAudioFile};
+use indexmap::IndexMap;
 
 use super::{Harness, fixed_boundary, json, params, request_for, response, runtime, value, wav};
 use crate::api::transcription_call::call::SuppliedClientKind;
@@ -85,6 +86,15 @@ fn logging_records_the_client_string() {
         assert_eq!(
             state.model_call_details.get("client"),
             Some(&Json::Text(String::from("None")))
+        );
+        assert!(state.optional_params.is_empty());
+        assert_eq!(
+            state.litellm_params.get("litellm_call_id"),
+            Some(&Json::Null)
+        );
+        assert_eq!(
+            state.litellm_params.get("stream_response"),
+            Some(&Json::Object(IndexMap::new()))
         );
     });
 }
