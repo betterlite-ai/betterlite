@@ -9,9 +9,9 @@ deviations:
   - what: An x-litellm-spend-logs-metadata header longer than the request JSON limit is ignored with a warning, as text that isn't JSON already is; LiteLLM parses it whatever its size.
     why: The header is caller input parsed into the spend log, and the JSON limit is how betterlite bounds every other piece of caller JSON.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1310-L1318
-  - what: When forward_traceparent_to_llm_provider forwards a traceparent and the request body sets extra_headers to null, the traceparent goes into a new extra_headers object; LiteLLM checks "traceparent" in None and fails with TypeError.
+  - what: When forward_traceparent_to_llm_provider forwards a traceparent and the request body sets extra_headers to null or another non-object, the traceparent goes into a new or existing extra_headers object and any other value is left as it is; LiteLLM checks "traceparent" in None, a string or a list and fails with TypeError.
     why: Null takes the default under docs/compatibility.md, and a 500 here is never relied on.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L3529-L3536
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L3532-L3536
   - what: The header metadata is skipped when the request has no metadata slot; LiteLLM reads data[_metadata_variable_name] and raises KeyError.
     why: Same 500 as above, and the request path always fills the slot before this step.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1610-L1611
