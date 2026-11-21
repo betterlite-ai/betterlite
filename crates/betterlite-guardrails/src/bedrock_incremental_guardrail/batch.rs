@@ -9,7 +9,7 @@ use crate::bedrock_apply::{ApiInvocation, make_bedrock_api_request};
 use crate::bedrock_checks::request::ChecksScan;
 use crate::bedrock_message_selection::reconcile;
 use crate::bedrock_message_selection::wire::Message;
-use crate::bedrock_records::{MessageSelection, Response, Source};
+use crate::bedrock_records::{Response, Source};
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_base::inputs::GuardrailApiInputs;
@@ -76,14 +76,24 @@ where
     if selection.skip_scan {
         return Ok(());
     }
-    let masked = scan_selected(
-        &mut invocation.api,
-        &selection,
-        input_type,
-        credentials,
-        transport,
-    )
-    .await?;
+    let masked = match selection
+        .filtered_messages
+        .as_deref()
+        .filter(|items| !items.is_empty())
+    {
+        Some(messages) => {
+            let response = scan_request(
+                &mut invocation.api,
+                messages,
+                input_type,
+                credentials,
+                transport,
+            )
+            .await?;
+            masked_texts(&response)
+        }
+        None => Vec::new(),
+    };
     let merged = reconcile::texts(
         &masked,
         &texts,
@@ -129,28 +139,6 @@ where
             make_bedrock_api_request(invocation, scan, credentials, transport).await
         }
     }
-}
-
-async fn scan_selected<C, T>(
-    invocation: &mut ApiInvocation<'_>,
-    selection: &MessageSelection<Message>,
-    input_type: GuardrailInputType,
-    credentials: &C,
-    transport: &T,
-) -> Result<Vec<String>, GuardrailFailure>
-where
-    C: CredentialSource,
-    T: GuardrailTransport,
-{
-    let Some(messages) = selection
-        .filtered_messages
-        .as_deref()
-        .filter(|items| !items.is_empty())
-    else {
-        return Ok(Vec::new());
-    };
-    let response = scan_request(invocation, messages, input_type, credentials, transport).await?;
-    Ok(masked_texts(&response))
 }
 
 // LiteLLM re-raises HTTP and modify-response exceptions and wraps every other one; betterlite differs.
