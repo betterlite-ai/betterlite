@@ -5,7 +5,7 @@ description: >-
   the model-sensitive hosted-vLLM selection seam and the unsupported-provider None outcome.
   Build a function in the ProviderConfigManager that maps each provider enum member to its
   corresponding video operation contract, returning None for providers without a video
-  implementation at this pin. This task owns the whole selector function. RUNWAYML takes B1537's Runway video config, FAL_AI B1532's Fal config, HOSTED_VLLM B8151's model-sensitive hosted vLLM selection and EDENAI B5838's Eden AI video config.
+  implementation at this pin. This task owns the whole selector function. RUNWAYML takes B1537's Runway video config, FAL_AI B1532's Fal config and HOSTED_VLLM B8151's model-sensitive hosted vLLM selection; the EDENAI arm is B5838's, see below.
 
 
   Owned function: litellm/utils.py:9690-9725, ProviderConfigManager.get_provider_video_config.
@@ -17,7 +17,7 @@ description: >-
   type and async fallback trait; B525 owns OpenAI video config and is the concrete
   provider constructor/operation owner; B547 owns Azure video config constructor and URL
   generation; B1361 owns Vertex video config constructor; B1363 owns Gemini video config
-  constructor. These are concrete constructor owners, not provider umbrellas. RunwayML is B1537, Fal is B1532, hosted vLLM is B8151 and Eden AI is B5838.
+  constructor. These are concrete constructor owners, not provider umbrellas. RunwayML is B1537, Fal is B1532 and hosted vLLM is B8151. The EDENAI arm belongs to B5838, which adds it to this selector later and waits on this task. Until then the EDENAI branch returns `Err(VideoSelectionError::Unavailable { provider: "edenai" })` (Display "no video config is installed for 'edenai'"), the way main's logging catalog stubs answer CatalogError::Unavailable (crates/betterlite-logging/src/registry/catalog/agentops.rs), never None or a silent skip, so the selector returns `Result<Option<_>, VideoSelectionError>`.
 
 
 scope:
@@ -51,7 +51,7 @@ dod:
   - text: "Selecting VERTEX_AI returns Vertex's video config from B1361; the call is delegated
       to that concrete constructor."
     proof: [vertex-branch]
-  - text: "Selecting RUNWAYML, FAL_AI, HOSTED_VLLM or EDENAI returns the video config that B1537, B1532, B8151 or B5838 builds; hosted vLLM picks its config from the model the way get_hosted_vllm_video_config does."
+  - text: "Selecting RUNWAYML, FAL_AI or HOSTED_VLLM returns the video config that B1537, B1532 or B8151 builds; hosted vLLM picks its config from the model the way get_hosted_vllm_video_config does. EDENAI returns VideoSelectionError::Unavailable until B5838 adds its arm."
     proof: [leaf-branches]
   - text: "The function signature matches LiteLLM's contract: it takes an optional model
       parameter (used only for HOSTED_VLLM) and a provider identifier."
