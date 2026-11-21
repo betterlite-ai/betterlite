@@ -1,0 +1,30 @@
+task: B3276
+deviations:
+  - what: One execution path follows async_search, so validate_environment, transform_search_request, complete_url, sign_request and the pre-call always see the inputs the proxy's path gives them; LiteLLM's sync search() passes transform_search_request no api_key, api_base or headers and compares the method without upper-casing.
+    why: Only the async path is reachable from the proxy and the public asearch, so no working setup sees the narrower sync inputs, and one path stops the provider hooks from branching on the caller kind.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L1836-L1846"
+  - what: sign_request runs inline, with no executor, where async_search awaits sign_request_off_loop_if_aws.
+    why: The helper offloads only AWS signers (B595 owns it) and no search provider at the pin is one, so an inline call gives the same headers and body.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L1952-L1959"
+  - what: There is no "No provider config found" ValueError.
+    why: The provider is a typed trait value the caller must supply, so the case cannot occur.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L1925-L1926"
+  - what: A POST that fails on a connection error or a dropped connection is sent once, where AsyncHTTPHandler.post retries it once with a fresh client.
+    why: The task requires no retry, B173 builds the client with retry::never so no layer below repeats the request, and a search POST is not idempotent.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L836-L851"
+  - what: A list query is logged as its JSON array text (["a","b"]), where LiteLLM logs str(list) (['a', 'b']).
+    why: The task asks for the JSON array text, and the values and their order are the same.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L1963-L1964"
+  - what: A POST whose sign_request returns a body and signed headers with no content-type header sends content-type application/json, where httpx's data= parameter adds no content-type at all.
+    why: betterlite's RequestBody::Bytes carries its media type and the outbound builder inserts it only when the signed headers have none, and no provider at the pin signs a body.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L1995-L2001"
+  - what: A client the pool cannot select or build becomes a provider error through the shared converter, where the Search client is chosen outside async_search's try and its exception escapes as it is.
+    why: The task requires a closed pool to be a transport failure, and a raw exception would give the caller no status at all.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L1972-L1977"
+  - what: A transport failure other than a POST timeout reports betterlite's typed message (for example "the connection could not be made") with a synthesized 500, where LiteLLM reports str(exception) of the httpx error.
+    why: B173's TransportError names the failure and B2402's converter keeps that text; the status, the synthesis flag and the fact the provider never answered match.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6077-L6090"
+  - what: The async timeout message renders the elapsed time as whole seconds plus zero-padded milliseconds (time taken=0.300), where LiteLLM interpolates the rounded float (time taken=0.3), and a timeout of a whole number of seconds prints without a .0.
+    why: The shared converter B2402 owns renders typed Durations; the timeout the caller passed and the elapsed time are the same numbers.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L852-L866"
+kept_bugs: []

@@ -1,0 +1,900 @@
+#![cfg(test)]
+
+use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
+
+use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::tls::{TlsPolicy, Verification};
+use betterlite_config::types::ProxyTrust;
+use betterlite_http::proxy::ProxiedClient;
+use betterlite_http::proxy::base_builder;
+use betterlite_http::proxy::limits::TransportLimits;
+use betterlite_http::proxy::pool::ClientPool;
+use betterlite_http_fixture::error::FixtureError;
+use betterlite_http_fixture::reply::reply;
+use betterlite_http_fixture::server::{Serving, serve};
+use betterlite_logging::logging_pre_post::env::{
+    DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
+};
+use betterlite_logging::logging_pre_post::error::PrePostError;
+use betterlite_logging::logging_privacy::request::Decision;
+use betterlite_logging::logging_state::correlation::{
+    CorrelationContext, CorrelationSettings, CorrelationSetup,
+};
+use betterlite_logging::logging_state::{LoggingInit, LoggingState};
+use betterlite_models::decisions::Json;
+use betterlite_openai::error::ProviderError;
+use betterlite_openai::openai_base_config::{Headers, Object};
+use betterlite_openai::search::provider::{
+    HttpMethod, OutboundSearch, ProviderResponse, SearchProvider, SearchQuery,
+};
+use betterlite_openai::search::records::SearchResponse;
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use betterlite_test_ports::refused_port::RefusedPort;
+use chrono::{DateTime, FixedOffset};
+use indexmap::IndexMap;
+use secrecy::{ExposeSecret as _, SecretString};
+use thiserror::Error;
+
+use super::{SearchHttpCall, SearchHttpError, execute_search};
+use crate::api::vector_store_http_write::service::LogContext;
+
+const ANSWER: &str = r#"{"results":[{"title":"t","url":"u","snippet":"s"}]}"#;
+const NOT_AN_ANSWER: &str = "not a search response";
+
+type Events = Arc<Mutex<Vec<String>>>;
+
+fn record(events: &Events, name: &str) {
+    events
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .push(name.to_owned());
+}
+
+fn recorded(events: &Events) -> Vec<String> {
+    events
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone()
+}
+
+struct Sink;
+
+impl LogSink for Sink {
+    fn emit(&self, _record: LogRecord) {}
+}
+
+struct Fixture {
+    redactor: Redactor,
+    sink: Sink,
+    state: LoggingState,
+    now: DateTime<FixedOffset>,
+}
+
+impl Fixture {
+    fn new() -> Self {
+        let init: LoggingInit = serde_json::from_str(
+            r#"{"model":"search","call_type":"search","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#,
+        )
+        .expect("the logging fixture is valid");
+        let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor builds");
+        let now =
+            DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00").expect("the clock parses");
+        let state = LoggingState::new(
+            init,
+            CorrelationSetup {
+                context: &mut CorrelationContext::default(),
+                settings: CorrelationSettings::default(),
+            },
+            &redactor,
+            || String::from("generated"),
+            Duration::default,
+        )
+        .expect("the logging state builds");
+        Self {
+            redactor,
+            sink: Sink,
+            state,
+            now,
+        }
+    }
+
+    async fn execute<Provider>(
+        &mut self,
+        call: SearchHttpCall<'_>,
+        provider: &Provider,
+        pool: &ClientPool,
+        network_mock: bool,
+    ) -> Result<SearchResponse, SearchHttpError<Provider::Error>>
+    where
+        Provider: SearchProvider + Sync,
+        Provider::Error: 'static,
+    {
+        let logger = |_details: &Json| -> Result<(), PrePostError> { Ok(()) };
+        let env = PrePostEnv {
+            debug: DebugSettings::default(),
+            globals: GlobalFlags::default(),
+            decision: Decision {
+                content: false,
+                key_info: false,
+            },
+            redactor: &self.redactor,
+            log: &self.sink,
+            input_callbacks: &[],
+            sentry: None,
+            logger_fn: Some(&logger),
+            now: self.now,
+        };
+        let mut context = LogContext {
+            state: &mut self.state,
+            env: &env,
+        };
+        execute_search(call, provider, pool, &mut context, network_mock).await
+    }
+
+    fn logged(&self, name: &str) -> Option<&Json> {
+        let Json::Object(details) = self.state.model_call_details.get("additional_args")? else {
+            return None;
+        };
+        details.get(name)
+    }
+
+    fn input(&self) -> Option<&Json> {
+        self.state.model_call_details.get("input")
+    }
+}
+
+fn default_tls() -> TlsPolicy {
+    TlsPolicy {
+        verification: Verification::Enabled,
+        ca_file: None,
+        certificate: None,
+        http2: false,
+        ecdh_curve: None,
+        user_agent: String::from("betterlite"),
+    }
+}
+
+fn proxy_policy() -> Arc<ProxyPolicy> {
+    Arc::new(
+        ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new())
+            .expect("the proxy policy resolves"),
+    )
+}
+
+fn proxied(limits: TransportLimits, policy: &Arc<ProxyPolicy>) -> ProxiedClient {
+    ProxiedClient::build(base_builder().http1_only(), policy, limits)
+        .expect("the proxied client builds")
+}
+
+fn search_call<'call>(
+    query: &'call SearchQuery,
+    params: &'call Object,
+    base: &'call str,
+    tls: &'call TlsPolicy,
+    routing: &'call Arc<ProxyPolicy>,
+) -> SearchHttpCall<'call> {
+    SearchHttpCall {
+        query,
+        optional_params: params,
+        timeout: Duration::from_secs(2),
+        api_key: None,
+        api_base: Some(base.to_owned()),
+        headers: Headers::new(),
+        client: None,
+        tls,
+        proxy: routing,
+    }
+}
+
+#[derive(Debug, Error)]
+enum TestError {
+    #[error("the reply was rejected: {0}")]
+    Rejected(String),
+    #[error("the reply is not a search response")]
+    Decode(#[source] serde_json::Error),
+}
+
+#[derive(Clone, Default)]
+struct Seen {
+    transform_api_key: Option<String>,
+    transform_api_base: Option<String>,
+    transform_headers: Headers,
+    sign_api_base: String,
+    sign_api_key: Option<String>,
+    sign_headers: Headers,
+    sign_body: Vec<u8>,
+    sign_params: Object,
+}
+
+struct TestProvider {
+    complete: String,
+    method: HttpMethod,
+    body: Object,
+    signed: Headers,
+    signed_body: Option<Vec<u8>>,
+    reject: bool,
+    answer: Option<SearchResponse>,
+    events: Events,
+    seen: Mutex<Seen>,
+    errors: Mutex<Vec<(u16, String, Headers)>>,
+}
+
+fn test_provider(complete: &str) -> TestProvider {
+    TestProvider {
+        complete: complete.to_owned(),
+        method: HttpMethod::Post,
+        body: serde_json::from_str(r#"{"q":"rust"}"#).expect("the body fixture is an object"),
+        signed: Headers::new(),
+        signed_body: None,
+        reject: false,
+        answer: None,
+        events: Events::default(),
+        seen: Mutex::default(),
+        errors: Mutex::default(),
+    }
+}
+
+fn seen_values(provider: &TestProvider) -> Seen {
+    provider
+        .seen
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone()
+}
+
+fn recorded_errors(provider: &TestProvider) -> Vec<(u16, String, Headers)> {
+    provider
+        .errors
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone()
+}
+
+fn provider_error(rejection: &SearchHttpError<TestError>) -> &ProviderError {
+    match rejection {
+        SearchHttpError::Provider { provider } => provider,
+        SearchHttpError::Hook(hook) => panic!("the call ended in a hook failure: {hook}"),
+        SearchHttpError::Logging(logging) => {
+            panic!("the call ended in a logging failure: {logging}")
+        }
+    }
+}
+
+impl SearchProvider for TestProvider {
+    type Body = Object;
+    type Error = TestError;
+
+    fn http_method(&self) -> HttpMethod {
+        self.method
+    }
+
+    fn validate_environment(
+        &self,
+        mut headers: Headers,
+        _api_key: Option<&SecretString>,
+        _api_base: Option<&str>,
+    ) -> Headers {
+        record(&self.events, "validate");
+        headers.insert("x-validated".to_owned(), "yes".to_owned());
+        headers
+    }
+
+    fn complete_url(
+        &self,
+        _api_base: Option<&str>,
+        _optional_params: &Object,
+        _body: Option<&Object>,
+        _api_key: Option<&SecretString>,
+    ) -> Result<String, TestError> {
+        record(&self.events, "url");
+        Ok(self.complete.clone())
+    }
+
+    fn transform_search_request(
+        &self,
+        _query: &SearchQuery,
+        _optional_params: &Object,
+        api_key: Option<&SecretString>,
+        api_base: Option<&str>,
+        headers: &Headers,
+    ) -> Result<Object, TestError> {
+        record(&self.events, "transform");
+        let mut observed = self.seen.lock().unwrap_or_else(PoisonError::into_inner);
+        observed.transform_api_key = api_key.map(|key| key.expose_secret().to_owned());
+        observed.transform_api_base = api_base.map(str::to_owned);
+        observed.transform_headers = headers.clone();
+        drop(observed);
+        Ok(self.body.clone())
+    }
+
+    fn sign_request(
+        &self,
+        headers: Headers,
+        request: &OutboundSearch<'_, Object>,
+    ) -> Result<(Headers, Option<Vec<u8>>), TestError> {
+        record(&self.events, "sign");
+        let mut observed = self.seen.lock().unwrap_or_else(PoisonError::into_inner);
+        observed.sign_api_base = request.api_base.to_owned();
+        observed.sign_api_key = request.api_key.map(|key| key.expose_secret().to_owned());
+        observed.sign_headers = headers.clone();
+        observed.sign_body = serde_json::to_vec(request.body).expect("the body encodes");
+        observed.sign_params = request.optional_params.clone();
+        drop(observed);
+        let mut signed = headers;
+        signed.extend(self.signed.clone());
+        Ok((signed, self.signed_body.clone()))
+    }
+
+    fn transform_search_response(
+        &self,
+        response: &ProviderResponse<'_>,
+    ) -> Result<SearchResponse, TestError> {
+        if self.reject {
+            return Err(TestError::Rejected(response.text.to_owned()));
+        }
+        if let Some(answer) = &self.answer {
+            return Ok(answer.clone());
+        }
+        serde_json::from_str(response.text).map_err(TestError::Decode)
+    }
+
+    fn http_error(&self, response: &ProviderResponse<'_>) -> ProviderError {
+        self.errors
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((
+                response.status_code,
+                response.text.to_owned(),
+                response.headers.clone(),
+            ));
+        self.error_class(response.text, response.status_code, response.headers)
+    }
+}
+
+#[tokio::test]
+async fn post_body_sent() {
+    let served = serve(reply("200 OK", &[], ANSWER), Duration::ZERO).expect("the fixture serves");
+    let base = format!("http://{}/search", served.address);
+    let tls = default_tls();
+    let routing = proxy_policy();
+    let pool = ClientPool::new(4, TransportLimits::DEFAULT);
+    let provider = test_provider(&base);
+    let query = SearchQuery::Single(String::from("rust"));
+    let params = Object::new();
+    let mut fixture = Fixture::new();
+    let response = fixture
+        .execute(
+            search_call(&query, &params, &base, &tls, &routing),
+            &provider,
+            &pool,
+            false,
+        )
+        .await
+        .expect("the search succeeds");
+    assert_eq!(
+        response,
+        serde_json::from_str::<SearchResponse>(ANSWER).expect("the answer fixture")
+    );
+    let request = served.finish().expect("the fixture answers");
+    assert_eq!(request.line, "POST /search HTTP/1.1");
+    assert!(
+        request
+            .head
+            .to_lowercase()
+            .contains("content-type: application/json")
+    );
+    assert_eq!(request.body, r#"{"q":"rust"}"#);
+}
+
+#[tokio::test]
+async fn get_without_body() {
+    let served = serve(reply("200 OK", &[], ANSWER), Duration::ZERO).expect("the fixture serves");
+    let base = format!("http://{}/search?q=rust", served.address);
+    let tls = default_tls();
+    let routing = proxy_policy();
+    let pool = ClientPool::new(4, TransportLimits::DEFAULT);
+    let provider = TestProvider {
+        method: HttpMethod::Get,
+        signed: BTreeMap::from([("x-signature".to_owned(), "abc".to_owned())]),
+        signed_body: Some(b"{\"signed\":true}".to_vec()),
+        ..test_provider(&base)
+    };
+    let query = SearchQuery::Single(String::from("rust"));
+    let params = Object::new();
+    let mut fixture = Fixture::new();
+    let response = fixture
+        .execute(
+            search_call(&query, &params, &base, &tls, &routing),
+            &provider,
+            &pool,
+            false,
+        )
+        .await
+        .expect("the search succeeds");
+    assert_eq!(response.results.len(), 1);
+    let request = served.finish().expect("the fixture answers");
+    assert_eq!(request.line, "GET /search?q=rust HTTP/1.1");
+    assert_eq!(request.body, "");
+    assert!(request.head.to_lowercase().contains("x-signature: abc"));
+    assert!(!request.head.to_lowercase().contains("content-type"));
+}
+
+#[tokio::test]
+async fn signed_body_verbatim() {
+    let served = serve(reply("200 OK", &[], ANSWER), Duration::ZERO).expect("the fixture serves");
+    let base = format!("http://{}/search", served.address);
+    let tls = default_tls();
+    let routing = proxy_policy();
+    let pool = ClientPool::new(4, TransportLimits::DEFAULT);
+    let provider = TestProvider {
+        signed: BTreeMap::from([("x-signature".to_owned(), "abc".to_owned())]),
+        signed_body: Some(b"{ \"q\" : \"rust\" }".to_vec()),
+        ..test_provider(&base)
+    };
+    let query = SearchQuery::Single(String::from("rust"));
+    let params = Object::new();
+    let mut fixture = Fixture::new();
+    fixture
+        .execute(
+            search_call(&query, &params, &base, &tls, &routing),
+            &provider,
+            &pool,
+            false,
+        )
+        .await
+        .expect("the search succeeds");
+    let request = served.finish().expect("the fixture answers");
+    assert_eq!(request.body, "{ \"q\" : \"rust\" }");
+    assert!(request.head.to_lowercase().contains("x-signature: abc"));
+    assert!(
+        request
+            .head
+            .to_lowercase()
+            .contains("content-type: application/json")
+    );
+}
+
+#[tokio::test]
+async fn step_order() {
+    let served = serve(reply("200 OK", &[], ANSWER), Duration::ZERO).expect("the fixture serves");
+    let base = format!("http://{}/search", served.address);
+    let tls = default_tls();
+    let routing = proxy_policy();
+    let pool = ClientPool::new(4, TransportLimits::DEFAULT);
+    let provider = TestProvider {
+        signed: BTreeMap::from([("x-signature".to_owned(), "abc".to_owned())]),
+        ..test_provider(&base)
+    };
+    let query = SearchQuery::Single(String::from("rust"));
+    let params = Object::new();
+    let credential = SecretString::from("sk-search");
+    let mut fixture = Fixture::new();
+    let call = SearchHttpCall {
+        api_key: Some(&credential),
+        headers: BTreeMap::from([("x-caller".to_owned(), "1".to_owned())]),
+        ..search_call(&query, &params, &base, &tls, &routing)
+    };
+    fixture
+        .execute(call, &provider, &pool, false)
+        .await
+        .expect("the search succeeds");
+    assert_eq!(
+        recorded(&provider.events),
+        vec!["validate", "transform", "url", "sign"]
+    );
+    let validated = BTreeMap::from([
+        ("x-caller".to_owned(), "1".to_owned()),
+        ("x-validated".to_owned(), "yes".to_owned()),
+    ]);
+    let hooks = seen_values(&provider);
+    assert_eq!(hooks.transform_api_key.as_deref(), Some("sk-search"));
+    assert_eq!(hooks.transform_api_base.as_deref(), Some(base.as_str()));
+    assert_eq!(hooks.transform_headers, validated);
+    assert_eq!(hooks.sign_api_base, base);
+    assert_eq!(hooks.sign_api_key.as_deref(), Some("sk-search"));
+    assert_eq!(hooks.sign_headers, validated);
+    assert_eq!(hooks.sign_body, br#"{"q":"rust"}"#.to_vec());
+    assert_eq!(hooks.sign_params, Object::new());
+    assert_eq!(fixture.input(), Some(&Json::Text(String::from("rust"))));
+    assert_eq!(fixture.logged("api_base"), Some(&Json::Text(base.clone())));
+    assert_eq!(
+        fixture.logged("complete_input_dict"),
+        Some(&Json::Object(IndexMap::from([(
+            "q".to_owned(),
+            Json::Text(String::from("rust")),
+        )])))
+    );
+    assert_eq!(
+        fixture.logged("headers"),
+        Some(&Json::Object(IndexMap::from([
+            ("x-caller".to_owned(), Json::Text(String::from("1"))),
+            ("x-validated".to_owned(), Json::Text(String::from("yes"))),
+        ])))
+    );
+    assert_eq!(
+        served.finish().expect("the fixture answers").line,
+        "POST /search HTTP/1.1"
+    );
+}
+
+async fn reject_with_429() -> (SearchHttpError<TestError>, TestProvider, Serving) {
+    let served = serve(
+        reply(
+            "429 Too Many Requests",
+            &[("retry-after", "3")],
+            "slow down",
+        ),
+        Duration::ZERO,
+    )
+    .expect("the fixture serves");
+    let base = format!("http://{}/search", served.address);
+    let tls = default_tls();
+    let routing = proxy_policy();
+    let pool = ClientPool::new(4, TransportLimits::DEFAULT);
+    let provider = test_provider(&base);
+    let query = SearchQuery::Single(String::from("rust"));
+    let params = Object::new();
+    let mut fixture = Fixture::new();
+    let rejection = fixture
+        .execute(
+            search_call(&query, &params, &base, &tls, &routing),
+            &provider,
+            &pool,
+            false,
+        )
+        .await
+        .expect_err("the status fails the call");
+    (rejection, provider, served)
+}
+
+async fn status_error_is_a_provider_error() {
+    let (rejection, provider, served) = reject_with_429().await;
+    let error = provider_error(&rejection);
+    assert_eq!(
+        (error.status_code, error.message.as_str()),
+        (429, "slow down")
+    );
+    assert!(!error.status_code_is_synthesized);
+    let headers = error
+        .headers
+        .clone()
+        .expect("the provider error keeps the reply headers");
+    assert!(headers.contains(&("retry-after".to_owned(), "3".to_owned())));
+    let seen_errors = recorded_errors(&provider);
+    assert_eq!(seen_errors.len(), 1);
+    let (status, text, sent_headers) = seen_errors.first().expect("one http_error call");
+    assert_eq!((*status, text.as_str()), (429, "slow down"));
+    assert_eq!(
+        sent_headers.get("retry-after").map(String::as_str),
+        Some("3")
+    );
+    assert_eq!(
+        served.finish().expect("the fixture answers").line,
+        "POST /search HTTP/1.1"
+    );
+}
+
+async fn transform_error_is_not_converted() {
+    let served =
+        serve(reply("200 OK", &[], NOT_AN_ANSWER), Duration::ZERO).expect("the fixture serves");
+    let base = format!("http://{}/search", served.address);
+    let tls = default_tls();
+    let routing = proxy_policy();
+    let pool = ClientPool::new(4, TransportLimits::DEFAULT);
+    let provider = TestProvider {
+        reject: true,
+        ..test_provider(&base)
+    };
+    let query = SearchQuery::Single(String::from("rust"));
+    let params = Object::new();
+    let mut fixture = Fixture::new();
+    let rejection = fixture
+        .execute(
+            search_call(&query, &params, &base, &tls, &routing),
+            &provider,
+            &pool,
+            false,
+        )
+        .await
+        .expect_err("the reply fails the call");
+    match &rejection {
+        SearchHttpError::Hook(TestError::Rejected(text)) => assert_eq!(text, NOT_AN_ANSWER),
+        SearchHttpError::Hook(other) => panic!("the reply failed another way: {other}"),
+        SearchHttpError::Provider { provider } => {
+            panic!("the reply reached the converter: {}", provider.message);
+        }
+        SearchHttpError::Logging(logging) => panic!("the reply reached logging: {logging}"),
+    }
+    assert!(recorded_errors(&provider).is_empty());
+    assert_eq!(
+        served.finish().expect("the fixture answers").line,
+        "POST /search HTTP/1.1"
+    );
+}
+
+#[tokio::test]
+async fn status_failure() {
+    status_error_is_a_provider_error().await;
+    transform_error_is_not_converted().await;
+}
+
+async fn connection_failure_is_converted() {
+    let refused = RefusedPort::bind().expect("the refused port binds");
+    let base = format!("http://{}/search", refused.address);
+    let tls = default_tls();
+    let routing = proxy_policy();
+    let pool = ClientPool::new(4, TransportLimits::DEFAULT);
+    let provider = test_provider(&base);
+    let query = SearchQuery::Single(String::from("rust"));
+    let params = Object::new();
+    let mut fixture = Fixture::new();
+    let rejection = fixture
+        .execute(
+            search_call(&query, &params, &base, &tls, &routing),
+            &provider,
+            &pool,
+            false,
+        )
+        .await
+        .expect_err("the connection fails");
+    let error = provider_error(&rejection);
+    assert_eq!(
+        (error.status_code, error.status_code_is_synthesized),
+        (500, true)
+    );
+    assert_eq!(error.message, "the connection could not be made");
+    assert!(recorded_errors(&provider).is_empty());
+}
+
+async fn deadline_failure_is_a_timeout() {
+    let served = serve(reply("200 OK", &[], ANSWER), Duration::from_millis(300))
+        .expect("the fixture serves");
+    let base = format!("http://{}/search", served.address);
+    let tls = default_tls();
+    let routing = proxy_policy();
+    let pool = ClientPool::new(4, TransportLimits::DEFAULT);
+    let provider = test_provider(&base);
+    let query = SearchQuery::Single(String::from("rust"));
+    let params = Object::new();
+    let mut fixture = Fixture::new();
+    let call = SearchHttpCall {
+        timeout: Duration::from_millis(50),
+        ..search_call(&query, &params, &base, &tls, &routing)
+    };
+    let rejection = fixture
+        .execute(call, &provider, &pool, false)
+        .await
+        .expect_err("the deadline fails the call");
+    let error = provider_error(&rejection);
+    assert_eq!(
+        (error.status_code, error.status_code_is_synthesized),
+        (408, false)
+    );
+    assert!(
+        error
+            .message
+            .starts_with("litellm.Timeout: Connection timed out. Timeout passed=0.05, time taken=")
+    );
+    assert!(recorded_errors(&provider).is_empty());
+    served.finish().expect("the fixture answers");
+}
+
+async fn closed_pool_is_converted() {
+    let tls = default_tls();
+    let routing = proxy_policy();
+    let pool = ClientPool::new(4, TransportLimits::DEFAULT);
+    let drained = pool
+        .client(&tls, &routing)
+        .expect("the pool builds a client");
+    drained
+        .drain(Duration::from_secs(1))
+        .await
+        .expect("the client drains");
+    let other_tls = TlsPolicy {
+        user_agent: String::from("other"),
+        ..tls.clone()
+    };
+    let base = String::from("http://127.0.0.1:1/search");
+    let provider = test_provider(&base);
+    let query = SearchQuery::Single(String::from("rust"));
+    let params = Object::new();
+    let mut fixture = Fixture::new();
+    let call = SearchHttpCall {
+        tls: &other_tls,
+        ..search_call(&query, &params, &base, &tls, &routing)
+    };
+    let rejection = fixture
+        .execute(call, &provider, &pool, false)
+        .await
+        .expect_err("the pool is closed");
+    let error = provider_error(&rejection);
+    assert_eq!(
+        (error.status_code, error.status_code_is_synthesized),
+        (500, true)
+    );
+    assert_eq!(error.message, "the pool is closed");
+    assert!(recorded_errors(&provider).is_empty());
+}
+
+#[tokio::test]
+async fn transport_failure() {
+    connection_failure_is_converted().await;
+    deadline_failure_is_a_timeout().await;
+    closed_pool_is_converted().await;
+}
+
+async fn supplied_client_wins() {
+    let served = serve(reply("200 OK", &[], ANSWER), Duration::ZERO).expect("the fixture serves");
+    let base = format!("http://{}/search", served.address);
+    let tls = default_tls();
+    let routing = proxy_policy();
+    let pool = ClientPool::new(4, TransportLimits::DEFAULT);
+    let supplied = proxied(TransportLimits::DEFAULT, &routing);
+    supplied
+        .drain(Duration::from_secs(1))
+        .await
+        .expect("the supplied client drains");
+    let provider = test_provider(&base);
+    let query = SearchQuery::Single(String::from("rust"));
+    let params = Object::new();
+    let mut fixture = Fixture::new();
+    let call = SearchHttpCall {
+        client: Some(supplied),
+        ..search_call(&query, &params, &base, &tls, &routing)
+    };
+    let rejection = fixture
+        .execute(call, &provider, &pool, false)
+        .await
+        .expect_err("the supplied client is used");
+    assert_eq!(
+        provider_error(&rejection).message,
+        "the client is shutting down and takes no new requests"
+    );
+    assert!(matches!(served.finish(), Err(FixtureError::NoRequest)));
+    assert_eq!(pool.client_count(), 0);
+}
+
+async fn pool_client_is_used_when_none_is_supplied() {
+    let served = serve(reply("200 OK", &[], ANSWER), Duration::ZERO).expect("the fixture serves");
+    let base = format!("http://{}/search", served.address);
+    let tls = default_tls();
+    let routing = proxy_policy();
+    let pool = ClientPool::new(4, TransportLimits::DEFAULT);
+    let provider = test_provider(&base);
+    let query = SearchQuery::Single(String::from("rust"));
+    let params = Object::new();
+    let mut fixture = Fixture::new();
+    let response = fixture
+        .execute(
+            search_call(&query, &params, &base, &tls, &routing),
+            &provider,
+            &pool,
+            false,
+        )
+        .await
+        .expect("the pool client sends");
+    assert_eq!(response.results.len(), 1);
+    assert_eq!(
+        served.finish().expect("the fixture answers").line,
+        "POST /search HTTP/1.1"
+    );
+    assert_eq!(pool.client_count(), 1);
+}
+
+async fn network_mock_answers_before_the_pool() {
+    let served = serve(reply("200 OK", &[], ANSWER), Duration::ZERO).expect("the fixture serves");
+    let base = format!("http://{}/search", served.address);
+    let tls = default_tls();
+    let routing = proxy_policy();
+    let pool = ClientPool::new(4, TransportLimits::DEFAULT);
+    let provider = TestProvider {
+        answer: Some(serde_json::from_str::<SearchResponse>(ANSWER).expect("the answer fixture")),
+        ..test_provider(&base)
+    };
+    let query = SearchQuery::Single(String::from("rust"));
+    let params = Object::new();
+    let mut fixture = Fixture::new();
+    let response = fixture
+        .execute(
+            search_call(&query, &params, &base, &tls, &routing),
+            &provider,
+            &pool,
+            true,
+        )
+        .await
+        .expect("the mock answers");
+    assert_eq!(response.results.len(), 1);
+    assert!(matches!(served.finish(), Err(FixtureError::NoRequest)));
+}
+
+async fn post_uses_the_call_timeout() {
+    let served = serve(reply("200 OK", &[], ANSWER), Duration::from_millis(300))
+        .expect("the fixture serves");
+    let base = format!("http://{}/search", served.address);
+    let tls = default_tls();
+    let routing = proxy_policy();
+    let pool = ClientPool::new(4, TransportLimits::DEFAULT);
+    let provider = test_provider(&base);
+    let query = SearchQuery::Single(String::from("rust"));
+    let params = Object::new();
+    let mut fixture = Fixture::new();
+    let call = SearchHttpCall {
+        timeout: Duration::from_millis(50),
+        ..search_call(&query, &params, &base, &tls, &routing)
+    };
+    let rejection = fixture
+        .execute(call, &provider, &pool, false)
+        .await
+        .expect_err("the call timeout is the POST deadline");
+    assert_eq!(provider_error(&rejection).status_code, 408);
+    served.finish().expect("the fixture answers");
+}
+
+async fn get_uses_the_client_timeout() {
+    let served = serve(reply("200 OK", &[], ANSWER), Duration::from_millis(300))
+        .expect("the fixture serves");
+    let base = format!("http://{}/search?q=rust", served.address);
+    let tls = default_tls();
+    let routing = proxy_policy();
+    let pool = ClientPool::new(4, TransportLimits::DEFAULT);
+    let provider = TestProvider {
+        method: HttpMethod::Get,
+        ..test_provider(&base)
+    };
+    let supplied = proxied(TransportLimits::DEFAULT, &routing);
+    let query = SearchQuery::Single(String::from("rust"));
+    let params = Object::new();
+    let mut fixture = Fixture::new();
+    let call = SearchHttpCall {
+        client: Some(supplied),
+        timeout: Duration::from_millis(50),
+        ..search_call(&query, &params, &base, &tls, &routing)
+    };
+    let response = fixture
+        .execute(call, &provider, &pool, false)
+        .await
+        .expect("the client's own deadline applies to GET");
+    assert_eq!(response.results.len(), 1);
+    assert_eq!(
+        served.finish().expect("the fixture answers").line,
+        "GET /search?q=rust HTTP/1.1"
+    );
+}
+
+#[tokio::test]
+async fn client_selection() {
+    supplied_client_wins().await;
+    pool_client_is_used_when_none_is_supplied().await;
+    network_mock_answers_before_the_pool().await;
+    post_uses_the_call_timeout().await;
+    get_uses_the_client_timeout().await;
+}
+
+#[tokio::test]
+async fn list_query_logs_as_json_text() {
+    let served = serve(reply("200 OK", &[], ANSWER), Duration::ZERO).expect("the fixture serves");
+    let base = format!("http://{}/search", served.address);
+    let tls = default_tls();
+    let routing = proxy_policy();
+    let pool = ClientPool::new(4, TransportLimits::DEFAULT);
+    let provider = test_provider(&base);
+    let query = SearchQuery::Multiple(vec![String::from("rust"), String::from("search")]);
+    let params = Object::new();
+    let mut fixture = Fixture::new();
+    fixture
+        .execute(
+            search_call(&query, &params, &base, &tls, &routing),
+            &provider,
+            &pool,
+            false,
+        )
+        .await
+        .expect("the list query succeeds");
+    assert_eq!(
+        fixture.input(),
+        Some(&Json::Text(String::from(r#"["rust","search"]"#)))
+    );
+    served.finish().expect("the fixture answers");
+}
