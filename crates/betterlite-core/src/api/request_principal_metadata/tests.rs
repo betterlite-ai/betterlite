@@ -73,8 +73,7 @@ fn principal_tags_precedence(
     #[case] key_metadata: &str,
     #[case] expected: &str,
 ) {
-    let mut principal = PrincipalFacts::default();
-    principal.metadata = parsed(key_metadata);
+    let principal: PrincipalFacts = parsed(&format!(r#"{{"metadata": {key_metadata}}}"#));
     let input = RequestPrincipalMetadataInput {
         data: parsed(body),
         headers: tags_header(header),
@@ -129,7 +128,7 @@ fn caller_tags_distinct(#[case] header: Option<&str>, #[case] body: &str, #[case
 
 #[test]
 fn callback_policy_from_key() {
-    let mut principal: PrincipalFacts = parsed(
+    let principal: PrincipalFacts = parsed(
         r#"{"api_key": "hash-1", "metadata": {"logging": [{"callback_name": "langfuse"}],
         "callback_settings": {"callback_vars": {}}, "secret_manager_settings": {"vault": "x"},
         "owner": "ops", "tags": ["k"], "model_rpm_limit": {"m": 1}},
@@ -182,8 +181,12 @@ fn callback_policy_from_key() {
 )]
 #[case::no_matching_team(r#"[{"team_id": "t1", "dd_site": "a"}]"#, "t2", "none")]
 #[case::unknown_variable(r#"[{"team_id": "t1", "region": "eu"}]"#, "t1", "invalid region")]
-fn team_callbacks_from_config(#[case] teams: &str, #[case] team_id: &str, #[case] expected: &str) {
-    let teams: Vec<DefaultTeamSettings> = parsed(teams);
+fn team_callbacks_from_config(
+    #[case] teams_json: &str,
+    #[case] team_id: &str,
+    #[case] expected: &str,
+) {
+    let teams: Vec<DefaultTeamSettings> = parsed(teams_json);
     let env = BTreeMap::from([
         ("PK".to_owned(), "pk-1".to_owned()),
         ("EMPTY".to_owned(), String::new()),
@@ -216,10 +219,10 @@ fn logged_key_follows_session_alias(
     #[case] key_alias: Option<&str>,
     #[case] expected: Option<&str>,
 ) {
-    let mut principal = PrincipalFacts::default();
-    principal.api_key_hash = Some("hash-1".to_owned());
-    principal.is_session_token = is_session_token;
-    principal.key_alias = key_alias.map(str::to_owned);
+    let alias = serde_json::to_string(&key_alias).unwrap();
+    let principal: PrincipalFacts = parsed(&format!(
+        r#"{{"api_key": "hash-1", "is_session_token": {is_session_token}, "key_alias": {alias}}}"#
+    ));
     assert_eq!(logged_api_key(&principal), expected);
 }
 

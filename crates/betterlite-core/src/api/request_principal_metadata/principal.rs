@@ -17,59 +17,91 @@ const AGENT_ID_KEY: &str = "agent_id";
 // StandardLoggingUserAPIKeyMetadata: the key, team, project and user facts every logged request carries
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct UserKeyLogMetadata {
-    pub user_api_key_hash: Option<String>,
-    pub user_api_key_alias: Option<String>,
-    #[serde(with = "rust_decimal::serde::arbitrary_precision")]
-    pub user_api_key_spend: Decimal,
-    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
-    pub user_api_key_max_budget: Option<Decimal>,
-    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
-    pub user_api_key_user_spend: Option<Decimal>,
-    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
-    pub user_api_key_user_max_budget: Option<Decimal>,
-    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
-    pub user_api_key_team_spend: Option<Decimal>,
-    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
-    pub user_api_key_team_max_budget: Option<Decimal>,
-    pub user_api_key_team_id: Option<String>,
-    pub user_api_key_project_id: Option<String>,
-    pub user_api_key_project_alias: Option<String>,
-    pub user_api_key_user_id: Option<String>,
-    pub user_api_key_org_id: Option<String>,
-    pub user_api_key_org_alias: Option<String>,
-    pub user_api_key_team_alias: Option<String>,
-    pub user_api_key_end_user_id: Option<String>,
-    pub user_api_key_user_email: Option<String>,
-    pub user_api_key_request_route: Option<String>,
-    pub user_api_key_budget_reset_at: Option<String>,
-    pub user_api_key_auth_metadata: Metadata,
+    #[serde(rename = "user_api_key_hash")]
+    pub key_hash: Option<String>,
+    #[serde(rename = "user_api_key_alias")]
+    pub key_alias: Option<String>,
+    #[serde(
+        rename = "user_api_key_spend",
+        with = "rust_decimal::serde::arbitrary_precision"
+    )]
+    pub key_spend: Decimal,
+    #[serde(
+        rename = "user_api_key_max_budget",
+        with = "rust_decimal::serde::arbitrary_precision_option"
+    )]
+    pub key_max_budget: Option<Decimal>,
+    #[serde(
+        rename = "user_api_key_user_spend",
+        with = "rust_decimal::serde::arbitrary_precision_option"
+    )]
+    pub user_spend: Option<Decimal>,
+    #[serde(
+        rename = "user_api_key_user_max_budget",
+        with = "rust_decimal::serde::arbitrary_precision_option"
+    )]
+    pub user_max_budget: Option<Decimal>,
+    #[serde(
+        rename = "user_api_key_team_spend",
+        with = "rust_decimal::serde::arbitrary_precision_option"
+    )]
+    pub team_spend: Option<Decimal>,
+    #[serde(
+        rename = "user_api_key_team_max_budget",
+        with = "rust_decimal::serde::arbitrary_precision_option"
+    )]
+    pub team_max_budget: Option<Decimal>,
+    #[serde(rename = "user_api_key_team_id")]
+    pub team_id: Option<String>,
+    #[serde(rename = "user_api_key_project_id")]
+    pub project_id: Option<String>,
+    #[serde(rename = "user_api_key_project_alias")]
+    pub project_alias: Option<String>,
+    #[serde(rename = "user_api_key_user_id")]
+    pub user_id: Option<String>,
+    #[serde(rename = "user_api_key_org_id")]
+    pub org_id: Option<String>,
+    #[serde(rename = "user_api_key_org_alias")]
+    pub org_alias: Option<String>,
+    #[serde(rename = "user_api_key_team_alias")]
+    pub team_alias: Option<String>,
+    #[serde(rename = "user_api_key_end_user_id")]
+    pub end_user_id: Option<String>,
+    #[serde(rename = "user_api_key_user_email")]
+    pub user_email: Option<String>,
+    #[serde(rename = "user_api_key_request_route")]
+    pub request_route: Option<String>,
+    #[serde(rename = "user_api_key_budget_reset_at")]
+    pub budget_reset_at: Option<String>,
+    #[serde(rename = "user_api_key_auth_metadata")]
+    pub auth_metadata: Metadata,
 }
 
 impl From<&PrincipalFacts> for UserKeyLogMetadata {
     fn from(principal: &PrincipalFacts) -> Self {
         Self {
-            user_api_key_hash: logged_api_key(principal).map(str::to_owned),
-            user_api_key_alias: principal.key_alias.clone(),
-            user_api_key_spend: principal.spend,
-            user_api_key_max_budget: principal.max_budget,
-            user_api_key_user_spend: principal.user_spend,
-            user_api_key_user_max_budget: principal.user_max_budget,
-            user_api_key_team_spend: principal.team_spend,
-            user_api_key_team_max_budget: principal.team_max_budget,
-            user_api_key_team_id: principal.team_id.clone(),
-            user_api_key_project_id: principal.project_id.clone(),
-            user_api_key_project_alias: principal.project_alias.clone(),
-            user_api_key_user_id: principal.user_id.clone(),
-            user_api_key_org_id: principal.org_id.clone(),
-            user_api_key_org_alias: principal.organization_alias.clone(),
-            user_api_key_team_alias: principal.team_alias.clone(),
-            user_api_key_end_user_id: principal.end_user_id.clone(),
-            user_api_key_user_email: principal.user_email.clone(),
-            user_api_key_request_route: principal.request_route.clone(),
-            user_api_key_budget_reset_at: principal
+            key_hash: logged_api_key(principal).map(str::to_owned),
+            key_alias: principal.key_alias.clone(),
+            key_spend: principal.spend,
+            key_max_budget: principal.max_budget,
+            user_spend: principal.user_spend,
+            user_max_budget: principal.user_max_budget,
+            team_spend: principal.team_spend,
+            team_max_budget: principal.team_max_budget,
+            team_id: principal.team_id.clone(),
+            project_id: principal.project_id.clone(),
+            project_alias: principal.project_alias.clone(),
+            user_id: principal.user_id.clone(),
+            org_id: principal.org_id.clone(),
+            org_alias: principal.organization_alias.clone(),
+            team_alias: principal.team_alias.clone(),
+            end_user_id: principal.end_user_id.clone(),
+            user_email: principal.user_email.clone(),
+            request_route: principal.request_route.clone(),
+            budget_reset_at: principal
                 .budget_reset_at
                 .map(|reset_at| reset_at.to_rfc3339_opts(SecondsFormat::AutoSi, false)),
-            user_api_key_auth_metadata: strip_callback_config(&principal.metadata),
+            auth_metadata: strip_callback_config(&principal.metadata),
         }
     }
 }
