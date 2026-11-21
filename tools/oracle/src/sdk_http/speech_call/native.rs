@@ -74,7 +74,6 @@ impl SpeechCompletions for BridgeCompletions {
     }
 }
 
-// the provider's answer, or the failure the speech call projects from the SDK error
 fn completion_outcome(
     result: Result<ChatOutcome, ChatError>,
 ) -> Result<SpeechCompletionOutput, SpeechCallError> {
