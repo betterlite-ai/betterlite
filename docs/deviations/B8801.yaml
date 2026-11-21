@@ -1,0 +1,17 @@
+task: B8801
+deviations:
+  - what: The logging state is returned in PreCallOutput next to the data instead of being stored under litellm_logging_obj in the data.
+    why: A typed logging state cannot live in a JSON map, so every caller takes it from PreCallOutput.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L2176
+  - what: B1100 route modules build PreCallStep::standalone, with no hooks, router or checks, until B8804 swaps in the production step.
+    why: Route tasks cannot depend on the parts that build shared server state; the production step reaches them in B8804, as B8636 does for the stream generator.
+    link: ""
+  - what: tag_request is called without the key alias and the key hash.
+    why: PreCallKey exposes only the team id, the key aliases and the key router settings, so the step has neither value; B8800's key port would have to carry them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L2147-L2151
+  - what: applied_guardrails on the logging state stays unset.
+    why: LiteLLM fills it from the global litellm.callbacks registry, which belongs to the logging state owner B247 and is not on the step's ports.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1275-L1296
+  - what: The logging state's messages come from the data's messages field only, not from function_setup's per-call-type extraction.
+    why: That extraction reads a route-specific argument or field (input, prompt, contents, a file checksum) that the generic step does not receive; finish still hands update_messages the non-empty messages array.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1200-L1296
