@@ -40,9 +40,10 @@ fn an_excluded_label_is_dropped_from_schema_labels() {
     let labels = &metric.description.label_names;
     assert!(!labels.iter().any(|label| label == "model"));
     assert!(labels.iter().any(|label| label == "hashed_api_key"));
+    // resolve filters schema labels first, so the factory wraps nothing
     assert!(matches!(
         collectors.litellm_spend_metric,
-        MetricLike::Excluded(_)
+        MetricLike::Real(_)
     ));
     assert!(collectors.exclude_labels.contains("model"));
 }

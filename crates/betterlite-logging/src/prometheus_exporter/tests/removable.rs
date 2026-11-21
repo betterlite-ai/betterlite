@@ -71,9 +71,10 @@ fn a_wrong_label_count_is_unsupported() {
 
 #[test]
 fn a_no_op_metric_is_unsupported() {
+    // litellm_spend_metric is in DEFINED_PROMETHEUS_METRICS, so the exclude config accepts it
     let settings = PrometheusExporterSettings {
         prometheus_metrics_config: Vec::new(),
-        prometheus_exclude_metrics: vec![PROVIDER_BUDGET.to_owned()],
+        prometheus_exclude_metrics: vec!["litellm_spend_metric".to_owned()],
         prometheus_exclude_labels: Vec::new(),
         prometheus_latency_buckets: None,
         prometheus_emit_input_sequence_length_label: false,
@@ -81,7 +82,7 @@ fn a_no_op_metric_is_unsupported() {
     let (_registry, collectors) = registered(&settings, &default_label_settings());
     assert_eq!(
         collectors
-            .litellm_provider_remaining_budget_metric
+            .litellm_spend_metric
             .remove_child(&[])
             .expect("removal succeeds"),
         ChildRemoval::Unsupported
