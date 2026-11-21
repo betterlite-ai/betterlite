@@ -106,6 +106,7 @@ call:
               - {callback_name: langfuse, callback_vars: {langfuse_environment: Prod}}
               - {callback_name: langfuse_otel, callback_vars: {langfuse_span_scope: most}}
               - {callback_name: missing_vars}
+              - {callback_name: 5, callback_vars: {}}
           team_metadata: null
           team_id: null
         default_team_settings: []
