@@ -39,26 +39,6 @@ pub enum ImageEditError {
     Logging(#[from] PrePostError),
 }
 
-impl ImageEditError {
-    #[must_use]
-    pub const fn status(&self) -> Option<u16> {
-        match self {
-            Self::Provider(source) => Some(source.status_code),
-            Self::Resolution(_)
-            | Self::UnsupportedConfig { .. }
-            | Self::UnknownProvider { .. }
-            | Self::Options(_)
-            | Self::FormField(_)
-            | Self::Json(_)
-            | Self::HeaderText { .. }
-            | Self::InvalidTimeout { .. }
-            | Self::Invalid { .. }
-            | Self::Transport { .. }
-            | Self::Logging(_) => None,
-        }
-    }
-}
-
 // what a provider send reports: the status, the reply text, and whether the handler invented the status
 #[derive(Debug, Clone, Error)]
 #[error("{message}")]

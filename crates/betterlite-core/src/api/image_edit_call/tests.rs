@@ -24,6 +24,7 @@ use super::entry::ImageEditEntry;
 use super::error::ImageEditError;
 use super::service::{ImageEdits, branch_timeout};
 use crate::api::image_input_options::options::{Quality, ResponseFormat};
+use crate::api::image_input_options::selection::OptionalParamsPolicy;
 
 mod support;
 
@@ -106,6 +107,11 @@ async fn edit_openai_upload() {
     assert_eq!(record.model, "gpt-image-1");
     assert_eq!(record.user.as_deref(), Some("u"));
     assert_eq!(record.optional_params, sent.optional_params);
+    assert_eq!(
+        record.litellm_params.get("litellm_call_id"),
+        Some(&Json::Null)
+    );
+    assert_eq!(record.litellm_params.get("model_info"), Some(&Json::Null));
 }
 
 #[tokio::test]
@@ -804,6 +810,105 @@ fn image_edit_dispatch_defaults() {
         .expect("stability falls back"),
         Some(7.0)
     );
+    let refused = branch_timeout(
+        &ImageEditConfigTag::Bedrock(String::from("m")),
+        Some(-1.0),
+        7.0,
+    )
+    .expect_err("a negative timeout is refused");
+    assert_eq!(
+        refused.to_string(),
+        "timeout must be a non-negative number of seconds, got -1"
+    );
+}
+
+#[tokio::test]
+async fn edit_option_merge_passes_the_drop_policy() {
+    let world = World::new();
+    let context = world.context();
+    let settings = settings(&[]);
+    let provider = Arc::new(Provider::new(&[], true));
+    let source = Source::new(vec![(gpt_image_tag(), Arc::clone(&provider))]);
+    let service = ImageEdits {
+        settings: &settings,
+        resolution: &context,
+        providers: &source,
+        custom: &NoCustom,
+        global_drop_params: true,
+    };
+    let mut call = upload();
+    call.kwargs = ImageParams::from([
+        (String::from("drop_params"), Json::Bool(true)),
+        (
+            String::from("additional_drop_params"),
+            Json::List(vec![
+                Json::Text(String::from("size")),
+                Json::Number(Number::from(1)),
+            ]),
+        ),
+    ]);
+    ImageEditEntry {
+        operation: &service,
+        logger: &mut RecordingLogger::new(),
+        redactor: &redactor(),
+    }
+    .image_edit(&call)
+    .await
+    .expect("the edit succeeds");
+    assert_eq!(
+        provider.policies(),
+        [OptionalParamsPolicy {
+            global_drop_params: true,
+            call_drop_params: true,
+            additional_drop_params: vec![String::from("size")],
+        }]
+    );
+}
+
+#[rstest]
+#[case::openai_without_multipart(gpt_image_tag(), "openai/gpt-image-1", false)]
+#[case::gemini_with_multipart(
+    ImageEditConfigTag::Gemini(String::from("edit-model")),
+    "gemini/edit-model",
+    true
+)]
+#[tokio::test]
+async fn edit_option_merge_form_fields_need_an_openai_multipart_config(
+    #[case] tag: ImageEditConfigTag,
+    #[case] model: &str,
+    #[case] multipart: bool,
+) {
+    let world = World::new();
+    let context = world.context();
+    let settings = settings(&[]);
+    let provider = Arc::new(Provider::new(&[], multipart));
+    let source = Source::new(vec![(tag, Arc::clone(&provider))]);
+    let service = ImageEdits {
+        settings: &settings,
+        resolution: &context,
+        providers: &source,
+        custom: &NoCustom,
+        global_drop_params: false,
+    };
+    let mut call = upload();
+    call.model = Some(model.to_owned());
+    call.extra_body = Some(ImageParams::from([(
+        String::from("tags"),
+        Json::List(vec![Json::Text(String::from("a"))]),
+    )]));
+    ImageEditEntry {
+        operation: &service,
+        logger: &mut RecordingLogger::new(),
+        redactor: &redactor(),
+    }
+    .image_edit(&call)
+    .await
+    .expect("the edit succeeds");
+    let recorded = provider.take();
+    let [sent] = recorded.as_slice() else {
+        panic!("exactly one send");
+    };
+    assert!(!sent.optional_params.contains_key("tags"));
 }
 
 #[tokio::test]

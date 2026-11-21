@@ -75,6 +75,7 @@ pub(super) struct Provider {
     supported: Vec<String>,
     multipart: bool,
     sends: Mutex<Vec<Sent>>,
+    policies: Mutex<Vec<OptionalParamsPolicy>>,
     pending: bool,
 }
 
@@ -84,6 +85,7 @@ impl Provider {
             supported: supported.iter().map(|name| (*name).to_owned()).collect(),
             multipart,
             sends: Mutex::new(Vec::new()),
+            policies: Mutex::new(Vec::new()),
             pending: false,
         }
     }
@@ -97,6 +99,11 @@ impl Provider {
     pub(super) fn take(&self) -> Vec<Sent> {
         let mut sends = self.sends.lock().unwrap_or_else(PoisonError::into_inner);
         mem::take(&mut *sends)
+    }
+
+    pub(super) fn policies(&self) -> Vec<OptionalParamsPolicy> {
+        let mut policies = self.policies.lock().unwrap_or_else(PoisonError::into_inner);
+        mem::take(&mut *policies)
     }
 }
 
@@ -113,8 +120,9 @@ impl ImageEditProvider for Provider {
         &self,
         options: &ImageEditOptionalRequestParams,
         _model: &str,
-        _policy: &OptionalParamsPolicy,
+        policy: &OptionalParamsPolicy,
     ) -> Result<ImageParams, ImageEditError> {
+        record(&self.policies, policy.clone());
         // the OpenAI config's map_openai_params: a dict copy in the TypedDict's order
         Ok(serde_json::from_slice(&serde_json::to_vec(options)?)?)
     }
