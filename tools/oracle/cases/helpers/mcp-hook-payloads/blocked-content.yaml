@@ -1,0 +1,18 @@
+kind: helper
+name: mcp-hook-payloads-blocked-content
+call:
+  b8401: {"scenarios": [
+    {"function": "pre_call", "request": {"tool_name": "send_email", "arguments": {"to": "a@example.com"}}, "result": {"data": {"messages": [{"role": "user", "content": "Tool: send_email\nArguments: [BLOCKED]"}]}}},
+    {"function": "pre_call", "request": {"tool_name": "send_email", "arguments": {"to": "a@example.com"}}, "result": {"data": {"messages": [{"role": "user", "content": "Request rejected: policy VIOLATION"}]}}},
+    {"function": "pre_call", "request": {"tool_name": "send_email", "arguments": {"to": "a@example.com"}}, "result": {"data": {"messages": [{"role": "user", "content": ""}]}}},
+    {"function": "pre_call", "request": {"tool_name": "send_email", "arguments": {"to": "a@example.com"}}, "result": {"error": "Guardrail failed: PII found"}},
+    {"function": "pre_call", "request": {"tool_name": "send_email", "arguments": {"to": "a@example.com"}}, "result": {"text": "rejected by moderation"}},
+    {"function": "during_call", "request": {"tool_name": "send_email", "arguments": {"to": "a@example.com"}}, "result": {"data": {"messages": [{"role": "user", "content": "Content BLOCKED"}]}}},
+    {"function": "during_call", "request": {"tool_name": "send_email", "arguments": {"to": "a@example.com"}}, "result": {"data": {"messages": [{"role": "user", "content": "policy violation"}]}}},
+    {"function": "during_call", "request": {"tool_name": "send_email", "arguments": {"to": "a@example.com"}}, "result": {"data": {"messages": [{"role": "user", "content": ""}]}}},
+    {"function": "during_call", "request": {"tool_name": "send_email", "arguments": {"to": "a@example.com"}}, "result": {"error": "stop now"}},
+    {"function": "during_call", "request": {"tool_name": "send_email", "arguments": {"to": "a@example.com"}}, "result": {"text": "halted"}},
+    {"function": "during_call", "request": {"tool_name": "send_email", "arguments": {"to": "a@example.com"}}, "result": {"data": {"model": "gpt-4o"}}}
+  ]}
+env: {}
+compare: {ignore: []}

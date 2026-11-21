@@ -1,0 +1,15 @@
+kind: probe
+name: routing-retries-second-error-nonretryable
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    operation:
+      routing_retries:
+        deployments: [{id: a}, {id: b}]
+        num_retries: 3
+        timeout: "30"
+        steps:
+          - error: {class: authentication, status: 401}
+          - error: {class: bad_request, status: 400}
+compare:
+  ignore: []

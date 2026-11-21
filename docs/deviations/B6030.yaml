@@ -1,0 +1,114 @@
+task: B6030
+deviations:
+  - what: >-
+      CustomBatchLogger reads its default batch_size and flush_interval from
+      betterlite._integrations.custom_logger_types.DEFAULT_BATCH_SIZE and
+      DEFAULT_FLUSH_INTERVAL_SECONDS when the constructor runs. LiteLLM reads
+      litellm.DEFAULT_BATCH_SIZE and litellm.DEFAULT_FLUSH_INTERVAL_SECONDS at construction, so
+      assigning litellm.DEFAULT_BATCH_SIZE before building a logger changes the default there and
+      has no effect here.
+    why: >-
+      betterlite has no top-level DEFAULT_BATCH_SIZE or DEFAULT_FLUSH_INTERVAL_SECONDS;
+      betterlite/__init__.py belongs to the architect and no module it star-imports is in this
+      task's scope. The environment variables (DEFAULT_BATCH_SIZE, DEFAULT_FLUSH_INTERVAL_SECONDS),
+      their fallbacks (512, 5) and the construction-time read are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_batch_logger.py#L40-L41
+  - what: >-
+      get_callback_env_vars always returns []. LiteLLM lowercases the name, maps langfuse_otel and
+      s3_v2 to their registry names and returns that callback's litellm_callback_params.
+    why: >-
+      betterlite has no Python callback registry (B189, B256), so no name resolves. None and an
+      unknown name also return [] in LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L103-L139
+  - what: >-
+      handle_callback_failure writes the "No callback with increment_callback_logging_failure
+      method found" debug line without walking the callback manager. LiteLLM first increments the
+      registered Prometheus callback's failure counter when one is registered.
+    why: >-
+      The callback manager and the Prometheus callback belong to the callback registry, B189 and
+      B256.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L984-L1010
+  - what: >-
+      log_input_event, async_log_input_event, log_event and async_log_event swallow a callback
+      failure and pass LiteLLM's exact "Custom Logger Error - <traceback>" text to print_verbose,
+      as LiteLLM does, and they also write one LOGGER.debug("Custom Logger Error", exc_info=True)
+      line to the LiteLLM logger on that path. LiteLLM writes nothing extra there.
+    why: >-
+      Ruff BLE001 rejects a blind except whose handler only forwards text to print_verbose, and
+      accepts one whose handler logs the exception with exc_info; the suppression budget is zero.
+      The extra debug line is what lets the port keep LiteLLM's swallow, so a request whose
+      callback raises still completes and the caller's print_verbose receives the same text as
+      before. The success path is unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L533-L581
+  - what: >-
+      redact_standard_logging_payload_from_model_call_details raises
+      TypeError("standard_logging_object must be a dict") when standard_logging_object is neither
+      None nor a dict. LiteLLM calls .items() on it and raises AttributeError.
+    why: >-
+      The declared type is a dict, and betterlite's documented error names the field and the type
+      it needs. Both are a hard error on input the declared type rejects.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L921-L930
+  - what: >-
+      A CustomLogger subclass whose __init__ does not call super().__init__ raises AttributeError
+      from redact_standard_logging_payload_from_model_call_details, where LiteLLM reads
+      getattr(self, "turn_off_message_logging", False) and treats the missing attribute as False.
+      Deleting betterlite.standard_logging_payload_excluded_fields raises AttributeError here,
+      where LiteLLM's getattr default reads None.
+    why: >-
+      The Python rules ban getattr and fallback values, and a missing attribute surfaces instead of
+      being hidden: the class's own __init__ exists to set it. A subclass that calls
+      super().__init__ and the package attribute itself behave as in LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L914-L915
+  - what: >-
+      The proxy and core types CustomLogger annotates with are local Protocols in
+      custom_logger_types.py: Span, UserAPIKeyAuth, DualCache, LiteLLMLoggingObj,
+      MCPPostCallResponseObject, PreRoutingHookResponse, HTTPException, BaseAnthropicMessagesConfig
+      and CustomStreamWrapper. StandardLoggingPayload, StandardCallbackDynamicParams,
+      StandardAuditLogPayload, CallTypes and LLMResponseTypes are local aliases there. LiteLLM
+      imports the real classes from litellm.types, litellm.proxy._types and litellm.types.utils and
+      binds the TYPE_CHECKING ones to Any at runtime.
+    why: >-
+      Those ports do not exist in betterlite yet (types/utils is B5657, the proxy types are B6032
+      and B6033, the streaming wrapper is B158). Each Protocol declares only the members
+      CustomLogger's own code reaches, which is what the task asks for, and the module-level Any
+      aliases are not re-exported from betterlite.integrations.custom_logger.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L29-L56
+  - what: >-
+      AgenticLoopRequestPatch.messages, .tools, .optional_params and .kwargs, AgenticLoopPlan.metadata
+      and .response_override, and the request_patch lists hold JsonValue instead of Any.
+    why: >-
+      The Python rules forbid Any. Every field carries a JSON value in a working setup, so a JSON
+      body validates the same and a non-JSON Python object, which Any accepted, is rejected here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/custom_logger.py#L65-L88
+  - what: >-
+      CustomBatchLogger.__init__ annotates **kwargs as bool. LiteLLM leaves **kwargs untyped, so
+      any keyword passes its type check.
+    why: >-
+      The keywords the constructor forwards are CustomLogger's turn_off_message_logging and
+      message_logging, both bool, and mypy strict rejects forwarding a JsonValue mapping into them.
+      A keyword of another type still passes at runtime, as it does in LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_batch_logger.py#L26-L46
+  - what: >-
+      betterlite's CustomLogger is composed from mixin classes in custom_logger_hooks.py,
+      custom_logger_proxy_hooks.py, custom_logger_events.py, custom_logger_redaction.py and
+      custom_logger_base64.py instead of one class. CustomLogger.__bases__, its MRO and its
+      __dict__ differ from LiteLLM's, and a method's __qualname__ names its mixin, such as
+      CustomLoggerHooks.log_pre_api_call. async_should_run_chat_completion_agentic_loop is the same
+      function object as async_should_run_agentic_loop, since LiteLLM gives both the same parameters
+      and the same (False, {}) default, so its __name__ is async_should_run_agentic_loop; overriding
+      either one in a subclass leaves the other at the default, as in LiteLLM.
+      Every method LiteLLM defines is reachable on CustomLogger
+      with the same name, signature and default, and a subclass that overrides a method or calls
+      super() resolves it as in LiteLLM, an overridden _redact_base64 included.
+    why: >-
+      The class is about 1070 lines in LiteLLM and the repository caps a Python source file at 300
+      lines, split along the section boundaries the class already has.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L65
+kept_bugs:
+  - what: >-
+      _process_messages gives a message that has no content key an explicit "content": None,
+      because LiteLLM redacts msg.get("content") in its else branch.
+    why: >-
+      LiteLLM does the same, and a callback that compares the stripped payload sees the null
+      content, so betterlite copies the quirk to keep the payload identical.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L1127
