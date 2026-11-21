@@ -32,27 +32,26 @@ pub struct PassthroughAuthorizationCode {
     pub upstream_code: String,
 }
 
+// five values plus the cipher would be six arguments, past the workspace's five-argument limit
 #[derive(Clone, Copy)]
-pub struct PassthroughClient<'code> {
+pub struct PassthroughCodeParts<'code> {
     pub client_id: &'code str,
     pub client_secret: Option<&'code str>,
+    pub mcp_server_id: &'code str,
     pub token_endpoint_auth_method: Option<MCPTokenEndpointAuthMethod>,
+    pub upstream_code: &'code str,
 }
 
 impl PassthroughAuthorizationCode {
-    fn from_client(
-        upstream_code: &str,
-        client: &PassthroughClient<'_>,
-        mcp_server_id: &str,
-    ) -> Self {
+    fn from_parts(parts: &PassthroughCodeParts<'_>) -> Self {
         Self {
-            client_id: client.client_id.to_owned(),
-            client_secret: client
+            client_id: parts.client_id.to_owned(),
+            client_secret: parts
                 .client_secret
                 .map(|secret| StoredSecret(SecretString::from(secret.to_owned()))),
-            mcp_server_id: mcp_server_id.to_owned(),
-            token_endpoint_auth_method: client.token_endpoint_auth_method,
-            upstream_code: upstream_code.to_owned(),
+            mcp_server_id: parts.mcp_server_id.to_owned(),
+            token_endpoint_auth_method: parts.token_endpoint_auth_method,
+            upstream_code: parts.upstream_code.to_owned(),
         }
     }
 }
@@ -147,15 +146,10 @@ pub fn open_bridge_code(code: &str, cipher: &dyn SealCipher) -> Option<BridgeAut
 }
 
 #[must_use]
-pub fn seal_passthrough_code(
-    upstream_code: &str,
-    client: &PassthroughClient<'_>,
-    mcp_server_id: &str,
-    cipher: &dyn SealCipher,
-) -> String {
+pub fn seal_passthrough_code(parts: &PassthroughCodeParts<'_>, cipher: &dyn SealCipher) -> String {
     seal_payload(
         PASSTHROUGH_CODE_PREFIX,
-        &PassthroughAuthorizationCode::from_client(upstream_code, client, mcp_server_id),
+        &PassthroughAuthorizationCode::from_parts(parts),
         cipher,
     )
 }

@@ -10,9 +10,9 @@ use crate::oauth_state::SealCipher;
 use crate::oauth_state::test_support::{FieldBoundCipher, PlainCipher, RefusingCipher};
 
 use super::{
-    BRIDGE_CODE_PREFIX, BridgeCodePrefix, PASSTHROUGH_CODE_PREFIX, PassthroughClient, RedeemError,
-    open_bridge_code, open_passthrough_code, redeem_passthrough_code, seal_bridge_code,
-    seal_passthrough_code,
+    BRIDGE_CODE_PREFIX, BridgeCodePrefix, PASSTHROUGH_CODE_PREFIX, PassthroughCodeParts,
+    RedeemError, open_bridge_code, open_passthrough_code, redeem_passthrough_code,
+    seal_bridge_code, seal_passthrough_code,
 };
 
 const CORPUS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/fuzz/corpus/mcp_sealed_code");
@@ -55,16 +55,18 @@ fn any_passthrough_opens(jsons: &[&str]) -> bool {
         .any(|json| open_passthrough_code(&passthrough_code(json), &PlainCipher).is_some())
 }
 
-fn full_client() -> PassthroughClient<'static> {
-    PassthroughClient {
+fn full_parts() -> PassthroughCodeParts<'static> {
+    PassthroughCodeParts {
         client_id: "client-1",
         client_secret: Some("secret-1"),
+        mcp_server_id: "srv-1",
         token_endpoint_auth_method: Some(MCPTokenEndpointAuthMethod::ClientSecretPost),
+        upstream_code: "up-1",
     }
 }
 
 fn sealed_passthrough() -> String {
-    seal_passthrough_code("up-1", &full_client(), "srv-1", &PlainCipher)
+    seal_passthrough_code(&full_parts(), &PlainCipher)
 }
 
 #[test]
@@ -179,18 +181,20 @@ fn open_bridge_code_passes_the_bridge_label() {
 
 #[test]
 fn seal_passthrough_code_writes_the_sorted_payload() {
-    let sealed = seal_passthrough_code("up-1", &full_client(), "srv-1", &PlainCipher);
+    let sealed = seal_passthrough_code(&full_parts(), &PlainCipher);
     assert_eq!(sealed, passthrough_code(PASSTHROUGH_JSON));
 }
 
 #[test]
 fn seal_passthrough_code_keeps_nulls() {
-    let client = PassthroughClient {
+    let parts = PassthroughCodeParts {
         client_id: "client-1",
         client_secret: None,
+        mcp_server_id: "srv-1",
         token_endpoint_auth_method: None,
+        upstream_code: "up-1",
     };
-    let sealed = seal_passthrough_code("up-1", &client, "srv-1", &PlainCipher);
+    let sealed = seal_passthrough_code(&parts, &PlainCipher);
     assert_eq!(sealed, passthrough_code(PASSTHROUGH_NULL_JSON));
 }
 
