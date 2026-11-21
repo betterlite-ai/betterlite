@@ -23,7 +23,7 @@ fn counter_value_json(value: &CacheCounterValue) -> Value {
 
 fn read_json(record: &ReadRecord) -> Value {
     json!({
-        "key": record.key.clone(),
+        "key": &record.key,
         "local_only": record.local_only,
     })
 }
@@ -34,7 +34,7 @@ fn write_json(record: &WriteRecord) -> Value {
         RecordedValue::Local(number) => json!(number),
     };
     json!({
-        "key": record.key.clone(),
+        "key": &record.key,
         "value": value,
         "ttl": record.ttl,
         "local_only": record.local_only,
@@ -43,7 +43,7 @@ fn write_json(record: &WriteRecord) -> Value {
 
 fn increment_json(operation: &IncrementOperation) -> Value {
     json!({
-        "key": operation.key.clone(),
+        "key": &operation.key,
         "increment_value": operation.increment_value,
         "ttl": operation.ttl,
     })
@@ -70,18 +70,9 @@ pub(super) fn effects_json(effects: &Effects) -> Value {
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .clone();
-    let mut read_values: Vec<Value> = Vec::new();
-    for record in &reads {
-        read_values.push(read_json(record));
-    }
-    let mut write_values: Vec<Value> = Vec::new();
-    for record in &writes {
-        write_values.push(write_json(record));
-    }
-    let mut increment_values: Vec<Value> = Vec::new();
-    for operation in &increments {
-        increment_values.push(increment_json(operation));
-    }
+    let read_values: Vec<Value> = reads.iter().map(read_json).collect();
+    let write_values: Vec<Value> = writes.iter().map(write_json).collect();
+    let increment_values: Vec<Value> = increments.iter().map(increment_json).collect();
     let mut pipeline_values: Vec<Value> = Vec::new();
     for operations in &pipelines {
         pipeline_values.push(Value::Array(
@@ -100,8 +91,8 @@ pub(super) fn response_json(response: &RateLimitResponse) -> Value {
     let windows: Vec<&ReservationWindowIdentity> =
         response.reservation_windows.iter().flatten().collect();
     json!({
-        "overall_code": response.overall_code.clone(),
-        "statuses": response.statuses.clone(),
+        "overall_code": &response.overall_code,
+        "statuses": &response.statuses,
         "reservation_windows": windows,
     })
 }

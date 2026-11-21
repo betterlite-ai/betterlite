@@ -15,7 +15,7 @@ use betterlite_rate_limit::provider_attribution::RateLimitErrorAttribution;
 use betterlite_rate_limit::rate_limit_window_store::WindowStore;
 use betterlite_rate_limit::settlement_and_rollback::AtomicSettlement;
 use betterlite_rate_limit::token_adjustments::store::TokenAdjustments;
-use betterlite_rate_limit::token_reservations::{TokenReservationError, TokenReservations};
+use betterlite_rate_limit::token_reservations::{IoReservation, TokenReservations};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::runtime::{Builder, Runtime};
@@ -143,26 +143,10 @@ impl Fixture {
         cache: &BTreeMap<String, CounterValueInput>,
     ) -> Result<Self, Box<HelperError>> {
         let effects = Arc::new(Effects::default());
-        let recording = Arc::new(RecordingCache::new(cache, Arc::clone(&effects)));
-        let usage = Arc::new(RecordingUsage {
-            effects: Arc::clone(&effects),
-        });
+        let adjustments = token_adjustments(cache, &effects);
         let clock = FixedClock::at(now)
             .ok_or("the case time is too large")
             .or_value_error()?;
-        let adjustments = TokenAdjustments {
-            windows: WindowStore {
-                cache: recording,
-                rate_limiter_script: None,
-                counter_read_script: None,
-                request_batch: None,
-                check_and_increment_lock: Mutex::new(()),
-            },
-            usage,
-            post_call_batch: None,
-            token_increment_script: None,
-            guarded_token_script: None,
-        };
         Ok(Self {
             runtime: Builder::new_current_thread().build()?,
             effects,
@@ -197,6 +181,27 @@ impl Fixture {
                 router: None,
             },
         }
+    }
+}
+
+fn token_adjustments(
+    cache: &BTreeMap<String, CounterValueInput>,
+    effects: &Arc<Effects>,
+) -> TokenAdjustments {
+    TokenAdjustments {
+        windows: WindowStore {
+            cache: Arc::new(RecordingCache::new(cache, Arc::clone(effects))),
+            rate_limiter_script: None,
+            counter_read_script: None,
+            request_batch: None,
+            check_and_increment_lock: Mutex::new(()),
+        },
+        usage: Arc::new(RecordingUsage {
+            effects: Arc::clone(effects),
+        }),
+        post_call_batch: None,
+        token_increment_script: None,
+        guarded_token_script: None,
     }
 }
 
