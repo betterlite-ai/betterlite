@@ -7,12 +7,12 @@ use crate::api::request_model_overrides::model_config::{DEFAULT_ENTRY_NAME, Mode
 // the three request fields a credential may replace, in the order LiteLLM copies them
 pub(crate) const CREDENTIAL_FIELDS: [&str; 3] = ["api_base", "api_key", "api_version"];
 
-pub(crate) struct CredentialLookup<'a> {
-    pub(crate) model: &'a str,
-    pub(crate) pre_alias_model: Option<&'a str>,
-    pub(crate) provider: Option<&'a str>,
-    pub(crate) project: Option<&'a ModelConfig>,
-    pub(crate) team: Option<&'a ModelConfig>,
+pub(crate) struct CredentialLookup<'request> {
+    pub(crate) model: &'request str,
+    pub(crate) pre_alias_model: Option<&'request str>,
+    pub(crate) provider: Option<&'request str>,
+    pub(crate) project: Option<&'request ModelConfig>,
+    pub(crate) team: Option<&'request ModelConfig>,
 }
 
 // _resolve_credential_from_model_config: project model, pre-alias, defaultconfig, then the team chain

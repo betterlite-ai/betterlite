@@ -177,6 +177,7 @@ enum BodyMetadata {
     Absent,
     Keys(&'static [&'static str]),
     Text(&'static str),
+    Null,
 }
 
 #[rstest]
@@ -207,6 +208,13 @@ enum BodyMetadata {
     &["metadata.generation_name"],
     &[],
     BodyMetadata::Text("value"),
+    true,
+    Expected::ParentNotObject("metadata")
+)]
+#[case::parent_null(
+    &["metadata.generation_name"],
+    &[],
+    BodyMetadata::Null,
     true,
     Expected::ParentNotObject("metadata")
 )]
@@ -249,6 +257,9 @@ fn fill_metadata(data: &mut RequestData, metadata: BodyMetadata) {
         }
         BodyMetadata::Text(text) => {
             data.insert("metadata".to_owned(), Json::Text(text.to_owned()));
+        }
+        BodyMetadata::Null => {
+            data.insert("metadata".to_owned(), Json::Null);
         }
     }
 }

@@ -10,10 +10,10 @@ use crate::api::request_model_overrides::warnings::WarnOnce;
 use crate::api::request_model_overrides::{MODEL_FIELD, OverridesPrincipal};
 
 // the router and the warn-once set the stale-alias branches read
-pub(crate) struct AliasInputs<'a> {
-    pub(crate) catalog: Option<&'a dyn DeploymentCatalogView>,
+pub(crate) struct AliasInputs<'catalog> {
+    pub(crate) catalog: Option<&'catalog dyn DeploymentCatalogView>,
     pub(crate) team_stale_alias_bypass: bool,
-    pub(crate) warnings: &'a WarnOnce,
+    pub(crate) warnings: &'catalog WarnOnce,
 }
 
 impl AliasInputs<'_> {

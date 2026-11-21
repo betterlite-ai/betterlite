@@ -130,6 +130,7 @@ fn empty_key_metadata_params_still_pin_an_empty_list() {
 #[rstest]
 #[case::text(Json::Text("user".to_owned()))]
 #[case::list_with_a_boolean(Json::List(vec![Json::Text("user".to_owned()), Json::Bool(true)]))]
+#[case::list_with_a_null(Json::List(vec![Json::Text("user".to_owned()), Json::Null]))]
 fn invalid_key_metadata_params_name_the_field(#[case] value: Json) {
     let input = RequestModelOverridesInput {
         data: request(&[("model", "gpt-4o")]),

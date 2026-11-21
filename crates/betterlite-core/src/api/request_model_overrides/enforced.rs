@@ -52,7 +52,7 @@ fn text_items(items: &[Json]) -> Result<Vec<String>, RequestModelOverridesError>
     for item in items {
         match item {
             Json::Text(text) => texts.push(text.clone()),
-            Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
                 return Err(params_type_error());
             }
         }
@@ -102,7 +102,7 @@ fn check_enforced_param(data: &RequestData, param: &str) -> Result<(), RequestMo
             Some(Json::Object(_)) => Err(RequestModelOverridesError::MissingEnforcedParam {
                 param: param.to_owned(),
             }),
-            Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+            Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
                 Err(RequestModelOverridesError::EnforcedParamParentNotObject {
                     field: (*outer).to_owned(),
                     param: param.to_owned(),

@@ -203,13 +203,13 @@ fn reports_unknown_sibling_key() {
         ConfigError::Unsupported { paths } => {
             assert_eq!(paths, vec!["general_settings.enforced_paramz".to_owned()]);
         }
-        other @ ConfigError::CustomDimensions(_)
-        | other @ ConfigError::Environment { .. }
-        | other @ ConfigError::Yaml { .. }
-        | other @ ConfigError::MissingEnvironment { .. }
-        | other @ ConfigError::InvalidFloat { .. }
-        | other @ ConfigError::InvalidInteger { .. }
-        | other @ ConfigError::InvalidScalar { .. }
-        | other @ ConfigError::LoadThread { .. } => panic!("Unsupported expected, got {other:?}"),
+        other @ (ConfigError::CustomDimensions(_)
+        | ConfigError::Environment { .. }
+        | ConfigError::Yaml { .. }
+        | ConfigError::MissingEnvironment { .. }
+        | ConfigError::InvalidFloat { .. }
+        | ConfigError::InvalidInteger { .. }
+        | ConfigError::InvalidScalar { .. }
+        | ConfigError::LoadThread { .. }) => panic!("Unsupported expected, got {other:?}"),
     }
 }
