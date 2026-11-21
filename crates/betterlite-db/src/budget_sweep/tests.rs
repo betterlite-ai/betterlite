@@ -39,6 +39,7 @@ mod sweep_assembly {
 
     use crate::budget_sweep::BudgetSweep;
     use crate::budget_sweep::phase::{PhaseRunner, ResetPhase};
+    use crate::budget_sweep::production::production;
     use crate::budget_sweep::settings::BudgetResetSettings;
     use crate::postgres_store::session::PostgresStore;
     use crate::queues::pod_lock::NoPodLockEventSink;
@@ -69,7 +70,7 @@ mod sweep_assembly {
             TaskTracker::new(),
         );
         let snapshot = TestSnapshot::new(BudgetResetSettings::default());
-        let sweep = BudgetSweep::production(inputs, &snapshot);
+        let sweep = production(inputs, &snapshot);
         assert_eq!(sweep.settings, settings);
         assert_eq!(sweep.phases.settings, settings);
         assert_eq!(snapshot.calls(), 0);
@@ -85,7 +86,7 @@ mod sweep_assembly {
         };
         let snapshot = TestSnapshot::new(configured.clone());
         let inputs = assembly_inputs(PostgresStore { pool: None }, None, None, TaskTracker::new());
-        let mut sweep = BudgetSweep::production(inputs, &snapshot);
+        let mut sweep = production(inputs, &snapshot);
         assert_eq!(sweep.settings, configured);
         assert_eq!(sweep.phases.settings, configured);
         assert_eq!(snapshot.calls(), 1);
@@ -117,14 +118,15 @@ mod sweep_assembly {
     }
 
     #[rstest]
-    #[case::keys(ResetPhase::Keys, "reset_budget_keys")]
-    #[case::users(ResetPhase::Users, "reset_budget_users")]
-    #[case::teams(ResetPhase::Teams, "reset_budget_teams")]
-    #[case::tiers(ResetPhase::Tiers, "reset_budget_endusers")]
+    #[case::keys(ResetPhase::Keys, Some("reset_budget_keys"))]
+    #[case::users(ResetPhase::Users, Some("reset_budget_users"))]
+    #[case::teams(ResetPhase::Teams, Some("reset_budget_teams"))]
+    #[case::tiers(ResetPhase::Tiers, Some("reset_budget_endusers"))]
+    #[case::windows(ResetPhase::Windows, None)]
     #[tokio::test]
     async fn the_real_adapter_maps_every_phase_to_its_lower_service(
         #[case] phase: ResetPhase,
-        #[case] call_type: &str,
+        #[case] call_type: Option<&str>,
     ) {
         let inputs = assembly_inputs(
             PostgresStore { pool: None },
@@ -133,10 +135,10 @@ mod sweep_assembly {
             TaskTracker::new(),
         );
         let failures = inputs.ports.failure.clone();
-        let mut sweep =
-            BudgetSweep::production(inputs, &TestSnapshot::new(BudgetResetSettings::default()));
+        let mut sweep = production(inputs, &TestSnapshot::new(BudgetResetSettings::default()));
         sweep.phases.run(phase).await.unwrap();
-        assert_eq!(failures.call_types(), vec![call_type.to_owned()]);
+        let expected: Vec<String> = call_type.map(str::to_owned).into_iter().collect();
+        assert_eq!(failures.call_types(), expected);
     }
 
     #[tokio::test]
@@ -148,8 +150,7 @@ mod sweep_assembly {
             TaskTracker::new(),
         );
         let failures = inputs.ports.failure.clone();
-        let mut sweep =
-            BudgetSweep::production(inputs, &TestSnapshot::new(BudgetResetSettings::default()));
+        let mut sweep = production(inputs, &TestSnapshot::new(BudgetResetSettings::default()));
         let (logs, guard) = captured_logs();
         sweep.phases.run(ResetPhase::Windows).await.unwrap();
         drop(guard);

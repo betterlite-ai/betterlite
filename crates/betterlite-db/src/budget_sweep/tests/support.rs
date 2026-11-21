@@ -224,30 +224,35 @@ pub(crate) struct RecordingLeaseCache {
 
 impl RecordingLeaseCache {
     pub(crate) fn granting() -> Self {
-        Self::held_by(None, true, false)
+        Self::held_by(None, true)
     }
 
     pub(crate) fn denied() -> Self {
-        Self::held_by(None, false, false)
+        Self::held_by(None, false)
     }
 
     pub(crate) fn denied_with_owner(owner: &str) -> Self {
-        Self::held_by(Some(owner.as_bytes().to_vec()), false, false)
+        Self::held_by(Some(owner.as_bytes().to_vec()), false)
     }
 
     pub(crate) fn denied_with_raw_owner(owner: Vec<u8>) -> Self {
-        Self::held_by(Some(owner), false, false)
+        Self::held_by(Some(owner), false)
     }
 
     pub(crate) fn unreadable() -> Self {
-        Self::held_by(None, false, true)
+        Self {
+            operations: Recorder::default(),
+            granted: false,
+            read_fails: true,
+            owner: Mutex::new(None),
+        }
     }
 
-    fn held_by(owner: Option<Vec<u8>>, granted: bool, read_fails: bool) -> Self {
+    fn held_by(owner: Option<Vec<u8>>, granted: bool) -> Self {
         Self {
             operations: Recorder::default(),
             granted,
-            read_fails,
+            read_fails: false,
             owner: Mutex::new(owner),
         }
     }
@@ -290,8 +295,10 @@ impl LockCache for RecordingLeaseCache {
 
     async fn delete(&self, key: &str) -> Result<i64, LockCacheError> {
         self.record(LeaseOperation::Delete(key.to_owned()));
-        let mut guard = self.owner.lock().unwrap_or_else(PoisonError::into_inner);
-        let deleted = guard.take().is_some();
+        let deleted = {
+            let mut owner = self.owner.lock().unwrap_or_else(PoisonError::into_inner);
+            owner.take().is_some()
+        };
         Ok(i64::from(deleted))
     }
 

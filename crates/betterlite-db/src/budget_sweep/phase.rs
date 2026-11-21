@@ -77,34 +77,34 @@ pub struct SweepPhases<Schedule, Cache, Failures, Successes, Reconnect, Clock, D
     pub ports: SweepPorts<Schedule, Cache, Failures, Successes, Reconnect, Clock, Durations>,
 }
 
-// The hook-carrying phase services share failure, success and the seven SweepPorts fields, so the macro writes them once.
+// The three hook-carrying services share these ports; `self` in a macro body names the module, so the receiver is a parameter.
 macro_rules! sweep_service {
-    (hooks $service:ident $(, $field:ident: $value:expr)* $(,)?) => {
+    ($sweep:ident, hooks $service:ident $(, $field:ident: $value:expr)* $(,)?) => {
         $service {
-            store: self.store.clone(),
-            limits: self.ports.limits,
-            rollover: self.ports.rollover,
-            schedule: &self.ports.schedule,
-            cache: &self.ports.cache,
-            failure: &self.ports.failure,
-            success: &self.ports.success,
-            reconnect: self.ports.reconnect.as_mut(),
-            clock: &self.ports.clock,
+            store: $sweep.store.clone(),
+            limits: $sweep.ports.limits,
+            rollover: $sweep.ports.rollover,
+            schedule: &$sweep.ports.schedule,
+            cache: &$sweep.ports.cache,
+            failure: &$sweep.ports.failure,
+            success: &$sweep.ports.success,
+            reconnect: $sweep.ports.reconnect.as_mut(),
+            clock: &$sweep.ports.clock,
             $($field: $value,)*
         }
     };
     // The window phase has no failure or success hook, and reads its spend through WindowSpendStore.
-    (window) => {
+    ($sweep:ident, window) => {
         BudgetWindowReset {
-            store: self.store.clone(),
-            limits: self.ports.limits,
-            rollover: self.ports.rollover,
-            schedule: &self.ports.schedule,
-            cache: &self.ports.cache,
-            reconnect: self.ports.reconnect.as_mut(),
-            clock: &self.ports.clock,
-            window_spend: WindowSpendStore::from_store(self.store.clone()),
-            durations: &self.ports.durations,
+            store: $sweep.store.clone(),
+            limits: $sweep.ports.limits,
+            rollover: $sweep.ports.rollover,
+            schedule: &$sweep.ports.schedule,
+            cache: &$sweep.ports.cache,
+            reconnect: $sweep.ports.reconnect.as_mut(),
+            clock: &$sweep.ports.clock,
+            window_spend: WindowSpendStore::from_store($sweep.store.clone()),
+            durations: &$sweep.ports.durations,
         }
     };
 }
@@ -125,25 +125,30 @@ where
     async fn run(&mut self, phase: ResetPhase) -> Result<(), Infallible> {
         match phase {
             ResetPhase::Keys => {
-                sweep_service!(hooks IdentityBudgetReset)
+                sweep_service!(self, hooks IdentityBudgetReset)
                     .reset(IdentityPhase::Keys)
                     .await;
             }
             ResetPhase::Users => {
-                sweep_service!(hooks IdentityBudgetReset)
+                sweep_service!(self, hooks IdentityBudgetReset)
                     .reset(IdentityPhase::Users)
                     .await;
             }
-            ResetPhase::Teams => sweep_service!(hooks TeamBudgetReset).reset_teams().await,
+            ResetPhase::Teams => {
+                sweep_service!(self, hooks TeamBudgetReset)
+                    .reset_teams()
+                    .await
+            }
             ResetPhase::Tiers => {
                 sweep_service!(
+                    self,
                     hooks BudgetTierSweep,
                     default_enduser_budget_id: self.ports.default_enduser_budget_id.as_deref()
                 )
                 .reset()
                 .await;
             }
-            ResetPhase::Windows => sweep_service!(window).reset_windows().await,
+            ResetPhase::Windows => sweep_service!(self, window).reset_windows().await,
         }
         Ok(())
     }
