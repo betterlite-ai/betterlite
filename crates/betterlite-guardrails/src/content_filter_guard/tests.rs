@@ -798,8 +798,13 @@ async fn tool_call_arguments_are_scanned_on_a_request_and_on_a_response(
     arguments.blocked_words = Some(vec![blocked_word("secret", ContentFilterAction::Mask)]);
     let guardrail = built(arguments);
     let inputs = GuardrailApiInputs {
+        texts: None,
+        images: None,
+        tools: None,
         tool_calls: Some(vec![tool_call(r#"{"query":"secret"}"#)]),
-        ..GuardrailApiInputs::default()
+        structured_messages: None,
+        model: None,
+        stream_holdback_chars: None,
     };
     let run = applied(&guardrail, inputs, input_type).await;
     assert_eq!(
@@ -937,8 +942,13 @@ async fn a_failing_image_description_logs_guardrail_failed_to_respond() {
     arguments.image_model = Some("image-model".to_owned());
     let guardrail = built_with_router(arguments, TestRouter { description: None });
     let inputs = GuardrailApiInputs {
+        texts: None,
         images: Some(vec!["https://example.test/cat.png".to_owned()]),
-        ..GuardrailApiInputs::default()
+        tools: None,
+        tool_calls: None,
+        structured_messages: None,
+        model: None,
+        stream_holdback_chars: None,
     };
     let run = applied(&guardrail, inputs, GuardrailInputType::Request).await;
     let failure = run.result.unwrap_err();
@@ -966,8 +976,13 @@ async fn a_blocked_image_description_carries_the_description_in_the_400() {
         },
     );
     let inputs = GuardrailApiInputs {
+        texts: None,
         images: Some(vec!["https://example.test/cat.png".to_owned()]),
-        ..GuardrailApiInputs::default()
+        tools: None,
+        tool_calls: None,
+        structured_messages: None,
+        model: None,
+        stream_holdback_chars: None,
     };
     let run = applied(&guardrail, inputs, GuardrailInputType::Request).await;
     let GuardrailFailure::HttpObject { status, detail } = run.result.unwrap_err() else {
