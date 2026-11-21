@@ -21,14 +21,14 @@ struct RawGeneral {
 
 // LiteLLM's mock_testing_params_allowed reads this with `is True`, so only a real bool opts in
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct MockTestingParams {
+pub struct Settings {
     pub allowed: bool,
 }
 
 impl Section for Raw {
-    type Settings = MockTestingParams;
+    type Settings = Settings;
 
-    fn convert<L>(self, _lookup: &L) -> Result<Self::Settings, ConfigError>
+    fn convert<L>(self, _lookup: &L) -> Result<Settings, ConfigError>
     where
         L: EnvironmentLookup,
     {
@@ -45,6 +45,6 @@ impl Section for Raw {
                 });
             }
         };
-        Ok(MockTestingParams { allowed })
+        Ok(Settings { allowed })
     }
 }

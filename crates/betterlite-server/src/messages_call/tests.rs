@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use betterlite_config::sections::mock_testing_params::MockTestingParams;
+use betterlite_config::sections::mock_testing_params::Settings as MockTestingParams;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_openai::openai_base_config::Object as JsonMap;
 use rstest::rstest;

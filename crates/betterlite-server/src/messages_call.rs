@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use betterlite_config::sections::mock_testing_params::MockTestingParams;
+use betterlite_config::sections::mock_testing_params::Settings as MockTestingParams;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_error::proxy_model_not_found::{ProxyModelNotFoundError, route_endpoint};
 use betterlite_openai::openai_base_config::Object as JsonMap;
