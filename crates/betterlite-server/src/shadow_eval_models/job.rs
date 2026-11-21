@@ -40,7 +40,6 @@ pub struct ShadowJob {
 
 impl ShadowJob {
     // the first router, kept for callers that predate router_names, so the two fields never disagree
-    #[must_use]
     pub fn router_name(&self) -> Result<&str, ShadowEvalModelError> {
         self.router_names
             .first()
