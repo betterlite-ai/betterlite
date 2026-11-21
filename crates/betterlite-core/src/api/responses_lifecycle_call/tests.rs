@@ -134,30 +134,42 @@ async fn assert_raw_retrieval(fixture: &mut Fixture) {
 
 fn assert_retrieval_records(records: &[Recorded]) {
     assert_eq!(records.len(), 3);
-    assert_eq!(records[0].response_id, "resp/a");
+    assert_eq!(
+        (
+            records[0].response_id.as_str(),
+            records[0].tag.clone(),
+            records[0].mode
+        ),
+        ("resp/a", ResponsesConfigTag::OpenAi, ClientKind::Sync)
+    );
     assert_eq!(
         records[0].logged_optional,
         map(r#"{"response_id":"resp/a"}"#)
     );
-    assert_eq!(records[0].tag, ResponsesConfigTag::OpenAi);
     assert_eq!(records[0].api_base.as_deref(), Some("http://mock.test/v1"));
     assert_eq!(records[0].api_key.as_deref(), Some("sk-provider"));
-    assert_eq!(records[0].mode, ClientKind::Sync);
     assert!(records[0].query.is_none());
     assert!(records[0].extra_body.is_none());
-    assert_eq!(records[1].response_id, "resp/a");
+    assert_eq!(
+        (records[1].response_id.as_str(), records[1].mode),
+        ("resp/a", ClientKind::Asynchronous)
+    );
     assert_eq!(
         records[1].logged_optional,
         map(r#"{"response_id":"resp/a"}"#)
     );
-    assert_eq!(records[1].mode, ClientKind::Asynchronous);
     assert_eq!(
         records[1].logged_litellm.get("litellm_call_id"),
         Some(&Json::Text(String::from("call-a")))
     );
-    assert_eq!(records[2].response_id, "resp_a");
-    assert_eq!(records[2].tag, ResponsesConfigTag::OpenAi);
-    assert_eq!(records[2].mode, ClientKind::Sync);
+    assert_eq!(
+        (
+            records[2].response_id.as_str(),
+            records[2].tag.clone(),
+            records[2].mode
+        ),
+        ("resp_a", ResponsesConfigTag::OpenAi, ClientKind::Sync)
+    );
 }
 
 // the five SDK pagination arguments travel as a query, and an absent limit and order keep the SDK defaults
