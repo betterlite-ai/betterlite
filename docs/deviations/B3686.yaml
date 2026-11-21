@@ -18,6 +18,9 @@ deviations:
   - what: A failed team lookup during register or list answers 500 with the lookup error text; LiteLLM calls `_get_user_team_ids` outside any try block at those two points, so FastAPI answers a generic "Internal Server Error" body. The single read does catch it, so its 500 carries the text in both.
     why: The status is 500 either way, and the error text is what an operator needs to see the missing database or failed user row. No working setup depends on the generic body.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L907
+  - what: A `guardrail_info.description` that is not a string does not match `search`; LiteLLM runs `str()` over it, so `{"description": 5}` matches `search=5`.
+    why: docs/compatibility.md keeps Python's `str` text out of parity, and the description a register body writes is a string; searching a rendered number or nested object would invent text no caller wrote.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L946-L949
   - what: A stored `submitted_by_user_id` or `submitted_by_email` that is not a string is projected as null; LiteLLM's pydantic response model rejects it and answers 500.
     why: The columns hold whatever an earlier writer put there, and the register route only ever writes a string or null. Answering the item with the field null keeps a single bad row from breaking a whole listing, and no working setup reads a non-string submitter.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L863-L864
