@@ -1,6 +1,6 @@
 from collections.abc import Awaitable, Callable
 from datetime import datetime
-from typing import Final, Literal, TypeAlias, TypeVar, TypedDict, final, overload
+from typing import Final, Literal, TypeAlias, TypedDict, TypeVar, final, overload
 
 import litellm
 from fastapi import FastAPI, Request
@@ -31,6 +31,7 @@ Bind: TypeAlias = str | tuple[str, ...] | None
 TeamIds = TypedDict("TeamIds", {"in": list[str]})
 AuthCheck: TypeAlias = Callable[[Request], Awaitable[UserAPIKeyAuth]]
 AuthAnswer: TypeAlias = Callable[[], UserAPIKeyAuth]
+_Default = TypeVar("_Default")
 
 
 class CallerInput(TypedDict):
@@ -54,9 +55,7 @@ class UserInput(TypedDict):
     teams: list[str]
 
 
-class OwnerRow(TypedDict):
-    user: str | None
-    team_id: str | None
+OwnerRow = TypedDict("OwnerRow", {"user": str | None, "team_id": str | None})
 
 
 class SpendRow(TypedDict):
@@ -108,8 +107,7 @@ class ManyTeams(TypedDict):
     team_id: TeamIds
 
 
-class Refusal(TypedDict):
-    detail: dict[str, str]
+Refusal = TypedDict("Refusal", {"detail": dict[str, str]})
 
 
 BODY: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
@@ -210,9 +208,6 @@ class Loggers(LoggingCallbackManager):
         return [self.recorder]
 
 
-_Default = TypeVar("_Default")
-
-
 # the lookup FastAPI makes for the key check, answered for every callback the route declares
 class Overrides(dict[AuthCheck, AuthAnswer]):
     def __init__(self, answer: AuthAnswer) -> None:
@@ -223,14 +218,16 @@ class Overrides(dict[AuthCheck, AuthAnswer]):
         return True
 
     @overload
-    def get(self, key: AuthCheck, /) -> AuthAnswer | None:
-        ...
+    def get(self, key: AuthCheck, default: None = None, /) -> AuthAnswer | None: ...
 
     @overload
-    def get(self, key: AuthCheck, default: _Default, /) -> AuthAnswer | _Default:
-        ...
+    def get(self, key: AuthCheck, default: AuthAnswer, /) -> AuthAnswer: ...
 
-    def get(self, key: AuthCheck, default: _Default | None = None) -> AuthAnswer | _Default:
+    @overload
+    def get(self, key: AuthCheck, default: _Default, /) -> AuthAnswer | _Default: ...
+
+    @override
+    def get(self, key: AuthCheck, default: _Default | None = None, /) -> AuthAnswer | _Default:
         del key, default
         return self.answer
 
