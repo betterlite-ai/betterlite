@@ -24,7 +24,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use serde_json::json;
 
-// the model budget map dwarfs the other variants, so it is boxed to stay within 3x, the limit variant_size_differences enforces
+// the default params dwarf the other variants, so they are boxed to stay within 3x, the limit variant_size_differences enforces
 #[derive(Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Input {
@@ -51,7 +51,7 @@ pub(crate) enum Input {
     ModelCap {
         request: Box<JsonData>,
         user_role: Option<UserRole>,
-        existing: Option<Box<BTreeMap<String, JsonData>>>,
+        existing: Option<BTreeMap<String, JsonData>>,
     },
 }
 
@@ -94,7 +94,7 @@ impl Helper for Op {
                 request,
                 user_role,
                 existing,
-            } => model_cap(request, *user_role, existing.as_deref()),
+            } => model_cap(request, *user_role, existing.as_ref()),
         }
     }
 }
