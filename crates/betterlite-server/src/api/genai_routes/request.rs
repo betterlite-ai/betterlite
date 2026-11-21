@@ -74,7 +74,7 @@ fn json(value: serde_json::Value) -> Json {
         serde_json::Value::Object(fields) => Json::Object(
             fields
                 .into_iter()
-                .map(|(key, value)| (key, json(value)))
+                .map(|(field, nested)| (field, json(nested)))
                 .collect(),
         ),
     }

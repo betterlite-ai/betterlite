@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use axum::Json;
 use axum::http::{HeaderMap, HeaderName, HeaderValue, StatusCode};
-use axum::response::{IntoResponse, Response};
+use axum::response::{IntoResponse as _, Response};
 use betterlite_core::api::request_body::RequestBodyError;
 use betterlite_error::proxy_exception::ProxyException;
 use betterlite_error::proxy_exception::body::ProxyErrorBody;

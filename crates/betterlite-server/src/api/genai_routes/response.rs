@@ -2,7 +2,7 @@ use axum::Json;
 use axum::body::Body;
 use axum::http::header::{ALLOW, CACHE_CONTROL, CONTENT_TYPE};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
-use axum::response::{IntoResponse, Response};
+use axum::response::{IntoResponse as _, Response};
 use betterlite_core::api::genai_chat_output::GenAiOutputError;
 use futures_util::stream::BoxStream;
 use serde::{Deserialize, Serialize};
