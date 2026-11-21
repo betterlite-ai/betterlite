@@ -5,6 +5,8 @@ use crate::raw::RawNumber;
 use crate::resolve::{resolve_number, resolve_string};
 use crate::sections::Section;
 
+mod tests;
+
 const PATH_ROOT: &str = "litellm_params.complexity_router_config";
 const ENABLED_KEY: &str = "cache_aware_routing";
 const OUTPUT_TOKENS_KEY: &str = "cache_aware_routing_output_tokens";
