@@ -203,9 +203,8 @@ fn metric_help_texts_match_litellm() {
 #[test]
 fn the_default_latency_buckets_are_the_latency_table() {
     let (registry, _logger) = build(None);
-    let buckets = registered(&registry, "litellm_redis_latency")
-        .description
-        .buckets;
+    let histogram = registered(&registry, "litellm_redis_latency");
+    let buckets = &histogram.description.buckets;
     assert_eq!(buckets.len(), LATENCY_BUCKETS.len());
     assert_eq!(buckets.first(), Some(&Bucket::Seconds(0.005)));
     assert_eq!(buckets.get(15), Some(&Bucket::Seconds(420.0)));
