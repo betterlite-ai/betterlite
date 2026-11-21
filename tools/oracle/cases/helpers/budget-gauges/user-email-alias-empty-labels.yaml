@@ -1,0 +1,18 @@
+kind: helper
+name: budget-gauges-user-email-alias-empty-labels
+call:
+  b3882:
+    function: user
+    user_id: u1
+    user_email: null
+    user_alias: null
+    spend: 4
+    max_budget: null
+    budget_reset_at: null
+    now: "2026-11-20T00:00:00Z"
+    labels_by_metric:
+      litellm_remaining_user_budget_metric: [user, user_email, user_alias]
+      litellm_user_max_budget_metric: [user, user_email, user_alias]
+      litellm_user_budget_remaining_hours_metric: [user, user_email, user_alias]
+env: {}
+compare: {ignore: []}

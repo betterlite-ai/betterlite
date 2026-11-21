@@ -223,6 +223,7 @@ fn deployment(litellm_model: &str) -> ChatDeployment {
         weight: 1,
         rpm: 0,
         tpm: 0,
+        global_drop_params: false,
     }
 }
 

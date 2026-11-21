@@ -199,3 +199,10 @@ path = "fuzz_targets/custom_output.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "realtime_sdp"
+path = "fuzz_targets/realtime_sdp.rs"
+test = false
+doc = false
+bench = false

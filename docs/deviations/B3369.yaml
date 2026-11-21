@@ -1,0 +1,111 @@
+task: B3369
+deviations:
+  - what: >-
+      There is no _is_async flag, async_call kwarg, run_in_executor wrapper or coroutine-or-value
+      return. The blocking and async operations are four Rust functions, create_container,
+      acreate_container, list_containers and alist_containers, and the two variants of each share one
+      preparation step that runs before the handler.
+    why: >-
+      Rust has no Union return type, and a worker thread plus a contextvars copy adds nothing to an
+      async fn that awaits the handler's async form.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L49-L123
+  - what: >-
+      The @client decorator work (creating the logging object, callbacks, the call id) is not done
+      here. The caller passes B247's logging state, the redactor and the REQUEST_TIMEOUT seconds in
+      ContainerCallDeps, and litellm_call_id and litellm_metadata are typed fields instead of kwargs.
+    why: >-
+      B012 owns the decorator; this task only uses the object it produces, and B185's mapping needs
+      the redactor at the point the error is built.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L196-L215
+  - what: >-
+      The provider config is reached through B3361's get_provider_container_config and the caller's
+      ContainerConfigLookup registry, which answers a &dyn BaseContainerConfig; LiteLLM's
+      ProviderConfigManager builds the object inline. The operations themselves never build a config.
+    why: >-
+      Core cannot build a provider config with credentials (the Azure config is B547's), and the
+      registry seam is the one B3361 and B3368 already use.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L220-L226
+  - what: >-
+      An unknown custom_llm_provider is this module's UnknownProvider error, "<name>" is not a
+      provider betterlite knows, instead of LiteLLM's ValueError("<name> is not a valid
+      LlmProviders"). Both reach B185 with model "" and no status code, so both are the same
+      ApiConnection class; only the message differs.
+    why: >-
+      The provider set is betterlite's own ProviderId enum, and its parse failure names the value the
+      caller gave.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L220-L226
+  - what: >-
+      The timeout is an Option<f64> field: an explicit none or zero takes the request timeout, and a
+      call that leaves the field at its default carries the declared 600 seconds. LiteLLM's omitted
+      argument is 600 and an explicit None also falls through `timeout or DEFAULT_REQUEST_TIMEOUT`
+      to the request timeout, exactly as its zero does.
+    why: >-
+      The call struct's Default carries the declared 600, and Option<f64> cannot tell an omitted
+      field from an explicit null; docs/compatibility.md makes an absent or null value take the
+      declared default.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L262
+  - what: >-
+      The request timeout reaches this module as a float number of seconds and must convert into a
+      usable duration; a negative, infinite or NaN value is this module's Timeout error, mapped as a
+      ValueError-like connection error before the handler runs. LiteLLM's DEFAULT_REQUEST_TIMEOUT is
+      a module constant that always works.
+    why: >-
+      The route passes betterlite_config's RequestTimeout.seconds, an operator sets it through
+      REQUEST_TIMEOUT, and Duration::from_secs_f64 is banned because it panics, so the value is
+      checked where it first becomes a Duration.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L562-L577
+  - what: >-
+      extra_body and extra_headers are text maps and an extra_query value is text or an integer,
+      the value types B3360's records and B3364's handler declare. LiteLLM types all three as
+      dict[str, object], so for example target_model_names as a JSON list is not expressible here
+      and only the text form reaches B3361's encoder.
+    why: >-
+      docs/compatibility.md sends input of the declared type, and the records and the handler seam
+      belong to B3360 and B3364.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/utils.py#L137-L147
+  - what: >-
+      Handler failures are mapped from B3364's ContainerCollectionError once per call. A provider
+      error and a config Upstream error keep their status and class; a ParamType failure is a
+      BadRequest whose body_param names the field; every other handler failure (client, logging,
+      encoding, suspended, other params) is a ValueError-like ApiConnection. Model stays "" and the
+      provider is the call's custom_llm_provider.
+    why: >-
+      B3364 already merges the handler's own error handling into that enum, and naming the field is
+      docs/compatibility.md's rule for a value of the wrong type.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L253-L277
+  - what: >-
+      A mock_response that is not valid JSON, or that does not decode into ContainerObject or
+      ContainerListResponse, is this module's MockDecodeError and reaches B185 as a ValueError-like
+      ApiConnection with the caller's provider and betterlite's message. LiteLLM raises
+      json.loads' JSONDecodeError or pydantic's ValidationError, neither of which exception_type
+      classifies as a provider answer.
+    why: >-
+      Error messages and classes are betterlite's own outside LiteLLM's provider family, and a mock
+      body of the wrong shape is a caller error rather than a provider answer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L204-L212
+  - what: >-
+      A kwargs entry named api_key, api_base, api_version, litellm_call_id or litellm_metadata is
+      replaced by the matching typed field. LiteLLM's signature binds the credential names as
+      parameters and reads the other two from kwargs, so its kwargs never carries them and it has no
+      precedence to state.
+    why: >-
+      The Rust call holds those names as typed fields and the remaining kwargs as a map, with no
+      argument binding to keep them out of the map; the value the caller stated explicitly wins.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L166-L181
+kept_bugs:
+  - what: >-
+      The mock short circuit runs before the provider is parsed, its container config looked up or
+      anything logged, so a call with an unknown custom_llm_provider or a provider without a
+      container config still succeeds when mock_response is set, and the created id is not encoded.
+    why: >-
+      Mocking without provider credentials is the point of the short circuit and setups use it that
+      way, so the name, the config, the logging and the encode step are skipped when a mock answers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L204-L212
+  - what: >-
+      list_containers never encodes container ids, so a list call that carries litellm_metadata's
+      model_info.id or extra_body's target_model_names still returns the provider's raw ids, while
+      create_container encodes the id it gets back.
+    why: >-
+      LiteLLM only wraps create's result in the encoder; a routed list answering raw ids is the
+      behavior a caller of list already sees, and callers of create rely on the encoded id.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L464-L479
