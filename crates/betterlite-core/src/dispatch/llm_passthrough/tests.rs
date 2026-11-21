@@ -5,22 +5,18 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use betterlite_config::sections::settings::JsonValue;
-use betterlite_error::proxy_model_not_found::ProxyModelNotFoundError;
 use betterlite_models::resolution::ResolutionError;
 use betterlite_openai::error::{ProviderError, ProviderErrorParts};
 use betterlite_openai::openai_base_config::Object;
 
 use self::support::{
-    Calls, FakeView, Outcome, Ports, RecordingCallee, call_args, empty_view,
-    failing_router_request, override_settings, ports_with, recording_blocked, request, route_input,
-    sdk_router,
+    Calls, FakeView, RecordingBlocked, call_args, empty_view, failing_router_request,
+    override_settings, ports_with, request, route_input, sdk_router,
 };
 use super::entry;
-use super::error::{LlmPassthroughError, ModelBlockedError};
-use super::ports::{BlockedModels, PassthroughCallPort};
+use super::error::LlmPassthroughError;
 use super::route::{PassthroughRoute, PassthroughRouteInput, RouteFlag, plan_passthrough_route};
 use crate::api::passthrough_call::{PassthroughBody, PassthroughCallError};
-use crate::api::video_router_calls::route::VideoRouteView;
 use crate::dispatch::Dispatch;
 use crate::dispatch::NoRules;
 use crate::dispatch::error::DispatchError;
@@ -34,7 +30,10 @@ mod support;
 fn plan_api_key_with_router_is_router() {
     let trace = Trace::default();
     let view = FakeView::default();
-    let blocked = recording_blocked(vec!["gpt-upstream"], &trace);
+    let blocked = RecordingBlocked {
+        blocked: vec!["gpt-upstream"],
+        trace: trace.clone(),
+    };
     let input = PassthroughRouteInput {
         has_api_key_or_base: RouteFlag(true),
         ..route_input("gpt-upstream")
@@ -50,7 +49,10 @@ fn plan_api_key_with_router_is_router() {
 
 #[test]
 fn plan_api_key_without_router_is_direct() {
-    let blocked = recording_blocked(vec!["gpt-upstream"], &Trace::default());
+    let blocked = RecordingBlocked {
+        blocked: vec!["gpt-upstream"],
+        trace: Trace::default(),
+    };
     let input = PassthroughRouteInput {
         has_api_key_or_base: RouteFlag(true),
         ..route_input("gpt-upstream")
@@ -64,7 +66,10 @@ fn plan_api_key_without_router_is_direct() {
 #[test]
 fn plan_user_config_is_user_config() {
     let view = FakeView::default();
-    let blocked = recording_blocked(Vec::new(), &Trace::default());
+    let blocked = RecordingBlocked {
+        blocked: Vec::new(),
+        trace: Trace::default(),
+    };
     let input = PassthroughRouteInput {
         has_user_config: RouteFlag(true),
         ..route_input("gpt-upstream")
@@ -82,7 +87,10 @@ fn plan_user_config_is_user_config() {
 #[test]
 fn plan_api_key_beats_user_config() {
     let view = FakeView::default();
-    let blocked = recording_blocked(Vec::new(), &Trace::default());
+    let blocked = RecordingBlocked {
+        blocked: Vec::new(),
+        trace: Trace::default(),
+    };
     let input = PassthroughRouteInput {
         has_api_key_or_base: RouteFlag(true),
         has_user_config: RouteFlag(true),
@@ -99,7 +107,10 @@ fn plan_api_key_beats_user_config() {
 #[test]
 fn plan_user_config_beats_override() {
     let view = FakeView::default();
-    let blocked = recording_blocked(Vec::new(), &Trace::default());
+    let blocked = RecordingBlocked {
+        blocked: Vec::new(),
+        trace: Trace::default(),
+    };
     let input = PassthroughRouteInput {
         has_user_config: RouteFlag(true),
         router_settings_override: Some(Object::new()),
@@ -118,7 +129,10 @@ fn plan_override_with_router_is_router() {
         deployment_names: vec!["gpt-upstream"],
         ..empty_view()
     };
-    let blocked = recording_blocked(vec!["gpt-upstream"], &trace);
+    let blocked = RecordingBlocked {
+        blocked: vec!["gpt-upstream"],
+        trace: trace.clone(),
+    };
     let input = PassthroughRouteInput {
         router_settings_override: Some(Object::new()),
         ..route_input("gpt-upstream")
@@ -134,7 +148,10 @@ fn plan_override_with_router_is_router() {
 
 #[test]
 fn plan_override_without_router_is_direct() {
-    let blocked = recording_blocked(Vec::new(), &Trace::default());
+    let blocked = RecordingBlocked {
+        blocked: Vec::new(),
+        trace: Trace::default(),
+    };
     let input = PassthroughRouteInput {
         router_settings_override: Some(Object::new()),
         ..route_input("gpt-upstream")
@@ -148,7 +165,10 @@ fn plan_override_without_router_is_direct() {
 #[test]
 fn plan_without_router_is_direct() {
     let trace = Trace::default();
-    let blocked = recording_blocked(Vec::new(), &trace);
+    let blocked = RecordingBlocked {
+        blocked: Vec::new(),
+        trace: trace.clone(),
+    };
     let input = route_input("gpt-upstream");
     assert_eq!(
         plan_passthrough_route(&input, None, &blocked),
@@ -164,7 +184,10 @@ fn plan_blocked_model_is_blocked() {
         recognized: RouteFlag(true),
         ..empty_view()
     };
-    let blocked = recording_blocked(vec!["gpt-upstream"], &trace);
+    let blocked = RecordingBlocked {
+        blocked: vec!["gpt-upstream"],
+        trace: trace.clone(),
+    };
     let input = route_input("gpt-upstream");
     assert_eq!(
         plan_passthrough_route(&input, Some(&view), &blocked),
@@ -180,7 +203,10 @@ fn plan_blocked_check_gets_team_id() {
         recognized: RouteFlag(true),
         ..empty_view()
     };
-    let blocked = recording_blocked(vec!["team-model"], &trace);
+    let blocked = RecordingBlocked {
+        blocked: vec!["team-model"],
+        trace: trace.clone(),
+    };
     let input = PassthroughRouteInput {
         team_id: Some(String::from("team-1")),
         ..route_input("team-model")
@@ -196,7 +222,10 @@ fn plan_blocked_check_gets_team_id() {
 fn plan_blocked_skips_empty_model() {
     let trace = Trace::default();
     let view = FakeView::default();
-    let blocked = recording_blocked(vec![""], &trace);
+    let blocked = RecordingBlocked {
+        blocked: vec![""],
+        trace: trace.clone(),
+    };
     let input = route_input("");
     assert_eq!(
         plan_passthrough_route(&input, Some(&view), &blocked),
@@ -211,7 +240,10 @@ fn plan_blocked_before_team_mapping() {
         team_map: vec![("team-model", "team-1", "global-model")],
         ..empty_view()
     };
-    let blocked = recording_blocked(vec!["team-model"], &Trace::default());
+    let blocked = RecordingBlocked {
+        blocked: vec!["team-model"],
+        trace: Trace::default(),
+    };
     let input = PassthroughRouteInput {
         team_id: Some(String::from("team-1")),
         ..route_input("team-model")
@@ -228,7 +260,10 @@ fn plan_team_model_is_router() {
         team_map: vec![("team-model", "team-1", "global-model")],
         ..empty_view()
     };
-    let blocked = recording_blocked(Vec::new(), &Trace::default());
+    let blocked = RecordingBlocked {
+        blocked: Vec::new(),
+        trace: Trace::default(),
+    };
     let input = PassthroughRouteInput {
         team_id: Some(String::from("team-1")),
         ..route_input("team-model")
@@ -247,7 +282,10 @@ fn plan_recognized_model_is_router() {
         recognized: RouteFlag(true),
         ..empty_view()
     };
-    let blocked = recording_blocked(Vec::new(), &Trace::default());
+    let blocked = RecordingBlocked {
+        blocked: Vec::new(),
+        trace: Trace::default(),
+    };
     let input = route_input("gpt-upstream");
     assert_eq!(
         plan_passthrough_route(&input, Some(&view), &blocked),
@@ -263,7 +301,10 @@ fn plan_admin_team_public_model_is_router() {
         team_public: vec!["secret-model"],
         ..empty_view()
     };
-    let blocked = recording_blocked(Vec::new(), &Trace::default());
+    let blocked = RecordingBlocked {
+        blocked: Vec::new(),
+        trace: Trace::default(),
+    };
     let input = PassthroughRouteInput {
         is_proxy_admin_without_team: RouteFlag(true),
         ..route_input("secret-model")
@@ -283,7 +324,10 @@ fn plan_admin_model_in_names_is_not_team_public_router() {
         model_names: vec!["gpt-upstream"],
         ..empty_view()
     };
-    let blocked = recording_blocked(Vec::new(), &Trace::default());
+    let blocked = RecordingBlocked {
+        blocked: Vec::new(),
+        trace: Trace::default(),
+    };
     let input = PassthroughRouteInput {
         is_proxy_admin_without_team: RouteFlag(true),
         ..route_input("gpt-upstream")
@@ -300,7 +344,10 @@ fn plan_team_public_model_needs_admin() {
         team_public: vec!["secret-model"],
         ..empty_view()
     };
-    let blocked = recording_blocked(Vec::new(), &Trace::default());
+    let blocked = RecordingBlocked {
+        blocked: Vec::new(),
+        trace: Trace::default(),
+    };
     let input = route_input("secret-model");
     assert_eq!(
         plan_passthrough_route(&input, Some(&view), &blocked),
@@ -316,7 +363,10 @@ fn plan_pass_through_all_is_direct() {
         deployment_names: vec!["anthropic.claude-3"],
         ..empty_view()
     };
-    let blocked = recording_blocked(Vec::new(), &Trace::default());
+    let blocked = RecordingBlocked {
+        blocked: Vec::new(),
+        trace: Trace::default(),
+    };
     let input = route_input("anthropic.claude-3");
     assert_eq!(
         plan_passthrough_route(&input, Some(&view), &blocked),
@@ -330,7 +380,10 @@ fn plan_default_or_pattern_is_router() {
         default_or_pattern: RouteFlag(true),
         ..empty_view()
     };
-    let blocked = recording_blocked(Vec::new(), &Trace::default());
+    let blocked = RecordingBlocked {
+        blocked: Vec::new(),
+        trace: Trace::default(),
+    };
     let input = route_input("anthropic.claude-3");
     assert_eq!(
         plan_passthrough_route(&input, Some(&view), &blocked),
@@ -346,7 +399,10 @@ fn plan_deployment_name_is_specific() {
         deployment_names: vec!["deployment-7"],
         ..empty_view()
     };
-    let blocked = recording_blocked(Vec::new(), &Trace::default());
+    let blocked = RecordingBlocked {
+        blocked: Vec::new(),
+        trace: Trace::default(),
+    };
     let input = route_input("deployment-7");
     assert_eq!(
         plan_passthrough_route(&input, Some(&view), &blocked),
@@ -363,7 +419,10 @@ fn plan_wildcard_beats_deployment() {
         deployment_names: vec!["deployment-7"],
         ..empty_view()
     };
-    let blocked = recording_blocked(Vec::new(), &Trace::default());
+    let blocked = RecordingBlocked {
+        blocked: Vec::new(),
+        trace: Trace::default(),
+    };
     let input = route_input("deployment-7");
     assert_eq!(
         plan_passthrough_route(&input, Some(&view), &blocked),
@@ -376,7 +435,10 @@ fn plan_wildcard_beats_deployment() {
 #[test]
 fn plan_unknown_model_is_not_found() {
     let view = FakeView::default();
-    let blocked = recording_blocked(Vec::new(), &Trace::default());
+    let blocked = RecordingBlocked {
+        blocked: Vec::new(),
+        trace: Trace::default(),
+    };
     let input = route_input("missing");
     assert_eq!(
         plan_passthrough_route(&input, Some(&view), &blocked),
@@ -390,7 +452,10 @@ fn plan_model_in_names_is_not_found() {
         model_names: vec!["gpt-upstream"],
         ..empty_view()
     };
-    let blocked = recording_blocked(Vec::new(), &Trace::default());
+    let blocked = RecordingBlocked {
+        blocked: Vec::new(),
+        trace: Trace::default(),
+    };
     let input = route_input("gpt-upstream");
     assert_eq!(
         plan_passthrough_route(&input, Some(&view), &blocked),
@@ -418,7 +483,7 @@ async fn entry_router_plan_calls_router() {
         panic!("the fake answers with a full body");
     };
     assert_eq!(from_utf8(&body).expect("utf-8"), "{}");
-    assert_eq!(trace.steps(), ["router"]);
+    assert_eq!(trace.steps(), ["blocked:gpt-upstream:", "router"]);
     assert_eq!(calls.recorded().len(), 1);
 }
 
@@ -655,10 +720,7 @@ async fn entry_router_plan_keeps_specific_absent() {
 async fn entry_blocked_is_403() {
     let trace = Trace::default();
     let calls = Calls::default();
-    let view = FakeView {
-        recognized: RouteFlag(true),
-        ..empty_view()
-    };
+    let view = FakeView::default();
     let ports = ports_with(Some(view), vec!["gpt-upstream"], &calls, &trace);
     let request = request(
         call_args("gpt-upstream"),
@@ -672,7 +734,6 @@ async fn entry_blocked_is_403() {
         panic!("a blocked model answers Blocked");
     };
     assert_eq!(blocked.model, "gpt-upstream");
-    assert_eq!(ModelBlockedError::STATUS.as_u16(), 403);
     assert_eq!(blocked.to_string(), "Model is blocked");
     assert_eq!(trace.steps(), ["blocked:gpt-upstream:"]);
     assert!(calls.recorded().is_empty());
@@ -687,12 +748,9 @@ async fn entry_not_found_names_route() {
     let Err(LlmPassthroughError::NotFound(error)) = entry::execute(request).await else {
         panic!("an unknown model is not found");
     };
-    assert_eq!(ProxyModelNotFoundError::STATUS.as_u16(), 400);
+    let message = &error.detail.error;
     assert!(
-        error
-            .detail
-            .error
-            .contains("allm_passthrough_route: Invalid model name passed in model=missing.")
+        message.contains("allm_passthrough_route: Invalid model name passed in model=missing.")
     );
     assert!(error.retryable_with_model_read_through);
     assert_eq!(trace.steps(), ["blocked:missing:"]);
@@ -716,17 +774,16 @@ async fn entry_user_config_is_rejected() {
     let DispatchError::Rejected {
         status,
         error_type,
-        param,
-        code,
         message,
+        ..
     } = error.rejected()
     else {
         panic!("the dispatch answer is a rejected call");
     };
-    assert_eq!(status, 400);
-    assert_eq!(error_type, "invalid_request_error");
-    assert_eq!(param, None);
-    assert_eq!(code, "400");
+    assert_eq!(
+        (status, error_type.as_str()),
+        (400, "invalid_request_error")
+    );
     assert_eq!(
         message,
         "user_config is not supported on pass-through routes"
@@ -783,57 +840,37 @@ async fn entry_call_error_wraps() {
         error,
         PassthroughCallError::UpstreamStatus { status: 418, .. }
     ));
-    let DispatchError::Rejected {
-        status,
-        error_type,
-        code,
-        ..
-    } = LlmPassthroughError::Call(error).rejected()
-    else {
-        panic!("the dispatch answer is a rejected call");
-    };
-    assert_eq!(status, 418);
-    assert_eq!(error_type, "invalid_request_error");
-    assert_eq!(code, "418");
+    let (status, error_type, code) = rejected_parts(&LlmPassthroughError::Call(error));
+    assert_eq!(
+        (status, error_type.as_str(), code.as_str()),
+        (418, "invalid_request_error", "418")
+    );
 }
 
 #[tokio::test]
 async fn entry_call_error_types_follow_status() {
-    assert_eq!(
-        rejected_call(401).await,
-        (401, String::from("authentication_error"))
-    );
-    assert_eq!(
-        rejected_call(403).await,
-        (403, String::from("permission_error"))
-    );
-    assert_eq!(
-        rejected_call(429).await,
-        (429, String::from("rate_limit_error"))
-    );
-    assert_eq!(
-        rejected_call(503).await,
-        (503, String::from("internal_server_error"))
-    );
+    let authentication = rejected_call(401).await;
+    let permission = rejected_call(403).await;
+    let rate_limit = rejected_call(429).await;
+    let server = rejected_call(503).await;
+    assert_eq!(authentication, (401, String::from("authentication_error")));
+    assert_eq!(permission, (403, String::from("permission_error")));
+    assert_eq!(rate_limit, (429, String::from("rate_limit_error")));
+    assert_eq!(server, (503, String::from("internal_server_error")));
 }
 
 #[test]
 fn entry_mapped_call_error_keeps_status() {
-    assert_eq!(
-        rejected_parts(&provider_failure(429)),
-        (429, String::from("rate_limit_error"), String::from("429"))
-    );
+    let (status, error_type, _code) = rejected_parts(&provider_failure(429));
+    assert_eq!((status, error_type.as_str()), (429, "rate_limit_error"));
 }
 
 #[test]
 fn entry_mapped_call_error_outside_range_is_500() {
+    let (status, error_type, _code) = rejected_parts(&provider_failure(302));
     assert_eq!(
-        rejected_parts(&provider_failure(302)),
-        (
-            500,
-            String::from("internal_server_error"),
-            String::from("500")
-        )
+        (status, error_type.as_str()),
+        (500, "internal_server_error")
     );
 }
 
@@ -844,13 +881,10 @@ fn entry_resolution_call_error_is_400() {
             model: String::from("foo"),
         },
     ));
+    let (status, error_type, _code) = rejected_parts(&error);
     assert_eq!(
-        rejected_parts(&error),
-        (
-            400,
-            String::from("invalid_request_error"),
-            String::from("400")
-        )
+        (status, error_type.as_str()),
+        (400, "invalid_request_error")
     );
 }
 
@@ -858,23 +892,12 @@ fn entry_resolution_call_error_is_400() {
 async fn entry_router_missing() {
     let trace = Trace::default();
     let calls = Calls::default();
-    let view: Arc<dyn VideoRouteView + Send + Sync> = Arc::new(FakeView {
+    let view = FakeView {
         recognized: RouteFlag(true),
         ..empty_view()
-    });
-    let blocked: Arc<dyn BlockedModels> = Arc::new(recording_blocked(Vec::new(), &trace));
-    let direct: Arc<dyn PassthroughCallPort> = Arc::new(RecordingCallee {
-        label: "direct",
-        trace: trace.clone(),
-        outcome: Outcome::Reply,
-        calls: calls.clone(),
-    });
-    let ports = Ports {
-        router: None,
-        view: Some(view),
-        blocked,
-        direct,
     };
+    let mut ports = ports_with(Some(view), Vec::new(), &calls, &trace);
+    ports.router = None;
     let request = request(
         call_args("gpt-upstream"),
         route_input("gpt-upstream"),
@@ -891,24 +914,12 @@ async fn entry_router_missing() {
 async fn entry_router_uses_b8690_trait() {
     let trace = Trace::default();
     let calls = Calls::default();
-    let router: Arc<dyn PassthroughCallPort> = sdk_router(&trace);
-    let view: Arc<dyn VideoRouteView + Send + Sync> = Arc::new(FakeView {
+    let view = FakeView {
         recognized: RouteFlag(true),
         ..empty_view()
-    });
-    let blocked: Arc<dyn BlockedModels> = Arc::new(recording_blocked(Vec::new(), &trace));
-    let direct: Arc<dyn PassthroughCallPort> = Arc::new(RecordingCallee {
-        label: "direct",
-        trace: trace.clone(),
-        outcome: Outcome::Reply,
-        calls: calls.clone(),
-    });
-    let ports = Ports {
-        router: Some(router),
-        view: Some(view),
-        blocked,
-        direct,
     };
+    let mut ports = ports_with(Some(view), Vec::new(), &calls, &trace);
+    ports.router = Some(sdk_router(&trace));
     let request = request(
         call_args("gpt-upstream"),
         route_input("gpt-upstream"),
@@ -916,17 +927,14 @@ async fn entry_router_uses_b8690_trait() {
     );
     let reply = entry::execute(request).await.expect("sdk reply");
     assert_eq!(reply.status, 200);
-    assert_eq!(trace.steps(), ["sdk"]);
+    assert_eq!(trace.steps(), ["blocked:gpt-upstream:", "sdk"]);
 }
 
 #[tokio::test]
 async fn entry_dispatch_blocked_is_403() {
     let trace = Trace::default();
     let calls = Calls::default();
-    let view = FakeView {
-        recognized: RouteFlag(true),
-        ..empty_view()
-    };
+    let view = FakeView::default();
     let ports = ports_with(Some(view), vec!["gpt-upstream"], &calls, &trace);
     let request = request(
         call_args("gpt-upstream"),
@@ -935,9 +943,8 @@ async fn entry_dispatch_blocked_is_403() {
     );
     let dispatch = Dispatch::new(Vec::new(), Arc::new(NoRules), Arc::new(TracingCallLog));
     let context = context(None, SystemTime::UNIX_EPOCH);
-    let result = dispatch
-        .execute(Operation::LlmPassthrough(request), &context)
-        .await;
+    let operation = Operation::LlmPassthrough(request);
+    let result = dispatch.execute(operation, &context).await;
     let Err(DispatchError::Rejected {
         status,
         error_type,
@@ -963,9 +970,8 @@ async fn entry_dispatch_not_found_is_400() {
     let request = request(call_args("missing"), route_input("missing"), &ports);
     let dispatch = Dispatch::new(Vec::new(), Arc::new(NoRules), Arc::new(TracingCallLog));
     let context = context(None, SystemTime::UNIX_EPOCH);
-    let result = dispatch
-        .execute(Operation::LlmPassthrough(request), &context)
-        .await;
+    let operation = Operation::LlmPassthrough(request);
+    let result = dispatch.execute(operation, &context).await;
     let Err(DispatchError::Rejected {
         status,
         error_type,

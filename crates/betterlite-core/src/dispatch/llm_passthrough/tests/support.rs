@@ -205,13 +205,6 @@ impl BlockedModels for RecordingBlocked {
     }
 }
 
-pub(super) fn recording_blocked(blocked: Vec<&'static str>, trace: &Trace) -> RecordingBlocked {
-    RecordingBlocked {
-        blocked,
-        trace: trace.clone(),
-    }
-}
-
 pub(super) struct RecordingCallee {
     pub(super) label: &'static str,
     pub(super) trace: Trace,
