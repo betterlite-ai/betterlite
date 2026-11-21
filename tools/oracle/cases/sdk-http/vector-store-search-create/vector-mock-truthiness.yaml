@@ -7,10 +7,11 @@ call:
         mode: sync
         create: {name: notes}
         options: {api_key: sk-client, litellm_call_id: call-1, mock_response: {}}
+      # LiteLLM's pydantic union turns a ModelResponse-shaped dict into a ModelResponse, so created:x keeps this one a dict and its mock branch fires
       - operation: create
         mode: sync
         create: {name: notes}
-        options: {api_key: sk-client, litellm_call_id: call-2, mock_response: {id: vs_a, object: vector_store}}
+        options: {api_key: sk-client, litellm_call_id: call-2, mock_response: {id: vs_a, object: vector_store, created: x}}
       - operation: search
         mode: sync
         search: {vector_store_id: vs_a, query: hello}
