@@ -51,13 +51,24 @@ fn team_grants_project_all_eighteen_fields() {
     let membership: LiteLLMTeamMembership = serde_json::from_str(MEMBERSHIP).unwrap();
     let grants = team_grants(&team, Some(&membership), Some("user-1"));
     assert_eq!(grants.team_alias.as_deref(), Some("Team One"));
-    assert_eq!(grants.team_tpm_limit, Some(1000_i64));
-    assert_eq!(grants.team_rpm_limit, Some(100_i64));
-    assert_eq!(grants.team_tpd_limit, Some(50000_i64));
-    assert_eq!(grants.team_max_budget, Some(Decimal::new(505, 1)));
-    assert_eq!(grants.team_soft_budget, Some(Decimal::new(40, 0)));
+    let limits = (
+        grants.team_tpm_limit,
+        grants.team_rpm_limit,
+        grants.team_tpd_limit,
+    );
+    assert_eq!(limits, (Some(1000_i64), Some(100_i64), Some(50000_i64)));
+    let money = (
+        grants.team_max_budget,
+        grants.team_soft_budget,
+        grants.team_spend,
+    );
+    let expected_money = (
+        Some(Decimal::new(505, 1)),
+        Some(Decimal::new(40, 0)),
+        Some(Decimal::new(1225, 2)),
+    );
+    assert_eq!(money, expected_money);
     assert!(grants.team_model_max_budget.unwrap().contains_key("gpt-4o"));
-    assert_eq!(grants.team_spend, Some(Decimal::new(1225, 2)));
     assert_eq!(grants.team_models, ["gpt-4o", "o3", "gpt-4o"]);
     assert!(grants.team_blocked);
     let owner = JsonData::String("ops".to_owned());
@@ -66,17 +77,22 @@ fn team_grants_project_all_eighteen_fields() {
         grants.team_model_aliases,
         Some(aliases(&[("fast", "gpt-4o")]))
     );
-    assert_eq!(grants.team_object_permission_id.as_deref(), Some("perm-1"));
-    assert_eq!(
-        grants.team_object_permission.unwrap().object_permission_id,
-        "perm-1"
+    let permission = grants.team_object_permission.unwrap().object_permission_id;
+    let permission_ids = (
+        grants.team_object_permission_id.as_deref(),
+        permission.as_str(),
     );
+    assert_eq!(permission_ids, (Some("perm-1"), "perm-1"));
     let member = grants.team_member.unwrap();
-    assert_eq!(member.base.user_email.as_deref(), Some("one@example.com"));
-    assert_eq!(member.role, MemberRole::Admin);
-    assert_eq!(grants.team_member_spend, Some(Decimal::new(35, 1)));
-    assert_eq!(grants.team_member_tpm_limit, Some(11_i64));
-    assert_eq!(grants.team_member_rpm_limit, Some(7_i64));
+    let member_view = (member.base.user_email.as_deref(), member.role);
+    assert_eq!(member_view, (Some("one@example.com"), MemberRole::Admin));
+    let member_limits = (
+        grants.team_member_spend,
+        grants.team_member_tpm_limit,
+        grants.team_member_rpm_limit,
+    );
+    let expected_member = (Some(Decimal::new(35, 1)), Some(11_i64), Some(7_i64));
+    assert_eq!(member_limits, expected_member);
 }
 
 #[rstest]

@@ -80,17 +80,17 @@ pub fn team_json_columns(team: &LiteLLMTeamTable) -> TeamJsonColumns {
         .litellm_model_table
         .as_ref()
         .and_then(|table| table.model_aliases.as_ref());
-    match column.map(decode_model_aliases).transpose() {
-        Ok(model_aliases) => TeamJsonColumns {
-            metadata: team.fields.base.metadata.clone(),
-            model_aliases: model_aliases.flatten(),
-        },
-        // both columns validate together, so an alias mapping that fails discards the metadata too
-        Err(_) => TeamJsonColumns {
+    // both columns validate together, so an alias mapping that fails discards the metadata too
+    column.map(decode_model_aliases).transpose().map_or(
+        TeamJsonColumns {
             metadata: None,
             model_aliases: None,
         },
-    }
+        |model_aliases| TeamJsonColumns {
+            metadata: team.fields.base.metadata.clone(),
+            model_aliases: model_aliases.flatten(),
+        },
+    )
 }
 
 // The membership is projected as given: its ids are not checked against the team or the user.
