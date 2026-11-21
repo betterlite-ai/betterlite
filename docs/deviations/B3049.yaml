@@ -1,0 +1,36 @@
+task: B3049
+deviations:
+  - what: precise_minute is built from one clock reading. LiteLLM reads the clock three times (date, hour, minute).
+    why: Three reads can straddle a midnight, hour or minute change and build an id that never existed. One reading cannot, and it matches LiteLLM whenever the reads agree.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter.py#L305-L308
+  - what: A failure of the final batch write is logged at error level under LiteLLM's own "LiteLLM Cache: exception in async add_cache" line, and the request is still admitted.
+    why: The write no longer runs in a detached task (see the entry below), so the error is available to the hook; LiteLLM's DualCache logs the same failure and admits too.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter.py#L484-L490
+  - what: The arguments `cache` and `call_type` are not accepted.
+    why: LiteLLM never reads them in this hook, and an unused parameter would only invite a reader to guess its purpose.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter.py#L246-L252
+  - what: The final batch write is awaited before pre_call returns, where LiteLLM detaches it with asyncio.create_task.
+    why: The lint table here denies tokio::spawn and std::thread::spawn, and a JoinSet or TaskTracker is the server's to own, which is B8399's wiring. The write carries the same collected list even when empty, ttl 60 and no local-only flag, and its failure does not fail the request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter.py#L484-L490
+  - what: A usage cache failure on the global counter read or its increment returns LegacyAdmissionError::Cache, where LiteLLM's DualCache logs and swallows the exception, reads the counter as missing and admits the request.
+    why: Betterlite's UsageCache trait answers Err only when its adapter breaks the trait's contract, since a swallowed failure is the None answer; admitting every request because the limiter's own store broke would silently lift the global cap. The six-key read and every write B3047 performs keep its log-and-continue behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L565-L604
+  - what: The global counter read goes through B3047's usage cache trait, whose batch_get carries no local-only flag, so an adapter that reads a shared tier consults it too; LiteLLM reads the in-memory tier only.
+    why: The trait was built without the flag and this task may not change it. The increment stays local-only, so no shared tier ever learns this hook's global count.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter.py#L280-L285
+  - what: The global counter is incremented by a read and a batch_set with ttl 600 and local_only true, because the trait has no increment call. LiteLLM calls async_increment_cache, which keeps a live ttl and otherwise uses InMemoryCache.default_ttl, 600.
+    why: B3047's trait offers no increment, so the same local-only write produces the same value and ttl.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L565-L604
+  - what: The global read and increment, the six-key read and the final write pass no parent_otel_span. UserAPIKeyAuth keeps it in a pub(crate) field with no public reader.
+    why: LiteLLM threads user_api_key_dict.parent_otel_span into every cache call for tracing. The B2314 record and B3047's handler seam are out of this task's scope, so the calls carry None. B3036 records the same trade for its seams.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter.py#L310-L335
+  - what: A cache value of the wrong shape for its key (a bare number where a minute counter belongs, or a counter where the global count belongs) counts as a missing counter and is logged at error level, where LiteLLM raises a TypeError out of the comparison.
+    why: The hook's reads fail open on cache errors as DualCache does, and a wrong shape means a broken writer; a 500 there would refuse every request of that dimension.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter.py#L106-L140
+  - what: get_key_model_tpm_limit and get_key_model_rpm_limit are called without a deployment catalog, so their last fallback, a deployment's default_api_key_rpm_limit or default_api_key_tpm_limit, never applies; key metadata, key model_max_budget and team metadata still do.
+    why: That fallback reads B302's deployment catalog through B745's DeploymentLimitCatalog, which this hook has no handle on (the B3047 handler holds a DeploymentSnapshot, a different seam), and B745 owns the lookup.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L1006-L1067
+  - what: A metadata.global_max_parallel_requests that is present but not a whole JSON number is treated as absent, so no global cap applies; LiteLLM compares it with the counter and raises a TypeError for any value of another type.
+    why: general_settings declares the cap as int or None, so a working config never carries another type, and the request metadata is untyped JSON that this hook cannot reject with a field error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter.py#L260
+kept_bugs: []
