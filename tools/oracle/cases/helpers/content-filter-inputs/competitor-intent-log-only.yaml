@@ -1,0 +1,6 @@
+kind: helper
+name: competitor-intent-log-only
+call:
+  b3699: {"operation": "competitor", "text": "Qatar Airways is better", "model": "gpt-test", "config": {"brand_self": ["Acme Air"], "competitors": ["Qatar"], "locations": ["Qatar"], "policy": {"competitor_comparison": "refuse"}, "threshold_high": 0.9, "threshold_medium": 0.8, "threshold_low": 0.3, "refuse_message_template": null, "reframe_message_template": null}, "patterns": [], "blocked_words": []}
+env: {}
+compare: {ignore: []}
