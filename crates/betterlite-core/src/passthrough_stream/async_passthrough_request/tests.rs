@@ -1,12 +1,12 @@
 #![cfg(test)]
 
-use std::net::TcpListener;
 use std::sync::{Arc, PoisonError};
 use std::time::Duration;
 
 use betterlite_http::error::HttpError;
 use betterlite_http_fixture::reply::reply;
 use betterlite_http_fixture::server::serve;
+use betterlite_test_ports::refused_port::RefusedPort;
 use rstest::rstest;
 use tokio_util::task::TaskTracker;
 
@@ -419,11 +419,9 @@ async fn proxied_client_accepts_a_body_at_the_transport_limit() {
 
 #[tokio::test]
 async fn proxied_client_reports_a_failed_connection() {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
+    let refused = RefusedPort::bind().unwrap();
     let client = proxy_client(1024);
-    let url = format!("http://{address}/v1/chat/completions");
+    let url = format!("http://{}/v1/chat/completions", refused.address);
     let reply = async_passthrough_request(
         send_to(&client, &url, false),
         fake_config(),

@@ -9,11 +9,12 @@ use betterlite_http_fixture::server::serve;
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_models::decisions::Json;
 use betterlite_openai::evals::error::EvalsError;
+use betterlite_test_ports::refused_port::RefusedPort;
 use rstest::rstest;
 
 use self::support::{
-    Answer, Bench, Call, IMPATIENT, assert_line, assert_no_request, body_json, dead_url, headers,
-    json, json_server, object, provider, run, url,
+    Answer, Bench, Call, IMPATIENT, assert_line, assert_no_request, body_json, headers, json,
+    json_server, object, provider, run, url,
 };
 use crate::api::eval_http::error::EvalHttpError;
 use crate::api::eval_http::exchange::{EvalExchange, EvalMethod};
@@ -341,7 +342,11 @@ async fn get_binary_body_reaches_the_transform_as_its_size() {
 // A refused connection was never an HTTP answer, so _handle_error marks its 500 as synthesized
 #[tokio::test]
 async fn connection_refused_is_a_synthesized_500() {
-    let mut bench = Bench::new(dead_url(), TransportLimits::DEFAULT);
+    let refused = RefusedPort::bind().unwrap();
+    let mut bench = Bench::new(
+        format!("http://{}/v1/evals", refused.address),
+        TransportLimits::DEFAULT,
+    );
     let error = run(
         &mut bench,
         Call::Create {

@@ -1,4 +1,5 @@
 use betterlite_config::sections::vertex_credential_sources::credential_source::CredentialDecodeError;
+use betterlite_http::error::HttpError;
 use thiserror::Error;
 
 use crate::api::vertex_location::VertexLocationError;
@@ -13,6 +14,8 @@ pub enum VertexIngestionError {
     MissingProject,
     #[error(transparent)]
     Location(#[from] VertexLocationError),
+    #[error(transparent)]
+    CorpusId(#[from] HttpError),
     #[error("the vertex credentials could not be read")]
     Credentials {
         #[source]

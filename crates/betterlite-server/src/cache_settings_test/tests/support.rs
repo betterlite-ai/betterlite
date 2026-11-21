@@ -285,15 +285,6 @@ impl FakeRedis {
     }
 }
 
-pub(crate) async fn closed_port() -> u16 {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("an ephemeral listener");
-    let address = listener.local_addr().expect("the listener address");
-    drop(listener);
-    address.port()
-}
-
 async fn serve(
     listener: TcpListener,
     commands: Arc<Mutex<Vec<Recorded>>>,

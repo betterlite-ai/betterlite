@@ -8,6 +8,7 @@ use std::sync::Mutex;
 use std::sync::PoisonError;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use betterlite_test_ports::refused_port::RefusedPort;
 use rstest::rstest;
 
 use super::{
@@ -383,11 +384,9 @@ fn local_port_prober_finds_a_listening_ipv4_port() {
 
 #[test]
 fn local_port_prober_answers_false_when_nothing_listens() {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
-    drop(listener);
+    let refused = RefusedPort::bind().unwrap();
 
-    assert!(!LocalPortProber.in_use(port));
+    assert!(!LocalPortProber.in_use(refused.address.port()));
 }
 
 #[test]
