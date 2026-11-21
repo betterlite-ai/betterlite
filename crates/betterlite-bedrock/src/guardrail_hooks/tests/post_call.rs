@@ -32,6 +32,7 @@ async fn scans_only_the_output_and_masks_the_response() {
     assert_eq!(scans.len(), 1);
     assert_eq!(scans[0].source, ScanSource::Output);
     assert!(scans[0].has_response);
+    drop(scans);
     assert_eq!(runtime.masked.lock().unwrap().len(), 1);
     assert_eq!(data["applied"], GuardrailValue::Boolean(true));
 }
@@ -110,11 +111,13 @@ async fn attaches_the_replaced_response_before_rethrowing_a_block() {
         .await
         .unwrap_err();
     match failure {
-        HookFailure::ModifyResponse(failure) => {
-            assert_eq!(failure.message, "blocked output");
-            assert_eq!(failure.original_response, Some(response));
+        HookFailure::ModifyResponse(modify) => {
+            assert_eq!(modify.message, "blocked output");
+            assert_eq!(modify.original_response, Some(response));
         }
-        other => panic!("expected a modify response, got {other:?}"),
+        other @ (HookFailure::Rejected { .. } | HookFailure::Failed { .. }) => {
+            panic!("expected a modify response, got {other:?}");
+        }
     }
 }
 
@@ -133,10 +136,12 @@ async fn keeps_an_original_response_the_scan_already_attached() {
         .await
         .unwrap_err();
     match failure {
-        HookFailure::ModifyResponse(failure) => {
-            assert_eq!(failure.original_response, Some(attached));
+        HookFailure::ModifyResponse(modify) => {
+            assert_eq!(modify.original_response, Some(attached));
         }
-        other => panic!("expected a modify response, got {other:?}"),
+        other @ (HookFailure::Rejected { .. } | HookFailure::Failed { .. }) => {
+            panic!("expected a modify response, got {other:?}");
+        }
     }
 }
 

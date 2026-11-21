@@ -19,13 +19,10 @@ pub fn error_frames(message: &str) -> Vec<StreamChunk> {
     let mut event = BTreeMap::new();
     event.insert("type".to_owned(), GuardrailValue::Text("error".to_owned()));
     event.insert("error".to_owned(), GuardrailValue::Object(error));
-    let body = serde_json::to_string(&GuardrailValue::Object(event)).map_or_else(
-        |source| {
-            tracing::error!("the guardrail error frame could not be serialized: {source}");
-            String::new()
-        },
-        |text| text,
-    );
+    let body = serde_json::to_string(&GuardrailValue::Object(event)).unwrap_or_else(|source| {
+        tracing::error!("the guardrail error frame could not be serialized: {source}");
+        String::new()
+    });
     vec![StreamChunk::Bytes(
         format!("event: error\ndata: {body}\n\n").into_bytes(),
     )]

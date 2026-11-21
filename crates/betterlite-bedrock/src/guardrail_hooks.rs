@@ -45,7 +45,7 @@ where
 
 // LiteLLM's _streams_incrementally: mask_response_content needs the full response, and the buffering flags decide the rest.
 #[must_use]
-pub fn streams_incrementally(settings: &StreamingSettings) -> bool {
+pub const fn streams_incrementally(settings: &StreamingSettings) -> bool {
     if settings.mask_response_content {
         return false;
     }

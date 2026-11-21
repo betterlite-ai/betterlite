@@ -20,7 +20,7 @@ fn scripted_runtime(kind: &str) -> super::fake::FakeRuntime {
     let messages = vec![message("user", text(kind))];
     runtime.messages = Some(messages.clone());
     runtime.selection = RoleSelection {
-        payload: Some(messages.clone()),
+        payload: Some(messages),
         original: None,
         target_indices: None,
     };
@@ -80,8 +80,10 @@ async fn lets_a_modify_response_propagate_while_the_llm_call_runs() {
         .await
         .unwrap_err();
     match failure {
-        HookFailure::ModifyResponse(failure) => assert_eq!(failure.message, "blocked during call"),
-        other => panic!("expected a modify response, got {other:?}"),
+        HookFailure::ModifyResponse(modify) => assert_eq!(modify.message, "blocked during call"),
+        other @ (HookFailure::Rejected { .. } | HookFailure::Failed { .. }) => {
+            panic!("expected a modify response, got {other:?}");
+        }
     }
 }
 

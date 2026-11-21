@@ -11,7 +11,7 @@ use crate::guardrail_hooks::chunks::StreamChunk;
 use crate::guardrail_hooks::errors::HookFailure;
 use crate::guardrail_hooks::streaming::{StreamHook, streaming_iterator_hook};
 
-pub async fn run_buffered(
+pub(crate) async fn run_buffered(
     runtime: &FakeRuntime,
     settings: &StreamingSettings,
     request_route: &str,
@@ -33,7 +33,7 @@ pub async fn run_buffered(
     .await
 }
 
-pub struct FixedRoutes {
+pub(crate) struct FixedRoutes {
     pub route: &'static str,
     pub call_types: Vec<CallType>,
 }
@@ -44,11 +44,11 @@ impl RouteCallTypes<CallType> for FixedRoutes {
     }
 }
 
-pub fn routes(route: &'static str, call_types: Vec<CallType>) -> FixedRoutes {
+pub(crate) fn routes(route: &'static str, call_types: Vec<CallType>) -> FixedRoutes {
     FixedRoutes { route, call_types }
 }
 
-pub fn streaming_settings() -> StreamingSettings {
+pub(crate) fn streaming_settings() -> StreamingSettings {
     StreamingSettings {
         guardrail_name: "bedrock-guard".to_owned(),
         params: BedrockGuardrailStreamParams::default(),
@@ -57,15 +57,15 @@ pub fn streaming_settings() -> StreamingSettings {
     }
 }
 
-pub fn text(value: &str) -> GuardrailValue {
+pub(crate) fn text(value: &str) -> GuardrailValue {
     GuardrailValue::Text(value.to_owned())
 }
 
-pub fn unsigned(value: u64) -> GuardrailValue {
+pub(crate) fn unsigned(value: u64) -> GuardrailValue {
     GuardrailValue::UnsignedInteger(value)
 }
 
-pub fn object(fields: Vec<(&str, GuardrailValue)>) -> GuardrailValue {
+pub(crate) fn object(fields: Vec<(&str, GuardrailValue)>) -> GuardrailValue {
     GuardrailValue::Object(
         fields
             .into_iter()
@@ -74,15 +74,15 @@ pub fn object(fields: Vec<(&str, GuardrailValue)>) -> GuardrailValue {
     )
 }
 
-pub fn array(items: Vec<GuardrailValue>) -> GuardrailValue {
+pub(crate) fn array(items: Vec<GuardrailValue>) -> GuardrailValue {
     GuardrailValue::Array(items)
 }
 
-pub fn message(role: &str, content: GuardrailValue) -> GuardrailValue {
+pub(crate) fn message(role: &str, content: GuardrailValue) -> GuardrailValue {
     object(vec![("role", text(role)), ("content", content)])
 }
 
-pub fn usage(prompt_tokens: u64, completion_tokens: u64) -> GuardrailValue {
+pub(crate) fn usage(prompt_tokens: u64, completion_tokens: u64) -> GuardrailValue {
     object(vec![
         ("prompt_tokens", unsigned(prompt_tokens)),
         ("completion_tokens", unsigned(completion_tokens)),
@@ -93,7 +93,7 @@ pub fn usage(prompt_tokens: u64, completion_tokens: u64) -> GuardrailValue {
     ])
 }
 
-pub fn chat_response(model: &str, content: GuardrailValue) -> GuardrailValue {
+pub(crate) fn chat_response(model: &str, content: GuardrailValue) -> GuardrailValue {
     object(vec![
         ("usage", usage(3, 2)),
         (
@@ -111,11 +111,11 @@ pub fn chat_response(model: &str, content: GuardrailValue) -> GuardrailValue {
     ])
 }
 
-pub fn stream_chunk(content: &str) -> GuardrailValue {
+pub(crate) fn stream_chunk(content: &str) -> GuardrailValue {
     chunk(content, GuardrailValue::Null, false)
 }
 
-pub fn replay_chunk(content: &str) -> GuardrailValue {
+pub(crate) fn replay_chunk(content: &str) -> GuardrailValue {
     chunk(content, text("stop"), true)
 }
 
@@ -145,11 +145,11 @@ fn chunk(content: &str, finish_reason: GuardrailValue, with_usage: bool) -> Guar
     GuardrailValue::Object(fields)
 }
 
-pub fn sse_frame(event: &str, data: &str) -> StreamChunk {
+pub(crate) fn sse_frame(event: &str, data: &str) -> StreamChunk {
     StreamChunk::Bytes(format!("event: {event}\ndata: {data}\n\n").into_bytes())
 }
 
-pub fn frame_texts(chunks: &[StreamChunk]) -> Vec<String> {
+pub(crate) fn frame_texts(chunks: &[StreamChunk]) -> Vec<String> {
     chunks
         .iter()
         .map(|chunk| match chunk {

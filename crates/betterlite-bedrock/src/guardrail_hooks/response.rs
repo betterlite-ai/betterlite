@@ -65,9 +65,7 @@ pub fn response_model(response: &GuardrailValue) -> Option<&str> {
 // The upstream usage the block reply has to carry, since the replaced response never reaches the client.
 #[must_use]
 pub fn response_usage(response: &GuardrailValue) -> Option<GuardrailValue> {
-    let Some(usage) = response_field(response, "usage") else {
-        return None;
-    };
+    let usage = response_field(response, "usage")?;
     Some(usage.clone())
 }
 
@@ -80,34 +78,7 @@ pub fn chat_chunk(response: &GuardrailValue) -> Option<StreamChunk> {
     let choices = choices(response)?;
     let mut streaming_choices = Vec::with_capacity(choices.len());
     for choice in choices {
-        let GuardrailValue::Object(choice_fields) = choice else {
-            return None;
-        };
-        let Some(GuardrailValue::Object(message)) = choice_fields.get("message") else {
-            return None;
-        };
-        let mut delta = BTreeMap::new();
-        for (key, value) in message {
-            if !matches!(value, GuardrailValue::Null) {
-                delta.insert(key.clone(), value.clone());
-            }
-        }
-        let mut fields = BTreeMap::new();
-        fields.insert(
-            "index".to_owned(),
-            choice_fields
-                .get("index")
-                .cloned()
-                .unwrap_or(GuardrailValue::UnsignedInteger(0)),
-        );
-        fields.insert("delta".to_owned(), GuardrailValue::Object(delta));
-        if let Some(finish_reason) = choice_fields
-            .get("finish_reason")
-            .filter(|value| !matches!(value, GuardrailValue::Null))
-        {
-            fields.insert("finish_reason".to_owned(), finish_reason.clone());
-        }
-        streaming_choices.push(GuardrailValue::Object(fields));
+        streaming_choices.push(streaming_choice(choice)?);
     }
     let mut chunk = BTreeMap::new();
     for key in ["id", "created"] {
@@ -136,6 +107,37 @@ pub fn chat_chunk(response: &GuardrailValue) -> Option<StreamChunk> {
         chunk.insert("usage".to_owned(), usage.clone());
     }
     Some(StreamChunk::Json(GuardrailValue::Object(chunk)))
+}
+
+fn streaming_choice(choice: &GuardrailValue) -> Option<GuardrailValue> {
+    let GuardrailValue::Object(choice_fields) = choice else {
+        return None;
+    };
+    let Some(GuardrailValue::Object(message)) = choice_fields.get("message") else {
+        return None;
+    };
+    let mut delta = BTreeMap::new();
+    for (key, value) in message {
+        if !matches!(value, GuardrailValue::Null) {
+            delta.insert(key.clone(), value.clone());
+        }
+    }
+    let mut fields = BTreeMap::new();
+    fields.insert(
+        "index".to_owned(),
+        choice_fields
+            .get("index")
+            .cloned()
+            .unwrap_or(GuardrailValue::UnsignedInteger(0)),
+    );
+    fields.insert("delta".to_owned(), GuardrailValue::Object(delta));
+    if let Some(finish_reason) = choice_fields
+        .get("finish_reason")
+        .filter(|value| !matches!(value, GuardrailValue::Null))
+    {
+        fields.insert("finish_reason".to_owned(), finish_reason.clone());
+    }
+    Some(GuardrailValue::Object(fields))
 }
 
 fn choices(response: &GuardrailValue) -> Option<&[GuardrailValue]> {

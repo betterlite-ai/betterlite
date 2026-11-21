@@ -39,7 +39,13 @@ pub fn detail_message(detail: &GuardrailValue) -> String {
     let GuardrailValue::Object(fields) = detail else {
         return match detail {
             GuardrailValue::Text(text) => text.clone(),
-            other => encode(other),
+            other @ GuardrailValue::Null
+            | other @ GuardrailValue::Boolean(_)
+            | other @ GuardrailValue::SignedInteger(_)
+            | other @ GuardrailValue::UnsignedInteger(_)
+            | other @ GuardrailValue::Decimal(_)
+            | other @ GuardrailValue::Array(_)
+            | other @ GuardrailValue::Object(_) => encode(other),
         };
     };
     if let Some(GuardrailValue::Text(text)) = fields.get("error") {
@@ -57,11 +63,8 @@ pub fn detail_message(detail: &GuardrailValue) -> String {
 }
 
 fn encode(value: &GuardrailValue) -> String {
-    serde_json::to_string(value).map_or_else(
-        |error| {
-            tracing::error!("the guardrail detail could not be serialized: {error}");
-            String::new()
-        },
-        |text| text,
-    )
+    serde_json::to_string(value).unwrap_or_else(|error| {
+        tracing::error!("the guardrail detail could not be serialized: {error}");
+        String::new()
+    })
 }

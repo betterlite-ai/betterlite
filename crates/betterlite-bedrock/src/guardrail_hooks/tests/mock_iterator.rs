@@ -64,7 +64,9 @@ async fn an_assembly_without_choices_fails_instead_of_dropping_the_stream() {
         HookFailure::Failed { message } => {
             assert!(message.contains("could not be replayed"));
         }
-        other => panic!("expected a failed replay, got {other:?}"),
+        other @ (HookFailure::ModifyResponse(_) | HookFailure::Rejected { .. }) => {
+            panic!("expected a failed replay, got {other:?}");
+        }
     }
 }
 

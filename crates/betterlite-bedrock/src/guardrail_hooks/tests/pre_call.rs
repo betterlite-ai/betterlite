@@ -45,6 +45,7 @@ async fn scans_the_latest_user_message_and_writes_the_masked_text_back() {
     assert_eq!(scans[0].event, GuardrailEventHooks::PreCall);
     assert_eq!(scans[0].message_count, 1);
     assert!(!scans[0].has_response);
+    drop(scans);
 }
 
 #[tokio::test]
@@ -91,7 +92,7 @@ async fn leaves_the_request_alone_when_the_guardrail_does_not_run() {
 
 #[tokio::test]
 async fn leaves_the_request_alone_when_the_call_type_has_no_messages() {
-    let mut runtime = base();
+    let runtime = base();
     let mut data = request(vec![message("user", text("hi"))]);
     let before = data.clone();
     scan_input(&runtime, &mut data, "embedding", InputHook::PreCall)
@@ -138,7 +139,9 @@ async fn propagates_a_block_to_the_endpoint_handler() {
         .await
         .unwrap_err();
     match failure {
-        HookFailure::ModifyResponse(failure) => assert_eq!(failure.message, "blocked input"),
-        other => panic!("expected a modify response, got {other:?}"),
+        HookFailure::ModifyResponse(modify) => assert_eq!(modify.message, "blocked input"),
+        other @ (HookFailure::Rejected { .. } | HookFailure::Failed { .. }) => {
+            panic!("expected a modify response, got {other:?}");
+        }
     }
 }

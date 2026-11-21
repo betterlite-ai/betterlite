@@ -85,6 +85,7 @@ async fn release_on_scan_delegates_with_the_default_buffering_off() {
     .unwrap();
     let records = runtime.delegations.lock().unwrap();
     assert!(!records[0].buffer_until_moderated_default);
+    drop(records);
 }
 
 #[tokio::test]

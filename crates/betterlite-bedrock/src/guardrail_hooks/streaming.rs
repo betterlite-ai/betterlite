@@ -83,14 +83,7 @@ where
         raw_sse,
     };
     let Some(mut assembled) = runtime.assemble(&chunks, raw_sse).await else {
-        if raw_sse {
-            let message = format!(
-                "{}: streamed response could not be assembled for scanning, blocking it",
-                settings.guardrail_name
-            );
-            return Ok(error_frames(&message));
-        }
-        return Ok(chunks);
+        return Ok(unassembled_output(settings, chunks, raw_sse));
     };
     let before = model_response_text(&assembled);
     let messages = runtime.request_messages(data);
@@ -109,12 +102,28 @@ where
     if raw_sse {
         return raw_output(runtime, &assembled, chunks, &before);
     }
-    match chat_chunk(&assembled) {
-        Some(chunk) => Ok(vec![chunk]),
-        None => Err(HookFailure::Failed {
+    let Some(chunk) = chat_chunk(&assembled) else {
+        return Err(HookFailure::Failed {
             message: "the assembled response could not be replayed as a chunk".to_owned(),
-        }),
+        });
+    };
+    Ok(vec![chunk])
+}
+
+// A raw stream that cannot be assembled is blocked as an error frame, while a chat stream replays its chunks.
+fn unassembled_output(
+    settings: &StreamingSettings,
+    chunks: Vec<StreamChunk>,
+    raw_sse: bool,
+) -> Vec<StreamChunk> {
+    if !raw_sse {
+        return chunks;
     }
+    let message = format!(
+        "{}: streamed response could not be assembled for scanning, blocking it",
+        settings.guardrail_name
+    );
+    error_frames(&message)
 }
 
 // A raw stream whose text did not change keeps the frames it already had, since re-encoding would rewrite them.
@@ -147,7 +156,7 @@ where
     R: HookRuntime,
 {
     match failure {
-        HookFailure::ModifyResponse(failure) => block_output(runtime, context, assembled, *failure),
+        HookFailure::ModifyResponse(modify) => block_output(runtime, context, assembled, *modify),
         HookFailure::Rejected { status, detail } => {
             rejected_output(runtime, context, detail, status)
         }

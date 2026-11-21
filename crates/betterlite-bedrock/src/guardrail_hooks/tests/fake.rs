@@ -13,7 +13,7 @@ use crate::guardrail_hooks::runtime::{
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ScanRecord {
+pub(crate) struct ScanRecord {
     pub source: ScanSource,
     pub message_count: usize,
     pub has_response: bool,
@@ -21,12 +21,12 @@ pub struct ScanRecord {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DelegateRecord {
+pub(crate) struct DelegateRecord {
     pub buffer_until_moderated_default: bool,
     pub chunk_count: usize,
 }
 
-pub struct FakeRuntime {
+pub(crate) struct FakeRuntime {
     pub should_run: bool,
     pub messages: Option<Vec<GuardrailValue>>,
     pub selection: RoleSelection,
@@ -41,13 +41,12 @@ pub struct FakeRuntime {
     pub scans: Mutex<Vec<ScanRecord>>,
     pub delegations: Mutex<Vec<DelegateRecord>>,
     pub masked: Mutex<Vec<GuardrailValue>>,
-    pub refused: Mutex<usize>,
     pub applied: Mutex<usize>,
     pub blocked_sse: Mutex<Vec<BlockedMessage>>,
     pub blocked_chat: Mutex<Vec<BlockedChat>>,
 }
 
-pub fn base() -> FakeRuntime {
+pub(crate) fn base() -> FakeRuntime {
     FakeRuntime {
         should_run: true,
         messages: None,
@@ -69,7 +68,6 @@ pub fn base() -> FakeRuntime {
         scans: Mutex::new(Vec::new()),
         delegations: Mutex::new(Vec::new()),
         masked: Mutex::new(Vec::new()),
-        refused: Mutex::new(0),
         applied: Mutex::new(0),
         blocked_sse: Mutex::new(Vec::new()),
         blocked_chat: Mutex::new(Vec::new()),
@@ -124,10 +122,9 @@ impl HookRuntime for FakeRuntime {
         messages: &[GuardrailValue],
         _scan: &GuardrailValue,
     ) -> Vec<GuardrailValue> {
-        match &self.updated {
-            Some(updated) => updated.clone(),
-            None => messages.to_vec(),
-        }
+        self.updated
+            .as_ref()
+            .map_or_else(|| messages.to_vec(), |updated| updated.clone())
     }
 
     fn mask_response(&self, response: &mut GuardrailValue, _scan: &GuardrailValue) {
@@ -141,8 +138,7 @@ impl HookRuntime for FakeRuntime {
     }
 
     fn record_applied(&self, data: &mut RequestData) {
-        let mut applied = self.applied.lock().expect("applied count");
-        *applied = applied.saturating_add(1);
+        self.note_applied();
         data.insert("applied".to_owned(), GuardrailValue::Boolean(true));
     }
 
@@ -173,18 +169,12 @@ impl HookRuntime for FakeRuntime {
     }
 
     fn block_sse_chunks(&self, block: &BlockedMessage) -> Result<Vec<Vec<u8>>, HookFailure> {
-        self.blocked_sse
-            .lock()
-            .expect("sse block records")
-            .push(block.clone());
+        self.note_sse_block(block);
         Ok(self.block_frames.clone())
     }
 
     fn block_chat_chunks(&self, block: &BlockedChat) -> Result<Vec<StreamChunk>, HookFailure> {
-        self.blocked_chat
-            .lock()
-            .expect("chat block records")
-            .push(block.clone());
+        self.note_chat_block(block);
         Ok(self.replacement_chunks.clone())
     }
 
@@ -211,5 +201,25 @@ impl FakeRuntime {
             .lock()
             .expect("delegation records")
             .push(record);
+    }
+
+    fn note_applied(&self) {
+        let mut applied = self.applied.lock().expect("applied count");
+        *applied = applied.saturating_add(1);
+        drop(applied);
+    }
+
+    fn note_sse_block(&self, block: &BlockedMessage) {
+        self.blocked_sse
+            .lock()
+            .expect("sse block records")
+            .push(block.clone());
+    }
+
+    fn note_chat_block(&self, block: &BlockedChat) {
+        self.blocked_chat
+            .lock()
+            .expect("chat block records")
+            .push(block.clone());
     }
 }

@@ -92,7 +92,7 @@ async fn a_service_failure_after_a_keepalive_ping_becomes_a_frame() {
         detail: text("bedrock is down"),
     });
     let mut settings = streaming_settings();
-    settings.keepalive_interval_seconds = Some(1.0);
+    settings.keepalive_interval_seconds = Some(1.0_f64);
     let output = run_buffered(&runtime, &settings, "/v1/chat/completions", raw_chunks())
         .await
         .unwrap();
@@ -110,13 +110,15 @@ async fn a_service_failure_before_a_keepalive_ping_raises() {
         detail: text("bedrock is down"),
     });
     let mut settings = streaming_settings();
-    settings.keepalive_interval_seconds = Some(1.0);
+    settings.keepalive_interval_seconds = Some(1.0_f64);
     let failure = run_buffered(&runtime, &settings, "/v1/chat/completions", raw_chunks())
         .await
         .unwrap_err();
     match failure {
         HookFailure::Rejected { status, .. } => assert_eq!(status, 500),
-        other => panic!("expected the service failure to raise, got {other:?}"),
+        other @ (HookFailure::ModifyResponse(_) | HookFailure::Failed { .. }) => {
+            panic!("expected the service failure to raise, got {other:?}");
+        }
     }
 }
 
@@ -130,10 +132,15 @@ async fn a_service_failure_with_pings_off_raises() {
         detail: text("bedrock is down"),
     });
     let settings = streaming_settings();
-    assert!(
-        run_buffered(&runtime, &settings, "/v1/chat/completions", raw_chunks())
-            .await
-            .is_err()
+    let failure = run_buffered(&runtime, &settings, "/v1/chat/completions", raw_chunks())
+        .await
+        .unwrap_err();
+    assert_eq!(
+        failure,
+        HookFailure::Rejected {
+            status: 500,
+            detail: text("bedrock is down"),
+        }
     );
 }
 
@@ -146,10 +153,15 @@ async fn a_plain_400_string_detail_is_a_service_failure_not_a_block() {
         detail: text("bad request"),
     });
     let settings = streaming_settings();
-    assert!(
-        run_buffered(&runtime, &settings, "/v1/chat/completions", raw_chunks())
-            .await
-            .is_err()
+    let failure = run_buffered(&runtime, &settings, "/v1/chat/completions", raw_chunks())
+        .await
+        .unwrap_err();
+    assert_eq!(
+        failure,
+        HookFailure::Rejected {
+            status: 400,
+            detail: text("bad request"),
+        }
     );
 }
 
