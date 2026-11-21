@@ -53,9 +53,7 @@ pub(super) async fn global(
 // a bare count is what the global step stores; any other shape, or a wrong-length answer, counts as missing
 #[must_use]
 fn stored_global_count(answer: Option<&[Option<LegacyCacheValue>]>) -> Option<i64> {
-    let Some(values) = answer else {
-        return None;
-    };
+    let values = answer?;
     match values {
         [Some(LegacyCacheValue::Count(current))] => Some(*current),
         [] | [None] => None,
