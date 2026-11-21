@@ -78,7 +78,7 @@ pub struct Failure {
     pub message: String,
 }
 // The record or failure the call produced, plus the diagnostics it logged in order
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Outcome {
     pub result: Option<Json>,

@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::future::ready;
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
@@ -30,7 +31,7 @@ use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Number;
-use tokio::runtime::Builder;
+use tokio::runtime::{Builder, Runtime};
 
 use super::call::{RerankCall, ReturnDocuments};
 use super::dispatch::{
@@ -141,10 +142,12 @@ struct Case<'case> {
     ops: &'case FakeOps,
     settings: RerankSettings,
     environment: BTreeMap<String, String>,
+    redactor: Redactor,
+    runtime: Runtime,
 }
 
 impl<'case> Case<'case> {
-    const fn new(
+    fn new(
         ops: &'case FakeOps,
         settings: RerankSettings,
         environment: BTreeMap<String, String>,
@@ -153,6 +156,12 @@ impl<'case> Case<'case> {
             ops,
             settings,
             environment,
+            redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
+                .expect("the default redactor compiles"),
+            runtime: Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("the test runtime builds"),
         }
     }
 
@@ -165,20 +174,14 @@ impl<'case> Case<'case> {
     where
         Identity: RerankIdentity + Sync,
     {
-        let redactor =
-            Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the default redactor compiles");
         let plan = RerankPlan {
             identity,
             operations: self.ops,
             settings: &self.settings,
             environment: &self.environment,
-            redactor: &redactor,
+            redactor: &self.redactor,
         };
-        Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("the test runtime builds")
-            .block_on(rerank(&plan, call, logging))
+        self.runtime.block_on(rerank(&plan, call, logging))
     }
 }
 
@@ -212,11 +215,11 @@ impl RerankOperations for FakeOps {
         Ok(mapped_params(&request))
     }
 
-    async fn send(
+    fn send(
         &self,
         request: SendRequest<'_>,
         _logging: &mut LoggingState,
-    ) -> Result<RerankResponse, Box<RawException>> {
+    ) -> impl Future<Output = Result<RerankResponse, Box<RawException>>> + Send {
         self.sends
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -241,16 +244,17 @@ impl RerankOperations for FakeOps {
                 max_tokens_per_doc: request.max_tokens_per_doc,
                 instruction: request.instruction.map(str::to_owned),
             });
-        if let Some((status, message)) = &self.send_failure {
-            return Err(Box::new(provider_failure(
+        let result = match &self.send_failure {
+            Some((status, message)) => Err(Box::new(provider_failure(
                 *status,
                 message,
                 request.model,
                 request.provider,
                 "BaseLLMException",
-            )));
-        }
-        Ok(reply())
+            ))),
+            None => Ok(reply()),
+        };
+        ready(result)
     }
 }
 
@@ -265,7 +269,7 @@ impl FakeIdentity {
                 model: model.to_owned(),
                 provider,
                 api_base: base.map(str::to_owned),
-                api_key: key.map(|key| SecretString::from(key.to_owned())),
+                api_key: key.map(|value| SecretString::from(value.to_owned())),
             }),
         }
     }

@@ -127,9 +127,9 @@ where
     Failure: Error + Send + Sync + 'static,
 {
     match error {
-        RerankHttpError::Provider(error) => Box::new(provider_failure(
-            error.status_code,
-            &error.message,
+        RerankHttpError::Provider(raised) => Box::new(provider_failure(
+            raised.status_code,
+            &raised.message,
             model,
             provider,
             "BaseLLMException",
