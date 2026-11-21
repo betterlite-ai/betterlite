@@ -13,8 +13,8 @@ use crate::api::realtime_http_transport::calls::{CallsCall, calls_post, session_
 use crate::api::realtime_http_transport::error::RealtimeHttpError;
 
 use super::{
-    BOUNDARY, OK_REPLY, Reply, Request, exchange, fallback_deps, input_untouched, json_object,
-    logging_env, logging_state, runtime, test_source,
+    OK_REPLY, Reply, Request, exchange, fallback_deps, input_untouched, json_object, logging_env,
+    logging_state, runtime, test_source,
 };
 
 // Three bytes of every cap: the SDP text is longer than the JSON body cap the decoder enforces
@@ -36,8 +36,19 @@ fn assert_sdp_multipart_wire(answer: &UpstreamResponse, request: &Request) {
         head.to_ascii_lowercase()
             .contains("authorization: bearer ep-test")
     );
-    assert!(head.contains(&format!("boundary={BOUNDARY}")));
-    assert_eq!(request.body, expected_multipart());
+    let boundary = declared_boundary(head);
+    assert_eq!(request.body, expected_multipart(boundary));
+}
+
+// The boundary is random on every run, so the wire test takes the one the request declares and spells the body with it
+fn declared_boundary(head: &str) -> &str {
+    let Some((_, after)) = head.split_once("content-type: multipart/form-data; boundary=") else {
+        panic!("the request declares its multipart content type");
+    };
+    let Some((boundary, _)) = after.split_once("\r\n") else {
+        panic!("the content type ends its own header line");
+    };
+    boundary
 }
 
 fn assert_calls_recorded(state: &LoggingState, base: &str) {
@@ -131,14 +142,14 @@ fn calls_record_the_offer_the_url_and_the_session() {
     assert_calls_recorded(&state, &api_base);
 }
 
-fn expected_multipart() -> Vec<u8> {
+fn expected_multipart(boundary: &str) -> Vec<u8> {
     let session = b"{\"voice\":\"alloy\",\"type\":\"realtime\",\"model\":\"m\"}";
     let mut body = Vec::new();
     for (name, content_type, data) in [
         ("sdp", "text/plain", b"v=0\r\n".to_vec()),
         ("session", "application/json", session.to_vec()),
     ] {
-        body.extend_from_slice(format!("--{BOUNDARY}\r\n").as_bytes());
+        body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
         body.extend_from_slice(
             format!("Content-Disposition: form-data; name=\"{name}\"\r\n").as_bytes(),
         );
@@ -146,7 +157,7 @@ fn expected_multipart() -> Vec<u8> {
         body.extend_from_slice(&data);
         body.extend_from_slice(b"\r\n");
     }
-    body.extend_from_slice(format!("--{BOUNDARY}--\r\n").as_bytes());
+    body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
     body
 }
 

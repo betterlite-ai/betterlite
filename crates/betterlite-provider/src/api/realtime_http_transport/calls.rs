@@ -11,7 +11,7 @@ use betterlite_logging::logging_pre_post::args::AdditionalArgs;
 use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use sha2::{Digest as _, Sha256};
+use uuid::Uuid;
 
 use super::TransportDeps;
 use super::client::select;
@@ -62,7 +62,7 @@ where
         },
     };
     pre_call(log.state, &record, log.env).map(drop)?;
-    let separator = boundary(&form);
+    let separator = Uuid::new_v4().simple().to_string();
     send(
         deps.config,
         &client,
@@ -136,15 +136,4 @@ fn parts(
             data: encoded,
         },
     ])
-}
-
-// A boundary derived from the parts, so a body carrying it would have to hold a hash of itself
-fn boundary(parts: &[MultipartPart]) -> String {
-    let mut hasher = Sha256::new();
-    for part in parts {
-        hasher.update(part.name.as_bytes());
-        hasher.update(part.data.as_slice());
-        hasher.update(part.content_type.as_deref().unwrap_or_default());
-    }
-    hex::encode(hasher.finalize())
 }

@@ -54,8 +54,6 @@ mod calls;
 mod wire;
 
 const INIT: &str = r#"{"model":"realtime","call_type":"realtime","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
-// sha256 over the two multipart parts in order: name, bytes, content type
-const BOUNDARY: &str = "2f5cc9be1c163676e4ae2f347a1309d402542a6a431366f1f96b68a587ba2451";
 
 struct Sink;
 
@@ -612,9 +610,10 @@ fn a_status_without_a_config_is_the_masked_response() {
     let envelope = logging_env(&redactor);
     let source = test_source();
     let data = session_request();
+    // an encoding the transport does not decode stays on the wire, so the handler's own masking is what the test sees
     let replies = [Reply {
         status: 429,
-        headers: "content-type: text/plain\r\nretry-after: 2\r\ncontent-encoding: gzip",
+        headers: "content-type: text/plain\r\nretry-after: 2\r\ncontent-encoding: br",
         body: b"slow",
         hold: false,
     }];
