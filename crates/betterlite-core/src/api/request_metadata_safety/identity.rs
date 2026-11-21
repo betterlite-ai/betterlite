@@ -112,11 +112,18 @@ fn is_sha256_hex(value: &str) -> bool {
             .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
 }
 
+fn is_valid_session_id(value: &str) -> bool {
+    if value.len() < MINIMUM_SESSION_ID_LENGTH {
+        return false;
+    }
+    is_session_id_text(value)
+}
+
 fn generic_session_id(normalized: &IndexMap<String, String>) -> Option<&str> {
     normalized.iter().find_map(|(name, value)| {
         if EXPLICIT_SESSION_HEADERS.contains(&name.as_str())
             || !is_generic_session_header(name)
-            || !(value.len() >= MINIMUM_SESSION_ID_LENGTH && is_session_id_text(value))
+            || !is_valid_session_id(value)
         {
             return None;
         }
@@ -132,20 +139,17 @@ fn codex_session_id(normalized: &IndexMap<String, String>) -> Option<&str> {
     CODEX_SESSION_ID_HEADERS.iter().find_map(|header| {
         normalized
             .get(*header)
-            .filter(|value| {
-                value.len() >= MINIMUM_SESSION_ID_LENGTH && is_session_id_text(value.as_str())
-            })
+            .filter(|value| is_valid_session_id(value))
             .map(String::as_str)
     })
 }
 
 fn bare_session_id(normalized: &IndexMap<String, String>) -> Option<&str> {
-    normalized
-        .get(BARE_SESSION_HEADER)
-        .filter(|value| {
-            value.len() >= MINIMUM_SESSION_ID_LENGTH && is_session_id_text(value.as_str())
-        })
-        .map(String::as_str)
+    let value = normalized.get(BARE_SESSION_HEADER)?;
+    if !is_valid_session_id(value) {
+        return None;
+    }
+    Some(value.as_str())
 }
 
 fn is_generic_session_header(name: &str) -> bool {

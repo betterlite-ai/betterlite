@@ -1,4 +1,3 @@
-// CustomPricingLiteLLMParams.model_fields, the per-request pricing controls a client may not set
 const CLIENT_PRICING_CONTROL_NAMES: &str = concat!(
     "input_cost_per_token output_cost_per_token input_cost_per_character output_cost_per_character",
     " cache_read_input_token_cost cache_creation_input_token_cost tiered_pricing cost_per_second",

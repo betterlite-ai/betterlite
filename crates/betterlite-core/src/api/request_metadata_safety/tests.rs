@@ -102,15 +102,12 @@ fn input_with_headers(
     headers: &[(&str, &str)],
     route: &str,
 ) -> RequestMetadataSafetyInput {
-    RequestMetadataSafetyInput {
-        data,
-        headers: headers
-            .iter()
-            .map(|&(name, value)| (name.to_owned(), value.to_owned()))
-            .collect(),
-        route: route.to_owned(),
-        principal: MetadataPrincipal::default(),
-    }
+    let mut request = input(data, route);
+    request.headers = headers
+        .iter()
+        .map(|&(name, value)| (name.to_owned(), value.to_owned()))
+        .collect();
+    request
 }
 
 #[derive(Clone, Default)]
