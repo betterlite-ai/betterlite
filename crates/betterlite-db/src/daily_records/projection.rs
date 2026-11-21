@@ -154,7 +154,7 @@ fn common_identities(
     Ok(daily_spend_entity_ids(&identity, entity)?)
 }
 
-// expected_keys and any_expected_keys: an mcp key counts whether or not it holds a value, and its presence alone excuses a missing provider or group.
+// expected_keys and any_expected_keys: an mcp key counts whether or not it holds a value, and its presence alone excuses a missing provider or group; a model names a row only with both of them.
 fn has_required_keys(payload: &DailyPayload) -> bool {
     if payload.start_time.is_none() || payload.api_key.is_none() {
         return false;
@@ -162,9 +162,10 @@ fn has_required_keys(payload: &DailyPayload) -> bool {
     if payload.model.is_none() && payload.mcp_namespaced_tool_name.is_none() {
         return false;
     }
-    payload.mcp_namespaced_tool_name.is_some()
-        || payload.custom_llm_provider.is_some()
-        || payload.model_group.is_some()
+    if payload.mcp_namespaced_tool_name.is_some() {
+        return true;
+    }
+    payload.custom_llm_provider.is_some() && payload.model_group.is_some()
 }
 
 // startTime.split("T")[0]: the date is the text before the first T, with no timezone conversion and no datetime path.
