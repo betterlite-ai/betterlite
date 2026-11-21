@@ -359,12 +359,13 @@ pub(crate) fn set_event(metric: RateLimitMetric, labels: &[(&str, &str)], amount
 }
 
 pub(crate) fn removal_event(metric: RateLimitMetric, label_values: &[Option<&str>]) -> Recorded {
+    let mut owned: Vec<Option<String>> = Vec::with_capacity(label_values.len());
+    for value in label_values {
+        owned.push((*value).map(str::to_owned));
+    }
     Recorded::Removal {
         metric: metric.name(),
-        label_values: label_values
-            .iter()
-            .map(|value| value.map(ToOwned::to_owned))
-            .collect(),
+        label_values: owned,
     }
 }
 

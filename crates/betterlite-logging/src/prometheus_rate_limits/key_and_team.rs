@@ -11,6 +11,7 @@ use crate::prometheus_latency::labels::LabelInputs;
 
 use super::error::PrometheusRateLimitError;
 use super::gauge::RateLimitGauges;
+// ast-grep-ignore: no-long-names
 use super::headers::get_int_from_v3_rate_limit_headers;
 use super::metric::{RateLimitDescriptor, RateLimitMetric, RateLimitType};
 

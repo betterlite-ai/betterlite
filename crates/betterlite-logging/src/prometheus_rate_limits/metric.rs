@@ -1,4 +1,3 @@
-// the two v3 limiter counter families, spelled as the header segment carries them
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RateLimitType {
     Requests,

@@ -19,6 +19,7 @@ use crate::prometheus_label_schema::PrometheusLabelSettings;
 
 use super::error::{PrometheusRateLimitError, RateLimitValueError};
 use super::gauge::RateLimitGauges;
+// ast-grep-ignore: no-long-names
 use super::headers::{declared_integer, get_remaining_from_v3_rate_limit_headers};
 use super::metric::{RateLimitMetric, RateLimitType};
 
