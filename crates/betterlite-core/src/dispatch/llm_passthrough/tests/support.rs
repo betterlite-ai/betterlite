@@ -2,6 +2,7 @@ use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
+use betterlite_config::sections::settings::JsonValue;
 use betterlite_openai::openai_base_config::Object;
 use bytes::Bytes;
 
@@ -55,6 +56,31 @@ pub(super) fn route_input(model: &str) -> PassthroughRouteInput {
         router_settings_override: None,
         user_model: None,
     }
+}
+
+pub(super) fn override_settings() -> Object {
+    let mut settings = Object::new();
+    settings.insert(String::from("fallbacks"), JsonValue::Array(Vec::new()));
+    settings.insert(
+        String::from("context_window_fallbacks"),
+        JsonValue::Array(Vec::new()),
+    );
+    settings.insert(
+        String::from("content_policy_fallbacks"),
+        JsonValue::Array(Vec::new()),
+    );
+    settings.insert(String::from("num_retries"), JsonValue::from(3_u32));
+    settings.insert(String::from("timeout"), JsonValue::from(30_u32));
+    settings.insert(
+        String::from("model_group_retry_policy"),
+        JsonValue::Object(Object::new()),
+    );
+    settings.insert(
+        String::from("routing_strategy"),
+        JsonValue::String(String::from("usage-based-routing")),
+    );
+    settings.insert(String::from("enable_tag_filtering"), JsonValue::Bool(true));
+    settings
 }
 
 pub(super) fn reply() -> PassthroughReply {
@@ -254,6 +280,21 @@ pub(super) fn ports_with(
         view: view.map(view_of),
         blocked: blocked_port,
         direct,
+    }
+}
+
+pub(super) fn request(
+    args: PassthroughCallArgs,
+    route: PassthroughRouteInput,
+    ports: &Ports,
+) -> LlmPassthroughRequest {
+    LlmPassthroughRequest {
+        args,
+        route,
+        router: ports.router.clone(),
+        view: ports.view.clone(),
+        blocked: Arc::clone(&ports.blocked),
+        direct: Arc::clone(&ports.direct),
     }
 }
 

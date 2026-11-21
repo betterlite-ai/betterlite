@@ -10,7 +10,7 @@ use betterlite_openai::openai_base_config::Object;
 
 use self::support::{
     Calls, FakeView, Outcome, Ports, RecordingBlocked, RecordingDirect, call_args,
-    failing_router_request, ports_with, route_input, sdk_router,
+    failing_router_request, override_settings, ports_with, request, route_input, sdk_router,
 };
 use super::entry;
 use super::route::{PassthroughRoute, PassthroughRouteInput, RouteFlag, plan_passthrough_route};
@@ -25,34 +25,8 @@ use crate::dispatch::error::DispatchError;
 use crate::dispatch::log::TracingCallLog;
 use crate::dispatch::tests::support::{Trace, context};
 use crate::operation::Operation;
-use crate::operation::llm_passthrough::LlmPassthroughRequest;
 
 mod support;
-
-fn override_settings() -> Object {
-    let mut settings = Object::new();
-    settings.insert(String::from("fallbacks"), JsonValue::Array(Vec::new()));
-    settings.insert(
-        String::from("context_window_fallbacks"),
-        JsonValue::Array(Vec::new()),
-    );
-    settings.insert(
-        String::from("content_policy_fallbacks"),
-        JsonValue::Array(Vec::new()),
-    );
-    settings.insert(String::from("num_retries"), JsonValue::from(3_u32));
-    settings.insert(String::from("timeout"), JsonValue::from(30_u32));
-    settings.insert(
-        String::from("model_group_retry_policy"),
-        JsonValue::Object(Object::new()),
-    );
-    settings.insert(
-        String::from("routing_strategy"),
-        JsonValue::String(String::from("usage-based-routing")),
-    );
-    settings.insert(String::from("enable_tag_filtering"), JsonValue::Bool(true));
-    settings
-}
 
 #[test]
 fn plan_api_key_with_router_is_router() {
@@ -481,14 +455,11 @@ async fn entry_router_plan_calls_router() {
         ..FakeView::default()
     };
     let ports = ports_with(Some(view), Vec::new(), &calls, &trace);
-    let request = LlmPassthroughRequest {
-        args: call_args("gpt-upstream"),
-        route: route_input("gpt-upstream"),
-        router: ports.router,
-        view: ports.view,
-        blocked: ports.blocked,
-        direct: ports.direct,
-    };
+    let request = request(
+        call_args("gpt-upstream"),
+        route_input("gpt-upstream"),
+        &ports,
+    );
     let reply = entry::execute(request).await.expect("router reply");
     assert_eq!(reply.status, 200);
     let PassthroughBody::Full(body) = reply.body else {
@@ -504,14 +475,11 @@ async fn entry_direct_plan_calls_direct() {
     let trace = Trace::default();
     let calls = Calls::default();
     let ports = ports_with(None, Vec::new(), &calls, &trace);
-    let request = LlmPassthroughRequest {
-        args: call_args("gpt-upstream"),
-        route: route_input("gpt-upstream"),
-        router: ports.router,
-        view: ports.view,
-        blocked: ports.blocked,
-        direct: ports.direct,
-    };
+    let request = request(
+        call_args("gpt-upstream"),
+        route_input("gpt-upstream"),
+        &ports,
+    );
     entry::execute(request).await.expect("direct reply");
     assert_eq!(trace.steps(), ["direct"]);
     assert_eq!(calls.recorded()[0].model, "gpt-upstream");
@@ -526,14 +494,7 @@ async fn entry_override_copies_every_key() {
         router_settings_override: Some(override_settings()),
         ..route_input("gpt-upstream")
     };
-    let request = LlmPassthroughRequest {
-        args: call_args("gpt-upstream"),
-        route: input,
-        router: ports.router,
-        view: ports.view,
-        blocked: ports.blocked,
-        direct: ports.direct,
-    };
+    let request = request(call_args("gpt-upstream"), input, &ports);
     entry::execute(request).await.expect("router reply");
     let recorded = calls.recorded();
     assert_eq!(recorded.len(), 1);
@@ -580,14 +541,7 @@ async fn entry_override_keeps_existing_key() {
     );
     args.extra
         .insert(String::from("timeout"), JsonValue::from(5_u32));
-    let request = LlmPassthroughRequest {
-        args,
-        route: input,
-        router: ports.router,
-        view: ports.view,
-        blocked: ports.blocked,
-        direct: ports.direct,
-    };
+    let request = request(args, input, &ports);
     entry::execute(request).await.expect("router reply");
     let extra = &calls.recorded()[0].extra;
     assert_eq!(
@@ -608,14 +562,7 @@ async fn entry_override_skipped_with_api_key() {
         router_settings_override: Some(override_settings()),
         ..route_input("gpt-upstream")
     };
-    let request = LlmPassthroughRequest {
-        args: call_args("gpt-upstream"),
-        route: input,
-        router: ports.router,
-        view: ports.view,
-        blocked: ports.blocked,
-        direct: ports.direct,
-    };
+    let request = request(call_args("gpt-upstream"), input, &ports);
     entry::execute(request).await.expect("router reply");
     assert_eq!(trace.steps(), ["router"]);
     assert!(calls.recorded()[0].extra.is_empty());
@@ -630,14 +577,7 @@ async fn entry_override_reaches_direct() {
         router_settings_override: Some(override_settings()),
         ..route_input("gpt-upstream")
     };
-    let request = LlmPassthroughRequest {
-        args: call_args("gpt-upstream"),
-        route: input,
-        router: ports.router,
-        view: ports.view,
-        blocked: ports.blocked,
-        direct: ports.direct,
-    };
+    let request = request(call_args("gpt-upstream"), input, &ports);
     entry::execute(request).await.expect("direct reply");
     assert_eq!(trace.steps(), ["direct"]);
     assert_eq!(calls.recorded()[0].extra.len(), 8);
@@ -656,14 +596,7 @@ async fn entry_team_model_written() {
         team_id: Some(String::from("team-1")),
         ..route_input("team-model")
     };
-    let request = LlmPassthroughRequest {
-        args: call_args("team-model"),
-        route: input,
-        router: ports.router,
-        view: ports.view,
-        blocked: ports.blocked,
-        direct: ports.direct,
-    };
+    let request = request(call_args("team-model"), input, &ports);
     entry::execute(request).await.expect("router reply");
     assert_eq!(calls.recorded()[0].model, "global-model");
 }
@@ -682,14 +615,7 @@ async fn entry_api_key_keeps_model() {
         has_api_key_or_base: RouteFlag(true),
         ..route_input("team-model")
     };
-    let request = LlmPassthroughRequest {
-        args: call_args("team-model"),
-        route: input,
-        router: ports.router,
-        view: ports.view,
-        blocked: ports.blocked,
-        direct: ports.direct,
-    };
+    let request = request(call_args("team-model"), input, &ports);
     entry::execute(request).await.expect("router reply");
     assert_eq!(calls.recorded()[0].model, "team-model");
 }
@@ -708,14 +634,7 @@ async fn entry_override_keeps_model() {
         router_settings_override: Some(override_settings()),
         ..route_input("team-model")
     };
-    let request = LlmPassthroughRequest {
-        args: call_args("team-model"),
-        route: input,
-        router: ports.router,
-        view: ports.view,
-        blocked: ports.blocked,
-        direct: ports.direct,
-    };
+    let request = request(call_args("team-model"), input, &ports);
     entry::execute(request).await.expect("router reply");
     assert_eq!(calls.recorded()[0].model, "team-model");
 }
@@ -729,14 +648,11 @@ async fn entry_specific_deployment_in_extra() {
         ..FakeView::default()
     };
     let ports = ports_with(Some(view), Vec::new(), &calls, &trace);
-    let request = LlmPassthroughRequest {
-        args: call_args("deployment-7"),
-        route: route_input("deployment-7"),
-        router: ports.router,
-        view: ports.view,
-        blocked: ports.blocked,
-        direct: ports.direct,
-    };
+    let request = request(
+        call_args("deployment-7"),
+        route_input("deployment-7"),
+        &ports,
+    );
     entry::execute(request).await.expect("router reply");
     assert_eq!(
         calls.recorded()[0].extra.get("specific_deployment"),
@@ -756,14 +672,7 @@ async fn entry_specific_deployment_overwrites() {
     let mut args = call_args("deployment-7");
     args.extra
         .insert(String::from("specific_deployment"), JsonValue::Bool(false));
-    let request = LlmPassthroughRequest {
-        args,
-        route: route_input("deployment-7"),
-        router: ports.router,
-        view: ports.view,
-        blocked: ports.blocked,
-        direct: ports.direct,
-    };
+    let request = request(args, route_input("deployment-7"), &ports);
     entry::execute(request).await.expect("router reply");
     assert_eq!(
         calls.recorded()[0].extra.get("specific_deployment"),
@@ -780,14 +689,11 @@ async fn entry_router_plan_keeps_specific_absent() {
         ..FakeView::default()
     };
     let ports = ports_with(Some(view), Vec::new(), &calls, &trace);
-    let request = LlmPassthroughRequest {
-        args: call_args("gpt-upstream"),
-        route: route_input("gpt-upstream"),
-        router: ports.router,
-        view: ports.view,
-        blocked: ports.blocked,
-        direct: ports.direct,
-    };
+    let request = request(
+        call_args("gpt-upstream"),
+        route_input("gpt-upstream"),
+        &ports,
+    );
     entry::execute(request).await.expect("router reply");
     assert_eq!(calls.recorded()[0].extra.get("specific_deployment"), None);
 }
@@ -801,14 +707,11 @@ async fn entry_blocked_is_403() {
         ..FakeView::default()
     };
     let ports = ports_with(Some(view), vec!["gpt-upstream"], &calls, &trace);
-    let request = LlmPassthroughRequest {
-        args: call_args("gpt-upstream"),
-        route: route_input("gpt-upstream"),
-        router: ports.router,
-        view: ports.view,
-        blocked: ports.blocked,
-        direct: ports.direct,
-    };
+    let request = request(
+        call_args("gpt-upstream"),
+        route_input("gpt-upstream"),
+        &ports,
+    );
     let Err(error) = entry::execute(request).await else {
         panic!("a blocked model is refused");
     };
@@ -827,14 +730,7 @@ async fn entry_not_found_names_route() {
     let trace = Trace::default();
     let calls = Calls::default();
     let ports = ports_with(Some(FakeView::default()), Vec::new(), &calls, &trace);
-    let request = LlmPassthroughRequest {
-        args: call_args("missing"),
-        route: route_input("missing"),
-        router: ports.router,
-        view: ports.view,
-        blocked: ports.blocked,
-        direct: ports.direct,
-    };
+    let request = request(call_args("missing"), route_input("missing"), &ports);
     let Err(LlmPassthroughError::NotFound(error)) = entry::execute(request).await else {
         panic!("an unknown model is not found");
     };
@@ -859,14 +755,7 @@ async fn entry_user_config_is_rejected() {
         has_user_config: RouteFlag(true),
         ..route_input("gpt-upstream")
     };
-    let request = LlmPassthroughRequest {
-        args: call_args("gpt-upstream"),
-        route: input,
-        router: ports.router,
-        view: ports.view,
-        blocked: ports.blocked,
-        direct: ports.direct,
-    };
+    let request = request(call_args("gpt-upstream"), input, &ports);
     let Err(error) = entry::execute(request).await else {
         panic!("a user_config request is refused");
     };
@@ -972,14 +861,11 @@ async fn entry_router_missing() {
         blocked,
         direct,
     };
-    let request = LlmPassthroughRequest {
-        args: call_args("gpt-upstream"),
-        route: route_input("gpt-upstream"),
-        router: ports.router,
-        view: ports.view,
-        blocked: ports.blocked,
-        direct: ports.direct,
-    };
+    let request = request(
+        call_args("gpt-upstream"),
+        route_input("gpt-upstream"),
+        &ports,
+    );
     let Err(error) = entry::execute(request).await else {
         panic!("a router plan without a router fails");
     };
@@ -1011,14 +897,11 @@ async fn entry_router_uses_b8690_trait() {
         blocked,
         direct,
     };
-    let request = LlmPassthroughRequest {
-        args: call_args("gpt-upstream"),
-        route: route_input("gpt-upstream"),
-        router: ports.router,
-        view: ports.view,
-        blocked: ports.blocked,
-        direct: ports.direct,
-    };
+    let request = request(
+        call_args("gpt-upstream"),
+        route_input("gpt-upstream"),
+        &ports,
+    );
     let reply = entry::execute(request).await.expect("sdk reply");
     assert_eq!(reply.status, 200);
     assert_eq!(trace.steps(), ["sdk"]);
@@ -1033,14 +916,11 @@ async fn entry_dispatch_blocked_is_403() {
         ..FakeView::default()
     };
     let ports = ports_with(Some(view), vec!["gpt-upstream"], &calls, &trace);
-    let request = LlmPassthroughRequest {
-        args: call_args("gpt-upstream"),
-        route: route_input("gpt-upstream"),
-        router: ports.router,
-        view: ports.view,
-        blocked: ports.blocked,
-        direct: ports.direct,
-    };
+    let request = request(
+        call_args("gpt-upstream"),
+        route_input("gpt-upstream"),
+        &ports,
+    );
     let dispatch = Dispatch::new(Vec::new(), Arc::new(NoRules), Arc::new(TracingCallLog));
     let context = context(None, SystemTime::UNIX_EPOCH);
     let result = dispatch
@@ -1068,14 +948,7 @@ async fn entry_dispatch_not_found_is_400() {
     let trace = Trace::default();
     let calls = Calls::default();
     let ports = ports_with(Some(FakeView::default()), Vec::new(), &calls, &trace);
-    let request = LlmPassthroughRequest {
-        args: call_args("missing"),
-        route: route_input("missing"),
-        router: ports.router,
-        view: ports.view,
-        blocked: ports.blocked,
-        direct: ports.direct,
-    };
+    let request = request(call_args("missing"), route_input("missing"), &ports);
     let dispatch = Dispatch::new(Vec::new(), Arc::new(NoRules), Arc::new(TracingCallLog));
     let context = context(None, SystemTime::UNIX_EPOCH);
     let result = dispatch
