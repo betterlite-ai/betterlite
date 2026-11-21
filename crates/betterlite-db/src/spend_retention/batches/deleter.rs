@@ -85,7 +85,13 @@ where
         let batch = delete_batch(self.client, run, self.bounds.batch_size, timeout_ms);
         match within_deadline(timeout_ms, batch).await {
             Ok(deleted) => self.batch_deleted(run, deleted, started).await,
-            Err(error) => self.batch_failed(run, &error).await,
+            Err(error) => {
+                let stop_reason = self.batch_failed(run, &error);
+                if stop_reason.is_none() {
+                    sleep(self.bounds.failure_backoff).await;
+                }
+                stop_reason
+            }
         }
     }
 
@@ -116,7 +122,7 @@ where
     }
 
     // a batch the clamped timeout cancelled at the deadline is the bound working, not a database fault
-    async fn batch_failed(
+    fn batch_failed(
         &self,
         run: &mut TableRun,
         error: &BoundedTransactionError,
@@ -147,7 +153,6 @@ where
             );
             return Some(StopReason::Aborted);
         }
-        sleep(self.bounds.failure_backoff).await;
         None
     }
 
