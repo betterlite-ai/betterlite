@@ -1,0 +1,23 @@
+kind: helper
+name: flow_order
+call:
+  b3459:
+    step: flow
+    cases:
+      - vector: {vector_bucket_name: flow-bucket, index_name: flow-index, dimension: 3}
+        environment: {S3_VECTORS_DEFAULT_DISTANCE_METRIC: cosine}
+        chunks: [first, second]
+        embeddings: [[0.5, 0.25, 0.125], [1.0, 0.5, 0.25]]
+        filename: notes.txt
+      - vector: {vector_bucket_name: flow-bucket, index_name: flow-index, litellm_embedding_model: vendor/model}
+        environment: {S3_VECTORS_DEFAULT_DISTANCE_METRIC: cosine}
+        answer: [[0.1, 0.2]]
+        chunks: [first]
+        embeddings: [[0.5, 0.25]]
+        filename: notes.txt
+      - vector: {vector_bucket_name: flow-bucket, index_name: flow-index, distance_metric: euclidean, non_filterable_metadata_keys: [source_text, page]}
+        environment: {S3_VECTORS_DEFAULT_DISTANCE_METRIC: cosine}
+        chunks: [first]
+        embeddings: [[0.5]]
+env: {S3_VECTORS_DEFAULT_DISTANCE_METRIC: cosine}
+compare: {ignore: []}
