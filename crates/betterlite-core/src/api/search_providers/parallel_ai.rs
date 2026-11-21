@@ -138,6 +138,7 @@ impl SearchProvider for ParallelAiSearch {
         api_base: Option<&str>,
         _optional_params: &Object,
         _body: Option<&SearchBody>,
+        _api_key: Option<&SecretString>,
     ) -> Result<String, ParallelAiSearchError> {
         Ok(self.endpoint(api_base))
     }
@@ -146,6 +147,9 @@ impl SearchProvider for ParallelAiSearch {
         &self,
         query: &SearchQuery,
         optional_params: &Object,
+        _api_key: Option<&SecretString>,
+        _api_base: Option<&str>,
+        _headers: &Headers,
     ) -> Result<SearchBody, ParallelAiSearchError> {
         search_body(query, optional_params)
     }

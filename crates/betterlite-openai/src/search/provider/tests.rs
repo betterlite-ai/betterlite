@@ -1,7 +1,8 @@
 #![cfg(test)]
 use std::collections::BTreeMap;
+use std::sync::Mutex;
 
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Error;
 
 use crate::openai_base_config::{Headers, Object};
@@ -20,6 +21,7 @@ impl SearchProvider for EchoSearch {
         api_base: Option<&str>,
         _optional_params: &Object,
         _body: Option<&SearchQuery>,
+        _api_key: Option<&SecretString>,
     ) -> Result<String, Error> {
         let base = api_base.unwrap_or("https://echo.example");
         Ok(format!("{base}/search"))
@@ -29,6 +31,9 @@ impl SearchProvider for EchoSearch {
         &self,
         query: &SearchQuery,
         _optional_params: &Object,
+        _api_key: Option<&SecretString>,
+        _api_base: Option<&str>,
+        _headers: &Headers,
     ) -> Result<SearchQuery, Error> {
         Ok(query.clone())
     }
@@ -75,10 +80,10 @@ fn provider_hooks_build_url_body_and_response() {
     assert_eq!(single, SearchQuery::Single(String::from("latest rust")));
     let many: SearchQuery = serde_json::from_str(r#"["a", "b"]"#).unwrap();
     let body = EchoSearch
-        .transform_search_request(&many, &Object::new())
+        .transform_search_request(&many, &Object::new(), None, None, &Headers::new())
         .unwrap();
     assert_eq!(serde_json::to_string(&body).unwrap(), r#"["a","b"]"#);
-    let url = EchoSearch.complete_url(None, &Object::new(), Some(&body));
+    let url = EchoSearch.complete_url(None, &Object::new(), Some(&body), None);
     assert_eq!(url.unwrap(), "https://echo.example/search");
     let response = ProviderResponse {
         status_code: 200,
@@ -108,4 +113,75 @@ fn search_errors_carry_status_text_and_headers() {
         (direct.status_code, direct.message.as_str(), direct.headers),
         (400, "bad query", Some(Vec::new()))
     );
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SeenRequest {
+    api_key: Option<String>,
+    api_base: Option<String>,
+    headers: Headers,
+}
+struct RecordingSearch {
+    seen: Mutex<Option<SeenRequest>>,
+}
+
+impl SearchProvider for RecordingSearch {
+    type Body = SearchQuery;
+    type Error = Error;
+
+    fn complete_url(
+        &self,
+        api_base: Option<&str>,
+        _optional_params: &Object,
+        _body: Option<&SearchQuery>,
+        _api_key: Option<&SecretString>,
+    ) -> Result<String, Error> {
+        Ok(api_base.unwrap_or("https://record.example").to_owned())
+    }
+
+    fn transform_search_request(
+        &self,
+        query: &SearchQuery,
+        _optional_params: &Object,
+        api_key: Option<&SecretString>,
+        api_base: Option<&str>,
+        headers: &Headers,
+    ) -> Result<SearchQuery, Error> {
+        *self.seen.lock().unwrap() = Some(SeenRequest {
+            api_key: api_key.map(|key| key.expose_secret().to_owned()),
+            api_base: api_base.map(str::to_owned),
+            headers: headers.clone(),
+        });
+        Ok(query.clone())
+    }
+
+    fn transform_search_response(
+        &self,
+        response: &ProviderResponse<'_>,
+    ) -> Result<SearchResponse, Error> {
+        serde_json::from_str(response.text)
+    }
+}
+
+#[test]
+fn transform_sees_key_base_and_validated_headers() {
+    let key = SecretString::from("sk-search");
+    let validated = headers("x-validated", "yes");
+    let provider = RecordingSearch {
+        seen: Mutex::new(None),
+    };
+    let body = provider
+        .transform_search_request(
+            &SearchQuery::Single(String::from("rust")),
+            &Object::new(),
+            Some(&key),
+            Some("https://record.example"),
+            &validated,
+        )
+        .unwrap();
+    assert_eq!(body, SearchQuery::Single(String::from("rust")));
+    let seen = provider.seen.lock().unwrap().clone().unwrap();
+    assert_eq!(seen.api_key.as_deref(), Some("sk-search"));
+    assert_eq!(seen.api_base.as_deref(), Some("https://record.example"));
+    assert_eq!(seen.headers, validated);
 }

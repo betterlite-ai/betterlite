@@ -54,14 +54,26 @@ fn param(record: &IndexMap<String, Json>, name: &str) -> Json {
 
 fn request_body(query_text: &str, options_json: &str) -> IndexMap<String, Json> {
     let record = config(&[])
-        .transform_search_request(&query(query_text), &optional_params(options_json))
+        .transform_search_request(
+            &query(query_text),
+            &optional_params(options_json),
+            None,
+            None,
+            &Headers::new(),
+        )
         .unwrap();
     expected(&serde_json::to_string(&record).unwrap())
 }
 
 fn request_error(query_text: &str, options_json: &str) -> ApiserpentSearchError {
     config(&[])
-        .transform_search_request(&query(query_text), &optional_params(options_json))
+        .transform_search_request(
+            &query(query_text),
+            &optional_params(options_json),
+            None,
+            None,
+            &Headers::new(),
+        )
         .unwrap_err()
 }
 
@@ -69,10 +81,10 @@ fn complete(api_base: Option<&str>, options_json: &str, values: &[(&str, &str)])
     let params = optional_params(options_json);
     let config = config(values);
     let record = config
-        .transform_search_request(&query("\"q\""), &params)
+        .transform_search_request(&query("\"q\""), &params, None, None, &Headers::new())
         .unwrap();
     config
-        .complete_url(api_base, &params, Some(&record))
+        .complete_url(api_base, &params, Some(&record), None)
         .unwrap()
 }
 
@@ -185,7 +197,7 @@ fn apiserpent_missing_key_reports_the_source_message() {
 fn apiserpent_sign_request_fails_before_sending_without_a_key() {
     let config = config(&[]);
     let record = config
-        .transform_search_request(&query("\"q\""), &Object::new())
+        .transform_search_request(&query("\"q\""), &Object::new(), None, None, &Headers::new())
         .unwrap();
     let empty = Object::new();
     let outbound = OutboundSearch {
@@ -202,7 +214,7 @@ fn apiserpent_sign_request_fails_before_sending_without_a_key() {
 fn apiserpent_sign_request_blocks_the_server_key_for_an_untrusted_base() {
     let config = config(&[("APISERPENT_API_KEY", "sk-server")]);
     let record = config
-        .transform_search_request(&query("\"q\""), &Object::new())
+        .transform_search_request(&query("\"q\""), &Object::new(), None, None, &Headers::new())
         .unwrap();
     let empty = Object::new();
     let outbound = OutboundSearch {
@@ -228,7 +240,7 @@ fn apiserpent_sign_request_signs_with_the_key_and_content_type(
 ) {
     let config = config(&[("APISERPENT_API_KEY", "sk-server")]);
     let record = config
-        .transform_search_request(&query("\"q\""), &Object::new())
+        .transform_search_request(&query("\"q\""), &Object::new(), None, None, &Headers::new())
         .unwrap();
     let caller_secret = caller_key.map(SecretString::from);
     let empty = Object::new();
@@ -292,7 +304,7 @@ fn apiserpent_url_switches_between_quick_and_deep(
     #[case] expected_url: &str,
 ) {
     let params = optional_params(options_json);
-    let complete_url = config(&[]).complete_url(None, &params, None).unwrap();
+    let complete_url = config(&[]).complete_url(None, &params, None, None).unwrap();
     assert_eq!(complete_url, expected_url);
 }
 
@@ -353,7 +365,7 @@ fn apiserpent_url_trims_trailing_slashes(
 ) {
     let params = optional_params(options_json);
     let complete_url = config(values)
-        .complete_url(api_base, &params, None)
+        .complete_url(api_base, &params, None, None)
         .unwrap();
     assert_eq!(complete_url, expected_url);
 }
@@ -370,7 +382,7 @@ fn apiserpent_url_repeats_a_list_param_with_doseq() {
     );
     let record = ApiserpentBody { params };
     let complete_url = config(&[])
-        .complete_url(None, &Object::new(), Some(&record))
+        .complete_url(None, &Object::new(), Some(&record), None)
         .unwrap();
     assert_eq!(
         complete_url,

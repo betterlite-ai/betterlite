@@ -237,7 +237,7 @@ fn trait_hooks_shape_headers_url_and_options() {
     );
     assert_eq!(
         search
-            .complete_url(Some("https://proxy.test"), &Object::new(), None)
+            .complete_url(Some("https://proxy.test"), &Object::new(), None, None)
             .unwrap(),
         "https://proxy.test/search"
     );
@@ -273,7 +273,13 @@ fn outbound<'call>(
 
 fn empty_body(search: &FastcrwSearch) -> SearchBody {
     search
-        .transform_search_request(&SearchQuery::Single("rust".to_owned()), &Object::new())
+        .transform_search_request(
+            &SearchQuery::Single("rust".to_owned()),
+            &Object::new(),
+            None,
+            None,
+            &Headers::new(),
+        )
         .unwrap()
 }
 
@@ -339,7 +345,7 @@ fn trait_sign_request_rejects_an_untrusted_base() {
 )]
 fn body_joins_the_query(#[case] query: SearchQuery, #[case] expected: &str) {
     let body = load(&[])
-        .transform_search_request(&query, &Object::new())
+        .transform_search_request(&query, &Object::new(), None, None, &Headers::new())
         .unwrap();
     assert_eq!(
         body_object(&body),
@@ -355,7 +361,13 @@ fn body_maps_max_results_and_drops_unified_names() {
         r#"{"max_results":7,"search_domain_filter":["docs.rs"],"max_tokens_per_page":512,"country":"US","sources":["web","images"],"tbs":"qdr:d"}"#,
     );
     let body = load(&[])
-        .transform_search_request(&SearchQuery::Single("rust".to_owned()), &optional_params)
+        .transform_search_request(
+            &SearchQuery::Single("rust".to_owned()),
+            &optional_params,
+            None,
+            None,
+            &Headers::new(),
+        )
         .unwrap();
     assert_eq!(
         body_object(&body),
@@ -369,7 +381,13 @@ fn body_maps_max_results_and_drops_unified_names() {
 fn body_keeps_a_caller_scrape_options_even_when_empty() {
     let empty = params(r#"{"scrapeOptions":{}}"#);
     let body = load(&[])
-        .transform_search_request(&SearchQuery::Single("q".to_owned()), &empty)
+        .transform_search_request(
+            &SearchQuery::Single("q".to_owned()),
+            &empty,
+            None,
+            None,
+            &Headers::new(),
+        )
         .unwrap();
     assert_eq!(
         body_object(&body),
@@ -377,7 +395,13 @@ fn body_keeps_a_caller_scrape_options_even_when_empty() {
     );
     let custom = params(r#"{"scrapeOptions":{"formats":["html"]}}"#);
     let custom_body = load(&[])
-        .transform_search_request(&SearchQuery::Single("q".to_owned()), &custom)
+        .transform_search_request(
+            &SearchQuery::Single("q".to_owned()),
+            &custom,
+            None,
+            None,
+            &Headers::new(),
+        )
         .unwrap();
     assert_eq!(
         body_object(&custom_body),
@@ -389,7 +413,13 @@ fn body_keeps_a_caller_scrape_options_even_when_empty() {
 fn body_never_overwrites_a_mapped_name() {
     let optional_params = params(r#"{"max_results":3,"limit":9,"query":"ignored"}"#);
     let body = load(&[])
-        .transform_search_request(&SearchQuery::Single("rust".to_owned()), &optional_params)
+        .transform_search_request(
+            &SearchQuery::Single("rust".to_owned()),
+            &optional_params,
+            None,
+            None,
+            &Headers::new(),
+        )
         .unwrap();
     assert_eq!(
         body_object(&body),
@@ -399,7 +429,13 @@ fn body_never_overwrites_a_mapped_name() {
     );
     let unmapped = params(r#"{"limit":9}"#);
     let unmapped_body = load(&[])
-        .transform_search_request(&SearchQuery::Single("rust".to_owned()), &unmapped)
+        .transform_search_request(
+            &SearchQuery::Single("rust".to_owned()),
+            &unmapped,
+            None,
+            None,
+            &Headers::new(),
+        )
         .unwrap();
     assert_eq!(
         body_object(&unmapped_body),

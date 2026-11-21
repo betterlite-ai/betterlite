@@ -155,6 +155,7 @@ impl SearchProvider for NimbleSearch {
         api_base: Option<&str>,
         _optional_params: &Object,
         _body: Option<&SearchBody>,
+        _api_key: Option<&SecretString>,
     ) -> Result<String, NimbleSearchError> {
         Ok(self.endpoint(api_base))
     }
@@ -163,6 +164,9 @@ impl SearchProvider for NimbleSearch {
         &self,
         query: &SearchQuery,
         optional_params: &Object,
+        _api_key: Option<&SecretString>,
+        _api_base: Option<&str>,
+        _headers: &Headers,
     ) -> Result<SearchBody, NimbleSearchError> {
         Ok(search_body(query, optional_params))
     }

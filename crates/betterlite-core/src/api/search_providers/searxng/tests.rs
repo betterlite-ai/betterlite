@@ -5,7 +5,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use betterlite_config::sections::settings::JsonValue;
-use betterlite_openai::openai_base_config::Object;
+use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::search::credentials::CredentialError;
 use betterlite_openai::search::provider::{
     HttpMethod, ProviderResponse, SearchProvider as _, SearchQuery,
@@ -92,7 +92,7 @@ fn searxng_search_settings_treat_an_empty_key_as_unset() {
 fn searxng_search_settings_treat_an_empty_base_as_unset() {
     let loaded = config(&[("SEARXNG_API_BASE", "")]);
     assert!(matches!(
-        loaded.complete_url(None, &Object::new(), None),
+        loaded.complete_url(None, &Object::new(), None, None),
         Err(SearxngSearchError::MissingApiBase)
     ));
 }
@@ -116,7 +116,7 @@ fn searxng_search_settings_trust_the_environment_base() {
     let loaded = SearxngSearchConfig::load(None, Some("https://searx.test/"), &lookup).unwrap();
     assert_eq!(
         loaded
-            .complete_url(Some("https://searx.test/"), &Object::new(), None)
+            .complete_url(Some("https://searx.test/"), &Object::new(), None, None)
             .unwrap(),
         "https://searx.test/search"
     );

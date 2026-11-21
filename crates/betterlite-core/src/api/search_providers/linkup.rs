@@ -112,6 +112,7 @@ impl SearchProvider for LinkupSearchConfig {
         api_base: Option<&str>,
         _optional_params: &Object,
         _body: Option<&LinkupSearchRequest>,
+        _api_key: Option<&SecretString>,
     ) -> Result<String, LinkupSearchError> {
         let base = api_base
             .filter(|base| !base.is_empty())
@@ -123,6 +124,9 @@ impl SearchProvider for LinkupSearchConfig {
         &self,
         query: &SearchQuery,
         optional_params: &Object,
+        _api_key: Option<&SecretString>,
+        _api_base: Option<&str>,
+        _headers: &Headers,
     ) -> Result<LinkupSearchRequest, LinkupSearchError> {
         build_request(query, optional_params)
     }

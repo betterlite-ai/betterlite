@@ -5,7 +5,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use betterlite_config::sections::settings::JsonValue;
-use betterlite_openai::openai_base_config::Object;
+use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::search::credentials::CredentialError;
 use betterlite_openai::search::provider::{
     HttpMethod, ProviderResponse, SearchProvider as _, SearchQuery,
@@ -74,7 +74,9 @@ fn linkup_search_settings_read_the_key_and_base() {
     );
     assert_eq!(sent.get("x-trace").map(String::as_str), Some("t-1"));
     assert_eq!(
-        loaded.complete_url(None, &Object::new(), None).unwrap(),
+        loaded
+            .complete_url(None, &Object::new(), None, None)
+            .unwrap(),
         "https://linkup.test/v2/search"
     );
 }
@@ -89,7 +91,9 @@ fn linkup_search_settings_treat_empty_values_as_unset() {
     let caller = SecretString::from("sk-caller");
     let loaded = LinkupSearchConfig::load(Some(caller), None, &lookup).unwrap();
     assert_eq!(
-        loaded.complete_url(None, &Object::new(), None).unwrap(),
+        loaded
+            .complete_url(None, &Object::new(), None, None)
+            .unwrap(),
         format!("{DEFAULT_API_BASE}/search")
     );
 }
@@ -99,7 +103,9 @@ fn linkup_search_settings_treat_an_empty_caller_base_as_unset() {
     let lookup = environment(&[("LINKUP_API_KEY", "sk-linkup")]);
     let loaded = LinkupSearchConfig::load(None, Some(""), &lookup).unwrap();
     assert_eq!(
-        loaded.complete_url(Some(""), &Object::new(), None).unwrap(),
+        loaded
+            .complete_url(Some(""), &Object::new(), None, None)
+            .unwrap(),
         format!("{DEFAULT_API_BASE}/search")
     );
 }
@@ -124,7 +130,12 @@ fn linkup_search_settings_trust_the_configured_base() {
         LinkupSearchConfig::load(None, Some("https://linkup.test/other"), &lookup).unwrap();
     assert_eq!(
         loaded
-            .complete_url(Some("https://linkup.test/other"), &Object::new(), None)
+            .complete_url(
+                Some("https://linkup.test/other"),
+                &Object::new(),
+                None,
+                None
+            )
             .unwrap(),
         "https://linkup.test/other/search"
     );
@@ -267,7 +278,9 @@ fn linkup_request_error_names_the_option() {
 fn linkup_url_appends_the_search_suffix(#[case] base: Option<&str>, #[case] expected: &str) {
     let loaded = config(&[("LINKUP_API_KEY", "sk-linkup")]);
     assert_eq!(
-        loaded.complete_url(base, &Object::new(), None).unwrap(),
+        loaded
+            .complete_url(base, &Object::new(), None, None)
+            .unwrap(),
         expected
     );
 }

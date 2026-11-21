@@ -141,6 +141,7 @@ impl SearchProvider for SerperSearchConfig {
         api_base: Option<&str>,
         _optional_params: &Object,
         _body: Option<&Self::Body>,
+        _api_key: Option<&SecretString>,
     ) -> Result<String, Self::Error> {
         let base = api_base
             .filter(|base| !base.is_empty())
@@ -165,6 +166,9 @@ impl SearchProvider for SerperSearchConfig {
         &self,
         query: &SearchQuery,
         optional_params: &Object,
+        _api_key: Option<&SecretString>,
+        _api_base: Option<&str>,
+        _headers: &Headers,
     ) -> Result<Self::Body, Self::Error> {
         request::build(query, optional_params)
     }

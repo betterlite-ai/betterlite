@@ -323,7 +323,7 @@ fn dataforseo_sign_request_signs_with_the_server_pair() {
     let config = pair();
     let text = SearchQuery::Single(String::from("rust"));
     let request = config
-        .transform_search_request(&text, &Object::new())
+        .transform_search_request(&text, &Object::new(), None, None, &Headers::new())
         .unwrap();
     let outbound = OutboundSearch {
         api_base: DATAFORSEO_API_BASE,
@@ -348,7 +348,7 @@ fn dataforseo_sign_request_fails_before_sending_without_credentials() {
     let config = config(&[]);
     let text = SearchQuery::Single(String::from("rust"));
     let request = config
-        .transform_search_request(&text, &Object::new())
+        .transform_search_request(&text, &Object::new(), None, None, &Headers::new())
         .unwrap();
     let outbound = OutboundSearch {
         api_base: DATAFORSEO_API_BASE,
@@ -365,7 +365,7 @@ fn dataforseo_sign_request_blocks_the_server_pair_for_an_untrusted_base() {
     let config = pair();
     let text = SearchQuery::Single(String::from("rust"));
     let request = config
-        .transform_search_request(&text, &Object::new())
+        .transform_search_request(&text, &Object::new(), None, None, &Headers::new())
         .unwrap();
     let outbound = OutboundSearch {
         api_base: "https://evil.test/v3",
@@ -393,7 +393,7 @@ fn dataforseo_url_is_the_resolved_endpoint_unchanged(
     #[case] expected: &str,
 ) {
     let url = config(values)
-        .complete_url(api_base, &Object::new(), None)
+        .complete_url(api_base, &Object::new(), None, None)
         .unwrap();
     assert_eq!(url, expected);
 }
@@ -403,11 +403,11 @@ fn dataforseo_url_ignores_the_parameters_and_the_body() {
     let config = config(&[]);
     let text = SearchQuery::Single(String::from("rust"));
     let body = config
-        .transform_search_request(&text, &Object::new())
+        .transform_search_request(&text, &Object::new(), None, None, &Headers::new())
         .unwrap();
     let options: Object = serde_json::from_str(r#"{"max_results": 5}"#).unwrap();
     let url = config
-        .complete_url(Some("https://proxy.test/v3"), &options, Some(&body))
+        .complete_url(Some("https://proxy.test/v3"), &options, Some(&body), None)
         .unwrap();
     assert_eq!(url, "https://proxy.test/v3");
 }
@@ -416,7 +416,7 @@ fn request_tasks(text: &str, options: &str) -> Vec<IndexMap<String, Json>> {
     let optional_params: Object = serde_json::from_str(options).unwrap();
     let query: SearchQuery = serde_json::from_str(text).unwrap();
     let body = config(&[])
-        .transform_search_request(&query, &optional_params)
+        .transform_search_request(&query, &optional_params, None, None, &Headers::new())
         .unwrap();
     serde_json::from_str(&serde_json::to_string(&body).unwrap()).unwrap()
 }
@@ -429,7 +429,7 @@ fn request_error(options: &str) -> DataForSeoSearchError {
     let optional_params: Object = serde_json::from_str(options).unwrap();
     let query = SearchQuery::Single(String::from("q"));
     config(&[])
-        .transform_search_request(&query, &optional_params)
+        .transform_search_request(&query, &optional_params, None, None, &Headers::new())
         .unwrap_err()
 }
 
@@ -439,7 +439,7 @@ fn dataforseo_request_is_a_one_element_task_array() {
     let optional_params: Object = serde_json::from_str(options).unwrap();
     let query = SearchQuery::Single(String::from("q"));
     let body = config(&[])
-        .transform_search_request(&query, &optional_params)
+        .transform_search_request(&query, &optional_params, None, None, &Headers::new())
         .unwrap();
     assert_eq!(body.0.len(), 1);
 }

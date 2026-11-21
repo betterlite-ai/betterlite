@@ -110,6 +110,7 @@ impl SearchProvider for SearxngSearchConfig {
         api_base: Option<&str>,
         _optional_params: &Object,
         body: Option<&SearxngSearchRequest>,
+        _api_key: Option<&SecretString>,
     ) -> Result<String, SearxngSearchError> {
         search_url(api_base, self.environment_base.as_deref(), body)
     }
@@ -118,6 +119,9 @@ impl SearchProvider for SearxngSearchConfig {
         &self,
         query: &SearchQuery,
         optional_params: &Object,
+        _api_key: Option<&SecretString>,
+        _api_base: Option<&str>,
+        _headers: &Headers,
     ) -> Result<SearxngSearchRequest, SearxngSearchError> {
         build_request(query, optional_params)
     }

@@ -104,6 +104,7 @@ impl SearchProvider for DuckDuckGoSearchConfig {
         api_base: Option<&str>,
         _optional_params: &Object,
         body: Option<&DuckDuckGoSearchRequest>,
+        _api_key: Option<&SecretString>,
     ) -> Result<String, DuckDuckGoSearchError> {
         Ok(request::search_url(api_base, &self.environment_base, body))
     }
@@ -112,6 +113,9 @@ impl SearchProvider for DuckDuckGoSearchConfig {
         &self,
         query: &SearchQuery,
         optional_params: &Object,
+        _api_key: Option<&SecretString>,
+        _api_base: Option<&str>,
+        _headers: &Headers,
     ) -> Result<DuckDuckGoSearchRequest, DuckDuckGoSearchError> {
         let body = request::build_request(query, optional_params)?;
         // the response hook gets only &self, so the config keeps the query its reply must decode with

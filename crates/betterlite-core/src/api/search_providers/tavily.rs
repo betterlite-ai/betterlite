@@ -120,6 +120,7 @@ impl SearchProvider for TavilySearch {
         api_base: Option<&str>,
         _optional_params: &Object,
         _body: Option<&Object>,
+        _api_key: Option<&SecretString>,
     ) -> Result<String, TavilyError> {
         Ok(self.endpoint(api_base))
     }
@@ -128,6 +129,9 @@ impl SearchProvider for TavilySearch {
         &self,
         query: &SearchQuery,
         optional_params: &Object,
+        _api_key: Option<&SecretString>,
+        _api_base: Option<&str>,
+        _headers: &Headers,
     ) -> Result<Object, TavilyError> {
         search_body(query, optional_params)
     }

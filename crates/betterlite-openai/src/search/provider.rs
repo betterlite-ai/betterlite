@@ -90,12 +90,16 @@ pub trait SearchProvider {
         api_base: Option<&str>,
         optional_params: &Object,
         body: Option<&Self::Body>,
+        api_key: Option<&SecretString>,
     ) -> Result<String, Self::Error>;
 
     fn transform_search_request(
         &self,
         query: &SearchQuery,
         optional_params: &Object,
+        api_key: Option<&SecretString>,
+        api_base: Option<&str>,
+        headers: &Headers,
     ) -> Result<Self::Body, Self::Error>;
 
     fn transform_search_response(

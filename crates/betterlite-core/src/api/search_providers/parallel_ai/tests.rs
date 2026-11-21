@@ -37,6 +37,9 @@ fn string_body(options: &str) -> SearchBody {
         .transform_search_request(
             &SearchQuery::Single("rust".to_owned()),
             &serde_json::from_str::<Object>(options).unwrap(),
+            None,
+            None,
+            &Headers::new(),
         )
         .unwrap()
 }
@@ -227,7 +230,7 @@ fn trait_hooks_shape_headers_and_url() {
     );
     assert_eq!(
         search
-            .complete_url(Some("https://proxy.test/v1"), &Object::new(), None)
+            .complete_url(Some("https://proxy.test/v1"), &Object::new(), None, None)
             .unwrap(),
         "https://proxy.test/v1/search"
     );
@@ -306,6 +309,9 @@ fn body_maps_a_list_query_without_objective() {
         .transform_search_request(
             &SearchQuery::Multiple(vec!["rust".to_owned(), "search".to_owned()]),
             &serde_json::from_str::<Object>("{}").unwrap(),
+            None,
+            None,
+            &Headers::new(),
         )
         .unwrap();
     assert_eq!(
@@ -420,6 +426,9 @@ fn body_rejects_a_non_object_advanced_settings(#[case] options: &str) {
         .transform_search_request(
             &SearchQuery::Single("rust".to_owned()),
             &serde_json::from_str::<Object>(options).unwrap(),
+            None,
+            None,
+            &Headers::new(),
         )
         .unwrap_err();
     assert!(matches!(

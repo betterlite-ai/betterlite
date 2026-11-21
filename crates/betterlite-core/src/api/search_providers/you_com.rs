@@ -117,6 +117,7 @@ impl SearchProvider for YouComSearch {
         api_base: Option<&str>,
         _optional_params: &Object,
         _body: Option<&Object>,
+        _api_key: Option<&SecretString>,
     ) -> Result<String, YouComError> {
         let configured = api_base.or(self.api_base.as_deref()).map(with_search_path);
         if let Some(url) = configured {
@@ -133,6 +134,9 @@ impl SearchProvider for YouComSearch {
         &self,
         query: &SearchQuery,
         optional_params: &Object,
+        _api_key: Option<&SecretString>,
+        _api_base: Option<&str>,
+        _headers: &Headers,
     ) -> Result<Object, YouComError> {
         search_body(query, optional_params)
     }

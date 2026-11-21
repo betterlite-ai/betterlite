@@ -37,6 +37,9 @@ fn single_body(options: &str) -> SearchBody {
         .transform_search_request(
             &SearchQuery::Single("rust".to_owned()),
             &serde_json::from_str::<Object>(options).unwrap(),
+            None,
+            None,
+            &Headers::new(),
         )
         .unwrap()
 }
@@ -202,7 +205,7 @@ fn trait_hooks_shape_headers_and_url() {
     );
     assert_eq!(
         search
-            .complete_url(Some("https://proxy.test/"), &Object::new(), None)
+            .complete_url(Some("https://proxy.test/"), &Object::new(), None, None)
             .unwrap(),
         "https://proxy.test/search"
     );
@@ -306,7 +309,7 @@ fn body_keeps_the_source_key_order() {
                 r#"{"location":"us","max_results":5,"country":"us","search_domain_filter":["news.test","-spam.test","","-","docs.test"],"max_tokens_per_page":100}"#,
             )
             .unwrap(),
-        )
+        None, None, &Headers::new())
         .unwrap();
     assert_eq!(
         serde_json::to_string(&body).unwrap(),

@@ -106,6 +106,7 @@ impl SearchProvider for FastcrwSearch {
         api_base: Option<&str>,
         _optional_params: &Object,
         _body: Option<&SearchBody>,
+        _api_key: Option<&SecretString>,
     ) -> Result<String, FastcrwError> {
         Ok(self.endpoint(api_base))
     }
@@ -124,6 +125,9 @@ impl SearchProvider for FastcrwSearch {
         &self,
         query: &SearchQuery,
         optional_params: &Object,
+        _api_key: Option<&SecretString>,
+        _api_base: Option<&str>,
+        _headers: &Headers,
     ) -> Result<SearchBody, FastcrwError> {
         Ok(search_body(query, optional_params))
     }
