@@ -1,0 +1,3 @@
+general_settings:
+  coordination_redis: {}
+  master_key: os.environ/MASTER_KEY
