@@ -335,6 +335,29 @@ async fn the_proxy_scheduler_port_reports_its_state_and_jobs() {
 }
 
 #[test]
+fn a_recorded_attempt_is_left_alone_when_no_retention_key_remains() {
+    let fixture = fixture();
+    let settings = store(&[]);
+    let previous = CleanupSchedule::default();
+    let recorded = cleanup_schedule_of(&retained("30d"));
+    let mut scheduler = recording(SchedulerState::Paused);
+    let mut state = CleanupScheduleState {
+        last_attempt: Some(recorded.clone()),
+        reschedule_failed: false,
+    };
+    apply(
+        Some(&mut scheduler),
+        &previous,
+        &settings,
+        &fixture.context(),
+        &mut state,
+    );
+    assert_eq!(scheduler.inserted, 0);
+    assert!(scheduler.removals.is_empty());
+    assert_eq!(state.last_attempt, Some(recorded));
+}
+
+#[test]
 fn an_invalid_new_schedule_keeps_the_live_job_and_is_not_retried() {
     let fixture = fixture();
     let previous = cleanup_schedule_of(&retained("30d"));
