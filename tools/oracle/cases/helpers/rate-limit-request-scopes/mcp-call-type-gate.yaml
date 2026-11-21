@@ -1,0 +1,82 @@
+kind: helper
+name: rate-limit-request-scopes-mcp-call-type-gate
+call:
+  b3040:
+    function: assemble
+    auth:
+      api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      team_id: team-1
+      metadata:
+        mcp_rpm_limit:
+          server1: 5
+          server2: 9
+      team_metadata:
+        mcp_rpm_limit:
+          server1: 7
+    server:
+      source_team_rpm_limits:
+        team-2:
+          server1: 11
+    data:
+      mcp_server_name: server1
+    call_type: call_mcp_tool
+    groups: {}
+    registry: []
+    tag_limits: []
+    window_size: 60
+calls:
+  - b3040:
+      function: assemble
+      auth:
+        api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        team_id: team-1
+        metadata:
+          mcp_rpm_limit:
+            server1: 5
+        team_metadata:
+          mcp_rpm_limit:
+            server1: 7
+      server: {}
+      data:
+        mcp_server_name: server1
+      call_type: null
+      groups: {}
+      registry: []
+      tag_limits: []
+      window_size: 60
+  - b3040:
+      function: assemble
+      auth:
+        api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        team_id: team-1
+        metadata:
+          mcp_rpm_limit:
+            server1: 5
+      server: {}
+      data:
+        mcp_server_name: server1
+        server_id: resolved-server
+      call_type: call_mcp_tool
+      groups: {}
+      registry: []
+      tag_limits: []
+      window_size: 60
+  - b3040:
+      function: assemble
+      auth:
+        api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        team_id: team-1
+        metadata:
+          mcp_rpm_limit:
+            server1: 5
+      server: {}
+      data:
+        model: gpt4
+      call_type: call_mcp_tool
+      groups:
+        gpt4: gpt-4
+      registry: []
+      tag_limits: []
+      window_size: 60
+env: {}
+compare: {ignore: []}

@@ -1154,6 +1154,7 @@ dependencies = [
  "betterlite-redis",
  "betterlite-routes",
  "betterlite-secrets",
+ "betterlite-test-ports",
  "chrono",
  "clap",
  "deadpool-postgres",
@@ -4695,6 +4696,13 @@ version = "0.0.0"
 dependencies = [
  "betterlite-streaming",
  "libfuzzer-sys",
+]
+
+[[package]]
+name = "betterlite-test-ports"
+version = "0.1.0"
+dependencies = [
+ "tokio",
 ]
 
 [[package]]
