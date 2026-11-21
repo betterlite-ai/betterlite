@@ -68,11 +68,14 @@ impl Probe {
 fn scripted_client(input: &Input) -> (Frames, Closes, Arc<Mutex<ClientData>>) {
     let client_data = Arc::new(Mutex::new(ClientData::default()));
     let (client, closes) = {
+        let data = client_data.locked();
+        (Arc::clone(&data.log), Arc::clone(&data.closes))
+    };
+    {
         let mut data = client_data.locked();
         data.incoming = input.messages.iter().cloned().collect();
         data.failures.clone_from(&input.client_send_failures);
         data.close_failures.clone_from(&input.client_close_failures);
-        (Arc::clone(&data.log), Arc::clone(&data.closes))
     };
     (client, closes, client_data)
 }
