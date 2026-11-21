@@ -23,14 +23,16 @@ pub(crate) fn construct_url(
     let requested_intent = query_params
         .and_then(|params| params.get(INTENT_KEY))
         .and_then(Option::as_deref);
+    let ga_model = !beta
+        && requested_intent != Some(TRANSCRIPTION_INTENT)
+        && query_params.is_none_or(|params| params.contains_key(MODEL_KEY));
     let mut pairs: Vec<(String, String)> = Vec::with_capacity(3);
     if beta {
         let version = api_version.ok_or(RealtimeError::MissingApiVersion)?;
         pairs.push((String::from(API_VERSION_KEY), version.to_owned()));
         pairs.push((String::from(DEPLOYMENT_KEY), model.to_owned()));
-    } else if requested_intent != Some(TRANSCRIPTION_INTENT)
-        && query_params.is_none_or(|params| params.contains_key(MODEL_KEY))
-    {
+    }
+    if ga_model {
         pairs.push((String::from(MODEL_KEY), model.to_owned()));
     }
     if let Some(value) = requested_intent.filter(|value| !value.is_empty()) {

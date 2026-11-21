@@ -10,7 +10,7 @@ use crate::realtime::failure::{
     SESSION_ERROR_MESSAGE, SESSION_ERROR_TYPE, client_action,
 };
 use crate::realtime::http_config::{
-    DEFAULT_API_VERSION, RealtimeHttpSettings, realtime_calls_headers, validate_environment,
+    DEFAULT_API_VERSION, realtime_calls_headers, validate_environment,
 };
 use crate::realtime::protocol::{BETA_PROTOCOL, GA_PROTOCOL, client_protocol, uses_beta_protocol};
 use crate::realtime::ssl::ssl_config;
@@ -27,8 +27,8 @@ pub(super) fn beta_realtime_deployment_query() {
 }
 
 fn beta_plan() {
-    let plain = connection(Some("https://example.test"), Some(API_VERSION), None, None);
-    let plan = plain.plan();
+    let defaulted = connection(Some("https://example.test"), Some(API_VERSION), None, None);
+    let plan = defaulted.plan();
     assert_eq!(
         plan.url,
         "wss://example.test/openai/realtime?api-version=2024-10-01-preview&deployment=realtime-a"
@@ -562,7 +562,7 @@ fn key_precedence() {
 
 fn version_precedence() {
     assert_eq!(DEFAULT_API_VERSION, "2024-12-17");
-    let defaulted: RealtimeHttpSettings = http_settings(None, None, None, None);
+    let defaulted = http_settings(None, None, None, None);
     assert_eq!(
         defaulted.complete_url(Some("https://x"), None),
         "https://x/openai/realtime/client_secrets?api-version=2024-12-17"
