@@ -5,18 +5,12 @@ use super::errors::HookFailure;
 use super::runtime::{HookRuntime, RequestData, ScanCall, ScanSource};
 
 // LiteLLM's async_pre_call_hook: scan the user messages before the call and write the guardrail's masked text back.
-pub async fn pre_call_hook<R>(
-    runtime: &R,
+pub async fn pre_call_hook(
+    runtime: &impl HookRuntime,
     data: &mut RequestData,
     call_type: &str,
-) -> Result<(), HookFailure>
-where
-    R: HookRuntime,
-{
-    if runtime.should_run(data, GuardrailEventHooks::PreCall) {
-        return scan_user_messages(runtime, data, call_type, GuardrailEventHooks::PreCall).await;
-    }
-    Ok(())
+) -> Result<(), HookFailure> {
+    scan_event(runtime, data, call_type, GuardrailEventHooks::PreCall).await
 }
 
 // LiteLLM's async_moderation_hook: the LLM call is already in flight, so a block propagates to the endpoint handler.
@@ -34,10 +28,22 @@ where
     } else {
         GuardrailEventHooks::DuringCall
     };
-    if runtime.should_run(data, event) {
-        return scan_user_messages(runtime, data, call_type, event).await;
+    scan_event(runtime, data, call_type, event).await
+}
+
+async fn scan_event<R>(
+    runtime: &R,
+    data: &mut RequestData,
+    call_type: &str,
+    event: GuardrailEventHooks,
+) -> Result<(), HookFailure>
+where
+    R: HookRuntime,
+{
+    if !runtime.should_run(data, event) {
+        return Ok(());
     }
-    Ok(())
+    scan_user_messages(runtime, data, call_type, event).await
 }
 
 async fn scan_user_messages<R>(

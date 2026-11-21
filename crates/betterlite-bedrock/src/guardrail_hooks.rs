@@ -14,7 +14,6 @@ pub mod post_call;
 pub mod response;
 pub mod runtime;
 pub mod streaming;
-#[cfg(test)]
 mod tests;
 
 pub type RequestData = BTreeMap<String, GuardrailValue>;

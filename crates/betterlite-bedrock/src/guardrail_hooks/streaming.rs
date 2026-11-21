@@ -147,10 +147,10 @@ where
     R: HookRuntime,
 {
     match failure {
+        HookFailure::ModifyResponse(failure) => block_output(runtime, context, assembled, *failure),
         HookFailure::Rejected { status, detail } => {
             rejected_output(runtime, context, detail, status)
         }
-        HookFailure::ModifyResponse(failure) => block_output(runtime, context, assembled, *failure),
         other @ HookFailure::Failed { .. } => Err(other),
     }
 }
@@ -192,29 +192,26 @@ fn block_output<R>(
 where
     R: HookRuntime,
 {
-    if context.raw_sse {
-        let model = response_model(assembled)
-            .filter(|model| !model.is_empty())
-            .map(ToOwned::to_owned)
-            .or(failure.model.clone())
-            .unwrap_or_default();
-        let block = BlockedMessage {
+    if !context.raw_sse {
+        let block = BlockedChat {
             message: failure.message,
-            model,
-            original_response: failure
-                .original_response
-                .unwrap_or_else(|| assembled.clone()),
+            model: failure.model,
+            usage: response_usage(assembled),
         };
-        return Ok(runtime
-            .block_sse_chunks(&block)?
-            .into_iter()
-            .map(StreamChunk::Bytes)
-            .collect());
+        return runtime.block_chat_chunks(&block);
     }
-    let block = BlockedChat {
+    let model = response_model(assembled)
+        .filter(|model| !model.is_empty())
+        .map(ToOwned::to_owned)
+        .or(failure.model)
+        .unwrap_or_default();
+    let block = BlockedMessage {
         message: failure.message,
-        model: failure.model,
-        usage: response_usage(assembled),
+        model,
+        original_response: failure
+            .original_response
+            .unwrap_or_else(|| assembled.clone()),
     };
-    runtime.block_chat_chunks(&block)
+    let frames = runtime.block_sse_chunks(&block)?;
+    Ok(frames.into_iter().map(StreamChunk::Bytes).collect())
 }

@@ -95,54 +95,53 @@ pub fn usage(prompt_tokens: u64, completion_tokens: u64) -> GuardrailValue {
 
 pub fn chat_response(model: &str, content: GuardrailValue) -> GuardrailValue {
     object(vec![
-        ("id", text("chatcmpl-1")),
-        ("object", text("chat.completion")),
-        ("created", unsigned(1)),
-        ("model", text(model)),
+        ("usage", usage(3, 2)),
         (
             "choices",
             array(vec![object(vec![
-                ("index", unsigned(0)),
                 ("message", message("assistant", content)),
+                ("index", unsigned(0)),
                 ("finish_reason", text("stop")),
             ])]),
         ),
-        ("usage", usage(3, 2)),
+        ("model", text(model)),
+        ("created", unsigned(1)),
+        ("object", text("chat.completion")),
+        ("id", text("chatcmpl-1")),
     ])
 }
 
 pub fn stream_chunk(content: &str) -> GuardrailValue {
     object(vec![
-        ("id", text("chatcmpl-1")),
-        ("object", text("chat.completion.chunk")),
-        ("created", unsigned(1)),
-        ("model", text("gpt-test")),
         (
             "choices",
             array(vec![object(vec![
-                ("index", unsigned(0)),
                 (
                     "delta",
                     object(vec![
-                        ("role", text("assistant")),
                         ("content", text(content)),
+                        ("role", text("assistant")),
                     ]),
                 ),
+                ("index", unsigned(0)),
                 ("finish_reason", GuardrailValue::Null),
             ])]),
         ),
+        ("model", text("gpt-test")),
+        ("id", text("chatcmpl-1")),
+        ("object", text("chat.completion.chunk")),
+        ("created", unsigned(1)),
     ])
 }
 
 pub fn replay_chunk(content: &str) -> GuardrailValue {
     object(vec![
-        ("id", text("chatcmpl-1")),
         ("created", unsigned(1)),
-        ("object", text("chat.completion.chunk")),
-        ("model", text("gpt-test")),
+        ("usage", usage(3, 2)),
         (
             "choices",
             array(vec![object(vec![
+                ("finish_reason", text("stop")),
                 ("index", unsigned(0)),
                 (
                     "delta",
@@ -151,10 +150,11 @@ pub fn replay_chunk(content: &str) -> GuardrailValue {
                         ("content", text(content)),
                     ]),
                 ),
-                ("finish_reason", text("stop")),
             ])]),
         ),
-        ("usage", usage(3, 2)),
+        ("id", text("chatcmpl-1")),
+        ("model", text("gpt-test")),
+        ("object", text("chat.completion.chunk")),
     ])
 }
 

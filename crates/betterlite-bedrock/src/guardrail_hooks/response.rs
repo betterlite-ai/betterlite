@@ -41,34 +41,28 @@ pub fn response_has_text(response: &GuardrailValue) -> Option<bool> {
     Some(has_text)
 }
 
-// A replacement response reports the model the exception named, which only falls back to the assembled one for raw streams.
-#[must_use]
-pub fn response_model(response: &GuardrailValue) -> Option<&str> {
+fn response_field<'a>(response: &'a GuardrailValue, key: &str) -> Option<&'a GuardrailValue> {
     let GuardrailValue::Object(fields) = response else {
         return None;
     };
-    match fields.get("model") {
-        Some(GuardrailValue::Text(model)) => Some(model.as_str()),
-        None | Some(_) => None,
-    }
+    fields
+        .get(key)
+        .filter(|value| !matches!(value, GuardrailValue::Null))
+}
+
+// A replacement response reports the model the exception named, which only falls back to the assembled one for raw streams.
+#[must_use]
+pub fn response_model(response: &GuardrailValue) -> Option<&str> {
+    let Some(GuardrailValue::Text(model)) = response_field(response, "model") else {
+        return None;
+    };
+    Some(model.as_str())
 }
 
 // The upstream usage the block reply has to carry, since the replaced response never reaches the client.
 #[must_use]
 pub fn response_usage(response: &GuardrailValue) -> Option<GuardrailValue> {
-    match response {
-        GuardrailValue::Object(fields) => fields
-            .get("usage")
-            .filter(|usage| !matches!(usage, GuardrailValue::Null))
-            .cloned(),
-        GuardrailValue::Null
-        | GuardrailValue::Boolean(_)
-        | GuardrailValue::SignedInteger(_)
-        | GuardrailValue::UnsignedInteger(_)
-        | GuardrailValue::Decimal(_)
-        | GuardrailValue::Text(_)
-        | GuardrailValue::Array(_) => None,
-    }
+    response_field(response, "usage").cloned()
 }
 
 // MockResponseIterator's convert_model_response_to_streaming: the assembled reply replayed as one chat chunk.

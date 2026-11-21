@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 mod block;
 mod fake;
 mod mock_iterator;
