@@ -1,0 +1,26 @@
+kind: sdk_http
+name: image-edit-call-dispatch-and-timeout
+env: {REQUEST_TIMEOUT: "7"}
+call:
+  image_edit_call:
+    runs:
+      - {recorded: true, model: gemini/gemini-2.5-flash-image, image: abc, prompt: generic}
+      - {recorded: true, model: gemini/gemini-2.5-flash-image, image: abc, prompt: generic, timeout: 0}
+      - {recorded: true, model: gemini/gemini-2.5-flash-image, image: abc, prompt: generic, timeout: 3}
+      - {recorded: true, model: stability/stable-image-edit, image: abc, prompt: stability, kwargs: {settings: {strength: 1}}}
+      - {recorded: true, model: stability/stable-image-edit, image: abc, prompt: stability, timeout: 0}
+      - {recorded: true, model: stability/stable-image-edit, image: abc, prompt: stability, timeout: 3}
+      - {recorded: true, model: black_forest_labs/flux-kontext-pro, image: abc, prompt: bfl, kwargs: {settings: {strength: 1}}}
+      - {recorded: true, model: black_forest_labs/flux-kontext-pro, image: abc, prompt: bfl, timeout: 0}
+      - {recorded: true, model: black_forest_labs/flux-kontext-pro, image: abc, prompt: bfl, timeout: 3}
+      - {recorded: true, model: bedrock/stability.stable-image-inpaint-v1:0, image: abc, prompt: bedrock, kwargs: {settings: {strength: 1}}}
+      - {recorded: true, model: bedrock/stability.stable-image-inpaint-v1:0, image: abc, prompt: bedrock, timeout: 0}
+      - {recorded: true, model: bedrock/stability.stable-image-inpaint-v1:0, image: abc, prompt: bedrock, timeout: 3}
+      - {recorded: true, model: groq/llama-3.1-8b-instant, image: abc, prompt: unsupported}
+      - {recorded: true, asynchronous: true, model: groq/llama-3.1-8b-instant, image: abc, prompt: unsupported}
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []
