@@ -5,7 +5,8 @@ use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 
 use super::support::{
-    COMPACT_OK, Events, Harness, ModelNames, Rig, base_env, call, env_vars, kwargs, text_input,
+    COMPACT_OK, Events, Harness, ModelNames, Rig, base_env, body_json, call, env_vars, json,
+    kwargs, text_input,
 };
 use crate::api::responses_compact_call::error::CompactResponsesError;
 use crate::api::responses_compact_call::{acompact_responses, compact_responses};
@@ -126,6 +127,7 @@ pub(super) async fn async_handoff() {
         .expect("the async handoff call succeeds");
     assert!(rig.events.recorded().contains(&String::from("off_loop")));
     handoff_context(log.state);
+    handoff_request(&rig);
     preliminary_lookup(&rig.resolver);
 }
 
@@ -138,9 +140,14 @@ fn handoff_context(state: &LoggingState) {
         state.optional_params.get("instructions"),
         Some(&Json::Text(String::from("short")))
     );
+}
+
+fn handoff_request(rig: &Rig) {
+    let requests = rig.wire.requests();
+    assert_eq!(requests.len(), 1);
     assert_eq!(
-        state.litellm_params.get("input"),
-        Some(&Json::Text(String::from("hello")))
+        body_json(&requests[0]),
+        json(r#"{"model":"gpt-4o","input":"hello","instructions":"short"}"#)
     );
 }
 
