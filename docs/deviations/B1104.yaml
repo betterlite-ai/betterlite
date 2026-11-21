@@ -1,0 +1,24 @@
+task: B1104
+deviations:
+  - what: An x-litellm-timeout, x-litellm-stream-timeout, x-litellm-keepalive-seconds or x-litellm-num-retries header that isn't a number is a typed RequestHeadersError naming the header; LiteLLM's float() or int() raises ValueError and the request fails with a 500. Digit groups with underscores, which Python's float() and int() accept, are rejected the same way.
+    why: A 500 from an unhandled exception is never something a setup relies on, and a bad header is the caller's mistake, so the gateway can answer it with a 4xx.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1252-L1307
+  - what: A Cache-Control directive holding a second '=' is a typed RequestHeadersError; LiteLLM's parse_cache_control unpacks the split into two names and raises ValueError.
+    why: Same 500 as above for a malformed header.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L225-L236
+  - what: An x-litellm-spend-logs-metadata header longer than the request JSON limit is ignored with a warning, as text that isn't JSON already is; LiteLLM parses it whatever its size.
+    why: The header is caller input parsed into the spend log, and the JSON limit is how betterlite bounds every other piece of caller JSON.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1310-L1318
+  - what: When forward_traceparent_to_llm_provider forwards a traceparent and the request body sets extra_headers to null, the traceparent goes into a new extra_headers object; LiteLLM checks "traceparent" in None and fails with TypeError.
+    why: Null takes the default under docs/compatibility.md, and a 500 here is never relied on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L3529-L3536
+  - what: The header metadata is skipped when the request has no metadata slot; LiteLLM reads data[_metadata_variable_name] and raises KeyError.
+    why: Same 500 as above, and the request path always fills the slot before this step.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1610-L1611
+  - what: The provider-scoped Anthropic headers and whether a client OAuth token was used come back in a typed ProviderHeaders value; LiteLLM writes them into the request body under provider_specific_header, as one entry or a list.
+    why: The request body is JSON and the scoped headers carry a credential, so they travel as a typed value that keeps the token secret; the oracle adapter rebuilds LiteLLM's one-or-list shape to compare.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L3489-L3513
+kept_bugs:
+  - what: Cache-Control is split on a comma followed by exactly one space, so "no-cache,no-store" is one directive with that whole name.
+    why: It isn't clear whether a setup sends the compact form and relies on the cache hook seeing it as unknown, so the split is kept.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L227
