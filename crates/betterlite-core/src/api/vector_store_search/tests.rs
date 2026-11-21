@@ -580,6 +580,15 @@ fn local_errors_map_to_api_connection() {
             message: String::from("Vector store create is not supported for anthropic"),
         }
     );
+    let empty = resolve_provider("search", Some(""))
+        .err()
+        .expect("an empty provider is not an enum member");
+    let SdkRaise::Exception(empty_mapped) = failure(&empty, &redactor) else {
+        panic!("an empty provider is an SDK exception");
+    };
+    assert_eq!(empty_mapped.class, "APIConnectionError");
+    assert_eq!(empty_mapped.status, 500);
+    assert_eq!(empty_mapped.message, " is not a valid LlmProviders");
 }
 
 // the direct executor check runs before the try block, so the call fails as a bare TypeError the client decorator re-raises

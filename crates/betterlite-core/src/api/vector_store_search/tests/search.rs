@@ -68,7 +68,7 @@ async fn search_optional_fields() {
             seen.search_optionals.last().expect("the transform ran"),
             &params(SEARCH_OPTIONALS)
         );
-        assert_eq!(seen.search_timeouts, vec![Some(Duration::from_secs(6000))]);
+        assert_eq!(seen.search_timeouts, vec![Some(Duration::from_mins(100))]);
     });
 }
 
@@ -137,8 +137,8 @@ async fn search_logs_litellm_params() {
 }
 
 #[rstest]
-#[case::unset(None, Duration::from_secs(6000))]
-#[case::zero(Some(0.0_f64), Duration::from_secs(6000))]
+#[case::unset(None, Duration::from_mins(100))]
+#[case::zero(Some(0.0_f64), Duration::from_mins(100))]
 #[case::given(Some(3.0_f64), Duration::from_secs(3))]
 #[tokio::test]
 async fn search_timeout_follows_request_timeout(

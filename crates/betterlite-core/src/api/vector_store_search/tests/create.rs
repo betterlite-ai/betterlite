@@ -181,7 +181,7 @@ async fn create_ssl_verify_reaches_the_client(#[case] input: &str, #[case] expec
 
 // an asynchronous create waits the resolved timeout: null uses REQUEST_TIMEOUT and an explicit value is that many seconds
 #[rstest]
-#[case::unset(None, Duration::from_secs(6000))]
+#[case::unset(None, Duration::from_mins(100))]
 #[case::given(Some(3.0_f64), Duration::from_secs(3))]
 #[tokio::test]
 async fn create_timeout_follows_request_timeout(
