@@ -100,10 +100,11 @@ pub(super) async fn memory_floor<Cache>(
 where
     Cache: ReseedCache + ?Sized,
 {
-    let mut floor = amount;
-    if let Some(stored) = tier.memory_get(key).await.map_err(cache_failure)? {
-        floor = amount.max(cache_amount(&stored)?);
-    }
+    let floor = if let Some(stored) = tier.memory_get(key).await.map_err(cache_failure)? {
+        amount.max(cache_amount(&stored)?)
+    } else {
+        amount
+    };
     tier.memory_set(key, floor).await.map_err(cache_failure)?;
     Ok(floor)
 }

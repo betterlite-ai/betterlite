@@ -509,18 +509,19 @@ impl ReseedCache for FakeCache {
             .unwrap_or(Decimal::ZERO);
         let next = incremented(base, increment);
         increments.insert(counter_key.to_owned(), next);
+        drop(increments);
         Ok(Some(next))
     }
 }
 
 impl WindowReseedCache for FakeCache {
-    async fn redis_increment(
+    fn redis_increment(
         &self,
         counter_key: &str,
         amount: Decimal,
-    ) -> Result<Decimal, FakeError> {
+    ) -> impl Future<Output = Result<Decimal, FakeError>> + Send {
         if self.redis_increment_fails.load(Ordering::Relaxed) {
-            return Err(FakeError);
+            return ready(Err(FakeError));
         }
         let base = match self.redis_value() {
             Some(ReseedCacheValue::Number(value)) => value,
@@ -533,7 +534,7 @@ impl WindowReseedCache for FakeCache {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push((counter_key.to_owned(), amount));
-        Ok(next)
+        ready(Ok(next))
     }
 }
 

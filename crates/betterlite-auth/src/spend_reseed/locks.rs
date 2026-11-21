@@ -53,11 +53,12 @@ impl KeyOperation {
     // takes an idle slot; the caller registered its release notification first
     fn claim(&self) -> bool {
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        if *state == OperationState::Idle {
+        let idle = *state == OperationState::Idle;
+        if idle {
             *state = OperationState::Running;
-            return true;
         }
-        false
+        drop(state);
+        idle
     }
 }
 
