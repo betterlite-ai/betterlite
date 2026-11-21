@@ -138,7 +138,7 @@ fn passed_params(kwargs: &Params, call: &TranscriptionCall) -> Params {
 }
 
 // get_non_default_transcription_params' drop policy: the kwargs bool first, then litellm_settings
-fn drop_policy(settings: &Settings, call: &TranscriptionCall) -> DropPolicy {
+pub(super) fn drop_policy(settings: &Settings, call: &TranscriptionCall) -> DropPolicy {
     DropPolicy {
         drop_params: call.params.get("drop_params").and_then(bool_value),
         litellm_drop_params: settings.drop_params.unwrap_or(false),
