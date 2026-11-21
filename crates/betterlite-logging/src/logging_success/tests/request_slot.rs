@@ -17,12 +17,13 @@ use crate::callback_logger::CallbackLogger;
 use crate::callback_logger::error::LoggerError;
 use crate::callback_logger::event::LoggerEvent;
 use crate::langfuse_observations::attributes::keys::TRACE_NAME;
+use crate::logging_state::LoggingState;
 use crate::logging_success::handler::{async_success_handler, success_handler};
 use crate::otel::langfuse_root::{RootSpanSink, RootSpanSource as _};
 use crate::otel::logger::v2::RequestTraceSource as _;
 use crate::otel::logger_runtime::tests::support::provider_exporting;
 use crate::otel::plumbing::context::context_slots::AnchoredSpan;
-use crate::otel::proxy_runtime::slot::{anchor_request_root, request_slot_scope};
+use crate::otel::proxy_runtime::slot::{RequestSlot, anchor_request_root, request_slot_scope};
 use crate::otel::proxy_runtime::sources::ProxyTraceSources;
 use crate::registry::Registration;
 use crate::registry::identity::CallbackIdentity;
@@ -89,8 +90,16 @@ fn add_logger(fixture: &mut Fixture, logger: &Arc<SlotReadingLogger>) {
     assert_ne!(registration, Registration::SkippedCapacity);
 }
 
-#[tokio::test]
-async fn a_handler_spawned_off_the_request_keeps_the_parent_span() {
+struct AnchoredRequest {
+    exporter: InMemorySpanExporter,
+    sources: Arc<ProxyTraceSources>,
+    seen: Arc<Mutex<Observation>>,
+    slot: Arc<RequestSlot>,
+    request_state: LoggingState,
+    root_context: SpanContext,
+}
+
+async fn anchored_request() -> AnchoredRequest {
     let exporter = InMemorySpanExporter::default();
     let provider = provider_exporting(&exporter);
     let sources = Arc::new(ProxyTraceSources::new(&BTreeMap::<String, String>::new()));
@@ -108,6 +117,44 @@ async fn a_handler_spawned_off_the_request_keeps_the_parent_span() {
         (state(Some(false)), context)
     })
     .await;
+    AnchoredRequest {
+        exporter,
+        sources,
+        seen,
+        slot,
+        request_state,
+        root_context,
+    }
+}
+
+fn assert_handler_kept_the_root(seen: &Mutex<Observation>, root_context: &SpanContext) {
+    let observed = seen.lock().unwrap();
+    assert_eq!(observed.root, Some(root_context.clone()));
+    assert!(observed.recording, "the handler reaches the live root span");
+    assert!(observed.stamped, "the handler stamps the live root span");
+}
+
+fn assert_root_exported(exporter: &InMemorySpanExporter, root_context: &SpanContext) {
+    let finished = exporter
+        .get_finished_spans()
+        .expect("the root span was exported");
+    assert_eq!(finished.len(), 1);
+    assert_eq!(&finished[0].span_context, root_context);
+    assert!(finished[0].attributes.iter().any(|attribute| {
+        attribute.key.as_str() == TRACE_NAME && attribute.value == Value::from(SERVER_SPAN)
+    }));
+}
+
+#[tokio::test]
+async fn a_handler_spawned_off_the_request_keeps_the_parent_span() {
+    let AnchoredRequest {
+        exporter,
+        sources,
+        seen,
+        slot,
+        mut request_state,
+        root_context,
+    } = anchored_request().await;
     let logger = Arc::new(SlotReadingLogger {
         sources: Arc::clone(&sources),
         seen: Arc::clone(&seen),
@@ -117,58 +164,31 @@ async fn a_handler_spawned_off_the_request_keeps_the_parent_span() {
         let mut fixture = Fixture::new();
         add_logger(&mut fixture, &logger);
         let handler = fixture.handler();
-        let mut state = request_state;
         let mut correlation = correlation();
         async_success_handler(
             &handler,
-            &mut state,
+            &mut request_state,
             &mut correlation,
             &request(chat_result()),
         )
         .await;
     });
     tasks.join_all().await;
-    let observed = seen.lock().unwrap();
-    assert_eq!(observed.root, Some(root_context.clone()));
-    assert!(
-        observed.recording,
-        "the spawned handler reaches the live root span"
-    );
-    assert!(
-        observed.stamped,
-        "the spawned handler stamps the live root span"
-    );
-    drop(observed);
+    assert_handler_kept_the_root(&seen, &root_context);
     drop(slot);
-    let finished = exporter
-        .get_finished_spans()
-        .expect("the root span was exported");
-    assert_eq!(finished.len(), 1);
-    assert_eq!(finished[0].span_context, root_context);
-    assert!(finished[0].attributes.iter().any(|attribute| {
-        attribute.key.as_str() == TRACE_NAME && attribute.value == Value::from(SERVER_SPAN)
-    }));
+    assert_root_exported(&exporter, &root_context);
 }
 
 #[tokio::test]
 async fn a_sync_handler_on_a_blocking_task_keeps_the_parent_span() {
-    let exporter = InMemorySpanExporter::default();
-    let provider = provider_exporting(&exporter);
-    let sources = Arc::new(ProxyTraceSources::new(&BTreeMap::<String, String>::new()));
-    let seen = Arc::new(Mutex::new(Observation::default()));
-    let (slot, (request_state, root_context)) = request_slot_scope(async {
-        let span = provider.tracer("request_slot_test").start(SERVER_SPAN);
-        let context = span.span_context().clone();
-        anchor_request_root(
-            AnchoredSpan {
-                context: context.clone(),
-                http_route: None,
-            },
-            Context::current_with_span(span),
-        );
-        (state(Some(false)), context)
-    })
-    .await;
+    let AnchoredRequest {
+        exporter,
+        sources,
+        seen,
+        slot,
+        mut request_state,
+        root_context,
+    } = anchored_request().await;
     let logger = Arc::new(SlotReadingLogger {
         sources: Arc::clone(&sources),
         seen: Arc::clone(&seen),
@@ -178,34 +198,16 @@ async fn a_sync_handler_on_a_blocking_task_keeps_the_parent_span() {
         let mut fixture = Fixture::new();
         add_logger(&mut fixture, &logger);
         let handler = fixture.handler();
-        let mut state = request_state;
         let mut correlation = correlation();
         success_handler(
             &handler,
-            &mut state,
+            &mut request_state,
             &mut correlation,
             &request(chat_result()),
         );
     });
     tasks.join_all().await;
-    let observed = seen.lock().unwrap();
-    assert_eq!(observed.root, Some(root_context.clone()));
-    assert!(
-        observed.recording,
-        "the blocking handler reaches the live root span"
-    );
-    assert!(
-        observed.stamped,
-        "the blocking handler stamps the live root span"
-    );
-    drop(observed);
+    assert_handler_kept_the_root(&seen, &root_context);
     drop(slot);
-    let finished = exporter
-        .get_finished_spans()
-        .expect("the root span was exported");
-    assert_eq!(finished.len(), 1);
-    assert_eq!(finished[0].span_context, root_context);
-    assert!(finished[0].attributes.iter().any(|attribute| {
-        attribute.key.as_str() == TRACE_NAME && attribute.value == Value::from(SERVER_SPAN)
-    }));
+    assert_root_exported(&exporter, &root_context);
 }
