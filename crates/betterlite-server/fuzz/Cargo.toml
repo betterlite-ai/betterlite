@@ -453,3 +453,10 @@ path = "fuzz_targets/object_permissions.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "guardrail_register"
+path = "fuzz_targets/guardrail_register.rs"
+test = false
+doc = false
+bench = false
