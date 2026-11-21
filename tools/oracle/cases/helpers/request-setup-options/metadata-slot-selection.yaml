@@ -73,6 +73,18 @@ call:
         missing_session_id: null
         principal:
           metadata: {}
+          team_metadata:
+            callback_settings: {success_callback: null, failure_callback: [langfuse], callbacks: [langfuse], callback_vars: {}}
+          team_id: null
+        default_team_settings: []
+      - data: {metadata: {}}
+        slot: metadata
+        route: /v1/chat/completions
+        query: []
+        user_agent: ""
+        missing_session_id: null
+        principal:
+          metadata: {}
           team_metadata: {callback_settings: null}
           team_id: null
         default_team_settings: []
@@ -83,7 +95,7 @@ call:
         user_agent: ""
         missing_session_id: null
         principal: {metadata: {}, team_metadata: {tags: [a]}, team_id: t1}
-        default_team_settings: [{team_id: t1, success_callback: [langsmith], langsmith_api_key: ls}]
+        default_team_settings: [{team_id: t1, success_callback: [langsmith], failure_callback: [langsmith], langsmith_api_key: ls}]
       - data: {metadata: {}}
         slot: metadata
         route: /v1/chat/completions

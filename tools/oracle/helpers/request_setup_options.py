@@ -125,7 +125,8 @@ def request_for(route: str, query: list[tuple[str, str]]) -> Request:
         "scheme": "http",
         "method": "POST",
         "path": route,
-        "query_string": urlencode(query).encode(),
+        # the case JSON brings each pair as a list, and urlencode takes only tuples
+        "query_string": urlencode([(name, value) for name, value in query]).encode(),
         "headers": headers,
     }
     return Request(scope=scope)

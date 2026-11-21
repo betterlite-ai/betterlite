@@ -139,6 +139,11 @@ fn vars(items: &[(&str, &str)]) -> Vec<(String, String)> {
     Some((names(&["langfuse"]), Vec::new(), Vec::new(), vars(&[("langfuse_public_key", "pk")]))),
     Vec::new()
 )]
+#[case::deprecated_callback_settings_lists(
+    r#"{"team_metadata": {"callback_settings": {"success_callback": null, "failure_callback": ["langfuse"], "callbacks": ["langfuse"], "callback_vars": {}}}}"#,
+    Some((Vec::new(), names(&["langfuse"]), names(&["langfuse"]), Vec::new())),
+    Vec::new()
+)]
 #[case::deprecated_null_settings(
     r#"{"team_metadata": {"callback_settings": null}}"#,
     Some((Vec::new(), Vec::new(), Vec::new(), Vec::new())),
@@ -146,7 +151,7 @@ fn vars(items: &[(&str, &str)]) -> Vec<(String, String)> {
 )]
 #[case::config_default_team_settings(
     r#"{"team_id": "t1"}"#,
-    Some((names(&["langsmith"]), Vec::new(), Vec::new(), vars(&[("langsmith_api_key", "ls")]))),
+    Some((names(&["langsmith"]), names(&["langsmith"]), Vec::new(), vars(&[("langsmith_api_key", "ls")]))),
     Vec::new()
 )]
 #[case::team_not_in_config(r#"{"team_id": "t2"}"#, None, Vec::new())]
@@ -201,7 +206,7 @@ fn metadata_slot_selection(
 ) {
     let mut configured = settings();
     configured.default_team_settings = serde_json::from_str(
-        r#"[{"team_id": "t1", "success_callback": ["langsmith"], "langsmith_api_key": "ls"}]"#,
+        r#"[{"team_id": "t1", "success_callback": ["langsmith"], "failure_callback": ["langsmith"], "langsmith_api_key": "ls"}]"#,
     )
     .unwrap();
     let result = prepared(configured, input("{}", CHAT_ROUTE, principal_text)).unwrap();
