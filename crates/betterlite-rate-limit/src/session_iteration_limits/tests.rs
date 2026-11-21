@@ -424,12 +424,16 @@ async fn invalid_agent_max_iterations_is_a_typed_error(#[case] record: &str) {
     assert!(handler.cache.memory_keys().is_empty());
 }
 
+#[rstest]
+#[case::text(r#"{"max_iterations":"soon"}"#)]
+#[case::list(r#"{"max_iterations":[]}"#)]
+#[case::object(r#"{"max_iterations":{}}"#)]
 #[tokio::test]
-async fn invalid_key_max_iterations_is_a_typed_error() {
+async fn invalid_key_max_iterations_is_a_typed_error(#[case] text: &str) {
     let cache = FakeCache::without_redis();
     let handler = iteration_handler(cache);
     let registry = agent_registry_with(&[NO_LIMIT]);
-    let metadata = key_metadata(r#"{"max_iterations":"soon"}"#);
+    let metadata = key_metadata(text);
     let key = KeyIterations {
         agent_id: Some(support::AGENT_ID),
         metadata: Some(&metadata),
@@ -502,19 +506,26 @@ async fn numeric_session_id_names_the_text_bucket() {
     assert_eq!(handler.cache.memory(&memory_key("5")), Some(1));
 }
 
+#[rstest]
+#[case::null("null")]
+#[case::boolean("true")]
+#[case::list(r#"["s"]"#)]
+#[case::object(r#"{"id":"s"}"#)]
 #[tokio::test]
-async fn boolean_session_id_reads_as_absent() {
+async fn non_text_session_id_falls_through_to_litellm_metadata(#[case] id: &str) {
     let cache = FakeCache::without_redis();
     let handler = iteration_handler(cache);
     let registry = agent_registry_with(&[LIMIT_TWO]);
-    let data = json(r#"{"model":"gpt-4o","metadata":{"session_id":true}}"#);
+    let data = json(&format!(
+        r#"{{"model":"gpt-4o","metadata":{{"session_id":{id}}},"litellm_metadata":{{"session_id":"s1"}}}}"#
+    ));
 
     handler
         .async_pre_call_hook(&registry, None, agent_key(), &data)
         .await
         .unwrap();
 
-    assert!(handler.cache.memory_keys().is_empty());
+    assert_eq!(handler.cache.memory(&memory_key("s1")), Some(1));
 }
 
 #[tokio::test]
