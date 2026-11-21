@@ -2,6 +2,8 @@
 
 mod support;
 
+use std::error::Error as _;
+use std::iter::once;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -16,10 +18,11 @@ use crate::budget_sweep::phase::ResetPhase;
 use crate::budget_sweep::settings::BudgetResetSettings;
 use crate::queues::pod_lock::NoPodLockEventSink;
 use crate::queues::pod_lock::PodLockManager;
+use crate::queues::pod_lock::owner::PodId;
 
 use self::support::{
-    LeaseOperation, PhaseEvent, RecordingLeaseCache, RecordingPhases, captured_logs, lazy_store,
-    pod_id,
+    LeaseOperation, PhaseEvent, PhaseFault, RecordingLeaseCache, RecordingPhases, captured_logs,
+    lazy_store, pod_id,
 };
 
 const LEASE_KEY: &str = "cronjob_lock:reset_budget_job";
@@ -31,6 +34,7 @@ mod sweep_assembly {
     use std::sync::Arc;
 
     use chrono::NaiveTime;
+    use rstest::rstest;
     use tokio_util::task::TaskTracker;
 
     use crate::budget_sweep::BudgetSweep;
@@ -112,8 +116,16 @@ mod sweep_assembly {
         assert!(calls.phases().is_empty());
     }
 
+    #[rstest]
+    #[case::keys(ResetPhase::Keys, "reset_budget_keys")]
+    #[case::users(ResetPhase::Users, "reset_budget_users")]
+    #[case::teams(ResetPhase::Teams, "reset_budget_teams")]
+    #[case::tiers(ResetPhase::Tiers, "reset_budget_endusers")]
     #[tokio::test]
-    async fn the_real_adapter_maps_every_phase_to_its_lower_service() {
+    async fn the_real_adapter_maps_every_phase_to_its_lower_service(
+        #[case] phase: ResetPhase,
+        #[case] call_type: &str,
+    ) {
         let inputs = assembly_inputs(
             PostgresStore { pool: None },
             Some(BudgetResetSettings::default()),
@@ -123,25 +135,28 @@ mod sweep_assembly {
         let failures = inputs.ports.failure.clone();
         let mut sweep =
             BudgetSweep::production(inputs, &TestSnapshot::new(BudgetResetSettings::default()));
-        let expected = [
-            (ResetPhase::Keys, "reset_budget_keys"),
-            (ResetPhase::Users, "reset_budget_users"),
-            (ResetPhase::Teams, "reset_budget_teams"),
-            (ResetPhase::Tiers, "reset_budget_endusers"),
-        ];
-        for (ran, (phase, call_type)) in expected.into_iter().enumerate() {
-            sweep.phases.run(phase).await.unwrap();
-            let recorded = failures.call_types();
-            assert_eq!(recorded.len(), ran + 1);
-            assert_eq!(recorded[ran], call_type);
-        }
+        sweep.phases.run(phase).await.unwrap();
+        assert_eq!(failures.call_types(), vec![call_type.to_owned()]);
+    }
+
+    #[tokio::test]
+    async fn the_real_adapter_logs_each_failing_window_source() {
+        let inputs = assembly_inputs(
+            PostgresStore { pool: None },
+            Some(BudgetResetSettings::default()),
+            None,
+            TaskTracker::new(),
+        );
+        let failures = inputs.ports.failure.clone();
+        let mut sweep =
+            BudgetSweep::production(inputs, &TestSnapshot::new(BudgetResetSettings::default()));
         let (logs, guard) = captured_logs();
         sweep.phases.run(ResetPhase::Windows).await.unwrap();
         drop(guard);
         let text = logs.text();
         assert!(text.contains("Failed to reset budget windows for keys"));
         assert!(text.contains("Failed to reset budget windows for teams"));
-        assert_eq!(failures.call_types().len(), 4);
+        assert!(failures.call_types().is_empty());
     }
 }
 
@@ -158,25 +173,11 @@ enum ElectionCase {
     UnreadableAfterFailedAcquire,
 }
 
-#[rstest]
-#[case::absent_manager(ElectionCase::AbsentManager)]
-#[case::manager_without_redis(ElectionCase::ManagerWithoutRedis)]
-#[case::acquired(ElectionCase::Acquired)]
-#[case::reentrant(ElectionCase::Reentrant)]
-#[case::held_by_other(ElectionCase::HeldByOther)]
-#[case::missing_after_failed_acquire(ElectionCase::MissingAfterFailedAcquire)]
-#[case::empty_stored_owner_after_failed_acquire(ElectionCase::EmptyStoredOwnerAfterFailedAcquire)]
-#[case::undecodable_owner_after_failed_acquire(ElectionCase::UndecodableOwnerAfterFailedAcquire)]
-#[case::unreadable_after_failed_acquire(ElectionCase::UnreadableAfterFailedAcquire)]
-#[tokio::test]
-async fn sweep_lease_election(#[case] case: ElectionCase) {
-    let pod = pod_id();
-    let cache = match case {
+fn election_cache(case: ElectionCase, pod: &str) -> Option<Arc<RecordingLeaseCache>> {
+    match case {
         ElectionCase::AbsentManager | ElectionCase::ManagerWithoutRedis => None,
         ElectionCase::Acquired => Some(Arc::new(RecordingLeaseCache::granting())),
-        ElectionCase::Reentrant => Some(Arc::new(RecordingLeaseCache::denied_with_owner(
-            pod.as_ref(),
-        ))),
+        ElectionCase::Reentrant => Some(Arc::new(RecordingLeaseCache::denied_with_owner(pod))),
         ElectionCase::HeldByOther => Some(Arc::new(RecordingLeaseCache::denied_with_owner(
             "another-pod",
         ))),
@@ -192,69 +193,56 @@ async fn sweep_lease_election(#[case] case: ElectionCase) {
         ElectionCase::UnreadableAfterFailedAcquire => {
             Some(Arc::new(RecordingLeaseCache::unreadable()))
         }
-    };
-    let lock_manager: Option<Arc<PodLockManager<RecordingLeaseCache>>> = match case {
-        ElectionCase::AbsentManager => None,
-        ElectionCase::ManagerWithoutRedis => Some(Arc::new(PodLockManager::new(
-            None,
-            60,
-            Arc::new(NoPodLockEventSink),
-            pod,
-        ))),
-        ElectionCase::Acquired
-        | ElectionCase::Reentrant
-        | ElectionCase::HeldByOther
-        | ElectionCase::MissingAfterFailedAcquire
-        | ElectionCase::EmptyStoredOwnerAfterFailedAcquire
-        | ElectionCase::UndecodableOwnerAfterFailedAcquire
-        | ElectionCase::UnreadableAfterFailedAcquire => Some(Arc::new(PodLockManager::new(
-            cache.clone(),
-            60,
-            Arc::new(NoPodLockEventSink),
-            pod,
-        ))),
-    };
-    let phases = RecordingPhases::default();
-    let mut sweep = BudgetSweep {
-        database: lazy_store(),
-        settings: BudgetResetSettings::default(),
-        lock_manager,
-        phases: phases.clone(),
-        tasks: TaskTracker::new(),
-    };
-    let (logs, guard) = captured_logs();
-    let outcome = sweep.reset_budget().await;
-    drop(guard);
-    outcome.unwrap();
+    }
+}
 
-    let operations = cache
-        .as_ref()
-        .map_or_else(Vec::new, |lease_cache| lease_cache.operations());
+fn election_lock_manager(
+    case: ElectionCase,
+    cache: Option<Arc<RecordingLeaseCache>>,
+    pod: PodId,
+) -> Option<Arc<PodLockManager<RecordingLeaseCache>>> {
+    if case == ElectionCase::AbsentManager {
+        return None;
+    }
+    Some(Arc::new(PodLockManager::new(
+        cache,
+        60,
+        Arc::new(NoPodLockEventSink),
+        pod,
+    )))
+}
+
+fn assert_election_operations(
+    case: ElectionCase,
+    cache: Option<&RecordingLeaseCache>,
+    operations: &[LeaseOperation],
+) {
     assert!(operations.iter().all(|operation| match operation {
-        LeaseOperation::Set { key, .. }
-        | LeaseOperation::Read { key }
-        | LeaseOperation::Delete { key } => key.as_str() == LEASE_KEY,
+        LeaseOperation::Set(key, _) | LeaseOperation::Read(key) | LeaseOperation::Delete(key) => {
+            key.as_str() == LEASE_KEY
+        }
     }));
-    let expected_ttls = match case {
-        ElectionCase::AbsentManager | ElectionCase::ManagerWithoutRedis => Vec::new(),
-        ElectionCase::Acquired
-        | ElectionCase::Reentrant
-        | ElectionCase::HeldByOther
-        | ElectionCase::MissingAfterFailedAcquire
-        | ElectionCase::EmptyStoredOwnerAfterFailedAcquire
-        | ElectionCase::UndecodableOwnerAfterFailedAcquire
-        | ElectionCase::UnreadableAfterFailedAcquire => vec![900_i64],
+    // The source passes lock_ttl=900 explicitly, and reaches no Redis at all without a manager or a cache.
+    let expected_ttls = if matches!(
+        case,
+        ElectionCase::AbsentManager | ElectionCase::ManagerWithoutRedis
+    ) {
+        Vec::new()
+    } else {
+        vec![900_i64]
     };
-    let ttls = cache
-        .as_ref()
-        .map_or_else(Vec::new, |lease_cache| lease_cache.set_ttls());
-    assert_eq!(ttls, expected_ttls);
-    let releases = matches!(case, ElectionCase::Acquired | ElectionCase::Reentrant);
-    let deletes = cache
-        .as_ref()
-        .map_or(0, |lease_cache| lease_cache.deletes());
-    assert_eq!(deletes, usize::from(releases));
+    assert_eq!(
+        cache.map_or_else(Vec::new, RecordingLeaseCache::set_ttls),
+        expected_ttls
+    );
+    let released = matches!(case, ElectionCase::Acquired | ElectionCase::Reentrant);
+    assert_eq!(
+        cache.map_or(0, RecordingLeaseCache::deletes),
+        usize::from(released)
+    );
+}
 
+fn assert_election_logs(case: ElectionCase, operations: &[LeaseOperation], text: &str) {
     let skip = case == ElectionCase::HeldByOther;
     let unguarded = matches!(
         case,
@@ -268,13 +256,12 @@ async fn sweep_lease_election(#[case] case: ElectionCase) {
         ElectionCase::UndecodableOwnerAfterFailedAcquire
             | ElectionCase::UnreadableAfterFailedAcquire
     );
-    let text = logs.text();
     assert_eq!(text.contains(SKIP_MESSAGE), skip);
     assert_eq!(text.contains(UNGUARDED_MESSAGE), unguarded);
     assert_eq!(text.contains(READ_FAILURE_MESSAGE), unreadable);
     let reads = operations
         .iter()
-        .filter(|operation| matches!(operation, LeaseOperation::Read { .. }))
+        .filter(|operation| matches!(operation, LeaseOperation::Read(_)))
         .count();
     let expected_reads = match case {
         ElectionCase::AbsentManager | ElectionCase::ManagerWithoutRedis => 0,
@@ -287,8 +274,40 @@ async fn sweep_lease_election(#[case] case: ElectionCase) {
         | ElectionCase::UnreadableAfterFailedAcquire => 2,
     };
     assert_eq!(reads, expected_reads);
+}
 
+#[rstest]
+#[case::absent_manager(ElectionCase::AbsentManager)]
+#[case::manager_without_redis(ElectionCase::ManagerWithoutRedis)]
+#[case::acquired(ElectionCase::Acquired)]
+#[case::reentrant(ElectionCase::Reentrant)]
+#[case::held_by_other(ElectionCase::HeldByOther)]
+#[case::missing_after_failed_acquire(ElectionCase::MissingAfterFailedAcquire)]
+#[case::empty_stored_owner_after_failed_acquire(ElectionCase::EmptyStoredOwnerAfterFailedAcquire)]
+#[case::undecodable_owner_after_failed_acquire(ElectionCase::UndecodableOwnerAfterFailedAcquire)]
+#[case::unreadable_after_failed_acquire(ElectionCase::UnreadableAfterFailedAcquire)]
+#[tokio::test]
+async fn sweep_lease_election(#[case] case: ElectionCase) {
+    let pod = pod_id();
+    let cache = election_cache(case, pod.as_ref());
+    let lease_cache = cache.as_deref();
+    let phases = RecordingPhases::default();
+    let mut sweep = BudgetSweep {
+        database: lazy_store(),
+        settings: BudgetResetSettings::default(),
+        lock_manager: election_lock_manager(case, cache.clone(), pod),
+        phases: phases.clone(),
+        tasks: TaskTracker::new(),
+    };
+    let (logs, guard) = captured_logs();
+    let outcome = sweep.reset_budget().await;
+    drop(guard);
+    outcome.unwrap();
+    let operations = lease_cache.map_or_else(Vec::new, RecordingLeaseCache::operations);
+    assert_election_operations(case, lease_cache, &operations);
+    assert_election_logs(case, &operations, &logs.text());
     let calls = phases.phases();
+    let skip = case == ElectionCase::HeldByOther;
     assert_eq!(calls.is_empty(), skip);
     assert_eq!(
         calls,
@@ -342,16 +361,12 @@ async fn sweep_error_short_circuit(#[case] failing: ResetPhase, #[case] label: &
         error.to_string(),
         format!("the {label} budget reset phase failed")
     );
-    match error {
-        SweepError::Phase { phase, source } => {
-            assert_eq!(phase, failing);
-            assert_eq!(source.to_string(), "the phase refused");
-        }
-    }
+    let source = error.source().unwrap();
+    assert_eq!(source.to_string(), "the phase refused");
     let expected: Vec<ResetPhase> = ResetPhase::ALL
         .into_iter()
         .take_while(|phase| *phase != failing)
-        .chain(std::iter::once(failing))
+        .chain(once(failing))
         .collect();
     assert_eq!(calls.phases(), expected);
     assert!(!calls.overlapped());
@@ -366,49 +381,38 @@ enum CleanupCase {
     Unguarded,
 }
 
-#[rstest]
-#[case::leader_success(CleanupCase::LeaderSuccess)]
-#[case::leader_failure(CleanupCase::LeaderFailure)]
-#[case::leader_cancel(CleanupCase::LeaderCancel)]
-#[case::follower(CleanupCase::Follower)]
-#[case::unguarded(CleanupCase::Unguarded)]
-#[tokio::test]
-async fn sweep_leader_cleanup(#[case] case: CleanupCase) {
-    let cache = Arc::new(match case {
+fn cleanup_cache(case: CleanupCase) -> Arc<RecordingLeaseCache> {
+    Arc::new(match case {
         CleanupCase::Follower => RecordingLeaseCache::denied_with_owner("another-pod"),
         CleanupCase::Unguarded => RecordingLeaseCache::denied(),
         CleanupCase::LeaderSuccess | CleanupCase::LeaderFailure | CleanupCase::LeaderCancel => {
             RecordingLeaseCache::granting()
         }
-    });
-    let manager = Arc::new(PodLockManager::new(
-        Some(Arc::clone(&cache)),
-        60,
-        Arc::new(NoPodLockEventSink),
-        pod_id(),
-    ));
-    let started = Arc::new(Notify::new());
-    let phases = match case {
+    })
+}
+
+fn cleanup_phases(case: CleanupCase, started: &Arc<Notify>) -> RecordingPhases {
+    match case {
         CleanupCase::LeaderFailure => {
             RecordingPhases::failing_at(ResetPhase::Teams, "the teams phase failed")
         }
         CleanupCase::LeaderCancel => {
-            RecordingPhases::blocking_at(ResetPhase::Keys, Arc::clone(&started))
+            RecordingPhases::blocking_at(ResetPhase::Keys, Arc::clone(started))
         }
         CleanupCase::LeaderSuccess | CleanupCase::Follower | CleanupCase::Unguarded => {
             RecordingPhases::default()
         }
-    };
-    let calls = phases.clone();
-    let tasks = TaskTracker::new();
-    let mut sweep = BudgetSweep {
-        database: lazy_store(),
-        settings: BudgetResetSettings::default(),
-        lock_manager: Some(manager),
-        phases,
-        tasks: tasks.clone(),
-    };
-    let (outcome, deletes_on_return) = match case {
+    }
+}
+
+async fn run_cleanup(
+    case: CleanupCase,
+    mut sweep: BudgetSweep<RecordingLeaseCache, RecordingPhases>,
+    tasks: TaskTracker,
+    started: &Arc<Notify>,
+    cache: &RecordingLeaseCache,
+) -> (Option<SweepError<PhaseFault>>, usize) {
+    let result = match case {
         CleanupCase::LeaderCancel => {
             let handle = tasks.spawn(async move { sweep.reset_budget().await });
             started.notified().await;
@@ -417,39 +421,41 @@ async fn sweep_leader_cleanup(#[case] case: CleanupCase) {
             tasks.close();
             timeout(Duration::from_secs(1), tasks.wait()).await.unwrap();
             assert!(tasks.is_empty());
-            (None, cache.deletes())
+            return (None, cache.deletes());
         }
         CleanupCase::LeaderSuccess
         | CleanupCase::LeaderFailure
         | CleanupCase::Follower
-        | CleanupCase::Unguarded => {
-            let result = sweep.reset_budget().await;
-            // The source awaits release_lock in its finally block, so the delete lands before reset_budget returns.
-            let deletes = cache.deletes();
-            tasks.close();
-            tasks.wait().await;
-            (result.err(), deletes)
-        }
+        | CleanupCase::Unguarded => sweep.reset_budget().await,
     };
-    let failure = match outcome {
-        Some(Err(error)) => Some(error),
-        Some(Ok(())) | None => None,
-    };
+    // The source awaits release_lock in its finally block, so the delete lands before reset_budget returns.
+    let deletes = cache.deletes();
+    tasks.close();
+    tasks.wait().await;
+    (result.err(), deletes)
+}
+
+fn assert_cleanup(
+    case: CleanupCase,
+    failure: Option<SweepError<PhaseFault>>,
+    deletes_on_return: usize,
+    cache: &RecordingLeaseCache,
+    calls: &RecordingPhases,
+) {
     assert_eq!(failure.is_some(), case == CleanupCase::LeaderFailure);
     if let Some(error) = failure {
-        match error {
-            SweepError::Phase { phase, source } => {
-                assert_eq!(phase, ResetPhase::Teams);
-                assert_eq!(source.to_string(), "the teams phase failed");
-            }
-        }
+        assert_eq!(error.to_string(), "the teams budget reset phase failed");
+        assert_eq!(
+            error.source().unwrap().to_string(),
+            "the teams phase failed"
+        );
     }
-    let releases = matches!(
+    let released = matches!(
         case,
         CleanupCase::LeaderSuccess | CleanupCase::LeaderFailure | CleanupCase::LeaderCancel
     );
-    assert_eq!(deletes_on_return, usize::from(releases));
-    assert_eq!(cache.deletes(), usize::from(releases));
+    assert_eq!(deletes_on_return, usize::from(released));
+    assert_eq!(cache.deletes(), usize::from(released));
     let expected_phases: Vec<ResetPhase> = match case {
         CleanupCase::LeaderSuccess | CleanupCase::Unguarded => ResetPhase::ALL.to_vec(),
         CleanupCase::LeaderFailure => ResetPhase::ALL.into_iter().take(3).collect(),
@@ -457,4 +463,34 @@ async fn sweep_leader_cleanup(#[case] case: CleanupCase) {
         CleanupCase::Follower => Vec::new(),
     };
     assert_eq!(calls.phases(), expected_phases);
+}
+
+#[rstest]
+#[case::leader_success(CleanupCase::LeaderSuccess)]
+#[case::leader_failure(CleanupCase::LeaderFailure)]
+#[case::leader_cancel(CleanupCase::LeaderCancel)]
+#[case::follower(CleanupCase::Follower)]
+#[case::unguarded(CleanupCase::Unguarded)]
+#[tokio::test]
+async fn sweep_leader_cleanup(#[case] case: CleanupCase) {
+    let cache = cleanup_cache(case);
+    let manager = Arc::new(PodLockManager::new(
+        Some(Arc::clone(&cache)),
+        60,
+        Arc::new(NoPodLockEventSink),
+        pod_id(),
+    ));
+    let started = Arc::new(Notify::new());
+    let phases = cleanup_phases(case, &started);
+    let calls = phases.clone();
+    let tasks = TaskTracker::new();
+    let sweep = BudgetSweep {
+        database: lazy_store(),
+        settings: BudgetResetSettings::default(),
+        lock_manager: Some(manager),
+        phases,
+        tasks: tasks.clone(),
+    };
+    let (failure, deletes_on_return) = run_cleanup(case, sweep, tasks, &started, &cache).await;
+    assert_cleanup(case, failure, deletes_on_return, &cache, &calls);
 }

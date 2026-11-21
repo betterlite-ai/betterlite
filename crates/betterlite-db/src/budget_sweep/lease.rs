@@ -9,7 +9,7 @@ use crate::queues::pod_lock::{LockCache, PodLockManager};
 
 pub const RESET_BUDGET_JOB_NAME: &str = "reset_budget_job";
 // Fixed at 900 seconds in the source, however DEFAULT_CRON_JOB_LOCK_TTL_SECONDS is configured.
-pub const RESET_BUDGET_JOB_LOCK_TTL_SECONDS: i64 = 900;
+pub const RESET_LEASE_TTL_SECONDS: i64 = 900;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Lease {
@@ -29,11 +29,7 @@ where
         return Lease::Unguarded;
     };
     let acquired = lock_manager
-        .acquire_lock(
-            RESET_BUDGET_JOB_NAME,
-            Some(RESET_BUDGET_JOB_LOCK_TTL_SECONDS),
-            true,
-        )
+        .acquire_lock(RESET_BUDGET_JOB_NAME, Some(RESET_LEASE_TTL_SECONDS), true)
         .await;
     if acquired == Some(true) {
         return Lease::Leader;

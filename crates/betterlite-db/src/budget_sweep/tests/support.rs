@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::convert::Infallible;
-use std::future::Future;
+use std::future::{Future, pending};
 use std::io;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -12,6 +12,7 @@ use rust_decimal::Decimal;
 use tokio::sync::Notify;
 use tokio_postgres::NoTls;
 use tokio_util::task::TaskTracker;
+use tracing::Level;
 use tracing::subscriber::DefaultGuard;
 use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::util::SubscriberInitExt as _;
@@ -188,9 +189,9 @@ impl WindowCounterCache for SweepCache {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum LeaseOperation {
-    Set { key: String, ttl: i64 },
-    Read { key: String },
-    Delete { key: String },
+    Set(String, i64),
+    Read(String),
+    Delete(String),
 }
 
 pub(crate) struct RecordingLeaseCache {
@@ -247,7 +248,7 @@ impl RecordingLeaseCache {
     pub(crate) fn deletes(&self) -> usize {
         self.operations()
             .iter()
-            .filter(|operation| matches!(operation, LeaseOperation::Delete { .. }))
+            .filter(|operation| matches!(operation, LeaseOperation::Delete(_)))
             .count()
     }
 
@@ -255,8 +256,8 @@ impl RecordingLeaseCache {
         self.operations()
             .iter()
             .filter_map(|operation| match operation {
-                LeaseOperation::Set { ttl, .. } => Some(*ttl),
-                LeaseOperation::Read { .. } | LeaseOperation::Delete { .. } => None,
+                LeaseOperation::Set(_, ttl) => Some(*ttl),
+                LeaseOperation::Read(_) | LeaseOperation::Delete(_) => None,
             })
             .collect()
     }
@@ -264,20 +265,14 @@ impl RecordingLeaseCache {
 
 impl LockCache for RecordingLeaseCache {
     async fn get_owner(&self, key: &str) -> Result<Option<Vec<u8>>, LockCacheError> {
-        self.record(LeaseOperation::Read {
-            key: key.to_owned(),
-        });
+        self.record(LeaseOperation::Read(key.to_owned()));
         if self.read_fails {
             return Err(LockCacheError::UnexpectedReply {
                 operation: "get_owner",
             });
         }
-        let owner = self
-            .owner
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone();
-        Ok(owner)
+        let guard = self.owner.lock().unwrap_or_else(PoisonError::into_inner);
+        Ok(guard.clone())
     }
 
     async fn set_owner_if_absent(
@@ -286,10 +281,7 @@ impl LockCache for RecordingLeaseCache {
         owner: &str,
         ttl_seconds: i64,
     ) -> Result<bool, LockCacheError> {
-        self.record(LeaseOperation::Set {
-            key: key.to_owned(),
-            ttl: ttl_seconds,
-        });
+        self.record(LeaseOperation::Set(key.to_owned(), ttl_seconds));
         if !self.granted {
             return Ok(false);
         }
@@ -299,15 +291,9 @@ impl LockCache for RecordingLeaseCache {
     }
 
     async fn delete(&self, key: &str) -> Result<i64, LockCacheError> {
-        self.record(LeaseOperation::Delete {
-            key: key.to_owned(),
-        });
-        let deleted = self
-            .owner
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .take()
-            .is_some();
+        self.record(LeaseOperation::Delete(key.to_owned()));
+        let mut guard = self.owner.lock().unwrap_or_else(PoisonError::into_inner);
+        let deleted = guard.take().is_some();
         Ok(i64::from(deleted))
     }
 
@@ -350,21 +336,28 @@ pub(crate) struct RecordingPhases {
 }
 
 impl RecordingPhases {
-    pub(crate) fn failing_at(phase: ResetPhase, message: &str) -> Self {
+    fn new(failure: Option<FailureAt>, blocking: Option<Blocking>) -> Self {
         Self {
-            failure: Some(FailureAt {
-                phase,
-                message: message.to_owned(),
-            }),
-            ..Self::default()
+            timeline: Arc::new(Mutex::new(Vec::new())),
+            inside: Arc::new(AtomicBool::new(false)),
+            overlapped: Arc::new(AtomicBool::new(false)),
+            failure,
+            blocking,
         }
     }
 
+    pub(crate) fn failing_at(phase: ResetPhase, message: &str) -> Self {
+        Self::new(
+            Some(FailureAt {
+                phase,
+                message: message.to_owned(),
+            }),
+            None,
+        )
+    }
+
     pub(crate) fn blocking_at(phase: ResetPhase, started: Arc<Notify>) -> Self {
-        Self {
-            blocking: Some(Blocking { phase, started }),
-            ..Self::default()
-        }
+        Self::new(None, Some(Blocking { phase, started }))
     }
 
     fn record(&self, event: PhaseEvent) {
@@ -410,7 +403,7 @@ impl PhaseRunner for RecordingPhases {
             .filter(|blocking| blocking.phase == phase)
         {
             blocking.started.notify_one();
-            std::future::pending::<()>().await;
+            pending::<()>().await;
         }
         let outcome = self
             .failure
@@ -531,7 +524,7 @@ pub(crate) fn captured_logs() -> (CapturedLogs, DefaultGuard) {
     let guard = tracing_subscriber::fmt()
         .with_writer(logs.clone())
         .with_ansi(false)
-        .with_max_level(tracing::Level::TRACE)
+        .with_max_level(Level::TRACE)
         .set_default();
     (logs, guard)
 }
