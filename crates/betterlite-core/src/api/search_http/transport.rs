@@ -157,20 +157,12 @@ pub(super) async fn exchange(
         .map_err(ExchangeFailure::from)
 }
 
-pub(super) fn search_failure<Provider>(
-    provider: &Provider,
-    failure: &ExchangeFailure,
-    timing: &Timing,
-) -> SearchHttpError<Provider::Error>
-where
-    Provider: SearchProvider,
-    Provider::Error: 'static,
-{
+pub(super) fn failure_facts(failure: &ExchangeFailure, timing: &Timing) -> FailureFacts {
     let timed_out = matches!(
         failure,
         ExchangeFailure::Transport(TransportError::Deadline(_))
     );
-    let facts = if timed_out && timing.method == HttpMethod::Post {
+    if timed_out && timing.method == HttpMethod::Post {
         timeout_facts(
             ClientKind::Asynchronous,
             Some(timing.deadline),
@@ -178,22 +170,10 @@ where
         )
     } else {
         display_facts(failure.to_string())
-    };
-    conversion(provider, &facts)
+    }
 }
 
 // A failure with no HTTP answer behind it keeps the converter's synthesized 500 and its own text
-pub(super) fn text_failure<Provider>(
-    provider: &Provider,
-    display: String,
-) -> SearchHttpError<Provider::Error>
-where
-    Provider: SearchProvider,
-    Provider::Error: 'static,
-{
-    conversion(provider, &display_facts(display))
-}
-
 pub(super) fn conversion<Provider>(
     provider: &Provider,
     facts: &FailureFacts,

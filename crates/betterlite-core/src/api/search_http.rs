@@ -19,13 +19,14 @@ use indexmap::IndexMap;
 use secrecy::SecretString;
 use thiserror::Error;
 
+use crate::api::vector_store_http_write::error::display_facts;
 use crate::api::vector_store_http_write::service::LogContext;
 
 mod tests;
 mod transport;
 
 use transport::{
-    Timing, exchange, finish, outbound_request, search_failure, select_client, text_failure,
+    Timing, conversion, exchange, failure_facts, finish, outbound_request, select_client,
 };
 
 pub struct SearchHttpCall<'call> {
@@ -75,17 +76,17 @@ where
 {
     let prepared = prepare_search(&call, provider)?;
     let encoded = serde_json::to_vec(&prepared.body)
-        .map_err(|source| text_failure(provider, source.to_string()))?;
+        .map_err(|source| conversion(provider, &display_facts(source.to_string())))?;
     log_pre_call(&call, &prepared, &encoded, log)?;
     let timeout = call.timeout;
     let client = select_client(pool, call, network_mock)
-        .map_err(|error| text_failure(provider, error.to_string()))?;
+        .map_err(|error| conversion(provider, &display_facts(error.to_string())))?;
     let timing = Timing::new(provider.http_method(), timeout, client.limits.read_timeout);
     let outbound = outbound_request(prepared, &encoded, &timing)
-        .map_err(|caught| search_failure(provider, &caught, &timing))?;
+        .map_err(|caught| conversion(provider, &failure_facts(&caught, &timing)))?;
     let reply = exchange(&client, outbound)
         .await
-        .map_err(|caught| search_failure(provider, &caught, &timing))?;
+        .map_err(|caught| conversion(provider, &failure_facts(&caught, &timing)))?;
     finish(provider, &reply)
 }
 
@@ -145,7 +146,10 @@ fn log_pre_call<Body>(
         additional_args: AdditionalArgs {
             api_base: Some(prepared.complete_url.clone()),
             headers: Some(logged),
-            complete_input_dict: Some(body_record(encoded)),
+            complete_input_dict: Some(
+                serde_json::from_slice(encoded)
+                    .unwrap_or_else(|_| RawBody::Text(body_text(encoded))),
+            ),
             request_str: None,
             openai_sdk: None,
             passthrough: IndexMap::new(),
@@ -161,10 +165,6 @@ fn query_text(query: &SearchQuery) -> Json {
             Json::Text(serde_json::to_string(items).unwrap_or_default())
         }
     }
-}
-
-fn body_record(encoded: &[u8]) -> RawBody {
-    serde_json::from_slice(encoded).unwrap_or_else(|_| RawBody::Text(body_text(encoded)))
 }
 
 fn body_text(body: &[u8]) -> String {
