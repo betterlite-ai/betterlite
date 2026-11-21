@@ -18,7 +18,7 @@ const NO_FILTER: &str = "null";
 const DATE_FORMAT: &str = "%Y-%m-%d";
 const DATETIME_FORMATS: [&str; 2] = ["%Y-%m-%dT%H:%M:%S%.f", "%Y-%m-%d %H:%M:%S%.f"];
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub(super) struct MetricsQuery {
     pub(super) model_group: Option<String>,
     pub(super) start_time: Option<String>,

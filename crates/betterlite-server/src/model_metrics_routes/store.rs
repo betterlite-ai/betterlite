@@ -1,3 +1,4 @@
+use std::fmt;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -20,13 +21,26 @@ pub struct StreamingWindow {
     pub end: DateTime<Utc>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct SpendFilters {
     pub model_group: String,
     pub start: DateTime<Utc>,
     pub end: DateTime<Utc>,
     pub api_key: String,
     pub customer: String,
+}
+
+impl fmt::Debug for SpendFilters {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SpendFilters")
+            .field("model_group", &self.model_group)
+            .field("start", &self.start)
+            .field("end", &self.end)
+            .field("api_key", &"***")
+            .field("customer", &self.customer)
+            .finish()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -122,18 +136,15 @@ pub struct PostgresModelMetricsStore {
 }
 
 impl PostgresModelMetricsStore {
-    async fn query(&self, sql: &str, parameters: &[Parameter<'_>]) -> Result<Vec<Row>, DbError> {
-        let client = self.store.session().await?;
-        client.query(sql, parameters).await.map_err(backend)
-    }
-
-    async fn streaming_rows(
+    async fn rows<Value>(
         &self,
         sql: &str,
-        request: &StreamingWindow,
-    ) -> Result<Vec<SeriesValue>, DbError> {
-        let rows = self.query(sql, &request.parameters()).await?;
-        rows.iter().map(series_value).collect()
+        parameters: &[Parameter<'_>],
+        decode: fn(&Row) -> Result<Value, DbError>,
+    ) -> Result<Vec<Value>, DbError> {
+        let client = self.store.session().await?;
+        let rows = client.query(sql, parameters).await.map_err(backend)?;
+        rows.iter().map(decode).collect()
     }
 }
 
@@ -143,31 +154,31 @@ impl ModelMetricsStore for PostgresModelMetricsStore {
         &self,
         request: &StreamingWindow,
     ) -> Result<Vec<SeriesValue>, DbError> {
-        self.streaming_rows(STREAMING_SAME_DAY_SQL, request).await
+        self.rows(STREAMING_SAME_DAY_SQL, &request.parameters(), series_value)
+            .await
     }
 
     async fn streaming_daily(
         &self,
         request: &StreamingWindow,
     ) -> Result<Vec<SeriesValue>, DbError> {
-        self.streaming_rows(STREAMING_DAILY_SQL, request).await
+        self.rows(STREAMING_DAILY_SQL, &request.parameters(), series_value)
+            .await
     }
 
     async fn latency(&self, request: &SpendFilters) -> Result<Vec<SeriesValue>, DbError> {
-        let rows = self.query(LATENCY_SQL, &request.parameters()).await?;
-        rows.iter().map(series_value).collect()
+        self.rows(LATENCY_SQL, &request.parameters(), series_value)
+            .await
     }
 
     async fn slow_responses(&self, request: &SlowRequest) -> Result<Vec<SlowRow>, DbError> {
-        let rows = self
-            .query(SLOW_RESPONSES_SQL, &request.parameters())
-            .await?;
-        rows.iter().map(slow_row).collect()
+        self.rows(SLOW_RESPONSES_SQL, &request.parameters(), slow_row)
+            .await
     }
 
     async fn exceptions(&self, request: &ExceptionWindow) -> Result<Vec<ExceptionRow>, DbError> {
-        let rows = self.query(EXCEPTIONS_SQL, &request.parameters()).await?;
-        rows.iter().map(exception_row).collect()
+        self.rows(EXCEPTIONS_SQL, &request.parameters(), exception_row)
+            .await
     }
 }
 

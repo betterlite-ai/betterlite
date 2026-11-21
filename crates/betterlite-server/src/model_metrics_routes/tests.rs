@@ -10,6 +10,7 @@ use betterlite_db::gateway_request_tracking::GatewayRequestClock;
 use chrono::DateTime;
 use chrono::TimeDelta;
 use chrono::Utc;
+use rstest::rstest;
 
 use super::EXCEPTIONS_PATH;
 use super::METRICS_PATH;
@@ -46,18 +47,16 @@ const EMPTY_SERIES: &str = r#"{"data":[],"all_api_bases":[]}"#;
 
 const EMPTY_EXCEPTIONS: &str = r#"{"data":[],"exception_types":[]}"#;
 
+#[rstest]
+#[case::streaming(STREAMING_METRICS_PATH)]
+#[case::latency(METRICS_PATH)]
+#[case::slow(SLOW_RESPONSES_PATH)]
+#[case::exceptions(EXCEPTIONS_PATH)]
 #[tokio::test]
-async fn oneshot_every_route_without_a_key_is_401() {
-    for path in [
-        STREAMING_METRICS_PATH,
-        METRICS_PATH,
-        SLOW_RESPONSES_PATH,
-        EXCEPTIONS_PATH,
-    ] {
-        let reply = get(app(None, DEFAULT_THRESHOLD), None, path).await;
-        assert_eq!(reply.status, StatusCode::UNAUTHORIZED, "{path}");
-        assert_eq!(reply.body, UNAUTHORIZED_BODY, "{path}");
-    }
+async fn oneshot_every_route_without_a_key_is_401(#[case] path: &str) {
+    let reply = get(app(None, DEFAULT_THRESHOLD), None, path).await;
+    assert_eq!(reply.status, StatusCode::UNAUTHORIZED, "{path}");
+    assert_eq!(reply.body, UNAUTHORIZED_BODY, "{path}");
 }
 
 #[tokio::test]
@@ -361,54 +360,56 @@ async fn oneshot_model_metrics_treats_undefined_as_no_filter() {
     );
 }
 
+#[rstest]
+#[case::rounds_down(300.75_f64, 300_i64)]
+#[case::cuts_the_fraction(12.9_f64, 12_i64)]
+#[case::truncates_toward_zero(-1.5_f64, -1_i64)]
+#[case::keeps_zero(0.0_f64, 0_i64)]
 #[tokio::test]
-async fn oneshot_slow_responses_truncates_the_threshold() {
-    for (configured, expected) in [
-        (300.75_f64, 300_i64),
-        (12.9_f64, 12_i64),
-        (-1.5_f64, -1_i64),
-        (0.0_f64, 0_i64),
-    ] {
-        let store = Arc::new(FakeStore::default());
-        let reply = get(
-            app(Some(Arc::<FakeStore>::clone(&store)), configured),
-            Some(&caller()),
-            SLOW_RESPONSES_PATH,
-        )
-        .await;
-        assert_eq!(reply.status, StatusCode::OK, "{configured}");
-        assert_eq!(reply.body, "[]", "{configured}");
-        assert_eq!(
-            store.calls(),
-            vec![Call::Slow(SlowRequest {
-                filters: SpendFilters {
-                    model_group: "gpt-4-32k".to_owned(),
-                    start: fixed_now() - TimeDelta::days(28),
-                    end: fixed_now(),
-                    api_key: "null".to_owned(),
-                    customer: "null".to_owned(),
-                },
-                threshold_seconds: expected,
-            })],
-            "{configured}"
-        );
-    }
+async fn oneshot_slow_responses_truncates_the_threshold(
+    #[case] configured: f64,
+    #[case] expected: i64,
+) {
+    let store = Arc::new(FakeStore::default());
+    let reply = get(
+        app(Some(Arc::<FakeStore>::clone(&store)), configured),
+        Some(&caller()),
+        SLOW_RESPONSES_PATH,
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK, "{configured}");
+    assert_eq!(reply.body, "[]", "{configured}");
+    assert_eq!(
+        store.calls(),
+        vec![Call::Slow(SlowRequest {
+            filters: SpendFilters {
+                model_group: "gpt-4-32k".to_owned(),
+                start: fixed_now() - TimeDelta::days(28),
+                end: fixed_now(),
+                api_key: "null".to_owned(),
+                customer: "null".to_owned(),
+            },
+            threshold_seconds: expected,
+        })],
+        "{configured}"
+    );
 }
 
+#[rstest]
+#[case::nan(f64::NAN)]
+#[case::infinity(f64::INFINITY)]
 #[tokio::test]
-async fn oneshot_slow_responses_a_threshold_that_is_not_whole_is_500() {
-    for configured in [f64::NAN, f64::INFINITY] {
-        let store = Arc::new(FakeStore::default());
-        let reply = get(
-            app(Some(Arc::<FakeStore>::clone(&store)), configured),
-            Some(&caller()),
-            SLOW_RESPONSES_PATH,
-        )
-        .await;
-        assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
-        assert_eq!(reply.body, INTERNAL_BODY);
-        assert!(store.calls().is_empty());
-    }
+async fn oneshot_slow_responses_a_threshold_that_is_not_whole_is_500(#[case] configured: f64) {
+    let store = Arc::new(FakeStore::default());
+    let reply = get(
+        app(Some(Arc::<FakeStore>::clone(&store)), configured),
+        Some(&caller()),
+        SLOW_RESPONSES_PATH,
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(reply.body, INTERNAL_BODY);
+    assert!(store.calls().is_empty());
 }
 
 #[tokio::test]
