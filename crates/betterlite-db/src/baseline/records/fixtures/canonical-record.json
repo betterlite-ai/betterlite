@@ -1,0 +1,96 @@
+{
+  "scope": "autorouter-baseline:v3:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "api_key": "café-☃-😀",
+  "session_id": "sess-\u007f-\u0001-\"quote\"-back\\slash",
+  "router_name": "router-é",
+  "baseline_model": "claude-sonnet-4-20250514",
+  "observation": {
+    "request_id": "req-☃-1",
+    "started_at": 0.0001,
+    "available_at": 1e-07,
+    "outcome": "complete",
+    "baseline_equivalent": true,
+    "usage": {
+      "prompt_tokens": 10,
+      "completion_tokens": 5,
+      "total_tokens": 15,
+      "prompt_tokens_details": {
+        "text_tokens": 5,
+        "cached_tokens": 2,
+        "cache_creation_tokens": 3,
+        "cache_write_tokens": 3,
+        "cache_creation_token_details": {
+          "ephemeral_5m_input_tokens": 1,
+          "ephemeral_1h_input_tokens": 2
+        },
+        "audio_tokens": 0,
+        "image_tokens": 1,
+        "web_search_requests": 4
+      },
+      "cache_read_input_tokens": 2,
+      "cache_creation_input_tokens": 3,
+      "completion_tokens_details": {
+        "reasoning_tokens": 1,
+        "text_tokens": 4,
+        "mystery": 9
+      },
+      "something_else": "é"
+    },
+    "plan": {
+      "total_tokens": 10,
+      "breakpoints": [
+        {
+          "fingerprint": "fpé",
+          "ttl_seconds": 300,
+          "prefix_tokens": 10,
+          "lookback_fingerprints": ["fpé"],
+          "content_fingerprint": "cfp",
+          "lookback_content_fingerprints": ["cfp"]
+        }
+      ]
+    },
+    "minimum_cache_tokens": 0,
+    "reason": "cache_prefix_cold"
+  },
+  "pricing": {
+    "model": "m☃",
+    "provider": "anthropic",
+    "prices": null,
+    "basis": [null, "eu", null],
+    "actual_spend": 0.00001,
+    "actual_token_cost": 1234567890123456.0,
+    "classifier_cost": 0.0
+  },
+  "turn": {
+    "api_key": "café-☃-😀",
+    "session_id": "sess-\u007f-\u0001-\"quote\"-back\\slash",
+    "router_name": "router-é",
+    "router_type": "simple-shuffle",
+    "model": "m☃",
+    "turn_at": "2026-01-02T03:04:05.100000+02:00",
+    "total_tokens": 15,
+    "spend": 0.00001,
+    "saved_spend": 0.0,
+    "classifier_cost": 0.0,
+    "covered": false,
+    "cache_hit": false,
+    "cache_ttl_seconds": 300,
+    "cache_touched": false,
+    "tier": "t1",
+    "baseline_model": "claude-sonnet-4-20250514",
+    "user_id": "user-é"
+  },
+  "daily": {
+    "date": "2026-01-02",
+    "api_key": "café-☃-😀",
+    "model": "m☃",
+    "custom_llm_provider": "anthropic",
+    "model_group": null,
+    "endpoint": "/v1/chat/completions",
+    "mcp_namespaced_tool_name": null,
+    "targets": [
+      {"entity": "user", "entity_id": "user-é"},
+      {"entity": "tag", "entity_id": null}
+    ]
+  }
+}
