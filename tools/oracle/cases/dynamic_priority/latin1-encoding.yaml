@@ -1,0 +1,14 @@
+kind: helper
+name: dynamic-priority-latin1-encoding
+call:
+  b3051:
+    function: latin1
+    values:
+      - prod
+      - "prïority"
+      - "ÿ"
+      - "Ā"
+      - "приоритет"
+      - "🚀"
+env: {}
+compare: {ignore: []}

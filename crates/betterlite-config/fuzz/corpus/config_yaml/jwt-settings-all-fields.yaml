@@ -1,0 +1,51 @@
+general_settings:
+  litellm_jwtauth:
+    admin_jwt_scope: proxy.admin
+    admin_allowed_routes: [management_routes, /key/generate]
+    team_id_jwt_field: realm.team.id
+    team_id_upsert: true
+    team_ids_jwt_field: realm.team.ids
+    upsert_sso_user_to_team: true
+    team_allowed_routes: [openai_routes]
+    team_id_default: fallback-team
+    team_alias_jwt_field: realm.team.name
+    org_id_jwt_field: org
+    org_alias_jwt_field: org_name
+    user_id_jwt_field: sub
+    user_email_jwt_field: email
+    user_allowed_email_domain: example.com
+    user_roles_jwt_field: realm.roles
+    user_allowed_roles: [admin, ops]
+    user_id_upsert: true
+    end_user_id_jwt_field: eid
+    agent_id_jwt_field: azp
+    mcp_client_id_jwt_field: client_id
+    public_key_ttl: 120
+    public_key_stale_ttl: 0
+    public_allowed_routes: [public_routes]
+    enforce_rbac: true
+    roles_jwt_field: resource_access.litellm.roles
+    role_mappings:
+      - {role: admin, internal_role: proxy_admin, note: ignored}
+    object_id_jwt_field: oid
+    scope_mappings:
+      - {scope: litellm.read, models: [gpt-4o], routes: null}
+    enforce_scope_based_access: true
+    enforce_team_based_model_access: true
+    jwt_litellm_role_map:
+      - {jwt_role: viewer, litellm_role: proxy_admin_viewer}
+    sync_user_role_and_teams: true
+    oidc_userinfo_endpoint: https://idp.example.com/userinfo
+    oidc_userinfo_enabled: true
+    oidc_userinfo_cache_ttl: 60
+    jwt_client_id_field: sub
+    virtual_key_claim_field: client_id
+    virtual_key_mapping_cache_ttl: -1
+    unregistered_jwt_client_behavior: reject
+    routing_overrides:
+      - {iss: [https://idp.example.com], client_id: cli, aud: []}
+    team_claim_fallback: true
+    fallback_to_db_teams: true
+    issuers:
+      - {issuer: https://idp.example.com, audience: '', virtual_key_claim_field: azp}
+      - {issuer: https://idp.example.com, disable_audience_validation: true, unregistered_jwt_client_behavior: auto_register}

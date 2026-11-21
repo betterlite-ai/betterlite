@@ -1,0 +1,11 @@
+kind: helper
+name: jwt-settings-issuer-missing-audience-error
+call:
+  jwt_settings:
+    scenarios:
+      - {"settings": {"issuers": [{"issuer": "https://idp-a.example.com"}]}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"issuers": [{"issuer": "https://idp-a.example.com", "audience": null, "disable_audience_validation": false}]}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"issuers": [{"issuer": "https://idp-a.example.com", "audience": "litellm"}, {"issuer": "https://idp-b.example.com"}]}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"issuers": [{"jwks_url": "https://idp-a.example.com/jwks", "audience": "litellm"}]}, "references": {}, "environment": {}, "issuers": []}
+env: {}
+compare: {ignore: []}

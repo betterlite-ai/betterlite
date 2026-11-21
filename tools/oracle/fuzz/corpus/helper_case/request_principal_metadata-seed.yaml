@@ -1,0 +1,22 @@
+kind: helper
+name: request-principal-metadata-seed
+call:
+  request_principal_metadata:
+    pre_auth_tags:
+      - data: {metadata: {tags: [own]}}
+        headers: [[x-litellm-tags, "a, ,b"]]
+        route: /v1/messages
+        principal: {api_key: hash-1, metadata: {tags: [key]}}
+    request_metadata:
+      - data: {tags: [x]}
+        slot: metadata
+        bucket: {}
+        headers: []
+        principal: {api_key: hash-1, spend: 1.5, metadata: {logging: [], tags: [k]}}
+        invoked_agent_id: null
+        managed_agent_context: null
+    team_callbacks:
+      - team_id: t1
+        teams: [{team_id: t1, langfuse_host: "https://logs.example"}]
+env: {}
+compare: {ignore: []}

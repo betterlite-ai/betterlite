@@ -5,7 +5,7 @@ use betterlite_config::loader::EnvironmentLookup;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::search::credentials::{CredentialError, ServerCredential};
 use betterlite_openai::search::provider::{
-    HttpMethod, OutboundSearch, ProviderResponse, SearchProvider, SearchQuery,
+    HttpMethod, OutboundSearch, ProviderResponse, RequestInput, SearchProvider,
 };
 use betterlite_openai::search::records::SearchResponse;
 use chrono::{DateTime, NaiveDate, Utc};
@@ -152,6 +152,7 @@ impl SearchProvider for BraveSearchConfig {
         api_base: Option<&str>,
         _optional_params: &Object,
         body: Option<&Self::Body>,
+        _api_key: Option<&SecretString>,
     ) -> Result<String, Self::Error> {
         let base = api_base
             .filter(|base| !base.is_empty())
@@ -167,10 +168,9 @@ impl SearchProvider for BraveSearchConfig {
 
     fn transform_search_request(
         &self,
-        query: &SearchQuery,
-        optional_params: &Object,
+        input: &RequestInput<'_>,
     ) -> Result<Self::Body, Self::Error> {
-        request::build(query, optional_params)
+        request::build(input.query, input.optional_params)
     }
 
     fn transform_search_response(

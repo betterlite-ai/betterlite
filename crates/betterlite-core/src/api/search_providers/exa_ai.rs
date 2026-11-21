@@ -2,7 +2,7 @@ use betterlite_config::loader::EnvironmentLookup;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::search::credentials::{CredentialError, ServerCredential};
 use betterlite_openai::search::provider::{
-    OutboundSearch, ProviderResponse, SearchProvider, SearchQuery,
+    OutboundSearch, ProviderResponse, RequestInput, SearchProvider,
 };
 use betterlite_openai::search::records::SearchResponse;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -142,6 +142,7 @@ impl SearchProvider for ExaAiSearchConfig {
         api_base: Option<&str>,
         _optional_params: &Object,
         _body: Option<&Self::Body>,
+        _api_key: Option<&SecretString>,
     ) -> Result<String, Self::Error> {
         let base = api_base
             .filter(|base| !base.is_empty())
@@ -163,10 +164,9 @@ impl SearchProvider for ExaAiSearchConfig {
 
     fn transform_search_request(
         &self,
-        query: &SearchQuery,
-        optional_params: &Object,
+        input: &RequestInput<'_>,
     ) -> Result<Self::Body, Self::Error> {
-        Ok(request::build(query, optional_params))
+        Ok(request::build(input.query, input.optional_params))
     }
 
     fn transform_search_response(

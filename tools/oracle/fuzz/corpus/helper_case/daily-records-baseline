@@ -1,0 +1,11 @@
+kind: helper
+name: daily-records-seed-baseline
+call:
+  daily_records:
+    operation: baseline
+    payload: '{"user": "u1", "startTime": "2025-01-02T03:04:05Z", "api_key": "k1", "mcp_namespaced_tool_name": null, "metadata": "{}", "prompt_tokens": 1, "completion_tokens": 2, "spend": 0.5}'
+    prices: {}
+    endpoints:
+      acompletion: "/chat/completions"
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,8 @@
+kind: helper
+name: jwt-settings-issuer-overrides-seed
+call:
+  jwt_settings:
+    scenarios:
+      - {"settings": {"virtual_key_claim_field": "sub", "unregistered_jwt_client_behavior": "reject", "issuers": [{"issuer": "https://idp-a.example.com", "audience": "a", "virtual_key_claim_field": null, "unregistered_jwt_client_behavior": null}, {"issuer": "https://idp-b.example.com", "audience": "b", "virtual_key_claim_field": "azp", "unregistered_jwt_client_behavior": "auto_register"}]}, "references": {}, "environment": {}, "issuers": ["https://idp-a.example.com", "https://idp-b.example.com", "https://unknown.example.com", null]}
+env: {}
+compare: {ignore: []}

@@ -61,8 +61,7 @@ description: >-
 
   Direct inputs come from B171 (Direct helper oracle and URL path encoding), B1087 (Api boundaries), B726 (Managed
   resources and transaction repositories), B858 (Typed managed-resource and analytics rows), B1140 (Claude plugin
-  and skill policy), B003 (HTTP server, health routes and master key auth), B756 (Authentication header selection
-  and mode dispatch), B1139 (Stateful HTTP oracle scenarios), B856 (Management oracle namespaces and Postgres test
+  and skill policy), B003 (HTTP server, health routes and master key auth, whose header parsing is on main in auth.rs), B1139 (Stateful HTTP oracle scenarios), B856 (Management oracle namespaces and Postgres test
   fixture). These are callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids retain
   ownership on the provider and keys/data branches.
 
