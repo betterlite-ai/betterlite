@@ -232,8 +232,8 @@ oracle_cases:
 out_of_scope:
 - AmazonInvokeAgentConfig constructor, option/URL/signing/request functions L49-L162 and environment/error/fake-stream
   methods L475-L496 are B652.
-- Binary frame/shape primitives are B599; error construction is B682; Python boto3 import availability is B159 SDK
-  packaging.
+- Binary frame/shape primitives are B599; error construction is B682; Python boto3 import availability is the oracle's pinned LiteLLM environment, not
+  this task's.
 - 'Function ownership inventory litellm/llms/bedrock/chat/invoke_agent/transformation.py: AmazonInvokeAgentConfig.__init__
   L49-L51; AmazonInvokeAgentConfig.get_supported_openai_params L53-L61; AmazonInvokeAgentConfig.map_openai_params
   L63-L73; AmazonInvokeAgentConfig.get_complete_url L75-L106; AmazonInvokeAgentConfig.sign_request L108-L129; AmazonInvokeAgentConfig._get_agent_id_and_alias_id
