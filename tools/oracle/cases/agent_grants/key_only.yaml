@@ -1,0 +1,33 @@
+kind: helper
+name: key_only
+call:
+  b4779:
+    operation: grants
+    method: key
+    strict: false
+    database: true
+    key:
+      team_id: null
+      agents: [alpha]
+      agent_access_groups: []
+      access_group_ids: []
+    team: null
+    db_agents: []
+    groups: {}
+    config_agents: []
+    fail: null
+calls:
+  - b4779:
+      operation: grants
+      method: key
+      strict: true
+      database: true
+      key: null
+      team: null
+      db_agents: []
+      groups: {}
+      config_agents: []
+      fail: null
+env: {}
+compare:
+  ignore: []
