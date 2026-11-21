@@ -16,6 +16,7 @@ from litellm.types.guardrails import GuardrailEventHooks
 from litellm.types.utils import GenericGuardrailAPIInputs
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from typing_extensions import override
+from websockets.exceptions import ConnectionClosed
 
 Wait = Literal["none", "cancel", "signal"]
 
@@ -92,7 +93,7 @@ class ScriptedClient:
 
     async def receive_text(self) -> str:
         if not self.incoming:
-            raise ScriptedError("the scripted client is exhausted")
+            raise ConnectionClosed(None, None)
         return self.incoming.pop(0)
 
     async def send_text(self, data: str) -> None:
