@@ -197,7 +197,8 @@ impl DeploymentAffinity {
         } else {
             None
         };
-        if !(user_key_enabled && user_key.is_some()) && session_id.is_none() {
+        let user_claim = user_key_enabled && user_key.is_some();
+        if !user_claim && session_id.is_none() {
             return Ok(());
         }
         let model_info = request

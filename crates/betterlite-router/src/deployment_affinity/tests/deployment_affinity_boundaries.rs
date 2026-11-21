@@ -231,6 +231,7 @@ pub(super) async fn hook_unusable_model_id() {
         None,
     );
     fixture.hook(&kwargs, Some(&empty)).await.unwrap();
+    assert_eq!(fixture.expiry(&user_pin("key")), None);
     let mut numeric = model_info("");
     numeric.insert("id".to_owned(), number(7));
     fixture.hook(&kwargs, Some(&numeric)).await.unwrap();
@@ -240,4 +241,5 @@ pub(super) async fn hook_unusable_model_id() {
         fixture.filter(&healthy, Some(&filter_kwargs)).await,
         ["a", "b"]
     );
+    assert_eq!(fixture.expiry(&user_pin("key")), None);
 }
