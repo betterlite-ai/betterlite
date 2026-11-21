@@ -16,9 +16,10 @@ use super::ApplyInput;
 use super::failure;
 
 // The fields a caller reads back from the constructed class, as LiteLLM stores them
-pub(super) fn build<R: ImageDescriptionCompletion>(
-    guardrail: &ContentFilterGuardrail<R>,
-) -> HelperResult {
+pub(super) fn build<R>(guardrail: &ContentFilterGuardrail<R>) -> HelperResult
+where
+    R: ImageDescriptionCompletion,
+{
     let patterns = guardrail
         .compiled_patterns
         .iter()
@@ -50,10 +51,13 @@ pub(super) fn build<R: ImageDescriptionCompletion>(
 }
 
 // The run's visible effect: the rewritten inputs, or the error LiteLLM raised
-pub(super) async fn apply<R: ImageDescriptionCompletion>(
+pub(super) async fn apply<R>(
     guardrail: &ContentFilterGuardrail<R>,
     input: &ApplyInput,
-) -> HelperResult {
+) -> HelperResult
+where
+    R: ImageDescriptionCompletion,
+{
     let mut request_data: BTreeMap<String, GuardrailValue> = BTreeMap::new();
     let inputs = GuardrailApiInputs {
         texts: Some(input.texts.clone()),
@@ -88,9 +92,10 @@ pub(super) async fn apply<R: ImageDescriptionCompletion>(
 }
 
 // LiteLLM's get_config_model answers with a class, whose name the config endpoint reads
-fn config_model<R: ImageDescriptionCompletion>(
-    guardrail: &ContentFilterGuardrail<R>,
-) -> Result<Value, Box<HelperError>> {
+fn config_model<R>(guardrail: &ContentFilterGuardrail<R>) -> Result<Value, Box<HelperError>>
+where
+    R: ImageDescriptionCompletion,
+{
     let model = serde_json::to_value(guardrail.get_config_model())
         .map_err(|error| failure("JsonError", error.to_string()))?;
     Ok(model.get("model").cloned().unwrap_or(Value::Null))

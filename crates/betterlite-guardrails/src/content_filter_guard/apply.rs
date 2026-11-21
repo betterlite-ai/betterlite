@@ -89,13 +89,16 @@ impl<R: ImageDescriptionCompletion> GuardrailContract for ContentFilterGuardrail
     }
 }
 
-async fn scan<R: ImageDescriptionCompletion>(
+async fn scan<R>(
     guardrail: &ContentFilterGuardrail<R>,
     inputs: &mut GuardrailApiInputs,
     request_data: &mut BTreeMap<String, GuardrailValue>,
     input_type: GuardrailInputType,
     detections: &mut Vec<ContentFilterDetection>,
-) -> Result<(), GuardrailFailure> {
+) -> Result<(), GuardrailFailure>
+where
+    R: ImageDescriptionCompletion,
+{
     let blocked_words = blocked_word_list(guardrail);
     let source = content_filter_source(guardrail, &blocked_words);
     process_input_images(guardrail, inputs, &source, detections).await?;
@@ -113,12 +116,15 @@ async fn scan<R: ImageDescriptionCompletion>(
     Ok(())
 }
 
-async fn process_input_images<R: ImageDescriptionCompletion>(
+async fn process_input_images<R>(
     guardrail: &ContentFilterGuardrail<R>,
     inputs: &GuardrailApiInputs,
     source: &ContentFilterSource<'_>,
     detections: &mut Vec<ContentFilterDetection>,
-) -> Result<(), GuardrailFailure> {
+) -> Result<(), GuardrailFailure>
+where
+    R: ImageDescriptionCompletion,
+{
     let scan = ImageScan {
         images: inputs.images.as_deref().unwrap_or_default(),
         image_model: guardrail.image_model.as_deref(),
