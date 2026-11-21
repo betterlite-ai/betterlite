@@ -44,8 +44,8 @@ impl Section for Raw {
 }
 
 // int(os.getenv("LITELLM_MAX_ITERATIONS_TTL", 3600)): unset or empty keeps the 3600 second default, and text that is not a count stops the load
-pub fn max_iterations_ttl(text: Option<&str>) -> Result<Duration, ConfigError> {
-    let Some(text) = text else {
+pub fn max_iterations_ttl(value: Option<&str>) -> Result<Duration, ConfigError> {
+    let Some(text) = value else {
         return Ok(Duration::from_secs(DEFAULT_TTL_SECONDS));
     };
     let Some(seconds) = number::<u64>(TTL_VARIABLE, text)? else {
