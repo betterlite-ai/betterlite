@@ -33,6 +33,7 @@ JSON_VALUE: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 DETAIL: Final[TypeAdapter[str | dict[str, str]]] = TypeAdapter(str | dict[str, str])
 Rows: TypeAlias = list[dict[str, JsonValue]]
 Include: TypeAlias = Mapping[str, bool] | None
+Argument: TypeAlias = str | bool | PrismaClient | UserApiKeyCache | None
 LOGGING_FUNCTIONS: Final = frozenset(
     ("_get_team_object_from_user_api_key_cache", "get_access_object", "get_team_object_by_alias")
 )
@@ -90,7 +91,6 @@ class Answer(TypedDict):
     steps: list[StepAnswer]
 
 
-# one step's record, its log handler and the clock LiteLLM reads through time.time
 class Board(logging.Handler):
     def __init__(self, call: Call) -> None:
         super().__init__(logging.DEBUG)
@@ -208,7 +208,7 @@ class Provisioner:
 
 # get_object_permission catches its own read failures, so a failed load is scripted in its place
 class Refusal:
-    async def __call__(self, **_kwargs: object) -> NoReturn:
+    async def __call__(self, **_kwargs: Argument) -> NoReturn:
         raise RuntimeError("permission")
 
 
