@@ -145,10 +145,9 @@ impl KeyListSource for FakeSource {
         _row: &mut KeyRow,
     ) -> impl Future<Output = Result<(), KeyQueryPlanError>> + Send {
         self.record("attach");
-        {
-            let mut count = self.attach_calls.lock().unwrap();
-            *count = count.saturating_add(1)
-        };
+        let mut count = self.attach_calls.lock().unwrap();
+        *count = count.saturating_add(1);
+        drop(count);
         async move { self.answer(Failure::Attach, ()) }
     }
 }

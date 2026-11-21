@@ -33,13 +33,13 @@ pub(crate) enum Input {
     },
     Filters {
         now: String,
-        filters: FilterArgs,
+        filters: Box<FilterArgs>,
     },
 }
 
 // the builder's own arguments, plus the two flags that pick the matching mode
 #[derive(Deserialize)]
-struct FilterArgs {
+pub(crate) struct FilterArgs {
     #[serde(flatten)]
     filters: KeyFilters,
     use_substring_matching: Option<bool>,
@@ -94,7 +94,7 @@ fn status_answer(
 fn status_clause_answer(status_filter: Option<&str>, now: &str) -> Result<Value, Box<HelperError>> {
     let instant = parse_now(now)?;
     let clause = build_status_where_clause(status_filter, instant);
-    Ok(clause.map_or(Value::Null, |clause| clause_value(&clause)))
+    Ok(clause.map_or(Value::Null, |where_clause| clause_value(&where_clause)))
 }
 
 fn sort_answer(sort_by: Option<&str>, sort_order: &str) -> Result<Value, Box<HelperError>> {
