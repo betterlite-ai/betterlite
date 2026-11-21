@@ -24,17 +24,23 @@ pub(crate) fn call_error(error: &CallError) -> PyErr {
         Err(_encoding) => PyRuntimeError::new_err(payload.message),
     }
 }
-pub(crate) fn request_error(error: ConvertError) -> PyErr {
-    match &error {
-        ConvertError::Json { .. } => PyValueError::new_err(error.to_string()),
-        ConvertError::Encode { .. } => PyRuntimeError::new_err(error.to_string()),
+impl From<ConvertError> for PyErr {
+    fn from(error: ConvertError) -> Self {
+        match &error {
+            ConvertError::Json { .. } => PyValueError::new_err(error.to_string()),
+            ConvertError::Encode { .. } => PyRuntimeError::new_err(error.to_string()),
+        }
     }
 }
-pub(crate) fn session_error(error: SessionError) -> PyErr {
-    if let SessionError::Json(_) = &error {
-        return PyValueError::new_err(error.to_string());
+impl From<SessionError> for PyErr {
+    fn from(error: SessionError) -> Self {
+        match &error {
+            SessionError::Json(_) => PyValueError::new_err(error.to_string()),
+            SessionError::Proxy { .. }
+            | SessionError::Client { .. }
+            | SessionError::Tokenizer { .. } => PyRuntimeError::new_err(error.to_string()),
+        }
     }
-    PyRuntimeError::new_err(error.to_string())
 }
 // main.py's valid_model raises BadRequestError(message="", model=model, llm_provider="") for every failure
 pub(crate) fn validation_error(model: &str) -> PyErr {

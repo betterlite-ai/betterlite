@@ -6,7 +6,7 @@ use betterlite_sdk::call_setup::RequestMap;
 use betterlite_sdk::call_setup::correlation::CallOutcome;
 use betterlite_sdk::call_wrapper::error::{CallError, class_name, class_status};
 use betterlite_sdk::completion_request::args::{CompletionFlags, CompletionSettings};
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 mod tests;
@@ -28,11 +28,11 @@ pub(crate) struct SettingsWire {
     pub(crate) request_timeout: Option<f64>,
     pub(crate) api_key: Option<SecretString>,
     pub(crate) api_base: Option<String>,
-    pub(crate) route_all_to_responses: bool,
+    pub(crate) route_all_to_responses: Option<bool>,
     pub(crate) proxy_headers: Option<AdditionalHeaders>,
     pub(crate) optional: OptionalParams,
-    pub(crate) add_function_to_prompt: bool,
-    pub(crate) disable_stop_sequence_limit: bool,
+    pub(crate) add_function_to_prompt: Option<bool>,
+    pub(crate) disable_stop_sequence_limit: Option<bool>,
     pub(crate) medium_thinking_budget: Option<u32>,
 }
 impl SettingsWire {
@@ -45,12 +45,12 @@ impl SettingsWire {
             request_timeout: self.request_timeout,
             api_key: self.api_key,
             api_base: self.api_base,
-            route_all_to_responses: self.route_all_to_responses,
+            route_all_to_responses: self.route_all_to_responses.unwrap_or_default(),
             proxy_headers: self.proxy_headers.unwrap_or_default(),
             optional: self.optional,
             flags: CompletionFlags {
-                add_function_to_prompt: self.add_function_to_prompt,
-                disable_stop_sequence_limit: self.disable_stop_sequence_limit,
+                add_function_to_prompt: self.add_function_to_prompt.unwrap_or_default(),
+                disable_stop_sequence_limit: self.disable_stop_sequence_limit.unwrap_or_default(),
             },
             medium_thinking_budget: self
                 .medium_thinking_budget
@@ -75,6 +75,20 @@ pub(crate) struct TokenCall {
 pub(crate) struct ProbeCall {
     pub(crate) model: String,
     pub(crate) api_key: Option<SecretString>,
+}
+impl ProbeCall {
+    // the probe runs the same deployment lookup a completion does, from the model and the key alone
+    pub(crate) fn arguments(&self) -> RequestMap {
+        let mut arguments = RequestMap::new();
+        arguments.insert(String::from("model"), Json::Text(self.model.clone()));
+        if let Some(key) = &self.api_key {
+            arguments.insert(
+                String::from("api_key"),
+                Json::Text(key.expose_secret().to_owned()),
+            );
+        }
+        arguments
+    }
 }
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
@@ -101,10 +115,7 @@ pub(crate) fn parse<'text, T>(text: &'text str) -> Result<T, ConvertError>
 where
     T: Deserialize<'text>,
 {
-    match serde_json::from_str(text) {
-        Ok(value) => Ok(value),
-        Err(source) => Err(ConvertError::Json { source }),
-    }
+    serde_json::from_str(text).map_err(|source| ConvertError::Json { source })
 }
 // What a finished native call hands to Python: JSON text for a response, chunk texts for a stream.
 #[derive(Debug, PartialEq, Eq)]

@@ -28,15 +28,17 @@ pub(crate) struct TargetSpec {
     pub(crate) ids: Arc<dyn IdSource>,
     pub(crate) clock: Arc<dyn WrapperClock>,
 }
-// The session-owned ports a target borrows; the caller keeps them alive for as long as the target lives.
-pub(crate) struct TargetPorts<'ports> {
-    pub(crate) metadata: &'ports SessionMetadata<'ports>,
-    pub(crate) facts: &'ports CatalogFacts<'ports>,
-    pub(crate) bridge: &'ports ModelBridgeFacts<'ports, NoFoundryRules>,
-    pub(crate) sleeper: &'ports dyn Sleeper,
+// The session-owned ports a target borrows; the caller keeps the scope alive for as long as the target lives.
+pub(crate) struct CallScope<'core> {
+    pub(crate) metadata: SessionMetadata<'core>,
+    pub(crate) bridge: ModelBridgeFacts<'core, NoFoundryRules>,
+    pub(crate) sleeper: &'core dyn Sleeper,
 }
 // One place builds every target, so the call path and the probes run through the same port set.
-pub(crate) fn build(ports: TargetPorts<'_>, spec: TargetSpec) -> CompletionTarget<'_> {
+pub(crate) fn build<'scope>(
+    scope: &'scope CallScope<'scope>,
+    spec: TargetSpec,
+) -> CompletionTarget<'scope> {
     let calls: Arc<dyn ChatCall> = Arc::new(ProviderCalls {
         client: spec.client,
         catalog: spec.capabilities,
@@ -44,9 +46,9 @@ pub(crate) fn build(ports: TargetPorts<'_>, spec: TargetSpec) -> CompletionTarge
     CompletionTarget {
         settings: spec.settings,
         ports: CompletionPorts {
-            model_metadata: ports.metadata,
+            model_metadata: &scope.metadata,
             prompt: &NoPrompt,
-            bridge: ports.bridge,
+            bridge: &scope.bridge,
             pricing: &NoPricing,
             logging: &NoLogging,
             timeout: &SessionTimeouts,
@@ -62,14 +64,12 @@ pub(crate) fn build(ports: TargetPorts<'_>, spec: TargetSpec) -> CompletionTarge
         clock: spec.clock,
         redactor: spec.redactor,
         mcp: &NoMcpLoop,
-        sleeper: ports.sleeper,
+        sleeper: scope.sleeper,
         stream_bytes: TransportLimits::DEFAULT.body_bytes,
     }
 }
 // No foundry deployment reaches a Python session from here; the OpenAI credentials are the session's own.
-pub(crate) fn bridge<'facts>(
-    facts: &'facts CatalogFacts<'facts>,
-) -> ModelBridgeFacts<'facts, NoFoundryRules> {
+pub(crate) fn bridge(facts: &CatalogFacts) -> ModelBridgeFacts<'_, NoFoundryRules> {
     ModelBridgeFacts {
         facts,
         foundry: &NoFoundryRules,

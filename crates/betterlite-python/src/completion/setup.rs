@@ -1,4 +1,7 @@
+use super::error::SessionError;
+use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::{Config, GeneralSettings, LiteLlmSettings, ProxyTrust};
+use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_openai::chat::deployment::OpenAiDefaults;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
@@ -7,6 +10,7 @@ use betterlite_sdk::completion_request::args::CompletionSettings;
 use betterlite_secrets::secret_codec::{Algorithm, CipherSettings};
 use secrecy::SecretString;
 use std::collections::BTreeMap;
+use std::sync::Arc;
 // litellm/constants.py's DEFAULT_REASONING_EFFORT_MEDIUM_THINKING_BUDGET
 pub(crate) const DEFAULT_MEDIUM_THINKING_BUDGET: u32 = 2048;
 pub(crate) fn redactor() -> Result<Redactor, CallError> {
@@ -35,6 +39,19 @@ pub(crate) fn openai_defaults(environment: &BTreeMap<String, String>) -> OpenAiD
         organization: first_text(environment, &["OPENAI_ORGANIZATION"]),
         global_drop_params: false,
     }
+}
+// the outbound client honours the proxy variables of the environment the session was built from
+pub(crate) fn outbound_client(
+    environment: &BTreeMap<String, String>,
+) -> Result<ProxiedClient, SessionError> {
+    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), environment).map_err(|error| {
+        SessionError::Proxy {
+            message: error.to_string(),
+        }
+    })?;
+    ProxiedClient::outbound(&Arc::new(policy)).map_err(|error| SessionError::Client {
+        message: error.to_string(),
+    })
 }
 // litellm.api_key and litellm.api_base reach resolution as the module-level credentials
 pub(crate) fn global_credentials(settings: &CompletionSettings) -> GlobalCredentials {

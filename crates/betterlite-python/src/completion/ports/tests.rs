@@ -101,5 +101,8 @@ fn a_timeout_that_is_not_a_number_of_seconds_is_a_field_error() {
     let text = value("\"soon\"");
     assert!(number_of(&text, "timeout").is_err());
     let numeric_text = value("\"30\"");
-    assert_eq!(number_of(&numeric_text, "timeout").unwrap(), 30.0_f64);
+    assert_eq!(
+        number_of(&numeric_text, "timeout").unwrap().to_bits(),
+        30.0_f64.to_bits()
+    );
 }

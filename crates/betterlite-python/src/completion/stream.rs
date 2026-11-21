@@ -51,15 +51,14 @@ impl NativeChatStream {
         let next = async move { Ok(feed.lock().await.take_next()) };
         future_into_py(py, next)
     }
-    fn close(&self, py: Python<'_>) -> PyResult<()> {
+    fn close(&self, py: Python<'_>) {
         let feed = Arc::clone(&self.feed);
         py.detach(move || {
             get_runtime().block_on(async move { feed.lock().await.close() });
         });
-        Ok(())
     }
     fn aclose<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        self.close(py)?;
+        self.close(py);
         future_into_py(py, async { Ok::<(), PyErr>(()) })
     }
 }

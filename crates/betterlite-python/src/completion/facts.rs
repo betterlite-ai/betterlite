@@ -12,6 +12,7 @@ use betterlite_sdk::completion_call::ports::ModelFacts;
 use betterlite_sdk::completion_request::ports::{
     ChatPolicy, ModelMetadata, ParameterMappingRequest, ProviderLookup,
 };
+use std::sync::Arc;
 // The SDK asks where a model lives; a plain Python session answers from the environment it was built with.
 pub(crate) struct SessionMetadata<'core> {
     pub(crate) core: &'core SessionCore,
@@ -55,10 +56,10 @@ impl ModelMetadata for SessionMetadata<'_> {
     }
 }
 // The responses bridge reads model_info out of the same catalog LiteLLM's model_cost table backs.
-pub(crate) struct CatalogFacts<'catalog> {
-    pub(crate) catalog: &'catalog ModelCatalog,
+pub(crate) struct CatalogFacts {
+    pub(crate) catalog: Arc<ModelCatalog>,
 }
-impl ModelFacts for CatalogFacts<'_> {
+impl ModelFacts for CatalogFacts {
     fn model_info(&self, model: &str, _custom_llm_provider: &str) -> Option<Object> {
         let metadata = self.catalog.metadata(model)?;
         let mut info = Object::new();

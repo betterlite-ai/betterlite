@@ -25,18 +25,6 @@ pub(crate) struct ProviderCalls {
     pub(crate) catalog: CatalogCapabilities,
 }
 impl ProviderCalls {
-    // main.py hands stream_chunk_size to the streaming writer; the route's own parser validates it
-    fn control(&self, request: &ChatRequest) -> Result<ControlOptions, ChatFailure> {
-        let Some(given) = request.passthrough.get("stream_chunk_size") else {
-            return Ok(ControlOptions::default());
-        };
-        let value: JsonValue = serde_json::from_value(given.clone()).map_err(|_error| {
-            ChatFailure::InvalidControl {
-                source: InvalidControlOption::StreamChunkSize,
-            }
-        })?;
-        parse_control_options(Some(&value)).map_err(|source| ChatFailure::InvalidControl { source })
-    }
     async fn send(
         &self,
         call: &ChatCallInput<'_>,
@@ -72,8 +60,17 @@ impl ProviderCalls {
 }
 #[async_trait]
 impl ChatCall for ProviderCalls {
+    // main.py hands stream_chunk_size to the streaming writer; the route's own parser validates it
     fn prepare(&self, request: &ChatRequest) -> Result<ControlOptions, ChatFailure> {
-        self.control(request)
+        let Some(given) = request.passthrough.get("stream_chunk_size") else {
+            return Ok(ControlOptions::default());
+        };
+        let value: JsonValue = serde_json::from_value(given.clone()).map_err(|_error| {
+            ChatFailure::InvalidControl {
+                source: InvalidControlOption::StreamChunkSize,
+            }
+        })?;
+        parse_control_options(Some(&value)).map_err(|source| ChatFailure::InvalidControl { source })
     }
     async fn complete(
         &self,

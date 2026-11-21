@@ -85,7 +85,7 @@ fn request_absent_fields_take_litellm_defaults() {
     assert_eq!(settings.drop_params, None);
     assert_eq!(settings.num_retries, None);
     assert_eq!(settings.request_timeout, None);
-    assert_eq!(settings.api_key, None);
+    assert!(settings.api_key.is_none());
     assert_eq!(settings.api_base, None);
     assert!(!settings.route_all_to_responses);
     assert!(settings.proxy_headers.is_empty());
@@ -145,7 +145,7 @@ fn request_token_call_without_messages_counts_nothing() {
     assert_eq!(call.messages, None);
     assert_eq!(call.tools, None);
     assert_eq!(call.system, None);
-    assert_eq!(call.api_key, None);
+    assert!(call.api_key.is_none());
     assert_eq!(call.api_base, None);
 }
 
@@ -156,7 +156,42 @@ fn request_probe_call_keeps_model_and_key() {
     assert!(call.api_key.is_some());
     let call = parse::<ProbeCall>(r#"{"model": "gpt-4o"}"#).unwrap();
     assert_eq!(call.model, "gpt-4o");
-    assert_eq!(call.api_key, None);
+    assert!(call.api_key.is_none());
+}
+
+#[test]
+fn request_probe_call_becomes_the_model_and_key_arguments() {
+    let call = parse::<ProbeCall>(r#"{"model": "gpt-4o", "api_key": "sk-test"}"#).unwrap();
+    let arguments = call.arguments();
+    assert_eq!(arguments.len(), 2);
+    assert_eq!(
+        arguments.get("model"),
+        Some(&Json::Text(String::from("gpt-4o")))
+    );
+    assert_eq!(
+        arguments.get("api_key"),
+        Some(&Json::Text(String::from("sk-test")))
+    );
+    let keyless = parse::<ProbeCall>(r#"{"model": "gpt-4o"}"#).unwrap();
+    assert_eq!(keyless.arguments().get("api_key"), None);
+    assert_eq!(keyless.arguments().len(), 1);
+}
+
+#[test]
+fn request_null_flags_take_their_defaults() {
+    let text = r#"{"settings": {"route_all_to_responses": null, "add_function_to_prompt": null, "disable_stop_sequence_limit": null}}"#;
+    let settings = parse::<CallWire>(text)
+        .unwrap()
+        .settings
+        .into_settings(2048_u32);
+    assert!(!settings.route_all_to_responses);
+    assert!(!settings.flags.add_function_to_prompt);
+    assert!(!settings.flags.disable_stop_sequence_limit);
+    let routed = parse::<CallWire>(r#"{"settings": {"route_all_to_responses": true}}"#)
+        .unwrap()
+        .settings
+        .into_settings(2048_u32);
+    assert!(routed.route_all_to_responses);
 }
 
 #[test]

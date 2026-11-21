@@ -20,7 +20,7 @@ fn closing_the_stream_ends_it_before_its_chunks_run_out() {
     Python::initialize();
     Python::attach(|py| {
         let stream = NativeChatStream::new(vec![String::from("first")]);
-        stream.close(py).unwrap();
+        stream.close(py);
         assert_eq!(stream.next_chunk(py), None);
     });
 }

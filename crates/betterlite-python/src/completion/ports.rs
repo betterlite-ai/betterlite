@@ -19,7 +19,10 @@ use betterlite_sdk::completion_request::ports::{
 use betterlite_tokenizer::count::Counter;
 use betterlite_tokenizer::count::request::{Message, TokenRequest};
 use chrono::{DateTime, FixedOffset, Utc};
+use serde_json::value::RawValue;
 use std::time::{Duration, Instant};
+use tokio::time;
+use uuid::Uuid;
 mod tests;
 // LiteLLM reads the clock out of the wrapper: utcnow for the response, monotonic for elapsed time
 pub(crate) struct SystemClock {
@@ -43,14 +46,14 @@ impl WrapperClock for SystemClock {
 pub(crate) struct SystemIds;
 impl IdSource for SystemIds {
     fn next_call_id(&self) -> String {
-        uuid::Uuid::new_v4().to_string()
+        Uuid::new_v4().to_string()
     }
 }
 pub(crate) struct TokioSleeper;
 #[async_trait]
 impl Sleeper for TokioSleeper {
     async fn sleep(&self, duration: Duration) {
-        tokio::time::sleep(duration).await;
+        time::sleep(duration).await;
     }
 }
 // the SDK hands a response through unchanged when no fake stream is in play
@@ -58,7 +61,7 @@ pub(crate) struct IdentityStream;
 impl FakeStreamPort for IdentityStream {
     fn wrap_model_response(
         &self,
-        response: Box<serde_json::value::RawValue>,
+        response: Box<RawValue>,
         _model: &str,
         _provider: &str,
         _logging: &AgenticLoggingHandle<'_>,

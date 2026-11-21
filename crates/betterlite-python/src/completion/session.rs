@@ -6,17 +6,15 @@ use super::error::SessionError;
 use super::facts::{CatalogFacts, SessionMetadata};
 use super::ports::{IdentityStream, LocalCounter, SystemClock, SystemIds, TokioSleeper};
 use super::setup::{
-    DEFAULT_MEDIUM_THINKING_BUDGET, global_credentials, openai_defaults, redactor, runtime_config,
+    DEFAULT_MEDIUM_THINKING_BUDGET, global_credentials, openai_defaults, outbound_client, redactor,
+    runtime_config,
 };
-use super::targets::{self, TargetPorts, TargetSpec};
+use super::targets::{self, CallScope, TargetSpec};
 use betterlite_config::loader::startup::process_environment;
-use betterlite_config::proxy::ProxyPolicy;
-use betterlite_config::types::ProxyTrust;
 use betterlite_context::agentic_callback::AgenticCallback;
 use betterlite_core::environment_validation::probe::{check_valid_key, valid_model};
 use betterlite_http::proxy::ProxiedClient;
-use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
-use betterlite_models::decisions::Json;
+use betterlite_models::catalog::BundledCatalog;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
@@ -24,23 +22,23 @@ use betterlite_models::provider_model_sets::ProviderModelSets;
 use betterlite_models::resolution::{
     ResolutionContext, ResolutionError, ResolutionRequest, ResolvedModel, resolve,
 };
-use betterlite_openai::chat::deployment::OpenAiDefaults;
+use betterlite_openai::chat::deployment::{ChatDeployment, OpenAiDefaults};
 use betterlite_openai::openai_base_config::CatalogCapabilities;
 use betterlite_openai::text_completion_execution::catalog::CompletionCatalog;
-use betterlite_sdk::call_setup::RequestMap;
 use betterlite_sdk::call_wrapper::error::{CallError, plain_error};
 use betterlite_sdk::call_wrapper::ports::{IdSource, WrapperClock};
 use betterlite_sdk::call_wrapper::target::CallTarget as _;
 use betterlite_sdk::completion_call::error::into_call_error;
 use betterlite_sdk::completion_call::probe::CompletionProbe;
+use betterlite_sdk::completion_call::target::CompletionTarget;
 use betterlite_sdk::completion_call::target_async::AsyncCompletionTarget;
 use betterlite_sdk::completion_call::tokens::{
     TokenCountRequest, TokenCountResponse, count_tokens,
 };
 use betterlite_sdk::completion_request::args::CompletionSettings;
+use betterlite_sdk::completion_request::ports::ProviderLookup;
 use betterlite_tokenizer::count::Counter;
 use betterlite_tokenizer::count::runtime::runtime_counter;
-use secrecy::ExposeSecret as _;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::time::Duration;
@@ -59,7 +57,7 @@ pub(crate) enum ProbeAnswer {
 // Everything one Python session owns: the environment snapshot, the HTTP client and the catalog it resolves against.
 pub(crate) struct SessionCore {
     environment: BTreeMap<String, String>,
-    catalog: Arc<ModelCatalog>,
+    facts: CatalogFacts,
     known_model_names: BTreeSet<String>,
     custom_providers: BTreeSet<String>,
     registry: JSONProviderRegistry,
@@ -77,16 +75,7 @@ impl SessionCore {
     pub(crate) fn build(text: &str) -> Result<Self, SessionError> {
         let wire: SessionWire = parse(text)?;
         let environment = wire.environment.unwrap_or_else(process_environment);
-        let policy =
-            ProxyPolicy::resolve(&ProxyTrust::default(), &environment).map_err(|error| {
-                SessionError::Proxy {
-                    message: error.to_string(),
-                }
-            })?;
-        let client =
-            ProxiedClient::outbound(&Arc::new(policy)).map_err(|error| SessionError::Client {
-                message: error.to_string(),
-            })?;
+        let client = outbound_client(&environment)?;
         let catalog = BundledCatalog::default().get();
         let completion = CompletionCatalog::new(&catalog);
         let mut model_sets = ProviderModelSets::default();
@@ -98,7 +87,7 @@ impl SessionCore {
         Ok(Self {
             defaults: openai_defaults(&environment),
             environment,
-            catalog,
+            facts: CatalogFacts { catalog },
             known_model_names: BTreeSet::new(),
             custom_providers: BTreeSet::new(),
             registry: JSONProviderRegistry::load(),
@@ -135,7 +124,7 @@ impl SessionCore {
     // the resolution context carries one snapshot of every outside value a get_llm_provider call reads
     pub(crate) fn context(&self, globals: &GlobalCredentials) -> ResolutionContext<'_> {
         ResolutionContext {
-            catalog: &self.catalog,
+            catalog: &self.facts.catalog,
             known_model_names: &self.known_model_names,
             custom_providers: &self.custom_providers,
             environment: &self.environment,
@@ -144,6 +133,34 @@ impl SessionCore {
             globals: globals.clone(),
         }
     }
+    // the ports a call borrows for as long as its target lives, with litellm.api_key and api_base of this call
+    fn scope(&self, globals: GlobalCredentials) -> CallScope<'_> {
+        CallScope {
+            metadata: SessionMetadata {
+                core: self,
+                globals,
+            },
+            bridge: targets::bridge(&self.facts),
+            sleeper: &self.sleeper,
+        }
+    }
+    fn target<'scope>(
+        &self,
+        scope: &'scope CallScope<'scope>,
+        settings: CompletionSettings,
+        deployments: Vec<ChatDeployment>,
+    ) -> Result<CompletionTarget<'scope>, CallError> {
+        let spec = TargetSpec {
+            settings,
+            deployments,
+            redactor: redactor()?,
+            client: self.client.clone(),
+            capabilities: self.capabilities.clone(),
+            ids: Arc::clone(&self.ids),
+            clock: Arc::clone(&self.clock),
+        };
+        Ok(targets::build(scope, spec))
+    }
     pub(crate) async fn call(
         &self,
         wire: CallWire,
@@ -151,40 +168,17 @@ impl SessionCore {
     ) -> Result<OutcomeParts, CallError> {
         let settings = wire.settings.into_settings(self.medium_thinking_budget);
         let globals = global_credentials(&settings);
-        let spec = TargetSpec {
-            deployments: deployments::all(self, &wire.arguments, &settings, &globals),
-            redactor: redactor()?,
-            client: self.client.clone(),
-            capabilities: self.capabilities.clone(),
-            ids: Arc::clone(&self.ids),
-            clock: Arc::clone(&self.clock),
-            settings,
-        };
-        let metadata = SessionMetadata {
-            core: self,
-            globals,
-        };
-        let facts = CatalogFacts {
-            catalog: &self.catalog,
-        };
-        let bridge = targets::bridge(&facts);
-        let target = targets::build(
-            TargetPorts {
-                metadata: &metadata,
-                facts: &facts,
-                bridge: &bridge,
-                sleeper: &self.sleeper,
-            },
-            spec,
-        );
+        let deployments = deployments::all(self, &wire.arguments, &settings, &globals);
+        let scope = self.scope(globals);
+        let target = self.target(&scope, settings, deployments)?;
         let outcome = if acompletion {
             let callbacks: Vec<Arc<dyn AgenticCallback>> = Vec::new();
-            let target = AsyncCompletionTarget {
+            let awaitable = AsyncCompletionTarget {
                 inner: target,
                 callbacks: &callbacks,
                 fake_stream: &IdentityStream,
             };
-            target.call(wire.arguments, None).await
+            awaitable.call(wire.arguments, None).await
         } else {
             target.call(wire.arguments, None).await
         }?;
@@ -218,46 +212,14 @@ impl SessionCore {
     ) -> Result<ProbeAnswer, CallError> {
         let settings = CompletionSettings::default();
         let globals = global_credentials(&settings);
-        let mut arguments = RequestMap::new();
-        arguments.insert(String::from("model"), Json::Text(call.model.clone()));
-        if let Some(key) = &call.api_key {
-            arguments.insert(
-                String::from("api_key"),
-                Json::Text(key.expose_secret().to_owned()),
-            );
-        }
-        let deployments = deployments::all(self, &arguments, &settings, &globals);
+        let deployments = deployments::all(self, &call.arguments(), &settings, &globals);
         let Some(found) = deployments.first() else {
             return Ok(ProbeAnswer::Invalid);
         };
         let api_base = Some(found.api_base.clone());
         let api_key = found.api_key.clone();
-        let spec = TargetSpec {
-            settings,
-            deployments,
-            redactor: redactor()?,
-            client: self.client.clone(),
-            capabilities: self.capabilities.clone(),
-            ids: Arc::clone(&self.ids),
-            clock: Arc::clone(&self.clock),
-        };
-        let metadata = SessionMetadata {
-            core: self,
-            globals,
-        };
-        let facts = CatalogFacts {
-            catalog: &self.catalog,
-        };
-        let bridge = targets::bridge(&facts);
-        let target = targets::build(
-            TargetPorts {
-                metadata: &metadata,
-                facts: &facts,
-                bridge: &bridge,
-                sleeper: &self.sleeper,
-            },
-            spec,
-        );
+        let scope = self.scope(globals);
+        let target = self.target(&scope, settings, deployments)?;
         let probe = CompletionProbe {
             client: &self.client,
             completion: &target,
