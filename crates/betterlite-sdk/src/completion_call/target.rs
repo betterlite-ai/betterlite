@@ -28,7 +28,7 @@ use futures_util::StreamExt as _;
 use futures_util::stream;
 use serde::de::DeserializeOwned;
 use std::sync::Arc;
-const MAX_MODEL_LIST_DEPLOYMENTS: usize = 100;
+pub(crate) const MAX_MODEL_LIST_DEPLOYMENTS: usize = 100;
 const MODEL_LIST_CONCURRENCY: usize = 10;
 pub struct CompletionTarget<'ports> {
     pub settings: CompletionSettings,
@@ -147,13 +147,18 @@ impl CompletionTarget<'_> {
         }
         let mut base = request::args_to_map(&call.args)?;
         base.shift_remove("model_list");
-        let mut attempts = stream::iter(call.deployments.iter().map(|entry| {
-            let mut attempt = base.clone();
+        let mut requests = Vec::with_capacity(deployment_count);
+        for entry in &call.deployments {
             for (name, value) in entry {
-                attempt.insert(name.clone(), value.clone());
+                base.insert(name.clone(), value.clone());
             }
-            self.call(attempt, logging)
-        }))
+            requests.push(base.clone());
+        }
+        let mut attempts = stream::iter(
+            requests
+                .into_iter()
+                .map(|attempt| self.call(attempt, logging)),
+        )
         .buffer_unordered(MODEL_LIST_CONCURRENCY);
         let mut last_failure: Option<CompletionCallError> = None;
         while let Some(result) = attempts.next().await {
