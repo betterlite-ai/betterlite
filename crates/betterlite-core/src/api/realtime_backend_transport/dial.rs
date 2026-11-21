@@ -3,6 +3,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use betterlite_config::tls::Verification;
 use betterlite_openai::realtime::message_cap::oversized_message_close;
+use tokio::time::timeout;
 
 use crate::api::realtime_backend_relay::source::{RealtimeBackendSource, RelayReceiveError};
 use crate::api::realtime_contracts::close::{CloseFrame, ConnectionClosed};
@@ -66,7 +67,7 @@ where
 {
     let mut last_error: Option<DialError> = None;
     for _attempt in 0..MAX_OPEN_ATTEMPTS {
-        match tokio::time::timeout(OPEN_TIMEOUT, dialer.connect(request)).await {
+        match timeout(OPEN_TIMEOUT, dialer.connect(request)).await {
             Ok(Ok(backend)) => return Ok(backend),
             Ok(Err(error)) if !error.is_retryable() => return Err(error),
             Ok(Err(error)) => last_error = Some(error),
@@ -83,13 +84,13 @@ where
 }
 
 // The bounded-input policy for frames the dialer let through: one over the configured cap closes the session with 1009
-pub struct SizeLimitedSource<'source> {
-    pub inner: &'source mut (dyn RealtimeBackendSource + 'source),
+pub struct SizeLimitedSource {
+    pub inner: Box<dyn RealtimeBackendSource>,
     pub max_message_size_bytes: usize,
 }
 
 #[async_trait]
-impl RealtimeBackendSource for SizeLimitedSource<'_> {
+impl RealtimeBackendSource for SizeLimitedSource {
     async fn recv(&mut self, decode: Option<bool>) -> Result<RealtimeMessage, RelayReceiveError> {
         let message = self.inner.recv(decode).await?;
         let size = match &message {

@@ -1,4 +1,5 @@
 use std::error::Error as StdError;
+use std::mem;
 use std::sync::Arc;
 
 use betterlite_config::api::realtime_session_state::LoggedEventTypes;
@@ -138,40 +139,38 @@ where
             .open_backend(url, headers)
             .await
             .map_err(RealtimeConnectionError::Config)?;
-        match provider_backend {
-            Some(backend) => Ok(ConnectedBackend {
+        if let Some(backend) = provider_backend {
+            return Ok(ConnectedBackend {
                 sender: Box::new(backend),
                 source: None,
-            }),
-            None => {
-                let request = DialRequest {
-                    url,
-                    headers,
-                    ssl: &ssl,
-                    max_size: self.max_message_size_bytes,
-                    open_timeout: OPEN_TIMEOUT,
-                };
-                open_realtime_backend_ws(self.dialer, &request)
-                    .await
-                    .map_err(RealtimeConnectionError::Dial)
-            }
+            });
         }
+        let request = DialRequest {
+            url,
+            headers,
+            ssl: &ssl,
+            max_size: self.max_message_size_bytes,
+            open_timeout: OPEN_TIMEOUT,
+        };
+        open_realtime_backend_ws(self.dialer, &request)
+            .await
+            .map_err(RealtimeConnectionError::Dial)
     }
 
     async fn forward(
         &mut self,
         state: &mut RealtimeStreaming,
-        source: Option<Box<dyn RealtimeBackendSource>>,
+        backend_source: Option<Box<dyn RealtimeBackendSource>>,
     ) -> Result<(), RealtimeConnectionError<Config::Error, Callback::Error, Relay::Error>> {
-        let mut source = source;
-        let mut limited = source.as_deref_mut().map(|inner| SizeLimitedSource {
-            inner,
-            max_message_size_bytes: self.max_message_size_bytes,
-        });
-        let source_ref = limited
-            .as_mut()
-            .map(|limited| limited as &mut dyn RealtimeBackendSource);
-        self.send_initial_frame(state).await?;
+        let mut source: Option<Box<dyn RealtimeBackendSource>> =
+            backend_source.map(|owned| -> Box<dyn RealtimeBackendSource> {
+                Box::new(SizeLimitedSource {
+                    inner: owned,
+                    max_message_size_bytes: self.max_message_size_bytes,
+                })
+            });
+        let source_ref = source.as_deref_mut();
+        setup::send_initial_frame(self, state).await?;
         self.relay
             .relay(SessionRelay {
                 state,
@@ -184,13 +183,14 @@ where
 
     fn build_state(&mut self, backend: Box<dyn RealtimeBackend>) -> RealtimeStreaming {
         let mut request_data = IndexMap::new();
-        if let Some(metadata) = self.litellm_metadata {
-            if !metadata.is_empty() {
-                request_data.insert(
-                    "litellm_metadata".to_owned(),
-                    Json::Object(metadata.clone()),
-                );
-            }
+        if let Some(metadata) = self
+            .litellm_metadata
+            .filter(|metadata| !metadata.is_empty())
+        {
+            request_data.insert(
+                "litellm_metadata".to_owned(),
+                Json::Object(metadata.clone()),
+            );
         }
         let provider_config: Box<dyn RealtimeProviderConfig> = Box::new(ProviderState {
             provider: Arc::clone(&self.provider),
@@ -205,7 +205,7 @@ where
             logging_worker: self.logging_worker.take(),
             provider_config: Some(provider_config),
             event_normalizer: None,
-            logged_real_time_event_types: std::mem::take(&mut self.logged_real_time_event_types),
+            logged_real_time_event_types: mem::take(&mut self.logged_real_time_event_types),
             model: self.model.to_owned(),
             user_api_key_dict: self.user_api_key_dict.take(),
             request_data: Some(request_data),
