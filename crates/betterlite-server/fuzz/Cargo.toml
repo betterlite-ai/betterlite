@@ -453,3 +453,10 @@ path = "fuzz_targets/object_permissions.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "stored_ui_settings"
+path = "fuzz_targets/stored_ui_settings.rs"
+test = false
+doc = false
+bench = false
