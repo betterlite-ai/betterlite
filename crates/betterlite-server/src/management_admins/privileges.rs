@@ -32,10 +32,10 @@ where
     if caller.proxy_admin {
         return true;
     }
-    let (Some(teams), Some(user_id)) = (teams, caller.user_id) else {
+    let (Some(team_reads), Some(user_id)) = (teams, caller.user_id) else {
         return false;
     };
-    match privileges_block(user_id, caller, users, teams, cache).await {
+    match privileges_block(user_id, caller, users, team_reads, cache).await {
         Ok(granted) => granted,
         Err(error) => {
             tracing::debug!("Error checking admin privileges for user {user_id}: {error}");
@@ -55,8 +55,8 @@ where
     Users: AdminUserReads + ?Sized,
     Teams: TeamReads + ?Sized,
 {
-    let cache = match cache {
-        Some(cache) => cache,
+    let read_cache = match cache {
+        Some(given) => given,
         None => users.fresh_cache()?,
     };
     let request = UserLookupRequest {
@@ -66,7 +66,7 @@ where
         user_id_upsert: false,
         check_db_only: None,
     };
-    let Some(user) = users.user_object(request, cache).await? else {
+    let Some(user) = users.user_object(request, read_cache).await? else {
         return Ok(false);
     };
     if has_org_admin_membership(&user) {
@@ -101,8 +101,8 @@ where
 {
     match (caller.proxy_admin, teams, caller.user_id) {
         (true, _, _) => true,
-        (false, Some(teams), Some(user_id)) => {
-            match invite_block(target_user_id, caller, users, teams, cache).await {
+        (false, Some(team_reads), Some(user_id)) => {
+            match invite_block(target_user_id, caller, users, team_reads, cache).await {
                 Ok(granted) => granted,
                 Err(error) => {
                     tracing::debug!("Error checking invite permission for user {user_id}: {error}");
@@ -129,8 +129,8 @@ where
     let Some(admin_user_id) = caller.user_id else {
         return Ok(false);
     };
-    let cache = match cache {
-        Some(cache) => cache,
+    let read_cache = match cache {
+        Some(given) => given,
         None => users.fresh_cache()?,
     };
     let admin_request = UserLookupRequest {
@@ -140,7 +140,10 @@ where
         user_id_upsert: false,
         check_db_only: None,
     };
-    let Some(admin) = users.user_object(admin_request, Arc::clone(&cache)).await? else {
+    let Some(admin) = users
+        .user_object(admin_request, Arc::clone(&read_cache))
+        .await?
+    else {
         return Ok(false);
     };
     let target_request = UserLookupRequest {
@@ -150,7 +153,7 @@ where
         user_id_upsert: false,
         check_db_only: None,
     };
-    let Some(target) = users.user_object(target_request, cache).await? else {
+    let Some(target) = users.user_object(target_request, read_cache).await? else {
         return Ok(false);
     };
     if org_admin_can_invite_user(&admin, &target) {

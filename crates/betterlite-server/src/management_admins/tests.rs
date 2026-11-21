@@ -114,9 +114,13 @@ async fn same_cache_two_reads() {
     let supplied: Arc<dyn UserCache> = Arc::new(FakeCache::new(60.0_f64));
     let with_supplied = Some(Arc::clone(&supplied));
     assert!(!admin_can_invite_user("u2", &admin, &users, Some(&teams), with_supplied).await);
-    let calls = users.calls();
-    assert_eq!(calls.len(), 2);
-    assert!(calls.iter().all(|call| Arc::ptr_eq(&call.cache, &supplied)));
+    let supplied_calls = users.calls();
+    assert_eq!(supplied_calls.len(), 2);
+    assert!(
+        supplied_calls
+            .iter()
+            .all(|call| Arc::ptr_eq(&call.cache, &supplied))
+    );
     assert!(users.fresh().is_empty());
     assert!(!admin_can_invite_user("u2", &admin, &users, Some(&teams), None).await);
     let calls = users.calls();

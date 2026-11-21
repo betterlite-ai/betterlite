@@ -11,7 +11,7 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use tokio_util::task::TaskTracker;
 
 use crate::management_admins::adapters::LookupUserReads;
-use crate::management_admins::ports::{AdminUserReads, UserReadError};
+use crate::management_admins::ports::{AdminUserReads as _, UserReadError};
 
 use super::support::{FakeCache, user};
 
@@ -53,7 +53,7 @@ async fn user_object_reads_the_given_cache() {
     let fresh = reads
         .fresh_cache()
         .expect("the adapter builds its own dual cache");
-    assert_eq!(fresh.management_ttl(), 60.0_f64);
+    assert_eq!(fresh.management_ttl().to_bits(), 60.0_f64.to_bits());
     let request = UserLookupRequest {
         user_id: Some("u1"),
         sso_user_id: None,
