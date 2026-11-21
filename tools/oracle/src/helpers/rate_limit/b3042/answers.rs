@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::sync::PoisonError;
 
 use betterlite_rate_limit::limiter_records::{
     CacheCounterValue, RateLimitResponse, ReservationWindowIdentity,
@@ -49,29 +50,49 @@ fn increment_json(operation: &IncrementOperation) -> Value {
 }
 
 pub(super) fn effects_json(effects: &Effects) -> Value {
-    let mut reads: Vec<Value> = Vec::new();
-    for record in effects.reads() {
-        reads.push(read_json(&record));
+    let reads = effects
+        .reads
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
+    let writes = effects
+        .writes
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
+    let increments = effects
+        .increments
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
+    let pipelines = effects
+        .pipelines
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
+    let mut read_values: Vec<Value> = Vec::new();
+    for record in &reads {
+        read_values.push(read_json(record));
     }
-    let mut writes: Vec<Value> = Vec::new();
-    for record in effects.writes() {
-        writes.push(write_json(&record));
+    let mut write_values: Vec<Value> = Vec::new();
+    for record in &writes {
+        write_values.push(write_json(record));
     }
-    let mut increments: Vec<Value> = Vec::new();
-    for operation in effects.increments() {
-        increments.push(increment_json(&operation));
+    let mut increment_values: Vec<Value> = Vec::new();
+    for operation in &increments {
+        increment_values.push(increment_json(operation));
     }
-    let mut pipelines: Vec<Value> = Vec::new();
-    for operations in effects.pipelines() {
-        pipelines.push(Value::Array(
+    let mut pipeline_values: Vec<Value> = Vec::new();
+    for operations in &pipelines {
+        pipeline_values.push(Value::Array(
             operations.iter().map(increment_json).collect(),
         ));
     }
     json!({
-        "reads": reads,
-        "writes": writes,
-        "increments": increments,
-        "pipelines": pipelines,
+        "reads": read_values,
+        "writes": write_values,
+        "increments": increment_values,
+        "pipelines": pipeline_values,
     })
 }
 

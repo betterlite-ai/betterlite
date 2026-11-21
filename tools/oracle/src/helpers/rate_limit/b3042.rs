@@ -18,7 +18,7 @@ use betterlite_rate_limit::token_adjustments::store::TokenAdjustments;
 use betterlite_rate_limit::token_reservations::{TokenReservationError, TokenReservations};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use tokio::runtime::Builder;
+use tokio::runtime::{Builder, Runtime};
 use tokio::sync::Mutex;
 
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
@@ -126,6 +126,7 @@ impl Helper for Op {
 }
 
 struct Fixture {
+    runtime: Runtime,
     effects: Arc<Effects>,
     adjustments: TokenAdjustments,
     descriptors: ModelDescriptorBuilder,
@@ -143,7 +144,9 @@ impl Fixture {
     ) -> Result<Self, Box<HelperError>> {
         let effects = Arc::new(Effects::default());
         let recording = Arc::new(RecordingCache::new(cache, Arc::clone(&effects)));
-        let usage = Arc::new(RecordingUsage::new(Arc::clone(&effects)));
+        let usage = Arc::new(RecordingUsage {
+            effects: Arc::clone(&effects),
+        });
         let clock = FixedClock::at(now)
             .ok_or("the case time is too large")
             .or_value_error()?;
@@ -161,11 +164,14 @@ impl Fixture {
             guarded_token_script: None,
         };
         Ok(Self {
+            runtime: Builder::new_current_thread().build()?,
             effects,
             adjustments,
             descriptors: ModelDescriptorBuilder {
                 window_size,
-                resolver: Box::new(GroupMap::new(groups.clone())),
+                resolver: Box::new(GroupMap {
+                    groups: groups.clone(),
+                }),
             },
             clock,
             providers: UnresolvedProviders,
@@ -216,13 +222,10 @@ fn answer(
 
 fn reserve_tpm(case: &ReserveTpmInput) -> HelperResult {
     let fixture = Fixture::new(case.window_size, case.now, &case.groups, &case.cache)?;
-    let runtime = Builder::new_current_thread().build()?;
-    let response = runtime
-        .block_on(
-            fixture
-                .reservations()
-                .reserve_tpm_tokens(&case.descriptors, case.estimated_tokens),
-        )
+    let reservations = fixture.reservations();
+    let response = fixture
+        .runtime
+        .block_on(reservations.reserve_tpm_tokens(&case.descriptors, case.estimated_tokens))
         .or_value_error()?;
     Ok(answer(Some(&response), 0, 0, Value::Null, &fixture.effects))
 }
@@ -231,31 +234,34 @@ fn refund_reserved(case: &RefundReservedInput) -> HelperResult {
     let fixture = Fixture::new(case.window_size, case.now, &case.groups, &case.cache)?;
     let windows: BTreeSet<ReservationWindowIdentity> =
         case.reservation_windows.iter().cloned().collect();
-    let runtime = Builder::new_current_thread().build()?;
-    runtime
-        .block_on(fixture.reservations().refund_reserved_tokens(
-            &case.scopes,
-            case.amount,
-            &windows,
-        ))
+    let reservations = fixture.reservations();
+    fixture
+        .runtime
+        .block_on(reservations.refund_reserved_tokens(&case.scopes, case.amount, &windows))
         .or_value_error()?;
     Ok(answer(None, 0, 0, Value::Null, &fixture.effects))
 }
 
 fn reserve_io(case: &IoReserveInput) -> HelperResult {
     let fixture = Fixture::new(case.window_size, case.now, &case.groups, &case.cache)?;
-    let runtime = Builder::new_current_thread().build()?;
-    let reservation = runtime
-        .block_on(fixture.reservations().reserve_io_tokens(
+    let reservations = fixture.reservations();
+    let reservation = fixture
+        .runtime
+        .block_on(reservations.reserve_io_tokens(
             &case.descriptors,
             case.estimated_input_tokens,
             case.estimated_output_tokens,
         ))
         .or_value_error()?;
+    let IoReservation {
+        response,
+        itpm_reserved,
+        otpm_reserved,
+    } = reservation;
     Ok(answer(
-        Some(&reservation.response),
-        reservation.itpm_reserved,
-        reservation.otpm_reserved,
+        Some(&response),
+        itpm_reserved,
+        otpm_reserved,
         Value::Null,
         &fixture.effects,
     ))
@@ -269,13 +275,14 @@ fn enforce_frame(case: &FrameInput) -> HelperResult {
         .map(|fields| UserAPIKeyAuth::construct(AuthInput::Dict(fields)))
         .transpose()
         .or_value_error()?;
-    let runtime = Builder::new_current_thread().build()?;
-    let result = runtime.block_on(fixture.reservations().enforce_frame_project_io_quota(
-        auth.as_ref(),
-        case.requested_model.as_deref(),
-        case.estimated_input_tokens,
-        case.estimated_output_tokens,
-    ));
+    let result = fixture
+        .runtime
+        .block_on(fixture.reservations().enforce_frame_project_io_quota(
+            auth.as_ref(),
+            case.requested_model.as_deref(),
+            case.estimated_input_tokens,
+            case.estimated_output_tokens,
+        ));
     let raised = match result {
         Ok(()) => Value::Null,
         Err(error) => raised_json(&error)?,

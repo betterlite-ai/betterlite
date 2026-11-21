@@ -122,12 +122,12 @@ impl CounterCache for RecordingCache {
     }
 
     async fn set_cache(&self, key: &str, value: CacheCounterValue, ttl: i64, local_only: bool) {
-        self.effects.push_write(WriteRecord {
-            key: key.to_owned(),
-            value: WriteValue::Counter(value.clone()),
-            ttl: Some(ttl),
+        self.effects.push_write(write_record(
+            key,
+            WriteValue::Counter(value.clone()),
+            Some(ttl),
             local_only,
-        });
+        ));
         locked(&self.values).insert(key.to_owned(), value);
     }
 
@@ -161,12 +161,8 @@ impl UsageIncrements for RecordingUsage {
     }
 
     async fn set_local_counter(&self, key: &str, value: f64, ttl: Option<i64>) {
-        self.effects.push_write(WriteRecord {
-            key: key.to_owned(),
-            value: WriteValue::Local(value),
-            ttl,
-            local_only: true,
-        });
+        self.effects
+            .push_write(write_record(key, WriteValue::Local(value), ttl, true));
     }
 }
 
@@ -310,22 +306,26 @@ pub(crate) fn read(key: &str) -> ReadRecord {
     }
 }
 
-pub(crate) fn counter_write(key: &str, value: CacheCounterValue, ttl: i64) -> WriteRecord {
+pub(crate) fn write_record(
+    key: &str,
+    value: WriteValue,
+    ttl: Option<i64>,
+    local_only: bool,
+) -> WriteRecord {
     WriteRecord {
         key: key.to_owned(),
-        value: WriteValue::Counter(value),
-        ttl: Some(ttl),
-        local_only: true,
+        value,
+        ttl,
+        local_only,
     }
 }
 
+pub(crate) fn counter_write(key: &str, value: CacheCounterValue, ttl: i64) -> WriteRecord {
+    write_record(key, WriteValue::Counter(value), Some(ttl), true)
+}
+
 pub(crate) fn local_write(key: &str, value: f64, ttl: i64) -> WriteRecord {
-    WriteRecord {
-        key: key.to_owned(),
-        value: WriteValue::Local(value),
-        ttl: Some(ttl),
-        local_only: true,
-    }
+    write_record(key, WriteValue::Local(value), Some(ttl), true)
 }
 
 pub(crate) fn auth(fields: &str) -> UserAPIKeyAuth {

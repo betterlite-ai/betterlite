@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use betterlite_auth::rejection_provider::ProviderResolution;
@@ -33,31 +33,23 @@ pub(super) struct ReadRecord {
 
 #[derive(Default)]
 pub(super) struct Effects {
-    reads: Mutex<Vec<ReadRecord>>,
-    writes: Mutex<Vec<WriteRecord>>,
-    increments: Mutex<Vec<IncrementOperation>>,
-    pipelines: Mutex<Vec<Vec<IncrementOperation>>>,
-}
-
-fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+    pub(super) reads: Mutex<Vec<ReadRecord>>,
+    pub(super) writes: Mutex<Vec<WriteRecord>>,
+    pub(super) increments: Mutex<Vec<IncrementOperation>>,
+    pub(super) pipelines: Mutex<Vec<Vec<IncrementOperation>>>,
 }
 
 impl Effects {
-    pub(super) fn reads(&self) -> Vec<ReadRecord> {
-        locked(&self.reads).clone()
-    }
-
-    pub(super) fn writes(&self) -> Vec<WriteRecord> {
-        locked(&self.writes).clone()
-    }
-
-    pub(super) fn increments(&self) -> Vec<IncrementOperation> {
-        locked(&self.increments).clone()
-    }
-
-    pub(super) fn pipelines(&self) -> Vec<Vec<IncrementOperation>> {
-        locked(&self.pipelines).clone()
+    fn record_write(&self, key: &str, value: RecordedValue, ttl: Option<i64>, local_only: bool) {
+        self.writes
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(WriteRecord {
+                key: key.to_owned(),
+                value,
+                ttl,
+                local_only,
+            });
     }
 }
 
@@ -85,21 +77,32 @@ impl RecordingCache {
 #[async_trait::async_trait]
 impl CounterCache for RecordingCache {
     async fn get_cache(&self, key: &str, local_only: bool) -> Option<CacheCounterValue> {
-        locked(&self.effects.reads).push(ReadRecord {
-            key: key.to_owned(),
-            local_only,
-        });
-        locked(&self.values).get(key).cloned()
+        self.effects
+            .reads
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(ReadRecord {
+                key: key.to_owned(),
+                local_only,
+            });
+        self.values
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(key)
+            .cloned()
     }
 
     async fn set_cache(&self, key: &str, value: CacheCounterValue, ttl: i64, local_only: bool) {
-        locked(&self.effects.writes).push(WriteRecord {
-            key: key.to_owned(),
-            value: RecordedValue::Counter(value.clone()),
-            ttl: Some(ttl),
+        self.effects.record_write(
+            key,
+            RecordedValue::Counter(value.clone()),
+            Some(ttl),
             local_only,
-        });
-        locked(&self.values).insert(key.to_owned(), value);
+        );
+        self.values
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(key.to_owned(), value);
     }
 
     async fn batch_get_cache(&self, _keys: &[String], _local_only: bool) -> Option<CounterValues> {
@@ -112,32 +115,30 @@ impl CounterCache for RecordingCache {
 }
 
 pub(super) struct RecordingUsage {
-    effects: Arc<Effects>,
-}
-
-impl RecordingUsage {
-    pub(super) fn new(effects: Arc<Effects>) -> Self {
-        Self { effects }
-    }
+    pub(super) effects: Arc<Effects>,
 }
 
 #[async_trait::async_trait]
 impl UsageIncrements for RecordingUsage {
     async fn increment(&self, operation: &IncrementOperation) {
-        locked(&self.effects.increments).push(operation.clone());
+        self.effects
+            .increments
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(operation.clone());
     }
 
     async fn increment_pipeline(&self, operations: &[IncrementOperation]) {
-        locked(&self.effects.pipelines).push(operations.to_vec());
+        self.effects
+            .pipelines
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(operations.to_vec());
     }
 
     async fn set_local_counter(&self, key: &str, value: f64, ttl: Option<i64>) {
-        locked(&self.effects.writes).push(WriteRecord {
-            key: key.to_owned(),
-            value: RecordedValue::Local(value),
-            ttl,
-            local_only: true,
-        });
+        self.effects
+            .record_write(key, RecordedValue::Local(value), ttl, true);
     }
 }
 
@@ -160,13 +161,7 @@ impl LimiterClock for FixedClock {
 }
 
 pub(super) struct GroupMap {
-    groups: BTreeMap<String, String>,
-}
-
-impl GroupMap {
-    pub(super) fn new(groups: BTreeMap<String, String>) -> Self {
-        Self { groups }
-    }
+    pub(super) groups: BTreeMap<String, String>,
 }
 
 impl ModelGroupResolver for GroupMap {
