@@ -105,7 +105,7 @@ def failure_of(error: APIError, status: int | None) -> Failure:
 async def run_outcome(run: Run, api_base: str) -> RunOutcome:
     kwargs = substituted_kwargs(run.kwargs, api_base)
     try:
-        work: Work = litellm.arerank(
+        returned: Work = await litellm.arerank(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L31-L43
             model=run.model,
             query=run.query,
             documents=run.documents,
@@ -116,7 +116,7 @@ async def run_outcome(run: Run, api_base: str) -> RunOutcome:
             max_chunks_per_doc=run.max_chunks_per_doc,
             **kwargs,
         )
-        answer: RerankResponse = await settled(work)
+        answer: RerankResponse = await settled(returned)
     except APIStatusError as error:
         return RunOutcome(failure=failure_of(error, error.status_code))
     except APIConnectionError as error:
