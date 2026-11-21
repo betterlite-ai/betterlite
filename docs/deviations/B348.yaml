@@ -1,0 +1,84 @@
+task: B348
+deviations:
+  - what: >-
+      max_fallbacks, retry_after, enable_pre_call_checks false and disable_cooldowns false report source
+      "default" or "unset" where LiteLLM reports "config", and a configured disable_cooldowns false is
+      reported as null instead of false.
+    why: >-
+      betterlite reads these keys into Option<i64>, f64 and bool fields that cannot tell a written default
+      from an absent key, so the reported value stays exact but its provenance follows what the router
+      holds. disable_cooldowns is also only written into the store when true, and the router's own
+      attribute is null when the switch is off.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/router_settings_endpoints.py#L52-L61
+  - what: >-
+      An explicitly empty fallbacks, context_window_fallbacks or content_policy_fallbacks list is reported
+      as null with source "default" rather than [] with source "config", and an explicitly empty
+      model_group_alias, routing_strategy_args or default_litellm_params mapping is reported with source
+      "default" (the computed value for default_litellm_params) rather than as the written value with
+      source "config".
+    why: >-
+      betterlite holds these lists and maps as plain collections plus the router's computed defaults, and
+      an empty collection is indistinguishable from an unset key, so provenance and the empty shape follow
+      what the router holds.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/router_settings_endpoints.py#L120-L164
+  - what: >-
+      A context_window_fallbacks or content_policy_fallbacks list written under litellm_settings reports
+      source "config", while LiteLLM reports "default" for it because its router settings store only owns
+      the router_settings block.
+    why: >-
+      betterlite merges the router_settings and litellm_settings lists in one section and keeps no record
+      of which block wrote the list, so a non-empty list is reported as written configuration.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1104-L1120
+  - what: >-
+      A Float setting (timeout, stream_timeout, cooldown_time) written in float notation with a whole value,
+      such as 5.0, is reported as the JSON integer 5.
+    why: >-
+      betterlite reads these settings as f64 and renders a whole f64 without a fraction, so the value is
+      exact and only its JSON text form differs from the YAML number kind LiteLLM echoes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/router_settings_endpoints.py#L134-L135
+  - what: >-
+      Under router_settings.default_litellm_params only timeout and stream_timeout are read; a mapping that
+      carries another key is an unsupported configuration and fails to load.
+    why: >-
+      the routing_timeouts section owns those two keys and no betterlite section reads another key there,
+      so the loader's unsupported-key pass refuses it, where LiteLLM hands the whole mapping to Router and
+      reports it back.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1126-L1133
+  - what: >-
+      router_settings.set_verbose, router_settings.enable_tag_filtering and
+      router_settings.tag_filtering_match_any are unsupported configuration, and the endpoint always
+      reports false, false and true for them.
+    why: >-
+      no betterlite config section reads those three keys, so a file that sets them fails to load instead
+      of silently ignoring them; the field catalog still lists them with LiteLLM's defaults.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L915-L923
+  - what: >-
+      routing_strategy_args is reconstructed only for the strategies betterlite models
+      (latency-based-routing, usage-based-routing and lar1); arguments written under simple-shuffle,
+      least-busy, cost-based-routing or usage-based-routing-v2 are accepted and reported as {} with
+      source "default".
+    why: >-
+      the per-strategy argument sections parse only the strategy they implement, so the raw mapping is kept
+      nowhere else and cannot be reported back.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1184
+  - what: >-
+      A model_group_alias item written as {model: X, hidden: false} is reported as the plain string X.
+    why: >-
+      betterlite's alias type keeps only the target and the hidden flag, so an item that does not hide the
+      alias is indistinguishable from the string form and routes the same way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L1207-L1211
+  - what: >-
+      A retry_policy entry written with an explicit null is dropped from the reported mapping.
+    why: >-
+      each entry is an Option<i64> in the retry_policy section, so a null entry and an absent one are the
+      same value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/router_settings_endpoints.py#L134-L135
+  - what: >-
+      router_settings.num_retries and router_settings.allowed_fails must be integers from 0 to 4294967295,
+      and a routing group's model_priorities values must be non-negative integers; LiteLLM reads all three
+      as plain Python ints.
+    why: >-
+      betterlite parses the first two as u32 and the priorities as u64 while loading the config, so a
+      negative or wider value is a load error rather than a running router with that value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L772-L830
+kept_bugs: []
