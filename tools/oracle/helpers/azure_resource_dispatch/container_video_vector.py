@@ -1,11 +1,14 @@
 from typing import Final, cast
 
+import litellm
 from pydantic import JsonValue
 
 from azure_resource_urls import Input as ResourceUrlsInput
 from azure_resource_urls import run as resource_urls_run
 
 from .contracts import FIELDS, ContainerVideoVectorCase
+
+litellm.suppress_debug_info = True
 
 CONTAINER_KEY: Final[str] = "container_api_version_query"
 VIDEO_KEY: Final[str] = "video_supported_fields"

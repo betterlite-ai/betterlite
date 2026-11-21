@@ -2,6 +2,7 @@ from collections.abc import Callable
 from typing import Final, Literal, TypedDict
 
 import httpx
+import litellm
 import openai
 from pydantic import JsonValue, TypeAdapter
 
@@ -15,6 +16,8 @@ from azure_realtime.types import Input as RealtimeInput
 from azure_responses.contracts import Call as ResponsesCall
 from azure_search.surface import Input as SearchInput
 from azure_thread_messages import Input as ThreadsInput
+
+litellm.suppress_debug_info = True
 
 FIELDS: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
 ROWS: Final[TypeAdapter[list[JsonValue]]] = TypeAdapter(list[JsonValue])

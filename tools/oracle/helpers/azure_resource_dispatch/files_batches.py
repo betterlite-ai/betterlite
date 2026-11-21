@@ -1,3 +1,4 @@
+import litellm
 from pydantic import JsonValue
 
 from azure_batches import run as batches_run
@@ -21,6 +22,9 @@ from .contracts import (
     reply_payload,
     returned_of,
 )
+
+
+litellm.suppress_debug_info = True
 
 
 def file_value(kind: str, row: dict[str, JsonValue]) -> JsonValue:

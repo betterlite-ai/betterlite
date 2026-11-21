@@ -1,9 +1,13 @@
+import litellm
 from pydantic import JsonValue
 
 from azure_realtime import run as realtime_run
 from azure_realtime.types import Input as RealtimeInput
 
 from .contracts import FIELDS, REALTIME_IN, RealtimeCase
+
+
+litellm.suppress_debug_info = True
 
 
 def realtime_input(case: RealtimeCase, kind: str) -> RealtimeInput:

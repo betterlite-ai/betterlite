@@ -1,5 +1,6 @@
 from typing import Final
 
+import litellm
 from pydantic import JsonValue
 
 from azure_assistant_definitions import run as definitions_run
@@ -20,6 +21,8 @@ from .contracts import (
     first_step,
     raise_raised,
 )
+
+litellm.suppress_debug_info = True
 
 DEFINITION_CALLS: Final[dict[str, str]] = {
     "definitions_create": "create_assistant",

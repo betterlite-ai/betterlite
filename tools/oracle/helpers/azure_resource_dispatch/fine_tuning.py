@@ -1,3 +1,4 @@
+import litellm
 from pydantic import JsonValue
 
 from azure_fine_tuning import run as fine_tuning_run
@@ -14,6 +15,9 @@ from .contracts import (
     reply_payload,
     returned_of,
 )
+
+
+litellm.suppress_debug_info = True
 
 
 def job_value(kind: str, row: dict[str, JsonValue]) -> JsonValue:

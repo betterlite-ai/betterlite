@@ -1,3 +1,4 @@
+import litellm
 from pydantic import JsonValue
 
 from azure_responses import run as responses_run
@@ -12,6 +13,9 @@ from .contracts import (
     checked_url,
     first_step,
 )
+
+
+litellm.suppress_debug_info = True
 
 
 def projected_of(row: dict[str, JsonValue]) -> JsonValue:

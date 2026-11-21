@@ -1,8 +1,12 @@
+import litellm
 from pydantic import JsonValue
 
 from azure_passthrough import run as passthrough_run
 
 from .contracts import FIELDS, ROWS, PassthroughCase
+
+
+litellm.suppress_debug_info = True
 
 
 def passthrough(case: PassthroughCase) -> JsonValue:
