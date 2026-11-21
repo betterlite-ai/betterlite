@@ -1,0 +1,14 @@
+kind: helper
+name: genai-generate-mock-default-text
+call:
+  b3489:
+    entry: mock
+    model: gemini-2.5-flash
+    contents:
+      - role: user
+        parts:
+          - text: Hello
+    custom_llm_provider: gemini
+    mock_response: null
+env: {}
+compare: {ignore: []}
