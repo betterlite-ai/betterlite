@@ -180,7 +180,7 @@ def rate_limit_json(rate_limit: RateLimitObject) -> RateLimitJson:
 
 def descriptor_json(descriptor: RateLimitDescriptor) -> DescriptorJson:
     rate_limit = descriptor["rate_limit"]
-    canonical = None
+    canonical: RateLimitJson | None = None
     if rate_limit is not None:
         canonical = rate_limit_json(rate_limit)
     return DescriptorJson(key=descriptor["key"], value=descriptor["value"], rate_limit=canonical)
