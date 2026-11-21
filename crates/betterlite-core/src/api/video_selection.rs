@@ -42,7 +42,6 @@ const PROVIDER_TAGS: &[(ProviderId, VideoConfigTag)] = &[
 ];
 
 // LiteLLM's ProviderConfigManager.get_provider_video_config: a provider with no video config at this pin is None, a known one whose config is not built yet is an error
-#[must_use]
 pub fn get_provider_video_config(
     model: Option<&str>,
     provider: ProviderId,
