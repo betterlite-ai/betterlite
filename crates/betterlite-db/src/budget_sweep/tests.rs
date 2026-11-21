@@ -296,6 +296,8 @@ async fn run_cleanup(
         CleanupCase::LeaderCancel => {
             let handle = tasks.spawn(async move { sweep.reset_budget().await });
             started.notified().await;
+            // The source's finally releases after the phases, so the lease is still held while the keys phase runs.
+            assert_eq!(deletes(cache), 0);
             handle.abort();
             let _cancelled = handle.await;
             tasks.close();
