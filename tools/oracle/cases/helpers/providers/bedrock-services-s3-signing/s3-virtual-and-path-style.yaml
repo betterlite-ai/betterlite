@@ -21,6 +21,8 @@ call:
       - "1x://h/b/k"
       - "https://s3.r.amazonaws.com//k"
       - "https://.s3.r.amazonaws.com/k"
+      - "https://s3..amazonaws.com/b/k?q"
+      - "https://b.s3..amazonaws.com/k?q"
       - "https://s3.us-west-2.amazonaws.com/bkt/litellm-bedrock-files/0123-%C3%A9.jsonl"
       - "https://x/onlybucket"
       - "https://my.bucket.s3.us-west-2.amazonaws.com/k"

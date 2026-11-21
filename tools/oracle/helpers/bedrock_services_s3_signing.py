@@ -2,8 +2,9 @@ import json
 import os
 import time
 from datetime import UTC, datetime
+from functools import partial
 from typing import Final, Literal, NotRequired, TypedDict
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import botocore.auth  # type: ignore[import-untyped]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L1125
 import fastuuid
@@ -71,6 +72,11 @@ class Handoff(TypedDict):
     litellm_params: dict[str, JsonValue]
 
 
+class CreateFileData(TypedDict):
+    file: NotRequired[tuple[str | None, bytes]]
+    purpose: NotRequired[Purpose]
+
+
 class ObjectNames(TypedDict):
     operation: Literal["object_name"]
     files: list[ObjectFile]
@@ -116,14 +122,6 @@ class FileReply(TypedDict):
     status: str | None
 
 
-class FixedUuid:
-    def __init__(self, value: str) -> None:
-        self.value = UUID(value)
-
-    def __call__(self) -> UUID:
-        return self.value
-
-
 class FixedNow:
     def __init__(self, seconds: int) -> None:
         self.moment = datetime.fromtimestamp(seconds, tz=UTC).replace(tzinfo=None)
@@ -160,7 +158,7 @@ def reset_environment(environment: dict[str, str]) -> None:
         }
     )
     os.environ.update(environment)
-    fastuuid.uuid4 = FixedUuid(OBJECT_ID)
+    fastuuid.uuid4 = partial(UUID, OBJECT_ID)
 
 
 def object_name(config: BedrockFilesConfig, file: ObjectFile) -> JsonValue:
@@ -184,16 +182,19 @@ def created(config: BedrockFilesConfig, response: Response) -> JsonValue:
     pairs = [(name.encode(), value.encode("latin-1")) for name, value in response["headers"]]
     raw_response = httpx.Response(status_code=200, headers=pairs)
     params = response["litellm_params"]
+    saved = time.time
+    time.time = partial(float, response["now"])
     try:
-        with patch.object(time, "time", return_value=float(response["now"])):
-            file_object = (
-                config
-                .transform_create_file_response(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L1242
-                    None, raw_response, MagicMock(), params
-                )
+        file_object = (
+            config
+            .transform_create_file_response(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L1242
+                None, raw_response, MagicMock(), params
             )
+        )
     except ValueError:
         return {"failed": True}
+    finally:
+        time.time = saved
     reply = TypeAdapter(FileReply).validate_json(file_object.model_dump_json())
     return {"failed": False, "file": JSON.validate_json(json.dumps(reply))}
 
@@ -213,7 +214,7 @@ def error_class(config: BedrockFilesConfig, call: ErrorCall) -> JsonValue:
 
 def destination(config: BedrockFilesConfig, upload: Upload) -> JsonValue:
     reset_environment(upload["environment"])
-    data: dict[str, object] = {}
+    data: CreateFileData = {}
     if "file" in upload:
         data["file"] = (upload["file"]["filename"], upload["file"]["content"].encode())
     if "purpose" in upload:

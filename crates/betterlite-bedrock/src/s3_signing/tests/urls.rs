@@ -54,6 +54,12 @@ fn path_fallback() {
         // a key that starts with a newline gives the regexes nothing to capture
         ("https://s3.r.amazonaws.com/b/\nx", "s3://b/x | x"),
         ("https://bk.s3.r.amazonaws.com/\nx/y", "s3://x/y | y"),
+        // an empty region fails both regexes, and the fallback drops the query
+        ("https://s3..amazonaws.com/b/k?q", "s3://b/k | k"),
+        (
+            "https://b.s3..amazonaws.com/k?q",
+            "error: Unable to parse S3 URL: https://b.s3..amazonaws.com/k?q",
+        ),
         // a scheme must start with a letter, so 1x: stays part of the path
         ("1x://h/b/k", "s3://1x://h/b/k | k"),
     ]);

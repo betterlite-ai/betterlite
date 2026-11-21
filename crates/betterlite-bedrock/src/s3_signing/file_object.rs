@@ -27,14 +27,6 @@ fn virtual_host(url: &str) -> Option<(&str, &str, &str)> {
     Some((region, bucket, after_region.strip_prefix("amazonaws.com/")?))
 }
 
-// every capture of both patterns is non-empty, and their final . stops at a newline
-fn captured<'url>(
-    (region, bucket, key): (&str, &'url str, &'url str),
-) -> Option<(&'url str, &'url str)> {
-    let matched = key.split('\n').next()?;
-    (!region.is_empty() && !bucket.is_empty() && !matched.is_empty()).then_some((bucket, matched))
-}
-
 // urllib.parse.urlparse(url).path, without the query, fragment and ;params it splits off
 fn parsed_path(url: &str) -> Option<String> {
     let cleaned: String = url
@@ -79,9 +71,13 @@ pub fn convert_https_url_to_s3_uri(url: &str) -> Result<(String, String), S3Sign
     let unparsable = || S3SigningError::UnparsableUrl {
         url: url.to_owned(),
     };
-    let regex_match = path_style(url)
-        .and_then(captured)
-        .or_else(|| virtual_host(url).and_then(captured));
+    // every capture of both patterns is non-empty, and their final . stops at a newline
+    let matched = path_style(url).or_else(|| virtual_host(url));
+    let regex_match = matched.and_then(|(region, bucket, key)| {
+        let capture = key.split('\n').next()?;
+        (!region.is_empty() && !bucket.is_empty() && !capture.is_empty())
+            .then_some((bucket, capture))
+    });
     let (bucket, raw_key) = match regex_match {
         Some((bucket, key)) => (bucket.to_owned(), key.to_owned()),
         None => {
