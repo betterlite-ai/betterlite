@@ -1,21 +1,16 @@
 mod adapter;
 mod adapter_input;
 mod answered;
-mod async_stream;
-mod async_unary;
+pub mod async_stream;
+pub mod async_unary;
 mod caller;
 mod dispatch;
 pub mod error;
 mod fields;
 mod native;
-mod stream;
+pub mod stream;
 mod tests;
-mod unary;
-
-pub use async_stream::agenerate_content_stream;
-pub use async_unary::agenerate_content;
-pub use stream::generate_content_stream;
-pub use unary::generate_content;
+pub mod unary;
 
 use std::time::Duration;
 

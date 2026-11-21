@@ -34,10 +34,13 @@ use indexmap::IndexMap;
 use crate::api::genai::chat_call::{
     CompletionCall, CompletionExecutor, CompletionOutput, Operation,
 };
+use crate::api::genai::generate_content::async_stream::agenerate_content_stream;
+use crate::api::genai::generate_content::async_unary::agenerate_content;
 use crate::api::genai::generate_content::error::GenerateContentFailure;
+use crate::api::genai::generate_content::stream::generate_content_stream;
+use crate::api::genai::generate_content::unary::generate_content;
 use crate::api::genai::generate_content::{
-    GenerateContentAnswer, GenerateContentDeps, GenerateContentRequest, agenerate_content,
-    agenerate_content_stream, generate_content, generate_content_stream,
+    GenerateContentAnswer, GenerateContentDeps, GenerateContentRequest,
 };
 use crate::api::genai_http::config::{AuthCall, AuthTarget, GenerateContentHttpConfig};
 use crate::api::genai_http::service::{

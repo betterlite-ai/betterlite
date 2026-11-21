@@ -8,9 +8,10 @@ use crate::api::genai::chat_call::CompletionExecutor;
 use crate::api::genai_http::config::GenerateContentHttpConfig;
 use crate::api::genai_http::error::GenAiHttpError;
 use crate::api::genai_http::service::{
-    ClientSource, GenerateContentCall as HttpCall, GenerateContentDeps as HttpDeps, StreamSettings,
+    ClientSource, GenerateContentCall as HttpCall, GenerateContentDeps as HttpDeps,
     async_generate_content as async_native_call, generate_content as native_call,
 };
+use crate::api::genai_http::stream::StreamSettings;
 use crate::api::vector_store_http_write::service::{LogContext, SuppliedClient};
 use crate::genai_setup::merge::merge_native_request_fields;
 use crate::genai_setup::setup::GenerateContentSetupResult;

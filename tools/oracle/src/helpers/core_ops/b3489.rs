@@ -5,9 +5,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use betterlite_config::env_integer::timeout::RequestTimeout;
 use betterlite_core::api::genai::generate_content::error::GenerateContentFailure;
+use betterlite_core::api::genai::generate_content::stream::generate_content_stream;
+use betterlite_core::api::genai::generate_content::unary::generate_content;
 use betterlite_core::api::genai::generate_content::{
-    GenerateContentAnswer, GenerateContentDeps, GenerateContentRequest, generate_content,
-    generate_content_stream, mock_generate_content_response,
+    GenerateContentAnswer, GenerateContentDeps, GenerateContentRequest,
+    mock_generate_content_response,
 };
 use betterlite_core::api::genai_http::stream::StreamSettings;
 use betterlite_core::api::vector_store_http_write::service::LogContext;
