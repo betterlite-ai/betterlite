@@ -2,6 +2,7 @@ use betterlite_core::api::request_form::scalars::scalar_float;
 use betterlite_models::decisions::Json;
 use betterlite_models::price_fields::decimal_lexeme::parse_decimal_lexeme;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::FromPrimitive as _;
 
 // A cost value Python's float() keeps as an infinity or a decimal beyond Decimal's range cannot be a Decimal here.
 #[derive(Debug, thiserror::Error)]
@@ -25,9 +26,9 @@ pub fn cost_value(value: Option<&Json>) -> Result<Option<Decimal>, CostError> {
     }
 }
 
-// float() accepted the text, so a decimal failure means the value has no Decimal form.
+// float() accepted the text, so a failure means no Decimal form; from_f64 keeps Python's shortest form.
 fn finite_decimal(value: f64) -> Result<Decimal, CostError> {
-    Decimal::from_f64_retain(value).ok_or_else(|| CostError::NotRepresentable {
+    Decimal::from_f64(value).ok_or_else(|| CostError::NotRepresentable {
         value: value.to_string(),
     })
 }
