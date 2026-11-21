@@ -148,20 +148,16 @@ impl ServingNames for FakeServing {
 
 #[derive(Default)]
 pub(super) struct FakeCache {
-    stored: Mutex<Vec<(String, Vec<String>)>>,
+    stored: Mutex<Option<Value>>,
 }
 
 impl FakeCache {
     pub(super) fn summary(&self) -> Value {
-        match self
-            .stored
+        self.stored
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .last()
-        {
-            Some((team_id, models)) => json!({ "team_id": team_id, "models": models }),
-            None => Value::Null,
-        }
+            .clone()
+            .unwrap_or(Value::Null)
     }
 }
 
@@ -172,10 +168,8 @@ impl TeamObjectCache for FakeCache {
         team_id: &str,
         team: &mut LiteLLMTeamTableCachedObj,
     ) -> Result<(), InvalidationError> {
-        self.stored
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push((team_id.to_owned(), team.team.fields.base.models.clone()));
+        let summary = json!({ "team_id": team_id, "models": team.team.fields.base.models });
+        *self.stored.lock().unwrap_or_else(PoisonError::into_inner) = Some(summary);
         Ok(())
     }
 }

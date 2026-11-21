@@ -179,7 +179,10 @@ class FakeRouter(Router):
 def cache_summary(cache: UserApiKeyCache, team_id: str | None) -> CacheState | None:
     if team_id is None:
         return None
-    cached = cache.get_cache(key=f"team_id:{team_id}", model_type=LiteLLM_TeamTableCachedObj)
+    cached = cache.get_cache(
+        key=f"team_id:{team_id}",
+        model_type=LiteLLM_TeamTableCachedObj,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/user_api_key_cache.py#L104-L127
+    )
     if cached is None:
         return None
     return CacheState(team_id=cached.team_id, models=cached.models)
@@ -205,32 +208,28 @@ def alias_answer(call: AliasCall) -> JsonValue:
     return JSON.validate_python(report)
 
 
-def deployments_answer(call: TeamDeploymentsCall) -> JsonValue:
+def deployment_answer(call: TeamDeploymentsCall | TeamPublicNamesCall) -> JsonValue:
     deployments = FakeDeploymentTable(call["deployments"])
     client = FakePrismaClient(
         FakeDatabase(FakeAliasTable([]), deployments, FakeTeamTable(None, None))
     )
-    rows = asyncio.run(
-        model_management_endpoints._get_team_deployments(  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L1734-L1766
-            team_id=call["team_id"],
-            prisma_client=client,
+    if call["function"] == "get_team_public_model_names":
+        names = asyncio.run(
+            model_management_endpoints._get_team_public_model_names(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L1812-L1831
+                team_id=call["team_id"],
+                prisma_client=client,
+            )
         )
-    )
-    return JSON.validate_python({"deployments": [row.model_name for row in rows]})
-
-
-def public_names_answer(call: TeamPublicNamesCall) -> JsonValue:
-    deployments = FakeDeploymentTable(call["deployments"])
-    client = FakePrismaClient(
-        FakeDatabase(FakeAliasTable([]), deployments, FakeTeamTable(None, None))
-    )
-    names = asyncio.run(
-        model_management_endpoints._get_team_public_model_names(  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L1812-L1831
-            team_id=call["team_id"],
-            prisma_client=client,
+        report: dict[str, JsonValue] = {"names": sorted(names)}
+    else:
+        rows = asyncio.run(
+            model_management_endpoints._get_team_deployments(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L1734-L1766
+                team_id=call["team_id"],
+                prisma_client=client,
+            )
         )
-    )
-    return JSON.validate_python({"names": sorted(names)})
+        report = {"deployments": [row.model_name for row in rows]}
+    return JSON.validate_python(report)
 
 
 def remove_answer(call: RemoveCall) -> JsonValue:
@@ -241,20 +240,21 @@ def remove_answer(call: RemoveCall) -> JsonValue:
     cache = UserApiKeyCache()
     served = call.get("served_names")
     router = None if served is None else FakeRouter(served)
+    model_info: dict[str, JsonValue] = {
+        "team_id": call.get("team_id"),
+        "team_public_model_name": call.get("team_public_model_name"),
+    }
     model = Deployment(
         model_name=call["model_name"],
         litellm_params=LiteLLM_Params(model="openai/gpt-4o"),
-        model_info={
-            "team_id": call.get("team_id"),
-            "team_public_model_name": call.get("team_public_model_name"),
-        },
+        model_info=model_info,
     )
     asyncio.run(
-        model_management_endpoints._remove_unbacked_team_models(  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L1834-L1907
+        model_management_endpoints._remove_unbacked_team_models(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L1834-L1907
             model_params=model,
             prisma_client=client,
             user_api_key_cache=cache,
-            proxy_logging_obj=cast(ProxyLogging, None),  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L1834-L1844
+            proxy_logging_obj=cast(ProxyLogging, None),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L1834-L1844
             llm_router=router,
         )
     )
@@ -273,9 +273,9 @@ def answer(call: JsonValue) -> JsonValue:
     if function == "delete_team_model_alias":
         return alias_answer(ALIAS_CALL.validate_python(call))
     if function == "get_team_deployments":
-        return deployments_answer(DEPLOYMENTS_CALL.validate_python(call))
+        return deployment_answer(DEPLOYMENTS_CALL.validate_python(call))
     if function == "get_team_public_model_names":
-        return public_names_answer(PUBLIC_NAMES_CALL.validate_python(call))
+        return deployment_answer(PUBLIC_NAMES_CALL.validate_python(call))
     if function == "remove_unbacked_team_models":
         return remove_answer(REMOVE_CALL.validate_python(call))
     raise ValueError(f"unknown function {function}")

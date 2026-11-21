@@ -24,8 +24,8 @@ pub(super) async fn answer(input: &Input) -> HelperResult {
 async fn answer_call(call: &Call) -> HelperResult {
     match call {
         Call::DeleteTeamModelAlias(call) => alias_answer(call).await,
-        Call::GetTeamDeployments(call) => deployments_answer(call).await,
-        Call::GetTeamPublicModelNames(call) => public_names_answer(call).await,
+        Call::GetTeamDeployments(call) => deployment_answer(call, false).await,
+        Call::GetTeamPublicModelNames(call) => deployment_answer(call, true).await,
         Call::RemoveUnbackedTeamModels(call) => remove_answer(call).await,
     }
 }
@@ -42,22 +42,20 @@ async fn alias_answer(call: &AliasCall) -> HelperResult {
     Ok(json!({ "removed": pairs, "aliases": store.alias_summary() }))
 }
 
-async fn deployments_answer(call: &DeploymentCall) -> HelperResult {
+async fn deployment_answer(call: &DeploymentCall, public_names: bool) -> HelperResult {
     let store = FakeStore::new(&call.team_id, None, Vec::new(), call.deployments.clone());
-    let found = team_deployments(&call.team_id, &store)
+    if public_names {
+        let found = team_public_model_names(&call.team_id, &store)
+            .await
+            .map_err(|error| failure("CleanupError", error.to_string()))?;
+        let names: Vec<String> = found.into_iter().collect();
+        return Ok(json!({ "names": names }));
+    }
+    let rows = team_deployments(&call.team_id, &store)
         .await
         .map_err(|error| failure("CleanupError", error.to_string()))?;
-    let names: Vec<String> = found.into_iter().map(|row| row.model_name).collect();
+    let names: Vec<String> = rows.into_iter().map(|row| row.model_name).collect();
     Ok(json!({ "deployments": names }))
-}
-
-async fn public_names_answer(call: &DeploymentCall) -> HelperResult {
-    let store = FakeStore::new(&call.team_id, None, Vec::new(), call.deployments.clone());
-    let found = team_public_model_names(&call.team_id, &store)
-        .await
-        .map_err(|error| failure("CleanupError", error.to_string()))?;
-    let names: Vec<String> = found.into_iter().collect();
-    Ok(json!({ "names": names }))
 }
 
 async fn remove_answer(call: &RemoveCall) -> HelperResult {
