@@ -1,0 +1,27 @@
+general_settings:
+  master_key: sk-ui-settings
+  forward_client_headers_to_llm_api: true
+  forward_llm_provider_auth_headers: false
+  allow_public_health_readiness_details: true
+  disable_agents_for_internal_users: true
+  allow_agents_for_team_admins: false
+  disable_vector_stores_for_internal_users: true
+  allow_vector_stores_for_team_admins: true
+  disable_custom_api_keys: false
+  disable_key_generate_for_org_admin: true
+  scope_user_search_to_org: false
+  disable_model_add_for_internal_users: true
+  disable_team_admin_delete_team_user: false
+  require_auth_for_public_ai_hub: true
+  enable_chat_ui: false
+  enabled_ui_pages_internal_users:
+    - chat
+    - models
+  team_admin_editable_team_fields:
+    - max_budget
+    - projects
+model_list:
+  - model_name: ui-settings-model
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/UI_SETTINGS_MODEL_KEY
