@@ -15,6 +15,9 @@ deviations:
   - what: A stream answer is materialized into the chunk list CallOutcome holds, so the fallback attempt header adds to an object payload and not to a chunk list.
     why: B5654's live ChatStream cannot be stored in CallOutcome, and a list has no _hidden_params to carry the header.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_utils.py#L61-L85
+  - what: A completion without a model answers 400 BadRequestError, where LiteLLM raises a bare ValueError whose mapper turns it into a 500 APIConnectionError.
+    why: A request that cannot run without a model is a bad request, and no working setup can rely on the 500.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5246
   - what: batch_completion_models ends with a named error when every deployment fails, where LiteLLM returns None from completion.
     why: None is the empty answer the fallback and handler code reads as no response, and a caller of the Rust entry cannot tell it from a missing result.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batch_completion/main.py#L127-L200
