@@ -1,21 +1,21 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use async_trait::async_trait;
 use betterlite_config::sections::fallback_errors::FallbackErrors;
 use betterlite_config::sections::pre_call::Settings as PreCallSection;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_core::api::request_destination::model::ModelDefaults;
-use betterlite_logging::callback_logger::CallbackLogger;
 use betterlite_logging::callback_logger::resolver::LoggerResolver;
-use betterlite_logging::datadog::apm::{NullTracer, Span, Tracer};
-use betterlite_logging::registry::error::RegistryError;
+use betterlite_logging::datadog::apm::{NullTracer, Tracer};
+use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::Object as JsonMap;
 use http::Request;
 use http::request::Parts;
+use rstest::rstest;
 
+use super::standalone::{AllowAllBudgets, NoRouterSettings};
 use super::{PreCall, PreCallError, PreCallInput, PreCallOutput, PreCallSettings, PreCallStep};
 use crate::pre_call::failure::{PreCallFailure, ProxyFailure};
 use crate::pre_call::key::PreCallKey;
@@ -26,6 +26,10 @@ use crate::pre_call::ports::{
 };
 use crate::pre_call::rewrites::{CliOverrides, RequestModel};
 use crate::pre_call::route_type::RouteType;
+
+mod support;
+
+use support::{Fake, NoLoggers, TestLoggers, TestTracer, rate_limited};
 
 #[derive(Default)]
 struct TestKey {
@@ -109,250 +113,6 @@ fn fallback_script(models: &[&str], limited: &[&str]) -> Behavior {
         rate_limited_models: limited.iter().map(|model| (*model).to_owned()).collect(),
         ..behavior()
     }
-}
-
-struct Fake {
-    calls: Mutex<Vec<Call>>,
-    script: Behavior,
-}
-
-impl Fake {
-    fn new(script: Behavior) -> Self {
-        Self {
-            calls: Mutex::new(Vec::new()),
-            script,
-        }
-    }
-
-    fn record(&self, call: Call) {
-        self.calls.lock().unwrap().push(call);
-    }
-
-    fn events(&self) -> Vec<Call> {
-        self.calls.lock().unwrap().clone()
-    }
-}
-
-#[async_trait]
-impl RequestPreparer<TestKey> for Fake {
-    async fn prepare(
-        &self,
-        mut data: JsonMap,
-        _request: &Parts,
-        _key: &TestKey,
-        _version: Option<&str>,
-    ) -> Result<JsonMap, PreCallFailure> {
-        self.record(Call::Prepare);
-        if let Some(failure) = self.script.prepare.clone() {
-            return Err(failure);
-        }
-        if let Some(prefix) = &self.script.tag_on_prepare {
-            let model = data
-                .get("model")
-                .and_then(JsonValue::as_str)
-                .unwrap_or_default();
-            let tag = format!("{prefix}-{model}");
-            data.insert(
-                String::from("tags"),
-                JsonValue::Array(vec![JsonValue::String(tag)]),
-            );
-        }
-        Ok(data)
-    }
-}
-
-#[async_trait]
-impl VectorStoreAccess<TestKey> for Fake {
-    async fn assert_access(&self, store_id: &str, _key: &TestKey) -> Result<(), PreCallFailure> {
-        self.record(Call::Access(store_id.to_owned()));
-        match self.script.access.clone() {
-            Some(failure) => Err(failure),
-            None => Ok(()),
-        }
-    }
-}
-
-#[async_trait]
-impl RouterSettingsSource<TestKey> for Fake {
-    async fn router_settings(&self, _key: &TestKey) -> Result<Option<JsonMap>, PreCallFailure> {
-        self.record(Call::Settings);
-        Ok(self.script.settings.clone())
-    }
-}
-
-#[async_trait]
-impl RouterView<TestKey> for Fake {
-    fn resolved_models(&self, _model: &str, _team_id: Option<&str>) -> Vec<String> {
-        Vec::new()
-    }
-
-    fn arm_prefetch(&self, model: &str, _data: &JsonMap) {
-        self.record(Call::Prefetch(model.to_owned()));
-    }
-
-    async fn fallbacks(&self) -> Option<Vec<JsonValue>> {
-        self.record(Call::Fallbacks);
-        self.script.fallbacks.clone()
-    }
-
-    async fn fallback_models(&self, model: &str, fallbacks: &[JsonValue]) -> Option<Vec<String>> {
-        let listed = fallbacks
-            .iter()
-            .filter_map(JsonValue::as_str)
-            .map(str::to_owned)
-            .collect();
-        self.record(Call::FallbackModels(model.to_owned(), listed));
-        self.script.fallback_models.clone()
-    }
-
-    async fn authorize_alias(&self, target: &str, _key: &TestKey) -> Result<(), PreCallFailure> {
-        self.record(Call::Authorize(target.to_owned()));
-        match self.script.authorize.clone() {
-            Some(failure) => Err(failure),
-            None => Ok(()),
-        }
-    }
-}
-
-impl StreamOptionsCheck for Fake {
-    fn supports(&self, _litellm_model: &str) -> bool {
-        self.script.supports
-    }
-}
-
-#[async_trait]
-impl GuardrailMerge for Fake {
-    async fn merge(&self, data: JsonMap, model_alias: Option<&str>) -> JsonMap {
-        self.record(Call::Merge(model_alias.map(str::to_owned)));
-        data
-    }
-}
-
-#[async_trait]
-impl CompressionArming for Fake {
-    async fn arm(&self, _data: &mut JsonMap) {
-        self.record(Call::Compress);
-    }
-}
-
-#[async_trait]
-impl PreCallHooks<TestKey> for Fake {
-    async fn pre_call_hook(
-        &self,
-        _key: &TestKey,
-        mut data: JsonMap,
-        _route_type: RouteType,
-        skip_guardrails: bool,
-    ) -> Result<JsonMap, PreCallFailure> {
-        self.record(Call::Hook(skip_guardrails));
-        if let Some(failure) = self.script.hook_failure.clone() {
-            return Err(failure);
-        }
-        if let Some(JsonValue::String(model)) = data.get("model")
-            && self.script.rate_limited_models.contains(model)
-        {
-            return Err(rate_limited());
-        }
-        let tags = self.script.hook_tags.clone();
-        if !tags.is_empty() {
-            data.insert(
-                String::from("tags"),
-                JsonValue::Array(tags.into_iter().map(JsonValue::String).collect()),
-            );
-        }
-        Ok(data)
-    }
-}
-
-#[async_trait]
-impl TagBudgets<TestKey> for Fake {
-    async fn skips_budget(&self, route: &str, _model: &RequestModel) -> bool {
-        self.record(Call::Skip(route.to_owned()));
-        self.script.skip_budget
-    }
-
-    async fn check_tags(&self, tags: &[String], _key: &TestKey) -> Result<(), PreCallFailure> {
-        self.record(Call::Tags(tags.to_vec()));
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl RetrievalPipelines<TestKey> for Fake {
-    async fn attach(&self, _data: &mut JsonMap, _key: &TestKey) {
-        self.record(Call::Attach);
-    }
-}
-
-#[derive(Default)]
-struct TestTracer {
-    tags: Mutex<Vec<(String, String)>>,
-}
-
-impl TestTracer {
-    fn tags(&self) -> Vec<(String, String)> {
-        self.tags.lock().unwrap().clone()
-    }
-}
-
-impl Span for TestTracer {
-    fn set_tag(&self, key: &str, value: &str) -> bool {
-        self.tags
-            .lock()
-            .unwrap()
-            .push((key.to_owned(), value.to_owned()));
-        true
-    }
-}
-
-impl Tracer for TestTracer {
-    fn current_span(&self) -> Option<&dyn Span> {
-        Some(self)
-    }
-}
-
-struct NoLoggers;
-
-impl LoggerResolver for NoLoggers {
-    fn resolve(
-        &self,
-        _name: &str,
-        _params: &BTreeMap<String, String>,
-    ) -> Result<Option<Arc<dyn CallbackLogger>>, RegistryError> {
-        Ok(None)
-    }
-}
-
-struct TestLogger;
-
-impl CallbackLogger for TestLogger {
-    fn callback_name(&self) -> &str {
-        "test-logger"
-    }
-}
-
-struct TestLoggers;
-
-impl LoggerResolver for TestLoggers {
-    fn resolve(
-        &self,
-        name: &str,
-        _params: &BTreeMap<String, String>,
-    ) -> Result<Option<Arc<dyn CallbackLogger>>, RegistryError> {
-        if name == "test-logger" {
-            return Ok(Some(Arc::new(TestLogger)));
-        }
-        Ok(None)
-    }
-}
-
-fn rate_limited() -> PreCallFailure {
-    PreCallFailure::RateLimited(ProxyFailure {
-        message: String::from("rate limited"),
-        error_type: String::from("rate_limit_error"),
-        param: None,
-        code: 429,
-    })
 }
 
 fn boom() -> PreCallFailure {
@@ -585,7 +345,7 @@ async fn step_runs_the_ports_in_order() {
     let step = step_for(&fake);
     let request = parts("/chat/completions", None);
     let key = TestKey::default();
-    let fixture = r#"{"model": "gpt", "proxy_server_request": {"arrival_time": 1.0}}"#;
+    let fixture = r#"{"model": "gpt", "include_fallback_errors": true, "proxy_server_request": {"arrival_time": 1.0}}"#;
     let input = input_for(fixture, &request, &key, RouteType::Completion);
     let output = step.run(input.data.clone(), &input, None).await.unwrap();
     assert_eq!(
@@ -601,6 +361,7 @@ async fn step_runs_the_ports_in_order() {
     );
     assert_eq!(text_at(&output.data, "model"), "gpt");
     assert_eq!(text_at(&output.data, "litellm_call_id").len(), 36);
+    assert_eq!(output.data.get("include_fallback_errors"), None);
     assert!(output.data.contains_key("metadata"));
     assert_eq!(output.data.get("router_settings_override"), None);
 }
@@ -839,7 +600,11 @@ async fn step_writes_queue_time_to_the_route_bucket() {
     let input = input_for(fixture, &request, &key, RouteType::Responses);
     let output = step.run(input.data.clone(), &input, None).await.unwrap();
     let bucket = output.data.get("litellm_metadata").unwrap();
-    assert!(bucket.get("queue_time_seconds").is_some());
+    let queue_time = bucket
+        .get("queue_time_seconds")
+        .and_then(JsonValue::as_f64)
+        .unwrap();
+    assert!(queue_time > 1.0_f64);
     assert_eq!(output.data.get("metadata"), None);
 }
 
@@ -940,16 +705,20 @@ async fn standalone_passes_the_data_through() {
     let step = PreCallStep::<TestKey>::standalone(settings);
     let request = parts("/chat/completions", None);
     let key = TestKey::default();
-    let fixture = r#"{"model": "gpt", "messages": [{"role": "user", "content": "hi"}]}"#;
+    let fixture = r#"{"model": "gpt", "stream": true, "stream_options": null, "messages": "hi"}"#;
     let input = input_for(fixture, &request, &key, RouteType::Completion);
     let output = step.pre_call(input).await.unwrap();
     assert_eq!(text_at(&output.data, "model"), "gpt");
     assert!(output.data.contains_key("litellm_call_id"));
-    assert_eq!(output.data.get("stream_options"), None);
+    assert_eq!(output.data.get("stream_options"), Some(&JsonValue::Null));
     assert_eq!(
         output.data.get("messages"),
         data_from(fixture).get("messages")
     );
+    assert_eq!(output.logging.model, "gpt");
+    assert_eq!(output.logging.stream, Some(true));
+    assert!(output.logging.stream_options.is_none());
+    assert!(output.logging.messages.is_some());
 }
 
 #[tokio::test]
@@ -992,4 +761,109 @@ async fn standalone_runs_without_a_router() {
     assert_eq!(text_at(&output.data, "model"), "gpt");
     assert_eq!(output.data.get("tools"), data_from(fixture).get("tools"));
     assert_eq!(output.data.get("_router_weights"), None);
+}
+
+#[tokio::test]
+async fn step_builds_the_logging_state() {
+    let fake = Arc::new(Fake::new(behavior()));
+    let step = step_for(&fake);
+    let request = parts("/chat/completions", None);
+    let key = TestKey::default();
+    let fixture = r#"{"model": "gpt", "metadata": {"team": "a"}, "stream_options": {"include_usage": true}, "messages": ["hi"]}"#;
+    let input = input_for(fixture, &request, &key, RouteType::Completion);
+    let output = step.run(input.data.clone(), &input, None).await.unwrap();
+    assert_eq!(output.logging.model, "gpt");
+    assert!(output.logging.litellm_params.contains_key("metadata"));
+    assert!(output.logging.litellm_params.contains_key("api_base"));
+    assert!(output.logging.stream_options.is_some());
+    assert_eq!(output.logging.stream, Some(false));
+    assert_eq!(
+        output.logging.messages,
+        Some(vec![Json::Text(String::from("hi"))])
+    );
+}
+
+#[rstest]
+#[case("\"\"")]
+#[case("0")]
+#[case("[]")]
+#[case("{}")]
+#[tokio::test]
+async fn fallback_ignores_a_falsey_disable_flag(#[case] flag: &str) {
+    let script = fallback_script(&["a"], &["gpt"]);
+    let fixture = format!(r#"{{"model": "gpt", "disable_fallbacks": {flag}}}"#);
+    let (_, result) = fallback_run(script, &fixture, TestKey::default()).await;
+    result.unwrap();
+}
+
+#[tokio::test]
+async fn step_splits_the_callback_lists() {
+    let fake = Arc::new(Fake::new(behavior()));
+    let tracer: Arc<dyn Tracer + Send + Sync> = Arc::new(NullTracer);
+    let loggers: Arc<dyn LoggerResolver> = Arc::new(TestLoggers);
+    let step = step_full(&fake, tracer, loggers, PreCallSettings::default());
+    let request = parts("/chat/completions", None);
+    let key = TestKey::default();
+    let fixture = r#"{"model": "gpt", "success_callback": ["dynamodb", "langfuse"], "failure_callback": ["langfuse2"], "callbacks": ["test-logger", "test-logger"]}"#;
+    let input = input_for(fixture, &request, &key, RouteType::Completion);
+    let output = step.run(input.data.clone(), &input, None).await.unwrap();
+    let dynamic = &output.logging.dynamic_callbacks;
+    assert_eq!(
+        dynamic.success,
+        Some(vec![String::from("langfuse"), String::from("test-logger")])
+    );
+    assert_eq!(
+        dynamic.async_success,
+        Some(vec![String::from("dynamodb"), String::from("test-logger")])
+    );
+    assert_eq!(
+        dynamic.failure,
+        Some(vec![String::from("langfuse2"), String::from("test-logger")])
+    );
+    assert_eq!(
+        dynamic.async_failure,
+        Some(vec![String::from("test-logger")])
+    );
+    assert_eq!(dynamic.input, Some(vec![String::from("test-logger")]));
+}
+
+#[tokio::test]
+async fn step_uses_the_image_model_for_image_edits() {
+    let fake = Arc::new(Fake::new(behavior()));
+    let tracer: Arc<dyn Tracer + Send + Sync> = Arc::new(NullTracer);
+    let loggers: Arc<dyn LoggerResolver> = Arc::new(NoLoggers);
+    let mut settings = PreCallSettings::default();
+    settings.model_defaults.image_generation_model = Some(String::from("img-model"));
+    let step = step_full(&fake, tracer, loggers, settings);
+    let request = parts("/v1/images/edits", None);
+    let key = TestKey::default();
+    let input = input_for(r#"{"model": "gpt"}"#, &request, &key, RouteType::ImageEdit);
+    let output = step.run(input.data.clone(), &input, None).await.unwrap();
+    assert_eq!(text_at(&output.data, "model"), "img-model");
+}
+
+#[tokio::test]
+async fn standalone_router_settings_answer_none() {
+    let fake = Arc::new(Fake::new(behavior()));
+    let tracer: Arc<dyn Tracer + Send + Sync> = Arc::new(NullTracer);
+    let mut built = ports(&fake, tracer);
+    built.router_settings = Arc::new(NoRouterSettings);
+    let loggers: Arc<dyn LoggerResolver> = Arc::new(NoLoggers);
+    let step = PreCallStep::new(built, PreCallSettings::default(), loggers);
+    let request = parts("/chat/completions", None);
+    let key = TestKey::default();
+    let input = input_for(r#"{"model": "gpt"}"#, &request, &key, RouteType::Completion);
+    let output = step.run(input.data.clone(), &input, None).await.unwrap();
+    assert_eq!(output.data.get("router_settings_override"), None);
+}
+
+#[tokio::test]
+async fn standalone_allows_the_tag_budgets() {
+    let budgets = AllowAllBudgets;
+    let model = RequestModel::Absent;
+    let skips = budgets.skips_budget("/chat/completions", &model).await;
+    assert!(skips);
+    let key = TestKey::default();
+    let tags = [String::from("tag")];
+    budgets.check_tags(&tags, &key).await.unwrap();
 }
