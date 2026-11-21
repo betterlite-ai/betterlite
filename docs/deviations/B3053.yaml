@@ -1,0 +1,15 @@
+task: B3053
+deviations:
+  - what: Both x-litellm-priority and x-litellm-rate-limiter-version are written only when the response carries hidden params; the hook takes the headers target as Option<&mut AdditionalHeaders> and writes nothing into a response without one.
+    why: LiteLLM guards both assignments with response_has_hidden_params(response) (line 670), so a response outside rate-limit tracking gets no dynamic priority headers. Betterlite has no router response type in betterlite-rate-limit (that utility is B016's), so the caller passes None for a response without hidden params and the same two headers, and the nothing case, stay observable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L670-L680
+  - what: The success event reads the priority from standard_logging_metadata.user_api_key_auth_metadata only, while the post-call hook resolves it from team metadata first and then key metadata.
+    why: LiteLLM stores both priority sources during pre-call; team priority drives admission and the response header, and the key's own priority drives post-success counter accounting. Porting the asymmetry keeps per-key token usage attributable even when a team reservation moved the key into another pool.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L719-L722
+  - what: For the input and total token types the counted tokens exclude the response's cached tokens; LiteLLM reads prompt_tokens and total_tokens as they are.
+    why: Betterlite reuses B3044's get_total_tokens_from_usage, the one token resolver every other rate-limit path already counts with, and it subtracts cached tokens for input and total. The dynamic hook inherits that count so the two counters it increments agree with the counters the pre-call check reads; an oracle case over cached usage would set two results, so the cases send uncached usage.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L728-L736
+  - what: A token count with no exact f64 form (above 2^53) logs "Error in the dynamic rate limiter success event" and increments neither counter; LiteLLM increments both counters with the unbounded Python int.
+    why: The counters are incremented through f64 values in betterlite, so a larger count would round and drift from the pre-call check. LiteLLM's catch-all exception handler has no equivalent failure here because Python integers do not overflow, so the warn-and-skip path is betterlite's version of that guard, proved by a unit test.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L753-L755
+kept_bugs: []
