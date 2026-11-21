@@ -131,8 +131,7 @@ fn windows_dictionary_and_model_iso_json() {
         Clocks::at("2026-05-01T10:00:00.123456Z").key(),
     )
     .unwrap();
-    let stored = updated_kv.get("budget_limits").unwrap();
-    let JsonData::String(text) = stored else {
+    let JsonData::String(text) = &updated_kv["budget_limits"] else {
         panic!("the windows are stored as serialized JSON");
     };
     assert_eq!(
@@ -170,7 +169,7 @@ fn duration_overflow_propagates() {
     )
     .unwrap_err();
     assert!(
-        matches!(error, BudgetResetError::Duration { ref spec, .. } if spec == "99999999999999999999d"),
+        matches!(&error, BudgetResetError::Duration { spec, .. } if spec == "99999999999999999999d"),
         "{error:?}"
     );
     assert_eq!(updated_kv, before);

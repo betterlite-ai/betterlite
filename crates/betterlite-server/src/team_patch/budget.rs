@@ -43,8 +43,11 @@ pub fn set_budget_reset_at(
             "budget_reset_at".to_owned(),
             JsonData::String(zulu_datetime(microsecond_precision(reset.instant))),
         );
-    } else if matches!(updated_kv.get("budget_duration"), Some(JsonData::Null)) {
-        // only a duration the caller sent as null clears the column; an absent one leaves it alone
+    }
+    // only a duration the caller sent as null clears the column; an absent one leaves it alone
+    if fields.budget_duration.is_none()
+        && matches!(updated_kv.get("budget_duration"), Some(JsonData::Null))
+    {
         updated_kv.insert("budget_reset_at".to_owned(), JsonData::Null);
     }
     let Some(windows) = generate_budget_windows(fields.budget_limits.as_deref(), clock)? else {
