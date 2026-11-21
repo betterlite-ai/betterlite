@@ -43,14 +43,7 @@ where
     let Some(cold) = service.cold_storage else {
         return Ok(request);
     };
-    // LiteLLM searches str(request), so the marker in any key or nested string counts
-    let truncated = request.as_ref().is_none_or(|fields| {
-        fields.is_empty()
-            || fields
-                .iter()
-                .any(|(key, value)| key.contains(TRUNCATED_MARKER) || holds_truncation(value))
-    });
-    if !truncated {
+    if !request_is_truncated(request.as_ref()) {
         return Ok(request);
     }
     let Some(object_key) = cold_storage_key(log, service.limits) else {
@@ -62,6 +55,16 @@ where
         .await
         .map_err(SessionHistoryError::ColdStorage)?;
     Ok(restored.filter(|fields| !fields.is_empty()).or(request))
+}
+
+fn request_is_truncated(request: Option<&IndexMap<String, Json>>) -> bool {
+    // LiteLLM searches str(request), so the marker in any key or nested string counts
+    request.is_none_or(|fields| {
+        fields.is_empty()
+            || fields
+                .iter()
+                .any(|(key, value)| key.contains(TRUNCATED_MARKER) || holds_truncation(value))
+    })
 }
 
 fn holds_truncation(value: &Json) -> bool {

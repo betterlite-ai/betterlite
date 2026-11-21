@@ -95,23 +95,7 @@ where
     Sleep: Sync,
 {
     let request = stored_request(service, log).await?.unwrap_or_default();
-    let input = match request.get("input") {
-        Some(Json::Text(text)) if !text.is_empty() => Some(Json::Text(text.clone())),
-        Some(Json::List(items)) if !items.is_empty() => Some(Json::List(items.clone())),
-        Some(Json::Object(item)) => Some(Json::List(vec![Json::Object(item.clone())])),
-        None
-        | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            None
-        }
-    };
-    // LiteLLM reads a stored messages value only when Python would call it truthy
-    let replayed = input.or_else(|| {
-        request
-            .get("messages")
-            .filter(|messages| has_content(messages))
-            .cloned()
-    });
-    if let Some(chosen) = replayed {
+    if let Some(chosen) = replayed_input(&request) {
         let mut assembly: InputRequest = serde_json::from_value(serde_json::to_value(&request)?)?;
         assembly.input = Some(chosen);
         for message in input_messages(&assembly, true, service.limits, service.input_cache)? {
@@ -137,6 +121,25 @@ where
         });
     }
     Ok(())
+}
+
+fn replayed_input(request: &IndexMap<String, Json>) -> Option<Json> {
+    let input = match request.get("input") {
+        Some(Json::Text(text)) if !text.is_empty() => Some(Json::Text(text.clone())),
+        Some(Json::List(items)) if !items.is_empty() => Some(Json::List(items.clone())),
+        Some(Json::Object(item)) => Some(Json::List(vec![Json::Object(item.clone())])),
+        None
+        | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+            None
+        }
+    };
+    // LiteLLM reads a stored messages value only when Python would call it truthy
+    input.or_else(|| {
+        request
+            .get("messages")
+            .filter(|messages| has_content(messages))
+            .cloned()
+    })
 }
 
 // redaction stores the bare sentinel, which is not JSON, so a replayed call gets "{}" a provider can parse
