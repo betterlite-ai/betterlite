@@ -82,17 +82,17 @@ class CustomHandler(CustomLLM):
         self.origin = origin
 
     @override
-    def image_generation(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L526-L547
+    def image_generation(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L526-L547
         self,
         model: str,
         prompt: str,
-        api_key: str | None,  # noqa: ARG002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L526-L547
+        api_key: str | None,  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L526-L547
         api_base: str | None,
         model_response: ImageResponse,
-        optional_params: dict[str, JsonValue],  # noqa: ARG002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L526-L547
-        logging_obj: Logging,  # noqa: ARG002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L526-L547
+        optional_params: dict[str, JsonValue],  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L526-L547
+        logging_obj: Logging,  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L526-L547
         timeout: float | httpx.Timeout | None = None,
-        client: HTTPHandler | None = None,  # noqa: ARG002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L526-L547
+        client: HTTPHandler | None = None,  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L526-L547
     ) -> ImageResponse:
         base = self.origin if api_base is None else api_base
         body: dict[str, JsonValue] = {"model": model, "prompt": prompt}
@@ -186,7 +186,7 @@ def run(call: Call, api_base: str) -> Outcome:
     apply_settings(resolved_settings(call, api_base), api_base)
     install_custom_providers(call, api_base)
     try:
-        response: ImageResponse = litellm.image_generation(**call_kwargs(call, api_base))  # type: ignore[call-overload, misc]  # pyright: ignore[reportAny, reportArgumentType, reportCallIssue, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L183-L561
+        response: ImageResponse = litellm.image_generation(**call_kwargs(call, api_base))  # type: ignore[call-overload]  # pyright: ignore[reportAny, reportArgumentType, reportCallIssue, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L183-L561
     except APIError as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L853-L861
         return Outcome(failure=error_failure(error))
     finally:
