@@ -1,0 +1,20 @@
+name: genai-stream-answer-with-body-and-events
+config: |
+  general_settings:
+    master_key: oracle-master
+env: {}
+request:
+  method: POST
+  path: /v1beta/models/gemini-2.0-flash:streamGenerateContent
+  headers: {content-type: application/json, authorization: Bearer oracle-master}
+  body:
+    contents:
+      - role: user
+        parts:
+          - text: hello
+upstream:
+  - body:
+      candidates: []
+    events:
+      - '{"candidates": []}'
+compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}

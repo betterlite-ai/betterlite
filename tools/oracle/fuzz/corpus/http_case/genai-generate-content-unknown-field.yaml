@@ -1,0 +1,19 @@
+name: genai-generate-content-unknown-field
+config: |
+  general_settings:
+    master_key: oracle-master
+env: {}
+request:
+  method: POST
+  path: /v1beta/models/gemini-2.0-flash:generateContent
+  headers: {content-type: application/json, authorization: Bearer oracle-master}
+  body:
+    contents:
+      - role: user
+        parts:
+          - text: hello
+upstream:
+  - body:
+      candidates: []
+genai_operation: generate
+compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}
