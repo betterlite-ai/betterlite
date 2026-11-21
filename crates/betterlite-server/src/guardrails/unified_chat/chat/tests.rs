@@ -130,6 +130,28 @@ async fn adapter_chat_input_ignores_a_request_with_nothing_to_scan() {
 }
 
 #[tokio::test]
+async fn adapter_chat_input_surfaces_the_guardrail_failure() {
+    let denied = GuardrailFailure::Http {
+        status: 403,
+        detail: String::from("denied"),
+    };
+    let fake = Arc::new(FakeGuardrail::failing(denied.clone()));
+    let applied = context(&fake, Some("guard"));
+    let mut data = object(REQUEST);
+    let error = translation()
+        .process_input_messages(&mut data, &applied, None)
+        .await
+        .unwrap_err();
+    match error {
+        ChatTranslationError::Input(InputError::Guardrail(failure)) => {
+            assert_eq!(failure, denied);
+        }
+        other => panic!("expected the guardrail failure, got {other:?}"),
+    }
+    assert_eq!(message_content(&data, 1), "hi");
+}
+
+#[tokio::test]
 async fn adapter_chat_output_rewrites_text_and_keeps_unknown_fields() {
     let fake = Arc::new(FakeGuardrail::replying(texts_reply(&["masked"])));
     let applied = context(&fake, Some("guard"));
