@@ -1,0 +1,8 @@
+kind: helper
+name: jwt-settings-issuer-empty-audience-accepted
+call:
+  jwt_settings:
+    scenarios:
+      - {"settings": {"issuers": [{"issuer": "https://idp-a.example.com", "audience": ""}, {"issuer": "https://idp-b.example.com", "audience": []}, {"issuer": "https://idp-c.example.com", "disable_audience_validation": true}]}, "references": {}, "environment": {}, "issuers": ["https://idp-a.example.com", "https://idp-b.example.com", "https://idp-c.example.com"]}
+env: {}
+compare: {ignore: []}

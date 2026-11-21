@@ -1,0 +1,7 @@
+kind: helper
+name: limiter-assembly-select-main-corpus-seed
+call:
+  b5660:
+    call_type: create_batch
+env: {}
+compare: {ignore: []}

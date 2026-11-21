@@ -1,0 +1,10 @@
+kind: helper
+name: jwt-settings-scope-precheck-before-bool-coercion
+call:
+  jwt_settings:
+    scenarios:
+      - {"settings": {"scope_mappings": []}, "references": {"enforce_scope_based_access": "ENFORCE"}, "environment": {"ENFORCE": "false"}, "issuers": []}
+      - {"settings": {"scope_mappings": []}, "references": {"enforce_scope_based_access": "ENFORCE"}, "environment": {"ENFORCE": " FALSE "}, "issuers": []}
+      - {"settings": {"scope_mappings": []}, "references": {"enforce_scope_based_access": "ENFORCE"}, "environment": {"ENFORCE": "true"}, "issuers": []}
+env: {}
+compare: {ignore: []}

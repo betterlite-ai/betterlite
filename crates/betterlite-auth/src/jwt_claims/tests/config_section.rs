@@ -9,7 +9,7 @@ use crate::jwt_claims::teams::TeamClaims as _;
 use rstest::rstest;
 
 use betterlite_config::loader::{ConfigError, ConfigLoader};
-use betterlite_config::sections::jwt_claims::Settings;
+use betterlite_config::sections::jwt_settings::Settings;
 
 const ALL_SETTINGS: &str = r#"
 general_settings:
@@ -27,6 +27,7 @@ general_settings:
     end_user_id_jwt_field: eid
     agent_id_jwt_field: azp
     object_id_jwt_field: oid
+    role_mappings: [{role: admin, internal_role: proxy_admin}]
 "#;
 
 const ALL_CLAIMS: &str = r#"{
@@ -47,24 +48,24 @@ fn load(source: &str, environment: &[(&str, &str)]) -> Result<Settings, ConfigEr
         .iter()
         .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
         .collect::<BTreeMap<_, _>>();
-    Ok(ConfigLoader { lookup }.load(source)?.sections.jwt_claims)
+    Ok(ConfigLoader { lookup }.load(source)?.sections.jwt_settings)
 }
 
 fn auth_settings(loaded: &Settings) -> JwtAuthSettings {
     JwtAuthSettings {
-        team_id_jwt_field: loaded.team_id_jwt_field.clone(),
-        team_ids_jwt_field: loaded.team_ids_jwt_field.clone(),
-        team_id_default: loaded.team_id_default.clone(),
-        team_alias_jwt_field: loaded.team_alias_jwt_field.clone(),
-        org_id_jwt_field: loaded.org_id_jwt_field.clone(),
-        org_alias_jwt_field: loaded.org_alias_jwt_field.clone(),
-        user_id_jwt_field: loaded.user_id_jwt_field.clone(),
-        user_email_jwt_field: loaded.user_email_jwt_field.clone(),
-        user_allowed_email_domain: loaded.user_allowed_email_domain.clone(),
-        user_id_upsert: loaded.user_id_upsert,
-        end_user_id_jwt_field: loaded.end_user_id_jwt_field.clone(),
-        agent_id_jwt_field: loaded.agent_id_jwt_field.clone(),
-        object_id_jwt_field: loaded.object_id_jwt_field.clone(),
+        team_id_jwt_field: loaded.teams.team_id_jwt_field.clone(),
+        team_ids_jwt_field: loaded.teams.team_ids_jwt_field.clone(),
+        team_id_default: loaded.teams.team_id_default.clone(),
+        team_alias_jwt_field: loaded.teams.team_alias_jwt_field.clone(),
+        org_id_jwt_field: loaded.claims.org_id_jwt_field.clone(),
+        org_alias_jwt_field: loaded.claims.org_alias_jwt_field.clone(),
+        user_id_jwt_field: loaded.claims.user_id_jwt_field.clone(),
+        user_email_jwt_field: loaded.claims.user_email_jwt_field.clone(),
+        user_allowed_email_domain: loaded.claims.user_allowed_email_domain.clone(),
+        user_id_upsert: loaded.claims.user_id_upsert,
+        end_user_id_jwt_field: loaded.claims.end_user_id_jwt_field.clone(),
+        agent_id_jwt_field: loaded.claims.agent_id_jwt_field.clone(),
+        object_id_jwt_field: loaded.rbac.object_id_jwt_field.clone(),
     }
 }
 
@@ -83,25 +84,37 @@ fn project<'auth>(
 #[test]
 fn loads_settings() {
     let loaded = load(ALL_SETTINGS, &[("EMAIL_FIELD", "email")]).unwrap();
-    assert_eq!(loaded.team_id_jwt_field.as_deref(), Some("realm.team.id"));
-    assert_eq!(loaded.team_ids_jwt_field.as_deref(), Some("realm.team.ids"));
-    assert_eq!(loaded.team_id_default.as_deref(), Some("fallback-team"));
     assert_eq!(
-        loaded.team_alias_jwt_field.as_deref(),
+        loaded.teams.team_id_jwt_field.as_deref(),
+        Some("realm.team.id")
+    );
+    assert_eq!(
+        loaded.teams.team_ids_jwt_field.as_deref(),
+        Some("realm.team.ids")
+    );
+    assert_eq!(
+        loaded.teams.team_id_default.as_deref(),
+        Some("fallback-team")
+    );
+    assert_eq!(
+        loaded.teams.team_alias_jwt_field.as_deref(),
         Some("realm.team.name")
     );
-    assert_eq!(loaded.org_id_jwt_field.as_deref(), Some("org"));
-    assert_eq!(loaded.org_alias_jwt_field.as_deref(), Some("org_name"));
-    assert_eq!(loaded.user_id_jwt_field.as_deref(), Some("sub"));
-    assert_eq!(loaded.user_email_jwt_field.as_deref(), Some("email"));
+    assert_eq!(loaded.claims.org_id_jwt_field.as_deref(), Some("org"));
     assert_eq!(
-        loaded.user_allowed_email_domain.as_deref(),
+        loaded.claims.org_alias_jwt_field.as_deref(),
+        Some("org_name")
+    );
+    assert_eq!(loaded.claims.user_id_jwt_field.as_deref(), Some("sub"));
+    assert_eq!(loaded.claims.user_email_jwt_field.as_deref(), Some("email"));
+    assert_eq!(
+        loaded.claims.user_allowed_email_domain.as_deref(),
         Some("example.com")
     );
-    assert!(loaded.user_id_upsert);
-    assert_eq!(loaded.end_user_id_jwt_field.as_deref(), Some("eid"));
-    assert_eq!(loaded.agent_id_jwt_field.as_deref(), Some("azp"));
-    assert_eq!(loaded.object_id_jwt_field.as_deref(), Some("oid"));
+    assert!(loaded.claims.user_id_upsert);
+    assert_eq!(loaded.claims.end_user_id_jwt_field.as_deref(), Some("eid"));
+    assert_eq!(loaded.claims.agent_id_jwt_field.as_deref(), Some("azp"));
+    assert_eq!(loaded.rbac.object_id_jwt_field.as_deref(), Some("oid"));
     let component = auth_settings(&loaded);
     let claims = project(ALL_CLAIMS, &component, &[]);
     assert_eq!(claims.team_id(None).unwrap(), Some("team-1".to_owned()));
@@ -185,7 +198,7 @@ fn explicit_values_and_environment() {
         &[],
     )
     .unwrap();
-    assert_eq!(explicit.team_id_jwt_field.as_deref(), Some(""));
+    assert_eq!(explicit.teams.team_id_jwt_field.as_deref(), Some(""));
     let component = auth_settings(&explicit);
     let claims = project(EMPTY_CLAIMS, &component, &[]);
     assert!(claims.settings.user_allowed_email_domain.is_some());
@@ -200,7 +213,7 @@ fn explicit_values_and_environment() {
     )
     .unwrap();
     assert_eq!(
-        environment.team_id_jwt_field.as_deref(),
+        environment.teams.team_id_jwt_field.as_deref(),
         Some("resolved.team")
     );
     let unset = load(
@@ -208,20 +221,20 @@ fn explicit_values_and_environment() {
         &[("TEAM_FIELD", "")],
     )
     .unwrap();
-    assert_eq!(unset.team_id_jwt_field, None);
+    assert_eq!(unset.teams.team_id_jwt_field, None);
 
     let upsert = load(
         "general_settings:\n  litellm_jwtauth:\n    user_id_upsert: os.environ/UPSERT\n",
         &[("UPSERT", "yes")],
     )
     .unwrap();
-    assert!(upsert.user_id_upsert);
+    assert!(upsert.claims.user_id_upsert);
     let upsert_unset = load(
         "general_settings:\n  litellm_jwtauth:\n    user_id_upsert: os.environ/UPSERT\n",
         &[("UPSERT", "")],
     )
     .unwrap();
-    assert!(!upsert_unset.user_id_upsert);
+    assert!(!upsert_unset.claims.user_id_upsert);
 }
 
 #[rstest]
@@ -261,7 +274,7 @@ fn explicit_values_and_environment() {
     "UPSERT",
     false
 )]
-fn invalid_value_fallback(
+fn invalid_types_reject(
     #[case] source: &str,
     #[case] environment: &[(&str, &str)],
     #[case] fragment: &str,

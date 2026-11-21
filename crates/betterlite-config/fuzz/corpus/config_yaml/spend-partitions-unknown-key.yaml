@@ -1,0 +1,7 @@
+general_settings:
+  spend_logs_partition:
+    interval: week
+    precreate_ahead: 7
+litellm_settings:
+  max_budget:
+    - 1

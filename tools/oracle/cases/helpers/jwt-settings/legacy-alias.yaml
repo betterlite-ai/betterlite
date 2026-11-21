@@ -1,0 +1,10 @@
+kind: helper
+name: jwt-settings-legacy-alias
+call:
+  jwt_settings:
+    scenarios:
+      - {"settings": {"jwt_client_id_field": "sub"}, "references": {}, "environment": {}, "issuers": [null]}
+      - {"settings": {"jwt_client_id_field": "sub", "virtual_key_claim_field": "email"}, "references": {}, "environment": {}, "issuers": [null]}
+      - {"settings": {}, "references": {"jwt_client_id_field": "CLAIM"}, "environment": {"CLAIM": "azp"}, "issuers": [null]}
+env: {}
+compare: {ignore: []}

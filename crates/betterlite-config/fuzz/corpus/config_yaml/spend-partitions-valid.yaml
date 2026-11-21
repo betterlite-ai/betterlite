@@ -1,0 +1,11 @@
+model_list:
+  - model_name: gpt
+    litellm_params:
+      model: openai/gpt-4o-mini
+general_settings:
+  store_prompts_in_spend_logs: false
+  use_redis_transaction_buffer: true
+  disable_spend_updates: false
+litellm_settings:
+  max_budget: 100
+  disable_end_user_cost_tracking: false
