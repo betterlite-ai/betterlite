@@ -29,6 +29,7 @@ pub struct Call {
     pub base_url: Option<String>,
     pub azure_ad_token: Option<String>,
     pub extra_headers: Option<Headers>,
+    #[serde(default)]
     pub params: BTreeMap<String, JsonValue>,
 }
 

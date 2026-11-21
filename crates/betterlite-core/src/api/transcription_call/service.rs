@@ -23,6 +23,7 @@ use uuid::Uuid;
 use super::call::TranscriptionCall;
 use super::dispatch::{TranscriptionAnswer, TranscriptionDispatch};
 use super::error::{AsyncTranscriptionError, TranscriptionDispatchError, TranscriptionError};
+use super::plan::{Plan, prepare};
 use super::{
     cached_audio_response, error_type_name, public_duration_is_absent, store_hidden_duration,
 };
@@ -51,16 +52,10 @@ pub enum DurationDecoder<'context> {
     Available(&'context (dyn AudioDurationDecoder + Sync)),
 }
 
-// one asynchronous call's inputs, shared by the first run and the retry the wrapper may make
-struct AsyncCall<'call> {
-    call: &'call TranscriptionCall,
-    processed: &'call ProcessedAudioFile,
-    input: &'call str,
-}
-
 // atranscription's synchronous prologue: the checked model, the cloned call and the processed file
 struct AsyncPreparation {
     asynchronous: TranscriptionCall,
+    plan: Plan,
     model_name: String,
     input: String,
     processed: ProcessedAudioFile,
@@ -77,11 +72,19 @@ where
         file: AudioFile<'_>,
     ) -> impl Future<Output = Result<TranscriptionAnswer, TranscriptionError<Dispatch::Error>>> + Send
     {
+        let prepared = prepare(
+            call,
+            self.dispatch,
+            self.settings,
+            &self.resolution,
+            self.bundled,
+        );
         let input = get_audio_file_name(&file);
-        let pending = process_audio_file(file, self.files);
+        let pending = prepared.map(|plan| (plan, process_audio_file(file, self.files)));
         async move {
-            let processed = pending?;
-            let answer = execute(self, call, &processed, &input).await?;
+            let (plan, audio) = pending?;
+            let processed = audio?;
+            let answer = execute(self, call, &plan, &processed, &input).await?;
             Ok(self.with_measured_duration(answer, &processed))
         }
     }
@@ -114,6 +117,17 @@ where
         let mut asynchronous = call.clone();
         model_name.clone_into(&mut asynchronous.model);
         asynchronous.atranscription = Some(Json::Bool(true));
+        let prepared = prepare(
+            &asynchronous,
+            self.dispatch,
+            self.settings,
+            &self.resolution,
+            self.bundled,
+        );
+        let plan = match prepared {
+            Ok(plan) => plan,
+            Err(error) => return Err(self.mapped_error(&error, &asynchronous, model_name)),
+        };
         let input = get_audio_file_name(&file);
         let processed = match process_audio_file(file, self.files) {
             Ok(processed) => processed,
@@ -124,6 +138,7 @@ where
         };
         Ok(AsyncPreparation {
             asynchronous,
+            plan,
             model_name: model_name.to_owned(),
             input,
             processed,
@@ -136,14 +151,9 @@ where
         prepared: AsyncPreparation,
         file_from_kwargs: bool,
     ) -> Result<TranscriptionResponse, AsyncTranscriptionError> {
-        let async_call = AsyncCall {
-            call: &prepared.asynchronous,
-            processed: &prepared.processed,
-            input: &prepared.input,
-        };
-        let answer = self.transcribed(&async_call, &prepared.model_name).await?;
+        let answer = self.transcribed(&prepared, &prepared.model_name).await?;
         let mut response = self
-            .final_response(answer, &async_call, &prepared.model_name)
+            .final_response(answer, &prepared, &prepared.model_name)
             .await?;
         if file_from_kwargs
             && public_duration_is_absent(&response)
@@ -191,45 +201,46 @@ where
     // one sync stage, with its errors mapped through the outer wrapper's own rules
     async fn transcribed(
         &self,
-        async_call: &AsyncCall<'_>,
+        prepared: &AsyncPreparation,
         model: &str,
     ) -> Result<TranscriptionAnswer, AsyncTranscriptionError> {
         execute(
             self,
-            async_call.call,
-            async_call.processed,
-            async_call.input,
+            &prepared.asynchronous,
+            &prepared.plan,
+            &prepared.processed,
+            &prepared.input,
         )
         .await
-        .map_err(|error| self.mapped_error(&error, async_call.call, model))
+        .map_err(|error| self.mapped_error(&error, &prepared.asynchronous, model))
     }
 
     // the wrapper's isinstance chain: a reply, a cached dict, or one retry and the final type check
     async fn final_response(
         &self,
         answer: TranscriptionAnswer,
-        async_call: &AsyncCall<'_>,
+        prepared: &AsyncPreparation,
         model: &str,
     ) -> Result<TranscriptionResponse, AsyncTranscriptionError> {
-        match self.with_measured_duration(answer, async_call.processed) {
+        match self.with_measured_duration(answer, &prepared.processed) {
             TranscriptionAnswer::Reply(reply) => Ok(reply.response),
             TranscriptionAnswer::Mapping(mapping) => cached_audio_response(mapping)
-                .map_err(|error| self.mapped_error(&error, async_call.call, model)),
+                .map_err(|error| self.mapped_error(&error, &prepared.asynchronous, model)),
             TranscriptionAnswer::Unexpected(_) => {
-                let second = self.transcribed(async_call, model).await?;
-                match self.with_measured_duration(second, async_call.processed) {
+                let second = self.transcribed(prepared, model).await?;
+                match self.with_measured_duration(second, &prepared.processed) {
                     TranscriptionAnswer::Reply(reply) => Ok(reply.response),
                     TranscriptionAnswer::Mapping(_) => {
                         let failure = TranscriptionError::<Dispatch::Error>::InvalidResponse {
                             python_type: "<class 'dict'>",
                         };
-                        Err(self.mapped_error(&failure, async_call.call, model))
+                        Err(self.mapped_error(&failure, &prepared.asynchronous, model))
                     }
                     TranscriptionAnswer::Unexpected(value) => {
                         let failure = TranscriptionError::<Dispatch::Error>::InvalidResponse {
                             python_type: error_type_name(&value),
                         };
-                        Err(self.mapped_error(&failure, async_call.call, model))
+                        Err(self.mapped_error(&failure, &prepared.asynchronous, model))
                     }
                 }
             }

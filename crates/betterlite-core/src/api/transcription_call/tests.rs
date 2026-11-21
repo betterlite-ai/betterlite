@@ -96,8 +96,9 @@ fn transcription_openai_form() {
         assert_eq!(
             target.optional_params,
             params(
-                r#"{"language":"en","prompt":"hint","response_format":"verbose_json",
-                    "temperature":0,"timestamp_granularities":["word","segment"]}"#
+                r#"{"extra_body":{"prompt":"hint","temperature":0},"language":"en","prompt":"hint",
+                    "response_format":"verbose_json","temperature":0,
+                    "timestamp_granularities":["word","segment"]}"#
             )
         );
         let TranscriptionAnswer::Reply(reply) = answer else {
@@ -122,7 +123,7 @@ fn transcription_openai_form() {
         assert_eq!(srt_targets.len(), 2);
         assert_eq!(
             srt_targets[1].optional_params,
-            params(r#"{"response_format":"srt"}"#)
+            params(r#"{"extra_body":{},"response_format":"srt"}"#)
         );
         assert_eq!(srt_targets[1].input, "audio.wav");
         let TranscriptionAnswer::Reply(srt_reply) = srt_answer else {
@@ -380,7 +381,6 @@ fn transcription_native_selection() {
         );
         // a provider with no branch raises before any fabricated successful result
         let count = harness.dispatch.targets().len();
-        harness.dispatch.reply(response(r#"{"text":"Hello"}"#));
         let unmapped = request_for("cohere/command");
         let Err(unmapped_error) = harness
             .service()

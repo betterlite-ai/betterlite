@@ -17,7 +17,6 @@ use crate::api::transcription_call::dispatch::{TranscriptionAnswer, Transcriptio
 use crate::api::transcription_call::error::TranscriptionError;
 use crate::api::transcription_call::plan::{
     AzureCredentials, BranchCredentials, CredentialScheme, OpenAiCredentials, Plan, credentials,
-    prepare,
 };
 use crate::api::transcription_call::target::{
     AzureTranscription, InjectedTranscription, OpenAiTranscription, TranscriptionInput,
@@ -89,35 +88,29 @@ impl<'call> Destination<'call> {
     }
 }
 
-// the sync transcription body: resolve, log, then one provider branch
+// the sync transcription body after the caller prepared the plan: timeout, log, then one provider branch
 pub(super) async fn execute<Dispatch>(
     service: &Transcriptions<'_, Dispatch>,
     call: &TranscriptionCall,
+    plan: &Plan,
     processed: &ProcessedAudioFile,
     input: &str,
 ) -> Result<TranscriptionAnswer, TranscriptionError<Dispatch::Error>>
 where
     Dispatch: TranscriptionDispatch,
 {
-    let plan = prepare(
-        call,
-        service.dispatch,
-        service.settings,
-        &service.resolution,
-        service.bundled,
-    )?;
     let seconds = call.timeout.unwrap_or(DEFAULT_TIMEOUT_SECONDS);
     let timeout = Duration::try_from_secs_f64(seconds)
         .map_err(|_invalid| TranscriptionError::InvalidTimeout { seconds })?;
     let branch = BranchCall {
         call,
-        plan: &plan,
+        plan,
         processed,
         input,
         timeout,
         max_retries: retry_count(call.max_retries),
     };
-    log(service.logging, call, &plan)?;
+    log(service.logging, call, plan)?;
     dispatch_branch(service, &branch).await
 }
 

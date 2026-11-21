@@ -6,4 +6,10 @@ deviations:
   - what: The OpenAI branch sends one request, where LiteLLM's OpenAI SDK retries a 408, 409, 429 or 5xx answer up to max_retries times.
     why: betterlite's OpenAI transport (B515) has no retry loop, so the max_retries default of 2 reaches the dispatch without being spent; retrying belongs to the transport that owns it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/transcriptions/handler.py#L102-L109
+  - what: A cached dict is converted by keeping every key besides text, so a reply carrying words, duration or _hidden_params still becomes a typed response, where LiteLLM's TranscriptionResponse(**cached_dict) takes only text and raises TypeError for every other key.
+    why: The typed response keeps every provider field in extra, the shape the sync transports already produce, so a cached reply stays usable instead of failing on fields the caller never sent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L753-L754
+  - what: A cached dict skips the sync stage's duration step and is measured after conversion when the file came from kwargs, where LiteLLM's sync stage writes _hidden_params onto the dict and raises AttributeError for a readable audio file, failing the call.
+    why: A dict has no _hidden_params attribute, so LiteLLM's duration step crashes on exactly the cached replies it is meant to serve; betterlite converts the dict first and then stores the duration.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8186-L8191
 kept_bugs: []

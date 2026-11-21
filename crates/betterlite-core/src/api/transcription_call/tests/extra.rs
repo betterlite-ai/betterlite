@@ -1,15 +1,19 @@
+use std::path::Path;
 use std::sync::PoisonError;
 use std::time::Duration;
 
 use betterlite_context::non_default_params::Params;
 use betterlite_context::non_default_params::mapper::DropPolicy;
+use betterlite_error::error::ErrorClass;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::audio_file_input::{AudioFile, ProcessedAudioFile};
 use betterlite_openai::transcription::config::TranscriptionFamily;
 use indexmap::IndexMap;
 
 use super::support::request_for;
-use super::{Harness, TargetKind, fixed_boundary, json, params, response, runtime, value, wav};
+use super::{
+    Harness, TargetKind, fixed_boundary, json, params, response, runtime, secret, value, wav,
+};
 use crate::api::transcription_call::call::SuppliedClientKind;
 use crate::api::transcription_call::error::{
     AsyncTranscriptionError, TranscriptionDispatchError, TranscriptionError,
@@ -127,7 +131,7 @@ fn logging_records_the_client_string() {
         let harness = Harness::new();
         let audio = wav(1);
         harness.dispatch.reply(response(r#"{"text":"Hello"}"#));
-        let mut request = request_for("openai/whisper-1");
+        let mut request = request_for("openai/gpt-4o-transcribe");
         request.params = params(r#"{"litellm_call_id":"caller-call"}"#);
         request.user = Some(String::from("caller-user"));
         harness
@@ -143,6 +147,17 @@ fn logging_records_the_client_string() {
             state.model_call_details.get("client"),
             Some(&Json::Text(String::from("None")))
         );
+        // the resolved model replaces the harness INIT model, and the provider slug travels beside it
+        assert_eq!(state.model, "gpt-4o-transcribe");
+        assert_eq!(
+            state.model_call_details.get("model"),
+            Some(&Json::Text(String::from("gpt-4o-transcribe")))
+        );
+        assert_eq!(state.custom_llm_provider.as_deref(), Some("openai"));
+        assert_eq!(
+            state.model_call_details.get("custom_llm_provider"),
+            Some(&Json::Text(String::from("openai")))
+        );
         assert_eq!(state.user.as_deref(), Some("caller-user"));
         assert!(state.optional_params.is_empty());
         // the caller's kwargs come after the six defaults, so its value replaces the default
@@ -157,6 +172,12 @@ fn logging_records_the_client_string() {
         assert_eq!(
             state.litellm_params.get("stream_response"),
             Some(&Json::Object(IndexMap::new()))
+        );
+        assert_eq!(state.litellm_params.get("metadata"), Some(&Json::Null));
+        assert_eq!(state.litellm_params.get("model_info"), Some(&Json::Null));
+        assert_eq!(
+            state.litellm_params.get("preset_cache_key"),
+            Some(&Json::Null)
         );
     });
 }
@@ -283,7 +304,178 @@ fn atranscription_falls_back_to_openai_for_an_unresolvable_model() {
             exception.class.metadata().provider.as_deref(),
             Some("openai")
         );
+        // get_llm_provider raises BadRequestError with a 400 before any provider branch runs
+        assert!(matches!(exception.class, ErrorClass::BadRequest(_)));
+        assert_eq!(exception.class.metadata().status_code, 400_u16);
         assert!(harness.dispatch.targets().is_empty());
+    });
+}
+
+// resolution and the optional params run before any handler opens the file, as get_llm_provider does
+#[test]
+fn resolution_failure_precedes_the_audio_read() {
+    runtime().block_on(async {
+        let harness = Harness::new();
+        let request = request_for("no-such-provider/model-x");
+        let missing = Path::new("/missing.wav");
+        let synchronous = harness
+            .service()
+            .transcription(&request, AudioFile::Path(missing))
+            .await;
+        let Err(sync_error) = synchronous else {
+            panic!("the model does not resolve");
+        };
+        assert!(matches!(sync_error, TranscriptionError::Resolution(_)));
+        let asynchronous = harness
+            .service()
+            .atranscription(
+                Some("no-such-provider/model-x"),
+                &request,
+                AudioFile::Path(missing),
+                true,
+            )
+            .await;
+        let Err(refusal) = asynchronous else {
+            panic!("the model does not resolve");
+        };
+        let AsyncTranscriptionError::Exception(exception) = refusal else {
+            panic!("the resolution failure maps to an exception");
+        };
+        assert!(matches!(exception.class, ErrorClass::BadRequest(_)));
+        assert_eq!(exception.class.metadata().status_code, 400_u16);
+        assert!(harness.dispatch.targets().is_empty());
+    });
+}
+
+// litellm.openai_key is the OpenAI branch's key when no call key and no litellm.api_key are set
+#[test]
+fn openai_key_fallback_applies_alone() {
+    runtime().block_on(async {
+        let mut harness = Harness::new();
+        harness.settings.openai_key = Some(secret("openai-key"));
+        harness.dispatch.reply(response(r#"{"text":"Hello"}"#));
+        harness
+            .service()
+            .transcription(&request_for("openai/whisper-1"), AudioFile::Bytes(&wav(1)))
+            .await
+            .expect("the openai transcription succeeds");
+        let target = harness.dispatch.last();
+        assert_eq!(target.api_key.as_deref(), Some("openai-key"));
+        assert_eq!(
+            target.api_base.as_deref(),
+            Some("https://api.openai.com/v1")
+        );
+    });
+}
+
+// OPENAI_API_BASE alone provides the OpenAI base, after the missing call and litellm values
+#[test]
+fn openai_api_base_fallback_applies_alone() {
+    runtime().block_on(async {
+        let mut harness = Harness::new();
+        harness.settings.openai_api_base = Some(String::from("https://openai-api-base.test/v1"));
+        harness.dispatch.reply(response(r#"{"text":"Hello"}"#));
+        harness
+            .service()
+            .transcription(&request_for("openai/whisper-1"), AudioFile::Bytes(&wav(1)))
+            .await
+            .expect("the openai transcription succeeds");
+        assert_eq!(
+            harness.dispatch.last().api_base.as_deref(),
+            Some("https://openai-api-base.test/v1")
+        );
+    });
+}
+
+// litellm.azure_key is the Azure branch's key when no call key and no litellm.api_key are set
+#[test]
+fn azure_key_fallback_applies_alone() {
+    runtime().block_on(async {
+        let mut harness = Harness::new();
+        harness.settings.azure_key = Some(secret("azure-key"));
+        harness.dispatch.reply(response(r#"{"text":"Hello"}"#));
+        harness
+            .service()
+            .transcription(&request_for("azure/whisper"), AudioFile::Bytes(&wav(1)))
+            .await
+            .expect("the azure transcription succeeds");
+        let target = harness.dispatch.last();
+        assert_eq!(target.kind, TargetKind::Azure);
+        assert_eq!(target.api_key.as_deref(), Some("azure-key"));
+    });
+}
+
+// AZURE_API_KEY fills the Azure key when litellm.azure_key is unset, as the chain's last value
+#[test]
+fn azure_api_key_environment_fills_the_key_alone() {
+    runtime().block_on(async {
+        let mut harness = Harness::new();
+        harness.settings.azure_api_key = Some(secret("env-azure-key"));
+        harness.dispatch.reply(response(r#"{"text":"Hello"}"#));
+        harness
+            .service()
+            .transcription(&request_for("azure/whisper"), AudioFile::Bytes(&wav(1)))
+            .await
+            .expect("the azure transcription succeeds");
+        assert_eq!(
+            harness.dispatch.last().api_key.as_deref(),
+            Some("env-azure-key")
+        );
+    });
+}
+
+// a single AZURE_API_BASE, AZURE_API_VERSION or litellm.api_version reaches the Azure target alone
+#[test]
+fn azure_base_and_version_apply_alone() {
+    runtime().block_on(async {
+        let mut base = Harness::new();
+        base.settings.azure_api_base = Some(String::from("https://azure-api-base.test"));
+        base.settings.azure_api_version = Some(String::from("2025-01-01"));
+        base.dispatch.reply(response(r#"{"text":"Hello"}"#));
+        base.service()
+            .transcription(&request_for("azure/whisper"), AudioFile::Bytes(&wav(1)))
+            .await
+            .expect("the azure transcription succeeds");
+        let target = base.dispatch.last();
+        assert_eq!(
+            target.api_base.as_deref(),
+            Some("https://azure-api-base.test")
+        );
+        assert_eq!(target.api_version.as_deref(), Some("2025-01-01"));
+        let mut version = Harness::new();
+        version.settings.api_version = Some(String::from("2023-09-01"));
+        version.dispatch.reply(response(r#"{"text":"Hello"}"#));
+        version
+            .service()
+            .transcription(&request_for("azure/whisper"), AudioFile::Bytes(&wav(1)))
+            .await
+            .expect("the azure transcription succeeds");
+        assert_eq!(
+            version.dispatch.last().api_version.as_deref(),
+            Some("2023-09-01")
+        );
+    });
+}
+
+// the Azure call's own api_base and api_key beat litellm.api_base and litellm.api_key
+#[test]
+fn azure_call_credentials_beat_the_globals() {
+    runtime().block_on(async {
+        let mut harness = Harness::new();
+        harness.settings.api_base = Some(String::from("https://litellm-base.test"));
+        harness.settings.api_key = Some(secret("litellm-key"));
+        harness.dispatch.reply(response(r#"{"text":"Hello"}"#));
+        let mut azure = request_for("azure/whisper");
+        azure.api_base = Some(String::from("https://call.test"));
+        azure.api_key = Some(secret("call-key"));
+        harness
+            .service()
+            .transcription(&azure, AudioFile::Bytes(&wav(1)))
+            .await
+            .expect("the azure transcription succeeds");
+        let target = harness.dispatch.last();
+        assert_eq!(target.api_base.as_deref(), Some("https://call.test"));
+        assert_eq!(target.api_key.as_deref(), Some("call-key"));
     });
 }
 
