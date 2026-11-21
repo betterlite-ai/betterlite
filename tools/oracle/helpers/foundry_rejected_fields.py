@@ -60,7 +60,7 @@ def rejected(error: str) -> httpx.HTTPStatusError:
     return httpx.HTTPStatusError("rejected", request=REQUEST, response=response)
 
 
-def trigger_value(call: TriggerCall) -> JsonObject:
+def trigger_value(call: TriggerCall) -> JsonValue:
     litellm.drop_params = call["global_drop_params"]
     params: JsonObject = {"drop_params": call["request_drop_params"]}
     retry = CONFIG.should_retry_llm_api_inside_llm_translation_on_http_error(
@@ -69,7 +69,7 @@ def trigger_value(call: TriggerCall) -> JsonObject:
     return {"retry": retry}
 
 
-def repair_value(call: RepairCall) -> JsonObject:
+def repair_value(call: RepairCall) -> JsonValue:
     repaired = CONFIG.transform_request_on_unprocessable_entity_error(
         rejected(call["error"]), dict(call["body"])
     )
