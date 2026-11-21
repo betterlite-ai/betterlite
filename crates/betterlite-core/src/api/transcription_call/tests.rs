@@ -1,4 +1,13 @@
 #![cfg(test)]
+#![cfg_attr(
+    test,
+    expect(
+        clippy::too_many_lines,
+        reason = "each named behavior test states one LiteLLM transcription scenario end to end"
+    )
+)]
+mod extra;
+
 use super::call::{SuppliedClientKind, TranscriptionCall};
 use super::dispatch::{TranscriptionAnswer, TranscriptionDispatch, TranscriptionProviderReply};
 use super::error::{AsyncTranscriptionError, TranscriptionDispatchError, TranscriptionError};
@@ -205,7 +214,7 @@ fn transcription_credential_precedence() {
         // the environment-key fallbacks come after the globals, and OPENAI_ORGANIZATION after litellm.organization
         harness.settings.api_key = None;
         harness.settings.openai_key = None;
-        harness.settings.organization = None;
+        harness.settings.organization = Some(String::new());
         harness.settings.api_base = None;
         harness.settings.openai_base_url = Some(String::from("https://env-base.test/v1"));
         harness.dispatch.reply(response(r#"{"text":"Hello"}"#));
@@ -417,6 +426,10 @@ fn transcription_native_selection() {
         };
         assert!(matches!(exception.class, ErrorClass::RateLimit(_)));
         assert_eq!(exception.class.metadata().status_code, 429_u16);
+        assert_eq!(
+            exception.class.metadata().provider.as_deref(),
+            Some("openai")
+        );
     });
 }
 
@@ -900,25 +913,7 @@ fn runtime() -> tokio::runtime::Runtime {
 fn request_for(model: &str) -> TranscriptionCall {
     TranscriptionCall {
         model: model.to_owned(),
-        language: None,
-        prompt: None,
-        response_format: None,
-        timestamp_granularities: None,
-        temperature: None,
-        user: None,
-        timeout: None,
-        api_key: None,
-        api_base: None,
-        api_version: None,
-        max_retries: None,
-        custom_llm_provider: None,
-        base_url: None,
-        atranscription: None,
-        client: None,
-        extra_headers: None,
-        shared_session: None,
-        azure_ad_token: None,
-        params: Params::new(),
+        ..TranscriptionCall::default()
     }
 }
 

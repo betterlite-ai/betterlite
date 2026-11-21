@@ -136,7 +136,7 @@ fn optional_text(value: Option<&str>) -> JsonValue {
     }
 }
 
-fn bool_value(value: &JsonValue) -> Option<bool> {
+pub(super) fn bool_value(value: &JsonValue) -> Option<bool> {
     match value {
         JsonValue::Bool(flag) => Some(*flag),
         JsonValue::Null
