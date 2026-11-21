@@ -846,4 +846,34 @@ pub(super) fn streaming_deployment_request() {
     assert_eq!(chunks[0].id, format!("chatcmpl-{}", identifier()));
     assert_eq!(chunks[0].created, 1_700_000_000);
     assert_eq!(chunks[0].choices[0].delta.content.as_deref(), Some("Hello"));
+
+    // the sync path streams only on a literal true, so another truthy value still buffers
+    let buffered_source =
+        ScriptedSource::new(ClientKind::AzureOpenAi, Some("key"), Answer::reply());
+    let mut truthy = Harness::default();
+    truthy.optional_params = json!({"stream": 1});
+    let mut recorder = Recorder::default();
+    let outcome = block_on(async {
+        truthy
+            .run(&buffered_source, &mut recorder)
+            .await
+            .expect("reply")
+    });
+    assert!(matches!(outcome, ChatOutcome::Buffered(_)));
+
+    // acompletion streams on any truthy stream value, so a number is enough there
+    let async_source =
+        ScriptedSource::new(ClientKind::AsyncAzureOpenAi, Some("key"), Answer::reply())
+            .with_stream(STREAM_EVENTS);
+    let mut asynchronous = Harness::default();
+    asynchronous.acompletion = true;
+    asynchronous.optional_params = json!({"stream": 1});
+    let mut recorder = Recorder::default();
+    let outcome = block_on(async {
+        asynchronous
+            .run(&async_source, &mut recorder)
+            .await
+            .expect("stream opens")
+    });
+    assert!(matches!(outcome, ChatOutcome::Stream(_)));
 }
