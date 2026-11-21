@@ -828,7 +828,10 @@ async fn http_case() {
     };
     let request = OperationRequest::Chat(Box::new(ChatOperation {
         model: String::from("mistral-large"),
-        request: support::simple_request("mistral-large"),
+        // the optional parameters reach the body, and api_version becomes the URL query alone
+        request: support::request(
+            r#"{"model":"mistral-large","messages":[{"role":"user","content":"hi"}],"max_tokens":7,"api_version":"2024-02-01"}"#,
+        ),
         control: ControlOptions::default(),
     }));
     let prepared = AzureAi
@@ -857,7 +860,7 @@ async fn http_case() {
         completion.choices[0].message.content.as_deref(),
         Some("hello")
     );
-    assert!(sent.starts_with("POST /models/chat/completions HTTP/1.1"));
+    assert!(sent.starts_with("POST /models/chat/completions?api-version=2024-02-01 HTTP/1.1"));
     let lower = sent.to_lowercase();
     assert!(lower.contains("authorization: bearer sk-foundry-fixture"));
     assert!(lower.contains("content-type: application/json"));
@@ -867,6 +870,8 @@ async fn http_case() {
         field(&body, "model"),
         &JsonValue::Text(String::from("mistral-large"))
     );
+    let max_tokens = JsonValue::Number(serde_json::Number::from(7_u8));
+    assert_eq!(field(&body, "max_tokens"), &max_tokens);
     let JsonValue::Array(messages) = field(&body, "messages") else {
         panic!("the sent messages are an array");
     };
