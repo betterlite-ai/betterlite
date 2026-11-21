@@ -8,6 +8,7 @@ use betterlite_config::types::Config;
 use rstest::rstest;
 use serde_json::json;
 
+use super::catalog::field_default;
 use super::response::{RouterSettingsResponse, fields_response, settings_response};
 use super::view::{current_values, settings_store};
 
@@ -277,6 +278,30 @@ fn fields_endpoint_reports_the_reviewed_catalog_without_values() {
             .filter(|field| field.field_name != "enable_tag_filtering")
             .all(|field| field.link.is_none())
     );
+}
+
+#[test]
+fn field_defaults_are_read_from_the_reviewed_catalog() {
+    let answer = fields_response();
+    let defaults: BTreeMap<&str, JsonValue> = answer
+        .fields
+        .iter()
+        .map(|field| (field.field_name, field.field_default.clone()))
+        .collect();
+    assert_eq!(
+        defaults.get("routing_strategy"),
+        Some(&json!("simple-shuffle"))
+    );
+    assert_eq!(defaults.get("routing_groups"), Some(&json!([])));
+    assert_eq!(defaults.get("routing_strategy_args"), Some(&json!({})));
+    assert_eq!(defaults.get("num_retries"), Some(&json!(0)));
+    assert_eq!(defaults.get("max_fallbacks"), Some(&json!(5)));
+    assert_eq!(defaults.get("retry_after"), Some(&json!(0)));
+    assert_eq!(defaults.get("enable_pre_call_checks"), Some(&json!(false)));
+    assert_eq!(defaults.get("tag_filtering_match_any"), Some(&json!(true)));
+    assert_eq!(defaults.get("timeout"), Some(&json!(null)));
+    assert_eq!(field_default("num_retries"), json!(0));
+    assert_eq!(field_default("not_a_router_setting"), json!(null));
 }
 
 #[test]
