@@ -129,8 +129,7 @@ fn form_body(pairs: &[(&str, &str)]) -> Vec<u8> {
     body.into_bytes()
 }
 
-// reads the text of the child element inside the named parent, so Role/Arn is not any Arn;
-// quick-xml reports an entity as its own event, so the pieces of one element are appended
+// reads the named child's text; quick-xml emits an entity as its own event, so the pieces are appended
 pub fn child_text(
     body: &[u8],
     parent: &str,
