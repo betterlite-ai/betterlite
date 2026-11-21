@@ -1,4 +1,5 @@
 name: auth-request-policy-allowed-ips-denied
+native_feature_eligibility: true
 config: |
   general_settings:
     master_key: oracle-master

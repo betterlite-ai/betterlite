@@ -1,4 +1,5 @@
 name: auth-request-policy-check-order
+native_feature_eligibility: true
 config: |
   general_settings:
     master_key: oracle-master
