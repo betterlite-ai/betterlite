@@ -12,7 +12,7 @@ pub enum AssistantBodyError {
     Invalid(#[source] serde_json::Error),
 }
 
-// orjson.loads at proxy_server.py#L13162-L13164: one strict parse, no repair and no object coercion
+// orjson.loads at proxy_server.py#L13171: one strict parse, no repair and no object coercion
 pub fn decode_assistant_body(bytes: &[u8], limits: &ApiLimits) -> Result<Json, AssistantBodyError> {
     limits.check(ApiBoundariesInput::Json(JsonBoundary {
         known_bytes: bytes.len(),

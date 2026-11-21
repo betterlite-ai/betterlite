@@ -29,7 +29,7 @@ pub use operation::AssistantOperation;
 pub use outcome::AssistantOutcome;
 pub use request::AssistantRequest;
 
-// router.py#L7183-L7190: the exact text the factory raises when no provider is configured or passed
+// router.py#L7188-L7190: the exact text the factory raises when no provider is configured or passed
 const REQUIRED_PROVIDER: &str = "'custom_llm_provider' must be set. Either via:\n `Router(assistants_config={'custom_llm_provider': ..})` \nor\n `router.arun_thread(custom_llm_provider=..)`";
 
 // The callee Router.initialize_assistants_endpoint installs for the eight assistant wrappers.
@@ -52,7 +52,7 @@ struct Merged {
     kwargs: BTreeMap<String, Json>,
 }
 
-// the wrapper's own named arguments: a configured copy of either collides with the call (router.py#L7190)
+// the wrapper's own named arguments: a configured copy of either collides with the call (router.py#L7191)
 fn check_arguments(
     function: &str,
     kwargs: &BTreeMap<String, Json>,
