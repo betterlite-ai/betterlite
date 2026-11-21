@@ -1,5 +1,5 @@
 kind: helper
-name: jwt-settings-issuer-null-overrides-fall-back
+name: jwt-settings-issuer-overrides-seed
 call:
   jwt_settings:
     scenarios:

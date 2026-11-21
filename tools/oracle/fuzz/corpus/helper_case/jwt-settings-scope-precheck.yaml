@@ -1,5 +1,5 @@
 kind: helper
-name: jwt-settings-scope-precheck-before-bool-coercion
+name: jwt-settings-scope-precheck-seed
 call:
   jwt_settings:
     scenarios:

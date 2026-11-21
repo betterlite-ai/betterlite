@@ -48,7 +48,7 @@ enum Rejected {
 #[serde(untagged)]
 enum Outcome {
     Accepted {
-        accepted: Settings,
+        accepted: Box<Settings>,
         virtual_key_mapping_configured: bool,
         probes: Vec<Probe>,
     },
@@ -128,7 +128,7 @@ fn accepted(built: Settings, issuers: &[Option<String>]) -> Outcome {
     Outcome::Accepted {
         virtual_key_mapping_configured: built.is_virtual_key_mapping_configured(),
         probes,
-        accepted: built,
+        accepted: Box::new(built),
     }
 }
 
