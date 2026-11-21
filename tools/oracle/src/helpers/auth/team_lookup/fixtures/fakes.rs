@@ -123,10 +123,10 @@ impl TeamCache for Port {
 
     async fn write_team(&self, key: &str, team: &LiteLLMTeamTableCachedObj, ttl: f64) -> Written {
         let failure = format!("write {key}");
-        let mut board = self
-            .admit(format!("write {key} ttl={ttl}"), &failure)
-            .ok_or_else(refusal)?;
-        board.teams.insert(key.to_owned(), team.clone());
+        self.admit(format!("write {key} ttl={ttl}"), &failure)
+            .ok_or_else(refusal)?
+            .teams
+            .insert(key.to_owned(), team.clone());
         Ok(())
     }
 
@@ -150,10 +150,10 @@ impl TeamCache for Port {
     async fn cache_access_group(&self, access_group_id: &str, table: &AccessGroupTable) -> Written {
         let key = format!("access_group_id:{access_group_id}");
         let failure = format!("write {key}");
-        let mut board = self
-            .admit(format!("write {key} ttl=600"), &failure)
-            .ok_or_else(refusal)?;
-        board.groups.insert(key, table.clone());
+        self.admit(format!("write {key} ttl=600"), &failure)
+            .ok_or_else(refusal)?
+            .groups
+            .insert(key, table.clone());
         Ok(())
     }
 }

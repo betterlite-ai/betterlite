@@ -87,10 +87,9 @@ async fn writer_beats_cache_only() {
 #[tokio::test]
 async fn grant_relations_loaded() {
     let world = world();
-    let row = json(
+    world.lock().team_rows.push(json(
         r#"{"team_id": "t1", "object_permission_id": "p1", "litellm_model_table": {"id": 7, "model_aliases": {"fast": "gpt-4o"}, "created_by": "a", "updated_by": "a"}}"#,
-    );
-    world.lock().team_rows.push(row);
+    ));
     world.lock().permission_rows.push(json(
         r#"{"object_permission_id": "p1", "models": ["gpt-4o"]}"#,
     ));
@@ -114,10 +113,9 @@ async fn grant_relations_loaded() {
     assert_eq!(world.events(), expected);
 
     world.lock().events.clear();
-    let loaded = json(
+    world.lock().team_rows.push(json(
         r#"{"team_id": "t2", "object_permission_id": "p1", "object_permission": {"object_permission_id": "p1"}}"#,
-    );
-    world.lock().team_rows.push(loaded);
+    ));
     let second = TeamRequest {
         team_id: "t2",
         ..request(TeamSource::Writer)

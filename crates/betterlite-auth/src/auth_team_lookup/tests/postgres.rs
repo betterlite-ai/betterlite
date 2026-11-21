@@ -73,7 +73,9 @@ async fn assert_teams(database: &DatabaseTeamStore) {
         matches!(&relation.model_aliases, Some(ModelAliases::Map(aliases)) if aliases.contains_key("fast"))
     );
     assert_eq!(database.find_team("absent", false).await.unwrap(), None);
+}
 
+async fn assert_aliases(database: &DatabaseTeamStore) {
     let shared = database.find_by_alias("shared").await.unwrap();
     assert_eq!(shared.len(), 2);
     for shared_row in shared {
@@ -115,6 +117,7 @@ async fn relation_projection() {
         .unwrap();
     let database = team_store(store.clone(), store.clone());
     assert_teams(&database).await;
+    assert_aliases(&database).await;
     assert_group(&database).await;
 
     let writer_only = team_store(PostgresStore { pool: None }, store.clone());
