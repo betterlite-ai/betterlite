@@ -37,10 +37,11 @@ pub(super) async fn execute(
     let document = settings_document(call, api_base)?;
     let settings = loads_rerank_settings(&document, &environment)
         .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?;
+    // the case's litellm_settings are the dispatcher's view alone; the global loader knows none of their keys
     let loaded = ConfigLoader {
         lookup: environment.clone(),
     }
-    .load(&document)
+    .load("{}")
     .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?;
     let operations = build_operations(&environment, &loaded)?;
     let catalog = BundledCatalog::default().get();
