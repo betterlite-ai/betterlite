@@ -170,6 +170,6 @@ pub(super) fn proxy_fields(error: &ModelWriteError) -> (u16, String, Option<Stri
         param,
         code,
         ..
-    } = exception;
+    } = *exception;
     (status.as_u16(), error_type, param, code)
 }

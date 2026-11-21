@@ -484,8 +484,8 @@ async fn native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_
 #[case::not_team_admin(ModelWriteError::NotTeamAdmin { team_id: "team-1".to_owned(), key_team: None }, Some((403, "error")))]
 #[case::not_proxy_admin(ModelWriteError::NotProxyAdmin, Some((403, "error")))]
 #[case::session_tags(ModelWriteError::AdminOnly { field: AdminOnlyField::SessionTags }, Some((403, "proxy")))]
-#[case::team_read(ModelWriteError::TeamRead(TeamQueryError::Record { source: TeamRecordError::NotAnObject }), None)]
-#[case::team_access(ModelWriteError::TeamAccess(TeamAccessError::Denied), None)]
+#[case::team_read(ModelWriteError::TeamRead(Box::new(TeamQueryError::Record { source: TeamRecordError::NotAnObject })), None)]
+#[case::team_access(ModelWriteError::TeamAccess(Box::new(TeamAccessError::Denied)), None)]
 fn rejection_shapes(#[case] error: ModelWriteError, #[case] expected: Option<(u16, &str)>) {
     let shape = error.rejection().map(|found| {
         let kind = match found.detail {

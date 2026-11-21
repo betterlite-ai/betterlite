@@ -55,7 +55,7 @@ impl ModelWriteAccess<'_> {
             .teams
             .find_team(owner)
             .await
-            .map_err(ModelWriteError::TeamRead)?
+            .map_err(|source| ModelWriteError::TeamRead(Box::new(source)))?
             .ok_or_else(|| ModelWriteError::TeamMissing {
                 team_id: owner.to_owned(),
             })?;
@@ -107,7 +107,7 @@ impl ModelWriteAccess<'_> {
             .team_access
             .allows(caller, &team.fields.base, &TEAM_ADMIN_ONLY)
             .await
-            .map_err(ModelWriteError::TeamAccess)?;
+            .map_err(|source| ModelWriteError::TeamAccess(Box::new(source)))?;
         if is_admin {
             return Ok(ModelWriteGrant::Authorized);
         }
@@ -141,7 +141,7 @@ impl ModelWriteAccess<'_> {
             .teams
             .find_team(owner)
             .await
-            .map_err(ModelWriteError::TeamRead)?;
+            .map_err(|source| ModelWriteError::TeamRead(Box::new(source)))?;
         Ok(Some(Owner {
             team_id: owner,
             team,

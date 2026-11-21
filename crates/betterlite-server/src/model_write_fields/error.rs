@@ -49,9 +49,9 @@ pub enum ModelWriteError {
     #[error("only a proxy admin can {field} on a model")]
     AdminOnly { field: AdminOnlyField },
     #[error("the model's team could not be read")]
-    TeamRead(#[source] TeamQueryError),
+    TeamRead(#[source] Box<TeamQueryError>),
     #[error("the caller's team role could not be read")]
-    TeamAccess(#[source] TeamAccessError),
+    TeamAccess(#[source] Box<TeamAccessError>),
 }
 
 // LiteLLM raises an HTTPException whose detail is text or {"error": ...}, or a ProxyException with type, param and code
@@ -59,7 +59,7 @@ pub enum ModelWriteError {
 pub enum Detail {
     Message(String),
     Error(String),
-    Proxy(ProxyException),
+    Proxy(Box<ProxyException>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,7 +81,7 @@ impl ModelWriteError {
                 (StatusCode::FORBIDDEN, Detail::Error(message))
             }
             Self::AdminOnly { field } => {
-                let exception = ProxyException::new(ProxyExceptionInit {
+                let exception = Box::new(ProxyException::new(ProxyExceptionInit {
                     message,
                     error_type: ProxyErrorTypes::AuthError.to_string(),
                     param: Some(field.param().to_owned()),
@@ -89,7 +89,7 @@ impl ModelWriteError {
                     headers: BTreeMap::new(),
                     openai_code: None,
                     provider_specific_fields: BTreeMap::new(),
-                });
+                }));
                 (StatusCode::FORBIDDEN, Detail::Proxy(exception))
             }
             Self::TeamRead(_) | Self::TeamAccess(_) => return None,
