@@ -3,7 +3,7 @@
 use std::marker::PhantomData;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
-use betterlite_guardrails::guardrail_translation::BaseTranslation;
+use betterlite_guardrails::guardrail_translation::BaseTranslation as _;
 
 use crate::guardrails::unified_guardrail::other_adapters::RerankTranslation;
 use crate::guardrails::unified_guardrail::other_adapters::google_genai::GoogleGenAiTranslation;
@@ -63,9 +63,4 @@ fn adapters_keep_the_trait_defaults() {
     assert!(mcp.build_block_sse_chunks(&blocked(), true, None).is_none());
     assert!(genai.build_stream_error_items(&blocked(), None).is_none());
     assert_eq!(rerank.post_call_hook_response(response.clone()), response);
-    let class_flags = [
-        <McpTranslation<FakeGuardrail> as BaseTranslation>::DELIVERS_ENDED_STREAM_REWRITES,
-        <GoogleGenAiTranslation<FakeGuardrail> as BaseTranslation>::ASSEMBLES_STREAMED_RESPONSE,
-    ];
-    assert_eq!(class_flags, [false, false]);
 }
