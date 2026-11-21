@@ -1,0 +1,27 @@
+task: B5660
+deviations:
+  - what: >-
+      The batch limiter is not built inside the selection call: the assembly starts with an empty slot and a
+      set_batch_limiter call fills it before the first acreate_batch request reaches it.
+    why: >-
+      LiteLLM builds the batch limiter lazily inside _get_batch_rate_limiter to keep the handler module from
+      importing the batch module at startup. Rust has no such import cycle, and a constructor that does no I/O has
+      nothing to defer, so boot or the Batch API's own task fills the slot through the accessor instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L839-L854
+  - what: >-
+      CallTypeRateLimiter takes typed arguments (UserAPIKeyAuth, RateLimitCallData and a RequestStashSlot) and
+      returns Result<(), ProxyRateLimitError>.
+    why: >-
+      LiteLLM's protocol takes an untyped data dict, keeps the per-request stash in a ContextVar, and returns a union
+      of Exception, str, dict and None. The workspace rules forbid untyped values and hidden per-request state, and
+      B3055 turns the typed error into LiteLLM's 429 or 503 answer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L597-L604
+  - what: >-
+      The model group resolver reads the deployment catalog's model_group_alias table instead of the router object's
+      model_group_alias attribute.
+    why: >-
+      betterlite-rate-limit cannot depend on betterlite-router, because deny.toml allows that crate only to the
+      listed wrappers. The resolver reads the same router_settings.model_group_alias table the router is built from
+      and applies resolve_model_group_alias's non-empty-target rule, so a configured alias resolves the same way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/common_utils.py#L43-L61
+kept_bugs: []
