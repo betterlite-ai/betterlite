@@ -55,7 +55,7 @@ class ScriptedMemory(InMemoryCache):
         self.ttls: dict[str, float | None] = {}
 
     def current(self, key: str) -> float | str | None:
-        return self.values[key] if key in self.values else None
+        return self.values.get(key)
 
     @override
     def get_cache(self, key: str, **kwargs: JsonValue) -> float | str | None:
@@ -65,7 +65,7 @@ class ScriptedMemory(InMemoryCache):
     @override
     def set_cache(self, key: str, value: float | str, **kwargs: float | None) -> None:
         self.values[key] = value
-        self.ttls[key] = kwargs["ttl"] if "ttl" in kwargs else None
+        self.ttls[key] = kwargs.get("ttl")
 
 
 @dataclass
@@ -176,7 +176,9 @@ def build_client(data: Input, memory: ScriptedMemory, start: datetime | None) ->
 
 async def call(data: Input, start: datetime | None) -> JsonValue:
     if data["op"] == "read_spend_counter_cache_value":
-        value, authoritative = await proxy_server.read_spend_counter_cache_value(data["counter_key"])
+        value, authoritative = await proxy_server.read_spend_counter_cache_value(
+            data["counter_key"]
+        )
         return {"value": value, "authoritative": authoritative}
     spend = await proxy_server.get_current_spend(
         counter_key=data["counter_key"],
@@ -191,8 +193,14 @@ async def call(data: Input, start: datetime | None) -> JsonValue:
     return {"spend": spend}
 
 
+def start_of(text: str | None) -> datetime | None:
+    if text is None:
+        return None
+    return datetime.fromisoformat(text)
+
+
 async def scenario(data: Input, memory: ScriptedMemory, redis: ScriptedRedis) -> JsonValue:
-    start = None if data["window_start"] is None else datetime.fromisoformat(data["window_start"])
+    start = start_of(data["window_start"])
     key = data["counter_key"]
     batch_after: JsonValue = None
     if data["redis"] and data["batch"] != "none":
@@ -208,7 +216,7 @@ async def scenario(data: Input, memory: ScriptedMemory, redis: ScriptedRedis) ->
     for counter, amount in redis.set_max_calls:
         pair: JsonValue = [counter, amount]
         set_max_calls.append(pair)
-    marker_ttl = memory.ttls[marker_key] if marker_key in memory.ttls else None
+    marker_ttl = memory.ttls.get(marker_key)
     return {
         "result": result,
         "memory_after": memory.current(key),
@@ -226,11 +234,14 @@ def run(input_value: Input) -> JsonValue:
     if input_value["marker"] is not None:
         memory.set_cache(f"spend_db_floor:{input_value['counter_key']}", input_value["marker"])
     redis = ScriptedRedis(input_value)
-    start = None if input_value["window_start"] is None else datetime.fromisoformat(input_value["window_start"])
+    start = start_of(input_value["window_start"])
     client = build_client(input_value, memory, start)
-    # each helper call runs in its own process, so the proxy globals get_current_spend reads are set in place
+    # each helper call runs in its own process, so the proxy globals get set in place
     proxy_server.spend_counter_cache.in_memory_cache = memory
     proxy_server.spend_counter_cache.redis_cache = redis if input_value["redis"] else None
     proxy_server.prisma_client = client
-    proxy_server.general_settings = {"fail_closed_budget_enforcement": True} if input_value["strict"] else {}
+    settings: dict[str, bool] = {}
+    if input_value["strict"]:
+        settings["fail_closed_budget_enforcement"] = True
+    proxy_server.general_settings = settings
     return asyncio.run(scenario(input_value, memory, redis))
