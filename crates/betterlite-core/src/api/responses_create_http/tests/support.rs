@@ -597,6 +597,13 @@ impl AgenticRecorder {
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
     }
+
+    fn record(&self, call: ScriptedCall) {
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(call);
+    }
 }
 
 fn messages(messages: &[FollowupMessage]) -> Vec<PromptJson> {
@@ -644,10 +651,7 @@ impl AgenticCallback for Scripted {
         call: &AgenticCall<'_>,
     ) -> Result<AgenticGate, AgenticHookError> {
         self.recorder
-            .calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(ScriptedCall::Gate(messages(call.messages)));
+            .record(ScriptedCall::Gate(messages(call.messages)));
         Ok(AgenticGate {
             run: true,
             tools: JsonMap::new(),
@@ -658,11 +662,8 @@ impl AgenticCallback for Scripted {
         &self,
         call: &AgenticLoopCall<'_>,
     ) -> Result<Option<Box<RawValue>>, AgenticHookError> {
-        self.recorder
-            .calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(ScriptedCall::Loop(messages(call.messages)));
+        let recorded = messages(call.messages);
+        self.recorder.record(ScriptedCall::Loop(recorded));
         self.recorder
             .optional
             .lock()
