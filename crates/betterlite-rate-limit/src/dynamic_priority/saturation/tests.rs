@@ -54,6 +54,13 @@ async fn non_positive_limits_read_nothing() {
 }
 
 #[tokio::test]
+async fn a_zero_token_limit_reads_nothing() {
+    let (saturation, reads) = saturation(&[(TPM_KEY, text("900"))], limits(None, Some(0))).await;
+    assert_eq!(saturation.to_bits(), 0.0_f64.to_bits());
+    assert!(reads.is_empty());
+}
+
+#[tokio::test]
 async fn rpm_saturation_is_the_request_ratio() {
     let (saturation, reads) = saturation(&[(RPM_KEY, text("50"))], limits(Some(100), None)).await;
     assert_eq!(saturation.to_bits(), 0.5_f64.to_bits());

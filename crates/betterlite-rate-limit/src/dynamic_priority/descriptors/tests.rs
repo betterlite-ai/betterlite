@@ -150,6 +150,15 @@ fn the_multiplier_raises_the_tracking_limits() {
 }
 
 #[test]
+fn a_tracking_limit_past_the_integer_range_stops_at_the_bound() {
+    let descriptor = model_tracking_descriptor("gpt-4", &limits(Some(i64::MAX), None), 2, WINDOW);
+    assert_eq!(
+        descriptor.rate_limit,
+        Some(rate_limit(Some(i64::MAX), None))
+    );
+}
+
+#[test]
 fn an_explicit_zero_stays_a_tracking_limit() {
     let descriptor = model_tracking_descriptor("gpt-4", &limits(Some(0), None), 1, WINDOW);
     assert_eq!(descriptor.rate_limit, Some(rate_limit(Some(0), None)));
