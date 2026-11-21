@@ -21,7 +21,7 @@ call:
         models: [gpt-4o]
         add_user_information: false
     metadata:
-      - headers: [[traceparent, 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01]]
+      - headers: [[traceparent, 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0c9902b7-01]]
         data: {metadata: {}}
         slot: metadata
     otel_trace_id:
@@ -30,7 +30,7 @@ call:
         span: [42, 7]
     traceparent:
       - data: {}
-        headers: [[traceparent, 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01]]
+        headers: [[traceparent, 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0c9902b7-01]]
         forward: true
         otel_enabled: true
     user:

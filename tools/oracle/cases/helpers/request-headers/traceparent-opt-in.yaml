@@ -7,27 +7,27 @@ call:
     model_group: []
     metadata:
       - headers:
-          - [traceparent, 00-4BF92F3577B34DA6A3CE929D0E0E4736-00f067aa0ba902b7-01]
+          - [traceparent, 00-4BF92F3577B34DA6A3CE929D0E0E4736-00f067aa0c9902b7-01]
           - [baggage, "user.id=42, session.id = abc-123"]
         data: {model: gpt-4o, metadata: {}}
         slot: metadata
       - headers:
           - [x-litellm-trace-id, chain-trace-1]
-          - [traceparent, 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01]
+          - [traceparent, 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0c9902b7-01]
           - [baggage, session.id=from-baggage]
         data: {model: gpt-4o, litellm_metadata: {team: a}}
         slot: litellm_metadata
       - headers:
-          - [traceparent, 00-00000000000000000000000000000000-00f067aa0ba902b7-01]
+          - [traceparent, 00-00000000000000000000000000000000-00f067aa0c9902b7-01]
           - [baggage, "session.id=, user.id=1"]
         data: {metadata: {}}
         slot: metadata
       - headers:
-          - [traceparent, 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7]
+          - [traceparent, 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0c9902b7]
         data: {litellm_trace_id: caller-trace, metadata: {}}
         slot: metadata
       - headers:
-          - [Traceparent, 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01]
+          - [Traceparent, 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0c9902b7-01]
           - [x-litellm-spend-logs-metadata, '{"team": "search", "run": 3}']
           - [x-litellm-agent-id, agent-7]
         data: {metadata: {spend_logs_metadata: {old: true}}}
@@ -84,23 +84,23 @@ call:
         span: [42, 7]
     traceparent:
       - data: {model: gpt-4o}
-        headers: [[traceparent, 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01]]
+        headers: [[traceparent, 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0c9902b7-01]]
         forward: true
         otel_enabled: true
       - data: {model: gpt-4o}
-        headers: [[traceparent, 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01]]
+        headers: [[traceparent, 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0c9902b7-01]]
         forward: false
         otel_enabled: true
       - data: {model: gpt-4o}
-        headers: [[traceparent, 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01]]
+        headers: [[traceparent, 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0c9902b7-01]]
         forward: true
         otel_enabled: false
       - data: {model: gpt-4o, extra_headers: {traceparent: caller-set, x-other: one}}
-        headers: [[traceparent, 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01]]
+        headers: [[traceparent, 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0c9902b7-01]]
         forward: true
         otel_enabled: true
       - data: {model: gpt-4o, extra_headers: {x-other: one}}
-        headers: [[TraceParent, 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01]]
+        headers: [[TraceParent, 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0c9902b7-01]]
         forward: true
         otel_enabled: true
       - data: {model: gpt-4o}

@@ -27,7 +27,7 @@ use crate::api::request_headers::{
 use crate::api::request_metadata_safety::metadata::MetadataField;
 use crate::api::request_principal_metadata::PrincipalFacts;
 
-const TRACEPARENT: &str = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+const TRACEPARENT: &str = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0c9902b7-01";
 const TRACE_ID: &str = "4bf92f3577b34da6a3ce929d0e0e4736";
 
 type Pairs = &'static [(&'static str, &'static str)];
@@ -187,7 +187,7 @@ fn forwarded_header_cleaning(
 }
 
 #[rstest]
-#[case::opted_in(true, true, &[("traceparent", TRACEPARENT)], "{}", Some(r#"{"traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"}"#))]
+#[case::opted_in(true, true, &[("traceparent", TRACEPARENT)], "{}", Some(r#"{"traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0c9902b7-01"}"#))]
 #[case::header_case(true, true, &[("TraceParent", "00-a")], r#"{"extra_headers": {"x-a": "1"}}"#, Some(r#"{"x-a": "1", "traceparent": "00-a"}"#))]
 #[case::keeps_request_value(true, true, &[("traceparent", "00-a")], r#"{"extra_headers": {"traceparent": "mine"}}"#, Some(r#"{"traceparent": "mine"}"#))]
 #[case::null_extra_headers(true, true, &[("traceparent", "00-a")], r#"{"extra_headers": null}"#, Some(r#"{"traceparent": "00-a"}"#))]
@@ -396,14 +396,14 @@ fn backend_call_arguments_reject_retries() {
 #[rstest]
 #[case::spaced(&format!(" {TRACEPARENT} "), Some(TRACE_ID))]
 #[case::upper_case(
-    "00-4BF92F3577B34DA6A3CE929D0E0E4736-00F067AA0BA902B7-01",
+    "00-4BF92F3577B34DA6A3CE929D0E0E4736-00F067AA0C9902B7-01",
     Some(TRACE_ID)
 )]
-#[case::zero_trace("00-00000000000000000000000000000000-00f067aa0ba902b7-01", None)]
-#[case::short_trace("00-4bf92f3577b34da6a3ce929d0e0e473-00f067aa0ba902b7-01", None)]
-#[case::extra_field("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01-00", None)]
-#[case::three_fields("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7", None)]
-#[case::not_hex("00-4bf92f3577b34da6a3ce929d0e0e473g-00f067aa0ba902b7-01", None)]
+#[case::zero_trace("00-00000000000000000000000000000000-00f067aa0c9902b7-01", None)]
+#[case::short_trace("00-4bf92f3577b34da6a3ce929d0e0e473-00f067aa0c9902b7-01", None)]
+#[case::extra_field("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0c9902b7-01-00", None)]
+#[case::three_fields("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0c9902b7", None)]
+#[case::not_hex("00-4bf92f3577b34da6a3ce929d0e0e473g-00f067aa0c9902b7-01", None)]
 fn parses_traceparent(#[case] traceparent: &str, #[case] trace_id: Option<&str>) {
     assert_eq!(trace_id_from_traceparent(traceparent).as_deref(), trace_id);
 }
