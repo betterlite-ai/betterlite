@@ -268,7 +268,7 @@ fn stamp_chat_error_items_carry_the_failure_status_and_message() {
         "429",
         "quota",
     );
-    let wrapped = ChatTranslationError::Stream(EndedStreamError::Guardrail(http.clone()));
+    let wrapped = ChatTranslationError::Stream(EndedStreamError::Guardrail(http));
     assert_error_frame(
         &translation()
             .build_stream_error_items(&wrapped, None)

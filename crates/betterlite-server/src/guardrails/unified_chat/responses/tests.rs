@@ -124,8 +124,9 @@ fn adapter_responses_structured_messages_read_the_input() {
     let messages = translation()
         .get_structured_messages(&object(REQUEST))
         .unwrap();
-    assert_eq!(messages.len(), 1);
-    assert_eq!(messages[0].role, "user");
+    assert_eq!(messages.len(), 2);
+    assert_eq!(messages[0].role, "system");
+    assert_eq!(messages[1].role, "user");
 }
 
 #[test]

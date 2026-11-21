@@ -9,10 +9,10 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_config::sections::local_ttl_cache::Settings;
 use betterlite_context::local_ttl_cache::dual::{Diagnostics, DualLocalCache};
-use betterlite_guardrails::generic_guardrail_contracts::{GuardrailApiInputs, GuardrailInputType};
+use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::guardrail_base::contract::GuardrailContract;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
-use betterlite_guardrails::guardrail_base::inputs::GuardrailLogTarget;
+use betterlite_guardrails::guardrail_base::inputs::{GuardrailApiInputs, GuardrailLogTarget};
 use betterlite_guardrails::guardrail_message_scope::Object;
 use betterlite_guardrails::guardrail_message_scope::scoped_indices::{
     GlobalSkipFlags, GuardrailSkipFlags,
