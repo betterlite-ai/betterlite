@@ -57,6 +57,9 @@ use std::sync::Arc;
 
 use betterlite_auth::auth_request_models::MODEL_ROUTING_HEADER_NAME;
 use betterlite_auth::auth_request_models::catalog::{EmptyCatalog, RequestModelResolver};
+use betterlite_auth::auth_route_patterns::canonical::{
+    RequestRouteSource, ScopeFields, get_request_route,
+};
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
@@ -65,10 +68,12 @@ use crate::auth::auth_model_patterns::{
     ModelPatternStageInput, max_recurse_depth_for_request, rule_for_request,
 };
 use crate::auth::auth_request_models::{CoreDecoders, RequestModelStageInput, resolve};
+use crate::auth::auth_request_policy::AuthRequestPolicyStageInput;
 use crate::auth::auth_resource_grants::{
     ResourceGrantStageInput, database_for_request, rule_for_request as grant_rule_for_request,
 };
 use crate::auth::request_body_safety::RequestBodySafetyStageInput;
+use crate::auth::route_match::decoded_route_path;
 use crate::error_body::AuthenticationFailure;
 use crate::state::ServerState;
 use axum::body::{Body, Bytes};
@@ -110,6 +115,9 @@ fn stage_input(
 ) -> Result<StageInput, StageFailure> {
     match backend {
         AuthBackend::MasterKey => Ok(StageInput::MasterKey(extract_key(request.headers()))),
+        AuthBackend::AuthRequestPolicy => Ok(StageInput::AuthRequestPolicy(Box::new(
+            policy_stage_input(request, authenticated, body)?,
+        ))),
         AuthBackend::RequestBodySafety => Ok(StageInput::RequestBodySafety(Box::new(
             safety_stage_input(request, authenticated, body)?,
         ))),
@@ -121,6 +129,58 @@ fn stage_input(
             auth_tag_budgets::stage_input(request, authenticated)?,
         ))),
     }
+}
+
+fn policy_stage_input(
+    request: &Request<Body>,
+    authenticated: Option<&AuthContext>,
+    body: Option<&Bytes>,
+) -> Result<AuthRequestPolicyStageInput, StageFailure> {
+    let context = authenticated
+        .cloned()
+        .ok_or(AuthenticationFailure::Missing)?;
+    let content_length = request
+        .headers()
+        .get(header::CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    let forwarded_for = request
+        .headers()
+        .get("x-forwarded-for")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    let content_type = request
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    let decoded = decoded_route_path(request.uri().path());
+    let path = match &decoded {
+        Some(path) => path.as_str(),
+        None => request.uri().path(),
+    };
+    let route = get_request_route(&RequestRouteSource {
+        scope: Ok(Some(ScopeFields {
+            path: Some(path),
+            app_root_path: None,
+            root_path: None,
+        })),
+        url_path: path,
+    });
+    Ok(AuthRequestPolicyStageInput {
+        context,
+        content_length,
+        forwarded_for,
+        // The connection layer keeps the peer address to itself, so the forwarded header is the only client source.
+        client_host: None,
+        route,
+        content_type,
+        body: body.cloned().unwrap_or_default(),
+        slot: request
+            .extensions()
+            .get::<Arc<ServerState>>()
+            .map(|state| state.auth_request_policy.clone()),
+    })
 }
 
 fn safety_stage_input(
@@ -197,6 +257,7 @@ async fn prefetch_tag_budgets(input: StageInput) -> Result<StageInput, StageFail
             Ok(StageInput::AuthTagBudgets(stage))
         }
         other @ (StageInput::MasterKey(_)
+        | StageInput::AuthRequestPolicy(_)
         | StageInput::RequestBodySafety(_)
         | StageInput::AuthRequestModels(_)
         | StageInput::AuthModelPatterns(_)
