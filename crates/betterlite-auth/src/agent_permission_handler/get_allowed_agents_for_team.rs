@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use tracing::warn;
 
 use super::AgentGrants;
-use super::agent_ids_for_groups;
+use super::db_agent_ids_for_access_groups::db_agent_ids;
 use super::error::GrantError;
 use super::reads::AgentTableReads;
 use super::unified_access_group;
@@ -84,7 +84,7 @@ where
     }
     let mut ids: BTreeSet<String> = direct.iter().cloned().collect();
     if !declared.is_empty() {
-        ids.extend(agent_ids_for_groups::agent_ids(grants, declared, strict).await?);
+        ids.extend(db_agent_ids(&grants.agents, declared, strict).await?);
     }
     if !unified.is_empty() {
         ids.extend(unified_access_group::agent_ids(

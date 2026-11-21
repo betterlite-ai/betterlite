@@ -291,8 +291,9 @@ impl AccessGroupLookup for World {
             });
         };
         Ok(AccessGroupResources {
+            model_names: Vec::new(),
+            mcp_server_ids: Vec::new(),
             agent_ids: group.access_agent_ids,
-            ..AccessGroupResources::default()
         })
     }
 }

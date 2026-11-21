@@ -10,11 +10,11 @@ use crate::auth_model_patterns::access_groups::AccessGroupLookup;
 use crate::auth_team_lookup::lookup::TeamLookup;
 use crate::resolved_key::auth::UserAPIKeyAuth;
 
+use db_agent_ids_for_access_groups::db_agent_ids;
 use error::GrantError;
 use reads::AgentTableReads;
 
 mod agent_caller_access;
-mod agent_ids_for_groups;
 mod ceiling;
 // ast-grep-ignore: no-long-names
 mod config_agent_ids_for_access_groups;
@@ -146,6 +146,6 @@ where
         groups: &[String],
         check_db_only: bool,
     ) -> Result<BTreeSet<String>, GrantError> {
-        agent_ids_for_groups::agent_ids(self, groups, check_db_only).await
+        db_agent_ids(&self.agents, groups, check_db_only).await
     }
 }
