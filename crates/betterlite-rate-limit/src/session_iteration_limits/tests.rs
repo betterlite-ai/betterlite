@@ -488,11 +488,26 @@ async fn key_max_iterations_beyond_i64_is_a_typed_error() {
 }
 
 #[tokio::test]
-async fn non_text_session_id_reads_as_absent() {
+async fn numeric_session_id_names_the_text_bucket() {
     let cache = FakeCache::without_redis();
     let handler = iteration_handler(cache);
-    let registry = agent_registry_with(&[LIMIT_ONE]);
+    let registry = agent_registry_with(&[LIMIT_TWO]);
     let data = json(r#"{"model":"gpt-4o","metadata":{"session_id":5}}"#);
+
+    handler
+        .async_pre_call_hook(&registry, None, agent_key(), &data)
+        .await
+        .unwrap();
+
+    assert_eq!(handler.cache.memory(&memory_key("5")), Some(1));
+}
+
+#[tokio::test]
+async fn boolean_session_id_reads_as_absent() {
+    let cache = FakeCache::without_redis();
+    let handler = iteration_handler(cache);
+    let registry = agent_registry_with(&[LIMIT_TWO]);
+    let data = json(r#"{"model":"gpt-4o","metadata":{"session_id":true}}"#);
 
     handler
         .async_pre_call_hook(&registry, None, agent_key(), &data)

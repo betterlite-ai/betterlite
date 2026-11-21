@@ -66,12 +66,12 @@ impl<C: SessionIterationCache> SessionIterationHandler<C> {
         let Some(max_iterations) = admission::max_iterations_for(registry, key)? else {
             return Ok(());
         };
-        let current_count = increment::count_after_increment(self, session_id).await;
+        let current_count = increment::count_after_increment(self, &session_id).await;
         if current_count <= max_iterations {
             return Ok(());
         }
         let request = admission::ExceededRequest {
-            session_id,
+            session_id: session_id.as_str(),
             current_count,
             max_iterations,
             data,
