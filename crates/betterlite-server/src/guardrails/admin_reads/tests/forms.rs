@@ -80,6 +80,10 @@ async fn forms_sets_the_friendly_name_on_the_registry_entries() {
         text(field(field(&parsed, "tool_permission"), "ui_friendly_name")),
         "LiteLLM Tool Permission Guardrail"
     );
+    assert_eq!(
+        text(field(field(&parsed, "aporia"), "ui_friendly_name")),
+        "Aporia AI"
+    );
     assert!(field(field(&parsed, "custom_code"), "ui_friendly_name").is_null());
 }
 
