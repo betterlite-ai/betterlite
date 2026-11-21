@@ -247,6 +247,10 @@ fn unterminated_tag_flush() {
 }
 
 fn plain_text_prefix() {
+    assert_eq!(ReasoningPhase::Start.name(), "start");
+    assert_eq!(ReasoningPhase::Reasoning.name(), "reasoning");
+    assert_eq!(ReasoningPhase::AfterClose.name(), "after_close");
+    assert_eq!(ReasoningPhase::Content.name(), "content");
     let initial = ReasoningTagState::default();
     assert_eq!(initial.phase, ReasoningPhase::Start);
     assert_eq!(initial.pending, "");
