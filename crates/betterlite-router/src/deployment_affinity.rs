@@ -1,6 +1,7 @@
 pub mod error;
 pub mod flags;
 pub mod json;
+mod read;
 mod tests;
 
 use std::collections::BTreeSet;
@@ -13,6 +14,7 @@ use indexmap::IndexMap;
 
 use self::error::DeploymentAffinityError;
 use self::json::previous_response_id;
+use self::read::pinned_model_id;
 use crate::affinity_claims::AffinityClaims;
 use crate::affinity_claims::error::AffinityError;
 use crate::affinity_claims::identity::{
@@ -20,9 +22,8 @@ use crate::affinity_claims::identity::{
     marker_session_affinity_ttl, session_affinity_cache_key, session_id_from_request_kwargs,
     stable_model_map_key, user_key_from_request_kwargs,
 };
-use crate::affinity_claims::pin::{AffinityPin, StoredPin};
+use crate::affinity_claims::pin::AffinityPin;
 use crate::deployment_identity::spec::DeploymentSpec;
-use crate::routing_value_store::{RouteValue, StoreRead};
 
 // Router.deployment_affinity_ttl_seconds's declaration default
 pub const DEFAULT_TTL_SECONDS: u32 = 3600;
@@ -139,7 +140,7 @@ impl DeploymentAffinity {
             && let Some(session_id) = session_id_from_request_kwargs(kwargs)?
             && let Ok(key) =
                 session_affinity_cache_key(&model_group, &session_id, user_key.as_deref())
-            && let Some(model_id) = self.pinned_model_id(&key).await
+            && let Some(model_id) = pinned_model_id(self, &key).await
             && let Some(deployment) = find_deployment_by_model_id(request.deployments, &model_id)
         {
             tracing::debug!(
@@ -152,13 +153,13 @@ impl DeploymentAffinity {
         if !user_key_enabled {
             return Ok(request.deployments.to_vec());
         }
-        let Some(user_key) = user_key else {
+        let Some(caller) = user_key else {
             return Ok(request.deployments.to_vec());
         };
-        let Ok(key) = affinity_cache_key(&model_group, &user_key) else {
+        let Ok(key) = affinity_cache_key(&model_group, &caller) else {
             return Ok(request.deployments.to_vec());
         };
-        let Some(model_id) = self.pinned_model_id(&key).await else {
+        let Some(model_id) = pinned_model_id(self, &key).await else {
             return Ok(request.deployments.to_vec());
         };
         let Some(deployment) = find_deployment_by_model_id(request.deployments, &model_id) else {
@@ -197,14 +198,12 @@ impl DeploymentAffinity {
         } else {
             None
         };
-        let user_claim = user_key_enabled && user_key.is_some();
-        if !user_claim && session_id.is_none() {
-            return Ok(());
-        }
-        let model_info = request
+        // LiteLLM returns here when neither a caller nor a session can claim; each claim below already
+        // needs its own input, so a request with neither writes nothing.
+        let Some(model_info) = request
             .model_info
-            .or_else(|| json::metadata_model_info(kwargs));
-        let Some(model_info) = model_info else {
+            .or_else(|| json::metadata_model_info(kwargs))
+        else {
             return Ok(());
         };
         let model_id = match model_info.get("id") {
@@ -221,57 +220,16 @@ impl DeploymentAffinity {
             }
         };
         let pin = AffinityPin(IndexMap::from([("model_id".to_owned(), model_id.clone())]));
-        if user_key_enabled && let Some(user_key) = user_key.as_deref() {
-            let key = affinity_cache_key(model_group, user_key);
+        if user_key_enabled && let Some(caller) = user_key.as_deref() {
+            let key = affinity_cache_key(model_group, caller);
             self.claim_pin(key, &pin, self.settings.ttl_seconds).await;
         }
-        if let Some(session_id) = session_id.as_deref() {
+        if let Some(session) = session_id.as_deref() {
             let ttl_seconds = marker_ttl.unwrap_or(self.settings.ttl_seconds);
-            let key = session_affinity_cache_key(model_group, session_id, user_key.as_deref());
+            let key = session_affinity_cache_key(model_group, session, user_key.as_deref());
             self.claim_pin(key, &pin, ttl_seconds).await;
         }
         Ok(())
-    }
-
-    // DualCache.async_get_cache: the pod-local tier first, then the shared one, whose hit is mirrored back locally
-    async fn pinned_model_id(&self, key: &AffinityKey) -> Option<String> {
-        match self.claims.local.read(key) {
-            Ok(Some(stored)) => {
-                return stored
-                    .pinned_model_id()
-                    .filter(|model_id| !model_id.is_empty());
-            }
-            Ok(None) => {}
-            Err(error) => {
-                tracing::debug!(%error, "deployment affinity: the pod-local pin is unreadable");
-            }
-        }
-        let Some(store) = &self.claims.shared else {
-            return None;
-        };
-        let observed = match store.get(&key.0).await {
-            Ok(observed) => observed,
-            Err(error) => {
-                tracing::debug!(%error, "deployment affinity: the shared pin is unreadable");
-                return None;
-            }
-        };
-        let StoreRead::Value(RouteValue::Pin(value)) = observed else {
-            return None;
-        };
-        let stored = StoredPin::Pin(AffinityPin(IndexMap::from([(
-            "model_id".to_owned(),
-            value.model_id,
-        )])));
-        if let Err(error) = self.claims.local.set(key, &stored, BACKFILL_TTL_SECONDS) {
-            tracing::debug!(
-                %error,
-                "deployment affinity: the shared pin could not be mirrored locally"
-            );
-        }
-        stored
-            .pinned_model_id()
-            .filter(|model_id| !model_id.is_empty())
     }
 
     // _claim_pin: the first writer wins and a claim failure leaves affinity best effort

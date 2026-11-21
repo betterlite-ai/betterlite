@@ -16,6 +16,7 @@ fn runtime() -> Runtime {
 #[rstest]
 #[case::no_pin_keeps_pool(deployment_affinity_behaviors::no_pin_keeps_pool())]
 #[case::caller_pin_selects(deployment_affinity_behaviors::caller_pin_selects())]
+#[case::shared_pin_selects(deployment_affinity_behaviors::shared_pin_selects())]
 #[case::session_pin_selects(deployment_affinity_behaviors::session_pin_selects())]
 #[case::session_beats_caller(deployment_affinity_behaviors::session_beats_caller())]
 #[case::marker_enables_session(deployment_affinity_behaviors::marker_enables_session())]
@@ -68,6 +69,9 @@ where
 #[case::generated_flag_not_bool(deployment_affinity_boundaries::generated_flag_not_bool())]
 #[case::marker_zero_ignored(deployment_affinity_boundaries::marker_zero_ignored())]
 #[case::marker_out_of_range(deployment_affinity_boundaries::marker_out_of_range())]
+#[case::shared_value_not_a_pin_ignored(
+    deployment_affinity_boundaries::shared_value_not_a_pin_ignored()
+)]
 #[case::legacy_text_pin_selects(deployment_affinity_boundaries::legacy_text_pin_selects())]
 #[case::other_pin_ignored(deployment_affinity_boundaries::other_pin_ignored())]
 #[case::empty_model_id_pin_ignored(deployment_affinity_boundaries::empty_model_id_pin_ignored())]

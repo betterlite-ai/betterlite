@@ -2,11 +2,12 @@ use betterlite_models::decisions::Json;
 
 use super::support::{
     Fixture, MODEL_GROUP, deployment, encoded_previous_response_id, groups, hook_request,
-    litellm_metadata, metadata, number, pin, pool, session_pin, settings, settings_with_ttl, text,
-    user_pin, with_groups,
+    litellm_metadata, metadata, model_info, number, pin, pool, request, seed_shared, session_pin,
+    settings, settings_with_ttl, shared_store, text, user_pin, with_groups,
 };
 use crate::affinity_claims::identity::AffinityFlag;
 use crate::deployment_affinity::flags::warn_on_unknown_model_group_affinity_flags;
+use crate::routing_state_store::test_support::FakeRedis;
 
 // a pool with no pin keeps every healthy deployment
 pub(super) async fn no_pin_keeps_pool() {
@@ -23,6 +24,21 @@ pub(super) async fn caller_pin_selects() {
     let healthy = pool(&["a", "b"]);
     let kwargs = metadata(&[("user_api_key_hash", text("key"))]);
     assert_eq!(fixture.filter(&healthy, Some(&kwargs)).await, ["a"]);
+}
+
+// a pin only the shared tier holds selects its deployment, and the hit is mirrored into the pod-local tier
+pub(super) async fn shared_pin_selects() {
+    let server = FakeRedis::start().await;
+    let store = shared_store(&server);
+    seed_shared(&store, &session_pin("s1"), &pin("b"), 600).await;
+    let fixture = Fixture::with_shared(settings(&[AffinityFlag::Session]), &[], store);
+    let healthy = pool(&["a", "b"]);
+    let kwargs = metadata(&[("session_id", text("s1"))]);
+    assert_eq!(fixture.filter(&healthy, Some(&kwargs)).await, ["b"]);
+    // the mirror carries DualCache's own 600s default, not the pin's remaining lifetime
+    assert_eq!(fixture.expiry(&session_pin("s1")), Some(600.0));
+    server.set_down(true);
+    assert_eq!(fixture.filter(&healthy, Some(&kwargs)).await, ["b"]);
 }
 
 // an active session pin selects its deployment
@@ -70,10 +86,10 @@ pub(super) async fn responses_beats_session() {
     );
     fixture.seed(&session_pin("s1"), &pin("a"), 600);
     let healthy = pool(&["a", "b"]);
-    let kwargs = super::support::request(&[
+    let kwargs = request(&[
         (
             "metadata",
-            Json::Object(super::support::request(&[("session_id", text("s1"))])),
+            Json::Object(request(&[("session_id", text("s1"))])),
         ),
         (
             "previous_response_id",
@@ -251,12 +267,12 @@ pub(super) async fn expired_pin_is_replaced() {
 // the hook reads the model_info metadata channel when the request carries none
 pub(super) async fn hook_reads_metadata_model_info() {
     let fixture = Fixture::new(settings(&[AffinityFlag::Deployment]), &[]);
-    let kwargs = super::support::request(&[(
+    let kwargs = request(&[(
         "litellm_metadata",
-        Json::Object(super::support::request(&[
+        Json::Object(request(&[
             ("deployment_model_name", text(MODEL_GROUP)),
             ("user_api_key_hash", text("key")),
-            ("model_info", Json::Object(super::support::model_info("a"))),
+            ("model_info", Json::Object(model_info("a"))),
         ])),
     )]);
     fixture.hook(&kwargs, None).await.unwrap();

@@ -1,5 +1,8 @@
+use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
+use betterlite_config::sections::routing_state_store::connection::Connection;
 use betterlite_core::api::response_id_codecs::response::build_response_id;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
@@ -17,7 +20,12 @@ use crate::deployment_affinity::{
     Settings,
 };
 use crate::deployment_identity::spec::DeploymentSpec;
-use crate::routing_value_store::{Clock, StoreSettings};
+use crate::redis_failure_policy::Settings as BreakerSettings;
+use crate::routing_state_store::test_support::FakeRedis;
+use crate::routing_state_store::{
+    BreakerClock, RedisSettings, RoutingStateStore, Settings as SharedSettings,
+};
+use crate::routing_value_store::{Clock, PinValue, RouteValue, StoreRead, StoreSettings};
 
 pub(crate) const MODEL_GROUP: &str = "gpt-4o";
 
@@ -28,6 +36,22 @@ pub(crate) struct Fixture {
 
 impl Fixture {
     pub(crate) fn new(settings: Settings, priority_groups: &[&str]) -> Self {
+        Self::build(settings, priority_groups, None)
+    }
+
+    pub(crate) fn with_shared(
+        settings: Settings,
+        priority_groups: &[&str],
+        shared: RoutingStateStore,
+    ) -> Self {
+        Self::build(settings, priority_groups, Some(shared))
+    }
+
+    fn build(
+        settings: Settings,
+        priority_groups: &[&str],
+        shared: Option<RoutingStateStore>,
+    ) -> Self {
         let now = Arc::new(Mutex::new(0.0_f64));
         let handle = Arc::clone(&now);
         let clock: Clock = Arc::new(move || *handle.lock().unwrap_or_else(PoisonError::into_inner));
@@ -40,10 +64,7 @@ impl Fixture {
             Arc::new(move |model: &str| groups.iter().any(|group| group == model));
         Self {
             service: DeploymentAffinity::new(
-                AffinityClaims {
-                    local,
-                    shared: None,
-                },
+                AffinityClaims { local, shared },
                 settings,
                 Some(predicate),
             ),
@@ -243,4 +264,65 @@ const fn local_settings() -> StoreSettings {
         max_size_per_item: Some(1024),
         loaded_max_size_per_item_kib: 1024,
     }
+}
+
+// the shared tier a running proxy has: a redis client behind the state store
+pub(crate) fn shared_store(server: &FakeRedis) -> RoutingStateStore {
+    let settings = SharedSettings {
+        redis: RedisSettings {
+            url: None,
+            host: Some("127.0.0.1".to_owned()),
+            port: Some(i64::from(server.port())),
+            password: None,
+            namespace: None,
+            connection: Connection::default(),
+            socket_timeout: 0.25,
+            pool_timeout_seconds: 5,
+            environment: BTreeMap::new(),
+        },
+        breaker: BreakerSettings {
+            enabled: true,
+            failure_threshold: 3,
+            recovery_timeout: Duration::from_secs(60),
+            timeout_min_duration: Duration::from_secs(5),
+            timeout_log_interval: Duration::from_secs(1),
+        },
+    };
+    let clock: BreakerClock = Arc::new(|| Duration::ZERO);
+    RoutingStateStore::new(&settings, clock).unwrap()
+}
+
+// claim_affinity_pin's redis script writes the serialized pin into the route value's model_id
+pub(crate) async fn seed_shared(
+    store: &RoutingStateStore,
+    key: &AffinityKey,
+    pin: &StoredPin,
+    ttl_seconds: u32,
+) {
+    seed_shared_value(
+        store,
+        key,
+        RouteValue::Pin(PinValue {
+            model_id: pin.wire_text(),
+        }),
+        ttl_seconds,
+    );
+}
+
+pub(crate) async fn seed_shared_value(
+    store: &RoutingStateStore,
+    key: &AffinityKey,
+    value: RouteValue,
+    ttl_seconds: u32,
+) {
+    let written = store
+        .compare_and_set(
+            &key.0,
+            &StoreRead::Missing,
+            &value,
+            Some(f64::from(ttl_seconds)),
+        )
+        .await
+        .unwrap();
+    assert!(written.value.swapped);
 }

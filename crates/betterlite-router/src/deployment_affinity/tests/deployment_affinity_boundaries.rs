@@ -2,12 +2,15 @@ use betterlite_models::decisions::Json;
 
 use super::support::{
     Fixture, MODEL_GROUP, encoded_previous_response_id, hook_request, metadata, model_info, number,
-    pin, pool, request, session_pin, settings, settings_with_ttl, text, user_pin,
+    pin, pool, request, seed_shared_value, session_pin, settings, settings_with_ttl, shared_store,
+    text, user_pin,
 };
 use crate::affinity_claims::error::AffinityError;
 use crate::affinity_claims::identity::AffinityFlag;
 use crate::affinity_claims::pin::StoredPin;
 use crate::deployment_affinity::error::DeploymentAffinityError;
+use crate::routing_state_store::test_support::FakeRedis;
+use crate::routing_value_store::RouteValue;
 
 // an empty pool has no stable model map key and passes through
 pub(super) async fn empty_pool() {
@@ -128,6 +131,17 @@ pub(super) async fn marker_out_of_range() {
         DeploymentAffinityError::Affinity(AffinityError::TtlOutOfRange { field })
             if field == "_session_deployment_affinity_ttl"
     ));
+}
+
+// a shared value of another route type is not a pin and selects nothing
+pub(super) async fn shared_value_not_a_pin_ignored() {
+    let server = FakeRedis::start().await;
+    let store = shared_store(&server);
+    seed_shared_value(&store, &session_pin("s1"), RouteValue::Counter(1), 600).await;
+    let fixture = Fixture::with_shared(settings(&[AffinityFlag::Session]), &[], store);
+    let healthy = pool(&["a", "b"]);
+    let kwargs = metadata(&[("session_id", text("s1"))]);
+    assert_eq!(fixture.filter(&healthy, Some(&kwargs)).await, ["a", "b"]);
 }
 
 // a bare string pin left by an older writer still selects its deployment
