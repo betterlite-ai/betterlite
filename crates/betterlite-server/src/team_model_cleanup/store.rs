@@ -15,7 +15,7 @@ use super::deployments::{DeploymentRow, DeploymentRows};
 use super::error::CleanupError;
 use super::remove::TeamModelRows;
 
-const ALIAS_ROWS_SQL: &str = r#"SELECT alias_row.id::BIGINT, alias_row.aliases::TEXT, team.team_id
+const ALIAS_ROWS_SQL: &str = r#"SELECT alias_row.id, alias_row.aliases::TEXT, team.team_id
     FROM "LiteLLM_ModelTable" alias_row
     LEFT JOIN "LiteLLM_TeamTable" team ON team.model_id = alias_row.id
     ORDER BY alias_row.id"#;
@@ -55,7 +55,7 @@ impl AliasRows for PostgresTeamModels<'_> {
         let rows = client.query(ALIAS_ROWS_SQL, &[]).await.map_err(backend)?;
         let mut found = Vec::with_capacity(rows.len());
         for row in &rows {
-            let id: i64 = row.try_get(0).map_err(backend)?;
+            let id: i32 = row.try_get(0).map_err(backend)?;
             let aliases: Option<String> = row.try_get(1).map_err(backend)?;
             let team_id: Option<String> = row.try_get(2).map_err(backend)?;
             found.push(AliasRow {
@@ -67,7 +67,7 @@ impl AliasRows for PostgresTeamModels<'_> {
         Ok(found)
     }
 
-    async fn save_aliases(&self, id: i64, aliases: &AliasMap) -> Result<(), CleanupError> {
+    async fn save_aliases(&self, id: i32, aliases: &AliasMap) -> Result<(), CleanupError> {
         let text = serde_json::to_string(aliases).map_err(TableError::Row)?;
         let access = self.access()?;
         let client = access.write.session().await?;
@@ -148,7 +148,7 @@ impl TeamModelRows for PostgresTeamModels<'_> {
     }
 }
 
-fn alias_map(id: i64, stored: Option<String>) -> Result<Option<AliasMap>, CleanupError> {
+fn alias_map(id: i32, stored: Option<String>) -> Result<Option<AliasMap>, CleanupError> {
     let Some(text) = stored else {
         return Ok(None);
     };

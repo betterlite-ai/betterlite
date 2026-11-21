@@ -32,7 +32,7 @@ pub(crate) fn names(items: &[&str]) -> Vec<String> {
     items.iter().map(|item| (*item).to_owned()).collect()
 }
 
-pub(crate) fn alias_row(id: i64, team_id: Option<&str>, stored: Option<&str>) -> AliasRow {
+pub(crate) fn alias_row(id: i32, team_id: Option<&str>, stored: Option<&str>) -> AliasRow {
     AliasRow {
         id,
         team_id: team_id.map(str::to_owned),
@@ -53,7 +53,7 @@ pub(crate) struct FakeStore {
     pub(crate) deployments: Vec<DeploymentRow>,
     pub(crate) team_id: String,
     pub(crate) team_models: Mutex<Option<Vec<String>>>,
-    pub(crate) saved_aliases: Mutex<Vec<(i64, AliasMap)>>,
+    pub(crate) saved_aliases: Mutex<Vec<(i32, AliasMap)>>,
     pub(crate) saved_models: Mutex<Vec<Vec<String>>>,
 }
 
@@ -92,7 +92,7 @@ impl AliasRows for FakeStore {
         Ok(lock(&self.aliases).clone())
     }
 
-    async fn save_aliases(&self, id: i64, aliases: &AliasMap) -> Result<(), CleanupError> {
+    async fn save_aliases(&self, id: i32, aliases: &AliasMap) -> Result<(), CleanupError> {
         lock(&self.saved_aliases).push((id, aliases.clone()));
         for row in lock(&self.aliases).iter_mut() {
             if row.id == id {

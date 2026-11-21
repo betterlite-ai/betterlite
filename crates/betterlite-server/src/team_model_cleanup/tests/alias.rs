@@ -20,14 +20,14 @@ async fn alias_delete() {
     let store = FakeStore::new("t1", Some(Vec::new()), rows, Vec::new());
     let removed = delete_team_model_alias("old", &store).await.unwrap();
     assert_eq!(removed, vec![("t1".to_owned(), "second".to_owned())]);
-    let saved: Vec<i64> = store
+    let saved: Vec<i32> = store
         .saved_aliases
         .lock()
         .unwrap()
         .iter()
         .map(|(id, _)| *id)
         .collect();
-    assert_eq!(saved, vec![1_i64, 2_i64]);
+    assert_eq!(saved, vec![1_i32, 2_i32]);
     assert_eq!(
         store.remaining_aliases(),
         vec![
@@ -81,7 +81,7 @@ async fn a_failed_alias_write_does_not_skip_the_next_row() {
 
 struct FailingAliasRows {
     store: FakeStore,
-    failing_id: i64,
+    failing_id: i32,
 }
 
 #[async_trait]
@@ -90,7 +90,7 @@ impl AliasRows for FailingAliasRows {
         self.store.alias_rows().await
     }
 
-    async fn save_aliases(&self, id: i64, aliases: &AliasMap) -> Result<(), CleanupError> {
+    async fn save_aliases(&self, id: i32, aliases: &AliasMap) -> Result<(), CleanupError> {
         if id == self.failing_id {
             return Err(CleanupError::Aliases { id });
         }

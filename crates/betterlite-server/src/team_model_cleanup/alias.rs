@@ -10,7 +10,7 @@ pub type AliasMap = JsonObject;
 // One litellm_modeltable row with its team relation, as delete_team_model_alias reads it.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct AliasRow {
-    pub id: i64,
+    pub id: i32,
     pub team_id: Option<String>,
     pub aliases: Option<AliasMap>,
 }
@@ -19,7 +19,7 @@ pub struct AliasRow {
 pub trait AliasRows: Send + Sync {
     async fn alias_rows(&self) -> Result<Vec<AliasRow>, CleanupError>;
 
-    async fn save_aliases(&self, id: i64, aliases: &AliasMap) -> Result<(), CleanupError>;
+    async fn save_aliases(&self, id: i32, aliases: &AliasMap) -> Result<(), CleanupError>;
 }
 
 // delete_team_model_alias: the first key mapping to the public name goes, and only a row with a team reports the pair.

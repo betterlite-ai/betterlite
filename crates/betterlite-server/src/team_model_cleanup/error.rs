@@ -13,7 +13,7 @@ pub enum CleanupError {
     #[error(transparent)]
     Team(#[from] TeamQueryError),
     #[error("stored model aliases on row {id} are not a JSON object")]
-    Aliases { id: i64 },
+    Aliases { id: i32 },
     #[error(transparent)]
     Refresh(#[from] RefreshError),
 }
