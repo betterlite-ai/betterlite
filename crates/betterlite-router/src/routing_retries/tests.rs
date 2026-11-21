@@ -162,15 +162,25 @@ pub(super) struct Driven {
     pub draws: usize,
 }
 
-pub(super) async fn drive(scenario: Scenario) -> Driven {
-    let started = Instant::now();
-    let now = started.into_std();
-    let plan = TimeoutPlan {
-        deadline: now.checked_add(scenario.deadline).unwrap(),
+const BACKOFF: BackoffSettings = BackoffSettings {
+    initial_retry_delay: 0.5,
+    max_retry_delay: 8.0,
+    jitter: 0.75,
+    min_timeout: 0.0,
+};
+
+fn deadline_plan(started: Instant, deadline: Duration) -> TimeoutPlan {
+    TimeoutPlan {
+        deadline: started.into_std().checked_add(deadline).unwrap(),
         attempt: Seconds(600.0),
         stream: None,
         cancellation: CancellationToken::new(),
-    };
+    }
+}
+
+pub(super) async fn drive(scenario: Scenario) -> Driven {
+    let started = Instant::now();
+    let plan = deadline_plan(started, scenario.deadline);
     let mut scripted = Scripted {
         steps: VecDeque::from(scenario.steps),
         calls: Vec::new(),
@@ -185,12 +195,7 @@ pub(super) async fn drive(scenario: Scenario) -> Driven {
         request_num_retries: scenario.request_num_retries,
         router_num_retries: scenario.router_num_retries,
         policies: &scenario.policies,
-        backoff: BackoffSettings {
-            initial_retry_delay: 0.5,
-            max_retry_delay: 8.0,
-            jitter: 0.75,
-            min_timeout: 0.0,
-        },
+        backoff: BACKOFF,
         plan: &plan,
     };
     let mut random = ZeroDraws { draws: 0 };

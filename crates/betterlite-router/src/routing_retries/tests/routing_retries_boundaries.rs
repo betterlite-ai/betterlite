@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::iter::repeat_with;
 use std::time::Duration;
 
 use betterlite_error::error::ErrorClass;
@@ -223,7 +224,9 @@ async fn non_retryable_answers_skip_their_deployment() {
 
 #[tokio::test(start_paused = true)]
 async fn breadcrumbs_keep_the_latest_four() {
-    let steps = (0..5).map(|_| Step::Fail("a", internal("down"))).collect();
+    let steps = repeat_with(|| Step::Fail("a", internal("down")))
+        .take(5)
+        .collect();
     let driven = drive(Scenario::new(steps, 4)).await;
     let trail = &driven.retried.trail;
     let attempts: Vec<_> = trail
