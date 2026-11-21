@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::convert::Infallible;
 use std::future::pending;
 use std::io;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -74,10 +74,9 @@ impl RealtimeBackend for FakeBackend {
 
     async fn close(&mut self) -> Result<(), WebSocketError> {
         self.log.lock().unwrap().closed = true;
-        match &self.close_error {
-            Some(error) => Err(websocket_error(error)),
-            None => Ok(()),
-        }
+        self.close_error
+            .as_ref()
+            .map_or(Ok(()), |error| Err(websocket_error(error)))
     }
 }
 
@@ -228,10 +227,9 @@ impl RealtimeClientSocket for FakeClient {
 
     async fn close(&mut self, code: u16, reason: Option<&str>) -> Result<(), ClientCloseError> {
         self.log.lock().unwrap().close = Some((code, reason.map(str::to_owned)));
-        match &self.close_error {
-            Some(error) => Err(error.clone()),
-            None => Ok(()),
-        }
+        self.close_error
+            .as_ref()
+            .map_or(Ok(()), |error| Err(error.clone()))
     }
 }
 
@@ -253,10 +251,10 @@ impl BaseRealtimeConfig for TestProvider {
     type Backend = FakeBackend;
 
     fn validate_environment(&self, environment: &Environment<'_>) -> Result<HeaderMap, io::Error> {
-        match &self.validate_error {
-            Some(message) => Err(io::Error::other(message.clone())),
-            None => Ok(environment.headers.clone()),
-        }
+        self.validate_error.as_ref().map_or_else(
+            || Ok(environment.headers.clone()),
+            |message| Err(io::Error::other(message.clone())),
+        )
     }
 
     fn get_complete_url(
@@ -350,7 +348,7 @@ impl RealtimeGuardrailCallback for TestCallback {
         data: &RequestData,
         _event: GuardrailEventHooks,
     ) -> Result<bool, Infallible> {
-        *self.seen.lock().unwrap() = Some(data.clone());
+        *self.seen.lock().unwrap_or_else(PoisonError::into_inner) = Some(data.clone());
         Ok(true)
     }
 }
@@ -360,7 +358,7 @@ pub(super) enum SourceOutcome {
     #[default]
     Unread,
     Text(String),
-    Failed(String),
+    Failed,
     Closed {
         code: Option<u16>,
         reason: Option<String>,
@@ -432,10 +430,9 @@ async fn receive_outcome(source: &mut (dyn RealtimeBackendSource + '_)) -> Sourc
         Ok(RealtimeMessage::Binary(bytes)) => {
             SourceOutcome::Text(String::from_utf8(bytes).expect("the frame is UTF-8"))
         }
-        Err(RelayReceiveError::UnsupportedDecode) => {
-            SourceOutcome::Failed("the decode argument is unsupported".to_owned())
+        Err(RelayReceiveError::UnsupportedDecode | RelayReceiveError::Failed(_)) => {
+            SourceOutcome::Failed
         }
-        Err(RelayReceiveError::Failed(failure)) => SourceOutcome::Failed(failure.message),
         Err(RelayReceiveError::Closed(closed)) => {
             let (code, reason) = match closed.received {
                 Some(frame) => (Some(frame.code), Some(frame.reason)),
@@ -682,10 +679,7 @@ fn auth_headers() -> HeaderMap {
     )])
 }
 
-pub(super) fn harness<'callback>(
-    options: HarnessOptions,
-    callback_refs: Vec<&'callback TestCallback>,
-) -> Harness<'callback> {
+pub(super) fn harness(options: HarnessOptions, callback_refs: Vec<&TestCallback>) -> Harness<'_> {
     let logs = SharedLogs::default();
     let cancellation = CancellationToken::new();
     if options.cancellation.0 {

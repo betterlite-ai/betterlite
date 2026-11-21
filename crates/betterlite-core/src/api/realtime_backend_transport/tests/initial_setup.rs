@@ -22,7 +22,7 @@ async fn realtime_initial_setup_sequence() {
 async fn injects_the_guardrail_disable_into_the_one_setup() {
     let metadata = IndexMap::from([("user".to_owned(), Json::Text("u-1".to_owned()))]);
     let seen = Arc::new(Mutex::new(None));
-    let callbacks = vec![TestCallback {
+    let callbacks = [TestCallback {
         seen: Arc::clone(&seen),
     }];
     let refs: Vec<&TestCallback> = callbacks.iter().collect();
@@ -85,6 +85,7 @@ async fn sends_the_synthetic_session_created() {
     assert!(observation.session_created_sent.0);
     assert_eq!(observation.stored_messages, 1);
     assert!(!observation.backend_setup_complete.0);
+    drop(observation);
 }
 
 async fn skips_a_missing_synthetic_event() {

@@ -56,7 +56,7 @@ where
 // The setup is patched with the guardrail's disable before the backend send and cached once it is out
 async fn send_setup_frame<Callback, ConfigError, CallbackError, RelayError>(
     state: &mut RealtimeStreaming,
-    request: Option<String>,
+    provider_setup: Option<String>,
     callbacks: &[&Callback],
 ) -> Result<(), RealtimeConnectionError<ConfigError, CallbackError, RelayError>>
 where
@@ -65,7 +65,7 @@ where
     CallbackError: StdError + 'static,
     RelayError: StdError + 'static,
 {
-    let Some(request) = request.filter(|request| !request.is_empty()) else {
+    let Some(request) = provider_setup.filter(|candidate| !candidate.is_empty()) else {
         return Ok(());
     };
     let patched = inject_auto_response_disable(
