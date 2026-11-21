@@ -147,8 +147,8 @@ impl KeyListSource for FakeSource {
         self.record("attach");
         {
             let mut count = self.attach_calls.lock().unwrap();
-            *count = count.saturating_add(1);
-        }
+            *count = count.saturating_add(1)
+        };
         async move { self.answer(Failure::Attach, ()) }
     }
 }

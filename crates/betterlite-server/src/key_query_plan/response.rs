@@ -77,11 +77,15 @@ pub fn attach_user_expansion(
         );
         fields.insert(
             String::from("user_email"),
-            optional_text(user.user_email.as_deref()),
+            user.user_email
+                .as_deref()
+                .map_or(JsonData::Null, |text| JsonData::String(text.to_owned())),
         );
         fields.insert(
             String::from("user_alias"),
-            optional_text(user.user_alias.as_deref()),
+            user.user_alias
+                .as_deref()
+                .map_or(JsonData::Null, |text| JsonData::String(text.to_owned())),
         );
         row.insert(String::from("created_by_user"), JsonData::Object(fields));
     }
@@ -93,11 +97,4 @@ fn non_empty_text(value: Option<&JsonData>) -> Option<&str> {
         return None;
     };
     Some(text.as_str()).filter(|entry| !entry.is_empty())
-}
-
-fn optional_text(value: Option<&str>) -> JsonData {
-    match value {
-        Some(text) => JsonData::String(text.to_owned()),
-        None => JsonData::Null,
-    }
 }
