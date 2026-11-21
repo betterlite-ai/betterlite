@@ -1,3 +1,5 @@
+use std::future::{Future, ready};
+
 use betterlite_db::baseline::publication::change::change;
 use betterlite_db::baseline::publication::decode::decode_baseline_publication;
 use betterlite_db::baseline::publication::pricing::{PublicationPricing, baseline_publication};
@@ -42,12 +44,13 @@ impl SavingsPricingContext for NoPricing {
         None
     }
 
-    async fn deployment_price(
+    // The oracle has no deployment registry, so every case prices from supplied or public rates.
+    fn deployment_price(
         &self,
         _deployment_id: Option<&str>,
         _model: &str,
-    ) -> Option<PricedModel> {
-        None
+    ) -> impl Future<Output = Option<PricedModel>> + Send {
+        ready(None)
     }
 
     fn public_lookup(&self) -> &dyn PriceLookup {
@@ -56,7 +59,7 @@ impl SavingsPricingContext for NoPricing {
 }
 
 #[derive(serde::Deserialize)]
-struct StoredInput {
+pub(crate) struct StoredInput {
     data: String,
     publication: Option<String>,
     conflicted: bool,

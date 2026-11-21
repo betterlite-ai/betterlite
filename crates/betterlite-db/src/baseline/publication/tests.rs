@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::future::{Future, ready};
+
 use betterlite_models::baseline_history::estimate::{BaselineEstimate, Provenance};
 use betterlite_models::baseline_history::model::{BaselineHistory, BaselineObservation, Outcome};
 use betterlite_models::baseline_history::replay::advance_baseline_history;
@@ -27,7 +29,7 @@ use super::sql::{UPDATE_LOGS, UPDATE_PUBLICATIONS, session_correction_sql};
 use crate::autorouter_turn_sql::tests::database;
 use crate::autorouter_turn_sql::transaction::{AutoRouterTurnTransaction, TurnFlag, TurnTime};
 use crate::baseline::records::canonical::serialize_record;
-use crate::baseline::records::decode::{BaselineJson, decode_baseline_json};
+use crate::baseline::records::decode::{BaselineJson, BaselineJsonError, decode_baseline_json};
 use crate::baseline::records::{
     BaselineAccountingRecord, BaselineEntity, DailyBaselineAttribution, DailyBaselineTarget,
 };
@@ -59,12 +61,13 @@ impl SavingsPricingContext for NoPricing {
         None
     }
 
-    async fn deployment_price(
+    // These tests price from the record snapshot, so no deployment answers for any id.
+    fn deployment_price(
         &self,
         _deployment_id: Option<&str>,
         _model: &str,
-    ) -> Option<PricedModel> {
-        None
+    ) -> impl Future<Output = Option<PricedModel>> + Send {
+        ready(None)
     }
 
     fn public_lookup(&self) -> &dyn PriceLookup {
@@ -326,8 +329,14 @@ fn publication_serializes_every_stored_field_and_keeps_amounts_as_floats() {
     assert_eq!(stored.comparison_id, SCOPE);
     assert_eq!(stored.status, "estimated");
     assert_eq!(stored.provenance.as_deref(), Some("observed_identical"));
-    assert_eq!(stored.actual_amount, Some(0.25));
-    assert_eq!(stored.baseline_amount, Some(0.20));
+    assert_eq!(
+        stored.actual_amount.map(f64::to_bits),
+        Some(0.25_f64.to_bits())
+    );
+    assert_eq!(
+        stored.baseline_amount.map(f64::to_bits),
+        Some(0.20_f64.to_bits())
+    );
     assert_eq!(stored.input_tokens, Some(5));
     let unknown = unknown_publication("conflicting_observation");
     let stored_unknown: StoredPublication =
@@ -393,7 +402,7 @@ fn publication_prices_an_observed_identical_baseline_including_classifier_cost()
     let value = publication(&record, &estimate, 2.0);
     assert_eq!(value.status, PublicationStatus::Estimated);
     assert_eq!(value.reason, "identical_baseline_path");
-    assert_eq!(value.comparison_started_at, 2.0);
+    assert_eq!(value.comparison_started_at.to_bits(), 2.0_f64.to_bits());
     assert_eq!(value.actual_spend, Some(Decimal::new(25, 2)));
     assert_eq!(value.baseline_spend, Some(Decimal::new(20, 2)));
 }
@@ -433,8 +442,8 @@ fn change_subtracts_the_correction_amounts_as_exact_decimals() {
     let previous = estimated_publication(Decimal::new(1, 1), Decimal::new(3, 1));
     let current = estimated_publication(Decimal::new(4, 1), Decimal::new(7, 1));
     let value = decoded_change(&change(&record, Some(&previous), &current));
-    assert_eq!(value.actual_delta, 0.3);
-    assert_eq!(value.savings_delta, 0.1);
+    assert_eq!(value.actual_delta.to_bits(), 0.3_f64.to_bits());
+    assert_eq!(value.savings_delta.to_bits(), 0.1_f64.to_bits());
 }
 
 #[test]
@@ -444,8 +453,8 @@ fn change_serializes_the_daily_attribution_the_correction_key_reads() {
     let stored = decoded_change(&change(&record, None, &published));
     assert_eq!(stored.request_id, "req-1");
     assert_eq!(stored.publication.version, 3);
-    assert_eq!(stored.actual_delta, 0.25);
-    assert_eq!(stored.savings_delta, -0.05);
+    assert_eq!(stored.actual_delta.to_bits(), 0.25_f64.to_bits());
+    assert_eq!(stored.savings_delta.to_bits(), (-0.05_f64).to_bits());
     let target = stored.daily.unwrap().targets;
     assert_eq!(target.len(), 2);
     assert_eq!(target[0].entity, "user");
@@ -580,7 +589,10 @@ fn project_group_keeps_prior_changes_and_the_first_group_timestamp() {
     .unwrap();
     assert_eq!(changes.len(), 2);
     assert_eq!(changes[0].request_id, prior.request_id);
-    assert_eq!(changes[1].publication.comparison_started_at, 1.5);
+    assert_eq!(
+        changes[1].publication.comparison_started_at.to_bits(),
+        1.5_f64.to_bits()
+    );
 }
 
 #[test]
@@ -610,8 +622,14 @@ fn decode_baseline_json_dispatches_on_the_marker_byte() {
         BaselineJson::History(value) => assert_eq!(value.first_at, None),
         BaselineJson::Record(_) | BaselineJson::Publication(_) => panic!("history marker"),
     }
-    assert!(decode_baseline_json(b"X{}").is_err());
-    assert!(decode_baseline_json(b"").is_err());
+    assert!(matches!(
+        decode_baseline_json(b"X{}").err(),
+        Some(BaselineJsonError::UnknownKind)
+    ));
+    assert!(matches!(
+        decode_baseline_json(b"").err(),
+        Some(BaselineJsonError::UnknownKind)
+    ));
 }
 
 #[test]
@@ -646,7 +664,7 @@ fn stored_statements_replace_the_observation_and_write_the_signed_savings() {
     assert!(UPDATE_PUBLICATIONS.contains("SET publication = x.publication::text"));
 }
 
-fn seed_log(client: &Client, request_id: &str) {
+async fn seed_log(client: &Client, request_id: &str) {
     client
         .execute(
             "INSERT INTO \"LiteLLM_SpendLogs\" (request_id, call_type, api_key, \"startTime\", \"endTime\", metadata) VALUES ($1, 'acompletion', 'key', NOW(), NOW(), $2::jsonb)",
@@ -659,7 +677,7 @@ fn seed_log(client: &Client, request_id: &str) {
         .unwrap();
 }
 
-fn seed_observation(client: &Client, record: &BaselineAccountingRecord) {
+async fn seed_observation(client: &Client, record: &BaselineAccountingRecord) {
     client
         .execute(
             "INSERT INTO \"LiteLLM_AutoRouterBaselineObservation\" (request_id, scope, started_at, revision, data) VALUES ($1, $2, $3, 1, $4)",
