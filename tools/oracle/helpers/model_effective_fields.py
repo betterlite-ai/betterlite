@@ -56,6 +56,12 @@ class PtuCall(TypedDict):
     incoming: ModelInfo | None
 
 
+class CredentialRow(TypedDict):
+    credential_name: str
+    credential_values: dict[str, str]
+    credential_info: dict[str, str]
+
+
 class Input(TypedDict):
     salt_key: str
     ptu_enabled: bool
@@ -63,6 +69,7 @@ class Input(TypedDict):
 
 
 JSON: Final = TypeAdapter(JsonValue)
+JSON_OBJECT: Final = TypeAdapter(dict[str, JsonValue])
 TAG: Final = TypeAdapter(Tag)
 PARAMS_CALL: Final = TypeAdapter(ParamsCall)
 MARKER_CALL: Final = TypeAdapter(MarkerCall)
@@ -84,7 +91,9 @@ class FakeCredentialTable:
         self.lookups.append(name)
         if name not in self.names:
             return None
-        return CredentialItem(credential_name=name, credential_values={}, credential_info={})
+        return CredentialItem.model_validate(
+            CredentialRow(credential_name=name, credential_values={}, credential_info={})
+        )
 
 
 class FakeDatabase(PrismaWrapper):
@@ -102,7 +111,8 @@ def params_answer(call: ParamsCall) -> JsonValue:
         effective = model_management_endpoints._effective_complexity_router_params(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L459-L468
             call["incoming"], call["existing"]
         )
-        return JSON.validate_json(to_json(dict(effective)))
+        params: dict[str, object] = dict(effective)
+        return JSON.validate_json(to_json(params))
     try:
         model_management_endpoints._raise_on_strategy_router_write_violation(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L329-L341
             call["incoming"], call["existing"]
@@ -143,7 +153,9 @@ def marker_answer(call: MarkerCall) -> JsonValue:
 
 def credential_answer(call: CredentialCall) -> JsonValue:
     litellm.credential_list = [
-        CredentialItem(credential_name=name, credential_values={}, credential_info={})
+        CredentialItem.model_validate(
+            CredentialRow(credential_name=name, credential_values={}, credential_info={})
+        )
         for name in call["loaded"]
     ]
     table = FakeCredentialTable(call["stored"])
@@ -197,21 +209,25 @@ def ptu_answer(call: PtuCall) -> JsonValue:
     merged = model_management_endpoints._merged_ptu_model_info(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L727-L738
         db_model=stored, patch_data=updateDeployment(model_info=incoming)
     )
+    supplied: dict[str, JsonValue] = {}
+    if incoming is not None:
+        supplied = JSON_OBJECT.validate_json(incoming.model_dump_json(exclude_none=True))
     allowed: JsonValue = None
     try:
         model_management_endpoints._raise_if_ptu_cost_attribution_disabled(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L741-L764
-            {} if incoming is None else incoming.model_dump(exclude_none=True)
+            supplied
         )
-    except HTTPException as error:
+    except HTTPException as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L758-L764
         allowed = {"status": error.status_code, "type": None, "param": None, "code": None}
     valid: JsonValue = None
     try:
         model_management_endpoints._validate_ptu_model_info(merged)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L767-L780
-    except HTTPException as error:
+    except HTTPException as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L778-L780
         valid = {"status": error.status_code, "type": None, "param": None, "code": None}
+    merged_info: dict[str, object] = dict(merged)
     return {
         "cleared": cleared,
-        "merged": JSON.validate_json(to_json(dict(merged))),
+        "merged": JSON.validate_json(to_json(merged_info)),
         "allowed": allowed,
         "valid": valid,
     }

@@ -57,62 +57,44 @@ pub enum ModelFieldError {
     },
 }
 
+// the PTU refusals are bare HTTPExceptions in LiteLLM, so they carry no type or param
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Refusal {
+    pub status: u16,
+    pub error_type: Option<ProxyErrorTypes>,
+    pub param: Option<String>,
+}
+
 impl ModelFieldError {
     #[must_use]
-    pub const fn status(&self) -> u16 {
-        match self {
-            Self::ConfigWrite(_)
-            | Self::Placement(_)
-            | Self::RouterModel(_)
-            | Self::EmptyCredentialName
-            | Self::CredentialNotFound { .. }
-            | Self::RateLimitsMissing { .. }
-            | Self::PtuDisabled { .. }
-            | Self::PtuInvalid { .. } => 400,
+    pub fn refusal(&self) -> Refusal {
+        let validation = Some(ProxyErrorTypes::ValidationError);
+        let (status, error_type, param) = match self {
+            Self::ConfigWrite(_) | Self::Placement(_) | Self::RouterModel(_) => {
+                (400_u16, validation, Some("litellm_params.model".to_owned()))
+            }
+            Self::EmptyCredentialName | Self::CredentialNotFound { .. } => (
+                400_u16,
+                validation,
+                Some("litellm_credential_name".to_owned()),
+            ),
+            Self::RateLimitsMissing { missing } => (
+                400_u16,
+                validation,
+                missing
+                    .first()
+                    .map(|field| format!("litellm_params.{field}")),
+            ),
+            Self::PtuDisabled { .. } | Self::PtuInvalid { .. } => (400_u16, None, None),
             Self::CredentialLookup { .. }
             | Self::Database(_)
             | Self::Table(_)
-            | Self::Row { .. } => 500,
-        }
-    }
-
-    // the PTU refusals are bare HTTPExceptions in LiteLLM, so they carry no type, param or code
-    #[must_use]
-    pub const fn error_type(&self) -> Option<ProxyErrorTypes> {
-        match self {
-            Self::ConfigWrite(_)
-            | Self::Placement(_)
-            | Self::RouterModel(_)
-            | Self::EmptyCredentialName
-            | Self::CredentialNotFound { .. }
-            | Self::RateLimitsMissing { .. } => Some(ProxyErrorTypes::ValidationError),
-            Self::PtuDisabled { .. }
-            | Self::PtuInvalid { .. }
-            | Self::CredentialLookup { .. }
-            | Self::Database(_)
-            | Self::Table(_)
-            | Self::Row { .. } => None,
-        }
-    }
-
-    #[must_use]
-    pub fn param(&self) -> Option<String> {
-        match self {
-            Self::ConfigWrite(_) | Self::Placement(_) | Self::RouterModel(_) => {
-                Some("litellm_params.model".to_owned())
-            }
-            Self::EmptyCredentialName | Self::CredentialNotFound { .. } => {
-                Some("litellm_credential_name".to_owned())
-            }
-            Self::RateLimitsMissing { missing } => missing
-                .first()
-                .map(|field| format!("litellm_params.{field}")),
-            Self::PtuDisabled { .. }
-            | Self::PtuInvalid { .. }
-            | Self::CredentialLookup { .. }
-            | Self::Database(_)
-            | Self::Table(_)
-            | Self::Row { .. } => None,
+            | Self::Row { .. } => (500_u16, None, None),
+        };
+        Refusal {
+            status,
+            error_type,
+            param,
         }
     }
 }

@@ -97,5 +97,5 @@ async fn get_db_model_without_a_database_fails() {
         ),
         "{error:?}"
     );
-    assert_eq!(error.status(), 500);
+    assert_eq!(error.refusal().status, 500);
 }

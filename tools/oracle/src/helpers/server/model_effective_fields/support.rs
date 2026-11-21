@@ -82,12 +82,13 @@ pub(super) fn refusal(outcome: Result<(), ModelFieldError>) -> Value {
     let Err(error) = outcome else {
         return Value::Null;
     };
-    let error_type = error.error_type().map(|kind| kind.to_string());
-    let code = error_type.as_ref().map(|_kind| error.status().to_string());
+    let refused = error.refusal();
+    let error_type = refused.error_type.map(|kind| kind.to_string());
+    let code = error_type.as_ref().map(|_kind| refused.status.to_string());
     json!({
-        "status": error.status(),
+        "status": refused.status,
         "type": error_type,
-        "param": error.param(),
+        "param": refused.param,
         "code": code,
     })
 }

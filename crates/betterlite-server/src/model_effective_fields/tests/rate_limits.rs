@@ -43,9 +43,12 @@ fn required_rate_limit(
     };
     let error = outcome.unwrap_err();
     assert!(matches!(error, ModelFieldError::RateLimitsMissing { .. }));
-    assert_eq!(error.status(), 400);
-    assert_eq!(error.error_type(), Some(ProxyErrorTypes::ValidationError));
-    assert_eq!(error.param().as_deref(), Some(param));
+    assert_eq!(error.refusal().status, 400);
+    assert_eq!(
+        error.refusal().error_type,
+        Some(ProxyErrorTypes::ValidationError)
+    );
+    assert_eq!(error.refusal().param.as_deref(), Some(param));
     assert!(
         error
             .to_string()

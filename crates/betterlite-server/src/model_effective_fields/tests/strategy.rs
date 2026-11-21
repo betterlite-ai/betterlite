@@ -25,9 +25,15 @@ enum Refusal {
 
 fn refusal(incoming: Option<&JsonObject>, existing: Option<&JsonObject>) -> Option<Refusal> {
     let error = check_strategy_router_write(&cipher(), incoming, existing).err()?;
-    assert_eq!(error.status(), 400);
-    assert_eq!(error.error_type(), Some(ProxyErrorTypes::ValidationError));
-    assert_eq!(error.param().as_deref(), Some("litellm_params.model"));
+    assert_eq!(error.refusal().status, 400);
+    assert_eq!(
+        error.refusal().error_type,
+        Some(ProxyErrorTypes::ValidationError)
+    );
+    assert_eq!(
+        error.refusal().param.as_deref(),
+        Some("litellm_params.model")
+    );
     match error {
         ModelFieldError::ConfigWrite(_) => Some(Refusal::Config),
         ModelFieldError::Placement(_) => Some(Refusal::Placement),

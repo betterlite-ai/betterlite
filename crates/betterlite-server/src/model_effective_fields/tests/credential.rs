@@ -66,9 +66,15 @@ async fn an_empty_credential_name_is_refused_before_any_lookup() {
     .await
     .unwrap_err();
     assert!(matches!(error, ModelFieldError::EmptyCredentialName));
-    assert_eq!(error.status(), 400);
-    assert_eq!(error.error_type(), Some(ProxyErrorTypes::ValidationError));
-    assert_eq!(error.param().as_deref(), Some("litellm_credential_name"));
+    assert_eq!(error.refusal().status, 400);
+    assert_eq!(
+        error.refusal().error_type,
+        Some(ProxyErrorTypes::ValidationError)
+    );
+    assert_eq!(
+        error.refusal().param.as_deref(),
+        Some("litellm_credential_name")
+    );
     assert!(store.lookups.lock().unwrap().is_empty());
 }
 
@@ -141,8 +147,11 @@ async fn an_unknown_credential_is_refused() {
         }
         other => panic!("expected a missing credential: {other:?}"),
     }
-    assert_eq!(error.status(), 400);
-    assert_eq!(error.param().as_deref(), Some("litellm_credential_name"));
+    assert_eq!(error.refusal().status, 400);
+    assert_eq!(
+        error.refusal().param.as_deref(),
+        Some("litellm_credential_name")
+    );
 }
 
 #[tokio::test]
@@ -156,9 +165,9 @@ async fn a_failing_credential_table_is_a_server_error() {
         .await
         .unwrap_err();
     assert!(matches!(error, ModelFieldError::CredentialLookup { .. }));
-    assert_eq!(error.status(), 500);
-    assert_eq!(error.error_type(), None);
-    assert_eq!(error.param(), None);
+    assert_eq!(error.refusal().status, 500);
+    assert_eq!(error.refusal().error_type, None);
+    assert_eq!(error.refusal().param, None);
 }
 
 #[test]

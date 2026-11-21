@@ -69,9 +69,9 @@ fn ptu_fields_need_attribution(
     };
     let error = outcome.unwrap_err();
     assert!(matches!(error, ModelFieldError::PtuDisabled { .. }));
-    assert_eq!(error.status(), 400);
-    assert_eq!(error.error_type(), None);
-    assert_eq!(error.param(), None);
+    assert_eq!(error.refusal().status, 400);
+    assert_eq!(error.refusal().error_type, None);
+    assert_eq!(error.refusal().param, None);
     assert_eq!(
         error.to_string(),
         format!(
@@ -103,6 +103,6 @@ fn ptu_model_info_is_judged_whole(#[case] model_info: &str, #[case] refused: Opt
     };
     let error = outcome.unwrap_err();
     assert!(matches!(error, ModelFieldError::PtuInvalid { .. }));
-    assert_eq!(error.status(), 400);
+    assert_eq!(error.refusal().status, 400);
     assert_eq!(error.to_string(), message);
 }
