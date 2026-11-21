@@ -83,7 +83,7 @@ fn malformed_records_fail() {
     let cases: [(&[u8], &str); 6] = [
         (b"\xff", "error: the file content is not valid UTF-8"),
         (b"{\"a\": 1}\nnot json", record),
-        ("\u{1f}{}".as_bytes(), record),
+        (b"\x1f{}", record),
         (b"{\"body\": {\"model\": 5}}", shape),
         (b"{\"body\": []}", shape),
         (b" [1]", shape),

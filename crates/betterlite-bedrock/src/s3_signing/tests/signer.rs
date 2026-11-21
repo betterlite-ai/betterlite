@@ -49,7 +49,7 @@ struct Prepared {
 }
 
 fn prepare(upload: Upload<'_>) -> Prepared {
-    let seconds = Duration::from_secs(1_704_067_200);
+    let seconds = Duration::new(1_704_067_200, 0);
     Prepared {
         optional_params: serde_json::from_str(upload.params).unwrap(),
         key: upload.key.map(|key| SecretString::from(key.to_owned())),

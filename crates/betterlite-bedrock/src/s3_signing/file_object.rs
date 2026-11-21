@@ -78,16 +78,15 @@ pub fn convert_https_url_to_s3_uri(url: &str) -> Result<(String, String), S3Sign
         (!region.is_empty() && !bucket.is_empty() && !capture.is_empty())
             .then_some((bucket, capture))
     });
-    let (bucket, raw_key) = match regex_match {
-        Some((bucket, key)) => (bucket.to_owned(), key.to_owned()),
-        None => {
-            let path = parsed_path(url).ok_or_else(unparsable)?;
-            let (bucket, key) = path
-                .trim_start_matches('/')
-                .split_once('/')
-                .ok_or_else(unparsable)?;
-            (bucket.to_owned(), key.to_owned())
-        }
+    let (bucket, raw_key) = if let Some((bucket, key)) = regex_match {
+        (bucket.to_owned(), key.to_owned())
+    } else {
+        let path = parsed_path(url).ok_or_else(unparsable)?;
+        let (bucket, key) = path
+            .trim_start_matches('/')
+            .split_once('/')
+            .ok_or_else(unparsable)?;
+        (bucket.to_owned(), key.to_owned())
     };
     let key = percent_decode_str(&raw_key).decode_utf8_lossy();
     let filename = key.rsplit_once('/').map_or(&*key, |(_, last)| last);

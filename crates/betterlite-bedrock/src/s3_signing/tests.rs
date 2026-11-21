@@ -50,6 +50,11 @@ fn size(recorded: Option<RequestValue>, headers: &[(&str, &str)]) -> String {
 }
 
 fn upload_content_size() {
+    recorded_length_wins();
+    response_length_fallback();
+}
+
+fn recorded_length_wins() {
     let raw = |text: &str| Some(RequestValue::Raw(text.to_owned()));
     let five = [("Content-Length", "5")];
     assert_eq!(size(raw("9"), &five), "9");
@@ -59,6 +64,9 @@ fn upload_content_size() {
     assert_eq!(size(raw("9.5"), &five), "5");
     assert_eq!(size(raw("null"), &five), "5");
     assert_eq!(size(Some(RequestValue::Text("7".to_owned())), &five), "5");
+}
+
+fn response_length_fallback() {
     assert_eq!(size(None, &[("content-length", "12")]), "12");
     assert_eq!(size(None, &[]), "0");
     assert_eq!(size(None, &[("Content-Length", "")]), "0");
