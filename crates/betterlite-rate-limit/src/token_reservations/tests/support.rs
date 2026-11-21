@@ -439,9 +439,10 @@ impl ReservationFixture {
         let effects = Arc::new(Effects::default());
         let cache = Arc::new(RecordingCache::new(entries, Arc::clone(&effects)));
         let usage = Arc::new(RecordingUsage::new(Arc::clone(&effects)));
+        let store_cache = Arc::clone(&cache);
         let adjustments = TokenAdjustments {
             windows: WindowStore {
-                cache: Arc::clone(&cache),
+                cache: store_cache,
                 rate_limiter_script: None,
                 counter_read_script: None,
                 request_batch: None,

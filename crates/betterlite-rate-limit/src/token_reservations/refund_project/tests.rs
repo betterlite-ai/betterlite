@@ -103,7 +103,8 @@ async fn increments_unguarded_when_the_window_names_another_counter() {
 #[tokio::test]
 async fn sends_a_guard_script_call_for_a_redis_window() {
     let script = RecordingScript::new();
-    let fixture = ReservationFixture::seeded(&[]).with_guarded_script(Arc::clone(&script));
+    let guarded = Arc::clone(&script);
+    let fixture = ReservationFixture::seeded(&[]).with_guarded_script(guarded);
     let windows = BTreeSet::from([identity(
         &tokens_key(ITPM, VALUE),
         &START.to_string(),

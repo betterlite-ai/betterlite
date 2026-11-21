@@ -209,7 +209,7 @@ fn answer(
     response: Option<&RateLimitResponse>,
     itpm_reserved: i64,
     otpm_reserved: i64,
-    raised: Value,
+    raised: &Value,
     effects: &Effects,
 ) -> Value {
     let rendered = response.map_or(Value::Null, response_json);
@@ -229,7 +229,13 @@ fn reserve_tpm(case: &ReserveTpmInput) -> HelperResult {
         .runtime
         .block_on(reservations.reserve_tpm_tokens(&case.descriptors, case.estimated_tokens))
         .or_value_error()?;
-    Ok(answer(Some(&response), 0, 0, Value::Null, &fixture.effects))
+    Ok(answer(
+        Some(&response),
+        0,
+        0,
+        &Value::Null,
+        &fixture.effects,
+    ))
 }
 
 fn refund_reserved(case: &RefundReservedInput) -> HelperResult {
@@ -241,7 +247,7 @@ fn refund_reserved(case: &RefundReservedInput) -> HelperResult {
         .runtime
         .block_on(reservations.refund_reserved_tokens(&case.scopes, case.amount, &windows))
         .or_value_error()?;
-    Ok(answer(None, 0, 0, Value::Null, &fixture.effects))
+    Ok(answer(None, 0, 0, &Value::Null, &fixture.effects))
 }
 
 fn reserve_io(case: &IoReserveInput) -> HelperResult {
@@ -264,7 +270,7 @@ fn reserve_io(case: &IoReserveInput) -> HelperResult {
         Some(&response),
         itpm_reserved,
         otpm_reserved,
-        Value::Null,
+        &Value::Null,
         &fixture.effects,
     ))
 }
@@ -289,5 +295,5 @@ fn enforce_frame(case: &FrameInput) -> HelperResult {
         Ok(()) => Value::Null,
         Err(error) => raised_json(&error)?,
     };
-    Ok(answer(None, 0, 0, raised, &fixture.effects))
+    Ok(answer(None, 0, 0, &raised, &fixture.effects))
 }
