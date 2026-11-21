@@ -1,19 +1,46 @@
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
+use betterlite_openai::chat::ChatRequest;
 use betterlite_openai::openai_base_config::Headers;
 use secrecy::ExposeSecret as _;
 
-use super::support::{self, Env, field};
-use crate::foundry_dispatch::chat;
+use super::support::{self, Env, REPLY, chat_call, chat_http, field, run_chat, text_header};
+use crate::foundry_dispatch::chat::prepare::Plan;
+use crate::foundry_dispatch::chat::{self, Answer};
 use crate::foundry_dispatch::fixtures::logger::RecordingLogger;
-use crate::operation::{ChatCompletion, OperationResult};
-use crate::prepared::PreparedRequest;
+use crate::operation::{ChatCompletion, OperationError, OperationResult};
+use crate::prepared::deployment::Deployment;
 
-const REPLY: &str = r#"{"id":"chatcmpl-foundry","object":"chat.completion","created":1700000000,"model":"provider-model","choices":[{"index":0,"message":{"role":"assistant","content":"hello"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#;
 const ALPHA_KEY: &str = "key-alpha-0000000000";
 const BETA_KEY: &str = "key-beta-1111111111";
 const ALPHA_BASE: &str = "https://alpha.services.ai.azure.com/models";
 const BETA_BASE: &str = "https://beta.openai.azure.com/models";
+
+// One caller identity: its global key and tenant header, its deployment and its request
+struct Party {
+    env: Env,
+    deployment: Deployment,
+    request: ChatRequest,
+    model: &'static str,
+}
+
+impl Party {
+    const fn call<'party>(&'party self, headers: Option<&'party Headers>) -> chat::Call<'party> {
+        chat::Call {
+            headers,
+            ..chat_call(&self.request, &self.deployment, self.model, false)
+        }
+    }
+
+    fn plan(&self, headers: Option<&Headers>) -> Plan {
+        chat::prepare::prepare(&self.call(headers), &self.env.globals())
+            .expect("the identity prepares")
+    }
+
+    fn run(&self, answer: Answer<'_>) -> (Result<chat::Outcome, OperationError>, RecordingLogger) {
+        run_chat(self.call(None), &self.env, answer)
+    }
+}
 
 fn identity(key: &str, tenant: &str) -> Env {
     Env::new().global_key(key).headers(Headers::from([(
@@ -22,199 +49,135 @@ fn identity(key: &str, tenant: &str) -> Env {
     )]))
 }
 
-fn prepared_headers(prepared: &PreparedRequest) -> &http::HeaderMap {
-    let PreparedRequest::Chat(prepared) = prepared else {
-        panic!("the chat call prepares a chat request");
-    };
-    &prepared.http.headers
+fn alpha(deployment_key: Option<&str>) -> Party {
+    Party {
+        env: identity(ALPHA_KEY, "alpha"),
+        deployment: support::deployment(ALPHA_BASE, deployment_key),
+        request: support::simple_request("alpha-model"),
+        model: "alpha-model",
+    }
 }
 
-fn text_header<'headers>(headers: &'headers http::HeaderMap, name: &str) -> Option<&'headers str> {
-    headers.get(name).and_then(|value| value.to_str().ok())
+fn beta() -> Party {
+    Party {
+        env: identity(BETA_KEY, "beta"),
+        deployment: support::deployment(BETA_BASE, Some(BETA_KEY)),
+        request: support::simple_request("beta-model"),
+        model: "beta-model",
+    }
+}
+
+fn sent_header<'plan>(plan: &'plan Plan, name: &str) -> Option<&'plan str> {
+    text_header(&chat_http(&plan.prepared).headers, name)
+}
+
+fn sent_model(plan: &Plan) -> JsonValue {
+    let body: JsonValue =
+        serde_json::from_slice(&chat_http(&plan.prepared).body).expect("the body");
+    field(&body, "model").clone()
 }
 
 // Two identities keep their own key, base and headers, and a repeated call settles the same way
 #[test]
 fn foundry_provider_credential_identity_isolation() {
-    support::block_on(async {
-        let alpha_env = identity(ALPHA_KEY, "alpha");
-        let alpha = support::deployment(ALPHA_BASE, None);
-        let beta_env = identity(BETA_KEY, "beta");
-        let beta = support::deployment(BETA_BASE, Some(BETA_KEY));
+    let alpha_party = alpha(None);
+    let beta_party = beta();
+    let alpha_plan = alpha_party.plan(None);
+    check_alpha_credentials(&alpha_plan);
+    check_supplied_headers_replace_global(&alpha_party);
+    let beta_plan = beta_party.plan(None);
+    assert_eq!(beta_plan.base.as_deref(), Some(BETA_BASE));
+    assert_eq!(sent_header(&beta_plan, "api-key"), Some(BETA_KEY));
+    assert_eq!(sent_header(&beta_plan, "x-tenant"), Some("beta"));
+    assert_eq!(
+        sent_model(&alpha_plan),
+        JsonValue::Text(String::from("alpha-model"))
+    );
+    assert_eq!(
+        sent_model(&beta_plan),
+        JsonValue::Text(String::from("beta-model"))
+    );
+    assert_ne!(
+        chat_http(&alpha_plan.prepared).url,
+        chat_http(&beta_plan.prepared).url
+    );
+    check_alpha_dispatch_after_beta(&alpha_party, &alpha_plan);
+}
 
-        let alpha_request = support::simple_request("alpha-model");
-        let alpha_call = chat::Call {
-            model: "alpha-model",
-            request: &alpha_request,
-            extra_headers: None,
-            headers: None,
-            api_base: Some(alpha.api_base.as_str()),
-            api_key: alpha.api_key.as_ref(),
-            deployment: &alpha,
-            stream: false,
-        };
-        let alpha_plan = chat::prepare::prepare(&alpha_call, &alpha_env.globals())
-            .expect("the alpha identity prepares");
-        assert_eq!(alpha_plan.base.as_deref(), Some(ALPHA_BASE));
-        assert_eq!(
-            alpha_plan
-                .key
-                .as_ref()
-                .map(|key| key.expose_secret().to_owned()),
-            Some(String::from(ALPHA_KEY))
-        );
-        assert_eq!(
-            text_header(prepared_headers(&alpha_plan.prepared), "api-key"),
-            Some(ALPHA_KEY)
-        );
-        assert_eq!(
-            text_header(prepared_headers(&alpha_plan.prepared), "x-tenant"),
-            Some("alpha")
-        );
-        assert!(text_header(prepared_headers(&alpha_plan.prepared), "authorization").is_none());
+fn check_alpha_credentials(plan: &Plan) {
+    assert_eq!(plan.base.as_deref(), Some(ALPHA_BASE));
+    assert_eq!(
+        plan.key.as_ref().map(|key| key.expose_secret().to_owned()),
+        Some(String::from(ALPHA_KEY))
+    );
+    assert_eq!(sent_header(plan, "api-key"), Some(ALPHA_KEY));
+    assert_eq!(sent_header(plan, "x-tenant"), Some("alpha"));
+    assert!(sent_header(plan, "authorization").is_none());
+}
 
-        // a supplied map replaces the global one, so the environment's tenant header never reaches this call
-        let supplied = Headers::from([(String::from("x-own"), String::from("2"))]);
-        let supplied_call = chat::Call {
-            model: "alpha-model",
-            request: &alpha_request,
-            extra_headers: None,
-            headers: Some(&supplied),
-            api_base: Some(alpha.api_base.as_str()),
-            api_key: alpha.api_key.as_ref(),
-            deployment: &alpha,
-            stream: false,
-        };
-        let supplied_plan = chat::prepare::prepare(&supplied_call, &alpha_env.globals())
-            .expect("the supplied headers");
-        assert_eq!(
-            text_header(prepared_headers(&supplied_plan.prepared), "x-own"),
-            Some("2")
-        );
-        assert!(text_header(prepared_headers(&supplied_plan.prepared), "x-tenant").is_none());
+// a supplied map replaces the global one, so the environment's tenant header never reaches this call
+fn check_supplied_headers_replace_global(party: &Party) {
+    let supplied = Headers::from([(String::from("x-own"), String::from("2"))]);
+    let plan = party.plan(Some(&supplied));
+    assert_eq!(sent_header(&plan, "x-own"), Some("2"));
+    assert!(sent_header(&plan, "x-tenant").is_none());
+}
 
-        let beta_request = support::simple_request("beta-model");
-        let beta_call = chat::Call {
-            model: "beta-model",
-            request: &beta_request,
-            extra_headers: None,
-            headers: None,
-            api_base: Some(beta.api_base.as_str()),
-            api_key: beta.api_key.as_ref(),
-            deployment: &beta,
-            stream: false,
-        };
-        let beta_plan = chat::prepare::prepare(&beta_call, &beta_env.globals())
-            .expect("the beta identity prepares");
-        assert_eq!(beta_plan.base.as_deref(), Some(BETA_BASE));
-        assert_eq!(
-            text_header(prepared_headers(&beta_plan.prepared), "api-key"),
-            Some(BETA_KEY)
-        );
-        assert_eq!(
-            text_header(prepared_headers(&beta_plan.prepared), "x-tenant"),
-            Some("beta")
-        );
-        let PreparedRequest::Chat(alpha_prepared) = &alpha_plan.prepared else {
-            panic!("the alpha call prepares a chat request");
-        };
-        let PreparedRequest::Chat(beta_prepared) = &beta_plan.prepared else {
-            panic!("the beta call prepares a chat request");
-        };
-        let alpha_body: JsonValue =
-            serde_json::from_slice(&alpha_prepared.http.body).expect("the alpha body");
-        assert_eq!(
-            field(&alpha_body, "model"),
-            &JsonValue::Text(String::from("alpha-model"))
-        );
-        let beta_body: JsonValue =
-            serde_json::from_slice(&beta_prepared.http.body).expect("the beta body");
-        assert_eq!(
-            field(&beta_body, "model"),
-            &JsonValue::Text(String::from("beta-model"))
-        );
-        assert_ne!(alpha_prepared.http.url, beta_prepared.http.url);
-
-        // running the alpha identity after beta still sends only alpha's credentials
-        let mut logger = RecordingLogger::default();
-        let outcome = chat::Dispatch {
-            call: alpha_call,
-            globals: alpha_env.globals(),
-            answer: support::supplied(200, REPLY),
-        }
-        .run(&mut logger)
-        .await
-        .expect("the alpha dispatch runs");
-        let OperationResult::Chat(ChatCompletion::OpenAi(reply)) = outcome.result else {
-            panic!("the alpha dispatch replies with a chat completion");
-        };
-        assert_eq!(reply.model, "azure_ai/provider-model");
-        assert!(logger.calls.is_empty());
-        assert!(
-            !alpha_plan
-                .key
-                .as_ref()
-                .expect("the alpha key")
-                .expose_secret()
-                .contains(BETA_KEY)
-        );
-    });
+// running the alpha identity after beta still sends only alpha's credentials
+fn check_alpha_dispatch_after_beta(party: &Party, plan: &Plan) {
+    let (result, logger) = party.run(support::supplied(200, REPLY));
+    let outcome = result.expect("the alpha dispatch runs");
+    let OperationResult::Chat(ChatCompletion::OpenAi(reply)) = outcome.result else {
+        panic!("the alpha dispatch replies with a chat completion");
+    };
+    assert_eq!(reply.model, "azure_ai/provider-model");
+    assert!(logger.calls.is_empty());
+    assert!(
+        !plan
+            .key
+            .as_ref()
+            .expect("the alpha key")
+            .expose_secret()
+            .contains(BETA_KEY)
+    );
 }
 
 // Debug and the owned failure paths carry the resolved facts but never the credential itself
 #[test]
 fn foundry_provider_secret_safe_failure() {
-    support::block_on(async {
-        let env = identity(ALPHA_KEY, "alpha");
-        let deployment = support::deployment(ALPHA_BASE, Some(ALPHA_KEY));
-        let rendered = format!("{deployment:?}");
-        assert!(!rendered.contains(ALPHA_KEY));
-        assert!(rendered.contains("REDACTED"));
+    let party = alpha(Some(ALPHA_KEY));
+    let rendered = format!("{:?}", party.deployment);
+    assert!(!rendered.contains(ALPHA_KEY));
+    assert!(rendered.contains("REDACTED"));
+    let plan = party.plan(None);
+    let header = chat_http(&plan.prepared)
+        .headers
+        .get("api-key")
+        .expect("the resolved key header");
+    assert!(header.is_sensitive());
+    check_failure_hides_key(&party);
+}
 
-        let request = support::simple_request("alpha-model");
-        let call = chat::Call {
-            model: "alpha-model",
-            request: &request,
-            extra_headers: None,
-            headers: None,
-            api_base: Some(deployment.api_base.as_str()),
-            api_key: deployment.api_key.as_ref(),
-            deployment: &deployment,
-            stream: false,
-        };
-        let plan = chat::prepare::prepare(&call, &env.globals()).expect("the plan");
-        let header = prepared_headers(&plan.prepared)
-            .get("api-key")
-            .expect("the resolved key header");
-        assert!(header.is_sensitive());
-
-        let mut logger = RecordingLogger::default();
-        let Err(error) = chat::Dispatch {
-            call,
-            globals: env.globals(),
-            answer: support::supplied(500, r#"{"error":"upstream is down"}"#),
-        }
-        .run(&mut logger)
-        .await
-        else {
-            panic!("a 500 is a failure");
-        };
-        assert!(!error.to_string().contains(ALPHA_KEY));
-        assert!(!format!("{error:?}").contains(ALPHA_KEY));
-        assert_eq!(logger.calls.len(), 1);
-        let Json::Text(original) = &logger.calls[0].original_response else {
-            panic!("the failure log carries the error text");
-        };
-        assert!(!original.contains(ALPHA_KEY));
-        let headers = logger.calls[0].headers.as_ref().expect("the headers");
-        assert_eq!(
-            headers.get("x-tenant"),
-            Some(&Json::Text(String::from("alpha")))
-        );
-        assert!(
-            !serde_json::to_string(headers)
-                .expect("the headers text")
-                .contains(ALPHA_KEY)
-        );
-    });
+fn check_failure_hides_key(party: &Party) {
+    let (result, logger) = party.run(support::supplied(500, r#"{"error":"upstream is down"}"#));
+    let Err(error) = result else {
+        panic!("a 500 is a failure");
+    };
+    assert!(!error.to_string().contains(ALPHA_KEY));
+    assert!(!format!("{error:?}").contains(ALPHA_KEY));
+    assert_eq!(logger.calls.len(), 1);
+    let Json::Text(original) = &logger.calls[0].original_response else {
+        panic!("the failure log carries the error text");
+    };
+    assert!(!original.contains(ALPHA_KEY));
+    let headers = logger.calls[0].headers.as_ref().expect("the headers");
+    assert_eq!(
+        headers.get("x-tenant"),
+        Some(&Json::Text(String::from("alpha")))
+    );
+    assert!(
+        !serde_json::to_string(headers)
+            .expect("the headers text")
+            .contains(ALPHA_KEY)
+    );
 }
