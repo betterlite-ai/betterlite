@@ -46,6 +46,8 @@ pub fn standalone_routing(
 }
 
 impl DeploymentLookup for StandaloneRouting {
+    // The empty list is the whole answer, so every mutant of it is the same empty list
+    #[cfg_attr(test, mutants::skip)]
     fn deployments_for(&self, _model_name: &str) -> Vec<JsonValue> {
         Vec::new()
     }

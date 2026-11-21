@@ -38,6 +38,7 @@ fn standalone_routing_knows_the_config_groups_and_deployment_names() {
     );
     assert!(routing.is_recognized_model("messages-model"));
     assert!(routing.model_names_has("messages-model"));
+    assert!(!routing.model_names_has("openai/messages-model"));
     assert!(routing.is_deployment_name("openai/messages-model"));
     assert!(!routing.is_deployment_name("messages-model"));
     assert!(!routing.all_blocked("messages-model", Some("team")));
@@ -105,6 +106,22 @@ async fn standalone_anthropic_messages_writes_the_picked_deployment() {
     let hidden = outcome.hidden_mut();
     assert_eq!(hidden.get("model_id"), Some(&text(&deployment.model_id)));
     assert_eq!(hidden.get("api_base"), Some(&text("http://127.0.0.1:1")));
+    let numeric = object(&[
+        ("model", text("messages-model")),
+        (
+            "litellm_metadata",
+            JsonValue::Object(object(&[("model_info", JsonValue::from(7_i64))])),
+        ),
+    ]);
+    routing.anthropic_messages(numeric, false).await.unwrap();
+    let second = dispatch.calls.lock().unwrap()[1].clone();
+    assert_eq!(
+        second
+            .get("litellm_metadata")
+            .and_then(|metadata| metadata.get("model_info"))
+            .and_then(|info| info.get("id")),
+        Some(&text(&deployment.model_id))
+    );
 }
 
 #[tokio::test]
