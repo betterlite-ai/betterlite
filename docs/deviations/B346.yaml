@@ -1,0 +1,9 @@
+task: B346
+deviations:
+  - what: Each model's scheduler queue holds at most 1024 pending requests, and a request that would exceed the cap is rejected with a 429 rate-limit error.
+    why: The bounded-inputs rule forbids an unbounded queue; LiteLLM's heap takes any number of entries and the pin has no queue bound.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/scheduler.py#L42-L50
+  - what: A scheduled request leaves the queue when it completes or is cancelled as well as when it times out.
+    why: The async-hygiene rule forbids orphaned entries; LiteLLM removes an entry only on the timeout path, so every completed request and every request that ran through the healthy-deployment poll leaves its entry behind.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L4424-L4451
+kept_bugs: []
