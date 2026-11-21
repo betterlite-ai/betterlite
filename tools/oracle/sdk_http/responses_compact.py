@@ -6,13 +6,11 @@ from typing import Final, Literal, Protocol, TypeAlias, cast
 import litellm
 import openai
 from litellm.types.llms.openai import ResponsesAPIResponse
-from openai.types.responses.response_input_param import ResponseInputParam
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
 Mode = Literal["sync", "async"]
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
-INPUT: TypeAdapter[str | ResponseInputParam] = TypeAdapter(str | ResponseInputParam)
 
 CompactResult: TypeAlias = ResponsesAPIResponse | Coroutine[object, object, ResponsesAPIResponse]
 
@@ -51,7 +49,7 @@ class ResponsesCompactCall(BaseModel):
 
 def call_kwargs(run: CompactRun, api_base: str) -> dict[str, JsonValue]:
     values: dict[str, JsonValue] = {
-        "input": JSON.validate_python(INPUT.validate_python(run.input)),
+        "input": run.input,
         "model": run.model,
         "instructions": run.instructions,
         "previous_response_id": run.previous_response_id,
