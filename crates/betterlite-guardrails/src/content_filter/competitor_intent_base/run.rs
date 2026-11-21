@@ -2,10 +2,14 @@ use betterlite_config::sections::content_filter_records::overrides::CompetitorIn
 
 use super::{BaseCompetitorIntentChecker, Meaning, normalize};
 
-impl BaseCompetitorIntentChecker {
+// The workspace denies multiple_inherent_impl, so LiteLLM's base run lives on this trait.
+pub trait BaseCompetitorRun {
     #[must_use]
-    // ast-grep-ignore: no-one-line-functions - LiteLLM's base run is this one delegation to evaluate
-    pub fn run(&self, text: &str) -> CompetitorIntentResult {
+    fn run(&self, text: &str) -> CompetitorIntentResult;
+}
+
+impl BaseCompetitorRun for BaseCompetitorIntentChecker {
+    fn run(&self, text: &str) -> CompetitorIntentResult {
         self.evaluate(&normalize(text), base_classify)
     }
 }

@@ -1,8 +1,8 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::io;
-use std::io::Write;
+use std::fs;
+use std::io::{self, Write};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -20,6 +20,7 @@ use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_config::sections::guardrail_params::opaque::OpaqueParams;
 
 use super::error::ContentFilterBuildError;
+use super::record::policy_template;
 use super::{
     CompetitorIntentChecker, ContentFilterGuardrail, GUARDRAIL_PROVIDER, KEYWORD_REDACTION_TAG,
     PATTERN_REDACTION_FORMAT, SUPPORTED_EVENT_HOOKS,
@@ -236,11 +237,8 @@ fn tool_call(arguments: &str) -> GuardrailValue {
 }
 
 fn mcp_request_data() -> BTreeMap<String, GuardrailValue> {
-    let data = serde_json::json!({
-        "mcp_tool_name": "search",
-        "mcp_arguments": {"query": "secret stuff"},
-    });
-    serde_json::from_value(data).unwrap()
+    let data = r#"{"mcp_tool_name": "search", "mcp_arguments": {"query": "secret stuff"}}"#;
+    serde_json::from_str(data).unwrap()
 }
 
 fn intent(guardrail: &ContentFilterGuardrail<TestRouter>, text: &str) -> Option<String> {
@@ -354,7 +352,7 @@ fn tool_arguments(inputs: &GuardrailApiInputs) -> &str {
 }
 
 #[test]
-fn the_defaults_match_the_litellm_class_constants() {
+fn the_provider_and_redaction_strings_match_litellm() {
     let guardrail = built(args("content-filter"));
     assert_eq!(GUARDRAIL_PROVIDER, "litellm_content_filter");
     assert_eq!(guardrail.guardrail_provider, GUARDRAIL_PROVIDER);
@@ -362,6 +360,11 @@ fn the_defaults_match_the_litellm_class_constants() {
     assert_eq!(guardrail.pattern_redaction_format, PATTERN_REDACTION_FORMAT);
     assert_eq!(KEYWORD_REDACTION_TAG, "[KEYWORD_REDACTED]");
     assert_eq!(guardrail.keyword_redaction_tag, KEYWORD_REDACTION_TAG);
+}
+
+#[test]
+fn the_defaults_match_the_litellm_class_constants() {
+    let guardrail = built(args("content-filter"));
     assert_eq!(guardrail.severity_threshold, "medium");
     assert_eq!(guardrail.config_guardrail_id, None);
     assert_eq!(guardrail.config_policy_template, None);
@@ -549,7 +552,7 @@ fn blocked_words_are_keyed_lowercase_and_the_last_duplicate_wins() {
 fn a_blocked_words_file_is_merged_last_and_an_empty_path_is_skipped() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("words.yaml");
-    std::fs::write(
+    fs::write(
         &path,
         "blocked_words:\n  - keyword: \"Secret\"\n    action: \"BLOCK\"\n    description: \"from file\"\n  - keyword: \"FromFile\"\n    action: \"MASK\"\n",
     )
@@ -628,7 +631,7 @@ fn the_categories_load_from_the_bundled_assets_and_supply_the_policy_template() 
             .contains_key("bias_gender")
     );
     assert_eq!(
-        guardrail.policy_template(),
+        policy_template(&guardrail),
         Some(
             "Detects gender-based discriminatory language, stereotypes, and biased content"
                 .to_owned()
@@ -642,7 +645,7 @@ fn a_configured_policy_template_wins_over_the_categories() {
     arguments.categories = Some(vec![category("bias_gender")]);
     arguments.policy_template = Some("our policy".to_owned());
     let guardrail = built(arguments);
-    assert_eq!(guardrail.policy_template(), Some("our policy".to_owned()));
+    assert_eq!(policy_template(&guardrail), Some("our policy".to_owned()));
 }
 
 #[tokio::test]
@@ -826,7 +829,7 @@ async fn mcp_arguments_are_scanned_only_for_a_request() {
         GuardrailInputType::Request,
     )
     .await;
-    let mcp = request.request_data.get("mcp_arguments").unwrap();
+    let mcp = &request.request_data["mcp_arguments"];
     assert_eq!(
         field(mcp, &["query"]),
         Some(&GuardrailValue::Text("[KEYWORD_REDACTED] stuff".to_owned()))
@@ -841,10 +844,7 @@ async fn mcp_arguments_are_scanned_only_for_a_request() {
     .await;
     assert!(!response.request_data.contains_key("modified_arguments"));
     assert_eq!(
-        field(
-            response.request_data.get("mcp_arguments").unwrap(),
-            &["query"]
-        ),
+        field(&response.request_data["mcp_arguments"], &["query"]),
         Some(&GuardrailValue::Text("secret stuff".to_owned()))
     );
 }

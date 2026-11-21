@@ -101,7 +101,7 @@ impl CompetitorConfig {
         }
     }
 }
-
+// The type's one inherent impl: multiple_inherent_impl keeps the run and record logic free in their modules.
 impl<R: ImageDescriptionCompletion> ContentFilterGuardrail<R> {
     pub fn new(
         args: ContentFilterArgs,
@@ -120,13 +120,13 @@ impl<R: ImageDescriptionCompletion> ContentFilterGuardrail<R> {
         Ok(Self {
             base,
             guardrail_provider: GUARDRAIL_PROVIDER.to_owned(),
-            config_guardrail_id: args.guardrail_id.clone(),
-            config_policy_template: args.policy_template.clone(),
+            config_guardrail_id: args.guardrail_id,
+            config_policy_template: args.policy_template,
             pattern_redaction_format: PATTERN_REDACTION_FORMAT.to_owned(),
             keyword_redaction_tag: KEYWORD_REDACTION_TAG.to_owned(),
-            severity_threshold: args.severity_threshold.clone(),
+            severity_threshold: args.severity_threshold,
             router,
-            image_model: args.image_model.clone(),
+            image_model: args.image_model,
             loaded_categories,
             competitor_intent_checker,
             refuse_message_template: templates.refuse,
@@ -185,9 +185,9 @@ fn on_violation_text(action: OnViolation) -> String {
 }
 
 fn competitor_checker(
-    config: Option<&OpaqueParams>,
+    configured: Option<&OpaqueParams>,
 ) -> (Option<CompetitorIntentChecker>, CompetitorTemplates) {
-    let Some(config) = config else {
+    let Some(config) = configured else {
         return (None, CompetitorTemplates::default());
     };
     match build_competitor(config) {
@@ -220,14 +220,14 @@ fn build_competitor(
         competitor_signals: raw.competitor_signals.clone().unwrap_or_default(),
         other_meaning_anchors: raw.other_meaning_anchors.clone().unwrap_or_default(),
         explicit_competitor_marker: raw.explicit_competitor_marker.clone(),
-        explicit_other_meaning_marker: raw.explicit_other_meaning_marker.clone(),
+        explicit_other_meaning_marker: raw.explicit_other_meaning_marker,
     };
     let checker = AirlineCompetitorIntentChecker::new(&airline)?;
     Ok((CompetitorIntentChecker::Airline(checker), templates))
 }
 
-fn guardrail_categories(configs: Option<&[ContentFilterCategoryConfig]>) -> CategoryLoadResult {
-    let Some(configs) = configs.filter(|list| !list.is_empty()) else {
+fn guardrail_categories(configured: Option<&[ContentFilterCategoryConfig]>) -> CategoryLoadResult {
+    let Some(configs) = configured.filter(|list| !list.is_empty()) else {
         return CategoryLoadResult::default();
     };
     // LiteLLM's roots are install-time constants, so a missing asset tree skips categories instead of raising

@@ -62,76 +62,83 @@ impl GuardrailSpanSink for NoSpanSink {
 
 const NO_SPAN_SINK: NoSpanSink = NoSpanSink;
 
-impl<R> ContentFilterGuardrail<R> {
-    pub(super) fn write_record(
-        &self,
-        request_data: &mut BTreeMap<String, GuardrailValue>,
-        log_target: Option<&mut GuardrailLogTarget>,
-        trace: &RecordTrace<'_>,
-    ) -> Result<(), GuardrailRecordError> {
-        let timing = RecordTiming::ending_at(trace.started, SystemTime::now());
-        let detail = self.log_record(trace, &timing);
-        let input = GuardrailRecordInput {
-            guardrail_response: record_response(trace)?,
-            guardrail_status: record_status(trace.status),
-            start_time: Some(timing.start_time),
-            end_time: Some(timing.end_time),
+// The type's one inherent impl is in build; multiple_inherent_impl keeps the record logic free here.
+pub(super) fn write_record<R>(
+    guardrail: &ContentFilterGuardrail<R>,
+    request_data: &mut BTreeMap<String, GuardrailValue>,
+    log_target: Option<&mut GuardrailLogTarget>,
+    trace: &RecordTrace<'_>,
+) -> Result<(), GuardrailRecordError> {
+    let timing = RecordTiming::ending_at(trace.started, SystemTime::now());
+    let detail = log_record(guardrail, trace, &timing);
+    let input = GuardrailRecordInput {
+        guardrail_response: record_response(trace)?,
+        guardrail_status: record_status(trace.status),
+        start_time: Some(timing.start_time),
+        end_time: Some(timing.end_time),
+        duration: Some(timing.duration),
+        masked_entity_count: Some(masked_counts(trace.masked_entity_count)),
+        guardrail_provider: Some(guardrail.guardrail_provider.clone()),
+        event_type: None,
+        tracing_detail: Some(record_tracing_detail(detail)?),
+    };
+    let mut context = GuardrailRecordContext {
+        base: &guardrail.base,
+        request_data,
+        log_target,
+        sink: &NO_SPAN_SINK,
+    };
+    add_guardrail_record(&mut context, input)
+}
+
+fn log_record<R>(
+    guardrail: &ContentFilterGuardrail<R>,
+    trace: &RecordTrace<'_>,
+    timing: &RecordTiming,
+) -> GuardrailTracingDetail {
+    let mut records = Vec::new();
+    log_guardrail_information(
+        &mut records,
+        &GuardrailTraceInput {
+            guardrail_provider: &guardrail.guardrail_provider,
+            guardrail_name: guardrail
+                .base
+                .settings
+                .guardrail_name
+                .as_deref()
+                .unwrap_or_default(),
+            guardrail_id: guardrail.config_guardrail_id.as_deref(),
+            policy_template: policy_template(guardrail),
+            detections: trace.detections,
+            status: trace.status,
+            start_time: timing.start_time,
+            end_time: timing.end_time,
             duration: Some(timing.duration),
-            masked_entity_count: Some(masked_counts(trace.masked_entity_count)),
-            guardrail_provider: Some(self.guardrail_provider.clone()),
-            event_type: None,
-            tracing_detail: Some(record_tracing_detail(detail)?),
-        };
-        let mut context = GuardrailRecordContext {
-            base: &self.base,
-            request_data,
-            log_target,
-            sink: &NO_SPAN_SINK,
-        };
-        add_guardrail_record(&mut context, input)
-    }
+            masked_entity_count: trace.masked_entity_count,
+            patterns_checked: patterns_checked(guardrail),
+            exception_str: trace.exception,
+        },
+    )
+}
 
-    fn log_record(&self, trace: &RecordTrace<'_>, timing: &RecordTiming) -> GuardrailTracingDetail {
-        let mut records = Vec::new();
-        log_guardrail_information(
-            &mut records,
-            &GuardrailTraceInput {
-                guardrail_provider: &self.guardrail_provider,
-                guardrail_name: self
-                    .base
-                    .settings
-                    .guardrail_name
-                    .as_deref()
-                    .unwrap_or_default(),
-                guardrail_id: self.config_guardrail_id.as_deref(),
-                policy_template: self.policy_template(),
-                detections: trace.detections,
-                status: trace.status,
-                start_time: timing.start_time,
-                end_time: timing.end_time,
-                duration: Some(timing.duration),
-                masked_entity_count: trace.masked_entity_count,
-                patterns_checked: self.patterns_checked(),
-                exception_str: trace.exception,
-            },
-        )
-    }
+// LiteLLM's config_policy_template or the descriptions of the loaded categories
+pub(super) fn policy_template<R>(guardrail: &ContentFilterGuardrail<R>) -> Option<String> {
+    guardrail
+        .config_policy_template
+        .clone()
+        .or_else(|| category_policy_template(&guardrail.loaded_categories))
+}
 
-    // LiteLLM's config_policy_template or the descriptions of the loaded categories
-    pub(super) fn policy_template(&self) -> Option<String> {
-        self.config_policy_template
-            .clone()
-            .or_else(|| category_policy_template(&self.loaded_categories))
-    }
-
-    fn patterns_checked(&self) -> usize {
-        get_patterns_checked_count(
-            self.compiled_patterns.len(),
-            self.blocked_words.len(),
-            self.loaded_categories.category_keywords.len(),
-            self.loaded_categories.always_block_category_keywords.len(),
-        )
-    }
+fn patterns_checked<R>(guardrail: &ContentFilterGuardrail<R>) -> usize {
+    get_patterns_checked_count(
+        guardrail.compiled_patterns.len(),
+        guardrail.blocked_words.len(),
+        guardrail.loaded_categories.category_keywords.len(),
+        guardrail
+            .loaded_categories
+            .always_block_category_keywords
+            .len(),
+    )
 }
 
 // LiteLLM's _log_guardrail_information puts the exception text in place of the detections once the run failed

@@ -6,6 +6,7 @@ use indexmap::IndexMap;
 
 use crate::content_filter::competitor_intent_airline::AirlineCompetitorIntentChecker;
 use crate::content_filter::competitor_intent_base::BaseCompetitorIntentChecker;
+use crate::content_filter::competitor_intent_base::run::BaseCompetitorRun as _;
 use crate::guardrail_base::GuardrailBase;
 use crate::pattern_matching::CompiledPattern;
 

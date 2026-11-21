@@ -34,9 +34,11 @@ use super::CompetitorIntentChecker;
 use super::ContentFilterGuardrail;
 use super::SUPPORTED_EVENT_HOOKS;
 use super::record::RecordTrace;
+use super::record::write_record;
 
 const CONFIG_MODEL: &str = "LitellmContentFilterGuardrailConfigModel";
 
+// The type's one inherent impl is in build; multiple_inherent_impl keeps the run logic free here.
 impl<R: ImageDescriptionCompletion> GuardrailContract for ContentFilterGuardrail<R> {
     async fn apply_guardrail(
         &self,
@@ -47,9 +49,7 @@ impl<R: ImageDescriptionCompletion> GuardrailContract for ContentFilterGuardrail
     ) -> Result<GuardrailApiInputs, GuardrailFailure> {
         let started = SystemTime::now();
         let mut detections = Vec::new();
-        let outcome = self
-            .scan(&mut inputs, request_data, input_type, &mut detections)
-            .await;
+        let outcome = scan(self, &mut inputs, request_data, input_type, &mut detections).await;
         let mut masked_entity_count = BTreeMap::new();
         if outcome.is_ok() {
             count_masked_entities(&detections, &mut masked_entity_count);
@@ -62,7 +62,7 @@ impl<R: ImageDescriptionCompletion> GuardrailContract for ContentFilterGuardrail
             exception: exception.as_deref(),
             started,
         };
-        if let Err(error) = self.write_record(request_data, logging_obj, &trace) {
+        if let Err(error) = write_record(self, request_data, logging_obj, &trace) {
             tracing::debug!("ContentFilterGuardrail: guardrail record was not written: {error}");
         }
         match outcome {
@@ -89,118 +89,115 @@ impl<R: ImageDescriptionCompletion> GuardrailContract for ContentFilterGuardrail
     }
 }
 
-impl<R: ImageDescriptionCompletion> ContentFilterGuardrail<R> {
-    async fn scan(
-        &self,
-        inputs: &mut GuardrailApiInputs,
-        request_data: &mut BTreeMap<String, GuardrailValue>,
-        input_type: GuardrailInputType,
-        detections: &mut Vec<ContentFilterDetection>,
-    ) -> Result<(), GuardrailFailure> {
-        let blocked_words = self.blocked_word_list();
-        let source = self.content_filter_source(&blocked_words);
-        self.process_input_images(inputs, &source, detections)
-            .await?;
-        self.filter_texts(inputs, &source, request_data, detections)?;
-        let filter = ArgumentFilter {
-            source: &source,
-            max_depth: DEFAULT_RECURSE_DEPTH,
-        };
-        scan_tool_call_inputs(&filter, inputs, detections)?;
-        if input_type == GuardrailInputType::Request {
-            // the logging target has no call_type, so LiteLLM's call_mcp_tool check has nothing to read
-            scan_mcp_tool_call_arguments(&self.base, &filter, None, request_data, detections)
-                .map_err(ArgumentFilterError::into_failure)?;
-        }
-        Ok(())
+async fn scan<R: ImageDescriptionCompletion>(
+    guardrail: &ContentFilterGuardrail<R>,
+    inputs: &mut GuardrailApiInputs,
+    request_data: &mut BTreeMap<String, GuardrailValue>,
+    input_type: GuardrailInputType,
+    detections: &mut Vec<ContentFilterDetection>,
+) -> Result<(), GuardrailFailure> {
+    let blocked_words = blocked_word_list(guardrail);
+    let source = content_filter_source(guardrail, &blocked_words);
+    process_input_images(guardrail, inputs, &source, detections).await?;
+    filter_texts(guardrail, inputs, &source, request_data, detections)?;
+    let filter = ArgumentFilter {
+        source: &source,
+        max_depth: DEFAULT_RECURSE_DEPTH,
+    };
+    scan_tool_call_inputs(&filter, inputs, detections)?;
+    if input_type == GuardrailInputType::Request {
+        // the logging target has no call_type, so LiteLLM's call_mcp_tool check has nothing to read
+        scan_mcp_tool_call_arguments(&guardrail.base, &filter, None, request_data, detections)
+            .map_err(ArgumentFilterError::into_failure)?;
     }
+    Ok(())
+}
 
-    async fn process_input_images(
-        &self,
-        inputs: &GuardrailApiInputs,
-        source: &ContentFilterSource<'_>,
-        detections: &mut Vec<ContentFilterDetection>,
-    ) -> Result<(), GuardrailFailure> {
-        let scan = ImageScan {
-            images: inputs.images.as_deref().unwrap_or_default(),
-            image_model: self.image_model.as_deref(),
-            source,
-        };
-        process_images(&scan, self.router.as_ref(), detections)
-            .await
-            .map_err(ImageProcessingError::into_failure)
+async fn process_input_images<R: ImageDescriptionCompletion>(
+    guardrail: &ContentFilterGuardrail<R>,
+    inputs: &GuardrailApiInputs,
+    source: &ContentFilterSource<'_>,
+    detections: &mut Vec<ContentFilterDetection>,
+) -> Result<(), GuardrailFailure> {
+    let scan = ImageScan {
+        images: inputs.images.as_deref().unwrap_or_default(),
+        image_model: guardrail.image_model.as_deref(),
+        source,
+    };
+    process_images(&scan, guardrail.router.as_ref(), detections)
+        .await
+        .map_err(ImageProcessingError::into_failure)
+}
+
+fn filter_texts<R>(
+    guardrail: &ContentFilterGuardrail<R>,
+    inputs: &mut GuardrailApiInputs,
+    source: &ContentFilterSource<'_>,
+    request_data: &BTreeMap<String, GuardrailValue>,
+    detections: &mut Vec<ContentFilterDetection>,
+) -> Result<(), GuardrailFailure> {
+    let templates = CompetitorMessageTemplates {
+        refuse: guardrail.refuse_message_template.as_deref(),
+        reframe: guardrail.reframe_message_template.as_deref(),
+    };
+    let texts = inputs.texts.as_deref().unwrap_or_default();
+    let mut processed = Vec::with_capacity(texts.len());
+    for text in texts {
+        apply_competitor_check(guardrail, text, &templates, request_data, detections)?;
+        let filtered = filter_single_text(source, text, Some(detections)).map_err(text_failure)?;
+        processed.push(filtered);
     }
+    inputs.texts = Some(processed);
+    Ok(())
+}
 
-    fn filter_texts(
-        &self,
-        inputs: &mut GuardrailApiInputs,
-        source: &ContentFilterSource<'_>,
-        request_data: &BTreeMap<String, GuardrailValue>,
-        detections: &mut Vec<ContentFilterDetection>,
-    ) -> Result<(), GuardrailFailure> {
-        let templates = CompetitorMessageTemplates {
-            refuse: self.refuse_message_template.as_deref(),
-            reframe: self.reframe_message_template.as_deref(),
-        };
-        let texts = inputs.texts.as_deref().unwrap_or_default();
-        let mut processed = Vec::with_capacity(texts.len());
-        for text in texts {
-            self.apply_competitor_check(text, &templates, request_data, detections)?;
-            let filtered =
-                filter_single_text(source, text, Some(detections)).map_err(text_failure)?;
-            processed.push(filtered);
-        }
-        inputs.texts = Some(processed);
-        Ok(())
+fn apply_competitor_check<R>(
+    guardrail: &ContentFilterGuardrail<R>,
+    text: &str,
+    templates: &CompetitorMessageTemplates<'_>,
+    request_data: &BTreeMap<String, GuardrailValue>,
+    detections: &mut Vec<ContentFilterDetection>,
+) -> Result<(), GuardrailFailure> {
+    let Some(checker) = &guardrail.competitor_intent_checker else {
+        return Ok(());
+    };
+    let Some(intent) = competitor_intent(checker, text) else {
+        return Ok(());
+    };
+    if intent.intent.as_deref() != Some("other") {
+        apply_competitor_intent_policy(
+            &guardrail.base,
+            &intent,
+            templates,
+            request_data,
+            detections,
+        )?;
     }
+    Ok(())
+}
 
-    fn apply_competitor_check(
-        &self,
-        text: &str,
-        templates: &CompetitorMessageTemplates<'_>,
-        request_data: &BTreeMap<String, GuardrailValue>,
-        detections: &mut Vec<ContentFilterDetection>,
-    ) -> Result<(), GuardrailFailure> {
-        let Some(checker) = &self.competitor_intent_checker else {
-            return Ok(());
-        };
-        let Some(intent) = competitor_intent(checker, text) else {
-            return Ok(());
-        };
-        if intent.intent.as_deref() != Some("other") {
-            apply_competitor_intent_policy(
-                &self.base,
-                &intent,
-                templates,
-                request_data,
-                detections,
-            )?;
-        }
-        Ok(())
-    }
+fn blocked_word_list<R>(guardrail: &ContentFilterGuardrail<R>) -> Vec<BlockedWord> {
+    guardrail
+        .blocked_words
+        .iter()
+        .map(|(keyword, (action, description))| BlockedWord {
+            keyword: keyword.clone(),
+            action: *action,
+            description: description.clone(),
+        })
+        .collect()
+}
 
-    fn blocked_word_list(&self) -> Vec<BlockedWord> {
-        self.blocked_words
-            .iter()
-            .map(|(keyword, (action, description))| BlockedWord {
-                keyword: keyword.clone(),
-                action: *action,
-                description: description.clone(),
-            })
-            .collect()
-    }
-
-    fn content_filter_source<'source>(
-        &'source self,
-        blocked_words: &'source [BlockedWord],
-    ) -> ContentFilterSource<'source> {
-        ContentFilterSource {
-            categories: &self.loaded_categories,
-            patterns: &self.compiled_patterns,
-            blocked_words,
-            pattern_redaction_format: &self.pattern_redaction_format,
-            keyword_redaction_tag: &self.keyword_redaction_tag,
-        }
+fn content_filter_source<'source, R>(
+    guardrail: &'source ContentFilterGuardrail<R>,
+    blocked_words: &'source [BlockedWord],
+) -> ContentFilterSource<'source> {
+    ContentFilterSource {
+        categories: &guardrail.loaded_categories,
+        patterns: &guardrail.compiled_patterns,
+        blocked_words,
+        pattern_redaction_format: &guardrail.pattern_redaction_format,
+        keyword_redaction_tag: &guardrail.keyword_redaction_tag,
     }
 }
 
@@ -228,17 +225,17 @@ fn scan_tool_call_inputs(
         .map_err(ArgumentFilterError::into_failure)
 }
 
-fn text_failure(error: ContentFilterActionError) -> GuardrailFailure {
-    match error {
+fn text_failure(action_error: ContentFilterActionError) -> GuardrailFailure {
+    match action_error {
         ContentFilterActionError::Blocked { detail } => {
             ArgumentFilterError::Blocked { detail }.into_failure()
         }
-        error @ (ContentFilterActionError::Matching(_)
+        failure @ (ContentFilterActionError::Matching(_)
         | ContentFilterActionError::Redaction(_)
         | ContentFilterActionError::Pattern(_)
         | ContentFilterActionError::Replacement(_)
         | ContentFilterActionError::Keyword(_)) => {
-            ArgumentFilterError::Filter(error).into_failure()
+            ArgumentFilterError::Filter(failure).into_failure()
         }
     }
 }
