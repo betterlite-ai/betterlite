@@ -1768,6 +1768,7 @@ dependencies = [
  "betterlite-openai",
  "betterlite-policy",
  "betterlite-postgres-fixture",
+ "betterlite-prometheus",
  "betterlite-redact",
  "betterlite-redis",
  "betterlite-redis-fixture",
