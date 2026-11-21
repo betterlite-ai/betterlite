@@ -1,4 +1,3 @@
-// the three POST endpoints LiteLLM registers under both /v1beta/models and /models
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Operation {
     GenerateContent,

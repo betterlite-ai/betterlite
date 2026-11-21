@@ -71,15 +71,10 @@ pub(super) fn message(role: ChatRole, content: &str) -> ChatMessage {
 }
 
 pub(super) fn unscripted() -> ProxyException {
-    ProxyException::new(ProxyExceptionInit {
+    ProxyException {
         message: "no scripted outcome".to_owned(),
-        error_type: "internal_server_error".to_owned(),
-        param: None,
-        code: ExceptionCode::Status(500),
-        headers: BTreeMap::new(),
-        openai_code: None,
-        provider_specific_fields: BTreeMap::new(),
-    })
+        ..failure("500", "internal_server_error", None)
+    }
 }
 
 pub(super) fn failure(code: &str, error_type: &str, param: Option<&str>) -> ProxyException {
@@ -202,16 +197,20 @@ fn take(
         .unwrap_or_else(|| Err(Box::new(unscripted())))
 }
 
+fn record(calls: &Mutex<Vec<RecordedCall>>, call: &GenerateContentCall<'_>) {
+    calls
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .push(recorded(call));
+}
+
 #[async_trait]
 impl GenerateContentDispatch for FakeGeneration {
     async fn generate(
         &self,
         call: GenerateContentCall<'_>,
     ) -> Result<GenerationAnswer, Box<ProxyException>> {
-        self.generate_calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(recorded(&call));
+        record(&self.generate_calls, &call);
         take(&self.generate)
     }
 
@@ -219,10 +218,7 @@ impl GenerateContentDispatch for FakeGeneration {
         &self,
         call: GenerateContentCall<'_>,
     ) -> Result<GenerationAnswer, Box<ProxyException>> {
-        self.stream_calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(recorded(&call));
+        record(&self.stream_calls, &call);
         take(&self.stream)
     }
 }
@@ -402,10 +398,10 @@ pub(super) fn parse(source: &str) -> Json {
 }
 
 pub(super) fn error_body(message: &str, error_type: &str, param: Option<&str>, code: &str) -> Json {
-    Json::Object(object(vec![
-        ("message", text(message)),
-        ("type", text(error_type)),
-        ("param", param.map_or(Json::Null, text)),
-        ("code", text(code)),
-    ]))
+    let mut fields = Object::new();
+    fields.insert("message".to_owned(), text(message));
+    fields.insert("type".to_owned(), text(error_type));
+    fields.insert("param".to_owned(), param.map_or(Json::Null, text));
+    fields.insert("code".to_owned(), text(code));
+    Json::Object(fields)
 }

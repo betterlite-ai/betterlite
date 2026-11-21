@@ -22,6 +22,13 @@ use self::ports::{GenaiRoutesState, GenerateContentCall, TokenCountRequest};
 const V1BETA_MODELS: &str = "/v1beta/models/{*rest}";
 const MODELS: &str = "/models/{*rest}";
 
+// which of the two dispatch methods a path selects
+#[derive(Clone, Copy)]
+enum Pipeline {
+    Generate,
+    Stream,
+}
+
 // the six POST routes: both prefixes reach one handler, and a wrong method on a known suffix is Starlette's 405
 pub fn routes(state: GenaiRoutesState) -> Router {
     let models = post(handle).method_not_allowed_fallback(method_not_allowed);
@@ -50,12 +57,24 @@ async fn handle(
     match operation {
         Operation::GenerateContent => {
             request::with_model(&mut data, model);
-            generate(&state, &context, &headers, model, &data).await
+            let call = GenerateContentCall {
+                model,
+                data: &data,
+                context: &context,
+                headers: &headers,
+            };
+            dispatch(&state, call, Pipeline::Generate).await
         }
         Operation::StreamGenerateContent => {
             request::with_model(&mut data, model);
             request::with_stream_flags(&mut data);
-            stream(&state, &context, &headers, model, &data).await
+            let call = GenerateContentCall {
+                model,
+                data: &data,
+                context: &context,
+                headers: &headers,
+            };
+            dispatch(&state, call, Pipeline::Stream).await
         }
         Operation::CountTokens => count_tokens(&state, model, &data).await,
     }
@@ -69,39 +88,16 @@ async fn method_not_allowed(Path(rest): Path<String>) -> Response {
     }
 }
 
-async fn generate(
+async fn dispatch(
     state: &GenaiRoutesState,
-    context: &AuthContext,
-    headers: &HeaderMap,
-    model: &str,
-    data: &Object,
+    call: GenerateContentCall<'_>,
+    pipeline: Pipeline,
 ) -> Response {
-    let call = GenerateContentCall {
-        model,
-        data,
-        context,
-        headers,
+    let outcome = match pipeline {
+        Pipeline::Generate => state.generation.generate(call).await,
+        Pipeline::Stream => state.generation.stream(call).await,
     };
-    match state.generation.generate(call).await {
-        Ok(answer) => response::generation(answer),
-        Err(exception) => error::failure_response(&exception),
-    }
-}
-
-async fn stream(
-    state: &GenaiRoutesState,
-    context: &AuthContext,
-    headers: &HeaderMap,
-    model: &str,
-    data: &Object,
-) -> Response {
-    let call = GenerateContentCall {
-        model,
-        data,
-        context,
-        headers,
-    };
-    match state.generation.stream(call).await {
+    match outcome {
         Ok(answer) => response::generation(answer),
         Err(exception) => error::failure_response(&exception),
     }
