@@ -82,12 +82,12 @@ impl From<&PrincipalFacts> for UserKeyLogMetadata {
         Self {
             key_hash: logged_api_key(principal).map(str::to_owned),
             key_alias: principal.key_alias.clone(),
-            key_spend: principal.spend,
-            key_max_budget: principal.max_budget,
-            user_spend: principal.user_spend,
-            user_max_budget: principal.user_max_budget,
-            team_spend: principal.team_spend,
-            team_max_budget: principal.team_max_budget,
+            key_spend: float_amount(principal.spend),
+            key_max_budget: principal.max_budget.map(float_amount),
+            user_spend: principal.user_spend.map(float_amount),
+            user_max_budget: principal.user_max_budget.map(float_amount),
+            team_spend: principal.team_spend.map(float_amount),
+            team_max_budget: principal.team_max_budget.map(float_amount),
             team_id: principal.team_id.clone(),
             project_id: principal.project_id.clone(),
             project_alias: principal.project_alias.clone(),
@@ -104,6 +104,15 @@ impl From<&PrincipalFacts> for UserKeyLogMetadata {
             auth_metadata: strip_callback_config(&principal.metadata),
         }
     }
+}
+
+// UserAPIKeyAuth declares spend and budgets as floats, and a float prints a whole amount as 4.0
+fn float_amount(amount: Decimal) -> Decimal {
+    let mut float = amount;
+    if float.scale() == 0 {
+        float.rescale(1);
+    }
+    float
 }
 
 // everything add_user_api_key_auth_to_request_metadata writes except agent_id, which reads the slot first
@@ -166,7 +175,7 @@ pub fn add_principal_metadata(
             .or(principal.invoked_agent_id.as_deref()),
         agent_execution_mode: managed.map(|context| &context.mode),
         verified_human_user_id: managed.and_then(|context| context.user_id.as_deref()),
-        user_api_end_user_max_budget: principal.end_user_max_budget,
+        user_api_end_user_max_budget: principal.end_user_max_budget.map(float_amount),
         budget_reservation: principal.budget_reservation.as_ref(),
         access_groups: (!principal.matched_model_access_groups.is_empty())
             .then_some(principal.matched_model_access_groups.as_slice()),

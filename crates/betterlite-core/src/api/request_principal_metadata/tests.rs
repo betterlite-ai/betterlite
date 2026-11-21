@@ -262,9 +262,9 @@ fn principal_facts_reach_metadata(
     add_principal_metadata(&mut data, MetadataField::Metadata, &principal).unwrap();
     let expected = format!(
         r#"{{"kept": 1, "user_api_key_hash": "hash-1", "user_api_key_alias": "alias",
-        "user_api_key_spend": 2.5, "user_api_key_max_budget": 10, "user_api_key_user_spend": 1,
-        "user_api_key_user_max_budget": 5, "user_api_key_team_spend": 3,
-        "user_api_key_team_max_budget": 9, "user_api_key_team_id": "team",
+        "user_api_key_spend": 2.5, "user_api_key_max_budget": 10.0, "user_api_key_user_spend": 1.0,
+        "user_api_key_user_max_budget": 5.0, "user_api_key_team_spend": 3.0,
+        "user_api_key_team_max_budget": 9.0, "user_api_key_team_id": "team",
         "user_api_key_project_id": "proj", "user_api_key_project_alias": "Proj",
         "user_api_key_user_id": "user", "user_api_key_org_id": "org", "user_api_key_org_alias": "Org",
         "user_api_key_team_alias": "Team", "user_api_key_end_user_id": "end",
@@ -272,7 +272,7 @@ fn principal_facts_reach_metadata(
         "user_api_key_budget_reset_at": "2026-12-01T00:00:00+00:00", "user_api_key_auth_metadata": {{}},
         "user_api_key": "hash-1", "agent_id": "{expected_agent}", "actor_agent_id": {actor},
         "target_agent_id": {target}, "billing_agent_id": {billing}, "agent_execution_mode": "delegated",
-        "verified_human_user_id": "human", "user_api_end_user_max_budget": 4,
+        "verified_human_user_id": "human", "user_api_end_user_max_budget": 4.0,
         "user_api_key_budget_reservation": {{"reserved": 1}},
         "user_api_key_matched_model_access_groups": ["group"]}}"#,
         actor = serde_json::to_string(&agent_id).unwrap(),
@@ -298,7 +298,7 @@ fn principal_without_optional_facts_writes_nulls() {
     let Some(Json::Object(bucket)) = data.get("litellm_metadata") else {
         panic!("the slot is replaced by an object");
     };
-    assert_eq!(bucket.get("user_api_key_spend"), Some(&parsed("0")));
+    assert_eq!(bucket.get("user_api_key_spend"), Some(&parsed("0.0")));
     assert_eq!(bucket.get("agent_id"), Some(&Json::Null));
     assert_eq!(bucket.get("agent_execution_mode"), Some(&Json::Null));
     assert_eq!(
