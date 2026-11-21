@@ -12,10 +12,8 @@ pub(super) fn drop_top_level_loc() {
     .expect("the repair runs");
     assert_eq!(repaired, support::body(support::CHAT_WITHOUT_TEMPERATURE));
     // a message written as an object carries the same detail
-    let object_message = serde_json::json!({
-        "error": {"message": {"detail": [{"loc": ["body", "temperature"]}]}},
-    })
-    .to_string();
+    let object_message =
+        String::from(r#"{"error": {"message": {"detail": [{"loc": ["body", "temperature"]}]}}}"#);
     let from_object =
         repair(&object_message, &support::body(support::CHAT)).expect("the repair runs");
     assert_eq!(
@@ -152,11 +150,8 @@ fn strips_a_json_escaped_quote_once() {
 }
 
 fn drops_names_from_a_sibling_list() {
-    let sibling = serde_json::json!({
-        "error": {"message": PASS_THROUGH_HINT},
-        "params": ["n", "top_p"],
-    })
-    .to_string();
+    let sibling =
+        format!(r#"{{"error": {{"message": "{PASS_THROUGH_HINT}"}}, "params": ["n", "top_p"]}}"#);
     let repaired = repair(
         &sibling,
         &support::body(r#"{"model":"deployment","n":2,"top_p":0.5,"temperature":2}"#),

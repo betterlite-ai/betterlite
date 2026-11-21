@@ -21,7 +21,7 @@ impl TransformOnUnprocessable for AzureAi {
         &self,
         prepared: &mut PreparedRequest,
         response: &UpstreamResponse,
-        deployment: &Deployment,
+        _deployment: &Deployment,
     ) -> Result<(), OperationError> {
         // LiteLLM calls this transform only from the chat completion handler, so an embedding body stays as prepared
         let (PreparedRequest::Chat(chat) | PreparedRequest::Stream(chat)) = prepared else {

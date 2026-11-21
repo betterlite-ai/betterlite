@@ -17,20 +17,16 @@ pub(super) fn body(source: &str) -> Object {
 // Foundry's response text: a JSON error object whose message is a string, as httpx reads it
 #[must_use]
 pub(super) fn wrapped(message: &str) -> String {
-    serde_json::json!({
-        "error": {"message": message, "type": "invalid_request_error"},
-    })
-    .to_string()
+    let quoted = serde_json::to_string(message).expect("the message is a JSON string");
+    format!(r#"{{"error": {{"message": {quoted}, "type": "invalid_request_error"}}}}"#)
 }
 
 // the pydantic 422 whose message names one rejected top-level field
 #[must_use]
 pub(super) fn extra_inputs(field: &str) -> String {
-    let message = serde_json::json!({
-        "detail": [{"loc": ["body", field], "type": "extra_forbidden"}],
-        "msg": EXTRA_INPUTS_MARKER,
-    })
-    .to_string();
+    let message = format!(
+        r#"{{"detail": [{{"loc": ["body", "{field}"], "type": "extra_forbidden"}}], "msg": "{EXTRA_INPUTS_MARKER}"}}"#
+    );
     wrapped(&message)
 }
 

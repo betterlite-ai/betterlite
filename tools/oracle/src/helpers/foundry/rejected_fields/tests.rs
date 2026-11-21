@@ -63,7 +63,7 @@ fn the_helper_reports_every_named_section() {
         answer.get("repairs").unwrap(),
         &json!([{"body": {"model": "deployment"}}])
     );
-    assert_eq!(answer.get("bounds").unwrap(), &json!({"max_retry": 2}));
+    assert_eq!(answer.get("bounds").unwrap(), &json!({"max_retry": 2_u32}));
 }
 
 #[test]

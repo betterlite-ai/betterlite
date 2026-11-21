@@ -108,7 +108,7 @@ async fn a_tool_level_field_needs_no_drop_policy() {
     };
     assert_eq!(response.status, 422);
     assert_eq!(bodies.len(), 2);
-    assert!(!bodies.get(1).unwrap().contains("\"extra\""));
+    assert!(!bodies[1].contains("\"extra\""));
 }
 
 #[tokio::test]
