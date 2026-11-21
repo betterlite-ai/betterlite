@@ -146,7 +146,6 @@ where
         let request_data = call.request_data;
         let deliver = call.deliver_ended_stream_rewrites;
         async move {
-            // B3672's handler function; its name is fixed by the handler task
             // ast-grep-ignore: no-long-names
             let result = stream_output::process_output_streaming_response(
                 &mut events,
