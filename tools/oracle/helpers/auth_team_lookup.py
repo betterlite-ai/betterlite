@@ -215,7 +215,6 @@ def run(input_value: Call) -> Answer:
     level = logger.level
     handlers = logger.handlers
     clock = time.time
-    last_db_access_time.clear()
     time.time = board
     logger.setLevel(logging.DEBUG)
     logger.handlers = [board]
@@ -228,7 +227,6 @@ def run(input_value: Call) -> Answer:
         logger.handlers = handlers
         logger.setLevel(level)
         time.time = clock
-        last_db_access_time.clear()
 
 
 async def answer(call: Call, board: Board) -> Answer:
