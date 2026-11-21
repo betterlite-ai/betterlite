@@ -93,13 +93,14 @@ fn create_drops_a_marker_secret_and_writes_an_absent_switch_as_null() {
                 .naive_utc()
         )
     );
+    assert_eq!(plan.columns.updated_at, plan.columns.created_at);
 }
 
 #[test]
 fn create_writes_static_headers_only_when_non_empty() {
     let masker = SensitiveDataMasker::default();
     let empty = agent(r#"{"agent_name": "a", "static_headers": {}}"#);
-    let filled = agent(r#"{"agent_name": "a", "static_headers": {"x": "1"}}"#);
+    let filled = agent(r#"{"agent_name": "a", "static_headers": {"x": "1"}, "extra_headers": []}"#);
     let empty_plan = planned!(create_source(&empty), None, "author", &context(&masker));
     let filled_plan = planned!(create_source(&filled), None, "author", &context(&masker));
     assert_eq!(empty_plan.columns.static_headers, None);
@@ -107,6 +108,7 @@ fn create_writes_static_headers_only_when_non_empty() {
         filled_plan.columns.static_headers.as_deref(),
         Some(r#"{"x":"1"}"#)
     );
+    assert_eq!(filled_plan.columns.extra_headers, Some(Vec::new()));
 }
 
 #[test]
