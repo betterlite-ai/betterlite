@@ -1,0 +1,17 @@
+kind: helper
+name: dynamic-priority-weights-normalized
+call:
+  b3051:
+    function: allocation
+    model: gpt-4
+    rpm: 140
+    tpm: 1400
+    window_size: 30
+    priority_reservation:
+      key_a: 0.6
+      key_b: 0.8
+    team_metadata: null
+    key_metadata:
+      priority: key_a
+env: {}
+compare: {ignore: []}

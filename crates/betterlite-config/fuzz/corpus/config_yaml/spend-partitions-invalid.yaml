@@ -1,0 +1,10 @@
+model_list:
+  - model_name: gpt
+    litellm_params:
+      model: openai/gpt-4o-mini
+general_settings:
+  store_prompts_in_spend_logs: yes
+  use_redis_transaction_buffer: always
+  disable_spend_updates: 1
+litellm_settings:
+  max_budget: os.environ/SPEND_LOG_PARTITION_PRECREATE_AHEAD

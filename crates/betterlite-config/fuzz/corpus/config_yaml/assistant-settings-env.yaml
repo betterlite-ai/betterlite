@@ -1,0 +1,11 @@
+model_list: []
+assistant_settings:
+  custom_llm_provider: openai
+  litellm_params:
+    api_key: os.environ/ASSISTANT_API_KEY
+    model: os.environ/ASSISTANT_MODEL
+    api_base: https://assistants.example/v1
+    organization: plain-org
+    timeout: 30
+    extra_body:
+      api_key: os.environ/NESTED_VALUE

@@ -1,0 +1,83 @@
+kind: sdk_http
+name: assistant-dispatch-all-operations
+env: {}
+call:
+  assistant_dispatch:
+    runs:
+      - operation: create_assistant
+        payload:
+          model: gpt-4o-mini
+          name: helper
+          instructions: be brief
+          params: {api_base: $API_BASE, api_key: sk-test}
+        config: {custom_llm_provider: openai, litellm_params: {}}
+      - operation: list_assistants
+        payload:
+          params: {api_base: $API_BASE, api_key: sk-test}
+        config: {custom_llm_provider: openai, litellm_params: {}}
+      - operation: delete_assistant
+        assistant_id: asst_a
+        payload:
+          params: {api_base: $API_BASE, api_key: sk-test}
+        config: {custom_llm_provider: openai, litellm_params: {}}
+      - operation: create_thread
+        payload:
+          params: {api_base: $API_BASE, api_key: sk-test}
+        config: {custom_llm_provider: openai, litellm_params: {}}
+      - operation: get_thread
+        thread_id: thread_a
+        payload:
+          params: {api_base: $API_BASE, api_key: sk-test}
+        config: {custom_llm_provider: openai, litellm_params: {}}
+      - operation: create_message
+        thread_id: thread_a
+        payload:
+          role: user
+          content: hello
+          params: {api_base: $API_BASE, api_key: sk-test}
+        config: {custom_llm_provider: openai, litellm_params: {}}
+      - operation: list_messages
+        thread_id: thread_a
+        payload:
+          params: {api_base: $API_BASE, api_key: sk-test}
+        config: {custom_llm_provider: openai, litellm_params: {}}
+      - operation: run_thread
+        thread_id: thread_a
+        payload:
+          assistant_id: asst_a
+          stream: true
+          params: {api_base: $API_BASE, api_key: sk-test}
+        config: {custom_llm_provider: openai, litellm_params: {}}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: asst_a, object: assistant, created_at: 1, model: gpt-4o-mini, name: helper, tools: []}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [{id: asst_a, object: assistant, created_at: 1, model: gpt-4o-mini, name: helper, tools: []}], has_more: false, first_id: asst_a, last_id: asst_a}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: asst_a, object: assistant.deleted, deleted: true}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: thread_a, object: thread, created_at: 1, metadata: {}, tool_resources: {}}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: thread_a, object: thread, created_at: 1, metadata: {}, tool_resources: {}}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: msg_a, object: thread.message, thread_id: thread_a, role: user, content: [], created_at: 1}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [{id: msg_a, object: thread.message, thread_id: thread_a, role: user, content: [], created_at: 1}], has_more: false, first_id: msg_a, last_id: msg_a}
+  - status: 200
+    headers: {content-type: text/event-stream}
+    events:
+      - '{"event": "thread.run.created", "data": {"id": "run_a", "object": "thread.run", "created_at": 1700000000, "assistant_id": "asst_a", "thread_id": "thread_a", "status": "queued", "instructions": "base", "model": "gpt-4o-mini", "parallel_tool_calls": true, "tools": []}}'
+      - '{"event": "thread.run.completed", "data": {"id": "run_a", "object": "thread.run", "created_at": 1700000000, "completed_at": 1700000005, "assistant_id": "asst_a", "thread_id": "thread_a", "status": "completed", "instructions": "base", "model": "gpt-4o-mini", "parallel_tool_calls": true, "tools": []}}'
+      - '[DONE]'
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, openai-beta]
+  ignore: []

@@ -1,0 +1,5 @@
+kind: helper
+name: team-limits-budget-guard-seed
+call: {team_limits: {function: budget_guard, request: {"team_id": "team-a", "max_budget": 150.0}, user_role: internal_user, existing: 100.0}}
+env: {}
+compare: {ignore: []}

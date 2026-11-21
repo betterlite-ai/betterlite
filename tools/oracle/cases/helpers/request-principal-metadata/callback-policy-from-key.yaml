@@ -1,0 +1,72 @@
+kind: helper
+name: request-principal-metadata-callback-policy-from-key
+call:
+  request_principal_metadata:
+    pre_auth_tags: []
+    request_metadata:
+      - data: {model: gpt-4}
+        slot: metadata
+        bucket: {spend_logs_metadata: {team: caller}}
+        headers: []
+        principal:
+          api_key: hash-1
+          is_session_token: true
+          key_alias: dashboard
+          spend: 2.5
+          max_budget: 10
+          user_spend: 1
+          user_max_budget: 5
+          team_spend: 3
+          team_max_budget: 9
+          end_user_max_budget: 4
+          budget_reset_at: "2026-12-01T00:00:00Z"
+          team_id: team-1
+          team_alias: Team
+          project_id: proj-1
+          project_alias: Proj
+          org_id: org-1
+          organization_alias: Org
+          user_id: user-1
+          user_email: user@example.com
+          end_user_id: end-1
+          request_route: /chat/completions
+          agent_id: key-agent
+          budget_reservation: {reserved: 1}
+          matched_model_access_groups: [group-1]
+          metadata:
+            logging: [{callback_name: langfuse, callback_vars: {langfuse_secret_key: secret}}]
+            callback_settings: {callback_vars: {langfuse_host: "https://logs.example"}}
+            secret_manager_settings: {vault: kv}
+            owner: ops
+            tags: [k]
+            model_rpm_limit: {gpt-4: 1}
+            cache: {ttl: 60, namespace: x}
+            disable_fallbacks: true
+            enable_prompt_caching: false
+            disable_global_guardrails: true
+            spend_logs_metadata: {team: key, env: prod}
+          team_metadata: {logging: [], team: t}
+          project_metadata: null
+          organization_metadata: {callback_settings: {}, org: o}
+        invoked_agent_id: invoked-agent
+        managed_agent_context: {agent_id: invoked-agent, mode: delegated, user_id: human-1}
+    team_callbacks:
+      - team_id: t1
+        teams:
+          - {team_id: t0}
+          - team_id: t1
+            success_callback: [langfuse]
+            langfuse_public_key: pk-test-1
+            langfuse_secret: sk-test-2
+      - team_id: t1
+        teams:
+          - team_id: t1
+            failure_callback: [datadog]
+            langfuse_host: top
+            callback_vars: {langfuse_host: "https://inner.example", team_id: t1}
+      - team_id: t2
+        teams: [{team_id: t1, dd_site: datadoghq.eu}]
+      - team_id: t1
+        teams: [{team_id: t1, region: eu}]
+env: {}
+compare: {ignore: []}
