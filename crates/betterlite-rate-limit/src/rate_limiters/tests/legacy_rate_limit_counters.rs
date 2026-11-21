@@ -31,6 +31,11 @@ use crate::rate_limiters::legacy_rate_limit_counters::verbose::{
 
 const START_OF_MINUTE: &str = "2026-11-21T12:00:00+00:00";
 const CACHE_KEY: &str = "sk-test::2026-11-21-12-00::request_count";
+const LIMITS: DimensionLimits = DimensionLimits {
+    max_parallel_requests: 5,
+    tpm_limit: 20,
+    rpm_limit: 10,
+};
 
 fn check(
     current: Option<MinuteCounter>,
@@ -301,11 +306,7 @@ async fn dimension_precedence_raises_on_concurrent_requests_first() {
             current_tpm: 20,
             current_rpm: 10,
         }),
-        DimensionLimits {
-            max_parallel_requests: 5,
-            tpm_limit: 20,
-            rpm_limit: 10,
-        },
+        LIMITS,
     )
     .await;
     let error = rejected(result.expect_err("over the parallel request limit"));
@@ -348,16 +349,7 @@ async fn dimension_precedence_treats_each_limit_as_exclusive(
 ) {
     let fixture = fixture_with(RecordingCache::new(), FixedClock::at(START_OF_MINUTE));
     let capture = LogCapture::start();
-    let (result, _updates) = checked(
-        &fixture,
-        Some(current),
-        DimensionLimits {
-            max_parallel_requests: 5,
-            tpm_limit: 20,
-            rpm_limit: 10,
-        },
-    )
-    .await;
+    let (result, _updates) = checked(&fixture, Some(current), LIMITS).await;
     assert!(
         capture
             .text()
@@ -383,16 +375,7 @@ async fn dimension_precedence_treats_each_limit_as_exclusive(
 async fn dimension_precedence_initializes_a_missing_counter() {
     let fixture = fixture_with(RecordingCache::new(), FixedClock::at(START_OF_MINUTE));
     let capture = LogCapture::start();
-    let (result, updates) = checked(
-        &fixture,
-        None,
-        DimensionLimits {
-            max_parallel_requests: 5,
-            tpm_limit: 20,
-            rpm_limit: 10,
-        },
-    )
-    .await;
+    let (result, updates) = checked(&fixture, None, LIMITS).await;
     assert!(
         capture
             .text()
@@ -483,44 +466,24 @@ async fn cache_updates_writes_the_whole_list_with_ttl_and_local_only() {
         LegacyCacheValue::Count(3),
     );
     let mut updates = vec![earlier.clone()];
+    let current = MinuteCounter {
+        current_requests: 3,
+        current_tpm: 10,
+        current_rpm: 5,
+    };
+    let request = check(Some(current), LIMITS);
     let new_val = fixture
         .handler
-        .check_key_in_limits(
-            check(
-                Some(MinuteCounter {
-                    current_requests: 3,
-                    current_tpm: 10,
-                    current_rpm: 5,
-                }),
-                DimensionLimits {
-                    max_parallel_requests: 5,
-                    tpm_limit: 20,
-                    rpm_limit: 10,
-                },
-            ),
-            &mut updates,
-        )
+        .check_key_in_limits(request, &mut updates)
         .await
         .expect("under every limit");
-    assert_eq!(
-        new_val,
-        MinuteCounter {
-            current_requests: 4,
-            current_tpm: 10,
-            current_rpm: 6,
-        }
-    );
-    let expected = vec![
-        earlier,
-        (
-            String::from(CACHE_KEY),
-            LegacyCacheValue::Counter(MinuteCounter {
-                current_requests: 4,
-                current_tpm: 10,
-                current_rpm: 6,
-            }),
-        ),
-    ];
+    let counted = MinuteCounter {
+        current_requests: 4,
+        current_tpm: 10,
+        current_rpm: 6,
+    };
+    assert_eq!(new_val, counted);
+    let expected = vec![(String::from(CACHE_KEY), LegacyCacheValue::Counter(counted))];
     assert_eq!(updates, expected);
     assert_eq!(
         fixture.cache.calls(),
@@ -582,11 +545,7 @@ async fn cache_updates_keeps_going_when_the_write_fails() {
             current_tpm: 10,
             current_rpm: 5,
         }),
-        DimensionLimits {
-            max_parallel_requests: 5,
-            tpm_limit: 20,
-            rpm_limit: 10,
-        },
+        LIMITS,
     )
     .await;
     assert_eq!(
@@ -605,17 +564,14 @@ async fn cache_updates_keeps_going_when_the_write_fails() {
 async fn cache_updates_forwards_the_parent_span() {
     let fixture = fixture_with(RecordingCache::new(), FixedClock::at(START_OF_MINUTE));
     let span = ParentOtelSpan::Opaque;
+    let current = MinuteCounter {
+        current_requests: 3,
+        current_tpm: 10,
+        current_rpm: 5,
+    };
     let request = KeyLimitCheck {
-        limits: DimensionLimits {
-            max_parallel_requests: 5,
-            tpm_limit: 20,
-            rpm_limit: 10,
-        },
-        current: Some(MinuteCounter {
-            current_requests: 3,
-            current_tpm: 10,
-            current_rpm: 5,
-        }),
+        limits: LIMITS,
+        current: Some(current),
         request_count_api_key: String::from(CACHE_KEY),
         rate_limit_type: RateLimitScope::Key,
         requested_model: None,
@@ -627,14 +583,12 @@ async fn cache_updates_forwards_the_parent_span() {
         .check_key_in_limits(request, &mut updates)
         .await
         .expect("under every limit");
-    assert_eq!(
-        new_val,
-        MinuteCounter {
-            current_requests: 4,
-            current_tpm: 10,
-            current_rpm: 6,
-        }
-    );
+    let counted = MinuteCounter {
+        current_requests: 4,
+        current_tpm: 10,
+        current_rpm: 6,
+    };
+    assert_eq!(new_val, counted);
     assert_eq!(
         fixture.cache.calls(),
         vec![CacheCall::BatchSet {
@@ -646,31 +600,36 @@ async fn cache_updates_forwards_the_parent_span() {
     );
 }
 
+const APIKEY_COUNTER: MinuteCounter = MinuteCounter {
+    current_requests: 1,
+    current_tpm: 2,
+    current_rpm: 3,
+};
+const MODEL_COUNTER: MinuteCounter = MinuteCounter {
+    current_requests: 4,
+    current_tpm: 5,
+    current_rpm: 6,
+};
+const TEAM_COUNTER: MinuteCounter = MinuteCounter {
+    current_requests: 7,
+    current_tpm: 8,
+    current_rpm: 9,
+};
+const USER_COUNTER: MinuteCounter = MinuteCounter {
+    current_requests: 10,
+    current_tpm: 11,
+    current_rpm: 12,
+};
+
 #[tokio::test]
 async fn batch_object_maps_each_result_to_its_field() {
     let values = vec![
         Some(LegacyCacheValue::Count(7)),
-        Some(LegacyCacheValue::Counter(MinuteCounter {
-            current_requests: 1,
-            current_tpm: 2,
-            current_rpm: 3,
-        })),
-        Some(LegacyCacheValue::Counter(MinuteCounter {
-            current_requests: 4,
-            current_tpm: 5,
-            current_rpm: 6,
-        })),
+        Some(LegacyCacheValue::Counter(APIKEY_COUNTER)),
+        Some(LegacyCacheValue::Counter(MODEL_COUNTER)),
         None,
-        Some(LegacyCacheValue::Counter(MinuteCounter {
-            current_requests: 7,
-            current_tpm: 8,
-            current_rpm: 9,
-        })),
-        Some(LegacyCacheValue::Counter(MinuteCounter {
-            current_requests: 10,
-            current_tpm: 11,
-            current_rpm: 12,
-        })),
+        Some(LegacyCacheValue::Counter(TEAM_COUNTER)),
+        Some(LegacyCacheValue::Counter(USER_COUNTER)),
     ];
     let fixture = fixture_with(
         RecordingCache::answering(BatchAnswer::Values(values)),
@@ -679,27 +638,11 @@ async fn batch_object_maps_each_result_to_its_field() {
     let object = fixture.handler.get_all_cache_objects(keys(), None).await;
     let expected = CacheObject {
         current_global_requests: Some(LegacyCacheValue::Count(7)),
-        request_count_api_key: Some(LegacyCacheValue::Counter(MinuteCounter {
-            current_requests: 1,
-            current_tpm: 2,
-            current_rpm: 3,
-        })),
-        request_count_api_key_model: Some(LegacyCacheValue::Counter(MinuteCounter {
-            current_requests: 4,
-            current_tpm: 5,
-            current_rpm: 6,
-        })),
+        request_count_api_key: Some(LegacyCacheValue::Counter(APIKEY_COUNTER)),
+        request_count_api_key_model: Some(LegacyCacheValue::Counter(MODEL_COUNTER)),
         request_count_user_id: None,
-        request_count_team_id: Some(LegacyCacheValue::Counter(MinuteCounter {
-            current_requests: 7,
-            current_tpm: 8,
-            current_rpm: 9,
-        })),
-        request_count_end_user_id: Some(LegacyCacheValue::Counter(MinuteCounter {
-            current_requests: 10,
-            current_tpm: 11,
-            current_rpm: 12,
-        })),
+        request_count_team_id: Some(LegacyCacheValue::Counter(TEAM_COUNTER)),
+        request_count_end_user_id: Some(LegacyCacheValue::Counter(USER_COUNTER)),
     };
     assert_eq!(object, expected);
 }
