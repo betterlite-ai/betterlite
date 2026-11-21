@@ -13,12 +13,11 @@ use betterlite_openai::transcription::logging::{
     TranscriptionLogger, TranscriptionPostCall, TranscriptionPreCall,
 };
 use betterlite_openai::transcription::transport::TranscriptionTransport;
-use http::header::{HeaderName, HeaderValue};
 use indexmap::IndexMap;
 
 use super::DispatchFailure;
 
-// B515's audio_transcriptions, then the caller's organization, then the reply half over the mock
+// B515's audio_transcriptions, then the reply half over the mock
 pub(super) async fn transcribe(
     operation: OpenAiTranscription<'_>,
     client: &ProxiedClient,
@@ -44,12 +43,9 @@ pub(super) async fn transcribe(
         atranscription: input.atranscription,
     };
     let mut logger = Silent;
-    let (mut outbound, pending) =
+    let (outbound, pending) =
         audio_transcriptions(&call, &request, &mut logger).map_err(publish)?;
-    if let Some(organization) = operation.organization {
-        let (name, value) = organization_header(organization)?;
-        outbound.headers.insert(name, value);
-    }
+    // The pinned OpenAI SDK reads no openai.organization global, so no organization header is sent
     let sent = TranscriptionTransport::send(client, outbound).await;
     let reply = finish_transcription(pending, sent, &mut logger).map_err(publish)?;
     Ok(TranscriptionAnswer::Reply(Box::new(
@@ -58,16 +54,6 @@ pub(super) async fn transcribe(
             provider_headers: reply.provider_headers,
         },
     )))
-}
-
-// The OpenAI SDK sends openai.organization as this header on every request
-fn organization_header(organization: &str) -> Result<(HeaderName, HeaderValue), DispatchFailure> {
-    let name = HeaderName::from_static("openai-organization");
-    let value =
-        HeaderValue::from_str(organization).map_err(|error| DispatchFailure::Unsupported {
-            message: error.to_string(),
-        })?;
-    Ok((name, value))
 }
 
 fn publish(error: TranscriptionError) -> DispatchFailure {

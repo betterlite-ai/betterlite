@@ -15,4 +15,7 @@ deviations:
   - what: The options the OpenAI and Azure transports send have get_optional_params_transcription's extra_body map laid over them, where LiteLLM hands extra_body to the OpenAI SDK and the SDK merges it into the request body. A member that is not one of the transport's named fields is refused by betterlite before the send, where LiteLLM's SDK puts it in the body for the provider to judge.
     why: betterlite's transports take the OpenAI SDK's named transcription fields and refuse every other key, so the merge the SDK performs happens in the dispatch layer; every supported value reaches the provider in the same body, and an unknown key fails client-side.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5063-L5080
-kept_bugs: []
+kept_bugs:
+  - what: The OpenAI transcription request carries no OpenAI-Organization header even when litellm.organization or OPENAI_ORGANIZATION is set, because LiteLLM assigns those values to openai.organization while the pinned OpenAI SDK builds its clients with organization=None and reads only OPENAI_ORG_ID.
+    why: The pinned runtime is what a working setup sees, and its requests carry no organization header, so betterlite keeps that request while still computing the organization value and handing it to the dispatch as main.py computes it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8067-L8071
