@@ -3,4 +3,4 @@ deviations: []
 kept_bugs:
   - what: A literal nonempty string such as "false" or "0" under general_settings.disable_agents_for_internal_users, allow_agents_for_team_admins, disable_vector_stores_for_internal_users or allow_vector_stores_for_team_admins turns the switch on, because LiteLLM tests the raw value's truthiness instead of reading a boolean. A value written as an os.environ/ reference follows docs/compatibility.md instead, where its resolved text goes through the shared env parser.
     why: The task asks for the runtime map's truthiness on purpose, and a config that quoted the value keeps the feature closed to internal users the way a working LiteLLM proxy does.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/rbac_utils.py#L44-L48
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/rbac_utils.py#L44-L52

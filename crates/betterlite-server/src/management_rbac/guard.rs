@@ -26,16 +26,11 @@ pub async fn check_feature_access<Privileges>(
 where
     Privileges: AdminPrivileges + ?Sized,
 {
-    match role {
-        Some(UserRole::ProxyAdmin | UserRole::ProxyAdminViewer) => return Ok(()),
-        Some(
-            UserRole::OrgAdmin
-            | UserRole::InternalUser
-            | UserRole::InternalUserViewer
-            | UserRole::Team
-            | UserRole::Customer,
-        )
-        | None => {}
+    if matches!(
+        role,
+        Some(UserRole::ProxyAdmin | UserRole::ProxyAdminViewer)
+    ) {
+        return Ok(());
     }
     let switches = match feature {
         FeatureName::Agents => settings.agents,
@@ -45,7 +40,7 @@ where
         return Ok(());
     }
     if switches.team_admins_allowed {
-        // B863 tests the role for proxy_admin first, and the match above already returned for it
+        // B863 tests the role for proxy_admin first, and the check above already returned for it
         let caller = AdminCaller {
             user_id,
             proxy_admin: false,
