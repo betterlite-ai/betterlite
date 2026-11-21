@@ -1,0 +1,21 @@
+task: B1109
+deviations:
+  - what: _dynamically_disabled_backends checks only litellm_settings.allow_dynamic_callback_disabling and has no premium_user gate, so the x-litellm-disable-callbacks header and the key's litellm_disabled_callbacks list apply without a license. B8870 and the callback dispatch use the same policy.
+    why: The README removes paid-tier checks for code present in the open-source tree. The oracle case sets premium_user true on the LiteLLM side.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1047-L1072
+  - what: A key or team `logging` entry that is not an object, or whose callback_vars is null, is skipped with the "Ignoring invalid ... callback metadata" warning. LiteLLM calls AddTeamCallback(**item) and its validator calls .items() on the null, so the TypeError or AttributeError escapes the ValueError handler and fails the request.
+    why: The stored metadata belongs to the admin, not the caller, and one malformed entry should cost that entry the way an invalid variable does, not every request the key makes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L943-L952
+  - what: A key or team `logging` value that is not a list (an object or a string) yields no callbacks and one warning. LiteLLM iterates it, gets the keys or characters, and fails the request with a TypeError on the first one.
+    why: Same reason as the entry above; a 500 on every request of the key is not behavior a working setup can depend on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L984-L1006
+  - what: A tenant turn_off_message_logging value is read with the shared env flag parser (true, false, 1, 0, yes, no, on, off in any case), so the single letters t, f, y and n that pydantic's bool also takes empty the tenant params in betterlite.
+    why: docs/compatibility.md sends every text-to-bool reading through betterlite-env, and the callback endpoints store this variable as str() of a bool, which is True or False.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1037-L1041
+  - what: A langfuse_environment ending in a newline fails AddTeamCallback validation in betterlite; LiteLLM's pattern ends in `$`, which in Python also matches just before a trailing newline.
+    why: Langfuse itself rejects such an environment, so the entry could never have logged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/initialize_dynamic_callback_params.py#L67-L76
+kept_bugs:
+  - what: should_auto_drop_params_for_agentic_cli turns drop_params on for a Claude Code or Codex user agent even when litellm_settings.drop_params is configured. LiteLLM reads proxy_config.config with isinstance(config, dict), but update_config_state stores a MappingProxyType, so the litellm_settings branch never runs and only a drop_params in the request body stops the default.
+    why: A proxy with litellm_settings.drop_params false serves Claude Code and Codex today because their extra params are dropped; honouring the setting would start failing those requests.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L861-L875
