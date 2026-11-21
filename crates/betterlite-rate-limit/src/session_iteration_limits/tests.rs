@@ -597,6 +597,66 @@ async fn script_count_wins_over_the_local_counter() {
 }
 
 #[tokio::test]
+async fn script_count_decides_the_rejection() {
+    let cache = FakeCache::with_redis();
+    cache.preload_redis(&memory_key("s1"), 2);
+    let handler = iteration_handler(cache);
+    let registry = agent_registry_with(&[LIMIT_TWO]);
+    let data = session_data("s1");
+
+    let error = rejection(
+        handler
+            .async_pre_call_hook(&registry, None, agent_key(), &data)
+            .await
+            .unwrap_err(),
+    );
+
+    assert_eq!(error.detail, Payload::String(expected_detail("s1", 3, 2)));
+    assert_eq!(handler.cache.memory(&memory_key("s1")), None);
+}
+
+#[tokio::test]
+async fn script_receives_the_configured_ttl() {
+    let handler = iteration_handler_at(FakeCache::with_redis(), Duration::from_secs(60));
+    let registry = agent_registry_with(&[LIMIT_TWO]);
+    let data = session_data("s1");
+
+    handler
+        .async_pre_call_hook(&registry, None, agent_key(), &data)
+        .await
+        .unwrap();
+
+    assert_eq!(handler.cache.redis_count(&memory_key("s1")), Some(1));
+    assert_eq!(
+        handler.cache.redis_ttl(&memory_key("s1")),
+        Some(Duration::from_secs(60))
+    );
+}
+
+#[tokio::test]
+async fn key_metadata_limit_applies_without_an_agent() {
+    let cache = FakeCache::without_redis();
+    cache.preload_memory(&memory_key("s1"), 1);
+    let handler = iteration_handler(cache);
+    let registry = agent_registry_with(&[LIMIT_FIVE]);
+    let metadata = key_metadata(r#"{"max_iterations":1}"#);
+    let key = KeyIterations {
+        agent_id: None,
+        metadata: Some(&metadata),
+    };
+    let data = session_data("s1");
+
+    let error = rejection(
+        handler
+            .async_pre_call_hook(&registry, None, key, &data)
+            .await
+            .unwrap_err(),
+    );
+
+    assert_eq!(error.detail, Payload::String(expected_detail("s1", 2, 1)));
+}
+
+#[tokio::test]
 async fn unknown_model_falls_back_to_litellm_proxy() {
     let cache = FakeCache::without_redis();
     cache.preload_memory(&memory_key("s1"), 1);

@@ -41,6 +41,7 @@ fn empty_value_reads_as_unset(#[case] value: &str) {
 #[case::word("soon")]
 #[case::fraction("1.5")]
 #[case::negative("-5")]
+#[case::above_u64("18446744073709551616")]
 fn invalid_value_stops_the_load_and_names_the_variable(#[case] value: &str) {
     let error =
         settings(&[(TTL_VARIABLE, value)]).expect_err("a value that is not a count stops the load");
