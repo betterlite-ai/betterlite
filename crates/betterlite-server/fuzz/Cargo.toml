@@ -15,9 +15,10 @@ betterlite-auth = { path = "../../betterlite-auth" }
 betterlite-core = { path = "../../betterlite-core" }
 betterlite-db = { path = "../../betterlite-db" }
 betterlite-models = { path = "../../betterlite-models" }
-betterlite-server = { path = ".." }
+betterlite-server = { path = "..", features = ["testing"] }
 form_urlencoded = "1.2.2"
 libfuzzer-sys = "0.4.9"
+rust_decimal.workspace = true
 serde_json = "1.0.154"
 
 [[bin]]
