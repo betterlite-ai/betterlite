@@ -302,9 +302,11 @@ fn deeply_nested_defaults_up_to_the_cap_load() {
 #[test]
 fn defaults_nested_past_the_cap_fail() {
     let lookup: BTreeMap<String, String> = BTreeMap::new();
+    // the guard fires on the innermost value, so the error names every level down to it
+    let offending = format!("{DEFAULT_USER_PARAMS_PATH}{}", ".k".repeat(65));
     match resolved(nested_value(65), DEFAULT_USER_PARAMS_PATH, &lookup) {
         Err(ConfigError::InvalidScalar { path, .. }) => {
-            assert_eq!(path, DEFAULT_USER_PARAMS_PATH);
+            assert_eq!(path, offending);
         }
         other => panic!("a mapping past the depth cap fails startup: {other:?}"),
     }
