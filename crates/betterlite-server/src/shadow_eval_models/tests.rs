@@ -81,12 +81,6 @@ fn job(targets: Vec<ShadowLeg>) -> ShadowJob {
     }
 }
 
-#[derive(Debug)]
-enum Expected {
-    Status(ShadowEvalStatus),
-    Failure(ShadowEvalModelError, &'static str),
-}
-
 #[rstest]
 #[case::open_target_runs(job(vec![leg("hashed-key-1")]), ShadowEvalStatus::Running)]
 #[case::one_target_out_of_budget_keeps_the_job_running(
