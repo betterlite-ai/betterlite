@@ -1,0 +1,18 @@
+kind: helper
+name: foundry-rejected-fields-repair-without-drop-policy-for-tools
+call:
+  foundry_rejected_fields:
+    triggers:
+      # a tool-level field asks for a retry with neither drop flag set
+      - error: |-
+          {"error":{"message":"Extra inputs are not permitted: tools[0].extra","type":"invalid_request_error"}}
+        request_drop_params: false
+        global_drop_params: false
+    repairs:
+      - error: |-
+          {"error":{"message":"Extra inputs are not permitted: tools[0].extra","type":"invalid_request_error"}}
+        body:
+          model: deployment
+          tools: [{type: function, extra: 1}, {type: function, extra: 5}]
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,49 @@
+task: B1204
+deviations:
+  - what: >-
+      A model_rpm_limit or model_tpm_limit that isn't a map of model names to whole numbers, in the request
+      metadata, a sibling team's stored metadata or the organization's metadata, fails with an error that
+      names the field. LiteLLM raises an unhandled AttributeError or TypeError (a 500) at the first line that
+      uses it, so a ceiling rejection for the same metric that LiteLLM would reach first is not reported.
+    why: >-
+      docs/compatibility.md: a value the declared type can't hold is an error that names the field. Both sides
+      fail the request; malformed_model_limits_named proves the error and that a request without model limits
+      never reads the maps.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L864-L870
+  - what: >-
+      When one request puts several models over their ceilings, betterlite reports the first model in name
+      order. LiteLLM reports the first in the order the caller's model_rpm_limit or model_tpm_limit dict was
+      written.
+    why: >-
+      B1231's NewTeamRequest and UpdateTeamRequest contracts hold the model limit maps as ordered-by-key maps,
+      so the caller's key order is gone before these checks run. The status and the detail shape are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L872-L874
+  - what: >-
+      A guaranteed-throughput check for an organization row without an organization_id fails with an error
+      instead of querying teams where organization_id is null.
+    why: >-
+      Every stored organization has its primary key, so a missing id is a caller bug; summing the limits of
+      every team outside any organization would check the wrong teams. metadata_guarantee_fallback proves it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L1088-L1090
+kept_bugs:
+  - what: >-
+      Updating a team in an organization sums every team of the organization, the updated team's old
+      limits included, before adding the new request limits.
+    why: >-
+      Subtracting the old allocation would move LiteLLM's rejection boundary, and a working setup sizes its
+      organization ceilings against it. siblings_include_updated_team proves the sum.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L1088-L1106
+  - what: >-
+      A per-model ceiling of 0 in the organization's metadata is no ceiling at all, while a budget-table RPM or
+      TPM of 0 is enforced.
+    why: >-
+      LiteLLM tests the per-model ceiling for truthiness, so an organization that stores 0 there allows any
+      allocation today. zero_specific_ceiling_skipped and zero_aggregate_ceiling_enforced prove both sides.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L880-L884
+  - what: >-
+      An empty model_rpm_limit or model_tpm_limit on the request falls back to the same key in the request
+      metadata instead of meaning no per-model limits.
+    why: >-
+      LiteLLM reads the field with `or`, and the task text names the fallback; empty_model_limits_fall_back
+      proves it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L851-L856

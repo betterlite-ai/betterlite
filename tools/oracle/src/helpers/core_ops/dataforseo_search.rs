@@ -5,7 +5,7 @@ use betterlite_core::api::search_providers::dataforseo::{
     DataForSeoSearchConfig, DataForSeoSearchError, DataForSeoSearchSettings,
 };
 use betterlite_openai::openai_base_config::{Headers, Object};
-use betterlite_openai::search::provider::{SearchProvider as _, SearchQuery};
+use betterlite_openai::search::provider::{RequestInput, SearchProvider as _, SearchQuery};
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use secrecy::{ExposeSecret, SecretString};
@@ -90,15 +90,23 @@ fn run_operation(
             Ok(serde_json::to_value(validated)?)
         }
         Operation::CompleteUrl { api_base } => {
-            let url = config.complete_url(api_base.as_deref(), &Object::new(), None)?;
+            let url = config.complete_url(api_base.as_deref(), &Object::new(), None, None)?;
             Ok(Value::String(url))
         }
         Operation::Request {
             query,
             optional_params,
-        } => Ok(serde_json::to_value(
-            config.transform_search_request(query, optional_params)?,
-        )?),
+        } => {
+            let empty_headers = Headers::new();
+            let body = config.transform_search_request(&RequestInput {
+                query,
+                optional_params,
+                api_key: None,
+                api_base: None,
+                headers: &empty_headers,
+            })?;
+            Ok(serde_json::to_value(body)?)
+        }
         Operation::Reply { body } => Ok(serde_json::to_value(decode_dataforseo_search(
             body.as_bytes(),
         )?)?),

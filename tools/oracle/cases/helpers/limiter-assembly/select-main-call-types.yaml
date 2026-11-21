@@ -1,0 +1,34 @@
+kind: helper
+name: limiter-assembly-select-main-call-types
+call:
+  b5660:
+    call_type: create_batch
+calls:
+  - b5660:
+      call_type: aretrieve_batch
+  - b5660:
+      call_type: retrieve_batch
+  - b5660:
+      call_type: acancel_batch
+  - b5660:
+      call_type: cancel_batch
+  - b5660:
+      call_type: completion
+  - b5660:
+      call_type: acompletion
+  - b5660:
+      call_type: embedding
+  - b5660:
+      call_type: aembedding
+  - b5660:
+      call_type: responses
+  - b5660:
+      call_type: _arealtime
+  - b5660:
+      call_type: _aresponses_websocket
+  - b5660:
+      call_type: pass_through_endpoint
+  - b5660:
+      call_type: acreate_skill
+env: {}
+compare: {ignore: []}

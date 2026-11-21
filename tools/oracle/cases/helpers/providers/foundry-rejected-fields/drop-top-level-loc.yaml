@@ -1,0 +1,23 @@
+kind: helper
+name: foundry-rejected-fields-drop-top-level-loc
+call:
+  foundry_rejected_fields:
+    repairs:
+      # the 422 message is a JSON string naming the rejected top-level field
+      - error: |-
+          {"error":{"message":"{\"detail\":[{\"loc\":[\"body\",\"temperature\"],\"type\":\"extra_forbidden\"}],\"msg\":\"Extra inputs are not permitted\"}","type":"invalid_request_error"}}
+        body:
+          model: deployment
+          messages: [{role: user, content: hi}]
+          temperature: 2
+          top_p: 0.5
+      # a message that is already an object names the same field
+      - error: |-
+          {"error":{"message":{"detail":[{"loc":["body","temperature"],"type":"extra_forbidden"}],"msg":"Extra inputs are not permitted"}}}
+        body:
+          model: deployment
+          messages: [{role: user, content: hi}]
+          temperature: 2
+          top_p: 0.5
+env: {}
+compare: {ignore: []}

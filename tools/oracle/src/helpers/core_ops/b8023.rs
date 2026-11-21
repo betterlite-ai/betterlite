@@ -177,6 +177,7 @@ where
                 input.api_base.as_deref(),
                 &request.optional_params,
                 Some(&body),
+                None,
             )
             .map_err(failure)?;
         let (address, params) = split_url(&url);

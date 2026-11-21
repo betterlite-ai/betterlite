@@ -6,7 +6,6 @@ vendors:
   - id: anthropic
     limit_markers: ["You've hit your", "Not logged in", "Can't reach the API server"]
     max_parallel: 14
-    max_writers: 4
   - id: deepseek
     limit_markers: ["Insufficient Balance", "Authentication Fails", "Rate Limit Reached", "Server Overloaded", "Can't reach the API server"]
     max_parallel: 40
