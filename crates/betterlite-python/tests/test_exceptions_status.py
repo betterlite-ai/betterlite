@@ -25,6 +25,7 @@ _BODY: Final[dict[str, JsonValue]] = {
     "param": "messages",
     "type": "invalid_request_error",
 }
+_BYTES: Final[bytes] = b"raw"
 _POLICY_FIELDS: Final[dict[str, JsonValue]] = {"categories": ["violence"], "score": 0.9}
 _REQUEST_DATA: Final[dict[str, JsonValue]] = {
     "model": _MODEL,
@@ -44,9 +45,6 @@ _THEIR_BARE: Final[httpx.Response] = httpx.Response(status_code=429)
 _OUR_BARE: Final[OurResponse] = OurResponse(status_code=429)
 _URL_TEXT = Annotated[str, BeforeValidator(str)]
 _DEFAULT_TEXT = Annotated[str, BeforeValidator(repr)]
-_KEYWORD_CLASSES: Final[frozenset[str]] = frozenset(
-    {"BadRequestError", "ImageFetchError", "UnsupportedParamsError"}
-)
 _DROPPED_MODULES: Final[frozenset[str]] = frozenset({"openai", "httpx"})
 _MOCK_METHOD: Final[str] = "GET"
 _MOCK_URL: Final[str] = "https://litellm.ai"
@@ -76,6 +74,13 @@ class _ParameterView(BaseModel):
     default: _DEFAULT_TEXT
 
 
+class _BodyView(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    code: JsonValue
+    param: JsonValue
+    type: JsonValue
+
+
 class _StatusView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     message: str | None = None
@@ -85,14 +90,15 @@ class _StatusView(BaseModel):
     num_retries: int | None = None
     max_retries: int | None = None
     litellm_debug_info: str | None = None
-    code: JsonValue = None
-    param: JsonValue = None
+    code: JsonValue
+    param: JsonValue
     type: JsonValue = None
-    body: JsonValue = None
+    body: JsonValue | bytes = None
     headers: dict[str, str] | None = None
     args: tuple[JsonValue, ...] = ()
     response: _ResponseView | None = None
     request: _RequestView | None = None
+    request_id: str | None = None
     provider_specific_fields: dict[str, JsonValue] | None = None
     request_data: dict[str, JsonValue] | None = None
     failures: tuple[dict[str, JsonValue], ...] | None = None
@@ -392,8 +398,7 @@ def _check(theirs: BaseException, ours: BaseException) -> None:
     our_names = _mro_names(ours)
     assert our_names[0] == their_names[0]
     assert [name for name in their_names if name in our_names] == their_names
-    if type(theirs).__name__ not in _KEYWORD_CLASSES:
-        assert _signature_views(ours) == _signature_views(theirs)
+    assert _signature_views(ours) == _signature_views(theirs)
 
 
 @pytest.mark.parametrize(("theirs", "ours"), _CASES)
@@ -402,6 +407,16 @@ def test_status_error_matches(theirs: BaseException, ours: BaseException) -> Non
         theirs,
         ours,
     )
+
+
+def test_bad_request_non_dict_body() -> None:
+    ours = our_errors.BadRequestError(
+        message=_MESSAGE, model=_MODEL, llm_provider=_PROVIDER, body=_BYTES
+    )
+    view = _BodyView.model_validate(ours)
+    assert view.code is None
+    assert view.param is None
+    assert view.type is None
 
 
 def test_invalid_request_pinned() -> None:

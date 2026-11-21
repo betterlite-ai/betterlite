@@ -17,9 +17,6 @@ _REQUEST_DATA: Final[dict[str, JsonValue]] = {"model": _MODEL, "stream": False}
 _ORIGINAL: Final[dict[str, JsonValue]] = {"id": "chatcmpl-1", "usage": {"total_tokens": 12}}
 _CHANGED_STATUS: Final[int] = 429
 _DEFAULT_TEXT = Annotated[str, BeforeValidator(repr)]
-_SIGNATURE_EXEMPT: Final[frozenset[str]] = frozenset(
-    {"GuardrailRaisedException", "ModelNotMappedError"}
-)
 _DROPPED_MODULES: Final[frozenset[str]] = frozenset({"openai", "httpx"})
 
 
@@ -195,8 +192,11 @@ def _mro_names(error: BaseException) -> list[str]:
     return [cls.__name__ for cls in classes if cls.__module__.split(".")[0] not in _DROPPED_MODULES]
 
 
-def _signature_views(error: BaseException) -> list[_ParameterView]:
-    signature = inspect.signature(type(error))
+def _signature_views(error: BaseException) -> list[_ParameterView] | None:
+    try:
+        signature = inspect.signature(type(error))
+    except ValueError:
+        return None
     return [_ParameterView.model_validate(parameter) for parameter in signature.parameters.values()]
 
 
@@ -208,8 +208,7 @@ def _check(theirs: BaseException, ours: BaseException) -> None:
     our_names = _mro_names(ours)
     assert our_names[0] == their_names[0]
     assert [name for name in their_names if name in our_names] == their_names
-    if type(theirs).__name__ not in _SIGNATURE_EXEMPT:
-        assert _signature_views(ours) == _signature_views(theirs)
+    assert _signature_views(ours) == _signature_views(theirs)
 
 
 @pytest.mark.parametrize(("theirs", "ours"), _CASES)

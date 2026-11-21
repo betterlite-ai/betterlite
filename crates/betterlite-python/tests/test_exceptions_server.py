@@ -29,6 +29,17 @@ _RATE_BODY: Final[dict[str, JsonValue]] = {
     "type": "original_type",
 }
 _CONTENT: Final[bytes] = b"slow down"
+_BYTES: Final[bytes] = b"raw"
+_LATIN_CONTENT: Final[bytes] = b"caf\xe9"
+_LATIN_HEADERS: Final[dict[str, str]] = {
+    "content-type": "text/plain; charset=latin-1",
+    "x-request-id": "req_3",
+}
+_BROKEN_CONTENT: Final[bytes] = b"\xff"
+_UNKNOWN_HEADERS: Final[dict[str, str]] = {
+    "content-type": "text/plain; charset=x-unknown",
+    "x-request-id": "req_4",
+}
 _THEIR_TARGET: Final[httpx.Response] = httpx.Response(
     status_code=429,
     headers=_HEADERS,
@@ -51,9 +62,44 @@ _OUR_RATE: Final[OurResponse] = OurResponse(
     headers=_HEADERS,
     content=_CONTENT,
 )
+_THEIR_LATIN: Final[httpx.Response] = httpx.Response(
+    status_code=429,
+    headers=_LATIN_HEADERS,
+    content=_LATIN_CONTENT,
+    request=httpx.Request(method="POST", url=_URL),
+)
+_OUR_LATIN: Final[OurResponse] = OurResponse(
+    status_code=429,
+    request=OurRequest(method="POST", url=_URL),
+    headers=_LATIN_HEADERS,
+    content=_LATIN_CONTENT,
+)
+_THEIR_BROKEN: Final[httpx.Response] = httpx.Response(
+    status_code=429,
+    headers=_HEADERS,
+    content=_BROKEN_CONTENT,
+    request=httpx.Request(method="POST", url=_URL),
+)
+_OUR_BROKEN: Final[OurResponse] = OurResponse(
+    status_code=429,
+    request=OurRequest(method="POST", url=_URL),
+    headers=_HEADERS,
+    content=_BROKEN_CONTENT,
+)
+_THEIR_UNKNOWN: Final[httpx.Response] = httpx.Response(
+    status_code=429,
+    headers=_UNKNOWN_HEADERS,
+    content=_BROKEN_CONTENT,
+    request=httpx.Request(method="POST", url=_URL),
+)
+_OUR_UNKNOWN: Final[OurResponse] = OurResponse(
+    status_code=429,
+    request=OurRequest(method="POST", url=_URL),
+    headers=_UNKNOWN_HEADERS,
+    content=_BROKEN_CONTENT,
+)
 _URL_TEXT = Annotated[str, BeforeValidator(str)]
 _DEFAULT_TEXT = Annotated[str, BeforeValidator(repr)]
-_KEYWORD_CLASSES: Final[frozenset[str]] = frozenset({"Timeout", "MidStreamFallbackError"})
 _DROPPED_MODULES: Final[frozenset[str]] = frozenset({"openai", "httpx"})
 _OPENAI_PROVIDER: Final[str] = "openai"
 _OPENAI_TEXT: Final[str] = ""
@@ -73,6 +119,7 @@ class _ResponseView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     status_code: int
     headers: dict[str, str]
+    text: str
     request: _RequestView
 
 
@@ -81,6 +128,12 @@ class _ParameterView(BaseModel):
     name: str
     kind: _DEFAULT_TEXT
     default: _DEFAULT_TEXT
+
+
+class _OpenAIView(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    llm_provider: str
+    args: tuple[JsonValue, ...]
 
 
 class _ServerView(BaseModel):
@@ -92,14 +145,15 @@ class _ServerView(BaseModel):
     num_retries: int | None = None
     max_retries: int | None = None
     litellm_debug_info: str | None = None
-    code: JsonValue = None
-    param: JsonValue = None
+    code: JsonValue
+    param: JsonValue
     type: JsonValue = None
-    body: JsonValue = None
+    body: JsonValue | bytes = None
     headers: dict[str, str] | None = None
     args: tuple[JsonValue, ...] = ()
     response: _ResponseView | None = None
     request: _RequestView | None = None
+    request_id: str | None = None
     category: str | None = None
     rate_limit_type: str | None = None
     detail: JsonValue = None
@@ -203,6 +257,33 @@ _CASES = [
         id="rate-limit-enum",
     ),
     pytest.param(
+        their_errors.RateLimitError(
+            message=_MESSAGE, llm_provider=_PROVIDER, model=_MODEL, response=_THEIR_LATIN
+        ),
+        our_errors.RateLimitError(
+            message=_MESSAGE, llm_provider=_PROVIDER, model=_MODEL, response=_OUR_LATIN
+        ),
+        id="rate-limit-latin1",
+    ),
+    pytest.param(
+        their_errors.RateLimitError(
+            message=_MESSAGE, llm_provider=_PROVIDER, model=_MODEL, response=_THEIR_BROKEN
+        ),
+        our_errors.RateLimitError(
+            message=_MESSAGE, llm_provider=_PROVIDER, model=_MODEL, response=_OUR_BROKEN
+        ),
+        id="rate-limit-replace",
+    ),
+    pytest.param(
+        their_errors.RateLimitError(
+            message=_MESSAGE, llm_provider=_PROVIDER, model=_MODEL, response=_THEIR_UNKNOWN
+        ),
+        our_errors.RateLimitError(
+            message=_MESSAGE, llm_provider=_PROVIDER, model=_MODEL, response=_OUR_UNKNOWN
+        ),
+        id="rate-limit-unknown-charset",
+    ),
+    pytest.param(
         their_errors.ServiceUnavailableError(
             message=_MESSAGE,
             llm_provider=_PROVIDER,
@@ -250,6 +331,15 @@ _CASES = [
             body=_BODY,
         ),
         id="internal-server",
+    ),
+    pytest.param(
+        their_errors.InternalServerError(
+            message=_MESSAGE, llm_provider=_PROVIDER, model=_MODEL, body=_BYTES
+        ),
+        our_errors.InternalServerError(
+            message=_MESSAGE, llm_provider=_PROVIDER, model=_MODEL, body=_BYTES
+        ),
+        id="internal-server-bytes-body",
     ),
     pytest.param(
         their_errors.APIError(
@@ -489,8 +579,7 @@ def _check(theirs: BaseException, ours: BaseException) -> None:
     our_names = _mro_names(ours)
     assert our_names[0] == their_names[0]
     assert [name for name in their_names if name in our_names] == their_names
-    if type(theirs).__name__ not in _KEYWORD_CLASSES:
-        assert _signature_views(ours) == _signature_views(theirs)
+    assert _signature_views(ours) == _signature_views(theirs)
 
 
 @pytest.mark.parametrize(("theirs", "ours"), _CASES)
@@ -504,20 +593,15 @@ def test_server_error_matches(theirs: BaseException, ours: BaseException) -> Non
 def test_openai_error_pinned() -> None:
     ours = our_errors.OpenAIError()
     ignored = our_errors.OpenAIError(original_exception=ValueError("bad output"))
-    view = _ServerView.model_validate(ours)
+    view = _OpenAIView.model_validate(ours)
     params = _signature_views(ours)
     assert str(ours) == _OPENAI_TEXT
     assert repr(ours) == _OPENAI_REPR
-    assert view.message is None
-    assert view.status_code is None
     assert view.llm_provider == _OPENAI_PROVIDER
-    assert view.model is None
     assert view.args == ()
-    assert view.response is None
-    assert view.request is None
     assert [param.name for param in params] == _OPENAI_PARAMS
     assert [param.default for param in params] == [_NONE_TEXT]
     our_names = _mro_names(ours)
     assert [name for name in _OPENAI_MRO if name in our_names] == _OPENAI_MRO
-    assert _ServerView.model_validate(ignored) == view
+    assert _OpenAIView.model_validate(ignored) == view
     assert str(ignored) == _OPENAI_TEXT

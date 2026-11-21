@@ -1,18 +1,10 @@
-import inspect
-from typing import Annotated, Final
+from typing import Final
 
 import litellm.exceptions as their_errors
 import pytest
-from pydantic import BaseModel, BeforeValidator, ConfigDict, JsonValue
+from pydantic import BaseModel, ConfigDict, JsonValue
 
 import betterlite.exceptions as our_errors
-from betterlite.exceptions._process import GuardrailOptions
-from betterlite.exceptions._server import MidStreamOptions, TimeoutOptions
-from betterlite.exceptions._status import (
-    BadRequestOptions,
-    ImageFetchOptions,
-    UnsupportedParamsOptions,
-)
 
 _PUBLIC_NAMES: Final[list[str]] = [
     "LITELLM_EXCEPTION_TYPES",
@@ -54,15 +46,12 @@ _PUBLIC_NAMES: Final[list[str]] = [
     "validate_rate_limit_category",
     "validate_rate_limit_type",
 ]
-# inspect.Parameter.empty is the default of a parameter that has none.
-_EMPTY_DEFAULT: Final[str] = "<class 'inspect._empty'>"
 # LiteLLM's VectorStoreSearchFailure at litellm/types/vector_stores.py L104-L108.
 _SEARCH_FAILURE_KEYS: Final[set[str]] = {
     "vector_store_id",
     "custom_llm_provider",
     "error",
 }
-_DEFAULT_TEXT = Annotated[str, BeforeValidator(repr)]
 _VALIDATOR_VALUES: Final[list[JsonValue]] = [
     None,
     "",
@@ -78,70 +67,55 @@ _VALIDATOR_VALUES: Final[list[JsonValue]] = [
 ]
 
 
-class _ParameterView(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    name: str
-    kind: _DEFAULT_TEXT
-    default: _DEFAULT_TEXT
-
-
 class _EnumView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     name: str
     value: JsonValue
 
 
-def _bad_request() -> BaseException:
-    return their_errors.BadRequestError(
-        message="m", model="model", llm_provider="provider"
-    )
+class _PositionalView(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    message: str | None = None
+    status_code: int | None = None
+    model: str | None = None
+    llm_provider: str | None = None
+    guardrail_name: str | None = None
+    blocked_content: bool | None = None
+    args: tuple[JsonValue, ...] = ()
 
 
-def _image_fetch() -> BaseException:
-    return their_errors.ImageFetchError(
-        message="m", model="model", llm_provider="provider"
-    )
-
-
-def _unsupported_params() -> BaseException:
-    return their_errors.UnsupportedParamsError(
-        message="m", llm_provider="provider", model="model"
-    )
-
-
-def _timeout() -> BaseException:
-    return their_errors.Timeout(
-        message="m", model="model", llm_provider="provider"
-    )
-
-
-def _mid_stream() -> BaseException:
-    return their_errors.MidStreamFallbackError(
-        message="m", model="model", llm_provider="provider"
-    )
-
-
-def _guardrail() -> BaseException:
-    return their_errors.GuardrailRaisedException(
-        guardrail_name="pii", message="m", blocked_content=True
-    )
-
-
-def _parameter_views(error: BaseException) -> list[_ParameterView]:
-    signature = inspect.signature(type(error))
-    return [
-        _ParameterView.model_validate(parameter) for parameter in signature.parameters.values()
-    ]
-
-
-def _assert_options(
-    required: frozenset[str], optional: frozenset[str], theirs: BaseException
-) -> None:
-    views = _parameter_views(theirs)
-    expected_required = {view.name for view in views if view.default == _EMPTY_DEFAULT}
-    expected_optional = {view.name for view in views if view.default != _EMPTY_DEFAULT}
-    assert required == expected_required
-    assert optional == expected_optional
+_POSITIONAL_CASES = [
+    pytest.param(
+        their_errors.BadRequestError("m", "model", "provider"),
+        our_errors.BadRequestError("m", "model", "provider"),
+        id="bad-request",
+    ),
+    pytest.param(
+        their_errors.ImageFetchError("m", "model", "provider"),
+        our_errors.ImageFetchError("m", "model", "provider"),
+        id="image-fetch",
+    ),
+    pytest.param(
+        their_errors.UnsupportedParamsError("m", "provider", "model"),
+        our_errors.UnsupportedParamsError("m", "provider", "model"),
+        id="unsupported-params",
+    ),
+    pytest.param(
+        their_errors.Timeout("m", "model", "provider"),
+        our_errors.Timeout("m", "model", "provider"),
+        id="timeout",
+    ),
+    pytest.param(
+        their_errors.MidStreamFallbackError("m", "model", "provider"),
+        our_errors.MidStreamFallbackError("m", "model", "provider"),
+        id="mid-stream",
+    ),
+    pytest.param(
+        their_errors.GuardrailRaisedException("pii", "m"),
+        our_errors.GuardrailRaisedException("pii", "m"),
+        id="guardrail",
+    ),
+]
 
 
 def test_public_names_exact() -> None:
@@ -221,52 +195,8 @@ def test_exception_types_order() -> None:
     assert ours == theirs
 
 
-_OPTION_CASES = [
-    pytest.param(
-        BadRequestOptions.__required_keys__,
-        BadRequestOptions.__optional_keys__,
-        _bad_request(),
-        id="bad-request",
-    ),
-    pytest.param(
-        ImageFetchOptions.__required_keys__,
-        ImageFetchOptions.__optional_keys__,
-        _image_fetch(),
-        id="image-fetch",
-    ),
-    pytest.param(
-        UnsupportedParamsOptions.__required_keys__,
-        UnsupportedParamsOptions.__optional_keys__,
-        _unsupported_params(),
-        id="unsupported-params",
-    ),
-    pytest.param(
-        TimeoutOptions.__required_keys__,
-        TimeoutOptions.__optional_keys__,
-        _timeout(),
-        id="timeout",
-    ),
-    pytest.param(
-        MidStreamOptions.__required_keys__,
-        MidStreamOptions.__optional_keys__,
-        _mid_stream(),
-        id="mid-stream",
-    ),
-    pytest.param(
-        GuardrailOptions.__required_keys__,
-        GuardrailOptions.__optional_keys__,
-        _guardrail(),
-        id="guardrail",
-    ),
-]
-
-
-@pytest.mark.parametrize(("required", "optional", "theirs"), _OPTION_CASES)
-def test_options_match(
-    required: frozenset[str], optional: frozenset[str], theirs: BaseException
-) -> None:
-    _assert_options(
-        required,
-        optional,
-        theirs,
-    )
+@pytest.mark.parametrize(("theirs", "ours"), _POSITIONAL_CASES)
+def test_positional_constructors(theirs: BaseException, ours: BaseException) -> None:
+    assert str(ours) == str(theirs)
+    assert repr(ours) == repr(theirs)
+    assert _PositionalView.model_validate(ours) == _PositionalView.model_validate(theirs)
