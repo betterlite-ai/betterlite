@@ -2,9 +2,12 @@ use betterlite_context::chat_config_selection::tags::ChatConfigTag;
 use betterlite_models::decisions::Json as LogJson;
 use betterlite_openai::vercel_ai_gateway::DEFAULT_API_BASE as VERCEL_DEFAULT_API_BASE;
 use betterlite_prompts::arguments::json::{Json, Object};
+use secrecy::SecretString;
 
 use super::call::CompletionCall;
-use super::context::{CallLogging, DispatchContext, first_nonempty, first_secret, referer_headers};
+use super::context::{
+    CallLogging, DispatchContext, DispatchSettings, first_nonempty, first_secret, referer_headers,
+};
 use super::error::DispatchError;
 use super::handler::ChatCompletionHandler;
 use super::logging;
@@ -27,8 +30,8 @@ pub fn dispatch<R>(
     log: &mut CallLogging<'_, '_>,
 ) -> Option<Result<R, DispatchError>> {
     match tag {
-        ChatConfigTag::Openrouter => Some(openrouter(context, handler, log)),
-        ChatConfigTag::VercelAiGateway => Some(vercel(context, handler, log)),
+        ChatConfigTag::Openrouter => Some(complete(context, handler, log, &Gateway::OPENROUTER)),
+        ChatConfigTag::VercelAiGateway => Some(complete(context, handler, log, &Gateway::VERCEL)),
         ChatConfigTag::A2a | ChatConfigTag::Ai21Chat | ChatConfigTag::AiohttpOpenAiChat | ChatConfigTag::AmazonNovaChat | ChatConfigTag::Anthropic | ChatConfigTag::AnthropicText
         | ChatConfigTag::AzureAiStudio | ChatConfigTag::AzureAnthropic | ChatConfigTag::AzureModelRouter | ChatConfigTag::AzureOpenAi | ChatConfigTag::AzureOpenAiGpt5
         | ChatConfigTag::AzureOpenAiO1 | ChatConfigTag::AzureOpenAiText | ChatConfigTag::Baseten | ChatConfigTag::Bedrock(_) | ChatConfigTag::BedrockMantleChat
@@ -56,80 +59,104 @@ pub fn dispatch<R>(
     }
 }
 
-// _complete_openrouter: the passed base, litellm.api_base, OPENROUTER_API_BASE and the public default; the passed key, litellm.api_key, litellm.openrouter_key, OPENROUTER_API_KEY and OR_API_KEY; then the referer headers and the class config
-fn openrouter<R>(
-    context: &DispatchContext<'_>,
-    handler: &(dyn ChatCompletionHandler<Reply = R> + Sync),
-    log: &mut CallLogging<'_, '_>,
-) -> Result<R, DispatchError> {
-    let mut call = CompletionCall::from_context(context);
-    call.api_base = Some(
-        first_nonempty([
-            context.api_base,
-            context.settings.api_base,
-            context.settings.openrouter_api_base,
-        ])
-        .unwrap_or_else(|| String::from(OPENROUTER_DEFAULT_API_BASE)),
-    );
-    call.api_key = first_secret([
-        context.api_key,
-        context.settings.api_key,
-        context.settings.openrouter_key,
-        context.settings.openrouter_api_key,
-        context.settings.or_api_key,
-    ]);
-    call.custom_llm_provider = String::from(OPENROUTER_PROVIDER);
-    call.headers = Some(referer_headers(
-        context.headers,
-        context.settings.headers,
-        OPENROUTER_REFERER,
-        OPENROUTER_TITLE,
-        context.settings.or_site_url,
-        context.settings.or_app_name,
-    ));
-    merge_config(
-        &mut call.optional_params,
-        context.class_config,
-        OPENROUTER_PROVIDER,
-    )?;
-    let reply = handler.complete(&call).map_err(DispatchError::Handler)?;
-    logging::post(log, context.messages, LogJson::Null)?;
-    Ok(reply)
+// the names and the environment positions one arm uses, so both arms share one body
+struct Gateway {
+    which: Which,
+    provider: &'static str,
+    default_api_base: &'static str,
+    referer: &'static str,
+    title: &'static str,
 }
 
-// _complete_vercel_ai_gateway: the same shape in lower case; the chat chain never reads VERCEL_OIDC_TOKEN
-fn vercel<R>(
+#[derive(Clone, Copy)]
+enum Which {
+    Openrouter,
+    Vercel,
+}
+
+impl Gateway {
+    // _complete_openrouter: the base chain ends at OPENROUTER_API_BASE, the key chain at OR_API_KEY
+    const OPENROUTER: Self = Self {
+        which: Which::Openrouter,
+        provider: OPENROUTER_PROVIDER,
+        default_api_base: OPENROUTER_DEFAULT_API_BASE,
+        referer: OPENROUTER_REFERER,
+        title: OPENROUTER_TITLE,
+    };
+
+    // _complete_vercel_ai_gateway: lower-case header names; its chat key chain skips VERCEL_OIDC_TOKEN
+    const VERCEL: Self = Self {
+        which: Which::Vercel,
+        provider: VERCEL_PROVIDER,
+        default_api_base: VERCEL_DEFAULT_API_BASE,
+        referer: VERCEL_REFERER,
+        title: VERCEL_TITLE,
+    };
+}
+
+// the provider variables each arm falls back to, in chain order; Vercel's chat chain stops at its gateway key
+struct Chains<'settings> {
+    api_base: Option<&'settings str>,
+    first_key: Option<&'settings SecretString>,
+    second_key: Option<&'settings SecretString>,
+    third_key: Option<&'settings SecretString>,
+    site_url: Option<&'settings str>,
+    app_name: Option<&'settings str>,
+}
+
+const fn chains(settings: DispatchSettings<'_>, which: Which) -> Chains<'_> {
+    match which {
+        Which::Openrouter => Chains {
+            api_base: settings.openrouter_api_base,
+            first_key: settings.openrouter_key,
+            second_key: settings.openrouter_api_key,
+            third_key: settings.or_api_key,
+            site_url: settings.or_site_url,
+            app_name: settings.or_app_name,
+        },
+        Which::Vercel => Chains {
+            api_base: settings.vercel_ai_gateway_api_base,
+            first_key: settings.vercel_ai_gateway_api_key,
+            second_key: None,
+            third_key: None,
+            site_url: settings.vercel_site_url,
+            app_name: settings.vercel_app_name,
+        },
+    }
+}
+
+fn complete<R>(
     context: &DispatchContext<'_>,
     handler: &(dyn ChatCompletionHandler<Reply = R> + Sync),
     log: &mut CallLogging<'_, '_>,
+    gateway: &Gateway,
 ) -> Result<R, DispatchError> {
+    let values = chains(context.settings, gateway.which);
     let mut call = CompletionCall::from_context(context);
     call.api_base = Some(
-        first_nonempty([
-            context.api_base,
-            context.settings.api_base,
-            context.settings.vercel_ai_gateway_api_base,
-        ])
-        .unwrap_or_else(|| String::from(VERCEL_DEFAULT_API_BASE)),
+        first_nonempty([context.api_base, context.settings.api_base, values.api_base])
+            .unwrap_or_else(|| String::from(gateway.default_api_base)),
     );
     call.api_key = first_secret([
         context.api_key,
         context.settings.api_key,
-        context.settings.vercel_ai_gateway_api_key,
+        values.first_key,
+        values.second_key,
+        values.third_key,
     ]);
-    call.custom_llm_provider = String::from(VERCEL_PROVIDER);
+    call.custom_llm_provider = String::from(gateway.provider);
     call.headers = Some(referer_headers(
         context.headers,
         context.settings.headers,
-        VERCEL_REFERER,
-        VERCEL_TITLE,
-        context.settings.vercel_site_url,
-        context.settings.vercel_app_name,
+        gateway.referer,
+        gateway.title,
+        values.site_url,
+        values.app_name,
     ));
     merge_config(
         &mut call.optional_params,
         context.class_config,
-        VERCEL_PROVIDER,
+        gateway.provider,
     )?;
     let reply = handler.complete(&call).map_err(DispatchError::Handler)?;
     logging::post(log, context.messages, LogJson::Null)?;
