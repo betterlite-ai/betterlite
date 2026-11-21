@@ -880,11 +880,8 @@ async fn a_proxy_call_keeps_a_buffered_answer_buffered_and_a_stream_streamed(
 }
 
 #[rstest]
-#[case::aleph(
-    Legacy::AlephAlpha,
-    r#"{"completions":[{"completion":"Paris.","finish_reason":"stop"}]}"#
-)]
-#[case::custom(Legacy::Custom, r#"{"data":[{"output":["Paris."]}]}"#)]
+#[case::aleph(Legacy::AlephAlpha, r#"{"aleph":true}"#)]
+#[case::custom(Legacy::Custom, r#"{"custom":true}"#)]
 #[tokio::test]
 async fn a_legacy_post_follows_a_redirect_to_the_next_answer(
     #[case] legacy: Legacy,
