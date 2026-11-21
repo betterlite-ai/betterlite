@@ -3,7 +3,7 @@ deviations:
   - what: A record url whose path is longer than 4096 bytes is not matched against the route table, so the record falls back to its body shape.
     why: B207's route catalog refuses routes past 4096 bytes, and the body fallback is the same answer LiteLLM gives any url it does not recognize.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/batch_guardrails.py#L283-L302
-  - what: The url's authority is not NFKC-normalized before the path is taken, so a host holding a character that normalizes to one of / ? # @ or : still yields its path instead of falling back to the body.
+  - what: The url's authority is not NFKC-normalized before the path is taken, so a host holding a character that normalizes to a slash, question mark, hash sign, at sign or colon still yields its path instead of falling back to the body.
     why: urlsplit raises for such a host only to protect callers that use the host; the scan reads the path alone, and every other urlsplit rule that changes the path is kept.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/batch_guardrails.py#L291-L297
   - what: An unscannable record whose url holds a lone surrogate gets the 400 with that character shown as "?".
