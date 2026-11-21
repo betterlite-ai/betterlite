@@ -1,15 +1,38 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 use rstest::rstest;
 
-use super::load_realtime_settings;
-use crate::loader::ConfigError;
+use super::{Borrowed, load_realtime_settings};
+use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::openai_realtime::{DEFAULT_MAX_MESSAGE_SIZE_BYTES, MAX_MESSAGE_SIZE_VARIABLE};
 
 fn environment(value: &str) -> BTreeMap<String, String> {
     BTreeMap::from([(MAX_MESSAGE_SIZE_VARIABLE.to_owned(), value.to_owned())])
+}
+
+// an environment whose only extra is the home lookup the loader forwards
+struct Home(PathBuf);
+
+impl EnvironmentLookup for Home {
+    fn lookup(&self, _name: &str) -> Option<String> {
+        None
+    }
+
+    fn system_home(&self) -> Option<PathBuf> {
+        Some(self.0.clone())
+    }
+}
+
+#[test]
+fn forwards_the_system_home() {
+    let home = Home(PathBuf::from("/opt/litellm"));
+    assert_eq!(
+        Borrowed(&home).system_home(),
+        Some(PathBuf::from("/opt/litellm"))
+    );
 }
 
 const DEFAULT_SEED: &str =

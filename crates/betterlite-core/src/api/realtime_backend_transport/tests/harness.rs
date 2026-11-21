@@ -518,6 +518,10 @@ fn client_of(options: &HarnessOptions, logs: &SharedLogs) -> ClientHandle {
     }
 }
 
+pub(super) fn client_handle(options: &HarnessOptions) -> ClientHandle {
+    client_of(options, &SharedLogs::default())
+}
+
 fn dialer_of(
     dials: Vec<DialOutcome>,
     source_frames: Vec<RealtimeMessage>,

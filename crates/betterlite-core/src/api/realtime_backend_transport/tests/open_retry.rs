@@ -121,6 +121,14 @@ fn keeps_the_ssl_argument_on_a_ws_url() {
         realtime_ssl("ws://upstream.test/realtime", &Verification::Enabled),
         RealtimeSsl::Shared(Verification::Enabled)
     );
+    assert_eq!(
+        realtime_ssl("ws://upstream.test/realtime", &Verification::Disabled),
+        RealtimeSsl::Disabled
+    );
+    assert_eq!(
+        realtime_ssl("wss://upstream.test/realtime", &Verification::Disabled),
+        RealtimeSsl::Insecure
+    );
 }
 
 async fn closes_after_a_failed_setup_send() {
