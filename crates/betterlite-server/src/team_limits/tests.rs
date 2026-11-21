@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 use axum::http::StatusCode;
+use betterlite_auth::budget_primitives::window_start::DurationParser as _;
 use betterlite_auth::model_budget_values::budget_config::BudgetRuntime;
 use betterlite_auth::model_budget_values::candidates::BedrockCatalog;
 use betterlite_auth::user_roles::UserRole;
@@ -521,6 +522,26 @@ fn model_lower_same_window() {
         ),
         Ok(())
     );
+}
+
+#[test]
+fn model_equal_same_window() {
+    assert_eq!(
+        model_verdict(
+            r#"{"team_id":"t","model_max_budget":{"m":{"max_budget":10.0,"budget_duration":"1d"}}}"#,
+            r#"{"m":{"max_budget":10.0,"budget_duration":"1d"}}"#
+        ),
+        Ok(())
+    );
+}
+
+#[test]
+fn duration_parser_reads_budget_specs() {
+    let zones = TimeZoneDatabase::from_env();
+    let durations = ZoneDurations { database: &zones };
+    assert_eq!(durations.seconds("1d", instant()), Some(86_400));
+    assert_eq!(durations.seconds("90m", instant()), Some(5_400));
+    assert_eq!(durations.seconds("not-a-duration", instant()), None);
 }
 
 #[test]
