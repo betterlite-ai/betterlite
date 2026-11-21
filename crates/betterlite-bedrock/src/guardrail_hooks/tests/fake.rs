@@ -192,21 +192,24 @@ impl HookRuntime for FakeRuntime {
         &self,
         call: UnifiedCall<'_>,
     ) -> impl Future<Output = Result<Vec<StreamChunk>, HookFailure>> + Send {
-        self.note_delegation(DelegateRecord {
-            buffer_until_moderated_default: call.buffer_until_moderated_default,
-            chunk_count: call.chunks.len(),
-        });
+        self.note_delegation(&call);
         ready(Ok(call.chunks))
-    }
-
-    fn note_delegation(&self, record: DelegateRecord) {
-        self.delegations
-            .lock()
-            .expect("delegation records")
-            .push(record);
     }
 
     fn elapsed(&self, _since: Instant) -> Duration {
         self.elapsed
+    }
+}
+
+impl FakeRuntime {
+    fn note_delegation(&self, call: &UnifiedCall<'_>) {
+        let record = DelegateRecord {
+            buffer_until_moderated_default: call.buffer_until_moderated_default,
+            chunk_count: call.chunks.len(),
+        };
+        self.delegations
+            .lock()
+            .expect("delegation records")
+            .push(record);
     }
 }

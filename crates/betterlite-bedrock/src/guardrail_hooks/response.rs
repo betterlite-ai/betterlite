@@ -62,7 +62,10 @@ pub fn response_model(response: &GuardrailValue) -> Option<&str> {
 // The upstream usage the block reply has to carry, since the replaced response never reaches the client.
 #[must_use]
 pub fn response_usage(response: &GuardrailValue) -> Option<GuardrailValue> {
-    response_field(response, "usage").cloned()
+    let Some(usage) = response_field(response, "usage") else {
+        return None;
+    };
+    Some(usage.clone())
 }
 
 // MockResponseIterator's convert_model_response_to_streaming: the assembled reply replayed as one chat chunk.

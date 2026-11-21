@@ -112,50 +112,37 @@ pub fn chat_response(model: &str, content: GuardrailValue) -> GuardrailValue {
 }
 
 pub fn stream_chunk(content: &str) -> GuardrailValue {
-    object(vec![
-        (
-            "choices",
-            array(vec![object(vec![
-                (
-                    "delta",
-                    object(vec![
-                        ("content", text(content)),
-                        ("role", text("assistant")),
-                    ]),
-                ),
-                ("index", unsigned(0)),
-                ("finish_reason", GuardrailValue::Null),
-            ])]),
-        ),
-        ("model", text("gpt-test")),
-        ("id", text("chatcmpl-1")),
-        ("object", text("chat.completion.chunk")),
-        ("created", unsigned(1)),
-    ])
+    chunk(content, GuardrailValue::Null, false)
 }
 
 pub fn replay_chunk(content: &str) -> GuardrailValue {
-    object(vec![
-        ("created", unsigned(1)),
-        ("usage", usage(3, 2)),
-        (
-            "choices",
-            array(vec![object(vec![
-                ("finish_reason", text("stop")),
-                ("index", unsigned(0)),
-                (
-                    "delta",
-                    object(vec![
-                        ("role", text("assistant")),
-                        ("content", text(content)),
-                    ]),
-                ),
-            ])]),
-        ),
-        ("id", text("chatcmpl-1")),
-        ("model", text("gpt-test")),
-        ("object", text("chat.completion.chunk")),
-    ])
+    chunk(content, text("stop"), true)
+}
+
+fn chunk(content: &str, finish_reason: GuardrailValue, with_usage: bool) -> GuardrailValue {
+    let mut choice = BTreeMap::new();
+    choice.insert(
+        "delta".to_owned(),
+        object(vec![
+            ("role", text("assistant")),
+            ("content", text(content)),
+        ]),
+    );
+    choice.insert("index".to_owned(), unsigned(0));
+    choice.insert("finish_reason".to_owned(), finish_reason);
+    let mut fields = BTreeMap::new();
+    fields.insert(
+        "choices".to_owned(),
+        array(vec![GuardrailValue::Object(choice)]),
+    );
+    fields.insert("model".to_owned(), text("gpt-test"));
+    fields.insert("id".to_owned(), text("chatcmpl-1"));
+    fields.insert("object".to_owned(), text("chat.completion.chunk"));
+    fields.insert("created".to_owned(), unsigned(1));
+    if with_usage {
+        fields.insert("usage".to_owned(), usage(3, 2));
+    }
+    GuardrailValue::Object(fields)
 }
 
 pub fn sse_frame(event: &str, data: &str) -> StreamChunk {
