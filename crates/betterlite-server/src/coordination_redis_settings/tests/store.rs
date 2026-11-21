@@ -12,7 +12,10 @@ use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::{Config, NoTls};
 
-use super::support::object;
+use super::support::{environment, object};
+use crate::coordination_redis_settings::source::{
+    CacheBackendKind, CoordinationRedisSource, coordination_redis_source,
+};
 use crate::coordination_redis_settings::store::{
     DatabaseGeneralSettingsStore, GeneralSettingsStore, SettingsError, current_settings,
     persisted_settings,
@@ -118,6 +121,24 @@ async fn a_saved_block_wins_over_the_file_state_even_when_empty() {
     assert_eq!(
         current_settings(Some(&saved), &config_state).await.unwrap(),
         Some(object("{}")),
+    );
+}
+
+// The saved empty object is authoritative for the settings, while source reporting still treats it as false.
+#[tokio::test]
+async fn an_empty_saved_block_suppresses_the_file_block_but_not_the_source() {
+    let saved = store(r#"{"coordination_redis": {}}"#);
+    let config_state =
+        object(r#"{"general_settings": {"coordination_redis": {"host": "file-host"}}}"#);
+    let current = current_settings(Some(&saved), &config_state).await.unwrap();
+    assert_eq!(current, Some(object("{}")));
+    assert_eq!(
+        coordination_redis_source(
+            current.as_ref(),
+            CacheBackendKind::Other,
+            &environment(&[("REDIS_HOST", "env-host")]),
+        ),
+        Some(CoordinationRedisSource::Environment),
     );
 }
 
