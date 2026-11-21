@@ -313,10 +313,10 @@ async fn deepkeep_guardrail_apply_honors_fail_open_when_unreachable(
     } else {
         Some(RefusedPort::bind().expect("a refused port"))
     };
-    let base = match &refused {
-        Some(held) => format!("http://{}", held.address),
-        None => format!("http://{}", listener.local_addr().expect("addr")),
-    };
+    let base = refused.as_ref().map_or_else(
+        || format!("http://{}", listener.local_addr().expect("addr")),
+        |held| format!("http://{}", held.address),
+    );
     let mut deepkeep = guardrail();
     deepkeep.settings.api_base = format!("{base}/v3/openai/beta/litellm_basic_guardrail_api");
     deepkeep.settings.unreachable_fallback = unreachable_fallback;
