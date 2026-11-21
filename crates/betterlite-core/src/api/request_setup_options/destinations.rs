@@ -1,5 +1,4 @@
 use std::collections::BTreeSet;
-use std::str::FromStr as _;
 
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_logging::callback_config::CallbackVars;
@@ -9,7 +8,6 @@ use betterlite_logging::otel::presets::destinations::destination_for;
 use betterlite_models::decisions::Json;
 use betterlite_models::prompt_contracts::StandardCallbackDynamicParams;
 use indexmap::{IndexMap, IndexSet};
-use rust_decimal::Decimal;
 
 use crate::api::request_principal_metadata::{Metadata, PrincipalFacts};
 use crate::api::request_setup_options::callbacks::{logging_entries, validated_callbacks};
@@ -170,10 +168,8 @@ fn tenant_params(vars: &CallbackVars) -> StandardCallbackDynamicParams {
         "langfuse_prompt_version" => value.trim().parse::<i64>().is_ok(),
         "turn_off_message_logging" => PYDANTIC_BOOLS.contains(&value.to_lowercase().as_str()),
         "litellm_disabled_callbacks" => false,
-        other if SAMPLING_RATE_PARAMS.contains(&other) => {
-            Decimal::from_str(value.trim()).is_ok()
-                || Decimal::from_scientific(value.trim()).is_ok()
-        }
+        // pydantic's float takes what f64 parsing takes, inf and nan included
+        other if SAMPLING_RATE_PARAMS.contains(&other) => value.trim().parse::<f64>().is_ok(),
         _ => true,
     });
     if !fits {

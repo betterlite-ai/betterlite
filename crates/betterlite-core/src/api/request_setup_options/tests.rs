@@ -317,6 +317,7 @@ fn tenant_destinations(
 #[case::prompt_version_text(r#""langfuse_prompt_version": "three""#, false)]
 #[case::sampling_rate_decimal(r#""langsmith_sampling_rate": "0.5""#, true)]
 #[case::sampling_rate_scientific(r#""arize_error_sampling_rate": "5e-1""#, true)]
+#[case::sampling_rate_infinite(r#""langsmith_sampling_rate": "inf""#, true)]
 #[case::sampling_rate_text(r#""arize_success_sampling_rate": "half""#, false)]
 #[case::bool_word(r#""turn_off_message_logging": "Yes""#, true)]
 #[case::disabled_list_never_fits(r#""litellm_disabled_callbacks": "arize""#, false)]
