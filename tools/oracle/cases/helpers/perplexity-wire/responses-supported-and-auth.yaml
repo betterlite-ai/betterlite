@@ -1,0 +1,6 @@
+kind: helper
+name: perplexity-responses-supported-and-auth
+env: {}
+compare: {ignore: []}
+call:
+  b5834: {"op": "responses", "headers": [{"api_key": "sk-call", "headers": {"X-Caller": "c1"}, "env": {"PERPLEXITYAI_API_KEY": "sk-env"}}, {"api_key": null, "headers": {}, "env": {"PERPLEXITYAI_API_KEY": "sk-first", "PERPLEXITY_API_KEY": "sk-second"}}, {"api_key": "", "headers": {}, "env": {"PERPLEXITYAI_API_KEY": "", "PERPLEXITY_API_KEY": "sk-second"}}, {"api_key": null, "headers": {"X-Caller": "c1", "Content-Type": "text/plain"}, "env": {}}], "urls": [], "requests": [], "replies": []}
