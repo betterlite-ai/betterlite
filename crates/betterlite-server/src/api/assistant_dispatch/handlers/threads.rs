@@ -103,10 +103,8 @@ fn supplied<'dispatcher, T: Deps, S: Sources>(
 fn thread_data(kwargs: &mut BTreeMap<String, Json>) -> Result<ThreadData, AssistantDispatchError> {
     let messages = optional::<Vec<ThreadMessageData>>(kwargs, "messages")?;
     let metadata = optional::<BTreeMap<String, Json>>(kwargs, "metadata")?;
-    let tool_resources = kwargs
-        .get("tool_resources")
-        .filter(|value| !matches!(value, Json::Null))
-        .cloned();
+    // create_thread's own argument: the SDK owner accepts it for signature parity and never forwards it
+    let tool_resources = kwargs.get("tool_resources").cloned();
     for name in ["messages", "metadata", "tool_resources"] {
         kwargs.remove(name);
     }
