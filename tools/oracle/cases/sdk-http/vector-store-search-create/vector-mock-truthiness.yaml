@@ -1,0 +1,75 @@
+kind: sdk_http
+name: vector-store-search-create-vector-mock-truthiness
+call:
+  vector_store_search_create:
+    runs:
+      - operation: create
+        mode: sync
+        create: {name: notes}
+        options: {api_key: sk-client, litellm_call_id: call-1, mock_response: {}}
+      # LiteLLM's pydantic union turns a ModelResponse-shaped dict into a ModelResponse, so created:x keeps this one a dict and its mock branch fires
+      - operation: create
+        mode: sync
+        create: {name: notes}
+        options: {api_key: sk-client, litellm_call_id: call-2, mock_response: {id: vs_a, object: vector_store, created: x}}
+      - operation: search
+        mode: sync
+        search: {vector_store_id: vs_a, query: hello}
+        options: {api_key: sk-client, litellm_call_id: call-3, mock_response: ""}
+      - operation: search
+        mode: sync
+        search: {vector_store_id: vs_a, query: hello}
+        options: {api_key: sk-client, litellm_call_id: call-4, mock_response: []}
+      - operation: search
+        mode: sync
+        search: {vector_store_id: vs_a, query: hello}
+        options: {api_key: sk-client, litellm_call_id: call-5, mock_response: {}}
+      - operation: search
+        mode: sync
+        search: {vector_store_id: vs_a, query: hello}
+        options: {api_key: sk-client, litellm_call_id: call-6, mock_response: "yes"}
+      - operation: search
+        mode: sync
+        search: {vector_store_id: vs_a, query: hello}
+        options:
+          api_key: sk-client
+          litellm_call_id: call-7
+          mock_response:
+            - score: 0.5
+              content: [{text: kept result, type: text}]
+      - operation: search
+        mode: sync
+        search: {vector_store_id: vs_a, query: hello}
+        options: {api_key: sk-client, litellm_call_id: call-8, mock_response: {x: 1}}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: vs_http
+      object: vector_store
+      created_at: 1699061776
+      name: notes
+      bytes: 0
+      file_counts: {in_progress: 0, completed: 0, failed: 0, cancelled: 0, total: 0}
+      status: completed
+      expires_after: null
+      expires_at: null
+      last_active_at: null
+      metadata: null
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: vector_store.search_results.page, search_query: hello, data: []}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: vector_store.search_results.page, search_query: hello, data: []}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: vector_store.search_results.page, search_query: hello, data: []}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: vector_store.search_results.page, search_query: hello, data: []}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore: []

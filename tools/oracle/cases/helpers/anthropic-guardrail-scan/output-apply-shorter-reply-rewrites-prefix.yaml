@@ -1,0 +1,6 @@
+kind: helper
+name: anthropic-guardrail-scan-output-apply-shorter-reply-rewrites-prefix
+call:
+  b3675: {"function": "output_apply", "scenarios": [{"content": [{"type": "text", "text": "first"}, {"type": "tool_use", "id": "toolu_1", "name": "get", "input": {}}, {"type": "text", "text": "second"}], "responses": ["X"], "mappings": [0, 2]}, {"content": [{"type": "text", "text": "first"}, {"type": "text", "text": "second"}], "responses": ["X", "Y"], "mappings": [0, 1]}, {"content": [{"type": "tool_use", "id": "toolu_1", "name": "get", "input": {}}], "responses": ["X"], "mappings": [0]}, {"content": [{"type": "text", "text": "only"}], "responses": ["X"], "mappings": [7]}]}
+env: {}
+compare: {ignore: []}

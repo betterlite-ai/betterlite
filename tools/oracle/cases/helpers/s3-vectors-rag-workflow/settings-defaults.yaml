@@ -1,0 +1,18 @@
+kind: helper
+name: settings_defaults
+call:
+  b3459:
+    step: settings
+    cases:
+      - vector: {vector_bucket_name: my-bucket}
+        environment: {}
+      - vector: {vector_bucket_name: my-bucket, aws_region_name: ap-south-1}
+        environment: {AWS_REGION: eu-west-1}
+      - vector: {vector_bucket_name: my-bucket}
+        environment: {AWS_REGION_NAME: eu-west-1}
+      - vector: {vector_bucket_name: my-bucket}
+        environment: {AWS_REGION_NAME: eu-west-1, AWS_REGION: sa-east-1}
+      - vector: {}
+        environment: {}
+env: {}
+compare: {ignore: []}
