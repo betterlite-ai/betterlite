@@ -141,7 +141,7 @@ fn agent_grants(
 ) -> Result<AgentGrants<CaseWorld<'_>, CaseWorld<'_>, CaseWorld<'_>>, Box<HelperError>> {
     let registry = AgentRegistry::default();
     registry
-        .load_agents_from_config(Some(&case.config_agents))
+        .load_agents_from_config(Some(case.config_agents.as_slice()))
         .or_value_error()?;
     let team = case.team.as_ref().map(team_row).transpose()?;
     let world = CaseWorld { case, team };
