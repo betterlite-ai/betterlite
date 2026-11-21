@@ -227,7 +227,7 @@ fn seen_base(base: &HandlerCallBase<'_>, form: HandlerForm) -> SeenBase {
         form,
         litellm_params: base.litellm_params.clone(),
         headers: base.extra_headers.cloned(),
-        timeout: base.timeout,
+        timeout: Some(base.timeout),
         call_type: state.call_type.clone(),
         provider: state.custom_llm_provider.clone(),
         model: state.model.clone(),

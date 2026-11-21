@@ -56,7 +56,7 @@ impl ReadyCreate<'_> {
                 litellm_params: &self.litellm_params,
                 logging,
                 extra_headers: call.extra_headers.as_ref(),
-                timeout: Some(self.timeout),
+                timeout: self.timeout,
             },
             name: &call.name,
             params: &self.params,

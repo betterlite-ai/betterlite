@@ -26,7 +26,7 @@ pub struct HandlerCallBase<'call> {
     pub litellm_params: &'call Object,
     pub logging: &'call Mutex<LoggingState>,
     pub extra_headers: Option<&'call BTreeMap<String, String>>,
-    pub timeout: Option<Duration>,
+    pub timeout: Duration,
 }
 
 pub struct CreateHandlerCall<'call> {
@@ -87,7 +87,7 @@ impl HandlerCallBase<'_> {
             litellm_params: self.litellm_params,
             logging: self.logging,
             extra_headers: self.extra_headers,
-            timeout: self.timeout,
+            timeout: Some(self.timeout),
             source,
             blocking: None,
             asynchronous: None,
