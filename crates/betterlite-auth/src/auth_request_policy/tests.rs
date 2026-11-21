@@ -364,6 +364,8 @@ fn no_route_license_diagnostic() {
 
 #[test]
 fn no_size_limit() {
+    // an unset limit returns before it parses content-length, as LiteLLM does
+    check_request_size(Some("not-a-number"), &[0_u8; 1024], None).unwrap();
     check_request_size(Some("999999999"), &[0_u8; 1024], None).unwrap();
     check_response_size(&[0_u8; 1024], None).unwrap();
 }
@@ -415,7 +417,9 @@ fn positive_size_zero_limit() {
 
 #[test]
 fn negative_limit_not_clamped() {
-    check_request_size(Some("0"), &[], Some(-1.0_f64)).unwrap();
+    // 0 MB is over a negative limit, so a clamp to zero would let the empty request through
+    let error = check_request_size(Some("0"), &[], Some(-1.0_f64)).unwrap_err();
+    assert!(matches!(error, SizeError::RequestTooLarge { .. }));
     let error = check_request_size(Some("1"), &[], Some(-1.0_f64)).unwrap_err();
     assert!(matches!(error, SizeError::RequestTooLarge { .. }));
 }

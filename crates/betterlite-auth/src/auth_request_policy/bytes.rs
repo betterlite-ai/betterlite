@@ -62,9 +62,10 @@ pub fn check_request_size(
     body: &[u8],
     max_request_size_mb: Option<f64>,
 ) -> Result<(), SizeError> {
-    let Some(limit_mb) = max_request_size_mb else {
+    // LiteLLM returns before reading content-length, so an unset limit must not parse the header
+    if max_request_size_mb.is_none() {
         return Ok(());
-    };
+    }
     let bytes = match content_length.filter(|value| !value.is_empty()) {
         Some(header) => {
             header
@@ -76,29 +77,28 @@ pub fn check_request_size(
         }
         None => i64::try_from(body.len()).map_err(|_| SizeError::UnrepresentableBytes)?,
     };
-    let size_mb = bytes
-        .to_f64()
-        .ok_or(SizeError::UnrepresentableBytes)?
-        .div(MEBIBYTE);
-    enforce(size_mb, limit_mb, Direction::Request)
+    check_size(bytes, max_request_size_mb, Direction::Request)
 }
 
 pub fn check_response_size(
     body: &[u8],
     max_response_size_mb: Option<f64>,
 ) -> Result<(), SizeError> {
-    let Some(limit_mb) = max_response_size_mb else {
+    check_size(
+        i64::try_from(body.len()).map_err(|_| SizeError::UnrepresentableBytes)?,
+        max_response_size_mb,
+        Direction::Response,
+    )
+}
+
+fn check_size(bytes: i64, max_size_mb: Option<f64>, direction: Direction) -> Result<(), SizeError> {
+    let Some(limit_mb) = max_size_mb else {
         return Ok(());
     };
-    let bytes = i64::try_from(body.len()).map_err(|_| SizeError::UnrepresentableBytes)?;
     let size_mb = bytes
         .to_f64()
         .ok_or(SizeError::UnrepresentableBytes)?
         .div(MEBIBYTE);
-    enforce(size_mb, limit_mb, Direction::Response)
-}
-
-fn enforce(size_mb: f64, limit_mb: f64, direction: Direction) -> Result<(), SizeError> {
     if size_mb > limit_mb {
         return Err(match direction {
             Direction::Request => SizeError::RequestTooLarge { size_mb, limit_mb },
