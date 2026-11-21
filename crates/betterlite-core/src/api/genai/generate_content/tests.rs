@@ -474,6 +474,29 @@ async fn dispatch_sync_stream_prefers_the_camel_system_instruction() {
 }
 
 #[tokio::test]
+async fn dispatch_async_stream_prefers_the_camel_system_instruction() {
+    let harness = Harness::new();
+    let contents = contents();
+    let kwargs = object(
+        r#"{"systemInstruction":{"parts":[{"text":"first"}]},"system_instruction":{"parts":[{"text":"second"}]}}"#,
+    );
+    let request = request(ADAPTER_MODEL, &contents, None, &kwargs);
+
+    harness
+        .call(Entry::AgenerateStream, &request)
+        .await
+        .answer
+        .expect("the stream entry call succeeds");
+
+    let seen = harness.executor.seen();
+    assert_eq!(seen[0].0, Operation::Acompletion);
+    assert_eq!(
+        seen[0].1.request.messages[0].content,
+        Some(MessageContent::Text(String::from("first")))
+    );
+}
+
+#[tokio::test]
 async fn dispatch_native_call_merges_native_fields_under_extra_body() {
     let mut harness = Harness::new();
     harness.config.top_fields = &["safetySettings"];
@@ -780,6 +803,26 @@ async fn mock_stream_entry_without_stream_flag_fails_and_with_it_proceeds() {
         GenerateContentAnswer::Native(GenerateContentOutcome::Stream(_))
     ));
     assert_eq!(harness.source.requests().len(), 1);
+}
+
+#[tokio::test]
+async fn dispatch_async_stream_refuses_a_string_mock_without_a_stream_flag() {
+    let harness = Harness::new();
+    let contents = contents();
+    let kwargs = object(r#"{"mock_response":"mocked answer"}"#);
+    let request = request(ADAPTER_MODEL, &contents, None, &kwargs);
+
+    let dispatch = harness.call(Entry::AgenerateStream, &request).await;
+
+    let Err(failure) = dispatch.answer else {
+        panic!("the setup guard refuses a mock");
+    };
+    assert!(matches!(
+        failure.error,
+        GenerateContentError::Setup(GenAiSetupError::MockResponseHandledByCaller)
+    ));
+    assert_eq!(failure.class.metadata().status_code, 500_u16);
+    assert_eq!(harness.executor.seen().len(), 0);
 }
 
 #[tokio::test]
