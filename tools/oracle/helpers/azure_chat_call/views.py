@@ -207,7 +207,8 @@ def params_view(params: JsonValue) -> JsonValue:
     if params is None:
         return None
     view = PARAMS_VIEW.validate_python(params)
-    return {key: view.get(key) for key in ("azure_ad_token", "max_retries", "timeout")}
+    kept = {key: view.get(key) for key in ("azure_ad_token", "max_retries", "timeout")}
+    return BODY.validate_python(kept)
 
 
 FORWARDED: Final = (

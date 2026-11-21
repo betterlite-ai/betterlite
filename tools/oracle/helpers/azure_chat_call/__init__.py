@@ -21,6 +21,7 @@ from .types import (
     CompletionKwargs,
     Input,
     OSeriesChat,
+    OSeriesKwargs,
     Outcome,
     SyncChat,
 )
@@ -89,7 +90,7 @@ async def o_series_call(case: CallCase) -> JsonValue:
     return report(handler, fixture, recorder, Outcome(outcome="delegated", forward=forward))
 
 
-def captured(handler: ScriptedOSeries, kwargs: CompletionKwargs) -> JsonValue:
+def captured(handler: ScriptedOSeries, kwargs: OSeriesKwargs) -> JsonValue:
     capture = Capture()
     original = OpenAIChatCompletion.completion  # type: ignore[misc]  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L645-L646
     OpenAIChatCompletion.completion = capture  # type: ignore[method-assign, assignment]  # pyright: ignore[reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L645-L646
