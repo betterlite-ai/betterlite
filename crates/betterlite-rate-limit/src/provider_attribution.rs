@@ -94,15 +94,15 @@ fn reservation_percent(
     };
     let positive = capacity
         .and_then(cast::<i64, f64>)
-        .filter(|limit| *limit > 0.0);
+        .filter(|limit| *limit > 0.0_f64);
     positive.map_or(reservation.value, |limit| reservation.value.div(limit))
 }
 
 // What the rejected request's provider attribution needs: B2327's native resolver and the router its alias fallback reads (None before startup builds one).
-pub struct RateLimitErrorAttribution<'a> {
-    pub requested_model: Option<&'a str>,
-    pub native: &'a dyn ProviderResolution,
-    pub router: Option<&'a dyn DeploymentSnapshot>,
+pub struct RateLimitErrorAttribution<'request> {
+    pub requested_model: Option<&'request str>,
+    pub native: &'request dyn ProviderResolution,
+    pub router: Option<&'request dyn DeploymentSnapshot>,
 }
 
 // _handle_rate_limit_error: the first OVER_LIMIT status becomes the 429 the v3 limiter raises, and a response with none raises nothing.

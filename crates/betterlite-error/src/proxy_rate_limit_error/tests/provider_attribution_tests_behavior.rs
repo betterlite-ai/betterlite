@@ -86,15 +86,15 @@ fn provider_attribution_tests_behavior_maps_v3_rate_limit_types(
 }
 
 #[rstest]
-#[case::null(r#"null"#, "")]
+#[case::null("null", "")]
 #[case::text(r#""slow down""#, "slow down")]
 #[case::error_text(r#"{"error": "flat"}"#, "flat")]
 #[case::message_text(r#"{"message": "slow down"}"#, "slow down")]
 #[case::nested_error(r#"{"error": {"message": "inner"}}"#, "inner")]
 #[case::nested_message(r#"{"message": {"message": "deep"}}"#, "deep")]
 #[case::error_before_message(r#"{"error": "first", "message": "second"}"#, "first")]
-#[case::number(r#"7"#, "7")]
-#[case::boolean(r#"true"#, "true")]
+#[case::number("7", "7")]
+#[case::boolean("true", "true")]
 #[case::array(r#"["a"]"#, r#"["a"]"#)]
 fn provider_attribution_tests_behavior_coerces_the_detail_into_the_message(
     #[case] detail: &str,

@@ -51,8 +51,8 @@ fn limits(rpm: Option<i64>, tpm: Option<i64>) -> ModelGroupLimits {
 #[test]
 fn provider_attribution_tests_behavior_passes_a_plain_number_through() {
     assert_eq!(
-        convert_priority_to_percent(PriorityValue::Percent(0.9), None),
-        0.9
+        convert_priority_to_percent(PriorityValue::Percent(0.9), None).to_bits(),
+        0.9_f64.to_bits()
     );
 }
 
@@ -60,8 +60,9 @@ fn provider_attribution_tests_behavior_passes_a_plain_number_through() {
 fn provider_attribution_tests_behavior_passes_a_percent_reservation_through() {
     let model_info = limits(Some(100), Some(100));
     assert_eq!(
-        convert_priority_to_percent(reservation(PriorityKind::Percent, 0.5), Some(&model_info)),
-        0.5
+        convert_priority_to_percent(reservation(PriorityKind::Percent, 0.5), Some(&model_info))
+            .to_bits(),
+        0.5_f64.to_bits()
     );
 }
 
@@ -69,8 +70,9 @@ fn provider_attribution_tests_behavior_passes_a_percent_reservation_through() {
 fn provider_attribution_tests_behavior_divides_an_rpm_value_by_the_group_rpm() {
     let model_info = limits(Some(1_000), None);
     assert_eq!(
-        convert_priority_to_percent(reservation(PriorityKind::Rpm, 900.0), Some(&model_info)),
-        0.9
+        convert_priority_to_percent(reservation(PriorityKind::Rpm, 900.0), Some(&model_info))
+            .to_bits(),
+        0.9_f64.to_bits()
     );
 }
 
@@ -78,27 +80,28 @@ fn provider_attribution_tests_behavior_divides_an_rpm_value_by_the_group_rpm() {
 fn provider_attribution_tests_behavior_divides_a_tpm_value_by_the_group_tpm() {
     let model_info = limits(None, Some(1_000_000));
     assert_eq!(
-        convert_priority_to_percent(reservation(PriorityKind::Tpm, 900_000.0), Some(&model_info)),
-        0.9
+        convert_priority_to_percent(reservation(PriorityKind::Tpm, 900_000.0), Some(&model_info))
+            .to_bits(),
+        0.9_f64.to_bits()
     );
 }
 
 #[rstest]
-#[case::rpm_absent(PriorityKind::Rpm, 900.0, None)]
-#[case::rpm_zero(PriorityKind::Rpm, 900.0, Some(limits(Some(0), None)))]
-#[case::rpm_negative(PriorityKind::Rpm, 900.0, Some(limits(Some(-5), None)))]
-#[case::rpm_missing(PriorityKind::Rpm, 900.0, Some(limits(None, Some(1_000))))]
-#[case::tpm_absent(PriorityKind::Tpm, 900_000.0, None)]
-#[case::tpm_zero(PriorityKind::Tpm, 900_000.0, Some(limits(None, Some(0))))]
-#[case::tpm_missing(PriorityKind::Tpm, 900_000.0, Some(limits(Some(1_000), None)))]
+#[case::rpm_absent(PriorityKind::Rpm, 900.0_f64, None)]
+#[case::rpm_zero(PriorityKind::Rpm, 900.0_f64, Some(limits(Some(0), None)))]
+#[case::rpm_negative(PriorityKind::Rpm, 900.0_f64, Some(limits(Some(-5), None)))]
+#[case::rpm_missing(PriorityKind::Rpm, 900.0_f64, Some(limits(None, Some(1_000))))]
+#[case::tpm_absent(PriorityKind::Tpm, 900_000.0_f64, None)]
+#[case::tpm_zero(PriorityKind::Tpm, 900_000.0_f64, Some(limits(None, Some(0))))]
+#[case::tpm_missing(PriorityKind::Tpm, 900_000.0_f64, Some(limits(Some(1_000), None)))]
 fn provider_attribution_tests_behavior_keeps_the_value_when_the_capacity_is_unusable(
     #[case] kind: PriorityKind,
     #[case] value: f64,
     #[case] model_info: Option<ModelGroupLimits>,
 ) {
     assert_eq!(
-        convert_priority_to_percent(reservation(kind, value), model_info.as_ref()),
-        value
+        convert_priority_to_percent(reservation(kind, value), model_info.as_ref()).to_bits(),
+        value.to_bits()
     );
 }
 
@@ -137,7 +140,10 @@ fn provider_attribution_tests_behavior_takes_the_value_for_an_unknown_reservatio
     let value: PriorityValue = serde_json::from_str(r#"{"type": "kilowatts", "value": 0.25}"#)
         .expect("the mapping parses");
     let model_info = limits(Some(10), Some(10));
-    assert_eq!(convert_priority_to_percent(value, Some(&model_info)), 0.25);
+    assert_eq!(
+        convert_priority_to_percent(value, Some(&model_info)).to_bits(),
+        0.25_f64.to_bits()
+    );
 }
 
 fn status(kind: RateLimitType) -> RateLimitStatus {
