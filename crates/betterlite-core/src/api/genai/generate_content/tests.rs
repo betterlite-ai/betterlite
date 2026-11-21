@@ -165,7 +165,7 @@ async fn dispatch_adapter_call_forwards_metadata_headers_and_proxy_request() {
         seen[0].1.forwarded,
         ForwardedFields {
             metadata: Some(metadata),
-            extra_headers: Some(headers.clone()),
+            extra_headers: Some(headers),
             proxy_server_request: Some(proxy),
         }
     );
@@ -194,20 +194,20 @@ async fn dispatch_adapter_call_forwards_params_and_narrows_a_negative_retry_coun
     assert_eq!(params.organization.as_deref(), Some("org-1"));
 
     let negative = Harness::new();
-    let kwargs = object(r#"{"max_retries":-1}"#);
-    let request = request(ADAPTER_MODEL, &contents, None, &kwargs);
+    let negative_kwargs = object(r#"{"max_retries":-1}"#);
+    let negative_request = request(ADAPTER_MODEL, &contents, None, &negative_kwargs);
     negative
-        .call(Entry::Generate, &request)
+        .call(Entry::Generate, &negative_request)
         .await
         .answer
         .expect("the call succeeds");
-    let seen = negative.executor.seen();
-    let params = seen[0]
+    let negative_seen = negative.executor.seen();
+    let negative_params = negative_seen[0]
         .1
         .litellm_params
         .as_ref()
         .expect("the adapter call carries the params");
-    assert_eq!(params.max_retries, Some(0_u32));
+    assert_eq!(negative_params.max_retries, Some(0_u32));
 }
 
 #[tokio::test]
@@ -318,11 +318,11 @@ async fn dispatch_native_call_merges_native_fields_under_extra_body() {
     };
     assert_eq!(response, json(NATIVE_REPLY));
     let seen = harness.source.requests();
-    let sent: Json = serde_json::from_slice(&seen[0].body).expect("the request body is JSON");
+    let payload: Json = serde_json::from_slice(&seen[0].body).expect("the request body is JSON");
     let expected = json(
         r#"{"model":"gemini-2.5-flash","contents":[{"role":"user","parts":[{"text":"Hi"}]}],"generationConfig":{},"safetySettings":[{"category":"HARM_CATEGORY_HATE_SPEECH","threshold":"BLOCK_NONE"}],"labels":{"team":"a"}}"#,
     );
-    assert_eq!(sent, expected);
+    assert_eq!(payload, expected);
     assert_eq!(harness.config.auth_calls()[0].model, "gemini-2.5-flash");
 }
 
@@ -374,8 +374,8 @@ async fn dispatch_native_call_prefers_the_camel_system_instruction() {
         .expect("the native call succeeds");
 
     let seen = harness.source.requests();
-    let sent: Json = serde_json::from_slice(&seen[0].body).expect("the request body is JSON");
-    let Json::Object(fields) = &sent else {
+    let payload: Json = serde_json::from_slice(&seen[0].body).expect("the request body is JSON");
+    let Json::Object(fields) = &payload else {
         panic!("the request body is an object");
     };
     assert_eq!(
@@ -399,8 +399,8 @@ async fn dispatch_native_call_falls_through_an_empty_system_instruction() {
         .expect("the native call succeeds");
 
     let seen = harness.source.requests();
-    let sent: Json = serde_json::from_slice(&seen[0].body).expect("the request body is JSON");
-    let Json::Object(fields) = &sent else {
+    let payload: Json = serde_json::from_slice(&seen[0].body).expect("the request body is JSON");
+    let Json::Object(fields) = &payload else {
         panic!("the request body is an object");
     };
     assert_eq!(

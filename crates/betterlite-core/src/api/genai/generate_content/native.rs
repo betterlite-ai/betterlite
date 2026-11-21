@@ -32,19 +32,18 @@ pub(super) struct NativeInput<'call, 'request, C> {
 pub(super) async fn native<C, S, Executor>(
     deps: &GenerateContentDeps<'_, C, S, Executor>,
     config: &C,
-    input: NativeInput<'_, '_, C>,
+    NativeInput {
+        request,
+        caller,
+        setup,
+    }: NativeInput<'_, '_, C>,
     env: &PrePostEnv<'_>,
 ) -> Result<GenerateContentAnswer<C::Response>, GenerateContentError<C::Error, Executor::Error>>
 where
     C: GenerateContentHttpConfig,
     S: ClientSource,
-    Executor: CompletionExecutor,
+    Executor: CompletionExecutor + Sync,
 {
-    let NativeInput {
-        request,
-        caller,
-        setup,
-    } = input;
     let GenerateContentSetupResult {
         model,
         custom_llm_provider,
@@ -95,6 +94,7 @@ async fn sent<C, S, Executor>(
 where
     C: GenerateContentHttpConfig,
     S: ClientSource,
+    Executor: Sync,
 {
     let http = http_deps(deps, config);
     if is_async {

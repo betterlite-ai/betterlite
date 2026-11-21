@@ -18,8 +18,7 @@ pub(super) fn decode<T>(
 where
     T: DeserializeOwned,
 {
-    let encoded = serde_json::to_value(value);
-    if let Ok(encoded) = encoded
+    if let Ok(encoded) = serde_json::to_value(value)
         && let Ok(typed) = serde_json::from_value(encoded)
     {
         return Ok(typed);
@@ -33,8 +32,8 @@ pub(super) fn first_non_empty<'object>(
     names: [&str; 2],
 ) -> Option<&'object Json> {
     let [first, second] = names;
-    let value = kwargs.get(first).filter(|value| value.is_truthy());
-    value.or_else(|| kwargs.get(second).filter(|value| value.is_truthy()))
+    let chosen = kwargs.get(first).filter(|candidate| candidate.is_truthy());
+    chosen.or_else(|| kwargs.get(second).filter(|candidate| candidate.is_truthy()))
 }
 
 // GenerateContentToCompletionHandler forwards these kwargs members to the completion call as they are

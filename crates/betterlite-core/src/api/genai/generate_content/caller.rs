@@ -83,19 +83,21 @@ where
     S: ClientSource,
     Executor: CompletionExecutor,
 {
-    match request.custom_llm_provider {
-        Some(given) => Ok(Some(given.to_owned())),
-        None => resolved(deps.resolution, request.model)
-            .map(Some)
-            .map_err(|error| {
-                failure(
-                    GenerateContentError::Resolve(error),
-                    request.model,
-                    None,
-                    deps.redactor,
-                )
-            }),
-    }
+    request.custom_llm_provider.map_or_else(
+        || {
+            resolved(deps.resolution, request.model)
+                .map(Some)
+                .map_err(|error| {
+                    failure(
+                        GenerateContentError::Resolve(error),
+                        request.model,
+                        None,
+                        deps.redactor,
+                    )
+                })
+        },
+        |given| Ok(Some(given.to_owned())),
+    )
 }
 
 // get_llm_provider(model=model): the async entry points pass no provider, api_base or api_key

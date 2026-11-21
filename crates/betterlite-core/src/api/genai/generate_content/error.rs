@@ -82,25 +82,25 @@ where
         GenerateContentError::Setup(GenAiSetupError::RequestField(field)) => {
             named_field_class(message, field.field, model, name)
         }
+        GenerateContentError::Native(GenAiHttpError::Provider(exception)) => {
+            provider_class(exception, model, name, redactor)
+        }
         GenerateContentError::Setup(
             GenAiSetupError::MockResponseHandledByCaller
             | GenAiSetupError::LoggingRequired
             | GenAiSetupError::Logging(_)
             | GenAiSetupError::Transform(_),
-        ) => value_error(message, model, name, redactor),
-        GenerateContentError::Adapter(_) => value_error(message, model, name, redactor),
-        GenerateContentError::Native(GenAiHttpError::Provider(exception)) => {
-            provider_class(exception, model, name, redactor)
-        }
-        GenerateContentError::Native(
+        )
+        | GenerateContentError::Adapter(_)
+        | GenerateContentError::Native(
             GenAiHttpError::Client(_)
             | GenAiHttpError::Logging(_)
             | GenAiHttpError::Auth(_)
             | GenAiHttpError::Transform(_)
             | GenAiHttpError::BodyNotObject
             | GenAiHttpError::UnexpectedStream,
-        ) => value_error(message, model, name, redactor),
-        GenerateContentError::Timeout(_) => value_error(message, model, name, redactor),
+        )
+        | GenerateContentError::Timeout(_) => value_error(message, model, name, redactor),
     };
     GenerateContentFailure { error, class }
 }
