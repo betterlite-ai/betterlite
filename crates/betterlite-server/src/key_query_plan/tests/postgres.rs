@@ -162,6 +162,7 @@ async fn postgres_visibility_matrix() {
     let counted = list_keys(Some(client), &query(1, 50)).await.unwrap();
     assert_eq!(counted.total_count, Some(12));
     assert_joined_rows(client).await;
+    assert_budgetless_row(client).await;
     assert_default_visibility(client).await;
     assert_team_visibility(client).await;
     assert_unscoped_creator(client).await;
@@ -202,7 +203,9 @@ async fn assert_joined_rows(client: PrismaClient<'_>) {
             "gpt-4o"
         ))]))
     );
+}
 
+async fn assert_budgetless_row(client: PrismaClient<'_>) {
     let mut budgetless = key_filters();
     budgetless.search = Some(String::from("alpha"));
     let mut budgetless_request = query(1, 50);
