@@ -41,11 +41,9 @@ impl AdmissionFacts {
     pub(super) fn read(principal: &UserAPIKeyAuth) -> Self {
         let view = principal.request_quota_view();
         let account = account_limits(principal);
-        // B1106's logged_api_key reads these three facts; the auth record keeps them private
         let record = SessionRecord::from_auth(principal);
-        let facts = principal_facts(account.hashed_api_key, record);
         Self {
-            api_key: logged_api_key(&facts).map(str::to_owned),
+            api_key: logged_key(account.hashed_api_key, record),
             max_parallel_requests: view.max_parallel_requests.unwrap_or(UNLIMITED),
             tpm_limit: throttled_limit(view.tpm_limit, view.throttle_pct).unwrap_or(UNLIMITED),
             rpm_limit: throttled_limit(view.rpm_limit, view.throttle_pct).unwrap_or(UNLIMITED),
@@ -62,10 +60,11 @@ impl AdmissionFacts {
     }
 }
 
-// only the three facts logged_api_key reads are filled; every other budget field is irrelevant to the hook
+// the key the counters log under: B1106's session-token alias when it has one, else the hashed key
 #[must_use]
-fn principal_facts(api_key_hash: Option<&str>, record: SessionRecord) -> PrincipalFacts {
-    PrincipalFacts {
+fn logged_key(api_key_hash: Option<&str>, record: SessionRecord) -> Option<String> {
+    // only the three facts logged_api_key reads are filled; every other budget field is irrelevant here
+    let facts = PrincipalFacts {
         api_key_hash: api_key_hash.map(str::to_owned),
         is_session_token: record.is_session_token,
         key_alias: record.key_alias,
@@ -96,7 +95,8 @@ fn principal_facts(api_key_hash: Option<&str>, record: SessionRecord) -> Princip
         team_metadata: None,
         project_metadata: None,
         organization_metadata: None,
-    }
+    };
+    logged_api_key(&facts).map(str::to_owned)
 }
 
 // the counter ids the hook builds: `{id}::{minute}::request_count`, with the model id keeping f-string None text

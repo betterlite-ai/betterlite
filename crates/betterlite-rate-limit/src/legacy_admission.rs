@@ -3,9 +3,13 @@ pub mod error;
 mod facts;
 mod tests;
 
+use std::sync::Arc;
+
+use betterlite_auth::auth_limit_inputs::deployment::DeploymentLimitCatalog;
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_openai::openai_base_config::Object as JsonMap;
+use tokio_util::task::TaskTracker;
 
 use self::error::LegacyAdmissionError;
 use self::facts::{AdmissionFacts, CounterIds, GLOBAL_KEY, counter_ids};
@@ -24,7 +28,9 @@ pub struct AdmissionRequest {
 
 // the legacy pre-call hook, run on the handler B3047 owns
 pub struct LegacyAdmission {
-    pub handler: LegacyRateLimitHandler,
+    handler: LegacyRateLimitHandler,
+    tasks: TaskTracker,
+    catalog: Option<Arc<dyn DeploymentLimitCatalog + Send + Sync>>,
 }
 
 // one request's state across the checks: the six counters read once, the ids they are keyed by, the collected pairs
@@ -38,6 +44,20 @@ struct Call<'call> {
 }
 
 impl LegacyAdmission {
+    // B8399 supplies the server's tracker for the detached write and B302's catalog for the deployment defaults
+    #[must_use]
+    pub fn new(
+        handler: LegacyRateLimitHandler,
+        tasks: TaskTracker,
+        catalog: Option<Arc<dyn DeploymentLimitCatalog + Send + Sync>>,
+    ) -> Self {
+        Self {
+            handler,
+            tasks,
+            catalog,
+        }
+    }
+
     pub async fn pre_call(
         &self,
         principal: &UserAPIKeyAuth,
@@ -67,23 +87,31 @@ impl LegacyAdmission {
         if let Some(dimension) = checks::key_dimension(&call) {
             checks::enforce(&self.handler, &mut call, dimension).await?;
         }
-        checks::model(&self.handler, &mut call, &mut request.metadata).await?;
+        checks::model(
+            &self.handler,
+            &mut call,
+            &mut request.metadata,
+            self.catalog.as_deref(),
+        )
+        .await?;
         for dimension in checks::other_dimensions(&call) {
             checks::enforce(&self.handler, &mut call, dimension).await?;
         }
-        self.write_counters(&call.counters).await;
+        self.write_counters(&call.counters);
         Ok(())
     }
 
-    // awaited instead of LiteLLM's detached asyncio.create_task: same entries, ttl and local-only flag; a failure logs
-    async fn write_counters(&self, entries: &[(String, LegacyCacheValue)]) {
-        let written = self
-            .handler
-            .internal_usage_cache
-            .batch_set(entries, COUNTER_TTL_SECONDS, None, false)
-            .await;
-        if let Err(error) = written {
-            tracing::error!("LiteLLM Cache: exception in async add_cache: {error}");
-        }
+    // LiteLLM's asyncio.create_task: the write outlives the hook, and its failure is only logged
+    fn write_counters(&self, entries: &[(String, LegacyCacheValue)]) {
+        let cache = Arc::clone(&self.handler.internal_usage_cache);
+        let entries = entries.to_vec();
+        self.tasks.spawn(async move {
+            let written = cache
+                .batch_set(&entries, COUNTER_TTL_SECONDS, None, false)
+                .await;
+            if let Err(error) = written {
+                tracing::error!("LiteLLM Cache: exception in async add_cache: {error}");
+            }
+        });
     }
 }

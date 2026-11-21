@@ -1,3 +1,4 @@
+use betterlite_auth::auth_limit_inputs::deployment::DeploymentLimitCatalog;
 use betterlite_auth::auth_limit_inputs::key_limits::{
     LimitQuery, ModelLimits, get_key_model_rpm_limit, get_key_model_tpm_limit,
 };
@@ -71,8 +72,9 @@ pub(super) async fn model(
     handler: &LegacyRateLimitHandler,
     call: &mut Call<'_>,
     metadata: &mut JsonMap,
+    catalog: Option<&dyn DeploymentLimitCatalog>,
 ) -> Result<(), LegacyAdmissionError> {
-    let Some((tpm_for_model, rpm_for_model)) = requested_limits(call) else {
+    let Some((tpm_for_model, rpm_for_model)) = requested_limits(call, catalog)? else {
         return Ok(());
     };
     let check = KeyLimitCheck {
@@ -103,21 +105,23 @@ pub(super) async fn model(
 }
 
 // step 6's gate and lookup: both maps absent skips the check, and each map's entry for the model is its limit
-#[must_use]
-fn requested_limits(call: &Call<'_>) -> Option<(Option<i64>, Option<i64>)> {
+fn requested_limits(
+    call: &Call<'_>,
+    catalog: Option<&dyn DeploymentLimitCatalog>,
+) -> Result<Option<(Option<i64>, Option<i64>)>, LegacyAdmissionError> {
     let query = LimitQuery {
         model_name: call.model,
-        catalog: None,
+        catalog,
     };
-    let tpm_limits = get_key_model_tpm_limit(call.principal, &query).unwrap_or_default();
-    let rpm_limits = get_key_model_rpm_limit(call.principal, &query).unwrap_or_default();
+    let tpm_limits = get_key_model_tpm_limit(call.principal, &query)?;
+    let rpm_limits = get_key_model_rpm_limit(call.principal, &query)?;
     if tpm_limits.is_none() && rpm_limits.is_none() {
-        return None;
+        return Ok(None);
     }
-    Some((
+    Ok(Some((
         limit_for(tpm_limits.as_ref(), call.model),
         limit_for(rpm_limits.as_ref(), call.model),
-    ))
+    )))
 }
 
 // Python's `if map:` then `map.get(model)`: a missing model or map entry is unlimited
@@ -203,15 +207,6 @@ pub(super) fn key_dimension(call: &Call<'_>) -> Option<Dimension> {
     )
 }
 
-// steps 7-9 carry no parallel cap: only the scope's own tpm and rpm are enforced
-const fn uncapped(tpm_limit: i64, rpm_limit: i64) -> DimensionLimits {
-    DimensionLimits {
-        max_parallel_requests: UNLIMITED,
-        tpm_limit,
-        rpm_limit,
-    }
-}
-
 // steps 7-9 in LiteLLM's order; the user and team gates are is-not-None, the end user's is truthiness
 pub(super) fn other_dimensions(call: &Call<'_>) -> Vec<Dimension> {
     let end_user_id = call
@@ -222,19 +217,31 @@ pub(super) fn other_dimensions(call: &Call<'_>) -> Vec<Dimension> {
     let mut dimensions = Vec::new();
     dimensions.extend(step(
         call.ids.user.as_deref(),
-        uncapped(call.facts.user_tpm_limit, call.facts.user_rpm_limit),
+        DimensionLimits {
+            max_parallel_requests: UNLIMITED,
+            tpm_limit: call.facts.user_tpm_limit,
+            rpm_limit: call.facts.user_rpm_limit,
+        },
         call.objects.request_count_user_id,
         RateLimitScope::User,
     ));
     dimensions.extend(step(
         call.ids.team.as_deref(),
-        uncapped(call.facts.team_tpm_limit, call.facts.team_rpm_limit),
+        DimensionLimits {
+            max_parallel_requests: UNLIMITED,
+            tpm_limit: call.facts.team_tpm_limit,
+            rpm_limit: call.facts.team_rpm_limit,
+        },
         call.objects.request_count_team_id,
         RateLimitScope::Team,
     ));
     dimensions.extend(step(
         end_user_id.and(call.ids.end_user.as_deref()),
-        uncapped(call.facts.end_user_tpm_limit, call.facts.end_user_rpm_limit),
+        DimensionLimits {
+            max_parallel_requests: UNLIMITED,
+            tpm_limit: call.facts.end_user_tpm_limit,
+            rpm_limit: call.facts.end_user_rpm_limit,
+        },
         call.objects.request_count_end_user_id,
         RateLimitScope::Customer,
     ));
