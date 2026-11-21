@@ -663,7 +663,7 @@ async fn a_mask_pattern_masks_every_text_and_counts_the_masked_entities() {
     )
     .await;
     let inputs = run.result.unwrap();
-    assert_eq!(inputs.texts, Some(vec!["[email_REDACTED]".to_owned(); 2]));
+    assert_eq!(inputs.texts, Some(vec!["[EMAIL_REDACTED]".to_owned(); 2]));
     let entry = record(&run.request_data);
     assert_eq!(text_field(entry, &["guardrail_status"]), Some("success"));
     assert_eq!(
