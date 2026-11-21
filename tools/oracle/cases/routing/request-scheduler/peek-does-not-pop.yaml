@@ -1,0 +1,16 @@
+kind: probe
+name: request-scheduler-peek-does-not-pop
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      request_scheduler:
+        timeout: "1.0"
+        steps:
+          - {op: add, priority: 128, request_id: b}
+          - {op: add, priority: 128, request_id: a}
+          - {op: peek, request_id: a}
+          - {op: peek, request_id: b}
+          - {op: queue}
+compare:
+  ignore: []

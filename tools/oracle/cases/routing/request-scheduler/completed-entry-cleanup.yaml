@@ -1,0 +1,28 @@
+kind: probe
+name: request-scheduler-completed-entry-cleanup
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      request_scheduler:
+        timeout: "1.0"
+        steps:
+          - {op: schedule, priority: 3, request_id: finished, healthy: 1}
+          - {op: queue}
+compare:
+  expected_difference:
+    - pointer: /output/request_scheduler/steps/0/depth
+      reference: 1
+      rust: 0
+      why: the pin leaves a completed request in the queue when a healthy deployment admitted it, while betterlite removes it as a declared cleanup deviation
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L4459-L4467
+    - pointer: /output/request_scheduler/steps/1/depth
+      reference: 1
+      rust: 0
+      why: the completed entry stays readable through get_queue on the pin and is gone on betterlite
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/scheduler.py#L118-L129
+  ignore:
+    - pointer: /output/request_scheduler/steps/0/queue
+      why: the pin files the scheduled request under the uuid it generates inside schedule_acompletion, which no case can spell out
+    - pointer: /output/request_scheduler/steps/1/queue
+      why: the same uuid entry read back through get_queue; the depth above carries the state change
