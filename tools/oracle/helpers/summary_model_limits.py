@@ -1,6 +1,7 @@
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Sequence
+from functools import partial
 from typing import Final, Literal, TypeAlias, TypedDict
 
 from litellm.caching.dual_cache import DualCache
@@ -15,11 +16,12 @@ from litellm.proxy.hooks.parallel_request_limiter_v3 import (
 )
 from litellm.proxy.utils import ProxyLogging
 from opentelemetry.trace import Span
-from pydantic import JsonValue
+from pydantic import JsonValue, TypeAdapter
 from typing_extensions import Unpack, override
 
 CHECK_BUDGET: Final = compact._check_summary_model_budget  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L395
 CHECK_RATE: Final = compact._check_summary_model_rate_limit  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L521
+PRINCIPALS: Final[TypeAdapter[UserAPIKeyAuth]] = TypeAdapter(UserAPIKeyAuth)
 
 Stage: TypeAlias = Literal["create", "team", "project", "organization", "check"]
 
@@ -101,23 +103,10 @@ class CreateArgs(TypedDict):
     model_has_failures: bool
 
 
-CheckCall: TypeAlias = Callable[..., Awaitable[RateLimitResponse]]
-CreateCall: TypeAlias = Callable[..., list[RateLimitDescriptor]]
-AddCall: TypeAlias = Callable[..., None]
-
-
 def blank(call: str, token: str | None) -> CallJson:
     return CallJson(
-        call=call,
-        hook=None,
-        model=None,
-        token=token,
-        rpm_limit_type=None,
-        tpm_limit_type=None,
-        model_has_failures=None,
-        descriptors=None,
-        parent_otel_span=None,
-        read_only=None,
+        call=call, hook=None, model=None, token=token, rpm_limit_type=None, tpm_limit_type=None,
+        model_has_failures=None, descriptors=None, parent_otel_span=None, read_only=None,
     )
 
 
@@ -134,11 +123,7 @@ def full(descriptor: RateLimitDescriptor) -> DescriptorJson:
     return DescriptorJson(key=descriptor["key"], value=descriptor["value"], rate_limit=canonical)
 
 
-class OfflineError(Exception):
-    pass
-
-
-class HooksOfflineError(Exception):
+class ScriptedError(Exception):
     pass
 
 
@@ -165,33 +150,30 @@ class ScriptedCache(DualCache):
     ) -> float | None:
         self.reads.append(key)
         if key in self.offline:
-            raise OfflineError("offline")
+            raise ScriptedError("offline")
         return self.spend.get(key)
 
 
 class ScriptedLimiter(CustomLogger):
     def __init__(self, script: RateScript, journal: list[CallJson]) -> None:
-        super().__init__()
         self.script = script
         self.journal = journal
         self.retained: list[RateLimitDescriptor] | None = None
-        missing = script["missing"]
-        self.should_rate_limit: CheckCall | None = (
-            None if "should_rate_limit" in missing else self.check
+        off = script["missing"]
+        team = partial(self.add, "team")
+        project = partial(self.add, "project")
+        self.should_rate_limit = None if "should_rate_limit" in off else self.check
+        self._create_rate_limit_descriptors = (
+            None if "_create_rate_limit_descriptors" in off else self.create
         )
-        self._create_rate_limit_descriptors: CreateCall | None = (
-            None if "_create_rate_limit_descriptors" in missing else self.create
+        self._add_team_model_rate_limit_descriptor_from_metadata = (
+            None if "_add_team_model_rate_limit_descriptor_from_metadata" in off else team
         )
-        self._add_team_model_rate_limit_descriptor_from_metadata: AddCall | None = (
-            None if "_add_team_model_rate_limit_descriptor_from_metadata" in missing else self.team
+        self._add_project_model_rate_limit_descriptor_from_metadata = (
+            None if "_add_project_model_rate_limit_descriptor_from_metadata" in off else project
         )
-        self._add_project_model_rate_limit_descriptor_from_metadata: AddCall | None = (
-            None
-            if "_add_project_model_rate_limit_descriptor_from_metadata" in missing
-            else self.project
-        )
-        self.create_organization_rate_limit_descriptor: CreateCall | None = (
-            None if "create_organization_rate_limit_descriptor" in missing else self.organization
+        self.create_organization_rate_limit_descriptor = (
+            None if "create_organization_rate_limit_descriptor" in off else self.organization
         )
 
     def record(self, stage: Stage, call: CallJson) -> None:
@@ -201,7 +183,7 @@ class ScriptedLimiter(CustomLogger):
             return
         if failure["kind"] == "unverifiable":
             raise UnverifiedError(failure["detail"])
-        raise OfflineError(failure["detail"])
+        raise ScriptedError(failure["detail"])
 
     def create(self, **kwargs: Unpack[CreateArgs]) -> list[RateLimitDescriptor]:
         call = blank("create", kwargs["user_api_key_dict"].token)
@@ -213,36 +195,19 @@ class ScriptedLimiter(CustomLogger):
         self.retained = list(self.script["base"])
         return self.retained
 
-    def append(
+    def add(
         self,
         stage: Literal["team", "project"],
-        auth: UserAPIKeyAuth,
-        model: str,
+        *,
+        user_api_key_dict: UserAPIKeyAuth,
+        requested_model: str,
         descriptors: list[RateLimitDescriptor],
     ) -> None:
-        call = blank(stage, auth.token)
-        call["model"] = model
+        call = blank(stage, user_api_key_dict.token)
+        call["model"] = requested_model
         call["descriptors"] = [full(descriptor) for descriptor in descriptors]
         self.record(stage, call)
         descriptors.extend(self.script[stage])
-
-    def team(
-        self,
-        *,
-        user_api_key_dict: UserAPIKeyAuth,
-        requested_model: str,
-        descriptors: list[RateLimitDescriptor],
-    ) -> None:
-        self.append("team", user_api_key_dict, requested_model, descriptors)
-
-    def project(
-        self,
-        *,
-        user_api_key_dict: UserAPIKeyAuth,
-        requested_model: str,
-        descriptors: list[RateLimitDescriptor],
-    ) -> None:
-        self.append("project", user_api_key_dict, requested_model, descriptors)
 
     def organization(
         self, user_api_key_dict: UserAPIKeyAuth, requested_model: str
@@ -280,7 +245,7 @@ class ScriptedHooks(ProxyLogging):
         call["hook"] = hook
         self.journal.append(call)
         if self.script["hook"] == "raises":
-            raise HooksOfflineError("hooks offline")
+            raise ScriptedError("hooks offline")
         if self.script["hook"] == "none":
             return None
         return self.scripted
@@ -298,7 +263,7 @@ class Warnings(logging.Handler):
 
 async def evaluate(summary_model: str, scenario: Scenario) -> Outcome:
     fields = scenario["principal"]
-    principal = None if fields is None else UserAPIKeyAuth.model_validate(fields)
+    principal = None if fields is None else PRINCIPALS.validate_python(fields)
     cache = ScriptedCache(scenario["spend"], scenario["offline"])
     proxy_server.model_max_budget_limiter.dual_cache = cache
     journal: list[CallJson] = []
@@ -309,37 +274,23 @@ async def evaluate(summary_model: str, scenario: Scenario) -> Outcome:
     raised: str | None = None
     try:
         rate = await CHECK_RATE(principal, summary_model)
-    except HooksOfflineError as error:
+    except ScriptedError as error:
         raised = str(error)
     kept = hooks.scripted.retained
     retained = None if kept is None else [full(descriptor) for descriptor in kept]
     return Outcome(
-        budget=budget,
-        rate=rate,
-        raised=raised,
-        reads=cache.reads,
-        calls=journal,
-        retained=retained,
-        warnings=[],
+        budget=budget, rate=rate, raised=raised, reads=cache.reads, calls=journal,
+        retained=retained, warnings=[],
     )
 
 
 def run(input_value: Input) -> Answer:
-    logger = logging.getLogger("LiteLLM")
-    saved_cache = proxy_server.model_max_budget_limiter.dual_cache
-    saved_hooks = proxy_server.proxy_logging_obj
+    warnings = Warnings()
+    logging.getLogger("LiteLLM").addHandler(warnings)
     outcomes: list[Outcome] = []
-    try:
-        for scenario in input_value["scenarios"]:
-            warnings = Warnings()
-            logger.addHandler(warnings)
-            try:
-                outcome = asyncio.run(evaluate(input_value["summary_model"], scenario))
-            finally:
-                logger.removeHandler(warnings)
-            outcome["warnings"] = warnings.lines
-            outcomes.append(outcome)
-    finally:
-        proxy_server.model_max_budget_limiter.dual_cache = saved_cache
-        proxy_server.proxy_logging_obj = saved_hooks
+    for scenario in input_value["scenarios"]:
+        outcome = asyncio.run(evaluate(input_value["summary_model"], scenario))
+        outcome["warnings"] = warnings.lines
+        warnings.lines = []
+        outcomes.append(outcome)
     return Answer(outcomes=outcomes)
