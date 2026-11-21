@@ -9,6 +9,7 @@
 
 use std::collections::BTreeMap;
 use std::future::Future;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -24,10 +25,12 @@ use betterlite_openai::output_limits::raw_send::{
 };
 use betterlite_openai::output_limits::tokens::{PromptCountError, PromptTokens};
 use betterlite_openai::text_completion_transport::logging::{SecretHeaders, StreamDefaults};
+use betterlite_openai::text_completion_transport::sdk::{ByteStream, SdkError};
 use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::message_content::Message;
 use betterlite_streaming::stream_chunk_shaping::creation::StreamInstant;
-use betterlite_streaming::stream_chunk_shaping::records::JsonObject;
+use betterlite_streaming::stream_chunk_shaping::records::{JsonObject, StreamOptions};
+use futures_util::stream;
 use http::{HeaderMap, HeaderName, HeaderValue};
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -36,7 +39,10 @@ use tokio::runtime::Builder;
 use uuid::Uuid;
 
 use crate::azure_default_chain::grant::{ClientSecretRecord, UsernamePasswordRecord};
-use crate::azure_stream_errors::records::{GetStreamClient, PreCallRecord, StreamClient};
+use crate::azure_stream_errors::error::Raised;
+use crate::azure_stream_errors::records::{
+    ChatStreamTransport, GetStreamClient, PreCallRecord, StreamAnswer, StreamClient,
+};
 use crate::chat_call::CancellationToken;
 use crate::chat_call::arguments::{ChatCall, Runtime};
 use crate::chat_call::client::{ClientHandle, ClientSource, GatewayClient, GetClient};
@@ -263,6 +269,7 @@ pub(super) struct ScriptedSource {
     api_key: Option<SecretString>,
     base_url: String,
     answer: Answer,
+    stream_payload: Option<String>,
     pub requests: Arc<Mutex<Vec<RequestRecord>>>,
     pub gets: Arc<Mutex<Vec<GetRecord>>>,
     pub gateways: Arc<Mutex<Vec<GatewayRecord>>>,
@@ -275,10 +282,16 @@ impl ScriptedSource {
             api_key: api_key.map(SecretString::from),
             base_url: "https://unit.test/openai/".to_owned(),
             answer,
+            stream_payload: None,
             requests: Arc::new(Mutex::new(Vec::new())),
             gets: Arc::new(Mutex::new(Vec::new())),
             gateways: Arc::new(Mutex::new(Vec::new())),
         }
+    }
+
+    pub(super) fn with_stream(mut self, payload: &str) -> Self {
+        self.stream_payload = Some(payload.to_owned());
+        self
     }
 
     pub(super) fn handle(&self) -> ClientHandle<ScriptedTransport> {
@@ -326,6 +339,27 @@ impl ScriptedSource {
     }
 }
 
+pub(super) struct ScriptedStream {
+    payload: String,
+}
+
+impl ChatStreamTransport for ScriptedStream {
+    fn create<'call>(
+        &'call self,
+        _data: &'call decisions::Extra,
+        _timeout: Option<f64>,
+    ) -> Pin<Box<dyn Future<Output = Result<StreamAnswer, Box<Raised>>> + Send + 'call>> {
+        let items: Vec<Result<Vec<u8>, SdkError>> = vec![Ok(self.payload.clone().into_bytes())];
+        Box::pin(async move {
+            let body: ByteStream = Box::pin(stream::iter(items));
+            Ok(StreamAnswer {
+                headers: HeaderMap::new(),
+                body,
+            })
+        })
+    }
+}
+
 impl ClientSource for ScriptedSource {
     type Client = ScriptedTransport;
 
@@ -363,13 +397,22 @@ impl ClientSource for ScriptedSource {
         )
     }
 
-    // the owned cases never stream; B685 owns the streaming path
+    // B685 owns the streaming path; only the one streaming case scripts a client for it
     fn stream(
         &self,
         _supplied: Option<&ClientHandle<Self::Client>>,
         _call: GetStreamClient<'_>,
     ) -> Result<StreamClient, EndpointError> {
-        Err(EndpointError::MissingApiVersion)
+        let Some(payload) = &self.stream_payload else {
+            return Err(EndpointError::MissingApiVersion);
+        };
+        Ok(StreamClient {
+            kind: self.kind,
+            api_key: self.api_key.clone(),
+            transport: Arc::new(ScriptedStream {
+                payload: payload.clone(),
+            }),
+        })
     }
 }
 
@@ -397,7 +440,9 @@ impl ChatHooks for Recorder {
 
     fn stream_defaults(&self) -> StreamDefaults {
         StreamDefaults {
-            stream_options: None,
+            stream_options: Some(StreamOptions {
+                include_usage: true,
+            }),
             merge_reasoning_in_choices: false,
             is_function_call: false,
             base_hidden_params: JsonObject::new(),

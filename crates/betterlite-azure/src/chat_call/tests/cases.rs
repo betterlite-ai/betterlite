@@ -17,6 +17,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use betterlite_logging::logging_pre_post::args::RawBody;
 use betterlite_models::decisions::{self, Json};
 use betterlite_prompts::arguments::json::Object;
+use futures_util::StreamExt as _;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Map, Value, json};
 
@@ -796,4 +797,49 @@ pub(super) fn raw_headers_projection() {
         fields.get("x-ratelimit-limit-requests"),
         Some(&Json::Text("100".to_owned()))
     );
+}
+
+const STREAM_EVENTS: &str = concat!(
+    "data: {\"object\":\"chat.completion.chunk\",\"model\":\"gpt-4o-deployment\",",
+    "\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Hello\"},",
+    "\"finish_reason\":null}]}\n\n",
+    "data: [DONE]\n\n"
+);
+
+#[test]
+pub(super) fn streaming_deployment_request() {
+    let source = ScriptedSource::new(ClientKind::AzureOpenAi, Some("key"), Answer::reply())
+        .with_stream(STREAM_EVENTS);
+    let mut harness = Harness::default();
+    harness.optional_params = json!({"stream": true});
+    let mut recorder = Recorder::default();
+    let outcome = block_on(async {
+        harness
+            .run(&source, &mut recorder)
+            .await
+            .expect("stream opens")
+    });
+    let mut stream = match outcome {
+        ChatOutcome::Stream(stream) => stream,
+        ChatOutcome::Buffered(_) => panic!("the streaming case opens a stream"),
+    };
+    assert_eq!(stream.model, MODEL);
+    assert!(
+        stream
+            .stream_options
+            .as_ref()
+            .is_some_and(|options| options.include_usage)
+    );
+    assert_eq!(recorder.pre.len(), 1);
+    assert_eq!(recorder.response_headers.len(), 1);
+    let chunks = block_on(async move {
+        let mut values = Vec::new();
+        while let Some(item) = stream.chunks.next().await {
+            values.push(item.expect("chunk"));
+        }
+        values
+    });
+    assert_eq!(chunks[0].id, format!("chatcmpl-{}", identifier()));
+    assert_eq!(chunks[0].created, 1_700_000_000);
+    assert_eq!(chunks[0].choices[0].delta.content.as_deref(), Some("Hello"));
 }
