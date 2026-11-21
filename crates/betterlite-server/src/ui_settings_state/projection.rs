@@ -17,7 +17,7 @@ pub fn apply_runtime_ui_flags(
         .iter()
         .filter_map(|key| {
             settings
-                .get(*key)
+                .get(key)
                 .map(|value| ((*key).to_owned(), value.clone()))
         })
         .collect();

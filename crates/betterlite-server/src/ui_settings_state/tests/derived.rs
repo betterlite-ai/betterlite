@@ -9,7 +9,7 @@ use rstest::rstest;
 use secrecy::SecretString;
 
 use super::support::{FakePtuFlag, json, settings};
-use crate::jobs::ptu::attribution::EnvironmentAttribution;
+use crate::jobs::ptu::attribution::{EnvironmentAttribution, PtuAttribution};
 use crate::ui_settings_state::derived::{
     DerivedUiSettings, PtuCostFlag, derived_ui_settings, ui_setting_source,
 };
@@ -121,11 +121,19 @@ fn ordinary_sources_follow_the_settings_store() {
         ),
         FieldSource::Db
     );
+}
+
+#[test]
+fn ordinary_sources_fall_back_to_the_field_default() {
+    let ptu = FakePtuFlag {
+        enabled: false,
+        configured: false,
+    };
     assert_eq!(
         ui_setting_source(
             "require_auth_for_public_ai_hub",
             &json("false"),
-            &store,
+            &store(),
             &ptu
         ),
         FieldSource::Default
@@ -134,13 +142,13 @@ fn ordinary_sources_follow_the_settings_store() {
         ui_setting_source(
             "enabled_ui_pages_internal_users",
             &json("null"),
-            &store,
+            &store(),
             &ptu
         ),
         FieldSource::Unset
     );
     assert_eq!(
-        ui_setting_source("not_a_ui_setting", &json("null"), &store, &ptu),
+        ui_setting_source("not_a_ui_setting", &json("null"), &store(), &ptu),
         FieldSource::Unset
     );
 }

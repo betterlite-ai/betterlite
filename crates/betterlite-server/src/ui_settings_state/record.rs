@@ -144,7 +144,7 @@ impl UiSettings {
         values
     }
 
-    fn flags(&self) -> [(&'static str, UiSettingFlag); 14] {
+    const fn flags(&self) -> [(&'static str, UiSettingFlag); 14] {
         [
             (DISABLE_MODEL_ADD_SETTING, self.disable_model_add),
             (DISABLE_TEAM_DELETE_SETTING, self.disable_team_delete),

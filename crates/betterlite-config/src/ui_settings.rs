@@ -104,7 +104,7 @@ pub fn ui_settings_from_store(store: &SettingsStore) -> UiSettingsDict {
         .iter()
         .filter_map(|name| {
             store
-                .get(*name)
+                .get(name)
                 .map(|value| ((*name).to_owned(), value.clone()))
         })
         .collect()

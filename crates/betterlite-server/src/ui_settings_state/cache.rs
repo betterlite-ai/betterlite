@@ -57,6 +57,7 @@ pub async fn get_ui_settings_cached<Memory: MemoryCacheOps>(
 }
 
 // sync_ui_settings_to_general_settings: a read that fails leaves this pod on the flags it already had.
+#[must_use]
 pub async fn sync_ui_settings(
     repository: &dyn UiSettingsRepository,
     target: GeneralSettingsTarget<'_>,

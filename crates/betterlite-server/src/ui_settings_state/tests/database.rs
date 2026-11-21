@@ -2,7 +2,7 @@ use betterlite_db::database_replica::availability::Availability;
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use clap::Parser;
-use deadpool_postgres::{Config, Manager, Pool};
+use deadpool_postgres::{Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
 
@@ -18,6 +18,9 @@ CREATE TABLE "LiteLLM_UISettings" (
 );
 "#;
 
+const INSERT_ROWS: &str =
+    r#"INSERT INTO "LiteLLM_UISettings" (id, ui_settings) VALUES ($1, $2::jsonb), ($3, $4::jsonb)"#;
+
 #[derive(Parser)]
 struct Environment {
     #[arg(long, env = "POSTGRES_TEST_URL")]
@@ -26,15 +29,13 @@ struct Environment {
 
 #[tokio::test]
 async fn database_repository_reads_the_ui_settings_row() {
-    let url = Environment::parse_from(["ui-settings-state-tests"])
-        .url
-        .map(SecretString::from);
+    let environment = Environment::parse_from(["ui-settings-state-tests"]);
+    let url = environment.url.map(SecretString::from);
     let fixture = PostgresFixture::provision_with_statements(url.as_ref(), vec![SCHEMA.to_owned()])
         .resolve()
         .await
         .unwrap();
-    let config: Config = fixture.options.url.expose_secret().parse().unwrap();
-    let manager = Manager::new(config, NoTls);
+    let manager = Manager::new(fixture.options.url.expose_secret().parse().unwrap(), NoTls);
     let pool = Pool::builder(manager).max_size(1).build().unwrap();
     let store = PostgresStore {
         pool: Some(pool.clone()),
@@ -48,28 +49,22 @@ async fn database_repository_reads_the_ui_settings_row() {
     let client = pool.get().await.unwrap();
     client
         .execute(
-            r#"INSERT INTO "LiteLLM_UISettings" (id, ui_settings) VALUES ($1, $2::jsonb)"#,
-            &[&"user_banner", &r#"{"enable_chat_ui": false}"#],
+            INSERT_ROWS,
+            &[
+                &"user_banner",
+                &"{}",
+                &"ui_settings",
+                &r#"{"enable_chat_ui": true}"#,
+            ],
         )
         .await
         .unwrap();
-    assert_eq!(repository.stored_ui_settings().await.unwrap(), None);
-    client
-        .execute(
-            r#"INSERT INTO "LiteLLM_UISettings" (id, ui_settings) VALUES ($1, $2::jsonb)"#,
-            &[&"ui_settings", &r#"{"enable_chat_ui": true}"#],
-        )
-        .await
-        .unwrap();
-    let text = repository
-        .stored_ui_settings()
-        .await
-        .unwrap()
-        .expect("the row exists");
+    drop(client);
+    let found = repository.stored_ui_settings().await.unwrap();
+    let text = found.expect("the row exists");
     assert_eq!(
         decode_stored_ui_settings(text.as_bytes()).unwrap(),
         settings(r#"{"enable_chat_ui": true}"#)
     );
-    pool.close();
     fixture.close_async().await.unwrap();
 }

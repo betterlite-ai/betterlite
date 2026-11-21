@@ -31,7 +31,7 @@ pub(super) struct FakeRepository {
 }
 
 impl FakeRepository {
-    pub(super) fn new(row: Option<String>) -> Self {
+    pub(super) const fn new(row: Option<String>) -> Self {
         Self {
             row: Mutex::new(row),
             reads: AtomicUsize::new(0),
@@ -118,7 +118,7 @@ impl Harness {
     }
 }
 
-pub(super) fn cache_options() -> CacheOptions {
+pub(super) const fn cache_options() -> CacheOptions {
     CacheOptions {
         ttl: Some(600.0),
         local_only: false,
