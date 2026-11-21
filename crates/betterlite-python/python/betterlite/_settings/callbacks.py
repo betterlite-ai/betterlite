@@ -1,13 +1,8 @@
-from typing import Literal, get_args
+from collections.abc import Awaitable, Callable
+from typing import Literal, TypeAlias, get_args
 
 from pydantic import JsonValue
 
-CALLBACK_TYPES: JsonValue = None
-input_callback: list[JsonValue] = []
-success_callback: list[JsonValue] = []
-failure_callback: list[JsonValue] = []
-service_callback: list[JsonValue] = []
-audit_log_callbacks: list[JsonValue] = []
 _CALLBACK_NAMES = Literal[
     "lago", "openmeter", "logfire", "literalai", "litellm_agent", "dynamic_rate_limiter",
     "dynamic_rate_limiter_v3", "langsmith", "prometheus", "otel", "datadog", "datadog_metrics",
@@ -19,6 +14,13 @@ _CALLBACK_NAMES = Literal[
     "vector_store_pre_call_hook", "dotprompt", "bitbucket", "gitlab", "cloudzero", "focus",
     "mavvrik", "vantage", "posthog", "levo", "compression_interception", "newrelic", "signoz",
 ]
+Callback: TypeAlias = str | _CALLBACK_NAMES | Callable[..., JsonValue | Awaitable[JsonValue]]
+CALLBACK_TYPES: JsonValue = None
+input_callback: list[Callback] = []
+success_callback: list[Callback] = []
+failure_callback: list[Callback] = []
+service_callback: list[Callback] = []
+audit_log_callbacks: list[Callback] = []
 # ast-grep-ignore: no-long-names
 _custom_logger_compatible_callbacks_literal = _CALLBACK_NAMES
 cold_storage_custom_logger = None
@@ -26,7 +28,7 @@ logged_real_time_event_types = None
 _callback_name_args: tuple[str, ...] = get_args(_CALLBACK_NAMES)
 # ast-grep-ignore: no-long-names
 _known_custom_logger_compatible_callbacks: list[str] = list(_callback_name_args)
-callbacks: list[JsonValue] = []
+callbacks: list[Callback] = []
 callback_settings: dict[str, dict[str, JsonValue]] = {}
 initialized_langfuse_clients = 0
 langfuse_default_tags = None
@@ -40,11 +42,11 @@ datadog_use_v1 = False
 gcs_pub_sub_use_v1 = False
 generic_api_use_v1 = False
 argilla_transformation_object = None
-_async_input_callback: list[JsonValue] = []
-_async_success_callback: list[JsonValue] = []
-_async_failure_callback: list[JsonValue] = []
-pre_call_rules: list[JsonValue] = []
-post_call_rules: list[JsonValue] = []
+_async_input_callback: list[Callback] = []
+_async_success_callback: list[Callback] = []
+_async_failure_callback: list[Callback] = []
+pre_call_rules: list[Callable[..., JsonValue | Awaitable[JsonValue]]] = []
+post_call_rules: list[Callable[..., JsonValue | Awaitable[JsonValue]]] = []
 turn_off_message_logging = False
 standard_logging_payload_excluded_fields = None  # ast-grep-ignore: no-long-names
 log_raw_request_response = False

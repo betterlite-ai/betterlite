@@ -1,5 +1,8 @@
 from pydantic import JsonValue
 
+from betterlite.types.guardrails.core import GuardrailItem
+from betterlite.types.prompts.init_prompts import PromptSpec
+
 email = None
 token = None
 bedrock_neutralize_orphaned_tool_blocks = True  # ast-grep-ignore: no-long-names
@@ -90,10 +93,10 @@ llamaguard_unsafe_content_categories = None  # ast-grep-ignore: no-long-names
 blocked_user_list = None
 banned_keywords_list = None
 llm_guard_mode = "all"
-guardrail_name_config_map: dict[str, JsonValue] = {}
+guardrail_name_config_map: dict[str, GuardrailItem] = {}
 include_cost_in_streaming_usage = False  # ast-grep-ignore: no-long-names
 reasoning_auto_summary = False
-prompt_name_config_map: dict[str, JsonValue] = {}
+prompt_name_config_map: dict[str, PromptSpec] = {}
 enable_preview_features = False
 return_response_headers = False
 enable_json_schema_validation = False

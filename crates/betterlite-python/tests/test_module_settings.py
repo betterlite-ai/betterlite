@@ -475,6 +475,9 @@ def test_module_helper_thread_context_starts_with_hello_world() -> None:
 def test_module_helper_identify_keeps_the_user_per_thread() -> None:
     betterlite.identify({"user": "alice"})
     assert _thread_context_user() == "alice"
+    betterlite.identify({})
+    betterlite.identify({"event": "other"})
+    assert _thread_context_user() == "alice"
     pool = ThreadPoolExecutor(max_workers=1)
     with pool:
         assert pool.submit(_identify_bob_in_this_thread).result() == "bob"
