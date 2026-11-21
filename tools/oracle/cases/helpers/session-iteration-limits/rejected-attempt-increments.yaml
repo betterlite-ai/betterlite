@@ -1,0 +1,18 @@
+kind: helper
+name: rejected-attempt-increments
+call:
+  b3054:
+    memory:
+      "{session_iterations:s1}:count": 1
+    agents:
+      - agent_id: agent-1
+        agent_name: alpha
+        agent_card_params: {model: gpt-4o}
+        litellm_params: {max_iterations: 1}
+    calls:
+      - agent_id: agent-1
+        data: {model: gpt-4o, metadata: {session_id: s1}}
+      - agent_id: agent-1
+        data: {model: gpt-4o, metadata: {session_id: s1}}
+env: {}
+compare: {ignore: []}

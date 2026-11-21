@@ -3593,6 +3593,7 @@ name = "betterlite-oracle-rate-limit"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "axum",
  "betterlite-auth",
  "betterlite-config",
  "betterlite-core",
