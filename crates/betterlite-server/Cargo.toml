@@ -20,7 +20,7 @@ aws-smithy-eventstream = "=0.61.6"
 aws-smithy-http-client = { version = "1.5.1", default-features = false, features = ["rustls-aws-lc"] }
 aws-smithy-types = "=1.9.1"
 aws-types = "=1.6.0"
-axum = { workspace = true, features = ["query"] }
+axum = { workspace = true, features = ["form", "query"] }
 base64 = "0.23.1"
 betterlite-a2a = { path = "../betterlite-a2a" }
 betterlite-analytics = { path = "../betterlite-analytics" }
