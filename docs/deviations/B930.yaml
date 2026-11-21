@@ -20,6 +20,17 @@ deviations:
       candidate list while leaving the caller's dict unmarked; betterlite records the pin on the supplied
       object.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/encrypted_content_affinity_check.py#L322
+  - what: >-
+      The decryptability cache lasts one filter call: strip_for_targets resolves every distinct origin
+      once into a local map. LiteLLM's functools.cache on target_can_decrypt keeps each answer for the
+      life of the process, so a later request reuses a boundary lookup taken before the catalog or its
+      credentials changed.
+    why: >-
+      A process-wide cache serves a stale boundary after a deployment is removed or moved, which can
+      route the request onto the wrong credential. The task asks for one cached lookup per distinct
+      origin within the call, and compatibility.md keeps a result a function of the request and the
+      current catalog.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/encrypted_content_affinity_check.py#L273-L285
 kept_bugs:
   - what: >-
       litellm_metadata that is present but not an object raises TypeError "'<type>' object does not

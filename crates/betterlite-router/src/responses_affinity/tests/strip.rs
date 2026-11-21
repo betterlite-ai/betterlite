@@ -133,3 +133,29 @@ fn a_same_id_origin_keeps_its_reasoning_without_a_router() {
     let expected = Some(Json::List(vec![titled_item("A"), reasoning_item("A")]));
     assert_eq!(request.input, expected);
 }
+
+#[test]
+fn a_later_call_uses_its_own_catalog_for_the_same_origin() {
+    let target = target();
+    let sharing = spec("C", params(Some("u-a"), Some("k-a")));
+    let shared_fixture = Fixture::new(vec![target.clone(), sharing]);
+    let shared_lookup = shared_fixture.lookup();
+    let credentials = CredentialSnapshot::default();
+    let shared_check = catalog_check(settings(true, &[]), &shared_lookup, &credentials);
+    let mut kept = Request::with_items(vec![reasoning_item("A"), reasoning_item("C")]);
+    let _returned = kept
+        .filter(&shared_check, "gpt-group", from_ref(&target))
+        .unwrap();
+    let kept_input = Some(Json::List(vec![reasoning_item("A"), reasoning_item("C")]));
+    assert_eq!(kept.input, kept_input);
+
+    let moved = spec("C", params(Some("u-other"), Some("k-other")));
+    let moved_fixture = Fixture::new(vec![target.clone(), moved]);
+    let moved_lookup = moved_fixture.lookup();
+    let moved_check = catalog_check(settings(true, &[]), &moved_lookup, &credentials);
+    let mut stripped = Request::with_items(vec![reasoning_item("A"), reasoning_item("C")]);
+    let _returned = stripped
+        .filter(&moved_check, "gpt-group", from_ref(&target))
+        .unwrap();
+    assert_eq!(stripped.input, Some(Json::List(vec![reasoning_item("A")])));
+}
