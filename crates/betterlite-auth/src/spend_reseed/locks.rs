@@ -88,18 +88,16 @@ impl LockRegistry {
     pub async fn hold(&self, counter_key: &str) -> OperationGuard {
         loop {
             let operation = self.operation(counter_key);
-            // the pinned notification borrows the operation, so it drops before the guard takes the operation
-            {
-                let released = operation.released.notified();
-                tokio::pin!(released);
-                // registering before the state check means a release in between still wakes this waiter
-                released.as_mut().enable();
-                if !operation.claim() {
-                    released.await;
-                    continue;
-                }
+            // the notification borrows its own Arc so the guard can take the original
+            let watched = Arc::clone(&operation);
+            let released = watched.released.notified();
+            tokio::pin!(released);
+            // registering before the state check means a release in between still wakes this waiter
+            released.as_mut().enable();
+            if operation.claim() {
+                return OperationGuard { operation };
             }
-            return OperationGuard { operation };
+            released.await;
         }
     }
 }
