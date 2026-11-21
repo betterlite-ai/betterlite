@@ -328,3 +328,36 @@ fn error_type_name_reads_a_wide_integer_as_int() {
         "<class 'int'>"
     );
 }
+
+// the openai and azure transports pass the caller's SDK client on unchanged
+#[test]
+fn sdk_clients_reach_the_openai_and_azure_transports() {
+    runtime().block_on(async {
+        let harness = Harness::new();
+        let audio = wav(1);
+        harness.dispatch.reply(response(r#"{"text":"Hello"}"#));
+        let mut openai = request_for("openai/whisper-1");
+        openai.client = Some(SuppliedClientKind::AsyncOpenAi);
+        harness
+            .service()
+            .transcription(&openai, AudioFile::Bytes(&audio))
+            .await
+            .expect("the openai transcription succeeds");
+        assert_eq!(
+            harness.dispatch.last().client,
+            Some(SuppliedClientKind::AsyncOpenAi)
+        );
+        harness.dispatch.reply(response(r#"{"text":"Hello"}"#));
+        let mut azure = request_for("azure/whisper");
+        azure.client = Some(SuppliedClientKind::AsyncAzureOpenAi);
+        harness
+            .service()
+            .transcription(&azure, AudioFile::Bytes(&audio))
+            .await
+            .expect("the azure transcription succeeds");
+        assert_eq!(
+            harness.dispatch.last().client,
+            Some(SuppliedClientKind::AsyncAzureOpenAi)
+        );
+    });
+}
