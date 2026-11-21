@@ -1,11 +1,12 @@
 import io
+from collections.abc import Callable
 from contextlib import redirect_stdout
-from typing import Final, NotRequired, Protocol, TypeAlias, TypedDict, runtime_checkable
+from typing import Final, NotRequired, TypeAlias, TypedDict
 
 import httpx
 import litellm
 from litellm.llms.azure_ai.chat.transformation import AzureAIStudioConfig
-from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
 JsonObject: TypeAlias = dict[str, JsonValue]
 REQUEST: Final[httpx.Request] = httpx.Request("POST", "https://oracle.test/v1/chat/completions")
@@ -29,28 +30,19 @@ class Input(TypedDict):
     bounds: NotRequired[bool]
 
 
-# the config's own signatures carry Any, so its three members enter through this JSON-facing shape
-@runtime_checkable
-class RepairConfig(Protocol):
-    @property
-    def max_retry_on_unprocessable_entity_error(self) -> int: ...  # ast-grep-ignore: no-long-names
-
-    def should_retry_llm_api_inside_llm_translation_on_http_error(  # ast-grep-ignore: no-long-names
-        self, e: Exception, litellm_params: JsonObject
-    ) -> bool: ...
-
-    def transform_request_on_unprocessable_entity_error(  # ast-grep-ignore: no-long-names
-        self, e: Exception, request_data: JsonObject
-    ) -> JsonObject: ...
+# LiteLLM's three config members enter through their own names as aliases, re-typed here so their Any stays out
+class RepairConfig(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    max_retry: int = Field(validation_alias="max_retry_on_unprocessable_entity_error")
+    should_retry: Callable[[Exception, JsonObject], bool] = Field(
+        validation_alias="should_retry_llm_api_inside_llm_translation_on_http_error"
+    )
+    transform_request: Callable[[Exception, JsonObject], JsonObject] = Field(
+        validation_alias="transform_request_on_unprocessable_entity_error"
+    )
 
 
-class ConfigBoundary(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-    config: RepairConfig
-
-
-CONFIG_VALUES: Final = {"config": AzureAIStudioConfig()}
-CONFIG: Final[RepairConfig] = ConfigBoundary.model_validate(CONFIG_VALUES).config
+CONFIG: Final[RepairConfig] = RepairConfig.model_validate(AzureAIStudioConfig())
 
 litellm.suppress_debug_info = True
 
@@ -63,16 +55,12 @@ def rejected(error: str) -> httpx.HTTPStatusError:
 def trigger_value(call: TriggerCall) -> JsonValue:
     litellm.drop_params = call["global_drop_params"]
     params: JsonObject = {"drop_params": call["request_drop_params"]}
-    retry = CONFIG.should_retry_llm_api_inside_llm_translation_on_http_error(
-        rejected(call["error"]), params
-    )
+    retry = CONFIG.should_retry(rejected(call["error"]), params)
     return {"retry": retry}
 
 
 def repair_value(call: RepairCall) -> JsonValue:
-    repaired = CONFIG.transform_request_on_unprocessable_entity_error(
-        rejected(call["error"]), dict(call["body"])
-    )
+    repaired = CONFIG.transform_request(rejected(call["error"]), dict(call["body"]))
     return {"body": JSON.validate_python(repaired)}
 
 
@@ -84,5 +72,5 @@ def run(values: Input) -> JsonValue:
         if "repairs" in values:
             answer["repairs"] = [repair_value(call) for call in values["repairs"]]
         if values.get("bounds") is True:
-            answer["bounds"] = {"max_retry": CONFIG.max_retry_on_unprocessable_entity_error}
+            answer["bounds"] = {"max_retry": CONFIG.max_retry}
     return answer
