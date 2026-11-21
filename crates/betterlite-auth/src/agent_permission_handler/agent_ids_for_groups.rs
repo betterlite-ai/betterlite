@@ -8,6 +8,8 @@ use super::error::GrantError;
 use super::reads::AgentTableReads;
 use crate::agent_registry::AgentRegistryApi as _;
 
+mod tests;
+
 // _get_agents_from_access_groups: the config records first, then the agents table, unioned into one set
 pub(crate) async fn agent_ids<Reads, Table, Unified>(
     grants: &AgentGrants<Reads, Table, Unified>,
