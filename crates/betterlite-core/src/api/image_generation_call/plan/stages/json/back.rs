@@ -17,8 +17,8 @@ pub(super) fn json_back(value: JsonValue) -> Json {
         }
         JsonValue::Object(fields) => {
             let mut values = IndexMap::new();
-            for (name, value) in fields {
-                values.insert(name, json_back(value));
+            for (name, field) in fields {
+                values.insert(name, json_back(field));
             }
             Json::Object(values)
         }

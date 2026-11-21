@@ -3,7 +3,9 @@ use std::sync::Arc;
 
 use super::super::call::{CustomClientKind, ImageGenerationCall};
 use super::super::error::{ImageGenerationException, raise, unknown_provider};
-use super::super::operations::{CustomImageHandler, CustomRequest, ImageGenerationOperations};
+use super::super::operations::{
+    BranchAnswer, CustomImageHandler, CustomRequest, ImageGenerationOperations,
+};
 use super::super::plan::{ImageGenerationPlan, MappedOptions, PreparedCall};
 
 pub(super) async fn send<Identity, Operations>(

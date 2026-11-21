@@ -21,11 +21,11 @@ impl ImageGenerationException {
 }
 
 pub(crate) fn raise(redactor: &Redactor, failure: RawException) -> ImageGenerationException {
-    let text = failure
+    let raw = failure
         .message
         .clone()
         .unwrap_or_else(|| failure.error_str.clone());
-    let text = redactor.redact_string(&text);
+    let text = redactor.redact_string(&raw);
     ImageGenerationException::Mapped {
         class: dispatch(&DispatchInput::Raw(Box::new(failure)), redactor),
         message: text,

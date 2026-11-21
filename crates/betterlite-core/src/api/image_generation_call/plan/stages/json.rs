@@ -32,7 +32,7 @@ fn json_value(value: &Json) -> JsonValue {
         Json::Object(fields) => JsonValue::Object(
             fields
                 .iter()
-                .map(|(name, value)| (name.clone(), json_value(value)))
+                .map(|(name, field)| (name.clone(), json_value(field)))
                 .collect(),
         ),
     }
