@@ -55,6 +55,7 @@ fn deployment(model: &str, api_base: &str, api_key: Option<&str>) -> Deployment 
         timeout: Duration::from_secs(30),
         max_retries: None,
         drop_params: None,
+        global_drop_params: false,
         provider_affinity_header: None,
         anthropic: None,
     }
@@ -241,7 +242,6 @@ fn the_proxy_stream_asks_for_usage_only_from_an_openai_backed_base() {
     };
     assert!(!entries.contains_key("stream_options"));
     assert_eq!(header_text(&call.headers, ACCEPT), "text/event-stream");
-
     let openai_base = deployment("gpt-4o", "https://api.openai.com/v1", Some("test-key"));
     let openai_call = proxy::prepare(&request, &openai_base, &catalog()).unwrap();
     let openai_body = object(&openai_call.body);

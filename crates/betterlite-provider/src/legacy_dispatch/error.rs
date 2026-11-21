@@ -1,4 +1,5 @@
 use std::io::Error as IoError;
+use std::str;
 
 use betterlite_error::native_errors_b::aleph_alpha::{
     AlephAlphaExceptionInput, map_aleph_alpha_exception,
@@ -108,7 +109,11 @@ pub(super) fn aleph_failure(error: OperationError) -> OperationError {
     let message = match decode_aleph_reply(status, &body) {
         Err(AlephAlphaError::Provider { message, .. }) => message,
         Err(other) => other.to_string(),
-        Ok(_) => String::from_utf8_lossy(&body).into_owned(),
+        // a completion body that arrived under a failure status, kept as the reply text
+        Ok(_) => match str::from_utf8(&body) {
+            Ok(text) => text.to_owned(),
+            Err(_source) => String::from("the reply body is not valid UTF-8"),
+        },
     };
     mapped_provider(status, message, headers)
 }
