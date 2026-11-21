@@ -41,6 +41,17 @@ deviations:
       single 1 MiB field plus its name already crosses it.
     link: ""
   - what: >-
+      A token request whose Content-Type media type uses mixed case and also
+      carries parameters, such as "Application/X-WWW-Form-Urlencoded;
+      charset=UTF-8", is decoded as a form, where LiteLLM answers the 422
+      missing-field body because python-multipart lowercases the media type only
+      when the header has no parameters.
+    why: >-
+      betterlite compares the media type before the first semicolon without
+      regard to case, as RFC 9110 says media types are case-insensitive; the
+      difference shows only for a header shape no OAuth client sends.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L835-L841
+  - what: >-
       A base URL whose URL parse fails (an unterminated IPv6 bracket) makes the
       protected-resource and prefixed discovery routes answer 500 with betterlite's
       JSON error envelope, where LiteLLM's urlparse raises and Starlette answers a
