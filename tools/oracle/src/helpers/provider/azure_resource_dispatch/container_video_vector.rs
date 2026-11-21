@@ -69,14 +69,14 @@ fn url_view(runtime: &Runtime, step: &UrlStep) -> Result<Value, Box<HelperError>
         fallback_api_base: fallback.as_deref(),
         api_version: step.api_version.as_deref(),
     };
-    let result = runtime.block_on(dispatch(AzureResourceOperation::ResourceUrls(
+    let result = runtime.block_on(dispatch(AzureResourceOperation::ResourceUrls(Box::new(
         resource_urls::Dispatch {
             call: Call::Url {
                 resource: AzureResource::Container,
                 request,
             },
         },
-    )));
+    ))));
     let url = match result {
         Ok(AzureResourceResult::ResourceUrls(Outcome::Url(url))) => url,
         Ok(_) => return Err(failure(OTHER)),
@@ -89,11 +89,11 @@ fn url_view(runtime: &Runtime, step: &UrlStep) -> Result<Value, Box<HelperError>
 fn video_view(runtime: &Runtime, step: &VideoStep) -> Result<Value, Box<HelperError>> {
     let options: VideoCreate =
         serde_json::from_value(Value::Object(step.options.clone())).map_err(failure)?;
-    let result = runtime.block_on(dispatch(AzureResourceOperation::ResourceUrls(
+    let result = runtime.block_on(dispatch(AzureResourceOperation::ResourceUrls(Box::new(
         resource_urls::Dispatch {
             call: Call::VideoParams(&options),
         },
-    )));
+    ))));
     let mapped = match result {
         Ok(AzureResourceResult::ResourceUrls(Outcome::VideoParams(mapped))) => *mapped,
         Ok(_) => return Err(failure(OTHER)),
@@ -101,9 +101,9 @@ fn video_view(runtime: &Runtime, step: &VideoStep) -> Result<Value, Box<HelperEr
         Err(error) => return Err(failure(error)),
     };
     let supported = match runtime.block_on(dispatch(AzureResourceOperation::ResourceUrls(
-        resource_urls::Dispatch {
+        Box::new(resource_urls::Dispatch {
             call: Call::VideoSupported,
-        },
+        }),
     ))) {
         Ok(AzureResourceResult::ResourceUrls(Outcome::VideoSupported(supported))) => supported,
         Ok(_) => return Err(failure(OTHER)),

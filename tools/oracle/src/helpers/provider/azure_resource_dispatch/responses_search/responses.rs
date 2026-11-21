@@ -1,10 +1,8 @@
 use std::collections::BTreeMap;
 
 use betterlite_openai::response_input::ResponsesInput;
-use betterlite_openai::response_resources::request::{
-    ListInputItemsQuery, ResourceOperation, ResourceRequest,
-};
-use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_openai::response_resources::request::{ListInputItemsQuery, ResourceOperation};
+use betterlite_prompts::arguments::json::Object;
 use betterlite_provider::azure_resource_dispatch::responses::{self, Call, Outcome};
 use betterlite_provider::azure_resource_dispatch::{
     AzureResourceError, AzureResourceOperation, AzureResourceResult, dispatch,
@@ -58,18 +56,20 @@ pub(super) fn answer(step: &Step) -> Answer {
     };
     let environment: BTreeMap<String, String> = BTreeMap::new();
     let runtime = runtime()?;
-    let result = runtime.block_on(dispatch(AzureResourceOperation::Responses(
-        responses::dispatch(responses::Dispatch {
+    let result = runtime.block_on(dispatch(AzureResourceOperation::Responses(Box::new(
+        responses::Dispatch {
             environment: &environment,
             call,
-        }),
-    )));
+        },
+    ))));
     let value = match result {
         Ok(AzureResourceResult::Responses(Outcome::Url(url))) => json!({"url": url}),
         Ok(AzureResourceResult::Responses(Outcome::Transformed(object))) => {
             json!({"projected": project(&object)})
         }
-        Ok(AzureResourceResult::Responses(Outcome::Resource(request))) => resource_value(&request),
+        Ok(AzureResourceResult::Responses(Outcome::Resource(request))) => {
+            json!({"url": request.url, "data": request.payload})
+        }
         Ok(_) => return Err(failure(OTHER)),
         Err(error) => return Err(failure(error)),
     };
@@ -116,16 +116,11 @@ fn project(object: &Object) -> Map<String, Value> {
     let mut projected = Map::new();
     for name in PROJECTED {
         if let Some(value) = object.get(name) {
-            projected.insert(String::from(name), json_value(value));
+            projected.insert(
+                String::from(name),
+                serde_json::to_value(value).unwrap_or(Value::Null),
+            );
         }
     }
     projected
-}
-
-fn json_value(value: &Json) -> Value {
-    serde_json::to_value(value).unwrap_or(Value::Null)
-}
-
-fn resource_value(request: &ResourceRequest) -> Value {
-    json!({"url": request.url, "data": request.payload})
 }

@@ -16,7 +16,7 @@ use serde_json::json;
 use tokio::runtime::Runtime;
 
 use super::super::support::{AssistantsFake, OTHER, failure, failure_with_status, runtime};
-use super::{Answer, Step};
+use super::{Answer, Fixture, Planned, Step};
 
 const RUN_TEXT: &str = r#"{"thread_id":"thread_1","assistant_id":"asst_1","model":"gpt-4o-mini","instructions":"base"}"#;
 
@@ -27,16 +27,18 @@ pub(super) fn answer(step: &Step) -> Answer {
         _ => return Err(failure(OTHER)),
     };
     let runtime = runtime()?;
-    let fake = Arc::new(AssistantsFake::new(fixture.planned()));
-    let request_fixture = fixture.fixture();
+    let fake = Arc::new(AssistantsFake::new(
+        fixture.replies.iter().map(Planned::planned).collect(),
+    ));
+    let request_fixture = Fixture::new(&fixture.api_key, &fixture.api_base, &fixture.api_version);
     let request = request_fixture.request();
     let api = AssistantsRunsApi {
         transport: Arc::clone(&fake),
     };
     let run: RunRequest = serde_json::from_str(RUN_TEXT).map_err(failure)?;
     let streaming = matches!(step, Step::RunStream(_));
-    let result = runtime.block_on(dispatch(AzureResourceOperation::AssistantRuns(
-        assistants::runs(RunsDispatch {
+    let result = runtime.block_on(dispatch(AzureResourceOperation::AssistantRuns(Box::pin(
+        RunsDispatch {
             api: &api,
             request: &request,
             supplied: None,
@@ -48,8 +50,9 @@ pub(super) fn answer(step: &Step) -> Answer {
                 run: &run,
                 handler: None,
             },
-        }),
-    )));
+        }
+        .run(),
+    ))));
     match result {
         Ok(AzureResourceResult::AssistantRuns(RunOutcome::Polled(_kind, reply))) => {
             Ok(("run_poll", json!({"status": reply.status})))

@@ -1,7 +1,7 @@
 use betterlite_azure::azure_files::client::auth::FileAuth;
 use betterlite_azure::azure_files::client::{Opened, SelectedClient};
 use betterlite_azure::azure_files::error::AzureFilesError;
-use betterlite_azure::azure_files::{Operation, Reply as FileReply};
+use betterlite_azure::azure_files::{Operation, Reply as FileReply, call};
 use betterlite_azure::endpoints::projection::ClientKind;
 use betterlite_openai::files::error::FilesError;
 use betterlite_openai::files::records::{
@@ -11,7 +11,7 @@ use betterlite_openai::files::{DEFAULT_TIMEOUT, FilesClient};
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_provider::azure_resource_dispatch::{
-    AzureResourceError, AzureResourceOperation, AzureResourceResult, dispatch, files,
+    AzureResourceError, AzureResourceOperation, AzureResourceResult, dispatch,
 };
 use indexmap::IndexMap;
 use secrecy::SecretString;
@@ -44,13 +44,9 @@ pub(super) fn answer(step: &Step) -> HelperResult {
         | Step::BatchCancel(_)
         | Step::BatchList(_) => return Err(failure(OTHER)),
     };
-    let result = runtime.block_on(dispatch(AzureResourceOperation::Files(files::dispatch(
-        files::Dispatch {
-            opened: &opened,
-            transport: &fake,
-            operation,
-        },
-    ))));
+    let result = runtime.block_on(dispatch(AzureResourceOperation::Files(Box::pin(call(
+        &opened, &fake, operation,
+    )))));
     match result {
         Ok(AzureResourceResult::Files(reply)) => Ok(value(reply)),
         Ok(_) => Err(failure(OTHER)),

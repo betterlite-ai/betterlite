@@ -2,14 +2,14 @@ use std::future::{Future, ready};
 use std::sync::{Mutex, PoisonError};
 
 use betterlite_azure::batches::error::AzureBatchesError;
-use betterlite_azure::batches::{Operation, Reply as BatchReply};
+use betterlite_azure::batches::{Operation, Reply as BatchReply, call};
 use betterlite_openai::batches::error::SdkError;
 use betterlite_openai::batches::records::{BatchCreate, BatchPage, BatchQuery};
 use betterlite_openai::batches::sdk::{BatchesSdk, ClientKind};
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_provider::azure_resource_dispatch::{
-    AzureResourceError, AzureResourceOperation, AzureResourceResult, batches, dispatch,
+    AzureResourceError, AzureResourceOperation, AzureResourceResult, dispatch,
 };
 use serde_json::{Map, Value, json};
 
@@ -44,12 +44,9 @@ pub(super) fn answer(step: &Step) -> HelperResult {
         | Step::FileList(_)
         | Step::FileDelete(_) => return Err(failure(OTHER)),
     };
-    let result = runtime.block_on(dispatch(AzureResourceOperation::Batches(
-        batches::dispatch(batches::Dispatch {
-            client: &sdk,
-            operation,
-        }),
-    )));
+    let result = runtime.block_on(dispatch(AzureResourceOperation::Batches(Box::pin(call(
+        &sdk, operation,
+    )))));
     match result {
         Ok(AzureResourceResult::Batches(reply)) => Ok(value(reply)),
         Ok(_) => Err(failure(OTHER)),

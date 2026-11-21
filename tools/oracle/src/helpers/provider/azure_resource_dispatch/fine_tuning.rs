@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::future::ready;
 use std::sync::{Mutex, PoisonError};
 
 use betterlite_azure::credentials::cache::RefreshProviderCache;
@@ -167,9 +168,9 @@ fn through(
         refresh: &mut refresh,
         materializer: &materializer,
     };
-    let result = runtime.block_on(dispatch(AzureResourceOperation::FineTuning(
-        fine_tuning::dispatch(fine_tuning::Dispatch { connection, call }),
-    )));
+    let result = runtime.block_on(dispatch(AzureResourceOperation::FineTuning(Box::pin(
+        ready(fine_tuning::Dispatch { connection, call }.run()),
+    ))));
     match result {
         Ok(outcome) => Ok(outcome),
         Err(AzureResourceError::FineTuning(AzureFineTuneError::Sdk { source })) => {

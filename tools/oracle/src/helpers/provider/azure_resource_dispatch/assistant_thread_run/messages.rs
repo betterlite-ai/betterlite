@@ -13,8 +13,10 @@ use betterlite_provider::azure_resource_dispatch::{
 };
 use serde_json::json;
 
-use super::super::support::{AssistantsFake, OTHER, failure, failure_with_status, runtime};
-use super::{Answer, Step};
+use super::super::support::{
+    AssistantsFake, OTHER, Reply as FakeReply, failure, failure_with_status, runtime,
+};
+use super::{Answer, Fixture, Step};
 
 const MESSAGE_TEXT: &str = r#"{"role":"user","content":"hello"}"#;
 
@@ -25,8 +27,11 @@ pub(super) fn answer(step: &Step) -> Answer {
         _ => return Err(failure(OTHER)),
     };
     let runtime = runtime()?;
-    let fake = Arc::new(AssistantsFake::new(vec![reply.planned()]));
-    let fixture = reply.fixture();
+    let fake = Arc::new(AssistantsFake::new(vec![FakeReply::json(
+        reply.status,
+        &reply.body,
+    )]));
+    let fixture = Fixture::new(&reply.api_key, &reply.api_base, &reply.api_version);
     let request = fixture.request();
     let api = MessagesApi {
         assistants: AssistantsApi {
@@ -46,13 +51,16 @@ pub(super) fn answer(step: &Step) -> Answer {
         _ => return Err(failure(OTHER)),
     };
     let result = runtime.block_on(dispatch(AzureResourceOperation::AssistantMessages(
-        assistants::messages(MessagesDispatch {
-            api: &api,
-            request: &request,
-            supplied: None,
-            flag: None,
-            call,
-        }),
+        Box::pin(
+            MessagesDispatch {
+                api: &api,
+                request: &request,
+                supplied: None,
+                flag: None,
+                call,
+            }
+            .run(),
+        ),
     )));
     let value = match result {
         Ok(AzureResourceResult::AssistantMessages(reply)) => match reply.reply {

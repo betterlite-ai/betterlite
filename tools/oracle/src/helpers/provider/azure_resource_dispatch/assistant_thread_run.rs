@@ -67,26 +67,6 @@ pub(crate) struct Planned {
     pub(super) headers: BTreeMap<String, String>,
 }
 
-impl Reply {
-    pub(super) fn planned(&self) -> super::support::Reply {
-        super::support::Reply::json(self.status, &self.body)
-    }
-
-    pub(super) fn fixture(&self) -> Fixture {
-        Fixture::new(&self.api_key, &self.api_base, &self.api_version)
-    }
-}
-
-impl RunFixture {
-    pub(super) fn planned(&self) -> Vec<super::support::Reply> {
-        self.replies.iter().map(Planned::planned).collect()
-    }
-
-    pub(super) fn fixture(&self) -> Fixture {
-        Fixture::new(&self.api_key, &self.api_base, &self.api_version)
-    }
-}
-
 impl Planned {
     pub(super) fn planned(&self) -> super::support::Reply {
         let mut reply = super::support::Reply::json(self.status, &self.body);

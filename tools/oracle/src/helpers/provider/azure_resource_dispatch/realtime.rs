@@ -175,9 +175,9 @@ fn headers_outcome(
 }
 
 fn through(runtime: &Runtime, call: Call<'_>) -> Result<Outcome, Box<HelperError>> {
-    let result = runtime.block_on(dispatch(AzureResourceOperation::Realtime(
+    let result = runtime.block_on(dispatch(AzureResourceOperation::Realtime(Box::new(
         realtime::Dispatch { call },
-    )));
+    ))));
     match result {
         Ok(AzureResourceResult::Realtime(outcome)) => Ok(outcome),
         Ok(_) => Err(failure(OTHER)),

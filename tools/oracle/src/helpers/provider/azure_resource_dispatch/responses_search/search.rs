@@ -58,7 +58,7 @@ pub(super) fn answer(step: &Step) -> Answer {
         _ => return Err(failure(OTHER)),
     };
     let runtime = runtime()?;
-    let result = runtime.block_on(dispatch(AzureResourceOperation::Search(search::dispatch(
+    let result = runtime.block_on(dispatch(AzureResourceOperation::Search(Box::new(
         search::Dispatch {
             config: &config,
             call,
@@ -93,7 +93,9 @@ fn settings_of(step: &Step) -> Settings {
         },
         Step::SearchUrl(value) => Settings {
             project_endpoint: Some(value.api_base.clone()),
-            ..Settings::default()
+            model: None,
+            connection_id: None,
+            token: None,
         },
         _ => Settings::default(),
     }

@@ -44,14 +44,9 @@ pub(super) fn failure_with_status<M>(status: u16, message: M) -> Box<HelperError
 where
     M: Display,
 {
-    Box::new(HelperError {
-        class: String::from("LeafFailure"),
-        status: Some(status),
-        error_type: None,
-        param: None,
-        code: None,
-        message: message.to_string(),
-    })
+    let mut error = failure(message);
+    error.status = Some(status);
+    error
 }
 
 pub(super) fn runtime() -> Result<Runtime, Box<HelperError>> {
@@ -174,7 +169,7 @@ pub(super) struct AssistantsFake {
 impl AssistantsFake {
     pub(super) fn new(replies: Vec<Reply>) -> Self {
         Self {
-            replies: Mutex::new(replies.into()),
+            replies: Mutex::new(VecDeque::from(replies)),
             seen: Mutex::new(Vec::new()),
         }
     }
