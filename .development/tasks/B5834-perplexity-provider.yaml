@@ -66,6 +66,8 @@ description: >-
   a mock base64 embedding holding the bytes 0, 127 and 129, so the response vector is [0, 1, -1] with total_tokens set.
 scope:
   paths:
+    - "tools/oracle/src/helpers/provider/b8310/wire.rs"
+    - "crates/betterlite-provider/src/provider.rs"
     - crates/betterlite-openai/src/perplexity_embedding.rs
     - crates/betterlite-openai/src/perplexity_embedding/**
     - crates/betterlite-openai/src/perplexity_responses.rs
