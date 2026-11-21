@@ -288,7 +288,7 @@ async fn embedding_case() {
 
     // an explicit base beats the environment value for both halves
     let explicit_base = embedding::Call {
-        api_base: Some("https://explicit.example.test"),
+        api_base: Some("https://explicit.services.ai.azure.com"),
         ..call
     };
     embedding::dispatch(&explicit_base, &env.globals(), None, &factory, &text)
@@ -296,7 +296,7 @@ async fn embedding_case() {
         .expect("the explicit base dispatch runs");
     assert_eq!(
         text.snapshot()[2].api_base.as_deref(),
-        Some("https://explicit.example.test/models")
+        Some("https://explicit.services.ai.azure.com/models")
     );
 
     // an azure_ad_token parameter fills the key slot once every key string is unset
