@@ -10,7 +10,6 @@ use betterlite_config::tls::Verification;
 use betterlite_core::api::realtime_contracts::close::close_after_handshake_refusal;
 use betterlite_core::api::realtime_contracts::transport::WebSocketScope;
 use betterlite_openai::openai_base_config::Headers;
-use betterlite_openai::realtime::url::QueryParams;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -112,17 +111,22 @@ impl Helper for Op {
             Kind::Connect => connect_answer(input),
             Kind::Protocol => Ok(protocol_answer(input)),
             Kind::Handshake | Kind::Error => failure_answer(input),
-            Kind::Http => Ok(http_answer(input)),
+            Kind::Http => Ok(json!({
+                "http": input
+                    .http_setups
+                    .iter()
+                    .map(|setup| http_view(input, setup))
+                    .collect::<Vec<_>>()
+            })),
         }
     }
 }
 
-fn query_params(values: Option<&BTreeMap<String, Option<String>>>) -> Option<QueryParams> {
-    values.map(|map| map.clone().into_iter().collect())
-}
-
 fn connect_view(input: &Input, setup: &QuerySetup) -> Result<Value, Box<HelperError>> {
-    let params = query_params(setup.query_params.as_ref());
+    let params = setup
+        .query_params
+        .as_ref()
+        .map(|map| map.clone().into_iter().collect());
     let api_key = setup.api_key.as_deref().map(SecretString::from);
     let ad_token = setup.azure_ad_token.as_deref().map(SecretString::from);
     let verification = input.ssl_verification.verification();
@@ -147,11 +151,10 @@ fn connect_view(input: &Input, setup: &QuerySetup) -> Result<Value, Box<HelperEr
 }
 
 fn connect_answer(input: &Input) -> HelperResult {
-    let connects = input
-        .queries
-        .iter()
-        .map(|setup| connect_view(input, setup))
-        .collect::<Result<Vec<_>, Box<HelperError>>>()?;
+    let mut connects = Vec::with_capacity(input.queries.len());
+    for setup in &input.queries {
+        connects.push(connect_view(input, setup)?);
+    }
     Ok(json!({"connects": connects}))
 }
 
@@ -161,7 +164,10 @@ fn protocol_answer(input: &Input) -> Value {
         .protocols
         .iter()
         .map(|setup| {
-            let params = query_params(setup.query_params.as_ref());
+            let params = setup
+                .query_params
+                .as_ref()
+                .map(|map| map.clone().into_iter().collect());
             client_protocol(
                 setup.configured_protocol.as_deref(),
                 params.as_ref(),
@@ -249,13 +255,4 @@ fn http_view(input: &Input, setup: &HttpSetup) -> Value {
         "headers": headers,
         "calls_headers": realtime_calls_headers(&setup.ephemeral_key),
     })
-}
-
-fn http_answer(input: &Input) -> Value {
-    let http = input
-        .http_setups
-        .iter()
-        .map(|setup| http_view(input, setup))
-        .collect::<Vec<_>>();
-    json!({"http": http})
 }
