@@ -25,9 +25,9 @@ compare:
   ignore:
     - pointer: /rerank_call/value/runs/0/failure/message
       why: >-
-        LiteLLM appends a traceback and a bug-report notice to an unmapped
-        exception's message, and betterlite carries its own resolution error
-        text, so only the message wording differs.
+        LiteLLM prefixes get_llm_provider's text with the exception class and
+        appends a provider-list hint, while betterlite carries the resolver's
+        own error text, so only the message wording differs.
     - pointer: /rerank_call/value/runs/1/failure/message
       why: >-
         LiteLLM prefixes the provider's response text with the exception class,
