@@ -91,7 +91,7 @@ fn build_plan<'borrow, Identity>(
     }
 }
 
-fn build_facade<'borrow, Identity, Entry>(
+const fn build_facade<'borrow, Identity, Entry>(
     identity: &'borrow Identity,
     entry: &'borrow Entry,
     operations: &'borrow Operations<'borrow>,
