@@ -54,7 +54,7 @@ pub(crate) enum Call {
 
 // one store behind both cache traits, recording every call in order
 pub(crate) struct RecordingCache {
-    stored: BTreeMap<String, LegacyCacheValue>,
+    stored: Mutex<BTreeMap<String, LegacyCacheValue>>,
     failing: Vec<String>,
     log: Mutex<Vec<Call>>,
 }
@@ -64,14 +64,22 @@ impl RecordingCache {
         self.log.lock().unwrap().clone()
     }
 
-    fn answer(&self, method: &str, key: &str, call: Call) -> Result<(), UsageCacheError> {
-        self.log.lock().unwrap().push(call);
+    // the call is logged first, so a failed call still shows in the order
+    fn answer(&self, call: Call) -> Result<(), UsageCacheError> {
+        let (method, key) = match &call {
+            Call::Get { key, .. } => ("get", key.as_str()),
+            Call::Set { key, .. } => ("set", key.as_str()),
+            Call::Increment { key, .. } => ("increment", key.as_str()),
+            Call::BatchGet { .. } => ("batch_get", "async_batch_get_cache"),
+            Call::BatchSet { .. } => ("batch_set", BATCH_WRITE),
+        };
         let one_method = format!("{method} {key}");
-        if self
+        let fails = self
             .failing
             .iter()
-            .any(|failing| *failing == key || *failing == one_method)
-        {
+            .any(|failing| *failing == key || *failing == one_method);
+        self.log.lock().unwrap().push(call);
+        if fails {
             return Err(UsageCacheError::Transport(
                 DualCacheError::UnrepresentableValue,
             ));
@@ -88,12 +96,12 @@ impl CounterCache for RecordingCache {
         _parent_otel_span: Option<&ParentOtelSpan>,
         local_only: bool,
     ) -> Result<Option<LegacyCacheValue>, UsageCacheError> {
-        let call = Call::Get {
+        let read = Call::Get {
             key: key.to_owned(),
             local_only,
         };
-        self.answer("get", key, call)?;
-        Ok(self.stored.get(key).copied())
+        self.answer(read)
+            .map(|()| self.stored.lock().unwrap().get(key).copied())
     }
 
     async fn set(
@@ -103,12 +111,13 @@ impl CounterCache for RecordingCache {
         ttl: u64,
         _parent_otel_span: Option<&ParentOtelSpan>,
     ) -> Result<(), UsageCacheError> {
-        let call = Call::Set {
+        self.answer(Call::Set {
             key: key.to_owned(),
             value,
             ttl,
-        };
-        self.answer("set", key, call)
+        })?;
+        self.stored.lock().unwrap().insert(key.to_owned(), value);
+        Ok(())
     }
 
     async fn increment(
@@ -118,12 +127,20 @@ impl CounterCache for RecordingCache {
         _parent_otel_span: Option<&ParentOtelSpan>,
         local_only: bool,
     ) -> Result<(), UsageCacheError> {
-        let call = Call::Increment {
+        self.answer(Call::Increment {
             key: key.to_owned(),
             delta,
             local_only,
+        })?;
+        let mut stored = self.stored.lock().unwrap();
+        let count = match stored.get(key) {
+            Some(LegacyCacheValue::Count(current)) => current.checked_add(delta).unwrap(),
+            Some(LegacyCacheValue::Counter(_)) => panic!("{key} holds a counter, not a count"),
+            None => delta,
         };
-        self.answer("increment", key, call)
+        stored.insert(key.to_owned(), LegacyCacheValue::Count(count));
+        drop(stored);
+        Ok(())
     }
 }
 
@@ -134,10 +151,9 @@ impl LegacyUsageCache for RecordingCache {
         keys: &[Option<String>],
         _parent_otel_span: Option<&ParentOtelSpan>,
     ) -> Result<Option<Vec<Option<LegacyCacheValue>>>, UsageCacheError> {
-        let call = Call::BatchGet {
+        self.answer(Call::BatchGet {
             keys: keys.to_vec(),
-        };
-        self.answer("batch_get", "async_batch_get_cache", call)?;
+        })?;
         Ok(None)
     }
 
@@ -148,12 +164,12 @@ impl LegacyUsageCache for RecordingCache {
         _parent_otel_span: Option<&ParentOtelSpan>,
         local_only: bool,
     ) -> Result<(), UsageCacheError> {
-        let call = Call::BatchSet {
+        // nothing reads the counters back after the success hook's one batch write
+        self.answer(Call::BatchSet {
             entries: entries.to_vec(),
             ttl,
             local_only,
-        };
-        self.answer("batch_set", BATCH_WRITE, call)
+        })
     }
 }
 
@@ -200,10 +216,12 @@ pub(crate) struct Fixture {
 
 pub(crate) fn fixture(stored: &[(&str, LegacyCacheValue)], failing: &[&str]) -> Fixture {
     let cache = Arc::new(RecordingCache {
-        stored: stored
-            .iter()
-            .map(|(key, value)| ((*key).to_owned(), *value))
-            .collect(),
+        stored: Mutex::new(
+            stored
+                .iter()
+                .map(|(key, value)| ((*key).to_owned(), *value))
+                .collect(),
+        ),
         failing: failing.iter().map(|key| (*key).to_owned()).collect(),
         log: Mutex::new(Vec::new()),
     });

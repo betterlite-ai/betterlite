@@ -1,4 +1,3 @@
-// the usage object of a response, as far as the legacy limiter counts it
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ResponseUsage {
     pub total_tokens: i64,

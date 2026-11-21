@@ -159,8 +159,8 @@ impl LegacyRateLimitHandler {
             current_rpm: current.current_rpm,
         };
         self.print_verbose(&format!(
-            "updated_value in success call: {new_val}, precise_minute: {}",
-            pass.precise_minute
+            "updated_value in success call: {{current_requests: {}, current_tpm: {}, current_rpm: {}}}, precise_minute: {}",
+            new_val.current_requests, new_val.current_tpm, new_val.current_rpm, pass.precise_minute
         ));
         Ok((key, LegacyCacheValue::Counter(new_val)))
     }
