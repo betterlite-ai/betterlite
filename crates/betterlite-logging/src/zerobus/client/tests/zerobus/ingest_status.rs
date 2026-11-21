@@ -1,12 +1,13 @@
 use std::time::Duration;
 
 use betterlite_logging::zerobus::client::types::ZerobusIngestFailure;
+use betterlite_test_ports::refused_port::RefusedPort;
 use indexmap::IndexMap;
 use rstest::rstest;
 
 use super::support::{
-    FakeClock, FakeZerobus, Reply, client, client_with, closed_endpoint, connection, expected,
-    token_reply, trace_rows,
+    FakeClock, FakeZerobus, Reply, client, client_with, connection, expected, token_reply,
+    trace_rows,
 };
 use betterlite_models::decisions::Json;
 
@@ -161,8 +162,9 @@ async fn a_401_insert_discards_the_token_and_the_next_insert_mints_a_fresh_one()
 #[tokio::test]
 async fn a_network_failure_on_insert_is_retryable() {
     let fake = FakeZerobus::start(minted(), accepted()).await;
+    let refused = RefusedPort::bind().unwrap();
     let mut connection = connection(&fake.base);
-    connection.server_endpoint = closed_endpoint().await;
+    connection.server_endpoint = format!("http://{}", refused.address);
     let clock = FakeClock::new(1_000.0);
     let client = client_with(connection, &clock, Duration::from_secs(5));
 

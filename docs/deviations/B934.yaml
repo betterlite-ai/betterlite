@@ -1,0 +1,18 @@
+task: B934
+deviations:
+  - what: Compact local failures keep their SDK class and status but expose a bounded redacted message instead of the Python traceback LiteLLM appends to the mapped APIConnectionError.
+    why: B184/B187 own the shared public diagnostics contract, and the exact local cause literals stay covered by compact_native_support_required.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2692-L2709
+  - what: A REQUEST_TIMEOUT that is not a number fails the compact call with a Timeout error, where LiteLLM raises while importing because constants.py parses the variable at module load.
+    why: betterlite reads environment settings when a call needs them, so one malformed variable cannot take down every request the process would serve.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L576-L577
+  - what: A 200 reply whose fields do not validate is returned as sent with its original response id, where LiteLLM builds the model with model_construct and still encodes the id with the deployment's model_id.
+    why: betterlite never fabricates a typed response out of fields that fail the shape; the reply keeps exactly what the provider sent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/transformation.py#L973-L978
+  - what: The async wrapper awaits the compact path on the caller's task, where LiteLLM runs the sync function in a default executor with a copied contextvars context and then awaits the coroutine it returns.
+    why: betterlite's compact path is async end to end, so there is no sync body to hand to a thread; the async mode still selects the asynchronous handler and the SDK result, pre-call ordering and exception mapping are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L2130-L2137
+kept_bugs:
+  - what: The async wrapper's preliminary provider lookup passes api_base=None because it reads a base_url name that compact_responses never defines as a local.
+    why: LiteLLM uses this lookup only to name the provider when mapping exceptions, and copying the None base keeps the detected provider identical; the caller's api_base still reaches the real request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L2109-L2114

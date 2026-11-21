@@ -4,7 +4,6 @@ use std::collections::BTreeMap;
 use std::env;
 use std::fmt::Debug;
 use std::fs::{self, File};
-use std::net::TcpStream;
 use std::path::PathBuf;
 use std::process;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -14,13 +13,14 @@ use std::time::Duration;
 
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
+use betterlite_test_ports::full_listener::FullListener;
 use futures_util::{StreamExt as _, stream};
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use reqwest::{ClientBuilder, Method, Request, Url};
 use rstest::rstest;
 use secrecy::SecretString;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
-use tokio::net::{TcpListener, TcpSocket, TcpStream as Connection};
+use tokio::net::{TcpListener, TcpStream as Connection};
 use tokio::task::JoinSet;
 use tokio::time::sleep;
 use tracing::subscriber::set_default;
@@ -200,8 +200,7 @@ pub(crate) struct Server {
     pub(crate) base: Url,
     pub(crate) heads: Arc<Mutex<Vec<String>>>,
     pub(crate) connections: Arc<AtomicUsize>,
-    _listener: Option<TcpListener>,
-    _fillers: Vec<TcpStream>,
+    _full: Option<FullListener>,
     _tasks: JoinSet<()>,
 }
 
@@ -322,27 +321,19 @@ pub(crate) async fn serve(answer: Vec<u8>, delay: Duration) -> Server {
         base,
         heads,
         connections,
-        _listener: None,
-        _fillers: Vec::new(),
+        _full: None,
         _tasks: tasks,
     }
 }
 
 // A listener whose accept queue is full, so a further connect hangs instead of failing.
 fn saturated() -> Server {
-    let socket = TcpSocket::new_v4().unwrap();
-    socket.bind("127.0.0.1:0".parse().unwrap()).unwrap();
-    let listener = socket.listen(1).unwrap();
-    let address = listener.local_addr().unwrap();
-    let fillers = (0_u8..4)
-        .filter_map(|_| TcpStream::connect_timeout(&address, Duration::from_millis(100)).ok())
-        .collect();
+    let full = FullListener::bind().unwrap();
     Server {
-        base: Url::parse(&format!("http://{address}/")).unwrap(),
+        base: Url::parse(&format!("http://{}/", full.address)).unwrap(),
         heads: Arc::default(),
         connections: Arc::default(),
-        _listener: Some(listener),
-        _fillers: fillers,
+        _full: Some(full),
         _tasks: JoinSet::new(),
     }
 }

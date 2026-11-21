@@ -1,0 +1,15 @@
+kind: helper
+name: azure-chat-call-async-timeout-diagnostic
+call:
+  azure_chat_call:
+    function: completion
+    cases:
+      - model: gpt-4o-deployment
+        messages:
+          - {role: user, content: hi}
+        api_key: key
+        acompletion: true
+        client: async
+        answer: {error: timeout, message: Request timed out.}
+env: {}
+compare: {ignore: []}

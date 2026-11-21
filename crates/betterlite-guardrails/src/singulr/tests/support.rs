@@ -109,14 +109,6 @@ fn header_text(headers: &HeaderMap) -> BTreeMap<String, String> {
         .collect()
 }
 
-// the listener is closed before the call, so the connect is refused and no server answers
-pub(crate) async fn refused_base() -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
-    format!("http://{address}")
-}
-
 pub(crate) struct StallServer {
     pub(crate) base: String,
     _server: JoinSet<io::Result<()>>,

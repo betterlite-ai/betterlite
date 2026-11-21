@@ -1,0 +1,24 @@
+kind: helper
+name: azure-chat-call-o-series-client-delegate
+call:
+  azure_chat_call:
+    function: o_series
+    cases:
+      - model: o3-deployment
+        messages:
+          - {role: user, content: hi}
+        api_key: key
+        timeout: 60.0
+        organization: org-1
+        drop_params: true
+      - model: o3-deployment
+        messages:
+          - {role: user, content: hi}
+        api_key: key
+        timeout: 60.0
+        acompletion: true
+        client: async
+        organization: org-1
+        drop_params: true
+env: {}
+compare: {ignore: []}

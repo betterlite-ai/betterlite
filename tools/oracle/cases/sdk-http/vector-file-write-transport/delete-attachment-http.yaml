@@ -1,0 +1,18 @@
+kind: sdk_http
+name: vector-file-write-transport-delete-attachment-http
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  vector_file_write_transport:
+    operation: delete
+    mode: sync
+    vector_store_id: vs/a
+    file_id: file/b
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file_b, object: vector_store.file.deleted, deleted: true}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore: []

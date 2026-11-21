@@ -1,0 +1,16 @@
+kind: helper
+name: key-query-plan-status-expired
+call:
+  key_query_plan:
+    function: status
+    blocked: null
+    expires: "2025-05-31T23:59:59"
+    now: "2025-06-01T00:00:00+00:00"
+calls:
+  - key_query_plan: {function: status, blocked: null, expires: "2025-06-01T00:00:00", now: "2025-06-01T00:00:00+00:00"}
+  - key_query_plan: {function: status, blocked: null, expires: "2025-06-01T00:00:01", now: "2025-06-01T00:00:00+00:00"}
+  - key_query_plan: {function: status, blocked: null, expires: null, now: "2025-06-01T00:00:00+00:00"}
+  - key_query_plan: {function: status, blocked: null, expires: "2025-06-01T01:00:00+02:00", now: "2025-06-01T00:00:00+00:00"}
+  - key_query_plan: {function: status, blocked: null, expires: "2025-06-01T00:00:00.500000", now: "2025-06-01T00:00:00+00:00"}
+env: {}
+compare: {ignore: []}

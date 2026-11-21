@@ -1,11 +1,12 @@
 use std::collections::BTreeMap;
 
+use betterlite_test_ports::refused_port::RefusedPort;
 use secrecy::SecretString;
 
 use super::fake_server::{FakeServer, Reply};
 use super::fixtures::{
-    Logs, assert_no_secret, closed_address, direct_fields, endpoint_error, factory, open_error,
-    sentinel_record, url_client,
+    Logs, assert_no_secret, direct_fields, endpoint_error, factory, open_error, sentinel_record,
+    url_client,
 };
 use crate::redis_client_factories::RedisClient;
 use crate::redis_connection_settings::model::scalars::PassthroughValue;
@@ -20,7 +21,8 @@ async fn parse_failures_do_not_expose_the_url_password() {
 
 #[tokio::test]
 async fn connect_failures_do_not_expose_the_password() {
-    let mut fields = direct_fields("127.0.0.1", closed_address().port());
+    let refused = RefusedPort::bind().unwrap();
+    let mut fields = direct_fields("127.0.0.1", refused.address.port());
     fields.password = Some(SecretString::from("topsecret".to_owned()));
     fields.socket_timeout = Some(0.2_f64);
     let error = open_error(&factory(None), &RedisClient::Direct(fields)).await;
@@ -56,7 +58,8 @@ async fn tls_failures_do_not_expose_passthrough_values() {
 
 #[test]
 fn log_lines_do_not_expose_the_monitor_password() {
-    let mut record = sentinel_record(&[closed_address()], "mymaster");
+    let refused = RefusedPort::bind().unwrap();
+    let mut record = sentinel_record(&[refused.address], "mymaster");
     record.monitor_password = Some(SecretString::from("topsecret".to_owned()));
     let (logs, _guard) = Logs::capture();
     let error = endpoint_error(&factory(None), &RedisClient::Sentinel(record));

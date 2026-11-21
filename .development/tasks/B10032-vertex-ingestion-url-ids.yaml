@@ -1,0 +1,111 @@
+id: B10032
+title: Vertex RAG ingestion keeps request ids from changing the Google URL
+description: >-
+  Security fix found in B3455's review (https://github.com/betterlite-ai/betterlite/pull/2758). The Vertex AI RAG
+  ingestion formats two request-supplied values straight into the URL of an outbound Google call that carries the
+  proxy's bearer token. create_corpus in crates/betterlite-core/src/rag/vertex_ingestion/corpus.rs puts the project
+  (vertex_project, vertex_ai_project or the Vertex settings) into
+  "{base_url}/v1beta1/projects/{project}/locations/{location}/ragCorpora", and upload_file in upload.rs puts the corpus
+  id, which ingest_options.vector_store_id can supply, into "{base_url}/upload/v1beta1/{corpus_id}/ragFiles:upload".
+  A value with "..", "?" or "#" changes the path or the query of that call, so the token goes to a different Google
+  resource. LiteLLM formats both the same way, and no working setup relies on that.
+
+
+  Every other Vertex URL builder in betterlite checks the project with validate_vertex_project in
+  crates/betterlite-core/src/api/vertex_location.rs, and create_corpus calls it too after this task. That validator
+  misses one case: the url crate follows the WHATWG URL standard and reads "%2e%2e" (in any case) as "..", so
+  "projects/%2e%2e/..." still moves the call. "%" joins URL_UNSAFE_PROJECT_CHARS; no Google Cloud project id contains
+  it, and the chirp, realtime and transcription callers get the same fix.
+
+
+  A corpus id is a full resource name such as projects/p/locations/l/ragCorpora/123, so it keeps its slashes.
+  upload_file builds that part of the path with betterlite_http::url_path::encode_segments(corpus_id, "vector_store_id"):
+  it rejects an empty id and empty or dot segments, and percent-encodes everything outside the RFC 3986 unreserved
+  characters in each segment. A real resource name has only letters, digits, "-" and "/", so its URL stays the same.
+  The id that Google's create operation returns goes through the same builder.
+
+
+  Both checks run before the token port or the HTTP port is called. The rows go into B3455's deviations file.
+scope:
+  paths:
+  - crates/betterlite-core/src/rag/vertex_ingestion.rs
+  - crates/betterlite-core/src/rag/vertex_ingestion/corpus.rs
+  - crates/betterlite-core/src/rag/vertex_ingestion/upload.rs
+  - crates/betterlite-core/src/rag/vertex_ingestion/error.rs
+  - crates/betterlite-core/src/rag/vertex_ingestion/tests.rs
+  - crates/betterlite-core/src/rag/vertex_ingestion/tests/**
+  - crates/betterlite-core/src/api/vertex_location.rs
+  - crates/betterlite-core/src/api/vertex_location/tests.rs
+  - docs/deviations/B3455.yaml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L187
+  why: The corpus create URL formats self.project_id into the path unchecked.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L342
+  why: The upload URL formats rag_corpus_id, which vector_store_id can supply, into the path unchecked.
+dod:
+- text: >-
+    A project that validate_vertex_project rejects fails the ingest with VertexIngestionError::Location before the
+    token port or the HTTP port is called. Tests cover "..", "?" and "#" in vertex_project from the ingest options.
+  proof: [ingestion]
+- text: >-
+    The upload URL's corpus part comes from encode_segments(corpus_id, "vector_store_id"). A full resource name gives
+    the same URL as before; an id with an empty or dot segment fails with a typed error before the token port or the
+    HTTP port is called; "?", "#" and "%" in an id arrive percent-encoded inside the path. Tests cover each case.
+  proof: [ingestion]
+- text: >-
+    validate_vertex_project rejects a project that contains "%", with a test for "%2e%2e", and the tests of its other
+    callers still pass.
+  proof: [project-validator, transcription]
+- text: >-
+    docs/deviations/B3455.yaml records the project check and the corpus id encoding as deviations, each with its pinned
+    LiteLLM link.
+  proof: [deviation-rows]
+checks:
+  optional: []
+  commands:
+  - id: ingestion
+    why: The Vertex ingestion still lets a request id change the Google URL, or another ingestion case broke.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rag::vertex_ingestion::tests::/)'
+  - id: project-validator
+    why: The project validator or one of its betterlite-core callers broke.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::(vertex_location|vertex_chirp|vertex_realtime_factory)::tests::/)'
+  - id: transcription
+    why: The Gemini transcription path broke on the stricter project check.
+    run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_gemini_transcription::tests::/)'
+  - id: deviation-rows
+    why: A deviation row or its pinned link is missing, or the upload URL still formats the raw corpus id.
+    run: >-
+      grep -q -F 'vertex_ai_ingestion.py#L187' docs/deviations/B3455.yaml
+      && grep -q -F 'vertex_ai_ingestion.py#L342' docs/deviations/B3455.yaml
+      && grep -q -F 'encode_segments' crates/betterlite-core/src/rag/vertex_ingestion/upload.rs
+oracle_cases: []
+deviations:
+- what: >-
+    A project that validate_vertex_project rejects (empty, or with "..", "/", "?", "#", "\", ":", "%" or whitespace)
+    fails the RAG ingest with the typed project error before any token or HTTP call.
+  why: >-
+    LiteLLM formats the project into the corpus create URL, so such a value sends the proxy's token to another Google
+    resource. Every other Vertex URL builder already checks the project.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L187
+- what: >-
+    The corpus id goes into the upload URL segment by segment: an empty id or an empty or dot segment fails before
+    any call, and characters outside the RFC 3986 unreserved set are percent-encoded. A full resource name is unchanged.
+  why: >-
+    LiteLLM formats vector_store_id raw into the upload URL, where "..", "?" or "#" change the path or query of a call
+    that carries the proxy's token.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L342
+out_of_scope:
+- The location. base_url already checks it with validate_vertex_location.
+- Other providers' RAG ingestion and the Vertex chat, embedding and batch URL builders.
+pitfalls:
+- 'A string check alone misses "%2e%2e": the url crate turns it into ".." while it parses the path. That is why "%" joins URL_UNSAFE_PROJECT_CHARS and why the corpus id is percent-encoded, which turns "%" into "%25".'
+- Use encode_segments, not encode_segment, for the corpus id. encode_segment would encode the slashes of a full resource name as %2F.
+- encode_segments returns betterlite_http's HttpError. Give VertexIngestionError a variant that carries it as its source instead of turning it into text.
+- The existing URL tests in tests/project_cases.rs pin the create URL for valid projects; they keep passing unchanged.
+review_level: standard
+budget:
+  max_changed_lines: 120
+  max_new_expects: 0

@@ -60,6 +60,7 @@ description: >-
   apply on a response with tool calls, and the supported hooks list.
 scope:
   paths:
+    - "crates/betterlite-guardrails/src/content_filter/competitor_intent_base/run.rs"
     - crates/betterlite-guardrails/src/content_filter_guard.rs
     - crates/betterlite-guardrails/src/content_filter_guard/**
     - tools/oracle/cases/helpers/content-filter-guard/**

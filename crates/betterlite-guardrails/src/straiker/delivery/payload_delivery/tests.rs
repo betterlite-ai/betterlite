@@ -10,6 +10,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_prompts::arguments::json::Json;
+use betterlite_test_ports::refused_port::RefusedPort;
 use rstest::rstest;
 use secrecy::SecretString;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
@@ -608,12 +609,10 @@ async fn a_non_ascii_authorization_is_a_permanent_failure() {
 
 #[tokio::test]
 async fn a_refused_connection_is_an_unreachable_failure() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
+    let refused = RefusedPort::bind().unwrap();
     let post = pooled();
     let headers = webhook_headers();
-    let url = format!("http://{address}/x");
+    let url = format!("http://{}/x", refused.address);
     let failure = post
         .post(request(&url, Duration::from_secs(1), &headers))
         .await

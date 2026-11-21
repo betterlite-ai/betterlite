@@ -1,0 +1,67 @@
+kind: sdk_http
+name: responses-compact-optional-parameters
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  responses_compact:
+    runs:
+      - mode: sync
+        model: openai/gpt-4o
+        input: hello
+        instructions: short
+        extra_query: {trace: ignored}
+        extra_body: {model: ignored}
+        kwargs: {temperature: 0.2, trace: ignored}
+      - mode: sync
+        model: openai/gpt-4o
+        input: hello
+        kwargs: {temperature: null}
+      - mode: async
+        model: openai/gpt-4o
+        input: hello
+        kwargs: {top_k: 5, trace: t}
+      - mode: sync
+        model: openai/gpt-4o
+        input: hello
+        kwargs: {reasoning: {summary: auto}, additional_drop_params: ["reasoning.summary"]}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: resp_compact
+      created_at: 100
+      object: response
+      status: completed
+      model: gpt-4o
+      output: []
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: resp_compact
+      created_at: 100
+      object: response
+      status: completed
+      model: gpt-4o
+      output: []
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: resp_compact
+      created_at: 100
+      object: response
+      status: completed
+      model: gpt-4o
+      output: []
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: resp_compact
+      created_at: 100
+      object: response
+      status: completed
+      model: gpt-4o
+      output: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore: []
