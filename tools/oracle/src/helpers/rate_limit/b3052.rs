@@ -2,11 +2,10 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_auth::resolved_key::auth::ParentOtelSpan;
-use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_rate_limit::atomic_counter::payload::IncrementAmounts;
 use betterlite_rate_limit::dynamic_admission::admission::{
-    AdmissionKey, CheckRateLimitError, DynamicAdmission, RateLimitCheck, RateLimitProviderResolver,
+    AdmissionKey, DynamicAdmission, RateLimitCheck, RateLimitProviderResolver,
 };
 use betterlite_rate_limit::dynamic_admission::limiter_port::{
     AdmissionLimiter, AdmissionLimiterError,
@@ -19,9 +18,11 @@ use betterlite_rate_limit::limiter_records::{
 };
 use betterlite_rate_limit::provider_attribution::{ModelGroupLimits, PriorityValue};
 use betterlite_rate_limit::request_stash::RequestStashSlot;
+use betterlite_rate_limit::settlement_and_rollback::SettlementError;
 use serde::Deserialize;
-use serde_json::{Value, json};
 use tokio::runtime::Builder;
+
+mod output;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct Input {
@@ -74,10 +75,10 @@ struct TrackingCall {
     read_only: bool,
 }
 
-#[derive(Default)]
-struct RecordedCalls {
-    atomic: Vec<AtomicCall>,
-    tracking: Vec<TrackingCall>,
+// one call the handler made, kept in order so the cases can check every descriptor and increment it sent
+enum RecordedCall {
+    Atomic(AtomicCall),
+    Tracking(TrackingCall),
 }
 
 // the v3 limiter the hook calls behind the port, answering the canned responses and recording each call
@@ -85,7 +86,7 @@ struct StubLimiter {
     window_size: i64,
     atomic: RateLimitResponse,
     tracking: RateLimitResponse,
-    calls: Mutex<RecordedCalls>,
+    calls: Mutex<Vec<RecordedCall>>,
 }
 
 impl StubLimiter {
@@ -94,13 +95,15 @@ impl StubLimiter {
             window_size: input.window_size,
             atomic: input.atomic.clone(),
             tracking: input.tracking.clone(),
-            calls: Mutex::new(RecordedCalls::default()),
+            calls: Mutex::new(Vec::new()),
         }
     }
 
-    fn recorded(&self) -> (Vec<AtomicCall>, Vec<TrackingCall>) {
-        let calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
-        (calls.atomic.clone(), calls.tracking.clone())
+    fn record(&self, call: RecordedCall) {
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(call);
     }
 }
 
@@ -117,13 +120,18 @@ impl AdmissionLimiter for StubLimiter {
         increments: &[IncrementAmounts],
         _parent_span: Option<ParentOtelSpan>,
     ) -> Result<RateLimitResponse, AdmissionLimiterError> {
-        let call = AtomicCall {
+        if increments.len() != descriptors.len() {
+            return Err(AdmissionLimiterError::from_settlement(
+                SettlementError::DescriptorCount {
+                    descriptors: descriptors.len(),
+                    increments: increments.len(),
+                },
+            ));
+        }
+        self.record(RecordedCall::Atomic(AtomicCall {
             descriptors: descriptors.to_vec(),
             increments: increments.to_vec(),
-        };
-        let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
-        calls.atomic.push(call);
-        drop(calls);
+        }));
         Ok(self.atomic.clone())
     }
 
@@ -133,13 +141,10 @@ impl AdmissionLimiter for StubLimiter {
         _parent_span: Option<ParentOtelSpan>,
         read_only: bool,
     ) -> Result<RateLimitResponse, AdmissionLimiterError> {
-        let call = TrackingCall {
+        self.record(RecordedCall::Tracking(TrackingCall {
             descriptors: descriptors.to_vec(),
             read_only,
-        };
-        let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
-        calls.tracking.push(call);
-        drop(calls);
+        }));
         Ok(self.tracking.clone())
     }
 }
@@ -153,110 +158,6 @@ fn policy_from(input: &Input) -> PriorityPolicy {
         },
         reservation: input.priority_reservation.clone(),
     }
-}
-
-fn descriptor_json(descriptors: &[RateLimitDescriptor]) -> Result<Vec<Value>, serde_json::Error> {
-    descriptors.iter().map(serde_json::to_value).collect()
-}
-
-fn increments_json(increments: &[IncrementAmounts]) -> Vec<Value> {
-    increments
-        .iter()
-        .map(|amount| json!({"requests": amount.requests, "tokens": amount.tokens}))
-        .collect()
-}
-
-fn atomic_calls_json(calls: &[AtomicCall]) -> Result<Vec<Value>, serde_json::Error> {
-    calls
-        .iter()
-        .map(|call| {
-            Ok(json!({
-                "descriptors": descriptor_json(&call.descriptors)?,
-                "increments": increments_json(&call.increments),
-            }))
-        })
-        .collect()
-}
-
-fn tracking_calls_json(calls: &[TrackingCall]) -> Result<Vec<Value>, serde_json::Error> {
-    calls
-        .iter()
-        .map(|call| {
-            Ok(json!({
-                "descriptors": descriptor_json(&call.descriptors)?,
-                "read_only": call.read_only,
-            }))
-        })
-        .collect()
-}
-
-fn stash_json(stash: &RequestStashSlot) -> Value {
-    let Some(stored) = stash.get() else {
-        return Value::Null;
-    };
-    let response = {
-        let state = stored.state.lock().unwrap_or_else(PoisonError::into_inner);
-        state.rate_limit_response.clone()
-    };
-    response.map_or(Value::Null, |response| {
-        json!({
-            "overall_code": response.overall_code,
-            "statuses": response.statuses,
-        })
-    })
-}
-
-fn headers_json(headers: &CheckRateLimitError) -> BTreeMap<String, String> {
-    match headers {
-        CheckRateLimitError::Rejection(error) => error
-            .headers
-            .iter()
-            .flat_map(|map| map.iter())
-            .filter_map(|(name, value)| {
-                value
-                    .to_str()
-                    .ok()
-                    .map(|text| (name.as_str().to_owned(), text.to_owned()))
-            })
-            .collect(),
-        CheckRateLimitError::Denial(_) | CheckRateLimitError::Limiter(_) => BTreeMap::new(),
-    }
-}
-
-fn unexpected(message: &str) -> HelperResult {
-    Err(Box::new(HelperError {
-        class: "UnexpectedFailure".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: message.to_owned(),
-    }))
-}
-
-fn answer(
-    outcome: Result<(), CheckRateLimitError>,
-    limiter: &StubLimiter,
-    stash: &RequestStashSlot,
-) -> HelperResult {
-    let (atomic, tracking) = limiter.recorded();
-    let error = match &outcome {
-        Ok(()) => Value::Null,
-        Err(error @ CheckRateLimitError::Rejection(rejection)) => json!({
-            "status": 429_u16,
-            "detail": rejection.detail.clone(),
-            "headers": headers_json(error),
-        }),
-        Err(error @ (CheckRateLimitError::Denial(_) | CheckRateLimitError::Limiter(_))) => {
-            return unexpected(&error.to_string());
-        }
-    };
-    Ok(json!({
-        "atomic_calls": atomic_calls_json(&atomic)?,
-        "tracking_calls": tracking_calls_json(&tracking)?,
-        "stash": stash_json(stash),
-        "error": error,
-    }))
 }
 
 pub(crate) struct Op;
@@ -297,6 +198,6 @@ impl Helper for Op {
         };
         let runtime = Builder::new_current_thread().build()?;
         let outcome = runtime.block_on(admission.check_rate_limits(&check));
-        answer(outcome, &limiter, &stash)
+        output::answer(outcome, &limiter, &stash)
     }
 }

@@ -9,10 +9,12 @@ from litellm.proxy.common_utils.proxy_rate_limit_error import ProxyRateLimitErro
 from litellm.proxy.hooks import dynamic_rate_limiter_v3, parallel_request_limiter_v3
 from litellm.proxy.hooks.parallel_request_limiter_v3 import (
     RateLimitDescriptor,
-    RateLimitDescriptorRateLimitObject as RateLimitObject,
     RateLimitResponse,
     RateLimitStatus,
     get_request_stash_for_call,
+)
+from litellm.proxy.hooks.parallel_request_limiter_v3 import (
+    RateLimitDescriptorRateLimitObject as RateLimitObject,
 )
 from litellm.router import Router
 from litellm.types.router import ModelGroupInfo
@@ -133,13 +135,15 @@ class StubLimiter(_STUB_BASE):
         self.tracking_calls: list[TrackingCallJson] = []
 
     @override
-    async def atomic_check_and_increment_by_n(  # ast-grep-ignore: no-long-names
+    async def atomic_check_and_increment_by_n(
         self,
         descriptors: list[RateLimitDescriptor],
         increments: list[dict[Literal["requests", "tokens"], int]],
         parent_otel_span: Span | None = None,
     ) -> RateLimitResponse:
         del parent_otel_span
+        if len(increments) != len(descriptors):
+            raise ValueError("the handler must send one increment per descriptor")
         self.atomic_calls.append(
             AtomicCallJson(
                 descriptors=[descriptor_json(descriptor) for descriptor in descriptors],
@@ -156,8 +160,8 @@ class StubLimiter(_STUB_BASE):
         self,
         descriptors: Sequence[RateLimitDescriptor],
         parent_otel_span: Span | None = None,
-        read_only: bool = False,  # noqa: FBT001, FBT002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L1528-L1535
-        skip_tpm_check: bool = False,  # noqa: FBT001, FBT002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L1528-L1535
+        read_only: bool = False,  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L1528-L1535
+        skip_tpm_check: bool = False,  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L1528-L1535
         parallel_slot_id: str | None = None,
     ) -> RateLimitResponse:
         del parent_otel_span, skip_tpm_check, parallel_slot_id
@@ -225,7 +229,7 @@ def error_json(rejected: ProxyRateLimitError) -> ErrorJson:
         headers = {name: str(value) for name, value in rejected.headers.items()}
     return ErrorJson(
         status=rejected.status_code,
-        detail=JSON.validate_python(rejected.detail),
+        detail=JSON.validate_python(rejected.detail),  # pyright: ignore[reportAny]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/proxy_rate_limit_error.py#L146
         headers=headers,
     )
 
@@ -242,7 +246,8 @@ async def admission_answer(input_value: AdmissionInput) -> dict[str, JsonValue]:
     limiter = StubLimiter(input_value)
     handler.v3_limiter = limiter
     handler.update_variables(FixedRouter(info))
-    auth = UserAPIKeyAuth(metadata={}, team_metadata=None)
+    key_metadata: dict[str, str] = {}
+    auth = UserAPIKeyAuth(metadata=key_metadata, team_metadata=None)
     error: ErrorJson | None = None
     try:
         await handler.check(
@@ -254,7 +259,7 @@ async def admission_answer(input_value: AdmissionInput) -> dict[str, JsonValue]:
                 saturation=input_value["saturation"],
             )
         )
-    except ProxyRateLimitError as rejected:
+    except ProxyRateLimitError as rejected:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/proxy_rate_limit_error.py#L101
         error = error_json(rejected)
     stash = get_request_stash_for_call(None)
     stash_value: StashJson | None = None

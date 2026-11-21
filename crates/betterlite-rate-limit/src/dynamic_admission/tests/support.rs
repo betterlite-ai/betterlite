@@ -218,7 +218,6 @@ impl AdmissionLimiter for RecordingLimiter {
         self.window_size
     }
 
-    // ast-grep-ignore: no-long-names
     async fn atomic_check_and_increment_by_n(
         &self,
         descriptors: &[RateLimitDescriptor],

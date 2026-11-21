@@ -71,9 +71,7 @@ fn model_capacity_error(
         configured_limit(facts.model_rpm),
         status.limit_remaining,
     );
-    let mut headers = retry_and_type_headers(status, facts);
-    insert_priority_header(&mut headers, facts.priority);
-    proxy_error(single_error_detail(detail), headers, status, facts)
+    known_key_error(detail, None, status, facts)
 }
 
 // the "Priority-based rate limit exceeded" 429, which is also the only error that carries the saturation
@@ -97,11 +95,23 @@ fn priority_limit_error(
         status.limit_remaining,
         facts.saturation.mul(100.0_f64),
     );
+    known_key_error(detail, Some(facts.saturation), status, facts)
+}
+
+// the shared tail of the two known-key 429s: the status headers, the optional saturation and the priority
+fn known_key_error(
+    detail: String,
+    saturation: Option<f64>,
+    status: &RateLimitStatus,
+    facts: &OverLimitFacts<'_>,
+) -> Result<ProxyRateLimitError, DenialError> {
     let mut headers = retry_and_type_headers(status, facts);
-    headers.insert(
-        String::from("x-litellm-saturation"),
-        Payload::String(format!("{:.2}%", facts.saturation.mul(100.0_f64))),
-    );
+    if let Some(value) = saturation {
+        headers.insert(
+            String::from("x-litellm-saturation"),
+            Payload::String(format!("{:.2}%", value.mul(100.0_f64))),
+        );
+    }
     insert_priority_header(&mut headers, facts.priority);
     proxy_error(single_error_detail(detail), headers, status, facts)
 }
