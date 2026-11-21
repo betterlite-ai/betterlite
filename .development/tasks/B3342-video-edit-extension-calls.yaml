@@ -53,6 +53,8 @@ description: >-
   Name the rstest functions `edit_call_behavior`, `extension_call_behavior` and `call_error_behavior`, one named case per DoD
   item, using a recording fake of the B3336 handler trait and a fake logging handle. The task changes no wire format, so
   there is no fuzz target.
+
+  B3332's `get_provider_video_config` returns `Result<Option<_>, VideoSelectionError>`. None still raises the ValueError-class error as above; map `VideoSelectionError::Unavailable` (a provider whose video config isn't built yet, such as edenai until B5838 lands) into this task's own error and keep its message.
 scope:
   paths:
     - crates/betterlite-core/src/api/video_edit_call.rs

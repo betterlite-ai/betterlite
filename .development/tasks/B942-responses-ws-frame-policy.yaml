@@ -18,9 +18,11 @@ description: >-
   `_enforce_frame_project_quota` ignores invalid JSON, top-level arrays, and every object whose `type` is not exactly
   `response.create`. For a valid response.create it invokes every quota callback sequentially with the unchanged
   `user_api_key_dict`, the authorized model, and the extracted input/output estimates. `_enforce_or_reject_frame`
-  catches only B163 `RateLimitError`: it attempts one JSON text frame with `type="error"`,
+  catches only a rate-limit rejection, a callback `Err` whose class is betterlite-error's `ErrorClass::RateLimit` (the Rust form of LiteLLM's RateLimitError): it attempts one JSON text frame with `type="error"`,
   `error.type="rate_limit_exceeded"` and `error.message=str(error)`, swallows any send exception, returns `false`
-  and drops the rejected frame. A non-RateLimitError propagates; accepted frames return `true`.
+  and drops the rejected frame. Any other error propagates; accepted frames return `true`.
+
+  B925's `ProjectQuotaCallback::enforce_frame_quota` (crates/betterlite-core/src/api/responses_stream_events.rs L40-L48) returns `()`, so a callback has no way to reject a frame. Change it to return `Result<(), ErrorClass>` and update its two test implementations, `QuotaCounter` in responses_stream_events/tests.rs and `TestQuota` in responses_ws_history/tests/support.rs. Nothing outside tests implements or calls it on main.
 
   Keep the exact event and text rules. Logged event types are `response.created`, `response.completed`,
   `response.failed`, `response.incomplete`, `error`; failure types are `error` and `response.failed`; output-item
@@ -56,7 +58,7 @@ description: >-
   `_enforce_or_reject_frame` (L2410-L2437).
 
   The project-quota callbacks arrive through B925's `ProjectQuotaCallback` port (`enforce_frame_quota` in api::responses_stream_events). At the pin B3042's `enforce_project_io_token_quota_for_frame`, a rate-limit hook and not a budget, sits behind that port; betterlite-rate-limit depends on betterlite-core, so this task never imports it. Other direct inputs are B3805's Presidio implementation and separate unmask function (B3806 and B3807 own response and stream unmasking),
-  B163's `RateLimitError`, B171's helper protocol, B902's WebSocket/default types and Presidio callback shape,
+  betterlite-error's `ErrorClass::RateLimit`, B171's helper protocol, B902's WebSocket/default types and Presidio callback shape,
   B903's response-ID and encrypted-item wrapper codecs, B904's encrypted input-item traversal, B925's JSON/type
   helpers and quota protocol, and B732's authenticated key record. B925 owns the source `_UnmasksPiiText` protocol
   and `_UNMASK_PII_TEXT_ATTR` declaration, but B942's Rust/native seam is the typed function passed beside the
@@ -70,6 +72,9 @@ scope:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/responses_ws_frame_policy.rs
   - crates/betterlite-core/src/api/responses_ws_frame_policy/**
+  - crates/betterlite-core/src/api/responses_stream_events.rs
+  - crates/betterlite-core/src/api/responses_stream_events/tests.rs
+  - crates/betterlite-core/src/api/responses_ws_history/tests/support.rs
   - Cargo.toml
   - Cargo.lock
   - tools/oracle/Cargo.toml
@@ -210,10 +215,10 @@ dod:
     does not panic.
   proof: [case-non-object-masking-frames, oracle]
 - text: >-
-    `quota_rejection` makes a callback raise `RateLimitError("quota exceeded")`; the client-send effect receives
+    `quota_rejection` makes a callback raise `RateLimitError("quota exceeded")` in LiteLLM and return an `ErrorClass::RateLimit` with that message in Rust; the client-send effect receives
     exactly `{"type":"error","error":{"type":"rate_limit_exceeded","message":"quota exceeded"}}`, the
     result is `false`, and the rejected frame is not forwarded. A send exception is swallowed and still returns false;
-    a non-RateLimitError propagates; accepted and non-response.create frames return true.
+    any other error propagates; accepted and non-response.create frames return true.
   proof: [case-quota-rejection, oracle]
 - text: >-
     The twelve named helper fixtures use `call: {responses_ws_frame_policy: ...}` and compare independently scripted
@@ -299,7 +304,7 @@ out_of_scope:
 - 'litellm/responses/streaming_iterator.py: B944 owns ManagedResponsesWebSocketHandler and its quota call site (L2519-L3016); B942 supplies the shared quota policy but not managed routing, history or provider calls.'
 - 'litellm/responses/utils.py: B903 owns _wrap_encrypted_content_with_model_id and previous-response-id codec functions; B904 owns _restore_encrypted_content_item_ids_in_input. B942 injects these seams and does not reimplement them.'
 - 'litellm/types/responses/streaming_websocket.py: B902 owns ResponsesClientWebSocket, ResponsesBackendWebSocket, PresidioGuardrailCallback and ResponsesWebSocketRequestDefaults declarations (L10-L54). The callback has no unmask method; B3805 supplies the separate typed unmask function consumed here.'
-- 'litellm/exceptions.py: B163 owns RateLimitError construction and fields; B942 only catches that type in _enforce_or_reject_frame.'
+- 'litellm/exceptions.py: B163 owns the Python RateLimitError class in betterlite-python; this Rust policy matches betterlite-error ErrorClass::RateLimit instead.'
 - 'The owned ranges contain no environment variable, config key, query parameter, route decorator, HTTP status/type/param/code, database write, warning-and-drop log or provider call; no such case belongs here.'
 pitfalls:
 - 'The oracle helper for this task is pre-registered as responses_ws_frame_policy in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/responses_ws_frame_policy.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/responses_ws_frame_policy.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
