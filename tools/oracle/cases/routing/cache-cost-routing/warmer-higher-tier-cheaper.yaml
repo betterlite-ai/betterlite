@@ -11,7 +11,7 @@ probes:
         tier_labels: {MEDIUM: Standard}
         tiers: {SIMPLE: small, MEDIUM: medium}
         params:
-          - {tier: MEDIUM, model: medium, params: {max_tokens: 8192}}
+          - {tier: MEDIUM, model: medium, params: {max_tokens: 8192, api_key: sk-live-secret}}
         response:
           model: small
           routing_decision:
@@ -39,3 +39,9 @@ probes:
         chooser_delay_ms: 0
 compare:
   ignore: []
+  expected_difference:
+    - pointer: /output/cache_cost_routing/response/routing_decision/tier_litellm_params/api_key
+      reference: sk-live-secret
+      rust: sk-l******cret
+      why: betterlite masks the credential in the decision's tier params, as its classified decision already does, where LiteLLM copies the tier entry's litellm_params unmasked; the response's litellm_params carry the raw value on both sides
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L4455
