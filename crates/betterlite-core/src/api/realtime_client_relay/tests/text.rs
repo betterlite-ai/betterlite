@@ -141,7 +141,7 @@ async fn non_iterable_content_ends_the_loop() {
 }
 
 fn sanitized_tool_output() -> Json {
-    let output = String::from(r#"{"error":"Tool output blocked by content policy"}"#);
+    let output = String::from(r#"{"error": "Tool output blocked by content policy"}"#);
     let mut item = indexmap::IndexMap::new();
     item.insert(
         String::from("type"),

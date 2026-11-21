@@ -15,8 +15,8 @@ const FUNCTION_CALL_OUTPUT: &str = "function_call_output";
 const INPUT_TEXT: &str = "input_text";
 const USER_ROLE: &str = "user";
 
-// The sanitized tool result LiteLLM hands the backend before the guardrail's own frames; compact JSON, not json.dumps spacing
-pub(crate) const TOOL_BLOCK_MARKER: &str = r#"{"error":"Tool output blocked by content policy"}"#;
+// LiteLLM builds the marker with json.dumps; the sanitized frame carries that exact string, spacing included
+pub(crate) const TOOL_BLOCK_MARKER: &str = r#"{"error": "Tool output blocked by content policy"}"#;
 
 // LiteLLM parses the frame once and reads its type; a frame that is not a JSON object skips every rewrite
 pub(crate) struct ClientEvent {

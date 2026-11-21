@@ -22,30 +22,10 @@ impl<T> Locked<T> for Mutex<T> {
     }
 }
 
-// A string that encodes a JSON object or array is compared as that value, so each side's own json.dumps spacing drops out
-fn canonical(value: Value) -> Value {
-    match value {
-        Value::String(text) => match serde_json::from_str::<Value>(&text) {
-            Ok(parsed @ (Value::Object(_) | Value::Array(_))) => canonical(parsed),
-            Ok(Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_)) | Err(_) => {
-                Value::String(text)
-            }
-        },
-        Value::Array(items) => Value::Array(items.into_iter().map(canonical).collect()),
-        Value::Object(fields) => Value::Object(
-            fields
-                .into_iter()
-                .map(|(key, item)| (key, canonical(item)))
-                .collect(),
-        ),
-        Value::Null | Value::Bool(_) | Value::Number(_) => value,
-    }
-}
-
 pub(crate) fn recorded(data: &str) -> Value {
     serde_json::from_str::<Value>(data).map_or_else(
         |_error| json!({"kind": "text", "text": data}),
-        |value| json!({"kind": "json", "value": canonical(value)}),
+        |value| json!({"kind": "json", "value": value}),
     )
 }
 
