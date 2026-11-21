@@ -33,7 +33,11 @@ impl LineSplitter {
 
     #[must_use]
     pub fn finish(self) -> Option<String> {
-        (!self.pending.is_empty()).then(|| decode_line(&self.pending))
+        if self.pending.is_empty() {
+            None
+        } else {
+            Some(decode_line(&self.pending))
+        }
     }
 }
 
