@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::net::{SocketAddr, TcpListener};
+use std::net::SocketAddr;
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -213,13 +213,6 @@ pub(crate) fn clients() -> HttpClients {
         fixture::policy(Verification::Enabled, None),
         fixture::proxy_policy(&[]),
     )
-}
-
-pub(crate) fn dead_address() -> SocketAddr {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
-    address
 }
 
 pub(crate) fn caller_headers(entries: &[(&str, &str)]) -> RequestHeaders {

@@ -2,6 +2,7 @@
 
 use std::time::Duration;
 
+use betterlite_test_ports::refused_port::RefusedPort;
 use rstest::rstest;
 use secrecy::SecretString;
 
@@ -224,9 +225,10 @@ fn create_agent_reports_a_redirect_status_as_an_error() {
 
 #[test]
 fn create_agent_builds_the_client_before_a_failing_environment() {
-    let mut config = Config::for_address(support::dead_address());
+    let refused = RefusedPort::bind().unwrap();
+    let mut config = Config::for_address(refused.address);
     config.refuse_environment = true;
-    let params = params_at(support::dead_address());
+    let params = params_at(refused.address);
     let request = support::create_request("agent-1", &params);
     let mut clients = clients();
     let mut logging = Recorder::default();
@@ -247,7 +249,8 @@ fn create_agent_builds_the_client_before_a_failing_environment() {
 
 #[test]
 fn create_agent_reports_a_non_string_api_base() {
-    let config = Config::for_address(support::dead_address());
+    let refused = RefusedPort::bind().unwrap();
+    let config = Config::for_address(refused.address);
     let params = base::params(r#"{"api_base": 7}"#);
     let request = support::create_request("agent-1", &params);
     let mut clients = clients();
@@ -433,9 +436,10 @@ async fn async_create_agent_converts_a_failing_status_through_the_config() {
 
 #[tokio::test]
 async fn async_create_agent_builds_the_client_before_a_failing_environment() {
-    let mut config = Config::for_address(support::dead_address());
+    let refused = RefusedPort::bind().unwrap();
+    let mut config = Config::for_address(refused.address);
     config.refuse_environment = true;
-    let params = params_at(support::dead_address());
+    let params = params_at(refused.address);
     let request = support::create_request("agent-1", &params);
     let mut clients = clients();
     let mut logging = Recorder::default();

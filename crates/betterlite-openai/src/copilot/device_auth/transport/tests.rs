@@ -7,6 +7,7 @@ use std::time::Duration;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::ProxiedClient;
+use betterlite_test_ports::refused_port::RefusedPort;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 
@@ -151,11 +152,9 @@ async fn http_transport_rejects_an_invalid_header_value() {
 
 #[tokio::test]
 async fn http_transport_reports_a_refused_connection() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
+    let refused = RefusedPort::bind().unwrap();
     let mut transport = http_transport();
-    let url = format!("http://{address}/login/device/code");
+    let url = format!("http://{}/login/device/code", refused.address);
     let post = Post {
         url: &url,
         headers: Headers::new(),

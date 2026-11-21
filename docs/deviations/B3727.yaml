@@ -15,4 +15,7 @@ deviations:
   - what: A structured or request message whose role or content the typed wire model cannot represent is left out and the flat texts are selected instead; LiteLLM keeps the arbitrary dict and compares roles as strings.
     why: betterlite's wire messages are typed, so an unknown role cannot be carried; on the OpenAI roles LiteLLM declares, selection is identical.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L655-L658
-kept_bugs: []
+kept_bugs:
+  - what: With only_scan_new_messages on, an incremental request scan sends every new segment of the session to Bedrock and returns before message selection, so experimental_use_latest_role_message_only is ignored for that scan.
+    why: LiteLLM's request path returns the incremental result before _select_messages_for_apply_guardrail, and its own test marks the latest-role selection as an expected failure pending a decision. A setup that runs the flag is blocked on what Bedrock finds in every new segment today, and a scan limited to the latest user message would let through content it blocks now.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L3178-L3186

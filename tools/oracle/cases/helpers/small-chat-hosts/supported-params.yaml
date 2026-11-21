@@ -1,0 +1,29 @@
+kind: helper
+name: small-chat-hosts-supported-params
+call:
+  b6410:
+    supported:
+      - {provider: maritalk, model: maritalk/maritalk-large, reasoning: false, chat_models: [], text_models: []}
+      - {provider: llama, model: llama/llama-3-8b, reasoning: false, chat_models: [], text_models: []}
+      - {provider: moonshot, model: moonshot/kimi-k2.5, reasoning: true, chat_models: [], text_models: []}
+      - {provider: moonshot, model: moonshot/moonshot-v1-8k, reasoning: false, chat_models: [], text_models: []}
+      - {provider: moonshot, model: moonshot/kimi-thinking-preview, reasoning: false, chat_models: [], text_models: []}
+      - {provider: morph, model: morph/morph-v3-fast, reasoning: false, chat_models: [], text_models: []}
+      - {provider: nadir, model: nadir/nadir-chat, reasoning: false, chat_models: [], text_models: []}
+      - {provider: nebius, model: nebius/meta-llama/Llama-3.1-8B-Instruct, reasoning: false, chat_models: [], text_models: []}
+      - {provider: novita, model: novita/meta-llama/llama-3.1-8b-instruct, reasoning: false, chat_models: [], text_models: []}
+      - {provider: nscale, model: nscale/Qwen/Qwen3-8B, reasoning: false, chat_models: [], text_models: []}
+      - {provider: v0, model: v0/v0-1.0-md, reasoning: false, chat_models: [], text_models: []}
+      - {provider: wandb, model: wandb/openai/gpt-oss-120b, reasoning: true, chat_models: [], text_models: []}
+      - {provider: wandb, model: wandb/meta-llama/Llama-3.1-8B-Instruct, reasoning: false, chat_models: [], text_models: []}
+      - {provider: zai, model: zai/glm-4.6, reasoning: true, chat_models: [], text_models: []}
+      - {provider: zai, model: zai/glm-4.5, reasoning: false, chat_models: [], text_models: []}
+    params: []
+    moonshot_urls: []
+    moonshot_requests: []
+    nadir_cost: []
+    novita_headers: []
+    zai_cache: []
+    maritalk_errors: []
+env: {}
+compare: {ignore: []}

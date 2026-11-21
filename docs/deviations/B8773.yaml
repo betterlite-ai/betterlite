@@ -1,0 +1,12 @@
+task: B8773
+deviations:
+  - what: The MCP tool call argument scan runs for every request whose event hook includes pre_mcp_call, while LiteLLM runs it only when the logging object's call_type is call_mcp_tool.
+    why: betterlite's GuardrailLogTarget carries no call_type, so the class passes None to the scan and LiteLLM's call_type check has nothing to read; the scan still requires the pre_mcp_call hook and a non-empty mcp_arguments object, as LiteLLM does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1811-L1815
+  - what: When the bundled category asset roots cannot be resolved, the class logs a warning and loads no categories; LiteLLM's data roots are install-time constants, so a broken install fails before the guardrail is constructed.
+    why: A guardrail that cannot reach its shipped category files drops that detection instead of failing every request that uses it; the warning names the resolution error, and configured category files are still loaded when the roots resolve.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L451-L452
+  - what: Category files load with the default category settings, so LITELLM_CONTENT_FILTER_ALLOW_EXTERNAL_PATHS is not read by this class; LiteLLM reads the variable on every category file resolution.
+    why: The class's arguments carry no category settings, and the configuration layer that will construct it owns the environment binding; until that wiring arrives the default keeps files jailed to the bundled roots.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L421
+kept_bugs: []

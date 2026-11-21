@@ -15,6 +15,7 @@ use axum::routing::post;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
+use betterlite_test_ports::refused_port::RefusedPort;
 use reqwest::StatusCode;
 use secrecy::ExposeSecret as _;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
@@ -527,9 +528,8 @@ async fn _call_crowdstrike_aidr_guard_reports_a_timeout() {
 
 #[tokio::test]
 async fn _call_crowdstrike_aidr_guard_reports_a_refused_connection() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let base = format!("http://{}", listener.local_addr().unwrap());
-    drop(listener);
+    let refused = RefusedPort::bind().unwrap();
+    let base = format!("http://{}", refused.address);
     let guardrail = handler_for(&base, None);
     let error = call_guard(&guardrail, &payload(), "test")
         .await

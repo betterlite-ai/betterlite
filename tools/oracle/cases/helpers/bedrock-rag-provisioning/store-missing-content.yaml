@@ -1,0 +1,17 @@
+kind: helper
+name: store-missing-content
+call:
+  b3457:
+    step: store
+    vector:
+      custom_llm_provider: bedrock
+      aws_region_name: us-west-2
+      vector_store_id: KB123
+    environment: {}
+    unique_id: "0123abcd"
+    content: null
+    filename: null
+    content_type: null
+    job_statuses: []
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,70 @@
+task: B3885
+deviations:
+  - what: >-
+      PrometheusServicesLogger takes B3875's CollectorRegistry and the
+      litellm_settings.prometheus_latency_buckets override as constructor arguments. LiteLLM
+      imports prometheus_client's process-wide REGISTRY inside __init__ and reads the
+      litellm.prometheus_latency_buckets module global.
+    why: >-
+      betterlite keeps no process globals and no module-level state, and the task keeps config
+      reading out of this module: B3875's prometheus_exporter config section parses the bucket
+      list and the caller hands both values in. A logger built twice on the same registry sees
+      the same collectors, which is what LiteLLM's module-level REGISTRY gives it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_services.py#L32-L46
+  - what: >-
+      is_metric_registered and _get_metric collapse into CollectorRegistry::get, one lookup by
+      collector name, and the REGISTRY.collect() fallback loop of is_metric_registered has no
+      counterpart.
+    why: >-
+      B3875's registry keeps a name-to-collector map that answers both questions directly, so a
+      second lookup path would answer the same thing. The task's pitfalls say to build no second
+      lookup path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_services.py#L101-L118
+  - what: >-
+      A constructor failure is returned as PrometheusServicesError (a registry duplicate or invalid
+      latency buckets) after a debug log with LiteLLM's message text, where LiteLLM logs through
+      print_verbose and re-raises the Python exception.
+    why: >-
+      Rust errors are typed values, not exceptions; the caller decides what to do with the failure.
+      Both outcomes stop the logger from being built, and the message keeps LiteLLM's wording.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_services.py#L86-L88
+  - what: >-
+      service_failure_hook increments the failed_requests counter with the service label only, so
+      its error_class and function_name labels take the missing-label value "None". LiteLLM's sync
+      hook also passes no additional labels, and prometheus_client raises ValueError (Incorrect
+      label count) when labels() gets one value for the three declared label names.
+    why: >-
+      The sync hook takes no error argument, so there is no error class to label a failure with, and
+      a hook that raises on every counter service is a bug no working setup can rely on: the sync
+      hooks have no caller at the pin. betterlite fills the two labels instead of raising, and the
+      error_class/function_name dispatch the task text asks for lives in
+      async_service_failure_hook, which does receive the error. The branch is pinned by
+      service_failure_hook_increments_every_counter.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_services.py#L206-L218
+  - what: >-
+      async_service_failure_hook takes the error class name as an error_class string argument where
+      LiteLLM takes error: str | Exception and reads error.__class__.__name__.
+    why: >-
+      Rust has no exception reflection, so the caller that caught the error passes its class name,
+      the value LiteLLM's expression produces. A plain str in LiteLLM yields "str" the same way, and
+      callers here pass the name they already know.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_services.py#L250-L258
+  - what: >-
+      The four hooks and the three metric factories are methods of the public ServiceHealthMetrics
+      trait implemented by PrometheusServicesLogger, and the hooks await nothing, so a Rust caller
+      invokes them without spawning a task where LiteLLM declares async def methods on its class.
+    why: >-
+      LiteLLM's async service hooks contain no await either; the async keyword only matches the
+      callback interface. The trait names the interface the service dispatcher calls, a caller that
+      needs a hook on a task can wrap the call, and one dispatch method behind the seven thin
+      methods keeps the four hooks from being four copies of the same loop.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_services.py#L220-L248
+  - what: >-
+      A finite duration or gauge value outside Decimal's range renders as PositiveInfinity or
+      NegativeInfinity, where prometheus_client keeps the float and writes its exponent form.
+    why: >-
+      B3874's samples hold a Decimal with explicit infinities and turn an overflowed addition into the
+      matching infinity, so a value too large for a Decimal takes that same route here instead of
+      being capped. The branch is pinned by values_beyond_the_decimal_range_become_infinities.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_services.py#L153-L184
+kept_bugs: []

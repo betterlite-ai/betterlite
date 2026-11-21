@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::net::{SocketAddr, TcpListener};
+use std::net::SocketAddr;
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -245,13 +245,6 @@ pub(crate) fn configured_headers(entries: &[(&str, &str)]) -> RequestHeaders {
 
 pub(crate) fn params_at(address: SocketAddr) -> Params {
     base::params(&format!(r#"{{"api_base": "http://{address}"}}"#))
-}
-
-pub(crate) fn dead_address() -> SocketAddr {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
-    address
 }
 
 pub(crate) fn create_request<'call>(

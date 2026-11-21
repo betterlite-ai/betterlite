@@ -8,9 +8,9 @@ use betterlite_config::sections::akto_mirroring::{
 };
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
+use betterlite_test_ports::refused_port::RefusedPort;
 use secrecy::SecretString;
 use serde::Deserialize;
-use tokio::net::TcpListener;
 use tokio::sync::Semaphore;
 use tokio::time::timeout;
 
@@ -91,13 +91,6 @@ where
     timeout(Duration::from_secs(2), call)
         .await
         .expect("the hook returned before its background send was answered")
-}
-
-async fn unreachable_base() -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
-    let address = listener.local_addr().expect("addr");
-    drop(listener);
-    format!("http://{address}")
 }
 
 // runs one hook mode over one input type and returns how many mirror calls it made
@@ -313,7 +306,8 @@ async fn akto_mode_maps_only_the_two_hook_names() {
 
 #[tokio::test]
 async fn akto_unreachable_follows_the_configured_fallback() {
-    let base = unreachable_base().await;
+    let refused = RefusedPort::bind().expect("a refused port");
+    let base = format!("http://{}", refused.address);
     let mode = LitellmParamsMode::One("pre_call".to_owned());
     let closed = akto_guardrail(&base, AktoFallback::FailClosed);
     let inputs = akto_inputs();
