@@ -59,6 +59,24 @@ deviations:
       B1100 answers the boundary instead of the framework. LiteLLM's _read_request_body has no
       size cap for a JSON body; its only size check skips the surrogate repair and raises a 400.
     link: ""
+  - what: >-
+      A body that is valid JSON but not an object answers 400 invalid_request_error with param
+      request_body.
+    why: >-
+      The task parses the body with B1100's decoder, which reports NotAnObject. LiteLLM's
+      orjson.loads accepts any JSON value and returns it; the handler's `"model" not in data`
+      test and `data["model"] = model_name` write then raise outside its try, so Starlette
+      answers a 500. docs/compatibility.md reports a value of the wrong type as an error
+      naming the field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L231-L271
+  - what: >-
+      The body is decoded as JSON whatever its content type; a form or binary body does not get
+      its own parser.
+    why: >-
+      The task parses the JSON body with B1100's JSON decoder. LiteLLM's _read_request_body
+      branches on content type first and parses form and binary bodies before falling back to
+      JSON; the Google GenAI SDK sends JSON bodies to these routes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L200-L224
 kept_bugs:
   - what: >-
       The path model is written into the request data only when the body has no model key, so
