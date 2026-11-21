@@ -49,10 +49,7 @@ async fn dispatch_generate_content_moves_generation_config_into_the_config() {
     let expected: Number = serde_json::from_str("0.4").expect("the expected temperature parses");
     assert_eq!(seen[0].1.request.temperature, Some(expected));
     assert_eq!(seen[0].1.request.model.as_deref(), Some(ADAPTER_MODEL));
-    assert_eq!(
-        response.candidates[0].finish_reason.as_deref(),
-        Some("STOP")
-    );
+    assert_eq!(response.candidates[0].finish_reason, Some("STOP"));
     assert_eq!(
         dispatch.state.litellm_params.get("agenerate_content"),
         Some(&DecisionJson::Bool(false))
@@ -436,8 +433,8 @@ async fn dispatch_native_call_defaults_a_missing_or_zero_timeout() {
 
     let seen = harness.source.requests();
     assert_eq!(seen.len(), 3);
-    assert_eq!(seen[0].timeout, Some(Duration::from_secs(6000)));
-    assert_eq!(seen[1].timeout, Some(Duration::from_secs(6000)));
+    assert_eq!(seen[0].timeout, Some(Duration::from_mins(100)));
+    assert_eq!(seen[1].timeout, Some(Duration::from_mins(100)));
     assert_eq!(seen[2].timeout, Some(Duration::from_secs(30)));
 }
 
