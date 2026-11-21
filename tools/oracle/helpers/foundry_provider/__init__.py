@@ -1,3 +1,4 @@
+import litellm
 from openai import OpenAIError
 from pydantic import JsonValue
 
@@ -10,13 +11,18 @@ from .bindings import (
     MESSAGES,
     PUBLIC,
     WIRE,
+    EmbeddingInput,
+    Input,
     NativeBindings,
+    Observation,
     Recorder,
     environment,
     frozen_context,
     request_context,
 )
-from .contracts import EmbeddingInput, Input, Observation
+
+# an unmapped model prints a provider banner on stdout, which carries the oracle's JSON line
+litellm.suppress_debug_info = True
 
 
 def run_chat(recorder: Recorder) -> None:
@@ -46,14 +52,16 @@ def observe(supplied: Input) -> Observation:
         ):
             run_chat(recorder)
     elif supplied["op"] == "embedding":
-        with environment(supplied["globals"], supplied["environment"]), NativeBindings(MAIN).install(
-            frozen_context(EMBED_MODEL, None, recorder), recorder,
+        with (
+            environment(supplied["globals"], supplied["environment"]),
+            NativeBindings(MAIN).install(frozen_context(EMBED_MODEL, None, recorder), recorder),
         ):
             run_embedding(supplied, recorder)
     else:
         recorder.status = supplied["status"]
-        with environment(supplied["globals"], supplied["environment"]), NativeBindings(MAIN).install(
-            request_context(supplied, recorder), recorder,
+        with (
+            environment(supplied["globals"], supplied["environment"]),
+            NativeBindings(MAIN).install(request_context(supplied, recorder), recorder),
         ):
             run_chat(recorder)
     return Observation(

@@ -2,7 +2,7 @@ import os
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Final, NotRequired, Protocol, TypedDict, Unpack, runtime_checkable
+from typing import Final, Literal, NotRequired, Protocol, TypedDict, Unpack, runtime_checkable
 
 import litellm
 from litellm import main
@@ -11,7 +11,54 @@ from litellm.llms.azure_ai import agents as agents_module
 from litellm.types.utils import EmbeddingResponse, ModelResponse
 from pydantic import ConfigDict, JsonValue, TypeAdapter, ValidationError
 
-from .contracts import DispatchInput, Globals, PostCall
+
+class Globals(TypedDict):
+    api_base: str | None
+    api_key: str | None
+    headers: dict[str, str] | None
+
+
+class Configured(TypedDict):
+    api_base: str | None
+    api_key: str | None
+    globals: Globals
+    environment: dict[str, str]
+
+
+class RewriteInput(TypedDict):
+    op: Literal["rewrite"]
+    base: str
+
+
+class EmbeddingInput(Configured):
+    op: Literal["embedding"]
+
+
+class DispatchInput(Configured):
+    op: Literal["dispatch"]
+    model: str
+    messages: list[dict[str, JsonValue]]
+    headers: dict[str, str] | None
+    stream: bool
+    status: int | None
+
+
+Input = RewriteInput | EmbeddingInput | DispatchInput
+
+
+class PostCall(TypedDict):
+    error: bool
+    headers: bool
+
+
+class Observation(TypedDict):
+    branch: str | None
+    base: str | None
+    key: str | None
+    headers: dict[str, str] | None
+    messages: JsonValue
+    post_calls: list[PostCall]
+    errors: bool
 
 
 class Arguments(TypedDict):
@@ -106,9 +153,6 @@ EMBED_MODEL: Final = "text-embedding-3-small"
 FAILURE_STATUS: Final = 400
 MESSAGES: Final[list[dict[str, JsonValue]]] = [{"role": "user", "content": "hi"}]
 
-# an unmapped model prints a provider banner on stdout, which carries the oracle's JSON line
-litellm.suppress_debug_info = True
-
 
 class Recorder:
     def __init__(self) -> None:
@@ -126,7 +170,7 @@ class Recorder:
         match kwargs["original_response"]:
             case str():
                 self.post_calls.append(PostCall(error=True, headers=logged_headers))
-            case ModelResponse():
+            case ModelResponse():  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2181
                 self.post_calls.append(PostCall(error=False, headers=logged_headers))
 
     def record(self, branch: str, kwargs: Arguments) -> None:
@@ -176,15 +220,15 @@ class NativeBindings:
     @contextmanager
     def install(self, context: Context, recorder: Recorder) -> Generator[None]:
         fields = self.fields
-        factory = fields._CompletionDispatchContext
-        encoding = fields._get_encoding
+        factory = fields._CompletionDispatchContext  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L1617
+        encoding = fields._get_encoding  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L1617
         chat = fields.base_llm_http_handler
         claude = fields.azure_anthropic_chat_completions
         embedding = fields.azure_ai_embedding
         agents = AGENTS.AzureAIAgentsConfig.completion
         leaf = RecorderLeaf(recorder, "chat")
-        fields._CompletionDispatchContext = FixedContext(context)
-        fields._get_encoding = str
+        fields._CompletionDispatchContext = FixedContext(context)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L1617
+        fields._get_encoding = str  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L1617
         fields.base_llm_http_handler = leaf
         fields.azure_anthropic_chat_completions = RecorderLeaf(recorder, "claude")
         fields.azure_ai_embedding = leaf
@@ -192,8 +236,8 @@ class NativeBindings:
         try:
             yield
         finally:
-            fields._CompletionDispatchContext = factory
-            fields._get_encoding = encoding
+            fields._CompletionDispatchContext = factory  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L1617
+            fields._get_encoding = encoding  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L1617
             fields.base_llm_http_handler = chat
             fields.azure_anthropic_chat_completions = claude
             fields.azure_ai_embedding = embedding
@@ -244,4 +288,5 @@ def normalize(value: JsonValue) -> JsonValue:
             return [normalize(item) for item in value]
         case dict():
             return {key: normalize(item) for key, item in value.items()}
-    return value
+        case None | bool() | int() | float():
+            return value
