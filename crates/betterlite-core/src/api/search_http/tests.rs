@@ -1,7 +1,10 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::io::Read as _;
+use std::net::TcpListener;
 use std::sync::{Arc, Mutex, PoisonError};
+use std::thread;
 use std::time::Duration;
 
 use betterlite_config::proxy::ProxyPolicy;
@@ -36,6 +39,7 @@ use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
+use tokio::time::sleep;
 
 use super::{SearchHttpCall, SearchHttpError, execute_search};
 use crate::api::vector_store_http_write::service::LogContext;
@@ -862,6 +866,51 @@ async fn request_failure_is_converted() {
     .await;
 }
 
+async fn dropped_connection_is_not_retried() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("the listener binds");
+    let address = listener.local_addr().expect("the listener address reads");
+    let attempts = Arc::new(Mutex::new(Vec::new()));
+    let seen = Arc::clone(&attempts);
+    let _server = thread::spawn(move || {
+        for _ in 0..2_u8 {
+            let Ok((mut stream, _peer)) = listener.accept() else {
+                return;
+            };
+            seen.lock().unwrap_or_else(PoisonError::into_inner).push(());
+            let mut buffer = [0_u8; 1024];
+            let _read = stream.read(&mut buffer);
+        }
+    });
+    let base = format!("http://{address}/search");
+    let tls = default_tls();
+    let routing = proxy_policy();
+    let pool = ClientPool::new(4, TransportLimits::DEFAULT);
+    let provider = test_provider(&base);
+    let query = SearchQuery::Single(String::from("rust"));
+    let params = Object::new();
+    let mut fixture = Fixture::new();
+    let rejection = fixture
+        .execute(
+            search_call(&query, &params, &base, &tls, &routing),
+            &provider,
+            &pool,
+            false,
+        )
+        .await
+        .expect_err("the dropped connection fails the call");
+    let error = provider_error(&rejection);
+    assert_eq!(
+        (error.status_code, error.status_code_is_synthesized),
+        (500, true)
+    );
+    sleep(Duration::from_millis(100)).await;
+    let arrived = attempts
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .len();
+    assert_eq!(arrived, 1);
+}
+
 #[tokio::test]
 async fn transport_failure() {
     connection_failure_is_converted().await;
@@ -869,6 +918,7 @@ async fn transport_failure() {
     closed_pool_is_converted().await;
     body_too_large_is_converted().await;
     request_failure_is_converted().await;
+    dropped_connection_is_not_retried().await;
 }
 
 async fn supplied_client_wins() {
