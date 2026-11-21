@@ -14,7 +14,6 @@ use deadpool_postgres::PoolError;
 
 use super::ports::PortError;
 use super::rows::UserRowError;
-use super::store::UserStoreError;
 use crate::auth_identity::errors::AuthError;
 use crate::auth_read::table::AuthReadError;
 
@@ -86,9 +85,6 @@ fn unavailable_link(link: &(dyn Error + 'static)) -> bool {
     if let Some(read) = link.downcast_ref::<AuthReadError<UserRowError>>() {
         return auth_read_unavailable(read);
     }
-    if let Some(store) = link.downcast_ref::<UserStoreError>() {
-        return store_unavailable(store);
-    }
     if let Some(port) = link.downcast_ref::<PortError>()
         && port
             .database_fault
@@ -118,6 +114,10 @@ fn database_unavailable(fault: &DatabaseFault) -> bool {
     is_infrastructure_error(fault.error_type)
         || is_database_transport_error(fault)
         || is_engine_internal_error(fault)
+        || fault
+            .message
+            .to_ascii_lowercase()
+            .contains(STALE_PLAN_MESSAGE)
 }
 
 fn lookup_unavailable(lookup: &DbLookupError) -> bool {
@@ -135,26 +135,27 @@ fn auth_read_unavailable(read: &AuthReadError<UserRowError>) -> bool {
     }
 }
 
-fn store_unavailable(store: &UserStoreError) -> bool {
-    match store {
-        UserStoreError::Session(native) => native_unavailable(native),
-        UserStoreError::Read(read) => auth_read_unavailable(read),
-        UserStoreError::Write(native) => native_unavailable(native),
-        UserStoreError::Backfill(native) => native_unavailable(native),
-        UserStoreError::Other(inner) => unavailable_link(inner.as_ref()),
-    }
-}
-
 fn native_unavailable<Failure>(error: &NativeDbError<Failure>) -> bool {
     if is_native_transport_error(error) {
         return true;
     }
-    native_driver(error).is_some_and(|driver| {
-        driver
+    native_driver(error).is_some_and(driver_names_stale_plan)
+}
+
+// the driver keeps the server's message in its source chain, not in its own Display
+fn driver_names_stale_plan(driver: &tokio_postgres::Error) -> bool {
+    let mut link = Some(driver as &(dyn Error + 'static));
+    while let Some(current) = link {
+        if current
             .to_string()
             .to_ascii_lowercase()
             .contains(STALE_PLAN_MESSAGE)
-    })
+        {
+            return true;
+        }
+        link = current.source();
+    }
+    false
 }
 
 // DriverError hides the driver text from the source chain, so a stale-plan fault is read here
