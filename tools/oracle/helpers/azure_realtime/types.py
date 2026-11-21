@@ -84,12 +84,8 @@ class RealtimeRunner(Protocol):
         api_key: str | None = None,
         api_version: str | None = None,
         azure_ad_token: str | None = None,
-        client: object | None = None,
-        timeout: float | None = None,
         realtime_protocol: str | None = None,
         query_params: RealtimeQueryParams | None = None,
-        user_api_key_dict: object | None = None,
-        litellm_metadata: dict[str, JsonValue] | None = None,
     ) -> None: ...
 
 
