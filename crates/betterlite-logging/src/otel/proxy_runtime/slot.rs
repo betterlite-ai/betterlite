@@ -59,10 +59,9 @@ pub fn set_destinations(destinations: Vec<OtelDestination>) {
 
 #[must_use]
 pub fn current_request_slot() -> Option<Arc<RequestSlot>> {
-    match ACTIVE_REQUEST_SLOT.try_with(Arc::clone) {
-        Ok(slot) => Some(slot),
-        Err(_) => None,
-    }
+    ACTIVE_REQUEST_SLOT
+        .try_with(Arc::clone)
+        .map_or_else(|_| None, Some)
 }
 
 // litellm.integrations.otel.plumbing.context's ContextVars ride the request task; a nested scope joins the outer slot the way betterlite-redis's batch scope does

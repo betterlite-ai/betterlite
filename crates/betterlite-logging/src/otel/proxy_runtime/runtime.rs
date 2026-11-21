@@ -113,10 +113,11 @@ fn span_attribute_limit(
             .unwrap_or(DEFAULT_SPAN_ATTRIBUTE_LIMIT),
         None => DEFAULT_SPAN_ATTRIBUTE_LIMIT,
     };
-    match environment.lookup(SPAN_ATTRIBUTE_COUNT_LIMIT) {
-        Some(value) => read_attribute_limit(SPAN_ATTRIBUTE_COUNT_LIMIT, &value),
-        None => Ok(Some(global)),
-    }
+    environment
+        .lookup(SPAN_ATTRIBUTE_COUNT_LIMIT)
+        .map_or(Ok(Some(global)), |value| {
+            read_attribute_limit(SPAN_ATTRIBUTE_COUNT_LIMIT, &value)
+        })
 }
 
 // the SDK reads a stripped value; an empty one is unlimited and anything else must parse as a non-negative integer

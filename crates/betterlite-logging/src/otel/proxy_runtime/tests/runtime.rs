@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use betterlite_config::loader::EnvironmentLookup;
 use opentelemetry::Context;
-use opentelemetry::trace::{Span as _, TraceContextExt as _, Tracer as _, TracerProvider as _};
+use opentelemetry::trace::{TraceContextExt as _, Tracer as _, TracerProvider as _};
 use opentelemetry_sdk::trace::SdkTracerProvider;
 use rstest::rstest;
 
@@ -17,7 +17,6 @@ use crate::otel::logger_runtime::LoggerRuntime;
 use crate::otel::logger_runtime::factory::build_otel_v2_logger;
 use crate::otel::logger_runtime::tests::support::{NoSettings, NullAssembler, destination};
 use crate::otel::logger_runtime::types::{CallbackHooks, ConstructorSettings, InjectedProviders};
-use crate::otel::plumbing::context::context_slots::AnchoredSpan;
 use crate::otel::proxy_runtime::error::ProxyRuntimeError;
 use crate::otel::proxy_runtime::runtime::{ProxyRuntimeInputs, build_proxy_runtime};
 use crate::otel::proxy_runtime::slot::{anchor_request_root, request_slot_scope, set_destinations};
@@ -77,10 +76,10 @@ fn attribute_limit(runtime: &LoggerRuntime) -> Option<usize> {
 #[case::empty(Some(""), false)]
 #[case::unset(None, false)]
 fn the_v2_switch_follows_the_environment(#[case] value: Option<&str>, #[case] enabled: bool) {
-    let lookup = match value {
-        Some(switch) => environment(&[("LITELLM_OTEL_V2", switch)]),
-        None => environment(&[]),
-    };
+    let mut lookup = environment(&[]);
+    if let Some(switch) = value {
+        lookup.insert("LITELLM_OTEL_V2".to_owned(), switch.to_owned());
+    }
     let runtime = runtime_with(lookup, None).expect("the runtime builds");
     assert_eq!(runtime.v2_enabled, enabled);
 }
@@ -184,11 +183,7 @@ async fn a_langfuse_content_config_builds_the_content_logger_with_the_assembler(
     assert!(Arc::ptr_eq(&assembler, &content.stream_assembler));
     request_slot_scope(async {
         let span = provider.tracer("proxy_runtime_test").start("SERVER");
-        let root = AnchoredSpan {
-            context: span.span_context().clone(),
-            http_route: None,
-        };
-        anchor_request_root(root, Context::current_with_span(span));
+        anchor_request_root(anchored(7, 7), Context::current_with_span(span));
         let roots: &dyn RootSpanSource = content.inner.roots.as_ref();
         assert!(roots.request_root_span().is_some());
     })

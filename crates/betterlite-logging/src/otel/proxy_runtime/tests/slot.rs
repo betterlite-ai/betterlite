@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use opentelemetry::Context;
 use tokio::task::JoinSet;
+use tokio::task::yield_now;
 
 use crate::otel::config::destination::OtelDestination;
 use crate::otel::logger_runtime::tests::support::destination;
@@ -23,7 +24,7 @@ async fn request_that_anchors(
     request_slot_scope(async move {
         anchor_request_root(anchored(trace, span), Context::new());
         set_destinations(vec![destination(destination_name)]);
-        tokio::task::yield_now().await;
+        yield_now().await;
         let slot = current_request_slot().expect("the request task holds its slot");
         let held = slot.trace();
         (held.root.clone(), held.destinations.clone())
