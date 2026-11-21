@@ -360,12 +360,12 @@ pub(super) fn build(setup: Fixture) -> Harness {
     let router = routes(SearchToolState {
         database,
         refresh: Arc::clone(&refresh),
-        ports: SearchToolPorts {
+        ports: Arc::new(SearchToolPorts {
             config: Arc::new(FakeConfig(setup.config)),
             teams: teams_port,
             search: search_port,
             catalog: Arc::new(FakeCatalog),
-        },
+        }),
     });
     Harness {
         router,

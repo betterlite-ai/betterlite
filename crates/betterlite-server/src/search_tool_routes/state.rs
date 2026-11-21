@@ -16,7 +16,8 @@ pub struct SearchToolState<Table, Reconnect, Refresh> {
     // None answers LiteLLM's "Prisma client not initialized" on the five table routes
     pub database: Option<SearchToolDatabase<Table, Reconnect>>,
     pub refresh: Arc<Refresh>,
-    pub ports: SearchToolPorts,
+    // shared with test_connection and ui/available_providers, which take the ports alone as their state
+    pub ports: Arc<SearchToolPorts>,
 }
 
 pub struct SearchToolDatabase<Table, Reconnect> {
