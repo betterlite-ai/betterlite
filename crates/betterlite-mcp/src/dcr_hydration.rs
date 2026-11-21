@@ -1,1 +1,177 @@
+mod tests;
 
+use std::convert::Infallible;
+use std::error::Error as StdError;
+use std::future::Future;
+
+use betterlite_db::mcp_stored_contracts::secret::StoredSecret;
+use betterlite_db::mcp_stored_contracts::{JsonValue, MCPTokenEndpointAuthMethod};
+use betterlite_db::stored_cipher::DbCipher;
+use betterlite_secrets::secret_codec::{DecryptPolicy, FailureLog, FailureValue, StoredValue};
+use secrecy::{ExposeSecret as _, SecretString};
+use serde::Deserialize;
+use thiserror::Error;
+
+use crate::server_record::{MCPServer, SecretCredential};
+
+#[derive(Debug, Error)]
+pub enum StoreReadError<Source>
+where
+    Source: StdError + 'static,
+{
+    #[error("the persisted DCR client could not be read: {source}")]
+    Read {
+        #[source]
+        source: Source,
+    },
+}
+
+pub trait DcrClientStore: Send + Sync {
+    type Error: StdError + Send + Sync + 'static;
+
+    fn client_credentials(
+        &self,
+        server_id: &str,
+    ) -> impl Future<Output = Result<Option<JsonValue>, StoreReadError<Self::Error>>> + Send;
+}
+
+#[derive(Clone, Default, Deserialize, Eq, PartialEq)]
+#[serde(default)]
+pub struct PersistedDcrCredentials {
+    pub client_id: Option<String>,
+    pub client_secret: Option<String>,
+    pub token_endpoint_auth_method: Option<String>,
+    pub redirect_uris: Option<Vec<String>>,
+}
+
+pub fn parse_persisted_credentials(blob: &JsonValue) -> Option<PersistedDcrCredentials> {
+    match blob {
+        JsonValue::Null => None,
+        JsonValue::Object(fields) if fields.is_empty() => None,
+        JsonValue::Array(items) if items.is_empty() => None,
+        JsonValue::String(text) if text.is_empty() => None,
+        JsonValue::String(text) => serde_json::from_str(text).ok(),
+        JsonValue::Object(_) | JsonValue::Array(_) | JsonValue::Bool(_) | JsonValue::Number(_) => {
+            serde_json::to_string(blob)
+                .ok()
+                .and_then(|text| serde_json::from_str(&text).ok())
+        }
+    }
+}
+
+pub fn decrypt_credential(cipher: &DbCipher, value: Option<&str>, field: &str) -> Option<String> {
+    let text = value?;
+    let sealed = StoredValue::<Infallible>::Text(SecretString::from(text.to_owned()));
+    let opened = cipher.decrypt_value(
+        sealed,
+        field,
+        DecryptPolicy {
+            log: FailureLog::Debug,
+            value: FailureValue::Original,
+        },
+    )?;
+    match opened {
+        StoredValue::Text(secret) => Some(secret.expose_secret().to_owned()),
+        StoredValue::Other(never) => match never {},
+    }
+}
+
+pub struct DcrHydration<Store> {
+    pub store: Store,
+    pub cipher: DbCipher,
+}
+
+impl<Store> DcrHydration<Store>
+where
+    Store: DcrClientStore,
+{
+    #[must_use]
+    pub fn apply_persisted_credentials(
+        &self,
+        server: &mut MCPServer,
+        credentials: &PersistedDcrCredentials,
+    ) -> bool {
+        let client_id =
+            decrypt_credential(&self.cipher, credentials.client_id.as_deref(), "client_id");
+        let Some(client_id) = client_id.filter(|value| !value.is_empty()) else {
+            return false;
+        };
+        server.fields.client_id = Some(client_id);
+        server.fields.client_secret = decrypt_credential(
+            &self.cipher,
+            credentials.client_secret.as_deref(),
+            "client_secret",
+        )
+        .map(|secret| SecretCredential(StoredSecret(SecretString::from(secret))));
+        server.fields.token_endpoint_auth_method =
+            parse_token_endpoint_auth_method(credentials.token_endpoint_auth_method.as_deref());
+        true
+    }
+
+    pub async fn load_store_credentials(&self, server_id: &str) -> Option<PersistedDcrCredentials> {
+        let blob = match self.store.client_credentials(server_id).await {
+            Ok(blob) => blob,
+            Err(error) => {
+                tracing::debug!(
+                    "register_client_with_server: failed to read stored DCR client for server_id={server_id}: {error}"
+                );
+                return None;
+            }
+        };
+        let credentials = parse_persisted_credentials(blob.as_ref()?)?;
+        if credentials
+            .client_id
+            .as_deref()
+            .is_some_and(|client_id| !client_id.is_empty())
+        {
+            return Some(credentials);
+        }
+        None
+    }
+
+    #[must_use]
+    pub async fn hydrate_config_server_dcr_client(&self, server: &mut MCPServer) -> bool {
+        if server
+            .fields
+            .client_id
+            .as_deref()
+            .is_some_and(|client_id| !client_id.is_empty())
+        {
+            return false;
+        }
+        let Some(credentials) = self.load_store_credentials(&server.fields.server_id).await else {
+            return false;
+        };
+        self.apply_persisted_credentials(server, &credentials)
+    }
+}
+
+fn parse_token_endpoint_auth_method(raw: Option<&str>) -> Option<MCPTokenEndpointAuthMethod> {
+    let Some(text) = raw else {
+        return None;
+    };
+    match text.parse::<MCPTokenEndpointAuthMethod>() {
+        Ok(method) => Some(method),
+        Err(error) => {
+            tracing::debug!(
+                method = text,
+                "the stored token_endpoint_auth_method is not one betterlite knows: {error}"
+            );
+            None
+        }
+    }
+}
+
+#[must_use]
+pub fn redirect_uri_not_registered(
+    credentials: &PersistedDcrCredentials,
+    current_redirect_uri: &str,
+) -> bool {
+    let Some(recorded) = credentials.redirect_uris.as_ref() else {
+        return false;
+    };
+    if recorded.is_empty() {
+        return false;
+    }
+    !recorded.iter().any(|uri| uri == current_redirect_uri)
+}
