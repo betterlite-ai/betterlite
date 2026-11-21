@@ -60,6 +60,31 @@ fn team_then_key_alias(
     assert_eq!(result.diagnostics, Vec::new());
 }
 
+// both alias stages read data.get("model"), so a request without a usable model keeps its data as sent
+#[rstest]
+#[case::absent(RequestData::new())]
+#[case::null(RequestData::from([("model".to_owned(), Json::Null)]))]
+#[case::empty(request(&[("model", "")]))]
+fn a_request_without_a_model_skips_both_alias_stages(#[case] data: RequestData) {
+    let principal = OverridesPrincipal {
+        team_id: Some("team-1".to_owned()),
+        team_model_aliases: alias_map(&[("gpt-4o", "team-model")]),
+        aliases: alias_map(&[("team-model", "key-model")]),
+        metadata: None,
+        team_metadata: None,
+        project_metadata: None,
+    };
+    let input = RequestModelOverridesInput {
+        data: data.clone(),
+        principal,
+        premium_user: true,
+    };
+    let result = RequestModelOverridesService::default()
+        .apply(&input)
+        .unwrap();
+    assert_eq!(result.data, data);
+}
+
 // the data map holds copied credential values, so the debug line names the redaction and never them
 #[test]
 fn result_debug_redacts_credential_values() {
