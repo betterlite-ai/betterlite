@@ -1,0 +1,11 @@
+kind: helper
+name: jwt-settings-mapping-empty-string-is-configured
+call:
+  jwt_settings:
+    scenarios:
+      - {"settings": {"virtual_key_claim_field": ""}, "references": {}, "environment": {}, "issuers": [null]}
+      - {"settings": {"issuers": [{"issuer": "https://idp.example.com", "disable_audience_validation": true, "virtual_key_claim_field": ""}]}, "references": {}, "environment": {}, "issuers": ["https://idp.example.com", null]}
+      - {"settings": {"issuers": [{"issuer": "https://idp.example.com", "disable_audience_validation": true}]}, "references": {}, "environment": {}, "issuers": ["https://idp.example.com"]}
+      - {"settings": {}, "references": {}, "environment": {}, "issuers": [null]}
+env: {}
+compare: {ignore: []}

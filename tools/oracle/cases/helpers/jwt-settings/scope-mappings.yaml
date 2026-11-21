@@ -1,0 +1,13 @@
+kind: helper
+name: jwt-settings-scope-mappings
+call:
+  jwt_settings:
+    scenarios:
+      - {"settings": {"scope_mappings": [{"scope": "litellm.read", "models": ["gpt-4o"], "routes": ["/chat/completions"]}, {"scope": "litellm.none"}], "enforce_scope_based_access": true}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"scope_mappings": [{"scope": "litellm.read"}]}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"scope_mappings": null}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"scope_mappings": [{"models": ["gpt-4o"]}], "enforce_scope_based_access": true}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"scope_mappings": [{"scope": "litellm.read", "models": 5}], "enforce_scope_based_access": true}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"object_id_jwt_field": "oid", "scope_mappings": []}, "references": {}, "environment": {}, "issuers": []}
+env: {}
+compare: {ignore: []}

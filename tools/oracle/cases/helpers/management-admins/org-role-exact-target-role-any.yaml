@@ -1,0 +1,85 @@
+kind: helper
+name: org-role-exact-target-role-any
+call:
+  management_admins:
+    cases:
+      - function: org_admin_can_invite_user
+        admin:
+          user_id: admin-1
+          organization_memberships:
+            - user_id: admin-1
+              organization_id: org-1
+              user_role: org_admin
+              created_at: "2026-01-01T00:00:00+00:00"
+              updated_at: "2026-01-01T00:00:00+00:00"
+            - user_id: admin-1
+              organization_id: org-2
+              user_role: proxy_admin
+              created_at: "2026-01-01T00:00:00+00:00"
+              updated_at: "2026-01-01T00:00:00+00:00"
+        target:
+          user_id: target-1
+          organization_memberships:
+            - user_id: target-1
+              organization_id: org-1
+              user_role: internal_user
+              created_at: "2026-01-01T00:00:00+00:00"
+              updated_at: "2026-01-01T00:00:00+00:00"
+      - function: org_admin_can_invite_user
+        admin:
+          user_id: admin-1
+          organization_memberships:
+            - user_id: admin-1
+              organization_id: org-1
+              user_role: org_admin
+              created_at: "2026-01-01T00:00:00+00:00"
+              updated_at: "2026-01-01T00:00:00+00:00"
+            - user_id: admin-1
+              organization_id: org-2
+              user_role: proxy_admin
+              created_at: "2026-01-01T00:00:00+00:00"
+              updated_at: "2026-01-01T00:00:00+00:00"
+        target:
+          user_id: target-1
+          organization_memberships:
+            - user_id: target-1
+              organization_id: org-2
+              user_role: org_admin
+              created_at: "2026-01-01T00:00:00+00:00"
+              updated_at: "2026-01-01T00:00:00+00:00"
+      - function: org_admin_can_invite_user
+        admin:
+          user_id: admin-1
+          organization_memberships:
+            - user_id: admin-1
+              organization_id: org-1
+              user_role: org_admin
+              created_at: "2026-01-01T00:00:00+00:00"
+              updated_at: "2026-01-01T00:00:00+00:00"
+        target:
+          user_id: target-1
+          organization_memberships:
+            - user_id: target-1
+              organization_id: org-1
+              user_role: null
+              created_at: "2026-01-01T00:00:00+00:00"
+              updated_at: "2026-01-01T00:00:00+00:00"
+      - function: org_admin_can_invite_user
+        admin:
+          user_id: admin-1
+          organization_memberships:
+            - user_id: admin-1
+              organization_id: org-1
+              user_role: ORG_ADMIN
+              created_at: "2026-01-01T00:00:00+00:00"
+              updated_at: "2026-01-01T00:00:00+00:00"
+        target:
+          user_id: target-1
+          organization_memberships:
+            - user_id: target-1
+              organization_id: org-1
+              user_role: internal_user
+              created_at: "2026-01-01T00:00:00+00:00"
+              updated_at: "2026-01-01T00:00:00+00:00"
+env: {}
+compare: {ignore: []}

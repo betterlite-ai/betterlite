@@ -5,7 +5,7 @@ use betterlite_core::api::search_providers::fastcrw::reply::decode_fastcrw_reply
 use betterlite_core::api::search_providers::firecrawl::FirecrawlSearch;
 use betterlite_core::api::search_providers::firecrawl::reply::decode_firecrawl_reply;
 use betterlite_openai::openai_base_config::{Headers, Object};
-use betterlite_openai::search::provider::{SearchProvider as _, SearchQuery};
+use betterlite_openai::search::provider::{RequestInput, SearchProvider, SearchQuery};
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -76,47 +76,62 @@ fn request(input: &Input) -> HelperResult {
             let headers = search
                 .prepare_headers(Headers::new(), key.as_ref(), base)
                 .map_err(failure)?;
-            let body = search
-                .transform_search_request(&query, &input.optional_params)
-                .map_err(failure)?;
-            let url = search
-                .complete_url(base, &input.optional_params, Some(&body))
-                .map_err(failure)?;
-            Ok(json!({"url": url, "headers": headers, "body": body}))
+            outbound(&search, &headers, &query, input, key.as_ref())
         }
         ProviderName::Firecrawl => {
             let search = FirecrawlSearch::load(&input.environment);
             let headers = search
                 .prepare_headers(Headers::new(), key.as_ref(), base)
                 .map_err(failure)?;
-            let body = search
-                .transform_search_request(&query, &input.optional_params)
-                .map_err(failure)?;
-            let url = search
-                .complete_url(base, &input.optional_params, Some(&body))
-                .map_err(failure)?;
-            Ok(json!({"url": url, "headers": headers, "body": body}))
+            outbound(&search, &headers, &query, input, key.as_ref())
         }
     }
+}
+
+fn outbound<Search>(
+    search: &Search,
+    headers: &Headers,
+    query: &SearchQuery,
+    input: &Input,
+    key: Option<&SecretString>,
+) -> HelperResult
+where
+    Search: SearchProvider,
+{
+    let base = input.api_base.as_deref();
+    let body = search
+        .transform_search_request(&RequestInput {
+            query,
+            optional_params: &input.optional_params,
+            api_key: key,
+            api_base: base,
+            headers,
+        })
+        .map_err(failure)?;
+    let url = search
+        .complete_url(base, &input.optional_params, Some(&body), key)
+        .map_err(failure)?;
+    Ok(json!({"url": url, "headers": headers, "body": body}))
 }
 
 fn responses(input: &Input) -> HelperResult {
     let mut parsed = Vec::new();
     for reply in &input.replies {
         let bytes = serde_json::to_vec(reply).map_err(failure)?;
-        let response = match input.provider {
-            ProviderName::Fastcrw => {
-                serde_json::to_value(decode_fastcrw_reply(&bytes).map_err(failure)?)
-                    .map_err(failure)?
-            }
-            ProviderName::Firecrawl => {
-                serde_json::to_value(decode_firecrawl_reply(&bytes).map_err(failure)?)
-                    .map_err(failure)?
-            }
-        };
-        parsed.push(response);
+        parsed.push(decoded(input.provider, &bytes)?);
     }
     Ok(json!({"responses": parsed}))
+}
+
+fn decoded(provider: ProviderName, bytes: &[u8]) -> HelperResult {
+    match provider {
+        ProviderName::Fastcrw => {
+            serde_json::to_value(decode_fastcrw_reply(bytes).map_err(failure)?).map_err(failure)
+        }
+        ProviderName::Firecrawl => {
+            serde_json::to_value(decode_firecrawl_reply(bytes).map_err(failure)?).map_err(failure)
+        }
+    }
 }
 
 fn failure<Error>(error: Error) -> Box<HelperError>

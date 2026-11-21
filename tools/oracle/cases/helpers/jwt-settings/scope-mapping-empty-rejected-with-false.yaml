@@ -1,0 +1,11 @@
+kind: helper
+name: jwt-settings-scope-mapping-empty-rejected-with-false
+call:
+  jwt_settings:
+    scenarios:
+      - {"settings": {"scope_mappings": [], "enforce_scope_based_access": false}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"scope_mappings": []}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"scope_mappings": [], "enforce_scope_based_access": null}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"scope_mappings": [], "enforce_scope_based_access": true}, "references": {}, "environment": {}, "issuers": []}
+env: {}
+compare: {ignore: []}

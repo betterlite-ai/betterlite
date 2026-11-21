@@ -8,7 +8,7 @@ use betterlite_config::loader::EnvironmentLookup;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::search::credentials::ServerCredential;
 use betterlite_openai::search::provider::{
-    OutboundSearch, ProviderResponse, SearchProvider, SearchQuery,
+    OutboundSearch, ProviderResponse, RequestInput, SearchProvider,
 };
 use betterlite_openai::search::records::SearchResponse;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -120,16 +120,13 @@ impl SearchProvider for TavilySearch {
         api_base: Option<&str>,
         _optional_params: &Object,
         _body: Option<&Object>,
+        _api_key: Option<&SecretString>,
     ) -> Result<String, TavilyError> {
         Ok(self.endpoint(api_base))
     }
 
-    fn transform_search_request(
-        &self,
-        query: &SearchQuery,
-        optional_params: &Object,
-    ) -> Result<Object, TavilyError> {
-        search_body(query, optional_params)
+    fn transform_search_request(&self, input: &RequestInput<'_>) -> Result<Object, TavilyError> {
+        search_body(input.query, input.optional_params)
     }
 
     fn transform_search_response(

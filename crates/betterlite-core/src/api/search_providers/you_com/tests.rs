@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::search::credentials::CredentialError;
 use betterlite_openai::search::provider::{
-    HttpMethod, OutboundSearch, ProviderResponse, SearchProvider, SearchQuery,
+    HttpMethod, OutboundSearch, ProviderResponse, RequestInput, SearchProvider, SearchQuery,
 };
 use betterlite_openai::search::records::SearchResult;
 use rstest::rstest;
@@ -233,7 +233,7 @@ fn complete_url_picks_the_keyed_or_free_base(
 ) {
     assert_eq!(
         load(environment)
-            .complete_url(api_base, &Object::new(), None)
+            .complete_url(api_base, &Object::new(), None, None)
             .unwrap(),
         expected
     );
@@ -251,7 +251,9 @@ fn caller_key_does_not_reach_the_url_choice() {
         Some("sk-caller")
     );
     assert_eq!(
-        search.complete_url(None, &Object::new(), None).unwrap(),
+        search
+            .complete_url(None, &Object::new(), None, None)
+            .unwrap(),
         YOU_COM_FREE_API_BASE
     );
 }
@@ -335,7 +337,13 @@ fn sign_request_accepts_a_caller_key_on_an_untrusted_host() {
 )]
 fn body_joins_the_query(#[case] query: SearchQuery, #[case] expected: &str) {
     let body = load(&[])
-        .transform_search_request(&query, &Object::new())
+        .transform_search_request(&RequestInput {
+            query: &query,
+            optional_params: &Object::new(),
+            api_key: None,
+            api_base: None,
+            headers: &Headers::new(),
+        })
         .unwrap();
     assert_eq!(body, object(expected));
 }
@@ -353,7 +361,13 @@ fn body_maps_unified_parameters_and_copies_the_rest() {
         }"#,
     );
     let body = load(&[])
-        .transform_search_request(&SearchQuery::Single("rust".to_owned()), &optional_params)
+        .transform_search_request(&RequestInput {
+            query: &SearchQuery::Single("rust".to_owned()),
+            optional_params: &optional_params,
+            api_key: None,
+            api_base: None,
+            headers: &Headers::new(),
+        })
         .unwrap();
     assert_eq!(
         body,
@@ -373,7 +387,13 @@ fn body_maps_unified_parameters_and_copies_the_rest() {
 fn body_keeps_a_caller_include_domains_without_the_filter() {
     let optional_params = object(r#"{"include_domains": ["kept.test"]}"#);
     let body = load(&[])
-        .transform_search_request(&SearchQuery::Single("rust".to_owned()), &optional_params)
+        .transform_search_request(&RequestInput {
+            query: &SearchQuery::Single("rust".to_owned()),
+            optional_params: &optional_params,
+            api_key: None,
+            api_base: None,
+            headers: &Headers::new(),
+        })
         .unwrap();
     assert_eq!(
         body,
@@ -385,7 +405,13 @@ fn body_keeps_a_caller_include_domains_without_the_filter() {
 fn body_rejects_a_non_string_country() {
     let optional_params = object(r#"{"country": []}"#);
     let error = load(&[])
-        .transform_search_request(&SearchQuery::Single("rust".to_owned()), &optional_params)
+        .transform_search_request(&RequestInput {
+            query: &SearchQuery::Single("rust".to_owned()),
+            optional_params: &optional_params,
+            api_key: None,
+            api_base: None,
+            headers: &Headers::new(),
+        })
         .unwrap_err();
     assert!(matches!(error, YouComError::CountryNotString));
 }

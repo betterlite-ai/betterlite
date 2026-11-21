@@ -21,8 +21,10 @@ description: >-
   immediately, even in strict mode. Otherwise unverified strict mode WARNs with the counter and raises
   HTTP503 detail.error Budget enforcement unavailable: current spend could not be verified against
   Redis or the database, and fail_closed_budget_enforcement is enabled, so the request was rejected
-  to avoid exceeding the configured budget. Retry shortly. Other paths return current. B757 maps
-  that auth error to503 auth_error with string None param; no retry or budget-exceeded substitution.
+  to avoid exceeding the configured budget. Retry shortly. Other paths return current. The server
+  wiring renders that error itself as B8410's ProxyException with code 503, type auth_error and the
+  string None param, the way the done auth stages build theirs (auth_tag_budgets.rs); no retry or
+  budget-exceeded substitution.
 
   Floor cache is process-local spend_db_floor:<counter>, TTL exactly5 seconds; nonnull hits convert to
   float. For spend:end_user: query B2322 end_user_from_db and return directly, without a window fallback.
