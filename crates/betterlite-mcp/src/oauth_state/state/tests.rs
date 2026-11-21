@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use betterlite_db::mcp_stored_contracts::MCPTokenEndpointAuthMethod;
 use betterlite_db::mcp_stored_contracts::secret::StoredSecret;
 use secrecy::{ExposeSecret as _, SecretString};

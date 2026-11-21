@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::collections::BTreeMap;
 
 use betterlite_db::mcp_stored_contracts::JsonValue;

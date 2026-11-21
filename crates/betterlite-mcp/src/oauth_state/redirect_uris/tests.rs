@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use betterlite_db::mcp_stored_contracts::JsonValue;
 use rstest::rstest;
 

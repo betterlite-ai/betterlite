@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use rstest::rstest;
 
 use super::append_query_params;
