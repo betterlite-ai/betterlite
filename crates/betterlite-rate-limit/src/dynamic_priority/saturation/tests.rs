@@ -136,6 +136,16 @@ async fn a_float_requests_counter_truncates_toward_zero() {
 }
 
 #[tokio::test]
+async fn a_float_tokens_counter_keeps_its_fraction() {
+    let (saturation, _) = saturation(
+        &[(TPM_KEY, CacheCounterValue::Float(12.5))],
+        limits(None, Some(25)),
+    )
+    .await;
+    assert_eq!(saturation.to_bits(), 0.5_f64.to_bits());
+}
+
+#[tokio::test]
 async fn the_configured_ttl_reaches_every_read() {
     let cache = RecordingCache::seeded(&[(RPM_KEY, text("50"))]);
     let policy = PriorityPolicy {
