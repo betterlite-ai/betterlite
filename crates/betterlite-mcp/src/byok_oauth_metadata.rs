@@ -48,6 +48,6 @@ pub fn protected_resource_document(
 
 #[must_use]
 pub fn prefixed_base_url(base_url: &str, prefix: &str) -> Result<String, UrlParseError> {
-    let parsed = python_url::parse(base_url)?;
-    Ok(format!("{}://{}{prefix}", parsed.scheme, parsed.netloc))
+    python_url::parse(base_url)
+        .map(|parsed| format!("{}://{}{prefix}", parsed.scheme, parsed.netloc))
 }

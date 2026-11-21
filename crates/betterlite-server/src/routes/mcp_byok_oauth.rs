@@ -17,7 +17,7 @@ use betterlite_mcp::byok_token_exchange::ports::{AuthCodeLookup, ByokCredentialS
 use betterlite_mcp::oauth_resource::challenge::BYOK_RESOURCE_METADATA_PATH;
 use secrecy::SecretString;
 
-use self::metadata::RootPrefix;
+use self::metadata::DocumentKind;
 
 pub(crate) const AUTHORIZATION_SERVER_PATH: &str = "/.well-known/oauth-authorization-server";
 pub(crate) const TOKEN_PATH: &str = "/v1/mcp/oauth/token";
@@ -48,12 +48,16 @@ where
     let mut router = Router::new()
         .route(
             AUTHORIZATION_SERVER_PATH,
-            get(metadata::bare_document::<C, S, B>),
+            get(metadata::discovery_document::<C, S, B>).layer(Extension(DocumentKind::Bare)),
         )
-        .route(&issuer_path, get(metadata::issuer_document::<C, S, B>))
+        .route(
+            &issuer_path,
+            get(metadata::discovery_document::<C, S, B>).layer(Extension(DocumentKind::Issuer)),
+        )
         .route(
             BYOK_RESOURCE_METADATA_PATH,
-            get(metadata::protected_resource::<C, S, B>),
+            get(metadata::discovery_document::<C, S, B>)
+                .layer(Extension(DocumentKind::ProtectedResource)),
         )
         .route(TOKEN_PATH, post(token::token_endpoint::<C, S, B>));
     // axum panics on a duplicate path, and LiteLLM's earlier suffix route wins over the catch-all.
@@ -65,10 +69,10 @@ where
         .collect();
     for prefix in prefixes {
         let path = format!("{AUTHORIZATION_SERVER_PATH}{prefix}/v1/mcp/oauth");
+        let kind = DocumentKind::Prefixed(prefix.to_owned());
         router = router.route(
             &path,
-            get(metadata::prefixed_document::<C, S, B>)
-                .layer(Extension(RootPrefix(prefix.to_owned()))),
+            get(metadata::discovery_document::<C, S, B>).layer(Extension(kind)),
         );
     }
     router.with_state(state)

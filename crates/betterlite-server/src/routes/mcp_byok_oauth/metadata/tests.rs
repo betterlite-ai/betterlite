@@ -110,7 +110,7 @@ async fn the_protected_resource_path_drops_the_base_path() {
 }
 
 #[tokio::test]
-async fn an_unparseable_base_url_answers_500_on_the_protected_resource_path() {
+async fn an_unparsable_base_url_answers_500_on_the_protected_resource_path() {
     let mut app = TestApp::with_record();
     app.base_url = "http://[::1".to_owned();
     let response = fetch(app, "/v1/mcp/oauth/protected-resource").await;
@@ -119,7 +119,7 @@ async fn an_unparseable_base_url_answers_500_on_the_protected_resource_path() {
 }
 
 #[tokio::test]
-async fn an_unparseable_base_url_answers_500_on_a_root_prefix_path() {
+async fn an_unparsable_base_url_answers_500_on_a_root_prefix_path() {
     let mut app = TestApp::with_record();
     app.base_url = "http://[::1".to_owned();
     app.root_prefixes = vec!["/prem".to_owned()];
