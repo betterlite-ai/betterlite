@@ -120,18 +120,17 @@ impl FakeTable {
         data: &SearchToolUpdate,
     ) -> Result<SearchToolRecord, TableError> {
         let mut rows = self.open(format!("update:{search_tool_id}"))?;
-        let updated = rows
+        let row = rows
             .iter_mut()
             .find(|row| row.search_tool_id == search_tool_id)
-            .map(|row| {
-                row.search_tool_name.clone_from(&data.search_tool_name);
-                row.litellm_params = stored(&data.litellm_params);
-                row.search_tool_info = Some(stored(&data.search_tool_info));
-                row.updated_at = data.updated_at;
-                row.clone()
-            });
+            .ok_or(TableError::MissingRow)?;
+        row.search_tool_name.clone_from(&data.search_tool_name);
+        row.litellm_params = stored(&data.litellm_params);
+        row.search_tool_info = Some(stored(&data.search_tool_info));
+        row.updated_at = data.updated_at;
+        let updated = row.clone();
         drop(rows);
-        updated.ok_or(TableError::MissingRow)
+        Ok(updated)
     }
 
     fn remove(&self, search_tool_id: &str) -> Result<SearchToolRecord, TableError> {
