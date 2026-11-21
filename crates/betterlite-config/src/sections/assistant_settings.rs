@@ -26,15 +26,16 @@ pub struct RawSettings {
     litellm_params: Option<BTreeMap<String, Json>>,
 }
 
-// a provider's three YAML states: absent (None), present with null (Some(None)), present with a value
+// a key's three YAML states: absent (None), present with null (Some(None)), present with a value
 type OptionalProvider = Option<Option<String>>;
+type OptionalParams = Option<Option<BTreeMap<String, Json>>>;
 
 #[derive(Deserialize)]
 struct Fields {
     #[serde(default, with = "serde_with::rust::double_option")]
     custom_llm_provider: OptionalProvider,
-    #[serde(default)]
-    litellm_params: Option<BTreeMap<String, Json>>,
+    #[serde(default, with = "serde_with::rust::double_option")]
+    litellm_params: OptionalParams,
 }
 
 // the one key the startup block reads once the mapping is nonempty
@@ -51,8 +52,8 @@ impl TryFrom<Fields> for RawSettings {
         if custom_llm_provider.is_none() && fields.litellm_params.is_none() {
             return Ok(Self::default());
         }
-        // once the mapping is nonempty, startup reads assistant_settings["litellm_params"]
-        let Some(litellm_params) = fields.litellm_params else {
+        // once the mapping is nonempty, startup reads assistant_settings["litellm_params"].items()
+        let Some(Some(litellm_params)) = fields.litellm_params else {
             return Err(MissingParams);
         };
         Ok(Self {

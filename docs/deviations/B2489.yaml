@@ -20,6 +20,17 @@ deviations:
       docs/compatibility.md allows for values outside the declared type.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7175-L7191
   - what: >-
+      A supplied client reaches create_assistant, list_assistants, delete_assistant,
+      create_thread, get_thread and run_thread, but not create_message or list_messages: the
+      message owner takes no supplied client, so those calls use the request's own api_base,
+      api_key and api_version.
+    why: >-
+      LiteLLM hands the client argument to a_add_message and aget_messages, and both forward it to
+      the openai or azure assistants API, where the client's own endpoint and key win. betterlite's
+      message owner (B1057) has no supplied-client input and this task's scope does not reach it; a
+      test pins the current behavior so the deviation is revisited when B1057 takes the client.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L848
+  - what: >-
       A delete call without the assistant_id raises the interpreter's TypeError with the sync
       delete_assistant() wording. LiteLLM's adelete_assistant catches that same TypeError inside
       its executor and re-raises it through exception_type as an APIConnectionError.

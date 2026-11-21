@@ -290,6 +290,18 @@ fn supplied(api_key: &str) -> AssistantClient {
     }
 }
 
+fn supplied_azure(api_key: &str) -> AssistantClient {
+    AssistantClient {
+        class: SuppliedClass::AsyncAzureOpenAi,
+        api_key: Some(SecretString::from(api_key.to_owned())),
+        api_base: Some(String::from("https://azure.test")),
+        api_version: Some(String::from("2024-05-01-preview")),
+        timeout: None,
+        max_retries: None,
+        organization: None,
+    }
+}
+
 fn openai_data() -> BTreeMap<String, Json> {
     data(&[("api_base", text(MOCK_BASE)), ("api_key", text("sk-test"))])
 }
@@ -576,6 +588,91 @@ async fn a_supplied_client_reaches_the_run_owner() {
     assert_eq!(fields.get("metadata"), Some(&metadata));
 }
 
+// B1057's message owner takes no supplied client yet, so the request's own parameters reach the provider
+#[tokio::test]
+async fn a_supplied_client_does_not_reach_the_message_owner() {
+    let settings = configured("openai", &[]);
+    let outcome = call(
+        &settings,
+        AssistantOperation::CreateMessage,
+        &data(&[
+            ("role", text("user")),
+            ("content", text("hello")),
+            ("api_base", text(MOCK_BASE)),
+            ("api_key", text("sk-test")),
+        ]),
+        Route {
+            thread_id: Some("thread_a"),
+            assistant_id: None,
+            client: Some(supplied("sk-supplied")),
+        },
+        &[(200, MESSAGE)],
+    )
+    .await;
+    outcome.result.expect("the message call succeeds");
+    assert_eq!(
+        outcome.seen[0].authorization.as_deref(),
+        Some("Bearer sk-test")
+    );
+}
+
+// an AsyncAzureOpenAI client keeps its own class, endpoint, key and api_version through create_thread
+#[tokio::test]
+async fn a_supplied_azure_client_reaches_create_thread() {
+    let settings = configured("openai", &[]);
+    let outcome = call(
+        &settings,
+        AssistantOperation::CreateThread,
+        &data(&[("custom_llm_provider", text("azure"))]),
+        Route {
+            thread_id: None,
+            assistant_id: None,
+            client: Some(supplied_azure("sk-azure")),
+        },
+        &[(200, THREAD)],
+    )
+    .await;
+    outcome
+        .result
+        .expect("the supplied azure client creates the thread");
+    let seen = &outcome.seen[0];
+    assert_eq!(seen.method, "POST");
+    assert_eq!(
+        seen.url,
+        "https://azure.test/openai/threads?api-version=2024-05-01-preview"
+    );
+    assert_eq!(seen.api_key.as_deref(), Some("sk-azure"));
+    assert_eq!(seen.authorization, None);
+}
+
+#[tokio::test]
+async fn a_supplied_azure_client_reaches_get_thread() {
+    let settings = configured("openai", &[]);
+    let outcome = call(
+        &settings,
+        AssistantOperation::GetThread,
+        &data(&[("custom_llm_provider", text("azure"))]),
+        Route {
+            thread_id: Some("thread_a"),
+            assistant_id: None,
+            client: Some(supplied_azure("sk-azure")),
+        },
+        &[(200, THREAD)],
+    )
+    .await;
+    outcome
+        .result
+        .expect("the supplied azure client reads the thread");
+    let seen = &outcome.seen[0];
+    assert_eq!(seen.method, "GET");
+    assert_eq!(
+        seen.url,
+        "https://azure.test/openai/threads/thread_a?api-version=2024-05-01-preview"
+    );
+    assert_eq!(seen.api_key.as_deref(), Some("sk-azure"));
+    assert_eq!(seen.authorization, None);
+}
+
 async fn a_configured_parameter_overlays_the_request(settings: &Settings) {
     let fixtures = fixture(settings);
     let original = settings.clone();
@@ -652,6 +749,29 @@ async fn an_empty_provider_is_rejected(settings: &Settings) {
     assert!(outcome.seen.is_empty());
 }
 
+async fn an_unsupported_provider_is_rejected(settings: &Settings) {
+    let fixtures = fixture(settings);
+    let outcome = dispatch(
+        &fixtures,
+        AssistantOperation::CreateAssistant,
+        &data(&[
+            ("custom_llm_provider", text("anthropic")),
+            ("api_key", text("request-key")),
+            ("model", text("gpt-4o")),
+        ]),
+        Route::default(),
+        &[],
+    )
+    .await;
+    let Err(AssistantDispatchError::Failure { failure }) = outcome.result else {
+        panic!("the unsupported provider did not surface as a failure");
+    };
+    assert_eq!(failure.class, "BadRequestError");
+    assert_eq!(failure.status, Some(400));
+    assert!(failure.message.contains("'anthropic'"), "{failure:?}");
+    assert!(outcome.seen.is_empty());
+}
+
 async fn configured_parameters_replace_the_path_keyword() {
     let settings = configured("openai", &[("assistant_id", text("asst_configured"))]);
     let fixtures = fixture(&settings);
@@ -686,6 +806,7 @@ async fn assistant_config_overlays_request() {
     a_configured_parameter_overlays_the_request(&settings).await;
     an_explicit_provider_bypasses_the_config(&settings).await;
     an_empty_provider_is_rejected(&settings).await;
+    an_unsupported_provider_is_rejected(&settings).await;
     configured_parameters_replace_the_path_keyword().await;
 }
 
@@ -892,6 +1013,20 @@ fn assistant_body_is_strict() {
         decode_assistant_body(b"[1,2]", &limits).expect("an array parses"),
         Json::List(_)
     ));
+    // a float that fits stays a float, and an integer too large for a double stays an integer
+    let finite = decode_assistant_body(
+        b"{\"temperature\": 1e308, \"seed\": 123456789012345678901234567890}",
+        &limits,
+    )
+    .expect("finite numbers parse");
+    let Json::Object(finite_fields) = finite else {
+        panic!("the object did not parse as a mapping");
+    };
+    assert!(matches!(
+        finite_fields.get("temperature"),
+        Some(Json::Number(_))
+    ));
+    assert!(matches!(finite_fields.get("seed"), Some(Json::Number(_))));
     // B1087's byte boundary is the decoder's own failure
     let over = vec![b'a'; limits.max_json_bytes.saturating_add(1)];
     let Err(AssistantBodyError::Limits(error)) = decode_assistant_body(&over, &limits) else {
@@ -909,6 +1044,9 @@ fn assistant_body_is_strict() {
 #[case::missing_value(b"{\"model\": }")]
 #[case::invalid_utf8(&[0xff_u8, 0xfe, b'{'])]
 #[case::nan(b"{\"model\": NaN}")]
+#[case::infinite(b"{\"model\": 1e400}")]
+#[case::negative_infinite(b"[-1e400]")]
+#[case::infinite_nested(b"{\"metadata\": {\"temperature\": 1e309}}")]
 #[case::single_quotes(b"{'model': 'x'}")]
 #[case::trailing_comma(b"{\"model\": \"x\",}")]
 fn malformed_assistant_bodies_are_rejected(#[case] malformed: &[u8]) {

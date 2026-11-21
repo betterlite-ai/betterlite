@@ -1,3 +1,4 @@
+use betterlite_azure::azure_assistant_definitions::error::DefinitionsError;
 use betterlite_core::api::assistant_messages::error::MessageFailure;
 use betterlite_core::api::assistant_read_delete::error::AssistantReadDeleteError;
 use betterlite_core::api::assistant_read_delete::sdk_dispatch::AssistantSdkError;
@@ -45,6 +46,9 @@ pub enum AssistantDispatchError {
     // the typed SDK input refused a value; the message names the field
     #[error("{message}")]
     Invalid { message: String },
+    // the supplied Azure client's own constructor would have refused these arguments before the call
+    #[error(transparent)]
+    Definitions(#[from] DefinitionsError),
     // the SDK failures are boxed: each carries a whole exception, and an error stays cheap to return
     #[error("{}", failure.message)]
     Failure { failure: Box<AssistantFailure> },

@@ -141,7 +141,8 @@ pub(super) fn dropped(error: AssistantDispatchError) -> Result<Step, SdkHttpErro
         other @ (AssistantDispatchError::ReadDelete(_)
         | AssistantDispatchError::Message(_)
         | AssistantDispatchError::Run(_)
-        | AssistantDispatchError::Thread { .. }) => {
+        | AssistantDispatchError::Thread { .. }
+        | AssistantDispatchError::Definitions(_)) => {
             return Err(SdkHttpError::Invalid(format!(
                 "the dispatcher answered with {other}"
             )));

@@ -84,6 +84,27 @@ fn a_nonempty_mapping_without_params_fails_to_load() {
 }
 
 #[test]
+fn a_null_params_value_fails_to_load() {
+    let error = settings("assistant_settings:\n  litellm_params: null\n", &[])
+        .expect_err("startup cannot iterate a null litellm_params");
+    assert!(
+        error.to_string().contains("litellm_params"),
+        "the null value is named: {error}"
+    );
+}
+
+#[test]
+fn a_null_provider_loads_for_the_dispatcher() {
+    let loaded = settings(
+        "assistant_settings:\n  custom_llm_provider: null\n  litellm_params:\n    api_key: sk-config\n",
+        &[],
+    )
+    .expect("the mapping is nonempty and litellm_params is one");
+    let config = loaded.config.expect("the assistant is configured");
+    assert_eq!(config.custom_llm_provider, None);
+}
+
+#[test]
 fn a_mapping_without_a_provider_loads_for_the_dispatcher() {
     let loaded = settings(
         "assistant_settings:\n  litellm_params:\n    api_key: sk-config\n",

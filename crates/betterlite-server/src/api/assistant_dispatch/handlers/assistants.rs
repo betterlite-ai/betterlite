@@ -6,6 +6,7 @@ use betterlite_core::api::assistant_read_delete::request::{
 use betterlite_core::api::assistant_read_delete::sdk_dispatch::SdkDispatch;
 use betterlite_core::api::assistant_read_delete::{AssistantReadDelete, AssistantStep};
 use betterlite_core::api::assistant_records::AssistantCreateInput;
+use betterlite_core::api::assistant_records::error::unsupported;
 use betterlite_core::api::assistant_records::service::AssistantRecords;
 use betterlite_models::decisions::Json;
 
@@ -46,8 +47,17 @@ where
     S: Sources,
 {
     let mut fields = merged.kwargs;
-    fields.insert(String::from("provider"), Json::Text(merged.provider));
+    fields.insert(
+        String::from("provider"),
+        Json::Text(merged.provider.clone()),
+    );
     let mut input: AssistantCreateInput = parse_value(&Json::Object(fields.into_iter().collect()))?;
+    // acreate_assistants partial-applies the caller's provider, so create_assistants' else branch sees it unchanged
+    if !matches!(merged.provider.as_str(), "openai" | "azure") {
+        return Err(AssistantDispatchError::Failure {
+            failure: Box::new(AssistantFailure::from(unsupported(&merged.provider))),
+        });
+    }
     input.client = request
         .client
         .as_ref()

@@ -58,7 +58,7 @@ where
             let call = GetThreadCall {
                 custom_llm_provider: merged.provider,
                 thread_id: id,
-                client: supplied(dispatcher, request),
+                client: supplied(dispatcher, request)?,
                 kwargs: &mut kwargs,
             };
             threads.aget_thread(call).await
@@ -83,7 +83,7 @@ where
         messages: data.messages,
         metadata: data.metadata,
         tool_resources: data.tool_resources,
-        client: supplied(dispatcher, request),
+        client: supplied(dispatcher, request)?,
         kwargs,
     })
 }
@@ -100,7 +100,7 @@ fn thread_id(kwargs: &mut BTreeMap<String, Json>) -> Result<String, AssistantDis
 fn supplied<'dispatcher, T, S>(
     dispatcher: &'dispatcher AssistantDispatcher<'_, '_, T, S>,
     request: &'dispatcher AssistantRequest<'_>,
-) -> Option<ThreadClient<'dispatcher, T>>
+) -> Result<Option<ThreadClient<'dispatcher, T>>, AssistantDispatchError>
 where
     T: Deps,
     S: Sources,
@@ -108,7 +108,15 @@ where
     request
         .client
         .as_ref()
-        .map(|client| client.thread(Arc::clone(&dispatcher.transport)))
+        .map(|client| {
+            client.thread(
+                Arc::clone(&dispatcher.transport),
+                dispatcher.environment,
+                &dispatcher.azure.azure_default_api_version,
+            )
+        })
+        .transpose()
+        .map_err(AssistantDispatchError::from)
 }
 
 // create_thread's named arguments are parsed here and never forwarded to the SDK owner
