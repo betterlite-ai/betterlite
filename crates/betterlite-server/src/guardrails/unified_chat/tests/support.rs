@@ -147,16 +147,10 @@ pub(crate) fn value(json: &str) -> GuardrailValue {
 }
 
 pub(crate) fn object(json: &str) -> Object {
-    match value(json) {
-        GuardrailValue::Object(fields) => fields,
-        other @ (GuardrailValue::Null
-        | GuardrailValue::Boolean(_)
-        | GuardrailValue::SignedInteger(_)
-        | GuardrailValue::UnsignedInteger(_)
-        | GuardrailValue::Decimal(_)
-        | GuardrailValue::Text(_)
-        | GuardrailValue::Array(_)) => panic!("expected a JSON object, got {other:?}"),
-    }
+    let GuardrailValue::Object(fields) = value(json) else {
+        panic!("expected a JSON object");
+    };
+    fields
 }
 
 pub(crate) fn items(json: &str) -> Vec<GuardrailValue> {
