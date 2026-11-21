@@ -1,6 +1,8 @@
 use rust_decimal::Decimal;
 
-use betterlite_prometheus::collector_factory::collector::{Collector as _, MetricValue};
+use betterlite_prometheus::collector_factory::collector::{
+    Collector as _, MetricLike, MetricValue,
+};
 
 use crate::prometheus_exporter::PrometheusExporterSettings;
 use crate::prometheus_helpers::bounded_series_tracker::{ChildRemoval, RemovableMetric as _};
@@ -80,6 +82,10 @@ fn a_no_op_metric_is_unsupported() {
         prometheus_emit_input_sequence_length_label: false,
     };
     let (_registry, collectors) = registered(&settings, &default_label_settings());
+    assert!(matches!(
+        collectors.litellm_spend_metric,
+        MetricLike::NoOp(_)
+    ));
     assert_eq!(
         collectors
             .litellm_spend_metric
