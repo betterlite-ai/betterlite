@@ -24,7 +24,7 @@ fn helper_seeds_select_azure_realtime() {
     let rejected: Vec<&str> = sources
         .iter()
         .filter(|source| {
-            let case: HelperCase = serde_saphyr::from_str(source).expect("a helper case");
+            let case: HelperCase = serde_saphyr::from_str(source.as_str()).expect("a helper case");
             let decodes = serde_json::from_value::<Input>(case.call.input.clone()).is_ok();
             case.call.operation != "azure_realtime"
                 || !decodes

@@ -58,12 +58,12 @@ pub(super) struct Connection<'base> {
 
 impl Connection<'_> {
     pub(super) fn with_key(mut self, key: Option<&str>) -> Self {
-        self.key = key.map(|value| SecretString::from(value.to_owned()));
+        self.key = key.map(SecretString::from);
         self
     }
 
     pub(super) fn with_token(mut self, token: Option<&str>) -> Self {
-        self.token = token.map(|value| SecretString::from(value.to_owned()));
+        self.token = token.map(SecretString::from);
         self
     }
 

@@ -1,6 +1,7 @@
 use betterlite_config::tls::Verification;
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_openai::realtime::failure::RealtimeClose;
+use betterlite_openai::realtime::ssl::RealtimeSsl;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::realtime::error::RealtimeError;
@@ -12,7 +13,7 @@ use crate::realtime::http_config::{
     DEFAULT_API_VERSION, RealtimeHttpSettings, realtime_calls_headers, validate_environment,
 };
 use crate::realtime::protocol::{BETA_PROTOCOL, GA_PROTOCOL, client_protocol, uses_beta_protocol};
-use crate::realtime::ssl::{RealtimeSsl, ssl_config};
+use crate::realtime::ssl::ssl_config;
 
 use super::fixture::{
     API_VERSION, KEY, MAX_SIZE, MODEL, TOKEN, connection, headers, http_settings, params,
