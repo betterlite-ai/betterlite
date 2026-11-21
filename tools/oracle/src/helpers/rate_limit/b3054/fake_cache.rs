@@ -105,13 +105,10 @@ impl SessionIterationCache for FakeCache {
     }
 
     fn memory_count(&self, key: &str) -> impl Future<Output = Option<i64>> + Send {
-        ready(
-            self.memory
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .get(key)
-                .copied(),
-        )
+        let guard = self.memory.lock().unwrap_or_else(PoisonError::into_inner);
+        let stored = guard.get(key).copied();
+        drop(guard);
+        ready(stored)
     }
 
     fn memory_set_count(
