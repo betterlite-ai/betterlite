@@ -275,8 +275,9 @@ pub(super) fn run_chat(
     (result, logger)
 }
 
+const USER_MESSAGE: &str = r#"{"role":"user","content":"hi"}"#;
+
 // The message, parameters and key every Claude call in the cases shares
-#[derive(Default)]
 pub(super) struct ClaudeInputs {
     messages: Vec<PromptObject>,
     params: PromptObject,
@@ -285,12 +286,11 @@ pub(super) struct ClaudeInputs {
 
 impl ClaudeInputs {
     pub(super) fn new() -> Self {
-        let mut inputs = Self::default();
-        inputs
-            .messages
-            .push(serde_json::from_str(r#"{"role":"user","content":"hi"}"#).expect("a message"));
-        inputs.key = Some(SecretString::from(KEY));
-        inputs
+        Self {
+            messages: vec![serde_json::from_str(USER_MESSAGE).expect("a message")],
+            params: PromptObject::default(),
+            key: Some(SecretString::from(KEY)),
+        }
     }
 
     pub(super) fn call(&self, style: Style, stream: bool) -> claude::Call<'_> {
