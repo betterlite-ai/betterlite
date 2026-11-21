@@ -1,0 +1,8 @@
+{
+  "include": [
+    "../b3453.py"
+  ],
+  "typeCheckingMode": "strict",
+  "reportAny": "error",
+  "reportMissingTypeStubs": "none"
+}

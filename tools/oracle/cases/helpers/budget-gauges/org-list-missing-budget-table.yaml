@@ -1,0 +1,17 @@
+kind: helper
+name: budget-gauges-org-list-missing-budget-table
+call:
+  b3882:
+    function: org_list
+    rows:
+      - organization_id: null
+        organization_alias: null
+        spend: null
+        budget: null
+    now: "2026-11-20T00:00:00Z"
+    labels_by_metric:
+      litellm_remaining_org_budget_metric: [org_id, org_alias]
+      litellm_org_max_budget_metric: [org_id, org_alias]
+      litellm_org_budget_remaining_hours_metric: [org_id, org_alias]
+env: {}
+compare: {ignore: []}

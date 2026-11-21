@@ -1,0 +1,47 @@
+kind: helper
+name: cost-recording-speech-input-and-native-generate-content
+call:
+  cost_recording:
+    function: record
+    model_cost: {}
+    vertex_location: null
+    ptu_cost_attribution: false
+    logs:
+      - log:
+          model: tts-1
+          call_type: speech
+          litellm_params: {metadata: null, litellm_metadata: null}
+          optional_params: {}
+          details: {custom_llm_provider: openai, input: hello}
+        calls:
+          - response:
+              kind: typed
+              model: tts-1
+              usage: {prompt_tokens: 3, completion_tokens: 2, total_tokens: 5}
+              hidden_params: {additional_headers: {}}
+              background: false
+            calculator: {cost: 0.5, error: null}
+            litellm_model_name: null
+            router_model_id: null
+      - log:
+          model: gemini-2.0-flash
+          call_type: generate_content
+          litellm_params: {metadata: null, litellm_metadata: null}
+          optional_params: {}
+          details: {custom_llm_provider: vertex_ai}
+        calls:
+          - response:
+              kind: generate_content
+              body:
+                candidates:
+                  - content: {parts: [{text: hi}], role: model}
+                    finishReason: STOP
+                    index: 0
+                usageMetadata: {promptTokenCount: 10, candidatesTokenCount: 5, totalTokenCount: 15}
+            calculator: {cost: 0.5, error: null}
+            litellm_model_name: null
+            router_model_id: null
+    hidden_params: null
+    cost: null
+env: {}
+compare: {ignore: []}

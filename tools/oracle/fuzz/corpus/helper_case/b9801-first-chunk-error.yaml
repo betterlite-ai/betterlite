@@ -1,0 +1,8 @@
+kind: helper
+name: b9801-first-chunk-error-seed
+call:
+  b9801:
+    text: 'data: {"error": {"message": "slow down", "type": "rate_limit_error", "code": "429"}}'
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,40 @@
+task: B2481
+deviations:
+  - what: >-
+      A GET answering 400 or more becomes a provider error whose status, message and headers the caller sees.
+      LiteLLM never checks the status on these GETs: it calls the provider's response transform, which parses
+      any JSON body and returns it as the file object or the content object, and only a non-JSON body raises,
+      through get_error_class, with the JSON decoder's text.
+    why: >-
+      A 404 or 500 carrying a JSON error object would otherwise reach the caller as a vector store file, and a
+      working setup cannot rely on an error body being read as a record; the status is the provider's answer and
+      belongs in the error. The headers are the response's, with content-encoding dropped and content-length
+      recomputed for the decoded body, as B2402's status facts do. The message text follows
+      docs/compatibility.md: LiteLLM's is the JSON decoder's, betterlite's names the provider's body.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L11161-L11165
+  - what: >-
+      An id, base URL or extra header the request cannot carry fails with a typed betterlite error before
+      anything is sent: B527's segment encoder refuses an empty or dot id, url::Url refuses a base that is not
+      a URL, and the header name and value conversions refuse bytes HTTP cannot carry. LiteLLM's request
+      transform raises ValueError before its pre-call for a bad id, and its HTTP client raises inside the
+      handler's try for a bad URL or header, which _handle_error turns into a synthesized 500 BaseLLMException.
+    why: >-
+      Nothing reaches the network on either side, and no working setup sends an id or a header the request
+      cannot carry; naming the field beats a 500 that claims the provider answered.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/vector_store_files/transformation.py#L155-L163
+kept_bugs:
+  - what: >-
+      The read handlers accept a timeout and never pass it to the GET, so a read runs on the selected client's
+      own timeout whatever the caller asked for, in both modes.
+    why: >-
+      The task text requires the omission, and a deployment relying on the client default would start timing
+      out reads LiteLLM lets run.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L11161-L11161
+  - what: >-
+      Caller extra_headers cannot override Authorization or Content-Type. Validation mutates the caller's map
+      in place and the handler's later headers.update re-applies that same map, so the provider's bearer key
+      and application/json win and a caller's OpenAI-Beta value is kept.
+    why: >-
+      A setup passing its own Authorization gets the provider key on the wire, and the oracle case compares
+      both sides on that same rule.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/vector_store_files/transformation.py#L63-L79

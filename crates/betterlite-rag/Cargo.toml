@@ -11,6 +11,7 @@ betterlite-bedrock = { path = "../betterlite-bedrock" }
 betterlite-config = { path = "../betterlite-config" }
 betterlite-context = { path = "../betterlite-context" }
 betterlite-core = { path = "../betterlite-core" }
+betterlite-env = { path = "../betterlite-env" }
 betterlite-http = { path = "../betterlite-http" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-openai = { path = "../betterlite-openai" }
