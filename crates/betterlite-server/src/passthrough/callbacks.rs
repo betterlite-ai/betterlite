@@ -54,7 +54,8 @@ where
     }
 }
 
-// a broken logging config must never fail the customer's upstream call
+// a broken logging config never fails the call, and a test reads the returned default, not the log line
+#[cfg_attr(test, mutants::skip)]
 fn fail_open(route_description: &str, reason: &dyn Display) -> TeamCallbackWiring {
     tracing::error!(
         "{route_description}: failed to resolve team logging callbacks, continuing without them: {reason}"

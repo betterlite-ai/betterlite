@@ -18,7 +18,7 @@ use crate::guardrails::callback_caps::errors::ProxyHookError;
 use crate::passthrough::error_relay::{
     FailureReporting, LoggingRedaction, MessageRedaction, PassthroughFailureHook,
     PassthroughHookError, RelayResponse, log_upstream_failure, relay_reporting_failures,
-    sanitize_upstream_error_body, truncate_upstream_error_body,
+    sanitize_upstream_error_body, truncate_upstream_error_body, without_query,
 };
 use crate::passthrough::request_context::PassthroughLoggingObj;
 
@@ -191,6 +191,43 @@ async fn assert_below_400() {
     assert_eq!(relayed.headers.get("content-length").unwrap(), "12");
 }
 
+async fn assert_at_400() {
+    let hook = RecordingHook::default();
+    let details = PassthroughLoggingObj::default();
+    let principal = PrincipalFacts::default();
+    let mut headers = HeaderMap::new();
+    headers.insert("content-length", HeaderValue::from_static("12"));
+    let relayed = log_upstream_failure(
+        response(StatusCode::BAD_REQUEST, headers),
+        FailureReporting {
+            user_api_key_dict: &principal,
+            request_payload: data(r#"{"model": "m"}"#),
+            logging_obj: &details,
+            hook: &hook,
+            redaction: &FixedRedaction(false),
+        },
+    )
+    .await;
+    // 400 is the first failure status: it is reported and its framing stripped
+    assert!(relayed.headers.get("content-length").is_none());
+    let calls = hook.calls.lock().unwrap();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].1["model"], Json::Text("m".to_owned()));
+}
+
+// the log line names the URL without the query or fragment a token can ride in
+fn assert_without_query() {
+    assert_eq!(
+        without_query("https://up.example/v1?token=secret#frag"),
+        "https://up.example/v1"
+    );
+    assert_eq!(
+        without_query("https://up.example/v1"),
+        "https://up.example/v1"
+    );
+    assert_eq!(without_query("not a url"), "not a url");
+}
+
 async fn assert_broken_hook() {
     let body = reported(&BrokenHook, &FixedRedaction(false)).await;
     assert_eq!(body, b"bad \x01body\t".to_vec());
@@ -359,7 +396,9 @@ fn passthrough_error_body_sanitize() {
 async fn passthrough_log_upstream_failure() {
     assert_reported().await;
     assert_below_400().await;
+    assert_at_400().await;
     assert_broken_hook().await;
+    assert_without_query();
 }
 
 #[tokio::test]

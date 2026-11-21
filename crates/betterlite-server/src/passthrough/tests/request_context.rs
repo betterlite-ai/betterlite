@@ -271,4 +271,11 @@ fn passthrough_request_context() {
     );
     assert_eq!(TRUSTED_CALLBACK_VARS_FIELD, "litellm_trusted_callback_vars");
     assert_eq!(PASS_THROUGH_CALL_TYPE, "pass_through_endpoint");
+    // the logging object carries the payload as the dict LiteLLM's logger stores
+    assert_eq!(
+        payload().to_json(),
+        json(
+            r#"{"url":"https://upstream.example/v1","request_method":"POST","request_body":null,"response_body":null,"cost_per_request":null}"#
+        )
+    );
 }

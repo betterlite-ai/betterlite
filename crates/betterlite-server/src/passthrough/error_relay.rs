@@ -215,8 +215,8 @@ pub fn relay_reporting_failures(
     }
 }
 
-// response.url.copy_with(query=None, fragment=None)
-fn without_query(url: &str) -> String {
+// response.url.copy_with(query=None, fragment=None): the log line never carries the query or fragment
+pub(super) fn without_query(url: &str) -> String {
     let Ok(mut parsed) = Url::parse(url) else {
         return url.to_owned();
     };
