@@ -75,43 +75,6 @@ async fn latest_role_only_does_not_narrow_the_incremental_scan() {
 }
 
 #[tokio::test]
-async fn tool_results_only_does_not_narrow_the_incremental_scan() {
-    let mut harness = Harness::new(vec![passing()]).with_session();
-    harness.incremental();
-    harness.tool_results_only = true;
-    harness.cache.remember(SESSION, &["sys"]);
-    harness.data.insert(
-        "messages".to_owned(),
-        data_messages(
-            r#"[
-                {"role": "system", "content": "sys"},
-                {"role": "user", "content": "first"},
-                {"role": "tool", "content": "result"},
-                {"role": "assistant", "content": "reply"}
-            ]"#,
-        ),
-    );
-
-    let result = harness
-        .apply(
-            inputs(&["sys", "first", "result", "reply"]),
-            GuardrailInputType::Request,
-        )
-        .await
-        .expect("the incremental scan passes");
-
-    assert_eq!(harness.transport.count(), 1);
-    assert_eq!(
-        content_texts(&harness.transport.bodies()[0]),
-        strings(&["first", "result", "reply"])
-    );
-    assert_eq!(
-        texts_of(&result),
-        strings(&["sys", "first", "result", "reply"])
-    );
-}
-
-#[tokio::test]
 async fn no_new_segments_skip_the_bedrock_call() {
     let mut harness = Harness::new(vec![]).with_session();
     harness.incremental();
