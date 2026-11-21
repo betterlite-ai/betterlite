@@ -1,6 +1,6 @@
 use betterlite_prompts::arguments::json::Json;
 
-use crate::api::summary_history::boundary::block_has_type;
+use crate::api::summary_history::boundary::{blocks_without, listed_content, with_content};
 use crate::api::summary_history::system::text_turn;
 
 pub const CONTINUE_PROMPT: &str = "Please continue based on the conversation summary above.";
@@ -9,24 +9,18 @@ pub const CONTINUE_PROMPT: &str = "Please continue based on the conversation sum
 #[must_use]
 pub fn select_last_user_question(messages: &[Json]) -> Json {
     for message in messages.iter().rev() {
-        let Json::Object(fields) = message else {
+        let Some(fields) = message.as_object() else {
             continue;
         };
         if fields.get("role").and_then(Json::as_str) != Some("user") {
             continue;
         }
-        let Some(Json::List(blocks)) = fields.get("content") else {
+        let Some((_, blocks)) = listed_content(message) else {
             return message.clone();
         };
-        let kept: Vec<Json> = blocks
-            .iter()
-            .filter(|block| !block_has_type(block, "tool_result"))
-            .cloned()
-            .collect();
+        let kept = blocks_without(blocks, "tool_result");
         if !kept.is_empty() {
-            let mut question = fields.clone();
-            question.insert("content".to_owned(), Json::List(kept));
-            return Json::Object(question);
+            return with_content(fields, kept);
         }
     }
     text_turn("user", CONTINUE_PROMPT)

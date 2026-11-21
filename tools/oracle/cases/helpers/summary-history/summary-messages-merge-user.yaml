@@ -10,7 +10,7 @@ call:
     messages:
     - {role: assistant, content: a}
     - {role: user, content: q}
-    translation: {messages: translated, tools: translated}
+    translation: translated
 calls:
 - summary_history:
     action: prompts
@@ -23,7 +23,7 @@ calls:
       content:
       - {type: text, text: one}
       - {type: text, text: two}
-    translation: {messages: translated, tools: translated}
+    translation: translated
 - summary_history:
     action: prompts
     edit_spec: {instructions: P}
@@ -33,7 +33,7 @@ calls:
     messages:
     - {role: user, content: q}
     - {role: assistant, content: a}
-    translation: {messages: translated, tools: translated}
+    translation: translated
 - summary_history:
     action: prompts
     edit_spec: {instructions: P}
@@ -46,7 +46,7 @@ calls:
     - role: user
       content:
       - {type: compaction, content: prior}
-    translation: {messages: translated, tools: translated}
+    translation: translated
 - summary_history:
     action: prompts
     edit_spec: {instructions: P}
@@ -55,7 +55,7 @@ calls:
     summary: null
     messages:
     - {role: user, content: ""}
-    translation: {messages: broken, tools: translated}
+    translation: broken
 - summary_history:
     action: prompts
     edit_spec: {instructions: P}
@@ -64,7 +64,7 @@ calls:
     summary: null
     messages:
     - {role: user, name: n}
-    translation: {messages: broken, tools: translated}
+    translation: broken
 - summary_history:
     action: prompts
     edit_spec: {instructions: P}
@@ -76,7 +76,7 @@ calls:
       content:
       - {type: text, text: raw}
       - {type: compaction, content: prior}
-    translation: {messages: broken, tools: translated}
+    translation: broken
 - summary_history:
     action: prompts
     edit_spec: {instructions: P}
@@ -84,6 +84,6 @@ calls:
     system: null
     summary: null
     messages: []
-    translation: {messages: translated, tools: translated}
+    translation: translated
 env: {}
 compare: {ignore: []}

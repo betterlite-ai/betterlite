@@ -9,7 +9,7 @@ call:
     summary: "S"
     messages:
     - {role: user, content: q}
-    translation: {messages: translated, tools: translated}
+    translation: translated
 calls:
 - summary_history:
     action: prompts
@@ -18,7 +18,7 @@ calls:
     system: X
     summary: "S"
     messages: []
-    translation: {messages: translated, tools: translated}
+    translation: translated
 - summary_history:
     action: prompts
     edit_spec: {instructions: P}
@@ -30,7 +30,7 @@ calls:
     - {type: text, text: "Y"}
     summary: "S"
     messages: []
-    translation: {messages: translated, tools: translated}
+    translation: translated
 - summary_history:
     action: prompts
     edit_spec: {instructions: P}
@@ -39,7 +39,7 @@ calls:
     - {type: image}
     summary: "S"
     messages: []
-    translation: {messages: translated, tools: translated}
+    translation: translated
 - summary_history:
     action: prompts
     edit_spec: {instructions: P}
@@ -49,7 +49,7 @@ calls:
     - {type: text, text: "Z"}
     summary: "S"
     messages: []
-    translation: {messages: translated, tools: translated}
+    translation: translated
 - summary_history:
     action: prompts
     edit_spec: {instructions: P}
@@ -61,7 +61,7 @@ calls:
     - {type: text, text: b}
     summary: null
     messages: []
-    translation: {messages: translated, tools: translated}
+    translation: translated
 - summary_history:
     action: prompts
     edit_spec: {instructions: P}
@@ -69,7 +69,7 @@ calls:
     system: []
     summary: null
     messages: []
-    translation: {messages: translated, tools: translated}
+    translation: translated
 - summary_history:
     action: count
     model: gpt-4o
@@ -83,6 +83,6 @@ calls:
     - {type: image, text: x}
     - {type: text, text: b}
     counter: {mode: scripted, values: [10, 4]}
-    translation: {messages: translated, tools: translated}
+    translation: translated
 env: {}
 compare: {ignore: []}

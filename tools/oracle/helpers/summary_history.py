@@ -1,7 +1,7 @@
 import logging
 from logging.handlers import MemoryHandler
 from types import TracebackType
-from typing import Final, Literal, NoReturn, Self, TypeAlias, TypedDict, cast
+from typing import Final, Literal, NoReturn, Self, TypeAlias, TypedDict, TypeVar, cast
 
 import litellm
 from litellm.llms.anthropic.pass_through.adapters import transformation
@@ -19,6 +19,8 @@ from litellm.llms.anthropic.pass_through.context_management.editors.compact impo
     _select_last_user_question,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L877-L912
     _slice_around_compaction_block,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L630-L676
     _strip_compaction_blocks,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L679-L698
+)
+from litellm.llms.anthropic.pass_through.context_management.editors.compact import (
     apply_client_compaction_block_history as client_history_call,
 )
 from litellm.llms.anthropic.pass_through.context_management.result import PolyfillResult
@@ -33,11 +35,7 @@ BROKEN: Final = "broken"
 DIAGNOSTIC: Final = "compact_20260112:"
 
 Outcome: TypeAlias = Literal["translated", "broken"]
-
-
-class Translation(TypedDict):
-    messages: Outcome
-    tools: Outcome
+Argument = TypeVar("Argument")
 
 
 class SlicingCall(TypedDict):
@@ -57,7 +55,7 @@ class PromptsCall(TypedDict):
     system: str | list[dict[str, JsonValue]] | None
     summary: str | None
     messages: list[dict[str, JsonValue]]
-    translation: Translation
+    translation: Outcome
 
 
 class MetadataCall(TypedDict):
@@ -82,7 +80,7 @@ class CountCall(TypedDict):
     tools: list[dict[str, JsonValue]] | None
     system: str | list[dict[str, JsonValue]] | None
     counter: ScriptedMode | RealMode
-    translation: Translation
+    translation: Outcome
 
 
 class ExtractionCall(TypedDict):
@@ -97,44 +95,27 @@ class ClientHistoryCall(TypedDict):
 
 
 Call: TypeAlias = (
-    SlicingCall | TriggerCall | PromptsCall | MetadataCall | CountCall | ExtractionCall | ClientHistoryCall
+    SlicingCall
+    | TriggerCall
+    | PromptsCall
+    | MetadataCall
+    | CountCall
+    | ExtractionCall
+    | ClientHistoryCall
 )
 
 
-class BrokenMessages(MessagesAdapter):
-    @override
-    def translate_anthropic_messages_to_openai(  # type: ignore[override]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/transformation.py#L456-L463
-        self,
-        messages: list[JsonValue],
-        model: str | None = None,
-        *,
-        custom_llm_provider: str | None = None,
-        preserve_midturn_system: bool = False,
-    ) -> NoReturn:
-        raise ValueError(BROKEN)
+class TranslationError(ValueError):
+    def refuse(self, *_args: Argument, **_kwargs: Argument) -> NoReturn:
+        raise self
 
 
-class BrokenTools(MessagesAdapter):
-    @override
-    def translate_anthropic_tools_to_openai(  # type: ignore[override]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/transformation.py#L781-L783
-        self,
-        tools: list[JsonValue],
-        model: str | None = None,
-    ) -> NoReturn:
-        raise ValueError(BROKEN)
-
-
-class BrokenBoth(BrokenMessages, BrokenTools):
-    pass
-
-
-# compact.py imports the adapter class inside each counting and summary call, so the case swaps it on the module
-ADAPTERS: Final[dict[tuple[Outcome, Outcome], type[MessagesAdapter]]] = {
-    ("translated", "translated"): MessagesAdapter,
-    ("broken", "translated"): BrokenMessages,
-    ("translated", "broken"): BrokenTools,
-    ("broken", "broken"): BrokenBoth,
-}
+# compact.py builds the adapter inside each counting and summary call, so a case swaps the class
+class BrokenAdapter(MessagesAdapter):
+    def __init__(self) -> None:
+        refusal = TranslationError(BROKEN)
+        self.translate_anthropic_messages_to_openai = refusal.refuse
+        self.translate_anthropic_tools_to_openai = refusal.refuse
 
 
 class LogCapture(MemoryHandler):
@@ -180,7 +161,9 @@ class ScriptedCounter:
         if not self.values:
             raise ValueError("scripted token counts exhausted")
         counted = self.values.pop()
-        self.calls.append({"model": model, "messages": messages, "tools": tools, "text": text, "count": counted})
+        self.calls.append(
+            {"model": model, "messages": messages, "tools": tools, "text": text, "count": counted},
+        )
         return counted
 
 
@@ -210,8 +193,8 @@ def prompts(call: PromptsCall) -> JsonValue:
     prompt = _build_summary_prompt(call["edit_spec"], call["tools"])
     summary = call["summary"]
     augmented = None if summary is None else _augment_system_with_summary(system, summary)
-    adapter = ADAPTERS[call["translation"]["messages"], call["translation"]["tools"]]
-    transformation.LiteLLMAnthropicMessagesAdapter = adapter  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L958-L964
+    if call["translation"] == "broken":
+        transformation.LiteLLMAnthropicMessagesAdapter = BrokenAdapter  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L958-L964
     with LogCapture() as capture:
         messages = _build_summary_messages(history, prompt, system=system)
     answer: dict[str, JsonValue] = {
@@ -228,13 +211,15 @@ def count(call: CountCall) -> JsonValue:
     scripted = ScriptedCounter(mode["values"]) if mode["mode"] == "scripted" else None
     if scripted is not None:
         litellm.token_counter = scripted
-    adapter = ADAPTERS[call["translation"]["messages"], call["translation"]["tools"]]
-    transformation.LiteLLMAnthropicMessagesAdapter = adapter  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L800-L806
+    if call["translation"] == "broken":
+        transformation.LiteLLMAnthropicMessagesAdapter = BrokenAdapter  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L800-L806
     system = cast("str | list[dict[str, object]] | None", call["system"])  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L785-L791
     history = cast("list[dict[str, object]]", call["messages"])  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L785-L791
     tools = cast("list[dict[str, object]] | None", call["tools"])  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L785-L791
     with LogCapture() as capture:
-        total = _count_effective_tokens(call["model"], history, call["compaction_block"], tools, system)
+        total = _count_effective_tokens(
+            call["model"], history, call["compaction_block"], tools, system,
+        )
     answer: dict[str, JsonValue] = {
         "total": total,
         "calls": [] if scripted is None else scripted.calls,
@@ -248,14 +233,13 @@ def client_history(call: ClientHistoryCall) -> JsonValue:
     history = cast("list[dict[str, object]]", call["messages"])  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L1114-L1118
     with LogCapture() as capture:
         result = client_history_call(messages=history, system=system)
-    answer: dict[str, JsonValue] = {
-        "result": None if result is None else ANSWER.validate_json(POLYFILL.dump_json(result)),
-        "logs": capture.lines(),
-    }
-    return answer
+    if result is None:
+        return {"result": None, "logs": capture.lines()}
+    return {"result": ANSWER.validate_json(POLYFILL.dump_json(result)), "logs": capture.lines()}
 
 
 def run(input_value: Call) -> JsonValue:
+    answer: JsonValue
     if input_value["action"] == "slicing":
         answer = slicing(input_value)
     elif input_value["action"] == "trigger":
@@ -263,7 +247,7 @@ def run(input_value: Call) -> JsonValue:
     elif input_value["action"] == "prompts":
         answer = prompts(input_value)
     elif input_value["action"] == "metadata":
-        answer = ANSWER.validate_python({"metadata": _propagate_metadata(input_value["parent"])})
+        answer = {"metadata": ANSWER.validate_python(_propagate_metadata(input_value["parent"]))}
     elif input_value["action"] == "count":
         answer = count(input_value)
     elif input_value["action"] == "extraction":

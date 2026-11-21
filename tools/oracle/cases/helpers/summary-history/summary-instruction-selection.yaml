@@ -10,7 +10,7 @@ call:
     system: null
     summary: null
     messages: []
-    translation: {messages: translated, tools: translated}
+    translation: translated
 calls:
 - summary_history:
     action: prompts
@@ -19,7 +19,7 @@ calls:
     system: null
     summary: null
     messages: []
-    translation: {messages: translated, tools: translated}
+    translation: translated
 - summary_history:
     action: prompts
     edit_spec: {instructions: " \n "}
@@ -27,7 +27,7 @@ calls:
     system: null
     summary: null
     messages: []
-    translation: {messages: translated, tools: translated}
+    translation: translated
 - summary_history:
     action: prompts
     edit_spec: {instructions: "   "}
@@ -37,7 +37,7 @@ calls:
     system: null
     summary: null
     messages: []
-    translation: {messages: translated, tools: translated}
+    translation: translated
 - summary_history:
     action: extraction
     raw: "x <SUMMARY> A\nB </SUMMARY> <summary>two</summary>"

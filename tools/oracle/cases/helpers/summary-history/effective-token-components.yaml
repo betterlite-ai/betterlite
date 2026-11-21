@@ -20,7 +20,7 @@ call:
           id: {type: string}
     system: be brief
     counter: {mode: scripted, values: [100, 7, 3]}
-    translation: {messages: translated, tools: translated}
+    translation: translated
 calls:
 - summary_history:
     action: count
@@ -31,7 +31,7 @@ calls:
     tools: []
     system: ""
     counter: {mode: scripted, values: [5]}
-    translation: {messages: translated, tools: translated}
+    translation: translated
 - summary_history:
     action: count
     model: claude-sonnet-4-5
@@ -41,7 +41,7 @@ calls:
     tools: null
     system: null
     counter: {mode: scripted, values: [6]}
-    translation: {messages: translated, tools: translated}
+    translation: translated
 - summary_history:
     action: count
     model: claude-sonnet-4-5
@@ -56,19 +56,7 @@ calls:
       input_schema: {type: object}
     system: null
     counter: {mode: scripted, values: [9]}
-    translation: {messages: broken, tools: broken}
-- summary_history:
-    action: count
-    model: claude-sonnet-4-5
-    messages:
-    - {role: user, content: q}
-    compaction_block: null
-    tools:
-    - name: lookup
-      input_schema: {type: object}
-    system: null
-    counter: {mode: scripted, values: [4]}
-    translation: {messages: translated, tools: broken}
+    translation: broken
 - summary_history:
     action: count
     model: gpt-3.5-turbo
@@ -79,6 +67,6 @@ calls:
     tools: null
     system: be brief
     counter: {mode: real}
-    translation: {messages: translated, tools: translated}
+    translation: translated
 env: {LITELLM_RUST: 'false'}
 compare: {ignore: []}

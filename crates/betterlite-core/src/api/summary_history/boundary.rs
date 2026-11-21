@@ -13,61 +13,72 @@ pub fn block_has_type(block: &Json, kind: &str) -> bool {
     }
 }
 
+#[must_use]
+pub fn listed_content(message: &Json) -> Option<(&Object, &[Json])> {
+    let fields = message.as_object()?;
+    match fields.get("content")? {
+        Json::List(blocks) => Some((fields, blocks.as_slice())),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => None,
+    }
+}
+
+#[must_use]
+pub fn blocks_without(blocks: &[Json], kind: &str) -> Vec<Json> {
+    blocks
+        .iter()
+        .filter(|block| !block_has_type(block, kind))
+        .cloned()
+        .collect()
+}
+
+#[must_use]
+pub fn with_content(fields: &Object, blocks: Vec<Json>) -> Json {
+    let mut copy = fields.clone();
+    copy.insert("content".to_owned(), Json::List(blocks));
+    Json::Object(copy)
+}
+
 // Anthropic drops everything before the latest compaction block, earlier blocks of the same turn included
 #[must_use]
 pub fn slice_around_compaction_block(messages: &[Json]) -> Option<CompactionSlice> {
-    for (message_index, message) in messages.iter().enumerate().rev() {
-        let Json::Object(fields) = message else {
-            continue;
-        };
-        let Some(Json::List(blocks)) = fields.get("content") else {
-            continue;
-        };
-        let Some(block_index) = blocks
+    let (message_index, fields, kept_blocks) =
+        messages
             .iter()
-            .rposition(|block| block_has_type(block, "compaction"))
-        else {
-            continue;
-        };
-        let kept_blocks = blocks.get(block_index..)?;
-        let block = kept_blocks.first()?.as_object()?.clone();
-        let mut sliced = fields.clone();
-        sliced.insert("content".to_owned(), Json::List(kept_blocks.to_vec()));
-        let mut kept = vec![Json::Object(sliced)];
-        kept.extend(
-            messages
-                .iter()
-                .skip(message_index.saturating_add(1))
-                .cloned(),
-        );
-        return Some(CompactionSlice {
-            messages: kept,
-            block,
-        });
-    }
-    None
+            .enumerate()
+            .rev()
+            .find_map(|(index, message)| {
+                let (turn, blocks) = listed_content(message)?;
+                let start = blocks
+                    .iter()
+                    .rposition(|block| block_has_type(block, "compaction"))?;
+                Some((index, turn, blocks.get(start..)?))
+            })?;
+    let block = kept_blocks.first()?.as_object()?.clone();
+    let mut kept = vec![with_content(fields, kept_blocks.to_vec())];
+    kept.extend(
+        messages
+            .iter()
+            .skip(message_index.saturating_add(1))
+            .cloned(),
+    );
+    Some(CompactionSlice {
+        messages: kept,
+        block,
+    })
 }
 
 #[must_use]
 pub fn strip_compaction_blocks(messages: &[Json]) -> Vec<Json> {
-    let mut cleaned = Vec::with_capacity(messages.len());
-    for message in messages {
-        if let Json::Object(fields) = message
-            && let Some(Json::List(blocks)) = fields.get("content")
-        {
-            let kept: Vec<Json> = blocks
-                .iter()
-                .filter(|block| !block_has_type(block, "compaction"))
-                .cloned()
-                .collect();
-            if !kept.is_empty() {
-                let mut copy = fields.clone();
-                copy.insert("content".to_owned(), Json::List(kept));
-                cleaned.push(Json::Object(copy));
-            }
-        } else {
-            cleaned.push(message.clone());
-        }
-    }
-    cleaned
+    messages
+        .iter()
+        .filter_map(|message| {
+            listed_content(message).map_or_else(
+                || Some(message.clone()),
+                |(fields, blocks)| {
+                    let kept = blocks_without(blocks, "compaction");
+                    (!kept.is_empty()).then(|| with_content(fields, kept))
+                },
+            )
+        })
+        .collect()
 }

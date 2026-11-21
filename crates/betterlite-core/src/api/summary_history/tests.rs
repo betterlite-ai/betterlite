@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::fmt::{self, Debug, Display};
+use std::fmt::Debug;
 use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -16,6 +16,7 @@ use betterlite_tokenizer::count::error::CountError;
 use betterlite_tokenizer::count::runtime::runtime_counter;
 use futures_executor::block_on;
 use rstest::rstest;
+use thiserror::Error;
 use tokio::runtime::Builder;
 use tracing::field::{Field, Visit};
 use tracing::subscriber::with_default;
@@ -96,14 +97,9 @@ where
     (value, lines)
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
+#[error("broken")]
 struct Broken;
-
-impl Display for Broken {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("broken")
-    }
-}
 
 struct FakeTranslator {
     broken_messages: bool,
@@ -327,24 +323,30 @@ fn summary_instruction_selection(
     assert_eq!(extract(None), None);
 }
 
+const PARENT_METADATA: &str = r#"{
+    "client_key": "drop",
+    "allowed_model_region": "eu",
+    "litellm_parent_otel_span": "litellm_parent_otel_span",
+    "litellm_call_id": "litellm_call_id",
+    "user_api_key_end_user_model_max_budget": "user_api_key_end_user_model_max_budget",
+    "user_api_key_user_model_max_budget": "user_api_key_user_model_max_budget",
+    "user_api_key_team_model_max_budget": "user_api_key_team_model_max_budget",
+    "user_api_key_model_max_budget": "user_api_key_model_max_budget",
+    "user_api_end_user_max_budget": "user_api_end_user_max_budget",
+    "user_api_key_end_user_id": "user_api_key_end_user_id",
+    "user_api_key_project_id": "user_api_key_project_id",
+    "user_api_key_org_id": "user_api_key_org_id",
+    "user_api_key_user_email": "user_api_key_user_email",
+    "user_api_key_user_id": "user_api_key_user_id",
+    "user_api_key_team_alias": "user_api_key_team_alias",
+    "user_api_key_team_id": "user_api_key_team_id",
+    "user_api_key_alias": null,
+    "user_api_key": "user_api_key"
+}"#;
+
 #[test]
 fn summary_metadata_allowlist() {
-    let mut parent = Object::new();
-    parent.insert("client_key".to_owned(), Json::Text("drop".to_owned()));
-    parent.insert(
-        "allowed_model_region".to_owned(),
-        Json::Text("eu".to_owned()),
-    );
-    for key in PROPAGATED_METADATA_KEYS.iter().rev() {
-        parent.insert(
-            (*key).to_owned(),
-            if *key == "user_api_key_alias" {
-                Json::Null
-            } else {
-                Json::Text((*key).to_owned())
-            },
-        );
-    }
+    let parent: Object = serde_json::from_str(PARENT_METADATA).expect("parent metadata");
     let propagated = propagate_metadata(Some(&parent));
     assert_eq!(
         propagated.keys().map(String::as_str).collect::<Vec<_>>(),

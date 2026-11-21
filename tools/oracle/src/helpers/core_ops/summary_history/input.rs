@@ -34,13 +34,6 @@ pub(crate) enum Outcome {
     Broken,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct Translation {
-    pub(crate) messages: Outcome,
-    pub(crate) tools: Outcome,
-}
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct PromptsInput {
@@ -49,7 +42,7 @@ pub(crate) struct PromptsInput {
     pub(crate) system: Option<SystemPrompt>,
     pub(crate) summary: Option<String>,
     pub(crate) messages: Vec<Json>,
-    pub(crate) translation: Translation,
+    pub(crate) translation: Outcome,
 }
 
 #[derive(Debug, Deserialize)]
@@ -74,7 +67,7 @@ pub(crate) struct CountInput {
     pub(crate) tools: Option<Vec<Json>>,
     pub(crate) system: Option<SystemPrompt>,
     pub(crate) counter: CounterInput,
-    pub(crate) translation: Translation,
+    pub(crate) translation: Outcome,
 }
 
 #[derive(Debug, Deserialize)]
