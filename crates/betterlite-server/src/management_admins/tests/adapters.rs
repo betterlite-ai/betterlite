@@ -50,6 +50,10 @@ async fn user_object_reads_the_given_cache() {
         clock,
         management_ttl: 60.0_f64,
     };
+    let fresh = reads
+        .fresh_cache()
+        .expect("the adapter builds its own dual cache");
+    assert_eq!(fresh.management_ttl(), 60.0_f64);
     let request = UserLookupRequest {
         user_id: Some("u1"),
         sso_user_id: None,

@@ -41,6 +41,17 @@ async fn viewer_not_bypass() {
 }
 
 #[tokio::test]
+async fn non_org_admin_membership_denies() {
+    let users = FakeUsers::new(vec![(
+        "u1",
+        org_user("u1", &[("org-1", Some("internal_user")), ("org-2", None)]),
+    )]);
+    let teams = FakeTeams::default();
+    let admin = caller(Some("u1"));
+    assert!(!user_has_admin_privileges(&admin, &users, Some(&teams), None).await);
+}
+
+#[tokio::test]
 async fn no_user_no_db() {
     let users = FakeUsers::default();
     let anonymous = caller(None);
@@ -173,6 +184,25 @@ async fn direct_team_error_propagates() {
     ));
     let users = FakeUsers::new(vec![("u1", admin_row), ("u2", target_row)]);
     assert!(!admin_can_invite_user("u2", &admin, &users, Some(&teams), None).await);
+}
+
+#[tokio::test]
+async fn empty_teams_reject_before_query() {
+    let teams = FakeTeams::failing();
+    let admin = caller(Some("u1"));
+    let empty_caller = user("u1", &[]);
+    let target_row = user("u2", &["t1"]);
+    assert!(matches!(
+        team_admin_can_invite_user(&admin, &empty_caller, &target_row, &teams).await,
+        Ok(false)
+    ));
+    let caller_row = user("u1", &["t1"]);
+    let empty_target = user("u2", &[]);
+    assert!(matches!(
+        team_admin_can_invite_user(&admin, &caller_row, &empty_target, &teams).await,
+        Ok(false)
+    ));
+    assert!(teams.requested().is_empty());
 }
 
 #[tokio::test]
