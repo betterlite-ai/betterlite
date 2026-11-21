@@ -4,7 +4,8 @@ use thiserror::Error;
 
 pub const DEFAULT_SPEECH_LOCATION: &str = "us";
 
-const URL_UNSAFE_PROJECT_CHARS: [char; 9] = ['/', '?', '#', '\\', ':', ' ', '\t', '\n', '\r'];
+// % is unsafe too: the URL parser reads %2e%2e as a parent path
+const URL_UNSAFE_PROJECT_CHARS: [char; 10] = ['/', '?', '#', '\\', ':', ' ', '\t', '\n', '\r', '%'];
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum VertexLocationError {

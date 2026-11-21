@@ -13,7 +13,7 @@ use betterlite_config::sections::vertex_credential_sources::VertexSettings;
 use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
 use secrecy::{ExposeSecret as _, SecretString};
 
-use crate::api::vertex_location::validate_vertex_location;
+use crate::api::vertex_location::{validate_vertex_location, validate_vertex_project};
 use crate::rag::ingestion::IngestionState;
 use crate::rag::ingestion::store::{RagStore, StoreRequest, StoreResult};
 
@@ -150,9 +150,10 @@ impl RagStore for VertexIngestion {
         let Some(project) = self.project.as_deref().filter(|value| !value.is_empty()) else {
             return Err(VertexIngestionError::MissingProject);
         };
+        let checked_project = validate_vertex_project(project)?;
         let corpus_id = match self.existing_corpus_id() {
             Some(corpus_id) => corpus_id,
-            None => corpus::create_corpus(self, project, self.display_name()).await?,
+            None => corpus::create_corpus(self, checked_project, self.display_name()).await?,
         };
         let file_id = self.store_file(&corpus_id, &request).await?;
         Ok((Some(corpus_id), file_id))
