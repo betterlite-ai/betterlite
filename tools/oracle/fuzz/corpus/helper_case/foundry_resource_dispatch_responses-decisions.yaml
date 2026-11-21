@@ -1,0 +1,11 @@
+kind: helper
+name: foundry-resource-dispatch-responses-decisions-seed
+call:
+  foundry_resource_dispatch:
+    case: responses_decisions
+    operation: decisions_route
+    model: Microsoft-Decision-1
+    api_base: https://res.services.ai.azure.com/openai/v1
+    api_key: decision-key
+env: {}
+compare: {ignore: []}

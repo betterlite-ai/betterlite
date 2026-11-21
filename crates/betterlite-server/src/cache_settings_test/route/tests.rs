@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use axum::http::StatusCode;
+use betterlite_test_ports::refused_port::RefusedPort;
 use rstest::rstest;
 use serde_json::Map;
 use serde_json::Value;
@@ -232,7 +233,8 @@ async fn route_reports_a_cluster_construction_error() {
 
 #[tokio::test]
 async fn route_reports_a_connection_error() {
-    let port = support::closed_port().await;
+    let refused = RefusedPort::bind().unwrap();
+    let port = refused.address.port();
     let body = support::request(support::parse(&format!(
         r#"{{"type":"redis","host":"127.0.0.1","port":{port}}}"#
     )));
@@ -421,7 +423,8 @@ fn changed_body(changed: ChangedTarget, redis: &FakeRedis) -> String {
 #[tokio::test]
 async fn route_never_sends_the_saved_password_to_another_target(#[case] changed: ChangedTarget) {
     let redis = FakeRedis::start().await;
-    let other_port = support::closed_port().await;
+    let refused = RefusedPort::bind().unwrap();
+    let other_port = refused.address.port();
     let (saved_row, repository) = support::fake_saved(SavedReply::Stored(saved_row_for(
         changed,
         redis.port(),
@@ -489,7 +492,8 @@ async fn route_lets_an_explicit_null_url_override_the_redis_url_environment() {
 #[tokio::test]
 async fn route_merges_before_the_url_precedence() {
     let redis = FakeRedis::start().await;
-    let other_port = support::closed_port().await;
+    let refused = RefusedPort::bind().unwrap();
+    let other_port = refused.address.port();
     let saved = support::parse(&format!(
         r#"{{"type":"redis","url":"redis://127.0.0.1:{other_port}"}}"#
     ));

@@ -1,0 +1,20 @@
+kind: helper
+name: vertex-rag-store-upload-chunking-config
+call:
+  b3455:
+    options:
+      chunking_strategy:
+        chunk_size: 500
+        chunk_overlap: 0
+      vector_store:
+        vertex_project: proj
+        vector_store_id: corpora/7
+        file_description: described file
+    file:
+      content_base64: ZGF0YQ==
+      filename: notes.txt
+    responses:
+      - status: 200
+        body: '{"name":"files/9"}'
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,10 @@
+kind: helper
+name: foundry-resource-dispatch-rerank-seed
+call:
+  foundry_resource_dispatch:
+    case: rerank
+    status: 200
+    body: '{"id":"r1","results":[{"index":0,"relevance_score":0.5,"document":{"text":"seed"}}]}'
+    model_group: offer-cohere-rerank-eng-paygo
+env: {}
+compare: {ignore: []}

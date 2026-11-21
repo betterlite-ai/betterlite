@@ -1,0 +1,12 @@
+kind: helper
+name: vertex-rag-store-create-status-failure
+call:
+  b3455:
+    options:
+      vector_store:
+        vertex_project: proj
+    responses:
+      - status: 400
+        body: '{"error":{"code":400,"message":"bad corpus"}}'
+env: {}
+compare: {ignore: []}

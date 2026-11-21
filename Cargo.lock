@@ -985,6 +985,7 @@ dependencies = [
  "betterlite-router",
  "betterlite-secret-managers",
  "betterlite-server",
+ "betterlite-test-ports",
  "chrono",
  "clap",
  "croner",
@@ -1154,6 +1155,7 @@ dependencies = [
  "betterlite-redis",
  "betterlite-routes",
  "betterlite-secrets",
+ "betterlite-test-ports",
  "chrono",
  "clap",
  "deadpool-postgres",
@@ -1456,6 +1458,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-redact",
  "betterlite-secrets",
+ "betterlite-test-ports",
  "chrono",
  "clap",
  "comfy-table",
@@ -3164,6 +3167,7 @@ dependencies = [
  "betterlite-redact",
  "betterlite-server",
  "betterlite-streaming",
+ "betterlite-test-ports",
  "betterlite-tokenizer",
  "chrono",
  "futures-util",
@@ -3498,6 +3502,7 @@ dependencies = [
  "async-trait",
  "aws-smithy-async",
  "betterlite-anthropic",
+ "betterlite-azure",
  "betterlite-bedrock",
  "betterlite-config",
  "betterlite-context",
@@ -4023,6 +4028,7 @@ dependencies = [
  "betterlite-a2a",
  "betterlite-anthropic",
  "betterlite-auth",
+ "betterlite-azure",
  "betterlite-bedrock",
  "betterlite-config",
  "betterlite-context",
@@ -4160,6 +4166,8 @@ dependencies = [
  "betterlite-bedrock",
  "betterlite-config",
  "betterlite-context",
+ "betterlite-core",
+ "betterlite-env",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-provider",
@@ -4565,6 +4573,7 @@ dependencies = [
  "betterlite-secrets",
  "betterlite-semantic",
  "betterlite-streaming",
+ "betterlite-test-ports",
  "betterlite-tokenizer",
  "betterlite-tracing",
  "betterlite-transcribe",
@@ -4687,6 +4696,13 @@ version = "0.0.0"
 dependencies = [
  "betterlite-streaming",
  "libfuzzer-sys",
+]
+
+[[package]]
+name = "betterlite-test-ports"
+version = "0.1.0"
+dependencies = [
+ "tokio",
 ]
 
 [[package]]

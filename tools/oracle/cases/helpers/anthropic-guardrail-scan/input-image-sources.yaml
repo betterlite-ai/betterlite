@@ -1,0 +1,6 @@
+kind: helper
+name: anthropic-guardrail-scan-input-image-sources
+call:
+  b3675: {"function": "image_sources", "scenarios": [{"block": {"type": "image", "source": {"type": "url", "url": "http://u"}}}, {"block": {"type": "image", "source": {"type": "url", "url": ""}}}, {"block": {"type": "image", "source": {"type": "url"}}}, {"block": {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "D"}}}, {"block": {"type": "image", "source": {"type": "base64", "data": "D"}}}, {"block": {"type": "image", "source": {"type": "base64", "media_type": "", "data": "D"}}}, {"block": {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": ""}}}, {"block": {"type": "image", "source": {"type": "file", "file_id": "f"}}}, {"block": {"type": "image"}}, {"block": {"type": "image", "source": "text"}}]}
+env: {}
+compare: {ignore: []}

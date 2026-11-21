@@ -1,0 +1,58 @@
+kind: helper
+name: widest-token-limit
+call:
+  model_group_info:
+    {
+      "model_group": "g",
+      "model_list": [
+        {
+          "model_name": "g",
+          "litellm_params": {
+            "model": "openai/m1"
+          },
+          "model_info": {
+            "id": "a"
+          }
+        },
+        {
+          "model_name": "g",
+          "litellm_params": {
+            "model": "openai/m2"
+          },
+          "model_info": {
+            "id": "b"
+          }
+        },
+        {
+          "model_name": "g",
+          "litellm_params": {
+            "model": "openai/m3"
+          },
+          "model_info": {
+            "id": "c"
+          }
+        }
+      ],
+      "model_group_alias": {},
+      "deployment_info": {
+        "a": {
+          "mode": "chat"
+        },
+        "b": {
+          "mode": "chat",
+          "max_input_tokens": 500,
+          "max_output_tokens": 20
+        },
+        "c": {
+          "mode": "chat",
+          "max_input_tokens": 900
+        }
+      },
+      "model_cost": {},
+      "parameters": {},
+      "lookup_error": false,
+      "provider_error": "none",
+      "missing_ids": []
+    }
+env: {}
+compare: {ignore: []}
