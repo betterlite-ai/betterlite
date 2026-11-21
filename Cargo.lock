@@ -1202,6 +1202,7 @@ dependencies = [
 name = "betterlite-azure"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "base64 0.23.1",
  "betterlite-config",
  "betterlite-context",
@@ -1235,6 +1236,7 @@ dependencies = [
  "sha2 0.11.1",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
  "url",
@@ -2755,6 +2757,7 @@ dependencies = [
 name = "betterlite-oracle-azure"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "base64 0.23.1",
  "betterlite-azure",
  "betterlite-config",
