@@ -28,7 +28,7 @@ use super::result::Failure;
 use super::result::kinds::SdkResult;
 use super::vector_query_embedding::outbound_client;
 
-mod model;
+pub mod model;
 mod projection;
 
 pub use model::{Call, ConfigProjection, OperationCall, Outcome, Payload, Step};
