@@ -68,11 +68,8 @@ fn parsed_path(url: &str) -> Option<String> {
         .find(';')
         .map(|offset| last_segment.saturating_add(offset))
         .filter(|_| PARAM_SCHEMES.contains(&scheme.as_str()));
-    Some(
-        without_query
-            .get(..params_at.unwrap_or(without_query.len()))?
-            .to_owned(),
-    )
+    let end = params_at.unwrap_or(without_query.len());
+    without_query.get(..end).map(str::to_owned)
 }
 
 pub fn convert_https_url_to_s3_uri(url: &str) -> Result<(String, String), S3SigningError> {

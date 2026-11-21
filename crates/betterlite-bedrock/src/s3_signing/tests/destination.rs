@@ -133,6 +133,12 @@ fn region_precedence() {
         located(&[bucket], &[("aws_region_name", "Bad")]),
         "error: invalid AWS region format: Bad"
     );
+    region_fallbacks();
+}
+
+fn region_fallbacks() {
+    let bucket = ("s3_bucket_name", "bkt");
+    let at = |region: &str| format!("https://s3.{region}.amazonaws.com/bkt/{OBJECT}");
     let mut arn = inputs(&[bucket], &[]);
     arn.litellm_params.insert(
         "s3_region_name".to_owned(),
@@ -179,6 +185,10 @@ fn endpoint_choice() {
         located(&[bucket, ("s3_endpoint_url", "")], &[]),
         format!("https://s3.us-west-2.amazonaws.com/bkt/{OBJECT}")
     );
+    assert_eq!(
+        located(&[("s3_bucket_name", " / ")], &[]),
+        "error: Cloud storage bucket name is required"
+    );
 }
 
 fn failure_order() {
@@ -217,8 +227,4 @@ fn failure_order() {
     let mut bare = inputs(&[bucket], &[]);
     bare.file = FileData::Direct(FileBody::BareString("/etc/passwd".to_owned()));
     assert!(url(&target(&bare)).starts_with("error: file content is a bare string"));
-    assert_eq!(
-        located(&[("s3_bucket_name", " / ")], &[]),
-        "error: Cloud storage bucket name is required"
-    );
 }

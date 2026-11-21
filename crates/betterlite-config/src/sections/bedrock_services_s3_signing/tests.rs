@@ -47,13 +47,19 @@ fn bedrock_s3_signing_config_cases(
     match expected {
         Expected::Region(region) => {
             let settings = load(deployment, environment).expect("the config loads");
-            assert_eq!(settings.deployments[0].region_name.as_deref(), region);
-            assert_eq!(settings.deployments[1], S3Location::default());
+            let [first, second] = &*settings.deployments else {
+                panic!("expected two deployments, got {:?}", settings.deployments);
+            };
+            assert_eq!(first.region_name.as_deref(), region);
+            assert_eq!(*second, S3Location::default());
         }
         Expected::Endpoint(endpoint) => {
             let settings = load(deployment, environment).expect("the config loads");
-            assert_eq!(settings.deployments[0].endpoint_url.as_deref(), endpoint);
-            assert_eq!(settings.deployments[1], S3Location::default());
+            let [first, second] = &*settings.deployments else {
+                panic!("expected two deployments, got {:?}", settings.deployments);
+            };
+            assert_eq!(first.endpoint_url.as_deref(), endpoint);
+            assert_eq!(*second, S3Location::default());
         }
         Expected::Unrelated(path) => {
             let error = load(deployment, environment).expect_err("the key is unknown");
