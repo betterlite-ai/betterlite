@@ -12,19 +12,24 @@ pub(super) fn failed(message: &str) -> HookFailure {
 }
 
 pub(super) fn encode<T: Serialize>(value: &T) -> Option<GuardrailValue> {
-    serde_json::from_value(serde_json::to_value(value).ok()?).ok()
+    let Ok(payload) = serde_json::to_value(value) else {
+        return None;
+    };
+    serde_json::from_value(payload).ok()
 }
 
 pub(super) fn decode<T: DeserializeOwned>(value: &GuardrailValue) -> Option<T> {
-    serde_json::from_value(serde_json::to_value(value).ok()?).ok()
+    let Ok(payload) = serde_json::to_value(value) else {
+        return None;
+    };
+    serde_json::from_value(payload).ok()
 }
 
 pub(super) fn to_wire(messages: &[GuardrailValue]) -> Result<Vec<Message>, HookFailure> {
-    encode(messages).ok_or_else(|| failed("the guardrail messages could not be decoded"))
-}
-
-pub(super) fn to_values(messages: &[Message]) -> Option<Vec<GuardrailValue>> {
-    encode(messages)
+    let Some(wire) = encode(messages) else {
+        return Err(failed("the guardrail messages could not be decoded"));
+    };
+    Ok(wire)
 }
 
 pub(super) fn hook_failure(failure: GuardrailFailure) -> HookFailure {

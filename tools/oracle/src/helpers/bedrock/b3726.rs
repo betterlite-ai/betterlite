@@ -136,7 +136,7 @@ impl Helper for Op {
                     let routes = Routes::new();
                     let hook = StreamHook {
                         runtime: &runtime,
-                        settings: runtime.settings(),
+                        settings: &runtime.settings,
                         routes: &routes,
                         request_route: input.request_route.as_deref(),
                         data: &mut data,
@@ -155,7 +155,7 @@ impl Helper for Op {
         Ok(json!({
             "outcome": view::outcome(outcome),
             "chunks": view::chunks(&chunks),
-            "scans": runtime.bodies().len(),
+            "scans": runtime.transport.bodies().len(),
         }))
     }
 }

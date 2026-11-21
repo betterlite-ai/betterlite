@@ -35,7 +35,7 @@ use betterlite_server::guardrails::anthropic_translation::block_continuation::{
 use super::assembly::{assemble, block_chat_chunks};
 use super::replies::Sent;
 use super::support::{Creds, ENVIRONMENT, helper_now};
-use super::values::{decode, encode, failed, hook_failure, to_values, to_wire};
+use super::values::{decode, encode, failed, hook_failure, to_wire};
 
 const BLOCK_MESSAGE_ID: &str = "msg_block";
 
@@ -43,8 +43,8 @@ const BLOCK_MESSAGE_ID: &str = "msg_block";
 pub(super) struct OracleRuntime {
     guardrail: BedrockGuardrail,
     base: GuardrailBase,
-    settings: StreamingSettings,
-    transport: Sent,
+    pub(super) settings: StreamingSettings,
+    pub(super) transport: Sent,
     elapsed: Duration,
 }
 
@@ -63,14 +63,6 @@ impl OracleRuntime {
             transport,
             elapsed,
         }
-    }
-
-    pub(super) fn settings(&self) -> &StreamingSettings {
-        &self.settings
-    }
-
-    pub(super) fn bodies(&self) -> Vec<serde_json::Value> {
-        self.transport.bodies()
     }
 }
 
@@ -100,8 +92,8 @@ impl HookRuntime for OracleRuntime {
         };
         let result = prepare_wire(Some(&wire), self.guardrail.latest_role_message_only);
         RoleSelection {
-            payload: result.payload_messages.as_deref().and_then(to_values),
-            original: result.original_messages.as_deref().and_then(to_values),
+            payload: result.payload_messages.as_deref().and_then(encode),
+            original: result.original_messages.as_deref().and_then(encode),
             target_indices: result.target_indices,
         }
     }
@@ -116,7 +108,7 @@ impl HookRuntime for OracleRuntime {
             return updated.to_vec();
         };
         let merged = reconcile::messages(Some(&originals), &replacements, indices);
-        to_values(&merged).unwrap_or_else(|| updated.to_vec())
+        encode(&merged).unwrap_or_else(|| updated.to_vec())
     }
 
     fn update_messages(
@@ -133,8 +125,7 @@ impl HookRuntime for OracleRuntime {
             request: false,
             response: false,
         };
-        to_values(&masking_update(&items, &scan_response, &flags))
-            .unwrap_or_else(|| messages.to_vec())
+        encode(&masking_update(&items, &scan_response, &flags)).unwrap_or_else(|| messages.to_vec())
     }
 
     fn mask_response(&self, response: &mut GuardrailValue, scan: &GuardrailValue) {

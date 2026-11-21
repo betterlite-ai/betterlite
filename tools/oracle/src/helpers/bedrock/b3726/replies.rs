@@ -25,7 +25,7 @@ pub(crate) struct Sent {
 impl Sent {
     pub(crate) fn new(replies: Vec<Reply>) -> Self {
         Self {
-            replies: Mutex::new(replies.into()),
+            replies: Mutex::new(VecDeque::from(replies)),
             bodies: Mutex::new(Vec::new()),
         }
     }

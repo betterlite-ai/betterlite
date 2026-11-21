@@ -14,11 +14,17 @@ pub(super) fn assemble(chunks: &[StreamChunk], raw_sse: bool) -> Option<Guardrai
 }
 
 pub(super) fn encoded(value: &GuardrailValue) -> Value {
-    serde_json::to_value(value).unwrap_or(Value::Null)
+    if let Ok(payload) = serde_json::to_value(value) {
+        return payload;
+    }
+    Value::Null
 }
 
 fn from_json(value: Value) -> Option<GuardrailValue> {
-    serde_json::from_value(value).ok()
+    if let Ok(parsed) = serde_json::from_value(value) {
+        return Some(parsed);
+    }
+    None
 }
 
 fn field(fields: &BTreeMap<String, GuardrailValue>, key: &str) -> Option<Value> {
@@ -50,6 +56,27 @@ fn integer_of(fields: &BTreeMap<String, GuardrailValue>, key: &str) -> i64 {
     }
 }
 
+pub(super) fn merge_choices(
+    choices: &[GuardrailValue],
+    text: &mut String,
+    finish: &mut Value,
+) -> Option<()> {
+    for choice in choices {
+        let GuardrailValue::Object(choice_fields) = choice else {
+            return None;
+        };
+        if let Some(GuardrailValue::Object(delta)) = choice_fields.get("delta")
+            && let Some(GuardrailValue::Text(part)) = delta.get("content")
+        {
+            text.push_str(part);
+        }
+        if let Some(reason) = field(choice_fields, "finish_reason") {
+            *finish = reason;
+        }
+    }
+    Some(())
+}
+
 // LiteLLM's stream_chunk_builder over the plain chat chunks the cases replay: deltas merge in order, the last usage wins.
 fn assemble_chat(chunks: &[StreamChunk]) -> Option<GuardrailValue> {
     let mut text = String::new();
@@ -69,19 +96,7 @@ fn assemble_chat(chunks: &[StreamChunk]) -> Option<GuardrailValue> {
         let Some(GuardrailValue::Array(choices)) = fields.get("choices") else {
             continue;
         };
-        for choice in choices {
-            let GuardrailValue::Object(choice_fields) = choice else {
-                return None;
-            };
-            if let Some(GuardrailValue::Object(delta)) = choice_fields.get("delta")
-                && let Some(GuardrailValue::Text(part)) = delta.get("content")
-            {
-                text.push_str(part);
-            }
-            if let Some(reason) = field(choice_fields, "finish_reason") {
-                finish = reason;
-            }
-        }
+        merge_choices(choices, &mut text, &mut finish)?;
     }
     from_json(json!({
         "object": "chat.completion",
@@ -95,76 +110,103 @@ fn assemble_chat(chunks: &[StreamChunk]) -> Option<GuardrailValue> {
     }))
 }
 
+fn frame_event(chunk: &StreamChunk) -> Option<BTreeMap<String, GuardrailValue>> {
+    let StreamChunk::Bytes(bytes) = chunk else {
+        return None;
+    };
+    let frame = std::str::from_utf8(bytes).ok()?;
+    let payload = frame
+        .lines()
+        .find_map(|line| line.strip_prefix("data:"))?
+        .trim();
+    let GuardrailValue::Object(event) = serde_json::from_str(payload).ok()? else {
+        return None;
+    };
+    Some(event)
+}
+
 // LiteLLM's assemble_anthropic_sse_stream with restore_identity: message_start names the message, text deltas fill it.
-fn assemble_sse(chunks: &[StreamChunk]) -> Option<GuardrailValue> {
-    let mut id = String::new();
-    let mut model = String::new();
-    let mut text = String::new();
-    let mut input_tokens = 0_i64;
-    let mut output_tokens = 0_i64;
-    let mut started = false;
-    for chunk in chunks {
-        let StreamChunk::Bytes(bytes) = chunk else {
-            return None;
-        };
-        let frame = std::str::from_utf8(bytes).ok()?;
-        let payload = frame
-            .lines()
-            .find_map(|line| line.strip_prefix("data:"))?
-            .trim();
-        let GuardrailValue::Object(event) = serde_json::from_str(payload).ok()? else {
-            return None;
-        };
+#[derive(Default)]
+struct SseBuilder {
+    id: String,
+    model: String,
+    text: String,
+    input_tokens: i64,
+    output_tokens: i64,
+    started: bool,
+}
+
+impl SseBuilder {
+    fn absorb(&mut self, chunk: &StreamChunk) -> Option<()> {
+        let event = frame_event(chunk)?;
         let kind = text_of(&event, "type").unwrap_or_default();
         match kind.as_str() {
-            "message_start" => {
-                started = true;
-                let Some(GuardrailValue::Object(message)) = event.get("message") else {
-                    continue;
-                };
-                if let Some(value) = text_of(message, "id") {
-                    id = value;
-                }
-                if let Some(value) = text_of(message, "model") {
-                    model = value;
-                }
-                if let Some(GuardrailValue::Object(usage)) = message.get("usage") {
-                    input_tokens = integer_of(usage, "input_tokens");
-                }
-            }
-            "content_block_delta" => {
-                if let Some(GuardrailValue::Object(delta)) = event.get("delta")
-                    && let Some(GuardrailValue::Text(part)) = delta.get("text")
-                {
-                    text.push_str(part);
-                }
-            }
-            "message_delta" => {
-                if let Some(GuardrailValue::Object(usage)) = event.get("usage") {
-                    output_tokens = integer_of(usage, "output_tokens");
-                }
-            }
+            "message_start" => self.start(&event),
+            "content_block_delta" => self.delta(&event),
+            "message_delta" => self.usage(&event),
             _ => {}
         }
+        Some(())
     }
-    if !started {
-        return None;
+
+    fn start(&mut self, event: &BTreeMap<String, GuardrailValue>) {
+        self.started = true;
+        let Some(GuardrailValue::Object(message)) = event.get("message") else {
+            return;
+        };
+        if let Some(value) = text_of(message, "id") {
+            self.id = value;
+        }
+        if let Some(value) = text_of(message, "model") {
+            self.model = value;
+        }
+        if let Some(GuardrailValue::Object(usage)) = message.get("usage") {
+            self.input_tokens = integer_of(usage, "input_tokens");
+        }
     }
-    from_json(json!({
-        "id": id,
-        "object": "chat.completion",
-        "model": model,
-        "choices": [{
-            "index": 0,
-            "message": {"role": "assistant", "content": text},
-            "finish_reason": "stop",
-        }],
-        "usage": {
-            "prompt_tokens": input_tokens,
-            "completion_tokens": output_tokens,
-            "total_tokens": input_tokens.saturating_add(output_tokens),
-        },
-    }))
+
+    fn delta(&mut self, event: &BTreeMap<String, GuardrailValue>) {
+        if let Some(GuardrailValue::Object(delta)) = event.get("delta")
+            && let Some(GuardrailValue::Text(part)) = delta.get("text")
+        {
+            self.text.push_str(part);
+        }
+    }
+
+    fn usage(&mut self, event: &BTreeMap<String, GuardrailValue>) {
+        if let Some(GuardrailValue::Object(usage)) = event.get("usage") {
+            self.output_tokens = integer_of(usage, "output_tokens");
+        }
+    }
+
+    fn finish(self) -> Option<GuardrailValue> {
+        if !self.started {
+            return None;
+        }
+        from_json(json!({
+            "id": self.id,
+            "object": "chat.completion",
+            "model": self.model,
+            "choices": [{
+                "index": 0,
+                "message": {"role": "assistant", "content": self.text},
+                "finish_reason": "stop",
+            }],
+            "usage": {
+                "prompt_tokens": self.input_tokens,
+                "completion_tokens": self.output_tokens,
+                "total_tokens": self.input_tokens.saturating_add(self.output_tokens),
+            },
+        }))
+    }
+}
+
+fn assemble_sse(chunks: &[StreamChunk]) -> Option<GuardrailValue> {
+    let mut builder = SseBuilder::default();
+    for chunk in chunks {
+        builder.absorb(chunk)?;
+    }
+    builder.finish()
 }
 
 fn block_failure() -> HookFailure {
