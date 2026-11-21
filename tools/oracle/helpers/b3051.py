@@ -121,7 +121,10 @@ class FixedRouter(Router):
         return self.model_group_info
 
 
-class SatHandler(dynamic_rate_limiter_v3._PROXY_DynamicRateLimitHandlerV3):  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L66
+_HANDLER_CLASS = dynamic_rate_limiter_v3._PROXY_DynamicRateLimitHandlerV3  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L66
+
+
+class SatHandler(_HANDLER_CLASS):
     def priority_of(self, auth: UserAPIKeyAuth) -> str | None:
         return self._get_priority_from_user_api_key_dict(auth)
 
