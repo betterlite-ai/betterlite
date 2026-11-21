@@ -46,6 +46,11 @@ deviations:
       The function's body is one expression, and rule no-one-line-functions (.ast-grep/rules/no-one-line-functions.yml) rejects it. The frame text is the same.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L81-L83
   - what: >-
+      The upstream A2A request follows at most 10 redirects, the shared client's limit. LiteLLM's httpx client follows up to 20 before it raises TooManyRedirects.
+    why: >-
+      The limit belongs to the shared ProxiedClient, which this task does not own; an agent reachable only through 11 to 20 redirects is refused here where LiteLLM reaches it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L618
+  - what: >-
       Event lines are decoded as UTF-8 with invalid bytes replaced. LiteLLM's httpx reader decodes with the charset the agent's Content-Type declares, and as UTF-8 when it declares none.
     why: >-
       The SSE spec fixes an event stream's encoding at UTF-8 and gives no way to name another, so an agent that declares a different charset in its Content-Type has its non-ASCII bytes replaced where LiteLLM would convert them.
