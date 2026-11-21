@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use betterlite_config::sections::deployment_catalog::GroupAlias;
@@ -7,7 +7,7 @@ use betterlite_redis::cache_primitives::pipeline_increment::IncrementOperation;
 use betterlite_redis::cache_primitives::protocol::RedisScalar;
 use betterlite_redis::redis_counters::RedisCountersError;
 use indexmap::IndexMap;
-use tokio::sync::Mutex;
+use tokio::sync::Mutex as AsyncMutex;
 
 use crate::concurrency_gauges::ConcurrencyGauges;
 use crate::concurrency_gauges::cache::{GaugeCache, GaugeCacheValue};
@@ -114,7 +114,7 @@ pub(crate) fn window_store() -> WindowStore {
         rate_limiter_script: None,
         counter_read_script: None,
         request_batch: None,
-        check_and_increment_lock: Mutex::new(()),
+        check_and_increment_lock: AsyncMutex::new(()),
     }
 }
 
@@ -162,7 +162,7 @@ fn build_gauges(
         count_script: None,
         release_batch: None,
         fail_closed,
-        check_and_increment_lock: Mutex::new(()),
+        check_and_increment_lock: AsyncMutex::new(()),
     })
 }
 
@@ -199,6 +199,6 @@ pub(crate) fn build_assembly(owners: &Owners) -> RateLimiterAssembly {
         model_groups: Box::new(RouterModelGroupResolver {
             aliases: Arc::clone(&owners.aliases),
         }),
-        batch_limiter: std::sync::Mutex::new(None),
+        batch_limiter: Mutex::new(None),
     }
 }
