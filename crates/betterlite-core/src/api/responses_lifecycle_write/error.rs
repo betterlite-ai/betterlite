@@ -37,54 +37,37 @@ pub struct ResponsesLifecycleWriteError {
 }
 
 impl ResponsesLifecycleWriteError {
-    // LiteLLM's exception_type(model=None, custom_llm_provider=..., original_exception=cause)
+    // LiteLLM's exception_type(model=None, custom_llm_provider=..., original_exception=cause): a success reply the transform could not decode carries the reply status, which the status branch maps to APIError
     #[must_use]
     pub fn error_class(&self, redactor: &Redactor) -> ErrorClass {
-        let raw = match &self.error {
-            // the handler's own exception is what exception_type received
-            LifecycleWriteError::Transport(WriteError::Provider(error)) => RawException {
-                model: String::new(),
-                custom_llm_provider: self.provider.clone(),
-                error_str: error.message.clone(),
-                status_code: Some(error.status_code),
-                status_code_is_synthesized: error.status_code_is_synthesized,
-                message: Some(error.message.clone()),
-                body: None,
-                exception_type: String::new(),
-            },
-            // a success reply the transform could not decode raises OpenAIError(message=reply text, status_code=reply status), which the status branch maps to APIError
+        let (status_code, synthesized, exception_type) = match &self.error {
+            LifecycleWriteError::Transport(WriteError::Provider(error)) => (
+                Some(error.status_code),
+                error.status_code_is_synthesized,
+                String::new(),
+            ),
             LifecycleWriteError::Transport(WriteError::Resource(error)) => {
-                let message = error.to_string();
-                RawException {
-                    model: String::new(),
-                    custom_llm_provider: self.provider.clone(),
-                    error_str: message.clone(),
-                    status_code: error.http_status(),
-                    status_code_is_synthesized: false,
-                    message: Some(message),
-                    body: None,
-                    exception_type: String::from("OpenAIError"),
-                }
+                (error.http_status(), false, String::from("OpenAIError"))
             }
-            // a ValueError or a failure that carries no provider status
             LifecycleWriteError::WrongAnswer { .. }
             | LifecycleWriteError::Transport(_)
             | LifecycleWriteError::MissingProvider
             | LifecycleWriteError::Unsupported { .. }
-            | LifecycleWriteError::Logging(_) => {
-                let message = self.error.to_string();
-                RawException {
-                    model: String::new(),
-                    custom_llm_provider: self.provider.clone(),
-                    error_str: message.clone(),
-                    status_code: None,
-                    status_code_is_synthesized: false,
-                    message: Some(message),
-                    body: None,
-                    exception_type: String::from("ValueError"),
-                }
-            }
+            | LifecycleWriteError::Logging(_) => (None, false, String::from("ValueError")),
         };
-        dispatch(&DispatchInput::Raw(Box::new(raw)), redactor)
+        let message = self.error.to_string();
+        dispatch(
+            &DispatchInput::Raw(Box::new(RawException {
+                model: String::new(),
+                custom_llm_provider: self.provider.clone(),
+                error_str: message.clone(),
+                status_code,
+                status_code_is_synthesized: synthesized,
+                message: Some(message),
+                body: None,
+                exception_type,
+            })),
+            redactor,
+        )
     }
 }
