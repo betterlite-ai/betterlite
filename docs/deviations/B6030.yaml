@@ -69,6 +69,17 @@ deviations:
       it needs. Both are a hard error on input the declared type rejects.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L921-L930
   - what: >-
+      A CustomLogger subclass whose __init__ does not call super().__init__ raises AttributeError
+      from redact_standard_logging_payload_from_model_call_details, where LiteLLM reads
+      getattr(self, "turn_off_message_logging", False) and treats the missing attribute as False.
+      Deleting betterlite.standard_logging_payload_excluded_fields raises AttributeError here,
+      where LiteLLM's getattr default reads None.
+    why: >-
+      The Python rules ban getattr and fallback values, and a missing attribute surfaces instead of
+      being hidden: the class's own __init__ exists to set it. A subclass that calls
+      super().__init__ and the package attribute itself behave as in LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L914-L915
+  - what: >-
       The proxy and core types CustomLogger annotates with are local Protocols in
       custom_logger_types.py: Span, UserAPIKeyAuth, DualCache, LiteLLMLoggingObj,
       MCPPostCallResponseObject, PreRoutingHookResponse, HTTPException, BaseAnthropicMessagesConfig
