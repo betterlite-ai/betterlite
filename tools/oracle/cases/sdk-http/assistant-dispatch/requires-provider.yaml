@@ -5,20 +5,24 @@ call:
   assistant_dispatch:
     runs:
       - operation: create_assistant
-        payload: {model: gpt-4o}
-        params: {api_base: $API_BASE, api_key: sk-test}
+        payload:
+          model: gpt-4o
+          params: {api_base: $API_BASE, api_key: sk-test}
       - operation: create_assistant
-        payload: {model: gpt-4o}
-        params: {api_base: $API_BASE, api_key: sk-test}
+        payload:
+          model: gpt-4o
+          params: {api_base: $API_BASE, api_key: sk-test}
         config: {}
       - operation: create_assistant
-        payload: {model: gpt-4o}
-        params: {api_base: $API_BASE, api_key: sk-test}
+        payload:
+          model: gpt-4o
+          params: {api_base: $API_BASE, api_key: sk-test}
         config: {custom_llm_provider: openai}
       - operation: create_assistant
         provider: anthropic
-        payload: {model: claude-3-haiku}
-        params: {api_base: $API_BASE, api_key: sk-test}
+        payload:
+          model: claude-3-haiku
+          params: {api_base: $API_BASE, api_key: sk-test}
 upstream: []
 compare:
   headers: []

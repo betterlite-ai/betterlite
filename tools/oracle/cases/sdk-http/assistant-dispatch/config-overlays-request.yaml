@@ -5,40 +5,48 @@ call:
   assistant_dispatch:
     runs:
       - operation: create_assistant
-        payload: {model: gpt-4o, name: helper}
-        params: {api_base: $API_BASE, api_key: request-key}
+        payload:
+          model: gpt-4o
+          name: helper
+          params: {api_base: $API_BASE, api_key: request-key}
         config:
           custom_llm_provider: openai
           litellm_params: {api_key: config-key, model: gpt-4o-mini}
       - operation: create_assistant
         provider: azure
-        payload: {model: gpt-4o, name: helper}
-        params: {api_base: $API_BASE, api_key: request-key, api_version: '2024-02-15-preview'}
+        payload:
+          model: gpt-4o
+          name: helper
+          params: {api_base: $API_BASE, api_key: request-key, api_version: '2024-02-15-preview'}
         config:
           custom_llm_provider: openai
           litellm_params: {api_key: config-key, model: gpt-4o-mini}
       - operation: create_assistant
         provider: ''
-        payload: {model: gpt-4o}
-        params: {api_base: $API_BASE, api_key: request-key}
+        payload:
+          model: gpt-4o
+          params: {api_base: $API_BASE, api_key: request-key}
         config:
           custom_llm_provider: openai
           litellm_params: {api_key: config-key}
       - operation: create_assistant
-        payload: {model: gpt-4o}
-        params: {api_base: $API_BASE, api_key: request-key}
+        payload:
+          model: gpt-4o
+          params: {api_base: $API_BASE, api_key: request-key}
         config:
           custom_llm_provider: openai
           litellm_params: {api_key: config-key, custom_llm_provider: azure}
       - operation: create_assistant
-        payload: {model: gpt-4o}
-        params: {api_base: $API_BASE, api_key: request-key}
+        payload:
+          model: gpt-4o
+          params: {api_base: $API_BASE, api_key: request-key}
         config:
           custom_llm_provider: openai
           litellm_params: {api_key: config-key, client: supplied}
       - operation: delete_assistant
         assistant_id: asst_a
-        params: {api_base: $API_BASE, api_key: request-key}
+        payload:
+          params: {api_base: $API_BASE, api_key: request-key}
         config:
           custom_llm_provider: openai
           litellm_params: {api_key: config-key, assistant_id: asst_configured}

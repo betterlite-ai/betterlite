@@ -6,16 +6,18 @@ call:
   assistant_dispatch:
     runs:
       - operation: create_assistant
-        payload: {name: helper}
-        params: {api_base: $API_BASE}
+        payload:
+          name: helper
+          params: {api_base: $API_BASE}
         config:
           custom_llm_provider: openai
           litellm_params: {api_key: 'os.environ/DISPATCH_KEY', model: gpt-4o-mini}
         startup: true
       - operation: create_assistant
         provider: openai
-        payload: {model: gpt-4o}
-        params: {api_base: $API_BASE, api_key: request-key}
+        payload:
+          model: gpt-4o
+          params: {api_base: $API_BASE, api_key: request-key}
         config:
           custom_llm_provider: openai
           litellm_params: {api_key: 'os.environ/DISPATCH_KEY', model: gpt-4o-mini}

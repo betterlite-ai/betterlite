@@ -5,36 +5,48 @@ call:
   assistant_dispatch:
     runs:
       - operation: create_assistant
-        payload: {model: gpt-4o-mini, name: helper, instructions: be brief}
-        params: {api_base: $API_BASE, api_key: sk-test}
+        payload:
+          model: gpt-4o-mini
+          name: helper
+          instructions: be brief
+          params: {api_base: $API_BASE, api_key: sk-test}
         config: {custom_llm_provider: openai, litellm_params: {}}
       - operation: list_assistants
-        params: {api_base: $API_BASE, api_key: sk-test}
+        payload:
+          params: {api_base: $API_BASE, api_key: sk-test}
         config: {custom_llm_provider: openai, litellm_params: {}}
       - operation: delete_assistant
         assistant_id: asst_a
-        params: {api_base: $API_BASE, api_key: sk-test}
+        payload:
+          params: {api_base: $API_BASE, api_key: sk-test}
         config: {custom_llm_provider: openai, litellm_params: {}}
       - operation: create_thread
-        params: {api_base: $API_BASE, api_key: sk-test}
+        payload:
+          params: {api_base: $API_BASE, api_key: sk-test}
         config: {custom_llm_provider: openai, litellm_params: {}}
       - operation: get_thread
         thread_id: thread_a
-        params: {api_base: $API_BASE, api_key: sk-test}
+        payload:
+          params: {api_base: $API_BASE, api_key: sk-test}
         config: {custom_llm_provider: openai, litellm_params: {}}
       - operation: create_message
         thread_id: thread_a
-        payload: {role: user, content: hello}
-        params: {api_base: $API_BASE, api_key: sk-test}
+        payload:
+          role: user
+          content: hello
+          params: {api_base: $API_BASE, api_key: sk-test}
         config: {custom_llm_provider: openai, litellm_params: {}}
       - operation: list_messages
         thread_id: thread_a
-        params: {api_base: $API_BASE, api_key: sk-test}
+        payload:
+          params: {api_base: $API_BASE, api_key: sk-test}
         config: {custom_llm_provider: openai, litellm_params: {}}
       - operation: run_thread
         thread_id: thread_a
-        payload: {assistant_id: asst_a, stream: true}
-        params: {api_base: $API_BASE, api_key: sk-test}
+        payload:
+          assistant_id: asst_a
+          stream: true
+          params: {api_base: $API_BASE, api_key: sk-test}
         config: {custom_llm_provider: openai, litellm_params: {}}
 upstream:
   - status: 200
