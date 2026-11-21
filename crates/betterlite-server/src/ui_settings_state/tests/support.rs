@@ -7,7 +7,6 @@ use betterlite_cache::dual_cache::{CacheOptions, DualCache, DualCacheSettings};
 use betterlite_config::sections::settings::settings_rules::JsonValue;
 use betterlite_config::ui_settings::UiSettingsDict;
 use betterlite_db::auxiliary_repository::repository::TableError;
-use betterlite_db::budget_permission_rows::JsonData;
 
 use crate::jobs::ptu::attribution::PtuAttribution;
 use crate::ui_settings_state::derived::PtuCostFlag;
@@ -21,18 +20,18 @@ pub(super) fn settings(text: &str) -> UiSettingsDict {
     serde_json::from_str(text).expect("the settings parse")
 }
 
-pub(super) fn stored(text: &str) -> JsonData {
-    serde_json::from_str(text).expect("the stored row parses")
+pub(super) fn stored(text: &str) -> String {
+    text.to_owned()
 }
 
 pub(super) struct FakeRepository {
-    row: Mutex<Option<JsonData>>,
+    row: Mutex<Option<String>>,
     reads: AtomicUsize,
     fails: AtomicBool,
 }
 
 impl FakeRepository {
-    pub(super) fn new(row: Option<JsonData>) -> Self {
+    pub(super) fn new(row: Option<String>) -> Self {
         Self {
             row: Mutex::new(row),
             reads: AtomicUsize::new(0),
@@ -55,11 +54,12 @@ impl FakeRepository {
 
 #[async_trait]
 impl UiSettingsRepository for FakeRepository {
-    async fn stored_ui_settings(&self) -> Result<Option<JsonData>, TableError> {
+    async fn stored_ui_settings(&self) -> Result<Option<String>, TableError> {
         self.reads.fetch_add(1, Ordering::SeqCst);
         if self.fails.load(Ordering::SeqCst) {
             return Err(TableError::Row(
-                serde_json::from_str::<JsonData>("{").expect_err("the stored row is malformed"),
+                serde_json::from_str::<UiSettingsDict>("{")
+                    .expect_err("the stored row is malformed"),
             ));
         }
         Ok(self

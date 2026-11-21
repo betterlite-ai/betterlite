@@ -6,7 +6,7 @@ use betterlite_models::decisions::Json;
 use thiserror::Error;
 use tracing::warn;
 
-use super::decode::{StoredUiSettingsError, decode_stored_value};
+use super::decode::{StoredUiSettingsError, decode_stored_ui_settings};
 use super::projection::{GeneralSettingsTarget, apply_runtime_ui_flags};
 use super::repository::UiSettingsRepository;
 use super::values::{decision_object, settings_json};
@@ -35,7 +35,7 @@ pub async fn get_ui_settings_cached<Memory: MemoryCacheOps>(
         return Ok(UiSettingsDict::new());
     };
     let stored = match repository.stored_ui_settings().await? {
-        Some(stored) => decode_stored_value(stored)?,
+        Some(text) => decode_stored_ui_settings(text.as_bytes())?,
         None => UiSettingsDict::new(),
     };
     let sanitized: UiSettingsDict = stored
@@ -62,7 +62,9 @@ pub async fn sync_ui_settings(
     target: GeneralSettingsTarget<'_>,
 ) -> UiSettingsDict {
     let decoded = match repository.stored_ui_settings().await {
-        Ok(Some(stored)) => decode_stored_value(stored).map_err(UiSettingsReadError::from),
+        Ok(Some(text)) => {
+            decode_stored_ui_settings(text.as_bytes()).map_err(UiSettingsReadError::from)
+        }
         Ok(None) => Ok(UiSettingsDict::new()),
         Err(error) => Err(UiSettingsReadError::Table(error)),
     };

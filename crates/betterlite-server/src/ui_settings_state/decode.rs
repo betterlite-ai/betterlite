@@ -16,10 +16,6 @@ pub enum StoredUiSettingsError {
 // The ui_settings column is JSON; LiteLLM reads it as a mapping or as the JSON text of one.
 pub fn decode_stored_ui_settings(bytes: &[u8]) -> Result<UiSettingsDict, StoredUiSettingsError> {
     let stored: JsonData = serde_json::from_slice(bytes)?;
-    decode_stored_value(stored)
-}
-
-pub fn decode_stored_value(stored: JsonData) -> Result<UiSettingsDict, StoredUiSettingsError> {
     match stored {
         JsonData::Null => Ok(UiSettingsDict::new()),
         JsonData::Object(entries) => Ok(object_settings(entries)),

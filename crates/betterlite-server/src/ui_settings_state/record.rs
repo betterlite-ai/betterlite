@@ -230,66 +230,60 @@ fn number_bool(name: &'static str, number: &Number) -> Result<UiSettingFlag, UiS
     })
 }
 
+// Both list fields share the item loop; only the whole-value error kind differs per field.
+fn list_setting(
+    value: &JsonValue,
+    name: &'static str,
+    text_error: UiSettingErrorKind,
+    other_error: UiSettingErrorKind,
+) -> Result<Vec<String>, UiSettingsError> {
+    let Some(items) = value.as_array() else {
+        let kind = if value.is_string() {
+            text_error
+        } else {
+            other_error
+        };
+        return Err(UiSettingsError {
+            kind,
+            field: name,
+            index: None,
+        });
+    };
+    let mut strings = Vec::with_capacity(items.len());
+    for (index, item) in items.iter().enumerate() {
+        let JsonValue::String(text) = item else {
+            return Err(UiSettingsError {
+                kind: UiSettingErrorKind::StringType,
+                field: name,
+                index: Some(index),
+            });
+        };
+        strings.push(text.clone());
+    }
+    Ok(strings)
+}
+
 fn pages_setting(input: &UiSettingsDict) -> Result<Option<Vec<String>>, UiSettingsError> {
     match input.get(PAGES_SETTING) {
         None | Some(JsonValue::Null) => Ok(None),
-        Some(JsonValue::Array(items)) => items
-            .iter()
-            .enumerate()
-            .map(|(index, item)| match item {
-                JsonValue::String(page) => Ok(page.clone()),
-                JsonValue::Null
-                | JsonValue::Bool(_)
-                | JsonValue::Number(_)
-                | JsonValue::Array(_)
-                | JsonValue::Object(_) => Err(UiSettingsError {
-                    kind: UiSettingErrorKind::StringType,
-                    field: PAGES_SETTING,
-                    index: Some(index),
-                }),
-            })
-            .collect::<Result<Vec<String>, UiSettingsError>>()
-            .map(Some),
-        Some(
-            JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::String(_) | JsonValue::Object(_),
-        ) => Err(UiSettingsError {
-            kind: UiSettingErrorKind::ListType,
-            field: PAGES_SETTING,
-            index: None,
-        }),
+        Some(value) => list_setting(
+            value,
+            PAGES_SETTING,
+            UiSettingErrorKind::ListType,
+            UiSettingErrorKind::ListType,
+        )
+        .map(Some),
     }
 }
 
 fn team_fields_setting(input: &UiSettingsDict) -> Result<Vec<String>, UiSettingsError> {
-    match input.get(EDITABLE_FIELDS_SETTING) {
-        None => Ok(Vec::new()),
-        Some(JsonValue::Array(items)) => items
-            .iter()
-            .enumerate()
-            .map(|(index, item)| match item {
-                JsonValue::String(field) => Ok(field.clone()),
-                JsonValue::Null
-                | JsonValue::Bool(_)
-                | JsonValue::Number(_)
-                | JsonValue::Array(_)
-                | JsonValue::Object(_) => Err(UiSettingsError {
-                    kind: UiSettingErrorKind::StringType,
-                    field: EDITABLE_FIELDS_SETTING,
-                    index: Some(index),
-                }),
-            })
-            .collect(),
-        Some(JsonValue::String(_)) => Err(UiSettingsError {
-            kind: UiSettingErrorKind::SequenceStr,
-            field: EDITABLE_FIELDS_SETTING,
-            index: None,
-        }),
-        Some(
-            JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Object(_),
-        ) => Err(UiSettingsError {
-            kind: UiSettingErrorKind::IsInstanceOf,
-            field: EDITABLE_FIELDS_SETTING,
-            index: None,
-        }),
-    }
+    let Some(value) = input.get(EDITABLE_FIELDS_SETTING) else {
+        return Ok(Vec::new());
+    };
+    list_setting(
+        value,
+        EDITABLE_FIELDS_SETTING,
+        UiSettingErrorKind::SequenceStr,
+        UiSettingErrorKind::IsInstanceOf,
+    )
 }

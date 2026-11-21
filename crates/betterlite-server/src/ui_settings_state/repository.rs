@@ -3,7 +3,6 @@ use betterlite_db::auxiliary_repository::bindings::UISettings;
 use betterlite_db::auxiliary_repository::repository::{
     PrismaClient, PrismaTableRepository, TableError,
 };
-use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::database_replica::availability::Availability;
 use betterlite_db::postgres_store::errors::backend;
 use betterlite_db::postgres_store::session::PostgresStore;
@@ -16,7 +15,7 @@ const SELECT_SQL: &str = r#"SELECT ui_settings::text FROM "LiteLLM_UISettings" W
 // The ui_settings row of LiteLLM_UISettings, read the way the user banner read reads its own row.
 #[async_trait]
 pub trait UiSettingsRepository: Send + Sync {
-    async fn stored_ui_settings(&self) -> Result<Option<JsonData>, TableError>;
+    async fn stored_ui_settings(&self) -> Result<Option<String>, TableError>;
 }
 
 pub struct DatabaseUiSettingsRepository<'db> {
@@ -26,7 +25,7 @@ pub struct DatabaseUiSettingsRepository<'db> {
 
 #[async_trait]
 impl UiSettingsRepository for DatabaseUiSettingsRepository<'_> {
-    async fn stored_ui_settings(&self) -> Result<Option<JsonData>, TableError> {
+    async fn stored_ui_settings(&self) -> Result<Option<String>, TableError> {
         let client = PrismaClient {
             writer: self.store,
             reader: self.store,
@@ -49,8 +48,6 @@ impl UiSettingsRepository for DatabaseUiSettingsRepository<'_> {
         let text: String = found
             .try_get(0)
             .map_err(|source| TableError::Database(backend(source)))?;
-        serde_json::from_str(&text)
-            .map(Some)
-            .map_err(TableError::Row)
+        Ok(Some(text))
     }
 }

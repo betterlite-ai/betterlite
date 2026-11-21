@@ -64,31 +64,126 @@ fn record_coerces_booleans_like_the_pydantic_model(#[case] value: &str, #[case] 
 }
 
 #[rstest]
-#[case::text_outside_the_set(r#""maybe""#, UiSettingErrorKind::BoolParsing)]
-#[case::blank_text(r#"" ""#, UiSettingErrorKind::BoolParsing)]
-#[case::integer_two("2", UiSettingErrorKind::BoolParsing)]
-#[case::float_two("2.0", UiSettingErrorKind::BoolParsing)]
-#[case::negative_float("-1.0", UiSettingErrorKind::BoolParsing)]
-#[case::float_fraction("1.5", UiSettingErrorKind::BoolType)]
-#[case::tiny_float("1e-21", UiSettingErrorKind::BoolType)]
-#[case::huge_float("1e21", UiSettingErrorKind::BoolType)]
-#[case::huge_integer("9223372036854775808", UiSettingErrorKind::BoolType)]
-#[case::huge_unsigned_integer("18446744073709551615", UiSettingErrorKind::BoolType)]
-#[case::null("null", UiSettingErrorKind::BoolType)]
-#[case::array("[]", UiSettingErrorKind::BoolType)]
-#[case::object("{}", UiSettingErrorKind::BoolType)]
-fn record_rejects_booleans_the_pydantic_model_rejects(
+#[case::boolean_text_outside_the_set(
+    "enable_chat_ui",
+    r#""maybe""#,
+    UiSettingErrorKind::BoolParsing,
+    None
+)]
+#[case::boolean_blank_text("enable_chat_ui", r#"" ""#, UiSettingErrorKind::BoolParsing, None)]
+#[case::boolean_integer_two("enable_chat_ui", "2", UiSettingErrorKind::BoolParsing, None)]
+#[case::boolean_float_two("enable_chat_ui", "2.0", UiSettingErrorKind::BoolParsing, None)]
+#[case::boolean_negative_float("enable_chat_ui", "-1.0", UiSettingErrorKind::BoolParsing, None)]
+#[case::boolean_float_fraction("enable_chat_ui", "1.5", UiSettingErrorKind::BoolType, None)]
+#[case::boolean_tiny_float("enable_chat_ui", "1e-21", UiSettingErrorKind::BoolType, None)]
+#[case::boolean_huge_float("enable_chat_ui", "1e21", UiSettingErrorKind::BoolType, None)]
+#[case::boolean_huge_integer(
+    "enable_chat_ui",
+    "9223372036854775808",
+    UiSettingErrorKind::BoolType,
+    None
+)]
+#[case::boolean_huge_unsigned_integer(
+    "enable_chat_ui",
+    "18446744073709551615",
+    UiSettingErrorKind::BoolType,
+    None
+)]
+#[case::boolean_null("enable_chat_ui", "null", UiSettingErrorKind::BoolType, None)]
+#[case::boolean_array("enable_chat_ui", "[]", UiSettingErrorKind::BoolType, None)]
+#[case::boolean_object("enable_chat_ui", "{}", UiSettingErrorKind::BoolType, None)]
+#[case::pages_text(
+    "enabled_ui_pages_internal_users",
+    r#""pages""#,
+    UiSettingErrorKind::ListType,
+    None
+)]
+#[case::pages_number(
+    "enabled_ui_pages_internal_users",
+    "3",
+    UiSettingErrorKind::ListType,
+    None
+)]
+#[case::pages_flag(
+    "enabled_ui_pages_internal_users",
+    "true",
+    UiSettingErrorKind::ListType,
+    None
+)]
+#[case::pages_object(
+    "enabled_ui_pages_internal_users",
+    "{}",
+    UiSettingErrorKind::ListType,
+    None
+)]
+#[case::pages_number_item(
+    "enabled_ui_pages_internal_users",
+    r#"["chat", 1]"#,
+    UiSettingErrorKind::StringType,
+    Some(1)
+)]
+#[case::pages_null_item(
+    "enabled_ui_pages_internal_users",
+    "[null]",
+    UiSettingErrorKind::StringType,
+    Some(0)
+)]
+#[case::pages_nested_item(
+    "enabled_ui_pages_internal_users",
+    "[[]]",
+    UiSettingErrorKind::StringType,
+    Some(0)
+)]
+#[case::team_text(
+    "team_admin_editable_team_fields",
+    r#""max_budget""#,
+    UiSettingErrorKind::SequenceStr,
+    None
+)]
+#[case::team_null(
+    "team_admin_editable_team_fields",
+    "null",
+    UiSettingErrorKind::IsInstanceOf,
+    None
+)]
+#[case::team_number(
+    "team_admin_editable_team_fields",
+    "3",
+    UiSettingErrorKind::IsInstanceOf,
+    None
+)]
+#[case::team_flag(
+    "team_admin_editable_team_fields",
+    "true",
+    UiSettingErrorKind::IsInstanceOf,
+    None
+)]
+#[case::team_object(
+    "team_admin_editable_team_fields",
+    "{}",
+    UiSettingErrorKind::IsInstanceOf,
+    None
+)]
+#[case::team_number_item(
+    "team_admin_editable_team_fields",
+    r#"["max_budget", 1]"#,
+    UiSettingErrorKind::StringType,
+    Some(1)
+)]
+fn record_rejects_values_the_pydantic_model_rejects(
+    #[case] name: &'static str,
     #[case] value: &str,
     #[case] kind: UiSettingErrorKind,
+    #[case] index: Option<usize>,
 ) {
-    let input = format!(r#"{{"enable_chat_ui": {value}}}"#);
+    let input = format!(r#"{{"{name}": {value}}}"#);
     let error = UiSettings::validate(&settings(&input)).expect_err("the value is rejected");
     assert_eq!(
         error,
         UiSettingsError {
             kind,
-            field: "enable_chat_ui",
-            index: None,
+            field: name,
+            index
         }
     );
 }
@@ -113,31 +208,6 @@ fn record_accepts_null_and_string_lists_for_the_page_setting() {
     );
 }
 
-#[rstest]
-#[case::text(r#""pages""#, UiSettingErrorKind::ListType, None)]
-#[case::number("3", UiSettingErrorKind::ListType, None)]
-#[case::flag("true", UiSettingErrorKind::ListType, None)]
-#[case::object("{}", UiSettingErrorKind::ListType, None)]
-#[case::number_item(r#"["chat", 1]"#, UiSettingErrorKind::StringType, Some(1))]
-#[case::null_item("[null]", UiSettingErrorKind::StringType, Some(0))]
-#[case::nested_item("[[]]", UiSettingErrorKind::StringType, Some(0))]
-fn record_rejects_page_settings_the_pydantic_model_rejects(
-    #[case] value: &str,
-    #[case] kind: UiSettingErrorKind,
-    #[case] index: Option<usize>,
-) {
-    let input = format!(r#"{{"enabled_ui_pages_internal_users": {value}}}"#);
-    let error = UiSettings::validate(&settings(&input)).expect_err("the value is rejected");
-    assert_eq!(
-        error,
-        UiSettingsError {
-            kind,
-            field: "enabled_ui_pages_internal_users",
-            index,
-        }
-    );
-}
-
 #[test]
 fn record_accepts_string_lists_for_the_team_fields() {
     let record = UiSettings::validate(&settings(
@@ -152,30 +222,6 @@ fn record_accepts_string_lists_for_the_team_fields() {
     assert_eq!(
         default.model_dump().get("team_admin_editable_team_fields"),
         Some(&json("[]"))
-    );
-}
-
-#[rstest]
-#[case::text(r#""max_budget""#, UiSettingErrorKind::SequenceStr, None)]
-#[case::null("null", UiSettingErrorKind::IsInstanceOf, None)]
-#[case::number("3", UiSettingErrorKind::IsInstanceOf, None)]
-#[case::flag("true", UiSettingErrorKind::IsInstanceOf, None)]
-#[case::object("{}", UiSettingErrorKind::IsInstanceOf, None)]
-#[case::number_item(r#"["max_budget", 1]"#, UiSettingErrorKind::StringType, Some(1))]
-fn record_rejects_team_fields_the_pydantic_model_rejects(
-    #[case] value: &str,
-    #[case] kind: UiSettingErrorKind,
-    #[case] index: Option<usize>,
-) {
-    let input = format!(r#"{{"team_admin_editable_team_fields": {value}}}"#);
-    let error = UiSettings::validate(&settings(&input)).expect_err("the value is rejected");
-    assert_eq!(
-        error,
-        UiSettingsError {
-            kind,
-            field: "team_admin_editable_team_fields",
-            index,
-        }
     );
 }
 

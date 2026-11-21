@@ -6,7 +6,8 @@ use deadpool_postgres::{Config, Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
 
-use super::support::stored;
+use super::support::settings;
+use crate::ui_settings_state::decode::decode_stored_ui_settings;
 use crate::ui_settings_state::repository::{DatabaseUiSettingsRepository, UiSettingsRepository};
 
 const SCHEMA: &str = r#"
@@ -60,9 +61,14 @@ async fn database_repository_reads_the_ui_settings_row() {
         )
         .await
         .unwrap();
+    let text = repository
+        .stored_ui_settings()
+        .await
+        .unwrap()
+        .expect("the row exists");
     assert_eq!(
-        repository.stored_ui_settings().await.unwrap(),
-        Some(stored(r#"{"enable_chat_ui": true}"#))
+        decode_stored_ui_settings(text.as_bytes()).unwrap(),
+        settings(r#"{"enable_chat_ui": true}"#)
     );
     pool.close();
     fixture.close_async().await.unwrap();
