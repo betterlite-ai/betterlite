@@ -162,7 +162,10 @@ async fn anthropic_row_reads_the_wire_body_when_the_kwargs_system_is_empty() {
 async fn anthropic_row_copies_only_the_allowed_wire_body_keys() {
     let kwargs = object(
         r#"{"model":"claude-3-5-sonnet","messages":[{"role":"user","content":"hi"}],
-            "litellm_params":{"proxy_server_request":{"body":{"max_tokens":64,"temperature":0,"made_up_key":"x"}}}}"#,
+            "litellm_params":{"proxy_server_request":{"body":{"max_tokens":64,"temperature":0,
+                "top_p":0.9,"top_k":5,"reasoning_effort":"high","stop_sequences":["END"],
+                "tools":[{"name":"lookup","description":"Find a record","input_schema":{"type":"object","properties":{"q":{"type":"string"}}}}],
+                "tool_choice":{"type":"tool","name":"lookup"},"made_up_key":"x"}}}}"#,
     );
     let request = chat_request("anthropic_messages", &kwargs, &object(r#"{"top_p":0.1}"#))
         .await
@@ -170,7 +173,10 @@ async fn anthropic_row_copies_only_the_allowed_wire_body_keys() {
     assert_eq!(
         request,
         object(
-            r#"{"model":"claude-3-5-sonnet","messages":[{"role":"user","content":"hi"}],"max_tokens":64,"temperature":0}"#
+            r#"{"model":"claude-3-5-sonnet","messages":[{"role":"user","content":"hi"}],
+                "max_tokens":64,"temperature":0,"top_p":0.9,"top_k":5,"reasoning_effort":"high","stop":["END"],
+                "tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"object","properties":{"q":{"type":"string"}}},"description":"Find a record"}}],
+                "tool_choice":{"type":"function","function":{"name":"lookup"}}}"#
         )
     );
 }
@@ -255,6 +261,30 @@ async fn responses_row_reads_the_wire_body_instructions_when_kwargs_has_none() {
         request,
         object(
             r#"{"messages":[{"role":"system","content":"inner"},{"role":"user","content":"hello"}],"model":"gpt-4o"}"#
+        )
+    );
+}
+
+#[tokio::test]
+async fn responses_row_translates_the_optional_params_the_wire_body_carries() {
+    let kwargs = object(
+        r#"{"model":"gpt-4o","messages":"hello","litellm_params":{"proxy_server_request":{"body":{
+            "tools":[{"type":"function","name":"lookup","description":"Find a record","parameters":{"type":"object","properties":{"q":{"type":"string"}}}}],
+            "tool_choice":{"type":"function","name":"lookup"},"parallel_tool_calls":true,
+            "text":{"format":{"type":"json_object"}},"reasoning":{"effort":"low"},
+            "user":"u","safety_identifier":"s","context_management":{"type":"auto"}}}}}"#,
+    );
+    let request = chat_request("responses", &kwargs, &object("{}"))
+        .await
+        .unwrap();
+    assert_eq!(
+        request,
+        object(
+            r#"{"messages":[{"role":"user","content":"hello"}],"model":"gpt-4o",
+                "tools":[{"type":"function","function":{"name":"lookup","description":"Find a record","parameters":{"type":"object","properties":{"q":{"type":"string"}}},"strict":false}}],
+                "tool_choice":{"type":"function","function":{"name":"lookup"}},"parallel_tool_calls":true,
+                "response_format":{"type":"json_object"},"reasoning_effort":"low",
+                "user":"u","safety_identifier":"s","context_management":{"type":"auto"}}"#
         )
     );
 }
