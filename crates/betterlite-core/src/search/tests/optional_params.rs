@@ -42,15 +42,15 @@ fn optional_params_are_empty_without_options() {
 }
 
 #[rstest]
-#[case::max_results(SearchOptions { max_results: Some(0_i64), search_domain_filter: None, max_tokens_per_page: None, country: None }, r#"{"max_results":0}"#)]
-#[case::domains(SearchOptions { max_results: None, search_domain_filter: Some(Vec::new()), max_tokens_per_page: None, country: None }, r#"{"search_domain_filter":[]}"#)]
-#[case::max_tokens(SearchOptions { max_results: None, search_domain_filter: None, max_tokens_per_page: Some(0_i64), country: None }, r#"{"max_tokens_per_page":0}"#)]
-#[case::country(SearchOptions { max_results: None, search_domain_filter: None, max_tokens_per_page: None, country: Some(String::new()) }, r#"{"country":""}"#)]
+#[case::max_results(&SearchOptions { max_results: Some(0_i64), search_domain_filter: None, max_tokens_per_page: None, country: None }, r#"{"max_results":0}"#)]
+#[case::domains(&SearchOptions { max_results: None, search_domain_filter: Some(Vec::new()), max_tokens_per_page: None, country: None }, r#"{"search_domain_filter":[]}"#)]
+#[case::max_tokens(&SearchOptions { max_results: None, search_domain_filter: None, max_tokens_per_page: Some(0_i64), country: None }, r#"{"max_tokens_per_page":0}"#)]
+#[case::country(&SearchOptions { max_results: None, search_domain_filter: None, max_tokens_per_page: None, country: Some(String::new()) }, r#"{"country":""}"#)]
 fn optional_params_keep_explicit_zero_and_empty_values(
-    #[case] options: SearchOptions,
+    #[case] options: &SearchOptions,
     #[case] expected: &str,
 ) {
-    let params = merged_params(&options, &IndexMap::new());
+    let params = merged_params(options, &IndexMap::new());
     assert_eq!(Json::Object(params), json(expected));
 }
 

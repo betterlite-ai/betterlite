@@ -60,7 +60,7 @@ where
 {
     let model = format!("{provider}/search");
     // a query of the wrong shape is the caller's mistake, where LiteLLM's ValueError maps to a 500
-    if let SearchCallError::Query(_) = &error {
+    if matches!(error, SearchCallError::Query(_)) {
         let context = ErrorContext {
             message: error.to_string(),
             model: Some(model),
