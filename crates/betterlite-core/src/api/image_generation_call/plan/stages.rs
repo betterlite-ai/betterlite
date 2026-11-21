@@ -170,6 +170,7 @@ pub(super) fn log(
         optional_params: mapped.params.clone(),
         additional_params: additional,
     };
+    // the additional params always record custom_llm_provider, so LiteLLM's post-call guard never fires here
     update_from_kwargs(logging, &call.kwargs, Some(&litellm_literal(call)), update).map_err(
         |error| {
             raise(
@@ -181,18 +182,7 @@ pub(super) fn log(
                 ),
             )
         },
-    )?;
-    // LiteLLM's post-call guard, which only fires for a logging object that recorded no provider
-    if !logging
-        .model_call_details
-        .contains_key("custom_llm_provider")
-    {
-        logging.model_call_details.insert(
-            String::from("custom_llm_provider"),
-            Json::Text(prepared.provider_slug.clone()),
-        );
-    }
-    Ok(())
+    )
 }
 
 fn project_params_error(
