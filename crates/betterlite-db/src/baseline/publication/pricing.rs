@@ -5,7 +5,8 @@ use betterlite_models::baseline_history::usage::{
 };
 use betterlite_models::cost_usage::CompletionDetails;
 use betterlite_models::cost_usage::modality_projection::CacheCreationTokenDetails;
-use betterlite_models::decisions::{Extra, Json};
+use betterlite_models::decisions::Json;
+use betterlite_models::savings_evidence::spend::BaselineCosts;
 use betterlite_models::savings_evidence::usage::{LoggedUsage, PromptTokensDetails};
 use betterlite_models::savings_pricing::compare::{
     ComparisonInput, ComparisonProvenance, price_baseline_comparison,
@@ -15,7 +16,7 @@ use betterlite_models::savings_pricing::usage::RequestUsage;
 use chrono::{DateTime, Utc};
 use jiff::tz::TimeZoneDatabase;
 
-use super::model::{BaselinePublication, PublicationStatus};
+use super::model::{BaselinePublication, PublicationProvenance, PublicationStatus, VERSION};
 use crate::baseline::records::BaselineAccountingRecord;
 
 // Everything the source's comparison pricing reads: the injected price side, the tz database and the pricing moment.
@@ -38,6 +39,7 @@ impl<'a, C> PublicationPricing<'a, C> {
 }
 
 // baseline_publication: price the estimate against the recorded snapshot, keeping its token evidence either way.
+#[must_use]
 pub fn baseline_publication<C>(
     pricing: &PublicationPricing<'_, C>,
     record: &BaselineAccountingRecord,
@@ -60,10 +62,21 @@ where
             database: &pricing.database,
         },
     );
+    build_publication(record, estimate, costs, first_at)
+}
+
+fn build_publication(
+    record: &BaselineAccountingRecord,
+    estimate: &BaselineEstimate,
+    costs: Option<BaselineCosts>,
+    first_at: f64,
+) -> BaselinePublication {
+    let usage = estimate.usage.as_ref();
     let details = usage.and_then(|value| value.prompt_tokens_details.as_ref());
     let writes = details.and_then(|value| value.cache_creation_token_details.as_ref());
     let estimated = costs.is_some();
     BaselinePublication {
+        version: VERSION,
         comparison_id: record.scope.clone(),
         comparison_started_at: first_at,
         status: if estimated {
@@ -76,7 +89,14 @@ where
         } else {
             "pricing_unavailable".to_owned()
         },
-        provenance: if estimated { provenance } else { None },
+        provenance: if estimated {
+            estimate
+                .provenance
+                .map(comparison_provenance)
+                .map(PublicationProvenance::from)
+        } else {
+            None
+        },
         actual_spend: costs.map(|value| value.actual),
         baseline_spend: costs.map(|value| value.baseline),
         input_tokens: details.and_then(|value| value.text_tokens),
@@ -119,9 +139,9 @@ fn prompt_details(value: &BaselinePromptDetails) -> PromptTokensDetails {
         cache_creation_tokens: value.cache_creation_tokens.unwrap_or_default(),
         cache_write_tokens: value.cache_write_tokens.unwrap_or_default(),
         text_tokens: value.text_tokens.unwrap_or_default(),
-        audio_tokens: extra_count(&value.extra, "audio_tokens"),
-        image_tokens: extra_count(&value.extra, "image_tokens"),
-        video_tokens: extra_count(&value.extra, "video_tokens"),
+        audio_tokens: optional_count(value.extra.get("audio_tokens")).unwrap_or_default(),
+        image_tokens: optional_count(value.extra.get("image_tokens")).unwrap_or_default(),
+        video_tokens: optional_count(value.extra.get("video_tokens")).unwrap_or_default(),
         cache_creation_token_details: None,
     }
 }
@@ -144,10 +164,6 @@ fn completion_details(value: Option<&Json>) -> Option<CompletionDetails> {
         video_tokens: optional_count(fields.get("video_tokens")),
         reasoning_tokens: optional_count(fields.get("reasoning_tokens")),
     })
-}
-
-fn extra_count(extra: &Extra, key: &str) -> i64 {
-    optional_count(extra.get(key)).unwrap_or_default()
 }
 
 fn optional_count(value: Option<&Json>) -> Option<i64> {

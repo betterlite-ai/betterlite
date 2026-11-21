@@ -75,7 +75,7 @@ fn daily_rows(changes: &[Change], entity: DailySpendEntity) -> Vec<SpendRow> {
             continue;
         };
         for target in &daily.targets {
-            if target.entity == entity {
+            if DailySpendEntity::from(target.entity) == entity {
                 rows.push(daily.adjustment(target, change.savings_delta, &change.request_id));
             }
         }

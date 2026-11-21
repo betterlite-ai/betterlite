@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
 use betterlite_models::decisions::Json;
+use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive as _;
 use serde_json::Number;
 
 mod datetime;
@@ -22,10 +24,6 @@ enum Canonical {
 }
 
 impl Canonical {
-    fn object() -> Self {
-        Self::Object(BTreeMap::new())
-    }
-
     fn insert(&mut self, key: &str, value: Self) {
         if let Self::Object(fields) = self {
             fields.insert(key.to_owned(), value);
@@ -48,6 +46,18 @@ impl From<&Json> for Canonical {
                     .collect(),
             ),
         }
+    }
+}
+
+impl From<Decimal> for Canonical {
+    fn from(value: Decimal) -> Self {
+        Self::Float(value.to_f64().unwrap_or_default())
+    }
+}
+
+impl From<Option<i64>> for Canonical {
+    fn from(value: Option<i64>) -> Self {
+        value.map_or(Self::Null, Self::Integer)
     }
 }
 

@@ -3,7 +3,6 @@ use betterlite_models::savings_evidence::snapshot::BaselineCostSnapshot;
 use serde::Deserialize;
 
 use crate::autorouter_turn_sql::transaction::AutoRouterTurnTransaction;
-use crate::daily_spend_sql::entities::DailySpendEntity;
 
 use super::{DailyBaselineAttribution, DailyBaselineTarget};
 
@@ -38,7 +37,7 @@ pub(super) struct RawDailyAttribution {
     #[serde(default)]
     mcp_namespaced_tool_name: Option<String>,
     #[serde(default)]
-    targets: Vec<RawTarget>,
+    targets: Vec<DailyBaselineTarget>,
 }
 
 impl RawDailyAttribution {
@@ -51,27 +50,7 @@ impl RawDailyAttribution {
             model_group: self.model_group,
             endpoint: self.endpoint,
             mcp_namespaced_tool_name: self.mcp_namespaced_tool_name,
-            targets: self
-                .targets
-                .into_iter()
-                .map(RawTarget::into_target)
-                .collect(),
-        }
-    }
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RawTarget {
-    entity: DailySpendEntity,
-    entity_id: Option<String>,
-}
-
-impl RawTarget {
-    fn into_target(self) -> DailyBaselineTarget {
-        DailyBaselineTarget {
-            entity: self.entity,
-            entity_id: self.entity_id,
+            targets: self.targets,
         }
     }
 }

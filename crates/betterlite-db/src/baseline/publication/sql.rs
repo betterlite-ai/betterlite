@@ -45,6 +45,15 @@ pub fn session_correction_sql(user_scoped: bool) -> String {
     } else {
         ""
     };
+    session_correction_statement(table, identity, user_filter, user_match)
+}
+
+fn session_correction_statement(
+    table: &str,
+    identity: &str,
+    user_filter: &str,
+    user_match: &str,
+) -> String {
     format!(
         r#"
 WITH changes AS (

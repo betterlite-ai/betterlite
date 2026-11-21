@@ -10,7 +10,6 @@ use betterlite_models::decisions::Extra;
 use betterlite_models::price_lookup::{PriceLookup, PriceRecord, PricedModel};
 use betterlite_models::savings_evidence::pricing_basis::PricingBasis;
 use betterlite_models::savings_evidence::snapshot::BaselineCostSnapshot;
-use betterlite_models::savings_pricing::compare::ComparisonProvenance;
 use betterlite_models::savings_pricing::context::{ModelIdentity, SavingsPricingContext};
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use chrono::{DateTime, TimeZone as _, Utc};
@@ -19,8 +18,8 @@ use rust_decimal::Decimal;
 use serde::Deserialize;
 
 use super::change::{Change, change};
-use super::decode::{decode_baseline_history, decode_baseline_publication};
-use super::model::{BaselinePublication, PublicationStatus};
+use super::decode::decode_baseline_publication;
+use super::model::{BaselinePublication, PublicationProvenance, PublicationStatus, VERSION};
 use super::pricing::{PublicationPricing, baseline_publication};
 use super::project::{StoredRecord, project_group};
 use super::publish::{PublishError, publish};
@@ -30,9 +29,8 @@ use crate::autorouter_turn_sql::transaction::{AutoRouterTurnTransaction, TurnFla
 use crate::baseline::records::canonical::serialize_record;
 use crate::baseline::records::decode::{BaselineJson, decode_baseline_json};
 use crate::baseline::records::{
-    BaselineAccountingRecord, DailyBaselineAttribution, DailyBaselineTarget,
+    BaselineAccountingRecord, BaselineEntity, DailyBaselineAttribution, DailyBaselineTarget,
 };
-use crate::daily_spend_sql::entities::DailySpendEntity;
 
 const SCOPE: &str =
     "autorouter-baseline:v3:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
@@ -172,11 +170,11 @@ fn daily() -> DailyBaselineAttribution {
         mcp_namespaced_tool_name: None,
         targets: vec![
             DailyBaselineTarget {
-                entity: DailySpendEntity::User,
+                entity: BaselineEntity::User,
                 entity_id: Some("user-1".to_owned()),
             },
             DailyBaselineTarget {
-                entity: DailySpendEntity::Tag,
+                entity: BaselineEntity::Tag,
                 entity_id: Some("tag-a".to_owned()),
             },
         ],
@@ -228,6 +226,7 @@ fn identical_estimate(record: &BaselineAccountingRecord) -> BaselineEstimate {
 
 fn unknown_publication(reason: &str) -> BaselinePublication {
     BaselinePublication {
+        version: VERSION,
         comparison_id: SCOPE.to_owned(),
         comparison_started_at: 1.0,
         status: PublicationStatus::Unknown,
@@ -244,11 +243,12 @@ fn unknown_publication(reason: &str) -> BaselinePublication {
 
 fn estimated_publication(actual: Decimal, baseline: Decimal) -> BaselinePublication {
     BaselinePublication {
+        version: VERSION,
         comparison_id: SCOPE.to_owned(),
         comparison_started_at: 1.0,
         status: PublicationStatus::Estimated,
         reason: "identical_baseline_path".to_owned(),
-        provenance: Some(ComparisonProvenance::ObservedIdentical),
+        provenance: Some(PublicationProvenance::ObservedIdentical),
         actual_spend: Some(actual),
         baseline_spend: Some(baseline),
         input_tokens: Some(5),
@@ -267,8 +267,10 @@ struct StoredPublication {
     status: String,
     reason: String,
     provenance: Option<String>,
-    actual_spend: Option<f64>,
-    baseline_spend: Option<f64>,
+    #[serde(rename = "actual_spend")]
+    actual_amount: Option<f64>,
+    #[serde(rename = "baseline_spend")]
+    baseline_amount: Option<f64>,
     input_tokens: Option<i64>,
     cache_read_input_tokens: Option<i64>,
     cache_creation_5m_input_tokens: Option<i64>,
@@ -324,14 +326,14 @@ fn publication_serializes_every_stored_field_and_keeps_amounts_as_floats() {
     assert_eq!(stored.comparison_id, SCOPE);
     assert_eq!(stored.status, "estimated");
     assert_eq!(stored.provenance.as_deref(), Some("observed_identical"));
-    assert_eq!(stored.actual_spend, Some(0.25));
-    assert_eq!(stored.baseline_spend, Some(0.20));
+    assert_eq!(stored.actual_amount, Some(0.25));
+    assert_eq!(stored.baseline_amount, Some(0.20));
     assert_eq!(stored.input_tokens, Some(5));
     let unknown = unknown_publication("conflicting_observation");
     let stored_unknown: StoredPublication =
         serde_json::from_str(&serde_json::to_string(&unknown).unwrap()).unwrap();
     assert_eq!(stored_unknown.provenance, None);
-    assert_eq!(stored_unknown.actual_spend, None);
+    assert_eq!(stored_unknown.actual_amount, None);
 }
 
 #[test]
@@ -407,7 +409,7 @@ fn change_retracts_published_savings_and_actual_spend() {
     assert_eq!(value.covered_delta, -1);
     assert_eq!(value.actual_delta, Decimal::new(-25, 2));
     assert_eq!(value.savings_delta, Decimal::new(5, 2));
-    assert_eq!(value.daily, Some(daily()));
+    assert!(value.daily.as_ref() == Some(&daily()));
 }
 
 #[test]
@@ -456,7 +458,7 @@ fn change_serializes_the_daily_attribution_the_correction_key_reads() {
         &unknown_publication("concurrent_uncertainty"),
     );
     let retracted = decoded_change(&retracted);
-    assert_eq!(retracted.daily, None);
+    assert!(retracted.daily.is_none());
     assert_eq!(retracted.user_id, "");
 }
 
@@ -559,7 +561,10 @@ fn project_group_keeps_prior_changes_and_the_first_group_timestamp() {
     let previous_history = BaselineHistory {
         first_at: Some(1.5),
         last_at: Some(1.0),
-        ..BaselineHistory::default()
+        equivalent: true,
+        uncertain_before: 0.0,
+        entries: Vec::new(),
+        blocked_until: 0.0,
     };
     let stored = StoredRecord {
         data: serialize_record(&record),
@@ -611,7 +616,9 @@ fn decode_baseline_json_dispatches_on_the_marker_byte() {
 
 #[test]
 fn history_decoder_keeps_the_source_dataclass_defaults() {
-    let decoded = decode_baseline_history(b"{}").unwrap();
+    let BaselineJson::History(decoded) = decode_baseline_json(b"H{}").unwrap() else {
+        panic!("history marker");
+    };
     assert_eq!(decoded, BaselineHistory::default());
 }
 

@@ -1,8 +1,7 @@
 use betterlite_models::baseline_history::model::BaselineObservation;
 use betterlite_models::savings_evidence::snapshot::BaselineCostSnapshot;
 use rust_decimal::Decimal;
-use serde::Serialize;
-use serde::ser::SerializeStruct as _;
+use serde::{Deserialize, Serialize};
 
 use crate::autorouter_turn_sql::transaction::AutoRouterTurnTransaction;
 use crate::daily_spend_sql::entities::{DailySpendEntity, SpendRow};
@@ -12,15 +11,65 @@ pub mod canonical;
 pub mod decode;
 mod types;
 
+// The daily entity a baseline correction lands on: its payload name and the column its rollup row is keyed by.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BaselineEntity {
+    User,
+    Team,
+    Org,
+    Tag,
+    EndUser,
+    Agent,
+}
+
+impl BaselineEntity {
+    const fn name(self) -> &'static str {
+        match self {
+            Self::User => "user",
+            Self::Team => "team",
+            Self::Org => "org",
+            Self::Tag => "tag",
+            Self::EndUser => "end_user",
+            Self::Agent => "agent",
+        }
+    }
+
+    const fn column(self) -> &'static str {
+        match self {
+            Self::User => "user_id",
+            Self::Team => "team_id",
+            Self::Org => "organization_id",
+            Self::Tag => "tag",
+            Self::EndUser => "end_user_id",
+            Self::Agent => "agent_id",
+        }
+    }
+}
+
+impl From<BaselineEntity> for DailySpendEntity {
+    fn from(value: BaselineEntity) -> Self {
+        match value {
+            BaselineEntity::User => Self::User,
+            BaselineEntity::Team => Self::Team,
+            BaselineEntity::Org => Self::Org,
+            BaselineEntity::Tag => Self::Tag,
+            BaselineEntity::EndUser => Self::EndUser,
+            BaselineEntity::Agent => Self::Agent,
+        }
+    }
+}
+
 // The entity a daily baseline correction lands on and the row id that entity is keyed by.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DailyBaselineTarget {
-    pub entity: DailySpendEntity,
+    pub entity: BaselineEntity,
     pub entity_id: Option<String>,
 }
 
 // The daily rollup identity a baseline request was logged under, before the per-entity rows are built.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Serialize)]
 pub struct DailyBaselineAttribution {
     pub date: String,
     pub api_key: String,
@@ -62,7 +111,7 @@ impl DailyBaselineAttribution {
             optional_text(self.mcp_namespaced_tool_name.as_ref()),
         );
         row.insert(
-            entity_id_column(target.entity).to_owned(),
+            target.entity.column().to_owned(),
             optional_text(target.entity_id.as_ref()),
         );
         row.insert(
@@ -83,63 +132,8 @@ fn optional_text(value: Option<&String>) -> SpendColumnValue {
     })
 }
 
-impl Serialize for DailyBaselineTarget {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let mut state = serializer.serialize_struct("DailyBaselineTarget", 2)?;
-        state.serialize_field("entity", entity_name(self.entity))?;
-        state.serialize_field("entity_id", &self.entity_id)?;
-        state.end()
-    }
-}
-
-// The YAML key order and the nulls are what the publication payload carries for a daily correction.
-impl Serialize for DailyBaselineAttribution {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let mut state = serializer.serialize_struct("DailyBaselineAttribution", 8)?;
-        state.serialize_field("date", &self.date)?;
-        state.serialize_field("api_key", &self.api_key)?;
-        state.serialize_field("model", &self.model)?;
-        state.serialize_field("custom_llm_provider", &self.custom_llm_provider)?;
-        state.serialize_field("model_group", &self.model_group)?;
-        state.serialize_field("endpoint", &self.endpoint)?;
-        state.serialize_field("mcp_namespaced_tool_name", &self.mcp_namespaced_tool_name)?;
-        state.serialize_field("targets", &self.targets)?;
-        state.end()
-    }
-}
-
-// DailySpendEntity's own serialized names, spelled once for the payload and the canonical text.
-pub(crate) const fn entity_name(entity: DailySpendEntity) -> &'static str {
-    match entity {
-        DailySpendEntity::User => "user",
-        DailySpendEntity::Team => "team",
-        DailySpendEntity::Org => "org",
-        DailySpendEntity::Tag => "tag",
-        DailySpendEntity::EndUser => "end_user",
-        DailySpendEntity::Agent => "agent",
-    }
-}
-
-// Mirrors DailySpendEntity's table entity column; the table descriptor keeps it crate-private.
-const fn entity_id_column(entity: DailySpendEntity) -> &'static str {
-    match entity {
-        DailySpendEntity::User => "user_id",
-        DailySpendEntity::Team => "team_id",
-        DailySpendEntity::Org => "organization_id",
-        DailySpendEntity::Tag => "tag",
-        DailySpendEntity::EndUser => "end_user_id",
-        DailySpendEntity::Agent => "agent_id",
-    }
-}
-
 // One stored autorouter baseline observation before publication; turn and daily are required nullable fields.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct BaselineAccountingRecord {
     pub scope: String,
     pub api_key: String,
@@ -168,41 +162,6 @@ pub enum RecordError {
         "Baseline observation must own an unestimated turn with matching scope and actual cost"
     )]
     InconsistentTurn,
-}
-
-pub(super) fn validate(raw: types::RawRecord) -> Result<BaselineAccountingRecord, RecordError> {
-    if !valid_scope(&raw.scope) {
-        return Err(RecordError::InvalidScope);
-    }
-    if raw.api_key.is_empty() {
-        return Err(RecordError::EmptyApiKey);
-    }
-    if !(1..=256).contains(&raw.session_id.chars().count()) {
-        return Err(RecordError::InvalidSessionId);
-    }
-    if raw.router_name.is_empty() {
-        return Err(RecordError::EmptyRouterName);
-    }
-    if raw.baseline_model.is_empty() {
-        return Err(RecordError::EmptyBaselineModel);
-    }
-    let record = BaselineAccountingRecord {
-        scope: raw.scope,
-        api_key: raw.api_key,
-        session_id: raw.session_id,
-        router_name: raw.router_name,
-        baseline_model: raw.baseline_model,
-        observation: raw.observation,
-        pricing: raw.pricing,
-        turn: raw.turn,
-        daily: raw.daily.map(types::RawDailyAttribution::into_attribution),
-    };
-    if let Some(turn) = &record.turn {
-        if !consistent_turn(&record, turn) {
-            return Err(RecordError::InconsistentTurn);
-        }
-    }
-    Ok(record)
 }
 
 fn valid_scope(scope: &str) -> bool {
@@ -238,13 +197,44 @@ pub enum RecordDecodeError {
     #[error("baseline record is not valid JSON of the required shape")]
     Json(#[from] serde_json::Error),
     #[error(transparent)]
-    Invalid(#[from] RecordError),
+    Invalid(RecordError),
 }
 
 // Stored data is the canonical text B1699 writes, so a retry decodes to the same record.
 pub fn decode_baseline_record(data: &[u8]) -> Result<BaselineAccountingRecord, RecordDecodeError> {
     let raw: types::RawRecord = serde_json::from_slice(data)?;
-    Ok(validate(raw)?)
+    if !valid_scope(&raw.scope) {
+        return Err(RecordDecodeError::Invalid(RecordError::InvalidScope));
+    }
+    if raw.api_key.is_empty() {
+        return Err(RecordDecodeError::Invalid(RecordError::EmptyApiKey));
+    }
+    if !(1..=256).contains(&raw.session_id.chars().count()) {
+        return Err(RecordDecodeError::Invalid(RecordError::InvalidSessionId));
+    }
+    if raw.router_name.is_empty() {
+        return Err(RecordDecodeError::Invalid(RecordError::EmptyRouterName));
+    }
+    if raw.baseline_model.is_empty() {
+        return Err(RecordDecodeError::Invalid(RecordError::EmptyBaselineModel));
+    }
+    let record = BaselineAccountingRecord {
+        scope: raw.scope,
+        api_key: raw.api_key,
+        session_id: raw.session_id,
+        router_name: raw.router_name,
+        baseline_model: raw.baseline_model,
+        observation: raw.observation,
+        pricing: raw.pricing,
+        turn: raw.turn,
+        daily: raw.daily.map(types::RawDailyAttribution::into_attribution),
+    };
+    if let Some(turn) = &record.turn {
+        if !consistent_turn(&record, turn) {
+            return Err(RecordDecodeError::Invalid(RecordError::InconsistentTurn));
+        }
+    }
+    Ok(record)
 }
 
 #[cfg(test)]

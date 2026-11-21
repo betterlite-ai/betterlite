@@ -6,7 +6,7 @@ use super::model::BaselinePublication;
 use crate::baseline::records::{BaselineAccountingRecord, DailyBaselineAttribution};
 
 // _Change: one reversed-or-applied correction, carrying the identity its session and daily rows key on.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Serialize)]
 pub struct Change {
     pub request_id: String,
     pub publication: BaselinePublication,
@@ -16,7 +16,9 @@ pub struct Change {
     pub router_name: String,
     pub baseline_model: String,
     pub covered_delta: i64,
+    #[serde(with = "rust_decimal::serde::float")]
     pub actual_delta: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
     pub savings_delta: Decimal,
     pub daily: Option<DailyBaselineAttribution>,
 }
@@ -41,7 +43,7 @@ pub fn change(
         session_id: record.session_id.clone(),
         router_name: record.router_name.clone(),
         baseline_model: record.baseline_model.clone(),
-        covered_delta: i64::from(current.is_some()) - i64::from(previous.is_some()),
+        covered_delta: i64::from(current.is_some()).saturating_sub(i64::from(previous.is_some())),
         actual_delta: delta(
             current.map(|value| value.actual),
             previous.map(|value| value.actual),
@@ -59,7 +61,7 @@ fn savings(value: BaselineCosts) -> Decimal {
 }
 
 fn delta(current: Option<Decimal>, previous: Option<Decimal>) -> Decimal {
-    let current = current.unwrap_or_default();
-    let previous = previous.unwrap_or_default();
-    current.checked_sub(previous).unwrap_or(Decimal::ZERO)
+    let new_amount = current.unwrap_or_default();
+    let old_amount = previous.unwrap_or_default();
+    new_amount.checked_sub(old_amount).unwrap_or(Decimal::ZERO)
 }

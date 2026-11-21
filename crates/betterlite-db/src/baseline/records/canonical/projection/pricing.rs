@@ -1,13 +1,14 @@
+use std::collections::BTreeMap;
+
 use betterlite_models::savings_evidence::pricing_basis::PricingBasis;
 use betterlite_models::savings_evidence::snapshot::BaselineCostSnapshot;
 use betterlite_models::tiered_pricing::Scalar;
 use betterlite_models::token_rates::ModelInfo;
 
 use super::super::Canonical;
-use super::money;
 
 pub(super) fn pricing(value: &BaselineCostSnapshot) -> Canonical {
-    let mut root = Canonical::object();
+    let mut root = Canonical::Object(BTreeMap::new());
     root.insert("model", Canonical::Text(value.model.clone()));
     root.insert("provider", Canonical::Text(value.provider.clone()));
     root.insert(
@@ -15,17 +16,19 @@ pub(super) fn pricing(value: &BaselineCostSnapshot) -> Canonical {
         value.prices.as_ref().map_or(Canonical::Null, prices),
     );
     root.insert("basis", basis(&value.basis));
-    root.insert("actual_spend", money(value.actual_spend));
+    root.insert("actual_spend", Canonical::from(value.actual_spend));
     root.insert(
         "actual_token_cost",
-        value.actual_token_cost.map_or(Canonical::Null, money),
+        value
+            .actual_token_cost
+            .map_or(Canonical::Null, Canonical::from),
     );
-    root.insert("classifier_cost", money(value.classifier_cost));
+    root.insert("classifier_cost", Canonical::from(value.classifier_cost));
     root
 }
 
 fn prices(value: &ModelInfo) -> Canonical {
-    let mut root = Canonical::object();
+    let mut root = Canonical::Object(BTreeMap::new());
     for (key, child) in value {
         root.insert(key, scalar(child));
     }
@@ -40,7 +43,7 @@ fn scalar(value: &Scalar) -> Canonical {
         Scalar::Text(text) => Canonical::Text(text.clone()),
         // B1693 keeps a composite rate opaque; only its container shape comes back out.
         Scalar::Array(_) => Canonical::List(Vec::new()),
-        Scalar::Object(_) => Canonical::object(),
+        Scalar::Object(_) => Canonical::Object(BTreeMap::new()),
     }
 }
 

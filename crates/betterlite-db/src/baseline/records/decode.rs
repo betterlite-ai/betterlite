@@ -1,13 +1,11 @@
 use betterlite_models::baseline_history::model::BaselineHistory;
 
 use super::{BaselineAccountingRecord, RecordDecodeError, decode_baseline_record};
-use crate::baseline::publication::decode::{
-    PublicationDecodeError, decode_baseline_history, decode_baseline_publication,
-};
+use crate::baseline::publication::decode::{PublicationDecodeError, decode_baseline_publication};
 use crate::baseline::publication::model::BaselinePublication;
 
 // The three stored baseline texts, tagged by the leading marker byte a fuzz seed or a replay row carries.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum BaselineJson {
     Record(BaselineAccountingRecord),
     Publication(BaselinePublication),
@@ -26,15 +24,17 @@ pub enum BaselineJsonError {
     History(#[from] serde_json::Error),
 }
 
-// One dispatch for the fuzz target and its corpus replay, so both exercise the production decoders.
+// One dispatch for the fuzz target and its corpus replay; a history row uses its dataclass's own coercions.
 pub fn decode_baseline_json(data: &[u8]) -> Result<BaselineJson, BaselineJsonError> {
-    match data.split_first() {
-        Some((b'R', rest)) => Ok(BaselineJson::Record(decode_baseline_record(rest)?)),
-        Some((b'P', rest)) => Ok(BaselineJson::Publication(decode_baseline_publication(
+    let Some((&marker, rest)) = data.split_first() else {
+        return Err(BaselineJsonError::UnknownKind);
+    };
+    match marker {
+        b'R' => Ok(BaselineJson::Record(decode_baseline_record(rest)?)),
+        b'P' => Ok(BaselineJson::Publication(decode_baseline_publication(
             rest,
         )?)),
-        Some((b'H', rest)) => Ok(BaselineJson::History(decode_baseline_history(rest)?)),
-        Some((_, _)) => Err(BaselineJsonError::UnknownKind),
-        None => Err(BaselineJsonError::UnknownKind),
+        b'H' => Ok(BaselineJson::History(serde_json::from_slice(rest)?)),
+        _ => Err(BaselineJsonError::UnknownKind),
     }
 }

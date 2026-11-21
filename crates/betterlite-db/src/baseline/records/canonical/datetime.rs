@@ -2,8 +2,7 @@ use chrono::NaiveDateTime;
 
 use crate::autorouter_turn_sql::transaction::TurnTime;
 
-// pydantic's mode="json" datetime: 'Z' for UTC, a numeric offset otherwise, six fraction digits when
-// microseconds are present and none when they are zero.
+// pydantic's mode="json" datetime: 'Z' for UTC, a numeric offset otherwise, six fraction digits when microseconds are present and none when they are zero.
 pub(super) fn turn_time(value: &TurnTime) -> String {
     match value {
         TurnTime::Aware(time) => {

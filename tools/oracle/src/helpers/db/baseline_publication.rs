@@ -1,13 +1,11 @@
 use betterlite_db::baseline::publication::change::change;
 use betterlite_db::baseline::publication::decode::decode_baseline_publication;
-use betterlite_db::baseline::publication::model::BaselinePublication;
 use betterlite_db::baseline::publication::pricing::{PublicationPricing, baseline_publication};
 use betterlite_db::baseline::publication::project::{StoredRecord, project_group};
 use betterlite_db::baseline::records::canonical::serialize_record;
 use betterlite_db::baseline::records::{
-    BaselineAccountingRecord, DailyBaselineTarget, decode_baseline_record,
+    BaselineEntity, DailyBaselineTarget, decode_baseline_record,
 };
-use betterlite_db::daily_spend_sql::entities::DailySpendEntity;
 use betterlite_models::baseline_history::estimate::{BaselineEstimate, Provenance};
 use betterlite_models::baseline_history::model::BaselineHistory;
 use betterlite_models::baseline_history::usage::Usage;
@@ -99,7 +97,7 @@ pub(crate) enum Input {
     },
     Adjustment {
         record: String,
-        entity: DailySpendEntity,
+        entity: BaselineEntity,
         entity_id: Option<String>,
         savings_delta: f64,
         request_id: String,
@@ -137,10 +135,6 @@ impl Helper for Op {
     }
 }
 
-fn pricing() -> PublicationPricing<'static, NoPricing> {
-    PublicationPricing::new(&NO_PRICING, DateTime::UNIX_EPOCH)
-}
-
 fn failure(message: String) -> Box<HelperError> {
     Box::new(HelperError {
         class: "ValueError".to_owned(),
@@ -150,14 +144,6 @@ fn failure(message: String) -> Box<HelperError> {
         code: None,
         message,
     })
-}
-
-fn validated_record(text: &str) -> Result<BaselineAccountingRecord, Box<HelperError>> {
-    decode_baseline_record(text.as_bytes()).map_err(|error| failure(error.to_string()))
-}
-
-fn stored_publication(text: &str) -> Result<BaselinePublication, Box<HelperError>> {
-    decode_baseline_publication(text.as_bytes()).map_err(|error| failure(error.to_string()))
 }
 
 fn validated_estimate(text: &str) -> Result<BaselineEstimate, Box<HelperError>> {
@@ -178,7 +164,8 @@ fn validated_estimate(text: &str) -> Result<BaselineEstimate, Box<HelperError>> 
 }
 
 fn validate(text: &str) -> HelperResult {
-    let _record = validated_record(text)?;
+    let _record =
+        decode_baseline_record(text.as_bytes()).map_err(|error| failure(error.to_string()))?;
     serde_json::to_value(Accepted { accepted: true }).or_value_error()
 }
 
@@ -188,27 +175,35 @@ struct Accepted {
 }
 
 fn canonical(text: &str) -> HelperResult {
-    let record = validated_record(text)?;
+    let record =
+        decode_baseline_record(text.as_bytes()).map_err(|error| failure(error.to_string()))?;
     serde_json::to_value(serialize_record(&record)).or_value_error()
 }
 
 fn publication(text: &str, estimate: &str, first_at: f64) -> HelperResult {
-    let record = validated_record(text)?;
-    let estimate = validated_estimate(estimate)?;
-    let value = baseline_publication(&pricing(), &record, &estimate, first_at);
+    let pricing = PublicationPricing::new(&NO_PRICING, DateTime::UNIX_EPOCH);
+    let record =
+        decode_baseline_record(text.as_bytes()).map_err(|error| failure(error.to_string()))?;
+    let decoded_estimate = validated_estimate(estimate)?;
+    let value = baseline_publication(&pricing, &record, &decoded_estimate, first_at);
     serde_json::to_value(value).or_value_error()
 }
 
 fn changed(text: &str, old: Option<&str>, new: &str) -> HelperResult {
-    let record = validated_record(text)?;
-    let previous = old.map(stored_publication).transpose()?;
-    let current = stored_publication(new)?;
+    let record =
+        decode_baseline_record(text.as_bytes()).map_err(|error| failure(error.to_string()))?;
+    let previous = old
+        .map(|value| decode_baseline_publication(value.as_bytes()))
+        .transpose()
+        .map_err(|error| failure(error.to_string()))?;
+    let current =
+        decode_baseline_publication(new.as_bytes()).map_err(|error| failure(error.to_string()))?;
     let value = change(&record, previous.as_ref(), &current);
     serde_json::to_value(value).or_value_error()
 }
 
 fn project(history: &str, stored: &[StoredInput]) -> HelperResult {
-    let history: BaselineHistory = serde_json::from_str(history)?;
+    let decoded: BaselineHistory = serde_json::from_str(history)?;
     let rows: Vec<StoredRecord> = stored
         .iter()
         .map(|row| StoredRecord {
@@ -218,18 +213,20 @@ fn project(history: &str, stored: &[StoredInput]) -> HelperResult {
             started_at: row.started_at,
         })
         .collect();
-    let (_, changes) = project_group(&pricing(), &(history, Vec::new()), &rows).or_value_error()?;
+    let pricing = PublicationPricing::new(&NO_PRICING, DateTime::UNIX_EPOCH);
+    let (_, changes) = project_group(&pricing, &(decoded, Vec::new()), &rows).or_value_error()?;
     serde_json::to_value(changes).or_value_error()
 }
 
 fn adjustment(
     text: &str,
-    entity: DailySpendEntity,
+    entity: BaselineEntity,
     entity_id: Option<String>,
     savings_delta: f64,
     request_id: &str,
 ) -> HelperResult {
-    let record = validated_record(text)?;
+    let record =
+        decode_baseline_record(text.as_bytes()).map_err(|error| failure(error.to_string()))?;
     let daily = record
         .daily
         .as_ref()

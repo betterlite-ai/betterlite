@@ -6,10 +6,9 @@ use rust_decimal::Decimal;
 use super::canonical::serialize_record;
 use super::decode::decode_baseline_json;
 use super::{
-    BaselineAccountingRecord, DailyBaselineAttribution, DailyBaselineTarget, RecordDecodeError,
-    RecordError, decode_baseline_record,
+    BaselineAccountingRecord, BaselineEntity, DailyBaselineAttribution, DailyBaselineTarget,
+    RecordDecodeError, RecordError, decode_baseline_record,
 };
-use crate::daily_spend_sql::entities::DailySpendEntity;
 use crate::daily_spend_sql::values::SpendColumnValue;
 
 const DIGEST: &str = "0000000000000000000000000000000000000000000000000000000000000000";
@@ -77,6 +76,11 @@ fn decodes_a_stored_record_with_no_turn_or_daily_attribution() {
     assert_eq!(record.pricing.actual_spend, Decimal::new(5, 1));
 }
 
+fn assert_invalid_scope(digest: &str) {
+    let json = with_scope_digest(digest);
+    assert!(matches!(invalid(&json), RecordError::InvalidScope));
+}
+
 #[test]
 fn rejects_scopes_outside_the_v3_digest_shape() {
     let prefixed = record_with(
@@ -84,16 +88,11 @@ fn rejects_scopes_outside_the_v3_digest_shape() {
         "\"scope\":\"autorouter-baseline:v2:",
     );
     assert!(matches!(invalid(&prefixed), RecordError::InvalidScope));
-    for digest in [
-        "AB".repeat(32),
-        "a".repeat(63),
-        "a".repeat(65),
-        "g".repeat(64),
-        String::new(),
-    ] {
-        let json = with_scope_digest(&digest);
-        assert!(matches!(invalid(&json), RecordError::InvalidScope));
-    }
+    assert_invalid_scope(&"AB".repeat(32));
+    assert_invalid_scope(&"a".repeat(63));
+    assert_invalid_scope(&"a".repeat(65));
+    assert_invalid_scope(&"g".repeat(64));
+    assert_invalid_scope("");
     let valid = "ab".repeat(32);
     decode_baseline_record(with_scope_digest(&valid).as_bytes()).unwrap();
 }
@@ -129,36 +128,41 @@ fn bounds_session_id_by_characters_not_bytes() {
     assert!(matches!(invalid(&rejected), RecordError::InvalidSessionId));
 }
 
+fn assert_inconsistent_turn(turn: &str) {
+    let json = with_turn(turn);
+    assert!(matches!(invalid(&json), RecordError::InconsistentTurn));
+}
+
 #[test]
 fn rejects_turns_that_disagree_with_the_record() {
-    let mismatched = [
-        TURN.replace("\"api_key\":\"key\"", "\"api_key\":\"other\""),
-        TURN.replace("\"session_id\":\"session\"", "\"session_id\":\"other\""),
-        TURN.replace("\"router_name\":\"router\"", "\"router_name\":\"other\""),
-        TURN.replace(
-            "\"baseline_model\":\"baseline\"",
-            "\"baseline_model\":\"other\"",
-        ),
-        TURN.replace("\"baseline_model\":\"baseline\"", "\"baseline_model\":null"),
-        TURN.replace("\"spend\":0.5", "\"spend\":0.6"),
-        TURN.replace("\"saved_spend\":0.0", "\"saved_spend\":0.1"),
-        TURN.replace(
-            "\"user_id\":\"user\"",
-            "\"user_id\":\"user\",\"savings_estimated_turns\":1",
-        ),
-        TURN.replace(
-            "\"user_id\":\"user\"",
-            "\"user_id\":\"user\",\"savings_estimated_actual_spend\":1.0",
-        ),
-        TURN.replace(
-            "\"user_id\":\"user\"",
-            "\"user_id\":\"user\",\"savings_estimated_saved_spend\":1.0",
-        ),
-    ];
-    for turn in mismatched {
-        let json = with_turn(&turn);
-        assert!(matches!(invalid(&json), RecordError::InconsistentTurn));
-    }
+    assert_inconsistent_turn(&TURN.replace("\"api_key\":\"key\"", "\"api_key\":\"other\""));
+    assert_inconsistent_turn(
+        &TURN.replace("\"session_id\":\"session\"", "\"session_id\":\"other\""),
+    );
+    assert_inconsistent_turn(
+        &TURN.replace("\"router_name\":\"router\"", "\"router_name\":\"other\""),
+    );
+    assert_inconsistent_turn(&TURN.replace(
+        "\"baseline_model\":\"baseline\"",
+        "\"baseline_model\":\"other\"",
+    ));
+    assert_inconsistent_turn(
+        &TURN.replace("\"baseline_model\":\"baseline\"", "\"baseline_model\":null"),
+    );
+    assert_inconsistent_turn(&TURN.replace("\"spend\":0.5", "\"spend\":0.6"));
+    assert_inconsistent_turn(&TURN.replace("\"saved_spend\":0.0", "\"saved_spend\":0.1"));
+    assert_inconsistent_turn(&TURN.replace(
+        "\"user_id\":\"user\"",
+        "\"user_id\":\"user\",\"savings_estimated_turns\":1",
+    ));
+    assert_inconsistent_turn(&TURN.replace(
+        "\"user_id\":\"user\"",
+        "\"user_id\":\"user\",\"savings_estimated_actual_spend\":1.0",
+    ));
+    assert_inconsistent_turn(&TURN.replace(
+        "\"user_id\":\"user\"",
+        "\"user_id\":\"user\",\"savings_estimated_saved_spend\":1.0",
+    ));
     decode_baseline_record(with_turn(TURN).as_bytes()).unwrap();
 }
 
@@ -214,11 +218,11 @@ fn decodes_daily_attribution_targets_in_order() {
         daily.targets,
         vec![
             DailyBaselineTarget {
-                entity: DailySpendEntity::User,
+                entity: BaselineEntity::User,
                 entity_id: Some("user".to_owned()),
             },
             DailyBaselineTarget {
-                entity: DailySpendEntity::Tag,
+                entity: BaselineEntity::Tag,
                 entity_id: None,
             },
         ]
@@ -233,76 +237,65 @@ fn defaults_missing_daily_targets_to_an_empty_tuple() {
     assert!(record.daily.unwrap().targets.is_empty());
 }
 
-#[test]
-fn adjustment_targets_each_entitys_own_id_column() {
-    let attribution = DailyBaselineAttribution {
+fn attribution(model: Option<&str>) -> DailyBaselineAttribution {
+    DailyBaselineAttribution {
         date: "2026-01-02".to_owned(),
         api_key: "key".to_owned(),
-        model: Some("m".to_owned()),
+        model: model.map(str::to_owned),
         custom_llm_provider: None,
         model_group: None,
         endpoint: None,
         mcp_namespaced_tool_name: None,
         targets: Vec::new(),
-    };
-    for (entity, column) in [
-        (DailySpendEntity::User, "user_id"),
-        (DailySpendEntity::Team, "team_id"),
-        (DailySpendEntity::Org, "organization_id"),
-        (DailySpendEntity::Tag, "tag"),
-        (DailySpendEntity::EndUser, "end_user_id"),
-        (DailySpendEntity::Agent, "agent_id"),
-    ] {
-        let target = DailyBaselineTarget {
-            entity,
-            entity_id: Some(format!("{column}-value")),
-        };
-        let row = attribution.adjustment(&target, Decimal::new(-25, 2), "req");
-        assert_eq!(
-            row.get(column),
-            Some(&SpendColumnValue::Text(format!("{column}-value")))
-        );
-        assert_eq!(row.len(), 10);
-        assert_eq!(
-            row.get("date"),
-            Some(&SpendColumnValue::Text("2026-01-02".to_owned()))
-        );
-        assert_eq!(
-            row.get("request_id"),
-            Some(&SpendColumnValue::Text("req".to_owned()))
-        );
-        assert_eq!(
-            row.get("autorouter_savings_spend"),
-            Some(&SpendColumnValue::Decimal(Decimal::new(-25, 2)))
-        );
-        for counter in [
-            "spend",
-            "total_tokens",
-            "prompt_tokens",
-            "completion_tokens",
-        ] {
-            assert!(!row.contains_key(counter));
-        }
     }
+}
+
+fn assert_adjustment_targets(entity: BaselineEntity, column: &str) {
+    let target = DailyBaselineTarget {
+        entity,
+        entity_id: Some(format!("{column}-value")),
+    };
+    let row = attribution(Some("m")).adjustment(&target, Decimal::new(-25, 2), "req");
+    assert_eq!(
+        row.get(column),
+        Some(&SpendColumnValue::Text(format!("{column}-value")))
+    );
+    assert_eq!(row.len(), 10);
+    assert_eq!(
+        row.get("date"),
+        Some(&SpendColumnValue::Text("2026-01-02".to_owned()))
+    );
+    assert_eq!(
+        row.get("request_id"),
+        Some(&SpendColumnValue::Text("req".to_owned()))
+    );
+    assert_eq!(
+        row.get("autorouter_savings_spend"),
+        Some(&SpendColumnValue::Decimal(Decimal::new(-25, 2)))
+    );
+    assert!(!row.contains_key("spend"));
+    assert!(!row.contains_key("total_tokens"));
+    assert!(!row.contains_key("prompt_tokens"));
+    assert!(!row.contains_key("completion_tokens"));
+}
+
+#[test]
+fn adjustment_targets_each_entitys_own_id_column() {
+    assert_adjustment_targets(BaselineEntity::User, "user_id");
+    assert_adjustment_targets(BaselineEntity::Team, "team_id");
+    assert_adjustment_targets(BaselineEntity::Org, "organization_id");
+    assert_adjustment_targets(BaselineEntity::Tag, "tag");
+    assert_adjustment_targets(BaselineEntity::EndUser, "end_user_id");
+    assert_adjustment_targets(BaselineEntity::Agent, "agent_id");
 }
 
 #[test]
 fn adjustment_keeps_a_null_entity_id_for_an_unscoped_target() {
-    let attribution = DailyBaselineAttribution {
-        date: "2026-01-02".to_owned(),
-        api_key: "key".to_owned(),
-        model: None,
-        custom_llm_provider: None,
-        model_group: None,
-        endpoint: None,
-        mcp_namespaced_tool_name: None,
-        targets: Vec::new(),
-    };
     let target = DailyBaselineTarget {
-        entity: DailySpendEntity::User,
+        entity: BaselineEntity::User,
         entity_id: None,
     };
-    let row = attribution.adjustment(&target, Decimal::ZERO, "req");
+    let row = attribution(None).adjustment(&target, Decimal::ZERO, "req");
     assert_eq!(row.get("user_id"), Some(&SpendColumnValue::Null));
     assert_eq!(row.get("model"), Some(&SpendColumnValue::Null));
 }

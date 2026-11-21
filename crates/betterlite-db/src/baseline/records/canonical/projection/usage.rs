@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use betterlite_models::baseline_history::cache_plan::{CountedBreakpoint, CountedPromptCachePlan};
 use betterlite_models::baseline_history::usage::{
     CacheCreationTokenDetails, PromptTokensDetails, Usage,
@@ -35,7 +37,7 @@ const COMPLETION_ALWAYS: [&str; 7] = [
 ];
 
 pub(super) fn usage_projection(value: &Usage) -> Canonical {
-    let mut root = Canonical::object();
+    let mut root = Canonical::Object(BTreeMap::new());
     root.insert("prompt_tokens", Canonical::Integer(value.prompt_tokens));
     root.insert(
         "completion_tokens",
@@ -68,10 +70,10 @@ pub(super) fn usage_projection(value: &Usage) -> Canonical {
 }
 
 fn prompt_details(value: &PromptTokensDetails) -> Canonical {
-    let mut root = Canonical::object();
+    let mut root = Canonical::Object(BTreeMap::new());
     root.insert("audio_tokens", extra_or_null(value, "audio_tokens"));
-    root.insert("cached_tokens", option_integer(value.cached_tokens));
-    root.insert("text_tokens", option_integer(value.text_tokens));
+    root.insert("cached_tokens", Canonical::from(value.cached_tokens));
+    root.insert("text_tokens", Canonical::from(value.text_tokens));
     root.insert("image_tokens", extra_or_null(value, "image_tokens"));
     root.insert("video_tokens", extra_or_null(value, "video_tokens"));
     if let Some(creation) = value.cache_creation_tokens {
@@ -105,14 +107,14 @@ fn extra_or_null(value: &PromptTokensDetails, key: &str) -> Canonical {
 }
 
 fn cache_creation_details(value: &CacheCreationTokenDetails) -> Canonical {
-    let mut root = Canonical::object();
+    let mut root = Canonical::Object(BTreeMap::new());
     root.insert(
         "ephemeral_5m_input_tokens",
-        option_integer(value.ephemeral_5m_input_tokens),
+        Canonical::from(value.ephemeral_5m_input_tokens),
     );
     root.insert(
         "ephemeral_1h_input_tokens",
-        option_integer(value.ephemeral_1h_input_tokens),
+        Canonical::from(value.ephemeral_1h_input_tokens),
     );
     root
 }
@@ -121,7 +123,7 @@ fn completion_details(value: Option<&Json>) -> Canonical {
     let Some(Json::Object(fields)) = value else {
         return Canonical::Null;
     };
-    let mut root = Canonical::object();
+    let mut root = Canonical::Object(BTreeMap::new());
     for key in COMPLETION_ALWAYS {
         root.insert(
             key,
@@ -137,7 +139,7 @@ fn completion_details(value: Option<&Json>) -> Canonical {
 }
 
 pub(super) fn plan_projection(value: &CountedPromptCachePlan) -> Canonical {
-    let mut root = Canonical::object();
+    let mut root = Canonical::Object(BTreeMap::new());
     root.insert("total_tokens", Canonical::Integer(value.total_tokens));
     root.insert(
         "breakpoints",
@@ -147,7 +149,7 @@ pub(super) fn plan_projection(value: &CountedPromptCachePlan) -> Canonical {
 }
 
 fn breakpoint(value: &CountedBreakpoint) -> Canonical {
-    let mut root = Canonical::object();
+    let mut root = Canonical::Object(BTreeMap::new());
     root.insert("fingerprint", Canonical::Text(value.fingerprint.clone()));
     root.insert("ttl_seconds", Canonical::Integer(value.ttl_seconds));
     root.insert("prefix_tokens", Canonical::Integer(value.prefix_tokens));
@@ -170,8 +172,4 @@ fn texts(values: &[String]) -> Canonical {
             .map(|text| Canonical::Text(text.clone()))
             .collect(),
     )
-}
-
-fn option_integer(value: Option<i64>) -> Canonical {
-    value.map_or(Canonical::Null, Canonical::Integer)
 }
