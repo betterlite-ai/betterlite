@@ -1,0 +1,74 @@
+kind: helper
+name: request-metadata-safety-admin-control-opt-in
+call:
+  request_metadata_safety:
+    calls:
+      - function: sanitize
+        data:
+          input_cost_per_token: "0.001"
+          turn_off_message_logging: false
+          dd_api_key: client-dd
+          metadata:
+            model_info: {}
+            attempted_fallbacks: []
+            turn_off_message_logging: "off"
+            headers: {litellm-disable-message-redaction: "1", x-keep: "1"}
+        headers: [[litellm-disable-message-redaction, "1"], [x-keep, "1"]]
+        route: /v1/chat/completions
+        principal:
+          metadata: {allow_client_pricing_override: true, allow_client_message_redaction_opt_out: true, allow_client_mock_response: true}
+          team_metadata: null
+        settings: {missing_session_id: null, turn_off_message_logging: true}
+      - function: sanitize
+        data:
+          input_cost_per_token: "0.001"
+          turn_off_message_logging: false
+          dd_api_key: client-dd
+          metadata:
+            model_info: {}
+            attempted_fallbacks: []
+            turn_off_message_logging: "off"
+            headers: {litellm-disable-message-redaction: "1", x-keep: "1"}
+        headers: [[litellm-disable-message-redaction, "1"], [x-keep, "1"]]
+        route: /v1/chat/completions
+        principal:
+          metadata: null
+          team_metadata: {allow_client_pricing_override: true, allow_client_message_redaction_opt_out: true, allow_client_mock_response: true}
+        settings: {missing_session_id: null, turn_off_message_logging: true}
+      - function: sanitize
+        data:
+          input_cost_per_token: "0.001"
+          turn_off_message_logging: false
+          metadata:
+            model_info: {}
+            turn_off_message_logging: "off"
+            headers: {litellm-disable-message-redaction: "1"}
+        headers: [[litellm-disable-message-redaction, "1"]]
+        route: /v1/chat/completions
+        principal:
+          metadata: {allow_client_pricing_override: "true", allow_client_message_redaction_opt_out: "true"}
+          team_metadata: null
+        settings: {missing_session_id: null, turn_off_message_logging: true}
+      - function: sanitize
+        data:
+          input_cost_per_token: "0.001"
+          turn_off_message_logging: false
+          metadata:
+            model_info: {}
+            turn_off_message_logging: "off"
+            headers: {litellm-disable-message-redaction: "1"}
+        headers: [[litellm-disable-message-redaction, "1"]]
+        route: /v1/chat/completions
+        principal:
+          metadata: {allow_client_pricing_override: false, allow_client_message_redaction_opt_out: false}
+          team_metadata: null
+        settings: {missing_session_id: null, turn_off_message_logging: true}
+      - {function: key_or_team_flag, metadata_key: allow_client_pricing_override, metadata: {allow_client_pricing_override: true}, team_metadata: null}
+      - {function: key_or_team_flag, metadata_key: allow_client_message_redaction_opt_out, metadata: null, team_metadata: {allow_client_message_redaction_opt_out: true}}
+      - {function: key_or_team_flag, metadata_key: allow_client_mock_response, metadata: {allow_client_mock_response: "true"}, team_metadata: null}
+      - {function: key_or_team_flag, metadata_key: allow_client_mock_response, metadata: {allow_client_mock_response: true}, team_metadata: null}
+      - {function: mock_response_flag, metadata: {allow_client_mock_response: true}, team_metadata: null}
+      - {function: mock_response_flag, metadata: null, team_metadata: {allow_client_mock_response: true}}
+      - {function: mock_response_flag, metadata: {allow_client_mock_response: false}, team_metadata: null}
+env: {}
+compare: {ignore: []}

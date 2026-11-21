@@ -1,0 +1,54 @@
+kind: helper
+name: request-metadata-safety-forged-control-stripped
+call:
+  request_metadata_safety:
+    calls:
+      - function: sanitize
+        data:
+          model: gpt-4
+          turn_off_message_logging: false
+          input_cost_per_token: "0.001"
+          output_cost_per_token: "0.002"
+          dd_api_key: client-dd
+          litellm_trusted_callback_vars: {otel: client}
+          litellm_params:
+            metadata: {gcs_bucket_name: client-bucket, dd_site: client-host, kept: value}
+          metadata:
+            model_info: {input_cost_per_token: "0"}
+            standard_logging_guardrail_information: []
+            attempted_fallbacks: [gpt-4]
+            request_retry_count: 3
+            turn_off_message_logging: "off"
+            headers: {litellm-disable-message-redaction: "1", x-keep: "1"}
+            kept: value
+          litellm_metadata:
+            original_model_group: gpt-4
+            turn_off_message_logging: false
+            kept: value
+        headers:
+          - [x-litellm-api-key, "sk-123"]
+          - [litellm-disable-message-redaction, "1"]
+          - [x-keep, "1"]
+        route: /v1/chat/completions
+        principal: {metadata: null, team_metadata: null}
+        settings: {missing_session_id: null, turn_off_message_logging: true}
+      - {function: chain_id, headers: [[x-litellm-session-id, session-1], [x-litellm-trace-id, trace-1]]}
+      - {function: chain_id, headers: [[x-claude-code-session-id, e96634a3-fa28-4083-b354-55542e2dca01], [x-session-id, bare-1234]]}
+      - {function: chain_id, headers: [[x-one-session-id, first-1234], [x-two-session-id, second-1234]]}
+      - {function: chain_id, headers: [[x-session-id, bare-1234]]}
+      - {function: chain_id, headers: [[x-session-id, short]]}
+      - {function: chain_id, headers: [[user-agent, codex_cli/1.0], [session-id, codex-1234]]}
+      - {function: chain_id, headers: [[user-agent, curl/8.0], [session-id, codex-1234]]}
+      - {function: chain_id, headers: []}
+      - {function: stampable_key_hash, api_key: null, via_virtual_key: true}
+      - {function: stampable_key_hash, api_key: litellm_proxy_master_key, via_virtual_key: true}
+      - {function: stampable_key_hash, api_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", via_virtual_key: true}
+      - {function: stampable_key_hash, api_key: "0123456789ABCDEF0123456789abcdef0123456789abcdef0123456789abcdef", via_virtual_key: true}
+      - {function: stampable_key_hash, api_key: sk-custom, via_virtual_key: true}
+      - {function: stampable_key_hash, api_key: litellm_proxy_master_key, via_virtual_key: false}
+      - {function: sanitize_for_log, value: "first line\nsecond line\rthird"}
+      - function: promoted_trace_control_fields
+        requester_metadata: {trace_id: requester-trace, session_id: requester-session, unrelated: value}
+        litellm_metadata: {trace_id: proxy-trace}
+env: {}
+compare: {ignore: []}
