@@ -12,7 +12,7 @@ deviations:
   - what: mark_litellm_import_complete() is not built and _AGENT_EXPORTS is not exported.
     why: Nothing fetches a cost map at import here, the top-level __getattr__ is out of this task's scope, and the agent functions arrive under their own names with B158 and B166.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L2314
-  - what: modify_integration("supabase", {"table_name": name}) stores the name in callback_settings["supabase"]["table_name"], where LiteLLM assigns it to Supabase.supabase_table_name.
+  - what: 'modify_integration("supabase", {"table_name": name}) stores the name in callback_settings["supabase"]["table_name"], where LiteLLM assigns it to Supabase.supabase_table_name.'
     why: The Supabase logger and its table setting belong to B3979, and the task names callback_settings as the place it reads the table name from.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L6867-L6871
   - what: This task has no helper oracle cases.
