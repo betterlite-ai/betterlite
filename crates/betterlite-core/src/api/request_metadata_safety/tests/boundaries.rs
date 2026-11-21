@@ -50,6 +50,26 @@ fn metadata_string_length_boundary(#[case] raw: &str, #[case] accepted: bool) {
 }
 
 #[test]
+fn null_requester_session_still_copies_the_body_session() {
+    let mut data = body(vec![
+        ("litellm_session_id", text("body-session")),
+        ("metadata", object(vec![("session_id", Json::Null)])),
+        ("litellm_metadata", object(vec![("session_id", Json::Null)])),
+    ]);
+    let policy = MissingSessionIdPolicy::Omit;
+    apply_missing_session_id_policy(
+        &mut data,
+        MetadataField::LitellmMetadata,
+        Some(&policy),
+        true,
+    );
+    assert_eq!(
+        field(&data, "litellm_metadata").get("session_id"),
+        Some(&text("body-session"))
+    );
+}
+
+#[test]
 fn null_slot_session_still_copies_the_body_session() {
     let mut data = body(vec![
         ("litellm_session_id", text("body-session")),

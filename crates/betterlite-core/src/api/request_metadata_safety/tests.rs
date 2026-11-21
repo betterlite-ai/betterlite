@@ -614,6 +614,8 @@ fn chain(headers: &[(&str, &str)]) -> Option<String> {
 #[case::generic_vendor(&[("x-claude-code-session-id", "e96634a3-fa28-4083"), ("x-session-id", "bare-1234")], Some("e96634a3-fa28-4083"))]
 #[case::generic_first_in_order(&[("x-one-session-id", "first-1234"), ("x-two-session-id", "second-1234")], Some("first-1234"))]
 #[case::bare_session(&[("X-Session-Id", "bare-1234")], Some("bare-1234"))]
+#[case::non_generic_header_ignored(&[("authorization", "bearer-1234")], None)]
+#[case::newline_in_name_rejected(&[("x-a\nb-session-id", "vendor-1234")], None)]
 #[case::codex_session(&[("user-agent", "codex_cli/1.0"), ("session-id", "codex-1234")], Some("codex-1234"))]
 #[case::codex_requires_the_agent(&[("user-agent", "curl/8.0"), ("session-id", "codex-1234")], None)]
 #[case::short_value_rejected(&[("x-session-id", "short")], None)]
