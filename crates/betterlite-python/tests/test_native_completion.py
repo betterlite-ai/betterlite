@@ -122,9 +122,13 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         recorder = self._server().recorder
-        length = int(self.headers.get("Content-Length") or "0")
+        declared = self.headers.get("Content-Length")
+        length = 0 if declared is None else int(declared)
         raw = self.rfile.read(length)
-        body = TypeAdapter(ChatBody).validate_json(raw if raw else b"{}")
+        if not raw:
+            raw = b"{}"
+        body = TypeAdapter(ChatBody).validate_json(raw)
+        streaming = body.get("stream")
         with recorder.lock:
             recorder.active += 1
             recorder.max_active = max(recorder.max_active, recorder.active)
@@ -132,7 +136,7 @@ class _Handler(BaseHTTPRequestHandler):
             time.sleep(recorder.delay)
             if recorder.status != OK:
                 self._reply(recorder.status, ERROR_BODY)
-            elif body.get("stream", False):
+            elif streaming is True:
                 self._stream()
             else:
                 self._reply(OK, COMPLETION.encode())
@@ -190,13 +194,19 @@ class Progress:
             self.count += 1
             time.sleep(TICK)
 
-    def stop(self) -> None:
-        self.stopped.set()
-
 
 def session_for(server: Server) -> _native.NativeSession:
-    environment = {"OPENAI_API_BASE": server.url, "OPENAI_API_KEY": "sk-test"}
-    return _native.NativeSession(json.dumps({"environment": environment}))
+    environment: dict[str, JsonValue] = {
+        "OPENAI_API_BASE": server.url,
+        "OPENAI_API_KEY": "sk-test",
+    }
+    settings: dict[str, JsonValue] = {"environment": environment}
+    return _native.NativeSession(json.dumps(settings))
+
+
+def key_accepted(recorder: Recorder, request: str) -> bool:
+    with Server(recorder) as server:
+        return session_for(server).check_valid_key(request)
 
 
 def completion_request(*, stream: bool = False) -> str:
@@ -206,13 +216,24 @@ def completion_request(*, stream: bool = False) -> str:
     }
     if stream:
         arguments["stream"] = True
-    return json.dumps({"arguments": arguments, "settings": {}})
+    wire: dict[str, JsonValue] = {"arguments": arguments, "settings": {}}
+    return json.dumps(wire)
 
 
 def response_text(result: str | _native.NativeChatStream) -> str:
-    if isinstance(result, _native.NativeChatStream):
-        raise AssertionError("a plain call answered with a stream")
-    return result
+    match result:
+        case str():
+            return result
+        case _native.NativeChatStream():
+            raise AssertionError("a plain call answered with a stream")
+
+
+def stream_of(answer: str | _native.NativeChatStream) -> _native.NativeChatStream:
+    match answer:
+        case _native.NativeChatStream():
+            return answer
+        case str():
+            raise AssertionError("a plain call answered with a stream")
 
 
 def contents_of(chunks: list[str]) -> list[str]:
@@ -230,13 +251,8 @@ def contents_of(chunks: list[str]) -> list[str]:
 
 
 def drain_blocking(stream: _native.NativeChatStream) -> list[str]:
-    chunks: list[str] = []
-    while True:
-        chunk = stream.next_chunk()
-        if chunk is None:
-            break
-        chunks.append(chunk)
-    return chunks
+    drained = iter(stream.next_chunk, None)
+    return list(drained)
 
 
 async def drain_async(stream: _native.NativeChatStream) -> list[str]:
@@ -249,7 +265,24 @@ async def drain_async(stream: _native.NativeChatStream) -> list[str]:
     return chunks
 
 
-def test_native_completion_blocking_returns_and_releases_the_gil() -> None:
+async def both_calls(session: _native.NativeSession) -> list[str]:
+    first_call = asyncio.ensure_future(session.acompletion(completion_request()))
+    second_call = asyncio.ensure_future(session.acompletion(completion_request()))
+    first = await first_call
+    second = await second_call
+    return [response_text(first), response_text(second)]
+
+
+async def consume_stream(session: _native.NativeSession) -> list[str]:
+    answer = stream_of(await session.acompletion(completion_request(stream=True)))
+    chunks = await drain_async(answer)
+    await answer.aclose()
+    await answer.aclose()
+    assert await answer.anext_chunk() is None
+    return chunks
+
+
+def test_blocking_frees_the_gil() -> None:
     recorder = Recorder(delay=SLOW)
     with Server(recorder) as server:
         session = session_for(server)
@@ -259,27 +292,18 @@ def test_native_completion_blocking_returns_and_releases_the_gil() -> None:
         try:
             text = response_text(session.completion(completion_request()))
         finally:
-            progress.stop()
+            progress.stopped.set()
             worker.join()
     payload = TypeAdapter(Completion).validate_json(text)
     assert payload["choices"][0]["message"]["content"] == "hello"
     assert progress.count > COUNTER_FLOOR
 
 
-def test_native_completion_async_call_runs_alongside_a_second_call() -> None:
+def test_async_call_overlaps() -> None:
     recorder = Recorder(delay=SLOW)
     with Server(recorder) as server:
-        session = session_for(server)
-
-        async def both() -> list[str]:
-            first_call = asyncio.ensure_future(session.acompletion(completion_request()))
-            second_call = asyncio.ensure_future(session.acompletion(completion_request()))
-            first = await first_call
-            second = await second_call
-            return [response_text(first), response_text(second)]
-
         started = time.monotonic()
-        results = asyncio.run(both())
+        results = asyncio.run(both_calls(session_for(server)))
         elapsed = time.monotonic() - started
     assert len(results) == PARALLEL
     assert all(TypeAdapter(Completion).validate_json(text)["model"] == "gpt-4o" for text in results)
@@ -287,11 +311,9 @@ def test_native_completion_async_call_runs_alongside_a_second_call() -> None:
     assert elapsed < SERIAL_LIMIT
 
 
-def test_native_stream_blocking_gives_chunks_then_none() -> None:
+def test_stream_gives_chunks() -> None:
     with Server(Recorder()) as server:
-        session = session_for(server)
-        answer = session.completion(completion_request(stream=True))
-        assert isinstance(answer, _native.NativeChatStream)
+        answer = stream_of(session_for(server).completion(completion_request(stream=True)))
         chunks = drain_blocking(answer)
         assert contents_of(chunks) == STREAM_CONTENTS
         answer.close()
@@ -299,58 +321,43 @@ def test_native_stream_blocking_gives_chunks_then_none() -> None:
         assert answer.next_chunk() is None
 
 
-def test_native_stream_async_gives_chunks_then_none() -> None:
+def test_async_stream_chunks() -> None:
     with Server(Recorder()) as server:
-        session = session_for(server)
-
-        async def consume() -> list[str]:
-            answer = await session.acompletion(completion_request(stream=True))
-            assert isinstance(answer, _native.NativeChatStream)
-            chunks = await drain_async(answer)
-            await answer.aclose()
-            await answer.aclose()
-            assert await answer.anext_chunk() is None
-            return chunks
-
-        chunks = asyncio.run(consume())
+        chunks = asyncio.run(consume_stream(session_for(server)))
     assert contents_of(chunks) == STREAM_CONTENTS
 
 
-def test_native_checks_count_tokens_counts_messages() -> None:
+def test_checks_count_tokens() -> None:
+    request: dict[str, JsonValue] = {
+        "model": "gpt-4o",
+        "messages": [{"role": "user", "content": "hello there"}],
+        "system": "be brief",
+    }
     with Server(Recorder()) as server:
-        session = session_for(server)
-        request = json.dumps(
-            {
-                "model": "gpt-4o",
-                "messages": [{"role": "user", "content": "hello there"}],
-                "system": "be brief",
-            }
+        counted = TypeAdapter(TokenCount).validate_json(
+            session_for(server).count_tokens(json.dumps(request))
         )
-        counted = TypeAdapter(TokenCount).validate_json(session.count_tokens(request))
     assert counted["total_tokens"] > 0
     assert counted["request_model"] == "gpt-4o"
     assert counted["model_used"] == "gpt-4o"
     assert counted["tokenizer_type"] == "local_tokenizer"
 
 
-def test_native_checks_check_valid_key_follows_the_answer() -> None:
-    request = json.dumps({"model": "gpt-4o", "api_key": "sk-test"})
-    with Server(Recorder()) as server:
-        accepted = session_for(server).check_valid_key(request)
+def test_checks_valid_key() -> None:
+    request: dict[str, JsonValue] = {"model": "gpt-4o", "api_key": "sk-test"}
+    accepted = key_accepted(Recorder(), json.dumps(request))
+    rejected = key_accepted(Recorder(status=DENIED), json.dumps(request))
     assert accepted
-    denied = Recorder(status=DENIED)
-    with Server(denied) as server:
-        rejected = session_for(server).check_valid_key(request)
     assert not rejected
 
 
-def test_native_checks_valid_model_raises_bad_request_on_failure() -> None:
-    request = json.dumps({"model": "gpt-4o"})
+def test_checks_valid_model() -> None:
+    request: dict[str, JsonValue] = {"model": "gpt-4o"}
     with Server(Recorder()) as server:
-        session_for(server).valid_model(request)
+        session_for(server).valid_model(json.dumps(request))
     absent = Server(Recorder(status=NOT_FOUND))
     with absent, pytest.raises(_native.NativeError) as raised:
-        session_for(absent).valid_model(request)
+        session_for(absent).valid_model(json.dumps(request))
     payload = TypeAdapter(ErrorPayload).validate_json(str(raised.value))
     assert payload["type"] == "BadRequestError"
     assert payload["status_code"] == BAD_REQUEST
