@@ -7,7 +7,7 @@ from litellm.proxy.common_utils.proxy_rate_limit_error import (
 from litellm.proxy.hooks.rate_limiter_utils import convert_priority_to_percent
 from litellm.types.router import ModelGroupInfo
 from litellm.types.utils import PriorityReservationDict
-from pydantic import JsonValue
+from pydantic import JsonValue, TypeAdapter
 
 
 class MapTypeInput(TypedDict):
@@ -52,7 +52,7 @@ def run(input_value: Input) -> dict[str, JsonValue]:
     model_info = (
         None
         if info is None
-        else ModelGroupInfo.model_validate(
+        else TypeAdapter(ModelGroupInfo).validate_python(
             ModelInfoPayload(
                 model_group="oracle",
                 providers=[],
