@@ -289,13 +289,6 @@ where
     settings
 }
 
-fn general(forward_headers: bool, forward_org: bool) -> Settings {
-    configured(|settings| {
-        settings.forward_client_headers = forward_headers;
-        settings.forward_openai_org_id = forward_org;
-    })
-}
-
 fn model_group(models: &[&str]) -> Settings {
     configured(|settings| {
         settings.model_group_forwarding =
@@ -304,18 +297,21 @@ fn model_group(models: &[&str]) -> Settings {
 }
 
 #[rstest]
-#[case::nothing_set(general(false, false), &[("OpenAI-Organization", "org-1"), ("x-a", "1")], "{}", Backend::default())]
+#[case::nothing_set(Settings::default(), &[("OpenAI-Organization", "org-1"), ("x-a", "1")], "{}", Backend::default())]
 #[case::transport_headers(
-    general(true, true),
+    configured(|settings| {
+        settings.forward_client_headers = true;
+        settings.forward_openai_org_id = true;
+    }),
     &[("x-litellm-timeout", " 90 "), ("x-litellm-stream-timeout", "1e1"), ("x-litellm-num-retries", "3"), ("x-litellm-keepalive-seconds", "0.5"), ("OpenAI-Organization", "org-1"), ("x-stainless-os", "mac"), ("anthropic-beta-extra", "b"), ("accept", "*/*")],
     "{}",
     Backend { headers: Some(&[("x-litellm-timeout", " 90 "), ("x-litellm-stream-timeout", "1e1"), ("x-litellm-num-retries", "3"), ("x-litellm-keepalive-seconds", "0.5"), ("anthropic-beta-extra", "b")]), organization: Some("org-1"), timeout: Some(90.0), stream_timeout: Some(10.0), client_side_timeout: true, num_retries: Some(3), keepalive_seconds: Some(0.5) }
 )]
-#[case::stream_timeout_alone(general(false, false), &[("x-litellm-stream-timeout", "5")], "{}", backend(|want| { want.stream_timeout = Some(5.0); want.client_side_timeout = true; }))]
-#[case::body_timeout(general(false, false), &[], r#"{"request_timeout": 3}"#, backend(|want| want.client_side_timeout = true))]
-#[case::body_stream_timeout(general(false, false), &[], r#"{"stream_timeout": 3}"#, backend(|want| want.client_side_timeout = true))]
-#[case::null_body_timeout(general(false, false), &[], r#"{"timeout": null}"#, Backend::default())]
-#[case::no_forwardable_headers(general(true, false), &[("accept", "*/*")], "{}", Backend::default())]
+#[case::stream_timeout_alone(Settings::default(), &[("x-litellm-stream-timeout", "5")], "{}", backend(|want| { want.stream_timeout = Some(5.0); want.client_side_timeout = true; }))]
+#[case::body_timeout(Settings::default(), &[], r#"{"request_timeout": 3}"#, backend(|want| want.client_side_timeout = true))]
+#[case::body_stream_timeout(Settings::default(), &[], r#"{"stream_timeout": 3}"#, backend(|want| want.client_side_timeout = true))]
+#[case::null_body_timeout(Settings::default(), &[], r#"{"timeout": null}"#, Backend::default())]
+#[case::no_forwardable_headers(configured(|settings| settings.forward_client_headers = true), &[("accept", "*/*")], "{}", Backend::default())]
 #[case::model_group_match(model_group(&["gpt-4o"]), &[("x-a", "1")], r#"{"model": "gpt-4o"}"#, backend(|want| want.headers = Some(&[("x-a", "1")])))]
 #[case::model_group_other_model(model_group(&["gpt-4o"]), &[("x-a", "1")], r#"{"model": "claude"}"#, Backend::default())]
 #[case::model_group_every_model(model_group(&[]), &[("x-a", "1")], r#"{"model": "claude"}"#, backend(|want| want.headers = Some(&[("x-a", "1")])))]

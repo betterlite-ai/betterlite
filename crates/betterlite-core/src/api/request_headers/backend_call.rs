@@ -1,16 +1,13 @@
-use std::collections::BTreeMap;
 use std::num::ParseFloatError;
 use std::str::FromStr;
 
-use betterlite_auth::auth_model_patterns::decision::check_model_access;
-use betterlite_auth::auth_model_patterns::grant::ModelGrantPattern;
 use betterlite_config::sections::request_headers::Settings;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
 use crate::api::request_destination::RequestData;
 use crate::api::request_headers::error::RequestHeadersError;
-use crate::api::request_headers::{ForwardedHeaders, HeaderValue, RequestHeaders};
+use crate::api::request_headers::{ForwardedHeaders, HeaderValue};
 use crate::api::request_principal_metadata::PrincipalFacts;
 use crate::api::request_principal_metadata::principal::UserKeyLogMetadata;
 
@@ -19,7 +16,6 @@ const STREAM_TIMEOUT_HEADER: &str = "x-litellm-stream-timeout";
 const KEEPALIVE_HEADER: &str = "x-litellm-keepalive-seconds";
 const NUM_RETRIES_HEADER: &str = "x-litellm-num-retries";
 const ORGANIZATION_HEADER: &str = "openai-organization";
-const MODEL_FIELD: &str = "model";
 // a caller-chosen timeout from any of these must not count as a deployment health signal
 const CLIENT_TIMEOUT_FIELDS: [&str; 3] = ["timeout", "request_timeout", "stream_timeout"];
 
@@ -106,34 +102,6 @@ pub fn llm_call_headers(
         forwarded.insert(format!("x-litellm-{field}"), HeaderValue::Plain(text));
     }
     Ok(forwarded)
-}
-
-impl RequestHeaders<'_> {
-    // model_group_settings forwards the headers only for the models it names, aliases and wildcards included
-    pub fn model_group_headers(
-        &self,
-        data: &RequestData,
-        headers: &ForwardedHeaders,
-        principal: &PrincipalFacts,
-        team_model_aliases: &BTreeMap<String, String>,
-    ) -> Result<Option<ForwardedHeaders>, RequestHeadersError> {
-        let (Some(models), Some(Json::Text(model))) =
-            (&self.settings.model_group_forwarding, data.get(MODEL_FIELD))
-        else {
-            return Ok(None);
-        };
-        let grant = ModelGrantPattern {
-            models: models.clone(),
-            team_model_aliases: team_model_aliases.clone(),
-            key_model_aliases: BTreeMap::new(),
-            team_id: principal.team_id.clone(),
-        };
-        if !check_model_access(model, &grant, self.model_access) {
-            return Ok(None);
-        }
-        let forwarded = llm_call_headers(headers, principal, self.settings.add_user_information)?;
-        Ok((!forwarded.is_empty()).then_some(forwarded))
-    }
 }
 
 // LiteLLM reads these with float() and int(), which also skip surrounding spaces

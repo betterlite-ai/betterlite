@@ -11,14 +11,18 @@ mod tests;
 
 use std::collections::BTreeMap;
 
-use betterlite_auth::auth_model_patterns::decision::ModelAccessContext;
+use betterlite_auth::auth_model_patterns::decision::{ModelAccessContext, check_model_access};
+use betterlite_auth::auth_model_patterns::grant::ModelGrantPattern;
 use betterlite_config::sections::request_headers::Settings;
+use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::api::api_boundaries::ApiLimits;
 use crate::api::request_destination::RequestData;
-use crate::api::request_headers::backend_call::{BackendCallArguments, backend_call_arguments};
+use crate::api::request_headers::backend_call::{
+    BackendCallArguments, backend_call_arguments, llm_call_headers,
+};
 use crate::api::request_headers::cleaning::{REDACTED_HEADER_VALUE, clean_headers, logged_headers};
 use crate::api::request_headers::error::RequestHeadersError;
 use crate::api::request_headers::header_metadata::add_header_metadata;
@@ -27,6 +31,8 @@ use crate::api::request_headers::trace_context::{add_otel_trace_id, forward_trac
 use crate::api::request_headers::user_mapping::{internal_user_from_mapping, user_from_headers};
 use crate::api::request_metadata_safety::metadata::MetadataField;
 use crate::api::request_principal_metadata::PrincipalFacts;
+
+const MODEL_FIELD: &str = "model";
 
 // a header that carries a caller credential keeps it in a secret, so only the forwarded copy can read it
 #[derive(Debug, Clone)]
@@ -124,17 +130,45 @@ impl RequestHeaders<'_> {
             &input.headers,
             self.otel_enabled && self.settings.forward_traceparent,
         );
+        let logged = logged_headers(&forwarded);
+        let user = user_from_headers(&forwarded, self.settings);
+        let internal_user_id =
+            internal_user_from_mapping(&forwarded, &self.settings.user_header_mappings);
+        let provider = provider_specific_headers(&forwarded);
         Ok(RequestHeadersResult {
-            logged: logged_headers(&forwarded),
-            user: user_from_headers(&forwarded, self.settings),
-            internal_user_id: internal_user_from_mapping(
-                &forwarded,
-                &self.settings.user_header_mappings,
-            ),
-            provider: provider_specific_headers(&forwarded),
             forwarded,
+            logged,
             backend,
             data,
+            user,
+            internal_user_id,
+            provider,
         })
+    }
+
+    // model_group_settings forwards the headers only for the models it names, aliases and wildcards included
+    pub fn model_group_headers(
+        &self,
+        data: &RequestData,
+        headers: &ForwardedHeaders,
+        principal: &PrincipalFacts,
+        team_model_aliases: &BTreeMap<String, String>,
+    ) -> Result<Option<ForwardedHeaders>, RequestHeadersError> {
+        let (Some(models), Some(Json::Text(model))) =
+            (&self.settings.model_group_forwarding, data.get(MODEL_FIELD))
+        else {
+            return Ok(None);
+        };
+        let grant = ModelGrantPattern {
+            models: models.clone(),
+            team_model_aliases: team_model_aliases.clone(),
+            key_model_aliases: BTreeMap::new(),
+            team_id: principal.team_id.clone(),
+        };
+        if !check_model_access(model, &grant, self.model_access) {
+            return Ok(None);
+        }
+        let forwarded = llm_call_headers(headers, principal, self.settings.add_user_information)?;
+        Ok((!forwarded.is_empty()).then_some(forwarded))
     }
 }
