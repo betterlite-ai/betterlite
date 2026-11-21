@@ -1,0 +1,13 @@
+kind: helper
+name: team-patch-reset-field-presence
+call:
+  team_patch:
+    calls:
+      - {request: {team_id: t, team_alias: kept}, now: "2026-05-01T10:00:00+00:00"}
+      - {request: {team_id: t, budget_duration: null}, now: "2026-05-01T10:00:00+00:00"}
+      - {request: {team_id: t, budget_duration: 1d}, now: "2026-05-01T10:00:00+00:00"}
+      - {request: {team_id: t, budget_duration: 7d}, now: "2026-12-31T23:59:59.999999+00:00"}
+      - {request: {team_id: t, budget_duration: 1x}, now: "2026-05-01T10:00:00+00:00"}
+      - {request: {team_id: t, budget_duration: 99999999999999999999d}, now: "2026-05-01T10:00:00+00:00"}
+env: {}
+compare: {ignore: []}
