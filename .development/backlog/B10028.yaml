@@ -1,0 +1,13 @@
+id: B10028
+milestone: R2 bug fixes
+title: Tests hold the port they expect to be refused
+status: todo
+depends_on: []
+file: tasks/B10028-test-ports-crate.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
