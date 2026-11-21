@@ -17,14 +17,15 @@ use super::resolver::AgentAccessResolver;
 mod tests;
 
 // raw ids throughout: the ceilings, the caller grants and the human grants are never mapped to stable ids
-pub async fn managed_actor_agent_access<
+pub async fn managed_actor_agent_access<Grants, Targets, Humans>(
+    resolver: &AgentAccessResolver<Grants, Targets, Humans>,
+    auth: &UserAPIKeyAuth,
+) -> Result<AgentAccess, AgentAccessError>
+where
     Grants: GrantSources,
     Targets: TargetAgents,
     Humans: HumanSources,
->(
-    resolver: &AgentAccessResolver<Grants, Targets, Humans>,
-    auth: &UserAPIKeyAuth,
-) -> Result<AgentAccess, AgentAccessError> {
+{
     let Some(agent) = managed_agent_policy(Some(auth)) else {
         return Ok(AgentAccess::Restricted(BTreeSet::new()));
     };
@@ -65,11 +66,16 @@ pub async fn managed_actor_agent_access<
 }
 
 // the agent's own declared agents, kept only where every access group ceiling allows them
-async fn grouped_grants<Grants: GrantSources, Targets: TargetAgents, Humans: HumanSources>(
+async fn grouped_grants<Grants, Targets, Humans>(
     resolver: &AgentAccessResolver<Grants, Targets, Humans>,
     agent: &AgentResponse,
     fields: &BTreeMap<String, Box<RawValue>>,
-) -> Result<BTreeSet<String>, AgentAccessError> {
+) -> Result<BTreeSet<String>, AgentAccessError>
+where
+    Grants: GrantSources,
+    Targets: TargetAgents,
+    Humans: HumanSources,
+{
     let permission: LiteLLMObjectPermissionTable = serde_json::to_string(fields)
         .and_then(|text| serde_json::from_str(&text))
         .map_err(|source| AgentAccessError::ObjectPermission {

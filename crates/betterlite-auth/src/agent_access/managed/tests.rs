@@ -1,6 +1,7 @@
 #![cfg(test)]
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Mutex;
 
 use rstest::rstest;
 
@@ -34,9 +35,14 @@ fn owning(grants: FakeGrants) -> FakeResolver {
 }
 
 fn own_grants(agent_ids: &[&str]) -> FakeGrants {
-    let mut grants = FakeGrants::default();
-    grants.key_strict = Ok(restricted(agent_ids));
-    grants
+    FakeGrants {
+        key_team: BTreeMap::new(),
+        caller: Ok(AgentAccess::Unrestricted),
+        key_strict: Ok(restricted(agent_ids)),
+        ceiling: Ok(None),
+        managed_ceilings: Ok(Vec::new()),
+        calls: Mutex::new(Vec::new()),
+    }
 }
 
 fn context(text: &str) -> ManagedAgentContext {
@@ -47,7 +53,7 @@ fn context(text: &str) -> ManagedAgentContext {
 async fn a_key_without_a_managed_policy_reaches_nothing() {
     let access_resolver = owning(own_grants(&["a"]));
     let key = auth(r#"{"user_id":"alice"}"#);
-    let access = managed_actor_agent_access(&access_resolver, &key)
+    let access = Box::pin(managed_actor_agent_access(&access_resolver, &key))
         .await
         .unwrap();
     assert_eq!(access, restricted(&[]));
@@ -61,7 +67,7 @@ async fn a_key_without_a_managed_policy_reaches_nothing() {
 async fn a_missing_or_empty_object_permission_reaches_nothing(#[case] object_permission: &str) {
     let access_resolver = owning(own_grants(&["a"]));
     let key = managed_key(object_permission, "null");
-    let access = managed_actor_agent_access(&access_resolver, &key)
+    let access = Box::pin(managed_actor_agent_access(&access_resolver, &key))
         .await
         .unwrap();
     assert_eq!(access, restricted(&[]));
@@ -72,7 +78,7 @@ async fn a_missing_or_empty_object_permission_reaches_nothing(#[case] object_per
 async fn an_object_permission_that_does_not_parse_is_an_error() {
     let access_resolver = owning(own_grants(&["a"]));
     let key = managed_key(r#"{"agents":["a"]}"#, "null");
-    let outcome = managed_actor_agent_access(&access_resolver, &key).await;
+    let outcome = Box::pin(managed_actor_agent_access(&access_resolver, &key)).await;
     assert!(matches!(
         &outcome,
         Err(AgentAccessError::ObjectPermission { agent_id, .. }) if agent_id == "bot"
@@ -87,7 +93,7 @@ async fn own_grants_come_from_the_declared_object_permission() {
         r#"{"object_permission_id":"op","agents":["a","b","c"]}"#,
         r#"["g1","g2"]"#,
     );
-    let access = managed_actor_agent_access(&access_resolver, &key)
+    let access = Box::pin(managed_actor_agent_access(&access_resolver, &key))
         .await
         .unwrap();
     assert_eq!(access, restricted(&["a", "b"]));
@@ -104,9 +110,12 @@ async fn own_grants_come_from_the_declared_object_permission() {
 #[tokio::test]
 async fn an_unrestricted_own_grant_reaches_nothing() {
     let access_resolver = owning(FakeGrants::default());
-    let access = managed_actor_agent_access(&access_resolver, &declared_key())
-        .await
-        .unwrap();
+    let access = Box::pin(managed_actor_agent_access(
+        &access_resolver,
+        &declared_key(),
+    ))
+    .await
+    .unwrap();
     assert_eq!(access, restricted(&[]));
 }
 
@@ -123,9 +132,12 @@ async fn every_ceiling_narrows_the_own_grants(
     let mut grants = own_grants(&["a", "b", "c"]);
     grants.managed_ceilings = Ok(ceilings);
     let access_resolver = owning(grants);
-    let access = managed_actor_agent_access(&access_resolver, &declared_key())
-        .await
-        .unwrap();
+    let access = Box::pin(managed_actor_agent_access(
+        &access_resolver,
+        &declared_key(),
+    ))
+    .await
+    .unwrap();
     assert_eq!(access, restricted(expected));
 }
 
@@ -141,9 +153,12 @@ async fn the_caller_grants_cap_the_grouped_ids(
     let mut grants = own_grants(&["a", "b", "c"]);
     grants.caller = Ok(caller);
     let access_resolver = owning(grants);
-    let access = managed_actor_agent_access(&access_resolver, &declared_key())
-        .await
-        .unwrap();
+    let access = Box::pin(managed_actor_agent_access(
+        &access_resolver,
+        &declared_key(),
+    ))
+    .await
+    .unwrap();
     assert_eq!(access, restricted(expected));
 }
 
@@ -154,9 +169,12 @@ async fn managed_ids_are_never_mapped_to_stable_ids() {
     grants.managed_ceilings = Ok(vec![ids(&[ALPHA_LEGACY])]);
     let mut access_resolver = owning(grants);
     access_resolver.registry = alpha_registry();
-    let access = managed_actor_agent_access(&access_resolver, &declared_key())
-        .await
-        .unwrap();
+    let access = Box::pin(managed_actor_agent_access(
+        &access_resolver,
+        &declared_key(),
+    ))
+    .await
+    .unwrap();
     assert_eq!(access, restricted(&[ALPHA_LEGACY]));
 }
 
@@ -168,7 +186,7 @@ async fn the_context_mode_decides_without_a_human(#[case] given: &str, #[case] e
     let access_resolver = owning(own_grants(&["a", "b", "c"]));
     let mut key = declared_key();
     key.extra.managed_agent_context = Some(context(given));
-    let access = managed_actor_agent_access(&access_resolver, &key)
+    let access = Box::pin(managed_actor_agent_access(&access_resolver, &key))
         .await
         .unwrap();
     assert_eq!(access, restricted(expected));
@@ -187,18 +205,17 @@ async fn a_delegated_context_keeps_what_the_human_may_reach_through_the_key_team
     grants
         .key_team
         .insert(String::from("team-2"), Ok(restricted(&["c"])));
-    let mut humans = FakeHumans::default();
-    humans.sources = vec![
+    let humans = FakeHumans::admitting(vec![
         auth(r#"{"user_id":"human"}"#),
         auth(r#"{"user_id":"human","team_id":"team-1"}"#),
         auth(r#"{"user_id":"human","team_id":"team-2"}"#),
-    ];
+    ]);
     let access_resolver = resolver(grants, FakeTargets::default(), humans);
     let mut key = declared_key();
     key.extra.managed_agent_context = Some(context(
         r#"{"agent_id":"bot","mode":"delegated","user_id":"human"}"#,
     ));
-    let access = managed_actor_agent_access(&access_resolver, &key)
+    let access = Box::pin(managed_actor_agent_access(&access_resolver, &key))
         .await
         .unwrap();
     assert_eq!(access, restricted(&["a", "b"]));
@@ -239,6 +256,6 @@ async fn a_failing_port_fails_the_managed_access(#[case] failing: FailingPort) {
     key.extra.managed_agent_context = Some(context(
         r#"{"agent_id":"bot","mode":"delegated","user_id":"human"}"#,
     ));
-    let outcome = managed_actor_agent_access(&access_resolver, &key).await;
+    let outcome = Box::pin(managed_actor_agent_access(&access_resolver, &key)).await;
     assert_eq!(rejected_status(outcome), 503);
 }

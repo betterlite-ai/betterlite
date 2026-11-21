@@ -21,7 +21,7 @@ async fn registry_unrestricted_access_allows_every_agent() {
         FakeHumans::default(),
     );
     let key = auth(r#"{"user_id":"alice"}"#);
-    let allowed = is_agent_allowed(&access_resolver, "any-agent", Some(&key))
+    let allowed = Box::pin(is_agent_allowed(&access_resolver, "any-agent", Some(&key)))
         .await
         .unwrap();
     assert!(allowed);
@@ -57,7 +57,7 @@ async fn registry_restricted_access_matches_stable_and_legacy_ids(
     let mut access_resolver = resolver(grants, FakeTargets::default(), FakeHumans::default());
     access_resolver.registry = alpha_registry();
     let key = auth(r#"{"user_id":"alice"}"#);
-    let allowed = is_agent_allowed(&access_resolver, agent_id, Some(&key))
+    let allowed = Box::pin(is_agent_allowed(&access_resolver, agent_id, Some(&key)))
         .await
         .unwrap();
     assert_eq!(allowed, expected);
@@ -74,18 +74,17 @@ async fn registry_store_rows_that_are_not_managed_fall_through_to_the_grants(
     grants
         .key_team
         .insert(String::from("alice"), Ok(restricted(&["db-agent"])));
-    let mut targets = FakeTargets::default();
-    targets.database = true;
+    let mut targets = FakeTargets::with_database();
     targets.agents.insert(String::from("db-agent"), Ok(row));
     let access_resolver = resolver(grants, targets, FakeHumans::default());
     access_resolver
         .registry
         .register_agent(plain_agent("db-agent"));
     let key = auth(r#"{"user_id":"alice"}"#);
-    let granted = is_agent_allowed(&access_resolver, "db-agent", Some(&key))
+    let granted = Box::pin(is_agent_allowed(&access_resolver, "db-agent", Some(&key)))
         .await
         .unwrap();
-    let denied = is_agent_allowed(&access_resolver, "other", Some(&key))
+    let denied = Box::pin(is_agent_allowed(&access_resolver, "other", Some(&key)))
         .await
         .unwrap();
     assert!(granted);
@@ -106,7 +105,7 @@ async fn registry_without_a_database_or_managed_copy_skips_the_store() {
     access_resolver
         .registry
         .register_agent(plain_agent("db-agent"));
-    let allowed = is_agent_allowed(&access_resolver, "db-agent", None)
+    let allowed = Box::pin(is_agent_allowed(&access_resolver, "db-agent", None))
         .await
         .unwrap();
     assert!(allowed);

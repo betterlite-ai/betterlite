@@ -22,15 +22,16 @@ pub fn granted_ids(access: AgentAccess) -> BTreeSet<String> {
     }
 }
 
-pub async fn granted_agent_ids<
-    Grants: GrantSources,
-    Targets: TargetAgents,
-    Humans: HumanSources,
->(
+pub async fn granted_agent_ids<Grants, Targets, Humans>(
     resolver: &AgentAccessResolver<Grants, Targets, Humans>,
     auth: &UserAPIKeyAuth,
     strict: bool,
-) -> Result<BTreeSet<String>, AgentAccessError> {
+) -> Result<BTreeSet<String>, AgentAccessError>
+where
+    Grants: GrantSources,
+    Targets: TargetAgents,
+    Humans: HumanSources,
+{
     let mut granted = BTreeSet::new();
     for context in resolver.humans.effective_contexts(auth).await? {
         granted.extend(granted_ids(
@@ -40,15 +41,16 @@ pub async fn granted_agent_ids<
     Ok(granted)
 }
 
-pub async fn accessible_agents<
-    Grants: GrantSources,
-    Targets: TargetAgents,
-    Humans: HumanSources,
->(
+pub async fn accessible_agents<Grants, Targets, Humans>(
     resolver: &AgentAccessResolver<Grants, Targets, Humans>,
     auth: &UserAPIKeyAuth,
     all_agents: Option<Vec<AgentResponse>>,
-) -> Result<Vec<AgentResponse>, AgentAccessError> {
+) -> Result<Vec<AgentResponse>, AgentAccessError>
+where
+    Grants: GrantSources,
+    Targets: TargetAgents,
+    Humans: HumanSources,
+{
     let agents = all_agents.unwrap_or_else(|| resolver.registry.get_agent_list(None));
     if auth.extra.user_role == Some(UserRole::ProxyAdmin) {
         return Ok(agents);

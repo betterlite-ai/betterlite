@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeSet;
+use std::sync::Mutex;
 
 use rstest::rstest;
 
@@ -14,11 +15,18 @@ use crate::agent_policy::{AgentResponse, PolicyFlag};
 use crate::resolved_key::auth::UserAPIKeyAuth;
 
 fn listing_resolver(grants: FakeGrants, contexts: &[&str]) -> FakeResolver {
-    let mut humans = FakeHumans::default();
-    humans.contexts = Some(Ok(contexts
-        .iter()
-        .map(|user_id| auth(&format!(r#"{{"user_id":"{user_id}"}}"#)))
-        .collect()));
+    let humans = FakeHumans {
+        reloaded_key: None,
+        human_failure: None,
+        sources: Vec::new(),
+        admit_every_team: false,
+        contexts: Some(Ok(contexts
+            .iter()
+            .map(|user_id| auth(&format!(r#"{{"user_id":"{user_id}"}}"#)))
+            .collect())),
+        calls: Mutex::new(Vec::new()),
+        context_auths: Mutex::new(Vec::new()),
+    };
     resolver(grants, FakeTargets::default(), humans)
 }
 
@@ -55,7 +63,7 @@ async fn granted_agent_ids_unions_every_effective_context(#[case] strict: bool) 
         .insert(String::from("bob"), Ok(restricted(&["b", "c"])));
     let access_resolver = listing_resolver(grants, &["alice", "bob", "carol"]);
     let key = auth(r#"{"user_id":"lister"}"#);
-    let granted = granted_agent_ids(&access_resolver, &key, strict)
+    let granted = Box::pin(granted_agent_ids(&access_resolver, &key, strict))
         .await
         .unwrap();
     assert_eq!(granted, ids(&["a", "b", "c"]));
@@ -82,7 +90,7 @@ async fn granted_agent_ids_returns_the_first_failing_context() {
     grants.key_team.insert(String::from("bob"), Err(401));
     let access_resolver = listing_resolver(grants, &["alice", "bob"]);
     let key = auth(r#"{"user_id":"lister"}"#);
-    let outcome = granted_agent_ids(&access_resolver, &key, false).await;
+    let outcome = Box::pin(granted_agent_ids(&access_resolver, &key, false)).await;
     assert_eq!(rejected_status(outcome), 503);
 }
 
@@ -90,7 +98,7 @@ async fn granted_agent_ids_returns_the_first_failing_context() {
 async fn granted_agent_ids_without_contexts_is_empty() {
     let access_resolver = listing_resolver(FakeGrants::default(), &[]);
     let key = auth(r#"{"user_id":"lister"}"#);
-    let granted = granted_agent_ids(&access_resolver, &key, false)
+    let granted = Box::pin(granted_agent_ids(&access_resolver, &key, false))
         .await
         .unwrap();
     assert!(granted.is_empty());
@@ -100,9 +108,13 @@ async fn granted_agent_ids_without_contexts_is_empty() {
 async fn accessible_agents_returns_every_agent_unchanged_for_a_proxy_admin() {
     let access_resolver = listing_resolver(FakeGrants::default(), &["lister"]);
     let agents = vec![managed_row("m1"), plain_agent("b"), plain_agent("a")];
-    let listed = accessible_agents(&access_resolver, &listing_auth("proxy_admin"), Some(agents))
-        .await
-        .unwrap();
+    let listed = Box::pin(accessible_agents(
+        &access_resolver,
+        &listing_auth("proxy_admin"),
+        Some(agents),
+    ))
+    .await
+    .unwrap();
     assert_eq!(agent_ids(&listed), ["m1", "b", "a"]);
     assert!(calls(&access_resolver.grants.calls).is_empty());
     assert!(
@@ -126,9 +138,13 @@ async fn accessible_agents_keeps_granted_agents_in_their_order(#[case] role: &st
         .insert(String::from("lister"), Ok(restricted(&["a", "c"])));
     let access_resolver = listing_resolver(grants, &["lister"]);
     let agents = vec![plain_agent("c"), plain_agent("b"), plain_agent("a")];
-    let listed = accessible_agents(&access_resolver, &listing_auth(role), Some(agents))
-        .await
-        .unwrap();
+    let listed = Box::pin(accessible_agents(
+        &access_resolver,
+        &listing_auth(role),
+        Some(agents),
+    ))
+    .await
+    .unwrap();
     assert_eq!(agent_ids(&listed), ["c", "a"]);
 }
 
@@ -136,11 +152,11 @@ async fn accessible_agents_keeps_granted_agents_in_their_order(#[case] role: &st
 async fn accessible_agents_lists_nothing_for_unrestricted_access() {
     let access_resolver = listing_resolver(FakeGrants::default(), &["lister"]);
     let agents = vec![plain_agent("a")];
-    let listed = accessible_agents(
+    let listed = Box::pin(accessible_agents(
         &access_resolver,
         &listing_auth("internal_user"),
         Some(agents),
-    )
+    ))
     .await
     .unwrap();
     assert!(listed.is_empty());
@@ -155,11 +171,11 @@ async fn accessible_agents_compares_raw_agent_ids() {
     let mut access_resolver = listing_resolver(grants, &["lister"]);
     access_resolver.registry = alpha_registry();
     let agents = vec![plain_agent(ALPHA_LEGACY), plain_agent(ALPHA_STABLE)];
-    let listed = accessible_agents(
+    let listed = Box::pin(accessible_agents(
         &access_resolver,
         &listing_auth("internal_user"),
         Some(agents),
-    )
+    ))
     .await
     .unwrap();
     assert_eq!(agent_ids(&listed), [ALPHA_STABLE]);
@@ -173,8 +189,7 @@ async fn accessible_agents_keeps_managed_agents_only_when_invocation_is_allowed(
         .insert(String::from("lister"), Ok(restricted(&["m1", "m2", "n1"])));
     let mut disabled = managed_row("m2");
     disabled.enabled = PolicyFlag(false);
-    let mut targets = FakeTargets::default();
-    targets.database = true;
+    let mut targets = FakeTargets::with_database();
     targets
         .agents
         .insert(String::from("m1"), Ok(Some(managed_row("m1"))));
@@ -188,11 +203,11 @@ async fn accessible_agents_keeps_managed_agents_only_when_invocation_is_allowed(
         managed_row("m1"),
         plain_agent("n2"),
     ];
-    let listed = accessible_agents(
+    let listed = Box::pin(accessible_agents(
         &access_resolver,
         &listing_auth("internal_user"),
         Some(agents),
-    )
+    ))
     .await
     .unwrap();
     assert_eq!(agent_ids(&listed), ["n1", "m1"]);
@@ -206,9 +221,13 @@ async fn accessible_agents_keeps_managed_agents_only_when_invocation_is_allowed(
 async fn accessible_agents_reads_the_registry_when_no_list_is_given() {
     let mut access_resolver = listing_resolver(FakeGrants::default(), &["lister"]);
     access_resolver.registry = alpha_registry();
-    let listed = accessible_agents(&access_resolver, &listing_auth("proxy_admin"), None)
-        .await
-        .unwrap();
+    let listed = Box::pin(accessible_agents(
+        &access_resolver,
+        &listing_auth("proxy_admin"),
+        None,
+    ))
+    .await
+    .unwrap();
     assert_eq!(agent_ids(&listed), [ALPHA_STABLE]);
 }
 
@@ -218,11 +237,11 @@ async fn accessible_agents_returns_a_grant_failure() {
     grants.key_team.insert(String::from("lister"), Err(503));
     let access_resolver = listing_resolver(grants, &["lister"]);
     let agents = vec![plain_agent("a")];
-    let outcome = accessible_agents(
+    let outcome = Box::pin(accessible_agents(
         &access_resolver,
         &listing_auth("internal_user"),
         Some(agents),
-    )
+    ))
     .await;
     assert_eq!(rejected_status(outcome), 503);
 }

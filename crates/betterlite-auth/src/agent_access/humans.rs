@@ -41,7 +41,7 @@ where
         .humans
         .admitted_subject_sources(&human, allowed_team_ids)
         .await?;
-    let mut grants = Vec::new();
+    let mut grants = Vec::with_capacity(sources.len());
     for source in sources {
         // a source resolves through the same path that may reach a managed key again, so the call is boxed
         let access = Box::pin(resolve_agent_access(resolver, Some(&source), true)).await?;
@@ -53,33 +53,42 @@ where
     Ok(grants)
 }
 
-pub async fn verified_human_agent_grants<
-    Grants: GrantSources,
-    Targets: TargetAgents,
-    Humans: HumanSources,
->(
+pub async fn verified_human_agent_grants<Grants, Targets, Humans>(
     resolver: &AgentAccessResolver<Grants, Targets, Humans>,
     user_id: Option<&str>,
     team_id: Option<&str>,
-) -> Result<BTreeSet<String>, AgentAccessError> {
-    // Some of an empty set admits no team source at all, unlike None
-    let allowed_team_ids: BTreeSet<String> = team_id.map(str::to_owned).into_iter().collect();
-    let sources = verified_human_sources(resolver, user_id, Some(&allowed_team_ids)).await?;
-    Ok(sources
-        .into_iter()
-        .filter(|source| source.team_id.is_none() || source.team_id.as_deref() == team_id)
-        .flat_map(|source| source.agent_ids)
-        .collect())
-}
-
-pub async fn resolve_delegated_agent_team<
+) -> Result<BTreeSet<String>, AgentAccessError>
+where
     Grants: GrantSources,
     Targets: TargetAgents,
     Humans: HumanSources,
->(
+{
+    // Some of an empty set admits no team source at all, unlike None
+    let allowed_team_ids = team_id
+        .map(str::to_owned)
+        .into_iter()
+        .collect::<BTreeSet<String>>();
+    verified_human_sources(resolver, user_id, Some(&allowed_team_ids))
+        .await
+        .map(|sources| {
+            // the user's own source always counts, a team source only when it is the chosen team
+            sources
+                .into_iter()
+                .filter(|source| source.team_id.is_none() || source.team_id.as_deref() == team_id)
+                .flat_map(|source| source.agent_ids)
+                .collect()
+        })
+}
+
+pub async fn resolve_delegated_agent_team<Grants, Targets, Humans>(
     resolver: &AgentAccessResolver<Grants, Targets, Humans>,
     request: &DelegatedTeamRequest<'_>,
-) -> Result<Option<String>, AgentAccessError> {
+) -> Result<Option<String>, AgentAccessError>
+where
+    Grants: GrantSources,
+    Targets: TargetAgents,
+    Humans: HumanSources,
+{
     let sources = verified_human_sources(resolver, request.user_id, None).await?;
     let user_grant = sources
         .iter()

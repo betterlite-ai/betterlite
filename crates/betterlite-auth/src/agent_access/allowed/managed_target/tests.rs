@@ -19,8 +19,7 @@ use crate::resolved_key::auth::UserAPIKeyAuth;
 const PLAIN_KEY: &str = r#"{"api_key":"sk-plain","user_id":"alice"}"#;
 
 fn managed_resolver(row: AgentResponse, grants: FakeGrants, humans: FakeHumans) -> FakeResolver {
-    let mut targets = FakeTargets::default();
-    targets.database = true;
+    let mut targets = FakeTargets::with_database();
     targets.agents.insert(row.agent_id.clone(), Ok(Some(row)));
     resolver(grants, targets, humans)
 }
@@ -70,7 +69,7 @@ async fn managed_target_is_denied_before_any_grant_is_read(#[case] broken: Broke
         Broken::NoAuth => None,
         Broken::Disabled | Broken::NoIdentity | Broken::InactiveIdentity => Some(&key),
     };
-    let allowed = is_agent_allowed(&access_resolver, "bot", caller)
+    let allowed = Box::pin(is_agent_allowed(&access_resolver, "bot", caller))
         .await
         .unwrap();
     assert!(!allowed);
@@ -87,7 +86,7 @@ async fn managed_target_missing_from_the_store_is_denied_when_the_registry_says_
     );
     access_resolver.registry.register_agent(managed_row("bot"));
     let key = auth(PLAIN_KEY);
-    let allowed = is_agent_allowed(&access_resolver, "bot", Some(&key))
+    let allowed = Box::pin(is_agent_allowed(&access_resolver, "bot", Some(&key)))
         .await
         .unwrap();
     assert!(!allowed);
@@ -104,7 +103,7 @@ async fn managed_registry_copy_answers_from_the_store_row_without_a_database() {
     let access_resolver = resolver(granting("alice", &["bot"]), targets, FakeHumans::default());
     access_resolver.registry.register_agent(managed_row("bot"));
     let key = auth(r#"{"user_id":"alice"}"#);
-    let allowed = is_agent_allowed(&access_resolver, "bot", Some(&key))
+    let allowed = Box::pin(is_agent_allowed(&access_resolver, "bot", Some(&key)))
         .await
         .unwrap();
     assert!(allowed);
@@ -126,15 +125,14 @@ async fn managed_store_failure_is_an_identity_error(
     #[case] code: FailureCode,
     #[case] status: u16,
 ) {
-    let mut targets = FakeTargets::default();
-    targets.database = true;
+    let mut targets = FakeTargets::with_database();
     let failure = AgentIdentityFailure {
         code,
         message: String::from("Agent policy could not be loaded"),
     };
     targets.agents.insert(String::from("bot"), Err(failure));
     let access_resolver = resolver(FakeGrants::default(), targets, FakeHumans::default());
-    let outcome = is_agent_allowed(&access_resolver, "bot", None).await;
+    let outcome = Box::pin(is_agent_allowed(&access_resolver, "bot", None)).await;
     assert!(matches!(&outcome, Err(AgentAccessError::Identity(_))));
     assert_eq!(rejected_status(outcome), status);
 }
@@ -148,14 +146,13 @@ async fn managed_target_reloads_a_plain_key_and_answers_from_its_fresh_strict_gr
     });
     let mut reloaded = auth(r#"{"user_id":"reloaded"}"#);
     reloaded.extra.agent_caller = None;
-    let mut humans = FakeHumans::default();
-    humans.reloaded_key = Some(reloaded);
+    let humans = FakeHumans::reloading(reloaded);
     let access_resolver = managed_resolver(
         managed_row("bot"),
         granting("reloaded", &["bot", "other"]),
         humans,
     );
-    let allowed = is_agent_allowed(&access_resolver, "bot", Some(&original))
+    let allowed = Box::pin(is_agent_allowed(&access_resolver, "bot", Some(&original)))
         .await
         .unwrap();
     assert!(allowed);
@@ -187,10 +184,9 @@ fn context_auth(access_resolver: &FakeResolver) -> UserAPIKeyAuth {
 #[tokio::test]
 async fn managed_target_falls_back_to_the_token_when_there_is_no_api_key() {
     let key = auth(r#"{"token":"hashed-token","user_id":"alice"}"#);
-    let mut humans = FakeHumans::default();
-    humans.reloaded_key = Some(auth(r#"{"user_id":"alice"}"#));
+    let humans = FakeHumans::reloading(auth(r#"{"user_id":"alice"}"#));
     let access_resolver = managed_resolver(managed_row("bot"), granting("alice", &["bot"]), humans);
-    let allowed = is_agent_allowed(&access_resolver, "bot", Some(&key))
+    let allowed = Box::pin(is_agent_allowed(&access_resolver, "bot", Some(&key)))
         .await
         .unwrap();
     assert!(allowed);
@@ -233,10 +229,9 @@ async fn managed_target_uses_the_auth_as_given(#[case] given: GivenAuthority) {
     }
     let mut grants = granting("alice", &["bot"]);
     grants.key_strict = Ok(restricted(&["bot"]));
-    let mut humans = FakeHumans::default();
-    humans.reloaded_key = Some(auth(r#"{"user_id":"reloaded"}"#));
+    let humans = FakeHumans::reloading(auth(r#"{"user_id":"reloaded"}"#));
     let access_resolver = managed_resolver(managed_row("bot"), grants, humans);
-    let allowed = is_agent_allowed(&access_resolver, "bot", Some(&key))
+    let allowed = Box::pin(is_agent_allowed(&access_resolver, "bot", Some(&key)))
         .await
         .unwrap();
     assert!(allowed);
@@ -255,7 +250,7 @@ async fn managed_target_needs_an_explicit_grant(#[case] access: AgentAccess) {
     grants.key_team.insert(String::from("alice"), Ok(access));
     let access_resolver = managed_resolver(managed_row("bot"), grants, FakeHumans::default());
     let key = auth(r#"{"user_id":"alice"}"#);
-    let allowed = is_agent_allowed(&access_resolver, "bot", Some(&key))
+    let allowed = Box::pin(is_agent_allowed(&access_resolver, "bot", Some(&key)))
         .await
         .unwrap();
     assert!(!allowed);
@@ -269,6 +264,6 @@ async fn managed_target_key_reload_failure_propagates() {
         FakeHumans::default(),
     );
     let key = auth(PLAIN_KEY);
-    let outcome = is_agent_allowed(&access_resolver, "bot", Some(&key)).await;
+    let outcome = Box::pin(is_agent_allowed(&access_resolver, "bot", Some(&key))).await;
     assert_eq!(rejected_status(outcome), 401);
 }

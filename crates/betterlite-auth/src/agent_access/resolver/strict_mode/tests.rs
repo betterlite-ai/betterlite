@@ -1,5 +1,8 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
+use std::sync::Mutex;
+
 use rstest::rstest;
 
 use crate::agent_access::error::AgentAccessError;
@@ -12,12 +15,17 @@ use crate::identity::{AgentIdentityFailure, FailureCode};
 
 #[tokio::test]
 async fn strict_unrestricted_key_and_team_access_denies_before_the_caller_and_ceiling() {
-    let mut grants = FakeGrants::default();
-    grants.caller = Ok(restricted(&["a"]));
-    grants.ceiling = Ok(Some(ids(&["a"])));
+    let grants = FakeGrants {
+        key_team: BTreeMap::new(),
+        caller: Ok(restricted(&["a"])),
+        key_strict: Ok(AgentAccess::Unrestricted),
+        ceiling: Ok(Some(ids(&["a"]))),
+        managed_ceilings: Ok(Vec::new()),
+        calls: Mutex::new(Vec::new()),
+    };
     let access_resolver = resolver(grants, FakeTargets::default(), FakeHumans::default());
     let key = auth(r#"{"user_id":"alice"}"#);
-    let access = resolve_agent_access(&access_resolver, Some(&key), true)
+    let access = Box::pin(resolve_agent_access(&access_resolver, Some(&key), true))
         .await
         .unwrap();
     assert_eq!(access, restricted(&[]));
@@ -35,7 +43,7 @@ async fn strict_off_keeps_unrestricted_key_and_team_access_unrestricted() {
         FakeHumans::default(),
     );
     let key = auth(r#"{"user_id":"alice"}"#);
-    let access = resolve_agent_access(&access_resolver, Some(&key), false)
+    let access = Box::pin(resolve_agent_access(&access_resolver, Some(&key), false))
         .await
         .unwrap();
     assert_eq!(access, AgentAccess::Unrestricted);
@@ -51,7 +59,7 @@ async fn strict_restricted_access_reads_the_caller_and_ceiling_strictly() {
     grants.ceiling = Ok(Some(ids(&["a", "c"])));
     let access_resolver = resolver(grants, FakeTargets::default(), FakeHumans::default());
     let key = auth(r#"{"user_id":"alice"}"#);
-    let access = resolve_agent_access(&access_resolver, Some(&key), true)
+    let access = Box::pin(resolve_agent_access(&access_resolver, Some(&key), true))
         .await
         .unwrap();
     assert_eq!(access, restricted(&["a"]));
@@ -91,7 +99,7 @@ async fn strict_port_errors_propagate(#[case] failing: FailingPort) {
     }
     let access_resolver = resolver(grants, FakeTargets::default(), FakeHumans::default());
     let key = auth(r#"{"user_id":"alice"}"#);
-    let outcome = resolve_agent_access(&access_resolver, Some(&key), true).await;
+    let outcome = Box::pin(resolve_agent_access(&access_resolver, Some(&key), true)).await;
     assert_eq!(rejected_status(outcome), 503);
 }
 

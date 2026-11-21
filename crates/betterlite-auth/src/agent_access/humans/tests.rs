@@ -26,13 +26,12 @@ fn human_resolver() -> FakeResolver {
     grants
         .key_team
         .insert(String::from("team-2"), Ok(restricted(&["b", "shared"])));
-    let mut humans = FakeHumans::default();
-    humans.sources = vec![
+    let humans = FakeHumans::admitting(vec![
         auth(r#"{"user_id":"human"}"#),
         auth(r#"{"user_id":"human","team_id":"team-2"}"#),
         auth(r#"{"user_id":"human","team_id":"team-1"}"#),
         auth(r#"{"user_id":"human","team_id":"team-3"}"#),
-    ];
+    ]);
     resolver(grants, FakeTargets::default(), humans)
 }
 
@@ -46,7 +45,7 @@ fn grant(team_id: Option<&str>, agent_ids: &[&str]) -> HumanGrant {
 #[tokio::test]
 async fn verified_human_sources_without_a_user_is_empty() {
     let access_resolver = human_resolver();
-    let sources = verified_human_sources(&access_resolver, None, None)
+    let sources = Box::pin(verified_human_sources(&access_resolver, None, None))
         .await
         .unwrap();
     assert!(sources.is_empty());
@@ -56,9 +55,13 @@ async fn verified_human_sources_without_a_user_is_empty() {
 #[tokio::test]
 async fn verified_human_sources_pair_each_source_with_its_strict_grants_in_order() {
     let access_resolver = human_resolver();
-    let sources = verified_human_sources(&access_resolver, Some("human"), None)
-        .await
-        .unwrap();
+    let sources = Box::pin(verified_human_sources(
+        &access_resolver,
+        Some("human"),
+        None,
+    ))
+    .await
+    .unwrap();
     assert_eq!(
         sources,
         [
@@ -91,7 +94,12 @@ async fn verified_human_sources_pair_each_source_with_its_strict_grants_in_order
 async fn verified_human_sources_return_a_reload_failure() {
     let mut access_resolver = human_resolver();
     access_resolver.humans.human_failure = Some(401);
-    let outcome = verified_human_sources(&access_resolver, Some("human"), None).await;
+    let outcome = Box::pin(verified_human_sources(
+        &access_resolver,
+        Some("human"),
+        None,
+    ))
+    .await;
     assert_eq!(rejected_status(outcome), 401);
 }
 
@@ -106,9 +114,13 @@ async fn verified_human_agent_grants_ask_for_the_allowed_teams_and_union_own_and
     #[case] expected: &[&str],
 ) {
     let access_resolver = human_resolver();
-    let granted = verified_human_agent_grants(&access_resolver, Some("human"), team_id)
-        .await
-        .unwrap();
+    let granted = Box::pin(verified_human_agent_grants(
+        &access_resolver,
+        Some("human"),
+        team_id,
+    ))
+    .await
+    .unwrap();
     assert_eq!(granted, ids(expected));
     assert_eq!(
         calls(&access_resolver.humans.calls)[1],
@@ -120,12 +132,20 @@ async fn verified_human_agent_grants_ask_for_the_allowed_teams_and_union_own_and
 async fn verified_human_agent_grants_keep_only_the_own_and_given_team_sources() {
     let mut access_resolver = human_resolver();
     access_resolver.humans.admit_every_team = true;
-    let with_team = verified_human_agent_grants(&access_resolver, Some("human"), Some("team-1"))
-        .await
-        .unwrap();
-    let without_team = verified_human_agent_grants(&access_resolver, Some("human"), None)
-        .await
-        .unwrap();
+    let with_team = Box::pin(verified_human_agent_grants(
+        &access_resolver,
+        Some("human"),
+        Some("team-1"),
+    ))
+    .await
+    .unwrap();
+    let without_team = Box::pin(verified_human_agent_grants(
+        &access_resolver,
+        Some("human"),
+        None,
+    ))
+    .await
+    .unwrap();
     assert_eq!(with_team, ids(&["a", "own", "shared"]));
     assert_eq!(without_team, ids(&["own"]));
 }
@@ -133,9 +153,13 @@ async fn verified_human_agent_grants_keep_only_the_own_and_given_team_sources() 
 #[tokio::test]
 async fn verified_human_agent_grants_without_a_user_are_empty() {
     let access_resolver = human_resolver();
-    let granted = verified_human_agent_grants(&access_resolver, None, Some("team-1"))
-        .await
-        .unwrap();
+    let granted = Box::pin(verified_human_agent_grants(
+        &access_resolver,
+        None,
+        Some("team-1"),
+    ))
+    .await
+    .unwrap();
     assert!(granted.is_empty());
 }
 
@@ -180,7 +204,7 @@ async fn resolve_delegated_agent_team_picks_the_granting_team(
         explicit_team,
         allowed_team_ids: allowed_team_ids.as_ref(),
     };
-    let outcome = resolve_delegated_agent_team(&access_resolver, &request).await;
+    let outcome = Box::pin(resolve_delegated_agent_team(&access_resolver, &request)).await;
     match expected {
         Ok(team) => assert_eq!(outcome.unwrap().as_deref(), team),
         Err(status) => {
@@ -204,6 +228,6 @@ async fn resolve_delegated_agent_team_without_a_user_is_rejected() {
         explicit_team: false,
         allowed_team_ids: None,
     };
-    let outcome = resolve_delegated_agent_team(&access_resolver, &request).await;
+    let outcome = Box::pin(resolve_delegated_agent_team(&access_resolver, &request)).await;
     assert!(matches!(&outcome, Err(AgentAccessError::TeamNotGranted)));
 }

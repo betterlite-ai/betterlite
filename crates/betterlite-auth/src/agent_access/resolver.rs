@@ -22,15 +22,16 @@ pub struct AgentAccessResolver<Grants, Targets, Humans> {
     pub humans: Humans,
 }
 
-pub async fn resolve_agent_access<
-    Grants: GrantSources,
-    Targets: TargetAgents,
-    Humans: HumanSources,
->(
+pub async fn resolve_agent_access<Grants, Targets, Humans>(
     resolver: &AgentAccessResolver<Grants, Targets, Humans>,
     auth: Option<&UserAPIKeyAuth>,
     strict: bool,
-) -> Result<AgentAccess, AgentAccessError> {
+) -> Result<AgentAccess, AgentAccessError>
+where
+    Grants: GrantSources,
+    Targets: TargetAgents,
+    Humans: HumanSources,
+{
     if let Some(managed_auth) = auth
         && managed_agent_policy(auth).is_some()
     {

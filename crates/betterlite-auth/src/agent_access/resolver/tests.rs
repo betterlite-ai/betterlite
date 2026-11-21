@@ -49,7 +49,7 @@ async fn own_access_is_capped_by_the_caller_and_the_ceiling(
         FakeHumans::default(),
     );
     let key = auth(r#"{"user_id":"alice"}"#);
-    let access = resolve_agent_access(&access_resolver, Some(&key), false)
+    let access = Box::pin(resolve_agent_access(&access_resolver, Some(&key), false))
         .await
         .unwrap();
     assert_eq!(access, expected);
@@ -62,7 +62,7 @@ async fn every_port_is_read_in_order_with_the_same_auth_and_mode() {
         FakeTargets::default(),
         FakeHumans::default(),
     );
-    let access = resolve_agent_access(&access_resolver, None, false)
+    let access = Box::pin(resolve_agent_access(&access_resolver, None, false))
         .await
         .unwrap();
     assert_eq!(access, AgentAccess::Unrestricted);
@@ -89,7 +89,7 @@ async fn own_access_is_mapped_to_stable_ids_before_the_ceiling() {
     );
     access_resolver.registry = alpha_registry();
     let key = auth(r#"{"user_id":"alice"}"#);
-    let access = resolve_agent_access(&access_resolver, Some(&key), false)
+    let access = Box::pin(resolve_agent_access(&access_resolver, Some(&key), false))
         .await
         .unwrap();
     assert_eq!(access, restricted(&[ALPHA_STABLE]));
@@ -108,7 +108,7 @@ async fn a_managed_key_returns_its_managed_access_without_key_or_team_grants() {
     key.extra.managed_agent_policy = Some(agent(
         r#"{"agent_id":"bot","agent_name":"bot","agent_card_params":{},"identity_managed":true,"object_permission":{"object_permission_id":"op","agents":["a","b"]}}"#,
     ));
-    let access = resolve_agent_access(&access_resolver, Some(&key), false)
+    let access = Box::pin(resolve_agent_access(&access_resolver, Some(&key), false))
         .await
         .unwrap();
     assert_eq!(access, restricted(&["a", "b"]));

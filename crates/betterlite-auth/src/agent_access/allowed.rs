@@ -14,11 +14,16 @@ mod managed_target;
 #[path = "allowed/registry_ids/tests.rs"]
 mod registry_ids;
 
-pub async fn is_agent_allowed<Grants: GrantSources, Targets: TargetAgents, Humans: HumanSources>(
+pub async fn is_agent_allowed<Grants, Targets, Humans>(
     resolver: &AgentAccessResolver<Grants, Targets, Humans>,
     agent_id: &str,
     auth: Option<&UserAPIKeyAuth>,
-) -> Result<bool, AgentAccessError> {
+) -> Result<bool, AgentAccessError>
+where
+    Grants: GrantSources,
+    Targets: TargetAgents,
+    Humans: HumanSources,
+{
     let registry_managed = resolver
         .registry
         .get_agent_by_id(agent_id)
@@ -49,15 +54,16 @@ pub async fn is_agent_allowed<Grants: GrantSources, Targets: TargetAgents, Human
 }
 
 // a managed target answers only from explicit, freshly loaded grants
-async fn managed_target_allowed<
-    Grants: GrantSources,
-    Targets: TargetAgents,
-    Humans: HumanSources,
->(
+async fn managed_target_allowed<Grants, Targets, Humans>(
     resolver: &AgentAccessResolver<Grants, Targets, Humans>,
     target: &AgentResponse,
     auth: Option<&UserAPIKeyAuth>,
-) -> Result<bool, AgentAccessError> {
+) -> Result<bool, AgentAccessError>
+where
+    Grants: GrantSources,
+    Targets: TargetAgents,
+    Humans: HumanSources,
+{
     let identity_active = target
         .identity
         .as_ref()

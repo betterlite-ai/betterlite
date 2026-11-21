@@ -1,7 +1,8 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::{Arc, Mutex};
+use std::future::{Future, ready};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_models::decisions::Json;
@@ -82,12 +83,17 @@ fn rejected(status: u16) -> AgentAccessError {
 }
 
 // records the call, then answers as the case set it up
-fn answer<T: Clone>(
+fn answer<T>(
     log: &Mutex<Vec<String>>,
     call: String,
     given: &Answer<T>,
-) -> Result<T, AgentAccessError> {
-    log.lock().unwrap().push(call);
+) -> Result<T, AgentAccessError>
+where
+    T: Clone,
+{
+    log.lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .push(call);
     given.clone().map_err(rejected)
 }
 
@@ -132,14 +138,25 @@ impl Default for FakeGrants {
 }
 
 impl FakeGrants {
+    // the grant the case stored for the key's team, or no grant when it stored none
+    fn team_grant(&self, auth: Option<&UserAPIKeyAuth>) -> Answer<AgentAccess> {
+        self.key_team
+            .get(&label(auth))
+            .cloned()
+            .unwrap_or(Ok(AgentAccess::Unrestricted))
+    }
+
     // records the port, the source and the mode of a read that takes both
-    fn strict_answer<T: Clone>(
+    fn strict_answer<T>(
         &self,
         port: &str,
         auth: Option<&UserAPIKeyAuth>,
         strict: bool,
         given: &Answer<T>,
-    ) -> Result<T, AgentAccessError> {
+    ) -> Result<T, AgentAccessError>
+    where
+        T: Clone,
+    {
         answer(
             &self.calls,
             format!("{port} {} strict={strict}", label(auth)),
@@ -149,49 +166,47 @@ impl FakeGrants {
 }
 
 impl GrantSources for FakeGrants {
-    async fn key_team_access(
+    fn key_team_access(
         &self,
         auth: Option<&UserAPIKeyAuth>,
         strict: bool,
-    ) -> Result<AgentAccess, AgentAccessError> {
-        let unrestricted = Ok(AgentAccess::Unrestricted);
-        let given = self.key_team.get(&label(auth)).unwrap_or(&unrestricted);
-        self.strict_answer("key_team", auth, strict, given)
+    ) -> impl Future<Output = Result<AgentAccess, AgentAccessError>> + Send {
+        ready(self.strict_answer("key_team", auth, strict, &self.team_grant(auth)))
     }
 
-    async fn caller_access(
+    fn caller_access(
         &self,
         auth: Option<&UserAPIKeyAuth>,
         strict: bool,
-    ) -> Result<AgentAccess, AgentAccessError> {
-        self.strict_answer("caller", auth, strict, &self.caller)
+    ) -> impl Future<Output = Result<AgentAccess, AgentAccessError>> + Send {
+        ready(self.strict_answer("caller", auth, strict, &self.caller))
     }
 
-    async fn key_access_strict(
+    fn key_access_strict(
         &self,
         auth: &UserAPIKeyAuth,
-    ) -> Result<AgentAccess, AgentAccessError> {
+    ) -> impl Future<Output = Result<AgentAccess, AgentAccessError>> + Send {
         let permission = auth.view.token.object_permission.as_ref();
         let declared = permission.map(|table| table.agents.0.clone());
         let call = format!("key_strict {} agents={declared:?}", label(Some(auth)));
-        answer(&self.calls, call, &self.key_strict)
+        ready(answer(&self.calls, call, &self.key_strict))
     }
 
-    async fn access_group_ceiling(
+    fn access_group_ceiling(
         &self,
         auth: Option<&UserAPIKeyAuth>,
         strict: bool,
-    ) -> Result<Option<BTreeSet<String>>, AgentAccessError> {
-        self.strict_answer("ceiling", auth, strict, &self.ceiling)
+    ) -> impl Future<Output = Result<Option<BTreeSet<String>>, AgentAccessError>> + Send {
+        ready(self.strict_answer("ceiling", auth, strict, &self.ceiling))
     }
 
-    async fn managed_ceilings(
+    fn managed_ceilings(
         &self,
         agent_id: &str,
         access_group_ids: &[String],
-    ) -> Result<Vec<BTreeSet<String>>, AgentAccessError> {
+    ) -> impl Future<Output = Result<Vec<BTreeSet<String>>, AgentAccessError>> + Send {
         let call = format!("managed_ceilings {agent_id} groups={access_group_ids:?}");
-        answer(&self.calls, call, &self.managed_ceilings)
+        ready(answer(&self.calls, call, &self.managed_ceilings))
     }
 }
 
@@ -203,14 +218,28 @@ pub(super) struct FakeTargets {
     pub(super) calls: Mutex<Vec<String>>,
 }
 
+impl FakeTargets {
+    // a fake whose store answers, with no row in it
+    pub(super) fn with_database() -> Self {
+        Self {
+            database: true,
+            agents: BTreeMap::new(),
+            calls: Mutex::new(Vec::new()),
+        }
+    }
+}
+
 impl TargetAgents for FakeTargets {
     fn has_database(&self) -> bool {
         self.database
     }
 
-    async fn agent(&self, agent_id: &str) -> Result<Option<AgentResponse>, AgentIdentityFailure> {
+    fn agent(
+        &self,
+        agent_id: &str,
+    ) -> impl Future<Output = Result<Option<AgentResponse>, AgentIdentityFailure>> + Send {
         self.calls.lock().unwrap().push(format!("agent {agent_id}"));
-        self.agents.get(agent_id).cloned().unwrap_or(Ok(None))
+        ready(self.agents.get(agent_id).cloned().unwrap_or(Ok(None)))
     }
 }
 
@@ -229,36 +258,64 @@ pub(super) struct FakeHumans {
     pub(super) context_auths: Mutex<Vec<UserAPIKeyAuth>>,
 }
 
+impl FakeHumans {
+    fn fake(reloaded_key: Option<UserAPIKeyAuth>, sources: Vec<UserAPIKeyAuth>) -> Self {
+        Self {
+            reloaded_key,
+            human_failure: None,
+            sources,
+            admit_every_team: false,
+            contexts: None,
+            calls: Mutex::new(Vec::new()),
+            context_auths: Mutex::new(Vec::new()),
+        }
+    }
+
+    // a fake whose key reload answers this admitted key
+    pub(super) fn reloading(reloaded: UserAPIKeyAuth) -> Self {
+        Self::fake(Some(reloaded), Vec::new())
+    }
+
+    // a fake that admits these grant sources for the reloaded human
+    pub(super) fn admitting(sources: Vec<UserAPIKeyAuth>) -> Self {
+        Self::fake(None, sources)
+    }
+}
+
 impl HumanSources for FakeHumans {
-    async fn reload_admitted_key(
+    fn reload_admitted_key(
         &self,
         key_hash: &SecretString,
         check_db_only: bool,
-    ) -> Result<UserAPIKeyAuth, AgentAccessError> {
+    ) -> impl Future<Output = Result<UserAPIKeyAuth, AgentAccessError>> + Send {
         let call = format!(
             "reload_key {} check_db_only={check_db_only}",
             key_hash.expose_secret()
         );
-        answer(&self.calls, call, &self.reloaded_key.clone().ok_or(401))
+        ready(answer(
+            &self.calls,
+            call,
+            &self.reloaded_key.clone().ok_or(401),
+        ))
     }
 
-    async fn reload_admitted_user(
+    fn reload_admitted_user(
         &self,
         user_id: &str,
         requires_fresh_policy: bool,
-    ) -> Result<UserAPIKeyAuth, AgentAccessError> {
+    ) -> impl Future<Output = Result<UserAPIKeyAuth, AgentAccessError>> + Send {
         let call = format!("reload_user {user_id} fresh={requires_fresh_policy}");
         let reloaded = self
             .human_failure
             .map_or_else(|| Ok(auth(&format!(r#"{{"user_id":"{user_id}"}}"#))), Err);
-        answer(&self.calls, call, &reloaded)
+        ready(answer(&self.calls, call, &reloaded))
     }
 
-    async fn admitted_subject_sources(
+    fn admitted_subject_sources(
         &self,
         human: &UserAPIKeyAuth,
         allowed_team_ids: Option<&BTreeSet<String>>,
-    ) -> Result<Vec<UserAPIKeyAuth>, AgentAccessError> {
+    ) -> impl Future<Output = Result<Vec<UserAPIKeyAuth>, AgentAccessError>> + Send {
         let call = format!(
             "sources {} allowed={allowed_team_ids:?}",
             label(Some(human))
@@ -270,18 +327,22 @@ impl HumanSources for FakeHumans {
                     allowed_team_ids.is_none_or(|allowed| allowed.contains(team_id))
                 })
         };
-        Ok(self.sources.iter().filter(admitted).cloned().collect())
+        let admitted_sources: Vec<UserAPIKeyAuth> =
+            self.sources.iter().filter(admitted).cloned().collect();
+        ready(Ok(admitted_sources))
     }
 
-    async fn effective_contexts(
+    fn effective_contexts(
         &self,
         auth: &UserAPIKeyAuth,
-    ) -> Result<Vec<UserAPIKeyAuth>, AgentAccessError> {
+    ) -> impl Future<Output = Result<Vec<UserAPIKeyAuth>, AgentAccessError>> + Send {
         self.context_auths.lock().unwrap().push(auth.clone());
-        self.contexts
+        let contexts = self
+            .contexts
             .clone()
             .unwrap_or_else(|| Ok(vec![auth.clone()]))
-            .map_err(rejected)
+            .map_err(rejected);
+        ready(contexts)
     }
 }
 
