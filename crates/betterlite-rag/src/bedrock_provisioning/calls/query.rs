@@ -129,7 +129,8 @@ fn form_body(pairs: &[(&str, &str)]) -> Vec<u8> {
     body.into_bytes()
 }
 
-// reads the text of the child element inside the named parent, so Role/Arn is not any Arn
+// reads the text of the child element inside the named parent, so Role/Arn is not any Arn;
+// quick-xml reports an entity as its own event, so the pieces of one element are appended
 pub fn child_text(
     body: &[u8],
     parent: &str,
@@ -157,23 +158,40 @@ fn find_child_text(
             .read_event()
             .map_err(|source| CallError::Xml { operation, source })?;
         match event {
-            Event::Start(tag) => stack.push(tag.name().as_ref().to_vec()),
+            Event::Start(tag) => {
+                stack.push(tag.name().as_ref().to_vec());
+                if is_child_of(&stack, parent, child) {
+                    found = Some(String::new());
+                }
+            }
             Event::End(_) => {
                 stack.pop();
             }
             Event::Text(value) => {
                 if is_child_of(&stack, parent, child) {
-                    found = Some(text_value(&value, operation)?);
+                    let piece = text_value(&value, operation)?;
+                    found.get_or_insert_with(String::new).push_str(&piece);
                 }
             }
             Event::CData(value) => {
                 if is_child_of(&stack, parent, child) {
-                    found = Some(cdata_value(&value, operation)?);
+                    let piece = cdata_value(&value, operation)?;
+                    found.get_or_insert_with(String::new).push_str(&piece);
+                }
+            }
+            Event::GeneralRef(reference) => {
+                if is_child_of(&stack, parent, child) {
+                    let decoded = reference
+                        .decode()
+                        .map_err(|source| CallError::Decode { operation, source })?;
+                    let raw = format!("&{decoded};");
+                    let piece =
+                        unescape(&raw).map_err(|source| CallError::Escape { operation, source })?;
+                    found.get_or_insert_with(String::new).push_str(&piece);
                 }
             }
             Event::Eof => break,
             Event::Empty(_)
-            | Event::GeneralRef(_)
             | Event::Decl(_)
             | Event::PI(_)
             | Event::DocType(_)

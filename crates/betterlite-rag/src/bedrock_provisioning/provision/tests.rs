@@ -213,7 +213,8 @@ async fn collection_uses_the_partition_arn_prefix_in_the_access_policy() {
     let access = transport.requests().remove(2);
     let body = str::from_utf8(&access.body).unwrap();
     assert!(body.contains("arn:aws-cn:iam::123456789012:root"));
-    assert!(body.contains("arn:aws-cn:iam::123456789012:role/caller"));
+    // the caller ARN keeps the partition STS answered with, as LiteLLM's normalization does
+    assert!(body.contains("arn:aws:iam::123456789012:role/caller"));
 }
 
 #[tokio::test(start_paused = true)]

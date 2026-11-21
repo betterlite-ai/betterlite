@@ -146,6 +146,10 @@ def role(input_value: RoleInput) -> dict[str, JsonValue]:
     client = scripted_client()
     client.scripted.role_arn = f"arn:aws:iam::{account_id}:role/litellm-bedrock-kb-{unique_id}"
     ingestion = build(input_value["vector"], input_value["environment"], client)
+    # a working flow has finished lazy initialization, which copies the configured bucket onto s3_bucket
+    bucket = input_value["vector"].get("s3_bucket")
+    if bucket is not None:
+        ingestion.s3_bucket = bucket
     arn = ingestion.role(unique_id, account_id, input_value["collection_arn"])
     return {
         "outcome": "created",
