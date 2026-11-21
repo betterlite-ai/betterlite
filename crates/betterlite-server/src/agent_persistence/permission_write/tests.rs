@@ -1,14 +1,33 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
+
 use betterlite_core::agents::permissions::AgentObjectPermission;
 use betterlite_db::budget_permission_rows::JsonData;
 
+use super::PermissionValue;
+use super::converted_record;
 use super::prepare;
 use super::write_permission;
 use crate::agent_persistence::support::Database;
 
 fn permission(json: &str) -> AgentObjectPermission {
     serde_json::from_str(json).expect("a valid object permission")
+}
+
+#[test]
+fn converted_record_carries_the_tool_search_flag() {
+    let record = BTreeMap::from([(
+        String::from("mcp_tool_search_enabled"),
+        JsonData::Bool(true),
+    )]);
+    let converted = converted_record(&record).expect("the record converts");
+    assert!(
+        converted
+            .iter()
+            .any(|(name, value)| *name == "mcp_tool_search_enabled"
+                && matches!(value, PermissionValue::Flag(Some(true))))
+    );
 }
 
 #[tokio::test]
