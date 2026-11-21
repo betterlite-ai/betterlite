@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::future::ready;
 use std::sync::{Mutex, PoisonError};
 
 use betterlite_azure::credentials::cache::RefreshProviderCache;
@@ -14,7 +15,7 @@ use betterlite_openai::fine_tuning::job::{FineTuneCreate, JobStatus};
 use secrecy::SecretString;
 
 use super::fixture::{NoSources, leaf_error, parse};
-use crate::azure_resource_dispatch::fine_tuning::{self, Call, Dispatch, Outcome};
+use crate::azure_resource_dispatch::fine_tuning::{Call, Dispatch, Outcome};
 use crate::azure_resource_dispatch::{
     AzureResourceError, AzureResourceOperation, AzureResourceResult,
 };
@@ -135,7 +136,7 @@ fn through(answer: Answer, call: Call<'_>) -> Result<AzureResourceResult, AzureR
         materializer: &materializer,
     };
     super::block_on(super::dispatch(AzureResourceOperation::FineTuning(
-        fine_tuning::dispatch(Dispatch { connection, call }),
+        Box::pin(ready(Dispatch { connection, call }.run())),
     )))
 }
 

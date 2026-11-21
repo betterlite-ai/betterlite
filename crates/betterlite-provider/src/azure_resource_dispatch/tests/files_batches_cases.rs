@@ -6,9 +6,13 @@ use betterlite_azure::azure_files::client::Opened;
 use betterlite_azure::azure_files::client::SelectedClient;
 use betterlite_azure::azure_files::client::auth::FileAuth;
 use betterlite_azure::azure_files::error::AzureFilesError;
-use betterlite_azure::azure_files::{Operation as FileOperation, Reply as FileReply};
+use betterlite_azure::azure_files::{
+    Operation as FileOperation, Reply as FileReply, call as file_call,
+};
 use betterlite_azure::batches::error::AzureBatchesError;
-use betterlite_azure::batches::{Operation as BatchOperation, Reply as BatchReply};
+use betterlite_azure::batches::{
+    Operation as BatchOperation, Reply as BatchReply, call as batch_call,
+};
 use betterlite_azure::endpoints::projection::ClientKind;
 use betterlite_openai::batches::error::SdkError;
 use betterlite_openai::batches::records::{BatchCreate, BatchPage, BatchQuery, BatchStatus};
@@ -25,7 +29,6 @@ use super::fixture::{FileFake, Planned, leaf_error, parse};
 use crate::azure_resource_dispatch::{
     AzureResourceError, AzureResourceOperation, AzureResourceResult, dispatch,
 };
-use crate::azure_resource_dispatch::{batches, files};
 
 const FILE_JSON: &str = r#"{"id":"file-1","object":"file","bytes":5,"created_at":1700000000,"filename":"notes.txt","purpose":"batch","status":"processed"}"#;
 const STATUS_ERROR: &str = r#"{"error":{"code":"not_found","message":"no such file","param":"file_id","type":"invalid_request_error"}}"#;
@@ -83,12 +86,8 @@ fn files_rows() {
     let fake = FileFake::new(Planned::json(200, FILE_JSON));
     let opened = opened();
     let data = upload();
-    let result = block_on(dispatch(AzureResourceOperation::Files(files::dispatch(
-        files::Dispatch {
-            opened: &opened,
-            transport: &fake,
-            operation: FileOperation::Create(&data),
-        },
+    let result = block_on(dispatch(AzureResourceOperation::Files(Box::pin(
+        file_call(&opened, &fake, FileOperation::Create(&data)),
     ))))
     .expect("the create reaches its leaf");
     let AzureResourceResult::Files(reply) = result else {
@@ -112,13 +111,9 @@ fn files_failure_row() {
     let fake = FileFake::new(Planned::json(404, STATUS_ERROR));
     let opened = opened();
     let data = upload();
-    let error = leaf_error(block_on(dispatch(AzureResourceOperation::Files(
-        files::dispatch(files::Dispatch {
-            opened: &opened,
-            transport: &fake,
-            operation: FileOperation::Create(&data),
-        }),
-    ))));
+    let error = leaf_error(block_on(dispatch(AzureResourceOperation::Files(Box::pin(
+        file_call(&opened, &fake, FileOperation::Create(&data)),
+    )))));
     assert!(matches!(
         error,
         AzureResourceError::Files(AzureFilesError::Files {
@@ -222,12 +217,9 @@ impl BatchesSdk for Sdk {
 fn batches_rows() {
     let sdk = Sdk::recording(BATCH_JSON);
     let create: BatchCreate = parse(CREATE_TEXT);
-    let result = block_on(dispatch(AzureResourceOperation::Batches(
-        batches::dispatch(batches::Dispatch {
-            client: &sdk,
-            operation: BatchOperation::Create(&create),
-        }),
-    )))
+    let result = block_on(dispatch(AzureResourceOperation::Batches(Box::pin(
+        batch_call(&sdk, BatchOperation::Create(&create)),
+    ))))
     .expect("the create reaches its leaf");
     let AzureResourceResult::Batches(BatchReply::Batch(batch)) = result else {
         panic!("a create returns the batch");
@@ -238,15 +230,15 @@ fn batches_rows() {
     assert!(sdk.calls()[0].starts_with("create:"));
 
     let listing = Sdk::recording(BATCH_JSON);
-    let page = block_on(dispatch(AzureResourceOperation::Batches(
-        batches::dispatch(batches::Dispatch {
-            client: &listing,
-            operation: BatchOperation::List {
+    let page = block_on(dispatch(AzureResourceOperation::Batches(Box::pin(
+        batch_call(
+            &listing,
+            BatchOperation::List {
                 after: Some("batch_0"),
                 limit: Some(20),
             },
-        }),
-    )));
+        ),
+    ))));
     assert!(matches!(
         page,
         Ok(AzureResourceResult::Batches(BatchReply::Page(_)))
@@ -261,10 +253,7 @@ fn batches_failure_row() {
     let sdk = Sdk::failing(500);
     let create: BatchCreate = parse(CREATE_TEXT);
     let error = leaf_error(block_on(dispatch(AzureResourceOperation::Batches(
-        batches::dispatch(batches::Dispatch {
-            client: &sdk,
-            operation: BatchOperation::Create(&create),
-        }),
+        Box::pin(batch_call(&sdk, BatchOperation::Create(&create))),
     ))));
     assert!(matches!(
         error,

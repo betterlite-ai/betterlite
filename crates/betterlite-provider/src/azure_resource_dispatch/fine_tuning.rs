@@ -1,4 +1,4 @@
-use std::future::{Future, ready};
+use std::future::Future;
 use std::pin::Pin;
 
 use betterlite_azure::fine_tuning::client::{ClientMaterializer, Connection};
@@ -52,13 +52,4 @@ impl<M: ClientMaterializer> Dispatch<'_, '_, '_, M> {
             }
         })
     }
-}
-
-pub fn dispatch<'cache, 'data, 'call, M>(
-    dispatch: Dispatch<'cache, 'data, 'call, M>,
-) -> RunFuture<'call>
-where
-    M: ClientMaterializer,
-{
-    Box::pin(ready(dispatch.run()))
 }

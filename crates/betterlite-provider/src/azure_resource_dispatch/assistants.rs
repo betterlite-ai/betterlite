@@ -113,31 +113,3 @@ impl<T: AssistantsTransport + RunStreamTransport + 'static> RunsDispatch<'_, T> 
         }
     }
 }
-
-pub fn definitions<'call, T>(dispatch: DefinitionsDispatch<'call, T>) -> DefinitionsFuture<'call>
-where
-    T: AssistantsTransport + 'call,
-{
-    Box::pin(dispatch.run())
-}
-
-pub fn threads<'call, T>(dispatch: ThreadsDispatch<'call, T>) -> ThreadsFuture<'call>
-where
-    T: AssistantsTransport + 'call,
-{
-    Box::pin(dispatch.run())
-}
-
-pub fn messages<'call, T>(dispatch: MessagesDispatch<'call, T>) -> MessagesFuture<'call>
-where
-    T: AssistantsTransport + 'call,
-{
-    Box::pin(dispatch.run())
-}
-
-pub fn runs<'call, T>(dispatch: RunsDispatch<'call, T>) -> RunsFuture<'call>
-where
-    T: AssistantsTransport + RunStreamTransport + 'static,
-{
-    Box::pin(dispatch.run())
-}

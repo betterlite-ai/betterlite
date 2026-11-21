@@ -159,7 +159,7 @@ pub(super) struct AssistantsFake {
 impl AssistantsFake {
     pub(super) fn new(replies: Vec<Planned>) -> Self {
         Self {
-            replies: Mutex::new(replies.into()),
+            replies: Mutex::new(VecDeque::from(replies)),
             seen: Mutex::new(Vec::new()),
         }
     }

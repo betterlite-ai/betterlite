@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::future::{Future, ready};
+use std::future::Future;
 use std::pin::Pin;
 
 use betterlite_azure::resource_urls::error::ResourceUrlError;
@@ -74,8 +74,4 @@ impl Dispatch<'_> {
             Call::VideoSupported => Outcome::VideoSupported(&VIDEO_SUPPORTED_PARAMS),
         })
     }
-}
-
-pub fn dispatch(dispatch: Dispatch<'_>) -> RunFuture<'_> {
-    Box::pin(ready(dispatch.run()))
 }

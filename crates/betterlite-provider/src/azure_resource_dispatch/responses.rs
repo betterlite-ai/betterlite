@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::future::{Future, ready};
+use std::future::Future;
 use std::pin::Pin;
 
 use betterlite_azure::responses::error::ResponsesError;
@@ -81,8 +81,4 @@ impl Dispatch<'_> {
             } => Outcome::Resource(list_input_items(api_base, response_id, query)?),
         })
     }
-}
-
-pub fn dispatch(dispatch: Dispatch<'_>) -> RunFuture<'_> {
-    Box::pin(ready(dispatch.run()))
 }

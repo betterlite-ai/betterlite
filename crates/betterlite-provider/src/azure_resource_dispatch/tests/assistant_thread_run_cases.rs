@@ -19,7 +19,7 @@ use secrecy::SecretString;
 
 use super::fixture::{AssistantsFake, NoSources, Planned, parse};
 use crate::azure_resource_dispatch::assistants::{
-    self, DefinitionsDispatch, MessagesDispatch, RunOutcome, RunsDispatch, ThreadsDispatch,
+    DefinitionsDispatch, MessagesDispatch, RunOutcome, RunsDispatch, ThreadsDispatch,
 };
 use crate::azure_resource_dispatch::{
     AzureResourceError, AzureResourceOperation, AzureResourceResult, dispatch,
@@ -103,15 +103,16 @@ async fn definitions_rows() {
     let api = AssistantsApi {
         transport: Arc::clone(&fake),
     };
-    let result = dispatch(AzureResourceOperation::AssistantDefinitions(
-        assistants::definitions(DefinitionsDispatch {
+    let result = dispatch(AzureResourceOperation::AssistantDefinitions(Box::pin(
+        DefinitionsDispatch {
             api: &api,
             request: &request,
             supplied: None,
             flag: None,
             call: DefinitionCall::List,
-        }),
-    ))
+        }
+        .run(),
+    )))
     .await
     .expect("the list reaches its leaf");
     let AzureResourceResult::AssistantDefinitions(reply) = result else {
@@ -133,15 +134,16 @@ async fn definitions_rows() {
         transport: Arc::new(failed),
     };
     let error = super::fixture::leaf_error(
-        dispatch(AzureResourceOperation::AssistantDefinitions(
-            assistants::definitions(DefinitionsDispatch {
+        dispatch(AzureResourceOperation::AssistantDefinitions(Box::pin(
+            DefinitionsDispatch {
                 api: &failing_api,
                 request: &request,
                 supplied: None,
                 flag: None,
                 call: DefinitionCall::Create(&create),
-            }),
-        ))
+            }
+            .run(),
+        )))
         .await,
     );
     assert!(matches!(error, AzureResourceError::AssistantDefinitions(_)));
@@ -155,15 +157,16 @@ async fn threads_rows() {
         transport: Arc::clone(&fake),
     };
     let create: ThreadCreate = parse(r#"{"messages":[{"role":"user","content":"hello"}]}"#);
-    let result = dispatch(AzureResourceOperation::AssistantThreads(
-        assistants::threads(ThreadsDispatch {
+    let result = dispatch(AzureResourceOperation::AssistantThreads(Box::pin(
+        ThreadsDispatch {
             api: &api,
             request: &request,
             supplied: None,
             flag: None,
             call: ThreadOperation::Create(&create),
-        }),
-    ))
+        }
+        .run(),
+    )))
     .await
     .expect("the create reaches its leaf");
     let AzureResourceResult::AssistantThreads(reply) = result else {
@@ -188,8 +191,8 @@ async fn messages_rows() {
         },
     };
     let data: ThreadMessageData = parse(r#"{"role":"user","content":"hello"}"#);
-    let result = dispatch(AzureResourceOperation::AssistantMessages(
-        assistants::messages(MessagesDispatch {
+    let result = dispatch(AzureResourceOperation::AssistantMessages(Box::pin(
+        MessagesDispatch {
             api: &api,
             request: &request,
             supplied: None,
@@ -198,8 +201,9 @@ async fn messages_rows() {
                 thread_id: "thread_1",
                 data: &data,
             },
-        }),
-    ))
+        }
+        .run(),
+    )))
     .await
     .expect("the append reaches its leaf");
     let AzureResourceResult::AssistantMessages(reply) = result else {
@@ -232,7 +236,7 @@ async fn runs_rows() {
         transport: Arc::clone(&fake),
     };
     let run = run_request();
-    let result = dispatch(AzureResourceOperation::AssistantRuns(assistants::runs(
+    let result = dispatch(AzureResourceOperation::AssistantRuns(Box::pin(
         RunsDispatch {
             api: &api,
             request: &request,
@@ -242,7 +246,8 @@ async fn runs_rows() {
                 run: &run,
                 handler: None,
             },
-        },
+        }
+        .run(),
     )))
     .await
     .expect("the run reaches its leaf");
@@ -268,7 +273,7 @@ async fn runs_rows() {
     let streaming_api = AssistantsRunsApi {
         transport: Arc::clone(&streaming),
     };
-    let streamed = dispatch(AzureResourceOperation::AssistantRuns(assistants::runs(
+    let streamed = dispatch(AzureResourceOperation::AssistantRuns(Box::pin(
         RunsDispatch {
             api: &streaming_api,
             request: &request,
@@ -281,7 +286,8 @@ async fn runs_rows() {
                 run: &run,
                 handler: None,
             },
-        },
+        }
+        .run(),
     )))
     .await
     .expect("the streamed run reaches its leaf");
@@ -300,7 +306,7 @@ async fn runs_rows() {
         transport: Arc::clone(&failing),
     };
     let error = super::fixture::leaf_error(
-        dispatch(AzureResourceOperation::AssistantRuns(assistants::runs(
+        dispatch(AzureResourceOperation::AssistantRuns(Box::pin(
             RunsDispatch {
                 api: &failing_api,
                 request: &request,
@@ -310,7 +316,8 @@ async fn runs_rows() {
                     run: &run,
                     handler: None,
                 },
-            },
+            }
+            .run(),
         )))
         .await,
     );

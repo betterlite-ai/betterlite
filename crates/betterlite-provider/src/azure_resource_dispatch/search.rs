@@ -1,4 +1,4 @@
-use std::future::{Future, ready};
+use std::future::Future;
 use std::pin::Pin;
 
 use betterlite_azure::search::AzureSearchConfig;
@@ -67,8 +67,4 @@ impl Dispatch<'_> {
             )),
         })
     }
-}
-
-pub fn dispatch(dispatch: Dispatch<'_>) -> RunFuture<'_> {
-    Box::pin(ready(dispatch.run()))
 }
