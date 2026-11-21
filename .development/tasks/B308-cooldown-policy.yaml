@@ -18,7 +18,11 @@ description: 'Apply B369 CooldownDecision using B307 cooldown records and B304 d
   Before _set_cooldown_deployments asks B369 for its decision, fill `DeploymentFacts::has_alternatives` the
   way cooldown_handlers.py L355-L361 does: true when the requested model group has alternatives by B323
   `RoutingGroups::has_alternatives` (betterlite-router routing_groups, on main) or the deployment has team
-  siblings by B8351 `CatalogQueries::team_model_has_alternatives` (betterlite-router catalog_queries).
+  siblings. This task builds that check itself as `team_model_has_alternatives` (router.py L1630-L1640, whose only caller
+  at the pin is this cooldown step): find the deployment with the B844 `get_deployment` lookup (model_catalog_lookup, on
+  main), answer false when it is missing or its model_info lacks team_id or team_public_model_name, take the deployments
+  under that (team, public name) pair in the B368 catalog `team_index`, drop blocked ones with the B016 `without_blocked`
+  filter (router_core candidates, LiteLLM _filter_blocked_deployments) and answer true when more than one is left.
   B016 registers RouteStage::CooldownPolicy as a stub, so replace only that stub and its not-built test in crates/betterlite-router/src/context/cooldown_policy.rs and leave strategy.rs, context.rs, routes.rs and state.rs as they are.'
 scope:
   paths:

@@ -42,8 +42,8 @@ description: >-
   metadata; do not introduce a second Nova response parser. direct_nova_defaults: AmazonNovaChatConfig constructor
   fields max_completion_tokens,max_tokens,temperature,top_p,tools,reasoning_effort start None and persist only non-None
   assignments. The metadata class field also defaults None but is not a constructor argument. get_config delegates
-  through B038 OpenAILikeChatConfig to B2202 BaseConfig. Supported options are exactly top_p,temperature,max_tokens,max_completion_tokens,metadata,stop,stream,stream_options,tools,tool_choice,reasoning_effort.
-  direct_nova_response_model: Call B038 OpenAILikeChatConfig.transform_response with the source arguments, then
+  through B1425 OpenAILikeChatConfig (betterlite-openai compatible_wire) to B2202 BaseConfig. Supported options are exactly top_p,temperature,max_tokens,max_completion_tokens,metadata,stop,stream,stream_options,tools,tool_choice,reasoning_effort.
+  direct_nova_response_model: Call B1425 compatible_wire::transform_response (OpenAILikeChatConfig.transform_response, betterlite-openai) with the source arguments, then
   replace model with amazon-nova/ plus the requested model, even when already prefixed. Other response fields and
   parent failures are preserved; the hyphenated response prefix differs from provider amazon_nova.
 
@@ -208,13 +208,13 @@ dod:
   - helper-python
 - text: 'direct_nova_defaults: AmazonNovaChatConfig constructor fields max_completion_tokens,max_tokens,temperature,top_p,tools,reasoning_effort
     start None and persist only non-None assignments. The metadata class field also defaults None but is not a constructor
-    argument. get_config delegates through B038 OpenAILikeChatConfig to B2202 BaseConfig. Supported options are
+    argument. get_config delegates through B1425 OpenAILikeChatConfig (betterlite-openai compatible_wire) to B2202 BaseConfig. Supported options are
     exactly top_p,temperature,max_tokens,max_completion_tokens,metadata,stop,stream,stream_options,tools,tool_choice,reasoning_effort.'
   proof:
   - case-direct-nova-defaults
   - oracle
   - helper-python
-- text: 'direct_nova_response_model: Call B038 OpenAILikeChatConfig.transform_response with the source arguments,
+- text: 'direct_nova_response_model: Call B1425 compatible_wire::transform_response (OpenAILikeChatConfig.transform_response, betterlite-openai) with the source arguments,
     then replace model with amazon-nova/ plus the requested model, even when already prefixed. Other response fields
     and parent failures are preserved; the hyphenated response prefix differs from provider amazon_nova.'
   proof:
@@ -322,11 +322,11 @@ checks:
   - id: case-direct-nova-defaults
     why: AmazonNovaChatConfig constructor fields max_completion_tokens,max_tokens,temperature,top_p,tools,reasoning_effort
       start None and persist only non-None assignments. The metadata class field also defaults None but is not a
-      constructor argument. get_config delegates through B038 OpenAILikeChatConfig to B2202 BaseConfig. Supported
+      constructor argument. get_config delegates through B1425 OpenAILikeChatConfig (betterlite-openai compatible_wire) to B2202 BaseConfig. Supported
       options are exactly top_p,temperature,max_tokens,max_completion_tokens,metadata,stop,stream,stream_options,tools,tool_choice,reasoning_effort.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::nova_chat_cases::case_[0-9]+_direct_nova_defaults$/)'
   - id: case-direct-nova-response-model
-    why: Call B038 OpenAILikeChatConfig.transform_response with the source arguments, then replace model with amazon-nova/
+    why: Call B1425 compatible_wire::transform_response (OpenAILikeChatConfig.transform_response, betterlite-openai) with the source arguments, then replace model with amazon-nova/
       plus the requested model, even when already prefixed. Other response fields and parent failures are preserved;
       the hyphenated response prefix differs from provider amazon_nova.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::nova_chat_cases::case_[0-9]+_direct_nova_response_model$/)'

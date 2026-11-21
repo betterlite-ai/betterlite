@@ -2,8 +2,8 @@ id: B3680
 title: Unified guardrail lifecycle hooks, registry and HTTP cases
 description: >-
   Build the part of `UnifiedLLMGuardrails` (litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py,
-  lines 171-380) that runs a guardrail at the pre-call, during-call and post-call points, fill B3679's translation
-  registry, and add the HTTP oracle cases for every endpoint family that the earlier parts left for the umbrella.
+  lines 171-380) that runs a guardrail at the pre-call, during-call and post-call points, and fill B3679's
+  translation registry. The HTTP oracle cases the earlier parts left for the umbrella go to B8399, which wires these hooks into the proxy.
   The split parts supply the pieces: B6160 (completion, embeddings, image, speech, transcription, video), B6161
   (chat, Responses, Anthropic), B6162 (pass-through and Bedrock), B6163 (A2A) and B6164 (the incremental stream
   loop). B3679 supplies the registry type, `resolve_endpoint_translation`, `infer_call_type`,
@@ -76,14 +76,9 @@ description: >-
 
   Global skip flags. B3680 owns the config section `guardrail_message_skip` (crates/betterlite-config/src/sections/guardrail_message_skip.rs) with `Settings { skip_system_message: bool, skip_tool_message: bool }`, both default false. It reads the `litellm_settings` keys `skip_system_message_in_guardrail` and `skip_tool_message_in_guardrail`. LiteLLM sets them as module attributes of litellm (defaults False, litellm/__init__.py L238-L239) and reads them only in `effective_skip_system_message_for_guardrail` and `effective_skip_tool_message_for_guardrail` (llms/base_llm/guardrail_translation/utils.py L194-L209, B3663's), each as `bool(...)` when the guardrail's own value is None. Where the pinned code reads the same module attribute elsewhere (the registry's scoping check in guardrail_registry.py) B3682 takes it as its `global_skip_tool_message` argument. B3680 gives both values to the hooks: `UnifiedGuardrailHooks` is built with `skip_defaults: GuardrailSkipDefaults { system: bool, tool: bool }` filled by the server from `config.sections.guardrail_message_skip`, and the same `tool` value is what the server passes to B3682's `InMemoryGuardrailHandler::new` as `global_skip_tool_message`. In `pre_call` and `moderation`, the hook resolves the two flags with B3663's effective functions (the guardrail's own scoping value when set, else the default) and passes them in the per-call context to the translation's `process_input_messages`. Nothing else in betterlite reads the two keys.
 
-  HTTP oracle cases. Each case boots both gateways with a `litellm_content_filter` guardrail (B3693, no network)
-  that blocks a fixed word, sends the request, and compares status, error body, headers and the upstream request.
-  Put them in tools/oracle/cases/guardrails/unified-lifecycle/. One file per case, named in oracle_cases below: chat pre-call block and mask, chat post-call block, chat during-call block,
-  Responses, Anthropic Messages (pre-call and post-call), text completion, embeddings, image generation and pass-through
-  pre-call blocks, and a post-call case for a route with no translation that must return the response unchanged. Each
-  case runs against both gateways. These are the cases that B3574, B3675, B3676, B3677, B5820 and B3678 left for the
-  umbrella, except speech, transcription, video, rerank and MCP. Those need provider mocks the content filter case
-  cannot reuse, so B3680 lists those as a deviation below.
+  HTTP oracle cases. The cases that B3574, B3675, B3676, B3677, B5820 and B3678 left for the umbrella need a route
+  that calls these hooks, and this task registers no route, so B8399 adds them when it wires the hooks into the proxy.
+  This task adds no files under tools/oracle/cases/guardrails/unified-lifecycle/ and proves its hooks with the Rust tests below.
 
 scope:
   paths:
@@ -118,19 +113,17 @@ dod:
   - text: The registry holds every table once, only completion and acompletion carry the chat-completions flag, and no call type is listed twice.
     proof: [registry-tests]
   - text: Pre-call and moderation hooks return the data unchanged when there is no guardrail, the gate says no, or the call type is unmapped, and otherwise add metadata and run the input rewrite.
-    proof: [input-hook-tests, oracle]
+    proof: [input-hook-tests]
   - text: The pre-call hook records the applied guardrail only when the guardrail does not record its own information, and the moderation hook never does.
-    proof: [recorder-tests, oracle]
+    proof: [recorder-tests]
   - text: Every apply_guardrail call made for the pre-call, moderation and post-call hooks gets one B3664 `GuardrailInvocation` with `ApplyGuardrail`, finished with success or with the failure, and none when the guardrail recorded its own entry, as LiteLLM's log_guardrail_information does for the 36 decorated apply_guardrail methods and the ones __init_subclass__ wraps.
     proof: [apply-record-tests]
   - text: MetadataGuardrailRecorder ignores a None name, creates applied_guardrails with the name when the metadata bucket has none, and adds a name once, never twice.
     proof: [recorder-tests]
   - text: The post-call hook resolves the call type in the order route, response kind, logging call type, warns and returns the response when unresolved or unmapped, and sets `original_response` on a block.
-    proof: [post-call-tests, oracle]
+    proof: [post-call-tests]
   - text: The guardrail_message_skip section reads litellm_settings.skip_system_message_in_guardrail and skip_tool_message_in_guardrail as booleans that default to false, and the pre-call and moderation hooks use them only when the guardrail's own value is unset.
     proof: [skip-defaults-tests]
-  - text: Pre-call, during-call and post-call blocks and masks reach clients through the booted proxy with the same status, error body and headers as LiteLLM on the endpoint families the cases cover.
-    proof: [oracle, http-case-corpus]
 
 checks:
   optional: [mutants]
@@ -159,24 +152,8 @@ checks:
     - id: skip-defaults-tests
       why: the two global skip flags are not read from litellm_settings or do not reach the hooks
       run: cargo nextest run --locked -p betterlite-config -p betterlite-server --no-tests=fail -E 'test(/^(sections::guardrail_message_skip::|guardrails::unified_guardrail::hooks::tests::skip_)/)'
-    - id: http-case-corpus
-      why: the HTTP cases are not added in this change
-      run: >-
-        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/guardrails/unified-lifecycle)"
 
-oracle_cases:
-  - tools/oracle/cases/guardrails/unified-lifecycle/chat-pre-call-block.yaml
-  - tools/oracle/cases/guardrails/unified-lifecycle/chat-pre-call-mask.yaml
-  - tools/oracle/cases/guardrails/unified-lifecycle/chat-post-call-block.yaml
-  - tools/oracle/cases/guardrails/unified-lifecycle/chat-during-call-block.yaml
-  - tools/oracle/cases/guardrails/unified-lifecycle/responses-pre-call-block.yaml
-  - tools/oracle/cases/guardrails/unified-lifecycle/anthropic-messages-pre-call-block.yaml
-  - tools/oracle/cases/guardrails/unified-lifecycle/anthropic-messages-post-call-block.yaml
-  - tools/oracle/cases/guardrails/unified-lifecycle/text-completion-pre-call-block.yaml
-  - tools/oracle/cases/guardrails/unified-lifecycle/embeddings-pre-call-block.yaml
-  - tools/oracle/cases/guardrails/unified-lifecycle/image-generation-pre-call-block.yaml
-  - tools/oracle/cases/guardrails/unified-lifecycle/passthrough-pre-call-block.yaml
-  - tools/oracle/cases/guardrails/unified-lifecycle/unmapped-route-post-call-skipped.yaml
+oracle_cases: []
 
 deviations:
   - what: There are no HTTP cases for the speech, transcription, video, rerank, Google GenAI and MCP guardrail paths, and none for the applied-guardrails header.

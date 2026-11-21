@@ -1,0 +1,6 @@
+task: B545
+deviations:
+  - what: Websocket messages are capped at 16 MiB by default and an oversized frame closes with code 1009; REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES overrides the cap.
+    why: Bounded external buffers are required, so betterlite names a visible default where LiteLLM leaves the limit unlimited when the variable is unset.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L336-L339
+kept_bugs: []
