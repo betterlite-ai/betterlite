@@ -88,13 +88,10 @@ class Answer(TypedDict):
     steps: list[StepAnswer]
 
 
-class ScriptedError(Exception):
-    pass
-
-
-# what one step records and the clock LiteLLM reads through time.time
-class Board:
+# what one step records, the log handler that records it and the clock LiteLLM reads through time.time
+class Board(logging.Handler):
     def __init__(self, call: Call) -> None:
+        super().__init__(logging.DEBUG)
         self.events: list[str] = []
         self.logs: list[str] = []
         self.fail: list[str] = []
@@ -105,16 +102,10 @@ class Board:
     def __call__(self) -> float:
         return self.now
 
-
-class Journal(logging.Handler):
-    def __init__(self, board: Board) -> None:
-        super().__init__(logging.DEBUG)
-        self.board = board
-
     @override
     def emit(self, record: logging.LogRecord) -> None:
         if record.funcName in LOGGING_FUNCTIONS:
-            self.board.logs.append(record.levelname)
+            self.logs.append(record.levelname)
 
 
 class Memory(InMemoryCache):
@@ -138,7 +129,7 @@ class KeyCache(UserApiKeyCache):
     async def async_set_cache(self, key: str, value: BaseModel, *, model_type: type[BaseModel], ttl: float) -> None:  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/user_api_key_cache.py#L215-L233
         del model_type
         if f"write {key}" in self.board.fail:
-            raise ScriptedError(key)
+            raise RuntimeError(key)
         self.board.events.append(f"write {key} ttl={ttl:g}")
         self.board.values[key] = JSON_VALUE.validate_json(value.model_dump_json())
 
@@ -163,7 +154,7 @@ class Table:
         field, value = next(iter(where.items()))
         self.board.events.append(f"db {self.name} {self.handle} {value}")
         if self.name in self.board.fail:
-            raise ScriptedError(self.name)
+            raise RuntimeError(self.name)
         return [Row.model_validate(row) for row in self.rows if row.get(field) == value]
 
 
@@ -206,24 +197,20 @@ class Provisioner:
         role = user_api_key_dict.user_role
         self.board.events.append(f"provision {data.team_id} {'' if role is None else role.value}")
         if "provision" in self.board.fail or self.board.created is None:
-            raise ScriptedError("provision")
+            raise RuntimeError("provision")
         return self.board.created
 
 
 # get_object_permission catches its own read failures, so a failed load is scripted in its place
 class Refusal:
     async def __call__(self, **_kwargs: str | bool | PrismaClient | UserApiKeyCache | None) -> NoReturn:
-        raise ScriptedError("permission")
-
-
-REFUSAL: Final = Refusal()
+        raise RuntimeError("permission")
 
 
 def run(input_value: Call) -> Answer:
     if input_value["in_memory_ttl"] != DEFAULT_IN_MEMORY_TTL:
         raise ValueError("in_memory_ttl must equal the DEFAULT_IN_MEMORY_TTL the case env sets")
     board = Board(input_value)
-    journal = Journal(board)
     logger = logging.getLogger("LiteLLM Proxy")
     level = logger.level
     handlers = logger.handlers
@@ -231,7 +218,7 @@ def run(input_value: Call) -> Answer:
     last_db_access_time.clear()
     time.time = board
     logger.setLevel(logging.DEBUG)
-    logger.handlers = [journal]
+    logger.handlers = [board]
     team_endpoints.new_team = Provisioner(board)  # pyright: ignore[reportAttributeAccessIssue, reportAssignmentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3152-L3163
     try:
         return asyncio.run(answer(input_value, board))
@@ -256,7 +243,7 @@ async def answer(call: Call, board: Board) -> Answer:
         board.fail = list(step["fail"])
         board.events = []
         board.logs = []
-        auth_checks.get_object_permission = REFUSAL if "permission" in board.fail else get_object_permission  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3981
+        auth_checks.get_object_permission = Refusal() if "permission" in board.fail else get_object_permission  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3981
         value: TeamView | GroupView | None = None
         error: Failure | None = None
         try:
@@ -274,16 +261,13 @@ async def answer(call: Call, board: Board) -> Answer:
 async def lookup(call: Call, client: Client | None, cache: KeyCache) -> TeamView | GroupView:
     target = call["target"]
     flags = call["flags"]
+    cache_only = "cache_only" in flags
     db_only = "db_only" in flags
     match call["function"]:
         case "team":
+            upsert = "upsert" in flags
             team = await get_team_object(
-                target,
-                client,
-                cache,
-                check_cache_only="cache_only" in flags,
-                check_db_only=db_only,
-                team_id_upsert="upsert" in flags,
+                target, client, cache, check_cache_only=cache_only, check_db_only=db_only, team_id_upsert=upsert
             )
             return team_view(team)
         case "alias":
