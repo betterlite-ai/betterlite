@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::mem::take;
 use std::sync::{Arc, PoisonError};
 
 use betterlite_logging::fields::payload::records::StandardLoggingMetadata;
@@ -23,6 +24,7 @@ use betterlite_redis::cache_primitives::pipeline_increment::IncrementOperation;
 use serde_json::{Value, json};
 use tokio::runtime::Builder;
 use tokio::sync::Mutex as AsyncMutex;
+use tracing::subscriber::set_default;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::registry;
 
@@ -40,7 +42,7 @@ struct Fixture {
 
 fn dependencies() -> Fixture {
     let usage = Arc::new(RecordedPipelines::default());
-    let increments: Arc<dyn UsageIncrements> = Arc::clone(&usage);
+    let increments: Arc<dyn UsageIncrements> = Arc::<RecordedPipelines>::clone(&usage);
     Fixture {
         gauges: ConcurrencyGauges {
             cache: Arc::new(SilentGauges),
@@ -130,7 +132,7 @@ fn headers_map(entries: &BTreeMap<String, Json>) -> AdditionalHeaders {
 pub(crate) fn log_success_answer(case: &LogSuccessCase) -> HelperResult {
     let logs = PriorityLogs::default();
     let runtime = Builder::new_current_thread().build()?;
-    let guard = tracing::subscriber::set_default(registry().with(logs.clone()));
+    let guard = set_default(registry().with(logs.clone()));
     let pipelines = runtime.block_on(log_success_run(case));
     drop(guard);
     let priority_logged = logs
@@ -162,7 +164,7 @@ async fn log_success_run(case: &LogSuccessCase) -> Vec<Vec<IncrementOperation>> 
         .lines
         .lock()
         .unwrap_or_else(PoisonError::into_inner);
-    std::mem::take(&mut *lines)
+    take(&mut *lines)
 }
 
 fn standard_metadata(case: &LogSuccessCase) -> StandardLoggingMetadata {

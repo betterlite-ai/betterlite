@@ -2,7 +2,6 @@
 
 use betterlite_config::sections::rate_limit_usage::TokenRateLimitType;
 use betterlite_logging::fields::payload::records::StandardLoggingMetadata;
-use betterlite_redis::cache_primitives::pipeline_increment::IncrementOperation;
 
 use super::tests::support::{CallbackFixture, Capture, WINDOW, logging_metadata, policy, usage};
 use crate::dynamic_callbacks::{LogSuccessEvent, log_success_event};

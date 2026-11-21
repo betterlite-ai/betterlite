@@ -156,7 +156,7 @@ impl Default for CallbackFixture {
 impl CallbackFixture {
     pub(crate) fn new() -> Self {
         let usage = Arc::new(RecordingUsage::default());
-        let incremented: Arc<dyn UsageIncrements> = Arc::clone(&usage);
+        let incremented: Arc<dyn UsageIncrements> = Arc::<RecordingUsage>::clone(&usage);
         Self {
             usage,
             store: RecordingStore::default(),
@@ -322,10 +322,10 @@ impl<S: Subscriber> Layer<S> for MessageLog {
     fn on_event(&self, event: &Event<'_>, _context: Context<'_, S>) {
         let mut fields = MessageFields::default();
         event.record(&mut fields);
-        if let Some(message) = fields.0
+        if !fields.0.is_empty()
             && let Ok(mut messages) = self.0.lock()
         {
-            messages.push(message);
+            messages.push(fields.0);
         }
     }
 }
