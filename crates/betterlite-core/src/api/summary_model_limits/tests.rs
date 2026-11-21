@@ -97,18 +97,27 @@ async fn budget_scope_arguments_skip_empty_budgets_and_null_ids() {
     assert_eq!(budgets.calls(), Vec::new());
 }
 
+#[rstest]
+#[case::key("token", "key")]
+#[case::user("user_id", "user")]
+#[case::team("team_id", "team")]
+#[case::end_user("end_user_id", "end-user")]
 #[tokio::test]
-async fn budget_scope_arguments_check_empty_string_ids() {
+async fn budget_scope_arguments_check_empty_string_ids(
+    #[case] field: &'static str,
+    #[case] scope: &'static str,
+) {
     let budgets = FakeBudgets::default();
     let mut fields: BTreeMap<String, JsonData> = serde_json::from_str(EVERY_SCOPE).unwrap();
-    for id in ["token", "user_id", "team_id", "end_user_id"] {
-        fields.insert(id.to_owned(), JsonData::String(String::new()));
-    }
+    fields.insert(field.to_owned(), JsonData::String(String::new()));
     let auth = UserAPIKeyAuth::construct(AuthInput::Dict(fields)).unwrap();
     let allowed = summary_model_within_budget(Some(&auth), Some(&budgets), MODEL).await;
     assert!(allowed.unwrap());
-    let ids: Vec<String> = budgets.calls().into_iter().map(|call| call.id).collect();
-    assert_eq!(ids, vec![String::new(); 4]);
+    let found = budgets
+        .calls()
+        .into_iter()
+        .find(|checked| checked.scope == scope);
+    assert_eq!(found, Some(call(scope, "")));
 }
 
 #[tokio::test]
