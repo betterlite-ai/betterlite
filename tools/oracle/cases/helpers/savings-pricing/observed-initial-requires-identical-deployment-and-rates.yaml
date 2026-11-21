@@ -1,0 +1,43 @@
+kind: helper
+name: observed-initial-requires-identical-deployment-and-rates
+call:
+  savings_pricing:
+    operation: compute_autorouter_savings
+    baseline_model: anthropic/baseline-model
+    selected_model: anthropic/baseline-model
+    usage:
+      prompt_tokens: 10
+      completion_tokens: 4
+      total_tokens: 14
+    baseline_usage:
+      prompt_tokens: 10
+      completion_tokens: 4
+      total_tokens: 14
+    selected_info:
+      key: baseline-model
+      max_tokens: null
+      max_input_tokens: null
+      max_output_tokens: null
+      input_cost_per_token: 0.5
+      output_cost_per_token: 2.0
+      litellm_provider: anthropic
+      mode: chat
+      supported_openai_params: null
+    baseline_info:
+      key: baseline-model
+      max_tokens: null
+      max_input_tokens: null
+      max_output_tokens: null
+      input_cost_per_token: 0.5
+      output_cost_per_token: 2.0
+      litellm_provider: anthropic
+      mode: chat
+      supported_openai_params: null
+    cost_breakdown:
+      input_cost: 4.0
+      output_cost: 9.0
+    baseline_deployment_id: dep-a
+    selected_deployment_id: dep-b
+    baseline_provenance: observed_initial
+compare: {ignore: []}
+env: {}

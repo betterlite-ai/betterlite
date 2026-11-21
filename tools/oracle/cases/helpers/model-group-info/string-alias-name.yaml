@@ -1,0 +1,62 @@
+kind: helper
+name: string-alias-name
+call:
+  model_group_info:
+    {
+      "model_group": "alias",
+      "model_list": [
+        {
+          "model_name": "target",
+          "litellm_params": {
+            "model": "openai/b846-target"
+          },
+          "model_info": {
+            "id": "a"
+          }
+        }
+      ],
+      "model_group_alias": {
+        "alias": "target"
+      },
+      "deployment_info": {
+        "a": {
+          "mode": "chat"
+        }
+      },
+      "model_cost": {},
+      "parameters": {},
+      "lookup_error": false,
+      "provider_error": "none",
+      "missing_ids": []
+    }
+calls:
+  - model_group_info:
+      {
+        "model_group": "empty",
+        "model_list": [
+          {
+            "model_name": "target",
+            "litellm_params": {
+              "model": "openai/b846-target"
+            },
+            "model_info": {
+              "id": "a"
+            }
+          }
+        ],
+        "model_group_alias": {
+          "empty": ""
+        },
+        "deployment_info": {
+          "a": {
+            "mode": "chat"
+          }
+        },
+        "model_cost": {},
+        "parameters": {},
+        "lookup_error": false,
+        "provider_error": "none",
+        "missing_ids": []
+      }
+env: {}
+compare: {ignore: []}

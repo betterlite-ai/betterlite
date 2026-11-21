@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use crate::cost_service::{CostService, CostServiceError, Policies, name_normalizers};
+use crate::savings::Context;
 use crate::state::shared::Shared;
 use betterlite_config::types::Config;
 use betterlite_core::cost::completion::lookup::{CatalogLookup, LookupSettings};
@@ -35,6 +36,18 @@ impl Slot {
                 TimeZoneDatabase::from_env(),
             ),
         }
+    }
+
+    // No router is bound to this resource, so savings prices by the public lookup alone.
+    #[must_use]
+    pub const fn savings(&self) -> Option<Context<'_>> {
+        let Ok(service) = &self.service else {
+            return None;
+        };
+        Some(Context {
+            lookup: &service.lookup,
+            deployments: None,
+        })
     }
 }
 

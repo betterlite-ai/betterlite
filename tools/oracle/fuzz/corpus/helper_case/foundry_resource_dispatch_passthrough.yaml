@@ -1,0 +1,11 @@
+kind: helper
+name: foundry-resource-dispatch-passthrough-seed
+call:
+  foundry_resource_dispatch:
+    case: passthrough
+    model: azure/azureml_model
+    endpoint: /providers/custom/route
+    status: 200
+    body: '{"result":"seed"}'
+env: {}
+compare: {ignore: []}
