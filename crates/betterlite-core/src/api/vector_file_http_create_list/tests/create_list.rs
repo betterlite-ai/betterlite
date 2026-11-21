@@ -151,6 +151,46 @@ async fn create_cleans_attributes_after_the_overlay(#[case] overlay: AttributeOv
     assert_cleaned(overlay, &body_json(&wire.requests()[0]));
 }
 
+// FileParams is a sorted map, so the cap keeps the alphabetically first 16 rather than the request's first 16
+#[tokio::test]
+async fn create_caps_sorted_attributes() {
+    let settings = openai_settings();
+    let config = openai_config(&settings, "sk-provider");
+    let events = Events::new();
+    let wire = Wire::replying(Reply::json(200, FILE), &events);
+    let source = Source::new(wire.clone());
+    let deps = file_deps(&config, &source);
+    let files = params("http://mock.test/v1");
+    let request = CallRequest::new("vs_a", &files);
+    // zz is first in the request body, so LiteLLM's insertion-order cap keeps it and drops k01
+    let original = file_params(concat!(
+        r#"{"file_id":"old","attributes":{"zz":"vzz","k16":"v16","k15":"v15","k14":"v14","k13":"v13","#,
+        r#""k12":"v12","k11":"v11","k10":"v10","k09":"v09","k08":"v08","k07":"v07","k06":"v06","#,
+        r#""k05":"v05","k04":"v04","k03":"v03","k02":"v02","k01":"v01"}}"#,
+    ));
+    let mut fixture = Fixture::new("vector_store_file_create");
+    let call = file_call(&request, Operation::Create, &original, None);
+    run(&mut fixture, &deps, ClientKind::Sync, &call, &events)
+        .await
+        .expect("the create succeeds");
+    assert_eq!(wire.requests().len(), 1);
+    let Json::Object(body) = body_json(&wire.requests()[0]) else {
+        panic!("the body is an object");
+    };
+    let Some(Json::Object(attributes)) = body.get("attributes") else {
+        panic!("the attributes are an object");
+    };
+    let names: Vec<&str> = attributes.keys().map(String::as_str).collect();
+    assert_eq!(
+        names,
+        [
+            "k01", "k02", "k03", "k04", "k05", "k06", "k07", "k08", "k09", "k10", "k11", "k12",
+            "k13", "k14", "k15", "k16",
+        ]
+    );
+    assert!(!attributes.contains_key("zz"));
+}
+
 #[tokio::test]
 async fn list_query_overlay() {
     let settings = openai_settings();

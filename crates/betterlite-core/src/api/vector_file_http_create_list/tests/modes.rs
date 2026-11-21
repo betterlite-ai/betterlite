@@ -166,6 +166,73 @@ async fn create_timeout_without_a_value_names_none() {
     );
 }
 
+// no per-call timeout sends None, so each sync send falls back to the pooled client's read deadline
+#[tokio::test]
+async fn plain_sync_calls_use_the_client_deadline() {
+    let files = params("http://unused.test");
+    let original = file_params(r#"{"file_id":"file_a"}"#);
+    let query = file_params(r#"{"limit":2}"#);
+    let events = Events::new();
+    let source = ProxiedSource::new(IMPATIENT);
+    let request = CallRequest::new("vs_a", &files);
+    let slow_create = serve(
+        reply("200 OK", &[("content-type", "application/json")], "{}"),
+        Duration::from_millis(500),
+    )
+    .expect("the fixture serves");
+    let create_config = RecordingConfig::new(&format!(
+        "http://{}/v1/vector_stores/vs_a/files",
+        slow_create.address
+    ));
+    let create_deps = file_deps(&create_config, &source);
+    let mut create_fixture = Fixture::new("vector_store_file_create");
+    let create_call = file_call(&request, Operation::Create, &original, None);
+    let created = run(
+        &mut create_fixture,
+        &create_deps,
+        ClientKind::Sync,
+        &create_call,
+        &events,
+    )
+    .await;
+    let Err(FileTransportError::Provider(create_error)) = created else {
+        panic!("a timeout is a provider error");
+    };
+    assert_eq!(create_error.status_code, 408);
+    assert!(!create_error.status_code_is_synthesized);
+    assert_eq!(
+        create_error.message,
+        "litellm.Timeout: Connection timed out after None seconds."
+    );
+    let slow_list = serve(
+        reply("200 OK", &[("content-type", "application/json")], "{}"),
+        Duration::from_millis(500),
+    )
+    .expect("the fixture serves");
+    let list_config = RecordingConfig::new(&format!(
+        "http://{}/v1/vector_stores/vs_a/files",
+        slow_list.address
+    ));
+    let list_deps = file_deps(&list_config, &source);
+    let mut list_fixture = Fixture::new("vector_store_file_list");
+    let list_call = file_call(&request, Operation::List, &query, None);
+    let listed = run(
+        &mut list_fixture,
+        &list_deps,
+        ClientKind::Sync,
+        &list_call,
+        &events,
+    )
+    .await;
+    let Err(FileTransportError::Provider(list_error)) = listed else {
+        panic!("a list timeout is a provider error");
+    };
+    assert_eq!(list_error.status_code, 500);
+    assert!(list_error.status_code_is_synthesized);
+    assert!(list_error.message.contains("read timeout"));
+    assert!(list_error.headers.is_empty());
+}
+
 #[tokio::test]
 async fn list_timeout_is_a_synthesized_500() {
     let query = file_params(r#"{"limit":2}"#);

@@ -181,6 +181,32 @@ async fn oversized_reply_fails_before_parsing() {
     assert_eq!(wire.requests().len(), 1);
 }
 
+// B527's segment encoder refuses an id a path cannot carry before the pre-call runs
+#[rstest]
+#[case::empty("")]
+#[case::dot(".")]
+#[case::dot_dot("..")]
+#[tokio::test]
+async fn an_unusable_id_sends_nothing(#[case] id: &str) {
+    let settings = openai_settings();
+    let config = openai_config(&settings, "sk-provider");
+    let events = Events::new();
+    let wire = Wire::replying(Reply::json(200, FILE), &events);
+    let source = Source::new(wire.clone());
+    let deps = file_deps(&config, &source);
+    let files = params("http://mock.test/v1");
+    let request = CallRequest::new(id, &files);
+    let original = file_params(r#"{"file_id":"file_a"}"#);
+    let mut fixture = Fixture::new("vector_store_file_create");
+    let call = file_call(&request, Operation::Create, &original, None);
+    let result = run(&mut fixture, &deps, ClientKind::Sync, &call, &events).await;
+    let Err(FileTransportError::Url(_)) = result else {
+        panic!("an id the path cannot carry is a typed URL error");
+    };
+    assert!(wire.requests().is_empty());
+    assert!(events.recorded().is_empty());
+}
+
 #[tokio::test]
 async fn preparation_failures_send_nothing() {
     url_failures_send_nothing().await;
