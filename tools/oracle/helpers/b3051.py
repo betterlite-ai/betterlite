@@ -2,11 +2,13 @@ import asyncio
 from typing import Literal, TypeAlias, TypedDict
 
 import litellm
-from litellm.caching.caching import DualCache
+from litellm.caching.dual_cache import DualCache
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.hooks import dynamic_rate_limiter_v3
 from litellm.proxy.hooks.parallel_request_limiter_v3 import (
     RateLimitDescriptor,
+)
+from litellm.proxy.hooks.parallel_request_limiter_v3 import (
     RateLimitDescriptorRateLimitObject as RateLimitObject,
 )
 from litellm.router import Router
