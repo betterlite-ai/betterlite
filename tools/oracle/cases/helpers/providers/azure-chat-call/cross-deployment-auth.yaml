@@ -1,0 +1,14 @@
+kind: helper
+name: azure-chat-call-cross-deployment-auth
+call:
+  azure_chat_call:
+    function: completion
+    cases:
+      - model: gpt-4o-deployment
+        messages:
+          - {role: user, content: hi}
+        api_key: null
+        azure_ad_token: ad-token
+        litellm_params: {azure_ad_token: ad-token}
+env: {}
+compare: {ignore: []}
