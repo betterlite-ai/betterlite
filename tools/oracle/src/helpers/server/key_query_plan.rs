@@ -124,7 +124,7 @@ fn filters_answer(args: &FilterArgs, now: &str) -> Result<Value, Box<HelperError
     )))
 }
 
-fn matching(substring: bool) -> TextMatching {
+const fn matching(substring: bool) -> TextMatching {
     if substring {
         TextMatching::Substring
     } else {
