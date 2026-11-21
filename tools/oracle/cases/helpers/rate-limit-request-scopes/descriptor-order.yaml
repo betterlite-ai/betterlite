@@ -1,0 +1,59 @@
+kind: helper
+name: rate-limit-request-scopes-descriptor-order
+call:
+  b3040:
+    function: assemble
+    auth:
+      api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      rpm_limit: 10
+      user_id: u1
+      user_rpm_limit: 2
+      team_id: team-1
+      team_rpm_limit: 3
+      team_member_rpm_limit: 4
+      end_user_id: e1
+      end_user_rpm_limit: 5
+      agent_id: agent-1
+      org_id: org-1
+      organization_rpm_limit: 21
+      project_id: project-1
+      metadata:
+        model_rpm_limit:
+          gpt-4: 7
+        tag_rpm_limit:
+          t1: 8
+      team_metadata:
+        model_tpm_limit:
+          gpt-4: 6
+      project_metadata:
+        model_rpm_limit:
+          gpt-4: 9
+        model_itpm_limit:
+          gpt-4: 11
+        model_otpm_limit:
+          gpt-4: 12
+      organization_metadata:
+        model_rpm_limit:
+          gpt-4: 13
+    server:
+      managed_agent_policy:
+        agent_id: agent-1
+        agent_name: agent-1
+        agent_card_params: {}
+        rpm_limit: 14
+    data:
+      model: gpt4
+      metadata:
+        tags:
+          - t1
+    call_type: null
+    groups:
+      gpt4: gpt-4
+    registry: []
+    tag_limits:
+      - tag_name: t1
+        rpm_limit: 8
+        tpm_limit: null
+    window_size: 60
+env: {}
+compare: {ignore: []}

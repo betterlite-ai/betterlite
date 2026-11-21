@@ -1,4 +1,4 @@
-use std::net::{SocketAddr, TcpListener};
+use std::net::SocketAddr;
 use std::str::from_utf8;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -282,13 +282,6 @@ pub(crate) fn clients() -> HttpClients {
         base::policy(Verification::Enabled, None),
         base::proxy_policy(&[]),
     )
-}
-
-pub(crate) fn dead_address() -> SocketAddr {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
-    address
 }
 
 pub(crate) fn caller_headers(entries: &[(&str, &str)]) -> RequestHeaders {

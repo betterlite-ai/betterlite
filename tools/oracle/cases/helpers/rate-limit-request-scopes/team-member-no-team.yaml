@@ -1,0 +1,40 @@
+kind: helper
+name: rate-limit-request-scopes-team-member-no-team
+call:
+  b3040:
+    function: create
+    auth:
+      api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      user_id: u1
+      team_member_rpm_limit: 5
+    server: {}
+    data: {}
+    rpm_limit_type: null
+    tpm_limit_type: null
+    model_has_failures: false
+    call_type: null
+    groups: {}
+    registry: []
+    tag_limits: []
+    window_size: 60
+calls:
+  - b3040:
+      function: create
+      auth:
+        api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        user_id: ""
+        user_rpm_limit: 4
+        team_id: team-1
+        team_member_rpm_limit: 5
+      server: {}
+      data: {}
+      rpm_limit_type: null
+      tpm_limit_type: null
+      model_has_failures: false
+      call_type: null
+      groups: {}
+      registry: []
+      tag_limits: []
+      window_size: 60
+env: {}
+compare: {ignore: []}

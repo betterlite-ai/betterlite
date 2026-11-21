@@ -221,6 +221,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "file_upload_location"
+path = "fuzz_targets/file_upload_location.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "file_upload_validation"
 path = "fuzz_targets/file_upload_validation.rs"
 test = false
@@ -489,6 +496,13 @@ bench = false
 [[bin]]
 name = "gemini_upload_reply"
 path = "fuzz_targets/gemini_upload_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "brave_search"
+path = "fuzz_targets/brave_search.rs"
 test = false
 doc = false
 bench = false

@@ -26,6 +26,8 @@ description: >-
   90 adapters and 30 wiring, 585 total under 620. No parser is introduced above B509 and B2401.
 scope:
   paths:
+  - "tools/oracle/helpers/b933.*"
+  - "crates/betterlite-core/src/api/assistant_records/error.rs"
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/responses_lifecycle_call.rs
   - crates/betterlite-core/src/api/responses_lifecycle_call/**

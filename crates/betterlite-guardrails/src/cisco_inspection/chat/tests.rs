@@ -11,6 +11,7 @@ use axum::routing::post;
 use betterlite_config::sections::cisco_verdict_contracts::{
     Configured, FallbackAction, FlaggedAction, InspectionType, Rule,
 };
+use betterlite_test_ports::refused_port::RefusedPort;
 use secrecy::SecretString;
 use serde_json::value::RawValue;
 use tokio::net::TcpListener;
@@ -221,10 +222,8 @@ async fn inspect_chat_falls_back_to_the_key_user_id_when_no_request_user_is_set(
 
 #[tokio::test]
 async fn inspect_chat_wraps_a_transport_failure_into_a_blocked_api_error() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
-    let base = format!("http://{}", listener.local_addr().expect("addr"));
-    drop(listener);
-    let guardrail = guardrail(base);
+    let refused = RefusedPort::bind().expect("a refused port");
+    let guardrail = guardrail(format!("http://{}", refused.address));
     let mut request_data = obj("{}");
 
     let outcome = inspect_chat(

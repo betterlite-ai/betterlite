@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::net::TcpListener;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
@@ -10,6 +9,7 @@ use betterlite_guardrails::singulr::error::SingulrError;
 use betterlite_guardrails::singulr::init::SingulrArgs;
 use betterlite_guardrails::singulr::{SUPPORTED_EVENT_HOOKS, SingulrGuardrail};
 use betterlite_http::proxy::base_builder;
+use betterlite_test_ports::refused_port::RefusedPort;
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -78,7 +78,8 @@ impl Helper for Op {
 }
 
 fn scenario_value(scenario: &Scenario) -> Result<Value, Box<HelperError>> {
-    let (mock, base) = start_mock(scenario.answer.as_ref())?;
+    // the guard lives until the guardrail's request has failed, so no other socket can take the address
+    let (mock, base, _refused) = start_mock(scenario.answer.as_ref())?;
     let guardrail = build_guardrail(&scenario.settings, &base)?;
     let runtime = Builder::new_current_thread()
         .enable_all()
@@ -111,22 +112,18 @@ fn scenario_value(scenario: &Scenario) -> Result<Value, Box<HelperError>> {
 
 fn start_mock(
     scripted: Option<&UpstreamAnswer>,
-) -> Result<(Option<MockProvider>, String), Box<HelperError>> {
+) -> Result<(Option<MockProvider>, String, Option<RefusedPort>), Box<HelperError>> {
     let Some(answer) = scripted else {
-        let listener = TcpListener::bind(("127.0.0.1", 0))
-            .map_err(|error| failure("OSError", error.to_string()))?;
-        let address = listener
-            .local_addr()
-            .map_err(|error| failure("OSError", error.to_string()))?;
-        drop(listener);
-        return Ok((None, format!("http://{address}")));
+        let refused = RefusedPort::bind().map_err(|error| failure("OSError", error.to_string()))?;
+        let base = format!("http://{}", refused.address);
+        return Ok((None, base, Some(refused)));
     };
     let script = MockScript::try_from(slice::from_ref(answer))
         .map_err(|error| failure("MockError", error.to_string()))?;
     let provider =
         MockProvider::start(script).map_err(|error| failure("MockError", error.to_string()))?;
     let base = provider.base_url.clone();
-    Ok((Some(provider), base))
+    Ok((Some(provider), base, None))
 }
 
 fn build_guardrail(settings: &Settings, base: &str) -> Result<SingulrGuardrail, Box<HelperError>> {

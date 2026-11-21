@@ -39,6 +39,7 @@ uuid.workspace = true
 [dev-dependencies]
 async-trait = "0.1.92"
 betterlite-redact = { path = "../betterlite-redact" }
+betterlite-test-ports = { path = "../betterlite-test-ports" }
 mutants = "0.0.4"
 rstest = "=0.27.0"
 tokio = { workspace = true, features = ["test-util", "time"] }

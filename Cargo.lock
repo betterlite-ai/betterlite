@@ -985,6 +985,7 @@ dependencies = [
  "betterlite-router",
  "betterlite-secret-managers",
  "betterlite-server",
+ "betterlite-test-ports",
  "chrono",
  "clap",
  "croner",
@@ -1095,6 +1096,7 @@ dependencies = [
  "betterlite-prompts",
  "betterlite-redact",
  "betterlite-streaming",
+ "betterlite-test-ports",
  "betterlite-tokenizer",
  "chrono",
  "futures-util",
@@ -1154,6 +1156,7 @@ dependencies = [
  "betterlite-redis",
  "betterlite-routes",
  "betterlite-secrets",
+ "betterlite-test-ports",
  "chrono",
  "clap",
  "deadpool-postgres",
@@ -1408,6 +1411,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-redact",
  "betterlite-redis",
+ "betterlite-test-ports",
  "chrono",
  "futures-util",
  "hex",
@@ -1456,6 +1460,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-redact",
  "betterlite-secrets",
+ "betterlite-test-ports",
  "chrono",
  "clap",
  "comfy-table",
@@ -1657,6 +1662,7 @@ dependencies = [
  "betterlite-redis",
  "betterlite-semantic",
  "betterlite-streaming",
+ "betterlite-test-ports",
  "betterlite-tokenizer",
  "caseless",
  "chrono",
@@ -1764,6 +1770,7 @@ dependencies = [
  "betterlite-roi",
  "betterlite-secret-managers",
  "betterlite-secrets",
+ "betterlite-test-ports",
  "blake2",
  "bytes",
  "chrono",
@@ -2003,6 +2010,7 @@ dependencies = [
  "betterlite-redact",
  "betterlite-redis",
  "betterlite-streaming",
+ "betterlite-test-ports",
  "betterlite-tokenizer",
  "chrono",
  "fancy-regex 0.19.2",
@@ -2125,6 +2133,7 @@ dependencies = [
  "betterlite-http-fixture",
  "betterlite-interactions",
  "betterlite-models",
+ "betterlite-test-ports",
  "bytes",
  "crc32fast",
  "futures-util",
@@ -2271,6 +2280,7 @@ dependencies = [
  "betterlite-redact",
  "betterlite-secret-managers",
  "betterlite-secrets",
+ "betterlite-test-ports",
  "chrono",
  "clap",
  "csv",
@@ -2503,6 +2513,7 @@ dependencies = [
  "betterlite-redact",
  "betterlite-secret-managers",
  "betterlite-streaming",
+ "betterlite-test-ports",
  "betterlite-tokenizer",
  "chrono",
  "encoding_rs",
@@ -3166,6 +3177,7 @@ dependencies = [
  "betterlite-redact",
  "betterlite-server",
  "betterlite-streaming",
+ "betterlite-test-ports",
  "betterlite-tokenizer",
  "chrono",
  "futures-util",
@@ -3972,6 +3984,7 @@ dependencies = [
  "betterlite-logging",
  "betterlite-models",
  "betterlite-redis",
+ "betterlite-test-ports",
  "chrono",
  "fancy-regex 0.19.2",
  "futures-util",
@@ -4166,6 +4179,7 @@ dependencies = [
  "betterlite-context",
  "betterlite-core",
  "betterlite-env",
+ "betterlite-http",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-provider",
@@ -4173,8 +4187,10 @@ dependencies = [
  "betterlite-redis",
  "betterlite-secret-managers",
  "hex",
+ "http 1.5.0",
  "indexmap 2.14.2",
  "percent-encoding",
+ "quick-xml",
  "redis",
  "rstest",
  "rust_decimal",
@@ -4185,6 +4201,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+ "url",
  "uuid",
 ]
 
@@ -4254,6 +4271,7 @@ version = "0.1.0"
 dependencies = [
  "betterlite-env",
  "betterlite-redact",
+ "betterlite-test-ports",
  "crc16",
  "futures-util",
  "hex",
@@ -4572,6 +4590,7 @@ dependencies = [
  "betterlite-secrets",
  "betterlite-semantic",
  "betterlite-streaming",
+ "betterlite-test-ports",
  "betterlite-tokenizer",
  "betterlite-tracing",
  "betterlite-transcribe",
@@ -4694,6 +4713,13 @@ version = "0.0.0"
 dependencies = [
  "betterlite-streaming",
  "libfuzzer-sys",
+]
+
+[[package]]
+name = "betterlite-test-ports"
+version = "0.1.0"
+dependencies = [
+ "tokio",
 ]
 
 [[package]]
@@ -4838,6 +4864,7 @@ dependencies = [
  "betterlite-prompts",
  "betterlite-redact",
  "betterlite-streaming",
+ "betterlite-test-ports",
  "betterlite-tokenizer",
  "chrono",
  "data-encoding",

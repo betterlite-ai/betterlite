@@ -1,0 +1,110 @@
+kind: helper
+name: prometheus-usage-cache-hit-miss
+call:
+  b3877:
+    function: cache
+    values: {user: alice}
+    supported_labels:
+      litellm_cache_hits_metric: [user]
+      litellm_cache_misses_metric: [user]
+      litellm_cached_tokens_metric: [user]
+    response_cost: 0.0
+    cache_hit: true
+    total_tokens: 8
+    prompt_tokens: 0
+    completion_tokens: 0
+    usage_object: null
+calls:
+  - b3877:
+      function: cache
+      values: {user: alice}
+      supported_labels:
+        litellm_cache_hits_metric: [user]
+        litellm_cache_misses_metric: [user]
+        litellm_cached_tokens_metric: [user]
+      response_cost: 0.0
+      cache_hit: false
+      total_tokens: 8
+      prompt_tokens: 0
+      completion_tokens: 0
+      usage_object: null
+  - b3877:
+      function: cache
+      values: {user: alice}
+      supported_labels:
+        litellm_cache_hits_metric: [user]
+        litellm_cache_misses_metric: [user]
+        litellm_cached_tokens_metric: [user]
+      response_cost: 0.0
+      cache_hit: null
+      total_tokens: 8
+      prompt_tokens: 0
+      completion_tokens: 0
+      usage_object: null
+  - b3877:
+      function: cache
+      values: {user: alice}
+      supported_labels:
+        litellm_cache_hits_metric: [user]
+        litellm_cache_misses_metric: [user]
+        litellm_cached_tokens_metric: [user]
+      response_cost: 0.0
+      cache_hit: true
+      total_tokens: 0
+      prompt_tokens: 0
+      completion_tokens: 0
+      usage_object: null
+  - b3877:
+      function: cache
+      values: {user: alice}
+      supported_labels:
+        litellm_cache_hits_metric: [user]
+        litellm_cache_misses_metric: [user]
+        litellm_cached_tokens_metric: [user]
+      response_cost: 0.0
+      cache_hit: false
+      total_tokens: 8
+      prompt_tokens: 0
+      completion_tokens: 0
+      usage_object: {cache_read_input_tokens: 5, cache_creation_input_tokens: 7}
+  - b3877:
+      function: cache
+      values: {user: alice}
+      supported_labels:
+        litellm_cache_hits_metric: [user]
+        litellm_cache_misses_metric: [user]
+        litellm_cached_tokens_metric: [user]
+      response_cost: 0.0
+      cache_hit: null
+      total_tokens: 8
+      prompt_tokens: 0
+      completion_tokens: 0
+      usage_object: {prompt_tokens_details: {cached_tokens: 4, cache_write_tokens: 6}}
+  - b3877:
+      function: cache
+      values: {user: alice}
+      supported_labels:
+        litellm_cache_hits_metric: [user]
+        litellm_cache_misses_metric: [user]
+        litellm_cached_tokens_metric: [user]
+      response_cost: 0.0
+      cache_hit: null
+      total_tokens: 8
+      prompt_tokens: 0
+      completion_tokens: 0
+      usage_object: {cache_read_input_tokens: 0, prompt_tokens_details: {cached_tokens: 4}}
+  - b3877:
+      function: cache
+      values: {user: alice}
+      supported_labels:
+        litellm_cache_hits_metric: [user]
+        litellm_cache_misses_metric: [user]
+        litellm_cached_tokens_metric: [user]
+      response_cost: 0.0
+      cache_hit: null
+      total_tokens: 8
+      prompt_tokens: 0
+      completion_tokens: 0
+      usage_object: {cache_read_input_tokens: null, prompt_tokens_details: {cached_tokens: 4}}
+env: {}
+compare: {ignore: []}

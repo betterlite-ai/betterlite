@@ -1,0 +1,40 @@
+kind: sdk_http
+name: responses-lifecycle-write-delete-and-cancel-encoded-provider
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  responses_lifecycle_write:
+    runs:
+      - operation: delete
+        mode: sync
+        response_id: resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDptb2RlbC1hO3Jlc3BvbnNlX2lkOnJlc3AvYQ==
+        custom_llm_provider: anthropic
+      - operation: cancel
+        mode: async
+        response_id: resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDptb2RlbC1hO3Jlc3BvbnNlX2lkOnJlc3AvYQ==
+        custom_llm_provider: anthropic
+      - operation: delete
+        mode: async
+        response_id: resp_a
+        custom_llm_provider: openai
+        params: {api_key: sk-caller}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: resp_a, object: response, deleted: true}
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: resp_a
+      created_at: 1735689600
+      object: response
+      status: cancelled
+      model: gpt-5
+      output: []
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: resp_a, object: response, deleted: true}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore: []

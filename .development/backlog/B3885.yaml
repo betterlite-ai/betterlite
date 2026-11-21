@@ -1,7 +1,7 @@
 id: B3885
 milestone: M7 observability
 title: Prometheus service health metrics
-status: todo
+status: done
 depends_on: [B3870, B3874, B012, B3875]
 file: tasks/B3885-prometheus-service-health.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/services.py"
 parent: B111
 split_from: B111
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2807

@@ -21,6 +21,8 @@ description: >-
   130 cases, 95 adapters, 70 fuzz/replay and 30 wiring lines, totaling 790.
 scope:
   paths:
+  - "tools/oracle/src/sdk_http.rs"
+  - "crates/betterlite-vertex/**"
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/file_http_upload.rs
   - crates/betterlite-core/src/api/file_http_upload/**
@@ -121,5 +123,5 @@ pitfalls:
 - A successful 204 media response still fails the explicit 200/201 check.
 review_level: standard
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2700
   max_new_expects: 0
