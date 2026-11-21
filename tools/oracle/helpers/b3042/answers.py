@@ -61,7 +61,6 @@ def raised_json(error: RateLimitError) -> JsonValue:
     fields = RaisedFields.model_validate(error, from_attributes=True)
     rendered: dict[str, JsonValue] = {
         "status": fields.status_code,
-        "detail": fields.detail,
         "headers": JSON.validate_python(fields.headers),
         "rate_limit_type": fields.rate_limit_type,
         "category": fields.category,

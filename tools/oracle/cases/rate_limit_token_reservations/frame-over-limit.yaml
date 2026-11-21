@@ -23,6 +23,4 @@ call:
 env:
   LITELLM_RATE_LIMIT_WINDOW_SIZE: "60"
 compare:
-  ignore:
-    - pointer: /raised/detail
-      why: "betterlite writes its own rate limit message; the Rust test asserts the exact text"
+  ignore: []

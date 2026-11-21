@@ -102,7 +102,6 @@ pub(super) fn raised_json(error: &TokenReservationError) -> Result<Value, Box<He
     };
     Ok(json!({
         "status": 429_u16,
-        "detail": rejection.detail.clone(),
         "headers": headers,
         "rate_limit_type": rejection.rate_limit_type,
         "category": rejection.category,

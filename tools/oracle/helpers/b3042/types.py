@@ -63,7 +63,6 @@ Input: TypeAlias = ReserveTpmInput | RefundInput | ReserveIoInput | FrameInput
 
 class RaisedFields(BaseModel):
     status_code: int
-    detail: str
     headers: dict[str, str] | None
     rate_limit_type: str | None
     category: str
