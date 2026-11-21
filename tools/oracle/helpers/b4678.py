@@ -57,7 +57,7 @@ async def redeem(code: str, code_verifier: str) -> TokenBody:
         code_verifier=code_verifier,
         client_id="",
     )
-    return TOKEN_BODY.validate_json(response.body)
+    return TOKEN_BODY.validate_json(bytes(response.body))
 
 
 def run(input_value: Input) -> bool:
