@@ -1,7 +1,11 @@
 use std::collections::BTreeMap;
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 
+use betterlite_auth::auth_cache::{WriteOptions, gateway_cache};
+use betterlite_cache::backend::memory::local::LocalMemoryOps;
+use betterlite_cache::dual_cache::{DualCacheSettings, MAX_REDIS_BATCH_CACHE_SIZE};
 use betterlite_config::sections::settings::{DbRow, JsonValue, Section, SettingsStore};
+use betterlite_models::decisions::Json;
 
 use crate::cleanup_schedule::cache_size::{CACHE_MAX_SIZE_KEY, on_cache_size_changed};
 use crate::cleanup_schedule::ports::CacheMaxSize;
@@ -39,6 +43,46 @@ fn applied_store(value: JsonValue) -> SettingsStore {
     let mut store = SettingsStore::from(Section::GeneralSettings);
     store.apply_db_row(DbRow::GeneralSettings, db_row(value));
     store
+}
+
+#[test]
+fn the_auth_cache_port_applies_the_max_size_to_the_memory_tier() {
+    let clock: Arc<dyn Fn() -> f64 + Send + Sync> = Arc::new(|| 1000.0_f64);
+    let memory = Arc::new(LocalMemoryOps::new(1024, clock).unwrap());
+    let cache = gateway_cache(
+        Arc::clone(&memory),
+        memory,
+        None,
+        DualCacheSettings {
+            default_in_memory_ttl: Some(60.0_f64),
+            default_redis_ttl: None,
+            batch_cache_expiry: None,
+            max_redis_batch_cache_size: MAX_REDIS_BATCH_CACHE_SIZE,
+            redis_delete_chunk_size: MAX_REDIS_BATCH_CACHE_SIZE,
+        },
+        45.0_f64,
+    );
+    CacheMaxSize::resize(&cache, Some(1));
+    let options = WriteOptions {
+        ttl: None,
+        local_only: true,
+        refresh_ttl: false,
+    };
+    cache
+        .set(Some("tag:first"), &Json::Text("first".to_owned()), options)
+        .unwrap();
+    cache
+        .set(
+            Some("tag:second"),
+            &Json::Text("second".to_owned()),
+            options,
+        )
+        .unwrap();
+    assert_eq!(cache.get("tag:first", true), None);
+    assert_eq!(
+        cache.get("tag:second", true),
+        Some(Json::Text("second".to_owned()))
+    );
 }
 
 #[test]

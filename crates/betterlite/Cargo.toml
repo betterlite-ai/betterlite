@@ -36,6 +36,7 @@ whoami = "2.1.3"
 workspace = true
 
 [dev-dependencies]
+betterlite-cache = { path = "../betterlite-cache" }
 betterlite-server = { path = "../betterlite-server", features = ["testing"] }
 betterlite-test-ports = { path = "../betterlite-test-ports" }
 rstest = "=0.27.0"

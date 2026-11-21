@@ -2,14 +2,16 @@ use betterlite_config::sections::settings::{JsonValue, SettingsStore};
 use chrono::TimeDelta;
 
 use crate::cleanup_schedule::changes::{CleanupScheduleState, ScheduleChange, on_settings_changed};
-use crate::cleanup_schedule::ports::CleanupScheduler;
+use crate::cleanup_schedule::ports::{CleanupScheduler, cleanup_job_spec};
 use crate::cleanup_schedule::schedule::{CleanupSchedule, cleanup_schedule_of};
 use crate::cleanup_schedule::trigger::ScheduleContext;
 use crate::cleanup_schedule::{CLEANUP_CRON_KEY, RETENTION_PERIOD_KEY, SPEND_LOG_CLEANUP_JOB_ID};
 use crate::job_scheduler::SchedulerState;
+use crate::job_scheduler::triggers::IntervalTrigger;
 
 use super::support::{
-    capture_logs, fixture, noop_job, origin, period_of, recording, retained, store, with_job,
+    capture_logs, fixture, noop_job, origin, period_of, proxy_scheduler, recording, retained,
+    store, with_job,
 };
 
 fn apply(
@@ -221,6 +223,84 @@ fn removing_an_absent_job_is_a_no_op() {
     );
     assert!(scheduler.removals.is_empty());
     assert_eq!(state.last_attempt, Some(CleanupSchedule::default()));
+}
+
+#[test]
+fn an_unchanged_schedule_without_retention_keys_removes_the_live_job() {
+    let fixture = fixture();
+    let settings = store(&[]);
+    let previous = CleanupSchedule::default();
+    let mut scheduler = with_job(recording(SchedulerState::Paused));
+    let mut state = CleanupScheduleState::default();
+    apply(
+        Some(&mut scheduler),
+        &previous,
+        &settings,
+        &fixture.context(),
+        &mut state,
+    );
+    assert_eq!(
+        scheduler.removals,
+        vec![SPEND_LOG_CLEANUP_JOB_ID.to_owned()]
+    );
+    assert!(scheduler.jobs.is_empty());
+    assert_eq!(state.last_attempt, Some(CleanupSchedule::default()));
+}
+
+#[test]
+fn a_live_job_without_a_recorded_attempt_and_an_unchanged_schedule_is_left_alone() {
+    let fixture = fixture();
+    let settings = retained("30d");
+    let previous = cleanup_schedule_of(&settings);
+    let mut scheduler = with_job(recording(SchedulerState::Paused));
+    let mut state = CleanupScheduleState::default();
+    apply(
+        Some(&mut scheduler),
+        &previous,
+        &settings,
+        &fixture.context(),
+        &mut state,
+    );
+    assert_eq!(scheduler.inserted, 0);
+    assert!(scheduler.removals.is_empty());
+}
+
+#[test]
+fn a_missing_job_is_added_when_the_recorded_attempt_differs_from_the_schedule() {
+    let fixture = fixture();
+    let settings = retained("30d");
+    let current = cleanup_schedule_of(&settings);
+    let mut scheduler = recording(SchedulerState::Paused);
+    let mut state = CleanupScheduleState {
+        last_attempt: Some(cleanup_schedule_of(&retained("60d"))),
+        reschedule_failed: false,
+    };
+    apply(
+        Some(&mut scheduler),
+        &current,
+        &settings,
+        &fixture.context(),
+        &mut state,
+    );
+    assert_eq!(scheduler.inserted, 1);
+    assert_eq!(state.last_attempt, Some(current));
+}
+
+#[tokio::test]
+async fn the_proxy_scheduler_port_reports_its_state_and_jobs() {
+    let mut scheduler = proxy_scheduler();
+    scheduler.start();
+    scheduler.pause();
+    assert_eq!(scheduler.scheduler_state(), SchedulerState::Paused);
+    assert!(!scheduler.has_job(SPEND_LOG_CLEANUP_JOB_ID));
+    let spec = cleanup_job_spec(Box::new(IntervalTrigger { seconds: 60 }), noop_job());
+    scheduler.insert_job(spec).unwrap();
+    assert!(scheduler.has_job(SPEND_LOG_CLEANUP_JOB_ID));
+    scheduler
+        .remove_existing_job(SPEND_LOG_CLEANUP_JOB_ID)
+        .unwrap();
+    assert!(!scheduler.has_job(SPEND_LOG_CLEANUP_JOB_ID));
+    scheduler.shutdown();
 }
 
 #[test]
