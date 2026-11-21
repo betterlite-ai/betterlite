@@ -38,15 +38,16 @@ impl Mode {
     }
 }
 
-// The four handlers' inputs: the operation and its mode, the id, the typed params and the three overrides
+// The four handlers' inputs: the operation and its mode, the id, the create body, the query params and the three overrides
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Call {
     pub operation: Operation,
     pub mode: Mode,
     pub vector_store_id: String,
+    // the attribute cap reads this body in the case's order on LiteLLM's side, so it is not the sorted map betterlite parses
     #[serde(default)]
-    pub create_request: FileParams,
+    pub create_request: IndexMap<String, Json>,
     #[serde(default)]
     pub query_params: FileParams,
     #[serde(default)]
