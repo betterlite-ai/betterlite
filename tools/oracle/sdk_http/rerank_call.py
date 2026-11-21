@@ -4,7 +4,7 @@ from typing import Final, Literal, TypeAlias
 
 import litellm
 from litellm.types.rerank import RerankResponse
-from openai import APIConnectionError, APIStatusError
+from openai import APIConnectionError, APIError, APIStatusError
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
 MOCK: Final = "{mock}"
@@ -91,21 +91,10 @@ async def settled(work: Work) -> RerankResponse:
             return work
 
 
-def status_failure(error: APIStatusError) -> Failure:
+def failure_of(error: APIError, status: int | None) -> Failure:
     return Failure(
         class_name=type(error).__name__,
-        status=error.status_code,
-        kind=error.type,
-        param=error.param,
-        code=error.code,
-        message=error.message,
-    )
-
-
-def connection_failure(error: APIConnectionError) -> Failure:
-    return Failure(
-        class_name=type(error).__name__,
-        status=CONNECTION_STATUS,
+        status=status,
         kind=error.type,
         param=error.param,
         code=error.code,
@@ -129,9 +118,9 @@ async def run_outcome(run: Run, api_base: str) -> RunOutcome:
         )
         answer: RerankResponse = await settled(work)
     except APIStatusError as error:
-        return RunOutcome(failure=status_failure(error))
+        return RunOutcome(failure=failure_of(error, error.status_code))
     except APIConnectionError as error:
-        return RunOutcome(failure=connection_failure(error))
+        return RunOutcome(failure=failure_of(error, CONNECTION_STATUS))
     return RunOutcome(result=JSON.validate_json(answer.model_dump_json()))
 
 
