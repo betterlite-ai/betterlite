@@ -6,7 +6,7 @@ use std::fs::{self, File};
 use std::ops::ControlFlow;
 use std::path::Path;
 
-use crate::dispatch::attempt::{UNFINISHED_NOTE, remove_extra_targets};
+use crate::dispatch::attempt::remove_extra_targets;
 use crate::dispatch::chain::Chain;
 use crate::dispatch::progress::{NextRun, Panel, Progress, Red, ReviewerPin, WorkerSession};
 use crate::dispatch::prompt::Brief;
@@ -217,7 +217,7 @@ fn a_restarted_dispatch_goes_on_from_the_saved_rung() {
         "ERROR: You've hit your usage limit.",
     )
     .unwrap();
-    mark(folder.path(), "anthropic-2", "You've hit your limit").unwrap();
+    mark(folder.path(), "anthropic", "You've hit your limit").unwrap();
     let places = Places {
         worktree: folder.path(),
         journal: folder.path(),
@@ -295,7 +295,7 @@ fn a_blocked_worker_resumes_its_session_once_then_stops_on_its_rung() {
 }
 
 #[test]
-fn a_blocked_answer_while_its_own_gate_run_is_unfinished_is_not_counted() {
+fn a_blocked_answer_counts_when_a_killed_stop_hook_left_its_gate_run_open() {
     let (mut agents, task) = fixtures();
     claude_answers(
         &mut agents,
@@ -317,10 +317,10 @@ fn a_blocked_answer_while_its_own_gate_run_is_unfinished_is_not_counted() {
     .unwrap_err();
     assert!(error.to_string().contains("2 blocked reports in a row"));
     let resumed = fs::read_to_string(folder.path().join("resumed")).unwrap();
-    assert_eq!(resumed, "s1\ns1\n");
+    assert_eq!(resumed, "s1\n");
     let prompts = fs::read_to_string(folder.path().join("prompts")).unwrap();
-    assert!(prompts.contains(UNFINISHED_NOTE), "{prompts}");
-    assert_eq!((progress.number, progress.used), (3, 1));
+    assert!(prompts.contains(BLOCKED_NOTE), "{prompts}");
+    assert_eq!((progress.number, progress.used), (2, 1));
 }
 
 #[test]
@@ -357,7 +357,7 @@ fn a_rung_pauses_without_a_run_while_every_vendor_it_can_use_is_at_its_limit() {
         "ERROR: You've hit your usage limit.",
     )
     .unwrap();
-    mark(folder.path(), "anthropic-2", "You've hit your limit").unwrap();
+    mark(folder.path(), "anthropic", "You've hit your limit").unwrap();
     let places = Places {
         worktree: folder.path(),
         journal: folder.path(),
@@ -395,7 +395,7 @@ fn a_limited_vendor_sends_the_start_to_the_other_vendor_at_the_same_level() {
     .unwrap();
     assert_eq!(pick(0).as_deref(), Some("claude-sonnet-5-5"));
     assert_eq!(pick(3).as_deref(), Some("claude-opus-5-5"));
-    mark(folder.path(), "anthropic-2", "You've hit your limit").unwrap();
+    mark(folder.path(), "anthropic", "You've hit your limit").unwrap();
     assert_eq!(pick(3), None);
 }
 
@@ -403,7 +403,7 @@ fn a_limited_vendor_sends_the_start_to_the_other_vendor_at_the_same_level() {
 fn a_limited_claude_rung_runs_on_the_open_codex_rung_at_its_level() {
     let (agents, _) = fixtures();
     let folder = tempfile::tempdir().unwrap();
-    mark(folder.path(), "anthropic-2", "You've hit your limit").unwrap();
+    mark(folder.path(), "anthropic", "You've hit your limit").unwrap();
     let chain = Chain::new(&agents).unwrap();
     let mut progress = progress();
     progress.fit(&agents.roles.worker.ladder);
@@ -489,7 +489,7 @@ fn a_dispatch_stopped_by_a_usage_limit_keeps_its_place() {
         "ERROR: You've hit your usage limit.",
     )
     .unwrap();
-    mark(folder.path(), "anthropic-2", "You've hit your limit").unwrap();
+    mark(folder.path(), "anthropic", "You've hit your limit").unwrap();
     let places = Places {
         worktree: folder.path(),
         journal: folder.path(),
@@ -509,7 +509,7 @@ fn a_dispatch_stopped_by_a_usage_limit_keeps_its_place() {
     let error = run_ladder(&agents, &brief, &places, &mut loaded, 0).unwrap_err();
     assert!(matches!(error, GateError::Unavailable { .. }));
     assert!(error.to_string().contains(
-        "every runner left on the worker ladder is unavailable (openai is at its usage limit: ERROR: You've hit your usage limit.; anthropic-2 is at its usage limit: You've hit your limit); last feedback: the saved findings"
+        "every runner left on the worker ladder is unavailable (openai is at its usage limit: ERROR: You've hit your usage limit.; anthropic is at its usage limit: You've hit your limit); last feedback: the saved findings"
     ));
     saved.limited = true;
     assert_eq!(loaded, saved);
@@ -527,7 +527,7 @@ fn a_task_with_only_limited_vendors_left_waits_while_another_vendor_is_up() {
         "ERROR: You've hit your usage limit.",
     )
     .unwrap();
-    mark(folder.path(), "anthropic-2", "You've hit your limit").unwrap();
+    mark(folder.path(), "anthropic", "You've hit your limit").unwrap();
     ladder_available(folder.path(), &agents, folder.path(), "B000").unwrap();
     let mut saved = progress();
     saved.used = 3;
@@ -686,13 +686,13 @@ fn no_start_moves_while_the_other_vendor_is_full_or_at_its_limit() {
     let writers = agents
         .vendors
         .iter()
-        .find(|vendor| vendor.id == "anthropic-2")
+        .find(|vendor| vendor.id == "anthropic")
         .and_then(|vendor| vendor.max_writers)
         .unwrap();
-    let anthropic = hold_seats(folder.path(), "anthropic-2-writer", writers);
+    let anthropic = hold_seats(folder.path(), "anthropic-writer", writers);
     assert_eq!(pick().as_deref(), Some("gpt-6-luna"));
     drop(anthropic);
-    mark(folder.path(), "anthropic-2", "You've hit your limit").unwrap();
+    mark(folder.path(), "anthropic", "You've hit your limit").unwrap();
     assert_eq!(pick().as_deref(), Some("gpt-6-luna"));
     drop(openai);
 }

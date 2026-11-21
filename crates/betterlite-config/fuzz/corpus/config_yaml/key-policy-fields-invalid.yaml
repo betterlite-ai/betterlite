@@ -1,0 +1,4 @@
+model_list: []
+litellm_settings:
+  enable_key_alias_format_validation: true
+  key_alias_pattern: '('

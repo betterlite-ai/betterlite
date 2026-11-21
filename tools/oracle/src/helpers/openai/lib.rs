@@ -6,7 +6,7 @@
 
 betterlite_oracle_helper_api::helper_group! {
     "agent_host_policy" => agent_host_policy, "aleph_alpha" => aleph_alpha,
-    "audio_file_input" => audio_file_input, "audio_subtitles" => audio_subtitles, "b3360" => b3360,
+    "audio_file_input" => audio_file_input, "audio_subtitles" => audio_subtitles, "b10022" => b10022, "b3360" => b3360,
     "b3512" => b3512, "b5830" => b5830, "b5831" => b5831, "b5832" => b5832, "b5833" => b5833,
     "b5834" => b5834, "b5835" => b5835, "b5836" => b5836, "b5837" => b5837, "b5838" => b5838,
     "b5848" => b5848, "b5960" => b5960, "b5970" => b5970, "b5971" => b5971, "b5990" => b5990,

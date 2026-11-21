@@ -17,6 +17,7 @@ use serde::Serialize;
 use crate::logging_metadata::decode::{DecodeError, decode};
 
 pub const BATCH_COST_REQUEST_ID_SUFFIX: &str = "_batch_cost";
+const ARETRIEVE_BATCH: &str = "aretrieve_batch";
 const LITELLM_PARAMS_RECORD: &str = "litellm params";
 const METADATA_BUCKETS: [&str; 2] = ["metadata", "litellm_metadata"];
 pub const MAX_MODEL_NAME_LENGTH: usize = 256;
@@ -100,6 +101,25 @@ pub(crate) fn nonempty_text(value: Option<&Json>) -> Option<&str> {
     None
 }
 
+// get_spend_logs_id over plain ids: the first nonempty string, with the batch suffix for aretrieve_batch.
+#[must_use]
+pub fn spend_logs_id_from_ids(
+    call_type: &str,
+    response_id: Option<&str>,
+    payload_id: Option<&str>,
+    call_id: Option<&str>,
+) -> Option<String> {
+    let candidates = [response_id, payload_id, call_id];
+    let resolved = candidates
+        .into_iter()
+        .flatten()
+        .find(|value| !value.is_empty())?;
+    if call_type == ARETRIEVE_BATCH {
+        return Some(format!("{resolved}{BATCH_COST_REQUEST_ID_SUFFIX}"));
+    }
+    Some(resolved.to_owned())
+}
+
 // get_spend_logs_id: the first nonempty string among the response id, the standard payload id and the call id.
 #[must_use]
 pub fn spend_logs_id(
@@ -111,16 +131,22 @@ pub fn spend_logs_id(
         .get("standard_logging_object")
         .and_then(as_object)
         .and_then(|payload| nonempty_text(payload.get("id")));
-    let candidates = [
+    spend_logs_id_from_ids(
+        call_type,
         nonempty_text(response_obj.get("id")),
         standard_logging_id,
         nonempty_text(kwargs.get("litellm_call_id")),
-    ];
-    let resolved = candidates.into_iter().flatten().next()?;
-    if call_type == "aretrieve_batch" {
-        return Some(format!("{resolved}{BATCH_COST_REQUEST_ID_SUFFIX}"));
+    )
+}
+
+// str(cache_hit): Python capitalizes its booleans and writes None.
+#[must_use]
+pub fn cache_hit_text(value: Option<bool>) -> String {
+    match value {
+        Some(true) => "True".to_owned(),
+        Some(false) => "False".to_owned(),
+        None => "None".to_owned(),
     }
-    Some(resolved.to_owned())
 }
 
 // _get_status_for_spend_log: only the exact string failure is a failure.

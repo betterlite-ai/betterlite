@@ -25,11 +25,11 @@ use betterlite_redis::redis_client_reuse::transport::RedisCacheFamily;
 use betterlite_redis::redis_connection_settings::model::scalars::Scalar;
 use betterlite_redis::redis_connection_settings::model::settings::RedisOverrides;
 use betterlite_redis::redis_live_client::LiveClientFactory;
+use betterlite_test_ports::refused_port::RefusedPort;
 use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use tempfile::NamedTempFile;
-use tokio::net::TcpListener;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt;
 
@@ -191,11 +191,9 @@ fn unreachable_overrides(port: u16) -> RedisOverrides {
     }
 }
 
-async fn unreachable_cache() -> RedisCache {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
-    drop(listener);
-    let overrides = unreachable_overrides(port);
+async fn unreachable_cache() -> (RedisCache, RefusedPort) {
+    let refused = RefusedPort::bind().unwrap();
+    let overrides = unreachable_overrides(refused.address.port());
     let options = RedisCacheOptions {
         overrides,
         family: RedisCacheFamily::Standalone,
@@ -208,9 +206,10 @@ async fn unreachable_cache() -> RedisCache {
         hooks: Arc::new(SilentHooks),
         gate: Arc::new(AllowGate),
     };
-    connect(options, &BTreeMap::<String, String>::new())
+    let cache = connect(options, &BTreeMap::<String, String>::new())
         .await
-        .unwrap()
+        .unwrap();
+    (cache, refused)
 }
 
 fn clock() -> Arc<dyn Fn() -> f64 + Send + Sync> {
@@ -746,7 +745,7 @@ async fn a_strict_miss_on_the_auth_cache_names_the_restart_cause() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_unreachable_redis_usage_cache_reads_as_a_miss() {
-    let cache = unreachable_cache().await;
+    let (cache, _refused) = unreachable_cache().await;
     assert_eq!(cache.kind(), PkceCacheKind::RedisUsage);
     assert!(matches!(
         cache.read("pkce_verifier:state").await,
@@ -757,7 +756,7 @@ async fn an_unreachable_redis_usage_cache_reads_as_a_miss() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_redis_usage_cache_delete_failure_only_warns() {
     let (log, _guard) = capture_logs(tracing::Level::WARN);
-    let cache = unreachable_cache().await;
+    let (cache, _refused) = unreachable_cache().await;
     cache.delete("pkce_verifier:state").await;
     assert!(written(&log).contains("best-effort cleanup"));
 }

@@ -22,13 +22,16 @@ pub mod auth_request_policy;
 pub mod auth_resource_grants;
 pub mod auth_route_patterns;
 pub mod auth_route_policy;
+pub mod auth_stage_loop;
 pub mod auth_tag_budgets;
 pub mod auth_tenant_budgets;
+pub mod body_buffering;
 pub mod budget_admission_handoff;
 pub mod central_auth_checks;
 pub mod current_spend;
 pub mod end_user_identity;
 pub mod entity_model_access;
+pub mod failures;
 pub mod identity_store;
 pub mod jwt_db_teams;
 pub mod jwt_key_resolution;
@@ -57,19 +60,18 @@ use betterlite_auth::auth_request_models::catalog::{EmptyCatalog, RequestModelRe
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
-use crate::auth::auth_identity::{
-    AuthBackend, AuthContext, INSTALLED_STAGES, StageFailure, StageInput, dispatch,
-};
+use crate::auth::auth_identity::{AuthBackend, AuthContext, StageFailure, StageInput};
 use crate::auth::auth_model_patterns::{
-    ModelPatternStageInput, max_recurse_depth_for_request, rejection_response, rule_for_request,
+    ModelPatternStageInput, max_recurse_depth_for_request, rule_for_request,
 };
 use crate::auth::auth_request_models::{CoreDecoders, RequestModelStageInput, resolve};
 use crate::auth::auth_resource_grants::{
-    ResourceGrantStageInput, database_for_request, denial_response,
-    rule_for_request as grant_rule_for_request,
+    ResourceGrantStageInput, database_for_request, rule_for_request as grant_rule_for_request,
 };
-use crate::error_body::{AuthenticationFailure, authentication_error};
-use axum::body::Body;
+use crate::auth::request_body_safety::RequestBodySafetyStageInput;
+use crate::error_body::AuthenticationFailure;
+use crate::state::ServerState;
+use axum::body::{Body, Bytes};
 use axum::extract::State;
 use axum::http::{HeaderMap, Request, header};
 use axum::middleware::Next;
@@ -78,8 +80,9 @@ use regex::Regex;
 use secrecy::SecretString;
 pub(crate) async fn authenticate(
     State(master_key_state): State<Option<SecretString>>,
-    mut request: Request<Body>,
+    request: Request<Body>,
     next: Next,
+    failure_response: fn(&StageFailure) -> Response,
 ) -> Response {
     if matches!(
         request.uri().path(),
@@ -90,32 +93,12 @@ pub(crate) async fn authenticate(
     let Some(master_key) = master_key_state.as_ref() else {
         return next.run(request).await;
     };
-    let resolver = request
-        .extensions()
-        .get::<Arc<RequestModelResolver>>()
-        .map_or_else(default_resolver, Arc::clone);
-    let mut authenticated: Option<AuthContext> = None;
-    for backend in INSTALLED_STAGES {
-        let Ok(input) = stage_input(*backend, &request, authenticated.as_ref(), &resolver) else {
-            return authentication_error(&AuthenticationFailure::Missing);
-        };
-        match dispatch(*backend, &input, master_key) {
-            Ok(context) => authenticated = Some(context),
-            Err(StageFailure::Authentication(failure)) => {
-                return authentication_error(&failure);
-            }
-            Err(StageFailure::ModelAccess(rejection)) => {
-                return rejection_response(&rejection);
-            }
-            Err(StageFailure::ResourceGrants(exception)) => {
-                return denial_response(&exception);
-            }
+    match auth_stage_loop::run_stages(request, master_key, failure_response).await {
+        Ok((staged, authenticated, body)) => {
+            auth_stage_loop::forward(staged, authenticated, body, next).await
         }
+        Err(response) => *response,
     }
-    if let Some(context) = authenticated {
-        request.extensions_mut().insert(context);
-    }
-    next.run(request).await
 }
 
 fn stage_input(
@@ -123,36 +106,101 @@ fn stage_input(
     request: &Request<Body>,
     authenticated: Option<&AuthContext>,
     resolver: &Arc<RequestModelResolver>,
-) -> Result<StageInput, AuthenticationFailure> {
+    body: Option<&Bytes>,
+) -> Result<StageInput, StageFailure> {
     match backend {
         AuthBackend::MasterKey => Ok(StageInput::MasterKey(extract_key(request.headers()))),
+        AuthBackend::RequestBodySafety => Ok(StageInput::RequestBodySafety(Box::new(
+            safety_stage_input(request, authenticated, body)?,
+        ))),
         AuthBackend::AuthRequestModels | AuthBackend::AuthModelPatterns => {
-            let context = authenticated
-                .cloned()
-                .ok_or(AuthenticationFailure::Missing)?;
-            let stage = model_stage_input(request, context.clone(), resolver);
-            if backend == AuthBackend::AuthRequestModels {
-                return Ok(StageInput::AuthRequestModels(Box::new(stage)));
-            }
-            let requested = match resolve(&stage) {
-                Ok(requested) => requested,
-                Err(error) => {
-                    tracing::debug!(error = %error, "the request model stage failed");
-                    return Err(AuthenticationFailure::Missing);
-                }
-            };
-            let rule = rule_for_request(request);
-            let depth = max_recurse_depth_for_request(request);
-            Ok(StageInput::AuthModelPatterns(Box::new(
-                ModelPatternStageInput {
-                    context,
-                    requested,
-                    rule,
-                    max_recurse_depth: depth,
-                },
-            )))
+            model_pattern_input(backend, request, authenticated, resolver)
         }
-        AuthBackend::AuthResourceGrants => resource_grant_stage_input(request, authenticated),
+        AuthBackend::AuthResourceGrants => Ok(resource_grant_stage_input(request, authenticated)?),
+        AuthBackend::AuthTagBudgets => Ok(StageInput::AuthTagBudgets(Box::new(
+            auth_tag_budgets::stage_input(request, authenticated)?,
+        ))),
+    }
+}
+
+fn safety_stage_input(
+    request: &Request<Body>,
+    authenticated: Option<&AuthContext>,
+    body: Option<&Bytes>,
+) -> Result<RequestBodySafetyStageInput, StageFailure> {
+    let context = authenticated
+        .cloned()
+        .ok_or(AuthenticationFailure::Missing)?;
+    let content_type = request
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    let slot = request
+        .extensions()
+        .get::<Arc<ServerState>>()
+        .map(|state| state.request_body_safety.clone());
+    Ok(RequestBodySafetyStageInput {
+        context,
+        content_type,
+        body: body.cloned().unwrap_or_default(),
+        slot,
+    })
+}
+
+fn model_pattern_input(
+    backend: AuthBackend,
+    request: &Request<Body>,
+    authenticated: Option<&AuthContext>,
+    resolver: &Arc<RequestModelResolver>,
+) -> Result<StageInput, StageFailure> {
+    let context = authenticated
+        .cloned()
+        .ok_or(AuthenticationFailure::Missing)?;
+    let stage = model_stage_input(request, context.clone(), resolver);
+    if backend == AuthBackend::AuthRequestModels {
+        return Ok(StageInput::AuthRequestModels(Box::new(stage)));
+    }
+    let requested = match resolve(&stage) {
+        Ok(requested) => requested,
+        Err(error) => {
+            tracing::debug!(error = %error, "the request model stage failed");
+            return Err(StageFailure::from(AuthenticationFailure::Missing));
+        }
+    };
+    let rule = rule_for_request(request);
+    let depth = max_recurse_depth_for_request(request);
+    Ok(StageInput::AuthModelPatterns(Box::new(
+        ModelPatternStageInput {
+            context,
+            requested,
+            rule,
+            max_recurse_depth: depth,
+        },
+    )))
+}
+
+fn resolver_for(request: &Request<Body>) -> Arc<RequestModelResolver> {
+    request
+        .extensions()
+        .get::<Arc<RequestModelResolver>>()
+        .map_or_else(default_resolver, Arc::clone)
+}
+
+// stage_input cannot await while holding the request borrow (Request<Body> is Send but not Sync), so the caller awaits the prefetch on the owned stage
+async fn prefetch_tag_budgets(input: StageInput) -> Result<StageInput, StageFailure> {
+    match input {
+        StageInput::AuthTagBudgets(stage) => {
+            auth_tag_budgets::prefetch(&stage)
+                .await
+                .map_err(StageFailure::TagBudgets)?;
+            Ok(StageInput::AuthTagBudgets(stage))
+        }
+        other @ (StageInput::MasterKey(_)
+        | StageInput::RequestBodySafety(_)
+        | StageInput::AuthRequestModels(_)
+        | StageInput::AuthModelPatterns(_)
+        | StageInput::AuthResourceGrants(_)) => Ok(other),
     }
 }
 

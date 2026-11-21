@@ -1,0 +1,13 @@
+kind: helper
+name: flow-classification-authorization-url
+call:
+  b4662:
+    function: flow_classify
+    signals:
+      - has_per_user_tokens: false
+        authorization_url: https://idp.example.com/authorize
+        registration_url: null
+        token_url: null
+        credentials: null
+env: {}
+compare: {ignore: []}

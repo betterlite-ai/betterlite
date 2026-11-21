@@ -1,0 +1,10 @@
+kind: helper
+name: bedrock-mantle-settings-messages
+call:
+  bedrock_mantle_settings:
+    messages_auth_and_url:
+      cases:
+        - {}
+        - {api_base: 'https://bedrock-mantle.eu-west-3.api.aws/v1'}
+env: {}
+compare: {ignore: []}

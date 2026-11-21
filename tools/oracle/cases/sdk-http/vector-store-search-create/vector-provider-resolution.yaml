@@ -1,0 +1,61 @@
+kind: sdk_http
+name: vector-store-search-create-vector-provider-resolution
+call:
+  vector_store_search_create:
+    runs:
+      - operation: create
+        mode: sync
+        create: {name: notes}
+        options: {api_key: sk-client, litellm_call_id: call-1}
+      - operation: search
+        mode: async
+        search: {vector_store_id: vs_a, query: hello}
+        options: {api_key: sk-client, litellm_call_id: call-2}
+        custom_llm_provider: openai/xyz
+      - operation: search
+        mode: sync
+        search: {vector_store_id: vs_b, query: hello}
+        options: {api_key: sk-client, litellm_call_id: call-3}
+        custom_llm_provider: anthropic
+      - operation: create
+        mode: async
+        create: {}
+        options: {api_key: sk-client, litellm_call_id: call-4}
+        custom_llm_provider: bogus
+      - operation: search
+        mode: sync
+        search: {vector_store_id: vs_c, query: hello}
+        options: {api_key: sk-client, litellm_call_id: call-5}
+        custom_llm_provider: openai
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: vs_provider
+      object: vector_store
+      created_at: 1699061776
+      name: notes
+      bytes: 0
+      file_counts: {in_progress: 0, completed: 0, failed: 0, cancelled: 0, total: 0}
+      status: completed
+      expires_after: null
+      expires_at: null
+      last_active_at: null
+      metadata: null
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: vector_store.search_results.page, search_query: hello, data: []}
+  - status: 404
+    headers: {content-type: text/plain}
+    body: the store is gone
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore:
+    - pointer: /vector_store_search_create/value/runs/2/failure/message
+      why: mapped ValueErrors carry LiteLLM's wrapper text on one side and the provider's own message on the other
+    - pointer: /vector_store_search_create/value/runs/3/failure/message
+      why: mapped ValueErrors carry LiteLLM's wrapper text on one side and the provider's own message on the other
+    - pointer: /vector_store_search_create/value/runs/4/failure/message
+      why: each side raises from its own decode failure, so the message text differs while class, status and fields match

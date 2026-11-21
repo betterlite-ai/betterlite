@@ -1,0 +1,77 @@
+id: B10008
+title: AgentOps catalog arm with its startup JWT fetch
+description: >-
+  LiteLLM's agentops arm (litellm_logging.py L4513-L4523) first asks _maybe_construct_otel_v2 for a V2 logger and
+  otherwise builds AgentOps(), whose constructor fetches a JWT before the logger exists (agentops.py L49-L84): a POST of
+  {"api_key": AGENTOPS_API_KEY} to https://api.agentops.ai/v3/auth/token with a 10 second timeout. The token becomes the
+  OTLP exporter's `Authorization=Bearer <token>` header and project_id becomes the project.id resource attribute; any
+  failure is swallowed and the logger starts without auth. B3863 built that fetch as the async AgentOpsCallback::connect
+  over PooledAuthTransport, but B8746's catalog builder is synchronous, so B8746 left agentops answering
+  CatalogError::Unavailable. This task fills the arm and keeps the fetch at startup, never on the first request.
+
+
+  Startup step. In crates/betterlite-logging/src/registry/catalog/agentops.rs add
+  `pub async fn connect_agentops(inputs: &CatalogInputs, transport: &dyn AuthTransport) -> AgentOpsCallback`, which reads
+  AgentOpsConfig::from_env through inputs.env and awaits connect, and `LoggerCatalog::with_agentops(self, AgentOpsCallback)`
+  in registry/catalog.rs, which hands the connected callback to the arm the way B8746's with_runtime hands over the
+  runtime. The step runs before the catalog resolves any name, and only when agentops is among
+  litellm_settings.callbacks, success_callback or failure_callback and the legacy path will run: with LITELLM_OTEL_V2 on,
+  ask the arm's V2 path first and fetch only when it gives no logger, since LiteLLM never calls the auth endpoint when V2
+  answers. The architect adds the awaited call where the server state is built, next to B110's with_runtime call.
+
+
+  The arm. With a runtime, call B8910's maybe_construct_otel_v2 for agentops and return its logger. With the V2 switch on
+  and no runtime, return CatalogError::Unavailable naming agentops, as B8746's other arms do. Otherwise build the legacy
+  OpenTelemetry logger through B8746's shared legacy path with callback name agentops, AgentOpsCallback::otel_config for
+  the exporter (otlp_http to https://otlp.agentops.cloud/v1/traces) and resource_attributes for the resource, reusing an
+  agentops logger the catalog already built. A name resolved with no connected callback, such as a key or team callback
+  that names agentops when the config did not, answers CatalogError::Unavailable naming agentops: the resolver cannot
+  await the fetch, and a logger without the fetch would differ from LiteLLM's without a trace.
+
+
+  Tests in registry/catalog/agentops/tests.rs with a fake AuthTransport and a fake environment: the token and project id
+  reach the header and the resource, a failed or tokenless reply gives the logger with no Authorization header, no
+  AGENTOPS_API_KEY sends no request, V2 with a runtime returns the V2 logger, V2 without a runtime gives Unavailable, and
+  a name with no startup connection gives Unavailable. The arm has no route of its own, and the fetch needs the network,
+  so there are no oracle cases.
+scope:
+  paths:
+    - crates/betterlite-logging/src/registry/catalog.rs
+    - crates/betterlite-logging/src/registry/catalog/agentops.rs
+    - crates/betterlite-logging/src/registry/catalog/agentops/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4513-L4523
+    why: The agentops arm, V2 first, then the AgentOps logger built once.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/agentops/agentops.py#L49-L84
+    why: The init-time token fetch, the Bearer header and the resource attributes.
+dod:
+  - text: Startup fetches the AgentOps JWT once before the catalog resolves names, and the arm's legacy logger carries the Bearer header and the project.id resource attribute.
+    proof: [agentops-tests]
+  - text: A failed or tokenless fetch keeps the logger without auth, and no API key sends no request.
+    proof: [agentops-tests]
+  - text: The V2 path wins when a runtime gives a logger, and with the V2 switch on and no runtime agentops gives CatalogError::Unavailable.
+    proof: [agentops-tests]
+  - text: Resolving agentops with no startup connection gives CatalogError::Unavailable naming agentops.
+    proof: [agentops-tests]
+checks:
+  optional: []
+  commands:
+    - id: agentops-tests
+      why: the arm skips the startup fetch, loses the token or builds a logger the fetch never reached
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^registry::catalog::agentops::/)'
+oracle_cases: []
+deviations:
+  - what: A key or team callback that names agentops when the config did not answers the unavailable-adapter error naming agentops; LiteLLM fetches the token then and builds the logger.
+    why: The resolver is synchronous and the fetch is not, and the fetch stays at startup instead of becoming a lazy one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/agentops/agentops.py#L56-L65
+out_of_scope:
+  - "AgentOpsConfig, AgentOpsCallback, connect and the token transport: B3863. maybe_construct_otel_v2: B8910. The other eleven OTel arms and with_runtime: B8746."
+  - "The awaited startup call where the server state is built: the architect adds it, as for B110's runtime."
+pitfalls:
+  - LiteLLM swallows every failure of the token fetch and still builds the logger, so a fetch error must never fail startup.
+  - The token is a secret; it goes into the exporter header only, never into a log line or an error.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

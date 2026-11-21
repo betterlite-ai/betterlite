@@ -35,8 +35,8 @@ jobs:
   part:
     name: ${{ matrix.part }}
     runs-on: ubuntu-24.04
-    # the longest local mutants run took 130 minutes
-    timeout-minutes: ${{ startsWith(matrix.part, 'mutants-') && 300 || 120 }}
+    # a B1553 shard of 54 mutants at 267 s each needed the whole 300 minutes on 11-21, and GitHub stops a hosted job at 360
+    timeout-minutes: ${{ startsWith(matrix.part, 'mutants-') && 350 || 120 }}
     permissions:
       contents: read
     strategy:

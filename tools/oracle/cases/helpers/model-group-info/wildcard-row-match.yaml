@@ -1,0 +1,32 @@
+kind: helper
+name: wildcard-row-match
+call:
+  model_group_info:
+    {
+      "model_group": "openai/b846-request",
+      "model_list": [
+        {
+          "model_name": "openai/*",
+          "litellm_params": {
+            "model": "openai/*"
+          },
+          "model_info": {
+            "id": "wild"
+          }
+        }
+      ],
+      "model_group_alias": {},
+      "deployment_info": {
+        "wild": {
+          "mode": "chat",
+          "max_input_tokens": 4096
+        }
+      },
+      "model_cost": {},
+      "parameters": {},
+      "lookup_error": false,
+      "provider_error": "none",
+      "missing_ids": []
+    }
+env: {}
+compare: {ignore: []}

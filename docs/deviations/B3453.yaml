@@ -1,0 +1,12 @@
+task: B3453
+deviations:
+  - what: >-
+      The vector store create, vector file attach and file upload calls run through three
+      injected ports instead of the Python SDK functions, and a failing port surfaces as
+      OpenAiIngestionError::Port whose message is the lower error's message.
+    why: >-
+      The module stays testable without HTTP and keeps the dependency graph acyclic.
+      LiteLLM's exception_type wrapping is applied by the SDK operations behind the ports,
+      so the failed-result message B3460 returns is the same text a user sees from LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/openai_ingestion.py#L54-L142
+kept_bugs: []

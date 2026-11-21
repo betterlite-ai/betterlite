@@ -1,0 +1,17 @@
+kind: helper
+name: ingest_request-multipart-seed
+call:
+  b3462:
+    mode: multipart
+    parts:
+      - name: file
+        kind: upload
+        filename: seed.txt
+        content_hex: '73656564'
+        content_type: text/plain
+      - name: request
+        kind: text
+        text: '{"ingest_options": {"vector_store": {}}}'
+env: {}
+compare:
+  ignore: []

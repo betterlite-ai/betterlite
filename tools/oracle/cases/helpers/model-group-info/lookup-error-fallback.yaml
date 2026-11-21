@@ -1,0 +1,34 @@
+kind: helper
+name: lookup-error-fallback
+call:
+  model_group_info:
+    {
+      "model_group": "g",
+      "model_list": [
+        {
+          "model_name": "g",
+          "litellm_params": {
+            "model": "openai/b846-alpha"
+          },
+          "model_info": {
+            "id": "a",
+            "mode": "embedding",
+            "input_cost_per_token": "0.5",
+            "output_cost_per_token": 0.25
+          }
+        }
+      ],
+      "model_group_alias": {},
+      "deployment_info": {},
+      "model_cost": {},
+      "parameters": {
+        "openai/b846-alpha": [
+          "temperature"
+        ]
+      },
+      "lookup_error": true,
+      "provider_error": "none",
+      "missing_ids": []
+    }
+env: {}
+compare: {ignore: []}

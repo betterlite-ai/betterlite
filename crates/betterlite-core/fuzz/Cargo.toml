@@ -221,8 +221,22 @@ doc = false
 bench = false
 
 [[bin]]
+name = "file_upload_location"
+path = "fuzz_targets/file_upload_location.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "file_upload_validation"
 path = "fuzz_targets/file_upload_validation.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fine_tuning_read_page"
+path = "fuzz_targets/fine_tuning_read_page.rs"
 test = false
 doc = false
 bench = false
@@ -468,6 +482,27 @@ bench = false
 [[bin]]
 name = "messages_responses_output"
 path = "fuzz_targets/messages_responses_output.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rag_json_decoder"
+path = "fuzz_targets/rag_json_decoder.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "gemini_upload_reply"
+path = "fuzz_targets/gemini_upload_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "brave_search"
+path = "fuzz_targets/brave_search.rs"
 test = false
 doc = false
 bench = false

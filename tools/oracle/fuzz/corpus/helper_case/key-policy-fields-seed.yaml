@@ -1,0 +1,11 @@
+kind: helper
+name: key-policy-fields-seed
+call:
+  key_policy_fields:
+    calls:
+      - {function: alias, pattern: null, enabled: true, alias: "ab"}
+      - {function: rotation, data: {key_alias: seed}, auto_rotate: true, rotation_interval: 1d, existing_alias: null, store_virtual_keys: false, now: "2026-05-01T10:00:00+00:00"}
+      - {function: json_column, column: router_settings, value: "{\"a\":1}"}
+      - {function: key_type, request: {key_type: management}, columns: {}}
+env: {}
+compare: {ignore: []}

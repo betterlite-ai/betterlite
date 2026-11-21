@@ -1,0 +1,35 @@
+kind: helper
+name: foundry-passthrough-stream-collected-log
+call:
+  foundry_passthrough:
+    streams:
+      - model: gpt-4o
+        endpoint: responses
+        chunks: ['data: {"type":"response.completed","response":{"id":"resp_1","created_at":7,"output":[],"status":"completed"}}']
+        request_data: {stream: true}
+      - model: gpt-4o
+        endpoint: /v1/responses/
+        chunks: ['data: {"type":"response.incomplete","response":{"id":"resp_2","created_at":8,"output":[],"status":"incomplete"}}']
+        request_data: {stream: false}
+      - model: gpt-4o
+        endpoint: responses
+        chunks: []
+        request_data: {}
+      - model: gpt-4o
+        endpoint: embeddings
+        chunks: ['data: {"type":"response.completed","response":{"id":"resp_6","created_at":12,"output":[]}}']
+        request_data: {stream: true}
+      - model: gpt-4o
+        endpoint: providers/mistral/azure/ocr
+        chunks: []
+        request_data: {stream: null}
+      - model: gpt-4o
+        endpoint: responses
+        chunks: ['data: {"type":"response.completed","response":{"id":"resp_5","created_at":11,"output":[],"status":"completed"}}', 'data: {"type":"response.completed","bad":']
+        request_data: {stream: 1}
+      - model: gpt-4o
+        endpoint: responses
+        chunks: ['data: {"type":"response.created","response":{"id":"resp_4","created_at":10,"output":[]}}']
+        request_data: {stream: "yes"}
+env: {}
+compare: {ignore: []}

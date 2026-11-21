@@ -13,6 +13,7 @@ betterlite-context = { path = "../betterlite-context" }
 betterlite-core = { path = "../betterlite-core" }
 betterlite-db = { path = "../betterlite-db" }
 betterlite-models = { path = "../betterlite-models" }
+betterlite-openai = { path = "../betterlite-openai" }
 betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-redis = { path = "../betterlite-redis" }
 betterlite-tokenizer = { path = "../betterlite-tokenizer" }
@@ -29,7 +30,6 @@ uuid.workspace = true
 
 [dev-dependencies]
 betterlite-http = { path = "../betterlite-http" }
-betterlite-openai = { path = "../betterlite-openai" }
 betterlite-redact = { path = "../betterlite-redact" }
 rstest = "=0.27.0"
 tokio = { workspace = true, features = ["time"] }

@@ -8,6 +8,7 @@ use crate::pre_call::rewrites::resolve_call_id;
 use crate::routes::chat::CallContext;
 use crate::routes::chat::chat_routes_with_call_id;
 use crate::routes::chat::headers::failure_headers;
+use crate::routes::chat::streaming::ChatCalls;
 use crate::routes::embeddings::embedding_routes;
 use crate::routes::router;
 use crate::server::connections::{
@@ -21,7 +22,7 @@ use crate::state::shared::Shared;
 use axum::http::StatusCode;
 use axum::middleware::{from_fn, from_fn_with_state};
 use axum::response::{IntoResponse as _, Response as AxumResponse};
-use axum::{Json, Router};
+use axum::{Extension, Json, Router};
 use betterlite_config::types::Config;
 use betterlite_error::envelope::EnvelopeError;
 use betterlite_error::envelope::error_body_call_id;
@@ -35,6 +36,7 @@ use betterlite_logging::registry::CallbackRegistry;
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::ChatError;
 use betterlite_openai::chat::execution::ChatExecutor;
+use betterlite_tokenizer::count::error::CountError;
 use chat_setup::vertex_embedding::{VertexEmbeddingSetupError, vertex_embedding_calls};
 use std::io;
 use std::sync::Arc;
@@ -70,6 +72,11 @@ pub enum ServerError {
     ListenerAddress {
         #[source]
         source: io::Error,
+    },
+    #[error("the token counter limits are invalid: {source}")]
+    TokenCounter {
+        #[from]
+        source: CountError,
     },
     #[error(transparent)]
     VertexEmbedding(#[from] VertexEmbeddingSetupError),
@@ -174,6 +181,8 @@ pub(crate) fn application(
     tasks: &TaskTracker,
 ) -> Result<Router, ServerError> {
     let executor = Arc::new(chat);
+    let calls = Arc::new(ChatCalls::new(config, Arc::clone(&executor))?);
+    let counter = Arc::clone(&calls.counter);
     let vertex = vertex_embedding_calls(config, &executor, tasks)?;
     let shared = Arc::new(Shared {
         bundled_catalog: Arc::clone(&executor.bundled_catalog),
@@ -184,14 +193,16 @@ pub(crate) fn application(
         state,
         shutting_down,
         chat_routes_with_call_id(
-            Arc::clone(&executor),
+            calls,
             config
                 .sections
                 .error_body_call_id
                 .include_call_id_in_error_body,
         )?,
         embedding_routes(executor, vertex, read_through),
-    );
+    )
+    // the completion route recovers an output-limit 400 with the counter the chat route counts prompts with
+    .layer(Extension(counter));
     // a route layer, so a blocked route's 404 still passes the security headers, size limit and admission below
     let stacked = request_stack::wrap(
         routed.route_layer(from_fn(filter_route)),

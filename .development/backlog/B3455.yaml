@@ -1,14 +1,14 @@
 id: B3455
 milestone: M5 api families
 title: Vertex RAG corpus creation and multipart upload
-status: blocked
+status: done
 depends_on: [B3451, B1301, B1302, B1305]
 file: tasks/B3455-vertex-rag-corpus-upload.yaml
 covers:
   - "litellm/rag/ingestion/vertex_ai_ingestion.py"
 parent: B097
 split_from: B097
-resolution: null
+resolution: merged
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, RAG ingestion is new and can wait"
-pr: null
+blocked_reason: null
+pr: 2758

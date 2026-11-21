@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::{Duration, TryFromFloatSecsError};
 
 use betterlite_http::proxy::transport_error::TransportError;
@@ -10,6 +11,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
 use url::Url;
 
+use crate::anthropic_dispatch::gateway::runtime::AnthropicRuntime;
 use crate::operation::OperationError;
 use crate::provider::Provider;
 
@@ -30,7 +32,10 @@ pub struct Deployment {
     pub timeout: Duration,
     pub max_retries: Option<u32>,
     pub drop_params: Option<DropParams>,
+    // litellm.drop_params; a call's own drop_params never turns the 422 resend on
+    pub global_drop_params: bool,
     pub provider_affinity_header: Option<String>,
+    pub anthropic: Option<Arc<AnthropicRuntime>>,
 }
 
 impl Deployment {
@@ -50,7 +55,9 @@ impl Deployment {
             timeout: deployment.timeout,
             max_retries: None,
             drop_params: None,
+            global_drop_params: deployment.global_drop_params,
             provider_affinity_header: None,
+            anthropic: None,
         }
     }
 
@@ -84,7 +91,9 @@ impl Deployment {
             timeout,
             max_retries,
             drop_params,
+            global_drop_params: false,
             provider_affinity_header,
+            anthropic: None,
         })
     }
 

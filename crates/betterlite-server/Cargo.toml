@@ -9,6 +9,7 @@ publish.workspace = true
 testing = []
 
 [dependencies]
+aes = "0.9.3"
 aho-corasick = "1.1.5"
 async-stream = "0.3.6"
 async-trait = "0.1.92"
@@ -43,6 +44,7 @@ betterlite-models = { path = "../betterlite-models" }
 betterlite-ocr = { path = "../betterlite-ocr" }
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-openapi = { path = "../betterlite-openapi" }
+betterlite-policy = { path = "../betterlite-policy" }
 betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-provider = { path = "../betterlite-provider" }
 betterlite-pyhost = { path = "../betterlite-pyhost" }
@@ -60,8 +62,10 @@ betterlite-transcribe = { path = "../betterlite-transcribe" }
 betterlite-vertex = { path = "../betterlite-vertex" }
 bytes = "1.12.1"
 caseless = "0.2.2"
+cbc = { version = "0.2.1", features = ["alloc"] }
 chrono = { workspace = true }
 crc32fast = "1.5.3"
+deadpool-postgres.workspace = true
 email_address = "0.2.9"
 encoding_rs = "0.8.42"
 flate2 = "1.1.5"
@@ -70,6 +74,7 @@ futures-channel = { version = "0.3.34", features = ["sink"] }
 futures-util = { version = "0.3.34", default-features = false, features = ["alloc", "async-await", "sink"] }
 getrandom = "0.4.3"
 hex.workspace = true
+hmac = "0.13.0"
 http = "1.5.0"
 http-body = "1.1.0"
 hyper-util = { workspace = true, features = ["server-auto", "tokio", "service"] }
@@ -106,7 +111,7 @@ strum = { version = "0.28.0", features = ["derive"] }
 subtle.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["time"] }
-tokio-postgres = { workspace = true, features = ["with-chrono-0_4"] }
+tokio-postgres = { workspace = true, features = ["with-chrono-0_4", "with-serde_json-1"] }
 tokio-util = { version = "0.7.20", default-features = false, features = ["rt"] }
 tower = { workspace = true, features = ["timeout"] }
 tracing.workspace = true
@@ -118,9 +123,9 @@ uuid.workspace = true
 betterlite-postgres-fixture = { path = "../../tools/postgres-fixture" }
 betterlite-router = { path = "../betterlite-router", features = ["testing"] }
 betterlite-secrets = { path = "../betterlite-secrets" }
+betterlite-test-ports = { path = "../betterlite-test-ports" }
 betterlite-tokenizer = { path = "../betterlite-tokenizer" }
 clap = { version = "4.6.7", features = ["derive", "env"] }
-deadpool-postgres.workspace = true
 mutants = "0.0.4"
 opentelemetry_sdk = { version = "0.33.1", default-features = false, features = ["testing", "trace"] }
 rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem"] }
@@ -128,6 +133,7 @@ rquickjs = "0.14.0"
 rstest = "=0.27.0"
 rustls = { workspace = true, features = ["std", "tls12"] }
 signal-hook = { version = "0.4.6", default-features = false }
+temp-env = { version = "0.3.6", features = ["async_closure"] }
 tempfile = "3.27.0"
 tokio = { workspace = true, features = ["test-util"] }
 tokio-rustls = { version = "0.26.6", default-features = false, features = ["aws_lc_rs", "tls12"] }

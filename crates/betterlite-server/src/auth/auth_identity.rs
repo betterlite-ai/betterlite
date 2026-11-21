@@ -10,30 +10,38 @@ use subtle::ConstantTimeEq as _;
 use crate::auth::auth_model_patterns::{ModelAccessRejection, ModelPatternStageInput, run_stage};
 use crate::auth::auth_request_models::{RequestModelStageInput, resolve};
 use crate::auth::auth_resource_grants::{self, ResourceGrantStageInput};
+use crate::auth::auth_tag_budgets::TagBudgetStageInput;
+use crate::auth::request_body_safety::{self, RequestBodySafetyStageInput};
 use crate::error_body::AuthenticationFailure;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AuthBackend {
     MasterKey,
+    RequestBodySafety,
     AuthRequestModels,
     AuthModelPatterns,
     AuthResourceGrants,
+    AuthTagBudgets,
 }
 
 // B052 owns the final stage order; the master-key stage authenticates before the model stages run.
 pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::MasterKey,
+    AuthBackend::RequestBodySafety,
     AuthBackend::AuthRequestModels,
     AuthBackend::AuthModelPatterns,
     AuthBackend::AuthResourceGrants,
+    AuthBackend::AuthTagBudgets,
 ];
 
 #[derive(Clone, Debug)]
 pub enum StageInput {
     MasterKey(Option<SecretString>),
+    RequestBodySafety(Box<RequestBodySafetyStageInput>),
     AuthRequestModels(Box<RequestModelStageInput>),
     AuthModelPatterns(Box<ModelPatternStageInput>),
     AuthResourceGrants(Box<ResourceGrantStageInput>),
+    AuthTagBudgets(Box<TagBudgetStageInput>),
 }
 
 #[derive(Clone, Debug)]
@@ -61,6 +69,8 @@ pub(crate) enum StageFailure {
     Authentication(Box<AuthenticationFailure>),
     ModelAccess(Box<ModelAccessRejection>),
     ResourceGrants(Box<ProxyException>),
+    TagBudgets(Box<ProxyException>),
+    RequestBodySafety(Box<ProxyException>),
 }
 
 impl From<AuthenticationFailure> for StageFailure {
@@ -77,11 +87,26 @@ pub(crate) fn dispatch(
     match backend {
         AuthBackend::MasterKey => master_key_stage(input, master_key)
             .map_err(|failure| StageFailure::Authentication(Box::new(failure))),
+        AuthBackend::RequestBodySafety => auth_request_body_safety_stage(input),
         AuthBackend::AuthRequestModels => auth_request_models_stage(input)
             .map_err(|failure| StageFailure::Authentication(Box::new(failure))),
         AuthBackend::AuthModelPatterns => auth_model_patterns_stage(input),
         AuthBackend::AuthResourceGrants => auth_resource_grants_stage(input),
+        AuthBackend::AuthTagBudgets => {
+            let StageInput::AuthTagBudgets(stage) = input else {
+                return Err(StageFailure::from(AuthenticationFailure::Missing));
+            };
+            // the batch reads ran while this stage's input was assembled, so only the identity is left
+            Ok(stage.context.clone())
+        }
     }
+}
+
+fn auth_request_body_safety_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
+    let StageInput::RequestBodySafety(stage) = input else {
+        return Err(StageFailure::from(AuthenticationFailure::Missing));
+    };
+    request_body_safety::run_stage(stage).map_err(StageFailure::RequestBodySafety)
 }
 
 fn auth_resource_grants_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {

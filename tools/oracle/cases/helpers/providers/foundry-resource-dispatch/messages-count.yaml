@@ -1,0 +1,12 @@
+kind: helper
+name: foundry-resource-dispatch-messages-count
+call:
+  foundry_resource_dispatch:
+    case: messages_count
+    api_base: https://res.services.ai.azure.com/anthropic
+calls:
+  - foundry_resource_dispatch:
+      case: messages_count
+      api_base: https://res.services.ai.azure.com/anthropic/v1
+env: {}
+compare: {ignore: []}

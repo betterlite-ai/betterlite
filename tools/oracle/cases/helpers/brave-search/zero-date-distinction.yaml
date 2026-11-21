@@ -1,0 +1,36 @@
+kind: helper
+name: brave-search-zero-date-distinction
+call:
+  brave_search:
+    environment: {}
+    calls:
+      - kind: date
+        value: 0
+        dayfirst: false
+        yearfirst: false
+      - kind: date
+        value: "0"
+        dayfirst: false
+        yearfirst: false
+      - kind: date
+        value: null
+        dayfirst: false
+        yearfirst: false
+      - kind: date
+        value: false
+        dayfirst: false
+        yearfirst: false
+      - kind: date
+        value: 0.0
+        dayfirst: false
+        yearfirst: false
+      - kind: date
+        value: ""
+        dayfirst: false
+        yearfirst: false
+      - kind: date
+        value: "2024-02-30"
+        dayfirst: false
+        yearfirst: false
+env: {}
+compare: {ignore: []}

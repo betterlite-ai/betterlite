@@ -6,7 +6,7 @@ description: >-
   lifetime, B8680 installs the HTTP SERVER-span layer and B3867 registers the seven trace paths.
   Build betterlite-server::app::callbacks::telemetry with its own TelemetryError and adjacent
   tests. The module takes explicit TelemetryInputs: B8742's live callback catalog, the single
-  B8910 logger runtime, B8911's optional started receiver, B198's request context and the
+  B8910 logger runtime (built below with B10007), B8911's optional started receiver, B198's request context and the
   resolved config. No additional logger registry, environment snapshot, provider or auth
   lookup is created. The architect adds the shared call sites and resource fields listed in
   the report before dispatch; this task's scope contains only the implementation they call.
@@ -61,8 +61,16 @@ description: >-
   as the unit struct `LangfuseStreamAssembler`. assemble_sse calls B3669's assemble_anthropic_sse_stream on the frames
   with restore_identity off and returns the ModelResponse serialized to an OtelModelValue object, or None when that gives
   None. assemble_chat calls B2227's stream_chunk_builder with the chunks and messages and returns its chat ModelResponse
-  the same way, or None on its error. The shared call site that builds the B8910 runtime passes
-  `Arc::new(LangfuseStreamAssembler)`. Boot test tracing::messages_stream_root_output streams POST /v1/messages through
+  the same way, or None on its error.
+
+  The shared runtime. Build it once in telemetry with B10007's build_proxy_runtime, passing
+  `Arc::new(LangfuseStreamAssembler)`, B8746's CallbackSettingsView over callback_settings.otel.attributes, B8746's
+  config.sections.otel_settings.configured_excluded_services as the configured exclusions, the exporter HttpClients from
+  B8746's otlp_http_clients, the loaded config with its environment lookup, and the process's local UTC offset. The
+  architect's call site where B8742's Slot::new
+  builds the catalog calls it and hands the runtime to B8746's LoggerCatalog::with_runtime before the catalog resolves
+  any name, so V2 configs stop failing startup once this lands; the slot keeps the same Arc for start, the auth adapters
+  and B8870's adapter. A build error stops startup with its message. Boot test tracing::messages_stream_root_output streams POST /v1/messages through
   langfuse_otel with content capture on and asserts that the root observation output is the assembled assistant message
   as LiteLLM's stream_output renders it; a raw stream without message_start stamps no output.
 
@@ -186,7 +194,7 @@ deviations:
     why: The existing tasks leave the excluded native bridge unimplemented. Returning success with a fake store would lose trace data; the architect must assign the missing backend and remove this limitation before advertising enabled ingestion.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/tracing_runtime.py#L35-L66
 out_of_scope:
-  - B8910 owns the remaining logger.py factories/publication/accessor and runtime.py hooks; B3852 owns the inference/MCP callback methods and B3853 the remaining callback methods. No class is recreated by this composition.
+  - B8910 owns the remaining logger.py factories/publication/accessor and runtime.py hooks; B3852 owns the inference/MCP callback methods and B3853 the remaining callback methods. B10007 owns build_proxy_runtime, the request slot and its trace, scope and root-span sources. No class is recreated by this composition.
   - langfuse_logger.py's four methods and mount.py's naming/instrumentation policy are B8250; B8680 owns the actual server-span layer. The _RenameableSpan protocol has no runtime implementation to port.
   - The otel, model, plumbing, agentops, levo, weave and tracing __init__.py files only re-export their existing owners' types (B3840-B3844, B3848, B3863 and B3867); they add no executable remainder.
   - The Arize README's prompt-client/template/manager behavior is B3864, including its explicitly uncalled list/reload/test_connection helpers. Levo setup and delivery are B3850/B3863/B8746. The OTel README describes B3840-B3869/B8250/B8910 composition rather than another implementation.

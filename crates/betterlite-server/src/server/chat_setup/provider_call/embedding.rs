@@ -31,7 +31,10 @@ pub(crate) fn embedding_error(error: OperationError) -> CallError<EmbeddingError
         },
         kept @ (OperationError::Http { .. }
         | OperationError::InvalidHeader { .. }
-        | OperationError::TransformRetry(_)) => {
+        | OperationError::TransformRetry(_)
+        | OperationError::Parameters { .. }
+        | OperationError::RejectedFields { .. }
+        | OperationError::Anthropic { .. }) => {
             return CallError::Operation { source: kept };
         }
     };

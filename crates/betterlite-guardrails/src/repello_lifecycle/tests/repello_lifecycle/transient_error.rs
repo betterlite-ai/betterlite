@@ -8,12 +8,13 @@ use betterlite_guardrails::repello_lifecycle::hooks::HookTarget;
 use betterlite_guardrails::repello_lifecycle::{
     RepelloAILifecycle, UNREACHABLE_ERROR_TYPE, UNREACHABLE_MESSAGE,
 };
+use betterlite_test_ports::refused_port::RefusedPort;
 use rstest::rstest;
 use tracing::subscriber::set_default;
 
 use crate::support::{
-    CapturedLog, applied, closed_base, field, guardrail, mock_repello, prompt_data, records,
-    run_hook, settings, text_field,
+    CapturedLog, applied, field, guardrail, mock_repello, prompt_data, records, run_hook, settings,
+    text_field,
 };
 
 fn guarding(base: &str, fallback: UnreachableFallback) -> RepelloAILifecycle {
@@ -89,8 +90,10 @@ async fn fail_open_allows_the_request_and_still_records_the_failure() {
 async fn an_unreachable_api_warns_with_the_reason(#[case] fallback: UnreachableFallback) {
     let captured = CapturedLog::default();
     let _guard = set_default(captured.subscriber(tracing::Level::WARN));
+    let refused = RefusedPort::bind().unwrap();
+    let base = format!("http://{}", refused.address);
     let run = run_hook(
-        &guarding(&closed_base(), fallback),
+        &guarding(&base, fallback),
         prompt_data(),
         HookTarget::Prompt,
         &BTreeSet::new(),

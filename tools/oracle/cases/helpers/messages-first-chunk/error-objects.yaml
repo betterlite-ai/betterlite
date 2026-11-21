@@ -1,0 +1,31 @@
+kind: helper
+name: messages-first-chunk-error-objects
+call:
+  b9801:
+    text: 'data: {"error": {"message": "boom", "type": "api_error", "param": null, "code": "500"}}'
+calls:
+  - b9801:
+      text: 'data: {"error": "not an object"}'
+  - b9801:
+      text: 'data: {"error": {"message": "boom", "code": 400, "extra": {"nested": [1, 2]}}}'
+  - b9801:
+      text: 'data: {"other": "no error"}'
+  - b9801:
+      text: 'data: {"error": null}'
+  - b9801:
+      text: 'data: {"error": {"litellm_call_id": "upstream", "code": 429}}'
+  - b9801:
+      text: 'data: {"error": {"code": "4_29", "type": "rate_limit_error"}}'
+  - b9801:
+      text: 'data: {not json'
+  - b9801:
+      text: '{"error": {"code": 400}}'
+  - b9801:
+      text: 'data: [DONE]'
+  - b9801:
+      text: 'data: [1, 2, 3]'
+  - b9801:
+      text: 'data:   {"error": {"code": 400}}  '
+env: {}
+compare:
+  ignore: []

@@ -15,10 +15,12 @@ betterlite-context = { path = "../betterlite-context" }
 betterlite-http = { path = "../betterlite-http" }
 betterlite-logging = { path = "../betterlite-logging" }
 betterlite-models = { path = "../betterlite-models" }
+betterlite-ocr = { path = "../betterlite-ocr" }
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-secret-managers = { path = "../betterlite-secret-managers" }
 betterlite-tokenizer = { path = "../betterlite-tokenizer" }
+caseless = "0.2.2"
 chrono.workspace = true
 futures-util = { version = "0.3.34", default-features = false, features = ["alloc", "async-await"] }
 http = "1.5.0"

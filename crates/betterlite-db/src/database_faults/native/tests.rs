@@ -4,9 +4,10 @@ use super::*;
 use crate::postgres_store::diagnostics::DriverError;
 use crate::postgres_store::diagnostics::PoolFailure;
 use crate::postgres_store::errors::DbError as NativeDbError;
+use betterlite_test_ports::refused_port::RefusedPort;
 use deadpool_postgres::TimeoutType;
 use std::convert::Infallible;
-use std::net::TcpListener;
+use tokio::io::AsyncWriteExt as _;
 use tokio::net::TcpListener as TokioTcpListener;
 use tokio::task::JoinSet;
 
@@ -38,11 +39,12 @@ fn pool_hook_failure_is_not_transport() {
 
 #[tokio::test]
 async fn refused_connection_is_transport() {
-    let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
+    let refused = RefusedPort::bind().unwrap();
     let Err(error) = tokio_postgres::connect(
-        &format!("host=127.0.0.1 port={} user=missing", address.port()),
+        &format!(
+            "host=127.0.0.1 port={} user=missing",
+            refused.address.port()
+        ),
         tokio_postgres::NoTls,
     )
     .await
@@ -61,8 +63,8 @@ async fn closed_connection_is_transport() {
     let address = listener.local_addr().unwrap();
     let mut accept = JoinSet::new();
     accept.spawn(async move {
-        let (socket, _) = listener.accept().await.unwrap();
-        drop(socket);
+        let (mut socket, _) = listener.accept().await.unwrap();
+        socket.shutdown().await.unwrap();
     });
     let Err(error) = tokio_postgres::connect(
         &format!("host=127.0.0.1 port={} user=missing", address.port()),
