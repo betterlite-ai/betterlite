@@ -161,6 +161,11 @@ impl PreCallHooks<TestKey> for Fake {
         {
             return Err(rate_limited());
         }
+        if let Some(JsonValue::String(model)) = data.get("model")
+            && self.script.fail_models.contains(model)
+        {
+            return Err(super::boom());
+        }
         let tags = self.script.hook_tags.clone();
         if !tags.is_empty() {
             data.insert(

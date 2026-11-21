@@ -79,6 +79,7 @@ struct Behavior {
     hook_failure: Option<PreCallFailure>,
     hook_tags: Vec<String>,
     rate_limited_models: Vec<String>,
+    fail_models: Vec<String>,
     authorize: Option<PreCallFailure>,
     access: Option<PreCallFailure>,
     tag_on_prepare: Option<String>,
@@ -95,6 +96,7 @@ fn behavior() -> Behavior {
         hook_failure: None,
         hook_tags: Vec::new(),
         rate_limited_models: Vec::new(),
+        fail_models: Vec::new(),
         authorize: None,
         access: None,
         tag_on_prepare: None,
@@ -866,4 +868,61 @@ async fn standalone_allows_the_tag_budgets() {
     let key = TestKey::default();
     let tags = [String::from("tag")];
     budgets.check_tags(&tags, &key).await.unwrap();
+}
+
+#[tokio::test]
+async fn step_rejects_a_url_valued_model_argument() {
+    let fake = Arc::new(Fake::new(behavior()));
+    let step = step_for(&fake);
+    let request = parts("/v1/images/edits", None);
+    let key = TestKey::default();
+    let data = data_from(r#"{"model": "gpt"}"#);
+    let mut input = call_input(data.clone(), &request, &key, RouteType::ImageEdit);
+    input.model = Some("https://example.com/model");
+    let result = step.run(input.data.clone(), &input, None).await;
+    let error = match result {
+        Ok(_) => panic!("a URL-valued model argument must fail"),
+        Err(error) => error,
+    };
+    let (status, detail) = match error.failure {
+        PreCallFailure::Http { status, detail } => (status, detail),
+        other => panic!("expected an HTTP failure, got {other:?}"),
+    };
+    assert_eq!(status, 400);
+    assert_eq!(
+        detail.get("param"),
+        Some(&JsonValue::String(String::from("model")))
+    );
+    assert_eq!(error.data, data);
+}
+
+#[tokio::test]
+async fn fallback_returns_another_failure_with_the_rate_limited_data() {
+    let mut script = fallback_script(&["a"], &["gpt"]);
+    script.fail_models = vec![String::from("a")];
+    let (events, result) = fallback_run(script, r#"{"model": "gpt"}"#, TestKey::default()).await;
+    let error = match result {
+        Ok(_) => panic!("the fallback failure must surface"),
+        Err(error) => error,
+    };
+    assert_eq!(error.failure, boom());
+    assert_eq!(text_at(&error.data, "model"), "gpt");
+    assert_eq!(hook_count(&events), 2);
+}
+
+#[tokio::test]
+async fn fallback_returns_the_failure_without_a_router() {
+    let script = fallback_script(&["a"], &["gpt"]);
+    let fake = Arc::new(Fake::new(script));
+    let step = step_without_router(&fake);
+    let request = parts("/chat/completions", None);
+    let key = TestKey::default();
+    let input = input_for(r#"{"model": "gpt"}"#, &request, &key, RouteType::Completion);
+    let result = step.pre_call(input).await;
+    let error = match result {
+        Ok(_) => panic!("the rate limit must surface"),
+        Err(error) => error,
+    };
+    assert_eq!(error.failure, rate_limited());
+    assert!(!fake.events().contains(&Call::Fallbacks));
 }
