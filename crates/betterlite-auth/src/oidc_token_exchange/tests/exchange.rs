@@ -1,9 +1,9 @@
 use std::time::Duration;
 
 use betterlite_error::proxy_error_types::ProxyErrorTypes;
+use betterlite_test_ports::refused_port::RefusedPort;
 use rstest::rstest;
 use secrecy::SecretString;
-use tokio::net::TcpListener;
 
 use crate::oidc_token_exchange::decode::ProviderClaims;
 use crate::oidc_token_exchange::exchange::{
@@ -248,11 +248,9 @@ fn uses_the_pinned_deadlines() {
 #[tokio::test]
 async fn maps_a_refused_connection_to_token_exchange_401() {
     let provider = LocalProvider::start().await;
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
+    let refused = RefusedPort::bind().unwrap();
     let mut request = base_request(&provider);
-    request.token_endpoint = format!("http://{address}/token");
+    request.token_endpoint = format!("http://{}/token", refused.address);
     let error = run_exchange(&request).await.unwrap_err();
     assert_token_failure(&error);
 }
@@ -369,11 +367,9 @@ async fn falls_back_to_the_id_token_when_the_access_token_cannot_form_a_header()
 async fn falls_back_to_the_id_token_when_userinfo_is_unreachable() {
     let provider = LocalProvider::start().await;
     provider.reply("/token", Reply::json(&token_reply(Some(VALID_ID_TOKEN))));
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
+    let refused = RefusedPort::bind().unwrap();
     let mut request = base_request(&provider);
-    request.userinfo_endpoint = Some(format!("http://{address}/userinfo"));
+    request.userinfo_endpoint = Some(format!("http://{}/userinfo", refused.address));
     let claims = run_exchange(&request).await.unwrap();
     assert_eq!(text(&claims, "sub"), Some("user-1"));
     assert_eq!(provider.requests().len(), 1);

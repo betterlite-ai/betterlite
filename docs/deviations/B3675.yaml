@@ -1,0 +1,21 @@
+task: B3675
+deviations:
+  - what: An output reply with more texts than were sent returns the typed TooManyTexts error, and a tool_use output block without id, name or input returns MalformedToolUse. The response scan fails with either.
+    why: LiteLLM raises IndexError and KeyError there, so the request fails with a 500 either way. A named error keeps the same outcome without an exception, and the too-many check runs before any text is rewritten, which no caller can observe because the response is discarded.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L1808-L1827
+  - what: A returned structured_messages answer counts as changed when it differs by value from the list that was sent, including an empty list returned when no structured messages were sent.
+    why: LiteLLM compares object identity, and a guardrail in Rust returns owned values, so identity is gone. A guardrail that returns an equal copy takes the structured path in LiteLLM and the text path here, which leaves the request body as the client sent it; that is the safer outcome for a copy that changed nothing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L648-L664
+  - what: post_call_hook_response treats a JSON object whose choices is an array as an OpenAI ModelResponse. Any other value comes back unchanged, and an object with choices that does not parse as a ModelResponse returns the typed Response error.
+    why: Python checks the class. A JSON value has no class, and an Anthropic message never has choices, so the key is the only marker left.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L306-L309
+  - what: Only plain JSON object blocks are read and rewritten on the output side. A pydantic content block is not read through model_dump or its text attribute.
+    why: docs/compatibility.md leaves out Python object duck typing beyond the declared JSON shapes, and the server keeps responses as JSON.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L1376-L1389
+kept_bugs:
+  - what: A request whose only scannable content is images makes no guardrail call. Images are collected for the inputs, but an image-only request never reaches the guardrail because the call is gated on texts or tool calls.
+    why: A working LiteLLM setup runs behind this gate, and the task's flow requires the same early stop. Fixing it would send requests no LiteLLM guardrail has ever seen.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L601-L602
+  - what: Tool calls a guardrail returns on a response scan are ignored. Only the returned texts are written back, so a rewritten tool_use input never reaches the client.
+    why: LiteLLM's process_output_response never applies the returned tool_calls, and the task requires that behavior. A guardrail that relies on it would need a new behavior no LiteLLM route provides.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L1188-L1195

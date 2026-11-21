@@ -1,0 +1,46 @@
+kind: sdk_http
+name: vector-store-search-create-search-optional-fields
+call:
+  vector_store_search_create:
+    runs:
+      - operation: search
+        mode: sync
+        search:
+          vector_store_id: vs_a
+          query: [one, two]
+          filters: {type: eq, key: tag, value: x}
+          max_num_results: 0
+          ranking_options: {ranker: auto}
+          rewrite_query: false
+        options: {api_key: sk-client, litellm_call_id: call-1}
+        extra_headers: {x-extra: "1"}
+        extra_query: {ignored: yes}
+        extra_body: {query: override}
+        timeout_seconds: 5
+      - operation: search
+        mode: async
+        search:
+          vector_store_id: vs_b
+          query: one
+          max_num_results: 51
+        options: {api_key: sk-client, litellm_call_id: call-2}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      object: vector_store.search_results.page
+      search_query: one
+      data:
+        - score: 0.5
+          content: [{text: first hit, type: text}]
+          file_id: file_a
+          filename: a.txt
+          attributes: {tag: x}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: vector_store.search_results.page, search_query: one, data: []}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type, x-extra]
+  ignore: []
