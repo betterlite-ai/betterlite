@@ -187,26 +187,20 @@ async def stream_items(case: HookCase) -> AsyncGenerator[StreamItem, None]:
 async def hook_outcome(
     hooks: Hooks, case: HookCase, data: Payload, user: UserAPIKeyAuth
 ) -> tuple[JsonValue, list[JsonValue]]:
-    outcome: JsonValue = None
-    chunks: list[JsonValue] = []
     match case["hook"]:
         case "pre_call":
-            outcome = await attempt(
-                hooks.async_pre_call_hook(user, DualCache(), data, case["call_type"])
-            )
+            return await attempt(hooks.async_pre_call_hook(user, DualCache(), data, case["call_type"])), []
         case "moderation":
-            outcome = await attempt(hooks.async_moderation_hook(data, user, case["call_type"]))
+            return await attempt(hooks.async_moderation_hook(data, user, case["call_type"])), []
         case "post_call":
             response = MODEL.validate_python(case["response"])
-            outcome = await attempt(hooks.async_post_call_success_hook(data, user, response))
+            return await attempt(hooks.async_post_call_success_hook(data, user, response)), []
         case "streaming":
             stream = hooks.async_post_call_streaming_iterator_hook(user, stream_items(case), data)
             try:
-                chunks.extend([item_json(item) async for item in stream])
+                return {"kind": "allowed"}, [item_json(item) async for item in stream]
             except HTTPException as error:
                 return rejected(error), []
-            outcome = {"kind": "allowed"}
-    return outcome, chunks
 
 
 def run(input_value: HookCase) -> JsonValue:
