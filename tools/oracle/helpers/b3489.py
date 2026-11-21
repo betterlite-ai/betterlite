@@ -1,4 +1,4 @@
-from typing import Literal, TypedDict
+from typing import Literal, TypedDict, cast
 
 from litellm.google_genai import main as g
 from pydantic import JsonValue, TypeAdapter
@@ -28,18 +28,18 @@ def run(input_value: JsonValue) -> JsonValue:
         )
     if entry == "generate_content":
         return VALUE.validate_python(
-            g.generate_content(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L302-L303
+            cast(object, g.generate_content(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L302-L303
                 model=call["model"],
                 contents=call["contents"],
                 custom_llm_provider=call["custom_llm_provider"],
                 mock_response=text,
-            )
+            ))
         )
     return VALUE.validate_python(
-        g.generate_content_stream(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L487-L488
+        cast(object, g.generate_content_stream(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L487-L488
             model=call["model"],
             contents=call["contents"],
             custom_llm_provider=call["custom_llm_provider"],
             mock_response=text,
-        )
+        ))
     )
