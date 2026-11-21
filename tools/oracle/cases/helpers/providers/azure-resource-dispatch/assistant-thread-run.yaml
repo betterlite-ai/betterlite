@@ -1,0 +1,55 @@
+kind: helper
+name: azure-resource-dispatch-assistant-thread-run
+call:
+  azure_resource_dispatch:
+    case: assistant_thread_run
+    steps:
+      - kind: definitions_create
+        api_base: "https://example.test"
+        api_version: "2024-02-01"
+        api_key: "sk-fixture"
+        status: 200
+        body: '{"id":"asst_1","object":"assistant","created_at":1,"model":"gpt-4o","tools":[]}'
+      - kind: definitions_list
+        api_base: "https://example.test"
+        api_version: "2024-02-01"
+        api_key: "sk-fixture"
+        status: 200
+        body: '{"object":"list","data":[],"first_id":null,"last_id":null,"has_more":false}'
+      - kind: definitions_delete
+        api_base: "https://example.test"
+        api_version: "2024-02-01"
+        api_key: "sk-fixture"
+        status: 200
+        target_id: "asst_1"
+        body: '{"id":"asst_1","deleted":true,"object":"assistant.deleted"}'
+      - kind: thread_create
+        api_base: "https://example.test"
+        api_version: "2024-02-01"
+        api_key: "sk-fixture"
+        status: 200
+        body: '{"id":"thread_1","object":"thread","created_at":7,"metadata":{"team":"a"}}'
+      - kind: message_create
+        api_base: "https://example.test"
+        api_version: "2024-02-01"
+        api_key: "sk-fixture"
+        status: 200
+        target_id: "thread_1"
+        body: '{"id":"msg_1","object":"thread.message","created_at":1,"thread_id":"thread_1","role":"user","content":[{"type":"text","text":{"value":"hi","annotations":[]}}],"status":"completed"}'
+      - kind: message_list
+        api_base: "https://example.test"
+        api_version: "2024-02-01"
+        api_key: "sk-fixture"
+        status: 200
+        target_id: "thread_1"
+        body: '{"object":"list","data":[],"first_id":null,"last_id":null,"has_more":false}'
+      - kind: run_poll
+        api_base: "https://example.test"
+        api_version: "2024-02-01"
+        api_key: "sk-fixture"
+        replies:
+          - status: 200
+            headers: {}
+            body: '{"id":"run_1","object":"thread.run","created_at":1700000000,"completed_at":1700000005,"assistant_id":"asst_1","thread_id":"thread_1","status":"completed","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[]}'
+env: {}
+compare: {ignore: []}

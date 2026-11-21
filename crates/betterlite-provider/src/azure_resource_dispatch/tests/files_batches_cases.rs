@@ -139,7 +139,7 @@ impl Sdk {
         Self {
             answer: answer.as_bytes().to_vec(),
             failure: None,
-            page: parse(answer),
+            page: parse(r#"{"data":[],"has_more":false}"#),
             calls: Mutex::new(Vec::new()),
         }
     }

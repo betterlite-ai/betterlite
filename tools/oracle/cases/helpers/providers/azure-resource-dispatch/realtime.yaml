@@ -1,0 +1,33 @@
+kind: helper
+name: azure-resource-dispatch-realtime
+call:
+  azure_resource_dispatch:
+    case: realtime
+    model: "gpt-4o-realtime-preview"
+    scope_headers: []
+    ssl_verification: enabled
+    max_message_size_bytes: 4096
+    azure_api_base: null
+    azure_api_key: null
+    azure_api_version: null
+    queries:
+      - api_base: "https://res.test"
+        api_version: null
+        realtime_protocol: null
+        query_params: null
+        api_key: "key-1"
+        azure_ad_token: null
+    protocols: []
+    failures: []
+    http_setups:
+      - api_base: null
+        api_key: null
+        api_version: null
+        litellm_api_base: "https://res.test"
+        litellm_api_key: "key-1"
+        ephemeral_key: "ek_1"
+        headers:
+          X-Test: "1"
+env:
+  REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES: "4096"
+compare: {ignore: []}
