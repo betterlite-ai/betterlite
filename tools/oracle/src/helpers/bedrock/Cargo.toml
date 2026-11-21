@@ -18,10 +18,12 @@ aws-types = "=1.6.0"
 base64 = "0.23.1"
 betterlite-anthropic = { path = "../../../../../crates/betterlite-anthropic" }
 betterlite-bedrock = { path = "../../../../../crates/betterlite-bedrock" }
+betterlite-bedrock-guardrails = { path = "../../../../../crates/betterlite-bedrock-guardrails" }
 betterlite-config = { path = "../../../../../crates/betterlite-config" }
 betterlite-context = { path = "../../../../../crates/betterlite-context" }
 betterlite-core = { path = "../../../../../crates/betterlite-core" }
 betterlite-error = { path = "../../../../../crates/betterlite-error" }
+betterlite-guardrails = { path = "../../../../../crates/betterlite-guardrails" }
 betterlite-http = { path = "../../../../../crates/betterlite-http" }
 betterlite-logging = { path = "../../../../../crates/betterlite-logging" }
 betterlite-models = { path = "../../../../../crates/betterlite-models" }
@@ -36,6 +38,7 @@ betterlite-redact = { path = "../../../../../crates/betterlite-redact" }
 betterlite-redis = { path = "../../../../../crates/betterlite-redis" }
 betterlite-sdk = { path = "../../../../../crates/betterlite-sdk" }
 betterlite-secret-managers = { path = "../../../../../crates/betterlite-secret-managers" }
+betterlite-server = { path = "../../../../../crates/betterlite-server" }
 betterlite-streaming = { path = "../../../../../crates/betterlite-streaming" }
 betterlite-tokenizer = { path = "../../../../../crates/betterlite-tokenizer" }
 bytes = "1.12.1"
@@ -44,6 +47,7 @@ futures-util = { version = "0.3.34", default-features = false }
 hex = "0.4.3"
 http = "1.5.0"
 indexmap = { version = "2.14.2", features = ["serde"] }
+reqwest = { version = "0.13.5", default-features = false }
 secrecy = { version = "0.10.3", features = ["serde"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde-saphyr = "2.0.0"
