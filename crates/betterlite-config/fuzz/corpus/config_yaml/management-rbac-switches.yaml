@@ -1,0 +1,5 @@
+general_settings:
+  disable_agents_for_internal_users: true
+  allow_agents_for_team_admins: true
+  disable_vector_stores_for_internal_users: false
+  allow_vector_stores_for_team_admins: null

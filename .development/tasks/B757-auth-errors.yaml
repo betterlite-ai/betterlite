@@ -135,8 +135,7 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/auth-errors/**
     - tools/oracle/fuzz/corpus/helper_case/auth-errors-*
-    - crates/betterlite-server/src/auth.rs
-    - crates/betterlite-server/src/auth/**
+    - crates/betterlite-server/src/auth/auth_stage_loop.rs
     - crates/betterlite-server/src/state/auth_errors.rs
     - crates/betterlite-server/src/state/auth_errors/**
     - tools/oracle/cases/auth/auth-errors/**

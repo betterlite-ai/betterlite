@@ -1,0 +1,16 @@
+kind: helper
+name: proxy-admin-unaffected
+call:
+  management_rbac:
+    calls:
+      - role: proxy_admin
+        feature: agents
+        general_settings: {disable_agents_for_internal_users: true, allow_agents_for_team_admins: false}
+      - role: proxy_admin
+        feature: vector_stores
+        general_settings: {disable_vector_stores_for_internal_users: true, allow_vector_stores_for_team_admins: true}
+      - role: proxy_admin
+        feature: agents
+        general_settings: {}
+env: {}
+compare: {ignore: []}

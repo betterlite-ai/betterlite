@@ -1,0 +1,21 @@
+task: B4778
+deviations:
+  - what: The injectable loader callables (AccessGroupIdsLoader, AccessGroupLoader, CeilingResolver) are replaced by the AccessGroupReads trait, and a caller that wants a fake passes a fake implementation of the trait.
+    why: betterlite wires dependencies through constructors and has no function-valued defaults that reach module globals. Behavior is the same for every caller.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_access_groups.py#L64-L70
+  - what: In LiteLLM, check_db_only=True makes resolve_agent_access_group_ceiling ignore the injected group loader and call its own database loader. Here the one port serves both modes, and check_db_only is the second argument of access_group.
+    why: There is no second loader to ignore. The reads that reach the database are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_access_groups.py#L75-L80
+  - what: resolve_managed_agent_ceilings takes only the access_group_ids of the managed agent instead of an AgentResponse.
+    why: LiteLLM reads only access_group_ids from the record; agent_id goes to a loader that ignores it, so the plain list is enough and the caller does not build a record.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_access_groups.py#L89-L101
+  - what: A read failure carries a typed error (AccessGroupsError::Read, AgentCallerError::Team, AgentCallerError::User) with the cause as source, where LiteLLM lets the HTTPException or Exception pass through unchanged.
+    why: betterlite errors are typed. The HTTP layer maps the cause the same way B737 and B736 map it for their own callers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_access_groups.py#L55-L61
+  - what: agent_caller_auth returns Result<Option<UserAPIKeyAuth>, AgentCallerError>, with AgentCallerError::Record when the empty stand-in record cannot be built.
+    why: The only constructor of UserAPIKeyAuth is fallible. Turning a failure into None would read as "no caller" and lift the caller cap, so the failure is returned instead; it cannot happen for the empty record.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_caller.py#L40-L53
+  - what: The trace handle (parent_otel_span) is not passed to the team and user reads.
+    why: The reads run inside the request's tracing span, so no handle is needed. agent_caller_auth still copies the field the key record holds.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_caller.py#L56-L88
+kept_bugs: []
