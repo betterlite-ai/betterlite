@@ -1,7 +1,7 @@
 id: B1082
 milestone: M5 api families
 title: Transcription call
-status: todo
+status: done
 depends_on: [B010, B174, B175, B176, B011, B1001, B1122, B515, B539, B2453, B002, B2401, B5360, B5362, B8331, B9952, B247]
 file: tasks/B1082-transcription-call.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/main.py"
 parent: B083
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2823
