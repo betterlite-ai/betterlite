@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::time::Instant;
+
 use betterlite_prometheus::collector_factory::collector::{
     Collector as _, MetricLike, MetricValue,
 };
@@ -8,10 +10,12 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 
 use super::support::{
-    Fixture, ScriptedUsage, json_object, number, payload, with_headers, with_model_group,
+    FakeGauges, Fixture, RATE_LIMIT_LABELS, ScriptedUsage, json_object, number, payload,
+    removal_event, with_headers, with_model_group,
 };
 use crate::end_user::EndUserCostTrackingSettings;
 use crate::prometheus_exporter::{Handle, PrometheusCollectors, PrometheusExporterSettings};
+use crate::prometheus_helpers::bounded_series_tracker::{SeriesKey, SeriesLimits};
 use crate::prometheus_label_schema::{PrometheusLabelSettings, get_labels};
 use crate::prometheus_rate_limits::deployment::{
     DeploymentLimitInputs, set_deployment_tpm_rpm_limit_metrics,
@@ -148,6 +152,52 @@ fn collectors_resolve_each_rate_limit_metric(
         get_labels(expected, &PrometheusLabelSettings::with_defaults())
             .expect("the metric has a label schema")
             .as_slice()
+    );
+}
+
+// B8655 records series limits here, so a later call must see what an earlier one tracked
+#[test]
+fn collectors_keep_the_series_tracked_between_calls() {
+    let (_, collectors) = registered();
+    let fake = FakeGauges::with_labels(&RATE_LIMIT_LABELS);
+    let gauge = fake.gauge(RateLimitMetric::RemainingRequests);
+    let limits = SeriesLimits {
+        max_series: Some(1),
+        ttl: None,
+        cleanup_interval: None,
+    };
+    let first_series = [Some("first-series".to_owned())];
+    collectors
+        .tracker()
+        .track_series(
+            &gauge,
+            SeriesKey {
+                metric_name: ROUTER_REQUESTS,
+                label_values: &first_series,
+            },
+            limits,
+            Instant::now(),
+        )
+        .unwrap();
+    let second_series = [Some("second-series".to_owned())];
+    collectors
+        .tracker()
+        .track_series(
+            &gauge,
+            SeriesKey {
+                metric_name: ROUTER_REQUESTS,
+                label_values: &second_series,
+            },
+            limits,
+            Instant::now(),
+        )
+        .unwrap();
+    assert_eq!(
+        fake.events(),
+        vec![removal_event(
+            RateLimitMetric::RemainingRequests,
+            &[Some("first-series")]
+        )]
     );
 }
 
