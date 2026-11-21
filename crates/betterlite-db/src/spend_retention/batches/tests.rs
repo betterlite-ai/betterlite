@@ -304,9 +304,10 @@ fn tables_name_their_keys_and_time_column(
     #[case] keys: &[&str],
     #[case] time_column: &str,
 ) {
-    assert_eq!(table.name(), name);
-    assert_eq!(table.key_columns(), keys);
-    assert_eq!(table.time_column(), time_column);
+    let spec = table.spec();
+    assert_eq!(spec.name, name);
+    assert_eq!(spec.key_columns, keys);
+    assert_eq!(spec.time_column, time_column);
 }
 
 #[test]

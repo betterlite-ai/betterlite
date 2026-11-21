@@ -11,39 +11,48 @@ pub enum CleanupTable {
     DailyTagSpend,
 }
 
+// one row per table, so a name, a key or a time column is written once next to the table it belongs to
+#[derive(Debug, Clone, Copy)]
+pub struct TableSpec {
+    pub name: &'static str,
+    pub key_columns: &'static [&'static str],
+    pub time_column: &'static str,
+}
+
 impl CleanupTable {
     #[must_use]
-    pub const fn name(self) -> &'static str {
+    pub const fn spec(self) -> TableSpec {
         match self {
-            Self::SpendLogs => "LiteLLM_SpendLogs",
-            Self::ToolIndex => "LiteLLM_SpendLogToolIndex",
-            Self::AutoRouterSessions => "LiteLLM_AutoRouterSession",
-            Self::AutoRouterUserSessions => "LiteLLM_AutoRouterUserSession",
-            Self::HealthChecks => "LiteLLM_HealthCheckTable",
-            Self::DailyTagSpend => "LiteLLM_DailyTagSpend",
-        }
-    }
-
-    #[must_use]
-    pub const fn key_columns(self) -> &'static [&'static str] {
-        match self {
-            Self::SpendLogs => &["request_id", "startTime"],
-            Self::ToolIndex => &["request_id", "tool_name"],
-            Self::AutoRouterSessions => &["api_key", "session_id", "router_name"],
-            Self::AutoRouterUserSessions => &["user_id", "api_key", "session_id", "router_name"],
-            Self::HealthChecks => &["health_check_id"],
-            Self::DailyTagSpend => &["id"],
-        }
-    }
-
-    #[must_use]
-    pub const fn time_column(self) -> &'static str {
-        match self {
-            Self::SpendLogs => "startTime",
-            Self::ToolIndex => "start_time",
-            Self::AutoRouterSessions | Self::AutoRouterUserSessions => "last_turn_at",
-            Self::HealthChecks => "checked_at",
-            Self::DailyTagSpend => "date",
+            Self::SpendLogs => TableSpec {
+                name: "LiteLLM_SpendLogs",
+                key_columns: &["request_id", "startTime"],
+                time_column: "startTime",
+            },
+            Self::ToolIndex => TableSpec {
+                name: "LiteLLM_SpendLogToolIndex",
+                key_columns: &["request_id", "tool_name"],
+                time_column: "start_time",
+            },
+            Self::AutoRouterSessions => TableSpec {
+                name: "LiteLLM_AutoRouterSession",
+                key_columns: &["api_key", "session_id", "router_name"],
+                time_column: "last_turn_at",
+            },
+            Self::AutoRouterUserSessions => TableSpec {
+                name: "LiteLLM_AutoRouterUserSession",
+                key_columns: &["user_id", "api_key", "session_id", "router_name"],
+                time_column: "last_turn_at",
+            },
+            Self::HealthChecks => TableSpec {
+                name: "LiteLLM_HealthCheckTable",
+                key_columns: &["health_check_id"],
+                time_column: "checked_at",
+            },
+            Self::DailyTagSpend => TableSpec {
+                name: "LiteLLM_DailyTagSpend",
+                key_columns: &["id"],
+                time_column: "date",
+            },
         }
     }
 }
@@ -52,15 +61,16 @@ impl CleanupTable {
 #[must_use]
 pub fn delete_statement(table: CleanupTable, cutoff: Cutoff) -> String {
     let keys = table
-        .key_columns()
+        .spec()
+        .key_columns
         .iter()
         .map(|column| format!("\"{column}\""))
         .collect::<Vec<String>>()
         .join(", ");
     format!(
         "DELETE FROM \"{name}\" WHERE ({keys}) IN (SELECT {keys} FROM \"{name}\" WHERE \"{time}\" < $1::{cast} LIMIT $2)",
-        name = table.name(),
-        time = table.time_column(),
+        name = table.spec().name,
+        time = table.spec().time_column,
         cast = cutoff.cast(),
     )
 }
@@ -70,8 +80,8 @@ pub fn delete_statement(table: CleanupTable, cutoff: Cutoff) -> String {
 pub fn remaining_statement(table: CleanupTable, cutoff: Cutoff) -> String {
     format!(
         "SELECT count(*)::int AS remaining FROM (SELECT 1 FROM \"{name}\" WHERE \"{time}\" < $1::{cast} LIMIT $2) capped",
-        name = table.name(),
-        time = table.time_column(),
+        name = table.spec().name,
+        time = table.spec().time_column,
         cast = cutoff.cast(),
     )
 }
