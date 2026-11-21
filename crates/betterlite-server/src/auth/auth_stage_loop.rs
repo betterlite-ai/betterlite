@@ -7,6 +7,7 @@ use axum::response::Response;
 use secrecy::SecretString;
 
 use super::{prefetch_tag_budgets, resolver_for, stage_input};
+use crate::auth::auth_errors::FailureContext;
 use crate::auth::auth_identity::{
     AuthBackend, AuthContext, INSTALLED_STAGES, StageFailure, StageInput, dispatch,
 };
@@ -36,19 +37,22 @@ pub(crate) async fn run_stages(
                 Err(error) => return Err(Box::new(buffer_failure_response(error, limit))),
             });
         }
-        let input = match stage_input(
+        // the input is built before any await, so no borrow of the request lives across one
+        let staged = stage_input(
             *backend,
             &request,
             authenticated.as_ref(),
             &resolver,
             body.as_ref(),
-        ) {
-            Ok(input) => input,
-            Err(failure) => return Err(Box::new(failure_response(&failure))),
-        };
-        match run_stage(*backend, input, master_key, failure_response).await {
+        );
+        match run_stage(*backend, staged, master_key).await {
             Ok(context) => authenticated = Some(context),
-            Err(response) => return Err(response),
+            Err(failure) => {
+                let rejection = FailureContext::of(&request, body.as_ref());
+                return Err(Box::new(
+                    rejection.respond(&failure, failure_response).await,
+                ));
+            }
         }
     }
     Ok((request, authenticated, body))
@@ -88,13 +92,9 @@ pub(crate) async fn forward(
 
 async fn run_stage(
     backend: AuthBackend,
-    input: StageInput,
+    staged: Result<StageInput, StageFailure>,
     master_key: &SecretString,
-    failure_response: fn(&StageFailure) -> Response,
-) -> Result<AuthContext, Box<Response>> {
-    let prefetched = prefetch_tag_budgets(input)
-        .await
-        .map_err(|failure| Box::new(failure_response(&failure)))?;
+) -> Result<AuthContext, StageFailure> {
+    let prefetched = prefetch_tag_budgets(staged?).await?;
     dispatch(backend, &prefetched, master_key)
-        .map_err(|failure| Box::new(failure_response(&failure)))
 }
