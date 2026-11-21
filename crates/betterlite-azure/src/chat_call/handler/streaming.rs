@@ -1,6 +1,7 @@
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_models::decisions::Extra;
 use betterlite_openai::text_completion_transport::logging::StreamDefaults;
+use betterlite_prompts::arguments::json::Json;
 use indexmap::IndexMap;
 
 use crate::azure_stream_errors::error::{Raised, StreamingError};
@@ -101,6 +102,15 @@ fn stream_call<'call, Client>(
     supplied: &'call StreamClient,
     data: &'call Extra,
 ) -> StreamCall<'call> {
+    // the streaming helpers take an int and never read it; a non-int keeps the configured default
+    let max_retries = match &sent.max_retries.0 {
+        Json::Bool(true) => 1,
+        Json::Bool(false) => 0,
+        Json::Number(number) => number.as_i64().unwrap_or(call.azure.default_max_retries),
+        Json::Null | Json::Text(_) | Json::List(_) | Json::Object(_) => {
+            call.azure.default_max_retries
+        }
+    };
     StreamCall {
         api_base: call.api_base,
         api_key: call.api_key,
@@ -109,7 +119,7 @@ fn stream_call<'call, Client>(
         data,
         model: &sent.model,
         timeout: Some(call.timeout),
-        max_retries: sent.max_retries.count(call.azure.default_max_retries),
+        max_retries,
         azure_ad_token: call.azure_ad_token,
         azure_ad_token_provider: call.azure_ad_token_provider,
         litellm_params: &sent.litellm_params,

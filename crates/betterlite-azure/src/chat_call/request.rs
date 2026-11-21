@@ -38,17 +38,6 @@ impl Retries {
             Json::Null | Json::Text(_) | Json::List(_) | Json::Object(_) => false,
         }
     }
-
-    // the streaming helpers take an int and never read it; a non-int keeps the configured default
-    #[must_use]
-    pub fn count(&self, fallback: i64) -> i64 {
-        match &self.0 {
-            Json::Bool(true) => 1,
-            Json::Bool(false) => 0,
-            Json::Number(number) => number.as_i64().unwrap_or(fallback),
-            Json::Null | Json::Text(_) | Json::List(_) | Json::Object(_) => fallback,
-        }
-    }
 }
 
 // if headers: optional_params["extra_headers"] = headers

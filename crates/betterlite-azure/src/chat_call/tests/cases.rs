@@ -295,6 +295,15 @@ pub(super) fn invalid_retries_422() {
     let _reply =
         block_on(async { buffered(accepted.run(&boolean, &mut recorder).await.expect("reply")) });
     assert_eq!(boolean.requests().len(), 1);
+
+    // a negative int is an int too: only a non-number fails the guard
+    let negative = ScriptedSource::new(ClientKind::AzureOpenAi, Some("key"), Answer::reply());
+    let mut signed = Harness::default();
+    signed.optional_params = json!({"max_retries": -1});
+    let mut recorder = Recorder::default();
+    let _reply =
+        block_on(async { buffered(signed.run(&negative, &mut recorder).await.expect("reply")) });
+    assert_eq!(negative.requests().len(), 1);
 }
 
 pub(super) fn cloudflare_model_null() {
@@ -461,6 +470,12 @@ pub(super) fn async_timeout_diagnostic() {
     assert_eq!(
         error.to_string(),
         "Request timed out. - timeout value=30, time taken=0.00 seconds"
+    );
+    // the async pre call went out before the send, with the call's api_base
+    assert_eq!(recorder.pre.len(), 1);
+    assert_eq!(
+        recorder.pre[0].additional_args.api_base.as_deref(),
+        Some("https://unit.test")
     );
     assert_eq!(recorder.post.len(), 1);
     assert_eq!(
