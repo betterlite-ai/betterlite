@@ -7,10 +7,12 @@ use std::path::PathBuf;
 use rstest::rstest;
 use rust_decimal::Decimal;
 
+use crate::loader::ConfigLoader;
+
 use super::{
-    DEFAULT_DEQUEUE_COUNT, DEFAULT_MAX_PROMPT_LENGTH, DEFAULT_RESEED_LOCK_LIMIT, ENV_DEQUEUE_COUNT,
-    ENV_RESEED_LOCK_LIMIT, MissingSessionId, Settings, SpendUpdates, decode_spend_storage_policy,
-    load_spend_storage_policy, runtime_dequeue_count, runtime_max_prompt_length,
+    DEFAULT_DEQUEUE_COUNT, DEFAULT_MAX_PROMPT_LENGTH, ENV_DEQUEUE_COUNT, MissingSessionId,
+    Settings, SpendUpdates, decode_spend_storage_policy, load_spend_storage_policy,
+    runtime_dequeue_count, runtime_max_prompt_length,
 };
 
 fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -158,46 +160,33 @@ fn a_malformed_redis_dequeue_count_fails_loading(#[case] value: &str) {
     assert!(error.to_string().contains(ENV_DEQUEUE_COUNT));
 }
 
+// B2322's spend_reseed section owns the variable: unset keeps 10000, and int() rejects empty text
 #[test]
 fn loads_reseed_lock_limit() {
-    let defaults = load("general_settings: {}\n", &[]);
-    assert_eq!(defaults.reseed_lock_limit, DEFAULT_RESEED_LOCK_LIMIT);
-    let configured = load("general_settings: {}\n", &[(ENV_RESEED_LOCK_LIMIT, "16")]);
-    assert_eq!(configured.reseed_lock_limit, 16);
-    // an empty value counts as unset, so the default stands
-    let empty = load("general_settings: {}\n", &[(ENV_RESEED_LOCK_LIMIT, "")]);
-    assert_eq!(empty.reseed_lock_limit, DEFAULT_RESEED_LOCK_LIMIT);
-    let blank = load("general_settings: {}\n", &[(ENV_RESEED_LOCK_LIMIT, "  ")]);
-    assert_eq!(blank.reseed_lock_limit, DEFAULT_RESEED_LOCK_LIMIT);
-}
-
-#[test]
-fn loads_reseed_lock_limit_from_a_stored_policy_row() {
-    let decoded = decode_spend_storage_policy(
-        br#"{"general_settings":{},"litellm_settings":{},"environment":{"SPEND_COUNTER_RESEED_LOCKS_MAX_SIZE":"32"}}"#,
-    )
+    let defaults = ConfigLoader {
+        lookup: environment(&[]),
+    }
+    .load("")
     .unwrap();
-    assert_eq!(decoded.reseed_lock_limit, 32);
-}
-
-#[rstest]
-#[case::zero("0", 0)]
-#[case::negative("-5", -5)]
-#[case::surrounding_space(" 42 ", 42)]
-fn keeps_zero_and_negative_reseed_lock_limits(#[case] value: &str, #[case] expected: i64) {
-    let settings = load("general_settings: {}\n", &[(ENV_RESEED_LOCK_LIMIT, value)]);
-    assert_eq!(settings.reseed_lock_limit, expected);
-}
-
-#[rstest]
-#[case::text("many")]
-#[case::fraction("20.5")]
-#[case::python_digit_group("1_0")]
-fn a_malformed_reseed_lock_limit_fails_loading(#[case] value: &str) {
-    let source = "general_settings: {}\n";
-    let lookup = environment(&[(ENV_RESEED_LOCK_LIMIT, value)]);
-    let error = load_spend_storage_policy(source, &lookup).unwrap_err();
-    assert!(error.to_string().contains(ENV_RESEED_LOCK_LIMIT));
+    assert_eq!(defaults.sections.spend_reseed.locks_max_size, 10_000);
+    let configured = ConfigLoader {
+        lookup: environment(&[("SPEND_COUNTER_RESEED_LOCKS_MAX_SIZE", "16")]),
+    }
+    .load("")
+    .unwrap();
+    assert_eq!(configured.sections.spend_reseed.locks_max_size, 16);
+    for value in ["", "  ", "many"] {
+        let error = ConfigLoader {
+            lookup: environment(&[("SPEND_COUNTER_RESEED_LOCKS_MAX_SIZE", value)]),
+        }
+        .load("")
+        .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("SPEND_COUNTER_RESEED_LOCKS_MAX_SIZE")
+        );
+    }
 }
 
 #[rstest]

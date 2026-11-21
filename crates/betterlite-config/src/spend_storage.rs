@@ -13,8 +13,6 @@ pub const ENV_MAX_PROMPT_LENGTH: &str = "MAX_STRING_LENGTH_PROMPT_IN_DB";
 pub const DEFAULT_MAX_PROMPT_LENGTH: i64 = 2048;
 pub const ENV_DEQUEUE_COUNT: &str = "MAX_REDIS_BUFFER_DEQUEUE_COUNT";
 pub const DEFAULT_DEQUEUE_COUNT: i64 = 100;
-pub const ENV_RESEED_LOCK_LIMIT: &str = "SPEND_COUNTER_RESEED_LOCKS_MAX_SIZE";
-pub const DEFAULT_RESEED_LOCK_LIMIT: i64 = 10_000;
 const MISSING_SESSION_ID_PATH: &str = "general_settings.missing_session_id";
 const USE_REDIS_BUFFER_PATH: &str = "general_settings.use_redis_transaction_buffer";
 const MAX_BUDGET_PATH: &str = "litellm_settings.max_budget";
@@ -66,7 +64,6 @@ pub struct Settings {
     pub enable_prometheus_only: Option<bool>,
     pub use_redis_transaction_buffer: bool,
     pub max_redis_buffer_dequeue_count: i64,
-    pub reseed_lock_limit: i64,
 }
 impl Section for Raw {
     type Settings = Settings;
@@ -103,12 +100,6 @@ impl Section for Raw {
                 lookup,
                 ENV_DEQUEUE_COUNT,
                 DEFAULT_DEQUEUE_COUNT,
-            )?,
-            // the lock registry takes the bound unchanged; zero and negative strip every entry it inserts
-            reseed_lock_limit: initial_environment_integer(
-                lookup,
-                ENV_RESEED_LOCK_LIMIT,
-                DEFAULT_RESEED_LOCK_LIMIT,
             )?,
         })
     }
