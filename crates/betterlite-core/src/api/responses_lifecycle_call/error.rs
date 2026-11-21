@@ -89,7 +89,7 @@ fn raw_exception(error: &LifecycleError, provider: &str) -> RawException {
 }
 
 // the exception class exception_type() raises for the families the read path reaches; class_message builds its text
-fn class_name(class: &ErrorClass) -> &'static str {
+const fn class_name(class: &ErrorClass) -> &'static str {
     match class {
         ErrorClass::Authentication(_) => "AuthenticationError",
         ErrorClass::NotFound(_) => "NotFoundError",
