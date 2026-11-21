@@ -68,3 +68,20 @@ fn a_block_whose_only_value_is_null_is_still_nonempty() {
         Some(CoordinationRedisSource::CoordinationRedis),
     );
 }
+
+#[test]
+fn the_source_serializes_with_the_source_literals() {
+    assert_eq!(
+        serde_json::to_value(CoordinationRedisSource::CoordinationRedis)
+            .expect("the source serializes"),
+        serde_json::json!("coordination_redis"),
+    );
+    assert_eq!(
+        serde_json::to_value(CoordinationRedisSource::CacheBackend).expect("the source serializes"),
+        serde_json::json!("cache_backend"),
+    );
+    assert_eq!(
+        serde_json::to_value(CoordinationRedisSource::Environment).expect("the source serializes"),
+        serde_json::json!("environment"),
+    );
+}
