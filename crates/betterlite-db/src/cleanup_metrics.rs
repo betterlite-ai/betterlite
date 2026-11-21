@@ -1,6 +1,6 @@
 mod tests;
 
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use betterlite_prometheus::collector_factory::collector::{Collector as _, MetricValue};
 use betterlite_prometheus::collector_registry::metric::{Bucket, CollectorKind, PrometheusMetric};
@@ -165,30 +165,30 @@ impl<'registry> CleanupMetrics<'registry> {
         }
     }
 
-    pub fn record_batch(&self, table_name: &str, rows_deleted: u64, duration_seconds: f64) {
+    fn locked_registration(&self) -> MutexGuard<'_, Registration> {
         self.ensure_registered();
-        let registration = self
-            .registration
+        self.registration
             .lock()
-            .unwrap_or_else(PoisonError::into_inner);
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    pub fn record_batch(&self, table_name: &str, rows_deleted: u64, duration_seconds: f64) {
+        let registration = self.locked_registration();
+        let labels = [(TABLE_LABEL, table_name)];
         if let Some(metric) = &registration.instruments.rows_deleted {
             metric
-                .labels(&[(TABLE_LABEL, table_name)])
+                .labels(&labels)
                 .inc(MetricValue::Finite(Decimal::from(rows_deleted)));
         }
         if let Some(metric) = &registration.instruments.batch_duration {
             metric
-                .labels(&[(TABLE_LABEL, table_name)])
+                .labels(&labels)
                 .observe(duration_value(duration_seconds));
         }
     }
 
     pub fn record_batch_failure(&self, table_name: &str) {
-        self.ensure_registered();
-        let registration = self
-            .registration
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
+        let registration = self.locked_registration();
         if let Some(metric) = &registration.instruments.batch_failures {
             metric
                 .labels(&[(TABLE_LABEL, table_name)])
@@ -197,24 +197,17 @@ impl<'registry> CleanupMetrics<'registry> {
     }
 
     pub fn set_rows_remaining(&self, table_name: &str, remaining: i64) {
-        self.ensure_registered();
-        let registration = self
-            .registration
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        if let Some(metric) = &registration.instruments.rows_remaining {
-            metric
-                .labels(&[(TABLE_LABEL, table_name)])
-                .set(MetricValue::Finite(Decimal::from(remaining)));
-        }
+        let registration = self.locked_registration();
+        let Some(metric) = &registration.instruments.rows_remaining else {
+            return;
+        };
+        metric
+            .labels(&[(TABLE_LABEL, table_name)])
+            .set(MetricValue::Finite(Decimal::from(remaining)));
     }
 
     pub fn record_run(&self, outcome: RunOutcome) {
-        self.ensure_registered();
-        let registration = self
-            .registration
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
+        let registration = self.locked_registration();
         if let Some(metric) = &registration.instruments.runs {
             metric
                 .labels(&[(OUTCOME_LABEL, outcome.as_str())])

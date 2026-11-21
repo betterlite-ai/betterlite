@@ -57,29 +57,24 @@ where
     }
 }
 
-async fn statement_transaction<'client>(
+// partition DDL takes ACCESS EXCLUSIVE, so its lock wait is bounded alongside the statement
+async fn bounded_transaction<'client>(
     client: &'client mut Client,
     timeout_ms: u64,
+    with_lock_timeout: bool,
 ) -> Result<Transaction<'client>, PostgresError> {
     let transaction = client.transaction().await?;
-    let statement_timeout = format!("SET LOCAL statement_timeout = {timeout_ms}");
-    transaction.batch_execute(&statement_timeout).await?;
-    Ok(transaction)
-}
-
-// partition DDL takes ACCESS EXCLUSIVE, so its lock wait needs its own bound on top of the statement bound
-async fn locking_transaction<'client>(
-    client: &'client mut Client,
-    timeout_ms: u64,
-) -> Result<Transaction<'client>, PostgresError> {
-    let transaction = statement_transaction(client, timeout_ms).await?;
-    let lock_timeout = format!("SET LOCAL lock_timeout = {timeout_ms}");
-    transaction.batch_execute(&lock_timeout).await?;
+    let settings = if with_lock_timeout {
+        format!("SET LOCAL statement_timeout = {timeout_ms}; SET LOCAL lock_timeout = {timeout_ms}")
+    } else {
+        format!("SET LOCAL statement_timeout = {timeout_ms}")
+    };
+    transaction.batch_execute(&settings).await?;
     Ok(transaction)
 }
 
 async fn probe_partitioned(client: &mut Client, timeout_ms: u64) -> Result<bool, PostgresError> {
-    let transaction = statement_transaction(client, timeout_ms).await?;
+    let transaction = bounded_transaction(client, timeout_ms, false).await?;
     let row = transaction
         .query_one(PARTITIONED_SQL, &[&SPEND_LOGS_TABLE])
         .await?;
@@ -109,7 +104,7 @@ pub async fn list_partitions(
     client: &mut Client,
     timeout_ms: u64,
 ) -> Result<Vec<CatalogPartition>, PostgresError> {
-    let transaction = statement_transaction(client, timeout_ms).await?;
+    let transaction = bounded_transaction(client, timeout_ms, false).await?;
     let rows = transaction
         .query(PARTITIONS_SQL, &[&SPEND_LOGS_TABLE])
         .await?;
@@ -127,12 +122,12 @@ pub async fn list_partitions(
     Ok(partitions)
 }
 
-async fn execute_ddl(
+pub(crate) async fn execute_ddl(
     client: &mut Client,
     statement: &str,
     timeout_ms: u64,
 ) -> Result<(), PostgresError> {
-    let transaction = locking_transaction(client, timeout_ms).await?;
+    let transaction = bounded_transaction(client, timeout_ms, true).await?;
     transaction.batch_execute(statement).await?;
     transaction.commit().await
 }
@@ -148,31 +143,10 @@ pub fn create_partition_statement(partition: &PlannedPartition) -> String {
     )
 }
 
-// _execute_bounded_ddl: one CREATE under the statement and lock bounds
-pub async fn create_partition(
-    client: &mut Client,
-    partition: &PlannedPartition,
-    timeout_ms: u64,
-) -> Result<(), BoundedTransactionError> {
-    within_deadline(
-        timeout_ms,
-        execute_ddl(client, &create_partition_statement(partition), timeout_ms),
+#[must_use]
+pub fn drop_partition_statement(catalog_partition_name: &str) -> String {
+    format!(
+        "DROP TABLE IF EXISTS \"{}\"",
+        catalog_partition_name.replace('"', "\"\""),
     )
-    .await
-}
-
-pub async fn drop_partition(
-    client: &mut Client,
-    name: &str,
-    timeout_ms: u64,
-) -> Result<(), BoundedTransactionError> {
-    within_deadline(
-        timeout_ms,
-        execute_ddl(
-            client,
-            &format!("DROP TABLE IF EXISTS \"{}\"", name.replace('"', "\"\"")),
-            timeout_ms,
-        ),
-    )
-    .await
 }

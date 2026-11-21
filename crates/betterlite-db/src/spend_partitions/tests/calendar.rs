@@ -6,8 +6,8 @@ use crate::spend_partitions::calendar::{
     upcoming_partitions,
 };
 
-fn day_of(year: i32, month: u32, day: u32) -> NaiveDate {
-    NaiveDate::from_ymd_opt(year, month, day).expect("a calendar date")
+fn day_of(text: &str) -> NaiveDate {
+    NaiveDate::parse_from_str(text, "%Y-%m-%d").expect("a calendar date")
 }
 
 fn partition(name: &str, lower: &str, upper: &str) -> PlannedPartition {
@@ -26,67 +26,47 @@ fn partitions(entries: &[(&str, &str, &str)]) -> Vec<PlannedPartition> {
 }
 
 #[rstest]
-#[case::monday(28, "LiteLLM_SpendLogs_p20261228", "2026-12-28", "2027-01-04")]
-#[case::sunday(6, "LiteLLM_SpendLogs_p20261130", "2026-11-30", "2026-12-07")]
-#[case::tuesday(1, "LiteLLM_SpendLogs_p20261130", "2026-11-30", "2026-12-07")]
-fn weeks_start_on_the_monday_and_cross_the_year(
-    #[case] day: u32,
-    #[case] name: &str,
-    #[case] lower: &str,
-    #[case] upper: &str,
-) {
-    let planned = upcoming_partitions(day_of(2026, 12, day), PartitionInterval::Week, 0);
-    assert_eq!(planned, vec![partition(name, lower, upper)]);
-}
-
-#[rstest]
-#[case::first_of_month(2026, 12, 1, 0, &[
+#[case::week_monday(PartitionInterval::Week, "2026-12-28", 0, &[
+    ("LiteLLM_SpendLogs_p20261228", "2026-12-28", "2027-01-04"),
+])]
+#[case::week_sunday(PartitionInterval::Week, "2026-12-06", 0, &[
+    ("LiteLLM_SpendLogs_p20261130", "2026-11-30", "2026-12-07"),
+])]
+#[case::week_tuesday(PartitionInterval::Week, "2026-12-01", 0, &[
+    ("LiteLLM_SpendLogs_p20261130", "2026-11-30", "2026-12-07"),
+])]
+#[case::month_first(PartitionInterval::Month, "2026-12-01", 0, &[
     ("LiteLLM_SpendLogs_p20261201", "2026-12-01", "2027-01-01"),
 ])]
-#[case::december(2026, 12, 15, 1, &[
+#[case::month_december(PartitionInterval::Month, "2026-12-15", 1, &[
     ("LiteLLM_SpendLogs_p20261201", "2026-12-01", "2027-01-01"),
     ("LiteLLM_SpendLogs_p20270101", "2027-01-01", "2027-02-01"),
 ])]
-#[case::february(2027, 2, 10, 1, &[
+#[case::month_february(PartitionInterval::Month, "2027-02-10", 1, &[
     ("LiteLLM_SpendLogs_p20270201", "2027-02-01", "2027-03-01"),
     ("LiteLLM_SpendLogs_p20270301", "2027-03-01", "2027-04-01"),
 ])]
-fn months_start_on_the_first_and_roll_over_december(
-    #[case] year: i32,
-    #[case] month: u32,
-    #[case] day: u32,
-    #[case] ahead: i64,
-    #[case] expected: &[(&str, &str, &str)],
-) {
-    assert_eq!(
-        upcoming_partitions(day_of(year, month, day), PartitionInterval::Month, ahead),
-        partitions(expected),
-    );
-}
-
-#[rstest]
-#[case::today(2026, 12, 31, 0, &[
+#[case::day_today(PartitionInterval::Day, "2026-12-31", 0, &[
     ("LiteLLM_SpendLogs_p20261231", "2026-12-31", "2027-01-01"),
 ])]
-#[case::three_days(2026, 12, 31, 2, &[
+#[case::day_three_days(PartitionInterval::Day, "2026-12-31", 2, &[
     ("LiteLLM_SpendLogs_p20261231", "2026-12-31", "2027-01-01"),
     ("LiteLLM_SpendLogs_p20270101", "2027-01-01", "2027-01-02"),
     ("LiteLLM_SpendLogs_p20270102", "2027-01-02", "2027-01-03"),
 ])]
-#[case::leap_day(2028, 2, 28, 1, &[
+#[case::day_leap_day(PartitionInterval::Day, "2028-02-28", 1, &[
     ("LiteLLM_SpendLogs_p20280228", "2028-02-28", "2028-02-29"),
     ("LiteLLM_SpendLogs_p20280229", "2028-02-29", "2028-03-01"),
 ])]
-#[case::negative_ahead(2026, 6, 2, -1, &[])]
-fn days_cover_today_and_each_ahead_day(
-    #[case] year: i32,
-    #[case] month: u32,
-    #[case] day: u32,
+#[case::negative_ahead(PartitionInterval::Day, "2026-06-02", -1, &[])]
+fn upcoming_partitions_cover_the_current_and_ahead_periods(
+    #[case] interval: PartitionInterval,
+    #[case] today: &str,
     #[case] ahead: i64,
     #[case] expected: &[(&str, &str, &str)],
 ) {
     assert_eq!(
-        upcoming_partitions(day_of(year, month, day), PartitionInterval::Day, ahead),
+        upcoming_partitions(day_of(today), interval, ahead),
         partitions(expected),
     );
 }

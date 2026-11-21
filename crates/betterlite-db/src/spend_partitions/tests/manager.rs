@@ -13,8 +13,8 @@ use tracing_subscriber::fmt::MakeWriter;
 use crate::spend_partitions::SpendPartitionOperation;
 use crate::spend_partitions::calendar::{PartitionClock, PartitionInterval, PlannedPartition};
 use crate::spend_partitions::catalog::{
-    BoundedTransactionError, TRANSACTION_COMMIT_SLACK, create_partition,
-    create_partition_statement, is_partitioned, list_partitions,
+    BoundedTransactionError, TRANSACTION_COMMIT_SLACK, create_partition_statement,
+    drop_partition_statement, execute_ddl, is_partitioned, list_partitions, within_deadline,
 };
 use crate::spend_partitions::fixtures::SpendPartitionCase;
 use crate::spend_partitions::manager::{
@@ -188,6 +188,10 @@ fn create_statements_quote_catalog_identifiers() {
     assert_eq!(
         create_partition_statement(&planned),
         r#"CREATE TABLE IF NOT EXISTS "odd""name" PARTITION OF "LiteLLM_SpendLogs" FOR VALUES FROM ('2026-06-02') TO ('2026-06-03')"#
+    );
+    assert_eq!(
+        drop_partition_statement(r#"odd"name"#),
+        r#"DROP TABLE IF EXISTS "odd""name""#
     );
 }
 
@@ -383,12 +387,11 @@ async fn a_locked_parent_cancels_the_create_within_the_statement_budget() {
         upper: day(2026, 6, 3),
     };
     let started = Instant::now();
-    let outcome = tokio::time::timeout(
-        Duration::from_secs(5),
-        create_partition(&mut case.client, &planned, 200),
-    )
-    .await
-    .expect("the create answers within the client deadline");
+    let statement = create_partition_statement(&planned);
+    let ddl = execute_ddl(&mut case.client, &statement, 200);
+    let outcome = tokio::time::timeout(Duration::from_secs(5), within_deadline(200, ddl))
+        .await
+        .expect("the create answers within the client deadline");
     let elapsed = started.elapsed();
     let error = outcome.expect_err("a create waiting on the parent lock");
     assert!(matches!(

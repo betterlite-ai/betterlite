@@ -3,8 +3,8 @@ use tokio_postgres::Client;
 
 use super::calendar::{PartitionClock, PartitionInterval, upcoming_partitions};
 use super::catalog::{
-    BoundedTransactionError, RemainingBudget, create_partition, drop_partition, list_partitions,
-    within_deadline,
+    BoundedTransactionError, RemainingBudget, create_partition_statement, drop_partition_statement,
+    execute_ddl, list_partitions, within_deadline,
 };
 use super::partition_bound::{PartitionBoundError, select_partitions_to_drop};
 
@@ -50,7 +50,9 @@ impl<Clock: PartitionClock> SpendPartitionManager<Clock> {
                 );
                 break;
             };
-            let created = create_partition(client, &partition, timeout_ms).await;
+            let statement = create_partition_statement(&partition);
+            let created =
+                within_deadline(timeout_ms, execute_ddl(client, &statement, timeout_ms)).await;
             match created {
                 Ok(()) => ensured.push(partition.name),
                 Err(error) => {
@@ -84,7 +86,9 @@ pub async fn drop_partitions_older_than(
             tracing::info!("Run budget spent, leaving the remaining partitions for the next run");
             break;
         };
-        let dropped_partition = drop_partition(client, &name, timeout_ms).await;
+        let statement = drop_partition_statement(&name);
+        let dropped_partition =
+            within_deadline(timeout_ms, execute_ddl(client, &statement, timeout_ms)).await;
         match dropped_partition {
             Ok(()) => dropped.push(name),
             Err(error) => tracing::warn!("Failed to drop spend-log partition {name}: {error}"),
