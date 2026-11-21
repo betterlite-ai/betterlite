@@ -71,7 +71,7 @@ fn sanitize_value(call: &SanitizeCall) -> Value {
     };
     let settings = MetadataSafetySettings {
         limits: ApiLimits::default(),
-        missing_session_id: policy(call.settings.missing_session_id.as_deref()),
+        missing_session_id: call.settings.missing_session_id.as_deref().map(policy),
         turn_off_message_logging: call.settings.turn_off_message_logging,
     };
     match sanitize_request_metadata(&input, &settings) {
@@ -84,13 +84,13 @@ fn sanitize_value(call: &SanitizeCall) -> Value {
     }
 }
 
-fn policy(name: Option<&str>) -> Option<MissingSessionIdPolicy> {
-    name.map(|text| match text {
+fn policy(name: &str) -> MissingSessionIdPolicy {
+    match name {
         "generate" => MissingSessionIdPolicy::Generate,
         "reject" => MissingSessionIdPolicy::Reject,
         "omit" => MissingSessionIdPolicy::Omit,
         other => MissingSessionIdPolicy::Unrecognized(other.to_owned()),
-    })
+    }
 }
 
 fn facts_json(facts: ErrorFacts) -> Value {
