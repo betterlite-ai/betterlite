@@ -6,7 +6,7 @@ use indexmap::IndexMap;
 use rust_decimal::Decimal;
 
 #[must_use]
-pub fn object(value: Option<&Json>) -> Option<&IndexMap<String, Json>> {
+pub const fn object(value: Option<&Json>) -> Option<&IndexMap<String, Json>> {
     match value {
         Some(Json::Object(fields)) => Some(fields),
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))

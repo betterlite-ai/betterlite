@@ -1,6 +1,5 @@
 use std::time::Instant;
 
-use betterlite_models::decisions::Json;
 use betterlite_prometheus::collector_factory::collector::MetricValue;
 use rust_decimal::Decimal;
 

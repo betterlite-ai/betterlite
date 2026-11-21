@@ -34,10 +34,7 @@ where
             end_user_settings,
         },
     )?;
-    let amount = match capture_rate {
-        Some(rate) => MetricValue::Finite(rate),
-        None => MetricValue::NotANumber,
-    };
+    let amount = capture_rate.map_or(MetricValue::NotANumber, MetricValue::Finite);
     let gauge = counters.counter(UsageMetric::SpendCaptureRate);
     if labels.is_empty() {
         gauge.set(amount);

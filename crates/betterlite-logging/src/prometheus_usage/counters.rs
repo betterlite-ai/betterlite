@@ -40,10 +40,10 @@ pub trait UsageCounters {
         amount: MetricValue,
         now: Instant,
     ) -> Result<(), PrometheusUsageError<<Self::Counter as RemovableMetric>::Error>> {
-        if let MetricValue::Finite(amount) = amount
-            && amount < Decimal::ZERO
+        if let MetricValue::Finite(value) = amount
+            && value < Decimal::ZERO
         {
-            return Err(PrometheusUsageError::NegativeAmount { amount });
+            return Err(PrometheusUsageError::NegativeAmount { amount: value });
         }
         let counter = self.counter(metric);
         let emission = CounterEmission {

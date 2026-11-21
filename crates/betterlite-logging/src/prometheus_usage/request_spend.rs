@@ -46,7 +46,7 @@ pub fn increment_zero_cost_requests<C>(
 where
     C: UsageCounters,
 {
-    let Some(diagnostic) = diagnostic else {
+    let Some(found) = diagnostic else {
         return Ok(());
     };
     let supported = counters.supported_labels(UsageMetric::ZeroCostRequests);
@@ -61,7 +61,7 @@ where
     {
         projected.insert(
             ZERO_COST_REASON_LABEL.to_owned(),
-            Some(diagnostic.reason.label().to_owned()),
+            Some(found.reason.label().to_owned()),
         );
     }
     let pairs = label_pairs(&projected);
