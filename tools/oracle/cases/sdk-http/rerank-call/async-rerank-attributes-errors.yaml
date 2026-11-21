@@ -1,0 +1,20 @@
+kind: sdk_http
+name: async-rerank-attributes-errors
+env: {}
+call:
+  rerank_call:
+    runs:
+      - model: unknown-provider/some-model
+        query: q
+        documents: [a]
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore:
+    - pointer: /rerank_call/value/runs/0/failure/message
+      why: >-
+        LiteLLM appends a traceback and a bug-report notice to an unmapped
+        exception's message, and betterlite carries its own resolution error
+        text, so only the message wording differs.
