@@ -78,21 +78,10 @@ impl ImageEditProviderSource for Providers {
         if self.recorded {
             return Some(&self.recorder);
         }
-        match tag {
-            ImageEditConfigTag::OpenAi(_) => Some(&self.openai),
-            ImageEditConfigTag::HostedVllm(_)
-            | ImageEditConfigTag::Azure
-            | ImageEditConfigTag::Recraft
-            | ImageEditConfigTag::BlackForestLabs
-            | ImageEditConfigTag::FalAi(_)
-            | ImageEditConfigTag::AzureAi(_)
-            | ImageEditConfigTag::Gemini(_)
-            | ImageEditConfigTag::LiteLlmProxy
-            | ImageEditConfigTag::VertexAi(_)
-            | ImageEditConfigTag::Stability(_)
-            | ImageEditConfigTag::Bedrock(_)
-            | ImageEditConfigTag::OpenRouter(_) => None,
+        if let ImageEditConfigTag::OpenAi(_) = tag {
+            return Some(&self.openai);
         }
+        None
     }
 }
 
