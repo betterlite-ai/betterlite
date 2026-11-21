@@ -134,8 +134,8 @@ fn series_total(registry: &CollectorRegistry, name: &str) -> Option<MetricValue>
         .map(|sample| sample.total)
 }
 
-fn finite(value: i64) -> Option<MetricValue> {
-    Some(MetricValue::Finite(Decimal::from(value)))
+fn finite(value: i64) -> MetricValue {
+    MetricValue::Finite(Decimal::from(value))
 }
 
 async fn run_table(
@@ -186,8 +186,8 @@ async fn deletes_expired_rows_in_batches_until_exhausted() {
     assert_eq!(result.table, CleanupTable::SPEND_LOGS);
     assert_eq!(batches, vec![2, 2, 1]);
     assert_eq!(row_count(&case.client, SPEND_LOGS).await, 2);
-    assert_eq!(series_total(&registry, ROWS_DELETED), finite(5));
-    assert_eq!(series_total(&registry, ROWS_REMAINING), finite(0));
+    assert_eq!(series_total(&registry, ROWS_DELETED), Some(finite(5)));
+    assert_eq!(series_total(&registry, ROWS_REMAINING), Some(finite(0)));
     let durations = registry.get(BATCH_DURATION).unwrap();
     let samples = durations.series(&[Some(SPEND_LOGS.to_owned())]).unwrap();
     assert_eq!(samples.count, 4);
@@ -224,7 +224,7 @@ async fn stops_at_the_batch_cap_and_probes_a_capped_backlog() {
     assert_eq!(result.rows_deleted, 2);
     assert_eq!(batches, vec![1, 1]);
     assert_eq!(row_count(&case.client, SPEND_LOGS).await, 5);
-    assert_eq!(series_total(&registry, ROWS_REMAINING), finite(3));
+    assert_eq!(series_total(&registry, ROWS_REMAINING), Some(finite(3)));
     case.close().await;
 }
 
@@ -282,7 +282,7 @@ async fn checks_the_deadline_before_the_batch_cap() {
     assert_eq!(result.rows_deleted, 0);
     assert!(batches.is_empty());
     assert_eq!(row_count(&case.client, SPEND_LOGS).await, 3);
-    assert_eq!(series_total(&registry, ROWS_REMAINING), finite(42));
+    assert_eq!(series_total(&registry, ROWS_REMAINING), Some(finite(42)));
     case.close().await;
 }
 
@@ -311,8 +311,8 @@ async fn aborts_after_consecutive_lock_timeouts_and_keeps_the_gauge() {
     assert_eq!(result.stop_reason, StopReason::Aborted);
     assert_eq!(result.rows_deleted, 0);
     assert!(batches.is_empty());
-    assert_eq!(series_total(&registry, BATCH_FAILURES), finite(3));
-    assert_eq!(series_total(&registry, ROWS_REMAINING), finite(42));
+    assert_eq!(series_total(&registry, BATCH_FAILURES), Some(finite(3)));
+    assert_eq!(series_total(&registry, ROWS_REMAINING), Some(finite(42)));
     holder.batch_execute("ROLLBACK").await.unwrap();
     assert_eq!(row_count(&case.client, SPEND_LOGS).await, 3);
     drop(holder);
@@ -321,7 +321,7 @@ async fn aborts_after_consecutive_lock_timeouts_and_keeps_the_gauge() {
 }
 
 #[tokio::test]
-async fn a_successful_batch_resets_failures_and_failures_spare_the_cap() {
+async fn a_successful_batch_resets_consecutive_failures() {
     let mut case = seeded(3, 0).await;
     case.client
         .batch_execute(ALTERNATING_FAILURES)
@@ -331,37 +331,50 @@ async fn a_successful_batch_resets_failures_and_failures_spare_the_cap() {
     let metrics = CleanupMetrics::new(&registry);
     let clock = StepClock::new(Duration::from_millis(1));
     let deadline = clock.at(1_000_000);
-    let resetting = CleanupBounds {
+    let bounds = CleanupBounds {
         batch_size: 1,
         max_consecutive_failures: 2,
         ..BOUNDS
     };
-    let (drained, batches) = run_table(
+    let (result, batches) = run_table(
         &mut case,
-        (resetting, &clock, &metrics),
+        (bounds, &clock, &metrics),
         CleanupTable::SPEND_LOGS,
         (cutoff(), deadline),
     )
     .await;
-    assert_eq!(drained.stop_reason, StopReason::Exhausted);
+    assert_eq!(result.stop_reason, StopReason::Exhausted);
     assert_eq!(batches, vec![1, 1, 1]);
-    assert_eq!(series_total(&registry, BATCH_FAILURES), finite(4));
-    case.seed_log("again-0", old()).await;
-    case.seed_log("again-1", old()).await;
-    let capped = CleanupBounds {
+    assert_eq!(series_total(&registry, BATCH_FAILURES), Some(finite(4)));
+    case.close().await;
+}
+
+#[tokio::test]
+async fn failed_batches_do_not_consume_the_batch_cap() {
+    let mut case = seeded(3, 0).await;
+    case.client
+        .batch_execute(ALTERNATING_FAILURES)
+        .await
+        .unwrap();
+    let registry = CollectorRegistry::default();
+    let metrics = CleanupMetrics::new(&registry);
+    let clock = StepClock::new(Duration::from_millis(1));
+    let deadline = clock.at(1_000_000);
+    let bounds = CleanupBounds {
         batch_size: 1,
         max_batches: 1,
         ..BOUNDS
     };
-    let (result, _batches) = run_table(
+    let (result, batches) = run_table(
         &mut case,
-        (capped, &clock, &metrics),
+        (bounds, &clock, &metrics),
         CleanupTable::SPEND_LOGS,
         (cutoff(), deadline),
     )
     .await;
     assert_eq!(result.stop_reason, StopReason::BatchCapReached);
     assert_eq!(result.rows_deleted, 1);
+    assert_eq!(batches, vec![1]);
     case.close().await;
 }
 
@@ -391,7 +404,7 @@ async fn a_batch_cancelled_at_the_deadline_is_not_a_failure() {
     assert!(started.elapsed() < Duration::from_secs(10));
     assert_eq!(result.stop_reason, StopReason::BudgetExhausted);
     assert_eq!(series_total(&registry, BATCH_FAILURES), None);
-    assert_eq!(series_total(&registry, ROWS_REMAINING), finite(42));
+    assert_eq!(series_total(&registry, ROWS_REMAINING), Some(finite(42)));
     holder.batch_execute("ROLLBACK").await.unwrap();
     drop(holder);
     drop(drivers);

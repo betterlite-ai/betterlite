@@ -226,7 +226,7 @@ fn cutoffs_bind_as_timestamptz_or_text(#[case] ty: Type, #[case] accepted: bool)
 #[case::zero_batch_timeout(10_000, 0, 1)]
 #[case::one_millisecond(1, 30_000, 1)]
 #[case::two_milliseconds(2, 30_000, 2)]
-#[case::above_postgres_range(4_000_000_000, 4_000_000_000, 2_147_483_647)]
+#[case::above_postgres_range(4_000_000_000, 4_000_000_000, 0x7FFF_FFFF)]
 fn statement_timeout_takes_the_smaller_bound(
     #[case] remaining_ms: u64,
     #[case] batch_timeout_ms: u64,
@@ -246,7 +246,7 @@ fn statement_timeout_floors_a_passed_deadline_at_one_millisecond() {
         statement_timeout_ms(now, deadline, Duration::from_secs(30)),
         1
     );
-    assert_eq!(MAX_TIMEOUT_MS, 2_147_483_647);
+    assert_eq!(MAX_TIMEOUT_MS, 0x7FFF_FFFF);
 }
 
 #[rstest]
