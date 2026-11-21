@@ -4,7 +4,7 @@
     reason = "a behavior test asserts one whole provider sequence, the searches it ran and the response it produced"
 )]
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::fmt::Debug;
 use std::fs;
 use std::path::Path;
@@ -282,8 +282,10 @@ impl VectorStoreSearches for FakeSearches {
         });
         let found = self.scripted_result(request.vector_store_id, request.query)?;
         Ok(VectorStoreSearchResponse {
+            object: None,
+            search_query: None,
             data: Some(found),
-            ..VectorStoreSearchResponse::default()
+            extra: BTreeMap::new(),
         })
     }
 }
@@ -698,14 +700,14 @@ fn store_warning_quotes_like_python() {
         value: &both_value,
         known: &known,
     }
-    .to_string();
+    .message();
     assert!(both.contains(r#"vector_store_id='a\'"b' outside"#));
     let single_value = text("a'b");
     let single = DiagnosticMessage::StoreOutside {
         value: &single_value,
         known: &known,
     }
-    .to_string();
+    .message();
     assert!(single.contains(r#"vector_store_id="a'b" outside"#));
 }
 
@@ -885,7 +887,8 @@ fn arguments_that_are_not_a_json_object_are_refused() {
 fn arguments_beyond_the_json_limit_are_refused() {
     let limits = ApiLimits {
         max_json_bytes: 2,
-        ..ApiLimits::default()
+        max_event_bytes: 1024 * 1024,
+        max_items: 64 * 1024,
     };
     let error = tool_call_arguments(&text(&queries_arguments(&["alpha"])), &limits).unwrap_err();
     assert!(matches!(
@@ -901,8 +904,9 @@ fn oversized_follow_up_input_is_refused() {
         &[function_call_item(&queries_arguments(&["q"]), "call_1")],
     );
     let limits = ApiLimits {
+        max_json_bytes: 16 * 1024 * 1024,
+        max_event_bytes: 1024 * 1024,
         max_items: 2,
-        ..ApiLimits::default()
     };
     let error = build_follow_up_input(&json(r#""question""#), &first.output, &[Json::Null], limits)
         .unwrap_err();

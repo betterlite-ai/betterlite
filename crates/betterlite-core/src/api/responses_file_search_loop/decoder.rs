@@ -8,6 +8,7 @@ use crate::api::responses_file_search_tools::tools::FUNCTION_TOOL_NAME;
 use crate::api::responses_tool_namespaces::values::Fields;
 
 use super::error::FileSearchLoopError;
+// ast-grep-ignore: no-long-names
 use super::{DecodeError, decode_responses_file_search_args};
 
 const FUNCTION_CALL_TYPE: &str = "function_call";
@@ -32,6 +33,7 @@ fn arguments_from_text(
     text: &str,
     limits: &ApiLimits,
 ) -> Result<Fields, FileSearchLoopError<Infallible>> {
+    // ast-grep-ignore: no-long-names
     match decode_responses_file_search_args(text.as_bytes(), limits) {
         Ok(fields) => Ok(fields),
         Err(DecodeError::Json(_)) => Ok(Fields::new()),

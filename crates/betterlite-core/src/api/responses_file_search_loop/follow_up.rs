@@ -10,8 +10,7 @@ use crate::api::responses_file_search_tools::error::FileSearchToolsError;
 
 use super::error::FileSearchLoopError;
 
-// _build_follow_up_input (L489-L512): the caller's items, the first response's output items with
-// their null fields dropped, then one function_call_output per tool call
+// _build_follow_up_input (L489-L512): caller items, first output items with nulls dropped, results
 pub fn build_follow_up_input(
     input: &Json,
     first_output: &[ResponseOutputItem],
@@ -48,8 +47,7 @@ fn user_message(content: &str) -> Json {
     ]))
 }
 
-// a plain dict item is kept as it is; a model item dumps with exclude_none=True, reading the
-// model's fields back off the wire form where every unset optional is a null
+// a plain dict item is kept as it is; a model item dumps with exclude_none=True off the wire form
 fn follow_up_item(item: &ResponseOutputItem) -> Result<Json, FileSearchToolsError> {
     let text =
         serde_json::to_string(item).map_err(|source| FileSearchToolsError::Wire { source })?;

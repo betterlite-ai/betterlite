@@ -56,8 +56,7 @@ pub struct ToolCallRequest<'round> {
     pub authorization: &'round SearchAuthorization,
 }
 
-// _run_vector_searches (L140-L178): one asearch per query per store, query-major, and a failed
-// search is a warning rather than an error, exactly as the bare except there treats it
+// _run_vector_searches (L140-L178): query-major asearch calls, and a failure is a warning only
 pub async fn run_vector_searches<Searches>(
     searches: &Searches,
     vector_store_ids: &[String],
@@ -89,7 +88,7 @@ where
                         vector_store_id,
                         error: &failure,
                     }
-                    .to_string();
+                    .message();
                     warn!(target: FILE_SEARCH_LOGGER, "{message}");
                     round.record(vector_store_id, query, 0, true);
                     round.diagnostics.push(FileSearchDiagnostic {
@@ -165,7 +164,7 @@ fn store_outside(round: &mut SearchRound, all: &[String], call: &Fields) {
         value: &taken,
         known: all,
     }
-    .to_string();
+    .message();
     warn!(target: FILE_SEARCH_LOGGER, "{message}");
     round.diagnostics.push(FileSearchDiagnostic {
         level: WARNING_LEVEL,

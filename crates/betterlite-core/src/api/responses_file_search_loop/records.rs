@@ -1,4 +1,3 @@
-use std::fmt::{self, Display, Formatter};
 use std::sync::Arc;
 
 use betterlite_models::decisions::Json;
@@ -49,9 +48,7 @@ impl FollowUpCall {
     }
 }
 
-// what _execute_file_search_tool_calls (L440-L486) returns: every query, every result, one
-// function_call_output per tool call, the searches and warnings that produced them, and the id
-// the round reports its file search under
+// what _execute_file_search_tool_calls (L440-L486) returns, with the id the round reports under
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExecutedToolCalls {
     pub call_id: String,
@@ -92,23 +89,23 @@ pub enum DiagnosticMessage<'message> {
     },
 }
 
-impl Display for DiagnosticMessage<'_> {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+impl DiagnosticMessage<'_> {
+    pub fn message(&self) -> String {
         match self {
             Self::SearchFailed {
                 query,
                 vector_store_id,
                 error,
-            } => write!(
-                formatter,
+            } => format!(
                 "file_search emulated: search failed for query='{query}', \
                  vector_store_id='{vector_store_id}': {error}"
             ),
             Self::StoreOutside { value, known } => {
                 let shown_value = display_value(value);
-                let shown_ids = display_ids(known);
-                write!(
-                    formatter,
+                // str() of the request's ids, which is repr() of a list of strings
+                let listed = Json::List(known.iter().map(|id| Json::Text(id.clone())).collect());
+                let shown_ids = display_value(&listed);
+                format!(
                     "file_search emulated: model picked vector_store_id={shown_value} outside the \
                      request's vector_store_ids {shown_ids}; searching the request's stores instead"
                 )
@@ -136,12 +133,6 @@ fn display_value(value: &Json) -> String {
             format!("{{{}}}", shown.join(", "))
         }
     }
-}
-
-// str() of the request's vector store ids, which is repr() of a list of strings
-fn display_ids(ids: &[String]) -> String {
-    let listed = Json::List(ids.iter().map(|id| Json::Text(id.clone())).collect());
-    display_value(&listed)
 }
 
 // Python's repr of a string: single quotes unless that forces escaping and double quotes would not
