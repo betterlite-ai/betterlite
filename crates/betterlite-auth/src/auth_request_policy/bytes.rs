@@ -21,9 +21,11 @@ pub enum SizeError {
         #[source]
         source: ParseIntError,
     },
-    #[error("Request size is too large. Request size is {size_mb} MB. Max size is {limit_mb} MB")]
+    #[error("Request size is too large. Request size is {size_mb:?} MB. Max size is {limit_mb} MB")]
     RequestTooLarge { size_mb: f64, limit_mb: f64 },
-    #[error("Response size is too large. Response size is {size_mb} MB. Max size is {limit_mb} MB")]
+    #[error(
+        "Response size is too large. Response size is {size_mb:?} MB. Max size is {limit_mb} MB"
+    )]
     ResponseTooLarge { size_mb: f64, limit_mb: f64 },
 }
 
