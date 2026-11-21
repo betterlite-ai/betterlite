@@ -180,15 +180,22 @@ pub(super) fn price_record(text: &str) -> PriceRecord {
     serde_json::from_str(text).unwrap()
 }
 
-// The payload every projection needs to get past its key gates; a case that reads other fields writes its own text.
-pub(super) const PAYLOAD_FIELDS: &str = r#""user":"u1","startTime":"2025-01-02T03:04:05Z","api_key":"k1","model":"gpt-4o","custom_llm_provider":"openai","model_group":"gpt-4o","prompt_tokens":3,"completion_tokens":4,"spend":0.25"#;
+// The payload fields every projection needs to get past its key gates; a case that reads other fields writes its own text.
+pub(super) const PAYLOAD_FIELDS: &str = r#""user":"u1","api_key":"k1","model":"gpt-4o","custom_llm_provider":"openai","model_group":"gpt-4o","prompt_tokens":3,"completion_tokens":4,"spend":0.25"#;
+
+// The startTime those fields are normally paired with; a case that varies it builds the payload with its own value.
+const DEFAULT_START_TIME: &str = r#""startTime":"2025-01-02T03:04:05Z""#;
 
 pub(super) fn base_payload() -> String {
-    format!("{{{PAYLOAD_FIELDS}}}")
+    format!("{{{DEFAULT_START_TIME},{PAYLOAD_FIELDS}}}")
 }
 
 pub(super) fn payload_with(fragment: &str) -> String {
-    format!("{{{PAYLOAD_FIELDS},{fragment}}}")
+    format!("{{{DEFAULT_START_TIME},{PAYLOAD_FIELDS},{fragment}}}")
+}
+
+pub(super) fn payload_with_start_time(value: &str) -> String {
+    format!("{{\"startTime\":{value},{PAYLOAD_FIELDS}}}")
 }
 
 pub(super) fn payload_with_metadata(metadata: &str) -> String {

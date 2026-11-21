@@ -8,7 +8,8 @@ use crate::daily_records::DailyRecordError;
 use crate::daily_records::projection::common_daily_transaction;
 use crate::daily_records::projection::rows::base_spend_row;
 use crate::daily_records::support::{
-    Case, base_payload, column, daily_payload, payload_with, project, projected_base, projected_row,
+    Case, base_payload, column, daily_payload, payload_with, payload_with_start_time, project,
+    projected_base, projected_row,
 };
 use crate::daily_spend_sql::entities::DailySpendEntity;
 use crate::daily_spend_sql::values::SpendColumnValue;
@@ -136,7 +137,7 @@ async fn an_end_user_without_the_projected_id_names_no_base() {
 #[case::empty("", "")]
 #[tokio::test]
 async fn takes_the_date_before_the_first_t(#[case] start_time: &str, #[case] date: &str) {
-    let text = payload_with(&format!(r#""startTime":"{start_time}""#));
+    let text = payload_with_start_time(&format!(r#""{start_time}""#));
     let row = projected_row(&case(), &text, DailySpendEntity::User).await;
     assert_eq!(
         column(&row, "date"),
@@ -145,13 +146,13 @@ async fn takes_the_date_before_the_first_t(#[case] start_time: &str, #[case] dat
 }
 
 #[rstest]
-#[case::number(r#""startTime":1700000000"#)]
-#[case::boolean(r#""startTime":true"#)]
-#[case::list(r#""startTime":[]"#)]
-#[case::object(r#""startTime":{}"#)]
+#[case::number("1700000000")]
+#[case::boolean("true")]
+#[case::list("[]")]
+#[case::object("{}")]
 #[tokio::test]
 async fn a_non_text_start_time_builds_no_record(#[case] fragment: &str) {
-    let text = payload_with(fragment);
+    let text = payload_with_start_time(fragment);
     let projection = project(&case(), &text, DailySpendEntity::User)
         .await
         .unwrap();
@@ -175,7 +176,7 @@ async fn maps_a_call_type_through_the_injected_route_map() {
 
 #[rstest]
 #[case::unmapped(r#""call_type":"acompletion""#)]
-#[case::empty(r#""call_type":""#)]
+#[case::empty("\"call_type\":\"\"")]
 #[case::missing("")]
 #[tokio::test]
 async fn an_unmapped_or_missing_call_type_has_no_endpoint(#[case] fragment: &str) {
