@@ -1,0 +1,78 @@
+task: B8386
+deviations:
+  - what: >-
+      A streaming metrics row whose api_base is null is named after its model instead of failing
+      the whole request.
+    why: >-
+      LiteLLM tests "https://" in api_base with no null check, so one spend log row written
+      without an api_base raises TypeError and the dashboard route answers 500. Null is a value
+      the SpendLogs column allows, and the latency route already falls back to the model the same
+      way, so betterlite uses that fallback for both routes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L15629
+  - what: >-
+      The all_api_bases list is sorted.
+    why: >-
+      LiteLLM returns list(set) in Python set iteration order, which changes between processes,
+      so no client can depend on the order it gets.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L15660
+  - what: >-
+      The exception_types list is sorted.
+    why: >-
+      LiteLLM returns list(set) in Python set iteration order, which changes between processes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L15953
+  - what: >-
+      The 200 models kept by the exceptions route are ordered by their number of exception types,
+      then by the joined model name, and the exception types within a model follow the name
+      order.
+    why: >-
+      LiteLLM orders only by total_exceptions DESC, a count of exception types, so which models
+      survive the cap, and their order, depends on the database's choice among equal counts and
+      changes between runs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L15918-L15920
+  - what: >-
+      The three monthly windows are 28 days; the DAYS_IN_A_MONTH environment variable is not
+      read.
+    why: >-
+      LiteLLM reads it once at import time into a module constant, so it is process-global setup
+      rather than a request value, and betterlite's settings come from config sections instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L434
+  - what: >-
+      Whether the streaming window falls on one day is decided on the UTC dates of the request
+      times.
+    why: >-
+      LiteLLM compares the dates in the offset the caller sent, then filters the logs by the
+      instant, so an offset datetime near midnight picks the same-day query and filters a
+      different day. betterlite reads every request time as one UTC instant and compares its UTC
+      date with the instant the SQL uses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L15557
+  - what: >-
+      A default window ends at the current UTC instant and starts exactly the lookback before it.
+    why: >-
+      LiteLLM calls datetime.now() twice, for a naive local-time start and end that differ by
+      microseconds and shift with the process time zone. betterlite reads one UTC clock once, so
+      the window ends now and is exactly the lookback long.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L15554-L15555
+kept_bugs:
+  - what: >-
+      total_exceptions counts the exception types a model raised, not the exceptions: two
+      RateLimitError rows and one AuthError row give total_exceptions 2 while the per-type
+      fields carry 2 and 1.
+    why: >-
+      LiteLLM's COUNT(*) runs over rows already grouped by exception type, and a working
+      dashboard reads this field, so the count is copied as LiteLLM produces it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L15913-L15920
+  - what: >-
+      The same-day streaming query ignores endTime; it keeps every row whose start date matches
+      the start parameter, including rows that start after the requested end.
+    why: >-
+      The dashboard always asks for a whole day, and dropping the end filter is what makes that
+      day's rows appear, so the copied query keeps it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L15569-L15573
+  - what: >-
+      The exceptions route ignores api_key and customer. LiteLLM normalizes api_key and passes it to
+      the query, but the SQL names only the window and the model group, so the rows cannot be
+      filtered by key or customer; betterlite keeps the same unfiltered rows.
+    why: >-
+      The task records this as LiteLLM's behavior, and adding the filter would change the rows a
+      working dashboard sees.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L15922-L15924
