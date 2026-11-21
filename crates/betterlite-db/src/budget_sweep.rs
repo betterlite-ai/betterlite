@@ -1,5 +1,6 @@
 pub mod error;
 pub mod lease;
+pub mod lease_guard;
 pub mod phase;
 pub mod production;
 pub mod settings;
@@ -11,11 +12,11 @@ use std::sync::Arc;
 use tokio_util::task::TaskTracker;
 
 use crate::postgres_store::session::PostgresStore;
-use crate::queues::pod_lock::lease_guard::LeaseGuard;
 use crate::queues::pod_lock::{LockCache, PodLockManager};
 
 use self::error::SweepError;
 use self::lease::{Lease, RESET_JOB_NAME, elect};
+use self::lease_guard::LeaseGuard;
 use self::phase::{PhaseRunner, ResetPhase};
 use self::settings::BudgetResetSettings;
 

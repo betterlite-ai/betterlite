@@ -5,7 +5,7 @@ use tokio::sync::Notify;
 use tokio::task::JoinHandle;
 use tokio_util::task::TaskTracker;
 
-use super::{LockCache, PodLockManager};
+use crate::queues::pod_lock::{LockCache, PodLockManager};
 
 // The release side of a lease holder: the pod lock manager here, and the server's scheduled export ports built on it.
 pub trait LockReleaser: Send + Sync {
