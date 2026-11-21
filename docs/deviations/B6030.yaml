@@ -16,10 +16,12 @@ deviations:
       async_build_chat_completion_agentic_loop_plan, log_event and async_log_event take
       **params with an Unpack[TypedDict] annotation instead of LiteLLM's named parameters. Each
       TypedDict key is one of LiteLLM's parameter names with its type, so a keyword call behaves
-      the same and a positional call raises TypeError.
+      the same, a positional call raises TypeError, and a call that leaves out a required
+      parameter raises KeyError where LiteLLM's signature raises TypeError.
     why: >-
       These methods have six to thirteen parameters, ruff PLR0913 and PLR0917 cap a definition at
-      five, and the suppression budget is zero.
+      five, A002 rejects LiteLLM's "input" parameter name in async_pre_routing_hook, and the
+      suppression budget is zero.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L200-L262
   - what: >-
       CustomBatchLogger reads its default batch_size and flush_interval from
@@ -50,15 +52,16 @@ deviations:
       B256.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L984-L1010
   - what: >-
-      log_input_event, async_log_input_event, log_event and async_log_event let an exception from
-      the user's callback propagate. LiteLLM catches every exception, formats the traceback and
-      passes "Custom Logger Error - <traceback>" to print_verbose, then returns.
+      log_input_event, async_log_input_event, log_event and async_log_event swallow a callback
+      failure and pass LiteLLM's exact "Custom Logger Error - <traceback>" text to print_verbose,
+      as LiteLLM does, and they also write one LOGGER.debug("Custom Logger Error", exc_info=True)
+      line to the LiteLLM logger on that path. LiteLLM writes nothing extra there.
     why: >-
-      Ruff BLE001 rejects the blind except and the suppression budget is zero; the project rules
-      make errors surface instead of being swallowed. The success path is identical: the callback
-      gets the same dict with model, messages and log_event_type set or the same four arguments,
-      and print_verbose gets the same "Custom Logger - model call details: ..." text. Handling a
-      failing callback belongs to the registry that registers it (B189, B256).
+      Ruff BLE001 rejects a blind except whose handler only forwards text to print_verbose, and
+      accepts one whose handler logs the exception with exc_info; the suppression budget is zero.
+      The extra debug line is what lets the port keep LiteLLM's swallow, so a request whose
+      callback raises still completes and the caller's print_verbose receives the same text as
+      before. The success path is unchanged.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L533-L581
   - what: >-
       redact_standard_logging_payload_from_model_call_details raises
@@ -108,4 +111,23 @@ deviations:
       message_logging, both bool, and mypy strict rejects forwarding a JsonValue mapping into them.
       A keyword of another type still passes at runtime, as it does in LiteLLM.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_batch_logger.py#L26-L46
-kept_bugs: []
+  - what: >-
+      betterlite's CustomLogger is composed from mixin classes in custom_logger_hooks.py,
+      custom_logger_proxy_hooks.py, custom_logger_events.py, custom_logger_redaction.py and
+      custom_logger_base64.py instead of one class. CustomLogger.__bases__, its MRO and its
+      __dict__ differ from LiteLLM's, and a method's __qualname__ names its mixin, such as
+      CustomLoggerHooks.log_pre_api_call. Every method LiteLLM defines is reachable on CustomLogger
+      with the same name, signature and default, and a subclass that overrides a method or calls
+      super() resolves it as in LiteLLM, an overridden _redact_base64 included.
+    why: >-
+      The class is about 1150 lines in LiteLLM and the repository caps a Python source file at 300
+      lines, split along the section boundaries the class already has.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L65
+kept_bugs:
+  - what: >-
+      _process_messages gives a message that has no content key an explicit "content": None,
+      because LiteLLM redacts msg.get("content") in its else branch.
+    why: >-
+      LiteLLM does the same, and a callback that compares the stripped payload sees the null
+      content, so betterlite copies the quirk to keep the payload identical.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L1127

@@ -5,35 +5,39 @@ from typing import Final
 import pytest
 from pydantic import JsonValue, TypeAdapter
 
-UNPACK_METHODS: Final = frozenset({
-    "async_build_agentic_loop_plan", "async_build_chat_completion_agentic_loop_plan",
-    "async_get_chat_completion_prompt", "async_log_event", "async_pre_routing_hook",
-    "async_run_agentic_loop", "async_run_chat_completion_agentic_loop",
-    "async_should_run_agentic_loop", "async_should_run_chat_completion_agentic_loop",
-    "get_chat_completion_prompt", "log_event",
-})
-NONE_HOOKS: Final = frozenset({
-    "async_agentic_run", "async_chat_run", "async_cleanup", "async_log_failure_event",
-    "async_log_pre_api_call", "async_log_stream_event", "async_log_success_event", "audit_log",
-    "callback_failure", "cold_storage", "failure_deployment", "failure_event",
-    "failure_fallback", "headers", "mcp_tool_call", "moderation",
-    "post_api_call", "post_call_failure", "post_call_success", "pre_api_call",
-    "pre_call", "pre_call_check", "pre_call_check_sync", "pre_call_deployment",
-    "pre_request", "pre_routing", "rate_limit", "stream_event",
-    "streaming_deployment", "streaming_hook", "success_deployment", "success_event",
-    "success_fallback", "translate_input", "translate_output", "translate_streaming",
-})
+UNPACK_METHODS: Final = frozenset(
+    {
+        "async_build_agentic_loop_plan",
+        "async_build_chat_completion_agentic_loop_plan",
+        "async_get_chat_completion_prompt",
+        "async_log_event",
+        "async_pre_routing_hook",
+        "async_run_agentic_loop",
+        "async_run_chat_completion_agentic_loop",
+        "async_should_run_agentic_loop",
+        "async_should_run_chat_completion_agentic_loop",
+        "get_chat_completion_prompt",
+        "log_event",
+    }
+)
+_NONE_HOOK_NAMES: Final = """async_agentic_run async_chat_run async_cleanup
+async_log_failure_event async_log_pre_api_call async_log_stream_event
+async_log_success_event audit_log callback_failure cold_storage failure_deployment
+failure_event failure_fallback headers mcp_tool_call moderation post_api_call
+post_call_failure post_call_success pre_api_call pre_call pre_call_check
+pre_call_check_sync pre_call_deployment pre_request pre_routing rate_limit
+stream_event streaming_deployment streaming_hook success_deployment success_event
+success_fallback translate_input translate_output translate_streaming"""
+NONE_HOOKS: Final = frozenset(_NONE_HOOK_NAMES.split())
 CUSTOM_LOGGER_ALL: Final = ["CustomLogger"]
 CUSTOM_BATCH_ALL: Final = ["CustomBatchLogger"]
-CUSTOM_LOGGER_TYPES_ALL: Final = [
-    "CHAT_COMPLETION_AGENTIC_SURFACE", "CODE_INTERPRETER_INTERCEPTION_PREFIX",
-    "CONVERTED_STREAM_KEYS", "HEADROOM_CONVERTED_STREAM_KEY",
-    "HEADROOM_INTERCEPTION_PREFIX", "INTERCEPTION_INTERNAL_PREFIXES",
-    "NON_CODE_INTERPRETER_INTERCEPTION_INTERNAL_PREFIXES", "RESPONSES_AGENTIC_SURFACE",
-    "AgenticLoopPlan", "AgenticLoopRequestPatch", "AgenticLoopSafetyError",
-    "StandardCustomLoggerInitParams", "converted_stream_requested",
-    "is_interception_internal_key",
-]
+_TYPES_EXPORT_NAMES: Final = """CHAT_COMPLETION_AGENTIC_SURFACE
+CODE_INTERPRETER_INTERCEPTION_PREFIX CONVERTED_STREAM_KEYS HEADROOM_CONVERTED_STREAM_KEY
+HEADROOM_INTERCEPTION_PREFIX INTERCEPTION_INTERNAL_PREFIXES
+NON_CODE_INTERPRETER_INTERCEPTION_INTERNAL_PREFIXES RESPONSES_AGENTIC_SURFACE
+AgenticLoopPlan AgenticLoopRequestPatch AgenticLoopSafetyError
+StandardCustomLoggerInitParams converted_stream_requested is_interception_internal_key"""
+CUSTOM_LOGGER_TYPES_ALL: Final = _TYPES_EXPORT_NAMES.split()
 BATCH_SIZE_DEFAULT: Final = 512
 FLUSH_INTERVAL_DEFAULT: Final = 5
 MAX_QUEUE_DEFAULT: Final = 50_000
@@ -53,46 +57,27 @@ MAX_DEPTH_MARKER: Final = "[MAX_DEPTH_REACHED]"
 REDACTED_CONTENT: Final = "redacted-by-litellm"
 TRUNCATION_SUFFIX: Final = "...truncated by litellm, this logger does not support large content"
 PROBE: Final = """
-import asyncio
-import importlib
-import inspect
-import json
-import os
-import sys
-from typing import get_args
-
-os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-
-import betterlite
-import litellm
-
-PACKAGES = {"litellm": litellm, "betterlite": betterlite}
-DATA = "data:image/png;base64,iVBORw0KGgo="
-LIMIT = 10_000
-LONG = 10_001
-LOGGER = "integrations.custom_logger"
-BATCH = "integrations.custom_batch_logger"
+import asyncio; import importlib; import inspect; import json; import os; import sys
+from typing import get_args; os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"; import betterlite
+import litellm; PACKAGES = {"litellm": litellm, "betterlite": betterlite}
+DATA = "data:image/png;base64,iVBORw0KGgo="; LIMIT = 10_000; LONG = 10_001
+LOGGER = "integrations.custom_logger"; BATCH = "integrations.custom_batch_logger"
 TYPES = "types.integrations.custom_logger"
-
 def logger_class(package):
     return importlib.import_module(package.__name__ + "." + LOGGER).CustomLogger
-
 def batch_class(package):
     return importlib.import_module(package.__name__ + "." + BATCH).CustomBatchLogger
-
 def unpack_keys(member):
     parameter = inspect.signature(member).parameters.get("params")
     if parameter is None:
         return []
     arguments = get_args(parameter.annotation)
     return sorted(getattr(arguments[0] if arguments else None, "__annotations__", {}))
-
 def param_row(item):
     default = "required"
     if item.default is not inspect.Parameter.empty:
         default = repr(item.default)
     return {"name": item.name, "kind": item.kind.name, "default": default}
-
 def method_rows(cls):
     rows = {}
     for name, member in inspect.getmembers(cls, inspect.isfunction):
@@ -104,7 +89,6 @@ def method_rows(cls):
             "unpack_keys": unpack_keys(member),
         }
     return rows
-
 def module_view(package, suffix):
     module = importlib.import_module(package.__name__ + "." + suffix)
     exported = list(getattr(module, "__all__", []))
@@ -115,23 +99,25 @@ def module_view(package, suffix):
     registry = importlib.import_module("betterlite._integrations")
     same = all(getattr(module, name) is getattr(registry, name) for name in exported)
     return {"all": exported, "missing_in_litellm": missing, "same_objects": same}
-
 def subclass_probe(base):
     class Recorder(base):
         def __init__(self):
-            super().__init__()
-            self.seen = []
+            super().__init__(); self.seen = []
         def log_pre_api_call(self, model, messages, kwargs):
             self.seen.append(model)
         async def async_filter_listed_models(self, user_api_key_dict, model_names):
             return [name for name in model_names if "keep" in name]
-    recorder = Recorder()
-    recorder.log_pre_api_call("model-one", [], {})
+        def _redact_base64(self, value, depth=0, max_depth=10):
+            if value == "inner":
+                return "SUB"
+            return super()._redact_base64(value=value, depth=depth, max_depth=max_depth)
+    recorder = Recorder(); recorder.log_pre_api_call("model-one", [], {})
     filtered = asyncio.run(recorder.async_filter_listed_models(None, ["keep-me", "drop-me"]))
     return {"seen": recorder.seen, "filtered": list(filtered),
             "message_logging": recorder.message_logging,
-            "turn_off_message_logging": recorder.turn_off_message_logging}
-
+            "turn_off_message_logging": recorder.turn_off_message_logging,
+            "redacted_nested": recorder._redact_base64({"a": ["inner", {"b": "inner"}],
+                                                        "c": "outer"})}
 def type_report(package):
     module = importlib.import_module(package.__name__ + "." + TYPES)
     keys = ["model", "_code_interpreter_interception_x", "_headroom_interception_x",
@@ -158,7 +144,6 @@ def type_report(package):
         ).model_dump(),
         "safety_error": [safety.__name__, issubclass(safety, ValueError)],
     }
-
 def surface_report(package):
     logger_cls = logger_class(package); batch_cls = batch_class(package)
     suffixes = (LOGGER, BATCH, TYPES)
@@ -175,15 +160,12 @@ def surface_report(package):
         "subclass": subclass_probe(logger_cls),
         "types": type_report(package),
     }
-
 def init_report(cls):
-    default = cls()
-    flagged = cls(turn_off_message_logging=True)
+    default = cls(); flagged = cls(turn_off_message_logging=True)
     unflagged = cls(message_logging=False)
     both = cls(turn_off_message_logging=True, message_logging=False)
     try:
-        cls(True)
-        positional = "none"
+        cls(True); positional = "none"
     except TypeError:
         positional = "TypeError"
     return {"default_message_logging": default.message_logging,
@@ -195,23 +177,17 @@ def init_report(cls):
             "both_message_logging": both.message_logging,
             "both_turn_off": both.turn_off_message_logging,
             "positional_error": positional}
-
 def events_report(cls):
-    logger = cls()
-    result = {}
-    calls, seen, verbose = [], {}, []
+    logger = cls(); result = {}; calls, seen, verbose = [], {}, []
     def record(*args):
-        calls.append(len(args))
-        seen["kwargs"] = args[0]
+        calls.append(len(args)); seen["kwargs"] = args[0]
     def boom(*args):
         raise RuntimeError("boom")
     kwargs = {"model": "old-model"}
     logger.log_input_event("new-model", [], kwargs, verbose.append, record)
-    result["input_calls"] = calls[0]
-    result["input_same_kwargs"] = seen["kwargs"] is kwargs
-    result["input_model"] = kwargs["model"]
-    result["input_type"] = kwargs["log_event_type"]
-    result["input_verbose"] = verbose[0]
+    result |= {"input_calls": calls[0], "input_same_kwargs": seen["kwargs"] is kwargs,
+               "input_model": kwargs["model"], "input_type": kwargs["log_event_type"],
+               "input_verbose": verbose[0]}
     try:
         logger.log_input_event("m", [], {}, verbose.append, boom)
         result["input_error"] = "swallowed"
@@ -226,8 +202,7 @@ def events_report(cls):
     logger.log_event(kwargs=event_kwargs, response_obj={"id": "r"}, start_time=1.0,
                      end_time=2.0, print_verbose=event_verbose.append,
                      callback_func=record_event)
-    result["event_calls"] = event_calls[0]
-    result["event_type"] = event_kwargs["log_event_type"]
+    result["event_calls"] = event_calls[0]; result["event_type"] = event_kwargs["log_event_type"]
     result["event_verbose_count"] = len(event_verbose)
     try:
         logger.log_event(kwargs={}, response_obj={"id": "r"}, start_time=1.0, end_time=2.0,
@@ -238,11 +213,9 @@ def events_report(cls):
     result["event_error_verbose"] = len(event_verbose)
     result["event_error_message"] = event_verbose[0] if event_verbose else None
     async def async_events():
-        a_result = {}
-        a_calls, a_seen, a_verbose = [], {}, []
+        a_result = {}; a_calls, a_seen, a_verbose = [], {}, []
         async def a_record(*args):
-            a_calls.append(len(args))
-            a_seen["kwargs"] = args[0]
+            a_calls.append(len(args)); a_seen["kwargs"] = args[0]
         async def a_boom(*args):
             raise RuntimeError("boom")
         a_kwargs = {"model": "old-model"}
@@ -279,11 +252,8 @@ def events_report(cls):
         return a_result
     result.update(asyncio.run(async_events()))
     return result
-
 def hooks_report(package):
-    cls = logger_class(package)
-    logger = cls()
-    nv = {}
+    cls = logger_class(package); logger = cls(); nv = {}
     nv["pre_api_call"] = logger.log_pre_api_call("m", [], {})
     nv["post_api_call"] = logger.log_post_api_call({}, {}, 1.0, 2.0)
     nv["stream_event"] = logger.log_stream_event({}, {}, 1.0, 2.0)
@@ -295,9 +265,7 @@ def hooks_report(package):
     nv["translate_output"] = logger.translate_completion_output_params(None)
     nv["translate_streaming"] = logger.translate_completion_output_params_streaming(None)
     async def run_all():
-        v = {}
-        deployments = [{"model": "m1"}]
-        response = {"id": "r1"}
+        v = {}; deployments = [{"model": "m1"}]; response = {"id": "r1"}
         plan_kwargs = {"tools": {}, "model": "m", "messages": [], "response": None,
                        "anthropic_messages_provider_config": None,
                        "anthropic_messages_optional_request_params": {},
@@ -356,11 +324,9 @@ def hooks_report(package):
                          "non_default_params": {"temperature": 0.5}, "prompt_id": None,
                          "prompt_variables": None, "dynamic_callback_params": {}}
         v["prompt"] = list(logger.get_chat_completion_prompt(**prompt_kwargs))
-        async_kwargs = dict(prompt_kwargs)
-        async_kwargs["litellm_logging_obj"] = None
+        async_kwargs = dict(prompt_kwargs); async_kwargs["litellm_logging_obj"] = None
         v["async_prompt"] = list(await logger.async_get_chat_completion_prompt(**async_kwargs))
-        hook_kwargs = {"a": 1}
-        hook_response = {"r": 1}
+        hook_kwargs = {"a": 1}; hook_response = {"r": 1}
         returned = logger.logging_hook(hook_kwargs, hook_response, "completion")
         v["logging_hook_same"] = returned[0] is hook_kwargs and returned[1] is hook_response
         async_returned = await logger.async_logging_hook(hook_kwargs, hook_response, "completion")
@@ -373,34 +339,25 @@ def hooks_report(package):
         streamed = logger.async_post_call_streaming_iterator_hook(None, chunks(), {})
         v["streaming_iterator"] = [item async for item in streamed]
         try:
-            await logger.async_dataset_hook(None, None)
-            v["dataset_error_type"] = "none"
+            await logger.async_dataset_hook(None, None); v["dataset_error_type"] = "none"
             v["dataset_error_text"] = ""
         except NotImplementedError as error:
-            v["dataset_error_type"] = type(error).__name__
-            v["dataset_error_text"] = str(error)
+            v["dataset_error_type"] = type(error).__name__; v["dataset_error_text"] = str(error)
         v["env_vars"] = [cls.get_callback_env_vars(None),
                          cls.get_callback_env_vars("not-a-callback")]
         v["redacts_itself"] = logger.redacts_messages_itself()
         return v
-    v = asyncio.run(run_all())
-    flags = {key: value is None for key, value in nv.items()}
+    v = asyncio.run(run_all()); flags = {key: value is None for key, value in nv.items()}
     return {"none": flags, "values": v, "events": events_report(cls), "init": init_report(cls)}
-
 def response_view(response):
-    return {"has_choices": isinstance(response, dict) and "choices" in response,
-            "content": response["choices"][0]["message"]["content"]}
-
+    return {key: value for key, value in response.items() if key not in ("id", "created")}
 def helpers_report(package):
-    cls = logger_class(package)
-    logger = cls(); redacting = cls(turn_off_message_logging=True)
-    s = {}
-    s["truncate_text_long"] = logger._truncate_text("x" * LONG, LIMIT)
+    cls = logger_class(package); logger = cls(); redacting = cls(turn_off_message_logging=True)
+    s = {}; s["truncate_text_long"] = logger._truncate_text("x" * LONG, LIMIT)
     s["truncate_text_short"] = logger._truncate_text("short", 10)
     s["truncate_field_none"] = logger._truncate_field(None, 10)
     s["truncate_field_short"] = logger._truncate_field("abc", 10)
-    s["truncate_field_list"] = logger._truncate_field(["z" * 20], 10)
-    exact = "x" * LIMIT
+    s["truncate_field_list"] = logger._truncate_field(["z" * 20], 10); exact = "x" * LIMIT
     s["truncate_exact"] = [logger._truncate_text(exact, LIMIT),
                            logger._truncate_field(exact, LIMIT)]
     payload = {"id": "x", "error_str": "E" * LONG,
@@ -453,11 +410,8 @@ def helpers_report(package):
     s["redact_copy_equal"] = copy_result == copy_details
     redacted = redacting.redact_standard_logging_payload_from_model_call_details(
         json.loads(json.dumps(details)))
-    slo = redacted["standard_logging_object"]
-    s["redact_messages"] = [{"content": item.get("content"), "role": item.get("role")}
-                            for item in slo["messages"]]
-    s["redact_response"] = response_view(slo["response"])
-    s["redact_slo_keys"] = sorted(slo)
+    slo = redacted["standard_logging_object"]; s["redact_messages"] = slo["messages"]
+    s["redact_response"] = response_view(slo["response"]); s["redact_slo_keys"] = sorted(slo)
     s["redact_proxy_request"] = redacted["litellm_params"]["proxy_server_request"]
     s["redact_extra"] = redacted["extra"]
     setattr(package, "standard_logging_payload_excluded_fields", ["messages", "response"])
@@ -488,10 +442,8 @@ def helpers_report(package):
         logger._strip_base64_from_messages(json.loads(json.dumps(strip_payload))))
     s["stripped_empty"] = asyncio.run(logger._strip_base64_from_messages({"model": "m"}))
     return {"shared": s, "error_type": error_type}
-
 def batch_report(package):
-    batch_cls = batch_class(package); s = {}
-    default = batch_cls()
+    batch_cls = batch_class(package); s = {}; default = batch_cls()
     s["defaults"] = {"flush_interval": default.flush_interval,
                      "batch_size": default.batch_size,
                      "max_queue_size": default.max_queue_size,
@@ -505,60 +457,47 @@ def batch_report(package):
         "default_max_queue_size": batch_cls.DEFAULT_MAX_QUEUE_SIZE}
     zero = batch_cls(batch_size=0, flush_interval=0)
     deviations = {"zero_batch_size": zero.batch_size, "zero_flush_interval": zero.flush_interval}
-    setattr(package, "DEFAULT_BATCH_SIZE", 7)
-    setattr(package, "DEFAULT_FLUSH_INTERVAL_SECONDS", 3)
-    late = batch_cls()
-    deviations["late_batch_size"] = late.batch_size
+    setattr(package, "DEFAULT_BATCH_SIZE", 7); setattr(package, "DEFAULT_FLUSH_INTERVAL_SECONDS", 3)
+    late = batch_cls(); deviations["late_batch_size"] = late.batch_size
     deviations["late_flush_interval"] = late.flush_interval
     setattr(package, "DEFAULT_BATCH_SIZE", 512)
     setattr(package, "DEFAULT_FLUSH_INTERVAL_SECONDS", 5)
     async def run_all():
-        results = {}
-        records = []
+        results = {}; records = []
         async def counting(*args, **kwargs):
             records.append(1)
         async def failing(*args, **kwargs):
             raise RuntimeError("boom")
-        no_lock = batch_cls()
-        no_lock.log_queue.extend([1, 2, 3])
-        no_lock.async_send_batch = counting
-        await no_lock.flush_queue()
+        no_lock = batch_cls(); no_lock.log_queue.extend([1, 2, 3])
+        no_lock.async_send_batch = counting; await no_lock.flush_queue()
         results["no_lock"] = {"queue": list(no_lock.log_queue), "sent": len(records)}
-        ok = batch_cls(flush_lock=asyncio.Lock())
-        ok.log_queue.extend([1, 2, 3])
-        before = ok.last_flush_time
-        start = len(records)
-        ok.async_send_batch = counting
+        ok = batch_cls(flush_lock=asyncio.Lock()); ok.log_queue.extend([1, 2, 3])
+        ok.last_flush_time = 0.0; start = len(records); ok.async_send_batch = counting
         await ok.flush_queue()
         results["send_ok"] = {"queue": list(ok.log_queue), "sent": len(records) - start,
-                              "advanced": ok.last_flush_time >= before}
+                              "advanced": ok.last_flush_time > 0}
         await ok.flush_queue()
         results["send_ok"]["resend"] = {"queue": list(ok.log_queue),
                                         "sent": len(records) - start}
         raising = batch_cls(flush_lock=asyncio.Lock(), max_queue_size=2)
-        raising.log_queue.extend([1, 2, 3, 4, 5])
-        raising.async_send_batch = failing
-        await raising.flush_queue()
-        results["send_raises"] = {"queue": list(raising.log_queue)}
-        under = batch_cls(flush_lock=asyncio.Lock())
-        under.log_queue.extend([1, 2])
-        under.async_send_batch = failing
-        await under.flush_queue()
+        raising.log_queue.extend([1, 2, 3, 4, 5]); raising.last_flush_time = 0.0
+        raising.async_send_batch = failing; await raising.flush_queue()
+        results["send_raises"] = {"queue": list(raising.log_queue),
+                                  "last_flush_time": raising.last_flush_time}
+        under = batch_cls(flush_lock=asyncio.Lock()); under.log_queue.extend([1, 2])
+        under.async_send_batch = failing; await under.flush_queue()
         results["send_under_cap"] = {"queue": list(under.log_queue)}
         preserving = batch_cls(flush_lock=asyncio.Lock())
         preserving.preserve_events_added_during_flush = True
         preserving.log_queue.extend(["a", "b"])
         async def adding(*args, **kwargs):
             preserving.log_queue.append("during")
-        preserving.async_send_batch = adding
-        await preserving.flush_queue()
+        preserving.async_send_batch = adding; await preserving.flush_queue()
         results["preserve"] = {"queue": list(preserving.log_queue)}
-        clearing = batch_cls(flush_lock=asyncio.Lock())
-        clearing.log_queue.extend(["a", "b"])
+        clearing = batch_cls(flush_lock=asyncio.Lock()); clearing.log_queue.extend(["a", "b"])
         async def adding_clear(*args, **kwargs):
             clearing.log_queue.append("during")
-        clearing.async_send_batch = adding_clear
-        await clearing.flush_queue()
+        clearing.async_send_batch = adding_clear; await clearing.flush_queue()
         results["not_preserve"] = {"queue": list(clearing.log_queue)}
         periodic = batch_cls(flush_lock=asyncio.Lock(), flush_interval=0.01)
         periodic.log_queue.append("p"); periodic_sends = []
@@ -576,7 +515,6 @@ def batch_report(package):
         return results
     s.update(asyncio.run(run_all()))
     return {"shared": s, "deviations": deviations}
-
 RUNNERS = {"surface": surface_report, "hooks": hooks_report, "helpers": helpers_report,
            "batch": batch_report}
 GROUP = sys.argv[1]
@@ -667,9 +605,9 @@ def compare_methods(
             assert unpacked == sorted(item for item in expected_names if item != "self"), name
             continue
         if name == "__init__" and keyword_init:
-            assert [row["name"] for row in found_rows] == [
-                row["name"] for row in expected_rows
-            ], name
+            assert [row["name"] for row in found_rows] == [row["name"] for row in expected_rows], (
+                name
+            )
             assert [row["default"] for row in found_rows] == [
                 row["default"] for row in expected_rows
             ], name
@@ -727,6 +665,7 @@ def test_logger_surface_subclass(surface_report: JsonValue) -> None:
     assert ours == theirs
     assert ours["seen"] == ["model-one"]
     assert ours["filtered"] == ["keep-me"]
+    assert ours["redacted_nested"] == {"a": ["SUB", {"b": "SUB"}], "c": "outer"}
 
 
 def test_logger_surface_types(surface_report: JsonValue) -> None:
@@ -736,8 +675,10 @@ def test_logger_surface_types(surface_report: JsonValue) -> None:
     assert ours["is_internal"] == [False, True, True, True, True, True, False]
     assert ours["converted"] == [True, True, False, True, False, False]
     assert ours["prefixes"] == [
-        "_code_interpreter_interception", "_compression_interception",
-        "_headroom_interception", "_websearch_interception",
+        "_code_interpreter_interception",
+        "_compression_interception",
+        "_headroom_interception",
+        "_websearch_interception",
     ]
     init_params = listing(ours["init_params"])
     assert init_params[0] == {"turn_off_message_logging": False}
@@ -757,8 +698,7 @@ def test_logger_hook_defaults(hooks_report: JsonValue) -> None:
     assert all(ours_none.values())
     assert ours["values"] == theirs["values"]
     values = mapping(ours["values"])
-    assert values["agentic_gate"] == [False, {}]
-    assert values["chat_gate"] == [False, {}]
+    assert values["agentic_gate"] == values["chat_gate"] == [False, {}]
     assert values["dataset_error_type"] == "NotImplementedError"
     assert values["dataset_error_text"] == "async_dataset_hook not implemented"
     assert values["env_vars"] == [[], []]
@@ -768,8 +708,13 @@ def test_logger_hook_defaults(hooks_report: JsonValue) -> None:
 
 def test_logger_hook_identities(hooks_report: JsonValue) -> None:
     values = mapping(dig(hooks_report, "betterlite", "values"))
-    same_object = ["filter_deployments_same", "filter_models_same", "logging_hook_same",
-                   "async_logging_hook_same", "agentic_post_same"]
+    same_object = [
+        "filter_deployments_same",
+        "filter_models_same",
+        "logging_hook_same",
+        "async_logging_hook_same",
+        "agentic_post_same",
+    ]
     for field in same_object:
         assert values[field] is True, field
     assert values["streaming_iterator"] == [1, 2]
@@ -790,8 +735,7 @@ def test_logger_hook_events(hooks_report: JsonValue) -> None:
     theirs = mapping(dig(hooks_report, "litellm", "events"))
     ours = mapping(dig(hooks_report, "betterlite", "events"))
     assert ours["input_calls"] == theirs["input_calls"] == ONE
-    assert ours["input_same_kwargs"] is True
-    assert theirs["input_same_kwargs"] is True
+    assert ours["input_same_kwargs"] is theirs["input_same_kwargs"] is True
     assert ours["input_model"] == theirs["input_model"] == "new-model"
     assert ours["input_type"] == theirs["input_type"] == "pre_api_call"
     assert text(ours["input_verbose"]) == text(theirs["input_verbose"])
@@ -800,38 +744,32 @@ def test_logger_hook_events(hooks_report: JsonValue) -> None:
     assert ours["event_type"] == theirs["event_type"] == "post_api_call"
     assert ours["event_verbose_count"] == theirs["event_verbose_count"] == ZERO
     assert ours["async_input_calls"] == theirs["async_input_calls"] == ONE
-    assert ours["async_input_same_kwargs"] is True
-    assert theirs["async_input_same_kwargs"] is True
+    assert ours["async_input_same_kwargs"] is theirs["async_input_same_kwargs"] is True
     assert ours["async_input_type"] == theirs["async_input_type"] == "pre_api_call"
     assert text(ours["async_input_verbose"]) == text(theirs["async_input_verbose"])
-    assert text(ours["async_input_verbose"]).startswith(
-        "Custom Logger - model call details: ")
+    assert text(ours["async_input_verbose"]).startswith("Custom Logger - model call details: ")
     assert ours["async_event_calls"] == theirs["async_event_calls"] == EVENT_ARG_COUNT
     assert ours["async_event_type"] == theirs["async_event_type"] == "post_api_call"
     assert ours["async_event_verbose_count"] == theirs["async_event_verbose_count"] == ZERO
-    assert ours["input_error"] == "raised"
-    assert theirs["input_error"] == "swallowed"
-    assert ours["input_verbose_count"] == ONE
-    assert theirs["input_verbose_count"] == TWO
-    assert ours["input_error_message"] is None
+    assert ours["input_error"] == theirs["input_error"] == "swallowed"
+    assert ours["input_verbose_count"] == theirs["input_verbose_count"] == TWO
+    assert text(ours["input_error_message"]).startswith("Custom Logger Error - ")
     assert text(theirs["input_error_message"]).startswith("Custom Logger Error - ")
+    assert "RuntimeError: boom" in text(ours["input_error_message"])
     assert "RuntimeError: boom" in text(theirs["input_error_message"])
-    assert ours["event_error"] == "raised"
-    assert theirs["event_error"] == "swallowed"
-    assert ours["event_error_verbose"] == ZERO
-    assert theirs["event_error_verbose"] == ONE
-    assert ours["event_error_message"] is None
+    assert ours["event_error"] == theirs["event_error"] == "swallowed"
+    assert ours["event_error_verbose"] == theirs["event_error_verbose"] == ONE
+    assert text(ours["event_error_message"]).startswith("Custom Logger Error - ")
     assert text(theirs["event_error_message"]).startswith("Custom Logger Error - ")
-    assert ours["async_input_error"] == "raised"
-    assert theirs["async_input_error"] == "swallowed"
-    assert ours["async_input_error_message"] is None
+    assert ours["async_input_error"] == theirs["async_input_error"] == "swallowed"
+    assert ours["async_input_error_message"] is not None
+    assert text(ours["async_input_error_message"]).startswith("Custom Logger Error - ")
     assert text(theirs["async_input_error_message"]).startswith("Custom Logger Error - ")
+    assert "RuntimeError: boom" in text(ours["async_input_error_message"])
     assert "RuntimeError: boom" in text(theirs["async_input_error_message"])
-    assert ours["async_event_error"] == "raised"
-    assert theirs["async_event_error"] == "swallowed"
-    assert ours["async_event_error_verbose"] == ZERO
-    assert theirs["async_event_error_verbose"] == ONE
-    assert ours["async_event_error_message"] is None
+    assert ours["async_event_error"] == theirs["async_event_error"] == "swallowed"
+    assert ours["async_event_error_verbose"] == theirs["async_event_error_verbose"] == ONE
+    assert text(ours["async_event_error_message"]).startswith("Custom Logger Error - ")
     assert text(theirs["async_event_error_message"]).startswith("Custom Logger Error - ")
 
 
@@ -839,9 +777,12 @@ def test_logger_hook_init(hooks_report: JsonValue) -> None:
     theirs = mapping(dig(hooks_report, "litellm", "init"))
     ours = mapping(dig(hooks_report, "betterlite", "init"))
     expected = {
-        "default_message_logging": True, "default_turn_off": False,
-        "flagged_message_logging": True, "flagged_turn_off": True,
-        "unflagged_message_logging": False, "both_message_logging": False,
+        "default_message_logging": True,
+        "default_turn_off": False,
+        "flagged_message_logging": True,
+        "flagged_turn_off": True,
+        "unflagged_message_logging": False,
+        "both_message_logging": False,
         "both_turn_off": True,
     }
     assert {field: ours[field] for field in expected} == expected
@@ -857,14 +798,21 @@ def test_logger_helper_truncate(helpers_report: JsonValue) -> None:
     assert long_text.endswith(TRUNCATION_SUFFIX)
     assert len(long_text) == MAX_STR_LENGTH + len(TRUNCATION_SUFFIX)
     assert ours["truncate_text_short"] == "short"
-    assert ours["truncate_field_none"] is None
-    assert ours["truncate_field_short"] is None
+    assert ours["truncate_field_none"] is ours["truncate_field_short"] is None
     assert text(ours["truncate_field_list"]).endswith(TRUNCATION_SUFFIX)
     assert listing(ours["truncate_exact"]) == ["x" * MAX_STR_LENGTH, None]
     assert ours["truncated_input_unchanged"] is True
     assert ours["metadata_fields"] == [None, "metadata", "litellm_metadata", "litellm_metadata"]
     assert ours["keep_content"] == [
-        True, False, False, True, True, False, True, True, True,
+        True,
+        False,
+        False,
+        True,
+        True,
+        False,
+        True,
+        True,
+        True,
     ]
     truncated = mapping(ours["truncated"])
     assert text(truncated["error_str"]).endswith(TRUNCATION_SUFFIX)
@@ -878,16 +826,26 @@ def test_logger_helper_redact(helpers_report: JsonValue) -> None:
     assert ours["redact_same_object"] is True
     assert ours["redact_copy_is_copy"] is True
     assert ours["redact_copy_equal"] is True
-    assert listing(ours["redact_messages"])[0] == {
-        "content": REDACTED_CONTENT, "role": "assistant"}
+    assert listing(ours["redact_messages"]) == [
+        {
+            "content": REDACTED_CONTENT,
+            "function_call": None,
+            "provider_specific_fields": None,
+            "role": "assistant",
+            "tool_calls": None,
+        }
+    ]
     response = mapping(ours["redact_response"])
-    assert response["has_choices"] is True
-    assert response["content"] == REDACTED_CONTENT
+    assert sorted(response) == ["choices", "model", "object", "system_fingerprint"]
+    assert response["object"] == "chat.completion"
+    choice = mapping(listing(response["choices"])[0])
+    assert (choice["finish_reason"], choice["index"]) == ("stop", ZERO)
+    assert mapping(choice["message"])["content"] == REDACTED_CONTENT
     assert ours["redact_slo_keys"] == ["id", "messages", "other", "response"]
     assert ours["redact_proxy_request"] == {"model": "m", "other": 1}
     assert ours["redact_extra"] == "kept"
     assert ours["redact_combined_keys"] == ["id", "other", "response"]
-    assert mapping(ours["redact_combined_response"])["has_choices"] is True
+    assert "choices" in mapping(ours["redact_combined_response"])
 
 
 def test_logger_helper_excluded(helpers_report: JsonValue) -> None:
@@ -896,10 +854,17 @@ def test_logger_helper_excluded(helpers_report: JsonValue) -> None:
     assert ours["shared"] == theirs["shared"]
     shared = mapping(ours["shared"])
     assert sorted(mapping(shared["redact_excluded_slo"])) == [
-        "classifier_input", "id", "originating_request_masked", "other"]
+        "classifier_input",
+        "id",
+        "originating_request_masked",
+        "other",
+    ]
     assert shared["redact_excluded_proxy"] == {
-        "classifier_input": "secret", "model": "m",
-        "originating_request_masked": "x", "other": 1}
+        "classifier_input": "secret",
+        "model": "m",
+        "originating_request_masked": "x",
+        "other": 1,
+    }
     assert ours["error_type"] == "TypeError"
     assert theirs["error_type"] == "AttributeError"
 
@@ -910,10 +875,8 @@ def test_logger_helper_base64(helpers_report: JsonValue) -> None:
     assert values[0] == BASE64_MARKER
     assert values[1] == {"url": BASE64_MARKER}
     assert listing(values[2])[0] == BASE64_MARKER
-    assert values[3] == "plain"
-    assert values[4] == SMALL_NUMBER
-    assert values[5] is None
-    assert values[6] is True
+    assert (values[3], values[4]) == ("plain", SMALL_NUMBER)
+    assert values[5:] == [None, True]
     assert ours["redact_depth"] == [[[MAX_DEPTH_MARKER]]]
     processed = listing(ours["processed"])
     expected_text = "see " + BASE64_MARKER
@@ -981,6 +944,7 @@ def test_batch_logger_send_ok(batch_report: JsonValue) -> None:
 def test_batch_logger_raises(batch_report: JsonValue) -> None:
     shared = mapping(dig(batch_report, "betterlite", "shared"))
     assert mapping(shared["send_raises"])["queue"] == [4, 5]
+    assert mapping(shared["send_raises"])["last_flush_time"] == ZERO
     assert mapping(shared["send_under_cap"])["queue"] == [1, 2]
     assert shared["default_send"] is None
 
