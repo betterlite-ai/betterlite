@@ -15,14 +15,12 @@ impl LineSplitter {
     pub fn push(&mut self, chunk: &[u8]) -> Vec<String> {
         let mut lines = Vec::new();
         for &byte in chunk {
-            if self.trailing_cr {
-                self.trailing_cr = false;
+            let after_cr = mem::take(&mut self.trailing_cr);
+            if after_cr {
                 lines.push(decode_line(&mem::take(&mut self.pending)));
-                if byte == b'\n' {
-                    continue;
-                }
             }
             match byte {
+                b'\n' if after_cr => {}
                 b'\r' => self.trailing_cr = true,
                 b'\n' => lines.push(decode_line(&mem::take(&mut self.pending))),
                 other => self.pending.push(other),

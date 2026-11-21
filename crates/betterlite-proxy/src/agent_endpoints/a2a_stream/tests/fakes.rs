@@ -21,6 +21,11 @@ use crate::agent_endpoints::a2a_stream::ports::StreamEventConverter;
 // nothing listens on port 1, so a request to it is refused at once
 pub(crate) const CLOSED: &str = "http://127.0.0.1:1";
 
+// json! builds objects through serde_json::Map, a type the lint table bans
+pub(crate) fn json(text: &str) -> AgentJson {
+    serde_json::from_str(text).unwrap()
+}
+
 // counts its calls on the event, so a test sees whether an event was converted and how often
 #[derive(Clone)]
 pub(crate) struct CountingConverter;
