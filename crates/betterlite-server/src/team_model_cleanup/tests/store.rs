@@ -81,9 +81,11 @@ async fn insert_team(
     team_models: Option<&[String]>,
     model_id: Option<i32>,
 ) {
+    // team creation writes these lists, and the row decoder rejects a null where a list belongs.
     client
         .execute(
-            r#"INSERT INTO "LiteLLM_TeamTable" (team_id, models, model_id) VALUES ($1, $2, $3)"#,
+            r#"INSERT INTO "LiteLLM_TeamTable" (team_id, models, model_id, admins, members)
+                VALUES ($1, $2, $3, '{}'::TEXT[], '{}'::TEXT[])"#,
             &[&team_id, &team_models, &model_id],
         )
         .await
@@ -256,4 +258,44 @@ async fn a_saved_alias_without_the_client_is_an_error() {
         .await
         .expect_err("no client is an error");
     assert!(matches!(disconnected_error, CleanupError::Database(_)));
+}
+
+#[tokio::test]
+async fn reads_use_the_writer_when_a_reader_is_configured() {
+    let (fixture, pool, client) = database().await;
+    insert_aliases(&client, 1, Some(r#"{"a":"pub"}"#)).await;
+    insert_team(&client, "t1", Some(&names(&["pub"])), None).await;
+    client
+        .execute(
+            r#"INSERT INTO "LiteLLM_ProxyModelTable"
+                (model_id, model_name, litellm_params, model_info, created_by, updated_by)
+                VALUES ('id-a', 'model_name_t1_a', '{}', '{"team_id":"t1"}', 'creator', 'editor')"#,
+            &[],
+        )
+        .await
+        .unwrap();
+    drop(client);
+    let (stored, availability) = store(&pool);
+    let absent = PostgresStore { pool: None };
+    let cleanup_models = PostgresTeamModels {
+        client: Some(PrismaClient {
+            writer: &stored,
+            reader: &absent,
+            availability: &availability,
+        }),
+    };
+    assert_eq!(cleanup_models.alias_rows().await.unwrap().len(), 1);
+    assert_eq!(
+        cleanup_models
+            .deployments_with_prefix("model_name_t1_")
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        cleanup_models.team_models("t1").await.unwrap(),
+        Some(names(&["pub"]))
+    );
+    close(fixture, pool).await;
 }
