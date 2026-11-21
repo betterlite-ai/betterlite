@@ -13,9 +13,9 @@ use crate::api::realtime_contracts::close::{
     close_after_handshake_refusal, realtime_error_event, websocket_close_reason,
 };
 use crate::api::realtime_contracts::config::{BaseRealtimeConfig, Environment};
-use crate::api::realtime_contracts::error::{HeaderMap, WebSocketError};
+use crate::api::realtime_contracts::error::HeaderMap;
 use crate::api::realtime_contracts::events::AudioTranscriptionUsage;
-use crate::api::realtime_contracts::transport::{RealtimeBackend, RealtimeMessage};
+use crate::api::realtime_contracts::transport::RealtimeBackend;
 use crate::api::realtime_guardrail_policy::RealtimeGuardrailCallback;
 use crate::api::realtime_session_state::logging::{RealtimeLogging, RealtimeSuccessQueue};
 use crate::api::realtime_session_state::{
@@ -118,17 +118,33 @@ where
         url: &str,
         headers: &HeaderMap,
     ) -> Result<(), RealtimeConnectionError<Config::Error, Callback::Error, Relay::Error>> {
+        let ConnectedBackend { sender, source } = self.dial(url, headers).await?;
+        let mut state = self.build_state(sender);
+        let relayed = self.forward(&mut state, source).await;
+        // the async context manager exits on every path, and a close failure replaces whatever the body was returning
+        Self::close_backend(&mut state).await?;
+        relayed
+    }
+
+    async fn dial(
+        &self,
+        url: &str,
+        headers: &HeaderMap,
+    ) -> Result<
+        ConnectedBackend,
+        RealtimeConnectionError<Config::Error, Callback::Error, Relay::Error>,
+    > {
         let ssl = realtime_ssl(url, &self.verification);
         let provider_backend = self
             .provider
             .open_backend(url, headers)
             .await
             .map_err(RealtimeConnectionError::Config)?;
-        let connected = match provider_backend {
-            Some(backend) => ConnectedBackend {
+        match provider_backend {
+            Some(backend) => Ok(ConnectedBackend {
                 sender: Box::new(backend),
                 source: None,
-            },
+            }),
             None => {
                 let request = DialRequest {
                     url,
@@ -139,11 +155,17 @@ where
                 };
                 open_realtime_backend_ws(self.dialer, &request)
                     .await
-                    .map_err(RealtimeConnectionError::Dial)?
+                    .map_err(RealtimeConnectionError::Dial)
             }
-        };
-        let ConnectedBackend { sender, mut source } = connected;
-        let mut state = self.build_state(sender);
+        }
+    }
+
+    async fn forward(
+        &mut self,
+        state: &mut RealtimeStreaming,
+        source: Option<Box<dyn RealtimeBackendSource>>,
+    ) -> Result<(), RealtimeConnectionError<Config::Error, Callback::Error, Relay::Error>> {
+        let mut source = source;
         let mut limited = source.as_deref_mut().map(|inner| SizeLimitedSource {
             inner,
             max_message_size_bytes: self.max_message_size_bytes,
@@ -151,29 +173,23 @@ where
         let source_ref = limited
             .as_mut()
             .map(|limited| limited as &mut dyn RealtimeBackendSource);
-        let setup = self.send_setup(&mut state).await;
-        let relayed = match setup {
-            Ok(()) => {
-                let synthetic = self.send_synthetic(&mut state).await;
-                match synthetic {
-                    Ok(()) => self
-                        .relay
-                        .relay(SessionRelay {
-                            state: &mut state,
-                            source: source_ref,
-                            cancellation: &self.cancellation,
-                        })
-                        .await
-                        .map_err(RealtimeConnectionError::Relay),
-                    Err(error) => Err(error),
-                }
-            }
-            Err(error) => Err(error),
+        let setup = if self.provider.requires_session_configuration() {
+            self.send_setup(state).await
+        } else {
+            self.send_synthetic(state).await
         };
-        // the async context manager exits on every path, and a close failure replaces whatever the body was returning
-        let closed = self.close_backend(&mut state).await;
-        closed?;
-        relayed
+        match setup {
+            Ok(()) => self
+                .relay
+                .relay(SessionRelay {
+                    state,
+                    source: source_ref,
+                    cancellation: &self.cancellation,
+                })
+                .await
+                .map_err(RealtimeConnectionError::Relay),
+            Err(error) => Err(error),
+        }
     }
 
     fn build_state(&mut self, backend: Box<dyn RealtimeBackend>) -> RealtimeStreaming {
@@ -209,33 +225,16 @@ where
         })
     }
 
-    async fn send_backend(
-        &self,
-        state: &mut RealtimeStreaming,
-        text: &str,
-    ) -> Result<(), RealtimeConnectionError<Config::Error, Callback::Error, Relay::Error>> {
-        let Some(backend) = state.backend.as_mut() else {
-            return Err(RealtimeConnectionError::Backend(WebSocketError {
-                message: "the realtime backend websocket is not connected".to_owned(),
-            }));
-        };
-        backend
-            .send(RealtimeMessage::Text(text.to_owned()))
-            .await
-            .map_err(RealtimeConnectionError::Backend)
-    }
-
     async fn close_backend(
-        &self,
         state: &mut RealtimeStreaming,
     ) -> Result<(), RealtimeConnectionError<Config::Error, Callback::Error, Relay::Error>> {
-        let Some(mut backend) = state.backend.take() else {
-            return Ok(());
-        };
-        backend
-            .close()
-            .await
-            .map_err(RealtimeConnectionError::Backend)
+        match state.backend.take() {
+            Some(mut backend) => backend
+                .close()
+                .await
+                .map_err(RealtimeConnectionError::Backend),
+            None => Ok(()),
+        }
     }
 
     // LiteLLM answers a handshake rejection with B1004's error event and the status-mapped close, and any close failure propagates
@@ -263,7 +262,7 @@ where
         let message = self.redactor.redact_string(&error.to_string());
         let event = realtime_error_event(&message, "server_error")
             .map_err(RealtimeConnectionError::Contract)?;
-        if let Err(send_error) = self.client.send_text(&event).await {
+        if let Err(send_error) = self.client.socket.lock().await.send_text(&event).await {
             tracing::debug!(
                 "Could not send realtime error event to client; closing anyway: {send_error}"
             );
@@ -272,7 +271,14 @@ where
             .redactor
             .redact_string(&format!("Internal server error: {error}"));
         let reason = websocket_close_reason(&detail, "Internal server error");
-        match self.client.close(1011, Some(&reason)).await {
+        match self
+            .client
+            .socket
+            .lock()
+            .await
+            .close(1011, Some(&reason))
+            .await
+        {
             Ok(()) => Ok(()),
             Err(close_error) if is_ignorable_close(&close_error) => Ok(()),
             Err(close_error @ ClientCloseError::Runtime { .. }) => {

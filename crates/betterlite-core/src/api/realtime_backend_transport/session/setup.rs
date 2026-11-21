@@ -5,7 +5,8 @@ use indexmap::IndexMap;
 use crate::api::realtime_backend_transport::error::RealtimeConnectionError;
 use crate::api::realtime_backend_transport::protocol::RealtimeSessionRelay;
 use crate::api::realtime_contracts::config::BaseRealtimeConfig;
-use crate::api::realtime_contracts::error::RealtimeContractError;
+use crate::api::realtime_contracts::error::{RealtimeContractError, WebSocketError};
+use crate::api::realtime_contracts::transport::{RealtimeBackend, RealtimeMessage};
 use crate::api::realtime_guardrail_policy::{
     RealtimeGuardrailCallback, inject_auto_response_disable,
 };
@@ -23,12 +24,9 @@ where
 {
     // A provider that needs a session gets its one setup before any client frame, cached only once the send succeeded
     pub(super) async fn send_setup(
-        &mut self,
+        &self,
         state: &mut RealtimeStreaming,
     ) -> Result<(), RealtimeConnectionError<Config::Error, Callback::Error, Relay::Error>> {
-        if !self.provider.requires_session_configuration() {
-            return Ok(());
-        }
         let Some(request) = self.provider.session_configuration_request(self.model) else {
             return Ok(());
         };
@@ -43,19 +41,24 @@ where
         )
         .map_err(RealtimeConnectionError::Guardrail)?;
         let setup = patched.unwrap_or(request);
-        self.send_backend(state, &setup).await?;
+        let Some(backend) = state.backend.as_mut() else {
+            return Err(RealtimeConnectionError::Backend(WebSocketError {
+                message: "the realtime backend websocket is not connected".to_owned(),
+            }));
+        };
+        backend
+            .send(RealtimeMessage::Text(setup.clone()))
+            .await
+            .map_err(RealtimeConnectionError::Backend)?;
         state.response.session_configuration_request = Some(setup);
         Ok(())
     }
 
     // A provider that defers setup may unblock its client with a synthetic session.created, stored before the client send and flagged after it
     pub(super) async fn send_synthetic(
-        &mut self,
+        &self,
         state: &mut RealtimeStreaming,
     ) -> Result<(), RealtimeConnectionError<Config::Error, Callback::Error, Relay::Error>> {
-        if self.provider.requires_session_configuration() {
-            return Ok(());
-        }
         let Some(event) =
             self.provider
                 .session_created_event(self.model, self.logging_session_id, None)
@@ -69,6 +72,9 @@ where
             .store_message(SessionMessage::Text(&text))
             .map_err(RealtimeConnectionError::Session)?;
         self.client
+            .socket
+            .lock()
+            .await
             .send_text(&text)
             .await
             .map_err(RealtimeConnectionError::Client)?;

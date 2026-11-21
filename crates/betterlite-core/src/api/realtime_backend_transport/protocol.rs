@@ -32,16 +32,6 @@ pub struct ClientHandle {
     pub scope: WebSocketScope,
 }
 
-impl ClientHandle {
-    pub async fn send_text(&self, data: &str) -> Result<(), WebSocketError> {
-        self.socket.lock().await.send_text(data).await
-    }
-
-    pub async fn close(&self, code: u16, reason: Option<&str>) -> Result<(), ClientCloseError> {
-        self.socket.lock().await.close(code, reason).await
-    }
-}
-
 // B1004's client socket over the shared handle, so the relay writes to the same connection the session opened
 pub struct ClientSlot {
     pub handle: ClientHandle,
@@ -56,7 +46,7 @@ impl ScopedWebSocket for ClientSlot {
 #[async_trait]
 impl ClientWebSocket for ClientSlot {
     async fn send_text(&mut self, data: &str) -> Result<(), WebSocketError> {
-        self.handle.send_text(data).await
+        self.handle.socket.lock().await.send_text(data).await
     }
 
     async fn receive_text(&mut self) -> Result<String, WebSocketError> {
@@ -65,6 +55,9 @@ impl ClientWebSocket for ClientSlot {
 
     async fn close(&mut self, code: u16, reason: Option<&str>) -> Result<(), WebSocketError> {
         self.handle
+            .socket
+            .lock()
+            .await
             .close(code, reason)
             .await
             .map_err(|error| WebSocketError {
