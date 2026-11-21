@@ -17,7 +17,7 @@ use crate::prepared::body::{
 use crate::prepared::deployment::Deployment;
 use crate::prepared::{PreparedChat, PreparedHttp, PreparedKind, PreparedRequest, Upstream};
 use crate::provider::Adapter;
-use crate::transform_retry::{TransformOnUnprocessable, TransformRetry, send_with_retry};
+use crate::transform_retry::{TransformRetry, send_with_retry};
 use betterlite_models::controls::json_value::JsonValue;
 
 pub mod call;
@@ -84,6 +84,9 @@ impl Adapter for OpenAi {
     ) -> Result<OperationResult, OperationError> {
         match (prepared.kind(), upstream) {
             (PreparedKind::Chat(chat), Upstream::Buffered(response)) => {
+                if let Some(limit) = recovery::output_limit(chat, &response)? {
+                    return Ok(limit);
+                }
                 let decoded: ChatResponse = parse(response, "chat")?;
                 let completion = decoded.for_client(chat.client_model.as_deref());
                 Ok(OperationResult::Chat(ChatCompletion::OpenAi(Box::new(
@@ -94,7 +97,10 @@ impl Adapter for OpenAi {
                 Ok(OperationResult::Stream(Box::new(response)))
             }
             // a refused stream arrives as a finished body, which the caller renders as the provider's own error
-            (PreparedKind::Stream(_), Upstream::Buffered(response)) => {
+            (PreparedKind::Stream(chat), Upstream::Buffered(response)) => {
+                if let Some(limit) = recovery::output_limit(chat, &response)? {
+                    return Ok(limit);
+                }
                 success(response)?;
                 Err(unsupported())
             }
@@ -115,8 +121,6 @@ impl Adapter for OpenAi {
         }
     }
 }
-
-impl TransformOnUnprocessable for OpenAi {}
 
 fn unsupported() -> OperationError {
     OperationError::UnsupportedOperation {
@@ -140,9 +144,15 @@ fn chat_request(
         deadline: deployment.timeout,
         body_limit: None,
     };
+    // LiteLLM's for _ in range(2) resend loop runs only when litellm.drop_params is on
+    let retry = if deployment.global_drop_params {
+        TransformRetry::bounded(2)?
+    } else {
+        TransformRetry::DISABLED
+    };
     let prepared = PreparedChat {
         http,
-        retry: TransformRetry::DISABLED,
+        retry,
         client_model: chat.request.model.clone(),
     };
     Ok(if stream {
@@ -214,3 +224,5 @@ fn embedding_request(
         client_model: embedding.request.model.clone(),
     })))
 }
+
+mod recovery;

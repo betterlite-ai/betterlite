@@ -1,0 +1,60 @@
+kind: helper
+name: rate-limit-request-scopes-api-key-dynamic-no-failures
+call:
+  b3040:
+    function: create
+    auth:
+      api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      rpm_limit: 10
+      metadata:
+        rpm_limit_type: dynamic
+    server: {}
+    data:
+      model: gpt4
+    rpm_limit_type: dynamic
+    tpm_limit_type: null
+    model_has_failures: false
+    call_type: null
+    groups:
+      gpt4: gpt-4
+    registry: []
+    tag_limits: []
+    window_size: 60
+calls:
+  - b3040:
+      function: create
+      auth:
+        api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        rpm_limit: 10
+        metadata:
+          rpm_limit_type: dynamic
+      server: {}
+      data:
+        model: gpt4
+      rpm_limit_type: dynamic
+      tpm_limit_type: null
+      model_has_failures: true
+      call_type: null
+      groups:
+        gpt4: gpt-4
+      registry: []
+      tag_limits: []
+      window_size: 60
+  - b3040:
+      function: assemble
+      auth:
+        api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        rpm_limit: 10
+        metadata:
+          rpm_limit_type: dynamic
+      server: {}
+      data:
+        model: gpt4
+      call_type: null
+      groups:
+        gpt4: gpt-4
+      registry: []
+      tag_limits: []
+      window_size: 60
+env: {}
+compare: {ignore: []}

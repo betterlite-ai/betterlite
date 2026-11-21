@@ -1,0 +1,16 @@
+kind: sdk_http
+name: realtime-http-transport-config-failure
+call:
+  realtime_http_transport:
+    handler: client_secrets
+    echo_config: true
+    api_key: k
+    request_data: {}
+    model: refuse
+    timeout_seconds: 30
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []

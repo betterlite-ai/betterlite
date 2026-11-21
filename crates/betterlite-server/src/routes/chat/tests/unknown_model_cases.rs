@@ -14,6 +14,7 @@ use serde::Deserialize;
 use tower::ServiceExt as _;
 
 use crate::route_read_through::ModelReadThrough;
+use crate::routes::chat::streaming::ChatCalls;
 use crate::routes::chat::{CallContext, ErrorLayer, chat_routes_with_call_id, dispatch_failure};
 use crate::server::chat_setup::chat_executor;
 use crate::state::ServerState;
@@ -85,14 +86,15 @@ async fn ask(
     .expect("config");
     let environment = BTreeMap::from([("OPENAI_API_KEY".to_owned(), "env-key".to_owned())]);
     let executor =
-        chat_executor(&config, &environment, StdRng::seed_from_u64(3)).expect("executor");
+        Arc::new(chat_executor(&config, &environment, StdRng::seed_from_u64(3)).expect("executor"));
     let shared = Arc::new(Shared {
         bundled_catalog: Arc::clone(&executor.bundled_catalog),
     });
-    let mut state = ServerState::new(&config, Arc::new(executor), shared);
+    let mut state = ServerState::new(&config, Arc::clone(&executor), shared);
     state.model_read_through.read_through = read_through;
     let shared_state = Arc::new(state);
-    let router = chat_routes_with_call_id(Arc::clone(&shared_state.executor), false)
+    let calls = ChatCalls::new(&config, executor).expect("calls");
+    let router = chat_routes_with_call_id(Arc::new(calls), false)
         .expect("routes")
         .layer(Extension(Arc::clone(&shared_state)));
     let request = Request::post(path)

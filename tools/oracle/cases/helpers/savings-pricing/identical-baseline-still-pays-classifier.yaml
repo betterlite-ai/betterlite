@@ -1,0 +1,18 @@
+kind: helper
+name: identical-baseline-still-pays-classifier
+call:
+  savings_pricing:
+    operation: price_baseline_comparison
+    snapshot:
+      model: claude-sonnet-4-5
+      provider: anthropic
+      prices: null
+      actual_spend: 10.0
+      classifier_cost: 1.0
+    baseline_usage:
+      prompt_tokens: 10
+      completion_tokens: 4
+      total_tokens: 14
+    provenance: observed_identical
+compare: {ignore: []}
+env: {}

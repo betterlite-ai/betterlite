@@ -1,0 +1,38 @@
+kind: helper
+name: malformed-alias-error
+call:
+  model_group_info:
+    {
+      "model_group": "no-hidden",
+      "model_list": [],
+      "model_group_alias": {
+        "no-hidden": {
+          "model": "target"
+        }
+      },
+      "deployment_info": {},
+      "model_cost": {},
+      "parameters": {},
+      "lookup_error": false,
+      "provider_error": "none",
+      "missing_ids": []
+    }
+calls:
+  - model_group_info:
+      {
+        "model_group": "no-model",
+        "model_list": [],
+        "model_group_alias": {
+          "no-model": {
+            "hidden": false
+          }
+        },
+        "deployment_info": {},
+        "model_cost": {},
+        "parameters": {},
+        "lookup_error": false,
+        "provider_error": "none",
+        "missing_ids": []
+      }
+env: {}
+compare: {ignore: []}

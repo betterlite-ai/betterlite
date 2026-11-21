@@ -1,0 +1,58 @@
+kind: helper
+name: rate-limit-request-scopes-dynamic-policy
+call:
+  b3040:
+    function: dynamic_flag
+    rpm_limit_type: dynamic
+    tpm_limit_type: null
+calls:
+  - b3040:
+      function: dynamic_flag
+      rpm_limit_type: null
+      tpm_limit_type: dynamic
+  - b3040:
+      function: dynamic_flag
+      rpm_limit_type: guaranteed_throughput
+      tpm_limit_type: best_effort_throughput
+  - b3040:
+      function: dynamic_flag
+      rpm_limit_type: null
+      tpm_limit_type: null
+  - b3040:
+      function: should_enforce
+      limit_type: dynamic
+      model_has_failures: true
+  - b3040:
+      function: should_enforce
+      limit_type: dynamic
+      model_has_failures: false
+  - b3040:
+      function: should_enforce
+      limit_type: null
+      model_has_failures: false
+  - b3040:
+      function: should_enforce
+      limit_type: best_effort_throughput
+      model_has_failures: false
+  - b3040:
+      function: enforced_limit
+      limit_value: 10
+      limit_type: dynamic
+      model_has_failures: true
+  - b3040:
+      function: enforced_limit
+      limit_value: 10
+      limit_type: dynamic
+      model_has_failures: false
+  - b3040:
+      function: enforced_limit
+      limit_value: null
+      limit_type: dynamic
+      model_has_failures: true
+  - b3040:
+      function: enforced_limit
+      limit_value: 10
+      limit_type: null
+      model_has_failures: false
+env: {}
+compare: {ignore: []}

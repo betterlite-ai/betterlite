@@ -52,6 +52,7 @@ uuid = { version = "1.29.0", features = ["serde", "v4"] }
 
 [dev-dependencies]
 betterlite-postgres-fixture = { path = "../../tools/postgres-fixture" }
+betterlite-test-ports = { path = "../betterlite-test-ports" }
 clap = { version = "4.6.7", features = ["derive", "env"] }
 mutants = "0.0.4"
 redis.workspace = true

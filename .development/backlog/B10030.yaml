@@ -1,0 +1,13 @@
+id: B10030
+milestone: R2 bug fixes
+title: Server, CLI, binary and oracle helpers hold the ports they expect to be refused
+status: todo
+depends_on: [B10028]
+file: tasks/B10030-refused-ports-top-crates.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

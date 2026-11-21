@@ -1,0 +1,8 @@
+kind: helper
+name: model-allowlist-rename-key-hash
+call:
+  model_allowlist_rename:
+    kind: key
+    object_id: sk-abc123
+env: {}
+compare: {ignore: []}

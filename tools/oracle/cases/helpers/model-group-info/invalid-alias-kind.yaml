@@ -1,0 +1,19 @@
+kind: helper
+name: invalid-alias-kind
+call:
+  model_group_info:
+    {
+      "model_group": "number",
+      "model_list": [],
+      "model_group_alias": {
+        "number": 5
+      },
+      "deployment_info": {},
+      "model_cost": {},
+      "parameters": {},
+      "lookup_error": false,
+      "provider_error": "none",
+      "missing_ids": []
+    }
+env: {}
+compare: {ignore: []}

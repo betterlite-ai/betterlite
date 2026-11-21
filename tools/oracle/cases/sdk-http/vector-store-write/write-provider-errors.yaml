@@ -1,0 +1,36 @@
+kind: sdk_http
+name: vector-store-write-provider-errors
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  vector_store_write:
+    runs:
+      - operation: update
+        mode: sync
+        vector_store_id: vs_a
+      - operation: update
+        mode: async
+        vector_store_id: vs_a
+      - operation: delete
+        mode: sync
+        vector_store_id: vs_a
+upstream:
+  - status: 404
+    headers: {content-type: application/json}
+    body: {error: {message: vector store not found, type: invalid_request_error, param: null, code: missing}}
+  - status: 404
+    headers: {content-type: application/json}
+    body: {error: {message: vector store not found, type: invalid_request_error, param: null, code: missing}}
+  - status: 404
+    headers: {content-type: application/json}
+    body: {error: {message: vector store not found, type: invalid_request_error, param: null, code: missing}}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization]
+  ignore:
+    - pointer: /vector_store_write/value/runs/0/failure/message
+      why: betterlite renders the provider body where LiteLLM prefixes its exception class
+    - pointer: /vector_store_write/value/runs/1/failure/message
+      why: betterlite renders the provider body where LiteLLM prefixes its exception class
+    - pointer: /vector_store_write/value/runs/2/failure/message
+      why: betterlite renders the provider body where LiteLLM prefixes its exception class
