@@ -1,0 +1,59 @@
+use std::time::Duration;
+
+use betterlite_db::spend_retention::batches::settings::CleanupBounds;
+use betterlite_env::EnvError;
+
+use crate::loader::{ConfigError, EnvironmentLookup};
+
+pub const ENV_BATCH_SIZE: &str = "SPEND_LOG_CLEANUP_BATCH_SIZE";
+pub const ENV_RUN_LOOPS: &str = "SPEND_LOG_RUN_LOOPS";
+pub const ENV_RUN_BUDGET: &str = "SPEND_LOG_CLEANUP_RUN_BUDGET_SECONDS";
+pub const ENV_BATCH_TIMEOUT: &str = "SPEND_LOG_CLEANUP_BATCH_TIMEOUT_SECONDS";
+pub const ENV_MAX_FAILURES: &str = "SPEND_LOG_CLEANUP_MAX_CONSECUTIVE_BATCH_FAILURES";
+pub const ENV_FAILURE_BACKOFF: &str = "SPEND_LOG_CLEANUP_BATCH_FAILURE_BACKOFF_SECONDS";
+pub const ENV_COUNT_CAP: &str = "SPEND_LOG_CLEANUP_REMAINING_COUNT_CAP";
+
+// litellm/constants.py reads these once at import, so a malformed number stops the proxy from starting
+pub fn cleanup_defaults<Lookup: EnvironmentLookup>(
+    lookup: &Lookup,
+) -> Result<CleanupBounds, ConfigError> {
+    Ok(CleanupBounds {
+        batch_size: integer(lookup, ENV_BATCH_SIZE, 1_000)?,
+        max_batches: integer(lookup, ENV_RUN_LOOPS, 500)?,
+        run_budget: seconds(lookup, ENV_RUN_BUDGET, Duration::from_secs(300))?,
+        batch_timeout: seconds(lookup, ENV_BATCH_TIMEOUT, Duration::from_secs(30))?,
+        max_consecutive_failures: integer(lookup, ENV_MAX_FAILURES, 3)?,
+        failure_backoff: seconds(lookup, ENV_FAILURE_BACKOFF, Duration::from_millis(500))?,
+        remaining_count_cap: integer(lookup, ENV_COUNT_CAP, 100_000)?,
+    })
+}
+
+fn integer<Lookup: EnvironmentLookup>(
+    lookup: &Lookup,
+    name: &str,
+    default: i64,
+) -> Result<i64, ConfigError> {
+    let Some(text) = lookup.lookup(name) else {
+        return Ok(default);
+    };
+    Ok(betterlite_env::number::<i64>(name, &text)?.unwrap_or(default))
+}
+
+// asyncio waits not at all for a negative number of seconds, which a zero Duration matches
+fn seconds<Lookup: EnvironmentLookup>(
+    lookup: &Lookup,
+    name: &str,
+    default: Duration,
+) -> Result<Duration, ConfigError> {
+    let Some(text) = lookup.lookup(name) else {
+        return Ok(default);
+    };
+    let Some(parsed) = betterlite_env::number::<f64>(name, &text)? else {
+        return Ok(default);
+    };
+    Duration::try_from_secs_f64(parsed.max(0.0_f64)).map_err(|_overflow| {
+        ConfigError::from(EnvError::Number {
+            name: name.to_owned(),
+        })
+    })
+}
