@@ -81,8 +81,7 @@ class ScriptedAzure:
     gets: list[JsonValue]
     gateways: list[JsonValue]
 
-    # ast-grep-ignore: no-long-names
-    def get_azure_openai_client(  # noqa: PLR0913, PLR0917
+    def get_azure_openai_client(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L480-L489
         self,
         api_key: str | None,
         api_base: str | None,
@@ -108,7 +107,7 @@ class ScriptedAzure:
         return client
 
     # ast-grep-ignore: no-long-names
-    def _init_azure_client_for_cloudflare_ai_gateway(  # noqa: PLR0913, PLR0917
+    def _init_azure_client_for_cloudflare_ai_gateway(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L698-L711
         self,
         api_base: str,
         model: str,

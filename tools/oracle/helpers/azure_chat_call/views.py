@@ -4,13 +4,7 @@ from typing import Final, TypedDict, cast
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.azure.common_utils import AzureOpenAIError
-from openai import (
-    APIError,
-    APIResponseValidationError,
-    APIStatusError,
-    APITimeoutError,
-    OpenAIError,
-)
+from openai import APIError, APIStatusError, APITimeoutError, OpenAIError
 from pydantic import JsonValue, ValidationError
 from typing_extensions import override
 
@@ -25,6 +19,7 @@ from .types import (
     TIMEOUT_DIAGNOSTIC,
     AnyClient,
     CallArgs,
+    ErrorView,
     HiddenResponse,
     JsonDump,
     ReplyView,
@@ -183,13 +178,6 @@ def sdk_error_view(error: OpenAIError) -> JsonValue:
         case APITimeoutError():
             return error_fields(500, None, error.message, has_body=False)
         case APIStatusError():
-            return error_fields(
-                error.status_code,
-                error.response.headers,
-                error.message,
-                has_body=error.body is not None,
-            )
-        case APIResponseValidationError():
             return error_fields(
                 error.status_code,
                 error.response.headers,

@@ -15,7 +15,7 @@ from .clients import (
     completion_kwargs,
     o_series_kwargs,
 )
-from .fixtures import Fixture, case_answer, caller_of, client_for, supplied_client
+from .fixtures import Fixture, caller_of, case_answer, client_for, supplied_client
 from .types import (
     AsyncChat,
     CallCase,
@@ -87,12 +87,12 @@ async def o_series_call(case: CallCase) -> JsonValue:
     recorder = Recorder()
     kwargs = o_series_kwargs(case, recorder, supplied_client(case, handler.mock))
     capture = Capture()
-    original = OpenAIChatCompletion.completion  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L645-L646
+    original = OpenAIChatCompletion.completion
     OpenAIChatCompletion.completion = capture  # type: ignore[method-assign, assignment]  # pyright: ignore[reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L645-L646
     try:
         cast(OSeriesChat, handler).completion(**kwargs)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/chat/o_series_handler.py#L23-L79
     finally:
-        OpenAIChatCompletion.completion = original  # type: ignore[method-assign]  # pyright: ignore[reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L645-L646
+        OpenAIChatCompletion.completion = original  # type: ignore[method-assign, assignment]  # pyright: ignore[reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L645-L646
     return report(
         handler,
         fixture,
