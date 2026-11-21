@@ -705,7 +705,7 @@ async fn assert_async_forwards_session(
     assert!(config.off_loop_sign.load(Ordering::SeqCst));
     assert!(config.off_loop_transform.load(Ordering::SeqCst));
     let line = format!("Creating HTTP client for responses API with shared_session: {logged}");
-    assert!(capture.logs.take().iter().any(|seen| *seen == line));
+    assert!(capture.logs.take().contains(&line));
 }
 
 async fn assert_sync_forwards_nothing(call_params: &CreateParams, dispatcher: &Dispatcher) {
