@@ -6,6 +6,7 @@ use betterlite_openai::api::file_type_records::UploadUrlLocation;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
+use super::OracleLimits;
 use super::call_kind::CallKind;
 use super::error::SdkHttpError;
 use super::result::kinds::SdkResult;
@@ -193,6 +194,16 @@ pub struct Outcome {
 }
 
 impl CallKind for Call {
+    // An extra upload runs after the first one only, so a case never nests its extras
+    fn validate(&self, _limits: &OracleLimits) -> Result<(), SdkHttpError> {
+        if self.also.iter().any(|extra| !extra.also.is_empty()) {
+            return Err(SdkHttpError::Invalid(String::from(
+                "a file upload case runs one level of extra uploads",
+            )));
+        }
+        Ok(())
+    }
+
     fn send(
         &self,
         api_base: &str,
@@ -201,3 +212,5 @@ impl CallKind for Call {
         native::execute(self, api_base, env)
     }
 }
+
+mod tests;
