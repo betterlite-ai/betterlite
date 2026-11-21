@@ -591,15 +591,14 @@ async fn connect_timeout_is_a_timeout() {
         .await
         .expect_err("the connect timeout fails the call");
     let error = provider_error(&rejection);
-    assert_eq!(
-        (error.status_code, error.status_code_is_synthesized),
-        (408, false)
-    );
+    assert_eq!(error.status_code, 408);
+    assert!(!error.status_code_is_synthesized);
     assert!(
         error
             .message
             .starts_with("litellm.Timeout: Connection timed out. Timeout passed=2, time taken=")
     );
+    assert_eq!(error.headers.as_ref().map(BTreeMap::len), Some(0));
     assert!(recorded_errors(&provider).is_empty());
 }
 
