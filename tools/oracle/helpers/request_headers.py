@@ -133,9 +133,7 @@ def model_group(call: ModelGroupCall) -> JsonValue:
     litellm.add_user_information_to_llm_headers = call["add_user_information"]
     data = dict(call["data"])
     headers = dict(call["headers"])
-    LiteLLMProxyRequestSetup.add_headers_to_llm_call_by_model_group(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1438
-        data, headers, principal
-    )
+    LiteLLMProxyRequestSetup.add_headers_to_llm_call_by_model_group(data, headers, principal)  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1438
     outcome = {"headers": data.get("headers")}
     return JSON.validate_python(outcome)
 
@@ -143,9 +141,7 @@ def model_group(call: ModelGroupCall) -> JsonValue:
 def metadata(call: MetadataCall) -> JsonValue:
     data = dict(call["data"])
     headers = dict(call["headers"])
-    LiteLLMProxyRequestSetup.add_litellm_metadata_from_request_headers(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1538
-        headers, data, call["slot"]
-    )
+    LiteLLMProxyRequestSetup.add_litellm_metadata_from_request_headers(headers, data, call["slot"])  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1538
     return JSON.validate_python(data)
 
 
