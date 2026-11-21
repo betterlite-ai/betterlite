@@ -1,0 +1,39 @@
+kind: helper
+name: request-principal-metadata-principal-tags-precedence
+call:
+  request_principal_metadata:
+    pre_auth_tags:
+      - data: {metadata: {tags: [own, own]}}
+        headers: [[x-litellm-tags, "key, own ,"]]
+        route: /v1/chat/completions
+        principal: {api_key: hash-1, metadata: {tags: [key, team]}}
+      - data: {metadata: {tags: [caller]}}
+        headers: [[x-litellm-tags, header]]
+        route: /v1/messages
+        principal: {api_key: hash-1, metadata: {tags: [key]}}
+      - data: {metadata: '{"tags": ["old"]}'}
+        headers: []
+        route: /v1/chat/completions
+        principal: {api_key: hash-1, metadata: {tags: [key]}}
+      - data: {model: gpt-4}
+        headers: [[x-litellm-tags, ""]]
+        route: /v1/batches
+        principal: {api_key: hash-1, metadata: {tags: solo}}
+    request_metadata:
+      - data: {model: gpt-4}
+        slot: metadata
+        bucket: {tags: [a, a]}
+        headers: []
+        principal: {api_key: hash-1, metadata: {tags: [b, a]}}
+        invoked_agent_id: null
+        managed_agent_context: null
+      - data: {model: gpt-4}
+        slot: litellm_metadata
+        bucket: {tags: a}
+        headers: []
+        principal: {api_key: hash-1, metadata: {tags: [b]}}
+        invoked_agent_id: null
+        managed_agent_context: null
+    team_callbacks: []
+env: {}
+compare: {ignore: []}
