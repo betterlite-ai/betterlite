@@ -5,17 +5,22 @@ use betterlite_error::rate_limit::{RateLimitCategory, RateLimitDimension};
 use crate::limiter_records::{PROJECT_ITPM_DESCRIPTOR_KEY, PROJECT_OTPM_DESCRIPTOR_KEY};
 use crate::token_reservations::TokenReservationError;
 use crate::token_reservations::tests::support::{
-    ReservationFixture, START, auth, count, local_write, text, tokens_key, window_key,
+    NOW, ReservationFixture, START, auth, count, counter_write, local_write, text, tokens_key,
+    window_key,
 };
 
 const VALUE: &str = "p1:gpt-4";
 
 #[tokio::test]
 async fn raises_the_429_for_a_frame_over_the_project_input_limit() {
-    let fixture = ReservationFixture::seeded(&[
-        (&window_key(PROJECT_ITPM_DESCRIPTOR_KEY, VALUE), text(START)),
-        (&tokens_key(PROJECT_ITPM_DESCRIPTOR_KEY, VALUE), count(40)),
-    ]);
+    let fixture = ReservationFixture::at(
+        &[
+            (&window_key(PROJECT_ITPM_DESCRIPTOR_KEY, VALUE), text(START)),
+            (&tokens_key(PROJECT_ITPM_DESCRIPTOR_KEY, VALUE), count(40)),
+        ],
+        NOW,
+        &[("gpt-4-0613", "gpt-4")],
+    );
     let auth = auth(
         r#"{"project_id": "p1", "project_metadata": {"model_itpm_limit": {"gpt-4": 500}, "model_otpm_limit": {"gpt-4": 900}}}"#,
     );
@@ -72,10 +77,13 @@ async fn raises_the_429_for_a_frame_over_the_project_output_limit() {
     );
     assert_eq!(
         fixture.effects.writes(),
-        vec![local_write(
-            &tokens_key(PROJECT_ITPM_DESCRIPTOR_KEY, VALUE),
-            0.0_f64,
-            60
-        )]
+        vec![
+            counter_write(
+                &tokens_key(PROJECT_ITPM_DESCRIPTOR_KEY, VALUE),
+                count(120),
+                60
+            ),
+            local_write(&tokens_key(PROJECT_ITPM_DESCRIPTOR_KEY, VALUE), 0.0_f64, 60),
+        ]
     );
 }
