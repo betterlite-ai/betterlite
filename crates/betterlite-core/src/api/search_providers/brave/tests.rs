@@ -17,6 +17,7 @@ use rstest::rstest;
 use secrecy::{ExposeSecret, SecretString};
 
 use super::dates::{self, DateFlags, DateValue};
+use super::request::BraveBody;
 use super::{BRAVE_API_BASE, BraveSearchConfig, BraveSearchError};
 
 fn environment(variables: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -65,31 +66,36 @@ fn query(value: &str) -> SearchQuery {
     SearchQuery::Single(value.to_owned())
 }
 
+static EMPTY_HEADERS: Headers = Headers::new();
+
+fn input<'call>(query: &'call SearchQuery, params: &'call Object) -> RequestInput<'call> {
+    RequestInput {
+        query,
+        optional_params: params,
+        api_key: None,
+        api_base: None,
+        headers: &EMPTY_HEADERS,
+    }
+}
+
+fn transformed(config: &BraveSearchConfig, value: &str, params: &Object) -> BraveBody {
+    config
+        .transform_search_request(&input(&query(value), params))
+        .unwrap()
+}
+
 fn request_body(config: &BraveSearchConfig, value: &str, params: &Object) -> JsonValue {
-    let body = config
-        .transform_search_request(&RequestInput {
-            query: &query(value),
-            optional_params: params,
-            api_key: None,
-            api_base: None,
-            headers: &Headers::new(),
-        })
-        .unwrap();
-    serde_json::to_value(body).unwrap()
+    serde_json::to_value(transformed(config, value, params)).unwrap()
 }
 
 fn request_url(config: &BraveSearchConfig, value: &str, params: &Object) -> String {
-    let body = config
-        .transform_search_request(&RequestInput {
-            query: &query(value),
-            optional_params: params,
-            api_key: None,
-            api_base: None,
-            headers: &Headers::new(),
-        })
-        .unwrap();
     config
-        .complete_url(None, params, Some(&body), None)
+        .complete_url(
+            None,
+            params,
+            Some(&transformed(config, value, params)),
+            None,
+        )
         .unwrap()
 }
 
@@ -99,13 +105,7 @@ fn answer(
     params: &Object,
     body: &str,
 ) -> Result<SearchResponse, BraveSearchError> {
-    let request = config.transform_search_request(&RequestInput {
-        query: &query(value),
-        optional_params: params,
-        api_key: None,
-        api_base: None,
-        headers: &Headers::new(),
-    })?;
+    let request = config.transform_search_request(&input(&query(value), params))?;
     let _url = config.complete_url(None, params, Some(&request), None)?;
     let headers = Headers::new();
     config.transform_search_response(&ProviderResponse {
@@ -190,13 +190,7 @@ fn brave_search_headers_keep_the_callers_beside_the_source_ones() {
 fn brave_search_sign_request_fails_before_sending_without_a_key() {
     let config = config(&[]);
     let body = config
-        .transform_search_request(&RequestInput {
-            query: &query("q"),
-            optional_params: &Object::new(),
-            api_key: None,
-            api_base: None,
-            headers: &Headers::new(),
-        })
+        .transform_search_request(&input(&query("q"), &Object::new()))
         .unwrap();
     let empty = Object::new();
     let outbound = OutboundSearch {
@@ -215,13 +209,7 @@ fn brave_search_sign_request_fails_before_sending_without_a_key() {
 fn brave_search_sign_request_blocks_the_server_key_for_an_untrusted_base() {
     let config = config(&[("BRAVE_API_KEY", "server-key")]);
     let body = config
-        .transform_search_request(&RequestInput {
-            query: &query("q"),
-            optional_params: &Object::new(),
-            api_key: None,
-            api_base: None,
-            headers: &Headers::new(),
-        })
+        .transform_search_request(&input(&query("q"), &Object::new()))
         .unwrap();
     let empty = Object::new();
     let outbound = OutboundSearch {
@@ -253,13 +241,7 @@ fn brave_search_sign_request_picks_the_key_the_policy_allows(
         ("BRAVE_API_BASE", "https://proxy.test/res/v1/web/search"),
     ]);
     let body = config
-        .transform_search_request(&RequestInput {
-            query: &query("q"),
-            optional_params: &Object::new(),
-            api_key: None,
-            api_base: None,
-            headers: &Headers::new(),
-        })
+        .transform_search_request(&input(&query("q"), &Object::new()))
         .unwrap();
     let caller = caller_key.map(SecretString::from);
     let empty = Object::new();
@@ -283,13 +265,10 @@ fn brave_search_sign_request_picks_the_key_the_policy_allows(
 fn brave_search_request_joins_lists_and_defaults_the_metadata_flag() {
     let config = config(&[]);
     let joined = config
-        .transform_search_request(&RequestInput {
-            query: &SearchQuery::Multiple(vec!["one".to_owned(), "two".to_owned()]),
-            optional_params: &Object::new(),
-            api_key: None,
-            api_base: None,
-            headers: &Headers::new(),
-        })
+        .transform_search_request(&input(
+            &SearchQuery::Multiple(vec!["one".to_owned(), "two".to_owned()]),
+            &Object::new(),
+        ))
         .unwrap();
 
     assert_eq!(
@@ -406,13 +385,7 @@ fn brave_search_request_rejects_a_max_results_that_is_not_an_integer() {
     let params = options(&[("max_results", text("5"))]);
 
     let error = config
-        .transform_search_request(&RequestInput {
-            query: &query("q"),
-            optional_params: &params,
-            api_key: None,
-            api_base: None,
-            headers: &Headers::new(),
-        })
+        .transform_search_request(&input(&query("q"), &params))
         .unwrap_err();
 
     assert!(matches!(
@@ -427,13 +400,7 @@ fn brave_search_request_rejects_a_domain_that_is_not_text() {
     let params = options(&[("search_domain_filter", json("[5]"))]);
 
     let error = config
-        .transform_search_request(&RequestInput {
-            query: &query("q"),
-            optional_params: &params,
-            api_key: None,
-            api_base: None,
-            headers: &Headers::new(),
-        })
+        .transform_search_request(&input(&query("q"), &params))
         .unwrap_err();
 
     assert!(matches!(
@@ -448,13 +415,7 @@ fn brave_search_request_rejects_a_passthrough_object() {
     let params = options(&[("goggles", json(r#"{"a": 1}"#))]);
 
     let error = config
-        .transform_search_request(&RequestInput {
-            query: &query("q"),
-            optional_params: &params,
-            api_key: None,
-            api_base: None,
-            headers: &Headers::new(),
-        })
+        .transform_search_request(&input(&query("q"), &params))
         .unwrap_err();
 
     assert!(matches!(
@@ -481,13 +442,7 @@ fn brave_search_url_keeps_the_caller_base_verbatim() {
     let config = config(&[]);
     let params = Object::new();
     let body = config
-        .transform_search_request(&RequestInput {
-            query: &query("q"),
-            optional_params: &params,
-            api_key: None,
-            api_base: None,
-            headers: &Headers::new(),
-        })
+        .transform_search_request(&input(&query("q"), &params))
         .unwrap();
 
     let url = config

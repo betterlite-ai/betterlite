@@ -135,21 +135,41 @@ async fn signed_body_verbatim() {
     );
 }
 
-async fn reject_with_429() -> (SearchHttpError<TestError>, TestProvider, Serving) {
-    let served = serve(
-        reply(
-            "429 Too Many Requests",
-            &[("retry-after", "3"), ("content-encoding", "identity")],
-            "slow down",
-        ),
-        Duration::ZERO,
-    )
-    .expect("the fixture serves");
-    let base = format!("http://{}/search", served.address);
+struct Rejection {
+    status: &'static str,
+    headers: &'static [(&'static str, &'static str)],
+    body: &'static str,
+    method: HttpMethod,
+    path: &'static str,
+}
+
+const TOO_MANY_REQUESTS: Rejection = Rejection {
+    status: "429 Too Many Requests",
+    headers: &[("retry-after", "3"), ("content-encoding", "identity")],
+    body: "slow down",
+    method: HttpMethod::Post,
+    path: "/search",
+};
+
+const SERVICE_UNAVAILABLE: Rejection = Rejection {
+    status: "503 Service Unavailable",
+    headers: &[("content-encoding", "identity")],
+    body: "try later",
+    method: HttpMethod::Get,
+    path: "/search?q=rust",
+};
+
+async fn reject_with(spec: &Rejection) -> (SearchHttpError<TestError>, TestProvider, Serving) {
+    let served = serve(reply(spec.status, spec.headers, spec.body), Duration::ZERO)
+        .expect("the fixture serves");
+    let base = format!("http://{}{}", served.address, spec.path);
     let tls = default_tls();
     let routing = proxy_policy();
     let pool = ClientPool::new(4, TransportLimits::DEFAULT);
-    let provider = test_provider(&base);
+    let provider = TestProvider {
+        method: spec.method,
+        ..test_provider(&base)
+    };
     let query = SearchQuery::Single(String::from("rust"));
     let params = Object::new();
     let mut fixture = Fixture::new();
@@ -166,7 +186,7 @@ async fn reject_with_429() -> (SearchHttpError<TestError>, TestProvider, Serving
 }
 
 async fn status_error_is_a_provider_error() {
-    let (rejection, provider, served) = reject_with_429().await;
+    let (rejection, provider, served) = reject_with(&TOO_MANY_REQUESTS).await;
     let error = provider_error(&rejection);
     assert_eq!(
         (error.status_code, error.message.as_str()),
@@ -197,41 +217,8 @@ async fn status_error_is_a_provider_error() {
     );
 }
 
-async fn reject_get_with_503() -> (SearchHttpError<TestError>, TestProvider, Serving) {
-    let served = serve(
-        reply(
-            "503 Service Unavailable",
-            &[("content-encoding", "identity")],
-            "try later",
-        ),
-        Duration::ZERO,
-    )
-    .expect("the fixture serves");
-    let base = format!("http://{}/search?q=rust", served.address);
-    let tls = default_tls();
-    let routing = proxy_policy();
-    let pool = ClientPool::new(4, TransportLimits::DEFAULT);
-    let provider = TestProvider {
-        method: HttpMethod::Get,
-        ..test_provider(&base)
-    };
-    let query = SearchQuery::Single(String::from("rust"));
-    let params = Object::new();
-    let mut fixture = Fixture::new();
-    let rejection = fixture
-        .execute(
-            search_call(&query, &params, &base, &tls, &routing),
-            &provider,
-            &pool,
-            false,
-        )
-        .await
-        .expect_err("the status fails the call");
-    (rejection, provider, served)
-}
-
 async fn get_status_error_is_a_provider_error() {
-    let (rejection, provider, served) = reject_get_with_503().await;
+    let (rejection, provider, served) = reject_with(&SERVICE_UNAVAILABLE).await;
     let error = provider_error(&rejection);
     assert_eq!(
         (error.status_code, error.status_code_is_synthesized),
