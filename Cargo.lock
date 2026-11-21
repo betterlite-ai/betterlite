@@ -1547,6 +1547,7 @@ dependencies = [
  "betterlite-env",
  "betterlite-models",
  "betterlite-postgres-fixture",
+ "betterlite-redact",
  "betterlite-redis",
  "betterlite-secret-managers",
  "betterlite-secrets",
