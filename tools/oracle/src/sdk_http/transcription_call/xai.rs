@@ -27,7 +27,7 @@ use betterlite_provider::api::transcription_http::{
 };
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
-use secrecy::ExposeSecret as _;
+use secrecy::ExposeSecret;
 
 use self::payload::XaiConfig;
 use super::super::error::SdkHttpError;
@@ -43,8 +43,8 @@ pub(super) async fn transcribe(
     let input = operation.input;
     let optional_params = object(&input.optional_params);
     let litellm_params = object(&input.litellm_params);
-    let headers = request_headers(input.headers);
-    let api_key = input.api_key.map(|key| key.expose_secret());
+    let headers = request_headers(operation.headers);
+    let api_key = input.api_key.map(ExposeSecret::expose_secret);
     let call = HttpCall {
         model: input.model,
         audio_file: AudioFile {

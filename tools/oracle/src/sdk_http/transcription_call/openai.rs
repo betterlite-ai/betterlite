@@ -12,7 +12,7 @@ use betterlite_openai::transcription::error::TranscriptionError;
 use betterlite_openai::transcription::logging::{
     TranscriptionLogger, TranscriptionPostCall, TranscriptionPreCall,
 };
-use betterlite_openai::transcription::transport::TranscriptionTransport as _;
+use betterlite_openai::transcription::transport::TranscriptionTransport;
 use http::header::{HeaderName, HeaderValue};
 use indexmap::IndexMap;
 
@@ -55,7 +55,7 @@ pub(super) async fn transcribe(
             })?;
         outbound.headers.insert(name, value);
     }
-    let sent = client.send(outbound).await;
+    let sent = TranscriptionTransport::send(client, outbound).await;
     let reply = finish_transcription(pending, sent, &mut logger).map_err(publish)?;
     Ok(TranscriptionAnswer::Reply(Box::new(
         TranscriptionProviderReply {

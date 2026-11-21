@@ -72,10 +72,16 @@ pub(super) struct Files;
 
 impl AuthorizedAudioFiles for Files {
     fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
-        Err(io::Error::new(io::ErrorKind::NotFound, path.to_owned()))
+        Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            path.display().to_string(),
+        ))
     }
 
     fn open(&self, path: &Path) -> io::Result<Box<dyn io::Read + Send>> {
-        Err(io::Error::new(io::ErrorKind::NotFound, path.to_owned()))
+        Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            path.display().to_string(),
+        ))
     }
 }

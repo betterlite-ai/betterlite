@@ -123,7 +123,7 @@ impl Outcome {
         }
     }
 
-    fn status(status: u16) -> Self {
+    const fn status(status: u16) -> Self {
         Self {
             text: None,
             words: None,
@@ -234,7 +234,7 @@ fn sync_outcome(
 ) -> Result<Outcome, SdkHttpError> {
     match answer {
         Ok(TranscriptionAnswer::Reply(reply)) => Ok(outcome_of(&reply.response)),
-        Ok(TranscriptionAnswer::Mapping(_)) | Ok(TranscriptionAnswer::Unexpected(_)) => {
+        Ok(TranscriptionAnswer::Mapping(_) | TranscriptionAnswer::Unexpected(_)) => {
             Err(SdkHttpError::Invalid(String::from(
                 "the sync transcription answered a mocked value",
             )))
