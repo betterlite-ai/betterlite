@@ -1,5 +1,4 @@
 use std::ops::Div as _;
-use std::str::from_utf8;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
@@ -68,9 +67,10 @@ pub fn transform_embedding_response(
             return Err(PerplexityEmbeddingError::Shape { source });
         }
         Err(_not_json) => {
-            let text = from_utf8(raw).unwrap_or_default();
+            // httpx decodes the body as UTF-8 with replacement characters for raw_response.text
+            let text = String::from_utf8_lossy(raw);
             return Err(PerplexityEmbeddingError::Provider {
-                error: Box::new(get_error_class(text, status_code, &Headers::new())),
+                error: Box::new(get_error_class(&text, status_code, &Headers::new())),
             });
         }
     };

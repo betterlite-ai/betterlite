@@ -7,7 +7,7 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::embedding::EmbeddingInput;
-use crate::error::{ErrorRequest, ErrorResponse, ProviderError, ProviderErrorParts};
+use crate::error::{ProviderError, ProviderErrorParts};
 use crate::openai_base_config::Headers;
 use error::PerplexityEmbeddingError;
 
@@ -76,21 +76,15 @@ pub fn transform_embedding_request(
     Ok(body)
 }
 
+// PerplexityEmbeddingError sets its own request, then BaseLLMException.__init__ replaces it with the docs URL
 #[must_use]
 pub fn get_error_class(message: &str, status_code: u16, headers: &Headers) -> ProviderError {
-    let request = ErrorRequest {
-        method: String::from("POST"),
-        url: DEFAULT_URL.to_owned(),
-    };
     ProviderError::from(ProviderErrorParts {
         status_code,
         message: message.to_owned(),
         headers: Some(headers.clone().into_iter().collect()),
-        request: Some(request.clone()),
-        response: Some(ErrorResponse {
-            status_code,
-            request,
-        }),
+        request: None,
+        response: None,
         body: None,
         status_code_is_synthesized: false,
     })

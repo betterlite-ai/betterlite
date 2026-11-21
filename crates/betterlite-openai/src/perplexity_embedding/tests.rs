@@ -206,7 +206,7 @@ fn a_reply_that_is_not_json_keeps_the_status_and_the_text() {
     };
     assert_eq!(error.message, "upstream down");
     assert_eq!(error.request.method, "POST");
-    assert_eq!(error.request.url, "https://api.perplexity.ai/v1/embeddings");
+    assert_eq!(error.request.url, "https://docs.litellm.ai/docs");
     assert_eq!(error.response.status_code, 502);
     assert_eq!(error.headers, Some(Vec::new()));
 }
@@ -242,6 +242,16 @@ fn a_reply_over_the_limit_is_refused_and_one_at_the_limit_is_read() {
 }
 
 #[test]
+fn a_reply_that_is_not_utf8_keeps_replacement_characters() {
+    let PerplexityEmbeddingError::Provider { error } =
+        transform_embedding_response("m", 502, b"\xffbad").unwrap_err()
+    else {
+        panic!("a provider error");
+    };
+    assert_eq!(error.message, "\u{fffd}bad");
+}
+
+#[test]
 fn the_error_class_keeps_status_message_and_headers() {
     let headers = Headers::from([(String::from("x-request-id"), String::from("r1"))]);
     let error = get_error_class("rate limited", 429, &headers);
@@ -251,7 +261,7 @@ fn the_error_class_keeps_status_message_and_headers() {
         error.headers,
         Some(vec![(String::from("x-request-id"), String::from("r1"))])
     );
-    assert_eq!(error.request.url, "https://api.perplexity.ai/v1/embeddings");
+    assert_eq!(error.request.url, "https://docs.litellm.ai/docs");
     assert_eq!(error.response.status_code, 429);
 }
 
