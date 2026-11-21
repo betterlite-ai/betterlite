@@ -69,7 +69,12 @@ impl ModelGroupInfo {
             "model_group".to_owned(),
             Json::Text(self.model_group.clone()),
         );
-        fields.insert("providers".to_owned(), text_list(&self.providers));
+        fields.insert(
+            "providers".to_owned(),
+            json_list(Some(self.providers.as_slice()), |name| {
+                Json::Text(name.clone())
+            }),
+        );
         for (field, cost) in [
             ("max_input_tokens", &self.max_input_tokens),
             ("max_output_tokens", &self.max_output_tokens),
@@ -108,9 +113,9 @@ impl ModelGroupInfo {
         );
         fields.insert(
             "supported_openai_params".to_owned(),
-            self.supported_openai_params
-                .as_deref()
-                .map_or(Json::Null, text_list),
+            json_list(self.supported_openai_params.as_deref(), |name| {
+                Json::Text(name.clone())
+            }),
         );
         fields.insert(
             "configurable_clientside_auth_params".to_owned(),
@@ -128,10 +133,6 @@ impl ClientsideAuth {
             Self::Item(fields) => Json::Object(fields.clone()),
         }
     }
-}
-
-fn text_list(values: &[String]) -> Json {
-    Json::List(values.iter().cloned().map(Json::Text).collect())
 }
 
 fn json_list<T>(values: Option<&[T]>, convert: fn(&T) -> Json) -> Json {
