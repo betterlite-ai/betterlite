@@ -124,6 +124,7 @@ impl Reply {
 pub(super) enum Answer {
     Json(Reply),
     Sse(Vec<String>),
+    Failure(TransportError),
 }
 
 #[derive(Clone)]
@@ -215,6 +216,7 @@ impl CreateTransport for Wire {
                     .collect();
                 Ok(SentReply::Streaming(Box::new(PrefetchedSource::new(items))))
             }
+            Answer::Failure(error) => Err(error),
         })
     }
 }

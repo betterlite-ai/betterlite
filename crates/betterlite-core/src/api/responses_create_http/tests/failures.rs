@@ -1,3 +1,4 @@
+use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::decisions::Json as ModelJson;
 use betterlite_openai::response_input::ResponsesInput;
 use betterlite_prompts::arguments::json::Object;
@@ -18,6 +19,7 @@ use crate::api::responses_create_http::service::CreateOutcome;
 enum FailureCase {
     Status,
     StreamingStatus,
+    Transport,
     Step(FailStage),
     ContextUpdate,
     Build(BuildFailure),
@@ -39,6 +41,7 @@ pub(super) async fn transport_failures() {
     for scenario in [
         FailureCase::Status,
         FailureCase::StreamingStatus,
+        FailureCase::Transport,
         FailureCase::Step(FailStage::Transform),
         FailureCase::Step(FailStage::Normalize),
         FailureCase::Step(FailStage::Sign),
@@ -66,6 +69,9 @@ async fn transport_failure(
         FailureCase::StreamingStatus => {
             let streaming = object(r#"{"stream":true}"#);
             status_failure(input, &streaming, call_params, dispatcher, true).await;
+        }
+        FailureCase::Transport => {
+            send_failure(input, empty, call_params, dispatcher).await;
         }
         FailureCase::Step(stage) => {
             step_failure(stage, input, empty, call_params, dispatcher).await;
@@ -140,6 +146,31 @@ async fn status_failure(
     let sent = wire.requests();
     assert_eq!(sent.len(), 1);
     assert_eq!(sent[0].stream, stream);
+}
+
+// A send the transport itself fails becomes _handle_error's synthesized 500 with the failure's own text
+async fn send_failure(
+    input: &ResponsesInput,
+    optional: &Object,
+    call_params: &CreateParams,
+    dispatcher: &Dispatcher,
+) {
+    let wire = Wire::new(vec![Answer::Failure(TransportError::Closed)]);
+    let source = Source::with(wire.clone());
+    let call = create_call(input, optional, call_params);
+    let config = Config::default();
+    let create_hooks = hooks(NO_CALLBACKS, dispatcher, &NO_RESOLVER);
+    let deps = create_deps(&config, &source);
+    let logged = execute_logged(&deps, ClientKind::Sync, &call, &create_hooks).await;
+    let Err(CreateError::Provider(provider)) = logged.outcome else {
+        panic!("the transport failure is a provider error");
+    };
+    assert_eq!(provider.status_code, 500);
+    assert!(provider.status_code_is_synthesized);
+    assert_eq!(provider.message, TransportError::Closed.to_string());
+    assert!(provider.headers.is_empty());
+    assert_eq!(wire.requests().len(), 1);
+    assert_eq!(logged.details.get("input"), Some(&models("\"hello\"")));
 }
 
 // transform, normalize and sign fail before the send catch and send nothing; the response transform runs after it
