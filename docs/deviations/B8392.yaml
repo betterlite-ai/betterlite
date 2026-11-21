@@ -24,4 +24,7 @@ deviations:
   - what: The guardrail_name and guardrail_mode enrichment applies to an HTTP error whose detail is a JSON object; a text detail is left as it is.
     why: ProxyHookError::Http carries its detail as text, and B3663's add_guardrail_context only adds keys to an object detail, as LiteLLM does to a dict detail.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L1975
+  - what: A sensitive data reroute on a request whose metadata is not an object writes the routing keys into a new metadata object.
+    why: LiteLLM assigns into the value and fails with a TypeError, a 500 for a request it had already decided to reroute; a missing or null metadata takes a new object in both.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L2690-L2695
 kept_bugs: []
