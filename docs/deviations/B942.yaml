@@ -1,0 +1,18 @@
+task: B942
+deviations:
+  - what: >-
+      A response.create, backend event or response.completed frame that is valid JSON but not an object (an array, a string, a number or null) makes the three masking functions return FramePolicyError::NotAnObject, where LiteLLM calls .get("type") on the decoded value and lets AttributeError escape the relay loop.
+    why: >-
+      Rust has no AttributeError to leak and must not panic on a valid JSON array; the typed error lets B943 end the forwarding the way LiteLLM's uncaught exception does instead of forwarding the frame unchecked.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L2153-L2159
+  - what: >-
+      A frame whose text opens a JSON object but that serde_json can't read, such as one carrying a lone UTF-16 surrogate escape or a NaN or Infinity token that Python's json.loads accepts, makes the three masking functions return FramePolicyError::Unreadable instead of passing it through as text that isn't JSON. Text that doesn't open an object still passes through untouched, as in LiteLLM.
+    why: >-
+      LiteLLM reads such a frame, so it still overwrites the model and masks PII before forwarding. Passing it through unread would forward a client-chosen model to a deployment the connection wasn't authorized for and skip PII masking, so the frame fails closed. No working client sends a lone surrogate or NaN in a response.create frame.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L148-L150
+  - what: >-
+      An integer max_output_tokens that doesn't fit in an i64 is charged at the 1024-token floor, where LiteLLM hands the quota callback Python's arbitrary-size integer.
+    why: >-
+      ProjectQuotaCallback takes the estimate as an i64, and serde_json reads an integer past the u64 range as a float, so the value can't reach the callback unchanged. The provider rejects such a cap before generating any output, so the floor never undercharges a request that runs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L1783-L1784
+kept_bugs: []

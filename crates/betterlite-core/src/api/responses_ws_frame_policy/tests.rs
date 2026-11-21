@@ -778,6 +778,42 @@ async fn non_object_masking_frames(#[case] message: &str) {
 }
 
 #[rstest]
+#[case::lone_surrogate(
+    r#"{"type":"response.completed","model":"client","input":"\ud800","response":{"output":[{"content":[{"text":"<EMAIL_ADDRESS_1>"}]}]}}"#
+)]
+#[case::not_a_number(r#"{"type":"response.completed","temperature":NaN}"#)]
+#[case::leading_whitespace(" \n{\"type\":\"response.completed\",")]
+#[tokio::test]
+async fn unreadable_object_frames(#[case] message: &str) {
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let guardrails = [InputGuardrail {
+        callback: masker(0, Vec::new(), &calls),
+        unmask_pii_text: &echo,
+    }];
+    let outputs = [masker(1, Vec::new(), &calls)];
+    let policy = FramePolicy {
+        quota_callbacks: &[],
+        user_api_key_dict: None,
+        guardrail_callbacks: &guardrails,
+        output_guardrail_callbacks: &outputs,
+        authorized_model: Some("gpt-4o"),
+        request_defaults: None,
+    };
+    let created_frame = message.replace("response.completed", "response.create");
+    let mut data = request_data(TOKENS);
+    let created = mask_response_create(&policy, &mut data, &created_frame).await;
+    assert!(matches!(created, Err(FramePolicyError::Unreadable { .. })));
+    let unmasked = unmask_response_event(&policy, &data, message);
+    assert!(matches!(unmasked, Err(FramePolicyError::Unreadable { .. })));
+    let completed = mask_response_completed(&policy, &data, message).await;
+    assert!(matches!(
+        completed,
+        Err(FramePolicyError::Unreadable { .. })
+    ));
+    assert!(lock(&calls).is_empty());
+}
+
+#[rstest]
 #[case::rejected(CREATE, Verdict::RateLimited, false, Ok(false), 1)]
 #[case::send_fails(CREATE, Verdict::RateLimited, true, Ok(false), 1)]
 #[case::other_error(CREATE, Verdict::Broken, false, Err("boom"), 0)]

@@ -102,13 +102,11 @@ impl PresidioGuardrailCallback for Guard {
         _presidio_config: Option<&'call ()>,
         request_data: &'call RequestData,
     ) -> impl Future<Output = Result<String, Infallible>> + Send + 'call {
-        let metadata = request_data
-            .get("metadata")
-            .and_then(|raw| serde_json::from_str::<Value>(raw.get()).ok());
+        let has_metadata = request_data.contains_key("metadata");
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(json!([self.index, text, output_parse_pii, metadata]));
+            .push(json!([self.index, text, output_parse_pii, has_metadata]));
         let mut masked = text.to_owned();
         for (from, to) in &self.replacements {
             masked = masked.replace(from.as_str(), to);

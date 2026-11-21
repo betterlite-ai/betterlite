@@ -62,6 +62,12 @@ where
     // LiteLLM's .get("type") raises AttributeError here, and the relay ends the connection on it
     #[error("the frame is JSON but not an object, so it can't be relayed")]
     NotAnObject,
+    // json.loads reads a lone surrogate escape or NaN that serde_json refuses, so such an object fails closed
+    #[error("the frame opens a JSON object that can't be read: {source}")]
+    Unreadable {
+        #[source]
+        source: serde_json::Error,
+    },
     #[error(transparent)]
     Guardrail(GuardError),
     #[error("the frame can't be written back as JSON: {source}")]
@@ -93,7 +99,8 @@ pub(crate) struct PiiCall<'call, Guard, Settings> {
     pub(crate) output_parse_pii: bool,
 }
 
-// json.loads, then .get on whatever came back: text that isn't JSON passes through untouched
+// json.loads, then .get on whatever came back: text that isn't JSON passes through untouched, unless it
+// opens an object, since forwarding that unread would skip model enforcement and masking
 pub(crate) fn decode_object<GuardError>(
     message: &str,
 ) -> Result<Option<IndexMap<String, Json>>, FramePolicyError<GuardError>>
@@ -104,6 +111,9 @@ where
         Ok(Json::Object(fields)) => Ok(Some(fields)),
         Ok(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
             Err(FramePolicyError::NotAnObject)
+        }
+        Err(source) if message.trim_start().starts_with('{') => {
+            Err(FramePolicyError::Unreadable { source })
         }
         Err(_invalid) => Ok(None),
     }
