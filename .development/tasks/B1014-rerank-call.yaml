@@ -23,6 +23,8 @@ description: >-
   Own 56 nonblank/non-comment lines at main.py:30-89. Budget 70 implementation,110 behavior tests,
   115 provider fixtures,80 adapters and 25 registration lines, 400 total. Test functions named in
   the cases below live under api::rerank_call::tests.
+
+  Fix B1419's return_documents default in the shared Cohere mapping (architect, 2026-11-21). `map_rerank_params` turns an absent or null return_documents into true (crates/betterlite-openai/src/cohere_rerank.rs L113-L117), but LiteLLM's map_cohere_rerank_params passes it through and transform_rerank_request drops None (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cohere/rerank/transformation.py#L68-L77); the true default lives only in rerank() and get_optional_rerank_params. Add return_documents to the Null name list and drop the match, then update the cohere_rerank tests, the Infinity test in host_rerank/tests.rs that expects true for an absent value, Foundry's rerank request comment and its default-body case, and tools/oracle/helpers/cohere_rerank_plan.py L137 (pass options.get("return_documents") as is) with the null-projection-and-response-error case. Sync rerank keeps sending true, since insert_optional_params fills the default before the mapping runs.
 scope:
   paths:
   - "tools/oracle/src/sdk_http/capture.rs"
@@ -38,6 +40,14 @@ scope:
   - tools/oracle/helpers/b1014/**
   - tools/oracle/src/helpers/core_ops/b1014.rs
   - tools/oracle/src/helpers/core_ops/b1014/**
+  - crates/betterlite-openai/src/cohere_rerank.rs
+  - crates/betterlite-openai/src/cohere_rerank/**
+  - crates/betterlite-openai/src/host_rerank/tests.rs
+  - crates/betterlite-foundry/src/rerank/request.rs
+  - crates/betterlite-foundry/src/rerank/tests.rs
+  - crates/betterlite-foundry/src/rerank/tests/**
+  - tools/oracle/helpers/cohere_rerank_plan.py
+  - tools/oracle/cases/helpers/cohere-rerank-plan/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L30-L89
