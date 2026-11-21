@@ -1,0 +1,9 @@
+task: B387
+deviations:
+  - what: "The router read parser refuses a row payload past 1048576 bytes before decoding it, with a typed invalid-input outcome; LiteLLM's pydantic row adapter has no equivalent byte bound."
+    why: "bounded-inputs requires a finite limit at every parser boundary, and the task pins this one; the aggregate consumer surfaces the typed invalid-input outcome instead of decoding an unbounded payload."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L618-L649
+  - what: "A benchmark window whose implicit start or exclusive end falls outside the representable calendar answers the typed invalid-request outcome, where LiteLLM raises an unhandled OverflowError and answers 500."
+    why: "datetime arithmetic underflows for an end_date in 0001-01-01..0001-01-30 without start_date, and adding one day overflows for end_date 9999-12-31; a request that cannot name a representable window is a bad request, not a server fault."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L879-L892
+kept_bugs: []

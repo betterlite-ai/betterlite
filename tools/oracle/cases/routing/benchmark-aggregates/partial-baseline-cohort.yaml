@@ -1,0 +1,68 @@
+kind: probe
+name: benchmark-aggregates-partial-baseline-cohort
+probes:
+  - clock: {unix_millis: 1710504000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      benchmark_aggregates:
+        now_unix_millis: 1710504000000
+        start_date: "2024-01-01"
+        end_date: "2024-01-02"
+        rows:
+          - router_name: complexity-auto
+            router_type: complexity
+            tier_turns: {SIMPLE: 1, MEDIUM: 1}
+            sessions: 1
+            turns: 2
+            unordered_turns: 0
+            covered_turns: 2
+            cache_hits: 1
+            same_model_turns: 1
+            same_model_hits: 1
+            first_visit_turns: 1
+            first_visit_hits: 0
+            return_turns: 0
+            return_hits: 0
+            return_expired_misses: 0
+            return_within_ttl_misses: 0
+            ttl_5m_turns: 1
+            ttl_1h_turns: 0
+            total_tokens: 1000
+            spend: 3.0
+            saved_spend: 1.0
+            savings_estimated_turns: 2
+            savings_estimated_actual_spend: 3.0
+            savings_estimated_classifier_cost: 0.25
+            savings_estimated_saved_spend: 1.0
+            classifier_cost: 0.25
+            classifier_cost_recorded_turns: 2
+            session_seconds: 3600.0
+          - router_name: complexity-partial
+            router_type: complexity
+            tier_turns: {SIMPLE: 2}
+            sessions: 1
+            turns: 2
+            unordered_turns: 0
+            covered_turns: 2
+            cache_hits: 1
+            same_model_turns: 2
+            same_model_hits: 1
+            first_visit_turns: 0
+            first_visit_hits: 0
+            return_turns: 0
+            return_hits: 0
+            return_expired_misses: 0
+            return_within_ttl_misses: 0
+            ttl_5m_turns: 0
+            ttl_1h_turns: 0
+            total_tokens: 500
+            spend: 2.0
+            saved_spend: 0.0
+            savings_estimated_turns: 0
+            savings_estimated_actual_spend: 0.0
+            savings_estimated_saved_spend: 0.0
+            classifier_cost: 0.5
+            classifier_cost_recorded_turns: 1
+            session_seconds: 1000.0
+compare:
+  ignore: []
