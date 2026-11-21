@@ -1,10 +1,11 @@
 use betterlite_error::dispatch::{DispatchInput, RawException, dispatch};
 use betterlite_error::envelope::WireField;
-use betterlite_error::error::{ErrorClass, class_message};
+use betterlite_error::error::class_message;
 use betterlite_logging::logging_state::LoggingStateError;
 use betterlite_redact::secret::Redactor;
 use thiserror::Error;
 
+use crate::api::assistant_records::error::class_name;
 use crate::api::response_id_traversal::response_id::ResponseRewriteError;
 use crate::api::responses_read_http::error::ReadError;
 
@@ -85,32 +86,5 @@ fn raw_exception(error: &LifecycleError, provider: &str) -> RawException {
         message: None,
         body: None,
         exception_type: String::from("ValueError"),
-    }
-}
-
-// the exception class exception_type() raises for the families the read path reaches; class_message builds its text
-const fn class_name(class: &ErrorClass) -> &'static str {
-    match class {
-        ErrorClass::Authentication(_) => "AuthenticationError",
-        ErrorClass::NotFound(_) => "NotFoundError",
-        ErrorClass::PermissionDenied(_) => "PermissionDeniedError",
-        ErrorClass::BadRequest(_) => "BadRequestError",
-        ErrorClass::UnprocessableEntity(_) => "UnprocessableEntityError",
-        ErrorClass::ContextWindowExceeded(_) => "ContextWindowExceededError",
-        ErrorClass::ContentPolicyViolation(_) => "ContentPolicyViolationError",
-        ErrorClass::ServiceUnavailable(_) => "ServiceUnavailableError",
-        ErrorClass::BadGateway(_) => "BadGatewayError",
-        ErrorClass::InternalServer(_) => "InternalServerError",
-        ErrorClass::Timeout(_) => "Timeout",
-        ErrorClass::RateLimit(_) => "RateLimitError",
-        ErrorClass::ApiConnection(_) => "APIConnectionError",
-        ErrorClass::ApiResponseValidation(_) => "APIResponseValidationError",
-        ErrorClass::BudgetExceeded(_) => "BudgetExceededError",
-        ErrorClass::UnsupportedParams(_) => "UnsupportedParamsError",
-        ErrorClass::Api(_)
-        | ErrorClass::JsonSchemaValidation(_)
-        | ErrorClass::GuardrailRaised(_)
-        | ErrorClass::MidStreamFallback(_)
-        | ErrorClass::Unclassified(_) => "APIError",
     }
 }
