@@ -49,10 +49,11 @@ pub struct BenchmarkGroup {
     )]
     pub savings_estimated_actual_spend: Decimal,
     #[serde(
+        rename = "savings_estimated_classifier_cost",
         serialize_with = "serialize_optional_money",
         deserialize_with = "rust_decimal::serde::arbitrary_precision_option::deserialize"
     )]
-    pub savings_estimated_classifier_cost: Option<Decimal>,
+    pub savings_classifier_cost: Option<Decimal>,
     #[serde(
         serialize_with = "serialize_optional_money",
         deserialize_with = "rust_decimal::serde::arbitrary_precision_option::deserialize"
@@ -101,7 +102,7 @@ pub fn benchmark_group(row: &SessionAggRow) -> BenchmarkGroup {
         classifier_cost: totals.classifier_cost,
         savings_estimated_turns: totals.savings_estimated_turns,
         savings_estimated_actual_spend: totals.savings_estimated_actual_spend,
-        savings_estimated_classifier_cost: totals.savings_estimated_classifier_cost,
+        savings_classifier_cost: totals.savings_classifier_cost,
         saved_spend: totals.saved_spend,
         baseline_spend: totals.baseline_spend,
         saved_pct: totals.saved_pct,
@@ -110,7 +111,10 @@ pub fn benchmark_group(row: &SessionAggRow) -> BenchmarkGroup {
     }
 }
 
-fn summed_counts(rows: &[SessionAggRow], field: impl Fn(&SessionAggRow) -> i64) -> i64 {
+fn summed_counts<F>(rows: &[SessionAggRow], field: F) -> i64
+where
+    F: Fn(&SessionAggRow) -> i64,
+{
     let mut total = 0_i64;
     for row in rows {
         total = total.saturating_add(field(row));
@@ -118,7 +122,10 @@ fn summed_counts(rows: &[SessionAggRow], field: impl Fn(&SessionAggRow) -> i64) 
     total
 }
 
-fn summed_money(rows: &[SessionAggRow], field: impl Fn(&SessionAggRow) -> Decimal) -> Decimal {
+fn summed_money<F>(rows: &[SessionAggRow], field: F) -> Decimal
+where
+    F: Fn(&SessionAggRow) -> Decimal,
+{
     let mut total = Decimal::ZERO;
     for row in rows {
         total = total.saturating_add(field(row));
@@ -126,10 +133,10 @@ fn summed_money(rows: &[SessionAggRow], field: impl Fn(&SessionAggRow) -> Decima
     total
 }
 
-fn summed_optional_money(
-    rows: &[SessionAggRow],
-    field: impl Fn(&SessionAggRow) -> Option<Decimal>,
-) -> Option<Decimal> {
+fn summed_optional_money<F>(rows: &[SessionAggRow], field: F) -> Option<Decimal>
+where
+    F: Fn(&SessionAggRow) -> Option<Decimal>,
+{
     let mut total = Some(Decimal::ZERO);
     for row in rows {
         total = total
@@ -167,9 +174,7 @@ pub fn summed_agg_row(rows: &[SessionAggRow]) -> SessionAggRow {
         savings_estimated_actual_spend: summed_money(rows, |row| {
             row.savings_estimated_actual_spend
         }),
-        savings_estimated_classifier_cost: summed_optional_money(rows, |row| {
-            row.savings_estimated_classifier_cost
-        }),
+        savings_classifier_cost: summed_optional_money(rows, |row| row.savings_classifier_cost),
         savings_estimated_saved_spend: summed_money(rows, |row| row.savings_estimated_saved_spend),
         classifier_cost: summed_money(rows, |row| row.classifier_cost),
         classifier_cost_recorded_turns: summed_counts(rows, |row| {

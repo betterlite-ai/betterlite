@@ -52,9 +52,10 @@ impl BenchmarkWindow {
             .checked_add_days(Days::new(1))
             .filter(|date| date.year() <= LAST_CALENDAR_YEAR)
             .ok_or(WindowError::CalendarRange)?;
+        // strftime("%Y-%m-%d") on glibc leaves a year below 1000 unpadded
         Ok(Self {
-            start_date: day_text(start),
-            end_date: day_text(end),
+            start_date: format!("{}-{:02}-{:02}", start.year(), start.month(), start.day()),
+            end_date: format!("{}-{:02}-{:02}", end.year(), end.month(), end.day()),
             query_start: instant_text(start),
             query_end: instant_text(after_end),
         })
@@ -100,11 +101,6 @@ fn parse_part(text: &str, min_digits: usize, max_digits: usize) -> Option<i32> {
         return None;
     }
     text.parse::<i32>().ok()
-}
-
-// strftime("%Y-%m-%d") on glibc leaves a year below 1000 unpadded
-fn day_text(date: NaiveDate) -> String {
-    format!("{}-{:02}-{:02}", date.year(), date.month(), date.day())
 }
 
 // datetime.isoformat() of midnight UTC, the bound the rollup query binds

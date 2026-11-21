@@ -3,7 +3,6 @@ use std::error::Error as StdError;
 use betterlite_models::decisions::Json;
 use betterlite_server::benchmark_aggregates::decode::{DecodeError, decode_session_agg_rows};
 use betterlite_server::benchmark_aggregates::group::{Benchmarks, benchmarks};
-use betterlite_server::benchmark_aggregates::row::SessionAggRow;
 use betterlite_server::benchmark_aggregates::window::BenchmarkWindow;
 use betterlite_server::routing::benchmark_aggregates::StrategyDeployment;
 use chrono::{DateTime, Utc};
@@ -99,11 +98,6 @@ fn window_of(payload: &Payload) -> Result<BenchmarkWindow, OperationError> {
     .map_err(|error| invalid(&error))
 }
 
-fn rows_of(payload: &Payload) -> Result<Vec<SessionAggRow>, OperationError> {
-    let bytes = serde_json::to_vec(&payload.rows).map_err(|error| invalid(&error))?;
-    decode_session_agg_rows(&bytes).map_err(|error| invalid(&error))
-}
-
 fn parse_step(rows: &[Json], payload: ParsePayload) -> Result<ParseOutput, OperationError> {
     let size = usize::try_from(payload.bytes).map_err(|error| invalid(&error))?;
     let mut document = serde_json::to_vec(rows).map_err(|error| invalid(&error))?;
@@ -128,7 +122,8 @@ pub(crate) fn run(
 ) -> Result<ProbeOutput, OperationError> {
     let payload = &input.0;
     let window = window_of(payload)?;
-    let rows = rows_of(payload)?;
+    let bytes = serde_json::to_vec(&payload.rows).map_err(|error| invalid(&error))?;
+    let rows = decode_session_agg_rows(&bytes).map_err(|error| invalid(&error))?;
     let deployments: Vec<StrategyDeployment<'_>> = payload
         .deployments
         .iter()

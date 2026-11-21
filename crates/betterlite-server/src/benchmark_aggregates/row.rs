@@ -46,10 +46,11 @@ pub struct SessionAggRow {
     pub savings_estimated_actual_spend: Decimal,
     #[serde(
         default,
+        rename = "savings_estimated_classifier_cost",
         serialize_with = "serialize_optional_money",
         deserialize_with = "rust_decimal::serde::arbitrary_precision_option::deserialize"
     )]
-    pub savings_estimated_classifier_cost: Option<Decimal>,
+    pub savings_classifier_cost: Option<Decimal>,
     #[serde(
         default,
         serialize_with = "serialize_money",
@@ -101,7 +102,7 @@ pub fn compared_row(row: &SessionAggRow) -> SessionAggRow {
     SessionAggRow {
         savings_estimated_turns: if compared { row.turns } else { 0 },
         savings_estimated_actual_spend: if compared { row.spend } else { Decimal::ZERO },
-        savings_estimated_classifier_cost: classifier_cost,
+        savings_classifier_cost: classifier_cost,
         savings_estimated_saved_spend: if compared {
             row.saved_spend
         } else {

@@ -109,7 +109,7 @@ fn an_explicit_start_survives_the_last_calendar_day() {
 #[case("2024-01- 12")]
 #[case("0000-01-01")]
 #[case("")]
-fn an_unparseable_day_is_refused(#[case] value: &str) {
+fn an_unparsable_day_is_refused(#[case] value: &str) {
     let error =
         BenchmarkWindow::resolve(Some(value), Some("2024-01-02"), date(2024, 1, 2)).unwrap_err();
     assert_eq!(
@@ -119,7 +119,7 @@ fn an_unparseable_day_is_refused(#[case] value: &str) {
 }
 
 #[test]
-fn an_unparseable_end_day_names_its_own_value() {
+fn an_unparsable_end_day_names_its_own_value() {
     let error = BenchmarkWindow::resolve(None, Some("2024-02-31"), date(2024, 1, 2)).unwrap_err();
     assert_eq!(
         error,
@@ -186,7 +186,7 @@ fn a_row_without_savings_estimates_takes_the_defaults() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].savings_estimated_turns, 0);
     assert_eq!(rows[0].savings_estimated_actual_spend, Decimal::ZERO);
-    assert_eq!(rows[0].savings_estimated_classifier_cost, None);
+    assert_eq!(rows[0].savings_classifier_cost, None);
     assert_eq!(rows[0].savings_estimated_saved_spend, Decimal::ZERO);
 }
 

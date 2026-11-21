@@ -77,10 +77,11 @@ pub struct BenchmarkTotals {
     )]
     pub savings_estimated_actual_spend: Decimal,
     #[serde(
+        rename = "savings_estimated_classifier_cost",
         serialize_with = "serialize_optional_money",
         deserialize_with = "rust_decimal::serde::arbitrary_precision_option::deserialize"
     )]
-    pub savings_estimated_classifier_cost: Option<Decimal>,
+    pub savings_classifier_cost: Option<Decimal>,
     #[serde(
         serialize_with = "serialize_optional_money",
         deserialize_with = "rust_decimal::serde::arbitrary_precision_option::deserialize"
@@ -179,7 +180,7 @@ pub fn benchmark_totals(row: &SessionAggRow) -> BenchmarkTotals {
             .then_some(row.classifier_cost),
         savings_estimated_turns: row.savings_estimated_turns,
         savings_estimated_actual_spend: row.savings_estimated_actual_spend,
-        savings_estimated_classifier_cost: row.savings_estimated_classifier_cost,
+        savings_classifier_cost: row.savings_classifier_cost,
         saved_spend,
         baseline_spend,
         saved_pct: saved_spend

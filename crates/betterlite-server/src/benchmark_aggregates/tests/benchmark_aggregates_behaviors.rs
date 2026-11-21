@@ -24,25 +24,29 @@ fn complexity_row() -> SessionAggRow {
         tier_turns: BTreeMap::from([("SIMPLE".to_owned(), 1_i64), ("MEDIUM".to_owned(), 2_i64)]),
         sessions: 2,
         turns: 4,
+        unordered_turns: 0,
         covered_turns: 4,
         cache_hits: 2,
         same_model_turns: 1,
         same_model_hits: 1,
         first_visit_turns: 1,
+        first_visit_hits: 0,
         return_turns: 2,
         return_hits: 1,
+        return_expired_misses: 0,
+        return_within_ttl_misses: 0,
         ttl_5m_turns: 2,
+        ttl_1h_turns: 0,
         total_tokens: 1024,
         spend: dec("2.0"),
         saved_spend: dec("2.0"),
         savings_estimated_turns: 2,
         savings_estimated_actual_spend: dec("1.5"),
-        savings_estimated_classifier_cost: Some(dec("0.5")),
+        savings_classifier_cost: Some(dec("0.5")),
         savings_estimated_saved_spend: dec("2.5"),
         classifier_cost: dec("0.5"),
         classifier_cost_recorded_turns: 4,
         session_seconds: dec("7200.0"),
-        ..SessionAggRow::default()
     }
 }
 
@@ -102,7 +106,7 @@ fn a_complexity_row_with_a_baseline_joins_the_comparison() {
     assert_eq!(compared.savings_estimated_turns, 4);
     assert_eq!(compared.savings_estimated_actual_spend, dec("2"));
     assert_eq!(compared.savings_estimated_saved_spend, dec("2"));
-    assert_eq!(compared.savings_estimated_classifier_cost, Some(dec("0.5")));
+    assert_eq!(compared.savings_classifier_cost, Some(dec("0.5")));
     assert_eq!(compared.spend, row.spend);
     assert_eq!(compared.router_name, row.router_name);
 }
@@ -116,10 +120,7 @@ fn a_complexity_row_without_a_baseline_is_zeroed() {
     assert_eq!(compared.savings_estimated_turns, 0);
     assert_eq!(compared.savings_estimated_actual_spend, Decimal::ZERO);
     assert_eq!(compared.savings_estimated_saved_spend, Decimal::ZERO);
-    assert_eq!(
-        compared.savings_estimated_classifier_cost,
-        Some(Decimal::ZERO)
-    );
+    assert_eq!(compared.savings_classifier_cost, Some(Decimal::ZERO));
 }
 
 #[test]
@@ -128,17 +129,14 @@ fn an_adaptive_row_never_compares_even_with_a_baseline() {
     row.router_type = "adaptive".to_owned();
     let compared = compared_row(&row);
     assert_eq!(compared.savings_estimated_turns, 0);
-    assert_eq!(
-        compared.savings_estimated_classifier_cost,
-        Some(Decimal::ZERO)
-    );
+    assert_eq!(compared.savings_classifier_cost, Some(Decimal::ZERO));
 }
 
 #[test]
 fn a_comparison_with_unrecorded_classifier_cost_reports_none() {
     let mut row = complexity_row();
     row.classifier_cost_recorded_turns = 3;
-    assert_eq!(compared_row(&row).savings_estimated_classifier_cost, None);
+    assert_eq!(compared_row(&row).savings_classifier_cost, None);
 }
 
 #[test]
@@ -153,7 +151,7 @@ fn the_totals_follow_the_row() {
     assert_eq!(totals.classifier_cost, Some(dec("0.5")));
     assert_eq!(totals.savings_estimated_turns, 2);
     assert_eq!(totals.savings_estimated_actual_spend, dec("1.5"));
-    assert_eq!(totals.savings_estimated_classifier_cost, Some(dec("0.5")));
+    assert_eq!(totals.savings_classifier_cost, Some(dec("0.5")));
     assert_eq!(totals.saved_spend, Some(dec("2.5")));
     assert_eq!(totals.baseline_spend, Some(dec("4")));
     assert_eq!(totals.saved_pct, Some(dec("62.5")));
@@ -249,7 +247,7 @@ fn the_summed_row_adds_every_measure() {
     second.savings_estimated_turns = 2;
     second.savings_estimated_actual_spend = dec("1.0");
     second.savings_estimated_saved_spend = dec("0.5");
-    second.savings_estimated_classifier_cost = Some(dec("0.25"));
+    second.savings_classifier_cost = Some(dec("0.25"));
     second.classifier_cost = dec("0.25");
     second.classifier_cost_recorded_turns = 2;
     second.session_seconds = dec("3600.0");
@@ -265,7 +263,7 @@ fn the_summed_row_adds_every_measure() {
     assert_eq!(summed.savings_estimated_turns, 4);
     assert_eq!(summed.savings_estimated_actual_spend, dec("2.5"));
     assert_eq!(summed.savings_estimated_saved_spend, dec("3.0"));
-    assert_eq!(summed.savings_estimated_classifier_cost, Some(dec("0.75")));
+    assert_eq!(summed.savings_classifier_cost, Some(dec("0.75")));
     assert_eq!(summed.classifier_cost, dec("0.75"));
     assert_eq!(summed.classifier_cost_recorded_turns, 6);
     assert_eq!(summed.session_seconds, dec("10800.0"));
@@ -276,18 +274,15 @@ fn an_empty_sum_is_the_zero_row() {
     let summed = summed_agg_row(&[]);
     assert_eq!(summed.turns, 0);
     assert_eq!(summed.spend, Decimal::ZERO);
-    assert_eq!(
-        summed.savings_estimated_classifier_cost,
-        Some(Decimal::ZERO)
-    );
+    assert_eq!(summed.savings_classifier_cost, Some(Decimal::ZERO));
 }
 
 #[test]
 fn a_summed_row_is_unavailable_when_any_classifier_cost_is() {
     let mut second = complexity_row();
-    second.savings_estimated_classifier_cost = None;
+    second.savings_classifier_cost = None;
     assert_eq!(
-        summed_agg_row(&[complexity_row(), second]).savings_estimated_classifier_cost,
+        summed_agg_row(&[complexity_row(), second]).savings_classifier_cost,
         None
     );
 }
@@ -298,7 +293,7 @@ fn a_summed_total_compares_when_any_row_recorded_a_baseline() {
     second.savings_estimated_turns = 0;
     second.savings_estimated_actual_spend = Decimal::ZERO;
     second.savings_estimated_saved_spend = Decimal::ZERO;
-    second.savings_estimated_classifier_cost = Some(Decimal::ZERO);
+    second.savings_classifier_cost = Some(Decimal::ZERO);
     second.saved_spend = Decimal::ZERO;
     let compared: Vec<SessionAggRow> = [complexity_row(), second]
         .iter()
@@ -308,7 +303,7 @@ fn a_summed_total_compares_when_any_row_recorded_a_baseline() {
     assert_eq!(totals.savings_estimated_turns, 4);
     assert_eq!(totals.saved_spend, Some(dec("2")));
     assert_eq!(totals.baseline_spend, Some(dec("4")));
-    assert_eq!(totals.savings_estimated_classifier_cost, Some(dec("0.5")));
+    assert_eq!(totals.savings_classifier_cost, Some(dec("0.5")));
 }
 
 fn mixed_deployments() -> [StrategyDeployment<'static>; 7] {
