@@ -9,9 +9,9 @@ use crate::guardrails::a2a_translation::adapter::A2A_CALL_TYPES;
 use crate::guardrails::unified_chat::tables::{
     ANTHROPIC_CALL_TYPES, CHAT_CALL_TYPES, RESPONSES_CALL_TYPES,
 };
-use crate::guardrails::unified_guardrail::other_adapters::{
-    GOOGLE_GENAI_CALL_TYPES, MCP_CALL_TYPES, RERANK_CALL_TYPES,
-};
+use crate::guardrails::unified_guardrail::other_adapters::RERANK_CALL_TYPES;
+use crate::guardrails::unified_guardrail::other_adapters::google_genai::GOOGLE_GENAI_CALL_TYPES;
+use crate::guardrails::unified_guardrail::other_adapters::mcp::MCP_CALL_TYPES;
 use crate::guardrails::unified_guardrail::tests::support::{FakeGuardrail, registry};
 use crate::guardrails::unified_guardrail::translation::UnifiedTranslation;
 use crate::guardrails::unified_passthrough::kinds::PASSTHROUGH_TABLE;

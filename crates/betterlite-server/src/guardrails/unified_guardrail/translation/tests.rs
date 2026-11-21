@@ -4,12 +4,12 @@ use std::collections::BTreeMap;
 
 use betterlite_core::routes::CallType;
 use betterlite_guardrails::guardrail_base::failure::{GuardrailFailure, ModifyResponseFailure};
-use betterlite_guardrails::guardrail_base::inputs::GuardrailLogTarget;
-use betterlite_guardrails::guardrail_translation::{BaseTranslation as _, TranslationCall};
+use betterlite_guardrails::guardrail_translation::BaseTranslation as _;
 use rstest::rstest;
 
 use crate::guardrails::unified_guardrail::tests::support::{
-    FakeGuardrail, FixedStamp, NoAssembler, NoHook, Registry, applied, object, registry, value,
+    FakeGuardrail, FixedStamp, NoAssembler, NoHook, Registry, applied, blocked, no_call, object,
+    registry, value,
 };
 use crate::guardrails::unified_guardrail::translation::{UnifiedTranslation, VariantFlags as _};
 
@@ -17,23 +17,6 @@ type Held = UnifiedTranslation<FakeGuardrail, FixedStamp, NoAssembler, NoHook>;
 
 fn held(built: &Registry<FakeGuardrail>, call_type: CallType) -> &Held {
     &built.get(call_type).unwrap().translation
-}
-
-fn no_call<'call>() -> TranslationCall<'call, GuardrailLogTarget> {
-    TranslationCall {
-        user_api_key_dict: None,
-        request_data: None,
-        logging_obj: None,
-        stream_transform_sink: None,
-        deliver_ended_stream_rewrites: false,
-    }
-}
-
-fn blocked() -> GuardrailFailure {
-    GuardrailFailure::Http {
-        status: 400,
-        detail: String::from("blocked"),
-    }
 }
 
 #[rstest]

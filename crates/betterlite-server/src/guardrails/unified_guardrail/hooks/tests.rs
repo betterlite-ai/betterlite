@@ -22,14 +22,14 @@ use rstest::rstest;
 
 use crate::guardrails::unified_guardrail::apply_record::RecordedGuardrail;
 use crate::guardrails::unified_guardrail::hooks::{
-    CallResponse, GuardrailSkipDefaults, HookRequest,
+    CallResponse, GuardrailSkipDefaults, HookRequest, InputCall,
 };
 use crate::guardrails::unified_guardrail::recorder::{
     AppliedGuardrailRecorder as _, MetadataGuardrailRecorder,
 };
 use crate::guardrails::unified_guardrail::tests::support::{
-    FakeGuardrail, FixedClock, Hooks, NAME, SpanLog, hooks, object, principal, settings, to_run,
-    value,
+    FakeGuardrail, FixedClock, Hooks, NAME, SpanLog, blocked, hooks, object, principal, settings,
+    to_run, value,
 };
 
 type Data = BTreeMap<String, GuardrailValue>;
@@ -96,31 +96,24 @@ fn modify(original_response: Option<GuardrailValue>) -> GuardrailFailure {
     }))
 }
 
-fn blocked() -> GuardrailFailure {
-    GuardrailFailure::Http {
-        status: 400,
-        detail: String::from("blocked"),
-    }
-}
-
 #[tokio::test]
 async fn input_without_a_guardrail_leaves_the_data() {
     let (hooks, spans) = plain_hooks();
     let (mut data, user, caller) = (object(PROMPT), object(r#"{"user_id": "u1"}"#), principal());
     hooks
-        .pre_call(
-            None,
-            request(&mut data, &user, &caller),
-            CallType::TextCompletion,
-        )
+        .pre_call(InputCall {
+            guardrail: None,
+            request: request(&mut data, &user, &caller),
+            call_type: CallType::TextCompletion,
+        })
         .await
         .unwrap();
     hooks
-        .moderation(
-            None,
-            request(&mut data, &user, &caller),
-            CallType::TextCompletion,
-        )
+        .moderation(InputCall {
+            guardrail: None,
+            request: request(&mut data, &user, &caller),
+            call_type: CallType::TextCompletion,
+        })
         .await
         .unwrap();
     assert_eq!(data, object(PROMPT));
@@ -145,9 +138,23 @@ async fn input_leaves_the_data_when_nothing_runs(
     let (mut data, user, caller) = (object(PROMPT), object(r#"{"user_id": "u1"}"#), principal());
     let call = request(&mut data, &user, &caller);
     if pre_call {
-        hooks.pre_call(Some(&run), call, call_type).await.unwrap();
+        hooks
+            .pre_call(InputCall {
+                guardrail: Some(&run),
+                request: call,
+                call_type,
+            })
+            .await
+            .unwrap();
     } else {
-        hooks.moderation(Some(&run), call, call_type).await.unwrap();
+        hooks
+            .moderation(InputCall {
+                guardrail: Some(&run),
+                request: call,
+                call_type,
+            })
+            .await
+            .unwrap();
     }
     assert_eq!(data, object(PROMPT));
     assert!(guardrail.seen().is_empty());
@@ -166,12 +173,20 @@ async fn input_rewrites_and_adds_the_key_metadata(#[case] pre_call: bool) {
     let call = request(&mut data, &user, &caller);
     if pre_call {
         hooks
-            .pre_call(Some(&run), call, CallType::TextCompletion)
+            .pre_call(InputCall {
+                guardrail: Some(&run),
+                request: call,
+                call_type: CallType::TextCompletion,
+            })
             .await
             .unwrap();
     } else {
         hooks
-            .moderation(Some(&run), call, CallType::TextCompletion)
+            .moderation(InputCall {
+                guardrail: Some(&run),
+                request: call,
+                call_type: CallType::TextCompletion,
+            })
             .await
             .unwrap();
     }
@@ -193,11 +208,11 @@ async fn input_keeps_litellm_metadata_the_request_already_has() {
     let mut data = object(r#"{"prompt": "secret", "litellm_metadata": {"trace": "t1"}}"#);
     let (user, caller) = (object(r#"{"user_id": "u1"}"#), principal());
     hooks
-        .pre_call(
-            Some(&run),
-            request(&mut data, &user, &caller),
-            CallType::TextCompletion,
-        )
+        .pre_call(InputCall {
+            guardrail: Some(&run),
+            request: request(&mut data, &user, &caller),
+            call_type: CallType::TextCompletion,
+        })
         .await
         .unwrap();
     let Some(GuardrailValue::Object(metadata)) = data.get("litellm_metadata") else {
@@ -231,9 +246,23 @@ async fn input_mcp_call_types_use_the_mcp_events(
     let (user, caller) = (Data::new(), principal());
     let call = request(&mut data, &user, &caller);
     if pre_call {
-        hooks.pre_call(Some(&run), call, call_type).await.unwrap();
+        hooks
+            .pre_call(InputCall {
+                guardrail: Some(&run),
+                request: call,
+                call_type,
+            })
+            .await
+            .unwrap();
     } else {
-        hooks.moderation(Some(&run), call, call_type).await.unwrap();
+        hooks
+            .moderation(InputCall {
+                guardrail: Some(&run),
+                request: call,
+                call_type,
+            })
+            .await
+            .unwrap();
     }
     assert_eq!(!guardrail.seen().is_empty(), runs);
 }
@@ -254,11 +283,11 @@ async fn input_gate_error_is_returned() {
     let run = to_run(&guardrail, chosen);
     let (mut data, user, caller) = (object(PROMPT), Data::new(), principal());
     let failure = hooks
-        .pre_call(
-            Some(&run),
-            request(&mut data, &user, &caller),
-            CallType::TextCompletion,
-        )
+        .pre_call(InputCall {
+            guardrail: Some(&run),
+            request: request(&mut data, &user, &caller),
+            call_type: CallType::TextCompletion,
+        })
         .await
         .unwrap_err();
     assert!(matches!(failure, GuardrailFailure::Other(_)), "{failure:?}");
@@ -278,11 +307,11 @@ async fn recorder_pre_call_records_the_name_unless_self_recording(
     let run = to_run(&guardrail, chosen);
     let (mut data, user, caller) = (object(PROMPT), Data::new(), principal());
     hooks
-        .pre_call(
-            Some(&run),
-            request(&mut data, &user, &caller),
-            CallType::TextCompletion,
-        )
+        .pre_call(InputCall {
+            guardrail: Some(&run),
+            request: request(&mut data, &user, &caller),
+            call_type: CallType::TextCompletion,
+        })
         .await
         .unwrap();
     assert_eq!(recorded(&hooks), expected);
@@ -295,11 +324,11 @@ async fn recorder_moderation_never_records() {
     let run = to_run(&guardrail, settings());
     let (mut data, user, caller) = (object(PROMPT), Data::new(), principal());
     hooks
-        .moderation(
-            Some(&run),
-            request(&mut data, &user, &caller),
-            CallType::TextCompletion,
-        )
+        .moderation(InputCall {
+            guardrail: Some(&run),
+            request: request(&mut data, &user, &caller),
+            call_type: CallType::TextCompletion,
+        })
         .await
         .unwrap();
     assert_eq!(guardrail.seen().len(), 1);
@@ -380,11 +409,19 @@ async fn apply_record_writes_one_success_per_call(#[case] hook: u8) {
     let call = request(&mut data, &user, &caller);
     match hook {
         0 => hooks
-            .pre_call(Some(&run), call, CallType::TextCompletion)
+            .pre_call(InputCall {
+                guardrail: Some(&run),
+                request: call,
+                call_type: CallType::TextCompletion,
+            })
             .await
             .unwrap(),
         1 => hooks
-            .moderation(Some(&run), call, CallType::TextCompletion)
+            .moderation(InputCall {
+                guardrail: Some(&run),
+                request: call,
+                call_type: CallType::TextCompletion,
+            })
             .await
             .unwrap(),
         _ => {
@@ -409,11 +446,11 @@ async fn apply_record_failure_records_the_intervention_and_returns_it() {
     let run = to_run(&guardrail, settings());
     let (mut data, user, caller) = (object(PROMPT), Data::new(), principal());
     let failure = hooks
-        .pre_call(
-            Some(&run),
-            request(&mut data, &user, &caller),
-            CallType::TextCompletion,
-        )
+        .pre_call(InputCall {
+            guardrail: Some(&run),
+            request: request(&mut data, &user, &caller),
+            call_type: CallType::TextCompletion,
+        })
         .await
         .unwrap_err();
     assert_eq!(failure, blocked());
@@ -428,11 +465,11 @@ async fn apply_record_self_recording_guardrail_writes_no_entry() {
     let run = to_run(&guardrail, self_recording());
     let (mut data, user, caller) = (object(PROMPT), Data::new(), principal());
     hooks
-        .pre_call(
-            Some(&run),
-            request(&mut data, &user, &caller),
-            CallType::TextCompletion,
-        )
+        .pre_call(InputCall {
+            guardrail: Some(&run),
+            request: request(&mut data, &user, &caller),
+            call_type: CallType::TextCompletion,
+        })
         .await
         .unwrap();
     assert_eq!(guardrail.seen().len(), 1);
@@ -670,11 +707,11 @@ async fn skip_system_default_applies_only_when_the_guardrail_leaves_it_unset(
     );
     let (user, caller) = (Data::new(), principal());
     hooks
-        .pre_call(
-            Some(&run),
-            request(&mut data, &user, &caller),
-            CallType::Completion,
-        )
+        .pre_call(InputCall {
+            guardrail: Some(&run),
+            request: request(&mut data, &user, &caller),
+            call_type: CallType::Completion,
+        })
         .await
         .unwrap();
     let sent: Vec<String> = guardrail.seen_texts().into_iter().flatten().collect();
@@ -716,11 +753,11 @@ async fn skip_tool_default_reaches_the_moderation_hook(
     );
     let (user, caller) = (Data::new(), principal());
     hooks
-        .moderation(
-            Some(&run),
-            request(&mut data, &user, &caller),
-            CallType::Completion,
-        )
+        .moderation(InputCall {
+            guardrail: Some(&run),
+            request: request(&mut data, &user, &caller),
+            call_type: CallType::Completion,
+        })
         .await
         .unwrap();
     let sent: Vec<String> = guardrail.seen_texts().into_iter().flatten().collect();

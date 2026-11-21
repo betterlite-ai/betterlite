@@ -26,6 +26,7 @@ use betterlite_guardrails::guardrail_records::error::GuardrailSpanError;
 use betterlite_guardrails::guardrail_records::record::{
     GuardrailInvocationRecord, GuardrailSpanSink,
 };
+use betterlite_guardrails::guardrail_translation::TranslationCall;
 use betterlite_guardrails::unified_dispatch::registry::TranslationRegistry;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 
@@ -198,6 +199,23 @@ pub(crate) fn object(json: &str) -> BTreeMap<String, GuardrailValue> {
         panic!("expected a JSON object");
     };
     fields
+}
+
+pub(crate) fn no_call<'call>() -> TranslationCall<'call, GuardrailLogTarget> {
+    TranslationCall {
+        user_api_key_dict: None,
+        request_data: None,
+        logging_obj: None,
+        stream_transform_sink: None,
+        deliver_ended_stream_rewrites: false,
+    }
+}
+
+pub(crate) fn blocked() -> GuardrailFailure {
+    GuardrailFailure::Http {
+        status: 400,
+        detail: String::from("blocked"),
+    }
 }
 
 pub(crate) fn principal() -> Principal {

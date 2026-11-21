@@ -9,10 +9,9 @@ use betterlite_guardrails::llm_passthrough_dispatch::LlmPassthroughRouteHandler;
 use betterlite_guardrails::unified_dispatch::registry::{TranslationEntry, TranslationRegistry};
 use betterlite_models::decisions::Json;
 
-use super::other_adapters::{
-    GOOGLE_GENAI_CALL_TYPES, GoogleGenAiTranslation, MCP_CALL_TYPES, McpTranslation,
-    RERANK_CALL_TYPES, RerankTranslation,
-};
+use super::other_adapters::google_genai::{GOOGLE_GENAI_CALL_TYPES, GoogleGenAiTranslation};
+use super::other_adapters::mcp::{MCP_CALL_TYPES, McpTranslation};
+use super::other_adapters::{RERANK_CALL_TYPES, RerankTranslation};
 use super::translation::UnifiedTranslation;
 use crate::guardrails::a2a_translation::adapter::{A2A_CALL_TYPES, A2ATranslation};
 use crate::guardrails::bedrock_passthrough::event_stream::hook::PostCallSuccessHook;
@@ -79,7 +78,11 @@ where
     let mut entries = Vec::new();
     push_simple_tables(&mut entries);
     push_chat_tables(&mut entries, config);
-    push_passthrough_table(&mut entries, config);
+    for (call_type, kind) in PASSTHROUGH_TABLE {
+        push_table(&mut entries, &[call_type], || {
+            passthrough_adapter(kind, config)
+        });
+    }
     push_table(&mut entries, &A2A_CALL_TYPES, || {
         UnifiedTranslation::A2a(A2ATranslation {
             guardrail: PhantomData,
@@ -153,38 +156,32 @@ where
 }
 
 // the sync llm_passthrough_route call type has no row in B6162's table, so it stays unmapped
-fn push_passthrough_table<G, S, A, H>(
-    entries: &mut Entries<G, S, A, H>,
+fn passthrough_adapter<G, S, A, H>(
+    kind: PassthroughKind,
     config: &RegistryConfig<S, A, H>,
-) where
+) -> UnifiedTranslation<G, S, A, H>
+where
     G: GuardrailContract + Send + Sync,
     H: PostCallSuccessHook + Sync + Clone,
 {
-    for (call_type, kind) in PASSTHROUGH_TABLE {
-        let translation = match kind {
-            PassthroughKind::Endpoint => {
-                UnifiedTranslation::Endpoint(PassthroughEndpointTranslation::new(
-                    config.guardrail_name.clone(),
-                    config.passthrough_guardrails_config.clone(),
-                ))
-            }
-            PassthroughKind::LlmRoute => {
-                let bedrock = BedrockPassthroughTranslation::new(
-                    config.hook.clone(),
-                    config.bedrock_skip,
-                    config.guardrail_name.clone(),
-                    config.passthrough_guardrails_config.clone(),
-                );
-                UnifiedTranslation::LlmRoute(LlmPassthroughRouteHandler::new(
-                    passthrough_provider_list(bedrock),
-                ))
-            }
-        };
-        entries.push(TranslationEntry {
-            call_type,
-            translation,
-            chat_completions: false,
-        });
+    match kind {
+        PassthroughKind::Endpoint => {
+            UnifiedTranslation::Endpoint(PassthroughEndpointTranslation::new(
+                config.guardrail_name.clone(),
+                config.passthrough_guardrails_config.clone(),
+            ))
+        }
+        PassthroughKind::LlmRoute => {
+            let bedrock = BedrockPassthroughTranslation::new(
+                config.hook.clone(),
+                config.bedrock_skip,
+                config.guardrail_name.clone(),
+                config.passthrough_guardrails_config.clone(),
+            );
+            UnifiedTranslation::LlmRoute(LlmPassthroughRouteHandler::new(
+                passthrough_provider_list(bedrock),
+            ))
+        }
     }
 }
 

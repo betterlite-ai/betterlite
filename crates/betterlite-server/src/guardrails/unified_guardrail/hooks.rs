@@ -23,7 +23,7 @@ use betterlite_guardrails::unified_dispatch::registry::{
 };
 
 use super::apply_record::{InvocationClock, RecordedGuardrail};
-use super::other_adapters::MCP_CALL_TYPES;
+use super::other_adapters::mcp::MCP_CALL_TYPES;
 use super::recorder::AppliedGuardrailRecorder;
 use super::translation::UnifiedTranslation;
 use crate::guardrails::bedrock_passthrough::event_stream::hook::PostCallSuccessHook;
@@ -37,6 +37,17 @@ const LOGGED_CALL_TYPES: [CallType; 4] = [
     CallType::AllmPassthroughRoute,
     CallType::Ocr,
     CallType::Aocr,
+];
+
+// the hook's event, then the one it uses for an MCP call type
+const PRE_CALL_EVENTS: [GuardrailEventHooks; 2] = [
+    GuardrailEventHooks::PreCall,
+    GuardrailEventHooks::PreMcpCall,
+];
+
+const DURING_CALL_EVENTS: [GuardrailEventHooks; 2] = [
+    GuardrailEventHooks::DuringCall,
+    GuardrailEventHooks::DuringMcpCall,
 ];
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -59,6 +70,13 @@ pub struct HookRequest<'call> {
     pub logging_obj: Option<&'call mut GuardrailLogTarget>,
     // LiteLLM's litellm_logging_obj.call_type, read only by the post-call fallback
     pub logging_call_type: Option<CallType>,
+}
+
+// what the pre-call and during-call hooks take
+pub struct InputCall<'call, G> {
+    pub guardrail: Option<&'call GuardrailToRun<G>>,
+    pub request: HookRequest<'call>,
+    pub call_type: CallType,
 }
 
 // the kind stands in for LiteLLM's isinstance checks on the response object
@@ -90,66 +108,57 @@ where
     H: PostCallSuccessHook + Sync,
     R: AppliedGuardrailRecorder,
 {
-    pub async fn pre_call(
-        &self,
-        guardrail: Option<&GuardrailToRun<G>>,
-        request: HookRequest<'_>,
-        call_type: CallType,
-    ) -> Result<(), GuardrailFailure> {
-        let event_type = if MCP_CALL_TYPES.contains(&call_type) {
-            GuardrailEventHooks::PreMcpCall
-        } else {
-            GuardrailEventHooks::PreCall
-        };
-        let Some(applied) = guardrail else {
-            return Ok(());
-        };
-        let Some(to_apply) = self.admitted(applied, &request, event_type)? else {
-            return Ok(());
-        };
-        let Some(entry) = self.registry.get(call_type) else {
-            return Ok(());
-        };
-        let user_metadata = transform_user_key_metadata(Some(request.user_api_key_dict));
-        ensure_request_metadata(request.data, user_metadata);
-        let translation = &entry.translation;
-        translation
-            .process_input_messages(request.data, &to_apply, request.logging_obj)
-            .await?;
-        if !applied.base.settings.switches.records_own_information {
-            let name = to_apply.guardrail_name.as_deref();
-            self.recorder.record(request.data, name);
+    pub async fn pre_call(&self, call: InputCall<'_, G>) -> Result<(), GuardrailFailure> {
+        let guardrail = call.guardrail;
+        let rewritten = self.rewrite_input(call, PRE_CALL_EVENTS).await?;
+        if let (Some(data), Some(applied)) = (rewritten, guardrail)
+            && !applied.base.settings.switches.records_own_information
+        {
+            let name = applied.base.settings.guardrail_name.as_deref();
+            self.recorder.record(data, name);
         }
         Ok(())
     }
 
     // the during-call hook never writes the applied-guardrails entry
-    pub async fn moderation(
+    pub async fn moderation(&self, call: InputCall<'_, G>) -> Result<(), GuardrailFailure> {
+        self.rewrite_input(call, DURING_CALL_EVENTS)
+            .await
+            .map(|_data| ())
+    }
+
+    // the gate, the adapter lookup, the key metadata and the input rewrite; the data comes back when it ran
+    async fn rewrite_input<'call>(
         &self,
-        guardrail: Option<&GuardrailToRun<G>>,
-        request: HookRequest<'_>,
-        call_type: CallType,
-    ) -> Result<(), GuardrailFailure> {
-        let event_type = if MCP_CALL_TYPES.contains(&call_type) {
-            GuardrailEventHooks::DuringMcpCall
+        call: InputCall<'call, G>,
+        [plain_event, mcp_event]: [GuardrailEventHooks; 2],
+    ) -> Result<Option<&'call mut BTreeMap<String, GuardrailValue>>, GuardrailFailure> {
+        let event_type = if MCP_CALL_TYPES.contains(&call.call_type) {
+            mcp_event
         } else {
-            GuardrailEventHooks::DuringCall
+            plain_event
         };
-        let Some(applied) = guardrail else {
-            return Ok(());
+        let Some(applied) = call.guardrail else {
+            return Ok(None);
         };
-        let Some(to_apply) = self.admitted(applied, &request, event_type)? else {
-            return Ok(());
+        let Some(to_apply) = self.admitted(applied, &call.request, event_type)? else {
+            return Ok(None);
         };
-        let Some(entry) = self.registry.get(call_type) else {
-            return Ok(());
+        let Some(entry) = self.registry.get(call.call_type) else {
+            return Ok(None);
         };
-        let user_metadata = transform_user_key_metadata(Some(request.user_api_key_dict));
-        ensure_request_metadata(request.data, user_metadata);
+        let HookRequest {
+            data,
+            user_api_key_dict,
+            logging_obj,
+            ..
+        } = call.request;
+        ensure_request_metadata(data, transform_user_key_metadata(Some(user_api_key_dict)));
         entry
             .translation
-            .process_input_messages(request.data, &to_apply, request.logging_obj)
-            .await
+            .process_input_messages(data, &to_apply, logging_obj)
+            .await?;
+        Ok(Some(data))
     }
 
     // None when nothing ran, the response otherwise

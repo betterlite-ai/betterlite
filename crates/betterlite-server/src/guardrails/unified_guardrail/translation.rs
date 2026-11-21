@@ -11,7 +11,9 @@ use betterlite_guardrails::guardrail_translation::{
 use betterlite_guardrails::llm_passthrough_dispatch::LlmPassthroughRouteHandler;
 
 use super::failures::AdapterFailure;
-use super::other_adapters::{GoogleGenAiTranslation, McpTranslation, RerankTranslation};
+use super::other_adapters::RerankTranslation;
+use super::other_adapters::google_genai::GoogleGenAiTranslation;
+use super::other_adapters::mcp::McpTranslation;
 use crate::guardrails::a2a_translation::adapter::A2ATranslation;
 use crate::guardrails::bedrock_passthrough::event_stream::hook::PostCallSuccessHook;
 use crate::guardrails::chat_guardrail_translation::rewrites::rebuild_ended_stream::ChunkAssembler;
@@ -76,6 +78,15 @@ macro_rules! each_variant {
     };
 }
 
+// each fallible async method calls the held adapter and brings its failure to GuardrailFailure
+macro_rules! forward_fallible {
+    ($method:ident($($arg:ident: $ty:ty),+ $(,)?) -> $output:ty) => {
+        async fn $method(&self, $($arg: $ty),+) -> Result<$output, Self::Failure> {
+            each_variant!(self, inner => inner.$method($($arg),+).await.map_err(AdapterFailure::into_failure))
+        }
+    };
+}
+
 // LiteLLM's two class flags are consts of each adapter type, so the enum reads them per held variant
 pub trait VariantFlags {
     fn delivers_ended_stream_rewrites(&self) -> bool;
@@ -128,41 +139,23 @@ where
         each_variant!(self, inner => inner.post_call_hook_response(response))
     }
 
-    async fn process_input_messages(
-        &self,
+    forward_fallible!(process_input_messages(
         data: &mut BTreeMap<String, GuardrailValue>,
         guardrail: &Self::Guardrail,
         logging_obj: Option<&mut Self::LogTarget>,
-    ) -> Result<(), Self::Failure> {
-        each_variant!(self, inner => inner
-            .process_input_messages(data, guardrail, logging_obj)
-            .await
-            .map_err(AdapterFailure::into_failure))
-    }
+    ) -> ());
 
-    async fn process_output_response(
-        &self,
+    forward_fallible!(process_output_response(
         response: GuardrailValue,
         guardrail: &Self::Guardrail,
         call: TranslationCall<'_, Self::LogTarget>,
-    ) -> Result<GuardrailValue, Self::Failure> {
-        each_variant!(self, inner => inner
-            .process_output_response(response, guardrail, call)
-            .await
-            .map_err(AdapterFailure::into_failure))
-    }
+    ) -> GuardrailValue);
 
-    async fn process_streaming_response(
-        &self,
+    forward_fallible!(process_streaming_response(
         responses_so_far: &mut Vec<GuardrailValue>,
         guardrail: &Self::Guardrail,
         call: TranslationCall<'_, Self::LogTarget>,
-    ) -> Result<(), Self::Failure> {
-        each_variant!(self, inner => inner
-            .process_streaming_response(responses_so_far, guardrail, call)
-            .await
-            .map_err(AdapterFailure::into_failure))
-    }
+    ) -> ());
 
     fn get_streaming_scan_key(
         &self,
@@ -177,11 +170,7 @@ where
         stream_started: bool,
         responses_so_far: Option<&[GuardrailValue]>,
     ) -> Option<Vec<Vec<u8>>> {
-        each_variant!(self, inner => inner.build_block_sse_chunks(
-            &AdapterFailure::from_failure(failure.clone()),
-            stream_started,
-            responses_so_far,
-        ))
+        each_variant!(self, inner => inner.build_block_sse_chunks(&AdapterFailure::from_failure(failure.clone()), stream_started, responses_so_far))
     }
 
     fn build_stream_error_items(
@@ -189,10 +178,7 @@ where
         failure: &Self::Failure,
         responses_so_far: Option<&[GuardrailValue]>,
     ) -> Option<Vec<GuardrailValue>> {
-        each_variant!(self, inner => inner.build_stream_error_items(
-            &AdapterFailure::from_failure(failure.clone()),
-            responses_so_far,
-        ))
+        each_variant!(self, inner => inner.build_stream_error_items(&AdapterFailure::from_failure(failure.clone()), responses_so_far))
     }
 
     fn get_structured_messages(
