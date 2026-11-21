@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::fmt::Debug;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_config::sections::auth_request_policy::Settings;
@@ -8,6 +9,7 @@ use betterlite_config::sections::request_body_safety::ClientsideParamGrant;
 use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
+use tracing::field::{Field, Visit};
 use tracing::subscriber;
 use tracing_subscriber::layer::{Context, SubscriberExt as _};
 use tracing_subscriber::{Layer, Registry};
@@ -149,14 +151,14 @@ struct Logs(Arc<Mutex<Vec<String>>>);
 
 struct RecordedLog(String);
 
-impl tracing::field::Visit for RecordedLog {
-    fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+impl Visit for RecordedLog {
+    fn record_str(&mut self, field: &Field, value: &str) {
         if field.name() == "message" {
             self.0 = value.to_owned();
         }
     }
 
-    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+    fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
         if field.name() == "message" {
             self.0 = format!("{value:?}");
         }

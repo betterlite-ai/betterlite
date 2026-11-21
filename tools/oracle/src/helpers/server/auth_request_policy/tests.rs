@@ -105,7 +105,7 @@ fn classification_requires_the_marker_and_a_401() {
 }
 
 #[test]
-fn marking_returns_a_copy_and_keeps_the_original() {
+fn marking_returns_a_copy() {
     let output = Op::decode_and_run(&json!({
         "calls": [{"function": "mark", "rows": [
             {
@@ -114,13 +114,6 @@ fn marking_returns_a_copy_and_keeps_the_original() {
                 "message": "Invalid proxy server token passed.",
                 "openai_code": null,
                 "headers": {"x-trace": "a"},
-            },
-            {
-                "is_invalid_virtual_key": false,
-                "code": "401",
-                "message": "Invalid proxy server token passed.",
-                "openai_code": null,
-                "headers": {},
             },
         ]}],
     }))
@@ -137,6 +130,27 @@ fn marking_returns_a_copy_and_keeps_the_original() {
                 "openai_code": "401",
                 "headers": {"x-trace": "a"},
             },
+        ]])
+    );
+}
+
+#[test]
+fn marking_a_disabled_row_returns_the_original() {
+    let output = Op::decode_and_run(&json!({
+        "calls": [{"function": "mark", "rows": [
+            {
+                "is_invalid_virtual_key": false,
+                "code": "401",
+                "message": "Invalid proxy server token passed.",
+                "openai_code": null,
+                "headers": {},
+            },
+        ]}],
+    }))
+    .expect("the projection runs");
+    assert_eq!(
+        output,
+        json!([[
             {
                 "same_object": true,
                 "classified": false,
@@ -182,23 +196,12 @@ fn pre_db_denies_an_unlisted_ip_with_auth_error_403() {
 }
 
 #[test]
-fn pre_db_accepts_without_routes_and_denies_an_empty_allowlist() {
+fn pre_db_accepts_without_routes() {
     let output = Op::decode_and_run(&json!({
         "calls": [{"function": "pre_db", "requests": [
             {
                 "allowed_ips": null,
                 "allowed_routes": null,
-                "use_x_forwarded_for": false,
-                "route": "/v1/chat/completions",
-                "forwarded_for": null,
-                "client_host": null,
-                "content_length": "2",
-                "max_request_size_mb": null,
-                "body": {"model": "gpt-4o"},
-            },
-            {
-                "allowed_ips": null,
-                "allowed_routes": [],
                 "use_x_forwarded_for": false,
                 "route": "/v1/chat/completions",
                 "forwarded_for": null,
@@ -221,6 +224,31 @@ fn pre_db_accepts_without_routes_and_denies_an_empty_allowlist() {
                 "code": null,
                 "message": null,
             },
+        ]])
+    );
+}
+
+#[test]
+fn pre_db_denies_an_empty_allowlist() {
+    let output = Op::decode_and_run(&json!({
+        "calls": [{"function": "pre_db", "requests": [
+            {
+                "allowed_ips": null,
+                "allowed_routes": [],
+                "use_x_forwarded_for": false,
+                "route": "/v1/chat/completions",
+                "forwarded_for": null,
+                "client_host": null,
+                "content_length": "2",
+                "max_request_size_mb": null,
+                "body": {"model": "gpt-4o"},
+            },
+        ]}],
+    }))
+    .expect("the projection runs");
+    assert_eq!(
+        output,
+        json!([[
             {
                 "ok": false,
                 "status": 403,

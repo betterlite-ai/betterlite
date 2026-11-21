@@ -62,8 +62,8 @@ impl Section for Raw {
 }
 
 // LiteLLM declares an int and takes any number, so an integer and a float both load
-fn megabytes(number: Option<serde_json::Number>, path: &str) -> Result<Option<f64>, ConfigError> {
-    let Some(number) = number else {
+fn megabytes(raw: Option<serde_json::Number>, path: &str) -> Result<Option<f64>, ConfigError> {
+    let Some(number) = raw else {
         return Ok(None);
     };
     let value = number

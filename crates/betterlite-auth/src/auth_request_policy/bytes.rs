@@ -75,7 +75,12 @@ pub fn check_request_size(
                     source,
                 })?
         }
-        None => i64::try_from(body.len()).map_err(|_| SizeError::UnrepresentableBytes)?,
+        None => {
+            let Ok(bytes) = i64::try_from(body.len()) else {
+                return Err(SizeError::UnrepresentableBytes);
+            };
+            bytes
+        }
     };
     check_size(bytes, max_request_size_mb, Direction::Request)
 }
@@ -84,11 +89,10 @@ pub fn check_response_size(
     body: &[u8],
     max_response_size_mb: Option<f64>,
 ) -> Result<(), SizeError> {
-    check_size(
-        i64::try_from(body.len()).map_err(|_| SizeError::UnrepresentableBytes)?,
-        max_response_size_mb,
-        Direction::Response,
-    )
+    let Ok(bytes) = i64::try_from(body.len()) else {
+        return Err(SizeError::UnrepresentableBytes);
+    };
+    check_size(bytes, max_response_size_mb, Direction::Response)
 }
 
 fn check_size(bytes: i64, max_size_mb: Option<f64>, direction: Direction) -> Result<(), SizeError> {

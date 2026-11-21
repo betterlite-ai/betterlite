@@ -25,15 +25,18 @@ const MODEL_ROUTE: &str = "/v1/files";
 const MASTER_KEY: &str = "secret-master-key";
 const DENIED_IP: &str = "203.0.113.9";
 
-fn config() -> Config {
+fn config_with(settings: &str) -> Config {
     ConfigLoader {
         lookup: BTreeMap::<String, String>::new(),
     }
     .load(&format!(
-        "general_settings:\n  master_key: {MASTER_KEY}\n  allowed_ips: [10.0.0.1]\n  \
-         use_x_forwarded_for: true\n"
+        "general_settings:\n  master_key: {MASTER_KEY}\n{settings}"
     ))
     .expect("the test config loads")
+}
+
+fn config() -> Config {
+    config_with("  allowed_ips: [10.0.0.1]\n  use_x_forwarded_for: true\n")
 }
 
 fn master_context() -> AuthContext {
@@ -135,6 +138,26 @@ async fn failure_stops_downstream() {
     assert!(text.contains("\"code\":\"403\""), "{text}");
     assert!(text.contains(DENIED_IP), "{text}");
     assert!(!reached.load(Ordering::Acquire));
+}
+
+#[tokio::test]
+async fn allowed_route_reaches_downstream() {
+    // the stage reads the request's own route and the configured list admits it; the body is not JSON
+    // so no later stage resolves a model
+    let reached = Arc::new(AtomicBool::new(false));
+    let allowed = Request::builder()
+        .method("POST")
+        .uri(MODEL_ROUTE)
+        .header(header::AUTHORIZATION, format!("Bearer {MASTER_KEY}"))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from("x"))
+        .expect("the request builds");
+    let response = application(&config_with("  allowed_routes: [/v1/files]\n"), &reached)
+        .oneshot(allowed)
+        .await
+        .expect("the request reaches the router");
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(reached.load(Ordering::Acquire));
 }
 
 #[test]

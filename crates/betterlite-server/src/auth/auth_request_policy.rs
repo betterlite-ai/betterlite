@@ -39,47 +39,41 @@ pub(crate) fn stage_input(
     let context = authenticated
         .cloned()
         .ok_or(AuthenticationFailure::Missing)?;
-    let content_length = request
+    Ok(AuthRequestPolicyStageInput {
+        context,
+        content_length: header_value(request, header::CONTENT_LENGTH.as_str()),
+        forwarded_for: header_value(request, "x-forwarded-for"),
+        // The connection layer keeps the peer address to itself, so the forwarded header is the only client source.
+        client_host: None,
+        route: request_route(request),
+        content_type: header_value(request, header::CONTENT_TYPE.as_str()),
+        body: body.cloned().unwrap_or_default(),
+        slot: request
+            .extensions()
+            .get::<Arc<ServerState>>()
+            .map(|state| state.auth_request_policy.clone()),
+    })
+}
+
+fn header_value(request: &Request<Body>, name: &str) -> Option<String> {
+    request
         .headers()
-        .get(header::CONTENT_LENGTH)
+        .get(name)
         .and_then(|value| value.to_str().ok())
-        .map(str::to_owned);
-    let forwarded_for = request
-        .headers()
-        .get("x-forwarded-for")
-        .and_then(|value| value.to_str().ok())
-        .map(str::to_owned);
-    let content_type = request
-        .headers()
-        .get(header::CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok())
-        .map(str::to_owned);
+        .map(str::to_owned)
+}
+
+fn request_route(request: &Request<Body>) -> String {
     let decoded = decoded_route_path(request.uri().path());
-    let path = match &decoded {
-        Some(path) => path.as_str(),
-        None => request.uri().path(),
-    };
-    let route = get_request_route(&RequestRouteSource {
+    let raw_path = request.uri().path();
+    let path = decoded.as_deref().unwrap_or(raw_path);
+    get_request_route(&RequestRouteSource {
         scope: Ok(Some(ScopeFields {
             path: Some(path),
             app_root_path: None,
             root_path: None,
         })),
         url_path: path,
-    });
-    Ok(AuthRequestPolicyStageInput {
-        context,
-        content_length,
-        forwarded_for,
-        // The connection layer keeps the peer address to itself, so the forwarded header is the only client source.
-        client_host: None,
-        route,
-        content_type,
-        body: body.cloned().unwrap_or_default(),
-        slot: request
-            .extensions()
-            .get::<Arc<ServerState>>()
-            .map(|state| state.auth_request_policy.clone()),
     })
 }
 
