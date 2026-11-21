@@ -86,14 +86,14 @@ impl Probe {
     }
 
     fn client(&self, input: &Input) -> ClientHandle {
+        let socket: Box<dyn RealtimeClientSocket> = Box::new(ScriptedClient {
+            sent: Arc::clone(&self.client_sent),
+            closed: Arc::clone(&self.client_close),
+            send_error: input.send_error.clone(),
+            close_error: input.close_error.clone(),
+        });
         ClientHandle {
-            socket: Arc::new(TokioMutex::new(Box::new(ScriptedClient {
-                sent: Arc::clone(&self.client_sent),
-                closed: Arc::clone(&self.client_close),
-                send_error: input.send_error.clone(),
-                close_error: input.close_error.clone(),
-            })
-                as Box<dyn RealtimeClientSocket>)),
+            socket: Arc::new(TokioMutex::new(socket)),
             scope: WebSocketScope::default(),
         }
     }
@@ -104,13 +104,13 @@ impl Probe {
             .backend_sent
             .locked()
             .iter()
-            .map(|text| frame(text))
+            .map(|text| frame(text.as_str()))
             .collect();
         let client: Vec<Value> = self
             .client_sent
             .locked()
             .iter()
-            .map(|text| frame(text))
+            .map(|text| frame(text.as_str()))
             .collect();
         json!({
             "dials": dials,
@@ -203,7 +203,7 @@ fn query_params_of(input: &Input) -> Option<IndexMap<String, String>> {
         .map(|intent| IndexMap::from([(String::from("intent"), intent.clone())]))
 }
 
-fn verification_of(input: &Input) -> Verification {
+const fn verification_of(input: &Input) -> Verification {
     if input.ssl_verify {
         Verification::Enabled
     } else {

@@ -32,7 +32,7 @@ impl<T> Locked<T> for Mutex<T> {
 }
 
 // The same three kinds the Python helper records, so an SSL argument mismatch shows up as a pointer difference
-pub(crate) fn ssl_name_of(ssl: &RealtimeSsl) -> &'static str {
+pub(crate) const fn ssl_name_of(ssl: &RealtimeSsl) -> &'static str {
     match ssl {
         RealtimeSsl::Disabled => "disabled",
         RealtimeSsl::Insecure => "insecure",
