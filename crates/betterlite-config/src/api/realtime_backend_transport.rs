@@ -6,7 +6,7 @@ use crate::sections::openai_realtime::Settings;
 mod tests;
 
 // B002's REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES read through the real loader, so the YAML and the environment meet where LiteLLM reads the constant
-pub fn loads_realtime_backend_settings(
+pub fn load_realtime_settings(
     source: &str,
     environment: &dyn EnvironmentLookup,
 ) -> Result<Settings, ConfigError> {

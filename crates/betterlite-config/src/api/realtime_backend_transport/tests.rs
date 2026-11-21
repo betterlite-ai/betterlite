@@ -1,6 +1,10 @@
+#![cfg(test)]
+
 use std::collections::BTreeMap;
 
-use super::loads_realtime_backend_settings;
+use rstest::rstest;
+
+use super::load_realtime_settings;
 use crate::loader::ConfigError;
 use crate::sections::openai_realtime::{DEFAULT_MAX_MESSAGE_SIZE_BYTES, MAX_MESSAGE_SIZE_VARIABLE};
 
@@ -16,33 +20,37 @@ const OVERRIDE_SEED: &str =
 #[test]
 fn loads_realtime_backend_settings() {
     let settings =
-        loads_realtime_backend_settings(DEFAULT_SEED, &BTreeMap::<String, String>::new()).unwrap();
+        load_realtime_settings(DEFAULT_SEED, &BTreeMap::<String, String>::new()).unwrap();
     assert_eq!(
         settings.max_message_size_bytes,
         DEFAULT_MAX_MESSAGE_SIZE_BYTES
     );
     assert_eq!(settings.max_message_size_bytes, 16_777_216);
 
-    let numeric = loads_realtime_backend_settings(OVERRIDE_SEED, &environment("4096")).unwrap();
+    let numeric = load_realtime_settings(OVERRIDE_SEED, &environment("4096")).unwrap();
     assert_eq!(numeric.max_message_size_bytes, 4096);
 
-    let zero = loads_realtime_backend_settings(DEFAULT_SEED, &environment("0")).unwrap();
+    let zero = load_realtime_settings(DEFAULT_SEED, &environment("0")).unwrap();
     assert_eq!(zero.max_message_size_bytes, 0);
 
-    let empty = loads_realtime_backend_settings(DEFAULT_SEED, &environment("")).unwrap();
+    let empty = load_realtime_settings(DEFAULT_SEED, &environment("")).unwrap();
     assert_eq!(empty.max_message_size_bytes, DEFAULT_MAX_MESSAGE_SIZE_BYTES);
 
-    for rejected in ["-1", "not-a-number", "1.5"] {
-        let error = loads_realtime_backend_settings(DEFAULT_SEED, &environment(rejected))
-            .expect_err("the cap must reject a value outside usize");
-        match error {
-            ConfigError::Environment {
-                source: betterlite_env::EnvError::Number { name },
-            } => assert_eq!(name, MAX_MESSAGE_SIZE_VARIABLE),
-            other => panic!("unexpected error for {rejected}: {other}"),
-        }
-    }
-
-    let error = loads_realtime_backend_settings(DEFAULT_SEED, &environment("-1")).unwrap_err();
+    let error = load_realtime_settings(DEFAULT_SEED, &environment("-1")).unwrap_err();
     assert!(error.to_string().contains(MAX_MESSAGE_SIZE_VARIABLE));
+}
+
+#[rstest]
+#[case::negative("-1")]
+#[case::text("not-a-number")]
+#[case::fractional("1.5")]
+fn rejects_values_outside_usize(#[case] rejected: &str) {
+    let error = load_realtime_settings(DEFAULT_SEED, &environment(rejected))
+        .expect_err("the cap must reject a value outside usize");
+    match error {
+        ConfigError::Environment {
+            source: betterlite_env::EnvError::Number { name },
+        } => assert_eq!(name, MAX_MESSAGE_SIZE_VARIABLE),
+        other => panic!("unexpected error for {rejected}: {other}"),
+    }
 }
