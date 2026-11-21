@@ -107,26 +107,29 @@ impl ImageEditProvider for Recorder {
     }
 
     fn send(&self, request: ImageEditSendRequest<'_>) -> Result<ImageEditStep<'_>, ImageEditError> {
-        // bedrock_image_edit and bfl_image_edit take no extra_body; the generic handler does
-        let extra_body = match request.custom_llm_provider {
-            "bedrock" | "black_forest_labs" => None,
-            _ => request.extra_body.cloned(),
-        };
-        let sent = Sent {
-            provider: request.custom_llm_provider.to_owned(),
-            received: received(
-                request.model,
-                request.images,
-                request.prompt,
-                request.optional_params,
-                request.timeout,
-            )?,
-            extra_headers: request.extra_headers.cloned(),
-            extra_body,
-            asynchronous: request.asynchronous,
-        };
-        Ok(answered(&self.sent, sent, false))
+        Ok(answered(&self.sent, sent(&request)?, false))
     }
+}
+
+// bedrock_image_edit and bfl_image_edit take no extra_body; the generic handler does
+fn sent(request: &ImageEditSendRequest<'_>) -> Result<Sent, ImageEditError> {
+    let extra_body = match request.custom_llm_provider {
+        "bedrock" | "black_forest_labs" => None,
+        _ => request.extra_body.cloned(),
+    };
+    Ok(Sent {
+        provider: request.custom_llm_provider.to_owned(),
+        received: received(
+            request.model,
+            request.images,
+            request.prompt,
+            request.optional_params,
+            request.timeout,
+        )?,
+        extra_headers: request.extra_headers.cloned(),
+        extra_body,
+        asynchronous: request.asynchronous,
+    })
 }
 
 fn received(
