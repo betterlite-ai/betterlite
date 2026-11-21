@@ -94,7 +94,7 @@ impl CallKind for Call {
         api_base: &str,
         env: &BTreeMap<String, String>,
     ) -> Result<SdkResult, SdkHttpError> {
-        execute(self, api_base, env).await
+        Box::pin(execute(self, api_base, env)).await
     }
 }
 

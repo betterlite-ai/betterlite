@@ -76,16 +76,16 @@ fn publish(error: TranscriptionError) -> DispatchFailure {
             status: Some(status.status),
             message: status.message,
         },
-        other @ TranscriptionError::MissingApiKey
-        | other @ TranscriptionError::BaseUrl { .. }
-        | other @ TranscriptionError::Field { .. }
-        | other @ TranscriptionError::Header { .. }
-        | other @ TranscriptionError::Transport { .. }
-        | other @ TranscriptionError::Logging { .. }
-        | other @ TranscriptionError::Utf8 { .. }
-        | other @ TranscriptionError::Json { .. }
-        | other @ TranscriptionError::NotObject
-        | other @ TranscriptionError::NoResponseFields => DispatchFailure::Unsupported {
+        other @ (TranscriptionError::MissingApiKey
+        | TranscriptionError::BaseUrl { .. }
+        | TranscriptionError::Field { .. }
+        | TranscriptionError::Header { .. }
+        | TranscriptionError::Transport { .. }
+        | TranscriptionError::Logging { .. }
+        | TranscriptionError::Utf8 { .. }
+        | TranscriptionError::Json { .. }
+        | TranscriptionError::NotObject
+        | TranscriptionError::NoResponseFields) => DispatchFailure::Unsupported {
             message: other.to_string(),
         },
     }
