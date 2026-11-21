@@ -68,7 +68,8 @@ fn outcome(case: &Case) -> Result<bool, Box<HelperError>> {
                 user_id: call.caller_user_id.as_deref(),
                 proxy_admin: false,
             };
-            let team = team_model(&call.team)?;
+            let team = LiteLLMTeamTable::try_from(call.team.clone())
+                .map_err(|error| value_error(&error.to_string()))?;
             Ok(is_team_admin(&caller, &team))
         }
     }
@@ -80,10 +81,6 @@ fn user_model(record: &JsonData) -> Result<LiteLLMUserTable, Box<HelperError>> {
         Ok(None) => Err(value_error("a case user must be a row object")),
         Err(error) => Err(value_error(&error.to_string())),
     }
-}
-
-fn team_model(record: &JsonData) -> Result<LiteLLMTeamTable, Box<HelperError>> {
-    LiteLLMTeamTable::try_from(record.clone()).map_err(|error| value_error(&error.to_string()))
 }
 
 fn value_error(message: &str) -> Box<HelperError> {
