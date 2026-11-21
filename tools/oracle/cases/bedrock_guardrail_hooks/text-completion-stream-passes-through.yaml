@@ -27,7 +27,7 @@ call:
         model: gpt-3.5-turbo-instruct
         choices:
           - index: 0
-            text: Hel
+            text: Hello
             finish_reason: null
         usage:
           prompt_tokens: 0
@@ -39,7 +39,7 @@ call:
         model: gpt-3.5-turbo-instruct
         choices:
           - index: 0
-            text: lo
+            text: " world"
             finish_reason: null
         usage:
           prompt_tokens: 0

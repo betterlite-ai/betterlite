@@ -24,7 +24,7 @@ fn text_completion_chunks() -> Vec<StreamChunk> {
                 "choices",
                 array(vec![object(vec![
                     ("index", unsigned(0)),
-                    ("text", text("Hel")),
+                    ("text", text("Hello")),
                     ("finish_reason", GuardrailValue::Null),
                 ])]),
             ),
@@ -36,7 +36,7 @@ fn text_completion_chunks() -> Vec<StreamChunk> {
                 "choices",
                 array(vec![object(vec![
                     ("index", unsigned(0)),
-                    ("text", text("lo")),
+                    ("text", text(" world")),
                     ("finish_reason", text("stop")),
                 ])]),
             ),

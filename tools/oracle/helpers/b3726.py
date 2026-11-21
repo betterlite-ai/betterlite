@@ -133,10 +133,7 @@ async def attempt(call: Awaitable[JsonValue | Exception]) -> JsonValue:
 # A chat chunk carries its text in the delta; a text-completion chunk carries it on the choice.
 def choice_text(record: Payload) -> str:
     delta = record.get("delta")
-    if delta is not None:
-        part = DICT.validate_python(delta).get("content")
-    else:
-        part = record.get("text")
+    part = DICT.validate_python(delta).get("content") if delta is not None else record.get("text")
     return "" if part is None else STRING.validate_python(part)
 
 

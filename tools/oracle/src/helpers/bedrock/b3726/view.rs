@@ -24,11 +24,7 @@ pub(super) fn outcome(result: Result<(), HookFailure>) -> Value {
     }
 }
 
-pub(super) fn chunks(items: &[StreamChunk]) -> Value {
-    Value::Array(items.iter().map(chunk).collect())
-}
-
-fn chunk(item: &StreamChunk) -> Value {
+pub(super) fn chunk(item: &StreamChunk) -> Value {
     match item {
         StreamChunk::Json(value) => chat(value),
         StreamChunk::Bytes(bytes) => frames(from_utf8(bytes).unwrap_or_default()),

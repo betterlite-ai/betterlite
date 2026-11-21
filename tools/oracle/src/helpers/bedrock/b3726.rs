@@ -11,7 +11,7 @@ use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Value, json};
 use tokio::runtime::Builder;
 
 mod assembly;
@@ -130,7 +130,7 @@ impl Helper for Op {
         };
         Ok(json!({
             "outcome": view::outcome(outcome),
-            "chunks": view::chunks(&chunks),
+            "chunks": Value::Array(chunks.iter().map(view::chunk).collect()),
             "scans": runtime.transport.bodies().len(),
         }))
     }

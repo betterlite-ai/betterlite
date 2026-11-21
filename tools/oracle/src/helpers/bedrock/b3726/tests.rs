@@ -33,7 +33,7 @@ fn a_text_completion_stream_does_not_assemble_to_a_chat_response() {
         serde_json::from_value(json!({
             "id": "cmpl-1",
             "model": "gpt-3.5-turbo-instruct",
-            "choices": [{"index": 0, "text": "Hel", "finish_reason": null}],
+            "choices": [{"index": 0, "text": "Hello", "finish_reason": null}],
         }))
         .unwrap(),
     )];
