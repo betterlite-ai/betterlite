@@ -1,19 +1,26 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::future::{Future, ready};
 use std::sync::Arc;
 
 use betterlite_auth::auth_identity::records::Principal;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::mode::{LitellmParamsMode, Mode, ModeTarget};
+use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_core::routes::CallType;
+use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
+use betterlite_guardrails::guardrail_base::GuardrailBase;
+use betterlite_guardrails::guardrail_base::contract::GuardrailContract;
 use betterlite_guardrails::guardrail_base::failure::{GuardrailFailure, ModifyResponseFailure};
+use betterlite_guardrails::guardrail_base::inputs::{GuardrailApiInputs, GuardrailLogTarget};
 use betterlite_guardrails::guardrail_base::settings::GuardrailSettings;
 use betterlite_guardrails::guardrail_message_scope::scoped_indices::GuardrailSkipFlags;
-use betterlite_guardrails::guardrail_records::record::GuardrailStatus;
+use betterlite_guardrails::guardrail_records::record::{GuardrailSpanSink, GuardrailStatus};
 use betterlite_guardrails::unified_dispatch::registry::ResponseKind;
 use rstest::rstest;
 
+use crate::guardrails::unified_guardrail::apply_record::RecordedGuardrail;
 use crate::guardrails::unified_guardrail::hooks::{
     CallResponse, GuardrailSkipDefaults, HookRequest,
 };
@@ -21,7 +28,8 @@ use crate::guardrails::unified_guardrail::recorder::{
     AppliedGuardrailRecorder as _, MetadataGuardrailRecorder,
 };
 use crate::guardrails::unified_guardrail::tests::support::{
-    FakeGuardrail, Hooks, NAME, SpanLog, hooks, object, principal, settings, to_run, value,
+    FakeGuardrail, FixedClock, Hooks, NAME, SpanLog, hooks, object, principal, settings, to_run,
+    value,
 };
 
 type Data = BTreeMap<String, GuardrailValue>;
@@ -429,6 +437,62 @@ async fn apply_record_self_recording_guardrail_writes_no_entry() {
         .unwrap();
     assert_eq!(guardrail.seen().len(), 1);
     assert!(statuses(&spans).is_empty());
+}
+
+// answers each capability question with the value it holds, or with no value
+struct Capable(bool);
+
+impl GuardrailContract for Capable {
+    fn apply_guardrail(
+        &self,
+        inputs: GuardrailApiInputs,
+        _request_data: &mut BTreeMap<String, GuardrailValue>,
+        _input_type: GuardrailInputType,
+        _logging_obj: Option<&mut GuardrailLogTarget>,
+    ) -> impl Future<Output = Result<GuardrailApiInputs, GuardrailFailure>> + Send {
+        ready(Ok(inputs))
+    }
+
+    fn get_config_model(&self) -> Option<GuardrailValue> {
+        self.0.then(|| value(r#"{"model": "word-filter-config"}"#))
+    }
+
+    fn get_supported_event_hooks(&self) -> Option<Vec<GuardrailEventHooks>> {
+        self.0
+            .then(|| vec![GuardrailEventHooks::PreCall, GuardrailEventHooks::PostCall])
+    }
+
+    fn supports_tool_result_scan(&self) -> bool {
+        self.0
+    }
+
+    fn messages_cover_full_request(&self) -> bool {
+        self.0
+    }
+}
+
+#[rstest]
+#[case::answers_yes(true)]
+#[case::answers_no(false)]
+fn apply_record_wrapper_answers_as_the_guardrail_does(#[case] answers: bool) {
+    let sink: Arc<dyn GuardrailSpanSink + Send + Sync> = Arc::new(SpanLog::default());
+    let recorded = RecordedGuardrail {
+        guardrail: Arc::new(Capable(answers)),
+        base: Arc::new(GuardrailBase {
+            settings: settings(),
+            mode: None,
+        }),
+        sink,
+        clock: Arc::new(FixedClock),
+    };
+    let inner = Capable(answers);
+    assert_eq!(recorded.get_config_model(), inner.get_config_model());
+    assert_eq!(
+        recorded.get_supported_event_hooks(),
+        inner.get_supported_event_hooks()
+    );
+    assert_eq!(recorded.supports_tool_result_scan(), answers);
+    assert_eq!(recorded.messages_cover_full_request(), answers);
 }
 
 #[rstest]

@@ -100,6 +100,7 @@ async fn input_rewrite_runs_the_held_variant(#[case] call_type: CallType, #[case
 
 #[rstest]
 #[case::completion(CallType::TextCompletion, r#"{"prompt": "secret"}"#)]
+#[case::embeddings(CallType::Embedding, r#"{"input": "secret"}"#)]
 #[case::chat(
     CallType::Completion,
     r#"{"model": "m", "messages": [{"role": "user", "content": "secret"}]}"#

@@ -101,6 +101,29 @@ async fn google_genai_masks_request_and_response_text() {
 }
 
 #[tokio::test]
+async fn google_genai_response_scan_reads_the_model_from_the_request() {
+    let guardrail = FakeGuardrail::masking();
+    let mut request = object(r#"{"model": "gemini-pro"}"#);
+    let user = object(r#"{"user_id": "u1"}"#);
+    let call = TranslationCall {
+        user_api_key_dict: Some(&user),
+        request_data: Some(&mut request),
+        logging_obj: None,
+        stream_transform_sink: None,
+        deliver_ended_stream_rewrites: false,
+    };
+    let response = value(r#"{"candidates": [{"content": {"parts": [{"text": "reply"}]}}]}"#);
+    GoogleGenAiTranslation(PhantomData)
+        .process_output_response(response, guardrail.as_ref(), call)
+        .await
+        .unwrap();
+    assert_eq!(
+        guardrail.seen()[0].inputs.model.as_deref(),
+        Some("gemini-pro")
+    );
+}
+
+#[tokio::test]
 async fn google_genai_scans_the_stream_text_so_far() {
     let guardrail = FakeGuardrail::masking();
     let mut frames = vec![
