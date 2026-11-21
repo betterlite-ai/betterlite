@@ -101,9 +101,9 @@ if [[ -z "${LAND_ONLY}" ]]; then
   if [[ -d "${worktree}" ]]; then
     # an agent sandbox that dies leaves its empty read-only .git/config.lock, and the gate then fails at remote set-url; no agent runs in this tree before next-slot
     [[ -f "${worktree}/.git/config.lock" ]] && [[ ! -s "${worktree}/.git/config.lock" ]] && rm -f -- "${worktree}/.git/config.lock" && say "removed a stale empty .git/config.lock"
-    # a paused worker leaves uncommitted work, and git merge refuses to start over it; all worktrees share one stash list, so the entry is kept by its commit, never by position
+    # a paused worker leaves uncommitted work, and git merge refuses to start over it; a `git add -N` file fails both stash and merge, so the index is reset first; all worktrees share one stash list, so the entry is kept by its commit, never by position
     stashed=
-    changes=$(git -C "${worktree}" status --porcelain) && [[ -n "${changes}" ]] && stashed=$({ flock 8 && git -C "${worktree}" stash push -u -q -m "${id} ${run} uncommitted work" && git -C "${worktree}" rev-parse refs/stash; } 8> "${L}/locks/stash.lock")
+    changes=$(git -C "${worktree}" status --porcelain) && [[ -n "${changes}" ]] && stashed=$({ flock 8 && git -C "${worktree}" reset -q && git -C "${worktree}" stash push -u -q -m "${id} ${run} uncommitted work" && git -C "${worktree}" rev-parse refs/stash; } 8> "${L}/locks/stash.lock")
     merge=$(bash "${P}/merge-main.sh" "${worktree}")
     grep -q -E '^merged' <<< "${merge}" || {
       park "main does not merge cleanly before ${run}${stashed:+ (uncommitted work kept in git stash ${stashed})}"

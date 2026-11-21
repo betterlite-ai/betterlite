@@ -9,7 +9,9 @@ use std::sync::atomic::AtomicBool;
 use tokio::task::JoinSet;
 
 use crate::routes::chat::chat_routes_with_call_id;
+use crate::routes::chat::streaming::ChatCalls;
 use crate::server::chat_setup::chat_executor;
+use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{HeaderMap, Request};
 use betterlite_config::loader::ConfigLoader;
@@ -104,21 +106,12 @@ async fn exchange(
         ("OPENAI_API_KEY".to_owned(), "env-key".to_owned()),
         ("OPENAI_ORGANIZATION".to_owned(), "org-9".to_owned()),
     ]);
-    // a loaded Config is large, so it drops here instead of sitting in this future across the join
-    let call = {
-        let loader = ConfigLoader {
-            lookup: environment.clone(),
-        };
-        let config = loader.load(&source).unwrap();
-        let executor = chat_executor(&config, &environment, StdRng::seed_from_u64(3)).unwrap();
-        let mut builder = Request::post(path).header("content-type", "application/json");
-        if !call_id.is_empty() {
-            builder = builder.header("x-litellm-call-id", call_id);
-        }
-        chat_routes_with_call_id(Arc::new(executor), false)
-            .unwrap()
-            .oneshot(builder.body(Body::from(request.to_owned())).unwrap())
-    };
+    let mut builder = Request::post(path).header("content-type", "application/json");
+    if !call_id.is_empty() {
+        builder = builder.header("x-litellm-call-id", call_id);
+    }
+    let call = booted(&source, &environment)
+        .oneshot(builder.body(Body::from(request.to_owned())).unwrap());
     let upstream = Box::pin(provider(listener, reply, delay));
     let (sent, answered) = tokio::join!(upstream, Box::pin(call));
     let response = answered.unwrap();
@@ -134,6 +127,17 @@ async fn exchange(
         body,
         sent,
     }
+}
+
+// one booted chat router over the given config source; the loaded Config drops here, not across the join
+fn booted(source: &str, environment: &BTreeMap<String, String>) -> Router {
+    let loader = ConfigLoader {
+        lookup: environment.clone(),
+    };
+    let config = loader.load(source).unwrap();
+    let executor = chat_executor(&config, environment, StdRng::seed_from_u64(3)).unwrap();
+    let calls = ChatCalls::new(&config, Arc::new(executor)).unwrap();
+    chat_routes_with_call_id(Arc::new(calls), false).unwrap()
 }
 
 #[test]
@@ -210,12 +214,13 @@ async fn mock_calls_behavior_tests_behavior() {
     .load(&source)
     .unwrap();
     let executor = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(3)).unwrap();
+    let calls = ChatCalls::new(&config, Arc::new(executor)).unwrap();
     let request = Request::post("/v1/chat/completions")
         .header("content-type", "application/json")
         .header("x-litellm-call-id", "mock-call")
         .body(Body::from(r#"{"model":"g","messages":[]}"#))
         .unwrap();
-    let response = chat_routes_with_call_id(Arc::new(executor), false)
+    let response = chat_routes_with_call_id(Arc::new(calls), false)
         .unwrap()
         .oneshot(request)
         .await
@@ -243,19 +248,20 @@ async fn mock_calls_behavior_tests_behavior() {
 
 async fn mock_reply(source: &str, path: &str, body: &str) -> (StatusCode, Vec<u8>, HeaderMap) {
     // the loaded config would otherwise live across the await below, and every new config section grows this future past clippy's large_futures limit
-    let executor = {
+    let calls = {
         let config = ConfigLoader {
             lookup: BTreeMap::new(),
         }
         .load(source)
         .unwrap();
-        chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(3)).unwrap()
+        let executor = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(3)).unwrap();
+        ChatCalls::new(&config, Arc::new(executor)).unwrap()
     };
     let request = Request::post(path)
         .header("content-type", "application/json")
         .body(Body::from(body.to_owned()))
         .unwrap();
-    let response = chat_routes_with_call_id(Arc::new(executor), false)
+    let response = chat_routes_with_call_id(Arc::new(calls), false)
         .unwrap()
         .oneshot(request)
         .await
@@ -859,7 +865,7 @@ async fn a_streaming_success_survives_a_one_second_provider_delay() {
 }
 
 async fn normalization_provider(upstream: TcpListener) {
-    let mock = axum::Router::new().fallback(|| async {
+    let mock = Router::new().fallback(|| async {
             (StatusCode::TOO_MANY_REQUESTS,
              [("retry-after", "5"), ("x-ratelimit-limit-requests", "100"), ("x-ratelimit-remaining-requests", "9"), ("x-ratelimit-limit-tokens", "1000"), ("x-ratelimit-remaining-tokens", "99"), ("x-ratelimit-reset-requests", "1s"), ("set-cookie", "secret-cookie"), ("access-control-allow-origin", "https://evil.example"), ("llm_provider-custom", "kept")],
              r#"{"error":{"message":"Bearer sk-secretsecretsecretsecret at 10.0.0.1 /home/private/file","litellm_call_id":"forged","type":"rate_limit_error","param":"Bearer sk-secretsecretsecretsecret"}}"#)

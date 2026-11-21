@@ -1,0 +1,11 @@
+kind: helper
+name: embed_default_model
+call:
+  b3459:
+    step: embed
+    vector: {vector_bucket_name: embed-bucket}
+    environment: {}
+    chunk_sets: [[one, two], [three], []]
+    answer: [[0.5], [0.25]]
+env: {}
+compare: {ignore: []}
