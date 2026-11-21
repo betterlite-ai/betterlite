@@ -98,8 +98,32 @@ async fn settings_lists_the_pii_entity_categories() {
     );
 }
 
+#[rstest]
+#[case::bedrock("bedrock", &["pre_call", "post_call", "during_call", "pre_mcp_call", "during_mcp_call"])]
+#[case::hide_secrets("hide-secrets", &["pre_call"])]
+#[case::guardrails_ai("guardrails_ai", &["post_call", "pre_call", "logging_only"])]
+#[case::custom_code("custom_code", &["pre_call", "during_call", "post_call", "pre_mcp_call", "during_mcp_call", "logging_only"])]
+#[case::litellm_content_filter("litellm_content_filter", &[
+    "pre_call",
+    "post_call",
+    "during_call",
+    "realtime_input_transcription",
+    "pre_mcp_call",
+    "post_mcp_call",
+])]
+#[case::prompt_shield("azure/prompt_shield", &["pre_call", "during_call"])]
 #[tokio::test]
-async fn settings_maps_every_provider_mode() {
+async fn settings_maps_every_provider_mode(#[case] provider: &str, #[case] hooks: &[&str]) {
+    let harness = harness(Setup::default());
+    let (status, body) = get(&harness, SETTINGS_PATH, Some(admin())).await;
+    assert_eq!(status, StatusCode::OK);
+    let parsed = parse(&body);
+    let providers = field(&parsed, "supported_modes_by_provider");
+    assert_strings(field(providers, provider), hooks);
+}
+
+#[tokio::test]
+async fn settings_lists_only_supported_hooks_for_each_provider() {
     let harness = harness(Setup::default());
     let (status, body) = get(&harness, SETTINGS_PATH, Some(admin())).await;
     assert_eq!(status, StatusCode::OK);
@@ -111,72 +135,13 @@ async fn settings_maps_every_provider_mode() {
         .as_object()
         .expect("the provider map");
     assert_eq!(providers.len(), 54);
-    assert_strings(
-        field(&parsed, "supported_modes_by_provider")
-            .get("bedrock")
-            .expect("the bedrock entry"),
-        &[
-            "pre_call",
-            "post_call",
-            "during_call",
-            "pre_mcp_call",
-            "during_mcp_call",
-        ],
-    );
-    assert_strings(
-        field(&parsed, "supported_modes_by_provider")
-            .get("hide-secrets")
-            .expect("the hide-secrets entry"),
-        &["pre_call"],
-    );
-    assert_strings(
-        field(&parsed, "supported_modes_by_provider")
-            .get("guardrails_ai")
-            .expect("the guardrails_ai entry"),
-        &["post_call", "pre_call", "logging_only"],
-    );
-    assert_strings(
-        field(&parsed, "supported_modes_by_provider")
-            .get("custom_code")
-            .expect("the custom_code entry"),
-        &[
-            "pre_call",
-            "during_call",
-            "post_call",
-            "pre_mcp_call",
-            "during_mcp_call",
-            "logging_only",
-        ],
-    );
-    assert_strings(
-        field(&parsed, "supported_modes_by_provider")
-            .get("litellm_content_filter")
-            .expect("the content filter entry"),
-        &[
-            "pre_call",
-            "post_call",
-            "during_call",
-            "realtime_input_transcription",
-            "pre_mcp_call",
-            "post_mcp_call",
-        ],
-    );
-    assert_strings(
-        field(&parsed, "supported_modes_by_provider")
-            .get("azure/prompt_shield")
-            .expect("the prompt shield entry"),
-        &["pre_call", "during_call"],
-    );
+    let listed: BTreeSet<String> = providers.values().flat_map(strings).collect();
+    assert!(listed.is_subset(&modes), "every hook is a supported mode");
     assert!(
         providers
             .values()
             .all(|hooks| hooks.as_array().is_some_and(|list| !list.is_empty())),
         "every provider has a hook list"
-    );
-    let listed: BTreeSet<String> = providers.values().flat_map(strings).collect();
-    assert!(
-        listed.is_subset(&modes),
-        "every provider hook is a supported mode"
     );
 }
 
@@ -185,19 +150,27 @@ async fn settings_content_filter_settings_match_the_catalog() {
     let harness = harness(Setup::default());
     let (status, body) = get(&harness, SETTINGS_PATH, Some(admin())).await;
     assert_eq!(status, StatusCode::OK);
-    let parsed = parse(&body);
-    let settings = field(&parsed, "content_filter_settings");
+    let settings = field(&parse(&body), "content_filter_settings");
     let patterns = field(settings, "prebuilt_patterns")
         .as_array()
         .expect("the pattern list");
     assert_eq!(patterns.len(), 82);
-    let first = patterns.first().expect("a first pattern");
-    assert_eq!(text(field(first, "name")), "us_ssn");
+    let first_pattern = patterns.first().expect("a first pattern");
+    assert_eq!(text(field(first_pattern, "name")), "us_ssn");
     assert_eq!(
-        text(field(first, "display_name")),
+        text(field(first_pattern, "display_name")),
         "SSN (Social Security Number)"
     );
-    assert_eq!(text(field(first, "category")), "PII Patterns");
+    assert_eq!(text(field(first_pattern, "category")), "PII Patterns");
+    assert_strings(field(settings, "supported_actions"), &["BLOCK", "MASK"]);
+}
+
+#[tokio::test]
+async fn settings_lists_the_content_filter_pattern_categories() {
+    let harness = harness(Setup::default());
+    let (status, body) = get(&harness, SETTINGS_PATH, Some(admin())).await;
+    assert_eq!(status, StatusCode::OK);
+    let settings = field(&parse(&body), "content_filter_settings");
     assert_strings(
         field(settings, "pattern_categories"),
         &[
@@ -219,14 +192,13 @@ async fn settings_content_filter_settings_match_the_catalog() {
             "Canadian Institutional Identifiers (FIPPA)",
         ],
     );
-    assert_strings(field(settings, "supported_actions"), &["BLOCK", "MASK"]);
     let categories = field(settings, "content_categories")
         .as_array()
         .expect("the content category list");
     assert_eq!(categories.len(), 32);
-    let first = categories.first().expect("a first content category");
-    assert_eq!(text(field(first, "name")), "age_discrimination");
-    assert_eq!(text(field(first, "default_action")), "BLOCK");
+    let first_category = categories.first().expect("a first content category");
+    assert_eq!(text(field(first_category, "name")), "age_discrimination");
+    assert_eq!(text(field(first_category, "default_action")), "BLOCK");
 }
 
 #[tokio::test]

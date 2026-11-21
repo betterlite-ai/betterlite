@@ -267,40 +267,22 @@ async fn team_labels_db_and_config_entries() {
         .await;
     let (status, body) = get(&harness, LIST_V2_PATH, Some(admin())).await;
     assert_eq!(status, StatusCode::OK);
-    let parsed = parse(&body);
-    let listed = listed_entries(&parsed);
+    let listed = listed_entries(&parse(&body));
     assert_eq!(listed.len(), 2);
-    let database_entry = &listed[0];
-    assert_eq!(
-        text(field(database_entry, "guardrail_definition_location")),
-        "db"
-    );
-    assert!(
-        text(field(database_entry, "created_at")).starts_with("2026-01-02T03:04:05"),
-        "the db entry keeps its timestamps"
-    );
-    assert!(field(database_entry, "guardrail_info").is_null());
-    assert_eq!(
-        text(field(field(database_entry, "litellm_params"), "api_key")),
-        "sk****34"
-    );
-    assert_eq!(
-        field(field(database_entry, "litellm_params"), "default_on"),
-        &JsonValue::Bool(false),
-        "the typed decode fills the absent default_on"
-    );
-    let config_entry = &listed[1];
-    assert_eq!(
-        text(field(config_entry, "guardrail_definition_location")),
-        "config"
-    );
-    assert!(field(config_entry, "created_at").is_null());
-    assert!(
-        field(config_entry, "guardrail_info")
-            .as_object()
-            .expect("an info object")
-            .is_empty()
-    );
+    let db_entry = &listed[0];
+    assert_eq!(text(field(db_entry, "guardrail_definition_location")), "db");
+    // the db row keeps its timestamps, and its typed decode fills the absent default_on
+    let created_at = text(field(db_entry, "created_at"));
+    assert!(created_at.starts_with("2026-01-02T03:04:05"));
+    assert!(field(db_entry, "guardrail_info").is_null());
+    let params = field(db_entry, "litellm_params");
+    assert_eq!(text(field(params, "api_key")), "sk****34");
+    assert_eq!(field(params, "default_on"), &JsonValue::Bool(false));
+    let cfg_entry = &listed[1];
+    let location = field(cfg_entry, "guardrail_definition_location");
+    assert_eq!(text(location), "config");
+    assert!(field(cfg_entry, "created_at").is_null());
+    assert_eq!(field(cfg_entry, "guardrail_info").to_string(), "{}");
 }
 
 #[tokio::test]

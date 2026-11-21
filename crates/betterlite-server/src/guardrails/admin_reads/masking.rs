@@ -12,7 +12,8 @@ const SENSITIVE_KEYWORDS: [&str; 8] = [
     "passwd",
 ];
 const UNMASKED_LENGTH: usize = 4;
-const VISIBLE_LENGTH: usize = UNMASKED_LENGTH / 2;
+// LiteLLM halves unmasked_length, so four characters show two on each side
+const VISIBLE_LENGTH: usize = 2;
 const ASTERISKS: &str = "****";
 const SHORT_MASK: &str = "*****";
 const MAX_DEPTH: usize = 20;

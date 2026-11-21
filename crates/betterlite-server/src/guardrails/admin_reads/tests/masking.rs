@@ -70,9 +70,9 @@ fn masking_leaves_a_nested_object_under_another_key_alone() {
 
 #[test]
 fn masking_counts_characters_not_bytes() {
-    let masked = mask_of("{\"key\":\"ééab\",\"token\":\"ééabcde\"}");
+    let masked = mask_of("{\"key\":\"\u{e9}\u{e9}ab\",\"token\":\"\u{e9}\u{e9}abcde\"}");
     assert_eq!(text(field(&masked, "key")), "*****");
-    assert_eq!(text(field(&masked, "token")), "éé****de");
+    assert_eq!(text(field(&masked, "token")), "\u{e9}\u{e9}****de");
 }
 
 #[test]

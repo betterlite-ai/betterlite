@@ -13,6 +13,7 @@ use betterlite_auth::auth_identity::records::{
     CredentialRef, NetworkContext, Principal, SourceKey, UserIdentity,
 };
 use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType, Role};
+use betterlite_auth::auth_user_lookup::error::UserLookupError;
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::decode::decode_litellm_params;
@@ -32,6 +33,7 @@ use betterlite_guardrails::guardrail_startup::runtime::GuardrailRuntime;
 use betterlite_guardrails::tool_policy::{RequestToolNames, ToolPolicyLookup};
 use betterlite_pyhost::json_values::{JsonObject, JsonValue};
 use chrono::NaiveDateTime;
+use rstest::rstest;
 use tower::ServiceExt as _;
 use tracing::Level;
 use tracing::subscriber::{DefaultGuard, set_default};
@@ -39,9 +41,7 @@ use tracing::subscriber::{DefaultGuard, set_default};
 use super::masking::mask_sensitive_values;
 use super::projection::validated;
 use super::routes;
-use super::state::{
-    ConfigGuardrail, ConfigGuardrails, ReadState, TeamIdsFuture, TeamsError, UserTeams,
-};
+use super::state::{ConfigGuardrail, ConfigGuardrails, ReadState, TeamIdsFuture, UserTeams};
 use crate::auth::auth_identity::AuthContext;
 use crate::guardrails::form_tables_a::tables_a;
 use crate::guardrails::form_tables_b::tables_b;
@@ -326,7 +326,9 @@ impl UserTeams for FakeTeams {
         self.calls.fetch_add(1, Ordering::SeqCst);
         let outcome = match &self.outcome {
             Ok(teams) => Ok(teams.clone()),
-            Err(message) => Err(TeamsError(Box::new(io::Error::other(*message)))),
+            Err(message) => Err(UserLookupError::Unavailable(Box::new(io::Error::other(
+                *message,
+            )))),
         };
         Box::pin(ready(outcome))
     }

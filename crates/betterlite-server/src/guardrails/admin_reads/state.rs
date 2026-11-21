@@ -2,6 +2,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
+use betterlite_auth::auth_user_lookup::error::UserLookupError;
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::guardrail_params::opaque::OpaqueParams;
 use betterlite_guardrails::guardrail_registry::rows::GuardrailRows;
@@ -32,13 +33,9 @@ pub trait ConfigGuardrails: Send + Sync {
 }
 
 pub type TeamIdsFuture<'read> =
-    Pin<Box<dyn Future<Output = Result<Vec<String>, TeamsError>> + Send + 'read>>;
+    Pin<Box<dyn Future<Output = Result<Vec<String>, UserLookupError>> + Send + 'read>>;
 
 // _get_user_team_ids reads the user row through B736's get_user_object, which a port keeps out of the route
 pub trait UserTeams: Send + Sync {
     fn team_ids(&self, user_id: &str) -> TeamIdsFuture<'_>;
 }
-
-#[derive(Debug, thiserror::Error)]
-#[error(transparent)]
-pub struct TeamsError(pub Box<dyn std::error::Error + Send + Sync>);

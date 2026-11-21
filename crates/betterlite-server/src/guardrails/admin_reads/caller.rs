@@ -5,7 +5,7 @@ use betterlite_auth::resolved_key::auth::user_api_key_has_admin_view;
 use betterlite_guardrails::guardrail_registry::rows::GuardrailRows;
 
 use super::error::ReadError;
-use super::state::{ReadState, TeamsError};
+use super::state::ReadState;
 use crate::auth::auth_identity::AuthContext;
 use crate::plugin_routes::routes::caller_identity;
 
@@ -53,8 +53,8 @@ where
         .teams
         .team_ids(&user_id)
         .await
-        .map_err(|TeamsError(source)| ReadError::Internal {
-            detail: source.to_string(),
+        .map_err(|error| ReadError::Internal {
+            detail: error.to_string(),
         })?;
     Ok(teams.into_iter().filter(|team| !team.is_empty()).collect())
 }

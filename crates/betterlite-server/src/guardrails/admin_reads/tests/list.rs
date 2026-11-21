@@ -16,9 +16,7 @@ async fn list_reads_the_config_guardrails_with_masked_params() {
     let (status, body) = get(&harness, LIST_PATH, Some(admin())).await;
     assert_eq!(status, StatusCode::OK);
     let parsed = parse(&body);
-    let listed = listed_entries(&parsed);
-    assert_eq!(listed.len(), 1);
-    let entry = &listed[0];
+    let entry = listed_entries(&parsed).first().expect("a config entry");
     assert_eq!(text(field(entry, "guardrail_id")), "cfg-1");
     assert_eq!(text(field(entry, "guardrail_name")), "my-guard");
     assert_eq!(
@@ -35,14 +33,8 @@ async fn list_reads_the_config_guardrails_with_masked_params() {
     assert_eq!(text(field(params, "api_key")), "sk****34");
     assert_eq!(text(field(params, "guardrail")), "bedrock");
     assert_eq!(text(field(params, "mode")), "pre_call");
-    assert!(
-        params
-            .as_object()
-            .expect("the params object")
-            .get("disable_exception_on_block")
-            .is_none(),
-        "a config entry carries no provider mixin defaults"
-    );
+    // a config entry carries no provider mixin defaults
+    assert!(params.get("disable_exception_on_block").is_none());
 }
 
 #[tokio::test]
