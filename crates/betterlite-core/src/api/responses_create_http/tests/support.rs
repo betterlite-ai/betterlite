@@ -1,5 +1,7 @@
 use std::collections::VecDeque;
+use std::fmt::Debug;
 use std::future::{Future, ready};
+use std::mem::take;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -9,7 +11,7 @@ use betterlite_context::agentic_callback::error::AgenticHookError;
 use betterlite_context::agentic_callback::{
     AgenticCall, AgenticCallback, AgenticGate, AgenticLoopCall, AgenticOverrides,
 };
-use betterlite_context::agentic_loop_plan::JsonMap;
+use betterlite_context::agentic_loop_plan::{FollowupMessage, JsonMap};
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::RequestBody;
 use betterlite_http::proxy::transport_error::TransportError;
@@ -34,6 +36,12 @@ use http::Method;
 use http::header::{HeaderName, HeaderValue};
 use indexmap::IndexMap;
 use serde_json::value::RawValue;
+use tracing::field::{Field, Visit};
+use tracing::subscriber::{DefaultGuard, set_default};
+use tracing::{Event, Subscriber};
+use tracing_subscriber::layer::SubscriberExt as _;
+use tracing_subscriber::layer::{Context as LayerContext, Layer};
+use tracing_subscriber::registry;
 use url::Url;
 
 use crate::api::responses_agentic_execution::executor::{
@@ -117,7 +125,6 @@ impl Reply {
 pub(super) enum Answer {
     Json(Reply),
     Sse(Vec<String>),
-    Failure(TransportError),
 }
 
 #[derive(Clone)]
@@ -132,7 +139,7 @@ pub(super) struct Sent {
 
 impl Sent {
     pub(super) fn header(&self, name: &str) -> Option<&str> {
-        self.headers.get(name).and_then(|value| value.to_str().ok())
+        self.headers.get(name)?.to_str().ok()
     }
 
     pub(super) fn body_json(&self) -> PromptJson {
@@ -174,11 +181,11 @@ impl Wire {
 }
 
 impl CreateTransport for Wire {
-    async fn send(
+    fn send(
         &self,
         request: CreateRequest,
         stream: bool,
-    ) -> Result<SentReply, TransportError> {
+    ) -> impl Future<Output = Result<SentReply, TransportError>> + Send {
         self.sent
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -196,7 +203,7 @@ impl CreateTransport for Wire {
             .unwrap_or_else(PoisonError::into_inner)
             .pop_front()
             .expect("one scripted answer per send");
-        match answer {
+        ready(match answer {
             Answer::Json(reply) => Ok(SentReply::Buffered(UpstreamResponse {
                 status: reply.status,
                 headers: reply.headers,
@@ -209,8 +216,7 @@ impl CreateTransport for Wire {
                     .collect();
                 Ok(SentReply::Streaming(Box::new(PrefetchedSource::new(items))))
             }
-            Answer::Failure(error) => Err(error),
-        }
+        })
     }
 }
 
@@ -360,8 +366,8 @@ impl CreateConfig for Config {
             String::from("model"),
             PromptJson::Text(request.model.to_owned()),
         );
-        let text = serde_json::to_string(request.input).expect("the input serializes");
-        let input: PromptJson = serde_json::from_str(&text).expect("the input round-trips");
+        let text = serde_json::to_string(request.input).map_err(ConfigFailure::new)?;
+        let input: PromptJson = serde_json::from_str(&text).map_err(ConfigFailure::new)?;
         data.insert(String::from("input"), input);
         Ok(data)
     }
@@ -554,13 +560,47 @@ impl DeploymentHookDispatcher for Dispatcher {
     }
 }
 
+// The messages each agentic hook was called with, in call order
+#[derive(Debug, Clone, PartialEq)]
+pub(super) enum ScriptedCall {
+    Gate(Vec<PromptJson>),
+    Loop(Vec<PromptJson>),
+}
+
+pub(super) struct AgenticRecorder {
+    calls: Mutex<Vec<ScriptedCall>>,
+}
+
+impl AgenticRecorder {
+    pub(super) fn new() -> Self {
+        Self {
+            calls: Mutex::new(Vec::new()),
+        }
+    }
+
+    pub(super) fn calls(&self) -> Vec<ScriptedCall> {
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+}
+
+fn messages(messages: &[FollowupMessage]) -> Vec<PromptJson> {
+    messages
+        .iter()
+        .map(|message| serde_json::from_str(message.0.get()).expect("the followup message parses"))
+        .collect()
+}
+
 pub(super) struct Scripted {
     pub(super) result: Option<Box<RawValue>>,
+    recorder: Arc<AgenticRecorder>,
 }
 
 #[async_trait]
 impl AgenticCallback for Scripted {
-    fn callback_name(&self) -> &str {
+    fn callback_name(&self) -> &'static str {
         "scripted"
     }
 
@@ -576,8 +616,13 @@ impl AgenticCallback for Scripted {
 
     async fn should_run_agentic_loop(
         &self,
-        _call: &AgenticCall<'_>,
+        call: &AgenticCall<'_>,
     ) -> Result<AgenticGate, AgenticHookError> {
+        self.recorder
+            .calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(ScriptedCall::Gate(messages(call.messages)));
         Ok(AgenticGate {
             run: true,
             tools: JsonMap::new(),
@@ -586,18 +631,27 @@ impl AgenticCallback for Scripted {
 
     async fn run_agentic_loop(
         &self,
-        _call: &AgenticLoopCall<'_>,
+        call: &AgenticLoopCall<'_>,
     ) -> Result<Option<Box<RawValue>>, AgenticHookError> {
+        self.recorder
+            .calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(ScriptedCall::Loop(messages(call.messages)));
         Ok(self.result.clone())
     }
 }
 
-pub(super) fn agentic_callback(result: Option<&str>) -> PolicyCallback {
+pub(super) fn agentic_callback(
+    result: Option<&str>,
+    recorder: &Arc<AgenticRecorder>,
+) -> PolicyCallback {
     PolicyCallback {
         name: String::from("scripted"),
         overrides_pre_hook: false,
         agentic: Some(Arc::new(Scripted {
             result: result.map(raw),
+            recorder: Arc::clone(recorder),
         })),
     }
 }
@@ -674,19 +728,39 @@ pub(super) fn create_deps<'deps>(
     }
 }
 
-pub(super) async fn execute(
+// The logging state a finished run leaves, so a test reads what pre_call stored
+pub(super) struct Logged {
+    pub(super) outcome: Result<CreateOutcome, CreateError>,
+    pub(super) details: IndexMap<String, Json>,
+}
+
+pub(super) async fn execute_logged(
     deps: &CreateDeps<'_, Config, Source>,
     mode: ClientKind,
     call: &CreateCall<'_>,
     hooks: &CreateHooks<'_, Dispatcher, NoExecutor>,
-) -> Result<CreateOutcome, CreateError> {
+) -> Logged {
     let mut fixture = Fixture::new();
     let env = base_env(&fixture.redactor, &fixture.sink, fixture.now);
     let mut log = LogContext {
         state: &mut fixture.state,
         env: &env,
     };
-    run(deps, mode, call, hooks, &mut log).await
+    let outcome = run(deps, mode, call, hooks, &mut log).await;
+    Logged {
+        outcome,
+        details: log.state.model_call_details.clone(),
+    }
+}
+
+pub(super) async fn execute(
+    deps: &CreateDeps<'_, Config, Source>,
+    mode: ClientKind,
+    call: &CreateCall<'_>,
+    hooks: &CreateHooks<'_, Dispatcher, NoExecutor>,
+) -> Result<CreateOutcome, CreateError> {
+    let logged = execute_logged(deps, mode, call, hooks).await;
+    logged.outcome
 }
 
 pub(super) fn hooks<'hooks>(
@@ -711,5 +785,58 @@ pub(super) fn body_map(json: &PromptJson) -> &Object {
         | PromptJson::Number(_)
         | PromptJson::Text(_)
         | PromptJson::List(_) => panic!("the body is an object"),
+    }
+}
+
+#[derive(Clone, Default)]
+pub(super) struct CapturedDebug(Arc<Mutex<Vec<String>>>);
+
+impl CapturedDebug {
+    pub(super) fn take(&self) -> Vec<String> {
+        let mut messages = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        take(&mut messages)
+    }
+}
+
+#[derive(Default)]
+struct Message(String);
+
+impl Visit for Message {
+    fn record_str(&mut self, field: &Field, value: &str) {
+        if field.name() == "message" {
+            value.clone_into(&mut self.0);
+        }
+    }
+
+    fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
+        if field.name() == "message" {
+            self.0 = format!("{value:?}");
+        }
+    }
+}
+
+impl<Inner: Subscriber> Layer<Inner> for CapturedDebug {
+    fn on_event(&self, event: &Event<'_>, _context: LayerContext<'_, Inner>) {
+        let mut message = Message::default();
+        event.record(&mut message);
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(message.0);
+    }
+}
+
+pub(super) struct DebugCapture {
+    pub(super) logs: CapturedDebug,
+    _guard: DefaultGuard,
+}
+
+// Captures every event on this thread, so the async client's debug line is observable
+pub(super) fn capture_debug() -> DebugCapture {
+    let logs = CapturedDebug::default();
+    let guard = set_default(registry().with(logs.clone()));
+    DebugCapture {
+        logs,
+        _guard: guard,
     }
 }

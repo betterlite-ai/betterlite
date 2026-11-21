@@ -1,26 +1,32 @@
 #![cfg(test)]
 
+mod failures;
 mod support;
 
+use std::fs;
+use std::path::PathBuf;
+use std::str::from_utf8;
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use betterlite_models::decisions::Json as ModelJson;
-use betterlite_openai::response_input::ResponsesInput;
+use betterlite_openai::response_input::{ResponsesInput, ResponsesItem};
 use betterlite_prompts::arguments::json::{Json as PromptJson, Object};
 use http::Method;
 use indexmap::IndexMap;
 use rstest::rstest;
 
 use self::support::{
-    Answer, Config, Dispatcher, NO_CALLBACKS, NO_RESOLVER, RESP_A, Reply, Sent, Source, Wire,
-    agentic_callback, body_map, config_with, create_deps, execute, headers, hooks, json, models,
-    object, params, pre_hook_callback, text_input,
+    AgenticRecorder, Answer, Config, Dispatcher, NO_CALLBACKS, NO_RESOLVER, RESP_A, Reply,
+    ScriptedCall, Sent, Source, Wire, agentic_callback, body_map, capture_debug, config_with,
+    create_deps, execute, execute_logged, headers, hooks, json, models, object, params,
+    pre_hook_callback, text_input,
 };
-use crate::api::responses_compact_http::error::Stage as FailStage;
+use super::convert::float_value;
 use crate::api::responses_compact_http::service::{ClientKind, SharedSession};
 use crate::api::responses_create_http::config::CreateParams;
-use crate::api::responses_create_http::error::{CreateError, Stage as ErrorStage};
+use crate::api::responses_create_http::error::CreateError;
 use crate::api::responses_create_http::service::{CreateCall, CreateLive, CreateOutcome};
 use crate::api::responses_hook_policy::callbacks::{CallbackLists, CallbackValue};
 use crate::api::responses_stream_driver::source::PayloadSource;
@@ -83,6 +89,7 @@ async fn create_transform_overlay_order() {
     let dispatcher = Dispatcher::patching(IndexMap::from([
         (String::from("model"), models("\"gpt-4o-mini\"")),
         (String::from("api_key"), models("\"sk-hooked\"")),
+        (String::from("input"), models("\"changed\"")),
     ]));
     let config = Config::default();
     let wire = Wire::new(vec![Answer::Json(Reply::json(200, RESP_A))]);
@@ -92,10 +99,11 @@ async fn create_transform_overlay_order() {
     call.extra_body = Some(&extra_body);
     let create_hooks = hooks(callbacks, &dispatcher, &NO_RESOLVER);
     let deps = create_deps(&config, &source);
-    let outcome = execute(&deps, ClientKind::Sync, &call, &create_hooks)
-        .await
-        .expect("the sync call");
+    let logged = execute_logged(&deps, ClientKind::Sync, &call, &create_hooks).await;
+    let outcome = logged.outcome.expect("the sync call");
 
+    // the pre-hook replaced the input, and pre_call logs what it replaced it with
+    assert_eq!(logged.details.get("input"), Some(&models("\"changed\"")));
     assert_overlay_request(&wire, &dispatcher);
     assert_overlay_records(&config);
     assert_eq!(
@@ -108,22 +116,30 @@ async fn create_transform_overlay_order() {
 fn assert_overlay_request(wire: &Wire, dispatcher: &Dispatcher) {
     let sent = wire.requests();
     assert_eq!(sent.len(), 1);
-    assert_eq!(sent[0].method, Method::POST);
-    assert_eq!(sent[0].url.as_str(), "http://mock/v1/responses");
-    assert_eq!(sent[0].timeout, Duration::from_secs(7));
-    assert_eq!(sent[0].header("authorization"), Some("Bearer explicit"));
-    assert_eq!(sent[0].header("x-option"), Some("a"));
-    assert_eq!(sent[0].header("x-trace"), Some("b"));
-    assert_eq!(sent[0].header("x-signed"), Some("yes"));
-    let fields = body_map(&sent[0].body_json()).clone();
+    assert_overlay_transport(&sent[0]);
+    assert_overlay_body(&sent[0]);
+    assert_eq!(dispatcher.calls(), 1);
+}
+
+fn assert_overlay_transport(sent: &Sent) {
+    assert_eq!(sent.method, Method::POST);
+    assert_eq!(sent.url.as_str(), "http://mock/v1/responses");
+    assert_eq!(sent.timeout, Duration::from_secs(7));
+    assert_eq!(sent.header("authorization"), Some("Bearer explicit"));
+    assert_eq!(sent.header("x-option"), Some("a"));
+    assert_eq!(sent.header("x-trace"), Some("b"));
+    assert_eq!(sent.header("x-signed"), Some("yes"));
+}
+
+fn assert_overlay_body(sent: &Sent) {
+    let fields = body_map(&sent.body_json()).clone();
     assert_eq!(fields.get("model"), Some(&json("\"gpt-4o-mini\"")));
     assert_eq!(fields.get("temperature"), Some(&json("0.8")));
-    assert_eq!(fields.get("input"), Some(&json("\"hello\"")));
+    assert_eq!(fields.get("input"), Some(&json("\"changed\"")));
     assert!(!fields.contains_key("extra_headers"));
     assert!(!fields.contains_key("timeout"));
     assert!(!fields.contains_key("litellm_params"));
     assert!(!fields.contains_key("request_context"));
-    assert_eq!(dispatcher.calls(), 1);
 }
 
 fn assert_overlay_records(config: &Config) {
@@ -166,6 +182,7 @@ async fn assert_async_keeps_original(
     let sent = wire.requests();
     let body = body_map(&sent[0].body_json()).clone();
     assert_eq!(body.get("model"), Some(&json("\"gpt-4o\"")));
+    assert_eq!(body.get("input"), Some(&json("\"hello\"")));
     assert_eq!(sent[0].header("authorization"), Some("Bearer explicit"));
     let signed = config.recorded_sign();
     assert_eq!(signed.model, "gpt-4o");
@@ -218,7 +235,10 @@ async fn run_scenario(
 ) -> (CreateOutcome, Wire) {
     let globals = match setup.callbacks {
         CallbackPlan::None => Vec::new(),
-        CallbackPlan::Agentic(result) => vec![CallbackValue::Object(agentic_callback(result))],
+        CallbackPlan::Agentic(result) => {
+            let recorder = Arc::new(AgenticRecorder::new());
+            vec![CallbackValue::Object(agentic_callback(result, &recorder))]
+        }
     };
     let callbacks = CallbackLists {
         global: &globals,
@@ -362,6 +382,29 @@ fn check_synthetic(outcome: CreateOutcome, sent: &[Sent]) {
     );
 }
 
+// deviation: a 200 body without the typed fields fails the fake stream, where LiteLLM model_constructs it
+#[tokio::test]
+async fn create_lax_synthetic_body_is_not_typed() {
+    let input = text_input("hello");
+    let optional = object(r#"{"stream":true}"#);
+    let call_params = params(r#"{"api_base":"http://mock/v1"}"#);
+    let fake = models("true");
+    let lax = r#"{"id":"resp_lax","created_at":1,"object":"response","status":500,"output":[]}"#;
+    let wire = Wire::new(vec![Answer::Json(Reply::json(200, lax))]);
+    let source = Source::with(wire.clone());
+    let mut call = create_call(&input, &optional, &call_params);
+    call.fake_stream = Some(&fake);
+    let dispatcher = Dispatcher::quiet();
+    let create_hooks = hooks(NO_CALLBACKS, &dispatcher, &NO_RESOLVER);
+    let config = Config::default();
+    let deps = create_deps(&config, &source);
+    let Err(error) = execute(&deps, ClientKind::Sync, &call, &create_hooks).await else {
+        panic!("the fake stream needs the typed response");
+    };
+    assert!(matches!(error, CreateError::NotTyped));
+    assert_eq!(wire.requests().len(), 1);
+}
+
 fn assert_live_setup(live: &CreateLive) {
     assert_eq!(live.setup.model, "gpt-4o");
     assert_eq!(live.setup.custom_llm_provider, "openai");
@@ -465,9 +508,8 @@ async fn bad_timeout(call_params: &CreateParams, dispatcher: &Dispatcher) {
     call.timeout = None;
     let create_hooks = hooks(NO_CALLBACKS, dispatcher, &NO_RESOLVER);
     let deps = create_deps(&config, &source);
-    let error = match execute(&deps, ClientKind::Sync, &call, &create_hooks).await {
-        Ok(_) => panic!("the bad timeout fails"),
-        Err(error) => error,
+    let Err(error) = execute(&deps, ClientKind::Sync, &call, &create_hooks).await else {
+        panic!("the bad timeout fails");
     };
     let CreateError::Provider(provider) = error else {
         panic!("the timeout conversion failure is a provider error")
@@ -493,9 +535,8 @@ async fn signed_body(call_params: &CreateParams, dispatcher: &Dispatcher) {
     call.timeout = Some(1.0_f64);
     let create_hooks = hooks(NO_CALLBACKS, dispatcher, &NO_RESOLVER);
     let deps = create_deps(&config, &source);
-    execute(&deps, ClientKind::Sync, &call, &create_hooks)
-        .await
-        .expect("the signed call");
+    let logged = execute_logged(&deps, ClientKind::Sync, &call, &create_hooks).await;
+    logged.outcome.expect("the signed call");
     let recorded = config.recorded_sign();
     assert!(!recorded.stream);
     assert!(matches!(recorded.fake_stream, Some(ModelJson::Bool(true))));
@@ -503,6 +544,34 @@ async fn signed_body(call_params: &CreateParams, dispatcher: &Dispatcher) {
     assert!(recorded.data.get("stream").is_none());
     assert_eq!(recorded.api_base, "http://mock/v1/responses");
     assert!(wire.requests()[0].body.is_empty());
+    assert_pre_call_record(&logged.details);
+}
+
+// _pre_call logs the original input, api_key="", the final body, the base URL and the signed headers
+fn assert_pre_call_record(details: &IndexMap<String, ModelJson>) {
+    assert_eq!(details.get("input"), Some(&models("\"hello\"")));
+    assert_eq!(details.get("api_key"), Some(&models("\"\"")));
+    let Some(ModelJson::Object(args)) = details.get("additional_args") else {
+        panic!("pre_call logs its additional arguments");
+    };
+    assert_eq!(
+        args.get("api_base"),
+        Some(&models("\"http://mock/v1/responses\""))
+    );
+    assert_eq!(
+        args.get("complete_input_dict"),
+        Some(&models(
+            r#"{"model":"gpt-4o","input":"hello","temperature":0.8}"#
+        ))
+    );
+    let Some(ModelJson::Object(logged_headers)) = args.get("headers") else {
+        panic!("pre_call logs the signed headers");
+    };
+    assert_eq!(logged_headers.get("X-Signed"), Some(&models("\"yes\"")));
+    assert_eq!(
+        logged_headers.get("Content-Type"),
+        Some(&models("\"application/json\""))
+    );
 }
 
 // a supplied client of the matching kind is reused; the wrong kind selects the pool
@@ -537,17 +606,54 @@ async fn client_selection(call_params: &CreateParams, dispatcher: &Dispatcher) {
 
 // async forwards ssl_verify and shared_session to the pool and signs off the loop; sync forwards neither
 async fn shared_session(call_params: &CreateParams, dispatcher: &Dispatcher) {
-    let (async_source, async_config) =
-        shared_session_run(call_params, dispatcher, ClientKind::Asynchronous).await;
+    let with_session = capture_debug();
+    let (async_source, async_config) = shared_session_run(
+        call_params,
+        dispatcher,
+        ClientKind::Asynchronous,
+        Some(SharedSession(9)),
+    )
+    .await;
     assert_eq!(
         async_source.creations(),
         vec![(Some(false), Some(SharedSession(9)))]
     );
     assert!(async_config.off_loop_sign.load(Ordering::SeqCst));
     assert!(async_config.off_loop_transform.load(Ordering::SeqCst));
+    assert!(
+        with_session
+            .logs
+            .take()
+            .iter()
+            .any(|line| line == "Creating HTTP client for responses API with shared_session: 9")
+    );
+    drop(with_session);
 
-    let (sync_source, sync_config) =
-        shared_session_run(call_params, dispatcher, ClientKind::Sync).await;
+    let without_session = capture_debug();
+    let (none_source, _) =
+        shared_session_run(call_params, dispatcher, ClientKind::Asynchronous, None).await;
+    assert_eq!(
+        none_source.creations(),
+        vec![(Some(false), None::<SharedSession>)]
+    );
+    assert!(
+        without_session
+            .logs
+            .take()
+            .iter()
+            .any(|line| line == "Creating HTTP client for responses API with shared_session: None")
+    );
+    drop(without_session);
+
+    assert_reused_client_skips_debug(call_params, dispatcher).await;
+
+    let (sync_source, sync_config) = shared_session_run(
+        call_params,
+        dispatcher,
+        ClientKind::Sync,
+        Some(SharedSession(9)),
+    )
+    .await;
     assert_eq!(
         sync_source.creations(),
         vec![(Some(false), None::<SharedSession>)]
@@ -556,10 +662,37 @@ async fn shared_session(call_params: &CreateParams, dispatcher: &Dispatcher) {
     assert!(!sync_config.off_loop_transform.load(Ordering::SeqCst));
 }
 
+// a supplied client of the matching async kind never builds one, so the debug line never runs
+async fn assert_reused_client_skips_debug(call_params: &CreateParams, dispatcher: &Dispatcher) {
+    let input = text_input("hello");
+    let empty = Object::new();
+    let supplied = Wire::new(vec![Answer::Json(Reply::json(200, RESP_A))]);
+    let pool = Wire::new(Vec::new());
+    let source = Source::with_supplied(pool, ClientKind::Asynchronous, supplied);
+    let config = Config::default();
+    let mut call = create_call(&input, &empty, call_params);
+    call.timeout = Some(1.0_f64);
+    call.shared_session = Some(SharedSession(9));
+    let create_hooks = hooks(NO_CALLBACKS, dispatcher, &NO_RESOLVER);
+    let deps = create_deps(&config, &source);
+    let capture = capture_debug();
+    execute(&deps, ClientKind::Asynchronous, &call, &create_hooks)
+        .await
+        .expect("the supplied async client");
+    assert!(
+        capture
+            .logs
+            .take()
+            .iter()
+            .all(|line| line != "Creating HTTP client for responses API with shared_session: 9")
+    );
+}
+
 async fn shared_session_run(
     call_params: &CreateParams,
     dispatcher: &Dispatcher,
     mode: ClientKind,
+    session: Option<SharedSession>,
 ) -> (Source, Config) {
     let input = text_input("hello");
     let empty = Object::new();
@@ -568,7 +701,7 @@ async fn shared_session_run(
     let config = Config::default();
     let mut call = create_call(&input, &empty, call_params);
     call.timeout = Some(1.0_f64);
-    call.shared_session = Some(SharedSession(9));
+    call.shared_session = session;
     let deps = create_deps(&config, &source);
     execute(&deps, mode, &call, &create_hooks)
         .await
@@ -635,6 +768,12 @@ struct AgenticScenario {
     mode: ClientKind::Sync,
     expect: AgenticExpect::Plain("\"resp_hook\""),
 })]
+#[case::depth_zero(AgenticScenario {
+    call_params: r#"{"api_base":"http://mock/v1","_websearch_interception_converted_stream":true,"_agentic_loop_depth":0}"#,
+    hook: CallbackPlan::Agentic(Some(HOOK_RESPONSE)),
+    mode: ClientKind::Sync,
+    expect: AgenticExpect::Wrapped("resp_hook"),
+})]
 #[case::false_result(AgenticScenario {
     call_params: r#"{"api_base":"http://mock/v1"}"#,
     hook: CallbackPlan::Agentic(Some("false")),
@@ -692,145 +831,59 @@ fn check_agentic(expect: AgenticExpect, outcome: CreateOutcome) {
     }
 }
 
-#[derive(Clone, Copy)]
-enum FailureCase {
-    Status,
-    StreamingStatus,
-    Step(FailStage),
-    ContextUpdate,
-}
-
+// The agentic hooks see the input list, or one user turn for a text input, as LiteLLM's messages argument
 #[rstest]
-#[case::status(FailureCase::Status)]
-#[case::streaming_status(FailureCase::StreamingStatus)]
-#[case::transform(FailureCase::Step(FailStage::Transform))]
-#[case::normalize(FailureCase::Step(FailStage::Normalize))]
-#[case::sign(FailureCase::Step(FailStage::Sign))]
-#[case::response_transform(FailureCase::Step(FailStage::Response))]
-#[case::context_update(FailureCase::ContextUpdate)]
+#[case::text_followup(false)]
+#[case::items_followup(true)]
 #[tokio::test]
-async fn create_transport_failure(#[case] scenario: FailureCase) {
-    let input = text_input("hello");
-    let empty = Object::new();
-    let call_params = params(r#"{"api_base":"http://mock/v1"}"#);
+async fn create_agentic_followup_messages(#[case] items: bool) {
+    let text = text_input("hello");
+    let item = json(r#"{"type":"message","role":"user","content":"hi"}"#);
+    let listed = ResponsesInput::Items(vec![ResponsesItem(item.clone())]);
+    let input = if items { &listed } else { &text };
+    let expected = if items {
+        item
+    } else {
+        json(r#"{"role":"user","content":"hello"}"#)
+    };
+    let recorder = Arc::new(AgenticRecorder::new());
+    let globals = [CallbackValue::Object(agentic_callback(
+        Some(HOOK_RESPONSE),
+        &recorder,
+    ))];
+    let callbacks = CallbackLists {
+        global: &globals,
+        dynamic: &[],
+    };
+    let optional = Object::new();
+    let call_params =
+        params(r#"{"api_base":"http://mock/v1","_websearch_interception_converted_stream":true}"#);
     let dispatcher = Dispatcher::quiet();
-    match scenario {
-        FailureCase::Status => {
-            status_failure(&input, &empty, &call_params, &dispatcher, false).await;
-        }
-        FailureCase::StreamingStatus => {
-            let streaming = object(r#"{"stream":true}"#);
-            status_failure(&input, &streaming, &call_params, &dispatcher, true).await;
-        }
-        FailureCase::Step(stage) => {
-            step_failure(stage, &input, &empty, &call_params, &dispatcher).await;
-        }
-        FailureCase::ContextUpdate => context_update(&input, &call_params, &dispatcher).await,
-    }
-}
-
-// HTTP 429 text=slow down with Retry-After=3 becomes B2402's 429 with the header preserved, streamed or not
-async fn status_failure(
-    input: &ResponsesInput,
-    optional: &Object,
-    call_params: &CreateParams,
-    dispatcher: &Dispatcher,
-    stream: bool,
-) {
     let config = Config::default();
-    let wire = Wire::new(vec![Answer::Json(
-        Reply::json(429, "slow down").with_header("retry-after", "3"),
-    )]);
-    let source = Source::with(wire.clone());
-    let call = create_call(input, optional, call_params);
-    let create_hooks = hooks(NO_CALLBACKS, dispatcher, &NO_RESOLVER);
+    let source = Source::with(Wire::new(vec![Answer::Json(Reply::json(200, RESP_A))]));
+    let call = create_call(input, &optional, &call_params);
+    let create_hooks = hooks(callbacks, &dispatcher, &NO_RESOLVER);
     let deps = create_deps(&config, &source);
-    let error = match execute(&deps, ClientKind::Sync, &call, &create_hooks).await {
-        Ok(_) => panic!("the 429 fails"),
-        Err(error) => error,
-    };
-    let CreateError::Provider(provider) = error else {
-        panic!("a 429 is a provider error")
-    };
-    assert_eq!(provider.status_code, 429);
-    assert!(!provider.status_code_is_synthesized);
-    assert_eq!(provider.message, "slow down");
-    assert_eq!(provider.headers.get("retry-after"), Some(&models("\"3\"")));
-    let sent = wire.requests();
-    assert_eq!(sent.len(), 1);
-    assert_eq!(sent[0].stream, stream);
-}
-
-// transform, normalize and sign fail before the send catch and send nothing; the response transform runs after it
-async fn step_failure(
-    stage: FailStage,
-    input: &ResponsesInput,
-    empty: &Object,
-    call_params: &CreateParams,
-    dispatcher: &Dispatcher,
-) {
-    let config = config_with(Some(stage), None);
-    let wire = Wire::new(if stage == FailStage::Response {
-        vec![Answer::Json(Reply::json(200, RESP_A))]
-    } else {
-        Vec::new()
-    });
-    let source = Source::with(wire.clone());
-    let call = create_call(input, empty, call_params);
-    let create_hooks = hooks(NO_CALLBACKS, dispatcher, &NO_RESOLVER);
-    let deps = create_deps(&config, &source);
-    let error = match execute(&deps, ClientKind::Sync, &call, &create_hooks).await {
-        Ok(_) => panic!("the step fails"),
-        Err(error) => error,
-    };
-    match error {
-        CreateError::Step { stage: found, .. } => assert_eq!(found, expected_stage(stage)),
-        other => panic!("the failure is a step error: {other:?}"),
-    }
-    let sent = wire.requests();
-    if stage == FailStage::Response {
-        assert_eq!(sent.len(), 1);
-    } else {
-        assert!(sent.is_empty());
-    }
-}
-
-fn expected_stage(stage: FailStage) -> ErrorStage {
-    match stage {
-        FailStage::Transform => ErrorStage::Transform,
-        FailStage::Normalize => ErrorStage::Normalize,
-        FailStage::Sign => ErrorStage::Sign,
-        FailStage::Response => ErrorStage::Response,
-        FailStage::Url | FailStage::Validate => panic!("only the transfer steps fail here"),
-    }
-}
-
-// the optional map updates the request context first and generic params still land last
-async fn context_update(
-    input: &ResponsesInput,
-    call_params: &CreateParams,
-    dispatcher: &Dispatcher,
-) {
-    let optional = object(r#"{"stream":true,"input":"override","litellm_params":"ignored"}"#);
-    let fake = models("true");
-    let wire = Wire::new(vec![Answer::Json(Reply::json(200, RESP_A))]);
-    let source = Source::with(wire);
-    let mut call = create_call(input, &optional, call_params);
-    call.fake_stream = Some(&fake);
-    let config = Config::default();
-    let create_hooks = hooks(NO_CALLBACKS, dispatcher, &NO_RESOLVER);
-    let deps = create_deps(&config, &source);
-    let outcome = execute(&deps, ClientKind::Sync, &call, &create_hooks)
+    execute(&deps, ClientKind::Asynchronous, &call, &create_hooks)
         .await
-        .expect("the context call");
-    let CreateOutcome::Synthetic(synthetic) = outcome else {
-        panic!("the fake call returns synthetic events")
+        .expect("the agentic call");
+    assert_eq!(
+        recorder.calls(),
+        vec![
+            ScriptedCall::Gate(vec![expected.clone()]),
+            ScriptedCall::Loop(vec![expected]),
+        ]
+    );
+}
+
+// The timeout text parser's seeds, replayed through the same float() the handler calls
+#[rstest]
+fn replays_the_create_timeout_text_corpus(
+    #[files("fuzz/corpus/create_timeout_text/*")] path: PathBuf,
+) {
+    let bytes = fs::read(path).expect("the corpus file");
+    let Ok(text) = from_utf8(&bytes) else {
+        return;
     };
-    let context = synthetic.setup.request_data.expect("the request context");
-    assert_eq!(context.get("input"), Some(&models("\"override\"")));
-    assert_eq!(context.get("stream"), Some(&models("true")));
-    assert!(matches!(
-        context.get("litellm_params"),
-        Some(ModelJson::Object(_))
-    ));
+    drop(float_value(&PromptJson::Text(text.to_owned())));
 }
