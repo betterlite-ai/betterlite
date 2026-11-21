@@ -163,7 +163,7 @@ async fn patch_unbinds_an_identity_and_refuses_to_enable_it_again() {
         .expect("the agent is created");
     let agent_id = created.agent_id.as_str();
     let revision = database
-        .text(REVISION_SQL, agent_id)
+        .text(REVISION_SQL, &[&agent_id])
         .await
         .expect("the identity row exists");
     let unbind = patch(r#"{"identity": null}"#);
@@ -171,11 +171,11 @@ async fn patch_unbinds_an_identity_and_refuses_to_enable_it_again() {
         .patch_agent_in_db(agent_id, &unbind, "editor")
         .await
         .expect("the identity is unbound");
-    let inactive = database.text(ACTIVE_SQL, agent_id).await;
+    let inactive = database.text(ACTIVE_SQL, &[&agent_id]).await;
     assert_eq!(inactive.as_deref(), Some("false"));
-    let stamped = database.text(CLEARED_SQL, agent_id).await;
+    let stamped = database.text(CLEARED_SQL, &[&agent_id]).await;
     assert_eq!(stamped.as_deref(), Some("true"));
-    let changed = database.text(REVISION_SQL, agent_id).await;
+    let changed = database.text(REVISION_SQL, &[&agent_id]).await;
     assert_ne!(changed, Some(revision));
     let enable = patch(r#"{"enabled": true}"#);
     let refusal = store
