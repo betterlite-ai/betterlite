@@ -656,10 +656,11 @@ async fn fallback_uses_the_key_router_settings() {
     let mut script = fallback_script(&["key-model"], &["gpt"]);
     script.fallbacks = Some(vec![JsonValue::String(String::from("router-model"))]);
     let key = TestKey {
+        aliases: None,
         router_settings: Some(JsonValue::Object(data_from(
             r#"{"fallbacks": ["key-model"]}"#,
         ))),
-        ..TestKey::default()
+        team: None,
     };
     let (events, result) = fallback_run(script, r#"{"model": "gpt"}"#, key).await;
     result.unwrap();
