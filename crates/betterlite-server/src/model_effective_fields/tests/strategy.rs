@@ -38,15 +38,15 @@ fn refusal(incoming: Option<&JsonObject>, existing: Option<&JsonObject>) -> Opti
         ModelFieldError::ConfigWrite(_) => Some(Refusal::Config),
         ModelFieldError::Placement(_) => Some(Refusal::Placement),
         ModelFieldError::RouterModel(_) => Some(Refusal::Model),
-        other @ ModelFieldError::EmptyCredentialName
-        | other @ ModelFieldError::CredentialNotFound { .. }
-        | other @ ModelFieldError::CredentialLookup { .. }
-        | other @ ModelFieldError::RateLimitsMissing { .. }
-        | other @ ModelFieldError::PtuDisabled { .. }
-        | other @ ModelFieldError::PtuInvalid { .. }
-        | other @ ModelFieldError::Database(_)
-        | other @ ModelFieldError::Table(_)
-        | other @ ModelFieldError::Row { .. } => panic!("not a strategy refusal: {other:?}"),
+        other @ (ModelFieldError::EmptyCredentialName
+        | ModelFieldError::CredentialNotFound { .. }
+        | ModelFieldError::CredentialLookup { .. }
+        | ModelFieldError::RateLimitsMissing { .. }
+        | ModelFieldError::PtuDisabled { .. }
+        | ModelFieldError::PtuInvalid { .. }
+        | ModelFieldError::Database(_)
+        | ModelFieldError::Table(_)
+        | ModelFieldError::Row { .. }) => panic!("not a strategy refusal: {other:?}"),
     }
 }
 
