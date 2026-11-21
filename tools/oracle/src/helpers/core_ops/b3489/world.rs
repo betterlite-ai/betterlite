@@ -33,7 +33,6 @@ pub(super) struct ConfigError;
 #[error("the oracle does not run completions")]
 pub(super) struct ExecutorError;
 
-#[derive(Default)]
 pub(super) struct Config;
 
 impl GenerateContentProviderConfig for Config {
@@ -80,7 +79,6 @@ impl GenerateContentHttpConfig for Config {
     }
 }
 
-#[derive(Default)]
 pub(super) struct Source;
 
 pub(super) struct StubClient;
@@ -107,7 +105,6 @@ impl GenAiTransport for StubClient {
     }
 }
 
-#[derive(Default)]
 pub(super) struct Executor;
 
 impl CompletionExecutor for Executor {
@@ -126,7 +123,6 @@ impl CompletionExecutor for Executor {
 }
 
 // Every collaborator the entry points take, over stubs that fail when a case reaches a real provider
-#[derive(Default)]
 pub(super) struct World {
     pub(super) catalog: ModelCatalog,
     pub(super) names: BTreeSet<String>,

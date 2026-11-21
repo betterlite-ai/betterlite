@@ -1,7 +1,7 @@
 mod logging;
 mod world;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use betterlite_config::env_integer::timeout::RequestTimeout;
 use betterlite_core::api::genai::generate_content::error::GenerateContentFailure;
@@ -16,6 +16,7 @@ use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
 };
 use betterlite_logging::logging_privacy::request::Decision;
+use betterlite_models::catalog::ModelCatalog;
 use betterlite_openai::openai_base_config::CatalogCapabilities;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
@@ -27,7 +28,7 @@ use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 use self::logging::logging_state;
-use self::world::{ConfigError, ExecutorError, World};
+use self::world::{Config, ConfigError, Executor, ExecutorError, Source, World};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -66,16 +67,36 @@ impl Helper for Op {
 }
 
 async fn call(input: &Input) -> HelperResult {
-    let (world, capabilities) = stubbed_world();
     let kwargs = kwargs_of(input);
     let request = request_of(input, &kwargs);
+    let world = World {
+        catalog: ModelCatalog::default(),
+        names: BTreeSet::from([String::from("gemini"), String::from("openai")]),
+        environment: BTreeMap::new(),
+        config: Config,
+        source: Source,
+        executor: Executor,
+    };
+    let capabilities = CatalogCapabilities {
+        chat_models: BTreeSet::new(),
+        text_models: BTreeSet::new(),
+    };
+    run_entry(&world, &capabilities, &request, input).await
+}
+
+async fn run_entry(
+    world: &World,
+    capabilities: &CatalogCapabilities,
+    request: &GenerateContentRequest<'_>,
+    input: &Input,
+) -> HelperResult {
     let resolution = world.resolution();
     let configs = world.configs();
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).or_value_error()?;
     let deps = GenerateContentDeps {
         configs: &configs,
         resolution: &resolution,
-        capabilities: &capabilities,
+        capabilities,
         limits: SchemaLimits::default(),
         source: &world.source,
         supplied_client: None,
@@ -97,23 +118,10 @@ async fn call(input: &Input) -> HelperResult {
             let answer = mock_generate_content_response(input.mock_response.as_deref());
             return serde_json::to_value(answer).or_value_error();
         }
-        Entry::GenerateContent => generate_content(&deps, &request, &mut log).await,
-        Entry::GenerateContentStream => generate_content_stream(&deps, &request, &mut log).await,
+        Entry::GenerateContent => generate_content(&deps, request, &mut log).await,
+        Entry::GenerateContentStream => generate_content_stream(&deps, request, &mut log).await,
     };
     answer_of(outcome)
-}
-
-// The two provider names a case resolves through, with no capabilities, catalog or provider behind them
-fn stubbed_world() -> (World, CatalogCapabilities) {
-    let world = World {
-        names: BTreeSet::from([String::from("gemini"), String::from("openai")]),
-        ..Default::default()
-    };
-    let capabilities = CatalogCapabilities {
-        chat_models: BTreeSet::new(),
-        text_models: BTreeSet::new(),
-    };
-    (world, capabilities)
 }
 
 fn kwargs_of(input: &Input) -> Object {
