@@ -1,0 +1,11 @@
+kind: helper
+name: metadata-status-versus-payload-status
+call:
+  daily_records:
+    operation: status
+    payload: |-
+      {"status": "success", "startTime": "2025-01-02T03:04:05Z", "api_key": "k1", "model": "gpt-4o", "custom_llm_provider": "openai", "model_group": "gpt-4o", "prompt_tokens": 3, "completion_tokens": 4, "spend": 0.25, "metadata": "{\"status\": \"failure\"}"}
+    prices: {}
+    endpoints: {}
+env: {}
+compare: {ignore: []}

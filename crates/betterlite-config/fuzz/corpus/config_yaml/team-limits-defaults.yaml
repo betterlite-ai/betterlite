@@ -1,0 +1,13 @@
+litellm_settings:
+  default_team_params:
+    models: [gpt-4o, openai/gpt-4o-mini]
+    max_budget: 100.5
+    budget_duration: 30d
+    tpm_limit: 1000
+    rpm_limit: 100
+    team_member_permissions: [/key/generate, /key/update]
+    organization_id: org-1
+  default_internal_user_params:
+    available_teams: [team-a, team-b]
+general_settings:
+  disable_auto_add_proxy_admin_to_teams: true

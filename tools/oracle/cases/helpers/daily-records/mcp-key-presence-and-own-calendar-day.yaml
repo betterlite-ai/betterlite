@@ -1,0 +1,13 @@
+kind: helper
+name: mcp-key-presence-and-own-calendar-day
+call:
+  daily_records:
+    operation: common
+    entity: user
+    payload: |-
+      {"user": "u1", "startTime": "2025-01-02T00:30:00+09:00", "api_key": "k1", "mcp_namespaced_tool_name": null, "call_type": "acompletion", "prompt_tokens": 3, "completion_tokens": 4, "spend": 0.25, "metadata": "{\"status\": \"success\"}"}
+    prices: {}
+    endpoints:
+      acompletion: "/chat/completions"
+env: {}
+compare: {ignore: []}

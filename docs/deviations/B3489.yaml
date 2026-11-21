@@ -1,0 +1,21 @@
+task: B3489
+deviations:
+  - what: agenerate_content calls the async body directly, where LiteLLM runs the sync generate_content in the default thread pool with a copied contextvars context and awaits its result.
+    why: betterlite's setup, chat adapter and native handler are async-native, and B198 injects the call context that LiteLLM carries in context vars, so there is no synchronous call to offload.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L282-L289
+  - what: The chat-compatibility handler and the native HTTP handler are constructor-injected collaborators on GenerateContentDeps, not a module-level BaseLLMHTTPHandler singleton and an imported handler class.
+    why: betterlite's rules require constructor wiring, and both collaborators are typed seams in this crate rather than Python objects looked up at call time.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L40
+  - what: The native call's client arrives as a typed SuppliedClient on GenerateContentDeps instead of kwargs["client"], and litellm_metadata stays in the loose fields because B3488's GenerateContentCall has no member for it.
+    why: B3488's native seam takes the client through its own deps record and reads no litellm_metadata, and this task only dispatches into that seam; the logging state already carries the loose fields.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L368-L379
+  - what: The two stream entry points do not remove stream from the loose fields before the chat adapter call, where LiteLLM pops it.
+    why: B3486's typed adapter call carries stream as its own field and forwards no loose kwargs, so the pop has nothing to clean and no observable effect.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L440-L442
+  - what: A negative max_retries reaches the chat adapter as 0 and the completion call goes out with no retries, where LiteLLM copies the negative value into the completion request and the OpenAI client built from it runs zero attempts, so its assertion turns the call into a 500 APIConnectionError.
+    why: A working setup cannot rely on a negative retry count failing inside the client, and the adapter's typed params carry an unsigned count, so the value is narrowed to 0 and the call proceeds; positive and absent values pass through unchanged. The client construction that runs the empty retry loop is https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L381-L420.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/transformation.py#L399-L419
+kept_bugs:
+  - what: The sync generate_content_stream adapter call reaches the chat handler without the caller's tools, unlike generate_content and agenerate_content_stream, which forward them.
+    why: LiteLLM's call site never passes the tools argument, and a setup that passes tools today gets a request without them, so forwarding would change what the provider sees.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L535-L544

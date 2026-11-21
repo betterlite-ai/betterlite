@@ -1,0 +1,79 @@
+kind: probe
+name: context-fit-rechecked
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cache_cost_routing:
+        cache_aware_routing: true
+        cache_aware_routing_output_tokens: 1024
+        cache_aware_routing_timeout_ms: 2000
+        tier_labels: {}
+        tiers: {SIMPLE: small, MEDIUM: medium}
+        params:
+          - {tier: MEDIUM, model: medium, params: {max_tokens: 8192}}
+        response:
+          model: small
+          routing_decision:
+            router_model_name: probe
+            router_type: complexity
+            routed_model: small
+            cause: heuristic_scorer
+            tier: SIMPLE
+            conversation_continuing: true
+            signals: ["short (2 tokens)"]
+          session_affinity_ttl_seconds: 3600
+          litellm_params: {max_tokens: 512}
+        messages: [{role: user, content: hello}]
+        request_kwargs: {}
+        context_fit:
+          facts: {medium: {window: 10}}
+          needed: 100
+          buffer: "0.8"
+        choice:
+          model: medium
+          tier: MEDIUM
+          deployment_id: dep-medium
+          original_cost: "0.004"
+          estimated_cost: "0.001"
+        # the chosen model's 10-token window cannot hold the 100-token request, so the route stays
+        chooser_delay_ms: 0
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cache_cost_routing:
+        cache_aware_routing: true
+        cache_aware_routing_output_tokens: 1024
+        cache_aware_routing_timeout_ms: 2000
+        tier_labels: {}
+        tiers: {SIMPLE: small, MEDIUM: medium}
+        params:
+          - {tier: MEDIUM, model: medium, params: {max_tokens: 8192}}
+        response:
+          model: small
+          routing_decision:
+            router_model_name: probe
+            router_type: complexity
+            routed_model: small
+            cause: heuristic_scorer
+            tier: SIMPLE
+            conversation_continuing: true
+            signals: ["short (2 tokens)"]
+          session_affinity_ttl_seconds: 3600
+          litellm_params: {max_tokens: 512}
+        messages: [{role: user, content: hello}]
+        request_kwargs: {}
+        context_fit:
+          facts: {medium: {window: 1000}}
+          needed: 100
+          buffer: "0.8"
+        choice:
+          model: medium
+          tier: MEDIUM
+          deployment_id: dep-medium
+          original_cost: "0.004"
+          estimated_cost: "0.001"
+        # the same choice into a window that holds the request replaces the route
+        chooser_delay_ms: 0
+compare:
+  ignore: []

@@ -1,0 +1,46 @@
+kind: helper
+name: budget_presence_and_guards
+call:
+  team_limits:
+    function: budget_guard
+    request: {"team_id": "team-a", "max_budget": 50.0}
+    user_role: internal_user
+    existing: null
+calls:
+  - team_limits:
+      function: budget_guard
+      request: {"team_id": "team-a"}
+      user_role: internal_user
+      existing: null
+  - team_limits:
+      function: budget_guard
+      request: {"team_id": "team-a", "max_budget": null}
+      user_role: internal_user
+      existing: null
+  - team_limits:
+      function: budget_guard
+      request: {"team_id": "team-a"}
+      user_role: internal_user
+      existing: 100.0
+  - team_limits:
+      function: budget_guard
+      request: {"team_id": "team-a", "max_budget": 0.0}
+      user_role: internal_user
+      existing: 100.0
+  - team_limits:
+      function: budget_guard
+      request: {"team_id": "team-a", "max_budget": 0.0}
+      user_role: internal_user
+      existing: null
+  - team_limits:
+      function: budget_guard
+      request: {"team_id": "team-a", "max_budget": 100.0, "team_alias": "renamed"}
+      user_role: internal_user
+      existing: 100.0
+  - team_limits:
+      function: budget_guard
+      request: {"team_id": "team-a", "team_alias": "renamed"}
+      user_role: internal_user
+      existing: 100.0
+env: {}
+compare: {ignore: []}

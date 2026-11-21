@@ -1,0 +1,14 @@
+kind: helper
+name: genai-generate-stream-entry-string-mock-without-stream
+call:
+  b3489:
+    entry: generate_content_stream
+    model: gemini-2.5-flash
+    contents:
+      - role: user
+        parts:
+          - text: Hello
+    custom_llm_provider: gemini
+    mock_response: mocked answer
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,10 @@
+litellm_settings:
+  default_team_params:
+    models: gpt-4o
+    max_budget: not-a-number
+    budget_duration: 30d
+    tpm_limit: 1.5
+  default_internal_user_params:
+    available_teams: team-a
+general_settings:
+  disable_auto_add_proxy_admin_to_teams: 1

@@ -1,0 +1,50 @@
+kind: helper
+name: default_value_projection
+call:
+  team_limits:
+    function: default_team_param
+    field: models
+    params: {"models": ["gpt-4o", "claude-3"], "team_member_permissions": ["/team/info"], "max_budget": 40.5, "budget_duration": "1d", "tpm_limit": 5, "rpm_limit": 7, "organization_id": "org-1"}
+calls:
+  - team_limits:
+      function: default_team_param
+      field: team_member_permissions
+      params: {"models": ["gpt-4o", "claude-3"], "team_member_permissions": ["/team/info"], "max_budget": 40.5, "budget_duration": "1d", "tpm_limit": 5, "rpm_limit": 7, "organization_id": "org-1"}
+  - team_limits:
+      function: default_team_param
+      field: max_budget
+      params: {"models": ["gpt-4o", "claude-3"], "team_member_permissions": ["/team/info"], "max_budget": 40.5, "budget_duration": "1d", "tpm_limit": 5, "rpm_limit": 7, "organization_id": "org-1"}
+  - team_limits:
+      function: default_team_param
+      field: budget_duration
+      params: {"models": ["gpt-4o", "claude-3"], "team_member_permissions": ["/team/info"], "max_budget": 40.5, "budget_duration": "1d", "tpm_limit": 5, "rpm_limit": 7, "organization_id": "org-1"}
+  - team_limits:
+      function: default_team_param
+      field: tpm_limit
+      params: {"models": ["gpt-4o", "claude-3"], "team_member_permissions": ["/team/info"], "max_budget": 40.5, "budget_duration": "1d", "tpm_limit": 5, "rpm_limit": 7, "organization_id": "org-1"}
+  - team_limits:
+      function: default_team_param
+      field: rpm_limit
+      params: {"models": ["gpt-4o", "claude-3"], "team_member_permissions": ["/team/info"], "max_budget": 40.5, "budget_duration": "1d", "tpm_limit": 5, "rpm_limit": 7, "organization_id": "org-1"}
+  - team_limits:
+      function: default_team_param
+      field: organization_id
+      params: {"models": ["gpt-4o", "claude-3"], "team_member_permissions": ["/team/info"], "max_budget": 40.5, "budget_duration": "1d", "tpm_limit": 5, "rpm_limit": 7, "organization_id": "org-1"}
+  - team_limits:
+      function: default_team_param
+      field: max_budget
+      params: {"max_budget": 0.0}
+  - team_limits:
+      function: default_team_param
+      field: models
+      params: {"models": []}
+  - team_limits:
+      function: default_team_param
+      field: team_member_permissions
+      params: {"team_member_permissions": []}
+  - team_limits:
+      function: default_team_param
+      field: organization_id
+      params: {"organization_id": null}
+env: {}
+compare: {ignore: []}

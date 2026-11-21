@@ -1,0 +1,24 @@
+task: B6161
+deviations:
+  - what: The three adapters carry the guardrail, its configured name, the caller principal and the skip flags in GuardrailToApply<G>, a GuardrailContract wrapper built per call, because BaseTranslation takes no guardrail name and no principal argument.
+    why: LiteLLM's handler classes hold those attributes on the guardrail object itself; in Rust the trait only passes &Self::Guardrail, so the registry has to build that value per call and the adapters read the name and flags from it.
+    link: ""
+  - what: AnthropicTranslation::get_structured_messages keeps BaseTranslation's default and returns None.
+    why: B3675's get_structured_messages is async and the trait method is sync, so the adapter cannot await it; B3679's registry sees no structured messages for Anthropic requests.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L507
+  - what: ResponsesTranslation::extract_request_tool_names keeps BaseTranslation's default and returns an empty list.
+    why: The Responses handler's extract_request_tool_names is owned by B888 and does not exist in the Rust module yet; the adapter calls the handler function as soon as B888 lands it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L662
+  - what: AnthropicTranslation::extract_request_tool_names keeps BaseTranslation's default and returns an empty list.
+    why: The Anthropic handler's extract_request_tool_names is owned by B888 and does not exist in the Rust module yet; the adapter calls the handler function as soon as B888 lands it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L918
+  - what: AnthropicTranslation::post_call_hook_response returns the response unchanged when B3675's translation fails, and logs the error.
+    why: BaseTranslation's post_call_hook_response is infallible, so a value that cannot be read as a chat completion stays as it is instead of failing the request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L306
+  - what: ChatTranslation::process_input_messages discards B3668's not-run reason instead of recording a not_run guardrail status.
+    why: BaseTranslation's process_input_messages returns () and the adapter has no logging record to write the reason to; B3680 owns the record.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/handler.py#L218-L225
+  - what: ChatTranslation::get_streaming_scan_key returns None when B3669's tool-call fingerprint fails.
+    why: BaseTranslation's get_streaming_scan_key returns Option, so the FingerprintError has no channel out of the adapter; LiteLLM's fingerprint raises there.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/handler.py#L829-L838
+kept_bugs: []

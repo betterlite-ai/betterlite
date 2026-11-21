@@ -1,0 +1,46 @@
+task: B1743
+deviations:
+  - what: >-
+      Oversized serialized daily metadata fails with the same typed spend-record limit used by
+      the Redis decoder instead of being parsed without a bound.
+    why: >-
+      The daily path must not allocate without a bound when it receives serialized records from
+      storage or a collector.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L2721-L2724
+  - what: >-
+      A daily queue key renders an absent model or custom_llm_provider as the None text, where
+      the source's key f-string indexes payload['model'] and payload['custom_llm_provider'] and
+      raises KeyError, so the whole daily row is dropped by the caller's exception guard.
+    why: >-
+      The builder's own gates accept a payload that carries mcp_namespaced_tool_name and no
+      model, which is the MCP path this task owns; dropping its daily spend is lost data no
+      working setup can rely on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L2816-L2819
+  - what: >-
+      A present null api_key fails the row with a typed invalid-field error naming api_key,
+      where the source builds a transaction carrying None and its upsert later normalizes that
+      key column to the empty string.
+    why: >-
+      SpendLogsPayload declares api_key as str and the daily transaction type betterlite builds
+      carries a non-optional api_key, so a null is a wrong-typed value reported as an error
+      naming its field instead of a row charged to an empty api_key column.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L2761-L2763
+  - what: >-
+      An absent or null metadata value reads as the empty object, so the row still builds with a
+      successful status and no internal-call marker, where the source indexes payload["metadata"]
+      and hands it to json.loads before its own try block, so a KeyError or TypeError drops the
+      daily row.
+    why: >-
+      metadata is required on SpendLogsPayload and a working proxy always logs it, so no setup
+      relies on the drop; betterlite reads an absent or null value as the field's default, and
+      losing a request's spend and tokens because its metadata string is missing is lost data.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L2723
+  - what: >-
+      A request_duration_ms integer beyond the signed 64-bit range counts as no timed request,
+      where the source accepts any nonnegative Python int and writes it to the row.
+    why: >-
+      The daily column is a 64-bit integer, so the source's own upsert already fails and drops
+      the row for such a value; betterlite keeps the row and leaves the request untimed instead
+      of losing its spend and tokens.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L262-L272
+kept_bugs: []

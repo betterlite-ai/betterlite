@@ -1,0 +1,10 @@
+kind: helper
+name: foundry-rejected-fields-trigger-seed
+call:
+  foundry_rejected_fields:
+    triggers:
+      - {error: "Extra inputs are not permitted tools[0].extra", request_drop_params: false, global_drop_params: false}
+      - {error: "unknown field: parameter index is not a valid field", request_drop_params: false, global_drop_params: true}
+    bounds: true
+env: {}
+compare: {ignore: []}

@@ -110,6 +110,9 @@ fn stage_input(
 ) -> Result<StageInput, StageFailure> {
     match backend {
         AuthBackend::MasterKey => Ok(StageInput::MasterKey(extract_key(request.headers()))),
+        AuthBackend::AuthRequestPolicy => Ok(StageInput::AuthRequestPolicy(Box::new(
+            auth_request_policy::stage_input(request, authenticated, body)?,
+        ))),
         AuthBackend::RequestBodySafety => Ok(StageInput::RequestBodySafety(Box::new(
             safety_stage_input(request, authenticated, body)?,
         ))),
@@ -197,6 +200,7 @@ async fn prefetch_tag_budgets(input: StageInput) -> Result<StageInput, StageFail
             Ok(StageInput::AuthTagBudgets(stage))
         }
         other @ (StageInput::MasterKey(_)
+        | StageInput::AuthRequestPolicy(_)
         | StageInput::RequestBodySafety(_)
         | StageInput::AuthRequestModels(_)
         | StageInput::AuthModelPatterns(_)

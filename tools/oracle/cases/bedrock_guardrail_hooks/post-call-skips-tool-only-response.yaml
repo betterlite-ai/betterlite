@@ -1,0 +1,48 @@
+kind: helper
+name: post-call-skips-tool-only-response
+call:
+  b3726:
+    hook: post_call
+    call_type: acompletion
+    guardrail:
+      name: bedrock-hooks
+      identifier: gr-abc123
+      version: "1"
+      disable_exception_on_block: false
+      latest_role_message_only: false
+      event_hook: post_call
+      buffer_until_moderated: null
+      streaming_end_of_stream_only: null
+      buffer_release_on_scan: null
+    data:
+      model: gpt-4o
+      messages:
+        - role: user
+          content: what is the weather
+      metadata:
+        guardrails:
+          - bedrock-hooks
+    response:
+      id: chatcmpl-tool
+      object: chat.completion
+      created: 1
+      model: gpt-4o
+      choices:
+        - index: 0
+          message:
+            role: assistant
+            content: null
+            tool_calls:
+              - id: call_1
+                type: function
+                function:
+                  name: get_weather
+                  arguments: "{}"
+          finish_reason: tool_calls
+    chunks: []
+    sse_chunks: []
+    request_route: null
+    keepalive_interval_seconds: null
+    replies: []
+env: {}
+compare: {ignore: []}
