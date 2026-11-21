@@ -1,0 +1,37 @@
+kind: helper
+name: limit-source-precedence
+call:
+  model_group_info:
+    {
+      "model_group": "g",
+      "model_list": [
+        {
+          "model_name": "g",
+          "litellm_params": {
+            "model": "openai/b846-alpha",
+            "tpm": 20,
+            "itpm": 7
+          },
+          "model_info": {
+            "id": "a",
+            "tpm": 10,
+            "rpm": 4,
+            "otpm": 8
+          },
+          "tpm": 30
+        }
+      ],
+      "model_group_alias": {},
+      "deployment_info": {
+        "a": {
+          "mode": "chat"
+        }
+      },
+      "model_cost": {},
+      "parameters": {},
+      "lookup_error": false,
+      "provider_error": "none",
+      "missing_ids": []
+    }
+env: {}
+compare: {ignore: []}

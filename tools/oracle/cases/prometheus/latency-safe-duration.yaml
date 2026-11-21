@@ -1,0 +1,15 @@
+kind: helper
+name: prometheus-latency-safe-duration
+call:
+  b3878:
+    function: safe_duration
+    duration_calls:
+      - {start_time: 1000, end_time: 1001}
+      - {start_time: 1000.5, end_time: 1000.75}
+      - {start_time: 1000.75, end_time: 1000.5}
+      - {start_time: null, end_time: 1001}
+      - {start_time: 1000, end_time: null}
+      - {start_time: null, end_time: null}
+      - {start_time: 1000.5, end_time: 1000.5}
+env: {}
+compare: {ignore: []}
