@@ -16,25 +16,30 @@ pub enum HealthProbeMode {
     Evaluation,
 }
 impl HealthProbeMode {
+    const ALL: [Self; 14] = [
+        Self::Chat,
+        Self::Completion,
+        Self::Embedding,
+        Self::AudioSpeech,
+        Self::AudioTranscription,
+        Self::ImageGeneration,
+        Self::ImageEdit,
+        Self::VideoGeneration,
+        Self::Rerank,
+        Self::Realtime,
+        Self::Batch,
+        Self::Responses,
+        Self::Ocr,
+        Self::Evaluation,
+    ];
     #[must_use]
-    pub const fn from_name(name: &str) -> Option<Self> {
-        match name {
-            "chat" => Some(Self::Chat),
-            "completion" => Some(Self::Completion),
-            "embedding" => Some(Self::Embedding),
-            "audio_speech" => Some(Self::AudioSpeech),
-            "audio_transcription" => Some(Self::AudioTranscription),
-            "image_generation" => Some(Self::ImageGeneration),
-            "image_edit" => Some(Self::ImageEdit),
-            "video_generation" => Some(Self::VideoGeneration),
-            "rerank" => Some(Self::Rerank),
-            "realtime" => Some(Self::Realtime),
-            "batch" => Some(Self::Batch),
-            "responses" => Some(Self::Responses),
-            "ocr" => Some(Self::Ocr),
-            "evaluation" => Some(Self::Evaluation),
-            _ => None,
+    pub fn from_name(name: &str) -> Option<Self> {
+        for mode in Self::ALL {
+            if mode.name() == name {
+                return Some(mode);
+            }
         }
+        None
     }
     #[must_use]
     pub const fn name(self) -> &'static str {

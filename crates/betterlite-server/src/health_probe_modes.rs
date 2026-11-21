@@ -11,7 +11,6 @@ pub mod params;
 pub mod plan;
 pub mod response;
 pub mod run;
-#[cfg(test)]
 mod tests;
 pub mod tracking;
 pub mod wildcard;

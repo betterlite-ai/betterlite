@@ -21,11 +21,11 @@ pub trait HealthProbeLogging: Send + Sync {
 pub struct ProbeLogging {
     state: Arc<Mutex<LoggingState>>,
 }
-impl ProbeLogging {
-    #[must_use]
-    pub fn new(state: LoggingState) -> Self {
-        let shared = Arc::new(Mutex::new(state));
-        Self { state: shared }
+impl From<LoggingState> for ProbeLogging {
+    fn from(state: LoggingState) -> Self {
+        Self {
+            state: Arc::new(Mutex::new(state)),
+        }
     }
 }
 impl HealthProbeLogging for ProbeLogging {

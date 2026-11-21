@@ -46,65 +46,58 @@ pub struct HealthProbeParams {
     pub litellm_logging_obj: Option<Arc<dyn HealthProbeLogging>>,
 }
 impl HealthProbeParams {
-    pub fn from_map(parameters: IndexMap<String, Value>) -> Result<Self, HealthProbeError> {
-        let mut params = Self {
+    pub fn from_map(mut parameters: IndexMap<String, Value>) -> Result<Self, HealthProbeError> {
+        let model = take_text(&mut parameters, "model")?;
+        let api_base = take_text(&mut parameters, "api_base")?;
+        let api_version = take_text(&mut parameters, "api_version")?;
+        let custom_llm_provider = take_text(&mut parameters, "custom_llm_provider")?;
+        let api_key = take_text(&mut parameters, "api_key")?
+            .as_option()
+            .cloned()
+            .map(SecretString::from);
+        let max_tokens = take_json(&mut parameters, "max_tokens");
+        let voice = take_json(&mut parameters, "voice");
+        let messages = take_json(&mut parameters, "messages");
+        let fallbacks = take_json(&mut parameters, "fallbacks");
+        let litellm_metadata = take_json(&mut parameters, "litellm_metadata");
+        let cache = take_json(&mut parameters, "cache");
+        let params = Self {
+            model,
+            api_base,
+            api_key,
+            api_version,
+            custom_llm_provider,
+            max_tokens,
+            voice,
+            messages,
+            fallbacks,
+            litellm_metadata,
+            cache,
             parameters,
-            ..Self::default()
+            litellm_logging_obj: None,
         };
-        params.model = params.take_text("model")?;
-        params.api_base = params.take_text("api_base")?;
-        params.api_version = params.take_text("api_version")?;
-        params.custom_llm_provider = params.take_text("custom_llm_provider")?;
-        params.api_key = params.take_secret("api_key")?;
-        params.max_tokens = params.take_json("max_tokens");
-        params.voice = params.take_json("voice");
-        params.messages = params.take_json("messages");
-        params.fallbacks = params.take_json("fallbacks");
-        params.litellm_metadata = params.take_json("litellm_metadata");
-        params.cache = params.take_json("cache");
         Ok(params)
-    }
-    fn take_text(&mut self, key: &'static str) -> Result<Param<String>, HealthProbeError> {
-        match self.parameters.shift_remove(key) {
-            None => Ok(Param::Absent),
-            Some(Value::Null) => Ok(Param::Null),
-            Some(Value::String(text)) => Ok(Param::Value(text)),
-            Some(_) => Err(HealthProbeError::ParameterType { key }),
-        }
-    }
-    fn take_secret(&mut self, key: &'static str) -> Result<Option<SecretString>, HealthProbeError> {
-        match self.parameters.shift_remove(key) {
-            None | Some(Value::Null) => Ok(None),
-            Some(Value::String(text)) => Ok(Some(SecretString::from(text))),
-            Some(_) => Err(HealthProbeError::ParameterType { key }),
-        }
-    }
-    fn take_json(&mut self, key: &'static str) -> Param<Json> {
-        match self.parameters.shift_remove(key) {
-            None => Param::Absent,
-            Some(value) => Param::Value(json_from_value(value)),
-        }
     }
     // the provider call kwargs, without api_key and the logging object: both travel as typed fields
     #[must_use]
     pub fn call_parameters(&self, include_messages: bool) -> IndexMap<String, Json> {
         let mut parameters = IndexMap::new();
-        insert_text(&mut parameters, "model", &self.model);
-        insert_text(&mut parameters, "api_base", &self.api_base);
-        insert_text(&mut parameters, "api_version", &self.api_version);
-        insert_text(
+        insert_parameter(&mut parameters, "model", &self.model);
+        insert_parameter(&mut parameters, "api_base", &self.api_base);
+        insert_parameter(&mut parameters, "api_version", &self.api_version);
+        insert_parameter(
             &mut parameters,
             "custom_llm_provider",
             &self.custom_llm_provider,
         );
-        insert_json(&mut parameters, "max_tokens", &self.max_tokens);
-        insert_json(&mut parameters, "voice", &self.voice);
+        insert_parameter(&mut parameters, "max_tokens", &self.max_tokens);
+        insert_parameter(&mut parameters, "voice", &self.voice);
         if include_messages {
-            insert_json(&mut parameters, "messages", &self.messages);
+            insert_parameter(&mut parameters, "messages", &self.messages);
         }
-        insert_json(&mut parameters, "fallbacks", &self.fallbacks);
-        insert_json(&mut parameters, "litellm_metadata", &self.litellm_metadata);
-        insert_json(&mut parameters, "cache", &self.cache);
+        insert_parameter(&mut parameters, "fallbacks", &self.fallbacks);
+        insert_parameter(&mut parameters, "litellm_metadata", &self.litellm_metadata);
+        insert_parameter(&mut parameters, "cache", &self.cache);
         for (key, value) in &self.parameters {
             if include_messages || key != "messages" {
                 parameters.insert(key.clone(), json_from_value(value.clone()));
@@ -113,25 +106,48 @@ impl HealthProbeParams {
         parameters
     }
 }
-fn insert_text(parameters: &mut IndexMap<String, Json>, key: &'static str, value: &Param<String>) {
-    match value {
-        Param::Absent => {}
-        Param::Null => {
-            parameters.insert(key.to_owned(), Json::Null);
-        }
-        Param::Value(text) => {
-            parameters.insert(key.to_owned(), Json::Text(text.clone()));
-        }
+fn take_text(
+    parameters: &mut IndexMap<String, Value>,
+    key: &'static str,
+) -> Result<Param<String>, HealthProbeError> {
+    match parameters.shift_remove(key) {
+        None => Ok(Param::Absent),
+        Some(Value::Null) => Ok(Param::Null),
+        Some(Value::String(text)) => Ok(Param::Value(text)),
+        Some(_) => Err(HealthProbeError::ParameterType { key }),
     }
 }
-fn insert_json(parameters: &mut IndexMap<String, Json>, key: &'static str, value: &Param<Json>) {
+fn take_json(parameters: &mut IndexMap<String, Value>, key: &'static str) -> Param<Json> {
+    match parameters.shift_remove(key) {
+        None => Param::Absent,
+        Some(value) => Param::Value(json_from_value(value)),
+    }
+}
+trait ParameterJson {
+    fn parameter_json(&self) -> Json;
+}
+impl ParameterJson for String {
+    fn parameter_json(&self) -> Json {
+        Json::Text(self.clone())
+    }
+}
+impl ParameterJson for Json {
+    fn parameter_json(&self) -> Json {
+        self.clone()
+    }
+}
+fn insert_parameter<T: ParameterJson>(
+    parameters: &mut IndexMap<String, Json>,
+    key: &'static str,
+    value: &Param<T>,
+) {
     match value {
         Param::Absent => {}
         Param::Null => {
             parameters.insert(key.to_owned(), Json::Null);
         }
-        Param::Value(json) => {
-            parameters.insert(key.to_owned(), json.clone());
+        Param::Value(inner) => {
+            parameters.insert(key.to_owned(), inner.parameter_json());
         }
     }
 }

@@ -12,6 +12,7 @@ use super::params::HealthProbeParams;
 use super::plan::HealthProbePlan;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::audio_file_input::HEALTH_CHECK_AUDIO;
+use indexmap::IndexMap;
 struct ProbeRequest<'plan> {
     model: &'plan str,
     custom_llm_provider: &'plan str,
@@ -24,6 +25,7 @@ pub async fn run_health_probe(
     backend: &dyn HealthProbeBackend,
     documents: &dyn OcrHealthDocuments,
 ) -> Result<HealthProbeReply, HealthProbeError> {
+    let mode = plan.mode;
     let request = ProbeRequest {
         model: &plan.model,
         custom_llm_provider: &plan.custom_llm_provider,
@@ -31,25 +33,60 @@ pub async fn run_health_probe(
         prompt: plan.prompt.as_deref(),
         input: plan.input.as_deref(),
     };
-    match plan.mode {
+    match mode {
         HealthProbeMode::Chat => {
-            let call = probe_call(request.params.call_parameters(true), request.params);
-            backend.chat(call).await
+            backend
+                .chat(probe_call(mode_parameters(mode, &request)?, request.params))
+                .await
         }
-        HealthProbeMode::Completion => run_completion(&request, backend).await,
-        HealthProbeMode::Embedding => run_embedding(&request, backend).await,
-        HealthProbeMode::AudioSpeech => run_audio_speech(&request, backend).await,
-        HealthProbeMode::AudioTranscription => run_audio_transcription(&request, backend).await,
-        HealthProbeMode::ImageGeneration => run_image_generation(&request, backend).await,
+        HealthProbeMode::Completion => {
+            backend
+                .completion(probe_call(mode_parameters(mode, &request)?, request.params))
+                .await
+        }
+        HealthProbeMode::Embedding => {
+            backend
+                .embedding(probe_call(mode_parameters(mode, &request)?, request.params))
+                .await
+        }
+        HealthProbeMode::AudioSpeech => {
+            backend
+                .audio_speech(probe_call(mode_parameters(mode, &request)?, request.params))
+                .await
+        }
+        HealthProbeMode::ImageGeneration => {
+            backend
+                .image_generation(probe_call(mode_parameters(mode, &request)?, request.params))
+                .await
+        }
+        HealthProbeMode::VideoGeneration => {
+            backend
+                .video_generation(probe_call(mode_parameters(mode, &request)?, request.params))
+                .await
+        }
+        HealthProbeMode::Rerank => {
+            backend
+                .rerank(probe_call(mode_parameters(mode, &request)?, request.params))
+                .await
+        }
+        HealthProbeMode::Responses => {
+            backend
+                .responses(probe_call(mode_parameters(mode, &request)?, request.params))
+                .await
+        }
+        HealthProbeMode::AudioTranscription => {
+            let call = audio_transcription_call(mode, &request)?;
+            backend.audio_transcription(call).await
+        }
         HealthProbeMode::ImageEdit => probe_image_edit(request.params, backend).await,
-        HealthProbeMode::VideoGeneration => run_video_generation(&request, backend).await,
-        HealthProbeMode::Rerank => run_rerank(&request, backend).await,
-        HealthProbeMode::Realtime => run_realtime(&request, backend).await,
+        HealthProbeMode::Realtime => backend.realtime(realtime_call(&request)).await,
         HealthProbeMode::Batch => {
             probe_batch_mode(request.custom_llm_provider, request.params, backend).await
         }
-        HealthProbeMode::Responses => run_responses(&request, backend).await,
-        HealthProbeMode::Ocr => run_ocr(&request, documents, backend).await,
+        HealthProbeMode::Ocr => {
+            let call = ocr_call(mode, &request, documents)?;
+            backend.ocr(call).await
+        }
         HealthProbeMode::Evaluation => {
             let call =
                 evaluation_call(request.params, request.prompt, request.custom_llm_provider)?;
@@ -57,139 +94,88 @@ pub async fn run_health_probe(
         }
     }
 }
-fn prompt_or<'text>(prompt: Option<&'text str>, fallback: &'text str) -> &'text str {
-    match prompt {
-        Some(text) if !text.is_empty() => text,
-        _ => fallback,
-    }
-}
-async fn run_completion(
+fn mode_parameters(
+    mode: HealthProbeMode,
     request: &ProbeRequest<'_>,
-    backend: &dyn HealthProbeBackend,
-) -> Result<HealthProbeReply, HealthProbeError> {
-    let mut parameters = request.params.call_parameters(false);
-    let prompt = prompt_or(request.prompt, "test");
-    add_parameter(
-        &mut parameters,
-        "prompt",
-        Json::Text(prompt.to_owned()),
-        HealthProbeMode::Completion,
-    )?;
-    backend
-        .completion(probe_call(parameters, request.params))
-        .await
-}
-async fn run_embedding(
-    request: &ProbeRequest<'_>,
-    backend: &dyn HealthProbeBackend,
-) -> Result<HealthProbeReply, HealthProbeError> {
-    let mut parameters = request.params.call_parameters(false);
-    let inputs: Vec<Json> = match request.input {
-        Some(values) if !values.is_empty() => values.iter().cloned().map(Json::Text).collect(),
-        _ => vec![Json::Text("test".to_owned())],
-    };
-    add_parameter(
-        &mut parameters,
-        "input",
-        Json::List(inputs),
-        HealthProbeMode::Embedding,
-    )?;
-    backend
-        .embedding(probe_call(parameters, request.params))
-        .await
-}
-async fn run_audio_speech(
-    request: &ProbeRequest<'_>,
-    backend: &dyn HealthProbeBackend,
-) -> Result<HealthProbeReply, HealthProbeError> {
-    let mut parameters = request.params.call_parameters(false);
-    if !parameters.contains_key("voice") {
+) -> Result<IndexMap<String, Json>, HealthProbeError> {
+    let mut parameters = request
+        .params
+        .call_parameters(mode == HealthProbeMode::Chat);
+    if mode == HealthProbeMode::AudioSpeech && !parameters.contains_key("voice") {
         parameters.insert("voice".to_owned(), Json::Text("alloy".to_owned()));
     }
-    let prompt = prompt_or(request.prompt, "test");
-    add_parameter(
-        &mut parameters,
-        "input",
-        Json::Text(prompt.to_owned()),
-        HealthProbeMode::AudioSpeech,
-    )?;
-    backend
-        .audio_speech(probe_call(parameters, request.params))
-        .await
+    for (key, value) in added_parameters(mode, request) {
+        add_parameter(&mut parameters, key, value, mode)?;
+    }
+    Ok(parameters)
 }
-async fn run_audio_transcription(
+fn added_parameters(
+    mode: HealthProbeMode,
     request: &ProbeRequest<'_>,
-    backend: &dyn HealthProbeBackend,
-) -> Result<HealthProbeReply, HealthProbeError> {
-    let parameters = request.params.call_parameters(false);
-    ensure_absent(&parameters, "file", HealthProbeMode::AudioTranscription)?;
+) -> Vec<(&'static str, Json)> {
+    match mode {
+        HealthProbeMode::Completion => vec![(
+            "prompt",
+            Json::Text(prompt_or(request.prompt, "test").to_owned()),
+        )],
+        HealthProbeMode::AudioSpeech | HealthProbeMode::Responses => vec![(
+            "input",
+            Json::Text(prompt_or(request.prompt, "test").to_owned()),
+        )],
+        HealthProbeMode::Embedding => {
+            let inputs = match request.input {
+                Some(values) if !values.is_empty() => {
+                    values.iter().cloned().map(Json::Text).collect()
+                }
+                None | Some(_) => vec![Json::Text("test".to_owned())],
+            };
+            vec![("input", Json::List(inputs))]
+        }
+        HealthProbeMode::ImageGeneration => vec![(
+            "prompt",
+            request
+                .prompt
+                .map_or(Json::Null, |text| Json::Text(text.to_owned())),
+        )],
+        HealthProbeMode::VideoGeneration => vec![(
+            "prompt",
+            Json::Text(prompt_or(request.prompt, "test video generation").to_owned()),
+        )],
+        HealthProbeMode::Rerank => vec![
+            (
+                "query",
+                Json::Text(prompt_or(request.prompt, "").to_owned()),
+            ),
+            (
+                "documents",
+                Json::List(vec![Json::Text("my sample text".to_owned())]),
+            ),
+        ],
+        HealthProbeMode::Chat
+        | HealthProbeMode::AudioTranscription
+        | HealthProbeMode::ImageEdit
+        | HealthProbeMode::Realtime
+        | HealthProbeMode::Batch
+        | HealthProbeMode::Ocr
+        | HealthProbeMode::Evaluation => Vec::new(),
+    }
+}
+fn audio_transcription_call(
+    mode: HealthProbeMode,
+    request: &ProbeRequest<'_>,
+) -> Result<AudioTranscriptionCall, HealthProbeError> {
+    let parameters = mode_parameters(mode, request)?;
+    ensure_absent(&parameters, "file", mode)?;
     let call = AudioTranscriptionCall {
         parameters,
         file: HEALTH_CHECK_AUDIO.to_vec(),
         api_key: request.params.api_key.clone(),
         logging: request.params.litellm_logging_obj.clone(),
     };
-    backend.audio_transcription(call).await
+    Ok(call)
 }
-async fn run_image_generation(
-    request: &ProbeRequest<'_>,
-    backend: &dyn HealthProbeBackend,
-) -> Result<HealthProbeReply, HealthProbeError> {
-    let mut parameters = request.params.call_parameters(false);
-    let prompt = request
-        .prompt
-        .map_or(Json::Null, |text| Json::Text(text.to_owned()));
-    add_parameter(
-        &mut parameters,
-        "prompt",
-        prompt,
-        HealthProbeMode::ImageGeneration,
-    )?;
-    backend
-        .image_generation(probe_call(parameters, request.params))
-        .await
-}
-async fn run_video_generation(
-    request: &ProbeRequest<'_>,
-    backend: &dyn HealthProbeBackend,
-) -> Result<HealthProbeReply, HealthProbeError> {
-    let mut parameters = request.params.call_parameters(false);
-    let prompt = prompt_or(request.prompt, "test video generation");
-    add_parameter(
-        &mut parameters,
-        "prompt",
-        Json::Text(prompt.to_owned()),
-        HealthProbeMode::VideoGeneration,
-    )?;
-    backend
-        .video_generation(probe_call(parameters, request.params))
-        .await
-}
-async fn run_rerank(
-    request: &ProbeRequest<'_>,
-    backend: &dyn HealthProbeBackend,
-) -> Result<HealthProbeReply, HealthProbeError> {
-    let mut parameters = request.params.call_parameters(false);
-    let query = prompt_or(request.prompt, "");
-    add_parameter(
-        &mut parameters,
-        "query",
-        Json::Text(query.to_owned()),
-        HealthProbeMode::Rerank,
-    )?;
-    add_parameter(
-        &mut parameters,
-        "documents",
-        Json::List(vec![Json::Text("my sample text".to_owned())]),
-        HealthProbeMode::Rerank,
-    )?;
-    backend.rerank(probe_call(parameters, request.params)).await
-}
-async fn run_realtime(
-    request: &ProbeRequest<'_>,
-    backend: &dyn HealthProbeBackend,
-) -> Result<HealthProbeReply, HealthProbeError> {
-    let call = RealtimeCall {
+fn realtime_call(request: &ProbeRequest<'_>) -> RealtimeCall {
+    RealtimeCall {
         model: request.model.to_owned(),
         custom_llm_provider: request.custom_llm_provider.to_owned(),
         api_base: request.params.api_base.as_option().cloned(),
@@ -197,32 +183,15 @@ async fn run_realtime(
         api_version: request.params.api_version.as_option().cloned(),
         model_params: request.params.call_parameters(true),
         logging: request.params.litellm_logging_obj.clone(),
-    };
-    backend.realtime(call).await
+    }
 }
-async fn run_responses(
-    request: &ProbeRequest<'_>,
-    backend: &dyn HealthProbeBackend,
-) -> Result<HealthProbeReply, HealthProbeError> {
-    let mut parameters = request.params.call_parameters(false);
-    let input = prompt_or(request.prompt, "test");
-    add_parameter(
-        &mut parameters,
-        "input",
-        Json::Text(input.to_owned()),
-        HealthProbeMode::Responses,
-    )?;
-    backend
-        .responses(probe_call(parameters, request.params))
-        .await
-}
-async fn run_ocr(
+fn ocr_call(
+    mode: HealthProbeMode,
     request: &ProbeRequest<'_>,
     documents: &dyn OcrHealthDocuments,
-    backend: &dyn HealthProbeBackend,
-) -> Result<HealthProbeReply, HealthProbeError> {
-    let parameters = request.params.call_parameters(false);
-    ensure_absent(&parameters, "document", HealthProbeMode::Ocr)?;
+) -> Result<OcrCall, HealthProbeError> {
+    let parameters = mode_parameters(mode, request)?;
+    ensure_absent(&parameters, "document", mode)?;
     let document = documents.health_check_document(request.model, request.custom_llm_provider)?;
     let call = OcrCall {
         parameters,
@@ -230,5 +199,11 @@ async fn run_ocr(
         api_key: request.params.api_key.clone(),
         logging: request.params.litellm_logging_obj.clone(),
     };
-    backend.ocr(call).await
+    Ok(call)
+}
+fn prompt_or<'text>(prompt: Option<&'text str>, fallback: &'text str) -> &'text str {
+    match prompt {
+        Some(text) if !text.is_empty() => text,
+        None | Some(_) => fallback,
+    }
 }

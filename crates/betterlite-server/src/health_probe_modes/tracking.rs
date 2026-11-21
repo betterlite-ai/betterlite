@@ -7,7 +7,7 @@ use betterlite_core::api::request_principal_metadata::PrincipalFacts;
 use betterlite_core::api::request_principal_metadata::principal::add_principal_metadata;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-pub const HEALTH_CHECK_SERVICE_ACCOUNT_NAME: &str = "litellm-internal-health-check";
+pub const SERVICE_ACCOUNT: &str = "litellm-internal-health-check";
 const METADATA_VARIABLE_NAME: &str = "litellm_metadata";
 const TAGS_KEY: &str = "tags";
 pub fn add_tracking_information(
@@ -18,9 +18,7 @@ pub fn add_tracking_information(
     let mut metadata = IndexMap::new();
     metadata.insert(
         TAGS_KEY.to_owned(),
-        Json::List(vec![Json::Text(
-            HEALTH_CHECK_SERVICE_ACCOUNT_NAME.to_owned(),
-        )]),
+        Json::List(vec![Json::Text(SERVICE_ACCOUNT.to_owned())]),
     );
     data.insert(METADATA_VARIABLE_NAME.to_owned(), Json::Object(metadata));
     add_principal_metadata(&mut data, MetadataField::LitellmMetadata, &principal)

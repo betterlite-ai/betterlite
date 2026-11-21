@@ -5,7 +5,7 @@ use super::logging::ProbeLoggingUpdate;
 use super::params::HealthProbeParams;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-pub const LIST_BATCHES_SUPPORTED_PROVIDERS: [&str; 6] = [
+pub const BATCH_PROVIDERS: [&str; 6] = [
     "openai",
     "azure",
     "hosted_vllm",
@@ -20,7 +20,7 @@ pub async fn probe_batch_mode(
 ) -> Result<HealthProbeReply, HealthProbeError> {
     let filtered = params.call_parameters(false);
     update_logging(params, &filtered)?;
-    if !LIST_BATCHES_SUPPORTED_PROVIDERS.contains(&custom_llm_provider) {
+    if !BATCH_PROVIDERS.contains(&custom_llm_provider) {
         return backend
             .chat(probe_call(params.call_parameters(true), params))
             .await;
