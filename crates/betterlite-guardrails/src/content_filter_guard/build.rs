@@ -227,7 +227,7 @@ fn build_competitor(
 }
 
 fn guardrail_categories(configured: Option<&[ContentFilterCategoryConfig]>) -> CategoryLoadResult {
-    let Some(configs) = configured else {
+    let Some(configs) = configured.filter(|list| !list.is_empty()) else {
         return CategoryLoadResult::default();
     };
     // LiteLLM's roots are install-time constants, so a missing asset tree skips categories instead of raising
