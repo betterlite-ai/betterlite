@@ -100,12 +100,13 @@ impl OAuthMetadataCache {
             *count = count.saturating_add(1);
             Arc::clone(state.locks.entry(key.clone()).or_default())
         };
-        let guard = lock.lock_owned().await;
-        FetchSlot {
-            guard: Some(guard),
+        let mut slot = FetchSlot {
+            guard: None,
             key: key.clone(),
             inner: Arc::clone(&self.inner),
-        }
+        };
+        slot.guard = Some(lock.lock_owned().await);
+        slot
     }
 
     pub fn invalidate(&self, server_id: &str) {
