@@ -68,15 +68,11 @@ impl AspeechKeywords for Step {
     }
 
     fn api_base(&self) -> Option<&str> {
-        self.speech
-            .as_ref()
-            .and_then(|speech| speech.api_base.as_deref())
+        self.speech.as_ref()?.api_base.as_deref()
     }
 
     fn custom_llm_provider(&self) -> Option<&str> {
-        self.speech
-            .as_ref()
-            .and_then(|speech| speech.custom_llm_provider.as_deref())
+        self.speech.as_ref()?.custom_llm_provider.as_deref()
     }
 
     // speech() takes the flag as its own argument, so it never stays in the caller's kwargs

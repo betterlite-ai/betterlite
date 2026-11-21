@@ -67,26 +67,7 @@ impl<Invoker> AsyncSpeech<'_, Invoker> {
             .ok_or(AspeechError::MissingModel)?
             .to_owned();
         keywords.force_async();
-        // the wrapper's get_llm_provider passes only the model and api_base, never the caller's provider
-        let request = ResolutionRequest {
-            model: &model,
-            custom_llm_provider: None,
-            api_base: keywords.api_base(),
-            api_key: None,
-        };
-        let provider = match resolve(&request, self.resolution) {
-            Ok(found) => found.provider.slug().to_owned(),
-            Err(source) => {
-                return Err(AspeechError::Raised {
-                    provider: keywords
-                        .custom_llm_provider()
-                        .unwrap_or(FALLBACK_PROVIDER)
-                        .to_owned(),
-                    model,
-                    error: Invoker::Error::from(source),
-                });
-            }
-        };
+        let provider = self.provider(&keywords, &model)?;
         let raised = |error| AspeechError::Raised {
             model: model.clone(),
             provider: provider.clone(),
@@ -107,6 +88,36 @@ impl<Invoker> AsyncSpeech<'_, Invoker> {
                 .speech(&keywords, context)
                 .await
                 .map_err(raised),
+        }
+    }
+
+    // the provider exception_type maps under; a resolver failure is raised under the caller's provider, else openai
+    fn provider<Keywords>(
+        &self,
+        keywords: &Keywords,
+        model: &str,
+    ) -> Result<String, AspeechError<Invoker::Error>>
+    where
+        Keywords: AspeechKeywords,
+        Invoker: SpeechInvoker<Keywords>,
+    {
+        // the wrapper's get_llm_provider passes only the model and api_base, never the caller's provider
+        let request = ResolutionRequest {
+            model,
+            custom_llm_provider: None,
+            api_base: keywords.api_base(),
+            api_key: None,
+        };
+        match resolve(&request, self.resolution) {
+            Ok(found) => Ok(found.provider.slug().to_owned()),
+            Err(source) => Err(AspeechError::Raised {
+                provider: keywords
+                    .custom_llm_provider()
+                    .unwrap_or(FALLBACK_PROVIDER)
+                    .to_owned(),
+                model: model.to_owned(),
+                error: Invoker::Error::from(source),
+            }),
         }
     }
 }

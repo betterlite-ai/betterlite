@@ -72,13 +72,11 @@ impl AspeechKeywords for Keywords {
     }
 
     fn api_base(&self) -> Option<&str> {
-        self.0.as_ref().and_then(|call| call.api_base.as_deref())
+        self.0.as_ref()?.api_base.as_deref()
     }
 
     fn custom_llm_provider(&self) -> Option<&str> {
-        self.0
-            .as_ref()
-            .and_then(|call| call.custom_llm_provider.as_deref())
+        self.0.as_ref()?.custom_llm_provider.as_deref()
     }
 
     fn force_async(&mut self) {
