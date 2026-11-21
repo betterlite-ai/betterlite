@@ -90,6 +90,7 @@ pub enum DiagnosticMessage<'message> {
 }
 
 impl DiagnosticMessage<'_> {
+    #[must_use]
     pub fn message(&self) -> String {
         match self {
             Self::SearchFailed {
