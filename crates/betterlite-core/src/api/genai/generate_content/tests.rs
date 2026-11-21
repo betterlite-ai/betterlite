@@ -7,10 +7,11 @@ use std::time::Duration;
 use betterlite_error::error::ErrorClass;
 use betterlite_models::decisions::Json as DecisionJson;
 use betterlite_models::resolution::ResolutionError;
-use betterlite_openai::chat::{MessageContent, Role};
+use betterlite_openai::chat::{MessageContent, Role, ToolChoice};
 use betterlite_prompts::arguments::json::Json;
 use futures_util::StreamExt as _;
 use indexmap::IndexMap;
+use secrecy::ExposeSecret as _;
 use serde_json::Number;
 
 use self::support::{
@@ -172,7 +173,9 @@ async fn dispatch_adapter_call_forwards_metadata_headers_and_proxy_request() {
 async fn dispatch_adapter_call_forwards_params_and_narrows_a_negative_retry_count() {
     let harness = Harness::new();
     let contents = contents();
-    let kwargs = object(r#"{"max_retries":3,"organization":"org-1"}"#);
+    let kwargs = object(
+        r#"{"api_base":"https://proxy.test","api_key":"sk-test","api_version":"v1beta","max_retries":3,"organization":"org-1"}"#,
+    );
     let positive_request = request(ADAPTER_MODEL, &contents, None, &kwargs);
 
     harness
@@ -187,6 +190,17 @@ async fn dispatch_adapter_call_forwards_params_and_narrows_a_negative_retry_coun
         .litellm_params
         .as_ref()
         .expect("the adapter call carries the params");
+    assert_eq!(params.api_base.as_deref(), Some("https://proxy.test"));
+    assert_eq!(
+        params
+            .api_key
+            .as_ref()
+            .expect("the api key reaches the adapter")
+            .expose_secret(),
+        "sk-test"
+    );
+    assert_eq!(params.api_version.as_deref(), Some("v1beta"));
+    assert_eq!(params.custom_llm_provider.as_deref(), Some("openai"));
     assert_eq!(params.max_retries, Some(3_u32));
     assert_eq!(params.organization.as_deref(), Some("org-1"));
 
@@ -226,6 +240,26 @@ async fn dispatch_adapter_call_falls_through_an_empty_system_instruction() {
     assert_eq!(
         seen[0].1.request.messages[0].content,
         Some(MessageContent::Text(String::from("be nice")))
+    );
+}
+
+#[tokio::test]
+async fn dispatch_adapter_call_forwards_the_tool_config_as_a_tool_choice() {
+    let harness = Harness::new();
+    let contents = contents();
+    let kwargs = object(r#"{"toolConfig":{"functionCallingConfig":{"mode":"ANY"}}}"#);
+    let request = request(ADAPTER_MODEL, &contents, None, &kwargs);
+
+    harness
+        .call(Entry::Generate, &request)
+        .await
+        .answer
+        .expect("the call succeeds");
+
+    let seen = harness.executor.seen();
+    assert_eq!(
+        seen[0].1.request.tool_choice,
+        Some(ToolChoice::Mode(String::from("required")))
     );
 }
 
@@ -374,6 +408,66 @@ async fn dispatch_async_stream_passes_tools_and_stream() {
 }
 
 #[tokio::test]
+async fn dispatch_sync_stream_moves_generation_config_into_the_config() {
+    let harness = Harness::new();
+    let contents = contents();
+    let kwargs = object(r#"{"generationConfig":{"temperature":0.4}}"#);
+    let request = request(ADAPTER_MODEL, &contents, None, &kwargs);
+
+    harness
+        .call(Entry::GenerateStream, &request)
+        .await
+        .answer
+        .expect("the stream entry call succeeds");
+
+    let seen = harness.executor.seen();
+    let expected: Number = serde_json::from_str("0.4").expect("the expected temperature parses");
+    assert_eq!(seen[0].1.request.temperature, Some(expected));
+    assert!(seen[0].1.request.stream);
+}
+
+#[tokio::test]
+async fn dispatch_async_stream_moves_generation_config_into_the_config() {
+    let harness = Harness::new();
+    let contents = contents();
+    let kwargs = object(r#"{"generationConfig":{"temperature":0.4}}"#);
+    let request = request(ADAPTER_MODEL, &contents, None, &kwargs);
+
+    harness
+        .call(Entry::AgenerateStream, &request)
+        .await
+        .answer
+        .expect("the stream entry call succeeds");
+
+    let seen = harness.executor.seen();
+    assert_eq!(seen[0].0, Operation::Acompletion);
+    let expected: Number = serde_json::from_str("0.4").expect("the expected temperature parses");
+    assert_eq!(seen[0].1.request.temperature, Some(expected));
+}
+
+#[tokio::test]
+async fn dispatch_sync_stream_prefers_the_camel_system_instruction() {
+    let harness = Harness::new();
+    let contents = contents();
+    let kwargs = object(
+        r#"{"systemInstruction":{"parts":[{"text":"first"}]},"system_instruction":{"parts":[{"text":"second"}]}}"#,
+    );
+    let request = request(ADAPTER_MODEL, &contents, None, &kwargs);
+
+    harness
+        .call(Entry::GenerateStream, &request)
+        .await
+        .answer
+        .expect("the stream entry call succeeds");
+
+    let seen = harness.executor.seen();
+    assert_eq!(
+        seen[0].1.request.messages[0].content,
+        Some(MessageContent::Text(String::from("first")))
+    );
+}
+
+#[tokio::test]
 async fn dispatch_native_call_merges_native_fields_under_extra_body() {
     let mut harness = Harness::new();
     harness.config.top_fields = &["safetySettings"];
@@ -436,6 +530,49 @@ async fn dispatch_native_call_defaults_a_missing_or_zero_timeout() {
     assert_eq!(seen[0].timeout, Some(Duration::from_mins(100)));
     assert_eq!(seen[1].timeout, Some(Duration::from_mins(100)));
     assert_eq!(seen[2].timeout, Some(Duration::from_secs(30)));
+}
+
+#[tokio::test]
+async fn dispatch_native_call_forwards_tools_headers_api_base_and_the_supplied_client() {
+    let mut harness = Harness::new();
+    harness.supplied = Some(Source::new(Wire::answering(200, NATIVE_REPLY)));
+    let contents = contents();
+    let kwargs = object(r#"{"api_base":"https://proxy.test"}"#);
+    let tools = json(TOOLS);
+    let headers = IndexMap::from([(String::from("x-extra"), String::from("1"))]);
+    let mut request = request(NATIVE_MODEL, &contents, None, &kwargs);
+    request.tools = Some(&tools);
+    request.extra_headers = Some(&headers);
+
+    harness
+        .call(Entry::Generate, &request)
+        .await
+        .answer
+        .expect("the native call succeeds");
+
+    assert_eq!(harness.source.requests().len(), 0);
+    let seen = harness
+        .supplied
+        .as_ref()
+        .expect("the supplied client answers the call")
+        .requests();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(
+        seen[0]
+            .headers
+            .get("x-extra")
+            .and_then(|value| value.to_str().ok()),
+        Some("1")
+    );
+    let payload: Json = serde_json::from_slice(&seen[0].body).expect("the request body is JSON");
+    let Json::Object(fields) = &payload else {
+        panic!("the request body is an object");
+    };
+    assert_eq!(fields.get("tools"), Some(&tools));
+    assert_eq!(
+        harness.config.auth_calls()[0].api_base.as_deref(),
+        Some("https://proxy.test")
+    );
 }
 
 #[tokio::test]

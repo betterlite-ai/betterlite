@@ -50,7 +50,7 @@ use crate::api::genai_http::stream::StreamSettings;
 use crate::api::vector_store_http_write::error::{
     BaseLlmException, ClientError, HeaderMap, header_map,
 };
-use crate::api::vector_store_http_write::service::LogContext;
+use crate::api::vector_store_http_write::service::{ClientKind, LogContext, SuppliedClient};
 use crate::genai_setup::config::{
     GenerateContentProviderConfig, GenerateContentProviderConfigs,
     GenerateContentRequest as SetupRequest,
@@ -161,10 +161,11 @@ pub(super) struct TestConfigError;
 #[error("{0}")]
 pub(super) struct ScriptedFailure(&'static str);
 
-// what the wire saw: enough for a test to assert the URL, the body and the timeout the handler sent
+// what the wire saw: enough for a test to assert the URL, the headers, the body and the timeout the handler sent
 #[derive(Clone)]
 pub(super) struct Seen {
     pub(super) url: String,
+    pub(super) headers: HttpHeaders,
     pub(super) body: Vec<u8>,
     pub(super) timeout: Option<Duration>,
     pub(super) streaming: bool,
@@ -212,6 +213,7 @@ impl GenAiTransport for Wire {
             .unwrap_or_else(PoisonError::into_inner)
             .push(Seen {
                 url: request.url.to_string(),
+                headers: request.headers,
                 body: request.body,
                 timeout: request.timeout,
                 streaming,
@@ -471,6 +473,7 @@ pub(super) struct Dispatch {
 pub(super) struct Harness {
     pub(super) config: TestConfig,
     pub(super) source: Source,
+    pub(super) supplied: Option<Source>,
     pub(super) executor: Scripted,
     pub(super) redactor: Redactor,
     pub(super) capabilities: CatalogCapabilities,
@@ -486,6 +489,7 @@ impl Harness {
         Self {
             config: TestConfig::new("https://gemini.test"),
             source: Source::new(Wire::answering(200, NATIVE_REPLY)),
+            supplied: None,
             executor: Scripted::answering(response_output()),
             redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor builds"),
             capabilities: CatalogCapabilities {
@@ -523,13 +527,17 @@ impl Harness {
             policies: ProviderPolicies::default(),
             globals: GlobalCredentials::default(),
         };
+        let supplied_client = self.supplied.as_ref().map(|source| SuppliedClient {
+            kind: ClientKind::Sync,
+            transport: &source.wire,
+        });
         let deps = GenerateContentDeps {
             configs: &configs,
             resolution: &resolution,
             capabilities: &self.capabilities,
             limits: SchemaLimits::default(),
             source: &self.source,
-            supplied_client: None,
+            supplied_client,
             executor: &self.executor,
             stream: StreamSettings::default(),
             request_timeout: self.timeout,
