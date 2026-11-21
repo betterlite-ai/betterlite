@@ -1,7 +1,9 @@
 id: B354
 title: Adaptive soft-floor placement for complexity tiers
-description: 'Compose B339''s adaptive model sampler with B334''s tier selection and B335''s transient
-  constraints. Add typed candidate provenance, cold-start observation and per-tier distance penalties
+description: 'Compose B339''s adaptive model sampler with B334''s tier selection. The transient hard floor and
+  ceiling arrive as plain tier arguments, as _soft_floor_pick takes them (L3033-L3041), and a tier''s severity is its
+  position in B374''s TierDefinitions::tier_names (betterlite-router tier_definitions, on main), which is all
+  _active_tier_severity (L3164-L3168) computes. Add typed candidate provenance, cold-start observation and per-tier distance penalties
   while retaining hard policy constraints at the final placement boundary. Reuse the adaptive cells and
   update lifecycle rather than creating another learner or random-number implementation. Nonmonetary statistical
   arithmetic uses f64 only in soft_floor_math; put one module-level #[expect(clippy::float_arithmetic,

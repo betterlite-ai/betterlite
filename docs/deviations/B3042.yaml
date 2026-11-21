@@ -1,0 +1,44 @@
+task: B3042
+deviations:
+  - what: >-
+      refund_reserved_tokens receives reservation_windows as a BTreeSet of
+      ReservationWindowIdentity values; an empty set takes the TPM refund path (no window guards) and a non-empty
+      set takes the project refund path (window-aware refund).
+    why: >-
+      Project I/O tokens are tracked per-window (distinct ITPM/OTPM windows), so their refund needs the window
+      identity, while a plain TPM refund only needs TTL preservation; this is LiteLLM's own dispatch on the
+      presence of reservation_windows.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2594-L2617
+  - what: >-
+      reserve_io_tokens returns (response, itpm_reserved, estimated_output_tokens) when both buckets succeed: the
+      third element is the output estimate, not an amount read back from the OTPM counter.
+    why: >-
+      LiteLLM's caller stashes these amounts for post-call reconciliation and the OTPM amount is always what was
+      charged, so returning the estimate keeps the two in step; an actual-reserved tracking path would diverge
+      from LiteLLM's numbers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2684-L2699
+  - what: >-
+      enforce_frame_project_io_quota charges the full estimate immediately and never reconciles or refunds it on
+      frame completion.
+    why: >-
+      A WebSocket connection sends many response.create frames after one connection-level admission and has no
+      per-frame post-call hook, so the estimate is the only signal available at frame time; the batch rate
+      limiter charges the same way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2704-L2720
+  - what: >-
+      The four entry points carry no parent_otel_span argument, where LiteLLM threads a span through
+      reserve_tpm_tokens, _refund_reserved_tokens and reserve_io_tokens and passes
+      user_api_key_dict.parent_otel_span from the frame hook.
+    why: >-
+      betterlite's settlement and token-adjustment primitives take no telemetry span; the span is not observable
+      in any response, counter or cache effect these functions produce, and tracing attaches where the caller
+      holds the request context.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2704-L2739
+  - what: >-
+      enforce_frame_project_io_quota returns Err(TokenReservationError::RateLimited) holding B3030's
+      ProxyRateLimitError instead of raising it, and every other failure comes back as a typed
+      TokenReservationError variant (Settlement, Tokens, Projection) rather than a propagated Python exception.
+    why: >-
+      Rust has no exceptions; the caller decides how the 429 becomes an HTTP response, and the error keeps the
+      detail, headers, category and rate_limit_type _handle_rate_limit_error projected.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2734-L2739

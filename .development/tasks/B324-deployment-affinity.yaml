@@ -1,6 +1,6 @@
 id: B324
 title: Atomic caller and session deployment affinity
-description: 'Compose B372 affinity identities/claims with B080 previous-response IDs and B323 priority-group
+description: 'Compose B372 affinity identities/claims with previous-response IDs decoded by B903 get_model_id_from_response_id (betterlite-core api::response_id_codecs, on main) and B323 priority-group
   flags in the B016 candidate filter. Preserve previous-response, session and key precedence; replace
   expired or ineligible pins without reviving filtered deployments. Wire the deployment pre-call hook
   through the server''s authenticated routing context. Configuration boundary keys introduced or consumed

@@ -26,6 +26,8 @@ description: >-
 
   The request-timeout setting is B198's REQUEST_TIMEOUT (env REQUEST_TIMEOUT, default 6000 seconds). The 600 default only applies to the status signature when the caller passes no timeout.
   HTTP cases for the status and content routes are owned by B3343, which registers the routes; this task has no route and no pure function an oracle helper can call, so it has no oracle cases. B3337 left the status HTTP cases to B3339 or B3343; they go to B3343.
+
+  B3332's `get_provider_video_config` returns `Result<Option<_>, VideoSelectionError>`. None still raises the ValueError-class error as above; map `VideoSelectionError::Unavailable` (a provider whose video config isn't built yet, such as edenai until B5838 lands) into this task's own error and keep its message.
 scope:
   paths:
     - crates/betterlite-core/src/api/video_content_call.rs
