@@ -695,6 +695,32 @@ async fn entry_api_key_keeps_model() {
 }
 
 #[tokio::test]
+async fn entry_override_keeps_model() {
+    let trace = Trace::default();
+    let calls = Calls::default();
+    let view = FakeView {
+        team_map: vec![("team-model", "team-1", "global-model")],
+        ..FakeView::default()
+    };
+    let ports = ports_with(Some(view), Vec::new(), &calls, &trace);
+    let input = PassthroughRouteInput {
+        team_id: Some(String::from("team-1")),
+        router_settings_override: Some(override_settings()),
+        ..route_input("team-model")
+    };
+    let request = LlmPassthroughRequest {
+        args: call_args("team-model"),
+        route: input,
+        router: ports.router,
+        view: ports.view,
+        blocked: ports.blocked,
+        direct: ports.direct,
+    };
+    entry::execute(request).await.expect("router reply");
+    assert_eq!(calls.recorded()[0].model, "team-model");
+}
+
+#[tokio::test]
 async fn entry_specific_deployment_in_extra() {
     let trace = Trace::default();
     let calls = Calls::default();
