@@ -79,6 +79,34 @@ pub(super) fn remove_tool_call_index() {
     )
     .expect("the repair runs");
     assert_eq!(absent_messages, support::body(r#"{"model":"deployment"}"#));
+    // the tool-level drop is not an elif: after the index branch it still removes tools[N].<field>
+    let index_and_tool_field = support::wrapped(&format!(
+        "{INVALID_TOOL_CALL_INDEX_MARKER}. Extra inputs are not permitted: tools[0].extra"
+    ));
+    let tools_request = support::body(
+        r#"{"model":"deployment","messages":[{"role":"assistant","tool_calls":[{"id":"call-1","type":"function","function":{"name":"f","arguments":"{}"},"index":0}]}],"tools":[{"type":"function","function":{"name":"f"},"extra":1},{"type":"function","extra":2}]}"#,
+    );
+    let index_repaired = repair(&index_and_tool_field, &tools_request).expect("the repair runs");
+    assert_eq!(
+        index_repaired,
+        support::body(
+            r#"{"model":"deployment","messages":[{"role":"assistant","tool_calls":[{"id":"call-1","type":"function","function":{"name":"f","arguments":"{}"}}]}],"tools":[{"type":"function","function":{"name":"f"}},{"type":"function"}]}"#,
+        )
+    );
+    // the pass-through branch drops top_p, and the tool-level drop still follows it
+    let hint_and_tool_field = support::wrapped(&format!(
+        "{PASS_THROUGH_HINT}. Extra parameters [top_p] are not allowed. Extra inputs are not permitted tools[1].extra"
+    ));
+    let hint_request = support::body(
+        r#"{"model":"deployment","messages":null,"top_p":0.5,"temperature":2,"tools":[{"type":"function","extra":1},"plain"]}"#,
+    );
+    let hint_repaired = repair(&hint_and_tool_field, &hint_request).expect("the repair runs");
+    assert_eq!(
+        hint_repaired,
+        support::body(
+            r#"{"model":"deployment","messages":null,"temperature":2,"tools":[{"type":"function"},"plain"]}"#,
+        )
+    );
 }
 
 pub(super) fn extra_parameters_list() {

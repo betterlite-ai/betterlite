@@ -25,5 +25,21 @@ call:
       - error: |-
           {"error":{"message":"unknown field: parameter index is not a valid field. Set extra-parameters to 'pass-through' ['temperature', 'top_p']","type":"invalid_request_error"}}
         body: {model: deployment, temperature: 2, top_p: 0.5}
+      # the tool-level drop is not an elif: after the index branch it still removes tools[N].<field>
+      - error: |-
+          {"error":{"message":"unknown field: parameter index is not a valid field. Extra inputs are not permitted: tools[0].extra","type":"invalid_request_error"}}
+        body:
+          model: deployment
+          messages:
+            - role: assistant
+              tool_calls:
+                - {id: call-1, type: function, function: {name: f, arguments: "{}"}, index: 0}
+          tools:
+            - {type: function, function: {name: f}, extra: 1}
+            - {type: function, extra: 2}
+      # after the pass-through branch the tool-level drop still follows
+      - error: |-
+          {"error":{"message":"Set extra-parameters to 'pass-through'. Extra parameters [top_p] are not allowed. Extra inputs are not permitted tools[1].extra","type":"invalid_request_error"}}
+        body: {model: deployment, messages: null, top_p: 0.5, temperature: 2, tools: [{type: function, extra: 1}, plain]}
 env: {}
 compare: {ignore: []}
