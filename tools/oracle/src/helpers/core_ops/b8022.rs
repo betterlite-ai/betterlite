@@ -118,19 +118,20 @@ fn responses(input: &Input) -> HelperResult {
     let mut parsed = Vec::new();
     for reply in &input.replies {
         let bytes = serde_json::to_vec(reply).map_err(failure)?;
-        let response = match input.provider {
-            ProviderName::Fastcrw => {
-                serde_json::to_value(decode_fastcrw_reply(&bytes).map_err(failure)?)
-                    .map_err(failure)?
-            }
-            ProviderName::Firecrawl => {
-                serde_json::to_value(decode_firecrawl_reply(&bytes).map_err(failure)?)
-                    .map_err(failure)?
-            }
-        };
-        parsed.push(response);
+        parsed.push(decoded(input.provider, &bytes)?);
     }
     Ok(json!({"responses": parsed}))
+}
+
+fn decoded(provider: ProviderName, bytes: &[u8]) -> HelperResult {
+    match provider {
+        ProviderName::Fastcrw => {
+            serde_json::to_value(decode_fastcrw_reply(bytes).map_err(failure)?).map_err(failure)
+        }
+        ProviderName::Firecrawl => {
+            serde_json::to_value(decode_firecrawl_reply(bytes).map_err(failure)?).map_err(failure)
+        }
+    }
 }
 
 fn failure<Error>(error: Error) -> Box<HelperError>
