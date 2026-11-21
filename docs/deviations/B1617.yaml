@@ -1,5 +1,5 @@
 task: B1617
 deviations:
-  - what: The two sides accept different UUID spellings. betterlite parses with uuid's Uuid::parse_str, so it takes the simple, hyphenated, braced and urn:uuid: forms and rejects hyphens anywhere outside the 8-4-4-4-12 layout; LiteLLM's UUID() deletes urn:, uuid: and every hyphen wherever they sit, and its urn:uuid: prefix is case-sensitive where uuid's is not.
+  - what: "The two sides accept different UUID spellings. betterlite parses with uuid's Uuid::parse_str, so it takes the simple, hyphenated, braced and urn:uuid: forms and rejects hyphens anywhere outside the 8-4-4-4-12 layout; LiteLLM's UUID() deletes urn:, uuid: and every hyphen wherever they sit, and its urn:uuid: prefix is case-sensitive where uuid's is not."
     why: The canonical hyphenated identifier Microsoft issues parses to the same canonical lowercase subject in both, so only a hand-typed tenant or response id with an unusual spelling differs; the uuid crate is the library's own parser, and re-implementing Python's string surgery by hand would add parsing the library already covers.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/sso/agent_subject_enrollment.py#L16-L21

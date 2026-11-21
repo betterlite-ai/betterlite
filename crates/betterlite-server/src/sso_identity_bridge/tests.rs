@@ -1,8 +1,6 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::error::Error as StdError;
-use std::fmt;
 use std::future::Future;
 use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -17,6 +15,7 @@ use betterlite_config::sso_identity_bridge::{
 use betterlite_mcp::sso_assertions::assertion::SsoIdentityAssertion;
 use rstest::rstest;
 use secrecy::SecretString;
+use thiserror::Error;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::{MakeWriter, fmt};
 
@@ -52,16 +51,9 @@ fn expectation(provider: &str) -> String {
     format!("the active SSO provider ({provider}) {UNCAPTURED_GAP}")
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Error)]
+#[error("the retention query is unavailable")]
 struct RetentionFailure;
-
-impl fmt::Display for RetentionFailure {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("the retention query is unavailable")
-    }
-}
-
-impl StdError for RetentionFailure {}
 
 struct FakeRetention {
     enabled: Result<bool, RetentionFailure>,
@@ -334,9 +326,9 @@ async fn the_capture_gap_warning_names_the_gap() {
 
 #[rstest]
 #[case::missing_tenant(None, Some(OBJECT_ID))]
-#[case::unparseable_tenant(Some("not-a-uuid"), Some(OBJECT_ID))]
+#[case::unparsable_tenant(Some("not-a-uuid"), Some(OBJECT_ID))]
 #[case::missing_response_id(Some(TENANT), None)]
-#[case::unparseable_response_id(Some(TENANT), Some("not-a-uuid"))]
+#[case::unparsable_response_id(Some(TENANT), Some("not-a-uuid"))]
 fn projection_needs_parseable_uuids(
     #[case] tenant: Option<&str>,
     #[case] response_id: Option<&str>,
