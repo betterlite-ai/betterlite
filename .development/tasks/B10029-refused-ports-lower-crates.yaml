@@ -22,6 +22,7 @@ description: >-
   crate lists betterlite-test-ports under [dev-dependencies].
 scope:
   paths:
+  - "crates/betterlite-guardrails/src/grayswan/grayswan_monitoring/tests.rs"
   - "crates/betterlite-redis/src/redis_live_client/tests/sentinel.rs"
   - "crates/betterlite-redis/src/redis_live_client/tests/secrets.rs"
   - "crates/betterlite-redis/src/redis_cache_admin/tests/health.rs"
