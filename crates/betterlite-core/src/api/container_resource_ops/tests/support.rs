@@ -365,7 +365,7 @@ impl ContainerIdDecoder for StubDecoder {
                 {
                     litellm_params.insert(
                         "model_id".to_owned(),
-                        serde_json::to_value(deployment).expect("a model id is JSON"),
+                        serde_json::to_value(deployment).unwrap_or_default(),
                     );
                 }
                 Ok(DecodedContainerCall {
