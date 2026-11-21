@@ -5,7 +5,7 @@ use betterlite_config::loader::EnvironmentLookup;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::search::credentials::{CredentialError, ServerCredential};
 use betterlite_openai::search::provider::{
-    HttpMethod, OutboundSearch, ProviderResponse, RequestInput, SearchProvider, SearchQuery,
+    HttpMethod, OutboundSearch, ProviderResponse, RequestInput, SearchProvider,
 };
 use betterlite_openai::search::records::SearchResponse;
 use chrono::{DateTime, NaiveDate, Utc};

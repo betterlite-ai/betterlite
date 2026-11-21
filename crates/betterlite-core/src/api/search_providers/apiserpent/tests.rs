@@ -52,22 +52,19 @@ fn param(record: &IndexMap<String, Json>, name: &str) -> Json {
     params_of(record)[name].clone()
 }
 
-fn request(
-    query_text: &str,
-    options_json: &str,
-) -> Result<IndexMap<String, Json>, ApiserpentSearchError> {
-    let record = config(&[]).transform_search_request(&RequestInput {
+fn request(query_text: &str, options_json: &str) -> Result<ApiserpentBody, ApiserpentSearchError> {
+    config(&[]).transform_search_request(&RequestInput {
         query: &query(query_text),
         optional_params: &optional_params(options_json),
         api_key: None,
         api_base: None,
         headers: &Headers::new(),
-    })?;
-    Ok(expected(&serde_json::to_string(&record).unwrap()))
+    })
 }
 
 fn request_body(query_text: &str, options_json: &str) -> IndexMap<String, Json> {
-    request(query_text, options_json).expect("the options are accepted")
+    let record = request(query_text, options_json).expect("the options are accepted");
+    expected(&serde_json::to_string(&record).expect("the body encodes"))
 }
 
 fn request_error(query_text: &str, options_json: &str) -> ApiserpentSearchError {

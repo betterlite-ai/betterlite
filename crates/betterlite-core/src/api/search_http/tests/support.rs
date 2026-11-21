@@ -320,7 +320,7 @@ impl SearchProvider for TestProvider {
         observed.sign_api_base = request.api_base.to_owned();
         observed.sign_api_key = request.api_key.map(|key| key.expose_secret().to_owned());
         observed.sign_headers = headers.clone();
-        observed.sign_body = serde_json::to_vec(request.body).expect("the body encodes");
+        observed.sign_body = serde_json::to_vec(request.body).map_err(TestError::Decode)?;
         observed.sign_params = request.optional_params.clone();
         drop(observed);
         let mut signed = headers;

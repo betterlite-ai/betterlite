@@ -3,7 +3,7 @@ use std::sync::{Mutex, PoisonError};
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::search::provider::{
-    HttpMethod, ProviderResponse, RequestInput, SearchProvider, SearchQuery,
+    HttpMethod, ProviderResponse, RequestInput, SearchProvider,
 };
 use betterlite_openai::search::records::SearchResponse;
 use secrecy::SecretString;

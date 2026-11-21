@@ -8,7 +8,7 @@ use betterlite_config::loader::EnvironmentLookup;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::search::credentials::ServerCredential;
 use betterlite_openai::search::provider::{
-    OutboundSearch, ProviderResponse, RequestInput, SearchProvider, SearchQuery,
+    OutboundSearch, ProviderResponse, RequestInput, SearchProvider,
 };
 use betterlite_openai::search::records::SearchResponse;
 use secrecy::{ExposeSecret as _, SecretString};

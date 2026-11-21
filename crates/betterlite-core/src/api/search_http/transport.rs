@@ -1,7 +1,5 @@
 use std::time::{Duration, Instant};
 
-use betterlite_config::proxy::ProxyPolicy;
-use betterlite_config::tls::TlsPolicy;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};

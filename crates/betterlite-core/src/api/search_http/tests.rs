@@ -24,8 +24,8 @@ use betterlite_test_ports::refused_port::RefusedPort;
 use tokio::time::sleep;
 
 use self::support::{
-    Fixture, TestError, TestProvider, default_tls, provider_error, proxied, proxy_policy, recorded,
-    recorded_errors, search_call, seen_values, test_provider,
+    Fixture, TestError, TestProvider, default_tls, provider_error, proxied, proxy_policy,
+    recorded_errors, search_call, test_provider,
 };
 use super::{SearchHttpCall, SearchHttpError};
 
@@ -267,8 +267,8 @@ async fn transform_error_is_not_converted() {
     match &rejection {
         SearchHttpError::Hook(TestError::Rejected(text)) => assert_eq!(text, NOT_AN_ANSWER),
         SearchHttpError::Hook(other) => panic!("the reply failed another way: {other}"),
-        SearchHttpError::Provider { provider } => {
-            panic!("the reply reached the converter: {}", provider.message);
+        SearchHttpError::Provider { provider: error } => {
+            panic!("the reply reached the converter: {}", error.message);
         }
         SearchHttpError::Logging(logging) => panic!("the reply reached logging: {logging}"),
     }

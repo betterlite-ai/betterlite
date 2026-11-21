@@ -5,7 +5,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use betterlite_config::sections::settings::JsonValue;
-use betterlite_openai::openai_base_config::{Headers, Object};
+use betterlite_openai::openai_base_config::Object;
 use betterlite_openai::search::credentials::CredentialError;
 use betterlite_openai::search::provider::{
     HttpMethod, ProviderResponse, SearchProvider as _, SearchQuery,
