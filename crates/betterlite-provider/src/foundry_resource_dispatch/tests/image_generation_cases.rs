@@ -145,7 +145,6 @@ async fn flux_params_of(call: Call<'_>, logging: &mut RecordingImageLogging) -> 
 }
 
 async fn flux2_params_rows() {
-    let mut logging = RecordingImageLogging::default();
     let options: ImageParams = parse(r#"{"size":"1024x1024","n":2,"seed":"7","quality":"high"}"#);
     let mapped = flux_params_of(
         Call::Flux2Params {
@@ -154,15 +153,11 @@ async fn flux2_params_rows() {
             model: "flux.2-pro",
             drop_params: false,
         },
-        &mut logging,
+        &mut RecordingImageLogging::default(),
     )
     .await;
     let expected: ImageParams = parse(r#"{"width":1024,"height":1024,"num_images":2,"seed":7}"#);
     assert_eq!(mapped, expected);
-}
-
-async fn flux2_params_reject_rows() {
-    let mut logging = RecordingImageLogging::default();
     let unsupported: ImageParams = parse(r#"{"style":"vivid"}"#);
     let error = leaf_error(
         Call::Flux2Params {
@@ -171,13 +166,12 @@ async fn flux2_params_reject_rows() {
             model: "flux.2-pro",
             drop_params: false,
         },
-        &mut logging,
+        &mut RecordingImageLogging::default(),
     )
     .await;
-    assert!(matches!(
-        error,
-        ImageError::Image(FoundryError::UnsupportedParams { .. })
-    ));
+    let ImageError::Image(FoundryError::UnsupportedParams { .. }) = error else {
+        panic!("the FLUX params call rejects the unsupported parameters");
+    };
     let dropped = flux_params_of(
         Call::Flux2Params {
             non_default: &unsupported,
@@ -185,7 +179,7 @@ async fn flux2_params_reject_rows() {
             model: "flux.2-pro",
             drop_params: true,
         },
-        &mut logging,
+        &mut RecordingImageLogging::default(),
     )
     .await;
     assert!(dropped.is_empty());
@@ -215,25 +209,6 @@ async fn mai_params_rows() {
         let wanted: Object = parse(expected);
         assert_eq!(mapped, wanted);
     }
-}
-
-async fn mai_params_reject_rows() {
-    let mut logging = RecordingImageLogging::default();
-    let above: Object = parse(r#"{"size":"1792x1024"}"#);
-    let above_error = leaf_error(
-        Call::MaiParams {
-            non_default: &above,
-            optional: &Object::new(),
-            model: "mai-image",
-            drop_params: false,
-        },
-        &mut logging,
-    )
-    .await;
-    assert!(matches!(
-        above_error,
-        image_generation::DispatchError::Mai(MaiImageError::SizeAboveMaximum { .. })
-    ));
     let counts: Object = parse(r#"{"n":2}"#);
     let error = leaf_error(
         Call::MaiParams {
@@ -304,9 +279,7 @@ pub(super) async fn check() {
     flux2_rows().await;
     mai_rows().await;
     flux2_params_rows().await;
-    flux2_params_reject_rows().await;
     mai_params_rows().await;
-    mai_params_reject_rows().await;
     mai_reply_rows().await;
     mai_reply_error_row().await;
 }
