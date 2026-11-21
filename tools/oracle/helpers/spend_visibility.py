@@ -1,6 +1,6 @@
 from collections.abc import Awaitable, Callable
 from datetime import datetime
-from typing import Final, Literal, TypeAlias, TypedDict, final
+from typing import Final, Literal, TypeAlias, TypeVar, TypedDict, final, overload
 
 import litellm
 from fastapi import FastAPI, Request
@@ -10,7 +10,6 @@ from litellm.integrations.custom_logger import CustomLogger
 from litellm.litellm_core_utils.logging_callback_manager import LoggingCallbackManager
 from litellm.proxy import proxy_server
 from litellm.proxy._types import LiteLLM_UserTable, LitellmUserRoles, UserAPIKeyAuth
-from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
 from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache
 from litellm.proxy.db.prisma_client import PrismaWrapper
 from litellm.proxy.spend_tracking.spend_management_endpoints import router
@@ -211,6 +210,31 @@ class Loggers(LoggingCallbackManager):
         return [self.recorder]
 
 
+_Default = TypeVar("_Default")
+
+
+# the lookup FastAPI makes for the key check, answered for every callback the route declares
+class Overrides(dict[AuthCheck, AuthAnswer]):
+    def __init__(self, answer: AuthAnswer) -> None:
+        super().__init__()
+        self.answer = answer
+
+    def __bool__(self) -> bool:
+        return True
+
+    @overload
+    def get(self, key: AuthCheck, /) -> AuthAnswer | None:
+        ...
+
+    @overload
+    def get(self, key: AuthCheck, default: _Default, /) -> AuthAnswer | _Default:
+        ...
+
+    def get(self, key: AuthCheck, default: _Default | None = None) -> AuthAnswer | _Default:
+        del key, default
+        return self.answer
+
+
 # the spend routes with the step's caller in place of the key check
 class App(FastAPI):
     dependency_overrides: dict[AuthCheck, AuthAnswer]
@@ -218,7 +242,7 @@ class App(FastAPI):
     def __init__(self, caller: UserAPIKeyAuth) -> None:
         super().__init__()
         self.caller = caller
-        self.dependency_overrides = {user_api_key_auth: self.auth}
+        self.dependency_overrides = Overrides(self.auth)
         self.include_router(router)
 
     def auth(self) -> UserAPIKeyAuth:
