@@ -17,9 +17,9 @@ pub const INVALID_TOOL_CALL_INDEX_MARKER: &str =
 pub const MAX_ATTEMPTS: u32 = 2;
 
 // LiteLLM's re.search(r"tools\[\d+\]\."): \d is the decimal-digit category
-const TOOL_INDEX_PATTERN: &str = r"tools\[\p{Nd}+\]\.";
+const TOOL_INDEX_PATTERN: &str = r"tools\[\p{Decimal_Number}+\]\.";
 // LiteLLM's re.findall(r"tools\[\d+\]\.([\w-]+)"): \w is Python's str.isalnum letter and number categories plus the underscore
-const TOOL_FIELD_PATTERN: &str = r"tools\[\p{Nd}+\]\.([\p{L}\p{N}_-]+)";
+const TOOL_FIELD_PATTERN: &str = r"tools\[\p{Decimal_Number}+\]\.([\p{L}\p{N}_-]+)";
 // LiteLLM's re.search(r"\[(.*?)\]"): the dot stops at a newline
 const BRACKET_PATTERN: &str = r"\[(.*?)\]";
 const PARAMETER_SEPARATOR: char = ',';
@@ -35,7 +35,11 @@ impl FoundryRepair {
     #[must_use]
     pub fn should_retry(&self, error_text: &str) -> bool {
         if error_text.contains(EXTRA_INPUTS_MARKER)
-            && (self.call || self.global || has_tool_level_extra_fields(error_text))
+            && (self.call
+                || self.global
+                || Regex::new(TOOL_INDEX_PATTERN)
+                    .ok()
+                    .is_some_and(|pattern| pattern.is_match(error_text)))
         {
             return true;
         }
@@ -67,7 +71,11 @@ pub fn repair(error_text: &str, request: &Object) -> Result<Object, RepairError>
     if !takes_index_branch && error_text.contains(PASS_THROUGH_HINT) {
         drop_extra_parameters(&mut repaired, error_text);
     }
-    if error_text.contains(EXTRA_INPUTS_MARKER) && has_tool_level_extra_fields(error_text) {
+    if error_text.contains(EXTRA_INPUTS_MARKER)
+        && Regex::new(TOOL_INDEX_PATTERN)
+            .ok()
+            .is_some_and(|pattern| pattern.is_match(error_text))
+    {
         drop_tool_level_extra_fields(&mut repaired, error_text);
     }
     let kept = without_rejected_fields(ErrorBody::Http(error_text.as_bytes()), &repaired)?;
@@ -122,7 +130,7 @@ fn extra_parameters(error_text: &str) -> Vec<String> {
 
 // re's `\[(.*?)\]` searched left to right: the dot stops at a newline, so an unclosed bracket is skipped and a later one can match
 fn first_bracket_group(error_text: &str) -> Option<&str> {
-    let pattern = compiled(BRACKET_PATTERN)?;
+    let pattern = Regex::new(BRACKET_PATTERN).ok()?;
     let found = pattern.captures(error_text)?;
     let group = found.get(1)?;
     Some(group.as_str())
@@ -146,14 +154,9 @@ fn drop_tool_level_extra_fields(request: &mut Object, error_text: &str) {
     }
 }
 
-// LiteLLM's _error_has_tool_level_extra_fields: re.search(r"tools\[\d+\]\.")
-fn has_tool_level_extra_fields(error_text: &str) -> bool {
-    compiled(TOOL_INDEX_PATTERN).is_some_and(|pattern| pattern.is_match(error_text))
-}
-
 // re.findall(r"tools\[\d+\]\.([\w-]+)"): every non-overlapping field name, the same one only once
 fn tool_level_field_names(error_text: &str) -> Vec<String> {
-    let Some(pattern) = compiled(TOOL_FIELD_PATTERN) else {
+    let Some(pattern) = Regex::new(TOOL_FIELD_PATTERN).ok() else {
         return Vec::new();
     };
     let mut names: Vec<&str> = Vec::new();
@@ -167,11 +170,6 @@ fn tool_level_field_names(error_text: &str) -> Vec<String> {
         }
     }
     names.into_iter().map(str::to_owned).collect()
-}
-
-// the three patterns are constants, so a compile failure is a typo here; matching nothing is the safe reading
-fn compiled(source: &str) -> Option<Regex> {
-    Regex::new(source).ok()
 }
 
 mod tests;
