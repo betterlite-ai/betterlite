@@ -18,7 +18,7 @@ use betterlite_prompts::arguments::json::{Json as PromptJson, Object as PromptOb
 use betterlite_prompts::message_content::Content;
 use indexmap::IndexMap;
 use rstest::rstest;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 
@@ -31,7 +31,7 @@ use crate::foundry_dispatch::fixtures::claude::{Harness, Mapper, NOW, TIMEOUT, T
 use crate::foundry_dispatch::fixtures::embedding::{Factory as EmbeddingFactory, Text};
 use crate::foundry_dispatch::fixtures::logger::RecordingLogger;
 use crate::foundry_dispatch::route::{self, Route};
-use crate::foundry_dispatch::{agents, chat, claude, embedding};
+use crate::foundry_dispatch::{agents, chat, claude, credentials, embedding};
 use crate::operation::{ChatCompletion, OperationError, OperationResult};
 use crate::prepared::PreparedRequest;
 use crate::prepared::deployment::Deployment;
@@ -279,6 +279,15 @@ async fn embedding_case() {
         .await
         .expect("the embedding dispatch runs");
     assert_eq!(text.snapshot()[1].api_key.as_deref(), Some("explicit-key"));
+
+    // an azure_ad_token parameter fills the key slot once every key string is unset
+    let empty = Env::new();
+    let entra_params: PromptObject = serde_json::from_str(r#"{"azure_ad_token":"entra-token"}"#)
+        .expect("the entra token parameter");
+    let token = credentials::resolve_embedding_key(None, &entra_params, &empty.globals())
+        .expect("the entra token resolves")
+        .expect("the entra token fills the key slot");
+    assert_eq!(token.expose_secret().as_str(), "entra-token");
 }
 
 fn anthropic_call<'data>(
