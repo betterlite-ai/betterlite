@@ -8,7 +8,7 @@ use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::guardrail_base::failure::{GuardrailFailure, ModifyResponseFailure};
 use betterlite_guardrails::guardrail_base::inputs::GuardrailLogTarget;
 use betterlite_guardrails::guardrail_message_scope::Object;
-use betterlite_guardrails::guardrail_translation::{BaseTranslation, TranslationCall};
+use betterlite_guardrails::guardrail_translation::{BaseTranslation as _, TranslationCall};
 use rstest::rstest;
 
 use super::{AnthropicTranslation, AnthropicTranslationError};
@@ -156,8 +156,10 @@ fn adapter_anthropic_tool_names_keep_the_trait_default() {
 
 #[test]
 fn flags_anthropic_match_pinned_handler() {
-    assert!(Anthropic::DELIVERS_ENDED_STREAM_REWRITES);
-    assert!(Anthropic::ASSEMBLES_STREAMED_RESPONSE);
+    let delivers_rewrites = Anthropic::DELIVERS_ENDED_STREAM_REWRITES;
+    let assembles_response = Anthropic::ASSEMBLES_STREAMED_RESPONSE;
+    assert!(delivers_rewrites);
+    assert!(assembles_response);
 }
 
 #[rstest]
@@ -191,7 +193,11 @@ async fn flags_anthropic_undeliverable_passes_through_unchanged() {
         AnthropicTranslationError::Stream(ProcessStreamError::Undeliverable(rewrite)) => {
             assert_eq!(rewrite.guardrail_name, "guard");
         }
-        other => panic!("expected the undeliverable error unchanged, got {other:?}"),
+        other @ (AnthropicTranslationError::Input(_)
+        | AnthropicTranslationError::Output(_)
+        | AnthropicTranslationError::Stream(_)) => {
+            panic!("expected the undeliverable error unchanged, got {other:?}")
+        }
     }
 }
 

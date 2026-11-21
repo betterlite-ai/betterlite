@@ -51,6 +51,10 @@ fn process_stream_error_undeliverable_passes_through() {
         AnthropicTranslationError::Stream(ProcessStreamError::Undeliverable(inner)) => {
             assert_eq!(inner, original);
         }
-        other => panic!("expected the undeliverable error unchanged, got {other:?}"),
+        other @ (AnthropicTranslationError::Input(_)
+        | AnthropicTranslationError::Output(_)
+        | AnthropicTranslationError::Stream(_)) => {
+            panic!("expected the undeliverable error unchanged, got {other:?}")
+        }
     }
 }

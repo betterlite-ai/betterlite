@@ -9,7 +9,7 @@ use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::guardrail_base::failure::{GuardrailFailure, ModifyResponseFailure};
 use betterlite_guardrails::guardrail_base::inputs::GuardrailLogTarget;
 use betterlite_guardrails::guardrail_message_scope::Object;
-use betterlite_guardrails::guardrail_translation::{BaseTranslation, TranslationCall};
+use betterlite_guardrails::guardrail_translation::{BaseTranslation as _, TranslationCall};
 use rstest::rstest;
 
 use super::{ResponsesTranslation, ResponsesTranslationError};
@@ -144,8 +144,10 @@ fn adapter_responses_tool_names_keep_the_trait_default() {
 
 #[test]
 fn flags_responses_match_pinned_handler() {
-    assert!(Responses::DELIVERS_ENDED_STREAM_REWRITES);
-    assert!(Responses::ASSEMBLES_STREAMED_RESPONSE);
+    let delivers_rewrites = Responses::DELIVERS_ENDED_STREAM_REWRITES;
+    let assembles_response = Responses::ASSEMBLES_STREAMED_RESPONSE;
+    assert!(delivers_rewrites);
+    assert!(assembles_response);
 }
 
 #[rstest]
@@ -179,7 +181,11 @@ async fn flags_responses_undeliverable_rewrite_keeps_the_name() {
         ResponsesTranslationError::Undeliverable(rewrite) => {
             assert_eq!(rewrite.guardrail_name, "guard");
         }
-        other => panic!("expected the undeliverable rewrite, got {other:?}"),
+        other @ (ResponsesTranslationError::Request(_)
+        | ResponsesTranslationError::Output(_)
+        | ResponsesTranslationError::Stream(_)) => {
+            panic!("expected the undeliverable rewrite, got {other:?}")
+        }
     }
 }
 

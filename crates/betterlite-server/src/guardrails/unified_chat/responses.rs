@@ -47,8 +47,8 @@ pub enum ResponsesTranslationError {
 impl ResponsesTranslationError {
     fn guardrail(&self) -> Option<&GuardrailFailure> {
         match self {
-            Self::Request(RequestRewriteError::Guardrail { source }) => Some(source.as_ref()),
-            Self::Output(OutputRewriteError::Guardrail { source }) => Some(source.as_ref()),
+            Self::Request(RequestRewriteError::Guardrail { source })
+            | Self::Output(OutputRewriteError::Guardrail { source }) => Some(source.as_ref()),
             Self::Stream(StreamOutputError::Guardrail(failure)) => Some(failure),
             Self::Request(_) | Self::Output(_) | Self::Stream(_) | Self::Undeliverable(_) => None,
         }

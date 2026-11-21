@@ -39,8 +39,8 @@ pub enum AnthropicTranslationError {
 impl AnthropicTranslationError {
     fn guardrail(&self) -> Option<&GuardrailFailure> {
         match self {
-            Self::Input(ProcessInputError::Guardrail { source }) => Some(source.as_ref()),
-            Self::Output(ProcessOutputError::Guardrail { source }) => Some(source.as_ref()),
+            Self::Input(ProcessInputError::Guardrail { source })
+            | Self::Output(ProcessOutputError::Guardrail { source }) => Some(source.as_ref()),
             Self::Stream(ProcessStreamError::Guardrail(failure)) => Some(failure),
             Self::Input(_) | Self::Output(_) | Self::Stream(_) => None,
         }

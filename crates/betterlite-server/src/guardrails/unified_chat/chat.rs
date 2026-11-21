@@ -55,11 +55,11 @@ pub enum ChatTranslationError {
 }
 
 impl ChatTranslationError {
-    fn guardrail(&self) -> Option<&GuardrailFailure> {
+    const fn guardrail(&self) -> Option<&GuardrailFailure> {
         match self {
-            Self::Guardrail(failure) => Some(failure),
-            Self::Input(InputError::Guardrail(failure)) => Some(failure),
-            Self::Stream(EndedStreamError::Guardrail(failure)) => Some(failure),
+            Self::Guardrail(failure)
+            | Self::Input(InputError::Guardrail(failure))
+            | Self::Stream(EndedStreamError::Guardrail(failure)) => Some(failure),
             Self::Input(_) | Self::Stream(_) | Self::Parse { .. } => None,
         }
     }

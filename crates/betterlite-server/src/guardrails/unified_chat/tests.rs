@@ -18,6 +18,7 @@ use betterlite_guardrails::guardrail_base::inputs::{GuardrailApiInputs, Guardrai
 use betterlite_guardrails::guardrail_message_scope::scoped_indices::{
     GlobalSkipFlags, GuardrailSkipFlags,
 };
+use indexmap::IndexMap;
 
 use self::support::{FakeGuardrail, context, principal, texts_reply};
 use super::{
@@ -82,12 +83,10 @@ fn helper_failure_parts_map_http_and_object_failures() {
     );
     let object = GuardrailFailure::HttpObject {
         status: 422,
-        detail: [(
+        detail: IndexMap::from([(
             String::from("message"),
             GuardrailValue::Text(String::from("bad")),
-        )]
-        .into_iter()
-        .collect(),
+        )]),
     };
     let (status, detail) = failure_parts(&object).unwrap();
     assert_eq!(status, 422);

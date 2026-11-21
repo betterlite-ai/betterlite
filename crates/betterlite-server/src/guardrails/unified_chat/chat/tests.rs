@@ -8,7 +8,7 @@ use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::guardrail_base::failure::{GuardrailFailure, ModifyResponseFailure};
 use betterlite_guardrails::guardrail_base::inputs::GuardrailLogTarget;
 use betterlite_guardrails::guardrail_message_scope::Object;
-use betterlite_guardrails::guardrail_translation::{BaseTranslation, TranslationCall};
+use betterlite_guardrails::guardrail_translation::{BaseTranslation as _, TranslationCall};
 use rstest::rstest;
 
 use super::support::write_back;
@@ -146,7 +146,12 @@ async fn adapter_chat_input_surfaces_the_guardrail_failure() {
         ChatTranslationError::Input(InputError::Guardrail(failure)) => {
             assert_eq!(failure, denied);
         }
-        other => panic!("expected the guardrail failure, got {other:?}"),
+        other @ (ChatTranslationError::Guardrail(_)
+        | ChatTranslationError::Input(_)
+        | ChatTranslationError::Stream(_)
+        | ChatTranslationError::Parse { .. }) => {
+            panic!("expected the guardrail failure, got {other:?}")
+        }
     }
     assert_eq!(message_content(&data, 1), "hi");
 }
@@ -232,8 +237,10 @@ fn adapter_chat_tool_names_come_from_tools_and_functions() {
 
 #[test]
 fn flags_chat_match_pinned_handler() {
-    assert!(Chat::DELIVERS_ENDED_STREAM_REWRITES);
-    assert!(Chat::ASSEMBLES_STREAMED_RESPONSE);
+    let delivers_rewrites = Chat::DELIVERS_ENDED_STREAM_REWRITES;
+    let assembles_response = Chat::ASSEMBLES_STREAMED_RESPONSE;
+    assert!(delivers_rewrites);
+    assert!(assembles_response);
 }
 
 #[rstest]

@@ -79,16 +79,17 @@ impl GuardrailContract for FakeGuardrail {
         input_type: GuardrailInputType,
         _logging_obj: Option<&mut GuardrailLogTarget>,
     ) -> impl Future<Output = Result<GuardrailApiInputs, GuardrailFailure>> + Send {
-        let mut state = self.state.lock().unwrap();
-        state.calls.push(RecordedCall {
-            inputs: inputs.clone(),
-            input_type,
-        });
-        let reply = state.reply.clone();
-        let failure = state.failure.clone();
+        let (reply, failure) = {
+            let mut state = self.state.lock().unwrap();
+            state.calls.push(RecordedCall {
+                inputs: inputs.clone(),
+                input_type,
+            });
+            (state.reply.clone(), state.failure.clone())
+        };
         async move {
-            if let Some(failure) = failure {
-                return Err(failure);
+            if let Some(denial) = failure {
+                return Err(denial);
             }
             Ok(reply.unwrap_or(inputs))
         }
@@ -148,14 +149,26 @@ pub(crate) fn value(json: &str) -> GuardrailValue {
 pub(crate) fn object(json: &str) -> Object {
     match value(json) {
         GuardrailValue::Object(fields) => fields,
-        other => panic!("expected a JSON object, got {other:?}"),
+        other @ (GuardrailValue::Null
+        | GuardrailValue::Boolean(_)
+        | GuardrailValue::SignedInteger(_)
+        | GuardrailValue::UnsignedInteger(_)
+        | GuardrailValue::Decimal(_)
+        | GuardrailValue::Text(_)
+        | GuardrailValue::Array(_)) => panic!("expected a JSON object, got {other:?}"),
     }
 }
 
 pub(crate) fn items(json: &str) -> Vec<GuardrailValue> {
     match value(json) {
         GuardrailValue::Array(items) => items,
-        other => panic!("expected a JSON array, got {other:?}"),
+        other @ (GuardrailValue::Null
+        | GuardrailValue::Boolean(_)
+        | GuardrailValue::SignedInteger(_)
+        | GuardrailValue::UnsignedInteger(_)
+        | GuardrailValue::Decimal(_)
+        | GuardrailValue::Text(_)
+        | GuardrailValue::Object(_)) => panic!("expected a JSON array, got {other:?}"),
     }
 }
 
