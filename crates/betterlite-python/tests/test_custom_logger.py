@@ -769,11 +769,10 @@ def test_logger_hook_defaults(hooks_report: JsonValue) -> None:
 
 def test_logger_hook_identities(hooks_report: JsonValue) -> None:
     values = mapping(dig(hooks_report, "betterlite", "values"))
-    assert values["filter_deployments_same"] is True
-    assert values["filter_models_same"] is True
-    assert values["logging_hook_same"] is True
-    assert values["async_logging_hook_same"] is True
-    assert values["agentic_post_same"] is True
+    same_object = ["filter_deployments_same", "filter_models_same", "logging_hook_same",
+                   "async_logging_hook_same", "agentic_post_same"]
+    for field in same_object:
+        assert values[field] is True, field
     assert values["streaming_iterator"] == [1, 2]
     prompt = listing(values["prompt"])
     assert prompt == values["async_prompt"]
@@ -840,13 +839,13 @@ def test_logger_hook_events(hooks_report: JsonValue) -> None:
 def test_logger_hook_init(hooks_report: JsonValue) -> None:
     theirs = mapping(dig(hooks_report, "litellm", "init"))
     ours = mapping(dig(hooks_report, "betterlite", "init"))
-    assert ours["default_message_logging"] is True
-    assert ours["default_turn_off"] is False
-    assert ours["flagged_message_logging"] is True
-    assert ours["flagged_turn_off"] is True
-    assert ours["unflagged_message_logging"] is False
-    assert ours["both_message_logging"] is False
-    assert ours["both_turn_off"] is True
+    expected = {
+        "default_message_logging": True, "default_turn_off": False,
+        "flagged_message_logging": True, "flagged_turn_off": True,
+        "unflagged_message_logging": False, "both_message_logging": False,
+        "both_turn_off": True,
+    }
+    assert {field: ours[field] for field in expected} == expected
     assert ours["positional_error"] == "TypeError"
     assert theirs["positional_error"] == "none"
 
