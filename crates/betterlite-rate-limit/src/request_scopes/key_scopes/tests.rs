@@ -488,7 +488,8 @@ fn every_builder_runs_in_the_handlers_order() {
 fn the_mcp_builders_are_skipped_when_the_body_names_a_server_id() {
     let fixture = Fixture::new();
     let builder = fixture.builder(&[]);
-    let auth = support::auth(r#"{"metadata": {"mcp_rpm_limit": {"server": 9}}}"#);
+    let auth =
+        support::auth(r#"{"api_key": "key-1", "metadata": {"mcp_rpm_limit": {"server": 9}}}"#);
     let data = support::data(r#"{"server_id": "srv-1", "mcp_server_name": "server"}"#);
     let descriptors = create_rate_limit_descriptors(
         &builder,
@@ -504,7 +505,8 @@ fn the_mcp_builders_are_skipped_when_the_body_names_a_server_id() {
 fn the_mcp_builders_are_skipped_for_other_call_types(#[case] call_type: Option<&str>) {
     let fixture = Fixture::new();
     let builder = fixture.builder(&[]);
-    let auth = support::auth(r#"{"metadata": {"mcp_rpm_limit": {"server": 9}}}"#);
+    let auth =
+        support::auth(r#"{"api_key": "key-1", "metadata": {"mcp_rpm_limit": {"server": 9}}}"#);
     let data = support::data(r#"{"mcp_server_name": "server"}"#);
     let descriptors = create_rate_limit_descriptors(
         &builder,
@@ -518,7 +520,8 @@ fn the_mcp_builders_are_skipped_for_other_call_types(#[case] call_type: Option<&
 fn the_mcp_builders_need_a_server_name() {
     let fixture = Fixture::new();
     let builder = fixture.builder(&[]);
-    let auth = support::auth(r#"{"metadata": {"mcp_rpm_limit": {"server": 9}}}"#);
+    let auth =
+        support::auth(r#"{"api_key": "key-1", "metadata": {"mcp_rpm_limit": {"server": 9}}}"#);
     let data = support::data(r#"{"mcp_server_name": 5}"#);
     let descriptors = create_rate_limit_descriptors(
         &builder,
