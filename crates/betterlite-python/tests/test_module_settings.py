@@ -6,14 +6,16 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from types import ModuleType
-from typing import Final
+from typing import Final, get_type_hints
 
 import litellm
 import pytest
 from pydantic import JsonValue, TypeAdapter
 
 import betterlite
+import betterlite._settings.callbacks as settings_callbacks
 from betterlite import _native
+from betterlite._settings.callbacks import Callback, _CallRule
 from betterlite.types.utils.base import ModelValue
 
 ASSIGNMENT_LIMIT = 2314
@@ -500,6 +502,9 @@ def test_model_data_empty_lists_are_separate_objects() -> None:
 
 # ast-grep-ignore: no-long-names
 def test_module_helper_callback_lists_accept_typed_functions() -> None:
+    hints: dict[str, type] = get_type_hints(settings_callbacks)
+    assert hints["input_callback"] == list[Callback]
+    assert hints["success_callback"] == list[Callback]
     betterlite.input_callback.append(_input_callback)
     betterlite.success_callback.append(_event_callback)
     assert _input_callback in betterlite.input_callback
@@ -510,6 +515,9 @@ def test_module_helper_callback_lists_accept_typed_functions() -> None:
 
 # ast-grep-ignore: no-long-names
 def test_module_helper_call_rules_accept_typed_functions() -> None:
+    hints: dict[str, type] = get_type_hints(settings_callbacks)
+    assert hints["pre_call_rules"] == list[_CallRule]
+    assert hints["post_call_rules"] == list[_CallRule]
     betterlite.pre_call_rules.append(_call_rule)
     betterlite.post_call_rules.append(_call_rule)
     assert _call_rule in betterlite.pre_call_rules
