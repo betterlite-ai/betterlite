@@ -34,13 +34,16 @@ fn chat_chunks() -> Vec<StreamChunk> {
 }
 
 fn response_without_model() -> GuardrailValue {
-    object(vec![(
-        "choices",
-        array(vec![object(vec![
-            ("index", unsigned(0)),
-            ("message", message("assistant", text("hello"))),
-        ])]),
-    )])
+    object(vec![
+        ("usage", GuardrailValue::Null),
+        (
+            "choices",
+            array(vec![object(vec![
+                ("index", unsigned(0)),
+                ("message", message("assistant", text("hello"))),
+            ])]),
+        ),
+    ])
 }
 
 #[tokio::test]
@@ -108,6 +111,22 @@ async fn a_chat_block_preserves_the_upstream_usage_and_the_exception_model() {
     assert_eq!(records[0].model, Some("guardrail-model".to_owned()));
     assert_eq!(records[0].usage, Some(usage(3, 2)));
     assert!(runtime.masked.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_raw_block_with_an_empty_assembled_model_keeps_the_exception_model() {
+    let mut runtime = base();
+    runtime.assembled = Some(object(vec![
+        ("model", text("")),
+        ("choices", array(vec![])),
+    ]));
+    runtime.scan_result = Err(blocked("blocked", Some("guardrail-model"), None));
+    let settings = streaming_settings();
+    run_buffered(&runtime, &settings, "/v1/messages", raw_chunks())
+        .await
+        .unwrap();
+    let records = runtime.blocked_sse.lock().unwrap();
+    assert_eq!(records[0].model, "guardrail-model");
 }
 
 #[tokio::test]

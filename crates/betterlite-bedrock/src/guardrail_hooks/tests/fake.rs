@@ -12,6 +12,8 @@ use crate::guardrail_hooks::runtime::{
     HookRuntime, RoleSelection, ScanCall, ScanSource, UnifiedCall,
 };
 
+use super::support::object;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ScanRecord {
     pub source: ScanSource,
@@ -38,6 +40,7 @@ pub(crate) struct FakeRuntime {
     pub block_frames: Vec<Vec<u8>>,
     pub replacement_chunks: Vec<StreamChunk>,
     pub elapsed: Duration,
+    pub since: Mutex<Option<Instant>>,
     pub scans: Mutex<Vec<ScanRecord>>,
     pub delegations: Mutex<Vec<DelegateRecord>>,
     pub masked: Mutex<Vec<GuardrailValue>>,
@@ -65,6 +68,7 @@ pub(crate) fn base() -> FakeRuntime {
         block_frames: Vec::new(),
         replacement_chunks: Vec::new(),
         elapsed: Duration::ZERO,
+        since: Mutex::new(None),
         scans: Mutex::new(Vec::new()),
         delegations: Mutex::new(Vec::new()),
         masked: Mutex::new(Vec::new()),
@@ -156,6 +160,15 @@ impl HookRuntime for FakeRuntime {
         ready(self.scan_result.clone())
     }
 
+    fn is_raw_sse_stream(&self, chunks: &[StreamChunk]) -> bool {
+        chunks.iter().any(|chunk| {
+            let StreamChunk::Json(value) = chunk else {
+                return true;
+            };
+            matches!(value, GuardrailValue::Text(_))
+        })
+    }
+
     fn assemble(
         &self,
         _chunks: &[StreamChunk],
@@ -164,8 +177,45 @@ impl HookRuntime for FakeRuntime {
         ready(self.assembled.clone())
     }
 
+    fn model_response_text(&self, response: &GuardrailValue) -> String {
+        let GuardrailValue::Object(fields) = response else {
+            return String::new();
+        };
+        let Some(GuardrailValue::Array(choices)) = fields.get("choices") else {
+            return String::new();
+        };
+        let mut text = String::new();
+        for choice in choices {
+            let GuardrailValue::Object(choice_fields) = choice else {
+                continue;
+            };
+            let Some(GuardrailValue::Object(message)) = choice_fields.get("message") else {
+                continue;
+            };
+            if let Some(GuardrailValue::Text(content)) = message.get("content") {
+                text.push_str(content);
+            }
+        }
+        text
+    }
+
     fn reassemble_sse(&self, _response: &GuardrailValue) -> Result<Vec<Vec<u8>>, HookFailure> {
         Ok(self.sse_frames.clone())
+    }
+
+    fn error_frames(&self, message: &str) -> Vec<StreamChunk> {
+        let error = object(vec![
+            ("type", GuardrailValue::Text("guardrail_error".to_owned())),
+            ("message", GuardrailValue::Text(message.to_owned())),
+        ]);
+        let event = object(vec![
+            ("type", GuardrailValue::Text("error".to_owned())),
+            ("error", error),
+        ]);
+        let body = serde_json::to_string(&event).unwrap_or_default();
+        vec![StreamChunk::Bytes(
+            format!("event: error\ndata: {body}\n\n").into_bytes(),
+        )]
     }
 
     fn block_sse_chunks(&self, block: &BlockedMessage) -> Result<Vec<Vec<u8>>, HookFailure> {
@@ -186,7 +236,8 @@ impl HookRuntime for FakeRuntime {
         ready(Ok(call.chunks))
     }
 
-    fn elapsed(&self, _since: Instant) -> Duration {
+    fn elapsed(&self, since: Instant) -> Duration {
+        *self.since.lock().expect("elapsed records") = Some(since);
         self.elapsed
     }
 }

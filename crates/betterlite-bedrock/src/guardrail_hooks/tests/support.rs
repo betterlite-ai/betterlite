@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::time::Instant;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_translation::bedrock_streaming::BedrockGuardrailStreamParams;
@@ -29,6 +30,7 @@ pub(crate) async fn run_buffered(
         request_route: Some(request_route),
         data: &mut data,
         chunks,
+        started: Instant::now(),
     })
     .await
 }

@@ -7,7 +7,6 @@ use betterlite_prompts::response_tool_calls::structured::RouteCallTypes;
 
 pub mod chunks;
 pub mod errors;
-pub mod frames;
 pub mod input;
 pub mod keepalive;
 pub mod post_call;

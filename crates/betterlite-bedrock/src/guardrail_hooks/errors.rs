@@ -36,17 +36,11 @@ pub struct BlockedChat {
 // LiteLLM's serialize_http_exception_detail: flat and nested error shapes name the message, and anything else stays JSON.
 #[must_use]
 pub fn detail_message(detail: &GuardrailValue) -> String {
+    if let GuardrailValue::Text(text) = detail {
+        return text.clone();
+    }
     let GuardrailValue::Object(fields) = detail else {
-        return match detail {
-            GuardrailValue::Text(text) => text.clone(),
-            other @ (GuardrailValue::Null
-            | GuardrailValue::Boolean(_)
-            | GuardrailValue::SignedInteger(_)
-            | GuardrailValue::UnsignedInteger(_)
-            | GuardrailValue::Decimal(_)
-            | GuardrailValue::Array(_)
-            | GuardrailValue::Object(_)) => encode(other),
-        };
+        return encode(detail);
     };
     if let Some(GuardrailValue::Text(text)) = fields.get("error") {
         return text.clone();

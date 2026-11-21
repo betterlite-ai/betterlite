@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::time::Instant;
 
 use betterlite_core::routes::CallType;
 use rstest::rstest;
@@ -51,6 +52,7 @@ async fn incremental_streaming_delegates_with_the_default_buffering_off() {
         request_route: Some("/v1/chat/completions"),
         data: &mut data,
         chunks: given.clone(),
+        started: Instant::now(),
     })
     .await
     .unwrap();
@@ -80,6 +82,7 @@ async fn release_on_scan_delegates_with_the_default_buffering_off() {
         request_route: None,
         data: &mut data,
         chunks: given,
+        started: Instant::now(),
     })
     .await
     .unwrap();
@@ -102,6 +105,7 @@ async fn a_responses_route_delegates_with_buffering_on() {
         request_route: Some("/v1/responses"),
         data: &mut data,
         chunks: given.clone(),
+        started: Instant::now(),
     })
     .await
     .unwrap();
@@ -124,15 +128,16 @@ async fn a_masked_stream_buffers_even_when_buffering_is_off() {
     let mut settings = streaming_settings();
     settings.mask_response_content = true;
     settings.params.buffer_until_moderated = false;
-    let table = routes("/v1/responses", vec![CallType::Responses]);
+    let table = routes("/v1/chat/completions", vec![CallType::Completion]);
     let mut data = BTreeMap::new();
     let output = streaming_iterator_hook(StreamHook {
         runtime: &runtime,
         settings: &settings,
         routes: &table,
-        request_route: Some("/v1/responses"),
+        request_route: Some("/v1/chat/completions"),
         data: &mut data,
         chunks: chunks(),
+        started: Instant::now(),
     })
     .await
     .unwrap();
@@ -156,6 +161,7 @@ async fn an_unknown_route_buffers_and_scans() {
         request_route: Some("/v1/unknown"),
         data: &mut data,
         chunks: chunks(),
+        started: Instant::now(),
     })
     .await
     .unwrap();

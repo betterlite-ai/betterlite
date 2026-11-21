@@ -3,7 +3,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use super::fake::base;
 use super::support::{
     array, chat_response, object, replay_chunk, run_buffered, stream_chunk, streaming_settings,
-    text,
+    text, unsigned,
 };
 use crate::guardrail_hooks::chunks::StreamChunk;
 use crate::guardrail_hooks::errors::HookFailure;
@@ -13,6 +13,96 @@ fn chat_chunks() -> Vec<StreamChunk> {
         StreamChunk::Json(stream_chunk("hello")),
         StreamChunk::Json(stream_chunk(" world")),
     ]
+}
+
+fn text_completion_chunks() -> Vec<StreamChunk> {
+    vec![
+        StreamChunk::Json(object(vec![
+            ("id", text("cmpl-1")),
+            ("model", text("gpt-3.5-turbo-instruct")),
+            (
+                "choices",
+                array(vec![object(vec![
+                    ("index", unsigned(0)),
+                    ("text", text("Hel")),
+                    ("finish_reason", GuardrailValue::Null),
+                ])]),
+            ),
+        ])),
+        StreamChunk::Json(object(vec![
+            ("id", text("cmpl-1")),
+            ("model", text("gpt-3.5-turbo-instruct")),
+            (
+                "choices",
+                array(vec![object(vec![
+                    ("index", unsigned(0)),
+                    ("text", text("lo")),
+                    ("finish_reason", text("stop")),
+                ])]),
+            ),
+        ])),
+    ]
+}
+
+#[tokio::test]
+async fn a_text_completion_stream_passes_through_unscanned() {
+    let runtime = base();
+    let settings = streaming_settings();
+    let given = text_completion_chunks();
+    let output = run_buffered(&runtime, &settings, "/v1/chat/completions", given.clone())
+        .await
+        .unwrap();
+    assert_eq!(output, given);
+    assert!(runtime.scans.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_replayed_chunk_omits_the_null_fields_the_assembled_response_carries() {
+    let mut runtime = base();
+    runtime.assembled = Some(object(vec![
+        ("id", GuardrailValue::Null),
+        ("created", GuardrailValue::Null),
+        ("usage", GuardrailValue::Null),
+        ("model", text("gpt-test")),
+        (
+            "choices",
+            array(vec![object(vec![
+                ("index", unsigned(0)),
+                (
+                    "message",
+                    object(vec![
+                        ("role", text("assistant")),
+                        ("content", text("hello")),
+                        ("tool_calls", GuardrailValue::Null),
+                    ]),
+                ),
+                ("finish_reason", GuardrailValue::Null),
+            ])]),
+        ),
+    ]));
+    runtime.scan_result = Ok(object(vec![]));
+    let settings = streaming_settings();
+    let output = run_buffered(&runtime, &settings, "/v1/chat/completions", chat_chunks())
+        .await
+        .unwrap();
+    let expected = object(vec![
+        ("object", text("chat.completion.chunk")),
+        ("model", text("gpt-test")),
+        (
+            "choices",
+            array(vec![object(vec![
+                ("index", unsigned(0)),
+                (
+                    "delta",
+                    object(vec![
+                        ("role", text("assistant")),
+                        ("content", text("hello")),
+                    ]),
+                ),
+            ])]),
+        ),
+    ]);
+    assert_eq!(output, vec![StreamChunk::Json(expected)]);
 }
 
 #[tokio::test]

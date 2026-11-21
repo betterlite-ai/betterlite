@@ -76,15 +76,24 @@ pub trait HookRuntime: Sync {
         call: ScanCall<'_>,
     ) -> impl Future<Output = Result<GuardrailValue, HookFailure>> + Send;
 
-    // stream_chunk_builder and assemble_anthropic_sse_stream, B2227 and B3669
+    // is_raw_sse_stream, B3669
+    fn is_raw_sse_stream(&self, chunks: &[StreamChunk]) -> bool;
+
+    // stream_chunk_builder and assemble_anthropic_sse_stream, B2227 and B3669: None when the chunks are not a chat ModelResponse
     fn assemble(
         &self,
         chunks: &[StreamChunk],
         raw_sse: bool,
     ) -> impl Future<Output = Option<GuardrailValue>> + Send;
 
+    // model_response_text, B3669
+    fn model_response_text(&self, response: &GuardrailValue) -> String;
+
     // anthropic_sse_chunks_from_response, B3669
     fn reassemble_sse(&self, response: &GuardrailValue) -> Result<Vec<Vec<u8>>, HookFailure>;
+
+    // anthropic_sse_error_frames, B3669
+    fn error_frames(&self, message: &str) -> Vec<StreamChunk>;
 
     // AnthropicMessagesHandler().build_block_sse_chunks, U1
     fn block_sse_chunks(&self, block: &BlockedMessage) -> Result<Vec<Vec<u8>>, HookFailure>;

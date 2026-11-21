@@ -32,6 +32,7 @@ async fn scans_only_the_output_and_masks_the_response() {
     assert_eq!(scans.len(), 1);
     assert_eq!(scans[0].source, ScanSource::Output);
     assert!(scans[0].has_response);
+    assert_eq!(scans[0].message_count, 1);
     drop(scans);
     assert_eq!(runtime.masked.lock().unwrap().len(), 1);
     assert_eq!(data["applied"], GuardrailValue::Boolean(true));

@@ -4,24 +4,6 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
 use super::chunks::StreamChunk;
 
-// LiteLLM's model_response_text: the assistant text of a chat response, used to tell whether the guardrail rewrote it.
-#[must_use]
-pub fn model_response_text(response: &GuardrailValue) -> String {
-    let Some(choices) = choices(response) else {
-        return String::new();
-    };
-    let mut text = String::new();
-    for choice in choices {
-        let Some(GuardrailValue::Object(message)) = message_object(choice) else {
-            continue;
-        };
-        if let Some(GuardrailValue::Text(content)) = message.get("content") {
-            text.push_str(content);
-        }
-    }
-    text
-}
-
 // LiteLLM scans only a ModelResponse that carries text; a tool-only response has no content and must skip Bedrock.
 #[must_use]
 pub fn response_has_text(response: &GuardrailValue) -> Option<bool> {
@@ -141,11 +123,4 @@ fn choices(response: &GuardrailValue) -> Option<&[GuardrailValue]> {
         return None;
     };
     Some(items.as_slice())
-}
-
-fn message_object(choice: &GuardrailValue) -> Option<&GuardrailValue> {
-    let GuardrailValue::Object(choice_fields) = choice else {
-        return None;
-    };
-    choice_fields.get("message")
 }

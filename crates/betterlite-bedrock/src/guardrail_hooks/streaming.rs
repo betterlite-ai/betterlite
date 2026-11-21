@@ -5,11 +5,10 @@ use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_core::routes::CallType;
 use betterlite_prompts::response_tool_calls::structured::RouteCallTypes;
 
-use super::chunks::{StreamChunk, is_raw_sse_stream};
+use super::chunks::StreamChunk;
 use super::errors::{BlockedChat, BlockedMessage, HookFailure, ModifyFailure, detail_message};
-use super::frames::error_frames;
 use super::keepalive::keepalive_ping_has_fired;
-use super::response::{chat_chunk, model_response_text, response_field, response_model};
+use super::response::{chat_chunk, response_field, response_model};
 use super::runtime::{HookRuntime, ScanCall, ScanSource, UnifiedCall};
 use super::{RequestData, StreamingSettings, is_responses_api_route, streams_incrementally};
 
@@ -20,6 +19,7 @@ pub struct StreamHook<'hook, R: HookRuntime, T: RouteCallTypes<CallType>> {
     pub request_route: Option<&'hook str>,
     pub data: &'hook mut RequestData,
     pub chunks: Vec<StreamChunk>,
+    pub started: Instant,
 }
 
 struct StreamContext<'context> {
@@ -43,6 +43,7 @@ where
         request_route,
         data,
         chunks,
+        started,
     } = hook;
     if streams_incrementally(settings) {
         return runtime
@@ -62,7 +63,6 @@ where
             })
             .await;
     }
-    let started = Instant::now();
     scan_buffered_stream(runtime, settings, data, chunks, started).await
 }
 
@@ -76,16 +76,16 @@ async fn scan_buffered_stream<R>(
 where
     R: HookRuntime,
 {
-    let raw_sse = is_raw_sse_stream(&chunks);
+    let raw_sse = runtime.is_raw_sse_stream(&chunks);
     let context = StreamContext {
         settings,
         started,
         raw_sse,
     };
     let Some(mut assembled) = runtime.assemble(&chunks, raw_sse).await else {
-        return Ok(unassembled_output(settings, chunks, raw_sse));
+        return Ok(not_scannable_output(runtime, settings, chunks, raw_sse));
     };
-    let before = model_response_text(&assembled);
+    let before = runtime.model_response_text(&assembled);
     let messages = runtime.request_messages(data);
     let scan = ScanCall {
         source: ScanSource::Output,
@@ -110,12 +110,16 @@ where
     Ok(vec![chunk])
 }
 
-// A raw stream that cannot be assembled is blocked as an error frame, while a chat stream replays its chunks.
-fn unassembled_output(
+// A stream that is not a chat ModelResponse replays its chunks, unless it is raw SSE, where forwarding it unscanned would disable the guardrail.
+fn not_scannable_output<R>(
+    runtime: &R,
     settings: &StreamingSettings,
     chunks: Vec<StreamChunk>,
     raw_sse: bool,
-) -> Vec<StreamChunk> {
+) -> Vec<StreamChunk>
+where
+    R: HookRuntime,
+{
     if !raw_sse {
         return chunks;
     }
@@ -123,7 +127,7 @@ fn unassembled_output(
         "{}: streamed response could not be assembled for scanning, blocking it",
         settings.guardrail_name
     );
-    error_frames(&message)
+    runtime.error_frames(&message)
 }
 
 // A raw stream whose text did not change keeps the frames it already had, since re-encoding would rewrite them.
@@ -136,7 +140,7 @@ fn raw_output<R>(
 where
     R: HookRuntime,
 {
-    if model_response_text(assembled) == before {
+    if runtime.model_response_text(assembled) == before {
         return Ok(chunks);
     }
     Ok(runtime
@@ -188,7 +192,7 @@ where
     } else {
         format!("{status}: {message}")
     };
-    Ok(error_frames(&text))
+    Ok(runtime.error_frames(&text))
 }
 
 // Streaming cannot raise a block: the frames are already out, so the replacement carries the model and usage the caller saw.

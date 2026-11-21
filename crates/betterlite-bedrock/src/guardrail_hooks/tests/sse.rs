@@ -1,11 +1,15 @@
-use std::time::Duration;
+use std::collections::BTreeMap;
+use std::time::{Duration, Instant};
+
+use betterlite_core::routes::CallType;
 
 use super::fake::base;
 use super::support::{
-    chat_response, frame_texts, object, run_buffered, sse_frame, streaming_settings, text,
+    chat_response, frame_texts, object, routes, run_buffered, sse_frame, streaming_settings, text,
 };
 use crate::guardrail_hooks::chunks::StreamChunk;
 use crate::guardrail_hooks::errors::HookFailure;
+use crate::guardrail_hooks::streaming::{StreamHook, streaming_iterator_hook};
 
 fn raw_chunks() -> Vec<StreamChunk> {
     vec![
@@ -163,6 +167,56 @@ async fn a_plain_400_string_detail_is_a_service_failure_not_a_block() {
             detail: text("bad request"),
         }
     );
+}
+
+#[tokio::test]
+async fn a_service_failure_with_a_structured_detail_raises_until_a_ping_fires() {
+    let mut runtime = base();
+    runtime.assembled = Some(chat_response("claude-test", text("hello")));
+    runtime.scan_result = Err(HookFailure::Rejected {
+        status: 500,
+        detail: object(vec![("error", text("bedrock is down"))]),
+    });
+    let settings = streaming_settings();
+    let failure = run_buffered(&runtime, &settings, "/v1/chat/completions", raw_chunks())
+        .await
+        .unwrap_err();
+    match failure {
+        HookFailure::Rejected { status, .. } => assert_eq!(status, 500),
+        other @ (HookFailure::ModifyResponse(_) | HookFailure::Failed { .. }) => {
+            panic!("expected the service failure to raise, got {other:?}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn the_keepalive_clock_reads_the_instant_the_caller_stamped() {
+    let mut runtime = base();
+    runtime.assembled = Some(chat_response("claude-test", text("hello")));
+    runtime.elapsed = Duration::from_secs(2);
+    runtime.scan_result = Err(HookFailure::Rejected {
+        status: 500,
+        detail: text("bedrock is down"),
+    });
+    let mut settings = streaming_settings();
+    settings.keepalive_interval_seconds = Some(1.0_f64);
+    let table = routes("/v1/chat/completions", vec![CallType::Completion]);
+    let mut data = BTreeMap::new();
+    let started = Instant::now()
+        .checked_sub(Duration::from_secs(5))
+        .expect("an instant five seconds ago exists");
+    streaming_iterator_hook(StreamHook {
+        runtime: &runtime,
+        settings: &settings,
+        routes: &table,
+        request_route: Some("/v1/chat/completions"),
+        data: &mut data,
+        chunks: raw_chunks(),
+        started,
+    })
+    .await
+    .unwrap();
+    assert_eq!(*runtime.since.lock().unwrap(), Some(started));
 }
 
 #[tokio::test]
