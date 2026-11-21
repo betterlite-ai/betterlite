@@ -19,6 +19,7 @@ use crate::logging_service_events::types::{
 };
 
 use super::PrometheusServicesLogger;
+use super::ServiceHealthMetrics as _;
 use super::error::PrometheusServicesError;
 
 fn build(buckets: Option<&[f64]>) -> (Arc<CollectorRegistry>, PrometheusServicesLogger) {

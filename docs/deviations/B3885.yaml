@@ -50,12 +50,14 @@ deviations:
       callers here pass the name they already know.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_services.py#L250-L258
   - what: >-
-      The async hooks are ordinary methods: they await nothing, so a Rust caller invokes them
-      without spawning a task, where LiteLLM declares async def.
+      The four hooks and the three metric factories are methods of the public ServiceHealthMetrics
+      trait implemented by PrometheusServicesLogger, and the hooks await nothing, so a Rust caller
+      invokes them without spawning a task where LiteLLM declares async def methods on its class.
     why: >-
       LiteLLM's async service hooks contain no await either; the async keyword only matches the
-      callback interface. betterlite's dispatcher calls these methods directly, and a caller that
-      needs them on a task can wrap the call.
+      callback interface. The trait names the interface the service dispatcher calls, a caller that
+      needs a hook on a task can wrap the call, and one dispatch method behind the seven thin
+      methods keeps the four hooks from being four copies of the same loop.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_services.py#L220-L248
   - what: >-
       A finite duration or gauge value outside Decimal's range renders as PositiveInfinity or
