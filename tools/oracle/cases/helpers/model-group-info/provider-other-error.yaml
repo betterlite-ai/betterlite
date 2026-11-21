@@ -1,0 +1,27 @@
+kind: helper
+name: provider-other-error
+call:
+  model_group_info:
+    {
+      "model_group": "g",
+      "model_list": [
+        {
+          "model_name": "g",
+          "litellm_params": {
+            "model": "openai/b846-alpha"
+          },
+          "model_info": {
+            "id": "a"
+          }
+        }
+      ],
+      "model_group_alias": {},
+      "deployment_info": {},
+      "model_cost": {},
+      "parameters": {},
+      "lookup_error": false,
+      "provider_error": "other",
+      "missing_ids": []
+    }
+env: {}
+compare: {ignore: []}

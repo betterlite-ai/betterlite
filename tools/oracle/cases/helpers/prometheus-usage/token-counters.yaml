@@ -1,0 +1,46 @@
+kind: helper
+name: prometheus-usage-token-counters
+call:
+  b3877:
+    function: token_metrics
+    values: {user: alice}
+    supported_labels:
+      litellm_total_tokens_metric: [user]
+      litellm_input_tokens_metric: [user]
+      litellm_output_tokens_metric: [user]
+    response_cost: 0.0
+    cache_hit: null
+    total_tokens: 12
+    prompt_tokens: 5
+    completion_tokens: 7
+    usage_object: null
+calls:
+  - b3877:
+      function: token_metrics
+      values: {user: alice}
+      supported_labels:
+        litellm_total_tokens_metric: [user]
+        litellm_input_tokens_metric: [user]
+        litellm_output_tokens_metric: [user]
+      response_cost: 0.0
+      cache_hit: null
+      total_tokens: 0
+      prompt_tokens: 0
+      completion_tokens: 0
+      usage_object: null
+  - b3877:
+      function: token_metrics
+      values: {user: alice}
+      supported_labels:
+        litellm_total_tokens_metric: [user]
+        litellm_input_tokens_metric: [user]
+        litellm_output_tokens_metric: [user]
+        litellm_input_cached_tokens_metric: [user]
+      response_cost: 0.0
+      cache_hit: null
+      total_tokens: 12
+      prompt_tokens: 5
+      completion_tokens: 7
+      usage_object: {prompt_tokens_details: {cached_tokens: 3}}
+env: {}
+compare: {ignore: []}

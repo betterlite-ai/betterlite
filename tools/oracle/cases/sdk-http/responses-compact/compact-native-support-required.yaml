@@ -1,0 +1,30 @@
+kind: sdk_http
+name: responses-compact-native-support-required
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  responses_compact:
+    runs:
+      - mode: sync
+        model: anthropic/claude-sonnet-4
+        input: hello
+      - mode: sync
+        model: openai/gpt-4o
+        input: hello
+upstream:
+  - status: 401
+    headers: {content-type: application/json}
+    body:
+      error:
+        message: bad key
+        type: invalid_api_key
+        param: null
+        code: invalid_api_key
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore:
+    - pointer: /responses_compact/value/runs/0/failure/message
+      why: LiteLLM appends a traceback to the mapped APIConnectionError and betterlite writes its own bounded text
+    - pointer: /responses_compact/value/runs/1/failure/message
+      why: LiteLLM prefixes the provider name and betterlite writes its own text

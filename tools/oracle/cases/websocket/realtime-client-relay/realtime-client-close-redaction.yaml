@@ -1,0 +1,126 @@
+kind: helper
+name: realtime-client-close-redaction
+call:
+  realtime_client_relay_websocket:
+    mode: lifetime
+    messages: []
+    setup:
+      pending: []
+      backend_setup_complete: null
+      flushing: false
+      turn_detection_sent: false
+      pending_guardrail_message: null
+      session_configuration_request: null
+    guardrails: []
+    beta_backend: false
+    close:
+      code: 1008
+      reason: /home/user/secret/config.yaml leaked
+    lifetime:
+      client_wait: cancel
+      client_signals: false
+      client_outcome: backend_closed
+      backend_wait: none
+      backend_signals: false
+      backend_outcome: close
+    client_send_failures: []
+    client_close_failures: []
+calls:
+  - realtime_client_relay_websocket:
+      mode: lifetime
+      messages: []
+      setup:
+        pending: []
+        backend_setup_complete: null
+        flushing: false
+        turn_detection_sent: false
+        pending_guardrail_message: null
+        session_configuration_request: null
+      guardrails: []
+      beta_backend: false
+      close:
+        code: 1000
+        reason: done
+      lifetime:
+        client_wait: cancel
+        client_signals: false
+        client_outcome: backend_closed
+        backend_wait: none
+        backend_signals: false
+        backend_outcome: close
+      client_send_failures: []
+      client_close_failures: []
+  - realtime_client_relay_websocket:
+      mode: lifetime
+      messages: []
+      setup:
+        pending: []
+        backend_setup_complete: null
+        flushing: false
+        turn_detection_sent: false
+        pending_guardrail_message: null
+        session_configuration_request: null
+      guardrails: []
+      beta_backend: false
+      close:
+        code: 1006
+        reason: ''
+      lifetime:
+        client_wait: cancel
+        client_signals: false
+        client_outcome: backend_closed
+        backend_wait: none
+        backend_signals: false
+        backend_outcome: close
+      client_send_failures: []
+      client_close_failures: []
+  - realtime_client_relay_websocket:
+      mode: lifetime
+      messages: []
+      setup:
+        pending: []
+        backend_setup_complete: null
+        flushing: false
+        turn_detection_sent: false
+        pending_guardrail_message: null
+        session_configuration_request: null
+      guardrails: []
+      beta_backend: false
+      close:
+        code: 1008
+        reason: policy
+      lifetime:
+        client_wait: cancel
+        client_signals: false
+        client_outcome: backend_closed
+        backend_wait: none
+        backend_signals: false
+        backend_outcome: close
+      client_send_failures: [0]
+      client_close_failures: []
+  - realtime_client_relay_websocket:
+      mode: lifetime
+      messages: []
+      setup:
+        pending: []
+        backend_setup_complete: null
+        flushing: false
+        turn_detection_sent: false
+        pending_guardrail_message: null
+        session_configuration_request: null
+      guardrails: []
+      beta_backend: false
+      close:
+        code: 1008
+        reason: policy
+      lifetime:
+        client_wait: cancel
+        client_signals: false
+        client_outcome: backend_closed
+        backend_wait: none
+        backend_signals: false
+        backend_outcome: close
+      client_send_failures: []
+      client_close_failures: [0]
+env: {}
+compare: {ignore: []}

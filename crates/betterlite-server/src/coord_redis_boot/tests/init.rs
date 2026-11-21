@@ -5,12 +5,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_redis::redis_client_reuse::transport::RedisCacheFamily;
+use betterlite_test_ports::refused_port::RefusedPort;
 use tracing::Level;
 
 use super::support::{
     AttachCall, FakeSecrets, LogLine, PingOutcome, RecordingCaches, RecordingProbe, block,
-    capture_async_logs, closed_port, environment, messages, no_environment, settings,
-    standalone_cache, wiring,
+    capture_async_logs, environment, messages, no_environment, settings, standalone_cache, wiring,
 };
 use crate::coord_redis_boot::attach::{CLI_SSO_SESSION_TTL_SECONDS, UsageAttach};
 use crate::coord_redis_boot::env_refs::ResolveContext;
@@ -182,7 +182,8 @@ async fn init_from_config_rejects_a_block_without_a_target() {
 
 #[tokio::test]
 async fn init_from_config_builds_and_attaches() {
-    let port = closed_port();
+    let refused = RefusedPort::bind().unwrap();
+    let port = refused.address.port();
     let config = config_with_block(&format!(r#"{{"host": "127.0.0.1", "port": {port}}}"#));
     let secrets = FakeSecrets::new(&[]);
     let env = no_environment();
@@ -210,7 +211,8 @@ async fn init_from_config_builds_and_attaches() {
 
 #[tokio::test]
 async fn init_from_config_resolves_environment_references() {
-    let port = closed_port();
+    let refused = RefusedPort::bind().unwrap();
+    let port = refused.address.port();
     let config =
         config_with_block(r#"{"host": "os.environ/COORD_HOST", "port": "os.environ/COORD_PORT"}"#);
     let secrets = FakeSecrets::new(&[]);
@@ -233,7 +235,8 @@ async fn init_from_config_resolves_environment_references() {
 
 #[tokio::test]
 async fn init_from_config_reads_the_auth_flag_from_litellm_settings() {
-    let port = closed_port();
+    let refused = RefusedPort::bind().unwrap();
+    let port = refused.address.port();
     let block_text = format!(r#"{{"host": "127.0.0.1", "port": {port}}}"#);
     let secrets = FakeSecrets::new(&[]);
     let env = no_environment();
@@ -267,7 +270,8 @@ async fn init_from_config_reads_the_auth_flag_from_litellm_settings() {
 
 #[tokio::test]
 async fn init_from_config_reports_a_malformed_node_list() {
-    let port = closed_port();
+    let refused = RefusedPort::bind().unwrap();
+    let port = refused.address.port();
     let config = config_with_block(&format!(r#"{{"host": "127.0.0.1", "port": {port}}}"#));
     let secrets = FakeSecrets::new(&[]);
     let env = environment(&[("REDIS_CLUSTER_NODES", "not json")]);
@@ -349,7 +353,8 @@ async fn init_from_db_warns_without_a_target() {
 
 #[tokio::test]
 async fn init_from_db_builds_and_attaches() {
-    let port = closed_port();
+    let refused = RefusedPort::bind().unwrap();
+    let port = refused.address.port();
     let persisted = block(&format!(r#"{{"host": "127.0.0.1", "port": {port}}}"#));
     let litellm_settings =
         settings(r#"{"litellm_settings": {"enable_redis_auth_cache": true}}"#).litellm_settings;
@@ -403,7 +408,7 @@ async fn init_from_db_rejects_a_block_that_is_not_a_mapping() {
 
 #[tokio::test]
 async fn admin_ping_reports_a_closed_port_as_an_error() {
-    let cache = standalone_cache().await;
+    let (cache, _refused) = standalone_cache().await;
     let outcome = AdminPing.ping(&cache).await;
     outcome.expect_err("a closed port pings as an error");
 }
@@ -457,7 +462,8 @@ async fn init_env_fallback_warns_when_the_build_fails() {
 
 #[tokio::test]
 async fn init_env_fallback_warns_when_the_ping_fails() {
-    let env = port_environment(closed_port());
+    let refused = RefusedPort::bind().unwrap();
+    let env = port_environment(refused.address.port());
     let caches = RecordingCaches::default();
     let probe = RecordingProbe {
         outcome: PingOutcome::Fails,
@@ -489,7 +495,8 @@ fn ping_timeout_is_two_seconds() {
 
 #[tokio::test(start_paused = true)]
 async fn init_env_fallback_warns_when_the_ping_times_out() {
-    let env = port_environment(closed_port());
+    let refused = RefusedPort::bind().unwrap();
+    let env = port_environment(refused.address.port());
     let caches = RecordingCaches::default();
     let probe = RecordingProbe {
         outcome: PingOutcome::Hangs,
@@ -513,7 +520,8 @@ async fn init_env_fallback_warns_when_the_ping_times_out() {
 
 #[tokio::test]
 async fn init_env_fallback_stays_silent_on_a_false_ping() {
-    let env = port_environment(closed_port());
+    let refused = RefusedPort::bind().unwrap();
+    let env = port_environment(refused.address.port());
     let caches = RecordingCaches::default();
     let probe = RecordingProbe {
         outcome: PingOutcome::Unreachable,
@@ -535,7 +543,8 @@ async fn init_env_fallback_stays_silent_on_a_false_ping() {
 
 #[tokio::test]
 async fn init_env_fallback_attaches_when_reachable() {
-    let port = closed_port();
+    let refused = RefusedPort::bind().unwrap();
+    let port = refused.address.port();
     let env = port_environment(port);
     let caches = RecordingCaches::default();
     let probe = RecordingProbe {
@@ -561,7 +570,7 @@ async fn init_env_fallback_attaches_when_reachable() {
 
 #[tokio::test]
 async fn buffer_redis_returns_the_usage_cache_first() {
-    let usage = standalone_cache().await;
+    let (usage, _refused) = standalone_cache().await;
     let env = environment(&[("REDIS_HOST", "127.0.0.1"), ("REDIS_PORT", "6379")]);
     let settings = buffer_settings("true");
     let redis = buffer_redis(&settings, Some(&usage), &wiring(), &env)
@@ -572,7 +581,8 @@ async fn buffer_redis_returns_the_usage_cache_first() {
 
 #[tokio::test]
 async fn buffer_redis_builds_from_the_environment_when_wanted() {
-    let port = closed_port();
+    let refused = RefusedPort::bind().unwrap();
+    let port = refused.address.port();
     let env = port_environment(port);
     let bool_flag = buffer_settings("true");
     let redis = buffer_redis(&bool_flag, None, &wiring(), &env)

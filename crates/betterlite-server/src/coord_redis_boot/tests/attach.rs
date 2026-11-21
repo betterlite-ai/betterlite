@@ -30,7 +30,7 @@ fn all_caches(caches: &RecordingCaches) -> Vec<Arc<RedisCache>> {
 
 #[tokio::test]
 async fn attach_usage_redis_backs_spend_cli_sso_and_config() {
-    let redis = standalone_cache().await;
+    let (redis, _refused) = standalone_cache().await;
     let caches = RecordingCaches::default();
     attach_usage_redis(&redis, false, &attach_with(&caches, 120.0));
     assert_eq!(
@@ -59,7 +59,7 @@ fn cli_sso_session_ttl_is_ten_minutes() {
 
 #[tokio::test]
 async fn attach_usage_redis_backs_the_auth_cache_when_asked() {
-    let redis = standalone_cache().await;
+    let (redis, _refused) = standalone_cache().await;
     let caches = RecordingCaches::default();
     attach_usage_redis(&redis, true, &attach_with(&caches, 90.0));
     assert_eq!(
@@ -73,7 +73,7 @@ async fn attach_usage_redis_backs_the_auth_cache_when_asked() {
 
 #[tokio::test]
 async fn attach_usage_redis_gives_every_target_the_same_client() {
-    let redis = standalone_cache().await;
+    let (redis, _refused) = standalone_cache().await;
     let caches = RecordingCaches::default();
     attach_usage_redis(&redis, true, &attach_with(&caches, 90.0));
     let held = all_caches(&caches);
@@ -83,7 +83,7 @@ async fn attach_usage_redis_gives_every_target_the_same_client() {
 
 #[tokio::test]
 async fn attach_usage_redis_logs_the_enabled_line() {
-    let redis = standalone_cache().await;
+    let (redis, _refused) = standalone_cache().await;
     let caches = RecordingCaches::default();
     let ((), lines) = capture_logs(|| {
         attach_usage_redis(&redis, true, &attach_with(&caches, 120.0));
@@ -99,7 +99,7 @@ async fn attach_usage_redis_logs_the_enabled_line() {
 
 #[tokio::test]
 async fn attach_usage_redis_logs_the_disabled_line() {
-    let redis = standalone_cache().await;
+    let (redis, _refused) = standalone_cache().await;
     let caches = RecordingCaches::default();
     let ((), lines) = capture_logs(|| {
         attach_usage_redis(&redis, false, &attach_with(&caches, 120.0));
@@ -115,7 +115,7 @@ async fn attach_usage_redis_logs_the_disabled_line() {
 
 #[tokio::test]
 async fn usage_cache_target_attaches_to_a_real_dual_cache() {
-    let redis = standalone_cache().await;
+    let (redis, _refused) = standalone_cache().await;
     let cache = dual_cache(None);
     UsageCacheTarget::attach_redis(&cache, Arc::clone(&redis), Some(30.0_f64));
     let held = cache.redis_cache.read().expect("the client lock");
@@ -132,8 +132,8 @@ async fn usage_cache_target_attaches_to_a_real_dual_cache() {
 
 #[tokio::test]
 async fn config_cache_target_replaces_a_real_dual_cache_client() {
-    let original = standalone_cache().await;
-    let replacement = standalone_cache().await;
+    let (original, _original_refused) = standalone_cache().await;
+    let (replacement, _replacement_refused) = standalone_cache().await;
     let cache = dual_cache(Some(Arc::clone(&original)));
     ConfigCacheTarget::replace_redis(&cache, Arc::clone(&replacement));
     let held = cache.redis_cache.read().expect("the client lock");
@@ -146,7 +146,7 @@ async fn config_cache_target_replaces_a_real_dual_cache_client() {
 
 #[tokio::test]
 async fn usage_cache_target_attaches_to_a_real_auth_cache() {
-    let redis = standalone_cache().await;
+    let (redis, _refused) = standalone_cache().await;
     let cache = auth_cache();
     UsageCacheTarget::attach_redis(&cache, Arc::clone(&redis), Some(45.0_f64));
     let held = cache

@@ -1,14 +1,14 @@
 id: B933
 milestone: M5 api families
 title: Responses lifecycle call
-status: todo
+status: done
 depends_on: [B010, B185, B186, B903, B904, B198, B247, B2416, B2401, B5360, B9952]
 file: tasks/B933-responses-lifecycle-call.yaml
 covers:
   - "litellm/responses/main.py"
 parent: B080
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2751

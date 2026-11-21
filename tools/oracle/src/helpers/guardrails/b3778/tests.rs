@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use betterlite_guardrails::lasso::error::LassoError;
 use betterlite_guardrails::lasso::wire::LassoResponse;
+use betterlite_test_ports::refused_port::RefusedPort;
 use reqwest::StatusCode;
 use reqwest::header::HeaderValue;
 
@@ -12,12 +13,14 @@ use super::lasso_failure;
 use tokio::runtime::Builder;
 
 fn connection_refused() -> reqwest::Error {
-    let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-    let addr = listener.local_addr().unwrap();
-    drop(listener);
+    let refused = RefusedPort::bind().unwrap();
     let runtime = Builder::new_current_thread().enable_all().build().unwrap();
     runtime
-        .block_on(reqwest::Client::new().get(format!("http://{addr}")).send())
+        .block_on(
+            reqwest::Client::new()
+                .get(format!("http://{}", refused.address))
+                .send(),
+        )
         .unwrap_err()
 }
 

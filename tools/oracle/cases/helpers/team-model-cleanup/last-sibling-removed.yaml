@@ -1,0 +1,26 @@
+kind: helper
+name: last-sibling-removed
+call:
+  team_model_cleanup:
+    calls:
+      - function: remove_unbacked_team_models
+        model_name: pub
+        team_id: t1
+        team_public_model_name: pub
+        aliases: []
+        deployments: []
+        served_names: null
+        team_models: [pub, other]
+calls:
+  - team_model_cleanup:
+      calls:
+        - function: remove_unbacked_team_models
+          model_name: model_name_t1_a
+          team_id: t1
+          team_public_model_name: pub
+          aliases: []
+          deployments: []
+          served_names: []
+          team_models: [pub]
+env: {}
+compare: {ignore: []}

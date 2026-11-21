@@ -1,7 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::IntoFuture as _;
 use std::io;
-use std::net::TcpListener as StdTcpListener;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -115,13 +114,6 @@ pub(crate) fn captured_body(mock: &MockRepello) -> BTreeMap<String, GuardrailVal
 
 pub(crate) fn captured_headers(mock: &MockRepello) -> HeaderMap {
     mock.seen.lock().unwrap().first().unwrap().headers.clone()
-}
-
-pub(crate) fn closed_base() -> String {
-    let listener = StdTcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
-    format!("http://{address}")
 }
 
 pub(crate) fn data(text: &str) -> Data {
