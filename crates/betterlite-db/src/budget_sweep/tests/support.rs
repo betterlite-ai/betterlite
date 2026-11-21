@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::convert::Infallible;
-use std::future::{Future, pending};
+use std::future::{Future, pending, ready};
 use std::io;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -269,39 +269,42 @@ impl RecordingLeaseCache {
 }
 
 impl LockCache for RecordingLeaseCache {
-    async fn get_owner(&self, key: &str) -> Result<Option<Vec<u8>>, LockCacheError> {
+    fn get_owner(
+        &self,
+        key: &str,
+    ) -> impl Future<Output = Result<Option<Vec<u8>>, LockCacheError>> + Send {
         self.record(LeaseOperation::Read(key.to_owned()));
         if self.read_fails {
-            return Err(LockCacheError::UnexpectedReply {
+            return ready(Err(LockCacheError::UnexpectedReply {
                 operation: "get_owner",
-            });
+            }));
         }
         let guard = self.owner.lock().unwrap_or_else(PoisonError::into_inner);
-        Ok(guard.clone())
+        ready(Ok(guard.clone()))
     }
 
-    async fn set_owner_if_absent(
+    fn set_owner_if_absent(
         &self,
         key: &str,
         owner: &str,
         ttl_seconds: i64,
-    ) -> Result<bool, LockCacheError> {
+    ) -> impl Future<Output = Result<bool, LockCacheError>> + Send {
         self.record(LeaseOperation::Set(key.to_owned(), ttl_seconds));
         if !self.granted {
-            return Ok(false);
+            return ready(Ok(false));
         }
         *self.owner.lock().unwrap_or_else(PoisonError::into_inner) =
             Some(owner.as_bytes().to_vec());
-        Ok(true)
+        ready(Ok(true))
     }
 
-    async fn delete(&self, key: &str) -> Result<i64, LockCacheError> {
+    fn delete(&self, key: &str) -> impl Future<Output = Result<i64, LockCacheError>> + Send {
         self.record(LeaseOperation::Delete(key.to_owned()));
         let deleted = {
             let mut owner = self.owner.lock().unwrap_or_else(PoisonError::into_inner);
             owner.take().is_some()
         };
-        Ok(i64::from(deleted))
+        ready(Ok(i64::from(deleted)))
     }
 
     fn compare_and_delete_script(&self) -> Option<Arc<dyn LockScript>> {
