@@ -236,10 +236,11 @@ impl CustomEditProviders for CustomSource {
         let Some((_, handlers)) = self.entries.iter().find(|(name, _)| name == provider) else {
             return CustomEditLookup::Missing;
         };
-        match handlers.last() {
-            Some(handler) => CustomEditLookup::Handler(handler.as_ref()),
-            None => CustomEditLookup::Unmatched,
-        }
+        handlers
+            .last()
+            .map_or(CustomEditLookup::Unmatched, |handler| {
+                CustomEditLookup::Handler(handler.as_ref())
+            })
     }
 }
 
@@ -384,7 +385,7 @@ pub(super) fn custom_call() -> ImageEditCall {
             String::from("settings"),
             Json::Object(IndexMap::from([(
                 String::from("strength"),
-                Json::Number(Number::from(1)),
+                Json::Number(Number::from(1_u32)),
             )])),
         ),
         (String::from("api_key"), Json::Text(String::from("sk-test"))),

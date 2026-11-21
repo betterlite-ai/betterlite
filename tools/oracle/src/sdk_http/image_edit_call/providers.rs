@@ -1,7 +1,7 @@
 use std::sync::{Mutex, PoisonError};
 
 use betterlite_context::media_config_selection::image_edit::ImageEditConfigTag;
-use betterlite_core::api::image_edit_call::call::ImageEditStep;
+use betterlite_core::api::image_edit_call::call::{ImageEditClientKind, ImageEditStep};
 use betterlite_core::api::image_edit_call::error::ImageEditError;
 use betterlite_core::api::image_edit_call::send::{
     CustomEditHandler, CustomEditLookup, CustomEditProviders, CustomEditRequest, ImageEditProvider,
@@ -18,7 +18,6 @@ use serde_json::Number;
 use super::openai::OpenAiProvider;
 use super::{Client, CustomProvider, CustomRecord, Received, Sent};
 
-// B1120's selection over a config that supports these names and maps them as the OpenAI dict copy
 pub(super) struct Options<'names> {
     pub(super) supported: &'names [&'names str],
 }
@@ -44,7 +43,6 @@ impl ImageEditProviderConfig for Options<'_> {
     }
 }
 
-// the real B512 OpenAI wire, or one recorder standing in for every config B157 selects
 pub(super) struct Providers {
     recorded: bool,
     openai: OpenAiProvider,
@@ -122,12 +120,12 @@ impl ImageEditProvider for Recorder {
                 request.prompt,
                 request.optional_params,
                 request.timeout,
-            ),
+            )?,
             extra_headers: request.extra_headers.cloned(),
             extra_body,
             asynchronous: request.asynchronous,
         };
-        answered(&self.sent, sent, false)
+        Ok(answered(&self.sent, sent, false))
     }
 }
 
@@ -137,25 +135,23 @@ fn received(
     prompt: Option<&str>,
     optional_params: &ImageParams,
     timeout: Option<f64>,
-) -> Received {
-    Received {
+) -> Result<Received, ImageEditError> {
+    let texts: Result<Vec<String>, _> = images
+        .iter()
+        .map(|file| String::from_utf8(file.content.clone()))
+        .collect();
+    Ok(Received {
         model: model.to_owned(),
-        images: images
-            .iter()
-            .map(|file| String::from_utf8_lossy(&file.content).into_owned())
-            .collect(),
+        images: texts.map_err(|error| ImageEditError::Invalid {
+            message: error.to_string(),
+        })?,
         prompt: prompt.map(str::to_owned),
         optional_params: optional_params.clone(),
         timeout: timeout.and_then(Number::from_f64),
-    }
+    })
 }
 
-// keeps what a recorder received and answers with an empty ImageResponse, as a coroutine when pending
-fn answered<T>(
-    slot: &Mutex<Option<T>>,
-    record: T,
-    pending: bool,
-) -> Result<ImageEditStep<'static>, ImageEditError> {
+fn answered<T>(slot: &Mutex<Option<T>>, record: T, pending: bool) -> ImageEditStep<'static> {
     *slot.lock().unwrap_or_else(PoisonError::into_inner) = Some(record);
     let answer = ImageResponse {
         created: 1,
@@ -163,12 +159,11 @@ fn answered<T>(
         usage: None,
     };
     if pending {
-        return Ok(ImageEditStep::Pending(Box::pin(async move { Ok(answer) })));
+        return ImageEditStep::Pending(Box::pin(async move { Ok(answer) }));
     }
-    Ok(ImageEditStep::Answer(answer))
+    ImageEditStep::Answer(answer)
 }
 
-// litellm._custom_providers with the handlers each name's custom_provider_map entries carry
 pub(super) struct CustomHandlers {
     entries: Vec<(String, Vec<CustomHandler>)>,
 }
@@ -211,10 +206,11 @@ impl CustomEditProviders for CustomHandlers {
         let Some((_, handlers)) = self.entries.iter().find(|(name, _)| name == provider) else {
             return CustomEditLookup::Missing;
         };
-        match handlers.last() {
-            Some(handler) => CustomEditLookup::Handler(handler),
-            None => CustomEditLookup::Unmatched,
-        }
+        handlers
+            .last()
+            .map_or(CustomEditLookup::Unmatched, |handler| {
+                CustomEditLookup::Handler(handler)
+            })
     }
 }
 
@@ -237,10 +233,13 @@ impl CustomEditHandler for CustomHandler {
                 request.prompt,
                 request.optional_params,
                 request.timeout,
-            ),
-            client: request.client.map(Client::from),
+            )?,
+            client: request.client.map(|kind| match kind {
+                ImageEditClientKind::Sync => Client::Sync,
+                ImageEditClientKind::Asynchronous => Client::Asynchronous,
+            }),
             asynchronous,
         };
-        answered(&self.received, record, asynchronous)
+        Ok(answered(&self.received, record, asynchronous))
     }
 }

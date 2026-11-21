@@ -69,7 +69,12 @@ impl ImageEditProvider for OpenAiProvider {
         let seconds = request.timeout.unwrap_or_default();
         let timeout = Duration::try_from_secs_f64(seconds)
             .map_err(|_invalid| ImageEditError::InvalidTimeout { seconds })?;
+        let redactor =
+            Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(|error| ImageEditError::Invalid {
+                message: error.to_string(),
+            })?;
         let edit = OwnedEdit {
+            redactor,
             config: OpenAiConfig {
                 family: select_image_edit_family(request.model),
                 images: request.images.iter().map(nameless).collect(),
@@ -103,6 +108,7 @@ fn nameless(file: &ImageFile) -> ImageEditFile {
 }
 
 struct OwnedEdit {
+    redactor: Redactor,
     config: OpenAiConfig,
     model: String,
     prompt: Option<String>,
@@ -130,50 +136,52 @@ impl LogSink for Sink {
 }
 
 // the handler's pre-call runs over a fresh logging state, as a request without callbacks would
-async fn send_edit(
-    client: ProxiedClient,
-    edit: OwnedEdit,
-) -> Result<ImageResponse, ImageEditError> {
+fn logging_state(redactor: &Redactor) -> Result<LoggingState, ImageEditError> {
     let init: LoggingInit = serde_json::from_str(LOGGING_INIT)?;
-    let redactor =
-        Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(|error| ImageEditError::Invalid {
-            message: error.to_string(),
-        })?;
-    let mut state = LoggingState::new(
+    LoggingState::new(
         init,
         CorrelationSetup {
             context: &mut CorrelationContext::default(),
             settings: CorrelationSettings::default(),
         },
-        &redactor,
+        redactor,
         || String::from("generated"),
         Duration::default,
     )
     .map_err(|error| ImageEditError::Invalid {
         message: error.to_string(),
-    })?;
-    let env = PrePostEnv {
+    })
+}
+
+fn pre_post_env(redactor: &Redactor) -> PrePostEnv<'_> {
+    PrePostEnv {
         debug: DebugSettings::default(),
         globals: GlobalFlags::default(),
         decision: Decision {
             content: false,
             key_info: false,
         },
-        redactor: &redactor,
+        redactor,
         log: &Sink,
         input_callbacks: &[],
         sentry: None,
         logger_fn: None,
         now: DateTime::UNIX_EPOCH.fixed_offset(),
-    };
+    }
+}
+
+async fn send_edit(
+    client: ProxiedClient,
+    edit: OwnedEdit,
+) -> Result<ImageResponse, ImageEditError> {
+    let mut state = logging_state(&edit.redactor)?;
     let mut log = LogContext {
         state: &mut state,
-        env: &env,
+        env: &pre_post_env(&edit.redactor),
     };
-    let source = Pooled(client);
     let deps = ImageEditDeps {
         config: &edit.config,
-        source: &source,
+        source: &Pooled(client),
         supplied: None,
     };
     let call = HandlerCall {

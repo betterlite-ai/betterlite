@@ -22,7 +22,6 @@ pub struct ImageEditSendRequest<'send> {
     pub api_base: Option<&'send str>,
     pub custom_llm_provider: &'send str,
     pub client: Option<ImageEditClientKind>,
-    // _is_async: the handler hands back a coroutine only when this is true
     pub asynchronous: bool,
 }
 
@@ -48,9 +47,7 @@ pub trait ImageEditProviderSource: Send + Sync {
 
 // What litellm._custom_providers and custom_provider_map together say about a name
 pub enum CustomEditLookup<'lookup> {
-    // not listed among the custom providers
     Missing,
-    // listed, but no map entry names a handler
     Unmatched,
     Handler(&'lookup dyn CustomEditHandler),
 }
@@ -68,7 +65,6 @@ pub struct CustomEditRequest<'send> {
 }
 
 pub trait CustomEditHandler: Send + Sync {
-    // image_edit when asynchronous is false, aimage_edit when it is true
     fn call(
         &self,
         request: CustomEditRequest<'_>,

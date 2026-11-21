@@ -23,7 +23,6 @@ pub trait ImageEditOperation {
         logger: &mut dyn ImageEditLogger,
     ) -> Result<ImageEditStep<'_>, ImageEditError>;
 
-    // the resolved model and provider once get_llm_provider succeeds, the caller's arguments before
     fn attribution(&self, call: &ImageEditCall) -> Attribution;
 }
 

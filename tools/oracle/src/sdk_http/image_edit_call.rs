@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 use std::future::Future;
 
-use betterlite_core::api::image_edit_call::call::ImageEditClientKind;
 use betterlite_core::api::image_input_options::options::{Quality, ResponseFormat};
 use betterlite_openai::api::image_contracts::records::{ImageHeaders, ImageParams};
 use serde::{Deserialize, Serialize};
@@ -65,15 +64,6 @@ pub enum Client {
     Asynchronous,
 }
 
-impl From<ImageEditClientKind> for Client {
-    fn from(kind: ImageEditClientKind) -> Self {
-        match kind {
-            ImageEditClientKind::Sync => Self::Sync,
-            ImageEditClientKind::Asynchronous => Self::Asynchronous,
-        }
-    }
-}
-
 // a name in litellm._custom_providers and the handlers its custom_provider_map entries carry, in map order
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -89,7 +79,6 @@ pub struct Call {
     pub runs: Vec<Run>,
 }
 
-// What both a recorded configured provider and a custom handler receive
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct Received {
     pub model: String,
@@ -99,7 +88,6 @@ pub struct Received {
     pub timeout: Option<Number>,
 }
 
-// What a recorded configured provider received, in the arguments its LiteLLM send takes
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct Sent {
     pub provider: String,
@@ -110,7 +98,6 @@ pub struct Sent {
     pub asynchronous: bool,
 }
 
-// What the last matching custom handler received: the caller's kwargs, without the named options
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct CustomRecord {
     pub handler: String,

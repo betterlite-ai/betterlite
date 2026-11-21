@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use betterlite_config::loader::ConfigLoader;
+use betterlite_config::sections::image_edit_call::Settings;
 use betterlite_core::api::image_edit_call::call::{ImageEditCall, ImageEditClientKind, ImageInput};
 use betterlite_core::api::image_edit_call::entry::ImageEditEntry;
 use betterlite_core::api::image_edit_call::error::ImageEditException;
@@ -8,6 +9,7 @@ use betterlite_core::api::image_edit_call::logging::{ImageEditLogger, PreCallRec
 use betterlite_core::api::image_edit_call::service::ImageEdits;
 use betterlite_error::envelope::WireField;
 use betterlite_error::error::class_message;
+use betterlite_http::proxy::ProxiedClient;
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_models::catalog::BundledCatalog;
 use betterlite_models::decisions::Json;
@@ -27,35 +29,23 @@ use super::super::vector_query_embedding::outbound_client;
 use super::providers::{CustomHandlers, Providers};
 use super::{Call, Client, Images, Outcome, Run, RunOutcome};
 
-// Each run builds the production operation over the mock's base, the case's custom providers and one recorder
 pub(super) async fn execute(
     call: &Call,
     api_base: &str,
     env: &BTreeMap<String, String>,
 ) -> Result<SdkResult, SdkHttpError> {
-    let client = outbound_client(env)?;
-    let loader = ConfigLoader {
-        lookup: env.clone(),
-    };
-    let settings = loader
-        .load("model_list: []")
-        .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?
-        .sections
-        .image_edit_call;
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(SdkHttpError::Redactor)?;
+    let (client, settings, redactor) = shared(env)?;
     let catalog = BundledCatalog::default().get();
-    let known_model_names = BTreeSet::new();
     let mut runs = Vec::with_capacity(call.runs.len());
     for run in &call.runs {
-        let custom_providers: BTreeSet<String> = run
-            .custom_providers
-            .iter()
-            .map(|provider| provider.name.clone())
-            .collect();
         let resolution = ResolutionContext {
             catalog: &catalog,
-            known_model_names: &known_model_names,
-            custom_providers: &custom_providers,
+            known_model_names: &BTreeSet::new(),
+            custom_providers: &run
+                .custom_providers
+                .iter()
+                .map(|provider| provider.name.clone())
+                .collect(),
             environment: env,
             registry: JSONProviderRegistry::default(),
             policies: ProviderPolicies::default(),
@@ -70,36 +60,66 @@ pub(super) async fn execute(
             custom: &custom,
             global_drop_params: false,
         };
-        let edit = edit_call(run, api_base);
-        let entry = ImageEditEntry {
-            operation: &service,
-            logger: &mut Unlogged,
-            redactor: &redactor,
-        };
-        let answer = if run.asynchronous {
-            entry.aimage_edit(&edit).await
-        } else {
-            entry.image_edit(&edit).await
-        };
-        let outcome = match answer {
-            Ok(response) => RunOutcome {
-                success: Some(success(response)),
-                failure: None,
-                sent: providers.take(),
-                custom: custom.take(),
-            },
-            Err(exception) => RunOutcome {
-                success: None,
-                failure: Some(failure(&exception)),
-                sent: None,
-                custom: None,
-            },
-        };
-        runs.push(outcome);
+        let answer = edit(run, api_base, &service, &redactor).await;
+        runs.push(outcome(answer, &providers, &custom));
     }
     Ok(SdkResult::ImageEditCall {
         value: Box::new(Outcome { runs }),
     })
+}
+
+fn shared(
+    env: &BTreeMap<String, String>,
+) -> Result<(ProxiedClient, Settings, Redactor), SdkHttpError> {
+    let settings = ConfigLoader {
+        lookup: env.clone(),
+    }
+    .load("model_list: []")
+    .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?
+    .sections
+    .image_edit_call;
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(SdkHttpError::Redactor)?;
+    Ok((outbound_client(env)?, settings, redactor))
+}
+
+async fn edit(
+    run: &Run,
+    api_base: &str,
+    service: &ImageEdits<'_>,
+    redactor: &Redactor,
+) -> Result<ImageResponse, ImageEditException> {
+    let call = edit_call(run, api_base);
+    let entry = ImageEditEntry {
+        operation: service,
+        logger: &mut Unlogged,
+        redactor,
+    };
+    if run.asynchronous {
+        entry.aimage_edit(&call).await
+    } else {
+        entry.image_edit(&call).await
+    }
+}
+
+fn outcome(
+    answer: Result<ImageResponse, ImageEditException>,
+    providers: &Providers,
+    custom: &CustomHandlers,
+) -> RunOutcome {
+    match answer {
+        Ok(response) => RunOutcome {
+            success: Some(success(response)),
+            failure: None,
+            sent: providers.take(),
+            custom: custom.take(),
+        },
+        Err(exception) => RunOutcome {
+            success: None,
+            failure: Some(failure(&exception)),
+            sent: None,
+            custom: None,
+        },
+    }
 }
 
 // the pre-call record is compared by the behavior tests, so the oracle's logger only accepts it

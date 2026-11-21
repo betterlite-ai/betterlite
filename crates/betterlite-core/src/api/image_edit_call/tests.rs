@@ -87,7 +87,7 @@ async fn edit_openai_upload() {
         sent.optional_params,
         ImageParams::from([
             (String::from("mask"), Json::Text(String::from("m.png"))),
-            (String::from("n"), Json::Number(Number::from(1))),
+            (String::from("n"), Json::Number(Number::from(1_u32))),
             (String::from("quality"), Json::Text(String::from("high"))),
             (
                 String::from("response_format"),
@@ -214,7 +214,7 @@ async fn edit_option_merge() {
             String::from("settings"),
             Json::Object(IndexMap::from([(
                 String::from("strength"),
-                Json::Number(Number::from(2)),
+                Json::Number(Number::from(2_u32)),
             )])),
         ),
         (
@@ -237,7 +237,7 @@ async fn edit_option_merge() {
             String::from("settings"),
             Json::Object(IndexMap::from([(
                 String::from("strength"),
-                Json::Number(Number::from(1)),
+                Json::Number(Number::from(1_u32)),
             )])),
         ),
         (String::from("api_key"), Json::Text(String::from("sk-test"))),
@@ -265,7 +265,7 @@ async fn edit_option_merge() {
     assert_eq!(
         sent.optional_params,
         ImageParams::from([
-            (String::from("n"), Json::Number(Number::from(1))),
+            (String::from("n"), Json::Number(Number::from(1_u32))),
             (
                 String::from("settings[strength]"),
                 Json::Text(String::from("2"))
@@ -318,7 +318,7 @@ async fn edit_option_merge_json_provider() {
             String::from("settings"),
             Json::Object(IndexMap::from([(
                 String::from("strength"),
-                Json::Number(Number::from(2)),
+                Json::Number(Number::from(2_u32)),
             )])),
         ),
         (
@@ -331,12 +331,12 @@ async fn edit_option_merge_json_provider() {
     ]);
     call.extra_body = Some(body.clone());
     call.kwargs = ImageParams::from([
-        (String::from("seed"), Json::Number(Number::from(7))),
+        (String::from("seed"), Json::Number(Number::from(7_u32))),
         (
             String::from("settings"),
             Json::Object(IndexMap::from([(
                 String::from("strength"),
-                Json::Number(Number::from(1)),
+                Json::Number(Number::from(1_u32)),
             )])),
         ),
     ]);
@@ -355,9 +355,9 @@ async fn edit_option_merge_json_provider() {
     assert_eq!(
         sent.optional_params,
         ImageParams::from([
-            (String::from("n"), Json::Number(Number::from(1))),
+            (String::from("n"), Json::Number(Number::from(1_u32))),
             (String::from("size"), Json::Text(String::from("1024x1024"))),
-            (String::from("seed"), Json::Number(Number::from(7))),
+            (String::from("seed"), Json::Number(Number::from(7_u32))),
         ])
     );
     assert_eq!(sent.extra_body.as_ref(), Some(&body));
@@ -381,7 +381,7 @@ async fn edit_option_merge_rejects_a_non_text_header() {
     let mut call = upload();
     call.extra_headers = Some(ImageParams::from([(
         String::from("x"),
-        Json::Number(Number::from(1)),
+        Json::Number(Number::from(1_u32)),
     )]));
     let error = ImageEditEntry {
         operation: &service,
@@ -553,7 +553,7 @@ async fn edit_dispatch_and_timeout_logs_before_the_branch_merge() {
         String::from("settings"),
         Json::Object(IndexMap::from([(
             String::from("strength"),
-            Json::Number(Number::from(1)),
+            Json::Number(Number::from(1_u32)),
         )])),
     )]);
     let mut logger = RecordingLogger::new();
@@ -579,7 +579,7 @@ async fn edit_dispatch_and_timeout_logs_before_the_branch_merge() {
             String::from("settings"),
             Json::Object(IndexMap::from([(
                 String::from("strength"),
-                Json::Number(Number::from(1)),
+                Json::Number(Number::from(1_u32)),
             )]))
         )])
     );
@@ -605,8 +605,10 @@ async fn edit_custom_and_async() {
         global_drop_params: false,
     };
     let mut call = custom_call();
-    call.kwargs
-        .insert(String::from("async_call"), Json::Number(Number::from(1)));
+    call.kwargs.insert(
+        String::from("async_call"),
+        Json::Number(Number::from(1_u32)),
+    );
     ImageEditEntry {
         operation: &service,
         logger: &mut RecordingLogger::new(),
@@ -846,7 +848,7 @@ async fn edit_option_merge_passes_the_drop_policy() {
             String::from("additional_drop_params"),
             Json::List(vec![
                 Json::Text(String::from("size")),
-                Json::Number(Number::from(1)),
+                Json::Number(Number::from(1_u32)),
             ]),
         ),
     ]);

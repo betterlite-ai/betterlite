@@ -125,7 +125,6 @@ impl ImageEdits<'_> {
         Ok(Some(handler.call(request, asynchronous)?))
     }
 
-    // B157 picks the config tag, and the composition has to hold a provider for it
     fn select_provider(
         &self,
         resolved: &ResolvedEdit,
@@ -140,7 +139,6 @@ impl ImageEdits<'_> {
         Ok((tag, provider))
     }
 
-    // the provider maps the options, then OpenAI-shaped multipart providers add the form fields
     fn edit_params(
         &self,
         call: &ImageEditCall,
