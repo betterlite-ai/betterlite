@@ -236,12 +236,11 @@ impl ScriptedTransport {
     }
 }
 
+type RawReply = Result<RawChatResponse, RawChatError>;
+type Handled = Result<ClientHandle<ScriptedTransport>, EndpointError>;
+
 impl SyncRawChatTransport for ScriptedTransport {
-    fn create(
-        &self,
-        data: &Map<String, Value>,
-        timeout: f64,
-    ) -> Result<RawChatResponse, RawChatError> {
+    fn create(&self, data: &Map<String, Value>, timeout: f64) -> RawReply {
         self.record(data, timeout);
         self.answer.make()
     }
@@ -249,14 +248,10 @@ impl SyncRawChatTransport for ScriptedTransport {
 
 #[async_trait]
 impl AsyncRawChatTransport for ScriptedTransport {
-    async fn create(
-        &self,
-        data: &Map<String, Value>,
-        timeout: f64,
-    ) -> Result<RawChatResponse, RawChatError> {
+    async fn create(&self, data: &Map<String, Value>, timeout: f64) -> RawReply {
         if matches!(self.answer, Answer::Pending) {
             self.record(data, timeout);
-            return std::future::pending::<Result<RawChatResponse, RawChatError>>().await;
+            return std::future::pending::<RawReply>().await;
         }
         SyncRawChatTransport::create(self, data, timeout)
     }
@@ -334,7 +329,7 @@ impl ScriptedSource {
 impl ClientSource for ScriptedSource {
     type Client = ScriptedTransport;
 
-    fn get(&self, call: GetClient<'_>) -> Result<ClientHandle<Self::Client>, EndpointError> {
+    fn get(&self, call: GetClient<'_>) -> Handled {
         self.record(
             &self.gets,
             GetRecord {
@@ -349,19 +344,20 @@ impl ClientSource for ScriptedSource {
         )
     }
 
-    fn gateway(
-        &self,
-        call: GatewayClient<'_>,
-    ) -> Result<ClientHandle<Self::Client>, EndpointError> {
+    fn gateway(&self, call: GatewayClient<'_>) -> Handled {
+        let api_base = call.api_base.to_owned();
+        let api_version = call.api_version.map(str::to_owned);
+        let max_retries = serde_json::to_value(&call.max_retries.0).unwrap_or(Value::Null);
+        let api_key = call.api_key.map(|key| key.expose_secret().to_owned());
         self.record(
             &self.gateways,
             GatewayRecord {
-                api_base: call.api_base.to_owned(),
+                api_base,
                 model: call.model.to_owned(),
-                api_version: call.api_version.map(str::to_owned),
-                max_retries: serde_json::to_value(&call.max_retries.0).unwrap_or(Value::Null),
+                api_version,
+                max_retries,
                 timeout: call.timeout,
-                api_key: call.api_key.map(|key| key.expose_secret().to_owned()),
+                api_key,
                 acompletion: call.acompletion,
             },
         )

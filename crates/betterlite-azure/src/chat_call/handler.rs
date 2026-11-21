@@ -93,7 +93,15 @@ where
         return Ok(ChatOutcome::Stream(stream));
     }
     if call.acompletion {
-        let reply = buffered::acompletion(source, sent, call, runtime, hooks).await?;
+        let reply = buffered::call(
+            source,
+            sent,
+            call,
+            runtime,
+            hooks,
+            streaming::Direction::Async,
+        )
+        .await?;
         return Ok(ChatOutcome::Buffered(Box::new(reply)));
     }
     if matches!(
@@ -111,7 +119,15 @@ where
         .await?;
         return Ok(ChatOutcome::Stream(stream));
     }
-    let reply = buffered::complete_buffered(source, sent, call, runtime, hooks).await?;
+    let reply = buffered::call(
+        source,
+        sent,
+        call,
+        runtime,
+        hooks,
+        streaming::Direction::Sync,
+    )
+    .await?;
     Ok(ChatOutcome::Buffered(Box::new(reply)))
 }
 

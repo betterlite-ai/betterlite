@@ -16,6 +16,9 @@ pub(super) mod answer;
 
 use answer::{Answer, ErrorKind};
 
+type RawReply = Result<RawChatResponse, RawChatError>;
+type Handled = Result<ClientHandle<ScriptedTransport>, EndpointError>;
+
 pub(super) const CHAT_BODY: &str = concat!(
     r#"{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"#,
     r#""model":"gpt-4o","choices":[{"index":0,"#,
@@ -76,11 +79,7 @@ impl ScriptedTransport {
 }
 
 impl SyncRawChatTransport for ScriptedTransport {
-    fn create(
-        &self,
-        data: &Map<String, Value>,
-        _timeout: f64,
-    ) -> Result<RawChatResponse, RawChatError> {
+    fn create(&self, data: &Map<String, Value>, _timeout: f64) -> RawReply {
         self.record(data);
         self.answer.make()
     }
@@ -88,14 +87,10 @@ impl SyncRawChatTransport for ScriptedTransport {
 
 #[async_trait]
 impl AsyncRawChatTransport for ScriptedTransport {
-    async fn create(
-        &self,
-        data: &Map<String, Value>,
-        timeout: f64,
-    ) -> Result<RawChatResponse, RawChatError> {
+    async fn create(&self, data: &Map<String, Value>, timeout: f64) -> RawReply {
         if self.answer.error == Some(ErrorKind::Pending) {
             self.record(data);
-            return std::future::pending::<Result<RawChatResponse, RawChatError>>().await;
+            return std::future::pending::<RawReply>().await;
         }
         SyncRawChatTransport::create(self, data, timeout)
     }
@@ -170,8 +165,7 @@ impl ScriptedSource {
 impl ClientSource for ScriptedSource {
     type Client = ScriptedTransport;
 
-    fn get(&self, call: GetClient<'_>) -> Result<ClientHandle<Self::Client>, EndpointError> {
-        let params = &call.litellm_params;
+    fn get(&self, call: GetClient<'_>) -> Handled {
         self.record(
             &self.gets,
             GetRecord {
@@ -180,30 +174,32 @@ impl ClientSource for ScriptedSource {
                 api_key: call.api_key.map(|key| key.expose_secret().to_owned()),
                 model: call.model.map(str::to_owned),
                 is_async: call.is_async,
-                azure_ad_token: params
+                azure_ad_token: call
+                    .litellm_params
                     .azure_ad_token
                     .as_ref()
                     .map(|token| token.expose_secret().to_owned()),
-                max_retries: params.max_retries,
-                timeout: params.timeout,
+                max_retries: call.litellm_params.max_retries,
+                timeout: call.litellm_params.timeout,
                 supplied: call.supplied.is_some(),
             },
         )
     }
 
-    fn gateway(
-        &self,
-        call: GatewayClient<'_>,
-    ) -> Result<ClientHandle<Self::Client>, EndpointError> {
+    fn gateway(&self, call: GatewayClient<'_>) -> Handled {
+        let api_base = call.api_base.to_owned();
+        let api_version = call.api_version.map(str::to_owned);
+        let max_retries = serde_json::to_value(&call.max_retries.0).unwrap_or(Value::Null);
+        let api_key = call.api_key.map(|key| key.expose_secret().to_owned());
         self.record(
             &self.gateways,
             GatewayRecord {
-                api_base: call.api_base.to_owned(),
+                api_base,
                 model: call.model.to_owned(),
-                api_version: call.api_version.map(str::to_owned),
-                max_retries: serde_json::to_value(&call.max_retries.0).unwrap_or(Value::Null),
+                api_version,
+                max_retries,
                 timeout: call.timeout,
-                api_key: call.api_key.map(|key| key.expose_secret().to_owned()),
+                api_key,
                 acompletion: call.acompletion,
             },
         )
