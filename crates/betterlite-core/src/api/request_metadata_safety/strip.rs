@@ -137,7 +137,7 @@ fn strip_false_like(metadata: &mut IndexMap<String, Json>) -> bool {
 // only an explicit false, or the spellings a client uses for it, opts out of message logging
 fn is_false_like(value: &Json) -> bool {
     match value {
-        Json::Bool(value) => !*value,
+        Json::Bool(flag) => !*flag,
         // ast-grep-ignore: no-python-habits - LiteLLM's _is_false_like lowercases the text and matches these four spellings
         Json::Text(text) => matches!(
             text.trim().to_lowercase().as_str(),

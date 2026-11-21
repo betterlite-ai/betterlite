@@ -48,7 +48,7 @@ fn copy_body_session_id(
     body_session_id: Option<Json>,
     requester_session_id: bool,
 ) {
-    let Some(body_session_id) = body_session_id else {
+    let Some(session_id) = body_session_id else {
         return;
     };
     if metadata
@@ -58,7 +58,7 @@ fn copy_body_session_id(
     {
         return;
     }
-    metadata.insert(SESSION_ID_KEY.to_owned(), body_session_id);
+    metadata.insert(SESSION_ID_KEY.to_owned(), session_id);
 }
 
 fn present_body_session_id(data: &RequestData) -> Option<Json> {

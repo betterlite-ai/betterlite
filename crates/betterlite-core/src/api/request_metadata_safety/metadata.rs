@@ -117,7 +117,7 @@ pub fn normalized_metadata_object(
         Json::Text(text) => parsed_object(text, limits),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => None,
     };
-    normalized.ok_or(RequestMetadataSafetyError::MetadataNotObject {
+    normalized.ok_or_else(|| RequestMetadataSafetyError::MetadataNotObject {
         field,
         received: JsonType::from(value),
     })

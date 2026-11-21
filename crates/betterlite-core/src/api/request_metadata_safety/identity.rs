@@ -69,10 +69,10 @@ pub fn get_chain_id_from_headers(headers: &IndexMap<String, String>) -> Option<S
 #[must_use]
 // ast-grep-ignore: no-long-names
 pub fn anthropic_session_id_from_metadata(metadata: &Json) -> Option<String> {
-    let Json::Object(metadata) = metadata else {
+    let Json::Object(fields) = metadata else {
         return None;
     };
-    match metadata.get(USER_ID_KEY) {
+    match fields.get(USER_ID_KEY) {
         Some(Json::Object(user)) => match user.get(SESSION_ID_KEY) {
             Some(Json::Text(session_id))
                 if !session_id.is_empty() && is_session_id_text(session_id) =>

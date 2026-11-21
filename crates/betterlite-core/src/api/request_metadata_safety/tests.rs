@@ -593,7 +593,7 @@ fn stampable_key_hash_cases(
 #[test]
 fn sanitize_for_log_removes_line_breaks() {
     assert_eq!(sanitize_for_log(&text("a\r\nb\nc")), "abc");
-    assert_eq!(sanitize_for_log(&Json::Number(Number::from(5))), "5");
+    assert_eq!(sanitize_for_log(&Json::Number(Number::from(5_i32))), "5");
     assert_eq!(
         sanitize_for_log(&object(vec![("a", text("b"))])),
         "{\"a\":\"b\"}"

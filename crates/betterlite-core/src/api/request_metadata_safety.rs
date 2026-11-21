@@ -74,21 +74,11 @@ pub struct RequestMetadataSafetyResult {
     pub metadata_variable_name: MetadataField,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct MetadataSafetySettings {
     pub limits: ApiLimits,
     pub missing_session_id: Option<MissingSessionIdPolicy>,
     pub turn_off_message_logging: bool,
-}
-
-impl Default for MetadataSafetySettings {
-    fn default() -> Self {
-        Self {
-            limits: ApiLimits::default(),
-            missing_session_id: None,
-            turn_off_message_logging: false,
-        }
-    }
 }
 
 pub fn sanitize_request_metadata(
