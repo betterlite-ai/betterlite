@@ -14,9 +14,10 @@ pub const ENV_FAILURE_BACKOFF: &str = "SPEND_LOG_CLEANUP_BATCH_FAILURE_BACKOFF_S
 pub const ENV_COUNT_CAP: &str = "SPEND_LOG_CLEANUP_REMAINING_COUNT_CAP";
 
 // litellm/constants.py reads these once at import, so a malformed number stops the proxy from starting
-pub fn cleanup_defaults<Lookup: EnvironmentLookup>(
-    lookup: &Lookup,
-) -> Result<CleanupBounds, ConfigError> {
+pub fn cleanup_defaults<Lookup>(lookup: &Lookup) -> Result<CleanupBounds, ConfigError>
+where
+    Lookup: EnvironmentLookup,
+{
     Ok(CleanupBounds {
         batch_size: betterlite_env::number(
             ENV_BATCH_SIZE,
@@ -46,10 +47,10 @@ pub fn cleanup_defaults<Lookup: EnvironmentLookup>(
 }
 
 // asyncio waits not at all for a negative number of seconds, which a zero Duration matches
-fn seconds<Lookup: EnvironmentLookup>(
-    lookup: &Lookup,
-    name: &str,
-) -> Result<Option<Duration>, ConfigError> {
+fn seconds<Lookup>(lookup: &Lookup, name: &str) -> Result<Option<Duration>, ConfigError>
+where
+    Lookup: EnvironmentLookup,
+{
     let text = lookup.lookup(name).unwrap_or_default();
     let Some(parsed) = betterlite_env::number::<f64>(name, &text)? else {
         return Ok(None);

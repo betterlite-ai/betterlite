@@ -35,7 +35,11 @@ struct TableRun {
     failures: i64,
 }
 
-impl<Clock: MonotonicClock, Progress: BatchProgress> BatchDeleter<'_, Clock, Progress> {
+impl<Clock, Progress> BatchDeleter<'_, Clock, Progress>
+where
+    Clock: MonotonicClock,
+    Progress: BatchProgress,
+{
     // _delete_old_rows_batched: the backlog running out, the deadline, the batch cap or repeated failures end a table
     pub async fn delete_expired(
         &mut self,
@@ -113,7 +117,7 @@ impl<Clock: MonotonicClock, Progress: BatchProgress> BatchDeleter<'_, Clock, Pro
 
     // a batch the clamped timeout cancelled at the deadline is the bound working, not a database fault
     async fn batch_failed(
-        &mut self,
+        &self,
         run: &mut TableRun,
         error: &BoundedTransactionError,
     ) -> Option<StopReason> {

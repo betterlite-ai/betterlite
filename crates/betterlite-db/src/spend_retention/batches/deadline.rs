@@ -42,12 +42,14 @@ pub fn group_deadline(overall: Instant, now: Instant, groups_remaining: u32) -> 
 }
 
 // _remaining_timeout_ms: a fresh bound per delegated statement, and None once the deadline has passed
-#[must_use]
-pub fn remaining_budget<Clock: MonotonicClock>(
+pub fn remaining_budget<Clock>(
     clock: &Clock,
     deadline: Instant,
     batch_timeout: Duration,
-) -> impl FnMut() -> Option<u64> + Send + '_ {
+) -> impl FnMut() -> Option<u64> + Send + '_
+where
+    Clock: MonotonicClock,
+{
     move || {
         let now = clock.now();
         (now < deadline).then(|| statement_timeout_ms(now, deadline, batch_timeout))

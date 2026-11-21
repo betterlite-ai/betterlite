@@ -93,7 +93,10 @@ pub struct CleanupSettings {
 impl CleanupSettings {
     // _refresh_bounds: every override falls back to its default, so clearing a key restores it
     #[must_use]
-    pub fn bounds<Parser: DurationParser>(&self, parser: &Parser) -> CleanupBounds {
+    pub fn bounds<Parser>(&self, parser: &Parser) -> CleanupBounds
+    where
+        Parser: DurationParser,
+    {
         let general = &self.general;
         let defaults = self.defaults;
         CleanupBounds {
@@ -127,11 +130,10 @@ impl CleanupSettings {
 
     // _retention_seconds_for: None disables the group; zero and other parsed values are kept as given
     #[must_use]
-    pub fn retention_seconds<Parser: DurationParser>(
-        &self,
-        retention: Retention,
-        parser: &Parser,
-    ) -> Option<i64> {
+    pub fn retention_seconds<Parser>(&self, retention: Retention, parser: &Parser) -> Option<i64>
+    where
+        Parser: DurationParser,
+    {
         let configured = match retention {
             Retention::SpendLogs => self.general.spend_logs_retention.as_ref(),
             Retention::AutorouterSessions => self.general.session_retention.as_ref(),
@@ -182,12 +184,15 @@ fn positive_setting(key: &str, configured: Option<&SettingValue>, default: i64) 
 }
 
 // duration_in_seconds(str(raw)) only accepts text, since str() of any other value has no unit
-fn duration_setting<Parser: DurationParser>(
+fn duration_setting<Parser>(
     key: &str,
     configured: Option<&SettingValue>,
     default: Duration,
     parser: &Parser,
-) -> Duration {
+) -> Duration
+where
+    Parser: DurationParser,
+{
     let Some(value) = configured else {
         return default;
     };
