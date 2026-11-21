@@ -17,11 +17,23 @@ deviations:
       B3055 turns the typed error into LiteLLM's 429 or 503 answer.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L597-L604
   - what: >-
-      The model group resolver reads the deployment catalog's model_group_alias table instead of the router object's
-      model_group_alias attribute.
+      The model group resolver holds a shared Arc<RwLock<IndexMap<String, GroupAlias>>> of the
+      router_settings.model_group_alias table instead of reading the proxy router's model_group_alias attribute on
+      every call.
     why: >-
       betterlite-rate-limit cannot depend on betterlite-router, because deny.toml allows that crate only to the
-      listed wrappers. The resolver reads the same router_settings.model_group_alias table the router is built from
-      and applies resolve_model_group_alias's non-empty-target rule, so a configured alias resolves the same way.
+      listed wrappers. The handle is seeded at boot from the same router_settings.model_group_alias table the router
+      is built from, and the resolver applies resolve_model_group_alias's non-empty-target rule; whoever holds the
+      handle can add or replace aliases and the next resolve sees them.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/common_utils.py#L43-L61
+  - what: >-
+      A saved DB router_settings row does not reach the shared alias handle yet: B5660 seeds the handle at boot and
+      exposes it, and the write belongs to the task that applies router settings.
+    why: >-
+      LiteLLM applies a saved row through proxy_server._apply_router_settings calling Router.update_settings, which
+      sets the router.model_group_alias attribute so the next request sees the alias. B9711 builds
+      RouterRuntimeSettings::update_settings and B8381 builds _apply_router_settings; neither task's scope names this
+      handle, so those owners must write the new aliases through the shared Arc<RwLock<...>> before a runtime alias
+      reaches the rate limiter.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7727-L7759
 kept_bugs: []

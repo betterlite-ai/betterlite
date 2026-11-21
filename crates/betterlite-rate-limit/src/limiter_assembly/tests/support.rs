@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use betterlite_config::sections::deployment_catalog::GroupAlias;
@@ -105,7 +105,7 @@ pub(crate) struct Owners {
     pub(crate) gauges: Arc<ConcurrencyGauges>,
     pub(crate) admission: Arc<WindowedAdmission>,
     pub(crate) adjustments: Arc<TokenAdjustments>,
-    pub(crate) aliases: Arc<IndexMap<String, GroupAlias>>,
+    pub(crate) aliases: Arc<RwLock<IndexMap<String, GroupAlias>>>,
 }
 
 pub(crate) fn window_store() -> WindowStore {
@@ -176,14 +176,14 @@ fn build_adjustments() -> Arc<TokenAdjustments> {
     })
 }
 
-fn build_aliases() -> Arc<IndexMap<String, GroupAlias>> {
-    Arc::new(IndexMap::from([(
+fn build_aliases() -> Arc<RwLock<IndexMap<String, GroupAlias>>> {
+    Arc::new(RwLock::new(IndexMap::from([(
         String::from("alias"),
         GroupAlias {
             model: String::from("group"),
             hidden: false,
         },
-    )]))
+    )])))
 }
 
 pub(crate) fn build_assembly(owners: &Owners) -> RateLimiterAssembly {

@@ -3,7 +3,7 @@
 pub(crate) mod support;
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_config::sections::deployment_catalog::GroupAlias;
@@ -354,13 +354,30 @@ fn build_resolver(aliases: &[(&str, &str)]) -> RouterModelGroupResolver {
         })
         .collect();
     RouterModelGroupResolver {
-        aliases: Arc::new(table),
+        aliases: Arc::new(RwLock::new(table)),
     }
 }
 
 #[test]
 fn resolver_returns_the_group_for_an_alias() {
     let resolver = build_resolver(&[("gpt4", "gpt-4")]);
+    let group = resolver.resolve("gpt4");
+    assert_eq!(group.as_deref(), Some("gpt-4"));
+}
+
+#[test]
+fn resolver_reads_an_alias_added_after_construction() {
+    let aliases: Arc<RwLock<IndexMap<String, GroupAlias>>> = Arc::new(RwLock::new(IndexMap::new()));
+    let resolver = RouterModelGroupResolver {
+        aliases: Arc::clone(&aliases),
+    };
+    aliases.write().unwrap().insert(
+        String::from("gpt4"),
+        GroupAlias {
+            model: String::from("gpt-4"),
+            hidden: false,
+        },
+    );
     let group = resolver.resolve("gpt4");
     assert_eq!(group.as_deref(), Some("gpt-4"));
 }
