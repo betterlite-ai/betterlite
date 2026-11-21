@@ -82,11 +82,10 @@ pub(super) fn remove_tool_call_index() {
 pub(super) fn extra_parameters_list() {
     drops_every_named_parameter();
     reads_only_the_first_bracket_pair();
-    names_nothing_without_a_bracket();
+    ignores_an_empty_or_missing_bracket_pair();
     strips_a_json_escaped_quote_once();
     drops_names_from_a_sibling_list();
     skips_a_bracket_open_at_the_end_of_its_line();
-    ignores_an_empty_bracket_pair();
     drops_parameters_alongside_messages();
 }
 
@@ -119,16 +118,21 @@ fn reads_only_the_first_bracket_pair() {
     );
 }
 
-fn names_nothing_without_a_bracket() {
-    let repaired = repair(
-        &support::pass_through("Extra parameters are not allowed."),
-        &support::body(r#"{"model":"deployment","top_p":0.5}"#),
+fn ignores_an_empty_or_missing_bracket_pair() {
+    let request = support::body(r#"{"model":"deployment","top_p":0.5}"#);
+    let emptied = repair(
+        &support::pass_through("Extra parameters [] are not allowed."),
+        &request,
     )
     .expect("the repair runs");
-    assert_eq!(
-        repaired,
-        support::body(r#"{"model":"deployment","top_p":0.5}"#)
-    );
+    assert_eq!(emptied, request);
+    // without any bracket the hint names nothing either, so the body comes back unchanged
+    let absent = repair(
+        &support::pass_through("Extra parameters are not allowed."),
+        &request,
+    )
+    .expect("the repair runs");
+    assert_eq!(absent, request);
 }
 
 fn strips_a_json_escaped_quote_once() {
@@ -164,18 +168,6 @@ fn skips_a_bracket_open_at_the_end_of_its_line() {
     let multiline = "{\n  \"error\": {\"message\": \"Set extra-parameters to 'pass-through'.\"},\n  \"fields\": [\n    \"top_p\"\n  ]\n}";
     let repaired = repair(
         multiline,
-        &support::body(r#"{"model":"deployment","top_p":0.5}"#),
-    )
-    .expect("the repair runs");
-    assert_eq!(
-        repaired,
-        support::body(r#"{"model":"deployment","top_p":0.5}"#)
-    );
-}
-
-fn ignores_an_empty_bracket_pair() {
-    let repaired = repair(
-        &support::pass_through("Extra parameters [] are not allowed."),
         &support::body(r#"{"model":"deployment","top_p":0.5}"#),
     )
     .expect("the repair runs");

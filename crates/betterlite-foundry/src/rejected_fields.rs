@@ -92,6 +92,16 @@ fn drop_extra_parameters(request: &mut Object, error_text: &str) {
     }
 }
 
+// Python's str.strip() removes U+001C..U+001F too, which char::is_whitespace leaves
+fn strip_parameter(parameter: &str) -> &str {
+    parameter
+        .trim_matches(|character: char| {
+            character.is_whitespace() || matches!(character, '\u{1c}'..='\u{1f}')
+        })
+        .trim_matches('\'')
+        .trim_matches('"')
+}
+
 // LiteLLM's _extract_params_to_drop_from_error_text: the first bracketed run, split on commas, stripped of whitespace then quotes
 fn extra_parameters(error_text: &str) -> Vec<String> {
     let Some(group) = first_bracket_group(error_text) else {
@@ -99,15 +109,7 @@ fn extra_parameters(error_text: &str) -> Vec<String> {
     };
     group
         .split(PARAMETER_SEPARATOR)
-        .map(|parameter| {
-            // Python's str.strip() removes U+001C..U+001F too, which char::is_whitespace leaves
-            parameter
-                .trim_matches(|character: char| {
-                    character.is_whitespace() || matches!(character, '\u{1c}'..='\u{1f}')
-                })
-                .trim_matches('\'')
-                .trim_matches('"')
-        })
+        .map(strip_parameter)
         .filter(|name| !name.is_empty())
         .map(str::to_owned)
         .collect()
