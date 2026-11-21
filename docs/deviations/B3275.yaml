@@ -1,0 +1,15 @@
+task: B3275
+deviations:
+  - what: The search tool routes are mounted at startup, where LiteLLM imports the module on the first request under /search_tools.
+    why: The lazy import has no visible effect for a client, and the paths and answers are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/search_tool_management.py#L30
+  - what: The config search tools, the router refresh, the team row read, the connection search and the provider lookup are injected traits that B8673 wires.
+    why: ProxyConfig's get_config, parse_search_tools and reload_search_tools_from_db live in the binary crate above this one, and the others need the mount's caches, pools and provider registry.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/search_tool_management.py#L56-L82
+  - what: A key inside search_tool or its litellm_params that SearchTool does not declare answers 422 naming the key, where LiteLLM's pydantic validation drops it and stores the rest.
+    why: B3271's stored record denies unknown fields, so an unmodeled key is refused where it enters instead of being lost without a word (rule no-silent-drops).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/search.py#L17-L52
+  - what: The 422 detail of a body that fails validation carries type, loc and msg; the type of a wrong-typed value is value_error and the input field is left out.
+    why: The status and the location of the failure are the contract a client acts on; pydantic's per-type error codes and echoed input are its own wording.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/search_tool_management.py#L263-L264
+kept_bugs: []

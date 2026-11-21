@@ -1,1 +1,292 @@
+mod body;
+mod connection;
+mod error;
+mod list;
+mod records;
+pub mod state;
 
+mod tests;
+
+use std::sync::Arc;
+
+use axum::body::Bytes;
+use axum::extract::{Extension, MatchedPath, Path, State};
+use axum::routing::{get, post};
+use axum::{Json, Router};
+use betterlite_db::database_faults::reconnect::DbReconnect;
+use betterlite_db::search_tools::convert::tool::SearchTool;
+use betterlite_db::search_tools::registry::SearchToolRegistry;
+use betterlite_db::search_tools::table_client::SearchToolTableClient;
+
+use self::body::decode_body;
+use self::connection::{
+    ConnectionAnswer, ConnectionBody, ProvidersBody, available_providers, test_connection,
+};
+use self::error::{RouteError, list_failure, logged};
+use self::list::{ListBody, ToolView, masked_view, merged_tools, visible_tools};
+use self::records::{DeletedBody, UpdatedBody, WriteBody};
+use self::state::SearchToolState;
+use crate::auth::auth_identity::AuthContext;
+use crate::search_tool_refresh::RouterSearchRefresh;
+
+const UPDATE_FAILED: &str = "Error updating search tool";
+const DELETE_FAILED: &str = "Error deleting search tool";
+
+type Shared<Table, Reconnect, Refresh> = State<Arc<SearchToolState<Table, Reconnect, Refresh>>>;
+
+// B8673 mounts these routes; the admin-only table for the write routes is B742's
+pub fn routes<Table, Reconnect, Refresh>(
+    state: SearchToolState<Table, Reconnect, Refresh>,
+) -> Router
+where
+    Table: SearchToolTableClient + 'static,
+    Reconnect: DbReconnect + Clone + Send + Sync + 'static,
+    Refresh: RouterSearchRefresh + 'static,
+{
+    // FastAPI tries the id routes too, so PUT /search_tools/list and GET /search_tools/test_connection read those words as ids
+    Router::new()
+        .route(
+            "/search_tools/list",
+            get(list_tools::<Table, Reconnect, Refresh>)
+                .put(update_tool::<Table, Reconnect, Refresh>)
+                .delete(delete_tool::<Table, Reconnect, Refresh>),
+        )
+        .route(
+            "/search_tools",
+            post(create_tool::<Table, Reconnect, Refresh>),
+        )
+        .route(
+            "/search_tools/test_connection",
+            post(connection_test::<Table, Reconnect, Refresh>)
+                .get(tool_info::<Table, Reconnect, Refresh>)
+                .put(update_tool::<Table, Reconnect, Refresh>)
+                .delete(delete_tool::<Table, Reconnect, Refresh>),
+        )
+        .route(
+            "/search_tools/ui/available_providers",
+            get(provider_list::<Table, Reconnect, Refresh>),
+        )
+        .route(
+            "/search_tools/{search_tool_id}",
+            get(tool_info::<Table, Reconnect, Refresh>)
+                .put(update_tool::<Table, Reconnect, Refresh>)
+                .delete(delete_tool::<Table, Reconnect, Refresh>),
+        )
+        .with_state(Arc::new(state))
+}
+
+// a fixed path has no capture, so its last segment is the id FastAPI's {search_tool_id} would read
+fn tool_id(path: Option<Path<String>>, matched: &MatchedPath) -> String {
+    match path {
+        Some(Path(search_tool_id)) => search_tool_id,
+        None => matched
+            .as_str()
+            .rsplit('/')
+            .next()
+            .unwrap_or_default()
+            .to_owned(),
+    }
+}
+
+// best effort: the row is committed, so a refresh failure must not answer a 500 the client would retry
+async fn refresh_router<Refresh>(refresh: &Refresh)
+where
+    Refresh: RouterSearchRefresh,
+{
+    if let Err(error) = refresh.refresh().await {
+        tracing::error!("Search tool router refresh failed after a management write: {error}");
+    }
+}
+
+async fn list_tools<Table, Reconnect, Refresh>(
+    State(state): Shared<Table, Reconnect, Refresh>,
+    caller: Option<Extension<AuthContext>>,
+) -> Result<Json<ListBody>, RouteError>
+where
+    Table: SearchToolTableClient,
+    Reconnect: DbReconnect + Clone + Send + Sync,
+    Refresh: RouterSearchRefresh,
+{
+    let Extension(context) = caller.ok_or(RouteError::Unauthenticated)?;
+    let database = state.database.as_ref().ok_or(RouteError::NoDatabase)?;
+    let mut reconnect = database.reconnect.clone();
+    let stored =
+        SearchToolRegistry::get_all_search_tools_from_db(&database.table, Some(&mut reconnect))
+            .await
+            .map_err(|error| {
+                logged(
+                    "Error getting search tools",
+                    RouteError::Registry(Box::new(error)),
+                )
+            })?;
+    let config = match state.ports.config.search_tools().await {
+        Ok(tools) => tools,
+        Err(error) => {
+            tracing::debug!("Could not get config-defined search tools: {error}");
+            Vec::new()
+        }
+    };
+    let merged = merged_tools(config, stored).map_err(list_failure)?;
+    let search_tools = visible_tools(merged, &context.principal, state.ports.teams.as_ref())
+        .await
+        .map_err(list_failure)?;
+    Ok(Json(ListBody { search_tools }))
+}
+
+async fn create_tool<Table, Reconnect, Refresh>(
+    State(state): Shared<Table, Reconnect, Refresh>,
+    caller: Option<Extension<AuthContext>>,
+    body: Bytes,
+) -> Result<Json<SearchTool>, RouteError>
+where
+    Table: SearchToolTableClient,
+    Refresh: RouterSearchRefresh,
+{
+    caller.ok_or(RouteError::Unauthenticated)?;
+    let request: WriteBody = decode_body(&body).map_err(RouteError::Body)?;
+    let database = state.database.as_ref().ok_or(RouteError::NoDatabase)?;
+    let created = database
+        .registry
+        .add_search_tool_to_db(request.search_tool, &database.table)
+        .await
+        .map_err(|error| {
+            logged(
+                "Error adding search tool to db",
+                RouteError::Registry(Box::new(error)),
+            )
+        })?;
+    refresh_router(state.refresh.as_ref()).await;
+    tracing::debug!(
+        "Successfully added search tool '{}' to database.",
+        created.search_tool_name
+    );
+    Ok(Json(created))
+}
+
+// LiteLLM reads the row first, so a missing id answers 404 before any write
+async fn ensure_exists<Table>(
+    registry: &SearchToolRegistry,
+    table: &Table,
+    search_tool_id: &str,
+    context: &str,
+) -> Result<(), RouteError>
+where
+    Table: SearchToolTableClient,
+{
+    let existing = registry
+        .get_search_tool_by_id_from_db(search_tool_id, table)
+        .await
+        .map_err(|error| logged(context, RouteError::Registry(Box::new(error))))?;
+    match existing {
+        Some(_) => Ok(()),
+        None => Err(RouteError::NotFound {
+            search_tool_id: search_tool_id.to_owned(),
+        }),
+    }
+}
+
+async fn update_tool<Table, Reconnect, Refresh>(
+    State(state): Shared<Table, Reconnect, Refresh>,
+    caller: Option<Extension<AuthContext>>,
+    path: Option<Path<String>>,
+    matched: MatchedPath,
+    body: Bytes,
+) -> Result<Json<UpdatedBody>, RouteError>
+where
+    Table: SearchToolTableClient,
+    Refresh: RouterSearchRefresh,
+{
+    caller.ok_or(RouteError::Unauthenticated)?;
+    let search_tool_id = tool_id(path, &matched);
+    let request: WriteBody = decode_body(&body).map_err(RouteError::Body)?;
+    let database = state.database.as_ref().ok_or(RouteError::NoDatabase)?;
+    let (registry, table) = (&database.registry, &database.table);
+    ensure_exists(registry, table, &search_tool_id, UPDATE_FAILED).await?;
+    let row = registry
+        .update_search_tool_in_db(&search_tool_id, &request.search_tool, table)
+        .await
+        .map_err(|error| logged(UPDATE_FAILED, RouteError::Registry(Box::new(error))))?;
+    refresh_router(state.refresh.as_ref()).await;
+    tracing::debug!(
+        "Successfully updated search tool '{}' in database.",
+        row.search_tool_name
+    );
+    Ok(Json(UpdatedBody::from(row)))
+}
+
+async fn delete_tool<Table, Reconnect, Refresh>(
+    State(state): Shared<Table, Reconnect, Refresh>,
+    caller: Option<Extension<AuthContext>>,
+    path: Option<Path<String>>,
+    matched: MatchedPath,
+) -> Result<Json<DeletedBody>, RouteError>
+where
+    Table: SearchToolTableClient,
+    Refresh: RouterSearchRefresh,
+{
+    caller.ok_or(RouteError::Unauthenticated)?;
+    let search_tool_id = tool_id(path, &matched);
+    let database = state.database.as_ref().ok_or(RouteError::NoDatabase)?;
+    let (registry, table) = (&database.registry, &database.table);
+    ensure_exists(registry, table, &search_tool_id, DELETE_FAILED).await?;
+    let deleted = registry
+        .delete_search_tool_from_db(&search_tool_id, table)
+        .await
+        .map_err(|error| logged(DELETE_FAILED, RouteError::Registry(Box::new(error))))?;
+    refresh_router(state.refresh.as_ref()).await;
+    tracing::debug!("Successfully deleted search tool from database.");
+    Ok(Json(DeletedBody {
+        message: deleted.message,
+        search_tool_name: deleted.search_tool_name,
+    }))
+}
+
+async fn tool_info<Table, Reconnect, Refresh>(
+    State(state): Shared<Table, Reconnect, Refresh>,
+    caller: Option<Extension<AuthContext>>,
+    path: Option<Path<String>>,
+    matched: MatchedPath,
+) -> Result<Json<ToolView>, RouteError>
+where
+    Table: SearchToolTableClient,
+{
+    caller.ok_or(RouteError::Unauthenticated)?;
+    let search_tool_id = tool_id(path, &matched);
+    let database = state.database.as_ref().ok_or(RouteError::NoDatabase)?;
+    let found = database
+        .registry
+        .get_search_tool_by_id_from_db(&search_tool_id, &database.table)
+        .await
+        .map_err(|error| {
+            logged(
+                "Error getting search tool info",
+                RouteError::Registry(Box::new(error)),
+            )
+        })?;
+    let Some(tool) = found else {
+        return Err(RouteError::NotFound { search_tool_id });
+    };
+    let view = masked_view(tool, false)
+        .map_err(|error| logged("Error getting search tool info", RouteError::List(error)))?;
+    Ok(Json(view))
+}
+
+async fn connection_test<Table, Reconnect, Refresh>(
+    State(state): Shared<Table, Reconnect, Refresh>,
+    caller: Option<Extension<AuthContext>>,
+    body: Bytes,
+) -> Result<Json<ConnectionAnswer>, RouteError> {
+    caller.ok_or(RouteError::Unauthenticated)?;
+    let request: ConnectionBody = decode_body(&body).map_err(RouteError::Body)?;
+    Ok(Json(
+        test_connection(state.ports.search.as_ref(), request).await,
+    ))
+}
+
+async fn provider_list<Table, Reconnect, Refresh>(
+    State(state): Shared<Table, Reconnect, Refresh>,
+    caller: Option<Extension<AuthContext>>,
+) -> Result<Json<ProvidersBody>, RouteError> {
+    caller.ok_or(RouteError::Unauthenticated)?;
+    Ok(Json(available_providers(state.ports.catalog.as_ref())))
+}
