@@ -1,6 +1,7 @@
 use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use tokio::runtime::Builder;
+use tokio::time;
 
 mod answers;
 mod cases;
@@ -20,7 +21,7 @@ impl Helper for Op {
             .build()
             .or_value_error()?;
         runtime.block_on(async {
-            tokio::time::pause();
+            time::pause();
         });
         steps::run(&runtime, input)
     }

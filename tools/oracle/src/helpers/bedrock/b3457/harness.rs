@@ -19,6 +19,7 @@ use betterlite_rag::bedrock_ingestion::state::BedrockRagState;
 use betterlite_rag::bedrock_provisioning::provision::BedrockProvisioner;
 use secrecy::SecretString;
 use serde_json::Value;
+use url::form_urlencoded;
 
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 
@@ -155,7 +156,7 @@ fn route(request: &AwsSignedRequest) -> String {
 // the form fields of a query-protocol request, percent-decoded
 pub(super) fn form_fields(request: &AwsSignedRequest) -> BTreeMap<String, String> {
     let text = str::from_utf8(&request.body).unwrap_or_default();
-    let parsed = url::form_urlencoded::parse(text.as_bytes()).into_owned();
+    let parsed = form_urlencoded::parse(text.as_bytes()).into_owned();
     parsed.collect()
 }
 
