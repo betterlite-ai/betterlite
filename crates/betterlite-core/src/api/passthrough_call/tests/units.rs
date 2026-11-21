@@ -237,7 +237,9 @@ fn auth_optional_text_reads_only_strings() {
             message,
             String::from("litellm_params.azure_ad_token must be a string")
         ),
-        other => panic!("unexpected error: {other}"),
+        other @ ConfigError::Passthrough(_)
+        | other @ ConfigError::Message { .. }
+        | other @ ConfigError::Provider(_) => panic!("unexpected error: {other}"),
     }
 }
 
@@ -259,7 +261,9 @@ async fn auth_refuses_non_string_provider_credentials(
         ConfigError::ValueError { message } => {
             assert_eq!(message, format!("litellm_params.{name} must be a string"));
         }
-        other => panic!("unexpected error: {other}"),
+        other @ ConfigError::Passthrough(_)
+        | other @ ConfigError::Message { .. }
+        | other @ ConfigError::Provider(_) => panic!("unexpected error: {other}"),
     }
 }
 
@@ -304,7 +308,9 @@ fn auth_credentials_failure_keeps_its_upstream_status() {
             assert_eq!(status, 401);
             assert_eq!(message, "token refused");
         }
-        other => panic!("unexpected error: {other}"),
+        other @ ConfigError::Passthrough(_)
+        | other @ ConfigError::ValueError { .. }
+        | other @ ConfigError::Provider(_) => panic!("unexpected error: {other}"),
     }
     let preflight = SourceFailure {
         class: String::from("ValueError"),
@@ -313,7 +319,9 @@ fn auth_credentials_failure_keeps_its_upstream_status() {
     };
     match ConfigError::from(CredentialsError::Source(preflight)) {
         ConfigError::ValueError { message } => assert_eq!(message, "no token source"),
-        other => panic!("unexpected error: {other}"),
+        other @ ConfigError::Passthrough(_)
+        | other @ ConfigError::Message { .. }
+        | other @ ConfigError::Provider(_) => panic!("unexpected error: {other}"),
     }
 }
 
@@ -341,7 +349,9 @@ fn urls_vllm_without_a_base_is_a_value_error() {
         ConfigError::ValueError { message } => {
             assert!(message.contains("VLLM_API_BASE is not set"));
         }
-        other => panic!("unexpected error: {other}"),
+        other @ ConfigError::Passthrough(_)
+        | other @ ConfigError::Message { .. }
+        | other @ ConfigError::Provider(_) => panic!("unexpected error: {other}"),
     }
 }
 
@@ -383,7 +393,9 @@ fn urls_bedrock_refuses_an_invalid_region() {
         ConfigError::ValueError { message } => {
             assert!(message.contains("Invalid AWS region format: 'Bad_Region'"));
         }
-        other => panic!("unexpected error: {other}"),
+        other @ ConfigError::Passthrough(_)
+        | other @ ConfigError::Message { .. }
+        | other @ ConfigError::Provider(_) => panic!("unexpected error: {other}"),
     }
 }
 

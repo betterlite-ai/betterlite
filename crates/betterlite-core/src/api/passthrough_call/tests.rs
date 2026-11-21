@@ -375,7 +375,6 @@ fn params_carry_the_flag_the_key_and_the_model_id() {
     args.extra = object(&[
         ("allm_passthrough_route", JsonValue::Bool(true)),
         ("model_id", JsonValue::String(String::from(MODEL_ARN))),
-        ("force_timeout", JsonValue::from(300_i64)),
         (
             "custom_llm_provider",
             JsonValue::String(String::from("ignored")),
@@ -402,11 +401,19 @@ fn params_carry_the_flag_the_key_and_the_model_id() {
         call.params.get("custom_llm_provider"),
         Some(&JsonValue::Null)
     );
+    assert!(call.logged.contains_key("model_id"));
+}
+
+#[test]
+fn params_pass_an_extra_timeout_key_through() {
+    let model = resolved(MODEL, ProviderId::Vllm, None, None);
+    let mut args = vllm_args("http://127.0.0.1:1");
+    args.extra = object(&[("force_timeout", JsonValue::from(300_i64))]);
+    let call = params::build(&args, &model);
     assert_eq!(
         call.params.get("force_timeout"),
         Some(&JsonValue::from(300_i64))
     );
-    assert!(call.logged.contains_key("model_id"));
 }
 
 #[test]
