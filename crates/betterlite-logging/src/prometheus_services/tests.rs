@@ -528,6 +528,26 @@ fn service_failure_hook_increments_every_counter() {
 }
 
 #[test]
+fn service_failure_hook_leaves_a_gauge_service_alone() {
+    let (registry, logger) = build(None);
+    logger.service_failure_hook(&failure(ServiceType::PodLockManager, 1.0));
+    assert_eq!(
+        series_count(&registered(&registry, "litellm_pod_lock_manager_size")),
+        0
+    );
+}
+
+#[test]
+fn async_service_failure_hook_leaves_a_gauge_service_alone() {
+    let (registry, logger) = build(None);
+    logger.async_service_failure_hook(&failure(ServiceType::PodLockManager, 1.0), "TimeoutError");
+    assert_eq!(
+        series_count(&registered(&registry, "litellm_pod_lock_manager_size")),
+        0
+    );
+}
+
+#[test]
 fn async_service_success_hook_observes_and_counts() {
     let (registry, logger) = build(None);
     logger.async_service_success_hook(&success(ServiceType::Postgres, 2.0));
