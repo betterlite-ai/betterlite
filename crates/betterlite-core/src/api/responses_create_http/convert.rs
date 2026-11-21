@@ -3,6 +3,8 @@ use betterlite_prompts::arguments::json::Json as PromptJson;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
+use crate::api::request_form::scalars::scalar_float;
+
 use super::error::CreateError;
 
 // The two Json enums and the provider contract's maps convert through their serde forms
@@ -62,7 +64,7 @@ pub(crate) fn float_value(value: &PromptJson) -> Result<f64, FloatError> {
         PromptJson::Bool(flag) => Ok(if *flag { 1.0_f64 } else { 0.0_f64 }),
         PromptJson::Number(number) => Ok(number.as_f64().unwrap_or(f64::INFINITY)),
         PromptJson::Text(text) => {
-            parse_float_text(text).map_err(|()| FloatError::Text { text: text.clone() })
+            scalar_float(text).ok_or_else(|| FloatError::Text { text: text.clone() })
         }
         other @ (PromptJson::Null | PromptJson::List(_) | PromptJson::Object(_)) => {
             Err(FloatError::NotANumber {
@@ -70,85 +72,4 @@ pub(crate) fn float_value(value: &PromptJson) -> Result<f64, FloatError> {
             })
         }
     }
-}
-
-fn parse_float_text(text: &str) -> Result<f64, ()> {
-    let trimmed = text.trim();
-    if trimmed.is_empty() {
-        return Err(());
-    }
-    let (negative, rest) = trimmed.strip_prefix('-').map_or_else(
-        || (false, trimmed.strip_prefix('+').unwrap_or(trimmed)),
-        |rest| (true, rest),
-    );
-    let lowered = rest.to_ascii_lowercase();
-    if matches!(lowered.as_str(), "inf" | "infinity") {
-        return Ok(if negative {
-            f64::NEG_INFINITY
-        } else {
-            f64::INFINITY
-        });
-    }
-    if lowered == "nan" {
-        return Ok(f64::NAN);
-    }
-    if !valid_decimal(rest) {
-        return Err(());
-    }
-    match trimmed.replace('_', "").parse::<f64>() {
-        Ok(value) => Ok(value),
-        Err(_) => Err(()),
-    }
-}
-
-// Python allows digits, one dot, underscores between digits and one exponent at the end
-fn valid_decimal(text: &str) -> bool {
-    let mut parts = text.splitn(2, ['e', 'E']);
-    let mantissa = parts.next().unwrap_or("");
-    if !valid_mantissa(mantissa) {
-        return false;
-    }
-    parts.next().map_or(true, |exponent| {
-        let digits = exponent.strip_prefix(['+', '-']).unwrap_or(exponent);
-        valid_digits(digits)
-    })
-}
-
-fn valid_mantissa(text: &str) -> bool {
-    let bytes = text.as_bytes();
-    let mut dots = 0_usize;
-    let mut digits = 0_usize;
-    for (index, byte) in bytes.iter().enumerate() {
-        match byte {
-            b'0'..=b'9' => digits = digits.saturating_add(1),
-            b'.' => dots = dots.saturating_add(1),
-            b'_' => {
-                if !digit_neighbour(bytes, index) {
-                    return false;
-                }
-            }
-            _ => return false,
-        }
-    }
-    digits > 0 && dots <= 1
-}
-
-fn valid_digits(text: &str) -> bool {
-    let bytes = text.as_bytes();
-    !bytes.is_empty()
-        && bytes.iter().enumerate().all(|(index, byte)| match byte {
-            b'0'..=b'9' => true,
-            b'_' => digit_neighbour(bytes, index),
-            _ => false,
-        })
-}
-
-fn digit_neighbour(bytes: &[u8], index: usize) -> bool {
-    index > 0
-        && bytes
-            .get(index.saturating_add(1))
-            .is_some_and(u8::is_ascii_digit)
-        && bytes
-            .get(index.saturating_sub(1))
-            .is_some_and(u8::is_ascii_digit)
 }
