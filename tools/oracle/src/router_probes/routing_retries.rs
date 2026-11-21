@@ -88,7 +88,9 @@ async fn scenario(
     };
     let request = RequestTimeouts {
         stream: payload.stream,
-        ..RequestTimeouts::default()
+        timeout: None,
+        request_timeout: None,
+        stream_timeout: None,
     };
     let plan = TimeoutPlan::new(
         Instant::now().into_std(),

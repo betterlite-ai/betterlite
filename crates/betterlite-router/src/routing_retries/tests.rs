@@ -220,16 +220,21 @@ pub(super) fn availability(healthy: usize, all: usize) -> Availability {
     }
 }
 
+const EMPTY_CONTEXT: ErrorContext = ErrorContext {
+    message: String::new(),
+    model: None,
+    provider: None,
+    max_retries: None,
+    num_retries: None,
+    body_type: None,
+    body_param: None,
+    body_code: None,
+};
+
 pub(super) fn context(message: &str) -> ErrorContext {
     ErrorContext {
         message: message.to_owned(),
-        model: None,
-        provider: None,
-        max_retries: None,
-        num_retries: None,
-        body_type: None,
-        body_param: None,
-        body_code: None,
+        ..EMPTY_CONTEXT
     }
 }
 

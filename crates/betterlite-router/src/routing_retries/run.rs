@@ -86,6 +86,17 @@ struct Schedule {
     availability: Availability,
 }
 
+// a provider failure earns a retry, while a routing failure ends the loop
+fn answer<Response>(
+    answered: Result<Response, AttemptFailure>,
+) -> Result<Answer<Response>, RetryError> {
+    match answered {
+        Ok(response) => Ok(Answer::Committed(response)),
+        Err(AttemptFailure::Provider(failure)) => Ok(Answer::Failed(*failure)),
+        Err(AttemptFailure::Routing(error)) => Err(RetryError::Routing(error)),
+    }
+}
+
 struct Attempts<'state, D, R> {
     dispatch: &'state mut D,
     settings: &'state RetryRun<'state>,
@@ -112,14 +123,10 @@ where
         let mut availability = schedule.availability;
         // each wait precedes the attempt it delays, so LiteLLM's last sleep, which nothing follows, never runs
         for attempted in 1..=schedule.num_retries {
-            let timing = RetryTiming {
-                remaining_retries: schedule
-                    .num_retries
-                    .saturating_sub(attempted)
-                    .saturating_add(1),
-                max_retries: schedule.num_retries,
-            };
-            if self.backoff(&latest, timing, &availability).await? == Backoff::OutOfTime {
+            let waited = self
+                .backoff(&latest, attempted, schedule.num_retries, &availability)
+                .await?;
+            if waited == Backoff::OutOfTime {
                 return Err(RetryError::Provider(Box::new(latest.error)));
             }
             self.trail.attempted_retries = attempted;
@@ -128,16 +135,29 @@ where
                 Answer::Failed(failure) => failure,
             };
             self.after_failure(&latest);
-            availability = self.dispatch.availability().await.map_err(Box::new)?;
-            // LiteLLM refreshes only the healthy deployments and keeps the count the first failure saw
-            availability.all_deployments = schedule.availability.all_deployments;
-            let observed = Observed::from(&latest.error);
-            let decision = decide(observed.class, observed.status, &availability);
-            if !schedule.policy_applies && matches!(decision, RetryDecision::Stop(_)) {
+            let Some(refreshed) = self.recheck(&latest, &schedule).await? else {
                 return Err(RetryError::Provider(Box::new(latest.error)));
-            }
+            };
+            availability = refreshed;
         }
         Err(exhausted(latest.error, schedule.num_retries))
+    }
+
+    // the loop's should_retry_this_error, skipped under a policy; None stops the retries
+    async fn recheck(
+        &mut self,
+        latest: &ProviderFailure,
+        schedule: &Schedule,
+    ) -> Result<Option<Availability>, RetryError> {
+        let mut availability = self.dispatch.availability().await.map_err(Box::new)?;
+        // LiteLLM refreshes only the healthy deployments and keeps the count the first failure saw
+        availability.all_deployments = schedule.availability.all_deployments;
+        let observed = Observed::from(&latest.error);
+        let decision = decide(observed.class, observed.status, &availability);
+        if !schedule.policy_applies && matches!(decision, RetryDecision::Stop(_)) {
+            return Ok(None);
+        }
+        Ok(Some(availability))
     }
 
     // one attempt under the routing deadline and the caller's cancellation; dropping its future cancels the transport call
@@ -155,17 +175,13 @@ where
             Instant::from_std(timeouts.deadline),
             self.dispatch.attempt(request, self.random),
         );
-        let Some(finished) = timeouts.cancellation.run_until_cancelled(bounded).await else {
-            return Err(RetryError::Timeout(TimeoutError::Cancelled));
-        };
-        let Ok(answered) = finished else {
-            cancellation.cancel();
-            return Err(RetryError::Timeout(TimeoutError::DeadlineExpired));
-        };
-        match answered {
-            Ok(response) => Ok(Answer::Committed(response)),
-            Err(AttemptFailure::Provider(failure)) => Ok(Answer::Failed(*failure)),
-            Err(AttemptFailure::Routing(error)) => Err(RetryError::Routing(error)),
+        match timeouts.cancellation.run_until_cancelled(bounded).await {
+            None => Err(RetryError::Timeout(TimeoutError::Cancelled)),
+            Some(Err(_elapsed)) => {
+                cancellation.cancel();
+                Err(RetryError::Timeout(TimeoutError::DeadlineExpired))
+            }
+            Some(Ok(answered)) => answer(answered),
         }
     }
 
@@ -231,9 +247,15 @@ where
     async fn backoff(
         &mut self,
         failure: &ProviderFailure,
-        timing: RetryTiming,
+        attempted: i64,
+        num_retries: i64,
         availability: &Availability,
     ) -> Result<Backoff, RetryError> {
+        // LiteLLM's first wait counts every retry as remaining, and each later one counts one fewer
+        let timing = RetryTiming {
+            remaining_retries: num_retries.saturating_sub(attempted).saturating_add(1),
+            max_retries: num_retries,
+        };
         let seconds = sleep_before_retry(
             &self.settings.backoff,
             timing,

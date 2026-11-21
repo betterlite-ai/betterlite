@@ -118,7 +118,13 @@ fn provider_error(input: ErrorInput) -> Result<ErrorClass, String> {
     };
     let facts = ProviderErrorFacts {
         status_code: Some(status),
-        ..ProviderErrorFacts::default()
+        status_code_is_synthesized: false,
+        message: None,
+        body: None,
+        headers: None,
+        response: None,
+        litellm_response_headers: None,
+        request: None,
     };
     let class = status_error_class(&facts, "probe failure", "openai", None, None)
         .ok_or_else(|| format!("status {status} maps to no provider error"))?;
