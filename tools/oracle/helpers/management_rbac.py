@@ -45,7 +45,7 @@ RUNTIME: Final[TypeAdapter[dict[str, Switch]]] = TypeAdapter(dict[str, Switch])
 
 
 def answer(call: Call) -> JsonValue:
-    # the runtime map holds only the keys the case sets, as it does for switches the admin never saved
+    # the runtime map holds only the keys the case sets, like switches an admin never saved
     proxy_server.general_settings = RUNTIME.validate_python(call["general_settings"])
     proxy_server.prisma_client = None
     role = call["role"]
