@@ -91,13 +91,10 @@ async fn common_answer(
     let Some(entity) = entity else {
         return Err(failure("a common operation needs an entity"));
     };
-    match common_daily_transaction(payload, entity, pricing, endpoints).await {
-        Ok(Some(projection)) => {
-            Ok(json!({"base": base_spend_row(&projection.base), "raised": false}))
-        }
-        Ok(None) => Ok(json!({"base": null, "raised": false})),
-        Err(_) => Ok(json!({"base": null, "raised": true})),
-    }
+    let (projection, raised) =
+        outcome(common_daily_transaction(payload, entity, pricing, endpoints).await);
+    let base = projection.map(|projection| base_spend_row(&projection.base));
+    Ok(json!({"base": base, "raised": raised}))
 }
 
 async fn baseline_answer(
@@ -105,10 +102,17 @@ async fn baseline_answer(
     pricing: &DailyPricing<'_, CasePrices>,
     endpoints: &CaseEndpoints,
 ) -> Value {
-    match baseline_daily_attribution(payload, pricing, endpoints).await {
-        Ok(Some(attribution)) => json!({"attribution": attribution, "raised": false}),
-        Ok(None) => json!({"attribution": null, "raised": false}),
-        Err(_) => json!({"attribution": null, "raised": true}),
+    let (attribution, raised) =
+        outcome(baseline_daily_attribution(payload, pricing, endpoints).await);
+    json!({"attribution": attribution, "raised": raised})
+}
+
+// Both operations answer the Python side the same way: the value, or a null with the raise flag the case compares.
+fn outcome<Value, Error>(result: Result<Option<Value>, Error>) -> (Option<Value>, bool) {
+    match result {
+        Ok(Some(value)) => (Some(value), false),
+        Ok(None) => (None, false),
+        Err(_) => (None, true),
     }
 }
 
