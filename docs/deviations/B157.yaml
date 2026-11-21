@@ -15,6 +15,9 @@ deviations:
   - what: mark_litellm_import_complete() is not built and _AGENT_EXPORTS is not exported.
     why: Nothing fetches a cost map at import here, the top-level __getattr__ is out of this task's scope, and the agent functions arrive under their own names with B158 and B166.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L2314
+  - what: '_async_client_cleanup_registered keeps the False its assignment sets, where LiteLLM''s top-level __getattr__ sets it True on its first missing-name access, which pytest collection makes when it probes __test__.'
+    why: 'That lazy handler is out of this task''s scope; B158 and B166 build it, and until then a process that imports betterlite leaves the flag at the declared default.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L2344-L2352
   - what: 'modify_integration("supabase", {"table_name": name}) stores the name in callback_settings["supabase"]["table_name"], where LiteLLM assigns it to Supabase.supabase_table_name.'
     why: The Supabase logger and its table setting belong to B3979, and the task names callback_settings as the place it reads the table name from.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L6867-L6871
