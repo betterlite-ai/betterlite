@@ -100,6 +100,7 @@ async fn prune_evicts_the_earliest_expiring_entries_and_ties_by_insert_order() {
     let tied = key("srv", &url(1));
     assert!(cache.store(&early, 0, Some(payload("early")), NEGATIVE_TTL_SECONDS, now));
     assert!(cache.store(&tied, 0, Some(payload("tied")), NEGATIVE_TTL_SECONDS, now));
+    assert!(cache.store(&early, 0, Some(payload("early")), NEGATIVE_TTL_SECONDS, now));
     let rest: Vec<CacheKey> = (2..MAX_SIZE).map(|index| key("srv", &url(index))).collect();
     rest.iter().for_each(|item| {
         assert!(cache.store(item, 0, Some(payload("rest")), TTL_SECONDS, now));
