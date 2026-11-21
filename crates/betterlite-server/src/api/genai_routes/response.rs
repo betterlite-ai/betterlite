@@ -41,8 +41,7 @@ fn event_response(
     response
 }
 
-// the three branches of google_count_tokens, in LiteLLM's order; a present original_response is the first branch
-// even when it is empty, since compatibility.md doesn't port the truthiness of `if original_response`
+// the three branches of google_count_tokens; a present original_response is the first even when it is empty, since compatibility.md does not port truthiness
 pub(super) fn token_count(response: Option<TokenCountResponse>) -> Response {
     let details = match response {
         Some(counted) => match counted.original_response {
