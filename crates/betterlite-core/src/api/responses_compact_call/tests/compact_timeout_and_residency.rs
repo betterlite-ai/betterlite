@@ -146,16 +146,20 @@ fn handoff_context(state: &LoggingState) {
 
 fn preliminary_lookup(resolver: &ModelNames) {
     let seen = resolver.seen();
-    let matching = seen
+    let mut recent = seen
         .iter()
         .filter(|resolution| resolution.model == "openai/gpt-4o")
-        .collect::<Vec<_>>();
+        .rev();
+    let actual = recent.next().expect("the provider call resolves the model");
+    let preliminary = recent
+        .next()
+        .expect("the async wrapper resolves the model before the call");
     assert!(
-        matching[matching.len() - 2].api_base.is_none(),
+        preliminary.api_base.is_none(),
         "the async wrapper's preliminary lookup reads no base"
     );
     assert_eq!(
-        matching[matching.len() - 1].api_base,
+        actual.api_base,
         Some(String::from("https://eu.api.openai.com/v1"))
     );
 }
