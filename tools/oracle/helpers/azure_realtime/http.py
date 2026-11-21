@@ -2,9 +2,9 @@ import litellm
 from litellm.llms.azure.realtime.http_transformation import AzureRealtimeHTTPConfig
 from pydantic import JsonValue
 
-from .types import HEADERS, JSON, HttpSetup, Input
+from .types import HEADERS, JSON, HttpSetup, Input, RealtimeHttpConfig
 
-CONFIG: AzureRealtimeHTTPConfig = AzureRealtimeHTTPConfig()
+CONFIG: RealtimeHttpConfig = AzureRealtimeHTTPConfig()
 
 
 def http_view(model: str, setup: HttpSetup) -> JsonValue:

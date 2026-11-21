@@ -1,4 +1,4 @@
-from typing import Literal, Protocol, TypeAlias, TypedDict
+from typing import Literal, Protocol, TypeAlias, TypedDict, Unpack
 
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.types.realtime import RealtimeQueryParams
@@ -83,6 +83,35 @@ class RealtimeCall(TypedDict):
     azure_ad_token: str | None
     realtime_protocol: str | None
     query_params: RealtimeQueryParams | None
+
+
+# the handler is unannotated for its return, so the runner is named through this protocol
+class RealtimeRunner(Protocol):
+    async def async_realtime(self, **call: Unpack[RealtimeCall]) -> None: ...
+
+
+class RealtimeHttpConfig(Protocol):
+    def get_api_base(self, api_base: str | None) -> str: ...
+
+    def get_api_key(self, api_key: str | None) -> str: ...
+
+    def get_complete_url(
+        self, api_base: str | None, model: str, api_version: str | None = None
+    ) -> str: ...
+
+    def get_realtime_calls_url(
+        self, api_base: str | None, model: str, api_version: str | None = None
+    ) -> str: ...
+
+    def get_transcription_session_url(
+        self, api_base: str | None, model: str, api_version: str | None = None
+    ) -> str: ...
+
+    def validate_environment(
+        self, headers: dict[str, str], model: str, api_key: str | None = None
+    ) -> dict[str, str]: ...
+
+    def get_realtime_calls_headers(self, ephemeral_key: str) -> dict[str, str]: ...
 
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)

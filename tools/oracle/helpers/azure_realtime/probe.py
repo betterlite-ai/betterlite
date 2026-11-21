@@ -30,11 +30,12 @@ from .types import (
     ProtocolSetup,
     QuerySetup,
     RealtimeCall,
+    RealtimeRunner,
     Scope,
     SslKind,
 )
 
-RUNNER: AzureOpenAIRealtime = AzureOpenAIRealtime()
+RUNNER: RealtimeRunner = AzureOpenAIRealtime()
 REAL_WEBSOCKETS: ModuleType = sys.modules["websockets"]
 FAILURE_API_BASE: str = "https://probe.example"
 FAILURE_API_VERSION: str = "2024-10-01-preview"
@@ -44,7 +45,7 @@ class ProbeClient(ClientSocket):
     def __init__(
         self, scope_headers: list[tuple[str, str]], send_error: str | None, close_error: str | None
     ) -> None:
-        self.scope: Scope = {
+        self._scope: Scope = {
             "headers": [
                 (name.encode("latin-1"), value.encode("latin-1"))
                 for name, value in scope_headers
@@ -56,6 +57,10 @@ class ProbeClient(ClientSocket):
         self.closed: CloseFrame | None = None
         self.send_raised = False
         self.close_raised = False
+
+    @property
+    def scope(self) -> Scope:
+        return self._scope
 
     @override
     async def send_text(self, data: str) -> None:
