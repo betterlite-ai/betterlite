@@ -110,6 +110,29 @@ async fn the_protected_resource_path_drops_the_base_path() {
 }
 
 #[tokio::test]
+async fn an_unparseable_base_url_answers_500_on_the_protected_resource_path() {
+    let mut app = TestApp::with_record();
+    app.base_url = "http://[::1".to_owned();
+    let response = fetch(app, "/v1/mcp/oauth/protected-resource").await;
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(text(response).await.contains(r#""code":"500""#));
+}
+
+#[tokio::test]
+async fn an_unparseable_base_url_answers_500_on_a_root_prefix_path() {
+    let mut app = TestApp::with_record();
+    app.base_url = "http://[::1".to_owned();
+    app.root_prefixes = vec!["/prem".to_owned()];
+    let response = fetch(
+        app,
+        "/.well-known/oauth-authorization-server/prem/v1/mcp/oauth",
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(text(response).await.contains(r#""code":"500""#));
+}
+
+#[tokio::test]
 async fn metadata_handlers_read_the_request_parts() {
     let router = routes(
         Arc::new(ByokOauthRoutes {

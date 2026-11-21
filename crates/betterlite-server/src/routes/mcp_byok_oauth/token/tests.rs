@@ -255,6 +255,14 @@ async fn more_than_a_thousand_fields_answer_the_starlette_error() {
 }
 
 #[tokio::test]
+async fn exactly_a_thousand_fields_is_accepted() {
+    let extras: Vec<String> = (0..997).map(|index| format!("x{index}=y")).collect();
+    let body = format!("{}&{}", valid_body(), extras.join("&"));
+    let (status, _response) = exchange(TestApp::with_record(), &body).await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+#[tokio::test]
 async fn a_body_over_one_megabyte_is_refused() {
     let body = format!("{}&padding={}", valid_body(), "a".repeat(1_048_577));
     let (status, response) = exchange(TestApp::with_record(), &body).await;
