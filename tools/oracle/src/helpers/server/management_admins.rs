@@ -66,15 +66,16 @@ fn outcome(case: &Case) -> Result<bool, Box<HelperError>> {
 }
 
 fn user_model(record: &JsonData) -> Result<LiteLLMUserTable, Box<HelperError>> {
-    match user_record_to_model(Some(record)).or_value_error()? {
-        Some(user) => Ok(user),
-        None => Err(Box::new(HelperError {
-            class: "ValueError".to_owned(),
-            status: None,
-            error_type: Some(None),
-            param: Some(None),
-            code: Some(None),
-            message: "a case user must be a row object".to_owned(),
-        })),
-    }
+    user_record_to_model(Some(record))
+        .or_value_error()?
+        .ok_or_else(|| {
+            Box::new(HelperError {
+                class: "ValueError".to_owned(),
+                status: None,
+                error_type: Some(None),
+                param: Some(None),
+                code: Some(None),
+                message: "a case user must be a row object".to_owned(),
+            })
+        })
 }
