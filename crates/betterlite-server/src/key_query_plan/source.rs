@@ -145,10 +145,11 @@ fn decode_live_row(row: &Row) -> Result<KeyRow, KeyQueryPlanError> {
     let document: String = row.try_get(0).map_err(backend::<Infallible>)?;
     let mut fields = decode_mapping(&document)?;
     let budget: Option<String> = row.try_get(1).map_err(backend::<Infallible>)?;
-    if let Some(budget_json) = budget {
-        let value: JsonData = serde_json::from_str(&budget_json).map_err(KeyQueryPlanError::Row)?;
-        fields.insert(String::from("litellm_budget_table"), value);
-    }
+    let value = match budget {
+        Some(budget_json) => serde_json::from_str(&budget_json).map_err(KeyQueryPlanError::Row)?,
+        None => JsonData::Null,
+    };
+    fields.insert(String::from("litellm_budget_table"), value);
     Ok(fields)
 }
 

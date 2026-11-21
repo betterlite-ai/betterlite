@@ -58,7 +58,7 @@ pub fn page_query(plan: &KeyQueryPlan) -> RenderedQuery {
     let table = plan.table.sql_name();
     let select = match plan.table {
         KeyTable::Live => format!(
-            "SELECT row_to_json(r)::text, row_to_json(b)::text FROM \"{table}\" AS r LEFT JOIN \"{BUDGET_TABLE}\" AS b ON b.\"budget_id\" = r.\"budget_id\""
+            "SELECT row_to_json(r)::text, CASE WHEN b.\"budget_id\" IS NULL THEN NULL ELSE row_to_json(b)::text END FROM \"{table}\" AS r LEFT JOIN \"{BUDGET_TABLE}\" AS b ON b.\"budget_id\" = r.\"budget_id\""
         ),
         KeyTable::Deleted => format!("SELECT row_to_json(r)::text FROM \"{table}\" AS r"),
     };
@@ -121,7 +121,7 @@ fn node_sql(entry: &Where, builder: &mut SqlBuilder) -> String {
         }
         Where::In(column, values) => {
             let list = builder.bind(SqlValue::TextList(values.clone()));
-            (column, "= ANY", format!("{list}::text[]"))
+            (column, "= ANY", format!("({list}::text[])"))
         }
         Where::HasSome(column, values) => {
             let list = builder.bind(SqlValue::TextList(values.clone()));

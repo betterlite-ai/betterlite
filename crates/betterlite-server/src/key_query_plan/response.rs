@@ -29,11 +29,13 @@ pub struct KeyListResponseObject {
 }
 
 pub fn entry_for_row(
-    row: KeyRow,
+    mut row: KeyRow,
     table: KeyTable,
     full_object: bool,
 ) -> Result<KeyListEntry, KeyQueryPlanError> {
     if full_object {
+        // the flattened token decodes through serde's buffered Content, where a null option reaches a visitor that rejects it, and LiteLLM reads null as the field's default
+        row.retain(|_, value| !matches!(value, JsonData::Null));
         return Ok(match table {
             KeyTable::Live => {
                 let auth = UserAPIKeyAuth::construct(AuthInput::Dict(row))?;

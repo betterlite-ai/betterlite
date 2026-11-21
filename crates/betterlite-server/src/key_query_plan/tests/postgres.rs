@@ -73,15 +73,16 @@ CREATE TABLE "LiteLLM_DeletedVerificationToken" (
     key_alias TEXT,
     user_id TEXT,
     team_id TEXT,
+    created_at TIMESTAMP,
     deleted_at TIMESTAMP,
     deleted_by TEXT,
     deleted_by_api_key TEXT
 );
 INSERT INTO "LiteLLM_DeletedVerificationToken"
-    (id, token, key_alias, user_id, team_id, deleted_at, deleted_by, deleted_by_api_key)
+    (id, token, key_alias, user_id, team_id, created_at, deleted_at, deleted_by, deleted_by_api_key)
 VALUES
-    ('deleted-1', 'gone-1', 'gone-1', 'alice', 'team-a', '2025-01-01T00:00:00', 'admin', 'op-hash'),
-    ('deleted-2', 'gone-2', 'gone-2', 'bob', NULL, '2025-01-02T00:00:00', 'admin', 'op-hash');
+    ('deleted-1', 'gone-1', 'gone-1', 'alice', 'team-a', '2024-12-01T00:00:00', '2025-01-01T00:00:00', 'admin', 'op-hash'),
+    ('deleted-2', 'gone-2', 'gone-2', 'bob', NULL, '2024-12-02T00:00:00', '2025-01-02T00:00:00', 'admin', 'op-hash');
 "#;
 
 const METACHARACTER_SQL: &str = r#"
@@ -91,6 +92,7 @@ CREATE TABLE "LiteLLM_BudgetTable" (
 CREATE TABLE "LiteLLM_VerificationToken" (
     token TEXT PRIMARY KEY,
     key_alias TEXT,
+    budget_id TEXT,
     spend NUMERIC DEFAULT 0,
     created_at TIMESTAMP,
     updated_at TIMESTAMP
@@ -199,6 +201,22 @@ async fn assert_joined_rows(client: PrismaClient<'_>) {
         Some(&JsonData::Array(vec![JsonData::String(String::from(
             "gpt-4o"
         ))]))
+    );
+
+    let mut budgetless = key_filters();
+    budgetless.search = Some(String::from("alpha"));
+    let mut budgetless_request = query(1, 50);
+    budgetless_request.filters = budgetless;
+    budgetless_request.return_full_object = true;
+    let budgetless_response = list_keys(Some(client), &budgetless_request).await.unwrap();
+    assert_eq!(budgetless_response.keys.len(), 1);
+    let budgetless_document = serde_json::to_string(&budgetless_response.keys[0]).unwrap();
+    let budgetless_fields: BTreeMap<String, JsonData> =
+        serde_json::from_str(&budgetless_document).unwrap();
+    assert_eq!(
+        budgetless_fields.get("litellm_budget_table"),
+        Some(&JsonData::Null),
+        "a key with no budget row carries a null budget, not an all-null object"
     );
 }
 

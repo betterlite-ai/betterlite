@@ -104,9 +104,20 @@ fn creator_none_empty_current_teams() {
         equals(KeyColumn::CreatedBy, "alice"),
         scoped_teams(),
     ])]);
+    let service_accounts = clause_of(vec![and_of(vec![
+        vec![Where::In(
+            KeyColumn::TeamId,
+            vec![String::from("team-a"), String::from("team-b")],
+        )],
+        vec![Where::IsNull(KeyColumn::UserId)],
+    ])]);
+    // the member teams add their service accounts as a third arm next to own and created-by keys
     assert_eq!(
         build_key_filter_conditions(&current, now()),
-        two_arm_clause(own, scoped_created)
+        clause_of(vec![and_of(vec![
+            filter_out_ui_session_tokens(),
+            clause_of(vec![or_of(vec![own, scoped_created, service_accounts])]),
+        ])])
     );
 }
 

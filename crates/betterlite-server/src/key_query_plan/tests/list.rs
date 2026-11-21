@@ -211,6 +211,22 @@ fn dump_fallback() {
 }
 
 #[test]
+fn full_object_null_fields_take_defaults() {
+    // the flattened auth view rejects a null at its custom decimal visitors, and LiteLLM reads a null as the field's default
+    let live = row(
+        r#"{"token":"k1","max_budget":null,"spend":null,"litellm_budget_table":null,"object_permission":null}"#,
+    );
+    let entry = entry_for_row(live, KeyTable::Live, true).unwrap();
+    let fields = entry_fields(&entry);
+    assert_eq!(fields.get("max_budget"), Some(&JsonData::Null));
+    assert!(
+        matches!(fields.get("spend"), Some(JsonData::Number(_))),
+        "a null spend reads as the zero default"
+    );
+    assert_eq!(fields.get("litellm_budget_table"), Some(&JsonData::Null));
+}
+
+#[test]
 fn full_live_vs_archived_rows() {
     let live = row(r#"{"token":"live-1","key_alias":"a"}"#);
     let live_entry = entry_for_row(live, KeyTable::Live, true).unwrap();
