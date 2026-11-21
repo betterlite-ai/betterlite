@@ -43,10 +43,7 @@ impl RolePattern {
                 '*' => tokens.push(Token::AnyRun),
                 '?' => tokens.push(Token::AnyOne),
                 '[' => {
-                    let Some((set, after)) = bracket(tail) else {
-                        tokens.push(Token::Literal('['));
-                        continue;
-                    };
+                    let (set, after) = bracket(tail).unwrap_or((Token::Literal('['), tail));
                     tokens.push(set);
                     rest = after;
                 }
@@ -97,7 +94,7 @@ impl RolePattern {
 fn bracket(tail: &[char]) -> Option<(Token, &[char])> {
     let opening = match tail {
         ['!', ']', ..] => 2,
-        ['!', ..] | [']', ..] => 1,
+        ['!' | ']', ..] => 1,
         _ => 0,
     };
     let (head, scan) = tail.split_at_checked(opening)?;

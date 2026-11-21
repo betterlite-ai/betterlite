@@ -91,9 +91,12 @@ fn scope_missing_empty(#[case] raw: &str) {
 #[rstest]
 #[case::spaces(r#""read write""#, r#"["read","write"]"#)]
 #[case::runs_and_edges(r#"" read\t\twrite\n admin ""#, r#"["read","write","admin"]"#)]
-#[case::unicode_spaces(r#""read　write admin x""#, r#"["read","write","admin","x"]"#)]
+#[case::unicode_spaces(
+    r#""read\u3000write\u00a0admin\u2028x""#,
+    r#"["read","write","admin","x"]"#
+)]
 #[case::ascii_separators(r#""read\u001cwrite\u001fadmin""#, r#"["read","write","admin"]"#)]
-#[case::zero_width_is_text(r#""read​write""#, r#"["read​write"]"#)]
+#[case::zero_width_is_text(r#""read\u200bwrite""#, r#"["read\u200bwrite"]"#)]
 #[case::empty(r#""""#, "[]")]
 #[case::only_spaces(r#""  \t ""#, "[]")]
 fn scope_whitespace_split(#[case] scope: &str, #[case] expected: &str) {

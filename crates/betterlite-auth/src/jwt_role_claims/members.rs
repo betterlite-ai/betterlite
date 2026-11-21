@@ -28,13 +28,17 @@ pub fn members(claim: &TypedValue) -> Result<Vec<Member>, RoleClaimError> {
         return Err(RoleClaimError::NotIterable { found });
     };
     let members = items.iter().map(|item| {
-        if let Some(text) = item.as_str() {
-            Member::Text(text.to_owned())
-        } else if item.is_array() || item.is_object() {
-            Member::Container
-        } else {
-            Member::Scalar
-        }
+        let nested = item.is_array() || item.is_object();
+        item.as_str().map_or_else(
+            || {
+                if nested {
+                    Member::Container
+                } else {
+                    Member::Scalar
+                }
+            },
+            |text| Member::Text(text.to_owned()),
+        )
     });
     Ok(members.collect())
 }
@@ -42,6 +46,7 @@ pub fn members(claim: &TypedValue) -> Result<Vec<Member>, RoleClaimError> {
 // Python's falsy claim values: null, false, zero and the empty string, list and object
 #[must_use]
 pub fn is_empty_claim(claim: &TypedValue) -> bool {
-    claim.json.as_f64().is_some_and(|number| number == 0.0_f64)
-        || [json!(null), json!(false), json!(""), json!([]), json!({})].contains(&claim.json)
+    let falsy_scalar = claim.json.as_f64().is_some_and(|number| number == 0.0_f64)
+        || [json!(null), json!(false), json!(""), json!([])].contains(&claim.json);
+    falsy_scalar || (claim.json.is_object() && members(claim).as_ref().is_ok_and(Vec::is_empty))
 }
