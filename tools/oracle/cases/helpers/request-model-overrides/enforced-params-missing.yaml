@@ -163,7 +163,7 @@ compare:
     - {pointer: /value/10/error/type, why: litellm raises a bare ValueError where betterlite answers 400}
     - {pointer: /value/10/error/param, why: litellm raises a bare ValueError where betterlite answers 400}
     - {pointer: /value/10/error/code, why: litellm raises a bare ValueError where betterlite answers 400}
-    - {pointer: /value/11/error/status, why: litellm raises a bare TypeError where betterlite answers 400}
-    - {pointer: /value/11/error/type, why: litellm raises a bare TypeError where betterlite answers 400}
-    - {pointer: /value/11/error/param, why: litellm raises a bare TypeError where betterlite answers 400}
-    - {pointer: /value/11/error/code, why: litellm raises a bare TypeError where betterlite answers 400}
+    - {pointer: /value/11/error/status, why: litellm raises a bare ValueError where betterlite answers 400}
+    - {pointer: /value/11/error/type, why: litellm raises a bare ValueError where betterlite answers 400}
+    - {pointer: /value/11/error/param, why: litellm raises a bare ValueError where betterlite answers 400}
+    - {pointer: /value/11/error/code, why: litellm raises a bare ValueError where betterlite answers 400}
