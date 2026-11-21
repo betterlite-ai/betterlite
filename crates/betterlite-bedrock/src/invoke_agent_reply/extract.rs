@@ -35,7 +35,9 @@ pub fn response_content(events: &[AgentEvent]) -> Result<String, ExtractError> {
         if event.headers.event_type != "chunk" || !non_empty(&event.payload) {
             continue;
         }
-        let fields = object(&event.payload, "chunk payload")?;
+        let fields = object(&event.payload).ok_or(ExtractError::NotObject {
+            field: "chunk payload",
+        })?;
         let Some(bytes) = fields.get("bytes") else {
             continue;
         };
@@ -54,11 +56,13 @@ pub fn usage_info(events: &[AgentEvent]) -> Result<UsageInfo, ExtractError> {
         if event.headers.event_type != "trace" || !non_empty(&event.payload) {
             continue;
         }
-        let payload = object(&event.payload, "trace payload")?;
+        let payload = object(&event.payload).ok_or(ExtractError::NotObject {
+            field: "trace payload",
+        })?;
         let Some(trace_value) = payload.get("trace").filter(|value| non_empty(value)) else {
             continue;
         };
-        let trace = object(trace_value, "trace")?;
+        let trace = object(trace_value).ok_or(ExtractError::NotObject { field: "trace" })?;
         preprocessing_usage(trace, &mut usage)?;
         if usage.model.is_none() {
             usage.model = orchestration_model(trace)?;
@@ -145,19 +149,14 @@ fn usable_object<'value>(
 ) -> Result<Option<&'value IndexMap<String, Json>>, ExtractError> {
     value
         .filter(|value| non_empty(value))
-        .map(|value| object(value, field))
+        .map(|value| object(value).ok_or(ExtractError::NotObject { field }))
         .transpose()
 }
 
-const fn object<'value>(
-    value: &'value Json,
-    field: &'static str,
-) -> Result<&'value IndexMap<String, Json>, ExtractError> {
+const fn object<'value>(value: &'value Json) -> Option<&'value IndexMap<String, Json>> {
     match value {
-        Json::Object(fields) => Ok(fields),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-            Err(ExtractError::NotObject { field })
-        }
+        Json::Object(fields) => Some(fields),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
     }
 }
 
