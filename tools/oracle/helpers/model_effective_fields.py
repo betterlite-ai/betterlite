@@ -151,12 +151,11 @@ def marker_answer(call: MarkerCall) -> JsonValue:
 
 
 def credential_answer(call: CredentialCall) -> JsonValue:
-    litellm.credential_list = CREDENTIALS.validate_python(
-        [
-            CredentialRow(credential_name=name, credential_values={}, credential_info={})
-            for name in call["loaded"]
-        ]
-    )
+    rows: list[CredentialRow] = [
+        CredentialRow(credential_name=name, credential_values={}, credential_info={})
+        for name in call["loaded"]
+    ]
+    litellm.credential_list = CREDENTIALS.validate_python(rows)
     table = FakeCredentialTable(call["stored"])
     refusal: JsonValue = None
     try:
