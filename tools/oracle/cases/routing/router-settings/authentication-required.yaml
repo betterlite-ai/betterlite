@@ -1,0 +1,30 @@
+name: router-settings-authentication-required
+config: |
+  general_settings:
+    master_key: sk-oracle-master
+  router_settings: {}
+env: {}
+upstream: []
+steps:
+  - request:
+      method: GET
+      path: /router/settings
+      headers: {}
+      body: null
+    compare:
+      headers: []
+      headers_present: []
+      upstream_headers: []
+      ignore:
+        - {pointer: /error/message, why: betterlite writes its own authentication message}
+  - request:
+      method: GET
+      path: /router/fields
+      headers: {}
+      body: null
+    compare:
+      headers: []
+      headers_present: []
+      upstream_headers: []
+      ignore:
+        - {pointer: /error/message, why: betterlite writes its own authentication message}
