@@ -359,6 +359,7 @@ fn stored_turn_replay_rejects_truthy_messages(#[case] request: &str) {
 #[case::redacted_function_call(r#"{"choices": [{"message": {"role": "user", "content": "x", "tool_calls": [], "function_call": {"name": "f", "arguments": "redacted-by-litellm"}, "audio": null, "refusal": null, "provider_specific_fields": {}}}]}"#, &[r#"{"content": "x", "role": "user", "tool_calls": null, "function_call": {"name": "f", "arguments": "{}"}, "provider_specific_fields": null, "refusal": null}"#])]
 #[case::kept_fields(r#"{"choices": [{"message": {"role": null, "content": "x", "function_call": {"name": "f", "arguments": "{\"a\": 1}"}, "reasoning_content": "r", "provider_specific_fields": {"p": 1}}}]}"#, &[r#"{"content": "x", "role": "assistant", "tool_calls": null, "function_call": {"name": "f", "arguments": "{\"a\": 1}"}, "provider_specific_fields": {"p": 1}, "reasoning_content": "r"}"#])]
 #[case::missing_arguments(r#"{"choices": [{"message": {"content": "x", "tool_calls": [{"id": "c1", "function": {"name": "f", "arguments": null}}], "function_call": {"name": "g"}}}]}"#, &[r#"{"content": "x", "role": "assistant", "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "f", "arguments": ""}}], "function_call": {"name": "g", "arguments": ""}, "provider_specific_fields": null}"#])]
+#[case::null_arguments_with_parameters(r#"{"choices": [{"message": {"content": "x", "function_call": {"arguments": null, "parameters": {"a": 1}}}}]}"#, &[r#"{"content": "x", "role": "assistant", "tool_calls": null, "function_call": {"arguments": "", "name": null, "parameters": {"a": 1}}, "provider_specific_fields": null}"#])]
 #[case::two_choices(r#"{"choices": [{"message": {"content": "a"}}, {"message": {"content": "b"}}]}"#, &[r#"{"content": "a", "role": "assistant", "tool_calls": null, "function_call": null, "provider_specific_fields": null}"#, r#"{"content": "b", "role": "assistant", "tool_calls": null, "function_call": null, "provider_specific_fields": null}"#])]
 #[case::text_response(r#""{\"choices\": [{\"message\": {\"content\": \"a\"}}]}""#, &[])]
 #[case::empty_response("{}", &[])]
@@ -379,6 +380,9 @@ fn stored_turn_replay_output(#[case] response: &str, #[case] expected: &[&str]) 
 #[rstest]
 #[case::unknown_role(r#"{"choices": [{"message": {"role": "bogus"}}]}"#)]
 #[case::list_content(r#"{"choices": [{"message": {"content": [{"type": "text"}]}}]}"#)]
+#[case::missing_tool_call_id(r#"{"choices": [{"message": {"tool_calls": [{"function": {"name": "f", "arguments": "{}"}}]}}]}"#)]
+#[case::null_tool_call_id(r#"{"choices": [{"message": {"tool_calls": [{"id": null, "function": {"name": "f", "arguments": "{}"}}]}}]}"#)]
+#[case::object_arguments(r#"{"choices": [{"message": {"tool_calls": [{"id": "c1", "type": "function", "function": {"name": "f", "arguments": {"a": 1}}}]}}]}"#)]
 fn stored_turn_replay_rejects_invalid_response(#[case] response: &str) {
     let setup = fixture(&[]);
     let mut log = logged("{}");

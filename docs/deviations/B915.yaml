@@ -12,6 +12,9 @@ deviations:
   - what: Stored function arguments must be a string; an object there fails the lookup instead of being re-encoded with json.dumps.
     why: The logged response is a dump of LiteLLM's own Function, whose arguments are already a string, so only a hand-edited spend log carries an object.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1196-L1200
+  - what: Stored function arguments that are null while the call carries a parameters object are replayed with empty arguments and keep the parameters key.
+    why: LiteLLM's Function constructor fills arguments from parameters only for a hand-edited log, and the text it writes there is json.dumps output the compatibility rules say not to reproduce.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1193-L1198
 kept_bugs:
   - what: The truncation marker is searched in the whole stored request, so a prompt that only mentions litellm_truncated still triggers a cold storage read.
     why: A setup with cold storage relies on the read when the marker sits in any nested field, and the bucket copy is the full request, so the extra read changes nothing a caller sees.
