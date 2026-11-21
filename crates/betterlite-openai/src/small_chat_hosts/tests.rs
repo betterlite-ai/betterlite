@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::convert::Infallible;
 use std::fs;
 use std::path::PathBuf;
+use std::slice::from_ref;
 use std::time::Duration;
 
 use betterlite_logging::logging_pre_post::args::RawBody;
@@ -98,6 +99,18 @@ fn object(pairs: Vec<(&str, Json)>) -> Object {
         .into_iter()
         .map(|(name, value)| (name.to_owned(), value))
         .collect()
+}
+
+fn text_value(value: &str) -> Value {
+    Value::String(value.to_owned())
+}
+
+fn value_object(pairs: Vec<(&str, Value)>) -> Value {
+    Value::from_iter(
+        pairs
+            .into_iter()
+            .map(|(name, value)| (name.to_owned(), value)),
+    )
 }
 
 fn mapped(pairs: Vec<(&str, Json)>) -> Object {
@@ -236,7 +249,10 @@ fn llama_supported_params_are_the_openai_list() {
 
 #[test]
 fn llama_keeps_a_json_schema_response_format() {
-    let keep = serde_json::json!({"type": "json_schema", "json_schema": {"name": "x"}});
+    let keep = value_object(vec![
+        ("type", text_value("json_schema")),
+        ("json_schema", value_object(vec![("name", text_value("x"))])),
+    ]);
     let mut optional = WireObject::new();
     LlamaAPIConfig::map_openai_params(
         &WireObject::from_iter([(String::from("response_format"), keep.clone())]),
@@ -248,8 +264,11 @@ fn llama_keeps_a_json_schema_response_format() {
 }
 
 #[rstest]
-#[case::text(serde_json::json!({"type": "text"}))]
-#[case::no_type(serde_json::json!({"json_schema": {"name": "x"}}))]
+#[case::text(value_object(vec![("type", text_value("text"))]))]
+#[case::no_type(value_object(vec![(
+    "json_schema",
+    value_object(vec![("name", text_value("x"))])
+)]))]
 fn llama_drops_a_response_format_that_is_not_json_schema(#[case] dropped: Value) {
     let mut optional = WireObject::new();
     LlamaAPIConfig::map_openai_params(
@@ -267,7 +286,7 @@ fn llama_maps_the_other_params_through_the_parent() {
     LlamaAPIConfig::map_openai_params(
         &WireObject::from_iter([
             (String::from("temperature"), Value::from(0.5_f64)),
-            (String::from("tools"), serde_json::json!([])),
+            (String::from("tools"), Value::Array(Vec::new())),
             (String::from("unknown_param"), Value::Bool(true)),
         ]),
         &mut optional,
@@ -275,7 +294,7 @@ fn llama_maps_the_other_params_through_the_parent() {
         &catalog(),
     );
     assert_eq!(optional.get("temperature"), Some(&Value::from(0.5_f64)));
-    assert_eq!(optional.get("tools"), Some(&serde_json::json!([])));
+    assert_eq!(optional.get("tools"), Some(&Value::Array(Vec::new())));
     assert!(!optional.contains_key("unknown_param"));
 }
 
@@ -471,20 +490,20 @@ fn zai_keeps_cache_control_on_messages_and_tools() {
     let mut cached = message(Role::User, "hi");
     cached.passthrough.insert(
         String::from("cache_control"),
-        serde_json::json!({"type": "ephemeral"}),
+        value_object(vec![("type", text_value("ephemeral"))]),
     );
     let tool = Tool {
         kind: String::from("function"),
         function: None,
         passthrough: IndexMap::from([(
             String::from("cache_control"),
-            serde_json::json!({"type": "ephemeral"}),
+            value_object(vec![("type", text_value("ephemeral"))]),
         )]),
     };
     let (messages, tools) = ZaiChatConfig::remove_cache_control_flag_from_messages_and_tools(
         MODEL,
-        &[cached.clone()],
-        Some(&[tool.clone()]),
+        from_ref(&cached),
+        Some(from_ref(&tool)),
     );
     assert_eq!(messages, vec![cached]);
     assert_eq!(tools, Some(vec![tool]));
@@ -539,7 +558,7 @@ fn moonshot_supported_params_drop_functions_and_gate_tool_calls() {
 }
 
 #[test]
-fn moonshot_maps_in_input_order_and_unwraps_reasoning_effort() {
+fn moonshot_maps_the_supported_params_and_skips_the_rest() {
     assert_eq!(
         mapped(vec![
             ("max_completion_tokens", number(64.0)),
@@ -552,6 +571,30 @@ fn moonshot_maps_in_input_order_and_unwraps_reasoning_effort() {
             ("temperature", number(0.5)),
         ])
     );
+}
+
+#[test]
+fn moonshot_takes_the_later_of_max_tokens_and_max_completion_tokens() {
+    assert_eq!(
+        mapped(vec![
+            ("max_tokens", number(10.0)),
+            ("max_completion_tokens", number(20.0)),
+        ])
+        .get("max_tokens"),
+        Some(&number(20.0))
+    );
+    assert_eq!(
+        mapped(vec![
+            ("max_completion_tokens", number(20.0)),
+            ("max_tokens", number(10.0)),
+        ])
+        .get("max_tokens"),
+        Some(&number(10.0))
+    );
+}
+
+#[test]
+fn moonshot_unwraps_reasoning_effort() {
     let mut unwrapped = Object::new();
     map_openai_params(
         &Reasons(true),
@@ -710,7 +753,10 @@ fn moonshot_keeps_every_list_when_any_part_is_not_text() {
 fn moonshot_fills_reasoning_content_from_provider_specific_fields() {
     let passthrough = IndexMap::from([(
         String::from("provider_specific_fields"),
-        serde_json::json!({"reasoning_content": "stored", "kept": true}),
+        value_object(vec![
+            ("reasoning_content", text_value("stored")),
+            ("kept", Value::Bool(true)),
+        ]),
     )]);
     let messages = vec![tool_message(passthrough)];
     let mut optional = Object::new();
@@ -802,10 +848,10 @@ fn json_truthiness_matches_the_python_read() {
     assert!(!json_is_truthy(&Value::Bool(false)));
     assert!(!json_is_truthy(&Value::Null));
     assert!(!json_is_truthy(&Value::String(String::new())));
-    assert!(json_is_truthy(&serde_json::json!([1])));
-    assert!(!json_is_truthy(&serde_json::json!({})));
-    assert!(json_is_truthy(&serde_json::json!(1)));
-    assert!(!json_is_truthy(&serde_json::json!(0.0)));
+    assert!(json_is_truthy(&Value::Array(vec![Value::from(1_i32)])));
+    assert!(!json_is_truthy(&value_object(Vec::new())));
+    assert!(json_is_truthy(&Value::from(1_i32)));
+    assert!(!json_is_truthy(&Value::from(0.0_f64)));
 }
 
 #[test]
@@ -840,9 +886,12 @@ fn nadir_lists_exactly_the_nine_params_in_order() {
 }
 
 #[rstest]
-#[case(br#"{"nadir_metadata":{"cost":{"total_cost_usd":1.5}}}"#, Some(1.5))]
-#[case(br#"{"nadir_metadata":{"cost":{"total_cost_usd":2}}}"#, Some(2.0))]
-#[case(br#"{"nadir_metadata":{"cost":{"total_cost_usd":0}}}"#, Some(0.0))]
+#[case(
+    br#"{"nadir_metadata":{"cost":{"total_cost_usd":1.5}}}"#,
+    Some(1.5_f64)
+)]
+#[case(br#"{"nadir_metadata":{"cost":{"total_cost_usd":2}}}"#, Some(2.0_f64))]
+#[case(br#"{"nadir_metadata":{"cost":{"total_cost_usd":0}}}"#, Some(0.0_f64))]
 #[case(br#"{"nadir_metadata":{"cost":{"total_cost_usd":true}}}"#, None)]
 #[case(br#"{"nadir_metadata":{"cost":{"total_cost_usd":false}}}"#, None)]
 #[case(br#"{"nadir_metadata":{"cost":{"total_cost_usd":-1}}}"#, None)]
@@ -876,11 +925,17 @@ fn nadir_treats_a_cost_beyond_f64_as_no_cost() {
     assert_eq!(nadir_reported_cost(body.as_bytes()), None);
 }
 
-fn identity_projection(
+// the marker lets a test inject a projection failure after the reply decodes
+fn projection(
     decoded: Value,
     _response: &Headers,
     _hidden: &Headers,
 ) -> Result<Value, ForwardingFailure> {
+    if decoded.get("refuse_projection").is_some() {
+        return Err(ForwardingFailure {
+            message: String::from("the test projection refused the reply"),
+        });
+    }
     Ok(decoded)
 }
 
@@ -942,8 +997,12 @@ fn reply_options() -> ReplyOptions<'static> {
     }
 }
 
+fn make_redactor() -> Redactor {
+    Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap()
+}
+
 fn nadir_reply(body: &[u8]) -> Result<NadirReply, TransformResponseError> {
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
+    let redactor = make_redactor();
     let (mut state, env) = fixture(&redactor);
     let headers = Headers::from([(String::from("x-request-id"), String::from("req-1"))]);
     nadir::transform_response(
@@ -958,7 +1017,7 @@ fn nadir_reply(body: &[u8]) -> Result<NadirReply, TransformResponseError> {
             input: log_input(),
             options: reply_options(),
         },
-        identity_projection,
+        projection,
     )
 }
 
@@ -988,6 +1047,14 @@ fn nadir_records_no_cost_when_the_bytes_carry_none() {
 fn nadir_returns_the_parent_error_before_reading_any_cost() {
     let result = nadir_reply(b"not json");
     assert!(matches!(result, Err(TransformResponseError::Json(_))));
+}
+
+#[test]
+fn nadir_returns_a_projection_failure_before_reading_any_cost() {
+    let result = nadir_reply(
+        br#"{"refuse_projection":true,"nadir_metadata":{"cost":{"total_cost_usd":0.25}}}"#,
+    );
+    assert!(matches!(result, Err(TransformResponseError::Projection(_))));
 }
 
 #[rstest]
