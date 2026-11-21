@@ -14,7 +14,7 @@ use self::support::{
     override_settings, ports_with, request, route_input, sdk_router,
 };
 use super::entry;
-use super::error::LlmPassthroughError;
+use super::error::{LlmPassthroughError, ModelBlockedError};
 use super::route::{PassthroughRoute, PassthroughRouteInput, RouteFlag, plan_passthrough_route};
 use crate::api::passthrough_call::{PassthroughBody, PassthroughCallError};
 use crate::dispatch::Dispatch;
@@ -735,6 +735,7 @@ async fn entry_blocked_is_403() {
     };
     assert_eq!(blocked.model, "gpt-upstream");
     assert_eq!(blocked.to_string(), "Model is blocked");
+    assert_eq!(ModelBlockedError::STATUS.as_u16(), 403);
     assert_eq!(trace.steps(), ["blocked:gpt-upstream:"]);
     assert!(calls.recorded().is_empty());
 }
