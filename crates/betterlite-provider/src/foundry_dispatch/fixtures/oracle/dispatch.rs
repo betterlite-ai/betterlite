@@ -268,19 +268,14 @@ pub(super) fn rewrite_case(case: &RewriteCase) -> Observation {
         base: Some(claude::endpoint(&case.base)),
         key: None,
         headers: None,
-        messages: rewrite_messages(),
+        // the Python helper sends this fixed message list with every rewrite, so both observations match
+        messages: JsonValue::Array(vec![JsonValue::Object(IndexMap::from([
+            (String::from("role"), JsonValue::Text(String::from("user"))),
+            (String::from("content"), JsonValue::Text(String::from("hi"))),
+        ]))]),
         post_calls: Vec::new(),
         errors: false,
     }
-}
-
-// the Python helper sends this fixed message list with every rewrite, so both observations match
-#[cfg_attr(test, mutants::skip)]
-fn rewrite_messages() -> JsonValue {
-    JsonValue::Array(vec![JsonValue::Object(IndexMap::from([
-        (String::from("role"), JsonValue::Text(String::from("user"))),
-        (String::from("content"), JsonValue::Text(String::from("hi"))),
-    ]))])
 }
 
 #[cfg_attr(test, mutants::skip)]
