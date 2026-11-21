@@ -1,3 +1,5 @@
+use betterlite_models::decisions::Json;
+
 use super::support::{
     COMPACT_OK, ENCODED_RESPONSE, Harness, Rig, base_env, body_json, call, item_input, json,
     kwargs, text_input, typed_id,
@@ -42,6 +44,17 @@ pub(super) async fn sync_and_async() {
             .get("authorization")
             .and_then(|value| value.to_str().ok()),
         Some("Bearer sk-provider")
+    );
+    let logged = log
+        .state
+        .litellm_params
+        .get("litellm_metadata")
+        .expect("update_from_kwargs logs the caller's litellm_metadata");
+    assert_eq!(
+        logged,
+        &Json::Object(kwargs(
+            r#"{"model_info":{"id":"deployment_a"},"encrypted_content_affinity_enabled":true}"#
+        ))
     );
 }
 
