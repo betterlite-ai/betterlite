@@ -62,18 +62,6 @@ impl KeyOperation {
     }
 }
 
-// registers the release notification before the state check, so a release in between still wakes the waiter
-pub(crate) async fn wait_for_turn(operation: &KeyOperation) -> bool {
-    let released = operation.released.notified();
-    tokio::pin!(released);
-    released.as_mut().enable();
-    if operation.claim() {
-        return true;
-    }
-    released.await;
-    false
-}
-
 impl LockRegistry {
     #[must_use]
     pub fn operation(&self, counter_key: &str) -> Arc<KeyOperation> {
@@ -100,9 +88,14 @@ impl LockRegistry {
     pub async fn hold(&self, counter_key: &str) -> OperationGuard {
         loop {
             let operation = self.operation(counter_key);
-            if wait_for_turn(operation.as_ref()).await {
+            // registers the release notification before the state check, so a release in between still wakes the waiter
+            let released = operation.released.notified();
+            tokio::pin!(released);
+            released.as_mut().enable();
+            if operation.claim() {
                 return OperationGuard { operation };
             }
+            released.await;
         }
     }
 }

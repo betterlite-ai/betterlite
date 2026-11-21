@@ -4,27 +4,10 @@ use std::time::Duration;
 use rstest::rstest;
 use tokio::time::timeout;
 
-use crate::spend_reseed::locks::{LockRegistry, wait_for_turn};
+use crate::spend_reseed::locks::LockRegistry;
 
 const WAIT: Duration = Duration::from_secs(1);
 const PAUSE: Duration = Duration::from_millis(10);
-
-// drives the wait primitive itself, so a stuck claim fails at once instead of parking a hold forever
-#[tokio::test(start_paused = true)]
-async fn a_busy_operation_parks_the_next_waiter_and_an_idle_one_is_claimed_without_waiting() {
-    let registry = LockRegistry::from(10);
-    let idle = registry.operation("idle");
-    let claimed = timeout(WAIT, wait_for_turn(idle.as_ref()))
-        .await
-        .expect("an idle operation is claimed without waiting");
-    assert!(claimed);
-
-    let parked = timeout(PAUSE, wait_for_turn(idle.as_ref())).await;
-    assert!(
-        parked.is_err(),
-        "a running operation parks its next waiter until release"
-    );
-}
 
 #[test]
 fn a_hit_moves_to_the_end_and_overflow_evicts_the_oldest() {
@@ -52,7 +35,9 @@ fn a_hit_moves_to_the_end_and_overflow_evicts_the_oldest() {
 #[tokio::test(start_paused = true)]
 async fn an_evicted_held_operation_no_longer_serializes_the_key() {
     let registry = LockRegistry::from(1);
-    let guard = registry.hold("held").await;
+    let guard = timeout(WAIT, registry.hold("held"))
+        .await
+        .expect("an idle key is acquired without waiting");
     // the overflow evicts the running operation, so a new one starts with no promise of singleflight
     let _other = registry.operation("other");
     let second = timeout(WAIT, registry.hold("held"))
@@ -72,7 +57,9 @@ async fn a_nonpositive_bound_strips_every_entry(#[case] bound: i64) {
     let second = registry.operation("z");
     assert!(!Arc::ptr_eq(&first, &second));
 
-    let held = registry.hold("z").await;
+    let held = timeout(WAIT, registry.hold("z"))
+        .await
+        .expect("a stripped entry never serializes");
     let other = timeout(WAIT, registry.hold("z"))
         .await
         .expect("a stripped entry never serializes");
@@ -83,7 +70,9 @@ async fn a_nonpositive_bound_strips_every_entry(#[case] bound: i64) {
 #[tokio::test(start_paused = true)]
 async fn an_owner_serializes_the_key_and_releasing_wakes_the_next_waiter() {
     let registry = LockRegistry::from(10);
-    let first = registry.hold("k").await;
+    let first = timeout(WAIT, registry.hold("k"))
+        .await
+        .expect("an idle key is acquired without waiting");
     let second = async {
         let _guard = registry.hold("k").await;
         true
@@ -104,7 +93,9 @@ async fn an_owner_serializes_the_key_and_releasing_wakes_the_next_waiter() {
 #[tokio::test(start_paused = true)]
 async fn a_cancelled_waiter_leaves_the_key_usable() {
     let registry = LockRegistry::from(10);
-    let first = registry.hold("k").await;
+    let first = timeout(WAIT, registry.hold("k"))
+        .await
+        .expect("an idle key is acquired without waiting");
     let mut waiter = Box::pin(async {
         let _guard = registry.hold("k").await;
     });
@@ -121,7 +112,9 @@ async fn a_cancelled_waiter_leaves_the_key_usable() {
 #[tokio::test]
 async fn dropping_the_guard_releases_the_key() {
     let registry = LockRegistry::from(10);
-    let guard = registry.hold("k").await;
+    let guard = timeout(WAIT, registry.hold("k"))
+        .await
+        .expect("an idle key is acquired without waiting");
     drop(guard);
     let again = timeout(WAIT, registry.hold("k"))
         .await
