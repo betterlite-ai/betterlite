@@ -92,6 +92,7 @@ def hook_answer(proxy: ProxyLogging, scenario: PreCallScenario | DuringCallScena
     tool_name = scenario["request"]["tool_name"]
     arguments = scenario["request"]["arguments"]
     response: MCPPreCallResponseObject | MCPDuringCallResponseObject | None
+    shown: set[str]
     match scenario["function"]:
         case "pre_call":
             pre_request = MCPPreCallRequestObject(tool_name=tool_name, arguments=arguments)
