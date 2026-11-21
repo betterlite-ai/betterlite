@@ -16,6 +16,7 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use std::fmt;
 use std::ops::Mul as _;
+use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
 
@@ -23,6 +24,7 @@ use self::correlation::{CorrelationOwnership, CorrelationSetup, apply_correlatio
 use self::types::{
     CallbackPolicy, CostState, DeferredLogging, DynamicCallbacks, Messages, RequestLoggingFlags,
 };
+use crate::callback_logger::event::GuardrailRequestSnapshot;
 
 mod tests;
 
@@ -94,6 +96,8 @@ pub struct LoggingState {
     pub cost_breakdown: Option<CostBreakdown>,
     pub billed_token_rates: Option<BilledTokenRates>,
     pub streamed_anthropic_message_id: Option<String>,
+    // B9999's post-guardrail body snapshot, which the success handler hands on without copying the body
+    pub shadow_eval_request_snapshot: Option<Arc<GuardrailRequestSnapshot>>,
     pub correlation: CorrelationOwnership,
     pub deferred: DeferredLogging,
     pub callback_policy: CallbackPolicy,
@@ -177,6 +181,7 @@ impl LoggingState {
             cost_breakdown: None,
             billed_token_rates: None,
             streamed_anthropic_message_id: None,
+            shadow_eval_request_snapshot: None,
             deferred: DeferredLogging::default(),
             callback_policy: init.callback_policy,
         })
