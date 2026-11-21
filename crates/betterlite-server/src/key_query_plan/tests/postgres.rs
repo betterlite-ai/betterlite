@@ -159,8 +159,7 @@ async fn postgres_visibility_matrix() {
 
     let counted = list_keys(Some(client), &query(1, 50)).await.unwrap();
     assert_eq!(counted.total_count, Some(12));
-    assert_budget_join(client).await;
-    assert_object_permission(client).await;
+    assert_joined_rows(client).await;
     assert_default_visibility(client).await;
     assert_team_visibility(client).await;
     assert_unscoped_creator(client).await;
@@ -171,7 +170,7 @@ async fn postgres_visibility_matrix() {
     fixture.close_async().await.unwrap();
 }
 
-async fn assert_budget_join(client: PrismaClient<'_>) {
+async fn assert_joined_rows(client: PrismaClient<'_>) {
     let mut own_full = key_filters();
     own_full.user_id = Some(String::from("alice"));
     let mut full_request = query(1, 50);
@@ -188,17 +187,6 @@ async fn assert_budget_join(client: PrismaClient<'_>) {
         budget.get("budget_id"),
         Some(&JsonData::String(String::from("budget-1")))
     );
-}
-
-async fn assert_object_permission(client: PrismaClient<'_>) {
-    let mut own_full = key_filters();
-    own_full.user_id = Some(String::from("alice"));
-    let mut full_request = query(1, 50);
-    full_request.filters = own_full;
-    full_request.return_full_object = true;
-    let response = list_keys(Some(client), &full_request).await.unwrap();
-    let document = serde_json::to_string(&response.keys[0]).unwrap();
-    let fields: BTreeMap<String, JsonData> = serde_json::from_str(&document).unwrap();
     let Some(JsonData::Object(permission)) = fields.get("object_permission") else {
         panic!("a live row carries the object permission its id points at");
     };

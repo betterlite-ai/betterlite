@@ -7,8 +7,6 @@ use crate::key_query_plan::filters::globals::build_key_filter_conditions;
 use crate::key_query_plan::filters::{KeyFilters, WhereClause};
 use crate::key_query_plan::sort::{DEFAULT_SORT, SortBy, validate_sort_column};
 
-pub const DELETED_KEY_TABLE: &str = "LiteLLM_DeletedVerificationToken";
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeyTable {
     Live,
@@ -20,7 +18,7 @@ impl KeyTable {
     pub const fn sql_name(self) -> &'static str {
         match self {
             Self::Live => KEY_TABLE,
-            Self::Deleted => DELETED_KEY_TABLE,
+            Self::Deleted => "LiteLLM_DeletedVerificationToken",
         }
     }
 }

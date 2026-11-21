@@ -82,7 +82,6 @@ enum Failure {
     Attach,
 }
 
-#[derive(Default)]
 struct FakeSource {
     page: Vec<KeyRow>,
     total: i64,
@@ -173,7 +172,14 @@ async fn user_lookup_without_database_errors() {
 
 #[tokio::test]
 async fn empty_page_zero_pages() {
-    let source = FakeSource::default();
+    let source = FakeSource {
+        page: Vec::new(),
+        total: 0,
+        users: Vec::new(),
+        failure: None,
+        calls: Mutex::new(Vec::new()),
+        attach_calls: Mutex::new(0),
+    };
     let mut request = query(1, 10);
     request.return_full_object = true;
     let response = list_keys_with(&source, &request).await.unwrap();
@@ -269,7 +275,10 @@ async fn page_then_count_not_snapshot() {
     let source = FakeSource {
         page: vec![row(r#"{"token":"k1"}"#)],
         total: 7,
-        ..FakeSource::default()
+        users: Vec::new(),
+        failure: None,
+        calls: Mutex::new(Vec::new()),
+        attach_calls: Mutex::new(0),
     };
     let response = list_keys_with(&source, &query(2, 2)).await.unwrap();
     assert_eq!(
@@ -306,7 +315,9 @@ async fn expand_owner_and_creator() {
             user_table("alice", Some("alice@example.com"), Some("Alice")),
             user_table("bob", Some("bob@example.com"), None),
         ],
-        ..FakeSource::default()
+        failure: None,
+        calls: Mutex::new(Vec::new()),
+        attach_calls: Mutex::new(0),
     };
     let mut request = query(1, 10);
     request.expand = vec![String::from("user")];
@@ -338,7 +349,10 @@ async fn expand_missing_users_and_unknown_names() {
             r#"{"token":"k1","user_id":"ghost","created_by":"phantom"}"#,
         )],
         total: 1,
-        ..FakeSource::default()
+        users: Vec::new(),
+        failure: None,
+        calls: Mutex::new(Vec::new()),
+        attach_calls: Mutex::new(0),
     };
     let mut request = query(1, 10);
     request.expand = vec![String::from("user")];
@@ -352,7 +366,10 @@ async fn expand_missing_users_and_unknown_names() {
     let unknown = FakeSource {
         page: vec![row(r#"{"token":"k1","user_id":"alice"}"#)],
         total: 1,
-        ..FakeSource::default()
+        users: Vec::new(),
+        failure: None,
+        calls: Mutex::new(Vec::new()),
+        attach_calls: Mutex::new(0),
     };
     let mut unknown_request = query(1, 10);
     unknown_request.expand = vec![String::from("bogus")];
@@ -366,7 +383,10 @@ async fn empty_identifiers_skip_user_lookup() {
     let source = FakeSource {
         page: vec![row(r#"{"token":"k1","user_id":"","created_by":""}"#)],
         total: 1,
-        ..FakeSource::default()
+        users: Vec::new(),
+        failure: None,
+        calls: Mutex::new(Vec::new()),
+        attach_calls: Mutex::new(0),
     };
     let mut request = query(1, 10);
     request.expand = vec![String::from("user")];
@@ -383,7 +403,10 @@ async fn token_only_still_attaches_permission() {
     let source = FakeSource {
         page: vec![row(r#"{"token":"k1"}"#), row(r#"{"token":"k2"}"#)],
         total: 2,
-        ..FakeSource::default()
+        users: Vec::new(),
+        failure: None,
+        calls: Mutex::new(Vec::new()),
+        attach_calls: Mutex::new(0),
     };
     let request = query(1, 10);
     let response = list_keys_with(&source, &request).await.unwrap();
@@ -398,8 +421,10 @@ async fn token_only_still_attaches_permission() {
     let failing = FakeSource {
         page: vec![row(r#"{"token":"k1"}"#)],
         total: 1,
+        users: Vec::new(),
         failure: Some(Failure::Attach),
-        ..FakeSource::default()
+        calls: Mutex::new(Vec::new()),
+        attach_calls: Mutex::new(0),
     };
     let failure = list_keys_with(&failing, &request).await.unwrap_err();
     assert!(matches!(failure, KeyQueryPlanError::MissingToken));
@@ -409,7 +434,14 @@ async fn token_only_still_attaches_permission() {
 async fn query_failures_propagate() {
     let mut invalid_sort = query(1, 10);
     invalid_sort.sort_by = Some(String::from("created"));
-    let untouched = FakeSource::default();
+    let untouched = FakeSource {
+        page: Vec::new(),
+        total: 0,
+        users: Vec::new(),
+        failure: None,
+        calls: Mutex::new(Vec::new()),
+        attach_calls: Mutex::new(0),
+    };
     let sort_error = list_keys_with(&untouched, &invalid_sort).await.unwrap_err();
     assert!(matches!(
         sort_error,
@@ -426,8 +458,10 @@ async fn query_failures_propagate() {
     let users_failure = FakeSource {
         page: vec![row(r#"{"token":"k1","user_id":"alice"}"#)],
         total: 1,
+        users: Vec::new(),
         failure: Some(Failure::Users),
-        ..FakeSource::default()
+        calls: Mutex::new(Vec::new()),
+        attach_calls: Mutex::new(0),
     };
     let mut expanded = query(1, 10);
     expanded.expand = vec![String::from("user")];
@@ -444,9 +478,12 @@ async fn query_failures_propagate() {
 
 async fn failed_stage(stage: Failure, total: i64, expected: &[&str]) {
     let source = FakeSource {
+        page: Vec::new(),
         total,
+        users: Vec::new(),
         failure: Some(stage),
-        ..FakeSource::default()
+        calls: Mutex::new(Vec::new()),
+        attach_calls: Mutex::new(0),
     };
     let error = list_keys_with(&source, &query(1, 10)).await.unwrap_err();
     assert!(matches!(error, KeyQueryPlanError::MissingToken));

@@ -96,5 +96,8 @@ fn non_empty_text(value: Option<&JsonData>) -> Option<&str> {
 }
 
 fn optional_text(value: Option<&str>) -> JsonData {
-    value.map_or(JsonData::Null, |text| JsonData::String(text.to_owned()))
+    match value {
+        Some(text) => JsonData::String(text.to_owned()),
+        None => JsonData::Null,
+    }
 }
