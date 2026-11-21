@@ -2,7 +2,7 @@ id: B929
 title: Responses id security
 description: >-
   Implement response-ID ownership authorization and advertised-ID encryption using B732 authenticated principals
-  and B061's established secret encryption helper. Add general_settings.disable_responses_id_security=false and
+  and B2303's StoredCipher (betterlite-secrets, on main). Add general_settings.disable_responses_id_security=false and
   allow_unmanaged_response_ids=false; resolve LITELLM_SALT_KEY with master-key fallback through config. Keep request-scoped
   encryption reuse and authorize retained addressed IDs before decoding routing IDs.
   Install the policy by default: PROXY_HOOKS contains responses_id_security without an opt-in. A normal key with
@@ -16,7 +16,7 @@ description: >-
   previous_response_id for aresponses and response_id otherwise. Missing, empty or nonstring addressed values leave
   data unchanged. After authorization, store the provider id in that body field and retain the original addressed id.
 
-  Encrypt the plaintext litellm_proxy:responses_api:response_id:resp_test;user_id:user_a;team_id:team_a with B061,
+  Encrypt the plaintext litellm_proxy:responses_api:response_id:resp_test;user_id:user_a;team_id:team_a with B2303's StoredCipher,
   then advertise resp_ plus its ciphertext. Empty user/team become empty fields and enforce no corresponding check.
   Nonstream ResponsesAPIResponse objects are rewritten regardless of request route. Streaming rewrites only typed
   response events on /responses, /v1/responses, /openai/responses and /openai/v1/responses. Reuse one encrypted id
@@ -30,7 +30,7 @@ description: >-
 
 
   Place the policy in betterlite-core::api::responses_id_security, consuming B732 principals and B1138 response
-  objects. Inject the config snapshot and B061 encryption service; B1087 limits bound ids before decryption.
+  objects. Inject the config snapshot and B2303's StoredCipher; B1087 limits bound ids before decryption.
 
 
   The three 403 branches distinguish an unmanaged id, mismatched user and mismatched team. Source details start
@@ -52,14 +52,14 @@ description: >-
   master_key=test-master selects test-salt. Commit matching config_yaml seeds and assert none of these keys is unsupported.
 
 
-  B061 owns encrypted-byte decoding. Fuzz the bounded id boundary decode_owned_response_id(bytes, crypto, limits)
+  B2303 owns encrypted-byte decoding. Fuzz the bounded id boundary decode_owned_response_id(bytes, crypto, limits)
   in this crate as well, including UTF-8, ciphertext failure and malformed decrypted field counts. Its replay test
   calls the production decoder with a fixed non-secret encryption key; a two-field payload must return an error,
   never panic. Preserve the caller-visible 500 failure of LiteLLM's IndexError with a typed internal error.
 
 
   HelperCall::ResponsesIdSecurity selects call: {responses_id_security: ...}; register it in the Rust and Python
-  dispatchers. Python invokes the pinned hook with injected settings/principals and B061's real helper. Compare
+  dispatchers. Python invokes the pinned hook with injected settings/principals and B2303's real helper. Compare
   decrypted payloads, authorization outcomes and within-stream id equality, not randomized ciphertext strings.
   Normalize malformed-payload failures as an internal-error outcome while retaining their source diagnostic class.
 
@@ -84,7 +84,7 @@ description: >-
   tests, 125 fixtures, 95 adapters, 55 fuzz/replay, 40 config tests/seeds and 30 wiring, 765 changed lines.
 
 
-  B002 resolves settings, B061 supplies interoperable encryption, B171 runs pure-helper comparisons,
+  B002 resolves settings, B2303 supplies interoperable encryption, B171 runs pure-helper comparisons,
   B1138/B1113 provide response/event records, and B732 supplies principals. B903 is not called by this hook.
 scope:
   paths:
@@ -120,7 +120,7 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/__init__.py#L20-L31
   why: The startup hook inventory includes responses_id_security without requiring an explicit callback setting.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L209-L225
-  why: B061's default SecretBox encryption generates a fresh nonce, so ciphertext equality across independent calls is invalid.
+  why: B2303's default SecretBox encryption generates a fresh nonce, so ciphertext equality across independent calls is invalid.
 dod:
 - text: same_user_team decrypts an id carrying user_a/team_a for a user_a/team_a principal and returns the original resp_test.
   proof:
@@ -313,7 +313,7 @@ deviations:
   why: The no-panics rule prohibits reproducing the unchecked third-field access; the helper projection records the different diagnostic class explicitly.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/responses_id_security.py#L250-L260
 out_of_scope:
-- B061 owns the encryption algorithms and salt-key material; this task owns the identity payload and authorization policy.
+- B2303 owns the encryption algorithms and salt-key material; this task owns the identity payload and authorization policy.
 - B080/B938 own creation/lifecycle HTTP registration and its final status, error envelope and header comparisons.
 pitfalls:
 - 'The oracle helper for this task is pre-registered as responses_id_security in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/responses_id_security.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/responses_id_security.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'

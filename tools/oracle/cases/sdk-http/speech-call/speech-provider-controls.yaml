@@ -1,0 +1,51 @@
+kind: sdk_http
+name: sdk-http-speech-call-provider-controls
+env:
+  AZURE_API_VERSION: '2024-02-01'
+  EDENAI_API_KEY: ed-key
+  ELEVENLABS_API_KEY: el-key
+call:
+  speech_call:
+    globals:
+      api_base: '$API_BASE'
+      api_key: sk-global
+    steps:
+      - model: elevenlabs/eleven_model
+        voice: ' id '
+        api_base: '$API_BASE'
+        api_key: el-key
+        kwargs:
+          __elevenlabs_query_params__: {enable_logging: false}
+        operation_body: [0, 255, 98, 105, 110, 97, 114, 121, 128, 10]
+      - model: edenai/tts
+        voice: voice-id
+        api_base: '$API_BASE'
+        api_key: ed-key
+        operation_body: [0, 255, 98, 105, 110, 97, 114, 121, 128, 10]
+      - model: azure/my-deployment
+        voice: alloy
+        api_base: '$API_BASE'
+        api_key: az-call
+        api_version: '2024-06-01'
+        operation_body: [0, 255, 98, 105, 110, 97, 114, 121, 128, 10]
+      - model: openai/tts-1
+        voice: alloy
+upstream:
+  - status: 200
+    headers: {}
+    body: {body_kind: bytes, fixture: binary-response.bin, content_type: audio/wav}
+  - status: 200
+    headers: {}
+    body: {body_kind: bytes, fixture: binary-response.bin, content_type: audio/wav}
+  - status: 200
+    headers: {}
+    body: {body_kind: bytes, fixture: binary-response.bin, content_type: audio/wav}
+  - status: 200
+    headers: {}
+    body: {body_kind: bytes, fixture: binary-response.bin, content_type: audio/wav}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore:
+    - {pointer: /upstream, why: "the injected B010 operations answer the native provider branches without an HTTP request, so only LiteLLM calls the mock"}

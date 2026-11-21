@@ -1,0 +1,9 @@
+task: B3047
+deviations:
+  - what: precise_minute reads the wall clock once and builds all three fields of the minute text from that one reading.
+    why: LiteLLM calls datetime.now() separately for the date, the hour and the minute, so a call that spans midnight can label a counter with yesterday's date and today's minute; no working setup relies on that split, and one reading cannot straddle two days.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter.py#L305-L308
+  - what: get_all_cache_objects answers all six fields as None and logs at error level when the batch read answers a list whose length is not six.
+    why: LiteLLM indexes results[0] through results[5], so a short list raises IndexError and a long one silently drops the extras; a cache that breaks the six-key contract cannot be relied on, and the Rust form of that crash is a panic no request may reach.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter.py#L237-L244
+kept_bugs: []

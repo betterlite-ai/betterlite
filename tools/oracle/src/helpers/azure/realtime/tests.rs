@@ -1,0 +1,36 @@
+#![cfg(test)]
+
+use std::fs;
+use std::path::Path;
+
+use super::Input;
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::ORACLE_DIR;
+
+#[test]
+fn helper_seeds_select_azure_realtime() {
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
+    let sources: Vec<String> = fs::read_dir(corpus)
+        .expect("the helper corpus")
+        .map(|entry| entry.expect("a corpus entry").path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("azure_realtime"))
+        })
+        .map(|path| fs::read_to_string(path).expect("a seed"))
+        .collect();
+    assert!(!sources.is_empty());
+    let rejected: Vec<&str> = sources
+        .iter()
+        .filter(|source| {
+            let case: HelperCase = serde_saphyr::from_str(source.as_str()).expect("a helper case");
+            let decodes = serde_json::from_value::<Input>(case.call.input.clone()).is_ok();
+            case.call.operation != "azure_realtime"
+                || !decodes
+                || validate_helper(Path::new("<helper>"), &case).is_err()
+        })
+        .map(String::as_str)
+        .collect();
+    assert!(rejected.is_empty(), "{rejected:?}");
+}

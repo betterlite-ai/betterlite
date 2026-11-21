@@ -1,0 +1,15 @@
+task: B3048
+deviations:
+  - what: The success, failure and post-call hooks treat counter arithmetic that leaves the 64-bit range as an error. The success and failure hooks log it as they log any other error, and the post-call hook returns it.
+    why: Python integers have no upper bound, so LiteLLM never fails here. A counter near 2^63 can only come from a corrupt cache entry, and wrapping it would write a wrong counter back.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter.py#L560-L565
+  - what: The post-call hook returns an error when a minute key holds a bare number instead of a counter, even when the key has no rpm_limit or tpm_limit.
+    why: LiteLLM's TypeError on current["current_rpm"] only happens when one of the limits is set, because it only indexes the value then. A bare number at a counter key breaks CurrentItemRateLimit, the type LiteLLM declares for it, so no working setup has one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter.py#L813-L828
+kept_bugs:
+  - what: On a cache miss the user, team and end-user counters start at {current_requests 1, current_tpm total_tokens, current_rpm 1}, and the success hook then adds total_tokens again, so a miss counts the tokens twice.
+    why: The admission hook reads these counters against the user, team and end-user tpm limits, so a setup tuned on LiteLLM depends on the doubled count.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter.py#L620-L632
+  - what: When the logged api key is None, the post-call hook reads the counter under the text key "None::{minute}::request_count".
+    why: LiteLLM formats None into the f-string, so a request without a logged key reads that shared text key. Copying it keeps the x-ratelimit-* headers a setup sees on such a request the same as on LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter.py#L812

@@ -1,0 +1,13 @@
+kind: helper
+name: admin-viewer-bypasses-settings
+call:
+  management_rbac:
+    calls:
+      - role: proxy_admin_viewer
+        feature: agents
+        general_settings: {disable_agents_for_internal_users: true, allow_agents_for_team_admins: true}
+      - role: proxy_admin_viewer
+        feature: vector_stores
+        general_settings: {disable_vector_stores_for_internal_users: "false", allow_vector_stores_for_team_admins: false}
+env: {}
+compare: {ignore: []}

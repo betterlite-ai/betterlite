@@ -1,0 +1,21 @@
+kind: helper
+name: jwt-role-claims-precedence
+env: {}
+compare: {ignore: []}
+call:
+  jwt_role_claims: {"identity": {"team_id_jwt_field": "team", "user_id_jwt_field": "sub"}, "settings": {"roles_jwt_field": "roles", "role_mappings": [{"role": "dev", "internal_role": "team"}]}, "claims": {"scope": "litellm_proxy_admin", "team": "t", "sub": "u", "roles": ["dev"]}, "projection": {"kind": "rbac_role"}}
+calls:
+  - jwt_role_claims: {"identity": {"team_id_jwt_field": "team", "user_id_jwt_field": "sub"}, "settings": {"roles_jwt_field": "roles", "role_mappings": [{"role": "dev", "internal_role": "proxy_admin"}]}, "claims": {"team": "t", "sub": "u", "roles": ["dev"]}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {"team_id_jwt_field": "team", "user_id_jwt_field": "sub"}, "settings": {"roles_jwt_field": "roles", "role_mappings": [{"role": "dev", "internal_role": "proxy_admin"}]}, "claims": {"sub": "u", "roles": ["dev"]}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {"team_id_jwt_field": "team", "user_id_jwt_field": "sub"}, "settings": {"roles_jwt_field": "roles", "role_mappings": [{"role": "dev", "internal_role": "proxy_admin"}], "user_roles_jwt_field": "realm.roles", "user_allowed_roles": ["ops"]}, "claims": {"realm": {"roles": ["ops"]}, "roles": ["dev"]}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {"team_id_jwt_field": "team", "user_id_jwt_field": "sub"}, "settings": {"roles_jwt_field": "roles", "role_mappings": [{"role": "dev", "internal_role": "proxy_admin"}], "user_roles_jwt_field": "realm.roles", "user_allowed_roles": ["ops"]}, "claims": {"realm": {"roles": ["guest"]}, "roles": ["dev"]}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {"team_id_jwt_field": "team", "user_id_jwt_field": "sub"}, "settings": {"roles_jwt_field": "roles", "role_mappings": [{"role": "dev", "internal_role": "proxy_admin"}], "user_roles_jwt_field": "realm.roles", "user_allowed_roles": ["ops"]}, "claims": {"realm": {"roles": ["guest"]}, "roles": ["guest"]}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {"team_id_jwt_field": "team", "user_id_jwt_field": "sub"}, "settings": {}, "claims": {"team": "", "sub": "u"}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {"team_id_jwt_field": "team", "user_id_jwt_field": "sub"}, "settings": {}, "claims": {"team": null, "sub": ""}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {"team_id_jwt_field": "team", "user_id_jwt_field": "sub"}, "settings": {}, "claims": {"team": null, "sub": null}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {"team_id_default": ""}, "settings": {}, "claims": {}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {"team_id_jwt_field": "team", "user_id_jwt_field": "sub"}, "settings": {"user_roles_jwt_field": "realm.roles", "user_allowed_roles": ["ops"]}, "claims": {"sub": "u", "realm": {"roles": 5}}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {"team_id_jwt_field": "team", "user_id_jwt_field": "sub"}, "settings": {"user_roles_jwt_field": "realm.roles", "user_allowed_roles": ["ops"]}, "claims": {"sub": "u", "realm": {"roles": ["guest"]}}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"user_roles_jwt_field": "realm.roles", "user_allowed_roles": ["admin", "ops"]}, "claims": {}, "projection": {"kind": "is_allowed_user_role", "user_roles": ["dev", "ops"]}}
+  - jwt_role_claims: {"identity": {}, "settings": {"user_roles_jwt_field": "realm.roles", "user_allowed_roles": ["admin", "ops"]}, "claims": {}, "projection": {"kind": "is_allowed_user_role", "user_roles": ["OPS", "op"]}}
+  - jwt_role_claims: {"identity": {}, "settings": {"user_roles_jwt_field": "realm.roles", "user_allowed_roles": ["admin"]}, "claims": {}, "projection": {"kind": "is_allowed_user_role", "user_roles": []}}

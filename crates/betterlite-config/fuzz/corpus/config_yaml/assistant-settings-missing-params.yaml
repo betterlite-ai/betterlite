@@ -1,0 +1,2 @@
+assistant_settings:
+  custom_llm_provider: azure

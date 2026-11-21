@@ -1,0 +1,38 @@
+kind: helper
+name: azure-realtime-calls-and-transcription-headers
+call:
+  azure_realtime:
+    kind: http
+    model: realtime-a
+    scope_headers: []
+    ssl_verification: enabled
+    max_message_size_bytes: 2048
+    azure_api_base: null
+    azure_api_key: null
+    azure_api_version: null
+    queries: []
+    protocols: []
+    failures: []
+    http_setups:
+      - {api_base: "https://explicit.test/v1/", api_key: "sk-explicit", api_version: "2025-04-01", litellm_api_base: null, litellm_api_key: null, ephemeral_key: "eph-1", headers: {api-key: "stale", Content-Type: "text/plain", Authorization: "Bearer old", X-Test: "kept"}}
+      - {api_base: null, api_key: null, api_version: null, litellm_api_base: null, litellm_api_key: null, ephemeral_key: "eph-2", headers: {}}
+calls:
+  - azure_realtime:
+      kind: connect
+      model: realtime-a
+      scope_headers: []
+      ssl_verification: disabled
+      max_message_size_bytes: 2048
+      azure_api_base: null
+      azure_api_key: null
+      azure_api_version: null
+      queries:
+        - {api_base: "https://example.test", api_version: "2024-10-01-preview", realtime_protocol: null, query_params: null, api_key: "k", azure_ad_token: null}
+        - {api_base: "http://example.test", api_version: "2024-10-01-preview", realtime_protocol: null, query_params: null, api_key: "k", azure_ad_token: null}
+      protocols: []
+      failures: []
+      http_setups: []
+env:
+  SSL_VERIFY: "false"
+  REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES: "2048"
+compare: {ignore: []}

@@ -3,8 +3,12 @@ use std::pin::Pin;
 
 use tokio_postgres::{Client, Error as PostgresError};
 
+pub mod calendar;
+pub mod catalog;
 pub mod fixtures;
+pub mod manager;
 pub mod partition;
+pub mod partition_bound;
 mod tests;
 pub mod unpartition;
 

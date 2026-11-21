@@ -1,0 +1,19 @@
+kind: helper
+name: ceiling-no-groups-attached
+call:
+  b4778:
+    operation: ceiling
+    agent_id: agent-1
+    agent_access_group_ids: []
+    groups:
+      g1: {access_model_names: [gpt-4o], access_mcp_server_ids: [srv-a], access_agent_ids: [agent-x]}
+calls:
+  - b4778:
+      operation: ceiling
+      agent_id: agent-unknown
+      agent_access_group_ids: [g1]
+      groups:
+        g1: {access_model_names: [gpt-4o], access_mcp_server_ids: [srv-a], access_agent_ids: [agent-x]}
+env: {}
+compare:
+  ignore: []

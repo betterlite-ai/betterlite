@@ -134,7 +134,7 @@ def run(input_value: Input) -> JsonValue:
             None,
             options.get("top_n"),
             options.get("rank_fields"),
-            options.get("return_documents") is not False,
+            options.get("return_documents"),
             options.get("max_chunks_per_doc"),
             options.get("max_tokens_per_doc"),
             options.get("instruction"),
