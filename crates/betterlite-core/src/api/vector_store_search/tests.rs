@@ -586,9 +586,17 @@ fn local_errors_map_to_api_connection() {
     let SdkRaise::Exception(empty_mapped) = failure(&empty, &redactor) else {
         panic!("an empty provider is an SDK exception");
     };
-    assert_eq!(empty_mapped.class, "APIConnectionError");
-    assert_eq!(empty_mapped.status, 500);
-    assert_eq!(empty_mapped.message, " is not a valid LlmProviders");
+    assert_eq!(
+        empty_mapped,
+        SdkFailure {
+            class: String::from("APIConnectionError"),
+            status: 500,
+            kind: WireField::Null,
+            param: WireField::Null,
+            code: WireField::Null,
+            message: String::from(" is not a valid LlmProviders"),
+        }
+    );
 }
 
 // the direct executor check runs before the try block, so the call fails as a bare TypeError the client decorator re-raises
