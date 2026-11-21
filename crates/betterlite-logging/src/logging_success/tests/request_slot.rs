@@ -10,7 +10,7 @@ use opentelemetry::Value;
 use opentelemetry::trace::{
     Span as _, SpanContext, TraceContextExt as _, Tracer as _, TracerProvider as _,
 };
-use opentelemetry_sdk::trace::InMemorySpanExporter;
+use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
 use tokio::task::JoinSet;
 
 use crate::callback_logger::CallbackLogger;
@@ -92,6 +92,8 @@ fn add_logger(fixture: &mut Fixture, logger: &Arc<SlotReadingLogger>) {
 
 struct AnchoredRequest {
     exporter: InMemorySpanExporter,
+    // the provider outlives the span: its shutdown resets the in-memory exporter
+    provider: SdkTracerProvider,
     sources: Arc<ProxyTraceSources>,
     seen: Arc<Mutex<Observation>>,
     slot: Arc<RequestSlot>,
@@ -119,6 +121,7 @@ async fn anchored_request() -> AnchoredRequest {
     .await;
     AnchoredRequest {
         exporter,
+        provider,
         sources,
         seen,
         slot,
@@ -153,6 +156,7 @@ fn assert_root_exported(exporter: &InMemorySpanExporter, root_context: &SpanCont
 async fn a_handler_spawned_off_the_request_keeps_the_parent_span() {
     let AnchoredRequest {
         exporter,
+        provider: _provider,
         sources,
         seen,
         slot,
@@ -187,6 +191,7 @@ async fn a_handler_spawned_off_the_request_keeps_the_parent_span() {
 async fn a_sync_handler_on_a_blocking_task_keeps_the_parent_span() {
     let AnchoredRequest {
         exporter,
+        provider: _provider,
         sources,
         seen,
         slot,
