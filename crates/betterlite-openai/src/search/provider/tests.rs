@@ -27,6 +27,16 @@ fn echo() -> EchoSearch {
     }
 }
 
+impl EchoSearch {
+    fn remember(&self, api_key: Option<&SecretString>, api_base: Option<&str>, headers: &Headers) {
+        *self.seen.lock().unwrap() = Some(SeenRequest {
+            api_key: api_key.map(|key| key.expose_secret().to_owned()),
+            api_base: api_base.map(str::to_owned),
+            headers: headers.clone(),
+        });
+    }
+}
+
 impl SearchProvider for EchoSearch {
     type Body = SearchQuery;
     type Error = Error;
@@ -50,11 +60,7 @@ impl SearchProvider for EchoSearch {
         api_base: Option<&str>,
         headers: &Headers,
     ) -> Result<SearchQuery, Error> {
-        *self.seen.lock().unwrap() = Some(SeenRequest {
-            api_key: api_key.map(|key| key.expose_secret().to_owned()),
-            api_base: api_base.map(str::to_owned),
-            headers: headers.clone(),
-        });
+        self.remember(api_key, api_base, headers);
         Ok(query.clone())
     }
 
