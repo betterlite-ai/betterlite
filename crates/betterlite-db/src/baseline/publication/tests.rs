@@ -787,7 +787,7 @@ async fn assert_sessions(client: &Client) {
     assert_eq!(user.get::<_, String>(3), "0.45");
     assert_eq!(
         user.get::<_, String>(4),
-        "{\"claude-sonnet-4-20250514\": 5, \"retired\": 2}"
+        "{\"retired\": 2, \"claude-sonnet-4-20250514\": 5}"
     );
 }
 
@@ -928,7 +928,7 @@ async fn assert_surfaces_untouched(client: &Client) {
     .unwrap();
     assert_eq!(
         metadata,
-        "{\"autorouter_baseline_observation\": {\"request_id\": \"seed\"}, \"keep\": \"value\"}"
+        "{\"keep\": \"value\", \"autorouter_baseline_observation\": {\"request_id\": \"seed\"}}"
     );
     let session = client
         .query_one(
@@ -990,7 +990,7 @@ async fn postgres_publish_issues_no_statement_for_an_empty_change_list() {
     assert_eq!(
         metadata.as_deref(),
         Some(
-            "{\"autorouter_baseline_observation\": {\"request_id\": \"seed\"}, \"keep\": \"value\"}"
+            "{\"keep\": \"value\", \"autorouter_baseline_observation\": {\"request_id\": \"seed\"}}"
         )
     );
     drop(client);
