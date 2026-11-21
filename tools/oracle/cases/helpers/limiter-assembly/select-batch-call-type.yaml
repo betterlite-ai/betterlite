@@ -1,0 +1,7 @@
+kind: helper
+name: limiter-assembly-select-batch-call-type
+call:
+  b5660:
+    call_type: acreate_batch
+env: {}
+compare: {ignore: []}
