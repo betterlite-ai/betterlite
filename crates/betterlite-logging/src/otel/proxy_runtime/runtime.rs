@@ -12,13 +12,9 @@ use crate::otel::config::Settings;
 use crate::otel::content_projections::StreamOutputAssembler;
 use crate::otel::emitter::span_emission::DEFAULT_SPAN_ATTRIBUTE_LIMIT;
 use crate::otel::fan_out::attach::TenantFanOutRegistry;
-use crate::otel::fan_out::scope::RequestScopeSource;
-use crate::otel::langfuse_root::RootSpanSource;
 use crate::otel::legacy_metrics::filter::CallbackSettingsView;
-use crate::otel::logger::v2::RequestTraceSource;
 use crate::otel::logger_runtime::LoggerRuntime;
 use crate::otel::logger_runtime::construction::CallbackConstructor;
-use crate::otel::logger_runtime::hooks::RuntimeHooks;
 use crate::otel::plumbing::exporters::{ExporterFactories, HttpClients};
 use crate::otel::v2_callback::registry::V2Registry;
 
@@ -56,10 +52,10 @@ pub fn build_proxy_runtime(
     let v2_enabled = FeatureFlag::default().enabled(environment.as_ref())?;
     let attribute_limit = span_attribute_limit(environment.as_ref())?;
     let registered = Arc::new(V2Registry::default());
-    let hooks: Arc<dyn RuntimeHooks> = Arc::clone(&registered);
-    let trace: Arc<dyn RequestTraceSource> = Arc::clone(&sources);
-    let scope: Arc<dyn RequestScopeSource> = Arc::clone(&sources);
-    let roots: Arc<dyn RootSpanSource> = Arc::clone(&sources);
+    let hooks = Arc::clone(&registered);
+    let trace = Arc::clone(&sources);
+    let scope = Arc::clone(&sources);
+    let roots = Arc::clone(&sources);
     let constructor = Arc::new(CallbackConstructor {
         raw_config: config.sections.otel_settings.clone(),
         callback_settings,
