@@ -113,9 +113,10 @@ async fn a_failed_row_read_is_an_error() {
 #[tokio::test]
 async fn a_saved_block_wins_over_the_file_state_even_when_empty() {
     let saved = store(r#"{"coordination_redis": {}}"#);
-    let state = object(r#"{"general_settings": {"coordination_redis": {"host": "file-host"}}}"#);
+    let config_state =
+        object(r#"{"general_settings": {"coordination_redis": {"host": "file-host"}}}"#);
     assert_eq!(
-        current_settings(Some(&saved), &state).await.unwrap(),
+        current_settings(Some(&saved), &config_state).await.unwrap(),
         Some(object("{}")),
     );
 }
@@ -123,9 +124,12 @@ async fn a_saved_block_wins_over_the_file_state_even_when_empty() {
 #[tokio::test]
 async fn the_file_state_fills_in_without_a_saved_block() {
     let missing = store(r#"{"master_key": "sk-x"}"#);
-    let state = object(r#"{"general_settings": {"coordination_redis": {"host": "file-host"}}}"#);
+    let config_state =
+        object(r#"{"general_settings": {"coordination_redis": {"host": "file-host"}}}"#);
     assert_eq!(
-        current_settings(Some(&missing), &state).await.unwrap(),
+        current_settings(Some(&missing), &config_state)
+            .await
+            .unwrap(),
         Some(object(r#"{"host": "file-host"}"#)),
     );
 }
@@ -142,8 +146,8 @@ async fn a_state_without_a_general_settings_mapping_has_no_block(#[case] state: 
 
 #[tokio::test]
 async fn a_non_object_config_state_is_an_error() {
-    let state = object(r#"["general_settings"]"#);
-    let error = current_settings(None, &state)
+    let config_state = object(r#"["general_settings"]"#);
+    let error = current_settings(None, &config_state)
         .await
         .expect_err("a non-object state is an error");
     assert!(matches!(error, SettingsError::ConfigStateNotAnObject));

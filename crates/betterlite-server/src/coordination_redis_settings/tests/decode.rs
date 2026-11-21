@@ -16,11 +16,11 @@ fn decodes_the_settings_object_of_a_request_body() {
 #[test]
 fn rejects_a_body_without_a_settings_object() {
     assert!(matches!(
-        decode_coordination_settings(br#"[]"#),
+        decode_coordination_settings(b"[]"),
         Err(DecodeError::NotAnObject)
     ));
     assert!(matches!(
-        decode_coordination_settings(br#"{}"#),
+        decode_coordination_settings(b"{}"),
         Err(DecodeError::MissingSettings)
     ));
     assert!(matches!(
