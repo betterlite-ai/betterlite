@@ -1,0 +1,5 @@
+task: B846
+deviations:
+  - {what: "A cost scalar whose text or number parses to a non-finite or out-of-Decimal-range value raises GroupInfoError::Cost instead of yielding Python's inf or nan float.", why: "Prices are Decimal money in betterlite and every later comparison and serialization needs a finite value; Python float() accepts inf and nan, which no billable price can carry.", link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L391-L397"}
+  - {what: "Summed tpm/rpm/itpm/otpm totals that overflow i64 raise GroupInfoError::Totals; LiteLLM adds Python ints of unbounded width.", why: "The ModelGroupInfo rate-limit fields are i64 in betterlite, so a total beyond i64 has no value the type can carry and must fail rather than wrap.", link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11130-L11160"}
+kept_bugs: []

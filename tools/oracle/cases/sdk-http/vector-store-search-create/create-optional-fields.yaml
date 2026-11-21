@@ -1,0 +1,56 @@
+kind: sdk_http
+name: vector-store-search-create-create-optional-fields
+call:
+  vector_store_search_create:
+    runs:
+      - operation: create
+        mode: sync
+        create:
+          name: notes
+          file_ids: [file_a]
+          expires_after: {anchor: last_active_at, days: 7}
+          chunking_strategy: {type: auto}
+          metadata: {tag: x}
+        options: {api_key: sk-client, litellm_call_id: call-1}
+        extra_headers: {x-trace: abc}
+        extra_query: {ignored: yes}
+        extra_body: {name: other}
+        timeout_seconds: 7
+      - operation: create
+        mode: async
+        create: {}
+        options: {api_key: sk-client, litellm_call_id: call-2}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: vs_a
+      object: vector_store
+      created_at: 1699061776
+      name: notes
+      bytes: 12
+      file_counts: {in_progress: 0, completed: 2, failed: 0, cancelled: 0, total: 2}
+      status: completed
+      expires_after: {anchor: last_active_at, days: 7}
+      expires_at: null
+      last_active_at: null
+      metadata: {tag: x}
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: vs_b
+      object: vector_store
+      created_at: 1699061777
+      name: null
+      bytes: 0
+      file_counts: {in_progress: 0, completed: 0, failed: 0, cancelled: 0, total: 0}
+      status: in_progress
+      expires_after: null
+      expires_at: null
+      last_active_at: null
+      metadata: null
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type, x-trace]
+  ignore: []

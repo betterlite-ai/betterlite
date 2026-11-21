@@ -1,0 +1,108 @@
+kind: helper
+name: fast-mode-all-deployments
+call:
+  model_group_info:
+    {
+      "model_group": "g",
+      "model_list": [
+        {
+          "model_name": "g",
+          "litellm_params": {
+            "model": "openai/b846-alpha"
+          },
+          "model_info": {
+            "id": "a"
+          }
+        },
+        {
+          "model_name": "g",
+          "litellm_params": {
+            "model": "anthropic/claude-b846-fast"
+          },
+          "model_info": {
+            "id": "f"
+          }
+        }
+      ],
+      "model_group_alias": {},
+      "deployment_info": {
+        "a": {
+          "mode": "chat"
+        },
+        "f": {
+          "mode": "chat"
+        }
+      },
+      "model_cost": {
+        "claude-b846-fast": {
+          "supports_fast_mode": true
+        }
+      },
+      "parameters": {},
+      "lookup_error": false,
+      "provider_error": "none",
+      "missing_ids": []
+    }
+calls:
+  - model_group_info:
+      {
+        "model_group": "g",
+        "model_list": [
+          {
+            "model_name": "g",
+            "litellm_params": {
+              "model": "anthropic/claude-b846-fast"
+            },
+            "model_info": {
+              "id": "f"
+            }
+          }
+        ],
+        "model_group_alias": {},
+        "deployment_info": {
+          "f": {
+            "mode": "chat"
+          }
+        },
+        "model_cost": {
+          "claude-b846-fast": {
+            "supports_fast_mode": true
+          }
+        },
+        "parameters": {},
+        "lookup_error": false,
+        "provider_error": "none",
+        "missing_ids": []
+      }
+  - model_group_info:
+      {
+        "model_group": "g",
+        "model_list": [
+          {
+            "model_name": "g",
+            "litellm_params": {
+              "model": "anthropic/claude-b846-unknown"
+            },
+            "model_info": {
+              "id": "u"
+            }
+          }
+        ],
+        "model_group_alias": {},
+        "deployment_info": {
+          "u": {
+            "mode": "chat"
+          }
+        },
+        "model_cost": {
+          "claude-b846-fast": {
+            "supports_fast_mode": true
+          }
+        },
+        "parameters": {},
+        "lookup_error": false,
+        "provider_error": "none",
+        "missing_ids": []
+      }
+env: {}
+compare: {ignore: []}

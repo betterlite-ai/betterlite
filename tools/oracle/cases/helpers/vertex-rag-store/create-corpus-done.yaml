@@ -1,0 +1,13 @@
+kind: helper
+name: vertex-rag-store-create-corpus-done
+call:
+  b3455:
+    options:
+      name: my-corpus
+      vector_store:
+        vertex_project: proj
+    responses:
+      - status: 201
+        body: '{"done":true,"response":{"name":"corpora/1"}}'
+env: {}
+compare: {ignore: []}
