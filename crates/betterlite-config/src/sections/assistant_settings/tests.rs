@@ -83,6 +83,22 @@ fn a_nonempty_mapping_without_params_fails_to_load() {
     );
 }
 
+// a null provider keeps the mapping nonempty, so startup still reads litellm_params
+#[test]
+fn a_null_provider_without_params_fails_to_load() {
+    assert_eq!(
+        settings("assistant_settings: {}\n", &[]).expect("an empty mapping loads"),
+        Settings::default()
+    );
+    let error = settings("assistant_settings:\n  custom_llm_provider: null\n", &[])
+        .expect_err("the nonempty mapping is missing litellm_params");
+    let message = error.to_string();
+    assert!(
+        message.contains("litellm_params"),
+        "the null provider mapping failed without naming the key: {message}"
+    );
+}
+
 #[test]
 fn a_null_params_value_fails_to_load() {
     let error = settings("assistant_settings:\n  litellm_params: null\n", &[])
