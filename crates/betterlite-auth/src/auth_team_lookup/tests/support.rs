@@ -33,7 +33,6 @@ pub(crate) struct State {
     pub(crate) events: Vec<String>,
     pub(crate) teams: BTreeMap<String, LiteLLMTeamTableCachedObj>,
     pub(crate) groups: BTreeMap<String, AccessGroupTable>,
-    pub(crate) permissions: BTreeMap<String, LiteLLMObjectPermissionTable>,
     pub(crate) team_rows: Vec<JsonData>,
     pub(crate) group_rows: Vec<JsonData>,
     pub(crate) permission_rows: Vec<JsonData>,
@@ -59,6 +58,15 @@ impl World {
 
     fn fails(&self, name: &str) -> bool {
         self.lock().failing.contains(name)
+    }
+
+    // a scripted write failure stops before the write is recorded
+    fn accept_write(&self, key: &str, ttl: f64) -> Result<(), TeamCacheError> {
+        if self.fails(&format!("write {key}")) {
+            return Err(cache_failure());
+        }
+        self.record(format!("write {key} ttl={ttl}"));
+        Ok(())
     }
 
     pub(crate) fn events(&self) -> Vec<String> {
@@ -135,8 +143,7 @@ pub(crate) const fn request(source: TeamSource) -> TeamRequest<'static> {
 }
 
 pub(crate) fn assert_http(error: &TeamLookupError, status: u16, detail: Detail) {
-    assert_eq!(error.status(), Some(status));
-    assert_eq!(error.detail(), Some(detail));
+    assert_eq!(error.http(), Some((status, detail)));
 }
 
 fn cache_failure() -> TeamCacheError {
@@ -169,10 +176,7 @@ impl TeamCache for World {
         team: &LiteLLMTeamTableCachedObj,
         ttl: f64,
     ) -> Result<(), TeamCacheError> {
-        if self.fails(&format!("write {key}")) {
-            return Err(cache_failure());
-        }
-        self.record(format!("write {key} ttl={ttl}"));
+        self.accept_write(key, ttl)?;
         self.lock().teams.insert(key.to_owned(), team.clone());
         Ok(())
     }
@@ -201,10 +205,7 @@ impl TeamCache for World {
         table: &AccessGroupTable,
     ) -> Result<(), TeamCacheError> {
         let key = format!("access_group_id:{access_group_id}");
-        if self.fails(&format!("write {key}")) {
-            return Err(cache_failure());
-        }
-        self.record(format!("write {key} ttl=600"));
+        self.accept_write(&key, 600.0_f64)?;
         self.lock().groups.insert(key, table.clone());
         Ok(())
     }
@@ -221,19 +222,16 @@ impl ObjectPermissionCache for World {
             )));
         }
         self.record(format!("read {key}"));
-        Ok(self.lock().permissions.get(key).cloned())
+        Ok(None)
     }
 
     async fn write(
         &self,
         key: &str,
-        permission: &LiteLLMObjectPermissionTable,
+        _permission: &LiteLLMObjectPermissionTable,
         ttl: f64,
     ) -> Result<(), PermissionCacheError> {
         self.record(format!("write {key} ttl={ttl}"));
-        self.lock()
-            .permissions
-            .insert(key.to_owned(), permission.clone());
         Ok(())
     }
 

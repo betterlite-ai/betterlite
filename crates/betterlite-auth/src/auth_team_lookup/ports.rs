@@ -7,6 +7,7 @@ use betterlite_db::resource_rows::access_group::AccessGroupTable;
 use betterlite_db::team_rows::archived::LiteLLMTeamTableCachedObj;
 use betterlite_db::team_rows::decoder::TeamRowError;
 use betterlite_db::team_rows::team::LiteLLMTeamTable;
+use serde::de::DeserializeOwned;
 
 use crate::auth_cache::backend::AuthCacheTier;
 use crate::auth_cache::{AuthCache, AuthCacheError, WriteOptions, WriteTtl};
@@ -53,6 +54,21 @@ pub trait TeamCache: Send + Sync {
     ) -> Result<(), TeamCacheError>;
 }
 
+// async_get_cache(model_type=...): an absent entry is a miss, an entry that does not decode an error
+async fn cached<Model, Tier>(
+    cache: &AuthCache<Tier>,
+    key: &str,
+) -> Result<Option<Model>, TeamCacheError>
+where
+    Model: DeserializeOwned,
+    Tier: AuthCacheTier,
+{
+    cache
+        .async_get_typed::<Model>(key, false)
+        .await
+        .map_err(|source| TeamCacheError::Cache(AuthCacheError::from(source)))
+}
+
 pub struct GatewayTeamCache<Tier: AuthCacheTier> {
     pub cache: Arc<AuthCache<Tier>>,
     pub invalidation: Arc<AuthInvalidation>,
@@ -67,10 +83,7 @@ where
         &self,
         key: &str,
     ) -> Result<Option<LiteLLMTeamTableCachedObj>, TeamCacheError> {
-        self.cache
-            .async_get_typed::<LiteLLMTeamTableCachedObj>(key, false)
-            .await
-            .map_err(|source| TeamCacheError::Cache(AuthCacheError::from(source)))
+        cached(&self.cache, key).await
     }
 
     async fn write_team(
@@ -105,10 +118,7 @@ where
         &self,
         key: &str,
     ) -> Result<Option<AccessGroupTable>, TeamCacheError> {
-        self.cache
-            .async_get_typed::<AccessGroupTable>(key, false)
-            .await
-            .map_err(|source| TeamCacheError::Cache(AuthCacheError::from(source)))
+        cached(&self.cache, key).await
     }
 
     async fn cache_access_group(

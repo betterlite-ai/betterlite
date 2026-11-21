@@ -31,8 +31,7 @@ async fn db_required_before_cache() {
     .await
     .unwrap_err();
     assert!(matches!(error, TeamLookupError::NoDatabase));
-    assert_eq!(error.status(), None);
-    assert_eq!(error.detail(), None);
+    assert_eq!(error.http(), None);
     assert!(
         world.events().is_empty(),
         "the cache is never read without a database"

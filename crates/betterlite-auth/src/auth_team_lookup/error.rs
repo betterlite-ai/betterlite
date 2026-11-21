@@ -62,35 +62,20 @@ pub enum Detail {
 }
 
 impl TeamLookupError {
+    // the HTTPException's status_code and detail shape; None is a plain Exception
     #[must_use]
-    pub const fn status(&self) -> Option<u16> {
+    pub const fn http(&self) -> Option<(u16, Detail)> {
         match self {
             Self::NoDatabase | Self::CacheRead(_) => None,
-            Self::AliasAmbiguous { .. } => Some(400),
-            Self::AliasFailure { .. } => Some(500),
-            Self::AccessPolicyUnavailable { .. } => Some(503),
+            Self::AliasAmbiguous { .. } => Some((400, Detail::Error)),
+            Self::AliasFailure { .. } => Some((500, Detail::Error)),
+            Self::AccessPolicyUnavailable { .. } => Some((503, Detail::Text)),
             Self::NotInCache { .. }
             | Self::TeamNotFound { .. }
             | Self::TeamUnavailable { .. }
             | Self::AliasNotFound { .. }
             | Self::AccessGroupNotFound { .. }
-            | Self::AccessGroupFailure { .. } => Some(404),
-        }
-    }
-
-    #[must_use]
-    pub const fn detail(&self) -> Option<Detail> {
-        match self {
-            Self::NoDatabase | Self::CacheRead(_) => None,
-            Self::AccessPolicyUnavailable { .. } => Some(Detail::Text),
-            Self::NotInCache { .. }
-            | Self::TeamNotFound { .. }
-            | Self::TeamUnavailable { .. }
-            | Self::AliasNotFound { .. }
-            | Self::AliasAmbiguous { .. }
-            | Self::AliasFailure { .. }
-            | Self::AccessGroupNotFound { .. }
-            | Self::AccessGroupFailure { .. } => Some(Detail::Error),
+            | Self::AccessGroupFailure { .. } => Some((404, Detail::Error)),
         }
     }
 }
