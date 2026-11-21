@@ -483,7 +483,10 @@ async fn cache_updates_writes_the_whole_list_with_ttl_and_local_only() {
         current_rpm: 6,
     };
     assert_eq!(new_val, counted);
-    let expected = vec![(String::from(CACHE_KEY), LegacyCacheValue::Counter(counted))];
+    let expected = vec![
+        earlier,
+        (String::from(CACHE_KEY), LegacyCacheValue::Counter(counted)),
+    ];
     assert_eq!(updates, expected);
     assert_eq!(
         fixture.cache.calls(),

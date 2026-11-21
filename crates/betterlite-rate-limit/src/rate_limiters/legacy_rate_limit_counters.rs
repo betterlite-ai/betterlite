@@ -151,7 +151,7 @@ impl LegacyRateLimitHandler {
         let limits = check.limits;
         if limits.max_parallel_requests == 0 || limits.tpm_limit == 0 || limits.rpm_limit == 0 {
             let details = format!(
-                "{} Hit limit for {}. Current limits: max_parallel_requests: {}, tpm_limit: {}, rpm_limit: {}",
+                "{}. Hit limit for {}. Current limits: max_parallel_requests: {}, tpm_limit: {}, rpm_limit: {}",
                 CommonProxyErrors::MaxParallelRequestLimitReached.as_str(),
                 check.rate_limit_type.as_str(),
                 limits.max_parallel_requests,
