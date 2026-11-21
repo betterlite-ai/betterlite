@@ -20,6 +20,8 @@ use betterlite_tokenizer::count::Counter;
 use betterlite_tokenizer::count::request::{Message, TokenRequest};
 use chrono::{DateTime, FixedOffset, Utc};
 use std::time::{Duration, Instant};
+#[cfg(test)]
+mod tests;
 // LiteLLM reads the clock out of the wrapper: utcnow for the response, monotonic for elapsed time
 pub(crate) struct SystemClock {
     started: Instant,
