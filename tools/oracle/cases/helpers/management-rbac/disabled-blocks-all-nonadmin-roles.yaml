@@ -1,0 +1,25 @@
+kind: helper
+name: disabled-blocks-all-nonadmin-roles
+call:
+  management_rbac:
+    calls:
+      - role: org_admin
+        feature: agents
+        general_settings: {disable_agents_for_internal_users: true, allow_agents_for_team_admins: true}
+      - role: internal_user
+        feature: agents
+        general_settings: {disable_agents_for_internal_users: true}
+      - role: internal_user_viewer
+        feature: vector_stores
+        general_settings: {disable_vector_stores_for_internal_users: true}
+      - role: team
+        feature: agents
+        general_settings: {disable_agents_for_internal_users: true}
+      - role: customer
+        feature: vector_stores
+        general_settings: {disable_vector_stores_for_internal_users: true, allow_vector_stores_for_team_admins: true}
+      - role: null
+        feature: agents
+        general_settings: {disable_agents_for_internal_users: true}
+env: {}
+compare: {ignore: []}

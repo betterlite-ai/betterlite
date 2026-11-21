@@ -1,0 +1,21 @@
+kind: helper
+name: jwt-role-claims-scope-string-list
+env: {}
+compare: {ignore: []}
+call:
+  jwt_role_claims: {"identity": {}, "settings": {}, "claims": {}, "projection": {"kind": "scopes"}}
+calls:
+  - jwt_role_claims: {"identity": {}, "settings": {}, "claims": {"sub": "u", "scp": "litellm_proxy_admin"}, "projection": {"kind": "scopes"}}
+  - jwt_role_claims: {"identity": {}, "settings": {}, "claims": {"scope": "read  write\tadmin\n"}, "projection": {"kind": "scopes"}}
+  - jwt_role_claims: {"identity": {}, "settings": {}, "claims": {"scope": "read\u001cwrite\u3000admin\u00a0x\u200by"}, "projection": {"kind": "scopes"}}
+  - jwt_role_claims: {"identity": {}, "settings": {}, "claims": {"scope": ""}, "projection": {"kind": "scopes"}}
+  - jwt_role_claims: {"identity": {}, "settings": {}, "claims": {"scope": ["read write", 1, null, true, ["x"], {"k": "v"}]}, "projection": {"kind": "scopes"}}
+  - jwt_role_claims: {"identity": {}, "settings": {}, "claims": {"scope": null}, "projection": {"kind": "scopes"}}
+  - jwt_role_claims: {"identity": {}, "settings": {}, "claims": {"scope": 7}, "projection": {"kind": "scopes"}}
+  - jwt_role_claims: {"identity": {}, "settings": {}, "claims": {"scope": {"read": true}}, "projection": {"kind": "scopes"}}
+  - jwt_role_claims: {"identity": {}, "settings": {}, "claims": {"scope": "read litellm_proxy_admin"}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {}, "claims": {"scope": ["litellm_proxy_admin read"]}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {}, "claims": {"scope": "LITELLM_PROXY_ADMIN litellm_proxy_admin_x"}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"admin_jwt_scope": "ops.admin"}, "claims": {"scope": ["ops.admin"]}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"admin_jwt_scope": "ops.admin"}, "claims": {"scope": "litellm_proxy_admin"}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {"team_id_jwt_field": "team", "user_id_jwt_field": "sub"}, "settings": {}, "claims": {"scope": true, "team": "t", "sub": "u"}, "projection": {"kind": "rbac_role"}}

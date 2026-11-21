@@ -1,0 +1,17 @@
+kind: helper
+name: dynamic-priority-default-pool
+call:
+  b3051:
+    function: allocation
+    model: gpt-4
+    rpm: 100
+    tpm: 1000
+    window_size: 60
+    priority_reservation:
+      prod: 0.5
+    team_metadata:
+      team_id: team-1
+    key_metadata:
+      priority: dev
+env: {}
+compare: {ignore: []}

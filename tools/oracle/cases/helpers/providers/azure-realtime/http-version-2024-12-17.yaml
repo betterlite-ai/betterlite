@@ -1,0 +1,23 @@
+kind: helper
+name: azure-realtime-http-version-2024-12-17
+call:
+  azure_realtime:
+    kind: http
+    model: realtime-a
+    scope_headers: []
+    ssl_verification: enabled
+    max_message_size_bytes: 1048576
+    azure_api_base: "https://env.test/base"
+    azure_api_key: "sk-env"
+    azure_api_version: null
+    queries: []
+    protocols: []
+    failures: []
+    http_setups:
+      - {api_base: null, api_key: null, api_version: null, litellm_api_base: null, litellm_api_key: null, ephemeral_key: "eph-env", headers: {}}
+      - {api_base: "https://explicit.test/v1", api_key: "sk-explicit", api_version: "2025-06-01", litellm_api_base: "https://global.test", litellm_api_key: "sk-global", ephemeral_key: "eph-explicit", headers: {X-Test: "1"}}
+      - {api_base: null, api_key: null, api_version: null, litellm_api_base: "https://global.test///", litellm_api_key: "sk-global", ephemeral_key: "eph-global", headers: {api-key: "stale", Content-Type: "text/plain"}}
+env:
+  AZURE_API_BASE: "https://env.test/base"
+  AZURE_API_KEY: "sk-env"
+compare: {ignore: []}
