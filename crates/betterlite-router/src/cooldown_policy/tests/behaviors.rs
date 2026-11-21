@@ -101,6 +101,16 @@ pub(super) async fn generic_404_and_caller_timeout_never_cool() {
             .trigger_for_failed_deployment(&lookup, &generic_fallback)
             .await
     );
+    // a background response cost poll's 404 says nothing about deployment health either
+    let mut poll = rate_limit(404);
+    poll.background_response_cost_poll = true;
+    assert!(
+        !harness
+            .service
+            .deployment_callback_on_failure(&lookup, &attempt("a", &poll))
+            .await
+            .unwrap()
+    );
     // the 404 guard covers only the generic calls a caller-supplied id can 404 on its own
     let direct = harness(Fixture::new(vec![deployment("gpt", "a")]), policy(0_u32));
     let direct_lookup = direct.fixture.lookup();
@@ -472,4 +482,19 @@ pub(super) async fn unknown_deployments_never_cool() {
             .unwrap()
     );
     assert!(harness.events.recorded().is_empty());
+}
+
+pub(super) async fn set_cools_a_known_deployment() {
+    let failure = rate_limit(429);
+    let harness = harness(Fixture::new(vec![deployment("gpt", "a")]), policy(0_u32));
+    let lookup = harness.fixture.lookup();
+    assert!(
+        harness
+            .service
+            .set_cooldown_deployments(&lookup, &call("a", &failure))
+            .await
+            .unwrap()
+    );
+    assert!(stored_record(&harness.shared, "a").is_some());
+    assert_eq!(harness.events.recorded().len(), 1);
 }

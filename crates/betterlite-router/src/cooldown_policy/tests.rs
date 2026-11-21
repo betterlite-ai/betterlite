@@ -51,6 +51,7 @@ mod support;
     behaviors::shared_fail_counts_answer_across_workers()
 )]
 #[case::unknown_deployments_never_cool(behaviors::unknown_deployments_never_cool())]
+#[case::set_cools_a_known_deployment(behaviors::set_cools_a_known_deployment())]
 #[tokio::test]
 async fn cooldown_policy_behaviors<Fut>(#[case] case: Fut)
 where
