@@ -1,0 +1,169 @@
+kind: helper
+name: request-model-overrides-enforced-params-missing
+call:
+  request_model_overrides:
+    settings:
+      credential_overrides: false
+      enforced_params: [user]
+      service_account_params: [dept]
+      team_stale_alias_bypass: false
+    deployments: null
+    credentials: []
+    calls:
+      - data: {model: m}
+        principal:
+          team_id: null
+          team_model_aliases: {}
+          aliases: {}
+          metadata: null
+          team_metadata: null
+          project_metadata: null
+        premium_user: true
+      - data: {model: m, user: u}
+        principal:
+          team_id: null
+          team_model_aliases: {}
+          aliases: {}
+          metadata: null
+          team_metadata: null
+          project_metadata: null
+        premium_user: true
+      - data: {model: m, user: u}
+        principal:
+          team_id: null
+          team_model_aliases: {}
+          aliases: {}
+          metadata: null
+          team_metadata: null
+          project_metadata: null
+        premium_user: false
+      - data: {model: m, user: u, dept: d}
+        principal:
+          team_id: null
+          team_model_aliases: {}
+          aliases: {}
+          metadata: {service_account_id: sa-1}
+          team_metadata: null
+          project_metadata: null
+        premium_user: true
+      - data: {model: m, user: u}
+        principal:
+          team_id: null
+          team_model_aliases: {}
+          aliases: {}
+          metadata: {service_account_id: sa-1}
+          team_metadata: null
+          project_metadata: null
+        premium_user: true
+      - data: {model: m, user: u}
+        principal:
+          team_id: null
+          team_model_aliases: {}
+          aliases: {}
+          metadata: {}
+          team_metadata: null
+          project_metadata: null
+        premium_user: true
+      - data: {model: m, user: u, team_field: t}
+        principal:
+          team_id: null
+          team_model_aliases: {}
+          aliases: {}
+          metadata: {enforced_params: [team_field]}
+          team_metadata: null
+          project_metadata: null
+        premium_user: true
+      - data: {model: m, user: u}
+        principal:
+          team_id: null
+          team_model_aliases: {}
+          aliases: {}
+          metadata: {enforced_params: [team_field]}
+          team_metadata: null
+          project_metadata: null
+        premium_user: true
+      - data: {model: m, user: u, metadata: {generation_name: g}}
+        principal:
+          team_id: null
+          team_model_aliases: {}
+          aliases: {}
+          metadata: {enforced_params: [metadata.generation_name]}
+          team_metadata: null
+          project_metadata: null
+        premium_user: true
+      - data: {model: m, user: u, metadata: {}}
+        principal:
+          team_id: null
+          team_model_aliases: {}
+          aliases: {}
+          metadata: {enforced_params: [metadata.generation_name]}
+          team_metadata: null
+          project_metadata: null
+        premium_user: true
+      - data: {model: m, user: u}
+        principal:
+          team_id: null
+          team_model_aliases: {}
+          aliases: {}
+          metadata: {enforced_params: [metadata.generation_name]}
+          team_metadata: null
+          project_metadata: null
+        premium_user: true
+      - data: {model: m, user: u, metadata: text}
+        principal:
+          team_id: null
+          team_model_aliases: {}
+          aliases: {}
+          metadata: {enforced_params: [metadata.generation_name]}
+          team_metadata: null
+          project_metadata: null
+        premium_user: true
+      - data: {model: m, user: u, metadata: {user: {email: e}}}
+        principal:
+          team_id: null
+          team_model_aliases: {}
+          aliases: {}
+          metadata: {enforced_params: [metadata.user.email]}
+          team_metadata: null
+          project_metadata: null
+        premium_user: true
+      - data: {model: m, user: null}
+        principal:
+          team_id: null
+          team_model_aliases: {}
+          aliases: {}
+          metadata: null
+          team_metadata: null
+          project_metadata: null
+        premium_user: true
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/0/error/status, why: litellm raises a bare ValueError where betterlite answers 400}
+    - {pointer: /value/0/error/type, why: litellm raises a bare ValueError where betterlite answers 400}
+    - {pointer: /value/0/error/param, why: litellm raises a bare ValueError where betterlite answers 400}
+    - {pointer: /value/0/error/code, why: litellm raises a bare ValueError where betterlite answers 400}
+    - {pointer: /value/2/error/status, why: litellm raises a bare ValueError where betterlite answers 403}
+    - {pointer: /value/2/error/type, why: litellm raises a bare ValueError where betterlite answers 403}
+    - {pointer: /value/2/error/param, why: litellm raises a bare ValueError where betterlite answers 403}
+    - {pointer: /value/2/error/code, why: litellm raises a bare ValueError where betterlite answers 403}
+    - {pointer: /value/4/error/status, why: litellm raises a bare ValueError where betterlite answers 400}
+    - {pointer: /value/4/error/type, why: litellm raises a bare ValueError where betterlite answers 400}
+    - {pointer: /value/4/error/param, why: litellm raises a bare ValueError where betterlite answers 400}
+    - {pointer: /value/4/error/code, why: litellm raises a bare ValueError where betterlite answers 400}
+    - {pointer: /value/7/error/status, why: litellm raises a bare ValueError where betterlite answers 400}
+    - {pointer: /value/7/error/type, why: litellm raises a bare ValueError where betterlite answers 400}
+    - {pointer: /value/7/error/param, why: litellm raises a bare ValueError where betterlite answers 400}
+    - {pointer: /value/7/error/code, why: litellm raises a bare ValueError where betterlite answers 400}
+    - {pointer: /value/9/error/status, why: litellm raises a bare ValueError where betterlite answers 400}
+    - {pointer: /value/9/error/type, why: litellm raises a bare ValueError where betterlite answers 400}
+    - {pointer: /value/9/error/param, why: litellm raises a bare ValueError where betterlite answers 400}
+    - {pointer: /value/9/error/code, why: litellm raises a bare ValueError where betterlite answers 400}
+    - {pointer: /value/10/error/status, why: litellm raises a bare ValueError where betterlite answers 400}
+    - {pointer: /value/10/error/type, why: litellm raises a bare ValueError where betterlite answers 400}
+    - {pointer: /value/10/error/param, why: litellm raises a bare ValueError where betterlite answers 400}
+    - {pointer: /value/10/error/code, why: litellm raises a bare ValueError where betterlite answers 400}
+    - {pointer: /value/11/error/status, why: litellm raises a bare TypeError where betterlite answers 400}
+    - {pointer: /value/11/error/type, why: litellm raises a bare TypeError where betterlite answers 400}
+    - {pointer: /value/11/error/param, why: litellm raises a bare TypeError where betterlite answers 400}
+    - {pointer: /value/11/error/code, why: litellm raises a bare TypeError where betterlite answers 400}
