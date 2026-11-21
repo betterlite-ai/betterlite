@@ -45,9 +45,7 @@ class CustomBatchLogger(CustomLogger):
     async def periodic_flush(self) -> None:
         while True:
             await asyncio.sleep(self.flush_interval)
-            LOGGER.debug(
-                "CustomLogger periodic flush after %s seconds", self.flush_interval
-            )
+            LOGGER.debug("CustomLogger periodic flush after %s seconds", self.flush_interval)
             await self.flush_queue()
 
     async def flush_queue(self) -> None:
@@ -57,9 +55,7 @@ class CustomBatchLogger(CustomLogger):
         async with flush_lock:
             if self.log_queue:
                 log_queue_length = len(self.log_queue)
-                LOGGER.debug(
-                    "CustomLogger: Flushing batch of %s events", len(self.log_queue)
-                )
+                LOGGER.debug("CustomLogger: Flushing batch of %s events", len(self.log_queue))
                 try:
                     await self.async_send_batch()
                 except Exception:
@@ -75,5 +71,4 @@ class CustomBatchLogger(CustomLogger):
                     self.log_queue.clear()
                 self.last_flush_time = time.time()
 
-    async def async_send_batch(self, *args: JsonValue, **kwargs: JsonValue) -> None:
-        ...
+    async def async_send_batch(self, *args: JsonValue, **kwargs: JsonValue) -> None: ...
