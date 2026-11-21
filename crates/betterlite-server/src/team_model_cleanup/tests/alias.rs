@@ -11,7 +11,7 @@ async fn alias_delete() {
         alias_row(
             1,
             Some("t1"),
-            Some(r#"{"first":"old","second":"old","keep":"other"}"#),
+            Some(r#"{"second":"old","first":"old","keep":"other"}"#),
         ),
         alias_row(2, None, Some(r#"{"orphan":"old"}"#)),
         alias_row(3, Some("t2"), Some(r#"{"current":"new"}"#)),
@@ -19,7 +19,7 @@ async fn alias_delete() {
     ];
     let store = FakeStore::new("t1", Some(Vec::new()), rows, Vec::new());
     let removed = delete_team_model_alias("old", &store).await.unwrap();
-    assert_eq!(removed, vec![("t1".to_owned(), "first".to_owned())]);
+    assert_eq!(removed, vec![("t1".to_owned(), "second".to_owned())]);
     let saved: Vec<i64> = store
         .saved_aliases
         .lock()
@@ -31,7 +31,7 @@ async fn alias_delete() {
     assert_eq!(
         store.remaining_aliases(),
         vec![
-            Some(aliases(r#"{"second":"old","keep":"other"}"#)),
+            Some(aliases(r#"{"first":"old","keep":"other"}"#)),
             Some(aliases("{}")),
             Some(aliases(r#"{"current":"new"}"#)),
             None,
