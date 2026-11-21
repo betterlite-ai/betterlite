@@ -8,8 +8,8 @@ use betterlite_guardrails::noma_scan_policy::BLOCKED_MESSAGE;
 use betterlite_test_ports::refused_port::RefusedPort;
 
 use crate::support::{
-    BLOCKED_REPLY, NONE_REPLY, data, field, guardrail, inputs, mock_noma, mock_noma_after,
-    records, request_count, request_data, scan, settings, text_field, value,
+    BLOCKED_REPLY, NONE_REPLY, data, field, guardrail, inputs, mock_noma, mock_noma_after, records,
+    request_count, request_data, scan, settings, text_field, value,
 };
 
 // Hardcoded independently of the guardrail's cap, so a mutation of that constant cannot move the boundary too.
