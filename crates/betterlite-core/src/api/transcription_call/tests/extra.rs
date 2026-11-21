@@ -129,6 +129,7 @@ fn logging_records_the_client_string() {
         harness.dispatch.reply(response(r#"{"text":"Hello"}"#));
         let mut request = request_for("openai/whisper-1");
         request.params = params(r#"{"litellm_call_id":"caller-call"}"#);
+        request.user = Some(String::from("caller-user"));
         harness
             .service()
             .transcription(&request, AudioFile::Bytes(&audio))
@@ -142,6 +143,7 @@ fn logging_records_the_client_string() {
             state.model_call_details.get("client"),
             Some(&Json::Text(String::from("None")))
         );
+        assert_eq!(state.user.as_deref(), Some("caller-user"));
         assert!(state.optional_params.is_empty());
         // the caller's kwargs come after the six defaults, so its value replaces the default
         assert_eq!(
