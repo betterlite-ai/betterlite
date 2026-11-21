@@ -273,6 +273,23 @@ const TEAM_A_TPM_SQL: &str =
     r#"SELECT tpm_limit FROM "LiteLLM_TeamTable" WHERE team_id = 'team-a'"#;
 const TEAM_COUNT_SQL: &str = r#"SELECT count(*) FROM "LiteLLM_TeamTable""#;
 
+async fn check_guaranteed(
+    organization: &OrganizationTable,
+    client: PrismaClient<'_>,
+    fields: &str,
+) -> Result<(), TeamLimitError> {
+    let guaranteed = r#""metadata": {"tpm_limit_type": "guaranteed_throughput"}"#;
+    let parsed = update_team(&format!(
+        r#"{{"team_id": "team-a", {fields}, {guaranteed}}}"#
+    ));
+    check_org_team_limits(
+        organization,
+        &TeamLimitRequest::Update(&parsed),
+        Some(client),
+    )
+    .await
+}
+
 #[tokio::test]
 async fn siblings_include_updated_team() {
     let (fixture, store) = database(SIBLINGS).await;
@@ -282,49 +299,21 @@ async fn siblings_include_updated_team() {
         reader: &store,
         availability: &availability,
     };
-    let budget = r#"{"tpm_limit": 100, "rpm_limit": 10}"#;
-    let mut organization = org("[]", budget);
+    let mut organization = org("[]", r#"{"tpm_limit": 100, "rpm_limit": 10}"#);
     organization.metadata =
         Some(serde_json::from_str(r#"{"model_rpm_limit": {"gpt": 5}}"#).unwrap());
-    let guaranteed = r#""metadata": {"tpm_limit_type": "guaranteed_throughput"}"#;
-    let over = update_team(&format!(
-        r#"{{"team_id": "team-a", "tpm_limit": 21, {guaranteed}}}"#
-    ));
-    let rejection = rejected(
-        check_org_team_limits(
-            &organization,
-            &TeamLimitRequest::Update(&over),
-            Some(client),
-        )
-        .await,
-    );
+    let over = check_guaranteed(&organization, client, r#""tpm_limit": 21"#).await;
     assert_eq!(
-        allocation_text(&rejection),
+        allocation_text(&rejected(over)),
         "Allocated TPM limit=80 + Team TPM limit=21 is greater than organization TPM limit=100"
     );
-    let fits = update_team(&format!(
-        r#"{{"team_id": "team-a", "tpm_limit": 20, {guaranteed}}}"#
-    ));
-    check_org_team_limits(
-        &organization,
-        &TeamLimitRequest::Update(&fits),
-        Some(client),
-    )
-    .await
-    .unwrap();
-    let model = update_team(&format!(
-        r#"{{"team_id": "team-a", "model_rpm_limit": {{"gpt": 3}}, {guaranteed}}}"#
-    ));
-    let per_model = rejected(
-        check_org_team_limits(
-            &organization,
-            &TeamLimitRequest::Update(&model),
-            Some(client),
-        )
-        .await,
-    );
+    check_guaranteed(&organization, client, r#""tpm_limit": 20"#)
+        .await
+        .unwrap();
+    let model_limit = r#""model_rpm_limit": {"gpt": 3}"#;
+    let per_model = check_guaranteed(&organization, client, model_limit).await;
     assert_eq!(
-        allocation_text(&per_model),
+        allocation_text(&rejected(per_model)),
         "Allocated RPM limit=3 + Team RPM limit=3 is greater than organization RPM limit=5"
     );
     assert_eq!(count(&store, TEAM_COUNT_SQL).await, 3);

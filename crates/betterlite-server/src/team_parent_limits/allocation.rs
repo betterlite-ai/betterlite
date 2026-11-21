@@ -58,12 +58,12 @@ pub fn check_rate_allocations(
     request: &TeamLimitRequest<'_>,
 ) -> Result<(), Rejection> {
     let budget = organization.litellm_budget_table.as_ref();
-    let allocated_tpm = teams
+    let tpm_allocated = teams
         .iter()
         .filter_map(|team| team.fields.base.tpm_limit)
         .map(i128::from)
         .fold(0_i128, i128::saturating_add);
-    let allocated_rpm = teams
+    let rpm_allocated = teams
         .iter()
         .filter_map(|team| team.fields.base.rpm_limit)
         .map(i128::from)
@@ -72,14 +72,14 @@ pub fn check_rate_allocations(
     check_total(
         RateLimit::Tpm,
         request.tpm_limit(),
-        allocated_tpm,
+        tpm_allocated,
         tpm_ceiling,
     )?;
     let rpm_ceiling = budget.and_then(|table| table.rpm_limit);
     check_total(
         RateLimit::Rpm,
         request.rpm_limit(),
-        allocated_rpm,
+        rpm_allocated,
         rpm_ceiling,
     )
 }

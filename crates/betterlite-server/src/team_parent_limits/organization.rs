@@ -110,11 +110,13 @@ fn is_guaranteed(
     request: &TeamLimitRequest<'_>,
     key: &str,
 ) -> bool {
-    match field {
-        Some(kind) => kind == ThroughputLimitType::Guaranteed,
-        None => matches!(
-            request.metadata().and_then(|entries| entries.get(key)),
-            Some(JsonData::String(text)) if text == GUARANTEED_THROUGHPUT
-        ),
-    }
+    field.map_or_else(
+        || {
+            matches!(
+                request.metadata().and_then(|entries| entries.get(key)),
+                Some(JsonData::String(text)) if text == GUARANTEED_THROUGHPUT
+            )
+        },
+        |kind| kind == ThroughputLimitType::Guaranteed,
+    )
 }
