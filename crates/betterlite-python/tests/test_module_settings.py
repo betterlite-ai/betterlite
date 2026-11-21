@@ -300,8 +300,12 @@ def test_setting_defaults_cover_litellm_assignments() -> None:
                     match target:
                         case ast.Name(id=name):
                             assigned.add(name)
+                        case ast.expr():
+                            continue
             case ast.AnnAssign(target=ast.Name(id=name)):
                 assigned.add(name)
+            case ast.stmt():
+                continue
     listed = [name for group in ASSIGNMENT_GROUPS for name in group]
     assert len(listed) == len(set(listed))
     assert set(listed) == assigned
@@ -471,7 +475,7 @@ def test_module_helper_thread_context_starts_with_hello_world() -> None:
 def test_module_helper_identify_keeps_the_user_per_thread() -> None:
     betterlite.identify({"user": "alice"})
     assert _thread_context_user() == "alice"
-    pool: ThreadPoolExecutor[str] = ThreadPoolExecutor(max_workers=1)
+    pool = ThreadPoolExecutor(max_workers=1)
     with pool:
         assert pool.submit(_identify_bob_in_this_thread).result() == "bob"
     assert _thread_context_user() == "alice"
