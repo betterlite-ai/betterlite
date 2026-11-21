@@ -1,19 +1,23 @@
 import asyncio
+from contextlib import nullcontext
 from functools import partial
-from typing import Final, Literal, Protocol, TypeAlias, cast
+from typing import Final, Literal, Protocol, TypeAlias, TypedDict, Unpack, cast
 
 import litellm
 import litellm.images.main as images_main
 import openai
+from httpx import Timeout
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.base_llm.image_edit.transformation import BaseImageEditConfig
+from litellm.llms.black_forest_labs.image_edit.handler import bfl_image_edit
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, HTTPHandler
 from litellm.llms.custom_llm import CustomLLM
+from litellm.main import base_llm_http_handler, bedrock_image_edit
 from litellm.types.llms.custom_llm import CustomLLMItem
 from litellm.types.router import GenericLiteLLMParams
 from litellm.types.utils import ImageResponse, LlmProviders
 from litellm.utils import ProviderConfigManager, custom_llm_setup
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, JsonValue
 from typing_extensions import override
 
 from image_edit_http import FixtureConfig
@@ -24,8 +28,6 @@ Client: TypeAlias = HTTPHandler | AsyncHTTPHandler
 Argument: TypeAlias = JsonValue | bytes | list[bytes] | Client
 Seen: TypeAlias = Logging | ImageResponse | GenericLiteLLMParams | BaseImageEditConfig | Argument
 ClientKind: TypeAlias = Literal["sync", "async"]
-Forwarded: TypeAlias = dict[str, Argument | Logging]
-CustomCall: TypeAlias = tuple[str, list[bytes], str | None, float | None, Forwarded, Client | None]
 
 
 class ImageEditEntry(Protocol):
@@ -35,12 +37,11 @@ class ImageEditEntry(Protocol):
 
 
 ENTRY = cast("ImageEditEntry", images_main)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1674
-PARAMS: Final = TypeAdapter(dict[str, JsonValue])
 FIXTURE: Final = FixtureConfig(multipart=False)
 SELECT_CONFIG: Final = ProviderConfigManager.get_provider_image_edit_config
-BEDROCK_EDIT: Final = images_main.bedrock_image_edit.image_edit
-BFL_EDIT: Final = images_main.bfl_image_edit.image_edit
-EDIT_HANDLER: Final = images_main.base_llm_http_handler.image_edit_handler
+BEDROCK_EDIT: Final = bedrock_image_edit.image_edit  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L888
+BFL_EDIT: Final = bfl_image_edit.image_edit  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L924
+EDIT_HANDLER: Final = base_llm_http_handler.image_edit_handler  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L937
 
 
 class CustomProvider(BaseModel):
@@ -83,12 +84,15 @@ class Sent(BaseModel):
     prompt: str | None
     images: list[str] = Field(validation_alias="image")
     optional_params: dict[str, JsonValue] = Field(
+        default_factory=dict,
         validation_alias=AliasChoices("optional_params", "image_edit_optional_request_params"),
     )
     extra_headers: dict[str, JsonValue] | None
     extra_body: dict[str, JsonValue] | None = None
     timeout: float | None
-    asynchronous: bool = Field(validation_alias=AliasChoices("aimage_edit", "_is_async"))
+    asynchronous: bool = Field(
+        default=False, validation_alias=AliasChoices("aimage_edit", "_is_async")
+    )
 
 
 class CustomRecord(BaseModel):
@@ -121,6 +125,20 @@ class Envelope(BaseModel):
     image_edit_call: ImageEditCallValue
 
 
+# the keyword arguments image_edit hands a custom handler
+class CustomArguments(TypedDict):
+    model: str
+    image: list[bytes]
+    prompt: str | None
+    model_response: ImageResponse
+    api_key: str | None
+    api_base: str | None
+    optional_params: dict[str, Argument | Logging]
+    logging_obj: Logging
+    timeout: float | Timeout | None
+    client: Client | None
+
+
 class Recorder:
     def __init__(self) -> None:
         self.sent: Sent | None = None
@@ -129,6 +147,19 @@ class Recorder:
         values = {"custom_llm_provider": provider, "extra_body": None, **received}
         self.sent = Sent.model_validate(values)
         return ImageResponse(created=1, data=[])
+
+    # each configured send records for one call, and LiteLLM's own sends come back after it
+    def __enter__(self) -> None:
+        ProviderConfigManager.get_provider_image_edit_config = recorded_config  # type: ignore[method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L833-L836
+        bedrock_image_edit.image_edit = partial(self.keep, "bedrock")  # type: ignore[method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L888
+        bfl_image_edit.image_edit = partial(self.keep, "black_forest_labs")  # type: ignore[method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L924
+        base_llm_http_handler.image_edit_handler = partial(self.keep, "")  # type: ignore[method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L937
+
+    def __exit__(self, *_: object) -> None:
+        ProviderConfigManager.get_provider_image_edit_config = SELECT_CONFIG  # type: ignore[method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L833-L836
+        bedrock_image_edit.image_edit = BEDROCK_EDIT  # type: ignore[method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L888
+        bfl_image_edit.image_edit = BFL_EDIT  # type: ignore[method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L924
+        base_llm_http_handler.image_edit_handler = EDIT_HANDLER  # type: ignore[method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L937
 
 
 def recorded_config(model: str, provider: LlmProviders) -> BaseImageEditConfig | None:
@@ -144,60 +175,30 @@ class Handler(CustomLLM):
         self.kwargs = kwargs
         self.received: CustomRecord | None = None
 
-    def record(self, values: CustomCall, *, asynchronous: bool) -> ImageResponse:
-        model, image, prompt, timeout, optional_params, client = values
-        forwarded = {name: optional_params[name] for name in self.kwargs if name in optional_params}
-        kind: ClientKind | None = None
-        match client:
-            case AsyncHTTPHandler():
-                kind = "async"
-            case HTTPHandler():
-                kind = "sync"
-        self.received = CustomRecord(
-            handler=self.name,
-            model=model,
-            images=[part.decode() for part in image],
-            prompt=prompt,
-            optional_params=PARAMS.validate_python(forwarded),
-            timeout=timeout,
-            client=kind,
-            asynchronous=asynchronous,
-        )
+    # image_edit hands over a client only of the kind the entry expects, None otherwise
+    def record(self, call: CustomArguments, kind: ClientKind) -> ImageResponse:
+        params = call["optional_params"]
+        forwarded = {name: params[name] for name in self.kwargs if name in params}
+        values = {
+            "handler": self.name,
+            "model": call["model"],
+            "images": [part.decode() for part in call["image"]],
+            "prompt": call["prompt"],
+            "optional_params": forwarded,
+            "timeout": call["timeout"],
+            "client": None if call["client"] is None else kind,
+            "asynchronous": kind == "async",
+        }
+        self.received = CustomRecord.model_validate(values)
         return ImageResponse(created=1, data=[])
 
     @override
-    def image_edit(
-        self,
-        model: str,
-        image: list[bytes],
-        prompt: str | None,
-        model_response: ImageResponse,
-        api_key: str | None,
-        api_base: str | None,
-        optional_params: Forwarded,
-        logging_obj: Logging,
-        timeout: float | None = None,
-        client: HTTPHandler | None = None,
-    ) -> ImageResponse:
-        called = (model, image, prompt, timeout, optional_params, client)
-        return self.record(called, asynchronous=False)
+    def image_edit(self, **call: Unpack[CustomArguments]) -> ImageResponse:  # type: ignore[override]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L813-L824
+        return self.record(call, "sync")
 
     @override
-    async def aimage_edit(
-        self,
-        model: str,
-        image: list[bytes],
-        prompt: str | None,
-        model_response: ImageResponse,
-        api_key: str | None,
-        api_base: str | None,
-        optional_params: Forwarded,
-        logging_obj: Logging,
-        timeout: float | None = None,
-        client: AsyncHTTPHandler | None = None,
-    ) -> ImageResponse:
-        called = (model, image, prompt, timeout, optional_params, client)
-        return self.record(called, asynchronous=True)
+    async def aimage_edit(self, **call: Unpack[CustomArguments]) -> ImageResponse:  # type: ignore[override]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L798-L809
+        return self.record(call, "async")
 
 
 def register(run: Run) -> list[Handler]:
@@ -212,7 +213,7 @@ def register(run: Run) -> list[Handler]:
             handlers.append(handler)
             entries.append({"provider": provider.name, "custom_handler": handler})
     litellm.custom_provider_map = entries
-    custom_llm_setup()
+    custom_llm_setup()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L572
     return handlers
 
 
@@ -227,7 +228,7 @@ def arguments(run: Run, api_base: str) -> dict[str, Argument]:
         match run.image:
             case str() as content:
                 values["image"] = content.encode()
-            case list() as parts:
+            case [*parts]:
                 values["image"] = [part.encode() for part in parts]
     values.update(
         prompt=run.prompt,
@@ -254,27 +255,12 @@ def call_entry(run: Run, api_base: str) -> ImageResponse:
     return ENTRY.image_edit(**values)
 
 
-def recorded_call(run: Run, api_base: str, recorder: Recorder) -> ImageResponse:
-    ProviderConfigManager.get_provider_image_edit_config = recorded_config  # type: ignore[method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L833-L836
-    images_main.bedrock_image_edit.image_edit = partial(recorder.keep, "bedrock")  # type: ignore[assignment, method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L888
-    images_main.bfl_image_edit.image_edit = partial(recorder.keep, "black_forest_labs")  # type: ignore[assignment, method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L924
-    images_main.base_llm_http_handler.image_edit_handler = partial(recorder.keep, "")  # type: ignore[assignment, method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L937
-    try:
-        return call_entry(run, api_base)
-    finally:
-        ProviderConfigManager.get_provider_image_edit_config = SELECT_CONFIG  # type: ignore[method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L833-L836
-        images_main.bedrock_image_edit.image_edit = BEDROCK_EDIT  # type: ignore[method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L888
-        images_main.bfl_image_edit.image_edit = BFL_EDIT  # type: ignore[method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L924
-        images_main.base_llm_http_handler.image_edit_handler = EDIT_HANDLER  # type: ignore[method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L937
-
-
 def run_one(run: Run, api_base: str) -> RunOutcome:
     handlers = register(run)
     recorder = Recorder()
     try:
-        response = (
-            recorded_call(run, api_base, recorder) if run.recorded else call_entry(run, api_base)
-        )
+        with recorder if run.recorded else nullcontext():
+            response = call_entry(run, api_base)
     except openai.APIError as error:
         return RunOutcome(failure=api_failure(error))
     data = response.data if response.data is not None else []
