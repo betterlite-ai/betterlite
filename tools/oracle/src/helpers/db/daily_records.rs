@@ -16,7 +16,7 @@ use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use chrono::DateTime;
 use jiff::tz::TimeZoneDatabase;
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Value, json};
 use tokio::runtime::Builder;
 
 pub(crate) struct Op;
@@ -69,32 +69,46 @@ async fn run_case(input: &Input) -> HelperResult {
         fallback_moment: DateTime::UNIX_EPOCH,
     };
     match input.operation {
-        Operation::Status => Ok(json!({
-            "status": request_status(payload.metadata.as_deref().map(str::as_bytes)),
-            "raised": false,
-        })),
-        Operation::Common => {
-            let Some(entity) = input.entity else {
-                return Err(failure("a common operation needs an entity"));
-            };
-            let answer =
-                match common_daily_transaction(&payload, entity, &pricing, &endpoints).await {
-                    Ok(Some(projection)) => {
-                        json!({"base": base_spend_row(&projection.base), "raised": false})
-                    }
-                    Ok(None) => json!({"base": null, "raised": false}),
-                    Err(_) => json!({"base": null, "raised": true}),
-                };
-            Ok(answer)
+        Operation::Status => Ok(status_answer(&payload)),
+        Operation::Common => common_answer(&payload, input.entity, &pricing, &endpoints).await,
+        Operation::Baseline => Ok(baseline_answer(&payload, &pricing, &endpoints).await),
+    }
+}
+
+fn status_answer(payload: &DailyPayload) -> Value {
+    json!({
+        "status": request_status(payload.metadata.as_deref().map(str::as_bytes)),
+        "raised": false,
+    })
+}
+
+async fn common_answer(
+    payload: &DailyPayload,
+    entity: Option<DailySpendEntity>,
+    pricing: &DailyPricing<'_, CasePrices>,
+    endpoints: &CaseEndpoints,
+) -> HelperResult {
+    let Some(entity) = entity else {
+        return Err(failure("a common operation needs an entity"));
+    };
+    match common_daily_transaction(payload, entity, pricing, endpoints).await {
+        Ok(Some(projection)) => {
+            Ok(json!({"base": base_spend_row(&projection.base), "raised": false}))
         }
-        Operation::Baseline => {
-            let answer = match baseline_daily_attribution(&payload, &pricing, &endpoints).await {
-                Ok(Some(attribution)) => json!({"attribution": attribution, "raised": false}),
-                Ok(None) => json!({"attribution": null, "raised": false}),
-                Err(_) => json!({"attribution": null, "raised": true}),
-            };
-            Ok(answer)
-        }
+        Ok(None) => Ok(json!({"base": null, "raised": false})),
+        Err(_) => Ok(json!({"base": null, "raised": true})),
+    }
+}
+
+async fn baseline_answer(
+    payload: &DailyPayload,
+    pricing: &DailyPricing<'_, CasePrices>,
+    endpoints: &CaseEndpoints,
+) -> Value {
+    match baseline_daily_attribution(payload, pricing, endpoints).await {
+        Ok(Some(attribution)) => json!({"attribution": attribution, "raised": false}),
+        Ok(None) => json!({"attribution": null, "raised": false}),
+        Err(_) => json!({"attribution": null, "raised": true}),
     }
 }
 
