@@ -1,10 +1,7 @@
 #![cfg(test)]
-#![cfg_attr(
-    test,
-    expect(
-        clippy::too_many_lines,
-        reason = "each named behavior test states one LiteLLM transcription scenario end to end"
-    )
+#![expect(
+    clippy::too_many_lines,
+    reason = "each named behavior test states one LiteLLM transcription scenario end to end"
 )]
 mod extra;
 
