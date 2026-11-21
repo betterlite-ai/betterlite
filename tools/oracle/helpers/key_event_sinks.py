@@ -4,7 +4,6 @@ from typing import Final, Literal, TypeAlias, TypedDict
 
 import litellm
 from litellm.caching.in_memory_cache import InMemoryCache
-from litellm.integrations.SlackAlerting.slack_alerting import SlackAlerting
 from litellm.proxy import proxy_server
 from litellm.proxy._types import LiteLLM_VerificationToken, WebhookEvent
 from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache
@@ -110,6 +109,21 @@ class Board(logging.Handler):
         if record.funcName in OWNED:
             self.logs.append(record.levelname)
 
+    async def email(self, webhook_event: WebhookEvent) -> bool:
+        view: dict[str, JsonValue] = {
+            "event": webhook_event.event,
+            "event_group": webhook_event.event_group.value,
+            "event_message": webhook_event.event_message,
+            "token": webhook_event.token,
+            "spend": webhook_event.spend,
+            "max_budget": webhook_event.max_budget,
+            "user_id": webhook_event.user_id,
+            "team_id": webhook_event.team_id,
+            "key_alias": webhook_event.key_alias,
+        }
+        self.effects.append(["email", view])
+        return True
+
 
 class Manager(BaseSecretManager):
     def __init__(self, board: Board, call: Call) -> None:
@@ -117,7 +131,10 @@ class Manager(BaseSecretManager):
         self.secrets = call["secrets"]
         self.failing = call["failing"]
 
-    def answer(self, effect: list[JsonValue], name: str) -> dict[str, JsonValue]:
+    def answer(
+        self, effect: list[JsonValue], name: str, timeout: float | None
+    ) -> dict[str, JsonValue]:
+        del timeout
         self.board.effects.append(effect)
         if name in self.failing:
             raise RuntimeError(name)
@@ -133,53 +150,33 @@ class Manager(BaseSecretManager):
     def sync_read_secret(  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/base_secret_manager.py#L49-L54
         self, secret_name: str, optional_params: Params = None, timeout: float | None = None
     ) -> str | None:
-        del timeout
-        self.answer(["read", secret_name, optional_params], secret_name)
+        self.answer(["read", secret_name, optional_params], secret_name, timeout)
         return self.secrets.get(secret_name)
 
     @override
     async def async_write_secret(  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/base_secret_manager.py#L68-L76
-        self,
-        secret_name: str,
-        secret_value: str,
-        description: str | None = None,
-        optional_params: Params = None,
-        timeout: float | None = None,
-        tags: dict[str, str] | None = None,
+        self, secret_name: str, secret_value: str, description: str | None = None,
+        optional_params: Params = None, timeout: float | None = None, tags: Params = None,
     ) -> dict[str, JsonValue]:
-        del timeout
-        effect: list[JsonValue] = [
-            "write", secret_name, secret_value, description, tags, optional_params
-        ]
-        return self.answer(effect, secret_name)
+        effect: list[JsonValue] = ["write", secret_name, secret_value, description, tags]
+        return self.answer([*effect, optional_params], secret_name, timeout)
 
     @override
     async def async_delete_secret(  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/base_secret_manager.py#L94-L100
-        self,
-        secret_name: str,
-        recovery_window_in_days: int | None = 7,
-        optional_params: Params = None,
-        timeout: float | None = None,
+        self, secret_name: str, recovery_window_in_days: int | None = 7,
+        optional_params: Params = None, timeout: float | None = None,
     ) -> dict[str, JsonValue]:
-        del timeout
         effect: list[JsonValue] = ["delete", secret_name, recovery_window_in_days, optional_params]
-        return self.answer(effect, secret_name)
+        return self.answer(effect, secret_name, timeout)
 
     # one rotate effect keeps the base class's read, write and delete steps out of these cases
     @override
     async def async_rotate_secret(  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/base_secret_manager.py#L114-L120
-        self,
-        current_secret_name: str,
-        new_secret_name: str,
-        new_secret_value: str,
-        optional_params: Params = None,
-        timeout: float | None = None,
+        self, current_secret_name: str, new_secret_name: str, new_secret_value: str,
+        optional_params: Params = None, timeout: float | None = None,
     ) -> dict[str, JsonValue]:
-        del timeout
-        effect: list[JsonValue] = [
-            "rotate", current_secret_name, new_secret_name, new_secret_value, optional_params
-        ]
-        return self.answer(effect, current_secret_name)
+        effect: list[JsonValue] = ["rotate", current_secret_name, new_secret_name, new_secret_value]
+        return self.answer([*effect, optional_params], current_secret_name, timeout)
 
 
 # a team read from the cache never reaches the database, and a missing one fails on the stub below
@@ -203,28 +200,6 @@ class Database(PrismaClient):
         self.connected = True
 
 
-class Mailer(SlackAlerting):
-    def __init__(self, board: Board) -> None:
-        super().__init__()
-        self.board = board
-
-    @override
-    async def send_key_created_or_user_invited_email(self, webhook_event: WebhookEvent) -> bool:
-        view: dict[str, JsonValue] = {
-            "event": webhook_event.event,
-            "event_group": webhook_event.event_group.value,
-            "event_message": webhook_event.event_message,
-            "token": webhook_event.token,
-            "spend": webhook_event.spend,
-            "max_budget": webhook_event.max_budget,
-            "user_id": webhook_event.user_id,
-            "team_id": webhook_event.team_id,
-            "key_alias": webhook_event.key_alias,
-        }
-        self.board.effects.append(["email", view])
-        return True
-
-
 def run(input_value: Call) -> Answer:
     board = Board()
     logger = logging.getLogger("LiteLLM Proxy")
@@ -232,6 +207,7 @@ def run(input_value: Call) -> Answer:
     handlers = logger.handlers
     cache = proxy_server.user_api_key_cache
     alerting = proxy_server.proxy_logging_obj.slack_alerting_instance
+    sender = alerting.send_key_created_or_user_invited_email
     logger.setLevel(logging.DEBUG)
     logger.handlers = [board]
     settings = input_value["settings"]
@@ -246,11 +222,11 @@ def run(input_value: Call) -> Answer:
     proxy_server.prisma_client = Database() if ready else None
     proxy_server.user_api_key_cache = UserApiKeyCache(in_memory_cache=Teams(board, input_value))
     proxy_server.general_settings = {"alerting": input_value["alerting"]}
-    proxy_server.proxy_logging_obj.slack_alerting_instance = Mailer(board)
+    alerting.send_key_created_or_user_invited_email = board.email  # type: ignore[method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1274
     try:
         return asyncio.run(answer(input_value, board))
     finally:
-        proxy_server.proxy_logging_obj.slack_alerting_instance = alerting
+        alerting.send_key_created_or_user_invited_email = sender  # type: ignore[method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1274
         proxy_server.general_settings = {}
         proxy_server.user_api_key_cache = cache
         proxy_server.prisma_client = None
@@ -294,7 +270,6 @@ async def perform(step: Step) -> None:
         await Hooks._delete_virtual_keys_from_secret_manager(keys)  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/key_management_event_hooks.py#L405-L438
     elif step["action"] == "key_created_email":
         await Hooks._send_key_created_email(step["response"])  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/key_management_event_hooks.py#L517-L589
-        # the email goes out on a task the hook does not await, so it runs before the step ends
         await asyncio.sleep(0)
     else:
         await Hooks._send_key_rotated_email({}, None)  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/key_management_event_hooks.py#L592-L645
