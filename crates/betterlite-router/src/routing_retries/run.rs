@@ -113,17 +113,9 @@ where
     R: Rng + Send,
 {
     async fn execute(&mut self) -> Result<D::Response, RetryError> {
-        let first = match self.dispatch.mock_rate_limit(self.settings.model_group) {
-            Err(error) => stamp_deployment_retries(ProviderFailure {
-                error,
-                deployment_id: None,
-                deployment_num_retries: None,
-                retry_after: None,
-            }),
-            Ok(()) => match self.attempt().await? {
-                Answer::Committed(response) => return Ok(response),
-                Answer::Failed(failure) => failure,
-            },
+        let first = match self.first().await? {
+            Answer::Committed(response) => return Ok(response),
+            Answer::Failed(failure) => failure,
         };
         let Some(schedule) = self.schedule(&first).await? else {
             return Err(RetryError::Provider(Box::new(first.error)));
@@ -151,6 +143,19 @@ where
             availability = refreshed;
         }
         Err(exhausted(latest.error, schedule.num_retries))
+    }
+
+    // the mock switch's rate limit fails the first attempt before any provider call
+    async fn first(&mut self) -> Result<Answer<D::Response>, RetryError> {
+        if let Err(error) = self.dispatch.mock_rate_limit(self.settings.model_group) {
+            return Ok(Answer::Failed(stamp_deployment_retries(ProviderFailure {
+                error,
+                deployment_id: None,
+                deployment_num_retries: None,
+                retry_after: None,
+            })));
+        }
+        self.attempt().await
     }
 
     // the loop's should_retry_this_error, skipped under a policy; None stops the retries
