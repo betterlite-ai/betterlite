@@ -12,6 +12,7 @@ use betterlite_config::sections::{azure_endpoints, resource_sdk_settings};
 use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::assistant_read_delete::sdk_dispatch::NoSources;
 use betterlite_core::api::assistant_run_sdk::service::RunOutcome;
+use betterlite_core::api::assistant_threads::SuppliedClient as ThreadClient;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody, merge_query};
 use betterlite_http::proxy::transport_error::TransportError;
@@ -21,6 +22,7 @@ use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
+use betterlite_openai::assistants::client::ClientKind;
 use betterlite_openai::assistants::transport::AssistantsTransport;
 use betterlite_openai::thread_runs::error::ThreadRunsError;
 use betterlite_openai::thread_runs::stream::{RunChunks, RunStream, RunStreamTransport};
@@ -671,6 +673,22 @@ async fn a_supplied_azure_client_reaches_get_thread() {
     );
     assert_eq!(seen.api_key.as_deref(), Some("sk-azure"));
     assert_eq!(seen.authorization, None);
+}
+
+// the client it builds carries the supplied AsyncAzureOpenAI class into the SDK client's own inputs
+#[test]
+fn a_supplied_azure_client_keeps_its_class_in_the_thread_client() {
+    let client = supplied_azure("sk-azure");
+    let environment: BTreeMap<String, String> = BTreeMap::new();
+    let thread = client
+        .thread(Arc::new(Recorder::default()), &environment, "2024-01-01")
+        .expect("the supplied azure client builds");
+    let ThreadClient::Azure(azure) = thread else {
+        panic!("the supplied azure class built another client");
+    };
+    assert_eq!(azure.kind, ClientKind::Async);
+    let inputs = azure.inputs.expect("the constructor inputs");
+    assert!(inputs.http_client.is_async);
 }
 
 async fn a_configured_parameter_overlays_the_request(settings: &Settings) {
