@@ -147,9 +147,9 @@ async fn canonical_rebind_before_membership() {
     let lines = logs.lines();
     assert_eq!(lines.len(), 1, "{lines:?}");
     assert!(lines[0].starts_with("DEBUG "), "{lines:?}");
-    for part in ["rebinding user_id", "\"new-id\"", "\"legacy-id\""] {
-        assert!(lines[0].contains(part), "{part} in {lines:?}");
-    }
+    assert!(lines[0].contains("rebinding user_id"), "{lines:?}");
+    assert!(lines[0].contains("\"new-id\""), "{lines:?}");
+    assert!(lines[0].contains("\"legacy-id\""), "{lines:?}");
 }
 
 #[tokio::test]

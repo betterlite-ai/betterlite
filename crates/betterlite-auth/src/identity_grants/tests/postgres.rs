@@ -109,8 +109,12 @@ fn tracker() -> Arc<DbLookupStallTracker<SystemClock>> {
     })
 }
 
-fn user_lookup(store: &PostgresStore, cache: &Arc<Cache>, tasks: &TaskTracker) -> UserLookup {
-    let database = DatabaseUserStore {
+// The three tables the readers query, all on the one seeded database.
+fn stores(
+    store: &PostgresStore,
+    tasks: &TaskTracker,
+) -> (DatabaseUserStore, DatabaseTeamStore, DatabaseTeamMembership) {
+    let users = DatabaseUserStore {
         reader: store.clone(),
         writer: store.clone(),
         availability: Arc::new(Availability::default()),
@@ -118,9 +122,34 @@ fn user_lookup(store: &PostgresStore, cache: &Arc<Cache>, tasks: &TaskTracker) -
         tracker: tracker(),
         tasks: tasks.clone(),
     };
-    UserLookup {
+    let teams = DatabaseTeamStore {
+        reader: store.clone(),
+        writer: store.clone(),
+        availability: Arc::new(Availability::default()),
+        default_deadline_seconds: 5.0_f64,
+        tracker: tracker(),
+        tasks: tasks.clone(),
+    };
+    let members = DatabaseTeamMembership {
+        writer: Arc::new(store.clone()),
+        reader: Arc::new(store.clone()),
+        availability: Arc::new(Availability::default()),
+        default_deadline_seconds: 5.0_f64,
+        tracker: tracker(),
+        tasks: tasks.clone(),
+    };
+    (users, teams, members)
+}
+
+fn identity_readers(
+    users: DatabaseUserStore,
+    members: DatabaseTeamMembership,
+    cache: &Arc<Cache>,
+    tasks: &TaskTracker,
+) -> (UserLookup, MembershipLookup) {
+    let user_reader = UserLookup {
         cache: Arc::<Cache>::clone(cache),
-        store: Some(Arc::new(database)),
+        store: Some(Arc::new(users)),
         cadence: Arc::new(Cadence::new(100, Arc::new(WallClock))),
         db_cache_expiry: 5,
         budget_reset: Arc::new(NoReset),
@@ -128,7 +157,15 @@ fn user_lookup(store: &PostgresStore, cache: &Arc<Cache>, tasks: &TaskTracker) -
         tasks: tasks.clone(),
         defaults: None,
         redactor: Arc::new(Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap()),
-    }
+    };
+    let registry = Arc::new(MembershipInflight::default());
+    let membership_reader = MembershipLookup {
+        cache: Arc::<Cache>::clone(cache),
+        rows: Some(Arc::new(members)),
+        index: Arc::new(SharedMembershipIndex::new(registry)),
+        tasks: tasks.clone(),
+    };
+    (user_reader, membership_reader)
 }
 
 fn permissions(
@@ -153,7 +190,12 @@ fn permissions(
     })
 }
 
-fn team_lookup(store: &PostgresStore, cache: &Arc<Cache>, tasks: &TaskTracker) -> TeamLookup {
+fn team_lookup(
+    teams: DatabaseTeamStore,
+    store: &PostgresStore,
+    cache: &Arc<Cache>,
+    tasks: &TaskTracker,
+) -> TeamLookup {
     let auth: Arc<dyn AuthInvalidationCache> = Arc::<Cache>::clone(cache);
     let spend: Arc<dyn SpendCounterCache> = Arc::new(DualCache::new(memory(), None, settings()));
     let invalidation = AuthInvalidation {
@@ -163,14 +205,6 @@ fn team_lookup(store: &PostgresStore, cache: &Arc<Cache>, tasks: &TaskTracker) -
         transport: Arc::new(Silent),
         clock: Arc::new(InvalidationClock),
         access_group_ttl: 600.0_f64,
-    };
-    let teams = DatabaseTeamStore {
-        reader: store.clone(),
-        writer: store.clone(),
-        availability: Arc::new(Availability::default()),
-        default_deadline_seconds: 5.0_f64,
-        tracker: tracker(),
-        tasks: tasks.clone(),
     };
     TeamLookup {
         cache: Arc::new(GatewayTeamCache {
@@ -186,29 +220,6 @@ fn team_lookup(store: &PostgresStore, cache: &Arc<Cache>, tasks: &TaskTracker) -
         provisioner: None,
         cadence: Arc::new(Cadence::new(100, Arc::new(WallClock))),
         in_memory_ttl: 60,
-    }
-}
-
-fn membership_lookup(
-    store: &PostgresStore,
-    cache: &Arc<Cache>,
-    tasks: &TaskTracker,
-) -> MembershipLookup {
-    let rows = DatabaseTeamMembership {
-        writer: Arc::new(store.clone()),
-        reader: Arc::new(store.clone()),
-        availability: Arc::new(Availability::default()),
-        default_deadline_seconds: 5.0_f64,
-        tracker: tracker(),
-        tasks: tasks.clone(),
-    };
-    MembershipLookup {
-        cache: Arc::<Cache>::clone(cache),
-        rows: Some(Arc::new(rows)),
-        index: Arc::new(SharedMembershipIndex::new(Arc::new(
-            MembershipInflight::default(),
-        ))),
-        tasks: tasks.clone(),
     }
 }
 
@@ -258,10 +269,12 @@ async fn seeded() -> (PostgresFixture, Pool, Readers, TaskTracker) {
         60.0_f64,
     ));
     let tasks = TaskTracker::new();
+    let (user_store, team_store, member_rows) = stores(&store, &tasks);
+    let (users, memberships) = identity_readers(user_store, member_rows, &cache, &tasks);
     let readers = Readers {
-        users: user_lookup(&store, &cache, &tasks),
-        teams: team_lookup(&store, &cache, &tasks),
-        memberships: membership_lookup(&store, &cache, &tasks),
+        users,
+        teams: team_lookup(team_store, &store, &cache, &tasks),
+        memberships,
     };
     (fixture, pool, readers, tasks)
 }

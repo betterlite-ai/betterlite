@@ -1,5 +1,6 @@
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
+use betterlite_db::team_rows::membership::LiteLLMTeamMembership;
 use tracing::debug;
 
 use super::loaders::{MembershipLoader, TeamLoader, UserLoader};
@@ -37,22 +38,7 @@ where
         team_id: Option<&str>,
     ) -> Result<ResolvedIdentity, IdentityLoadError> {
         let requested = query.user_id.as_deref();
-        let user = match requested {
-            Some(user_id) if !user_id.is_empty() => {
-                let request = UserLookupRequest {
-                    user_id: Some(user_id),
-                    sso_user_id: query.sso_user_id.as_deref(),
-                    user_email: query.user_email.as_deref(),
-                    user_id_upsert: query.upsert,
-                    check_db_only: None,
-                };
-                self.users
-                    .load_user(request)
-                    .await
-                    .map_err(|error| IdentityLoadError::User(Box::new(error)))?
-            }
-            Some(_) | None => None,
-        };
+        let user = self.user(query).await?;
         let effective_user_id = canonical_user_id(requested, user.as_ref()).map(str::to_owned);
         if effective_user_id.as_deref() != requested {
             debug!(
@@ -61,14 +47,9 @@ where
                 "Auth: rebinding user_id to the DB user_id (email/sso match)"
             );
         }
-        let membership = match (effective_user_id.as_deref(), team_id) {
-            (Some(member), Some(team)) if !member.is_empty() && !team.is_empty() => self
-                .memberships
-                .load_membership(member, team)
-                .await
-                .map_err(|error| IdentityLoadError::Membership(Box::new(error)))?,
-            (Some(_) | None, Some(_) | None) => None,
-        };
+        let membership = self
+            .membership(effective_user_id.as_deref(), team_id)
+            .await?;
         Ok(ResolvedIdentity {
             user,
             membership,
@@ -112,6 +93,40 @@ where
                 team: Some(loaded),
             })),
             Err(error) => team_failure(error, team),
+        }
+    }
+
+    // a falsey user_id never reaches the reader, so its hints are not used either
+    async fn user(&self, query: &UserQuery) -> Result<Option<LiteLLMUserTable>, IdentityLoadError> {
+        let Some(user_id) = query.user_id.as_deref().filter(|named| !named.is_empty()) else {
+            return Ok(None);
+        };
+        let request = UserLookupRequest {
+            user_id: Some(user_id),
+            sso_user_id: query.sso_user_id.as_deref(),
+            user_email: query.user_email.as_deref(),
+            user_id_upsert: query.upsert,
+            check_db_only: None,
+        };
+        self.users
+            .load_user(request)
+            .await
+            .map_err(|error| IdentityLoadError::User(Box::new(error)))
+    }
+
+    // both ids must be non-empty; the effective id is the row's own when a fuzzy match rebound it
+    async fn membership(
+        &self,
+        user_id: Option<&str>,
+        team_id: Option<&str>,
+    ) -> Result<Option<LiteLLMTeamMembership>, IdentityLoadError> {
+        match (user_id, team_id) {
+            (Some(member), Some(team)) if !member.is_empty() && !team.is_empty() => self
+                .memberships
+                .load_membership(member, team)
+                .await
+                .map_err(|error| IdentityLoadError::Membership(Box::new(error))),
+            (Some(_) | None, Some(_) | None) => Ok(None),
         }
     }
 }
