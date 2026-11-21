@@ -1,0 +1,9 @@
+task: B3726
+deviations:
+  - what: A service error raised after streaming started reaches the client as an HTTP status only while no keepalive ping has fired; once keepalive_ping_has_fired says the headers are flushed, the error travels as an SSE error frame. An assembled Bedrock policy block is always emitted as error frames and never raised.
+    why: Streaming has already yielded chunks, so the HTTP status is locked after the first keepalive ping and the error has to keep the wire shape the client is reading. Sending blocks as frames preserves the response shape and carries the original upstream usage instead of recalculating it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2814-L2847
+  - what: Responses API routes delegate to the unified guardrail streaming iterator instead of assembling and scanning their chunks in the native Bedrock hook.
+    why: Responses events are neither chat-completion SSE nor Anthropic SSE, and the unified framework owns the translation layer that decodes them into messages and responses. Scanning them natively would duplicate that translation and require the Bedrock hook to understand the Responses wire format.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2760-L2776
+kept_bugs: []
