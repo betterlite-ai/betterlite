@@ -1,3 +1,6 @@
+use betterlite_models::decisions::Json;
+use betterlite_openai::response_events::ReplyBody;
+
 use super::support::{Harness, Rig, base_env, call, text_input};
 use crate::api::responses_compact_call::compact_responses;
 use crate::api::responses_compact_http::service::LogContext;
@@ -91,5 +94,31 @@ pub(super) async fn provider_auth_error() {
         rig.source.created().len(),
         1,
         "only the provider call creates a client"
+    );
+}
+
+pub(super) async fn invalid_ok_returned_as_sent() {
+    let mut harness = Harness::new();
+    let rig = Rig::default();
+    rig.wire.queue(200, r#"{"id":"resp_raw","created_at":100}"#);
+    let prepost = base_env(&harness.redactor, &harness.sink, harness.now);
+    let mut log = LogContext {
+        state: &mut harness.state,
+        env: &prepost,
+    };
+    let reply = compact_responses(
+        &rig.deps(),
+        &call("openai/gpt-4o", text_input("hello")),
+        &mut log,
+    )
+    .await
+    .expect("a 200 that does not validate is still returned");
+
+    let ReplyBody::Lax(fields) = &reply.response else {
+        panic!("the reply keeps the fields that did not validate");
+    };
+    assert_eq!(
+        fields.get("id"),
+        Some(&Json::Text(String::from("resp_raw")))
     );
 }

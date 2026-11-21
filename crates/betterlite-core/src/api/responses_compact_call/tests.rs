@@ -39,4 +39,5 @@ async fn compact_native_support_required() {
     compact_native_support_required::native_config_required().await;
     compact_native_support_required::missing_provider().await;
     compact_native_support_required::provider_auth_error().await;
+    compact_native_support_required::invalid_ok_returned_as_sent().await;
 }
