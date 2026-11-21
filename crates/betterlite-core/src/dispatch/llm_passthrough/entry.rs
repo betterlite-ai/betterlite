@@ -1,8 +1,8 @@
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_error::proxy_model_not_found::{ProxyModelNotFoundError, route_endpoint};
 
+use super::error::{LlmPassthroughError, ModelBlockedError};
 use super::route::{PassthroughRoute, PassthroughRouteInput, plan_passthrough_route};
-use super::{BlockedModel, LlmPassthroughError};
 use crate::api::passthrough_call::{PassthroughCallArgs, PassthroughReply};
 use crate::api::video_router_calls::route::VideoRouteView;
 use crate::operation::llm_passthrough::LlmPassthroughRequest;
@@ -37,7 +37,7 @@ pub async fn execute(
     merge_overrides(&mut args, &input);
     match plan {
         PassthroughRoute::UserConfig => Err(LlmPassthroughError::UserConfig),
-        PassthroughRoute::Blocked => Err(LlmPassthroughError::Blocked(BlockedModel {
+        PassthroughRoute::Blocked => Err(LlmPassthroughError::Blocked(ModelBlockedError {
             model: input.model.clone(),
         })),
         PassthroughRoute::NotFound => {

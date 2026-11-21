@@ -1,6 +1,6 @@
 use betterlite_openai::openai_base_config::Object;
 
-use super::BlockedModels;
+use super::ports::BlockedModels;
 use crate::api::video_router_calls::route::VideoRouteView;
 
 // A bool in the route input; the newtype keeps struct_excessive_bools off a record that declares three

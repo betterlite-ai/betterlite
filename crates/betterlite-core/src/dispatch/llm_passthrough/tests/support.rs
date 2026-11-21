@@ -11,8 +11,8 @@ use crate::api::passthrough_call::{
     PassthroughRouterCalls,
 };
 use crate::api::video_router_calls::route::VideoRouteView;
+use crate::dispatch::llm_passthrough::ports::{BlockedModels, PassthroughCallPort};
 use crate::dispatch::llm_passthrough::route::{PassthroughRouteInput, RouteFlag};
-use crate::dispatch::llm_passthrough::{BlockedModels, PassthroughCallPort};
 use crate::dispatch::tests::support::Trace;
 use crate::operation::llm_passthrough::LlmPassthroughRequest;
 
@@ -81,6 +81,7 @@ pub(super) fn override_settings() -> Object {
         JsonValue::String(String::from("usage-based-routing")),
     );
     settings.insert(String::from("enable_tag_filtering"), JsonValue::Bool(true));
+    settings.insert(String::from("cooldown_time"), JsonValue::from(1_u32));
     settings
 }
 
@@ -201,6 +202,13 @@ impl BlockedModels for RecordingBlocked {
         self.trace
             .push(&format!("blocked:{model}:{}", team_id.unwrap_or("")));
         self.blocked.contains(&model)
+    }
+}
+
+pub(super) fn recording_blocked(blocked: Vec<&'static str>, trace: &Trace) -> RecordingBlocked {
+    RecordingBlocked {
+        blocked,
+        trace: trace.clone(),
     }
 }
 
