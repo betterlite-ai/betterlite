@@ -11,7 +11,7 @@ use tokio_postgres::{Config, NoTls};
 use super::support::{CountedOrgRoles, caller, team_access};
 use crate::model_write_fields::access::{ModelCall, ModelWriteAccess};
 use crate::model_write_fields::error::ModelWriteError;
-use crate::model_write_fields::teams::{TeamRows, WriterTeamRows};
+use crate::model_write_fields::teams::{TeamRows as _, WriterTeamRows};
 
 const STORAGE: &str = r#"CREATE TABLE "LiteLLM_TeamTable" (
     team_id TEXT NOT NULL,
@@ -39,7 +39,7 @@ struct Environment {
     url: Option<String>,
 }
 
-pub(super) async fn writer_team_rows_read_stored_teams() {
+async fn provision() -> (PostgresFixture, Pool) {
     let url = Environment::parse_from(["model-write-fields-tests"])
         .url
         .map(SecretString::from);
@@ -53,6 +53,11 @@ pub(super) async fn writer_team_rows_read_stored_teams() {
         .max_size(2)
         .build()
         .unwrap();
+    (fixture, pool)
+}
+
+pub(super) async fn writer_team_rows_read_stored_teams() {
+    let (fixture, pool) = provision().await;
     let rows = WriterTeamRows {
         writer: Arc::new(PostgresStore {
             pool: Some(pool.clone()),

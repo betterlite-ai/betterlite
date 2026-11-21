@@ -51,8 +51,8 @@ fn outcome(result: Result<(), ModelWriteError>) -> Option<(&'static str, u16, &'
     Some((label(&error), status.as_u16(), shape))
 }
 
-fn patch(json: Option<&str>) -> Option<ModelPatch> {
-    json.map(|text| serde_json::from_str(text).unwrap())
+fn patch(json: &str) -> ModelPatch {
+    serde_json::from_str(json).unwrap()
 }
 
 #[rstest]
@@ -233,7 +233,7 @@ fn credential_attachment_denied(
     #[case] null_detaches: bool,
     #[case] expected: Option<AdminOnlyField>,
 ) {
-    let (incoming, existing) = (patch(requested), patch(stored));
+    let (incoming, existing) = (requested.map(patch), stored.map(patch));
     let result = can_attach_credential(
         incoming.as_ref(),
         existing.as_ref(),
@@ -333,7 +333,7 @@ fn session_tag_escalation(
     #[case] role: Option<UserRole>,
     #[case] denied: bool,
 ) {
-    let (incoming, existing) = (patch(requested), patch(stored));
+    let (incoming, existing) = (requested.map(patch), stored.map(patch));
     let result = can_set_session_tags(
         incoming.as_ref(),
         existing.as_ref(),
@@ -498,23 +498,32 @@ fn rejection_shapes(#[case] error: ModelWriteError, #[case] expected: Option<(u1
     assert_eq!(shape, expected);
 }
 
+#[derive(Debug, Clone, Copy)]
+enum CredentialName {
+    Absent,
+    Null,
+    Named(&'static str),
+}
+
 #[rstest]
-#[case::absent("{}", None)]
-#[case::null(r#"{"litellm_credential_name": null}"#, Some(None))]
+#[case::absent("{}", CredentialName::Absent)]
+#[case::null(r#"{"litellm_credential_name": null}"#, CredentialName::Null)]
 #[case::named(
     r#"{"litellm_credential_name": "shared-openai"}"#,
-    Some(Some("shared-openai"))
+    CredentialName::Named("shared-openai")
 )]
-fn model_patch_keeps_absent_apart_from_null(
-    #[case] json: &str,
-    #[case] expected: Option<Option<&str>>,
-) {
+fn model_patch_keeps_absent_apart_from_null(#[case] json: &str, #[case] expected: CredentialName) {
     let parsed: ModelPatch = serde_json::from_str(json).unwrap();
     let name = parsed
         .litellm_credential_name
         .as_ref()
         .map(Option::as_deref);
-    assert_eq!(name, expected);
+    let wanted = match expected {
+        CredentialName::Absent => None,
+        CredentialName::Null => Some(None),
+        CredentialName::Named(stored_name) => Some(Some(stored_name)),
+    };
+    assert_eq!(name, wanted);
     let written = serde_json::to_string(&parsed).unwrap();
     let again: ModelPatch = serde_json::from_str(&written).unwrap();
     assert_eq!(again, parsed);
