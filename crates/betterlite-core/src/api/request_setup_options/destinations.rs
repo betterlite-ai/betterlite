@@ -23,9 +23,6 @@ const SAMPLING_RATE_PARAMS: [&str; 3] = [
     "arize_success_sampling_rate",
     "arize_error_sampling_rate",
 ];
-const PYDANTIC_BOOLS: [&str; 12] = [
-    "0", "off", "f", "false", "n", "no", "1", "on", "t", "true", "y", "yes",
-];
 
 #[derive(Debug, Clone, Default)]
 pub struct TenantDestinations {
@@ -94,7 +91,7 @@ where
             return TenantDestinations::default();
         };
         let disabled = disabled_backends(
-            self.settings.allow_dynamic_callback_disabling,
+            self.settings.callback_disabling,
             &principal.metadata,
             headers,
         );
@@ -166,7 +163,9 @@ fn tenant_service_name(principal: &PrincipalFacts) -> Option<String> {
 fn tenant_params(vars: &CallbackVars) -> StandardCallbackDynamicParams {
     let fits = vars.iter().all(|(name, value)| match name.as_str() {
         "langfuse_prompt_version" => value.trim().parse::<i64>().is_ok(),
-        "turn_off_message_logging" => PYDANTIC_BOOLS.contains(&value.to_lowercase().as_str()),
+        "turn_off_message_logging" => {
+            betterlite_env::flag(name, value).is_ok_and(|parsed| parsed.is_some())
+        }
         "litellm_disabled_callbacks" => false,
         // pydantic's float takes what f64 parsing takes, inf and nan included
         other if SAMPLING_RATE_PARAMS.contains(&other) => value.trim().parse::<f64>().is_ok(),

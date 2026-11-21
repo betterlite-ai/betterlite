@@ -73,7 +73,7 @@ pub enum SetupDiagnostic {
 
 #[derive(Debug, Clone)]
 pub struct RequestSetupSettings {
-    pub allow_dynamic_callback_disabling: bool,
+    pub callback_disabling: bool,
     pub missing_session_id: Option<MissingSessionIdPolicy>,
     pub otel_v2_enabled: bool,
     pub default_team_settings: Vec<DefaultTeamSettings>,

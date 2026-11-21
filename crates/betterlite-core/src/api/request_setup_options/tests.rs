@@ -48,7 +48,7 @@ type Service = RequestSetupOptions<FixedIds, Unseal, BTreeMap<String, String>>;
 
 fn settings() -> RequestSetupSettings {
     RequestSetupSettings {
-        allow_dynamic_callback_disabling: true,
+        callback_disabling: true,
         missing_session_id: None,
         otel_v2_enabled: true,
         default_team_settings: Vec::new(),
@@ -275,14 +275,14 @@ fn langfuse_entry(callback_type: &str) -> String {
 #[case::invalid_bool_empties_params(true, true, r#"{"metadata": {"logging": [{"callback_name": "langfuse_otel", "callback_vars": {"langfuse_public_key": "pk", "langfuse_secret_key": "sk", "turn_off_message_logging": "maybe"}}]}}"#.to_owned(), None, None)]
 fn tenant_destinations(
     #[case] otel_v2_enabled: bool,
-    #[case] allow_dynamic_callback_disabling: bool,
+    #[case] callback_disabling: bool,
     #[case] principal_text: String,
     #[case] header: Option<&str>,
     #[case] expected_service: Option<Option<&str>>,
 ) {
     let mut configured = settings();
     configured.otel_v2_enabled = otel_v2_enabled;
-    configured.allow_dynamic_callback_disabling = allow_dynamic_callback_disabling;
+    configured.callback_disabling = callback_disabling;
     let headers: IndexMap<String, String> = header
         .map(|value| ("x-litellm-disable-callbacks".to_owned(), value.to_owned()))
         .into_iter()
@@ -320,6 +320,7 @@ fn tenant_destinations(
 #[case::sampling_rate_infinite(r#""langsmith_sampling_rate": "inf""#, true)]
 #[case::sampling_rate_text(r#""arize_success_sampling_rate": "half""#, false)]
 #[case::bool_word(r#""turn_off_message_logging": "Yes""#, true)]
+#[case::bool_empty(r#""turn_off_message_logging": """#, false)]
 #[case::disabled_list_never_fits(r#""litellm_disabled_callbacks": "arize""#, false)]
 fn tenant_params_follow_the_declared_types(#[case] extra_var: &str, #[case] kept: bool) {
     let principal_text = format!(

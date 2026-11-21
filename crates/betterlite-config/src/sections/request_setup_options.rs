@@ -17,7 +17,8 @@ pub struct Raw {
 
 #[derive(Debug, Default, Deserialize)]
 struct RawSettings {
-    allow_dynamic_callback_disabling: Option<RawFlag>,
+    #[serde(rename = "allow_dynamic_callback_disabling")]
+    callback_disabling: Option<RawFlag>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -30,14 +31,14 @@ enum RawFlag {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Settings {
-    pub allow_dynamic_callback_disabling: bool,
+    pub callback_disabling: bool,
 }
 
 // litellm/__init__.py ships the switch on, so a config that never names it still honours the header
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            allow_dynamic_callback_disabling: true,
+            callback_disabling: true,
         }
     }
 }
@@ -49,7 +50,7 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let configured = match self.litellm_settings.allow_dynamic_callback_disabling {
+        let configured = match self.litellm_settings.callback_disabling {
             None => None,
             Some(RawFlag::Flag(flag)) => Some(flag),
             Some(RawFlag::Text(text)) => {
@@ -75,7 +76,7 @@ impl Section for Raw {
             }
         };
         Ok(Settings {
-            allow_dynamic_callback_disabling: configured.unwrap_or(true),
+            callback_disabling: configured.unwrap_or(true),
         })
     }
 }

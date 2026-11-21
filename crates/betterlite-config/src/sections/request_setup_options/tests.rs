@@ -90,7 +90,7 @@ fn loads_settings(
         (Ok(settings), Expected::Allowed(allowed)) => assert_eq!(
             settings,
             Settings {
-                allow_dynamic_callback_disabling: allowed
+                callback_disabling: allowed
             }
         ),
         (Err(ConfigError::InvalidScalar { path, .. }), Expected::InvalidScalar) => {

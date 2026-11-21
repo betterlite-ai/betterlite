@@ -6,6 +6,7 @@ use betterlite_auth::route_match::templates::{RouteValue, check_route_access};
 use betterlite_config::sections::request_metadata_safety::MissingSessionIdPolicy;
 use betterlite_core::api::request_destination::RequestData;
 use betterlite_core::api::request_metadata_safety::metadata::MetadataField;
+// ast-grep-ignore: no-long-names
 use betterlite_core::api::request_metadata_safety::session::apply_missing_session_id_policy;
 use betterlite_core::api::request_principal_metadata::team_callbacks::DefaultTeamSettings;
 use betterlite_core::api::request_principal_metadata::{Metadata, PrincipalFacts};
@@ -49,7 +50,7 @@ struct PrepareCall {
 struct DestinationsCall {
     principal: PrincipalFacts,
     headers: Vec<(String, String)>,
-    allow_dynamic_callback_disabling: bool,
+    callback_disabling: bool,
     otel_v2: bool,
 }
 
@@ -99,6 +100,7 @@ fn prepare_value(call: &PrepareCall) -> Value {
     };
     let route = call.route.as_str();
     let mut data = call.data.clone();
+    // ast-grep-ignore: no-long-names
     apply_missing_session_id_policy(
         &mut data,
         slot,
@@ -106,7 +108,7 @@ fn prepare_value(call: &PrepareCall) -> Value {
         is_llm_api_route(&RouteValue::Text(route)) && !check_route_access(route, MCP_ROUTES),
     );
     let options = service(RequestSetupSettings {
-        allow_dynamic_callback_disabling: true,
+        callback_disabling: true,
         missing_session_id: policy,
         otel_v2_enabled: false,
         default_team_settings: call.default_team_settings.clone(),
@@ -156,18 +158,14 @@ fn settings_value(settings: &CallbackSettings) -> Value {
 
 fn destinations_value(call: &DestinationsCall) -> Value {
     let options = service(RequestSetupSettings {
-        allow_dynamic_callback_disabling: call.allow_dynamic_callback_disabling,
+        callback_disabling: call.callback_disabling,
         missing_session_id: None,
         otel_v2_enabled: call.otel_v2,
         default_team_settings: Vec::new(),
         allowed_hosts: Vec::new(),
     });
     let headers: IndexMap<String, String> = call.headers.iter().cloned().collect();
-    let disabled = disabled_backends(
-        call.allow_dynamic_callback_disabling,
-        &call.principal.metadata,
-        &headers,
-    );
+    let disabled = disabled_backends(call.callback_disabling, &call.principal.metadata, &headers);
     let resolved = options.tenant_destinations(&call.principal, &headers);
     let destinations: Vec<Value> = resolved
         .destinations

@@ -4,8 +4,8 @@ from typing import Final, Literal, TypedDict
 from urllib.parse import urlencode
 
 import litellm
-import litellm.proxy.proxy_server as proxy_server
 from litellm.integrations.otel.model.config import is_otel_v2_enabled
+from litellm.proxy import proxy_server
 from litellm.proxy._types import ProxyException, UserAPIKeyAuth
 from litellm.proxy.litellm_pre_call_utils import (
     _dynamically_disabled_backends,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1047
@@ -18,6 +18,7 @@ from litellm.proxy.litellm_pre_call_utils import (
 from pydantic import JsonValue, TypeAdapter
 from starlette.requests import Request
 from starlette.types import Scope
+from typing_extensions import override
 
 PROXY_LOGGER: Final = "LiteLLM Proxy"
 
@@ -42,7 +43,7 @@ class PrepareCall(TypedDict):
 class DestinationsCall(TypedDict):
     principal: Principal
     headers: list[tuple[str, str]]
-    allow_dynamic_callback_disabling: bool
+    callback_disabling: bool
     otel_v2: bool
 
 
@@ -67,6 +68,38 @@ class Destination(TypedDict):
     span_scope: Literal["full", "llm_only"]
 
 
+class PrepareOutcome(TypedDict):
+    data: dict[str, JsonValue]
+    callback_settings: CallbackSettings | None
+
+
+class PrepareAnswer(TypedDict):
+    outcome: PrepareOutcome
+    warnings: list[str]
+
+
+class ErrorFacts(TypedDict):
+    status: int
+    type: str
+    param: str | None
+    code: str
+
+
+class ErrorAnswer(TypedDict):
+    error: ErrorFacts
+
+
+class DestinationsAnswer(TypedDict):
+    disabled: list[str]
+    destinations: list[Destination]
+    warnings: list[str]
+
+
+class Answer(TypedDict):
+    prepare: list[JsonValue]
+    destinations: list[JsonValue]
+
+
 JSON: Final = TypeAdapter(JsonValue)
 AUTH: Final[TypeAdapter[UserAPIKeyAuth]] = TypeAdapter(UserAPIKeyAuth)
 CALLBACK_SETTINGS: Final = TypeAdapter(CallbackSettings)
@@ -79,6 +112,7 @@ class Warnings(logging.Handler):
         super().__init__(logging.WARNING)
         self.levels: list[str] = []
 
+    @override
     def emit(self, record: logging.LogRecord) -> None:
         self.levels.append(record.levelname)
 
@@ -102,8 +136,8 @@ def proxy_config_for(teams: list[dict[str, JsonValue]]) -> proxy_server.ProxyCon
     return proxy_config
 
 
-def prepare_outcome(call: PrepareCall) -> JsonValue:
-    data: dict[str, object] = {**call["data"]}
+def prepare_outcome(call: PrepareCall) -> PrepareOutcome:
+    data: dict[str, JsonValue] = {**call["data"]}
     request = request_for(call["route"], call["query"])
     safe_add_api_version_from_query_params(data, request)
     apply_missing_session_id_policy(
@@ -119,8 +153,7 @@ def prepare_outcome(call: PrepareCall) -> JsonValue:
         if settings is None
         else CALLBACK_SETTINGS.validate_json(settings.model_dump_json())
     )
-    outcome = {"data": data, "callback_settings": callback_settings}
-    return JSON.validate_python(outcome)
+    return PrepareOutcome(data=data, callback_settings=callback_settings)
 
 
 def prepare(call: PrepareCall, warnings: Warnings) -> JsonValue:
@@ -128,19 +161,20 @@ def prepare(call: PrepareCall, warnings: Warnings) -> JsonValue:
     try:
         outcome = prepare_outcome(call)
     except ProxyException as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325
-        facts = {
-            "status": int(error.code),
-            "type": error.type,
-            "param": error.param,
-            "code": error.code,
-        }
-        return JSON.validate_python({"error": facts})
-    return JSON.validate_python({"outcome": outcome, "warnings": list(warnings.levels)})
+        facts = ErrorFacts(
+            status=int(error.code),
+            type=error.type,
+            param=error.param,
+            code=error.code,
+        )
+        return JSON.validate_python(ErrorAnswer(error=facts))
+    levels: list[str] = [*warnings.levels]
+    return JSON.validate_python(PrepareAnswer(outcome=outcome, warnings=levels))
 
 
 def destinations(call: DestinationsCall, warnings: Warnings) -> JsonValue:
     warnings.levels.clear()
-    litellm.allow_dynamic_callback_disabling = call["allow_dynamic_callback_disabling"]
+    litellm.allow_dynamic_callback_disabling = call["callback_disabling"]
     # betterlite has no license gate, so LiteLLM runs as the premium proxy the deviation names
     proxy_server.premium_user = True
     os.environ["LITELLM_OTEL_V2"] = "true" if call["otel_v2"] else "false"
@@ -152,12 +186,10 @@ def destinations(call: DestinationsCall, warnings: Warnings) -> JsonValue:
         DESTINATION.validate_json(destination.model_dump_json())
         for destination in resolve_tenant_otel_destinations(auth, headers)
     ]
-    outcome = {
-        "disabled": disabled,
-        "destinations": found,
-        "warnings": list(warnings.levels),
-    }
-    return JSON.validate_python(outcome)
+    levels: list[str] = [*warnings.levels]
+    return JSON.validate_python(
+        DestinationsAnswer(disabled=disabled, destinations=found, warnings=levels)
+    )
 
 
 def run(input_value: Input) -> JsonValue:
@@ -166,12 +198,10 @@ def run(input_value: Input) -> JsonValue:
     warnings = Warnings()
     logger.addHandler(warnings)
     try:
-        outcome = {
-            "prepare": [prepare(call, warnings) for call in input_value["prepare"]],
-            "destinations": [
-                destinations(call, warnings) for call in input_value["destinations"]
-            ],
-        }
+        outcome = Answer(
+            prepare=[prepare(call, warnings) for call in input_value["prepare"]],
+            destinations=[destinations(call, warnings) for call in input_value["destinations"]],
+        )
     finally:
         logger.removeHandler(warnings)
     return JSON.validate_python(outcome)
