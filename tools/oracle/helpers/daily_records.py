@@ -30,7 +30,7 @@ class CaseInput(TypedDict, total=False):
     endpoints: dict[str, str]
 
 
-BaseView = TypedDict(
+BaseView = TypedDict(  # noqa: UP013  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5647
     "BaseView",
     {
         "date": str,
