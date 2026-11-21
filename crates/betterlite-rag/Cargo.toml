@@ -12,13 +12,16 @@ betterlite-config = { path = "../betterlite-config" }
 betterlite-context = { path = "../betterlite-context" }
 betterlite-core = { path = "../betterlite-core" }
 betterlite-env = { path = "../betterlite-env" }
+betterlite-http = { path = "../betterlite-http" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-provider = { path = "../betterlite-provider" }
 betterlite-redis = { path = "../betterlite-redis" }
 hex.workspace = true
+http = "1.5.0"
 indexmap = { version = "2.14.2", features = ["serde"] }
 percent-encoding.workspace = true
+quick-xml.workspace = true
 redis.workspace = true
 rust_decimal.workspace = true
 secrecy.workspace = true
@@ -28,6 +31,7 @@ sha2.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["time"] }
 tracing.workspace = true
+url = "2.5.8"
 uuid.workspace = true
 
 [dev-dependencies]

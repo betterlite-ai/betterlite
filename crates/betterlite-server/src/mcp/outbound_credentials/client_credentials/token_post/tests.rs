@@ -11,6 +11,7 @@ use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::{ProxiedClient, base_builder};
+use betterlite_test_ports::refused_port::RefusedPort;
 use rstest::rstest;
 use secrecy::SecretString;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
@@ -164,17 +165,15 @@ async fn a_non_2xx_status_is_denied_with_its_status_code(
 
 #[tokio::test]
 async fn a_refused_connection_is_unreachable_without_the_url() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
+    let refused = RefusedPort::bind().unwrap();
     let outcome = poster(TransportLimits::DEFAULT)
-        .post(&format!("http://{address}/token"), &form(), &[])
+        .post(&format!("http://{}/token", refused.address), &form(), &[])
         .await;
     let TokenEndpointOutcome::Unreachable { detail } = outcome else {
         panic!("a refused connection is unreachable");
     };
     assert_eq!(detail, "Connect");
-    assert!(!detail.contains(&address.to_string()));
+    assert!(!detail.contains(&refused.address.to_string()));
 }
 
 #[tokio::test]

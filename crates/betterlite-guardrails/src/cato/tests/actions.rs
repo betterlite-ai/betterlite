@@ -7,8 +7,8 @@ use std::time::Duration;
 
 use axum::http::StatusCode;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_test_ports::refused_port::RefusedPort;
 use secrecy::SecretString;
-use tokio::net::TcpListener;
 use tracing::subscriber::set_default;
 
 use super::support::{
@@ -149,9 +149,8 @@ async fn cato_guardrail_headers_omit_a_call_id_that_is_not_text() {
 
 #[tokio::test]
 async fn cato_guardrail_headers_reject_a_value_that_is_not_a_header() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
-    let base = format!("http://{}", listener.local_addr().expect("addr"));
-    drop(listener);
+    let refused = RefusedPort::bind().expect("a refused port");
+    let base = format!("http://{}", refused.address);
     let mut configured = build(&base);
     configured.timeout = Duration::from_millis(100);
     let mut data = body(&[("messages", list(&[object(&[("content", text("hi"))])]))]);
