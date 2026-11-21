@@ -1,4 +1,3 @@
-use std::str::FromStr;
 use std::time::Duration;
 
 use betterlite_db::spend_retention::batches::settings::CleanupBounds;
@@ -19,23 +18,31 @@ pub fn cleanup_defaults<Lookup: EnvironmentLookup>(
     lookup: &Lookup,
 ) -> Result<CleanupBounds, ConfigError> {
     Ok(CleanupBounds {
-        batch_size: number(lookup, ENV_BATCH_SIZE)?.unwrap_or(1_000),
-        max_batches: number(lookup, ENV_RUN_LOOPS)?.unwrap_or(500),
+        batch_size: betterlite_env::number(
+            ENV_BATCH_SIZE,
+            &lookup.lookup(ENV_BATCH_SIZE).unwrap_or_default(),
+        )?
+        .unwrap_or(1_000),
+        max_batches: betterlite_env::number(
+            ENV_RUN_LOOPS,
+            &lookup.lookup(ENV_RUN_LOOPS).unwrap_or_default(),
+        )?
+        .unwrap_or(500),
         run_budget: seconds(lookup, ENV_RUN_BUDGET)?.unwrap_or(Duration::from_secs(300)),
         batch_timeout: seconds(lookup, ENV_BATCH_TIMEOUT)?.unwrap_or(Duration::from_secs(30)),
-        max_consecutive_failures: number(lookup, ENV_MAX_FAILURES)?.unwrap_or(3),
+        max_consecutive_failures: betterlite_env::number(
+            ENV_MAX_FAILURES,
+            &lookup.lookup(ENV_MAX_FAILURES).unwrap_or_default(),
+        )?
+        .unwrap_or(3),
         failure_backoff: seconds(lookup, ENV_FAILURE_BACKOFF)?
             .unwrap_or(Duration::from_millis(500)),
-        remaining_count_cap: number(lookup, ENV_COUNT_CAP)?.unwrap_or(100_000),
+        remaining_count_cap: betterlite_env::number(
+            ENV_COUNT_CAP,
+            &lookup.lookup(ENV_COUNT_CAP).unwrap_or_default(),
+        )?
+        .unwrap_or(100_000),
     })
-}
-
-fn number<Lookup: EnvironmentLookup, Value: FromStr>(
-    lookup: &Lookup,
-    name: &str,
-) -> Result<Option<Value>, ConfigError> {
-    let text = lookup.lookup(name).unwrap_or_default();
-    Ok(betterlite_env::number::<Value>(name, &text)?)
 }
 
 // asyncio waits not at all for a negative number of seconds, which a zero Duration matches
@@ -43,7 +50,8 @@ fn seconds<Lookup: EnvironmentLookup>(
     lookup: &Lookup,
     name: &str,
 ) -> Result<Option<Duration>, ConfigError> {
-    let Some(parsed) = number::<Lookup, f64>(lookup, name)? else {
+    let text = lookup.lookup(name).unwrap_or_default();
+    let Some(parsed) = betterlite_env::number::<f64>(name, &text)? else {
         return Ok(None);
     };
     let overflow = EnvError::Number {
