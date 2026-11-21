@@ -11,7 +11,9 @@ use betterlite_redact::secret::Redactor;
 use indexmap::IndexMap;
 
 use crate::api::rerank_provider_plan::call::{RerankCall, ReturnDocuments};
-use crate::api::rerank_provider_plan::dispatch::{RerankOperations, value_failure};
+use crate::api::rerank_provider_plan::dispatch::{
+    RerankOperations, provider_failure, value_failure,
+};
 use crate::api::rerank_provider_plan::plan::{RerankException, RerankIdentity, RerankPlan, rerank};
 
 mod tests;
@@ -121,11 +123,14 @@ where
             api_key: None,
         })
         .map(|resolved| resolved.provider.slug().to_owned())
+        // get_llm_provider raises BadRequestError with llm_provider "", so exception_type hands it back unchanged
         .map_err(|error| {
-            Box::new(value_failure(
+            Box::new(provider_failure(
+                400,
                 &error.to_string(),
                 &args.model,
-                args.custom_llm_provider.as_deref().unwrap_or(""),
+                "",
+                "BadRequestError",
             ))
         })
 }
@@ -136,10 +141,12 @@ fn api_base_argument(args: &AsyncRerankArgs) -> Result<Option<&str>, Box<RawExce
         None | Some(Json::Null) => Ok(None),
         Some(Json::Text(base)) => Ok(Some(base)),
         Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(Box::new(value_failure(
+            Err(Box::new(provider_failure(
+                400,
                 "api_base must be a string",
                 &args.model,
-                args.custom_llm_provider.as_deref().unwrap_or(""),
+                "",
+                "BadRequestError",
             )))
         }
     }
@@ -185,7 +192,7 @@ fn max_tokens_argument(
     }
 }
 
-// The facade's own failure, which exception_type maps from a raw ValueError before any provider arm
+// The facade's own failure, which exception_type maps by status before any provider arm
 fn raised(redactor: &Redactor, failure: Box<RawException>) -> RerankException {
     let message = redactor.redact_string(&failure.error_str);
     RerankException {

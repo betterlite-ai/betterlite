@@ -1,13 +1,11 @@
 use super::super::error::SdkHttpError;
 use super::{MOCK, Run};
-use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::proxy::ProxyPolicy;
-use betterlite_config::types::{Config, ProxyTrust};
+use betterlite_config::types::ProxyTrust;
 use betterlite_core::api::rerank_call::AsyncRerankArgs;
 use betterlite_core::api::rerank_provider_plan::dispatch::{
     Params, SendRequest, provider_failure, value_failure,
 };
-use betterlite_core::embedding_rerank_providers::RerankConfig;
 use betterlite_error::dispatch::RawException;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_logging::logging_pre_post::env::{
@@ -28,7 +26,6 @@ use betterlite_provider::api::rerank_http::client::ClientSource;
 use betterlite_provider::api::rerank_http::error::{ClientError, RerankHttpError};
 use betterlite_provider::api::rerank_http::rerank as rerank_http;
 use betterlite_provider::api::rerank_http::{RerankCall as HttpCall, RerankDeps, RerankLogContext};
-use betterlite_provider::embedding_rerank_providers::rerank::FamilyRerankConfig;
 use betterlite_redact::secret::Redactor;
 use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
@@ -69,19 +66,6 @@ pub(super) struct HttpState<'visit> {
     pub(super) source: &'visit Direct,
     pub(super) redactor: &'visit Redactor,
     pub(super) now: DateTime<FixedOffset>,
-}
-
-pub(super) const fn family<'settings>(
-    kind: RerankConfig,
-    config: &'settings Config,
-    environment: &'settings (dyn EnvironmentLookup + Send + Sync),
-) -> FamilyRerankConfig<'settings> {
-    FamilyRerankConfig {
-        config: kind,
-        cohere: &config.sections.cohere_rerank_settings,
-        host: &config.sections.jina_infinity_rerank,
-        environment,
-    }
 }
 
 pub(super) fn map_with<C>(
@@ -128,7 +112,20 @@ where
         logging: &mut http_logging,
     };
     let sink = Sink;
-    let env = prepost_env(&sink, http.redactor, http.now);
+    let env = PrePostEnv {
+        debug: DebugSettings::default(),
+        globals: GlobalFlags::default(),
+        decision: Decision {
+            content: false,
+            key_info: false,
+        },
+        redactor: http.redactor,
+        log: &sink,
+        input_callbacks: &[],
+        sentry: None,
+        logger_fn: None,
+        now: http.now,
+    };
     let mut log = RerankLogContext {
         state: logging,
         env: &env,
@@ -177,27 +174,6 @@ fn timeout_seconds(value: Option<f64>) -> Option<Duration> {
             Duration::try_from_secs_f64(seconds).ok()
         }
         Some(_) | None => None,
-    }
-}
-
-fn prepost_env<'visit>(
-    sink: &'visit Sink,
-    redactor: &'visit Redactor,
-    now: DateTime<FixedOffset>,
-) -> PrePostEnv<'visit> {
-    PrePostEnv {
-        debug: DebugSettings::default(),
-        globals: GlobalFlags::default(),
-        decision: Decision {
-            content: false,
-            key_info: false,
-        },
-        redactor,
-        log: sink,
-        input_callbacks: &[],
-        sentry: None,
-        logger_fn: None,
-        now,
     }
 }
 

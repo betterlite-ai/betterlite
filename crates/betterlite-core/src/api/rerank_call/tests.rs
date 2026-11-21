@@ -514,11 +514,12 @@ fn async_rerank_attributes_errors() {
     )]);
     let error = run(&identity, &entry, &redactor, args, &mut logging)
         .expect_err("an unknown provider raises");
-    let ErrorClass::ApiConnection(context) = error.class else {
-        panic!("the resolution failure is an api connection error");
+    let ErrorClass::BadRequest(details) = error.class else {
+        panic!("the resolution failure is a bad request");
     };
-    assert_eq!(context.provider.as_deref(), Some("cohere"));
-    assert_eq!(context.model.as_deref(), Some("rerank-english-v3.0"));
+    assert_eq!(details.status.0, 400);
+    assert_eq!(details.provider.as_deref(), Some(""));
+    assert_eq!(details.model.as_deref(), Some("rerank-english-v3.0"));
     assert!(error.message.starts_with("LLM Provider NOT provided"));
     let requests = identity.requests();
     assert_eq!(requests[0].model, "rerank-english-v3.0");
@@ -540,10 +541,11 @@ fn an_unresolved_provider_keeps_the_empty_label_and_names_no_openai() {
     args.model = String::from("rerank-english-v3.0");
     let error = run(&identity, &entry, &redactor, args, &mut logging)
         .expect_err("a model with no provider raises");
-    let ErrorClass::ApiConnection(context) = error.class else {
-        panic!("the resolution failure is an api connection error");
+    let ErrorClass::BadRequest(details) = error.class else {
+        panic!("the resolution failure is a bad request");
     };
-    assert_eq!(context.provider.as_deref(), Some(""));
+    assert_eq!(details.status.0, 400);
+    assert_eq!(details.provider.as_deref(), Some(""));
     assert_eq!(entry.begins(), 0);
 }
 
@@ -558,7 +560,11 @@ fn a_non_text_api_base_is_refused_before_the_call() {
     let error = run(&identity, &entry, &redactor, args, &mut logging)
         .expect_err("a boolean api_base raises");
     assert_eq!(error.message, "api_base must be a string");
-    assert!(matches!(error.class, ErrorClass::ApiConnection(_)));
+    let ErrorClass::BadRequest(details) = error.class else {
+        panic!("the wrong-typed api_base is a bad request");
+    };
+    assert_eq!(details.status.0, 400);
+    assert_eq!(details.provider.as_deref(), Some(""));
     assert!(identity.requests().is_empty());
     assert_eq!(entry.begins(), 0);
 }

@@ -2,18 +2,20 @@ use super::super::error::SdkHttpError;
 use super::super::result::kinds::SdkResult;
 use super::report::outcome;
 use super::support::{
-    Direct, HttpState, args, direct, family, logging_state, map_with, not_wired, send_with,
+    Direct, HttpState, args, direct, logging_state, map_with, not_wired, send_with,
 };
-use super::{Call, Outcome};
+use super::{Call, Outcome, RunOutcome};
 use betterlite_config::api::rerank_provider_plan::RerankSettings;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::Config;
-use betterlite_core::api::rerank_call::{AsyncRerankPlan, PlanEntry, arerank};
+use betterlite_core::api::rerank_call::{AsyncRerankPlan, PlanEntry, RerankEntry, arerank};
 use betterlite_core::api::rerank_provider_plan::call::ReturnDocuments as CoreReturnDocuments;
 use betterlite_core::api::rerank_provider_plan::dispatch::{
     OptionsRequest, Params, RerankOperations, SendRequest,
 };
-use betterlite_core::api::rerank_provider_plan::plan::{CatalogIdentity, RerankPlan};
+use betterlite_core::api::rerank_provider_plan::plan::{
+    CatalogIdentity, RerankIdentity, RerankPlan,
+};
 use betterlite_core::api::rerank_provider_plan::selection::SelectedConfig;
 use betterlite_core::embedding_rerank_providers::RerankConfig;
 use betterlite_error::dispatch::RawException;
@@ -27,12 +29,14 @@ use betterlite_openai::api::rerank_contracts::records::RerankResponse;
 use betterlite_provider::api::rerank_contracts::{
     OptionalRerankParams, ReturnDocuments as ProviderReturnDocuments,
 };
+use betterlite_provider::embedding_rerank_providers::rerank::FamilyRerankConfig;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 
-const FIXTURE_NOW: &str = "2026-01-01T00:00:05+00:00";
+// 2026-01-01T00:00:05+00:00, the fixed instant every logging record in a case is stamped with
+const FIXTURE_NOW_NANOS: i64 = 1_767_225_605_000_000_000;
 
 pub(super) async fn execute(
     call: &Call,
@@ -40,12 +44,7 @@ pub(super) async fn execute(
     env: &BTreeMap<String, String>,
 ) -> Result<SdkResult, SdkHttpError> {
     let environment = substituted_environment(env, api_base);
-    let loaded = ConfigLoader {
-        lookup: environment.clone(),
-    }
-    .load("{}")
-    .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?;
-    let operations = build_operations(&environment, &loaded)?;
+    let operations = build_operations(&environment)?;
     let settings = RerankSettings::default();
     let catalog = BundledCatalog::default().get();
     let known_model_names = BTreeSet::new();
@@ -62,45 +61,42 @@ pub(super) async fn execute(
     let identity = CatalogIdentity {
         context: &resolution,
     };
-    let plan = build_plan(&identity, &operations, &settings, &environment);
+    let plan = RerankPlan {
+        identity: &identity,
+        operations: &operations,
+        settings: &settings,
+        environment: &environment,
+        redactor: &operations.redactor,
+    };
     let entry = PlanEntry { plan: &plan };
-    let facade = build_facade(&identity, &entry, &operations);
-    let mut runs = Vec::with_capacity(call.runs.len());
-    for run in &call.runs {
-        let mut state = logging_state(&operations.redactor)?;
-        let result = arerank(&facade, args(run, api_base)?, &mut state).await;
-        runs.push(outcome(result)?);
-    }
+    let facade = AsyncRerankPlan {
+        identity: &identity,
+        entry: &entry,
+        redactor: &operations.redactor,
+    };
+    let runs = run_all(&facade, call, api_base).await?;
     Ok(SdkResult::RerankCall {
         value: Box::new(Outcome { runs }),
     })
 }
 
-fn build_plan<'borrow, Identity>(
-    identity: &'borrow Identity,
-    operations: &'borrow Operations<'borrow>,
-    settings: &'borrow RerankSettings,
-    environment: &'borrow BTreeMap<String, String>,
-) -> RerankPlan<'borrow, Identity, Operations<'borrow>> {
-    RerankPlan {
-        identity,
-        operations,
-        settings,
-        environment,
-        redactor: &operations.redactor,
+// Every run of the case goes through the one facade, each with its own logging state
+async fn run_all<Identity, Entry>(
+    facade: &AsyncRerankPlan<'_, Identity, Entry>,
+    call: &Call,
+    api_base: &str,
+) -> Result<Vec<RunOutcome>, SdkHttpError>
+where
+    Identity: RerankIdentity + Sync,
+    Entry: RerankEntry + Sync,
+{
+    let mut runs = Vec::with_capacity(call.runs.len());
+    for run in &call.runs {
+        let mut state = logging_state(facade.redactor)?;
+        let result = arerank(facade, args(run, api_base)?, &mut state).await;
+        runs.push(outcome(result)?);
     }
-}
-
-const fn build_facade<'borrow, Identity, Entry>(
-    identity: &'borrow Identity,
-    entry: &'borrow Entry,
-    operations: &'borrow Operations<'borrow>,
-) -> AsyncRerankPlan<'borrow, Identity, Entry> {
-    AsyncRerankPlan {
-        identity,
-        entry,
-        redactor: &operations.redactor,
-    }
+    Ok(runs)
 }
 
 fn substituted_environment(
@@ -112,23 +108,27 @@ fn substituted_environment(
         .collect()
 }
 
-fn build_operations<'settings>(
-    environment: &'settings BTreeMap<String, String>,
-    config: &'settings Config,
-) -> Result<Operations<'settings>, SdkHttpError> {
+// The fixture's empty config, read through the case environment the way a loaded proxy config would be
+fn build_operations(
+    environment: &BTreeMap<String, String>,
+) -> Result<Operations<'_>, SdkHttpError> {
+    let config = ConfigLoader {
+        lookup: environment.clone(),
+    }
+    .load("{}")
+    .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?;
     Ok(Operations {
         environment,
         config,
         source: direct(environment)?,
         redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(SdkHttpError::Redactor)?,
-        now: DateTime::parse_from_rfc3339(FIXTURE_NOW)
-            .map_err(|error| SdkHttpError::Invalid(error.to_string()))?,
+        now: DateTime::from_timestamp_nanos(FIXTURE_NOW_NANOS).fixed_offset(),
     })
 }
 
 struct Operations<'call> {
     environment: &'call BTreeMap<String, String>,
-    config: &'call Config,
+    config: Config,
     source: Direct,
     redactor: Redactor,
     now: DateTime<FixedOffset>,
@@ -139,7 +139,12 @@ impl RerankOperations for Operations<'_> {
         let (params, config, model, provider) = optional_params(request);
         match family_choice(config) {
             FamilyChoice::Family(kind) => map_with(
-                &family(kind, self.config, self.environment),
+                &FamilyRerankConfig {
+                    config: kind,
+                    cohere: &self.config.sections.cohere_rerank_settings,
+                    host: &self.config.sections.jina_infinity_rerank,
+                    environment: self.environment,
+                },
                 params,
                 model,
                 provider,
@@ -170,7 +175,12 @@ impl Operations<'_> {
         };
         match family_choice(request.config) {
             FamilyChoice::Family(kind) => {
-                let config = family(kind, self.config, self.environment);
+                let config = FamilyRerankConfig {
+                    config: kind,
+                    cohere: &self.config.sections.cohere_rerank_settings,
+                    host: &self.config.sections.jina_infinity_rerank,
+                    environment: self.environment,
+                };
                 send_with(&config, request, logging, &http).await
             }
             FamilyChoice::Unsupported => Err(Box::new(not_wired(request.model, request.provider))),
