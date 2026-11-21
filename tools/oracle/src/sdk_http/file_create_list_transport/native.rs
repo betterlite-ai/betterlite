@@ -8,6 +8,7 @@ use betterlite_core::api::vector_file_http_create_list::service::{
     CreateCall, FileCall, FileDeps, FileTarget, ListCall, send,
 };
 use betterlite_models::decisions::Json;
+use betterlite_openai::api::vector_file_contracts::records::FileParams;
 use betterlite_openai::credentials::LiteLlmGlobals;
 
 use super::super::error::SdkHttpError;
@@ -40,7 +41,8 @@ pub(super) async fn execute(
         api_key: None,
         ssl_verify: None,
     };
-    let transport_call = file_call(call, &files);
+    let create_body = create_params(call)?;
+    let transport_call = file_call(call, &files, &create_body);
     let deps = FileDeps {
         config: &provider,
         source: &origin,
@@ -53,7 +55,11 @@ pub(super) async fn execute(
     })
 }
 
-fn file_call<'call>(call: &'call Call, files: &'call FilesParams) -> FileCall<'call> {
+fn file_call<'call>(
+    call: &'call Call,
+    files: &'call FilesParams,
+    create_body: &'call FileParams,
+) -> FileCall<'call> {
     let target = FileTarget {
         vector_store_id: &call.vector_store_id,
         params: files,
@@ -63,7 +69,7 @@ fn file_call<'call>(call: &'call Call, files: &'call FilesParams) -> FileCall<'c
     match call.operation {
         Operation::Create => FileCall::Create(CreateCall {
             target,
-            create_request: &call.create_request,
+            create_request: create_body,
             extra_body: call.extra_body.as_ref(),
         }),
         Operation::List => FileCall::List(ListCall {
@@ -72,6 +78,12 @@ fn file_call<'call>(call: &'call Call, files: &'call FilesParams) -> FileCall<'c
             extra_query: call.extra_query.as_ref(),
         }),
     }
+}
+
+// betterlite reads the create body into its sorted map, so the case's attribute order reaches LiteLLM alone
+fn create_params(call: &Call) -> Result<FileParams, SdkHttpError> {
+    let encoded = serde_json::to_value(&call.create_request).map_err(SdkHttpError::Serialize)?;
+    serde_json::from_value(encoded).map_err(|error| SdkHttpError::Invalid(error.to_string()))
 }
 
 // A provider failure is what both sides can observe; a betterlite-only failure is not a parity answer

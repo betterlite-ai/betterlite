@@ -1,0 +1,41 @@
+kind: sdk_http
+name: vector-file-create-list-transport-create-caps-sorted-attributes
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  vector_file_create_list_transport:
+    operation: create
+    mode: sync
+    vector_store_id: vs_a
+    create_request:
+      file_id: file_a
+      attributes:
+        zz: vzz
+        k16: v16
+        k15: v15
+        k14: v14
+        k13: v13
+        k12: v12
+        k11: v11
+        k10: v10
+        k09: v09
+        k08: v08
+        k07: v07
+        k06: v06
+        k05: v05
+        k04: v04
+        k03: v03
+        k02: v02
+        k01: v01
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file_a, object: vector_store.file, status: completed}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization]
+  ignore:
+    - pointer: /upstream/0/body/attributes/zz
+      why: the 16-attribute cap row of docs/deviations/B2480.yaml keeps zz for LiteLLM as the first of 17 attributes in body order, while betterlite's sorted map drops it
+    - pointer: /upstream/0/body/attributes/k01
+      why: the 16-attribute cap row of docs/deviations/B2480.yaml keeps k01 for betterlite as the first of its sorted 16, while LiteLLM's body-order cap drops it
