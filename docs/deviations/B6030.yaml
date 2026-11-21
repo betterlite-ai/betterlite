@@ -120,7 +120,7 @@ deviations:
       with the same name, signature and default, and a subclass that overrides a method or calls
       super() resolves it as in LiteLLM, an overridden _redact_base64 included.
     why: >-
-      The class is about 1150 lines in LiteLLM and the repository caps a Python source file at 300
+      The class is about 1070 lines in LiteLLM and the repository caps a Python source file at 300
       lines, split along the section boundaries the class already has.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L65
 kept_bugs:
