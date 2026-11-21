@@ -221,7 +221,7 @@ pub(super) fn timeout(
             None => 0.0_f64,
         },
     };
-    if computed.is_infinite() && computed > 0.0_f64 {
+    if computed.is_infinite() && computed.is_sign_positive() {
         return Ok(Duration::MAX);
     }
     Ok(Duration::try_from_secs_f64(computed).unwrap_or(Duration::ZERO))

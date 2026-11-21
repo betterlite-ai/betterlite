@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 mod failures;
+mod proxied;
 mod support;
 
 use std::fs;
@@ -33,6 +34,9 @@ use crate::api::responses_stream_driver::source::PayloadSource;
 
 const HOOK_RESPONSE: &str = r#"{"id":"resp_hook","created_at":2,"object":"response","status":"completed","model":"gpt-4o","output":[]}"#;
 
+// A source that never ends fails the read instead of growing the payload list without bound
+const PAYLOAD_LIMIT: usize = 1000;
+
 fn create_call<'call>(
     input: &'call ResponsesInput,
     optional_params: &'call Object,
@@ -64,6 +68,10 @@ fn read_value(outcome: &CreateOutcome) -> PromptJson {
 async fn collect_payloads(source: &mut Box<dyn PayloadSource>) -> Vec<String> {
     let mut payloads = Vec::new();
     while let Some(item) = source.next_payload().await {
+        assert!(
+            payloads.len() < PAYLOAD_LIMIT,
+            "the source returns a finite number of payloads"
+        );
         match item {
             Ok(bytes) => payloads.push(String::from_utf8(bytes).expect("the payload is UTF-8")),
             Err(error) => panic!("the payload reads: {error:?}"),
@@ -207,6 +215,7 @@ enum StreamExpect {
     LiveGuard,
     Synthetic,
     Plain,
+    Unstreamed,
 }
 
 // One create call: its stream inputs, its callbacks and the transport's scripted answers
@@ -296,6 +305,15 @@ async fn run_scenario(
     sse: false,
     expect: StreamExpect::Plain,
 })]
+#[case::falsy_stream_fake_keeps_body(StreamScenario {
+    optional: r#"{"stream":false}"#,
+    body: None,
+    fake: Some("true"),
+    metadata: false,
+    mode: ClientKind::Sync,
+    sse: false,
+    expect: StreamExpect::Unstreamed,
+})]
 #[tokio::test]
 async fn create_stream_and_fake_selection(#[case] scenario: StreamScenario) {
     let input = text_input("hello");
@@ -360,6 +378,17 @@ async fn check_stream(scenario: StreamScenario, outcome: CreateOutcome, wire: &W
             assert!(!sent[0].stream);
             assert!(body_map(&sent[0].body_json()).get("stream").is_none());
         }
+        StreamExpect::Unstreamed => {
+            assert_eq!(
+                body_map(&read_value(&outcome)).get("id"),
+                Some(&json("\"resp_a\""))
+            );
+            assert!(!sent[0].stream);
+            assert_eq!(
+                body_map(&sent[0].body_json()).get("stream"),
+                Some(&json("false"))
+            );
+        }
     }
 }
 
@@ -403,6 +432,55 @@ async fn create_lax_synthetic_body_is_not_typed() {
     };
     assert!(matches!(error, CreateError::NotTyped));
     assert_eq!(wire.requests().len(), 1);
+}
+
+// value_kind names Python's types, and the litellm_params type errors print them
+#[test]
+fn create_param_type_errors_name_the_python_type() {
+    let ModelJson::Object(fields) = models(r#"{"api_base":7}"#) else {
+        panic!("the params fixture is an object")
+    };
+    assert_eq!(
+        CreateParams::from_map(fields)
+            .expect_err("a number api_base")
+            .to_string(),
+        "litellm_params.api_base must be a string, got int"
+    );
+    let ModelJson::Object(verify_fields) = models(r#"{"ssl_verify":1.5}"#) else {
+        panic!("the params fixture is an object")
+    };
+    assert_eq!(
+        CreateParams::from_map(verify_fields)
+            .expect_err("a float ssl_verify")
+            .to_string(),
+        "litellm_params.ssl_verify must be a boolean, got float"
+    );
+}
+
+// The reply's HTTP headers reach transform_response_api_response, as LiteLLM hands them over
+#[tokio::test]
+async fn create_response_headers_reach_the_transform() {
+    let input = text_input("hello");
+    let optional = Object::new();
+    let call_params = params(r#"{"api_base":"http://mock/v1"}"#);
+    let dispatcher = Dispatcher::quiet();
+    let config = Config::default();
+    let answered = Reply::json(200, RESP_A).with_header("x-request-id", "r-1");
+    let wire = Wire::new(vec![Answer::Json(answered)]);
+    let source = Source::with(wire);
+    let call = create_call(&input, &optional, &call_params);
+    let create_hooks = hooks(NO_CALLBACKS, &dispatcher, &NO_RESOLVER);
+    let deps = create_deps(&config, &source);
+    execute(&deps, ClientKind::Sync, &call, &create_hooks)
+        .await
+        .expect("the reply transforms");
+    assert_eq!(
+        config.transformed_headers(),
+        vec![IndexMap::from([(
+            String::from("x-request-id"),
+            String::from("r-1")
+        )])]
+    );
 }
 
 fn assert_live_setup(live: &CreateLive) {
@@ -647,6 +725,7 @@ async fn shared_session(call_params: &CreateParams, dispatcher: &Dispatcher) {
 
     assert_reused_client_skips_debug(call_params, dispatcher).await;
 
+    let sync_capture = capture_debug();
     let (sync_source, sync_config) = shared_session_run(
         call_params,
         dispatcher,
@@ -660,6 +739,13 @@ async fn shared_session(call_params: &CreateParams, dispatcher: &Dispatcher) {
     );
     assert!(!sync_config.off_loop_sign.load(Ordering::SeqCst));
     assert!(!sync_config.off_loop_transform.load(Ordering::SeqCst));
+    assert!(
+        !sync_capture
+            .logs
+            .take()
+            .iter()
+            .any(|line| line.starts_with("Creating HTTP client for responses API"))
+    );
 }
 
 // a supplied client of the matching async kind never builds one, so the debug line never runs
@@ -855,7 +941,7 @@ async fn create_agentic_followup_messages(#[case] items: bool) {
         global: &globals,
         dynamic: &[],
     };
-    let optional = Object::new();
+    let optional = object(r#"{"temperature":0.2}"#);
     let call_params =
         params(r#"{"api_base":"http://mock/v1","_websearch_interception_converted_stream":true}"#);
     let dispatcher = Dispatcher::quiet();
@@ -874,6 +960,7 @@ async fn create_agentic_followup_messages(#[case] items: bool) {
             ScriptedCall::Loop(vec![expected]),
         ]
     );
+    assert_eq!(recorder.optional(), vec![json(r#"{"temperature":0.2}"#)]);
 }
 
 // The timeout text parser's seeds, replayed through the same float() the handler calls

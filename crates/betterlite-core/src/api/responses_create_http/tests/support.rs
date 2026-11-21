@@ -50,8 +50,7 @@ use crate::api::responses_agentic_execution::executor::{
 use crate::api::responses_compact_http::error::{ConfigFailure, Stage};
 use crate::api::responses_compact_http::service::{ClientKind, SharedSession, SuppliedClient};
 use crate::api::responses_create_http::config::{
-    CreateConfig, CreateParams, CreateSignRequest, CreateTransformRequest, ExtraBodyRequest,
-    Headers, Signed,
+    CreateConfig, CreateParams, CreateSignRequest, CreateTransformRequest, Headers, Signed,
 };
 use crate::api::responses_create_http::error::CreateError;
 use crate::api::responses_create_http::service::{
@@ -281,6 +280,7 @@ pub(super) struct Config {
     pub(super) signed_body: Option<Vec<u8>>,
     pub(super) validated: Mutex<Vec<Headers>>,
     pub(super) signed: Mutex<Vec<SignRecord>>,
+    pub(super) transform_headers: Mutex<Vec<IndexMap<String, String>>>,
     pub(super) off_loop_sign: AtomicBool,
     pub(super) off_loop_transform: AtomicBool,
 }
@@ -306,6 +306,13 @@ impl Config {
 
     pub(super) fn validated_headers(&self) -> Vec<Headers> {
         self.validated
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    pub(super) fn transformed_headers(&self) -> Vec<IndexMap<String, String>> {
+        self.transform_headers
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
@@ -387,13 +394,6 @@ impl CreateConfig for Config {
         Ok(data)
     }
 
-    fn transform_extra_body(
-        &self,
-        request: &ExtraBodyRequest<'_>,
-    ) -> Result<Object, ConfigFailure> {
-        Ok(request.extra_body.clone())
-    }
-
     fn sign_request(&self, request: &CreateSignRequest<'_>) -> Result<Signed, ConfigFailure> {
         if self.fail == Some(Stage::Sign) {
             return Err(failure("the sign failed"));
@@ -435,6 +435,10 @@ impl CreateConfig for Config {
         state: &mut LoggingState,
         env: &PrePostEnv<'_>,
     ) -> Result<ResponsesReply, ConfigFailure> {
+        self.transform_headers
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(reply.headers.clone());
         if self.fail == Some(Stage::Response) {
             return Err(failure("the response transform failed"));
         }
@@ -569,17 +573,26 @@ pub(super) enum ScriptedCall {
 
 pub(super) struct AgenticRecorder {
     calls: Mutex<Vec<ScriptedCall>>,
+    optional: Mutex<Vec<PromptJson>>,
 }
 
 impl AgenticRecorder {
     pub(super) fn new() -> Self {
         Self {
             calls: Mutex::new(Vec::new()),
+            optional: Mutex::new(Vec::new()),
         }
     }
 
     pub(super) fn calls(&self) -> Vec<ScriptedCall> {
         self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    pub(super) fn optional(&self) -> Vec<PromptJson> {
+        self.optional
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
@@ -591,6 +604,18 @@ fn messages(messages: &[FollowupMessage]) -> Vec<PromptJson> {
         .iter()
         .map(|message| serde_json::from_str(message.0.get()).expect("the followup message parses"))
         .collect()
+}
+
+fn optional_params(params: &JsonMap) -> PromptJson {
+    PromptJson::Object(
+        params
+            .iter()
+            .map(|(key, value)| {
+                let parsed = serde_json::from_str(value.get()).expect("the optional param parses");
+                (key.clone(), parsed)
+            })
+            .collect(),
+    )
 }
 
 pub(super) struct Scripted {
@@ -638,6 +663,11 @@ impl AgenticCallback for Scripted {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(ScriptedCall::Loop(messages(call.messages)));
+        self.recorder
+            .optional
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(optional_params(call.optional_params));
         Ok(self.result.clone())
     }
 }
@@ -709,6 +739,7 @@ pub(super) fn config_with(fail: Option<Stage>, signed_body: Option<Vec<u8>>) -> 
         signed_body,
         validated: Mutex::new(Vec::new()),
         signed: Mutex::new(Vec::new()),
+        transform_headers: Mutex::new(Vec::new()),
         off_loop_sign: AtomicBool::new(false),
         off_loop_transform: AtomicBool::new(false),
     }

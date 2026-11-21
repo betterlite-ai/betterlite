@@ -152,10 +152,12 @@ async fn step_failure(
     let Err(error) = execute(&deps, ClientKind::Sync, &call, &create_hooks).await else {
         panic!("the step fails");
     };
+    let message = error.to_string();
     let CreateError::Step { stage: found, .. } = error else {
         panic!("the failure is a step error: {error:?}");
     };
     assert_eq!(found, expected_stage(stage));
+    assert_eq!(message, expected_message(stage));
     let sent = wire.requests();
     if stage == FailStage::Response {
         assert_eq!(sent.len(), 1);
@@ -170,6 +172,16 @@ fn expected_stage(stage: FailStage) -> ErrorStage {
         FailStage::Normalize => ErrorStage::Normalize,
         FailStage::Sign => ErrorStage::Sign,
         FailStage::Response => ErrorStage::Response,
+        FailStage::Url | FailStage::Validate => panic!("only the transfer steps fail here"),
+    }
+}
+
+fn expected_message(stage: FailStage) -> &'static str {
+    match stage {
+        FailStage::Transform => "request transform failed: the transform failed",
+        FailStage::Normalize => "request normalization failed: the normalize failed",
+        FailStage::Sign => "request signing failed: the sign failed",
+        FailStage::Response => "response transform failed: the response transform failed",
         FailStage::Url | FailStage::Validate => panic!("only the transfer steps fail here"),
     }
 }
