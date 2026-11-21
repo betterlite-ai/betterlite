@@ -1,4 +1,3 @@
-use std::net::TcpListener;
 use std::time::Duration;
 
 use betterlite_error::error::ErrorClass;
@@ -7,6 +6,7 @@ use betterlite_http_fixture::reply::reply;
 use betterlite_http_fixture::server::serve;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
+use betterlite_test_ports::refused_port::RefusedPort;
 use indexmap::IndexMap;
 use serde_json::Number;
 
@@ -314,11 +314,9 @@ fn delete_rejects_a_litellm_parameter_outside_its_type() {
 
 #[test]
 fn delete_reports_a_transport_failure_through_the_value_error_class() {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("a free port");
-    let address = listener.local_addr().expect("the bound address");
-    drop(listener);
+    let refused = RefusedPort::bind().expect("a refused port");
     let config = fixture();
-    let call = Call::new("int-1").at(address);
+    let call = Call::new("int-1").at(refused.address);
     let mut http = Logging::default();
     let mut logging = state("gemini-2.5-flash", "call-1");
     let redactor = redactor();
