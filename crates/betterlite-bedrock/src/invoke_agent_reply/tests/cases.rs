@@ -127,6 +127,7 @@ fn chunk_parse_and_decode() {
     let decoded = events(&chunk("hi"));
     assert_eq!(decoded[0].payload, json("{\"bytes\":\"aGk=\"}"));
     assert!(events(&trace("")).is_empty());
+    assert!(events(&chunk_body("{\"bytes\":\"\"}")).is_empty());
 
     let (captured, guard) = capture();
     let broken_parse = events(&join(&[
@@ -277,6 +278,8 @@ fn preprocess_trace_usage() {
         trace(r#"{"trace":{"preProcessingTrace":{"modelInvocationOutput":{"metadata":{}}}}}"#),
         trace(r#"{"trace":{"preProcessingTrace":{"modelInvocationOutput":{}}}}"#),
         trace(r#"{"trace":{"preProcessingTrace":{}}}"#),
+        trace(r#"{"trace":{"preProcessingTrace":null}}"#),
+        trace(r#"{"trace":{"preProcessingTrace":[]}}"#),
         trace(r#"{"trace":{}}"#),
         trace("{}"),
     ] {
