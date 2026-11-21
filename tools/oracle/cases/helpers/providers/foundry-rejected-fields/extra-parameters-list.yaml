@@ -1,0 +1,43 @@
+kind: helper
+name: foundry-rejected-fields-extra-parameters-list
+call:
+  foundry_rejected_fields:
+    repairs:
+      - error: |-
+          {"error":{"message":"Extra parameters ['stream_options', 'extra-parameters'] are not allowed when extra-parameters is not set or set to be 'error'. Set extra-parameters to 'pass-through'","type":"invalid_request_error"}}
+        body:
+          model: deployment
+          stream_options: {include_usage: true}
+          extra-parameters: error
+          top_p: 0.5
+      # only the first bracket pair is read
+      - error: |-
+          {"error":{"message":"Extra parameters [top_p] are not allowed. Also [temperature]. Set extra-parameters to 'pass-through'","type":"invalid_request_error"}}
+        body: {model: deployment, top_p: 0.5, temperature: 2, n: 2}
+      # no bracket names nothing
+      - error: |-
+          {"error":{"message":"Extra parameters are not allowed. Set extra-parameters to 'pass-through'","type":"invalid_request_error"}}
+        body: {model: deployment, top_p: 0.5}
+      # a double quote inside a JSON message keeps its backslash, so the n name does not strip cleanly
+      - error: |-
+          {"error":{"message":"Extra parameters [ \"n\" , 'top_p' ,, ] are not allowed. Set extra-parameters to 'pass-through'","type":"invalid_request_error"}}
+        body: {model: deployment, n: 2, top_p: 0.5, temperature: 2}
+      # quotes that are JSON syntax rather than string content strip cleanly
+      - error: |-
+          {"error":{"message":"Set extra-parameters to 'pass-through'"},"params":["n","top_p"]}
+        body: {model: deployment, n: 2, top_p: 0.5, temperature: 2}
+      # a bracket still open at the end of its line is skipped by the dot in the pattern
+      - error: |-
+          {
+            "error": {"message": "Set extra-parameters to 'pass-through'"},
+            "fields": [
+              "top_p"
+            ]
+          }
+        body: {model: deployment, top_p: 0.5}
+      # an empty bracket pair names nothing
+      - error: |-
+          {"error":{"message":"Extra parameters [] are not allowed. Set extra-parameters to 'pass-through'","type":"invalid_request_error"}}
+        body: {model: deployment, top_p: 0.5}
+env: {}
+compare: {ignore: []}

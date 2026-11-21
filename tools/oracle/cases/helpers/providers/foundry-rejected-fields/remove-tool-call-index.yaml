@@ -1,0 +1,29 @@
+kind: helper
+name: foundry-rejected-fields-remove-tool-call-index
+call:
+  foundry_rejected_fields:
+    repairs:
+      # the invalid index drops from the tool call, and the pass-through elif never runs
+      - error: |-
+          {"error":{"message":"unknown field: parameter index is not a valid field. Set extra-parameters to 'pass-through' ['temperature', 'top_p']","type":"invalid_request_error"}}
+        body:
+          model: deployment
+          temperature: 2
+          top_p: 0.5
+          messages:
+            - {role: user, content: hi}
+            - role: assistant
+              content: null
+              tool_calls:
+                - {id: call-1, type: function, function: {name: f, arguments: "{}"}, index: 0}
+            - {role: tool, tool_call_id: call-1, content: done}
+      # a null messages key skips the tool-call repair, so the elif drops the named parameters
+      - error: |-
+          {"error":{"message":"unknown field: parameter index is not a valid field. Set extra-parameters to 'pass-through' ['temperature', 'top_p']","type":"invalid_request_error"}}
+        body: {model: deployment, temperature: 2, top_p: 0.5, messages: null}
+      # an absent messages key skips it the same way
+      - error: |-
+          {"error":{"message":"unknown field: parameter index is not a valid field. Set extra-parameters to 'pass-through' ['temperature', 'top_p']","type":"invalid_request_error"}}
+        body: {model: deployment, temperature: 2, top_p: 0.5}
+env: {}
+compare: {ignore: []}
