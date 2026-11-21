@@ -19,7 +19,7 @@ use serde_json::Value;
 
 use crate::api::speech_chat_bridge::SpeechCompletions;
 
-use super::branches::families::{Rules, rules};
+use super::branches::families::rules;
 use super::call::SpeechCall;
 use super::error::{SpeechCallError, SpeechException, exception, unmapped_message};
 use super::logging::{SpeechCallLogging, record_call};

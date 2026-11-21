@@ -9,7 +9,7 @@ use super::error::SpeechCallError;
 pub(crate) fn first_text<'object>(object: &'object Object, names: &[&str]) -> Option<&'object str> {
     names
         .iter()
-        .filter_map(|name| object.get(name).and_then(Value::as_str))
+        .filter_map(|name| object.get(*name).and_then(Value::as_str))
         .find(|value| !value.is_empty())
 }
 

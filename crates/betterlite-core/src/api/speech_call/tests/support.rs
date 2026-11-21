@@ -358,9 +358,8 @@ impl SpeechConfigSource for Configs {
     }
 
     fn config(&self, _tag: TextToSpeechConfigTag) -> Option<&dyn SpeechConfigOperation> {
-        self.mapping
-            .as_ref()
-            .map(|mapping| mapping as &dyn SpeechConfigOperation)
+        let mapping: &dyn SpeechConfigOperation = self.mapping.as_ref()?;
+        Some(mapping)
     }
 }
 
@@ -368,6 +367,7 @@ pub(super) struct OperationRecord {
     pub(super) kind: SpeechOperationKind,
     pub(super) provider: String,
     pub(super) config_tag: Option<TextToSpeechConfigTag>,
+    pub(super) config_present: bool,
     pub(super) model: String,
     pub(super) input: String,
     pub(super) voice: Option<SpeechVoice>,
@@ -392,6 +392,7 @@ impl From<&SpeechOperation<'_>> for OperationRecord {
             kind: operation.kind,
             provider: operation.provider.clone(),
             config_tag: operation.config_tag,
+            config_present: operation.config.is_some(),
             model: operation.model.clone(),
             input: operation.input.clone(),
             voice: operation.voice.clone(),

@@ -1,4 +1,5 @@
 use betterlite_config::sections::speech_call::Settings;
+use betterlite_context::media_config_selection::text_to_speech::TextToSpeechConfigTag;
 use betterlite_openai::api::speech_provider_contract::SpeechVoice;
 use betterlite_openai::files::records::BinaryContent;
 use betterlite_openai::openai_base_config::Object;
@@ -19,8 +20,8 @@ use super::service::{BranchCall, SpeechDispatch};
 pub(crate) mod families;
 
 use self::families::{
-    VoiceRule, carries_base, first_voice, kind, overwrite_credentials, overwrites_credentials,
-    required_config, string_voice, voice_rule,
+    Rules, VoiceRule, carries_base, first_voice, kind, overwrite_credentials,
+    overwrites_credentials, required_config, string_voice, voice_rule,
 };
 
 impl<'service, Transport, Completions, Configs, Operations>
@@ -218,6 +219,17 @@ where
             return self.bridge(branch, logging).await;
         }
         let mut operation = self.operation(branch, SpeechOperationKind::Dispatch);
+        // the selector mirrors a manager that answers nothing for vertex_ai_beta, and LiteLLM fills
+        // that missing config after the parameter mapping: Lyria for its models, VertexAI otherwise
+        if branch.selected.is_none() {
+            let tag = if self.configs.is_lyria_model(&branch.resolved.model) {
+                TextToSpeechConfigTag::VertexAILyria
+            } else {
+                TextToSpeechConfigTag::VertexAI
+            };
+            operation.config_tag = Some(tag);
+            operation.config = self.configs.config(tag);
+        }
         operation.extra_headers = branch.call.headers.clone();
         operation.api_key = None;
         operation.api_base = branch.resolved.api_base.clone();

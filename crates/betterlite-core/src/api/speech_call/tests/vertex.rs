@@ -83,6 +83,41 @@ fn vertex_dispatch_passes_the_call_headers_and_params() {
 }
 
 #[test]
+fn vertex_ai_beta_takes_the_fallback_config_after_the_mapping() {
+    let harness = vertex_harness(
+        Configs::scripted(ScriptedConfig::keeping("{}")),
+        ScriptedOperations::ok(b"audio"),
+    );
+    let native = SpeechCall {
+        voice: named_voice("en-US-Studio-O"),
+        ..base_call("vertex_ai_beta/text-to-speech")
+    };
+    harness.run_ok(&native);
+    let executed = harness.operations.take();
+    assert_eq!(executed.len(), 1);
+    assert_eq!(executed[0].provider, "vertex_ai_beta");
+    assert_eq!(
+        executed[0].config_tag,
+        Some(TextToSpeechConfigTag::VertexAI)
+    );
+    assert!(executed[0].config_present);
+    let scripted = harness.configs.mapping().expect("the scripted config");
+    assert!(scripted.calls().is_empty());
+
+    let lyria_harness = vertex_harness(
+        Configs::lyria(ScriptedConfig::keeping("{}")),
+        ScriptedOperations::ok(b"audio"),
+    );
+    lyria_harness.run_ok(&native);
+    let lyria_executed = lyria_harness.operations.take();
+    assert_eq!(
+        lyria_executed[0].config_tag,
+        Some(TextToSpeechConfigTag::VertexAILyria)
+    );
+    assert!(lyria_executed[0].config_present);
+}
+
+#[test]
 fn a_vertex_gemini_model_uses_the_completion_bridge() {
     let completions =
         ScriptedCompletions::answered(responded("gemini-2.5-preview-tts", Some("AAA=")));
