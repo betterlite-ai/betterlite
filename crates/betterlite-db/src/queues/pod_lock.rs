@@ -11,6 +11,7 @@ use num_traits::ToPrimitive as _;
 use self::owner::{PodId, PodOwnerError, decode_pod_owner, lease_key};
 
 pub mod cache;
+pub mod lease_guard;
 pub mod owner;
 mod tests;
 

@@ -11,10 +11,11 @@ use std::sync::Arc;
 use tokio_util::task::TaskTracker;
 
 use crate::postgres_store::session::PostgresStore;
+use crate::queues::pod_lock::lease_guard::LeaseGuard;
 use crate::queues::pod_lock::{LockCache, PodLockManager};
 
 use self::error::SweepError;
-use self::lease::{Lease, LeaseRelease, elect};
+use self::lease::{Lease, RESET_JOB_NAME, elect};
 use self::phase::{PhaseRunner, ResetPhase};
 use self::settings::BudgetResetSettings;
 
@@ -52,12 +53,12 @@ where
     }
 
     // Only an invocation that acquired the lease releases it; unguarded and follower runs never touch another pod's lock.
-    fn leader_release(&self, lease: Lease) -> Option<LeaseRelease> {
+    fn leader_release(&self, lease: Lease) -> Option<LeaseGuard> {
         let Lease::Leader = lease else {
             return None;
         };
-        let manager = self.lock_manager.as_ref()?;
-        Some(LeaseRelease::start(Arc::clone(manager), &self.tasks))
+        let manager = Arc::clone(self.lock_manager.as_ref()?);
+        Some(LeaseGuard::start(manager, RESET_JOB_NAME, &self.tasks))
     }
 
     async fn run_phases(&mut self) -> Result<(), SweepError<Phases::Failure>> {
