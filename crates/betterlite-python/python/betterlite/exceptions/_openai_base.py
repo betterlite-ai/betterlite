@@ -10,22 +10,24 @@ class OpenAIError(Exception):
 class APIError(OpenAIError):
     message: str
     request: Request | None
-    body: JsonValue
-    code: JsonValue
-    param: JsonValue
+    body: JsonValue | bytes | None
+    code: JsonValue = None
+    param: JsonValue = None
     type: JsonValue
 
-    def __init__(self, message: str, request: Request, *, body: JsonValue) -> None:
+    def __init__(
+        self, message: str, request: Request, *, body: JsonValue | bytes | None
+    ) -> None:
         super().__init__(message)
         self.request = request
         self.message = message
         self.body = body
-        match body:
+        match body:  # ast-grep-ignore: no-match-wildcard
             case dict() as fields:
                 self.code = fields.get("code")
                 self.param = fields.get("param")
                 self.type = fields.get("type")
-            case list() | str() | bool() | float() | int() | None:
+            case _:
                 self.code = None
                 self.param = None
                 self.type = None
@@ -35,7 +37,9 @@ class APIResponseValidationError(APIError):
     response: Response | None
     status_code: int
 
-    def __init__(self, response: Response, body: JsonValue, *, message: str | None = None) -> None:
+    def __init__(
+        self, response: Response, body: JsonValue | bytes | None, *, message: str | None = None
+    ) -> None:
         super().__init__(
             message if message is not None else "Data returned by API invalid for expected schema.",
             response.request,
@@ -50,7 +54,9 @@ class APIStatusError(APIError):
     status_code: int
     request_id: str | None
 
-    def __init__(self, message: str, *, response: Response, body: JsonValue) -> None:
+    def __init__(
+        self, message: str, *, response: Response, body: JsonValue | bytes | None
+    ) -> None:
         super().__init__(message, response.request, body=body)
         self.response = response
         self.status_code = response.status_code

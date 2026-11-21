@@ -1,8 +1,8 @@
 from dataclasses import dataclass
-from typing import ClassVar, Final, Required, Unpack
+from typing import ClassVar, Final
 
 from pydantic import JsonValue
-from typing_extensions import TypedDict, override
+from typing_extensions import override
 
 from betterlite.exceptions import _openai_base as base
 from betterlite.exceptions import _process, _status
@@ -11,33 +11,6 @@ from betterlite.exceptions._rate_limit import RateLimitErrorCategory, RateLimitT
 from betterlite.exceptions._text import RetryText
 
 
-class TimeoutOptions(TypedDict, total=False):
-    message: Required[str]
-    model: Required[str]
-    llm_provider: Required[str]
-    litellm_debug_info: str | None
-    max_retries: int | None
-    num_retries: int | None
-    headers: dict[str, str] | None
-    exception_status_code: int | None
-    response: Response | None
-class MidStreamOptions(TypedDict, total=False):
-    message: Required[str]
-    model: Required[str]
-    llm_provider: Required[str]
-    original_exception: Exception | None
-    response: Response | None
-    litellm_debug_info: str | None
-    max_retries: int | None
-    num_retries: int | None
-    generated_content: str
-    is_pre_first_chunk: bool
-_TIMEOUT_KEYS: Final[frozenset[str]] = (
-    TimeoutOptions.__optional_keys__ | TimeoutOptions.__required_keys__
-)
-_MID_STREAM_KEYS: Final[frozenset[str]] = (
-    MidStreamOptions.__optional_keys__ | MidStreamOptions.__required_keys__
-)
 def _vertex_response(status_code: int, response: Response | None) -> Response:
     headers = response.headers if response is not None else None
     request = Request(method="POST", url=" https://cloud.google.com/vertex-ai/")
@@ -49,20 +22,29 @@ class Timeout(RetryText, base.APITimeoutError):
     litellm_debug_info: str | None
     headers: dict[str, str] | None
     response: Response | None
-    def __init__(self, **options: Unpack[TimeoutOptions]) -> None:
-        _status.check_options(options, _TIMEOUT_KEYS, TimeoutOptions.__required_keys__, "Timeout")
+    @override
+    def __init__(
+        self,
+        message: str,
+        model: str,
+        llm_provider: str,
+        litellm_debug_info: str | None = None,
+        max_retries: int | None = None,
+        num_retries: int | None = None,
+        headers: dict[str, str] | None = None,
+        exception_status_code: int | None = None,
+        response: Response | None = None,
+    ) -> None:
         request = Request(method="POST", url="https://api.openai.com/v1")
         base.APITimeoutError.__init__(self, request)
-        exception_status_code = options.get("exception_status_code")
         self.status_code = 408 if exception_status_code is None else exception_status_code
-        self.message = f"litellm.Timeout: {options['message']}"
-        self.model = options["model"]
-        self.llm_provider = options["llm_provider"]
-        self.litellm_debug_info = options.get("litellm_debug_info")
-        self.max_retries = options.get("max_retries")
-        self.num_retries = options.get("num_retries")
-        self.headers = options.get("headers")
-        response = options.get("response")
+        self.message = f"litellm.Timeout: {message}"
+        self.model = model
+        self.llm_provider = llm_provider
+        self.litellm_debug_info = litellm_debug_info
+        self.max_retries = max_retries
+        self.num_retries = num_retries
+        self.headers = headers
         if response is not None:
             self.response = response
 @dataclass(eq=False, repr=False)
@@ -78,7 +60,7 @@ class RateLimitError(RetryText, base.RateLimitError):
     rate_limit_type: str | RateLimitType | None = None
     headers: dict[str, str] | None = None
     detail: JsonValue = None
-    body: JsonValue = None
+    body: JsonValue | bytes | None = None
     def __post_init__(self) -> None:
         self.status_code = 429
         self.message = f"litellm.RateLimitError: {self.message}"
@@ -130,7 +112,7 @@ class InternalServerError(RetryText, base.InternalServerError):
     litellm_debug_info: str | None = None
     max_retries: int | None = None
     num_retries: int | None = None
-    body: JsonValue = None
+    body: JsonValue | bytes | None = None
     def __post_init__(self) -> None:
         self.status_code = 500
         self.message = f"litellm.InternalServerError: {self.message}"
@@ -148,7 +130,7 @@ class APIError(RetryText, base.APIError):
     litellm_debug_info: str | None = None
     max_retries: int | None = None
     num_retries: int | None = None
-    body: JsonValue = None
+    body: JsonValue | bytes | None = None
     def __post_init__(self) -> None:
         self.message = f"litellm.APIError: {self.message}"
         request = self.request
@@ -225,27 +207,34 @@ class MidStreamFallbackError(ServiceUnavailableError):
     original_exception: Exception | None
     generated_content: str
     is_pre_first_chunk: bool
-    def __init__(self, **options: Unpack[MidStreamOptions]) -> None:
-        _status.check_options(
-            options, _MID_STREAM_KEYS, MidStreamOptions.__required_keys__, "MidStreamFallbackError",
-        )
-        original_exception = options.get("original_exception")
+    request: Request | None
+    @override
+    def __init__(
+        self,
+        message: str,
+        model: str,
+        llm_provider: str,
+        original_exception: Exception | None = None,
+        response: Response | None = None,
+        litellm_debug_info: str | None = None,
+        max_retries: int | None = None,
+        num_retries: int | None = None,
+        generated_content: str = "",
+        is_pre_first_chunk: bool = False,
+    ) -> None:
         original_status = _original_status(original_exception)
         self.status_code = 503 if original_status is None else original_status
-        self.message = f"litellm.MidStreamFallbackError: {options['message']}"
-        self.model = options["model"]
-        self.llm_provider = options["llm_provider"]
+        self.message = f"litellm.MidStreamFallbackError: {message}"
+        self.model = model
+        self.llm_provider = llm_provider
         self.original_exception = original_exception
-        self.litellm_debug_info = options.get("litellm_debug_info")
-        self.max_retries = options.get("max_retries")
-        self.num_retries = options.get("num_retries")
-        generated_content = options.get("generated_content")
-        self.generated_content = "" if generated_content is None else generated_content
-        pre_first_chunk = options.get("is_pre_first_chunk")
-        self.is_pre_first_chunk = False if pre_first_chunk is None else pre_first_chunk
-        response = options.get("response")
+        self.litellm_debug_info = litellm_debug_info
+        self.max_retries = max_retries
+        self.num_retries = num_retries
+        self.generated_content = generated_content
+        self.is_pre_first_chunk = is_pre_first_chunk
         if response is None:
-            request = Request(method="POST", url=f"https://{self.llm_provider}.com/v1/")
+            request = Request(method="POST", url=f"https://{llm_provider}.com/v1/")
             response = Response(status_code=self.status_code, request=request)
         self.response = response
         saved_message = self.message

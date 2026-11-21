@@ -1,24 +1,13 @@
 import builtins
 from dataclasses import dataclass, field
-from typing import Final, Unpack
 
 from pydantic import JsonValue
-from typing_extensions import TypedDict
+from typing_extensions import override
 
 import betterlite
 from betterlite.exceptions._rate_limit import RateLimitErrorCategory, RateLimitType
-from betterlite.exceptions._status import check_options
 
 
-class GuardrailOptions(TypedDict, total=False):
-    guardrail_name: str | None
-    message: str
-    should_wrap_with_default_message: bool  # ast-grep-ignore: no-long-names
-    status_code: int
-    blocked_content: bool
-_GUARDRAIL_KEYS: Final[frozenset[str]] = (
-    GuardrailOptions.__optional_keys__ | GuardrailOptions.__required_keys__
-)
 class ModelNotMappedError(builtins.Exception):
     pass
 @dataclass(eq=False, repr=False)
@@ -50,24 +39,26 @@ class GuardrailRaisedException(builtins.Exception):
     message: str
     status_code: int
     blocked_content: bool
-    def __init__(self, **options: Unpack[GuardrailOptions]) -> None:
-        check_options(options, _GUARDRAIL_KEYS, frozenset(), "GuardrailRaisedException")
-        guardrail_name = options.get("guardrail_name")
-        message = options.get("message")
-        if message is None:
-            message = ""
+    @override
+    def __init__(
+        self,
+        guardrail_name: str | None = None,
+        message: str = "",
+        should_wrap_with_default_message: bool = True,  # ast-grep-ignore: no-long-names
+        status_code: int = 400,
+        blocked_content: bool = False,
+    ) -> None:
         default_message = (
             f"Guardrail raised an exception, Guardrail: {guardrail_name}, Message: {message}"
         )
         self.guardrail_name = guardrail_name
-        wrap = options.get("should_wrap_with_default_message")
-        if wrap is None:
-            wrap = True
-        status_code = options.get("status_code")
-        self.status_code = 400 if status_code is None else status_code
-        blocked = options.get("blocked_content")
-        self.blocked_content = False if blocked is None else blocked
-        self.message = default_message if wrap else message
+        self.status_code = status_code
+        self.blocked_content = blocked_content
+        self.message = (
+            default_message
+            if should_wrap_with_default_message  # ast-grep-ignore: no-long-names
+            else message
+        )
         super().__init__(self.message)
 class BlockedPiiEntityError(builtins.Exception):
     entity_type: str

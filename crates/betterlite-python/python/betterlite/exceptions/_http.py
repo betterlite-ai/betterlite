@@ -71,7 +71,17 @@ class Response:
 
     @property
     def text(self) -> str:
-        return self.content.decode()
+        charset = "utf-8"
+        content_type = self.headers.get("content-type")
+        if content_type is not None:
+            for parameter in content_type.split(";")[1:]:
+                name, _, value = parameter.strip().partition("=")
+                if name.lower() == "charset":
+                    charset = value.strip().strip('"')
+        try:
+            return self.content.decode(charset, errors="replace")
+        except LookupError:
+            return self.content.decode("utf-8", errors="replace")
 
     def has_request(self) -> bool:
         try:

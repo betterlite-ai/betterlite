@@ -1,6 +1,6 @@
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Final, Required, TypeAlias, Unpack
+from typing import Final, TypeAlias
 
 from pydantic import JsonValue
 from typing_extensions import ReadOnly, TypedDict, override
@@ -28,55 +28,6 @@ class VectorStoreSearchFailure(TypedDict):
     vector_store_id: ReadOnly[str]
     custom_llm_provider: ReadOnly[str | None]
     error: ReadOnly[str]
-class CommonErrorOptions(TypedDict, total=False):
-    message: Required[str]
-    model: Required[str | None]
-    llm_provider: Required[str | None]
-    litellm_debug_info: str | None
-    max_retries: int | None
-    num_retries: int | None
-class BadRequestOptions(CommonErrorOptions, total=False):
-    response: Response | None
-    body: JsonValue
-class ContentPolicyViolationOptions(CommonErrorOptions, total=False):
-    response: Response | None
-    provider_specific_fields: dict[str, JsonValue] | None
-    body: JsonValue
-class ImageFetchOptions(TypedDict, total=False):
-    message: Required[str]
-    model: str | None
-    llm_provider: str | None
-    response: Response | None
-    litellm_debug_info: str | None
-    max_retries: int | None
-    num_retries: int | None
-    body: JsonValue
-class UnsupportedParamsOptions(TypedDict, total=False):
-    message: Required[str]
-    model: str | None
-    llm_provider: str | None
-    status_code: int
-    response: Response | None
-    litellm_debug_info: str | None
-    max_retries: int | None
-    num_retries: int | None
-_BAD_REQUEST_KEYS: Final[frozenset[str]] = (
-    BadRequestOptions.__optional_keys__ | BadRequestOptions.__required_keys__
-)
-_UNSUPPORTED_PARAMS_KEYS: Final[frozenset[str]] = (
-    UnsupportedParamsOptions.__optional_keys__ | UnsupportedParamsOptions.__required_keys__
-)
-_IMAGE_FETCH_KEYS: Final[frozenset[str]] = (
-    ImageFetchOptions.__optional_keys__ | ImageFetchOptions.__required_keys__
-)
-def check_options(
-    names: Iterable[str], allowed: frozenset[str], required: frozenset[str], call: str,
-) -> None:
-    present = frozenset(names)
-    if missing := [name for name in required if name not in present]:
-        raise TypeError(f"{call}() missing required arguments: {', '.join(missing)}")
-    if unknown := [name for name in names if name not in allowed]:
-        raise TypeError(f"{call}() got unexpected keyword arguments: {', '.join(unknown)}")
 def mock_response(status_code: int) -> Response:
     request = Request(method="GET", url="https://litellm.ai")
     return Response(status_code=status_code, request=request)
@@ -115,43 +66,54 @@ class BadRequestError(RetryText, base.BadRequestError):
     llm_provider: str | None
     litellm_debug_info: str | None
     status_code: int
-    def __init__(self, **options: Unpack[BadRequestOptions]) -> None:
-        check_options(
-            options, _BAD_REQUEST_KEYS, BadRequestOptions.__required_keys__, "BadRequestError",
-        )
-        apply_common_fields(self, 400, "BadRequestError", options)
-        response = options.get("response")
-        if response is None or not response.has_request():
-            response = _MINIMAL_ERROR_RESPONSE
-        super().__init__(self.message, response=response, body=options.get("body"))
+    @override
+    def __init__(
+        self,
+        message: str,
+        model: str | None,
+        llm_provider: str | None,
+        response: Response | None = None,
+        litellm_debug_info: str | None = None,
+        max_retries: int | None = None,
+        num_retries: int | None = None,
+        body: JsonValue | bytes | None = None,
+    ) -> None:
+        self.status_code = 400
+        self.message = f"litellm.BadRequestError: {message}"
+        self.model = model
+        self.llm_provider = llm_provider
+        self.litellm_debug_info = litellm_debug_info
+        self.max_retries = max_retries
+        self.num_retries = num_retries
+        if response is not None and response.has_request():
+            built = response
+        else:
+            built = _MINIMAL_ERROR_RESPONSE
+        self.response = built
+        base.BadRequestError.__init__(self, self.message, response=built, body=body)
 class ImageFetchError(BadRequestError):
-    def __init__(self, **options: Unpack[ImageFetchOptions]) -> None:
-        check_options(
-            options, _IMAGE_FETCH_KEYS, ImageFetchOptions.__required_keys__, "ImageFetchError",
-        )
+    @override
+    def __init__(
+        self,
+        message: str,
+        model: str | None = None,
+        llm_provider: str | None = None,
+        response: Response | None = None,
+        litellm_debug_info: str | None = None,
+        max_retries: int | None = None,
+        num_retries: int | None = None,
+        body: JsonValue | bytes | None = None,
+    ) -> None:
         super().__init__(
-            message=options["message"],
-            model=options.get("model"),
-            llm_provider=options.get("llm_provider"),
-            response=options.get("response"),
-            litellm_debug_info=options.get("litellm_debug_info"),
-            max_retries=options.get("max_retries"),
-            num_retries=options.get("num_retries"),
-            body=options.get("body"),
+            message=message,
+            model=model,
+            llm_provider=llm_provider,
+            response=response,
+            litellm_debug_info=litellm_debug_info,
+            max_retries=max_retries,
+            num_retries=num_retries,
+            body=body,
         )
-def apply_common_fields(
-    error: BadRequestError,
-    status_code: int,
-    name: str,
-    options: CommonErrorOptions | ImageFetchOptions | UnsupportedParamsOptions,
-) -> None:
-    error.status_code = status_code
-    error.message = f"litellm.{name}: {options['message']}"
-    error.model = options.get("model")
-    error.llm_provider = options.get("llm_provider")
-    error.litellm_debug_info = options.get("litellm_debug_info")
-    error.max_retries = options.get("max_retries")
-    error.num_retries = options.get("num_retries")
 class VectorStoreSearchError(BadRequestError):
     failures: tuple[VectorStoreSearchFailure, ...]
     def __init__(
@@ -250,7 +212,7 @@ class ContentPolicyViolationError(BadRequestError):
     response: Response | None = None
     litellm_debug_info: str | None = None
     provider_specific_fields: dict[str, JsonValue] | None = None
-    body: JsonValue = None
+    body: JsonValue | bytes | None = None
     def __post_init__(self) -> None:
         self.message = f"litellm.ContentPolicyViolationError: {self.message}"
         super().__init__(
@@ -262,12 +224,25 @@ class ContentPolicyViolationError(BadRequestError):
             body=self.body,
         )
 class UnsupportedParamsError(BadRequestError):
-    def __init__(self, **options: Unpack[UnsupportedParamsOptions]) -> None:
-        check_options(
-            options, _UNSUPPORTED_PARAMS_KEYS, UnsupportedParamsOptions.__required_keys__,
-            "UnsupportedParamsError",
-        )
-        apply_common_fields(self, 400, "UnsupportedParamsError", options)
+    @override
+    def __init__(
+        self,
+        message: str,
+        llm_provider: str | None = None,
+        model: str | None = None,
+        status_code: int = 400,
+        response: Response | None = None,
+        litellm_debug_info: str | None = None,
+        max_retries: int | None = None,
+        num_retries: int | None = None,
+    ) -> None:
+        self.status_code = 400
+        self.message = f"litellm.UnsupportedParamsError: {message}"
+        self.model = model
+        self.llm_provider = llm_provider
+        self.litellm_debug_info = litellm_debug_info
+        self.max_retries = max_retries
+        self.num_retries = num_retries
 class InvalidRequestError(base.BadRequestError):
     def __init__(self, message: str, model: str, llm_provider: str) -> None:
         self.status_code = 400
