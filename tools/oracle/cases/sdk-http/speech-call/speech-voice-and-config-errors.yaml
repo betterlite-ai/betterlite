@@ -1,0 +1,30 @@
+kind: sdk_http
+name: sdk-http-speech-call-voice-and-config-errors
+env:
+  AZURE_API_VERSION: '2024-02-01'
+call:
+  speech_call:
+    steps:
+      - model: openai/tts-1
+        api_base: '$API_BASE'
+        api_key: sk-oracle
+      - model: openai/tts-1
+        voice: {voice: alloy}
+        api_base: '$API_BASE'
+        api_key: sk-oracle
+      - model: azure/my-deployment
+        api_base: '$API_BASE'
+        api_key: az-call
+      - model: anthropic/claude-3
+        custom_llm_provider: anthropic
+        api_base: '$API_BASE'
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore:
+    - {pointer: /speech_call/value/steps/0/failure/message, why: LiteLLM prefixes a raised litellm.BadRequestError with its class name and betterlite reports the source message}
+    - {pointer: /speech_call/value/steps/1/failure/message, why: LiteLLM prefixes a raised litellm.BadRequestError with its class name and betterlite reports the source message}
+    - {pointer: /speech_call/value/steps/2/failure/message, why: LiteLLM prefixes a raised litellm.BadRequestError with its class name and betterlite reports the source message}
+    - {pointer: /speech_call/value/steps/3/failure/message, why: LiteLLM prints the provider enum reprs where betterlite lists its own provider slugs}
