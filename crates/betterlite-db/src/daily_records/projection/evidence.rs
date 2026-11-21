@@ -6,6 +6,7 @@ use betterlite_models::savings_evidence::cache_extraction::{
 };
 use betterlite_models::savings_evidence::compression::compression_saved_tokens;
 use betterlite_models::savings_evidence::injection::marks_gateway_injection;
+use betterlite_models::savings_evidence::spend::SavingsSpend;
 use betterlite_models::savings_pricing::context::SavingsPricingContext;
 use betterlite_models::savings_pricing::spend::{SavingsSpendInput, compute_savings_spend};
 use betterlite_models::savings_pricing::usage::request_usage;
