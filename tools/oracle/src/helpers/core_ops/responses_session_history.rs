@@ -74,6 +74,7 @@ impl SpendLogQuery for Script<'_> {
             .queries
             .push(json!({"sql": flat_sql, "request_id": request_id}));
         let position = effects.queries.len().saturating_sub(1);
+        drop(effects);
         Ok(self
             .input
             .replies
@@ -90,8 +91,11 @@ impl ColdStorageReader for Script<'_> {
         &self,
         object_key: &str,
     ) -> Result<Option<IndexMap<String, Json>>, ColdStorageFailure> {
-        let mut effects = self.effects.lock().unwrap_or_else(PoisonError::into_inner);
-        effects.reads.push(object_key.to_owned());
+        self.effects
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .reads
+            .push(object_key.to_owned());
         if self
             .input
             .cold_failures
@@ -108,8 +112,11 @@ impl ColdStorageReader for Script<'_> {
 
 impl PollSleeper for Script<'_> {
     async fn sleep(&self, duration: Duration) {
-        let mut effects = self.effects.lock().unwrap_or_else(PoisonError::into_inner);
-        effects.sleeps.push(duration.as_secs_f64());
+        self.effects
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .sleeps
+            .push(duration.as_secs_f64());
     }
 }
 
@@ -194,6 +201,12 @@ fn answer(outcome: Outcome, script: &Script<'_>, log: &str) -> HelperResult {
         }
         Err(other) => return Err(other).or_value_error(),
     };
+    let debug = debug_records(log)?;
+    let messages = merged
+        .messages
+        .into_iter()
+        .map(attributes)
+        .collect::<Vec<_>>();
     let effects = script
         .effects
         .lock()
@@ -202,8 +215,8 @@ fn answer(outcome: Outcome, script: &Script<'_>, log: &str) -> HelperResult {
         "queries": effects.queries,
         "reads": effects.reads,
         "sleeps": effects.sleeps,
-        "debug": debug_records(log)?,
-        "messages": merged.messages.into_iter().map(attributes).collect::<Vec<_>>(),
+        "debug": debug,
+        "messages": messages,
         "litellm_trace_id": merged.litellm_trace_id,
     }))
 }
