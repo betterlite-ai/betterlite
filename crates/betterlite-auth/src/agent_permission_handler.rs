@@ -10,9 +10,9 @@ use crate::auth_model_patterns::access_groups::AccessGroupLookup;
 use crate::auth_team_lookup::lookup::TeamLookup;
 use crate::resolved_key::auth::UserAPIKeyAuth;
 
-use db_agent_ids_for_access_groups::db_agent_ids;
-use error::GrantError;
-use reads::AgentTableReads;
+use self::db_agent_ids_for_access_groups::db_agent_ids;
+use self::error::GrantError;
+use self::reads::AgentTableReads;
 
 mod agent_caller_access;
 mod ceiling;
