@@ -5,6 +5,7 @@ use rstest::rstest;
 use secrecy::SecretString;
 use serde_json::Value;
 
+use super::super::branches::families::{Rules, carries_base, overwrites_credentials};
 use super::super::call::SpeechCall;
 use super::super::error::SpeechFailure;
 use super::super::operations::SpeechOperationKind;
@@ -197,6 +198,22 @@ fn edenai_records_the_resolved_api_base() {
         harness.operations.take()[0].litellm_params.get("api_base"),
         Some(&Value::String(String::from("https://api.edenai.run/v3")))
     );
+}
+
+#[test]
+fn the_family_rules_match_the_source_credential_flags() {
+    assert!(!overwrites_credentials(Rules::Edenai));
+    assert!(carries_base(Rules::Edenai));
+    assert!(overwrites_credentials(Rules::Minimax));
+    assert!(!carries_base(Rules::Minimax));
+    assert!(overwrites_credentials(Rules::Mistral));
+    assert!(!carries_base(Rules::Mistral));
+    assert!(!overwrites_credentials(Rules::RunwayMl));
+    assert!(!carries_base(Rules::RunwayMl));
+    assert!(!overwrites_credentials(Rules::Polly));
+    assert!(!carries_base(Rules::Polly));
+    assert!(!overwrites_credentials(Rules::AzureSpeech));
+    assert!(!carries_base(Rules::AzureSpeech));
 }
 
 #[test]

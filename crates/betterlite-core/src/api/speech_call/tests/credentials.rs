@@ -7,6 +7,7 @@ use serde_json::Value;
 use super::super::branches::take_azure_ad_token;
 use super::super::call::SpeechCall;
 use super::super::error::SpeechFailure;
+use super::super::openai::openai_scopes;
 use super::support::*;
 
 fn keyed(key: Option<&str>) -> SpeechCall {
@@ -170,6 +171,56 @@ fn openai_organization_and_project_are_not_forwarded() {
     let sent = harness.transport.sent();
     assert_eq!(header(&sent[0], "openai-organization"), None);
     assert_eq!(header(&sent[0], "openai-project"), None);
+}
+
+#[test]
+fn openai_scopes_follow_the_call_the_globals_and_the_environment() {
+    let global = loaded_settings(
+        "litellm_settings:\n  organization: org-global\n  project: proj-global\n",
+        &[],
+    );
+    let native = SpeechCall {
+        organization: Some(String::from("org-call")),
+        project: Some(String::from("proj-call")),
+        ..base_call("openai/tts-1")
+    };
+    assert_eq!(
+        openai_scopes(&native, &global),
+        (
+            Some(String::from("org-call")),
+            Some(String::from("proj-call"))
+        )
+    );
+    let empty = SpeechCall {
+        organization: Some(String::new()),
+        project: Some(String::new()),
+        ..base_call("openai/tts-1")
+    };
+    assert_eq!(
+        openai_scopes(&empty, &global),
+        (
+            Some(String::from("org-global")),
+            Some(String::from("proj-global"))
+        )
+    );
+    let variables = [
+        ("OPENAI_ORGANIZATION", "org-env"),
+        ("OPENAI_PROJECT", "proj-env"),
+    ];
+    assert_eq!(
+        openai_scopes(
+            &base_call("openai/tts-1"),
+            &loaded_settings(SOURCE, &variables)
+        ),
+        (
+            Some(String::from("org-env")),
+            Some(String::from("proj-env"))
+        )
+    );
+    assert_eq!(
+        openai_scopes(&base_call("openai/tts-1"), &loaded_settings(SOURCE, &[])),
+        (None, None)
+    );
 }
 
 #[test]

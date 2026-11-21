@@ -52,14 +52,14 @@ pub(super) const fn voice_rule(family: Rules) -> VoiceRule {
     }
 }
 
-pub(super) const fn overwrites_credentials(family: Rules) -> bool {
+pub(crate) const fn overwrites_credentials(family: Rules) -> bool {
     match family {
         Rules::Minimax | Rules::Mistral => true,
         Rules::Edenai | Rules::RunwayMl | Rules::Polly | Rules::AzureSpeech => false,
     }
 }
 
-pub(super) const fn carries_base(family: Rules) -> bool {
+pub(crate) const fn carries_base(family: Rules) -> bool {
     match family {
         Rules::Edenai => true,
         Rules::Minimax | Rules::Mistral | Rules::RunwayMl | Rules::Polly | Rules::AzureSpeech => {

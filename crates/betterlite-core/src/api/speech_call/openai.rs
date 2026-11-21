@@ -83,7 +83,10 @@ fn openai_config<'config>(
 }
 
 // the call's organization and project over the two globals, then the two environment variables
-fn openai_scopes(call: &SpeechCall, settings: &Settings) -> (Option<String>, Option<String>) {
+pub(super) fn openai_scopes(
+    call: &SpeechCall,
+    settings: &Settings,
+) -> (Option<String>, Option<String>) {
     let organization = first_text([
         call.organization.as_deref(),
         settings.organization.as_deref(),
