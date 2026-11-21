@@ -109,7 +109,7 @@ fn count_of(number: &Number) -> Option<i64> {
     IntInput::int_value(number.as_f64()?)
 }
 
-// data.get("model"): the model the rejected request named, when it is a string
+// data.get("model") as text; betterlite_auth::session_budget::admission (B3007) reads it the same way but keeps that fn private, outside B3054's scope
 fn requested_model(data: &Json) -> Option<&str> {
     let Json::Object(fields) = data else {
         return None;
@@ -120,7 +120,7 @@ fn requested_model(data: &Json) -> Option<&str> {
     Some(model.as_str())
 }
 
-// the 429 async_pre_call_hook raises: RateLimitType.MAX_ITERATIONS with the resolved model and provider
+// the MAX_ITERATIONS 429; session_budget's builder is fixed to Budget and SessionBudgetError, so sharing one needs a betterlite-auth edit
 pub(crate) fn exceeded_error(
     handler: &SessionIterationHandler,
     router: Option<&dyn DeploymentSnapshot>,
