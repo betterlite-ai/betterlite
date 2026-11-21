@@ -5,26 +5,20 @@ use super::errors::HookFailure;
 use super::runtime::{HookRuntime, RequestData, ScanCall, ScanSource};
 
 // LiteLLM's async_pre_call_hook: scan the user messages before the call and write the guardrail's masked text back.
-pub async fn pre_call_hook<R>(
+pub async fn pre_call_hook<R: HookRuntime>(
     runtime: &R,
     data: &mut RequestData,
     call_type: &str,
-) -> Result<(), HookFailure>
-where
-    R: HookRuntime,
-{
+) -> Result<(), HookFailure> {
     scan_for_event(runtime, data, call_type, GuardrailEventHooks::PreCall).await
 }
 
 // LiteLLM's async_moderation_hook: the LLM call is already in flight, so a block propagates to the endpoint handler.
-pub async fn moderation_hook<R>(
+pub async fn moderation_hook<R: HookRuntime>(
     runtime: &R,
     data: &mut RequestData,
     call_type: &str,
-) -> Result<(), HookFailure>
-where
-    R: HookRuntime,
-{
+) -> Result<(), HookFailure> {
     // CallTypes::call_mcp_tool is the one call type that runs the MCP during-call event.
     let event = if call_type == "call_mcp_tool" {
         GuardrailEventHooks::DuringMcpCall
