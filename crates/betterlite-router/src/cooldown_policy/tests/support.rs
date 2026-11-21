@@ -185,9 +185,10 @@ pub(super) fn harness_with(
     let handle = Arc::clone(&clock);
     let clock_fn: Clock = Arc::new(move || *handle.lock().unwrap_or_else(PoisonError::into_inner));
     let shared = Arc::new(FakeCooldowns::default());
+    let shared_cooldowns: Arc<dyn SharedCooldowns> = Arc::clone(&shared);
     let cooldowns = CooldownCache::new(
         &CacheSettings::default(),
-        Arc::clone(&shared) as Arc<dyn SharedCooldowns>,
+        shared_cooldowns,
         Arc::clone(&clock_fn),
     );
     let local = Arc::new(
@@ -212,8 +213,8 @@ pub(super) fn harness_with(
         None,
     );
     let events = Arc::new(RecordingObserver::default());
-    let mut observers: Vec<Arc<dyn CooldownObserver>> =
-        vec![Arc::clone(&events) as Arc<dyn CooldownObserver>];
+    let observer: Arc<dyn CooldownObserver> = Arc::clone(&events);
+    let mut observers: Vec<Arc<dyn CooldownObserver>> = vec![observer];
     observers.extend(extras);
     let service = CooldownPolicyService::new(
         policy,
