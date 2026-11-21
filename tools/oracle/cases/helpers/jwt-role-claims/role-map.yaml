@@ -1,0 +1,23 @@
+kind: helper
+name: jwt-role-claims-role-map
+env: {}
+compare: {ignore: []}
+call:
+  jwt_role_claims: {"identity": {}, "settings": {}, "claims": {"realm": {"roles": ["admin"]}}, "projection": {"kind": "user_roles", "default_value": ["fallback"]}}
+calls:
+  - jwt_role_claims: {"identity": {}, "settings": {"user_roles_jwt_field": "realm.roles", "user_allowed_roles": ["admin"]}, "claims": {"realm": {}}, "projection": {"kind": "user_roles", "default_value": null}}
+  - jwt_role_claims: {"identity": {}, "settings": {"user_roles_jwt_field": "realm.roles", "user_allowed_roles": ["admin"]}, "claims": {"realm": {}}, "projection": {"kind": "user_roles", "default_value": ["fallback"]}}
+  - jwt_role_claims: {"identity": {}, "settings": {"user_roles_jwt_field": "realm.roles", "user_allowed_roles": ["admin"]}, "claims": {"realm": {"roles": "admin"}}, "projection": {"kind": "user_roles", "default_value": null}}
+  - jwt_role_claims: {"identity": {}, "settings": {"user_roles_jwt_field": "realm.roles", "user_allowed_roles": ["admin"]}, "claims": {"realm": {"roles": null}}, "projection": {"kind": "user_roles", "default_value": ["fallback"]}}
+  - jwt_role_claims: {"identity": {}, "settings": {"user_roles_jwt_field": "realm.roles", "user_allowed_roles": ["admin"]}, "claims": {"realm": {"roles": "admin"}}, "projection": {"kind": "user_roles", "default_value": []}}
+  - jwt_role_claims: {"identity": {}, "settings": {"user_roles_jwt_field": "realm.roles", "user_allowed_roles": ["admin"]}, "claims": {"realm": ["roles"]}, "projection": {"kind": "user_roles", "default_value": ["fallback"]}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "kubernetes\\.io.roles"}, "claims": {"kubernetes.io": {"roles": ["ops"]}}, "projection": {"kind": "jwt_role", "default_value": null}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "metadata.roles"}, "claims": {"roles": ["top"]}, "projection": {"kind": "jwt_role", "default_value": null}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": ""}, "claims": {"": ["admin"]}, "projection": {"kind": "jwt_role", "default_value": ["fallback"]}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles"}, "claims": {"roles": {"admin": 1}}, "projection": {"kind": "jwt_role", "default_value": null}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles"}, "claims": {"roles": ["admin", 1, null]}, "projection": {"kind": "jwt_role", "default_value": ["fallback"]}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "role_mappings": [{"role": "dev", "internal_role": "internal_user"}, {"role": "admin", "internal_role": "proxy_admin"}]}, "claims": {"roles": ["admin", "dev"]}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "role_mappings": [{"role": "dev", "internal_role": "internal_user"}, {"role": "admin", "internal_role": "proxy_admin"}]}, "claims": {"roles": ["admin"]}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "role_mappings": [{"role": "admin", "internal_role": "proxy_admin"}, {"role": "adm*", "internal_role": "team"}]}, "claims": {"roles": ["administrator", "Admin"]}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "role_mappings": [{"role": "admin", "internal_role": "proxy_admin"}, {"role": "adm*", "internal_role": "team"}]}, "claims": {"roles": ["adm*"]}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "role_mappings": [{"role": "admin", "internal_role": "proxy_admin"}, {"role": "dev", "internal_role": "team"}]}, "claims": {"roles": {"dev": {"admin": true}}}, "projection": {"kind": "rbac_role"}}
