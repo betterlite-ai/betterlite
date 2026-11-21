@@ -59,6 +59,8 @@ class LitellmRole(TypedDict):
 
 
 Projection: TypeAlias = Scopes | UserRoles | JwtRole | AllowedRole | RbacRole | LitellmRole
+# a LitellmUserRoles member is a str, so it serializes as its value
+Outcome: TypeAlias = list[str] | bool | str | None
 
 
 class Input(TypedDict):
@@ -100,7 +102,7 @@ def build_handler(input_value: Input) -> RoleHandler:
     return handler
 
 
-def run(input_value: Input) -> JsonValue:
+def run(input_value: Input) -> Outcome:
     handler = build_handler(input_value)
     token = input_value["claims"]
     projection = input_value["projection"]

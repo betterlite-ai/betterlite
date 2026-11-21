@@ -61,7 +61,7 @@ fn user_role_settings(allowed: Option<&[&str]>) -> Settings {
     settings
 }
 
-fn mapping_settings(mappings: &[(&str, RbacRole)]) -> Settings {
+fn role_settings(mappings: &[(&str, RbacRole)], role_map: &[(&str, UserRole)]) -> Settings {
     let mut settings = Settings::default();
     settings.rbac.roles_jwt_field = Some("roles".to_owned());
     let listed = mappings.iter().map(|(role, internal_role)| RoleMapping {
@@ -69,17 +69,11 @@ fn mapping_settings(mappings: &[(&str, RbacRole)]) -> Settings {
         internal_role: *internal_role,
     });
     settings.rbac.role_mappings = Some(listed.collect());
-    settings
-}
-
-fn role_map_settings(mappings: &[(&str, UserRole)]) -> Settings {
-    let mut settings = Settings::default();
-    settings.rbac.roles_jwt_field = Some("roles".to_owned());
-    let listed = mappings.iter().map(|(jwt_role, litellm_role)| RoleMap {
+    let patterns = role_map.iter().map(|(jwt_role, litellm_role)| RoleMap {
         jwt_role: (*jwt_role).to_owned(),
         litellm_role: *litellm_role,
     });
-    settings.sync.jwt_litellm_role_map = Some(listed.collect());
+    settings.sync.jwt_litellm_role_map = Some(patterns.collect());
     settings
 }
 
@@ -127,7 +121,7 @@ fn scope_other_types_error_before_identity(#[case] scope: &str, #[case] expected
     let error = scopes(&document(&raw)).unwrap_err();
     assert!(matches!(error, RoleClaimError::ScopeType { found } if found == expected));
     let fields = identity_settings(Some("team"), Some("sub"));
-    let settings = mapping_settings(&[("admin", RbacRole::ProxyAdmin)]);
+    let settings = role_settings(&[("admin", RbacRole::ProxyAdmin)], &[]);
     let outcome = rbac_role(&identity(&raw, &fields), &settings);
     assert!(matches!(outcome, Err(RoleClaimError::ScopeType { .. })));
 }
@@ -276,7 +270,7 @@ fn role_string_character_semantics() {
         Some(RbacRole::InternalUser)
     );
     assert_eq!(rbac(raw, &fields, &allowed_word), None);
-    let by_letter = mapping_settings(&[("ab", RbacRole::ProxyAdmin), ("b", RbacRole::Team)]);
+    let by_letter = role_settings(&[("ab", RbacRole::ProxyAdmin), ("b", RbacRole::Team)], &[]);
     assert_eq!(
         mapped_role(&document(r#"{"roles":"ab"}"#), &by_letter).unwrap(),
         Some(RbacRole::Team)
@@ -288,7 +282,10 @@ fn role_dict_key_semantics() {
     let keyed = document(r#"{"ops":false,"dev":null}"#);
     assert!(is_allowed_user_role(Some(&keyed), &user_role_settings(Some(&["ops"]))).unwrap());
     assert!(!is_allowed_user_role(Some(&keyed), &user_role_settings(Some(&["false"]))).unwrap());
-    let settings = mapping_settings(&[("admin", RbacRole::ProxyAdmin), ("dev", RbacRole::Team)]);
+    let settings = role_settings(
+        &[("admin", RbacRole::ProxyAdmin), ("dev", RbacRole::Team)],
+        &[],
+    );
     let claims = document(r#"{"roles":{"dev":{"admin":true}}}"#);
     assert_eq!(
         mapped_role(&claims, &settings).unwrap(),
@@ -309,7 +306,7 @@ fn role_noniterable_and_unhashable_errors(#[case] claim: &str, #[case] expected:
     let raw = format!(r#"{{"realm":{{"roles":{claim}}},"roles":["admin"]}}"#);
     let outcome = rbac_role(&identity(&raw, &fields), &allowed);
     assert!(matches!(outcome, Err(RoleClaimError::NotIterable { .. })));
-    let settings = mapping_settings(&[("admin", RbacRole::ProxyAdmin)]);
+    let settings = role_settings(&[("admin", RbacRole::ProxyAdmin)], &[]);
     let mapped = mapped_role(&document(&format!(r#"{{"roles":{claim}}}"#)), &settings);
     assert!(matches!(mapped, Err(RoleClaimError::NotIterable { .. })));
     let nested = mapped_role(&document(r#"{"roles":["admin",["dev"]]}"#), &settings);
@@ -338,7 +335,7 @@ fn role_noniterable_and_unhashable_errors(#[case] claim: &str, #[case] expected:
 #[case::nothing(r#"{"realm":{"roles":["guest"]},"roles":["guest"]}"#, None)]
 fn rbac_admin_team_user_mapping_precedence(#[case] raw: &str, #[case] expected: Option<RbacRole>) {
     let fields = identity_settings(Some("team"), Some("sub"));
-    let mut settings = mapping_settings(&[("dev", RbacRole::ProxyAdmin)]);
+    let mut settings = role_settings(&[("dev", RbacRole::ProxyAdmin)], &[]);
     settings.claims.user_roles_jwt_field = Some("realm.roles".to_owned());
     settings.claims.user_allowed_roles = Some(names(&["ops"]));
     assert_eq!(rbac(raw, &fields, &settings), expected);
@@ -380,11 +377,14 @@ fn user_identity_bypasses_allowed_roles() {
 
 #[test]
 fn role_mapping_order_and_exactness() {
-    let settings = mapping_settings(&[
-        ("dev", RbacRole::InternalUser),
-        ("admin", RbacRole::ProxyAdmin),
-        ("adm*", RbacRole::Team),
-    ]);
+    let settings = role_settings(
+        &[
+            ("dev", RbacRole::InternalUser),
+            ("admin", RbacRole::ProxyAdmin),
+            ("adm*", RbacRole::Team),
+        ],
+        &[],
+    );
     let both = document(r#"{"roles":["admin","dev"]}"#);
     assert_eq!(
         mapped_role(&both, &settings).unwrap(),
@@ -406,10 +406,13 @@ fn role_mapping_order_and_exactness() {
 
 #[test]
 fn litellm_role_map_configuration_order() {
-    let settings = role_map_settings(&[
-        ("viewer*", UserRole::ProxyAdminViewer),
-        ("*", UserRole::InternalUser),
-    ]);
+    let settings = role_settings(
+        &[],
+        &[
+            ("viewer*", UserRole::ProxyAdminViewer),
+            ("*", UserRole::InternalUser),
+        ],
+    );
     let later_role = document(r#"{"roles":["dev","viewer-1"]}"#);
     assert_eq!(
         litellm_role(&later_role, &settings).unwrap(),
@@ -483,18 +486,18 @@ fn fnmatch_case_slash_question_brackets(
 fn empty_maps_and_roles_none() {
     let roles =
         document(r#"{"roles":["admin"],"empty":[],"blank":"","zero":0,"off":false,"void":{}}"#);
-    let mut unset = role_map_settings(&[]);
+    let mut unset = role_settings(&[], &[]);
     assert_eq!(litellm_role(&roles, &unset).unwrap(), None);
     unset.sync.jwt_litellm_role_map = None;
     assert_eq!(litellm_role(&roles, &unset).unwrap(), None);
-    let mut matching = role_map_settings(&[("*", UserRole::InternalUser)]);
+    let mut matching = role_settings(&[], &[("*", UserRole::InternalUser)]);
     matching.rbac.roles_jwt_field = Some("empty".to_owned());
     assert_eq!(litellm_role(&roles, &matching).unwrap(), None);
     matching.rbac.roles_jwt_field = None;
     assert_eq!(litellm_role(&roles, &matching).unwrap(), None);
-    let mut mappings = mapping_settings(&[]);
+    let mut mappings = role_settings(&[], &[]);
     assert_eq!(mapped_role(&roles, &mappings).unwrap(), None);
-    mappings = mapping_settings(&[("admin", RbacRole::ProxyAdmin)]);
+    mappings = role_settings(&[("admin", RbacRole::ProxyAdmin)], &[]);
     mappings.rbac.role_mappings = None;
     assert_eq!(mapped_role(&roles, &mappings).unwrap(), None);
 }
@@ -508,7 +511,7 @@ fn empty_maps_and_roles_none() {
 #[case::missing("absent")]
 fn empty_role_claims_map_to_none(#[case] field: &str) {
     let claims = document(r#"{"empty":[],"blank":"","zero":0.0,"off":false,"void":{}}"#);
-    let mut settings = mapping_settings(&[("", RbacRole::ProxyAdmin)]);
+    let mut settings = role_settings(&[("", RbacRole::ProxyAdmin)], &[]);
     settings.rbac.roles_jwt_field = Some(field.to_owned());
     assert_eq!(mapped_role(&claims, &settings).unwrap(), None);
 }
@@ -516,16 +519,19 @@ fn empty_role_claims_map_to_none(#[case] field: &str) {
 #[test]
 fn no_mapping_none() {
     let claims = document(r#"{"roles":["guest","viewer"]}"#);
-    let mappings = mapping_settings(&[("admin", RbacRole::ProxyAdmin)]);
+    let mappings = role_settings(&[("admin", RbacRole::ProxyAdmin)], &[]);
     assert_eq!(mapped_role(&claims, &mappings).unwrap(), None);
     let fields = identity_settings(Some("team"), Some("sub"));
     assert_eq!(
         rbac(r#"{"roles":["guest","viewer"]}"#, &fields, &mappings),
         None
     );
-    let role_map = role_map_settings(&[
-        ("admin*", UserRole::ProxyAdmin),
-        ("ops", UserRole::OrgAdmin),
-    ]);
+    let role_map = role_settings(
+        &[],
+        &[
+            ("admin*", UserRole::ProxyAdmin),
+            ("ops", UserRole::OrgAdmin),
+        ],
+    );
     assert_eq!(litellm_role(&claims, &role_map).unwrap(), None);
 }
