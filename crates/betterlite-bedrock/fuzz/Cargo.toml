@@ -36,6 +36,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "bedrock_reasoning_stream"
+path = "fuzz_targets/bedrock_reasoning_stream.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "bedrock_converse_content"
 path = "fuzz_targets/bedrock_converse_content.rs"
 test = false
