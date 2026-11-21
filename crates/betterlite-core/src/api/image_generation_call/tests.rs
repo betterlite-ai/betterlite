@@ -37,7 +37,7 @@ use super::error::{ImageGenerationException, provider_failure};
 use super::operations::{
     AzureRequest, BedrockRequest, BlackForestLabsRequest, Branch, BranchAnswer, CustomImageHandler,
     CustomProviderSlot, CustomRequest, EntraRequest, FoundryAuthRequest, FoundryRequest,
-    GenericRequest, Headers, ImageGenerationOperations, OpenAiRequest,
+    GenericRequest, Headers, ImageGenerationOperations, OpenAiRequest, Params,
 };
 use super::plan::{
     ImageGenerationAnswer, ImageGenerationPlan, ImageIdentity, ImageResolutionError,
@@ -214,7 +214,7 @@ impl CallableTokenProvider for StaticProvider {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 struct Sent {
     branch: &'static str,
     model: Option<String>,
@@ -268,152 +268,321 @@ where
         .collect()
 }
 
+// what the fake reads off each branch request; a field the branch does not carry stays empty
+trait Recorded {
+    fn model(&self) -> Option<&str>;
+    fn prompt(&self) -> &str;
+    fn timeout(&self) -> Duration;
+    fn options(&self) -> &Params;
+    fn api_key(&self) -> Option<&SecretString> {
+        None
+    }
+    fn api_base(&self) -> Option<String> {
+        None
+    }
+    fn api_version(&self) -> Option<&str> {
+        None
+    }
+    fn azure_ad_token(&self) -> Option<&SecretString> {
+        None
+    }
+    fn has_entra_provider(&self) -> bool {
+        false
+    }
+    fn headers(&self) -> Option<&Headers> {
+        None
+    }
+    fn litellm_params(&self) -> Option<&Params> {
+        None
+    }
+    fn base_model(&self) -> Option<&str> {
+        None
+    }
+    fn organization(&self) -> Option<&str> {
+        None
+    }
+    fn asynchronous(&self) -> bool {
+        false
+    }
+    fn now_seconds(&self) -> i64 {
+        0_i64
+    }
+    fn client(&self) -> Option<CustomClientKind> {
+        None
+    }
+    fn config(&self) -> Option<ImageGenerationConfigTag> {
+        None
+    }
+    fn provider(&self) -> Option<&str> {
+        None
+    }
+}
+
+impl Recorded for AzureRequest<'_> {
+    fn model(&self) -> Option<&str> {
+        self.model
+    }
+    fn prompt(&self) -> &str {
+        self.prompt
+    }
+    fn timeout(&self) -> Duration {
+        self.timeout
+    }
+    fn options(&self) -> &Params {
+        self.optional_params
+    }
+    fn api_key(&self) -> Option<&SecretString> {
+        self.api_key
+    }
+    fn api_base(&self) -> Option<String> {
+        self.api_base.map(str::to_owned)
+    }
+    fn api_version(&self) -> Option<&str> {
+        self.api_version
+    }
+    fn azure_ad_token(&self) -> Option<&SecretString> {
+        self.azure_ad_token
+    }
+    fn has_entra_provider(&self) -> bool {
+        self.azure_ad_token_provider.is_some()
+    }
+    fn headers(&self) -> Option<&Headers> {
+        Some(self.headers)
+    }
+    fn litellm_params(&self) -> Option<&Params> {
+        Some(self.litellm_params)
+    }
+    fn base_model(&self) -> Option<&str> {
+        self.base_model
+    }
+    fn asynchronous(&self) -> bool {
+        self.asynchronous
+    }
+    fn now_seconds(&self) -> i64 {
+        self.now_seconds
+    }
+}
+
+impl Recorded for GenericRequest<'_> {
+    fn model(&self) -> Option<&str> {
+        self.model
+    }
+    fn prompt(&self) -> &str {
+        self.prompt
+    }
+    fn timeout(&self) -> Duration {
+        self.timeout
+    }
+    fn options(&self) -> &Params {
+        self.optional_params
+    }
+    fn api_key(&self) -> Option<&SecretString> {
+        self.api_key
+    }
+    fn api_base(&self) -> Option<String> {
+        match self.litellm_params.get("api_base") {
+            Some(Json::Text(text)) => Some(text.clone()),
+            Some(
+                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_),
+            )
+            | None => None,
+        }
+    }
+    fn litellm_params(&self) -> Option<&Params> {
+        Some(self.litellm_params)
+    }
+    fn config(&self) -> Option<ImageGenerationConfigTag> {
+        Some(self.config.clone())
+    }
+    fn provider(&self) -> Option<&str> {
+        Some(self.provider)
+    }
+}
+
+impl Recorded for BlackForestLabsRequest<'_> {
+    fn model(&self) -> Option<&str> {
+        Some(self.model)
+    }
+    fn prompt(&self) -> &str {
+        self.prompt
+    }
+    fn timeout(&self) -> Duration {
+        self.timeout
+    }
+    fn options(&self) -> &Params {
+        self.optional_params
+    }
+    fn litellm_params(&self) -> Option<&Params> {
+        Some(self.litellm_params)
+    }
+    fn asynchronous(&self) -> bool {
+        self.asynchronous
+    }
+}
+
+impl Recorded for FoundryRequest<'_> {
+    fn model(&self) -> Option<&str> {
+        self.model
+    }
+    fn prompt(&self) -> &str {
+        self.prompt
+    }
+    fn timeout(&self) -> Duration {
+        self.timeout
+    }
+    fn options(&self) -> &Params {
+        self.optional_params
+    }
+    fn api_key(&self) -> Option<&SecretString> {
+        self.api_key
+    }
+    fn api_base(&self) -> Option<String> {
+        self.api_base.map(str::to_owned)
+    }
+    fn api_version(&self) -> Option<&str> {
+        self.api_version
+    }
+    fn azure_ad_token(&self) -> Option<&SecretString> {
+        self.azure_ad_token
+    }
+    fn has_entra_provider(&self) -> bool {
+        self.azure_ad_token_provider.is_some()
+    }
+    fn headers(&self) -> Option<&Headers> {
+        Some(self.headers)
+    }
+    fn litellm_params(&self) -> Option<&Params> {
+        Some(self.litellm_params)
+    }
+    fn asynchronous(&self) -> bool {
+        self.asynchronous
+    }
+}
+
+impl Recorded for OpenAiRequest<'_> {
+    fn model(&self) -> Option<&str> {
+        self.model
+    }
+    fn prompt(&self) -> &str {
+        self.prompt
+    }
+    fn timeout(&self) -> Duration {
+        self.timeout
+    }
+    fn options(&self) -> &Params {
+        self.optional_params
+    }
+    fn api_key(&self) -> Option<&SecretString> {
+        self.api_key
+    }
+    fn api_base(&self) -> Option<String> {
+        self.api_base.map(str::to_owned)
+    }
+    fn headers(&self) -> Option<&Headers> {
+        Some(self.headers)
+    }
+    fn organization(&self) -> Option<&str> {
+        self.organization
+    }
+    fn asynchronous(&self) -> bool {
+        self.asynchronous
+    }
+    fn now_seconds(&self) -> i64 {
+        self.now_seconds
+    }
+}
+
+impl Recorded for BedrockRequest<'_> {
+    fn model(&self) -> Option<&str> {
+        self.model
+    }
+    fn prompt(&self) -> &str {
+        self.prompt
+    }
+    fn timeout(&self) -> Duration {
+        self.timeout
+    }
+    fn options(&self) -> &Params {
+        self.optional_params
+    }
+    fn api_key(&self) -> Option<&SecretString> {
+        self.api_key
+    }
+    fn api_base(&self) -> Option<String> {
+        self.api_base.map(str::to_owned)
+    }
+    fn asynchronous(&self) -> bool {
+        self.asynchronous
+    }
+}
+
+impl Recorded for CustomRequest<'_> {
+    fn model(&self) -> Option<&str> {
+        self.model
+    }
+    fn prompt(&self) -> &str {
+        self.prompt
+    }
+    fn timeout(&self) -> Duration {
+        self.timeout
+    }
+    fn options(&self) -> &Params {
+        self.optional_params
+    }
+    fn api_key(&self) -> Option<&SecretString> {
+        self.api_key
+    }
+    fn api_base(&self) -> Option<String> {
+        self.api_base.map(str::to_owned)
+    }
+    fn asynchronous(&self) -> bool {
+        self.asynchronous
+    }
+    fn client(&self) -> Option<CustomClientKind> {
+        self.client
+    }
+    fn provider(&self) -> Option<&str> {
+        Some(self.provider)
+    }
+}
+
 fn snapshot(branch: &Branch<'_>) -> Sent {
     match branch {
-        Branch::Azure(request) => azure_sent(request),
-        Branch::Generic(request) => generic_sent(request),
-        Branch::BlackForestLabs(request) => black_forest_sent(request),
-        Branch::Foundry(request) => foundry_sent(request),
-        Branch::OpenAi(request) => openai_sent(request),
-        Branch::Bedrock(request) => bedrock_sent(request),
-        Branch::Custom(request) => custom_sent(request),
+        Branch::Azure(request) => record("azure", request),
+        Branch::Generic(request) => record("generic", request),
+        Branch::BlackForestLabs(request) => record("black_forest_labs", request),
+        Branch::Foundry(request) => record("azure_ai", request),
+        Branch::OpenAi(request) => record("openai", request),
+        Branch::Bedrock(request) => record("bedrock", request),
+        Branch::Custom(request) => record("custom", request),
     }
 }
 
-fn azure_sent(request: &AzureRequest<'_>) -> Sent {
+fn record(branch: &'static str, request: &dyn Recorded) -> Sent {
     Sent {
-        branch: "azure",
-        model: request.model.map(str::to_owned),
-        prompt: request.prompt.to_owned(),
-        timeout: request.timeout,
+        branch,
+        model: request.model().map(str::to_owned),
+        prompt: request.prompt().to_owned(),
+        timeout: request.timeout(),
         api_key: request
-            .api_key
+            .api_key()
             .map(|secret| secret.expose_secret().to_owned()),
-        api_base: request.api_base.map(str::to_owned),
-        api_version: request.api_version.map(str::to_owned),
+        api_base: request.api_base(),
+        api_version: request.api_version().map(str::to_owned),
         azure_ad_token: request
-            .azure_ad_token
+            .azure_ad_token()
             .map(|secret| secret.expose_secret().to_owned()),
-        has_entra_provider: request.azure_ad_token_provider.is_some(),
-        options: pairs(request.optional_params),
-        headers: pairs(request.headers),
-        litellm_params: pairs(request.litellm_params),
-        base_model: request.base_model.map(str::to_owned),
-        asynchronous: request.asynchronous,
-        now_seconds: request.now_seconds,
-        ..Sent::default()
-    }
-}
-
-fn generic_sent(request: &GenericRequest<'_>) -> Sent {
-    let api_base = match request.litellm_params.get("api_base") {
-        Some(Json::Text(text)) => Some(text.clone()),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
-        | None => None,
-    };
-    Sent {
-        branch: "generic",
-        model: request.model.map(str::to_owned),
-        prompt: request.prompt.to_owned(),
-        timeout: request.timeout,
-        api_key: request
-            .api_key
-            .map(|secret| secret.expose_secret().to_owned()),
-        api_base,
-        options: pairs(request.optional_params),
-        litellm_params: pairs(request.litellm_params),
-        config: Some(request.config.clone()),
-        provider: Some(request.provider.to_owned()),
-        ..Sent::default()
-    }
-}
-
-fn black_forest_sent(request: &BlackForestLabsRequest<'_>) -> Sent {
-    Sent {
-        branch: "black_forest_labs",
-        model: Some(request.model.to_owned()),
-        prompt: request.prompt.to_owned(),
-        timeout: request.timeout,
-        options: pairs(request.optional_params),
-        litellm_params: pairs(request.litellm_params),
-        asynchronous: request.asynchronous,
-        ..Sent::default()
-    }
-}
-
-fn foundry_sent(request: &FoundryRequest<'_>) -> Sent {
-    Sent {
-        branch: "azure_ai",
-        model: request.model.map(str::to_owned),
-        prompt: request.prompt.to_owned(),
-        timeout: request.timeout,
-        api_key: request
-            .api_key
-            .map(|secret| secret.expose_secret().to_owned()),
-        api_base: request.api_base.map(str::to_owned),
-        api_version: request.api_version.map(str::to_owned),
-        azure_ad_token: request
-            .azure_ad_token
-            .map(|secret| secret.expose_secret().to_owned()),
-        has_entra_provider: request.azure_ad_token_provider.is_some(),
-        options: pairs(request.optional_params),
-        headers: pairs(request.headers),
-        litellm_params: pairs(request.litellm_params),
-        asynchronous: request.asynchronous,
-        ..Sent::default()
-    }
-}
-
-fn openai_sent(request: &OpenAiRequest<'_>) -> Sent {
-    Sent {
-        branch: "openai",
-        model: request.model.map(str::to_owned),
-        prompt: request.prompt.to_owned(),
-        timeout: request.timeout,
-        api_key: request
-            .api_key
-            .map(|secret| secret.expose_secret().to_owned()),
-        api_base: request.api_base.map(str::to_owned),
-        options: pairs(request.optional_params),
-        headers: pairs(request.headers),
-        organization: request.organization.map(str::to_owned),
-        asynchronous: request.asynchronous,
-        now_seconds: request.now_seconds,
-        ..Sent::default()
-    }
-}
-
-fn bedrock_sent(request: &BedrockRequest<'_>) -> Sent {
-    Sent {
-        branch: "bedrock",
-        model: request.model.map(str::to_owned),
-        prompt: request.prompt.to_owned(),
-        timeout: request.timeout,
-        api_key: request
-            .api_key
-            .map(|secret| secret.expose_secret().to_owned()),
-        api_base: request.api_base.map(str::to_owned),
-        options: pairs(request.optional_params),
-        asynchronous: request.asynchronous,
-        ..Sent::default()
-    }
-}
-
-fn custom_sent(request: &CustomRequest<'_>) -> Sent {
-    Sent {
-        branch: "custom",
-        model: request.model.map(str::to_owned),
-        prompt: request.prompt.to_owned(),
-        timeout: request.timeout,
-        api_key: request
-            .api_key
-            .map(|secret| secret.expose_secret().to_owned()),
-        api_base: request.api_base.map(str::to_owned),
-        options: pairs(request.optional_params),
-        asynchronous: request.asynchronous,
-        client: request.client,
-        provider: Some(request.provider.to_owned()),
-        ..Sent::default()
+        has_entra_provider: request.has_entra_provider(),
+        options: pairs(request.options()),
+        headers: request.headers().map(pairs).unwrap_or_default(),
+        litellm_params: request.litellm_params().map(pairs).unwrap_or_default(),
+        base_model: request.base_model().map(str::to_owned),
+        organization: request.organization().map(str::to_owned),
+        asynchronous: request.asynchronous(),
+        now_seconds: request.now_seconds(),
+        client: request.client(),
+        config: request.config(),
+        provider: request.provider().map(str::to_owned),
     }
 }
 

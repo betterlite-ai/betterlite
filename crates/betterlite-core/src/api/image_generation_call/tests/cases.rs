@@ -204,18 +204,10 @@ fn generation_provider_selection(
     #[case] provider: ProviderId,
     #[case] tag: ImageGenerationConfigTag,
 ) {
-    generic_selection(slug, provider, tag);
-    special_models_required();
-    special_models_forwarded();
-}
-
-fn generic_selection(slug: &str, provider: ProviderId, tag: ImageGenerationConfigTag) {
     let ops = FakeOps::new(Some(tag.clone()));
     let identity = FakeIdentity::new(Some("image-model"), ProviderIdentity::Known(provider));
-    let settings = Settings {
-        api_base: Some(String::from("https://global.example")),
-        ..Settings::default()
-    };
+    let mut settings = Settings::default();
+    settings.api_base = Some(String::from("https://global.example"));
     let case = Case::new(&ops, &identity, settings);
     let mut selected = call(Some("image-model"), Some(slug));
     selected.api_base = Some(String::from("https://call.example"));
@@ -247,39 +239,31 @@ fn generic_selection(slug: &str, provider: ProviderId, tag: ImageGenerationConfi
 }
 
 // a resolver that answers no model is impossible after normal resolution, so it is injected here
-fn special_models_required() {
-    for (slug, provider) in [
-        ("black_forest_labs", ProviderId::BlackForestLabs),
-        ("bedrock", ProviderId::Bedrock),
-    ] {
-        let ops = FakeOps::new(None);
-        let identity = FakeIdentity::new(None, ProviderIdentity::Known(provider));
-        let case = Case::new(&ops, &identity, Settings::default());
-        let error = case
-            .run(call(Some("model"), Some(slug)))
-            .0
-            .expect_err("a missing model is rejected");
-        assert_eq!(error.message(), format!("Model needs to be set for {slug}"));
-        assert!(ops.sends().is_empty());
-    }
-}
-
-fn special_models_forwarded() {
-    for (slug, provider, asynchronous) in [
-        ("black_forest_labs", ProviderId::BlackForestLabs, true),
-        ("bedrock", ProviderId::Bedrock, false),
-    ] {
-        let ops = FakeOps::new(None);
-        let identity = FakeIdentity::new(Some("resolved"), ProviderIdentity::Known(provider));
-        let case = Case::new(&ops, &identity, Settings::default());
-        let mut forwarded = call(Some("model"), Some(slug));
-        forwarded.kwargs = kwargs(vec![("aimg_generation", Json::Bool(asynchronous))]);
-        case.run(forwarded).0.unwrap();
-        let sent = ops.sends();
-        assert_eq!(sent[0].branch, slug);
-        assert_eq!(sent[0].model.as_deref(), Some("resolved"));
-        assert_eq!(sent[0].asynchronous, asynchronous);
-    }
+#[rstest]
+#[case::black_forest_labs("black_forest_labs", ProviderId::BlackForestLabs, true)]
+#[case::bedrock("bedrock", ProviderId::Bedrock, false)]
+fn special_branches_need_a_model(
+    #[case] slug: &str,
+    #[case] provider: ProviderId,
+    #[case] asynchronous: bool,
+) {
+    let ops = FakeOps::new(None);
+    let unresolved = FakeIdentity::new(None, ProviderIdentity::Known(provider));
+    let error = Case::new(&ops, &unresolved, Settings::default())
+        .run(call(Some("model"), Some(slug)))
+        .0
+        .expect_err("a missing model is rejected");
+    assert_eq!(error.message(), format!("Model needs to be set for {slug}"));
+    assert!(ops.sends().is_empty());
+    let identity = FakeIdentity::new(Some("resolved"), ProviderIdentity::Known(provider));
+    let case = Case::new(&ops, &identity, Settings::default());
+    let mut forwarded = call(Some("model"), Some(slug));
+    forwarded.kwargs = kwargs(vec![("aimg_generation", Json::Bool(asynchronous))]);
+    case.run(forwarded).0.unwrap();
+    let sent = ops.sends();
+    assert_eq!(sent[0].branch, slug);
+    assert_eq!(sent[0].model.as_deref(), Some("resolved"));
+    assert_eq!(sent[0].asynchronous, asynchronous);
 }
 
 fn custom_provider(
@@ -614,8 +598,13 @@ fn model_alone_still_resolves() {
     assert!(!seen[0].has_key);
 }
 
-#[test]
-fn drop_settings_let_unsupported_options_through() {
+#[rstest]
+#[case::drop_params("drop_params", Json::Bool(true))]
+#[case::additional_drop_params(
+    "additional_drop_params",
+    Json::List(vec![Json::Text(String::from("imageConfig"))])
+)]
+fn drop_settings_let_unsupported_options_through(#[case] setting: &str, #[case] value: Json) {
     let ops = FakeOps::new(Some(ImageGenerationConfigTag::Recraft(String::from(
         "recraft-v3",
     ))));
@@ -624,24 +613,17 @@ fn drop_settings_let_unsupported_options_through() {
         ProviderIdentity::Known(ProviderId::Recraft),
     );
     let case = Case::new(&ops, &identity, Settings::default());
-    let dropped_names = Json::List(vec![Json::Text(String::from("imageConfig"))]);
-    for dropping in [
-        ("drop_params", Json::Bool(true)),
-        ("additional_drop_params", dropped_names),
-    ] {
-        let mut dropped = call(Some("recraft-v3"), Some("recraft"));
-        dropped.kwargs = kwargs(vec![
-            ("imageConfig", Json::Text(String::from("x"))),
-            ("tenant_id", Json::Text(String::from("t"))),
-            dropping,
-        ]);
-        case.run(dropped).0.unwrap();
-    }
+    let mut dropped = call(Some("recraft-v3"), Some("recraft"));
+    dropped.kwargs = kwargs(vec![
+        ("imageConfig", Json::Text(String::from("x"))),
+        ("tenant_id", Json::Text(String::from("t"))),
+        (setting, value),
+    ]);
+    case.run(dropped).0.unwrap();
     let sent = ops.sends();
-    assert_eq!(sent.len(), 2);
-    assert!(sent.iter().all(|sent_call| {
-        sent_call.option("imageConfig").is_none() && sent_call.option("tenant_id").is_none()
-    }));
+    assert_eq!(sent.len(), 1);
+    assert!(sent[0].option("imageConfig").is_none());
+    assert!(sent[0].option("tenant_id").is_none());
 }
 
 #[test]

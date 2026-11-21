@@ -7,7 +7,6 @@ use super::*;
 #[test]
 fn azure_image_credentials() {
     azure_call_and_global_tiers();
-    azure_environment_tiers();
     azure_caller_headers();
     azure_ad_tokens();
     azure_entra_callbacks();
@@ -16,17 +15,10 @@ fn azure_image_credentials() {
 fn azure_call_and_global_tiers() {
     let ops = FakeOps::new(Some(ImageGenerationConfigTag::Azure(String::from("dep"))));
     let identity = azure_identity("dep");
-    let settings = Settings {
-        api_base: Some(String::from("https://global.example")),
-        api_version: Some(String::from("2024-06-01")),
-        api_key: Some(SecretString::from("global-key")),
-        azure_key: Some(SecretString::from("azure-key")),
-        azure_api_base: Some(String::from("https://azure-env.example")),
-        azure_api_version: Some(String::from("2024-01-01")),
-        azure_openai_api_key: Some(SecretString::from("openai-key")),
-        azure_api_key: Some(SecretString::from("api-key-env")),
-        ..Settings::default()
-    };
+    let mut settings = azure_environment();
+    settings.api_base = Some(String::from("https://global.example"));
+    settings.api_version = Some(String::from("2024-06-01"));
+    settings.api_key = Some(SecretString::from("global-key"));
     let case = Case::new(&ops, &identity, settings);
     let mut base = call(Some("dep"), Some("azure"));
     base.api_base = Some(String::from("https://call.example"));
@@ -46,40 +38,47 @@ fn azure_call_and_global_tiers() {
     assert_eq!(sent[1].api_key.as_deref(), Some("global-key"));
 }
 
-// each Azure environment tier is reached once every tier above it is unset
-fn azure_environment_tiers() {
-    let full = Settings {
+// each Azure environment key tier is reached once every tier above it is unset
+#[rstest]
+#[case::azure_key(Some("azure-key"), Some("openai-key"), "azure-key")]
+#[case::openai_key(None, Some("openai-key"), "openai-key")]
+#[case::api_key(None, None, "api-key-env")]
+fn azure_environment_tiers(
+    #[case] azure_key: Option<&str>,
+    #[case] openai_key: Option<&str>,
+    #[case] expected: &str,
+) {
+    let ops = FakeOps::new(Some(ImageGenerationConfigTag::Azure(String::from("dep"))));
+    let identity = azure_identity("dep");
+    let mut settings = azure_environment();
+    settings.azure_key = azure_key.map(SecretString::from);
+    settings.azure_openai_api_key = openai_key.map(SecretString::from);
+    let case = Case::new(&ops, &identity, settings);
+    case.run(call(Some("dep"), Some("azure"))).0.unwrap();
+    let sent = ops.sends();
+    assert_eq!(
+        sent[0].api_base.as_deref(),
+        Some("https://azure-env.example")
+    );
+    assert_eq!(sent[0].api_version.as_deref(), Some("2024-01-01"));
+    assert_eq!(sent[0].api_key.as_deref(), Some(expected));
+}
+
+// every Azure key tier set, so a test can unset the tiers above the one it wants
+fn azure_environment() -> Settings {
+    Settings {
+        api_base: None,
+        api_version: None,
+        api_key: None,
         azure_key: Some(SecretString::from("azure-key")),
+        azure_api_type: String::from("azure"),
         azure_api_base: Some(String::from("https://azure-env.example")),
         azure_api_version: Some(String::from("2024-01-01")),
         azure_openai_api_key: Some(SecretString::from("openai-key")),
         azure_api_key: Some(SecretString::from("api-key-env")),
-        ..Settings::default()
-    };
-    let without_azure_key = Settings {
-        azure_key: None,
-        ..full.clone()
-    };
-    let only_api_key = Settings {
-        azure_openai_api_key: None,
-        ..without_azure_key.clone()
-    };
-    for (settings, key) in [
-        (full, "azure-key"),
-        (without_azure_key, "openai-key"),
-        (only_api_key, "api-key-env"),
-    ] {
-        let ops = FakeOps::new(Some(ImageGenerationConfigTag::Azure(String::from("dep"))));
-        let identity = azure_identity("dep");
-        let case = Case::new(&ops, &identity, settings);
-        case.run(call(Some("dep"), Some("azure"))).0.unwrap();
-        let sent = ops.sends();
-        assert_eq!(
-            sent[0].api_base.as_deref(),
-            Some("https://azure-env.example")
-        );
-        assert_eq!(sent[0].api_version.as_deref(), Some("2024-01-01"));
-        assert_eq!(sent[0].api_key.as_deref(), Some(key));
+        azure_ad_token: None,
+        azure_ai_api_base: None,
+        azure_ai_api_key: None,
     }
 }
 
@@ -102,10 +101,8 @@ fn azure_caller_headers() {
 fn azure_ad_tokens() {
     let ops = FakeOps::new(Some(ImageGenerationConfigTag::Azure(String::from("dep"))));
     let identity = azure_identity("dep");
-    let settings = Settings {
-        azure_ad_token: Some(SecretString::from("env-token")),
-        ..Settings::default()
-    };
+    let mut settings = Settings::default();
+    settings.azure_ad_token = Some(SecretString::from("env-token"));
     let case = Case::new(&ops, &identity, settings);
     for (value, expected) in [
         (Json::Text(String::from("token")), "token"),
@@ -235,30 +232,30 @@ fn foundry_injected_auth() {
     assert_eq!(ops.foundry()[0].0.as_deref(), Some("resolved-key"));
 }
 
-#[test]
-fn generic_kwargs_reach_their_consumers() {
+// a Null azure_ad_token_provider is no callback, so the triple still builds one; an empty tenant builds none
+#[rstest]
+#[case::complete("tenant", Json::Null, true)]
+#[case::callback("tenant", Json::Text(String::from("callback")), false)]
+#[case::empty_tenant("", Json::Null, false)]
+fn generic_kwargs_reach_their_consumers(
+    #[case] tenant: &str,
+    #[case] provider: Json,
+    #[case] builds: bool,
+) {
     let ops = FakeOps::new(Some(ImageGenerationConfigTag::Azure(String::from("dep"))));
     let identity = azure_identity("dep");
     let case = Case::new(&ops, &identity, Settings::default());
-    let complete = vec![
-        ("base_model", Json::Text(String::from("azure/base"))),
-        ("azure_username", Json::Text(String::from("user"))),
-        ("azure_password", Json::Text(String::from("pass"))),
-        ("azure_ad_token_provider", Json::Null),
-    ];
-    let callback = vec![(
-        "azure_ad_token_provider",
-        Json::Text(String::from("callback")),
-    )];
-    for entries in [
-        entra_kwargs("tenant", complete),
-        entra_kwargs("tenant", callback),
-        entra_kwargs("", Vec::new()),
-    ] {
-        let mut azure_call = call(Some("dep"), Some("azure"));
-        azure_call.kwargs = entries;
-        case.run(azure_call).0.unwrap();
-    }
+    let mut azure_call = call(Some("dep"), Some("azure"));
+    azure_call.kwargs = entra_kwargs(
+        tenant,
+        vec![
+            ("base_model", Json::Text(String::from("azure/base"))),
+            ("azure_username", Json::Text(String::from("user"))),
+            ("azure_password", Json::Text(String::from("pass"))),
+            ("azure_ad_token_provider", provider),
+        ],
+    );
+    case.run(azure_call).0.unwrap();
     let sent = ops.sends();
     assert_eq!(sent[0].base_model.as_deref(), Some("azure/base"));
     assert_eq!(ops.configs()[0].0.as_deref(), Some("azure/base"));
@@ -270,8 +267,6 @@ fn generic_kwargs_reach_their_consumers() {
         sent[0].litellm("azure_password"),
         Some(&Json::Text(String::from("pass")))
     );
-    assert!(sent[0].has_entra_provider);
-    assert!(!sent[1].has_entra_provider);
-    assert!(!sent[2].has_entra_provider);
-    assert_eq!(ops.entra().len(), 1);
+    assert_eq!(sent[0].has_entra_provider, builds);
+    assert_eq!(ops.entra().len(), usize::from(builds));
 }

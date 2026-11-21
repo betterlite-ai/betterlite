@@ -124,6 +124,9 @@ where
             .lookup("AZURE_AI_API_KEY")
             .filter(|value| !value.is_empty())
             .map(SecretString::from),
-        ..Settings::default()
+        api_base: None,
+        api_version: None,
+        api_key: None,
+        azure_key: None,
     }
 }
