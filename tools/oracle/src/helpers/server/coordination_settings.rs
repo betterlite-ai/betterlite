@@ -1,6 +1,6 @@
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::coordination_redis_settings::projection::{
-    merge_over_saved, redact_all_values, redact_credentials, scrub_credentials,
+    Redaction, merge_over_saved, redact, scrub_credentials,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -33,12 +33,12 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         let settings = (!input.settings.is_null()).then_some(&input.settings);
         match input.function {
-            Function::Redact => Ok(redact_credentials(settings)),
+            Function::Redact => Ok(redact(settings, Redaction::Credentials)),
             Function::Merge => Ok(merge_over_saved(
                 settings.unwrap_or(&input.settings),
                 (!input.saved.is_null()).then_some(&input.saved),
             )),
-            Function::Audit => Ok(redact_all_values(settings)),
+            Function::Audit => Ok(redact(settings, Redaction::Audit)),
             Function::Scrub => Ok(json!({
                 "message": scrub_credentials(&input.message, settings.unwrap_or(&input.settings)),
             })),

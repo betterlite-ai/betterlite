@@ -58,8 +58,10 @@ impl GeneralSettingsStore for DatabaseGeneralSettingsStore {
 pub async fn persisted_settings(
     store: Option<&dyn GeneralSettingsStore>,
 ) -> Result<Option<JsonValue>, SettingsError> {
-    let general = general_settings(store).await?;
-    Ok(general.as_ref().and_then(coordination_block))
+    Ok(general_settings(store)
+        .await?
+        .as_ref()
+        .and_then(coordination_block))
 }
 
 // litellm's _current_coordination_redis_settings: the persisted row wins over the yaml config state.

@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use rstest::rstest;
 
 use crate::coordination_redis_settings::decode::{
-    decode_coordination_settings, decode_persisted_coordination_settings,
+    decode_coordination_settings, decode_persisted_settings,
 };
 
 // The fuzz target runs the same two boundaries over the same seeds.
@@ -14,5 +14,5 @@ fn replays_the_coordination_settings_corpus(
 ) {
     let bytes = fs::read(path).expect("a corpus seed");
     drop(decode_coordination_settings(&bytes));
-    drop(decode_persisted_coordination_settings(&bytes));
+    drop(decode_persisted_settings(&bytes));
 }

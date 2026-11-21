@@ -3,7 +3,7 @@ use rstest::rstest;
 
 use super::support::object;
 use crate::coordination_redis_settings::projection::{
-    merge_over_saved, redact_all_values, redact_credentials, scrub_credentials,
+    Redaction, merge_over_saved, redact, scrub_credentials,
 };
 
 #[test]
@@ -12,7 +12,7 @@ fn redacts_each_credential_and_keeps_the_rest() {
         r#"{"host": "cache.internal", "port": 6379, "password": "pw", "sentinel_password": "sp", "url": "redis://:pw@cache.internal:6379/1"}"#,
     );
     assert_eq!(
-        redact_credentials(Some(&settings)),
+        redact(Some(&settings), Redaction::Credentials),
         object(
             r#"{"host": "cache.internal", "port": 6379, "password": "***REDACTED***", "sentinel_password": "***REDACTED***", "url": "***REDACTED***"}"#,
         ),
@@ -23,7 +23,7 @@ fn redacts_each_credential_and_keeps_the_rest() {
 fn redacts_an_empty_credential_but_leaves_a_null_one() {
     let settings = object(r#"{"host": "", "password": "", "sentinel_password": null}"#);
     assert_eq!(
-        redact_credentials(Some(&settings)),
+        redact(Some(&settings), Redaction::Credentials),
         object(r#"{"host": "", "password": "***REDACTED***", "sentinel_password": null}"#),
     );
 }
@@ -33,7 +33,7 @@ fn redacts_an_empty_credential_but_leaves_a_null_one() {
 #[case::empty(Some("{}"))]
 fn redacting_nothing_yields_an_empty_object(#[case] settings: Option<&str>) {
     let owned = settings.map(object);
-    assert_eq!(redact_credentials(owned.as_ref()), object("{}"));
+    assert_eq!(redact(owned.as_ref(), Redaction::Credentials), object("{}"));
 }
 
 #[test]
@@ -60,7 +60,7 @@ fn audit_masks_every_value_and_keeps_the_keys() {
     let settings =
         object(r#"{"host": "h", "password": "p", "startup_nodes": [{"host": "a", "port": 1}]}"#);
     assert_eq!(
-        redact_all_values(Some(&settings)),
+        redact(Some(&settings), Redaction::Audit),
         object(
             r#"{"host": "***REDACTED***", "password": "***REDACTED***", "startup_nodes": "***REDACTED***"}"#
         ),
@@ -72,7 +72,7 @@ fn audit_masks_every_value_and_keeps_the_keys() {
 #[case::empty(Some("{}"))]
 fn audit_of_nothing_yields_an_empty_object(#[case] settings: Option<&str>) {
     let owned = settings.map(object);
-    assert_eq!(redact_all_values(owned.as_ref()), object("{}"));
+    assert_eq!(redact(owned.as_ref(), Redaction::Audit), object("{}"));
 }
 
 #[test]

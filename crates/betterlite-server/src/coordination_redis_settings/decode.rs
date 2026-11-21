@@ -24,22 +24,18 @@ pub fn decode_coordination_settings(bytes: &[u8]) -> Result<JsonValue, DecodeErr
     let JsonValue::Object(members) = safe_json_loads(bytes)? else {
         return Err(DecodeError::NotAnObject);
     };
-    let Some(settings) = members.get(SETTINGS_FIELD) else {
-        return Err(DecodeError::MissingSettings);
-    };
-    let JsonValue::Object(_) = settings else {
-        return Err(DecodeError::SettingsNotAnObject);
-    };
-    Ok(settings.clone())
+    match members.get(SETTINGS_FIELD) {
+        Some(settings @ JsonValue::Object(_)) => Ok(settings.clone()),
+        Some(_) => Err(DecodeError::SettingsNotAnObject),
+        None => Err(DecodeError::MissingSettings),
+    }
 }
 
 // A persisted general_settings row as JSON, read down to its coordination_redis block.
-pub fn decode_persisted_coordination_settings(
-    bytes: &[u8],
-) -> Result<Option<JsonValue>, DecodeError> {
+pub fn decode_persisted_settings(bytes: &[u8]) -> Result<Option<JsonValue>, DecodeError> {
     let document = safe_json_loads(bytes)?;
-    let JsonValue::Object(_) = document else {
+    if !document.is_object() {
         return Err(DecodeError::NotAnObject);
-    };
+    }
     Ok(coordination_block(&document))
 }

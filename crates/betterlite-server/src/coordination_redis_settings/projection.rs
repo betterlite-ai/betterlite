@@ -3,40 +3,41 @@ use betterlite_config::sections::settings::JsonValue;
 use super::{REDACTED_VALUE, SENSITIVE_FIELDS};
 use crate::cache_settings_read::view::carries_value;
 
-// litellm's _redact_credentials(settings or {}): a credential keeps its key and loses its value, a null stays null.
+// Which values a read masks: litellm redacts the three credential fields on GET and every value in an audit row.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Redaction {
+    Credentials,
+    Audit,
+}
+
+// litellm's _redact_credentials(settings or {}) and _redact_all_values: one projection, with the audit mode masking every value.
 #[must_use]
-pub fn redact_credentials(settings: Option<&JsonValue>) -> JsonValue {
-    let Some(members) = settings.and_then(JsonValue::as_object) else {
+pub fn redact(settings: Option<&JsonValue>, mode: Redaction) -> JsonValue {
+    let members = match mode {
+        Redaction::Credentials => settings.and_then(JsonValue::as_object),
+        Redaction::Audit => settings
+            .filter(|value| carries_value(value))
+            .and_then(JsonValue::as_object),
+    };
+    let Some(members) = members else {
         return JsonValue::Object([].into_iter().collect());
     };
     JsonValue::Object(
         members
             .iter()
             .map(|(key, value)| {
-                let redacted = if SENSITIVE_FIELDS.contains(&key.as_str()) && !value.is_null() {
-                    JsonValue::String(REDACTED_VALUE.to_owned())
-                } else {
-                    value.clone()
+                let redacted = match mode {
+                    Redaction::Credentials => {
+                        if SENSITIVE_FIELDS.contains(&key.as_str()) && !value.is_null() {
+                            JsonValue::String(REDACTED_VALUE.to_owned())
+                        } else {
+                            value.clone()
+                        }
+                    }
+                    Redaction::Audit => JsonValue::String(REDACTED_VALUE.to_owned()),
                 };
                 (key.clone(), redacted)
             })
-            .collect(),
-    )
-}
-
-// litellm's _redact_all_values: a falsy section yields nothing, otherwise every value becomes the marker.
-#[must_use]
-pub fn redact_all_values(settings: Option<&JsonValue>) -> JsonValue {
-    let Some(members) = settings
-        .filter(|value| carries_value(value))
-        .and_then(JsonValue::as_object)
-    else {
-        return JsonValue::Object([].into_iter().collect());
-    };
-    JsonValue::Object(
-        members
-            .keys()
-            .map(|key| (key.clone(), JsonValue::String(REDACTED_VALUE.to_owned())))
             .collect(),
     )
 }

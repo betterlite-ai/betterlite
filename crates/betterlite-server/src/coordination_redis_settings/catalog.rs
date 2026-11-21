@@ -1,7 +1,7 @@
 use betterlite_config::sections::settings::JsonValue;
 use serde::Serialize;
 
-use super::projection::redact_credentials;
+use super::projection::{Redaction, redact};
 
 // litellm declares field_type as a plain string; these four spellings are its whole catalog.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -182,7 +182,7 @@ pub const CATALOG: [CoordinationRedisField; 15] = [
 // A fresh catalog per call, so one request's filled values never reach the next response.
 #[must_use]
 pub fn fields(settings: Option<&JsonValue>) -> Vec<CoordinationRedisField> {
-    let values = redact_credentials(settings);
+    let values = redact(settings, Redaction::Credentials);
     let Some(current) = values.as_object() else {
         return Vec::new();
     };
