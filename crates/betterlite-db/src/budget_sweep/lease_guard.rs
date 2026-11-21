@@ -7,7 +7,7 @@ use tokio_util::task::TaskTracker;
 
 use crate::queues::pod_lock::{LockCache, PodLockManager};
 
-// The release side of a lease holder: the pod lock manager here, and the server's scheduled export ports built on it.
+// The release side of a lease holder, so the guard serves any lock port that releases by job name, not only the pod lock manager.
 pub trait LockReleaser: Send + Sync {
     fn release(&self, cronjob_id: &str) -> impl Future<Output = ()> + Send;
 }
