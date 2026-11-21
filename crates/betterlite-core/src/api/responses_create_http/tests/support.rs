@@ -650,12 +650,13 @@ impl AgenticCallback for Scripted {
         &self,
         call: &AgenticCall<'_>,
     ) -> Result<AgenticGate, AgenticHookError> {
-        self.recorder
-            .record(ScriptedCall::Gate(messages(call.messages)));
-        Ok(AgenticGate {
+        let gate = AgenticGate {
             run: true,
             tools: JsonMap::new(),
-        })
+        };
+        self.recorder
+            .record(ScriptedCall::Gate(messages(call.messages)));
+        Ok(gate)
     }
 
     async fn run_agentic_loop(
