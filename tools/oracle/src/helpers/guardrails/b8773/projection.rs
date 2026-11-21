@@ -73,10 +73,9 @@ where
         .await
     {
         Ok(returned) => {
-            let tool_calls = match returned.tool_calls {
-                Some(calls) => json!(tool_tags(&calls)),
-                None => Value::Null,
-            };
+            let tool_calls = returned
+                .tool_calls
+                .map_or(Value::Null, |calls| json!(tool_tags(&calls)));
             Ok(json!({
                 "texts": returned.texts,
                 "tool_calls": tool_calls,
