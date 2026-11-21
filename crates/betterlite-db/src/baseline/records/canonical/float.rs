@@ -52,7 +52,7 @@ fn scientific(digits: &str, exponent: i32) -> String {
         out.push_str(&rest);
     }
     out.push('e');
-    out.push(if exponent < 0_i32 { '-' } else { '+' });
+    out.push(if exponent.is_negative() { '-' } else { '+' });
     out.push_str(&format!("{:02}", exponent.unsigned_abs()));
     out
 }

@@ -25,7 +25,8 @@
         },
         "audio_tokens": 0,
         "image_tokens": 1,
-        "web_search_requests": 4
+        "web_search_requests": 4,
+        "query_count": null
       },
       "cache_read_input_tokens": 2,
       "cache_creation_input_tokens": 3,

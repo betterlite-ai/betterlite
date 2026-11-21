@@ -175,3 +175,5 @@ fn optional_count(value: Option<&Json>) -> Option<i64> {
     }
     number.as_i64()
 }
+
+mod tests;
