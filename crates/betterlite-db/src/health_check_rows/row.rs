@@ -30,7 +30,11 @@ fn details_value(row: &Row) -> Result<Option<Json>, HealthCheckRowsError> {
                 .map_err(|source| HealthCheckRowsError::Details { source })?;
             Ok(Some(decoded))
         }
-        other => Ok(Some(other)),
+        other @ Json::Null
+        | other @ Json::Bool(_)
+        | other @ Json::Number(_)
+        | other @ Json::List(_)
+        | other @ Json::Object(_) => Ok(Some(other)),
     }
 }
 
