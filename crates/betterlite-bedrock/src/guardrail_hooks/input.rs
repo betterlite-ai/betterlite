@@ -5,11 +5,15 @@ use super::errors::HookFailure;
 use super::runtime::{HookRuntime, RequestData, ScanCall, ScanSource};
 
 // LiteLLM's async_pre_call_hook: scan the user messages before the call and write the guardrail's masked text back.
-pub async fn pre_call_hook<R: HookRuntime>(
+pub async fn pre_call_hook<R>(
     runtime: &R,
     data: &mut RequestData,
     call_type: &str,
-) -> Result<(), HookFailure> {
+) -> Result<(), HookFailure>
+where
+    R: HookRuntime,
+{
+    tracing::debug!("inside the bedrock pre-call hook for call type {call_type}");
     scan_for_event(runtime, data, call_type, GuardrailEventHooks::PreCall).await
 }
 
