@@ -1,0 +1,13 @@
+kind: helper
+name: azure-chat-call-v1-body-model
+call:
+  azure_chat_call:
+    function: completion
+    cases:
+      - model: gpt-4o-deployment
+        messages:
+          - {role: user, content: hi}
+        api_key: key
+        api_base: https://resource.openai.azure.com/openai/v1
+env: {}
+compare: {ignore: []}

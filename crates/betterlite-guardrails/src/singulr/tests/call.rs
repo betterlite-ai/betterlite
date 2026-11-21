@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use axum::http::StatusCode;
+use betterlite_test_ports::refused_port::RefusedPort;
 use secrecy::SecretString;
 use tokio::runtime::Builder;
 
@@ -202,7 +203,8 @@ async fn an_http_error_passes_when_block_on_error_is_false() {
 
 #[tokio::test]
 async fn a_transport_failure_says_the_api_is_unreachable() {
-    let base = support::refused_base().await;
+    let refused = RefusedPort::bind().unwrap();
+    let base = format!("http://{}", refused.address);
     let guardrail = support::guardrail(&base);
     let error = guardrail
         .apply_guardrail(
@@ -223,7 +225,8 @@ async fn a_transport_failure_says_the_api_is_unreachable() {
 
 #[tokio::test]
 async fn a_transport_failure_passes_when_block_on_error_is_false() {
-    let base = support::refused_base().await;
+    let refused = RefusedPort::bind().unwrap();
+    let base = format!("http://{}", refused.address);
     let guardrail = support::open_guardrail(&base);
     let inputs = support::inputs(r#"{"texts": ["hello"]}"#);
     let returned = guardrail

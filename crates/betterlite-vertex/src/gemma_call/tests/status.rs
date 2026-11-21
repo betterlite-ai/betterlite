@@ -1,7 +1,6 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::net::TcpStream;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -13,9 +12,10 @@ use betterlite_http::proxy::base_builder;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_test_ports::full_listener::FullListener;
 use http::Method;
 use http::header::HeaderMap;
-use tokio::net::{TcpListener, TcpSocket};
+use tokio::net::TcpListener;
 use url::Url;
 
 use crate::gemma_call::error::FailureStatus as _;
@@ -56,16 +56,9 @@ async fn a_pooled_timeout_reports_408() {
 
 #[tokio::test]
 async fn a_pooled_connect_timeout_reports_408() {
-    let socket = TcpSocket::new_v4().expect("a socket");
-    socket
-        .bind("127.0.0.1:0".parse().expect("a loopback address"))
-        .expect("a bound socket");
-    let listener = socket.listen(1).expect("a listening socket");
-    let address = listener.local_addr().expect("the listener address");
     // the accept queue stays full, so the client's connect hangs until its connect timeout ends the call
-    let _fillers: Vec<TcpStream> = (0_u8..4)
-        .filter_map(|_| TcpStream::connect_timeout(&address, Duration::from_millis(100)).ok())
-        .collect();
+    let full = FullListener::bind().expect("a saturated listener");
+    let address = full.address;
     let policy = Arc::new(
         ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("the default policy"),
     );

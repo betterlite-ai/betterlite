@@ -1,0 +1,28 @@
+kind: helper
+name: auth-user-lookup-cadence-roles-classification
+call:
+  auth_user_lookup:
+    kind: cadence
+    max_size: 100
+    times_ms: [1000, 6000, 6000]
+    operations:
+      - {op: update, key: "user_id:u1", value: null}
+      - {op: should_check, key: "user_id:u1", expiry: 5}
+      - {op: should_check, key: "user_id:missing", expiry: 5}
+calls:
+  - auth_user_lookup:
+      kind: role_selection
+      role: internal_user
+      role_permissions:
+        - {role: internal_user, models: [shared-model], routes: [/v1/chat/completions]}
+  - auth_user_lookup:
+      kind: role_validation
+      role_permissions:
+        - {role: team, models: [m], routes: []}
+  - auth_user_lookup:
+      kind: read_error_classification
+      errors:
+        - {kind: message, message: boom}
+        - {kind: io, message: "connection refused"}
+env: {}
+compare: {ignore: []}

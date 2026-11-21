@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use betterlite_http_fixture::server::serve;
 use betterlite_models::controls::json_value::JsonValue;
+use betterlite_test_ports::refused_port::RefusedPort;
 use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -11,8 +12,8 @@ use secrecy::{ExposeSecret as _, SecretString};
 use super::AgentsDeleteVersionsError;
 use super::asynchronous::async_list_agent_versions;
 use super::support::{
-    Call, Fixture, FixtureError, assert_provider_refusal, caller_headers, clients, dead_address,
-    exposed, failing_environment, recorded_error, resolved_timeout,
+    Call, Fixture, FixtureError, assert_provider_refusal, caller_headers, clients, exposed,
+    failing_environment, recorded_error, resolved_timeout,
 };
 use super::synchronous::list_agent_versions;
 use crate::interactions::base::tests::support as server;
@@ -207,7 +208,8 @@ fn versions_passes_a_connection_failure_through() {
     let fixture = fixture();
     let mut clients = clients();
     let mut logging = Logging::default();
-    let call = Call::new(dead_address());
+    let refused = RefusedPort::bind().unwrap();
+    let call = Call::new(refused.address);
 
     let error = list_agent_versions(
         &fixture,
@@ -239,7 +241,8 @@ fn versions_reports_a_failing_environment_without_logging() {
     fixture.fail_environment = true;
     let mut clients = clients();
     let mut logging = Logging::default();
-    let call = Call::new(dead_address());
+    let refused = RefusedPort::bind().unwrap();
+    let call = Call::new(refused.address);
 
     let error = list_agent_versions(
         &fixture,
@@ -394,7 +397,8 @@ async fn async_versions_reports_a_failing_environment_without_logging() {
     let fixture = failing_environment();
     let mut clients = clients();
     let mut logging = Logging::default();
-    let call = Call::new(dead_address());
+    let refused = RefusedPort::bind().unwrap();
+    let call = Call::new(refused.address);
 
     let error = async_list_agent_versions(
         &fixture,

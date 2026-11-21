@@ -1,0 +1,35 @@
+name: proxy-custom-redirect
+config: |
+  model_list:
+    - model_name: redirect-model
+      litellm_params:
+        model: custom/my-custom-model
+        api_base: "{{upstream}}/redirect"
+        api_key: oracle-redirect-key
+  router_settings: {num_retries: 0}
+env: {}
+request:
+  method: POST
+  path: /chat/completions
+  headers: {content-type: application/json, authorization: Bearer oracle-master, x-litellm-call-id: oracle-call-custom-redirect}
+  body:
+    model: redirect-model
+    messages: [{role: user, content: hi}]
+upstream:
+  - status: 307
+    headers: {location: /custom-redirect}
+    body: ""
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      data:
+        - prompt: hi
+          output: ["Paris."]
+      message: ok
+compare:
+  headers: [content-type, x-litellm-call-id, x-litellm-model-group]
+  headers_present: []
+  upstream_headers: [content-type]
+  ignore:
+    - {pointer: /id, why: LiteLLM generates a fresh chatcmpl id and betterlite leaves the optional id unset}
+    - {pointer: /created, why: the completion time is read from the clock on each side}

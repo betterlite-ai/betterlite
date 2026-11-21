@@ -1,0 +1,59 @@
+kind: helper
+name: auth-user-lookup-role-validation
+call:
+  auth_user_lookup:
+    kind: role_validation
+    role_permissions: []
+calls:
+  - auth_user_lookup:
+      kind: role_validation
+      role_permissions:
+        - {role: proxy_admin}
+        - {role: team, models: [], routes: []}
+        - {role: internal_user, models: [m], routes: [r]}
+  - auth_user_lookup:
+      kind: role_validation
+      role_permissions:
+        - {role: team, models: null, routes: null}
+  - auth_user_lookup:
+      kind: role_validation
+      role_permissions:
+        - {role: proxy_admin, extra: 1}
+  - auth_user_lookup:
+      kind: role_validation
+      role_permissions:
+        - {role: proxy_admin_viewer}
+  - auth_user_lookup:
+      kind: role_validation
+      role_permissions:
+        - {role: null}
+  - auth_user_lookup:
+      kind: role_validation
+      role_permissions:
+        - {models: []}
+  - auth_user_lookup:
+      kind: role_validation
+      role_permissions:
+        - {role: team, models: m}
+  - auth_user_lookup:
+      kind: role_validation
+      role_permissions:
+        - {role: team, models: {a: 1}}
+  - auth_user_lookup:
+      kind: role_validation
+      role_permissions:
+        - {role: team, routes: [{a: 1}]}
+  - auth_user_lookup:
+      kind: role_validation
+      role_permissions: {role: proxy_admin}
+  - auth_user_lookup:
+      kind: role_validation
+      role_permissions: proxy_admin
+  - auth_user_lookup:
+      kind: role_validation
+      role_permissions: 5
+  - auth_user_lookup:
+      kind: role_validation
+      role_permissions: true
+env: {}
+compare: {ignore: []}

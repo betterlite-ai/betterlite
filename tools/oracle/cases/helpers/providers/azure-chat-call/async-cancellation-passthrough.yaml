@@ -1,0 +1,16 @@
+kind: helper
+name: azure-chat-call-async-cancellation
+call:
+  azure_chat_call:
+    function: completion
+    cases:
+      - model: gpt-4o-deployment
+        messages:
+          - {role: user, content: hi}
+        api_key: key
+        acompletion: true
+        client: async
+        cancel: true
+        answer: {error: pending}
+env: {}
+compare: {ignore: []}

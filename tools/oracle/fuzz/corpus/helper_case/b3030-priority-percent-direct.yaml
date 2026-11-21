@@ -1,0 +1,9 @@
+kind: helper
+name: provider_attribution-priority-percent-direct
+call:
+  b3030:
+    function: priority_percent
+    value: 0.9
+    model_info: null
+env: {}
+compare: {ignore: []}

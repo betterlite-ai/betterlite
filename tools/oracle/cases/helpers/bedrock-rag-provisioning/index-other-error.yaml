@@ -1,0 +1,18 @@
+kind: helper
+name: index-other-error
+call:
+  b3457:
+    step: index
+    vector:
+      custom_llm_provider: bedrock
+      aws_region_name: us-west-2
+      embedding_model: amazon.titan-embed-text-v2:0
+      aws_access_key_id: AKIDORACLE
+      aws_secret_access_key: oracle-secret
+    environment: {}
+    unique_id: "0123abcd"
+    collection_name: "litellm-kb-0123abcd"
+    endpoint: "https://abc.us-west-2.aoss.amazonaws.com"
+    failures: ["bad request"]
+env: {}
+compare: {ignore: []}
