@@ -25,7 +25,7 @@ use tracing_subscriber::registry;
 
 use super::{
     DcrClientStore, DcrHydration, PersistedDcrCredentials, StoreReadError,
-    redirect_uri_not_registered,
+    parse_persisted_credentials, redirect_uri_not_registered,
 };
 use crate::server_record::{MCPServer, SecretCredential};
 
@@ -325,6 +325,31 @@ async fn an_empty_blob_leaves_the_server_alone(#[case] stored: JsonValue) {
     );
     assert_eq!(server.fields.client_id, None);
     assert_eq!(client_secret(&server).as_deref(), Some("leftover-secret"));
+}
+
+#[rstest]
+#[case::null(JsonValue::Null, false, None)]
+#[case::empty_object(JsonValue::Object(BTreeMap::new()), false, None)]
+#[case::unknown_fields(blob(&[("grant_types", JsonValue::Array(Vec::new()))]), true, None)]
+#[case::object(blob(&[("client_id", JsonValue::String("stored".to_owned()))]), true, Some("stored"))]
+#[case::empty_array(JsonValue::Array(Vec::new()), false, None)]
+#[case::array(JsonValue::Array(vec![JsonValue::String("stored".to_owned())]), false, None)]
+#[case::empty_string(JsonValue::String(String::new()), false, None)]
+#[case::json_string(JsonValue::String("{\"client_id\": \"stored\"}".to_owned()), true, Some("stored"))]
+#[case::plain_string(JsonValue::String("garbage".to_owned()), false, None)]
+#[case::number(JsonValue::Number(serde_json::Number::from(5)), false, None)]
+#[case::boolean(JsonValue::Bool(true), false, None)]
+fn parse_persisted_credentials_follows_the_blob_shape(
+    #[case] blob_value: JsonValue,
+    #[case] present: bool,
+    #[case] client_id: Option<&str>,
+) {
+    let parsed = parse_persisted_credentials(&blob_value);
+    assert_eq!(parsed.is_some(), present);
+    assert_eq!(
+        parsed.as_ref().and_then(|item| item.client_id.as_deref()),
+        client_id
+    );
 }
 
 #[tokio::test]

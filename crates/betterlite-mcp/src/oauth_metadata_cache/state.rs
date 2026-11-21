@@ -26,7 +26,7 @@ impl CacheState {
     pub(super) fn prune(&mut self, now: Instant) {
         self.entries.retain(|_, entry| entry.expires_at > now);
         let overflow = self.entries.len().saturating_sub(MAX_SIZE);
-        if overflow > 0 {
+        if overflow != 0 {
             let mut by_expiry: Vec<(&CacheKey, &CacheEntry)> = self.entries.iter().collect();
             by_expiry.sort_by_key(|(_, entry)| (entry.expires_at, entry.sequence));
             let evicted: Vec<CacheKey> = by_expiry

@@ -48,8 +48,6 @@ pub fn parse_persisted_credentials(blob: &JsonValue) -> Option<PersistedDcrCrede
     match blob {
         JsonValue::Null => None,
         JsonValue::Object(fields) if fields.is_empty() => None,
-        JsonValue::Array(items) if items.is_empty() => None,
-        JsonValue::String(text) if text.is_empty() => None,
         JsonValue::String(text) => serde_json::from_str(text).ok(),
         JsonValue::Object(_) | JsonValue::Array(_) | JsonValue::Bool(_) | JsonValue::Number(_) => {
             serde_json::to_string(blob)
