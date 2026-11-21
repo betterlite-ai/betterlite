@@ -5,6 +5,7 @@ use std::time::Duration;
 use betterlite_db::mcp_stored_contracts::JsonValue;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
+use tokio::task::yield_now;
 use tokio::time::Instant;
 
 use super::{CacheKey, MAX_SIZE, NEGATIVE_TTL_SECONDS, OAuthMetadataCache, TTL_SECONDS};
@@ -247,7 +248,7 @@ async fn two_waiters_on_one_key_enter_one_at_a_time() {
         entered.send(()).await.unwrap();
     });
     started_receiver.recv().await.unwrap();
-    tokio::task::yield_now().await;
+    yield_now().await;
     assert!(entered_receiver.try_recv().is_err());
     assert_eq!(fetcher_count(&cache, &key), 2);
     drop(first);

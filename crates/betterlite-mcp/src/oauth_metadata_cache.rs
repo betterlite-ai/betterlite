@@ -109,8 +109,10 @@ impl OAuthMetadataCache {
     }
 
     pub fn invalidate(&self, server_id: &str) {
-        let mut state = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
-        state.invalidate(server_id);
+        self.inner
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .invalidate(server_id);
     }
 }
 

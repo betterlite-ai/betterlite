@@ -91,9 +91,9 @@ where
         server: &mut MCPServer,
         credentials: &PersistedDcrCredentials,
     ) -> bool {
-        let client_id =
+        let decrypted =
             decrypt_credential(&self.cipher, credentials.client_id.as_deref(), "client_id");
-        let Some(client_id) = client_id.filter(|value| !value.is_empty()) else {
+        let Some(client_id) = decrypted.filter(|value| !value.is_empty()) else {
             return false;
         };
         server.fields.client_id = Some(client_id);
@@ -104,7 +104,7 @@ where
         )
         .map(|secret| SecretCredential(StoredSecret(SecretString::from(secret))));
         server.fields.token_endpoint_auth_method =
-            parse_token_endpoint_auth_method(credentials.token_endpoint_auth_method.as_deref());
+            parse_token_auth_method(credentials.token_endpoint_auth_method.as_deref());
         true
     }
 
@@ -130,6 +130,7 @@ where
     }
 
     #[must_use]
+    // ast-grep-ignore: no-long-names
     pub async fn hydrate_config_server_dcr_client(&self, server: &mut MCPServer) -> bool {
         if server
             .fields
@@ -146,7 +147,7 @@ where
     }
 }
 
-fn parse_token_endpoint_auth_method(raw: Option<&str>) -> Option<MCPTokenEndpointAuthMethod> {
+fn parse_token_auth_method(raw: Option<&str>) -> Option<MCPTokenEndpointAuthMethod> {
     let Some(text) = raw else {
         return None;
     };
