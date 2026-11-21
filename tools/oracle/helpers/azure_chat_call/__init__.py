@@ -1,7 +1,6 @@
 import asyncio
 from typing import cast
 
-import litellm
 from litellm.llms.azure.common_utils import AzureOpenAIError
 from litellm.llms.openai.openai import OpenAIChatCompletion
 from openai import OpenAIError
@@ -87,12 +86,12 @@ async def o_series_call(case: CallCase) -> JsonValue:
     recorder = Recorder()
     kwargs = o_series_kwargs(case, recorder, supplied_client(case, handler.mock))
     capture = Capture()
-    original = OpenAIChatCompletion.completion
+    original = OpenAIChatCompletion.completion  # type: ignore[misc]  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L645-L646
     OpenAIChatCompletion.completion = capture  # type: ignore[method-assign, assignment]  # pyright: ignore[reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L645-L646
     try:
         cast(OSeriesChat, handler).completion(**kwargs)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/chat/o_series_handler.py#L23-L79
     finally:
-        OpenAIChatCompletion.completion = original  # type: ignore[method-assign, assignment]  # pyright: ignore[reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L645-L646
+        OpenAIChatCompletion.completion = original  # type: ignore[method-assign]  # pyright: ignore[reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L645-L646
     return report(
         handler,
         fixture,
@@ -102,7 +101,6 @@ async def o_series_call(case: CallCase) -> JsonValue:
 
 
 def run(input_value: Input) -> JsonValue:
-    litellm.suppress_debug_info = True
     if input_value["function"] == "completion":
         return {"calls": [asyncio.run(completion_call(case)) for case in input_value["cases"]]}
     return {"calls": [asyncio.run(o_series_call(case)) for case in input_value["cases"]]}

@@ -2,6 +2,7 @@ import asyncio
 from typing import Literal
 
 import httpx
+import litellm
 from openai import AsyncAzureOpenAI, AzureOpenAI
 from pydantic import JsonValue
 
@@ -134,6 +135,7 @@ def response_for(answer: Answer, request: httpx.Request) -> httpx.Response:
 
 class Fixture:
     def __init__(self, answer: Answer, caller: JsonValue) -> None:
+        litellm.suppress_debug_info = True
         self.answer = answer
         self.caller = caller
         self.requests: list[JsonValue] = []

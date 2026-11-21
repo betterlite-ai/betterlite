@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from typing import Final, TypedDict, cast
+from typing import Final, cast
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
@@ -203,21 +203,15 @@ def client_view(client: AnyClient | None) -> JsonValue:
     return {"kind": kind_name(client), "api_key": client.api_key}
 
 
-class ParamsView(TypedDict):
-    azure_ad_token: JsonValue
-    max_retries: JsonValue
-    timeout: JsonValue
-
-
 def params_view(params: JsonValue) -> JsonValue:
     if params is None:
         return None
     view = PARAMS_VIEW.validate_python(params)
-    return ParamsView(
-        azure_ad_token=view.get("azure_ad_token"),
-        max_retries=view.get("max_retries"),
-        timeout=view.get("timeout"),
-    )
+    return {
+        "azure_ad_token": view.get("azure_ad_token"),
+        "max_retries": view.get("max_retries"),
+        "timeout": view.get("timeout"),
+    }
 
 
 FORWARDED: Final = (
