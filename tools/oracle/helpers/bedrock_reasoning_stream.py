@@ -1,5 +1,6 @@
+from collections.abc import Mapping
 from datetime import UTC, datetime
-from typing import NotRequired, TypedDict
+from typing import NotRequired, Protocol, TypedDict, cast
 
 import httpx
 from litellm.litellm_core_utils.core_helpers import (
@@ -21,7 +22,26 @@ from litellm.types.utils import ModelResponse, ModelResponseStream
 from pydantic import JsonValue, TypeAdapter
 
 JsonObject = dict[str, JsonValue]
-JsonAdapter: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
+JSON_ADAPTER: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
+
+
+class ChunkParser(Protocol):
+    def chunk_parser(self, chunk: dict[str, JsonValue]) -> ModelResponseStream: ...
+
+
+class RuntimeConfig(Protocol):
+    def transform_response(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/chat_completions/transformation.py#L450-L463
+        self,
+        model: str,
+        raw_response: httpx.Response,
+        model_response: ModelResponse,
+        logging_obj: Logging,
+        request_data: dict[str, JsonValue],
+        messages: list[dict[str, str]],
+        optional_params: dict[str, JsonValue],
+        litellm_params: dict[str, JsonValue],
+        encoding: None,
+    ) -> ModelResponse: ...
 
 
 class SplitStep(TypedDict):
@@ -109,20 +129,6 @@ STREAM_ADAPTER: TypeAdapter[StreamView] = TypeAdapter(StreamView)
 REPLY_ADAPTER: TypeAdapter[ReplyView] = TypeAdapter(ReplyView)
 
 
-def make_logging() -> Logging:
-    messages: list[dict[str, str]] = []
-    return Logging(
-        model="bedrock-runtime",
-        messages=messages,
-        stream=False,
-        call_type="completion",
-        start_time=datetime(2020, 1, 1, tzinfo=UTC),
-        litellm_call_id="call-1",
-        function_id="function-1",
-        litellm_trace_id="trace-1",
-    )
-
-
 def split_view(state: ReasoningTagSplitter, reasoning: str, content: str) -> JsonObject:
     return {
         "phase": state.phase,
@@ -144,12 +150,11 @@ def run_split(step: SplitStep) -> JsonValue:
         state, reasoning, content = state.feed(fragment)
         feeds.append(split_view(state, reasoning, content))
     state, flush_reasoning, flush_content = state.flush()
-    flush = split_view(state, flush_reasoning, flush_content)
     again, again_reasoning, again_content = state.flush()
-    return JsonAdapter.validate_python(
+    return JSON_ADAPTER.validate_python(
         {
             "feeds": feeds,
-            "flush": flush,
+            "flush": split_view(state, flush_reasoning, flush_content),
             "flush_again": split_view(again, again_reasoning, again_content),
             "messages": [message_view(message) for message in step["messages"]],
         }
@@ -158,21 +163,19 @@ def run_split(step: SplitStep) -> JsonValue:
 
 def chunk_view(reply: ModelResponseStream) -> JsonObject:
     view = STREAM_ADAPTER.validate_json(reply.model_dump_json())
-    choices: list[JsonValue] = []
-    for choice in view["choices"]:
-        delta = choice["delta"]
-        choices.append(
-            JsonAdapter.validate_python(
-                {
-                    "index": choice["index"],
-                    "finish_reason": choice["finish_reason"],
-                    "role": delta.get("role"),
-                    "content": delta.get("content"),
-                    "reasoning_content": delta.get("reasoning_content"),
-                    "tool_calls": delta.get("tool_calls"),
-                }
-            )
+    choices = [
+        JSON_ADAPTER.validate_python(
+            {
+                "index": choice["index"],
+                "finish_reason": choice["finish_reason"],
+                "role": choice["delta"].get("role"),
+                "content": choice["delta"].get("content"),
+                "reasoning_content": choice["delta"].get("reasoning_content"),
+                "tool_calls": choice["delta"].get("tool_calls"),
+            }
         )
+        for choice in view["choices"]
+    ]
     return {
         "id": view["id"],
         "created": view["created"],
@@ -184,17 +187,20 @@ def chunk_view(reply: ModelResponseStream) -> JsonObject:
 
 
 def run_chunks(step: ChunkStep) -> JsonValue:
-    handler = BedrockRuntimeChatCompletionsStreamingHandler(
-        streaming_response=iter(()), sync_stream=True
+    handler = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/chat_completions/transformation.py#L218-L227
+        ChunkParser,
+        BedrockRuntimeChatCompletionsStreamingHandler(
+            streaming_response=iter(()), sync_stream=True
+        ),
     )
-    return JsonAdapter.validate_python(
+    return JSON_ADAPTER.validate_python(
         [chunk_view(handler.chunk_parser(chunk)) for chunk in step["chunks"]]
     )
 
 
 def run_effort(step: EffortStep) -> JsonValue:
     refused = chat_completions_params_refused_while_reasoning(step["model"], step["params"])
-    return JsonAdapter.validate_python(
+    return JSON_ADAPTER.validate_python(
         {
             "non_string": sorted(non_string_reasoning_effort(step["params"])),
             "refused_while_reasoning": sorted(refused),
@@ -203,12 +209,12 @@ def run_effort(step: EffortStep) -> JsonValue:
 
 
 def refusal_view(model: str, params: JsonObject) -> JsonValue:
-    return JsonAdapter.validate_python(
+    return JSON_ADAPTER.validate_python(
         {
             "model": model,
             "refused_params": sorted(chat_completions_params_refused_for(model)),
             "refused_efforts": sorted(chat_completions_reasoning_efforts_refused_for(model)),
-            "without_refused_effort": JsonAdapter.validate_python(
+            "without_refused_effort": JSON_ADAPTER.validate_python(
                 dict(without_refused_reasoning_effort(model, params))
             ),
         }
@@ -216,13 +222,13 @@ def refusal_view(model: str, params: JsonObject) -> JsonValue:
 
 
 def run_refusals(step: RefusalStep) -> JsonValue:
-    return JsonAdapter.validate_python(
+    return JSON_ADAPTER.validate_python(
         [refusal_view(model, step["params"]) for model in step["models"]]
     )
 
 
 def reply_choice_view(choice: ReplyChoiceView) -> JsonValue:
-    return JsonAdapter.validate_python(
+    return JSON_ADAPTER.validate_python(
         {
             "index": choice["index"],
             "finish_reason": choice["finish_reason"],
@@ -233,31 +239,42 @@ def reply_choice_view(choice: ReplyChoiceView) -> JsonValue:
 
 
 def run_buffered(step: BufferedStep) -> JsonValue:
-    config = AmazonBedrockRuntimeChatCompletionsConfig()
+    config = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/chat_completions/transformation.py#L450-L463
+        RuntimeConfig,
+        AmazonBedrockRuntimeChatCompletionsConfig(),
+    )
     headers = httpx.Headers(step["headers"])
-    request_data: dict[str, JsonValue] = {}
-    optional_params: dict[str, JsonValue] = {}
-    litellm_params: dict[str, JsonValue] = {}
+    messages: list[dict[str, str]] = []
+    logging_obj = Logging(
+        model="bedrock-runtime",
+        messages=messages,
+        stream=False,
+        call_type="completion",
+        start_time=datetime(2020, 1, 1, tzinfo=UTC),
+        litellm_call_id="call-1",
+        function_id="function-1",
+        litellm_trace_id="trace-1",
+    )
     response = config.transform_response(
         model="bedrock-runtime",
         raw_response=httpx.Response(200, json=step["reply"], headers=headers),
         model_response=ModelResponse(),
-        logging_obj=make_logging(),
-        request_data=request_data,
-        messages=[],
-        optional_params=optional_params,
-        litellm_params=litellm_params,
+        logging_obj=logging_obj,
+        request_data={},
+        messages=messages,
+        optional_params={},
+        litellm_params={},
         encoding=None,
     )
     view = REPLY_ADAPTER.validate_json(response.model_dump_json())
-    hidden = get_provider_response_headers_from_hidden_params(response) or {}
-    names = [name for name in step["headers"] if name in hidden]
-    return JsonAdapter.validate_python(
+    hidden_params = get_provider_response_headers_from_hidden_params(response)
+    hidden: Mapping[str, str] = {} if hidden_params is None else hidden_params
+    return JSON_ADAPTER.validate_python(
         {
             "id": view["id"],
             "created": view["created"],
             "choices": [reply_choice_view(choice) for choice in view["choices"]],
-            "headers": {name: hidden[name] for name in names},
+            "headers": {name: hidden[name] for name in step["headers"] if name in hidden},
         }
     )
 
