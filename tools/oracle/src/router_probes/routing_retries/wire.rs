@@ -15,6 +15,8 @@ pub(super) struct Payload {
     pub timeout: String,
     #[serde(default)]
     pub stream: bool,
+    #[serde(default)]
+    pub mock_testing_rate_limit_error: bool,
     pub steps: Vec<Step>,
 }
 
@@ -34,6 +36,9 @@ pub(super) struct Step {
     pub error: Option<ErrorInput>,
     #[serde(default)]
     pub disconnect: bool,
+    // the provider's Retry-After header in whole seconds
+    #[serde(default)]
+    pub retry_after: Option<i64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

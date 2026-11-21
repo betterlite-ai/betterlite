@@ -4,6 +4,7 @@ use betterlite_error::error::{ErrorClass, class_message};
 use thiserror::Error;
 
 use crate::router_core::error::RoutingError;
+use crate::routing_retries::attempt::ProviderFailure;
 use crate::routing_timeouts::error::TimeoutError;
 
 #[derive(Debug, Error)]
@@ -31,6 +32,15 @@ pub(super) fn exhausted(mut error: ErrorClass, retries: i64) -> RetryError {
         *num_retries = count;
     }
     RetryError::Provider(Box::new(error))
+}
+
+// _set_deployment_num_retries_on_exception: the deployment's count fills a count the error lacks, and the loop reads the error's
+pub(super) fn stamp_deployment_retries(mut failure: ProviderFailure) -> ProviderFailure {
+    if let Some((_, num_retries)) = retry_fields(&mut failure.error) {
+        *num_retries = num_retries.or(failure.deployment_num_retries);
+        failure.deployment_num_retries = *num_retries;
+    }
+    failure
 }
 
 type RetryFields<'error> = (&'error mut Option<u32>, &'error mut Option<u32>);
@@ -63,7 +73,7 @@ fn retry_fields(error: &mut ErrorClass) -> Option<RetryFields<'_>> {
         | ErrorClass::ApiConnection(context)
         | ErrorClass::ApiResponseValidation(context)
         | ErrorClass::UnsupportedParams(context) => &mut **context,
-        // JSONSchemaValidationError is listed but keeps no counters; the rest are not LiteLLM exception types
+        // JSONSchemaValidationError is listed, but SchemaValidationDetails keeps no counters; the rest are not LiteLLM exception types
         ErrorClass::JsonSchemaValidation(_)
         | ErrorClass::BudgetExceeded(_)
         | ErrorClass::GuardrailRaised(_)

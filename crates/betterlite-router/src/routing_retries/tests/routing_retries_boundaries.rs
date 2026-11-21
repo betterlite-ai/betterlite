@@ -4,14 +4,14 @@ use std::time::Duration;
 
 use betterlite_error::error::ErrorClass;
 use betterlite_error::error::details::{
-    BudgetExceededDetails, ResponseDetails, TimeoutDetails, TimeoutStatus,
+    BudgetExceededDetails, ResponseDetails, SchemaValidationDetails, TimeoutDetails, TimeoutStatus,
 };
 use rstest::rstest;
 use rust_decimal::Decimal;
 
 use super::{
-    Driven, Scenario, Step, authentication, availability, bad_request, context, drive, guardrail,
-    internal, millis, rate_limit,
+    Driven, GROUP, Scenario, Step, authentication, availability, bad_request, context, drive,
+    guardrail, internal, millis, mock_switch, rate_limit, stamped,
 };
 use crate::cooldown_decisions::failure::FailureClass;
 use crate::retry_policy::policy::{RetryPolicies, RetryPolicy};
@@ -35,7 +35,7 @@ fn timeout_error(driven: &Driven) -> &TimeoutError {
     }
 }
 
-fn internal_policy(retries: i64) -> RetryPolicies {
+fn policy(internal_server: Option<i64>, fallback: Option<i64>) -> RetryPolicies {
     RetryPolicies {
         global: Some(RetryPolicy {
             bad_request: None,
@@ -43,20 +43,13 @@ fn internal_policy(retries: i64) -> RetryPolicies {
             timeout: None,
             rate_limit: None,
             content_policy: None,
-            internal_server: Some(retries),
+            internal_server,
             service_unavailable: None,
             not_found: None,
-            fallback: None,
+            fallback,
         }),
         model_group: BTreeMap::new(),
     }
-}
-
-fn stamped(message: &str, retries: u32) -> ErrorClass {
-    let mut counted = context(message);
-    counted.max_retries = Some(retries);
-    counted.num_retries = Some(retries);
-    ErrorClass::InternalServer(Box::new(counted))
 }
 
 #[tokio::test(start_paused = true)]
@@ -83,9 +76,9 @@ fn refused(scenario: Scenario, seen: (usize, usize)) -> Scenario {
     changed
 }
 
-fn with_request(scenario: Scenario, request: i64, policies: RetryPolicies) -> Scenario {
+fn with_request(scenario: Scenario, request: Option<i64>, policies: RetryPolicies) -> Scenario {
     let mut changed = scenario;
-    changed.request_num_retries = Some(request);
+    changed.request_num_retries = request;
     changed.policies = policies;
     changed
 }
@@ -98,12 +91,21 @@ fn with_request(scenario: Scenario, request: i64, policies: RetryPolicies) -> Sc
     (2, 2, 2)
 )]
 #[case::request_zero_disables_the_policy(
-    with_request(Scenario::new(vec![Step::Fail("a", internal("down"))], 2), 0, internal_policy(3)),
+    with_request(Scenario::new(vec![Step::Fail("a", internal("down"))], 2), Some(0), policy(Some(3), None)),
     internal("down"),
     (1, 0, 0)
 )]
 #[case::router_zero_never_retries(Scenario::new(vec![Step::Fail("a", internal("down"))], 0), internal("down"), (1, 0, 0))]
-#[case::guardrail_block_is_never_retried(Scenario::new(vec![Step::Fail("a", guardrail("blocked"))], 2), guardrail("blocked"), (1, 2, 0))]
+// the fallback count applies to a guardrail block, so only the guardrail check keeps it from retrying
+#[case::guardrail_block_is_never_retried(
+    with_request(
+        Scenario::new(vec![Step::Fail("a", guardrail("blocked")), Step::Answer("ok")], 2),
+        None,
+        policy(None, Some(3)),
+    ),
+    guardrail("blocked"),
+    (1, 2, 0)
+)]
 #[case::no_healthy_deployment(
     refused(Scenario::new(vec![Step::Fail("a", internal("down"))], 2), (0, 1)),
     internal("down"),
@@ -272,6 +274,15 @@ fn budget() -> ErrorClass {
     }))
 }
 
+fn schema_error() -> ErrorClass {
+    ErrorClass::JsonSchemaValidation(Box::new(SchemaValidationDetails {
+        model: GROUP.to_owned(),
+        provider: "openai".to_owned(),
+        raw_response: "{}".to_owned(),
+        schema: "{}".to_owned(),
+    }))
+}
+
 fn counted_bad_request() -> ErrorClass {
     let mut details = ResponseDetails::with_status(context("bad"), Some(400));
     details.max_retries = Some(3);
@@ -295,6 +306,7 @@ fn counted_timeout() -> ErrorClass {
 #[case::nested_context(timeout(), counted_timeout())]
 #[case::budget_is_no_litellm_exception_type(budget(), budget())]
 #[case::guardrail_is_no_litellm_exception_type(guardrail("g"), guardrail("g"))]
+#[case::json_schema_validation_keeps_no_counters(schema_error(), schema_error())]
 fn exhaustion_stamps_only_litellm_exception_types(
     #[case] error: ErrorClass,
     #[case] expected: ErrorClass,
@@ -303,4 +315,53 @@ fn exhaustion_stamps_only_litellm_exception_types(
         panic!("exhaustion answers the provider error");
     };
     assert_eq!(*stamped_error, expected);
+}
+
+#[tokio::test(start_paused = true)]
+async fn refused_error_carries_the_deployment_count() {
+    let mut scenario = Scenario::new(vec![Step::Fail("a", internal("down"))], 2);
+    scenario.request_num_retries = Some(0);
+    scenario.deployment_num_retries = Some(1);
+    let mut counted = context("down");
+    counted.num_retries = Some(1);
+    let driven = drive(scenario).await;
+    assert_eq!(driven.calls.len(), 1);
+    assert_eq!(
+        provider_error(driven),
+        ErrorClass::InternalServer(Box::new(counted))
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn mock_rate_limit_raises_before_any_provider_call() {
+    let mut scenario = Scenario::new(Vec::new(), 2);
+    scenario.request_num_retries = Some(0);
+    scenario.deployment_num_retries = Some(1);
+    scenario.request = mock_switch();
+    let driven = drive(scenario).await;
+    assert!(driven.calls.is_empty());
+    let ErrorClass::RateLimit(details) = provider_error(driven) else {
+        panic!("the switch raises a rate limit error");
+    };
+    assert_eq!(details.context.num_retries, Some(1));
+    assert_eq!(details.context.max_retries, None);
+    assert_eq!(details.context.model.as_deref(), Some(GROUP));
+}
+
+#[tokio::test(start_paused = true)]
+async fn mock_rate_limit_is_logged_without_a_deployment() {
+    let mut scenario = Scenario::new(vec![Step::Answer("ok")], 0);
+    scenario.deployment_num_retries = Some(1);
+    scenario.request = mock_switch();
+    let driven = drive(scenario).await;
+    assert_eq!(driven.retried.outcome.unwrap(), "ok");
+    let call = &driven.calls[0];
+    assert_eq!(
+        (call.attempted_retries, call.max_retries, call.breadcrumbs),
+        (1, 1, 1)
+    );
+    assert!(call.skipped.is_empty());
+    let attempt = &driven.retried.trail.previous_models[0];
+    assert_eq!(attempt.deployment_id, None);
+    assert_eq!(attempt.class, FailureClass::RateLimit);
 }

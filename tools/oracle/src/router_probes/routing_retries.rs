@@ -9,6 +9,7 @@ use betterlite_router::retry_policy::policy::RetryPolicies;
 use betterlite_router::router_core::headers::{
     Response, ensure_additional_headers_dict, prepare_response,
 };
+use betterlite_router::router_predicates::JsonMap;
 use betterlite_router::routing_retries::error::RetryError;
 use betterlite_router::routing_retries::headers::install_retry_headers;
 use betterlite_router::routing_retries::run::{Retried, RetryRun, run as retried};
@@ -90,6 +91,10 @@ async fn scenario(
         deployments: &payload.deployments,
         steps: payload.steps.iter().cloned().collect::<VecDeque<_>>(),
         routing: plan.cancellation.clone(),
+        request: JsonMap::from([(
+            "mock_testing_rate_limit_error".to_owned(),
+            Json::Bool(payload.mock_testing_rate_limit_error),
+        )]),
         calls: Vec::new(),
         fault: None,
     };

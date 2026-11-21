@@ -9,7 +9,9 @@ use async_trait::async_trait;
 use betterlite_error::error::details::{GuardrailDetails, RateLimitDetails, ResponseDetails};
 use betterlite_error::error::{ErrorClass, ErrorContext};
 use betterlite_error::rate_limit::RateLimitCategory;
+use betterlite_models::decisions::Json;
 use rand::{Rng, TryRng};
+use serde_json::Number;
 use tokio::join;
 use tokio::time::{Instant, sleep};
 use tokio_util::sync::CancellationToken;
@@ -18,6 +20,8 @@ use crate::retry_policy::backoff::BackoffSettings;
 use crate::retry_policy::eligibility::Availability;
 use crate::retry_policy::policy::RetryPolicies;
 use crate::router_core::error::RoutingError;
+use crate::router_predicates::JsonMap;
+use crate::router_predicates::mock_testing::raise_mock_rate_limit;
 use crate::routing_retries::attempt::{
     AttemptDispatch, AttemptFailure, AttemptRequest, ProviderFailure,
 };
@@ -76,6 +80,9 @@ pub(super) struct Scripted {
     pub calls: Vec<Call>,
     pub availability: VecDeque<Availability>,
     pub deployment_num_retries: Option<u32>,
+    pub retry_after: Option<i64>,
+    pub request: JsonMap,
+    pub model_list: Vec<JsonMap>,
     pub routing: CancellationToken,
     pub attempt_tokens: Vec<CancellationToken>,
 }
@@ -104,7 +111,7 @@ impl AttemptDispatch for Scripted {
                 error,
                 deployment_id: Some(deployment.to_owned()),
                 deployment_num_retries: self.deployment_num_retries,
-                retry_after: None,
+                retry_after: self.retry_after,
             }))
         };
         match self.steps.pop_front().unwrap() {
@@ -125,6 +132,30 @@ impl AttemptDispatch for Scripted {
         }
         Ok(*self.availability.front().unwrap())
     }
+
+    fn mock_rate_limit(&mut self, model_group: &str) -> Result<(), ErrorClass> {
+        raise_mock_rate_limit(&mut self.request, Some(model_group), &self.model_list)
+    }
+}
+
+// a request body that sets mock_testing_rate_limit_error: true
+pub(super) fn mock_switch() -> JsonMap {
+    JsonMap::from([("mock_testing_rate_limit_error".to_owned(), Json::Bool(true))])
+}
+
+// the one deployment of the group as the model list holds it, with its litellm_params.num_retries
+fn model_list(num_retries: Option<u32>) -> Vec<JsonMap> {
+    let mut params = JsonMap::new();
+    if let Some(retries) = num_retries {
+        params.insert(
+            "num_retries".to_owned(),
+            Json::Number(Number::from(retries)),
+        );
+    }
+    vec![JsonMap::from([(
+        "litellm_params".to_owned(),
+        Json::Object(params),
+    )])]
 }
 
 pub(super) struct Scenario {
@@ -132,6 +163,9 @@ pub(super) struct Scenario {
     pub router_num_retries: i64,
     pub request_num_retries: Option<i64>,
     pub deployment_num_retries: Option<u32>,
+    // the Retry-After seconds every failed attempt carries
+    pub retry_after: Option<i64>,
+    pub request: JsonMap,
     pub policies: RetryPolicies,
     pub availability: Vec<Availability>,
     pub deadline: Duration,
@@ -146,6 +180,8 @@ impl Scenario {
             router_num_retries,
             request_num_retries: None,
             deployment_num_retries: None,
+            retry_after: None,
+            request: JsonMap::new(),
             policies: RetryPolicies::default(),
             availability: vec![availability(1, 1)],
             deadline: Duration::from_secs(30),
@@ -186,6 +222,9 @@ pub(super) async fn drive(scenario: Scenario) -> Driven {
         calls: Vec::new(),
         availability: VecDeque::from(scenario.availability),
         deployment_num_retries: scenario.deployment_num_retries,
+        retry_after: scenario.retry_after,
+        request: scenario.request,
+        model_list: model_list(scenario.deployment_num_retries),
         routing: plan.cancellation.clone(),
         attempt_tokens: Vec::new(),
     };
@@ -254,6 +293,13 @@ pub(super) fn rate_limit(message: &str) -> ErrorClass {
 
 pub(super) fn internal(message: &str) -> ErrorClass {
     ErrorClass::InternalServer(Box::new(context(message)))
+}
+
+pub(super) fn stamped(message: &str, retries: u32) -> ErrorClass {
+    let mut counted = context(message);
+    counted.max_retries = Some(retries);
+    counted.num_retries = Some(retries);
+    ErrorClass::InternalServer(Box::new(counted))
 }
 
 pub(super) fn bad_request(message: &str) -> ErrorClass {

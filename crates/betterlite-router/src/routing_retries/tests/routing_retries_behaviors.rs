@@ -8,7 +8,7 @@ use serde_json::Number;
 
 use super::{
     GROUP, Scenario, Step, authentication, availability, bad_request, drive, internal, millis,
-    rate_limit,
+    mock_switch, rate_limit, stamped,
 };
 use crate::cooldown_decisions::failure::FailureClass;
 use crate::retry_policy::policy::{RetryPolicies, RetryPolicy};
@@ -35,6 +35,16 @@ fn policy(bad_request: Option<i64>, internal_server: Option<i64>) -> RetryPolici
 
 fn with_deployment_retries(mut scenario: Scenario, retries: u32) -> Scenario {
     scenario.deployment_num_retries = Some(retries);
+    scenario
+}
+
+fn with_mock_rate_limit(mut scenario: Scenario) -> Scenario {
+    scenario.request = mock_switch();
+    scenario
+}
+
+fn with_retry_after(mut scenario: Scenario, seconds: i64) -> Scenario {
+    scenario.retry_after = Some(seconds);
     scenario
 }
 
@@ -85,6 +95,31 @@ type Expected = (&'static str, usize, i64, i64, Vec<u64>, usize);
         1,
     ),
     ("ok", 2, 1, 1, vec![500], 1)
+)]
+#[case::error_count_outranks_the_deployment_count(
+    with_deployment_retries(
+        Scenario::new(
+            vec![
+                Step::Fail("a", stamped("counted", 2)),
+                Step::Fail("a", internal("down")),
+                Step::Answer("ok"),
+            ],
+            0,
+        ),
+        1,
+    ),
+    ("ok", 3, 2, 2, vec![500, 1000], 2)
+)]
+#[case::mock_rate_limit_enters_the_retry_path(
+    with_mock_rate_limit(with_deployment_retries(Scenario::new(vec![Step::Answer("ok")], 0), 1)),
+    ("ok", 1, 1, 1, vec![500], 1)
+)]
+#[case::retry_after_header_sets_the_wait(
+    with_retry_after(
+        Scenario::new(vec![Step::Fail("a", rate_limit("busy")), Step::Answer("ok")], 1),
+        5,
+    ),
+    ("ok", 2, 1, 1, vec![5000], 1)
 )]
 #[case::policy_retries_a_bad_request(
     with_policies(

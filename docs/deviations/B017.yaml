@@ -6,4 +6,7 @@ deviations:
   - what: No backoff runs after the last retry fails; the error is raised as soon as the retries run out.
     why: LiteLLM sleeps once more after the final failure although no attempt follows, which only delays the error the caller gets.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7854-L7861
+  - what: A JSON schema validation error that ran out of retries comes back without max_retries and num_retries, where LiteLLM sets both to the retry count.
+    why: JSONSchemaValidationError is in LITELLM_EXCEPTION_TYPES (exceptions.py L990), but betterlite's SchemaValidationDetails in betterlite-error has no counter fields and that crate is outside this task's scope; the exhaustion test pins the error coming back unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7863-L7873
 kept_bugs: []

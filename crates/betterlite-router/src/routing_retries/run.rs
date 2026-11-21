@@ -11,7 +11,7 @@ use crate::retry_policy::skip::{FailedDeployment, skipped_deployment_ids};
 use crate::routing_retries::attempt::{
     AttemptDispatch, AttemptFailure, AttemptRequest, Observed, ProviderFailure,
 };
-use crate::routing_retries::error::{RetryError, exhausted};
+use crate::routing_retries::error::{RetryError, exhausted, stamp_deployment_retries};
 use crate::routing_retries::trail::{RetryAttempt, RetryTrail};
 use crate::routing_timeouts::error::TimeoutError;
 use crate::routing_timeouts::plan::TimeoutPlan;
@@ -92,7 +92,9 @@ fn answer<Response>(
 ) -> Result<Answer<Response>, RetryError> {
     match answered {
         Ok(response) => Ok(Answer::Committed(response)),
-        Err(AttemptFailure::Provider(failure)) => Ok(Answer::Failed(*failure)),
+        Err(AttemptFailure::Provider(failure)) => {
+            Ok(Answer::Failed(stamp_deployment_retries(*failure)))
+        }
         Err(AttemptFailure::Routing(error)) => Err(RetryError::Routing(error)),
     }
 }
@@ -111,9 +113,17 @@ where
     R: Rng + Send,
 {
     async fn execute(&mut self) -> Result<D::Response, RetryError> {
-        let first = match self.attempt().await? {
-            Answer::Committed(response) => return Ok(response),
-            Answer::Failed(failure) => failure,
+        let first = match self.dispatch.mock_rate_limit(self.settings.model_group) {
+            Err(error) => stamp_deployment_retries(ProviderFailure {
+                error,
+                deployment_id: None,
+                deployment_num_retries: None,
+                retry_after: None,
+            }),
+            Ok(()) => match self.attempt().await? {
+                Answer::Committed(response) => return Ok(response),
+                Answer::Failed(failure) => failure,
+            },
         };
         let Some(schedule) = self.schedule(&first).await? else {
             return Err(RetryError::Provider(Box::new(first.error)));

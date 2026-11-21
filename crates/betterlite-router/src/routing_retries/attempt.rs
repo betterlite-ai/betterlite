@@ -26,7 +26,7 @@ pub struct ProviderFailure {
     pub error: ErrorClass,
     // the effective model_info id: a client-side-credential call's own id, else the deployment's
     pub deployment_id: Option<String>,
-    // litellm_params.num_retries of the deployment that failed
+    // litellm_params.num_retries of the deployment that failed, replaced by the error's own count where the error keeps one
     pub deployment_num_retries: Option<u32>,
     // the provider's Retry-After, already parsed to whole seconds
     pub retry_after: Option<i64>,
@@ -95,4 +95,7 @@ pub trait AttemptDispatch: Send {
 
     // _async_get_healthy_deployments for the logical model group, with the fallback lists the retry check reads
     async fn availability(&mut self) -> Result<Availability, RoutingError>;
+
+    // _handle_mock_testing_rate_limit_error: pops the request's switch and raises its rate limit before the first attempt
+    fn mock_rate_limit(&mut self, model_group: &str) -> Result<(), ErrorClass>;
 }

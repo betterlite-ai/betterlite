@@ -2,6 +2,7 @@ import asyncio
 from typing import Final, Literal, NotRequired, Protocol, TypedDict
 from unittest.mock import patch
 
+import httpx
 import litellm
 from litellm.exceptions import (
     AuthenticationError,
@@ -23,7 +24,7 @@ from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
 from probes.protocol import Operation, ProbeError, Strict
-from probes.retry_policy import ErrorInput, build_exception
+from probes.retry_policy import ErrorInput, build_exception, rate_limit_with_headers
 
 # pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true, reportMissingTypeStubs=false
 
@@ -43,6 +44,7 @@ class Deployment(Strict):
 class Step(Strict):
     error: ErrorInput | None = None
     disconnect: bool = False
+    retry_after: int | None = None
 
 
 class Call(Strict):
@@ -131,6 +133,18 @@ class Completions(Protocol):
 _SDK: Final[Completions] = litellm
 
 
+class RouterCompletions(Protocol):
+    async def acompletion(
+        self,
+        *,
+        model: str,
+        messages: list[AllMessageValues],
+        stream: bool,
+        num_retries: int | None,
+        mock_testing_rate_limit_error: bool,
+    ) -> ModelResponse | CustomStreamWrapper: ...
+
+
 # the provider each attempt reaches: it answers the scripted outcome and records what the router told it
 class Provider:
     def __init__(self, steps: list[Step], *, stream: bool) -> None:
@@ -159,6 +173,8 @@ class Provider:
             raise asyncio.CancelledError
         if step.error is not None:
             self.between_attempts = True
+            if step.retry_after is not None:
+                raise rate_limit_with_headers(httpx.Headers({"retry-after": str(step.retry_after)}))
             raise build_exception(step.error)
         return await self.answer(model=_MODEL, messages=_MESSAGES, mock_response="ok", stream=self.stream)
 
@@ -199,6 +215,7 @@ class RoutingRetries(Operation):
     retry_policy: LiteLlmRetryPolicy | None = None
     timeout: str
     stream: bool = False
+    mock_testing_rate_limit_error: bool = False
     steps: list[Step]
 
     @override
@@ -206,7 +223,7 @@ class RoutingRetries(Operation):
         return asyncio.run(self.execute())
 
     async def execute(self) -> Output:
-        router = Router(
+        router: RouterCompletions = Router(
             model_list=[model_list_entry(deployment) for deployment in self.deployments],
             num_retries=self.num_retries,
             retry_policy=self.retry_policy,
@@ -215,6 +232,8 @@ class RoutingRetries(Operation):
             routing_strategy="simple-shuffle",
         )
         provider = Provider(self.steps, stream=self.stream)
+        # the switch raises before any provider call, so the backoff after it is the router's too
+        provider.between_attempts = self.mock_testing_rate_limit_error
         outcome: Outcome = "answered"
         answered: Headers | None = None
         failed: Failure | None = None
@@ -225,6 +244,7 @@ class RoutingRetries(Operation):
                     messages=_MESSAGES,
                     stream=self.stream,
                     num_retries=self.request_num_retries,
+                    mock_testing_rate_limit_error=self.mock_testing_rate_limit_error,
                 )
                 answered = headers(response)
             except asyncio.CancelledError:

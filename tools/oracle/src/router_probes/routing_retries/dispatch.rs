@@ -5,15 +5,19 @@ use async_trait::async_trait;
 use betterlite_error::error::ErrorClass;
 use betterlite_error::facts::ProviderErrorFacts;
 use betterlite_error::status::status_error_class;
+use betterlite_models::decisions::Json;
 use betterlite_router::cooldown_decisions::failure::FailureClass;
 use betterlite_router::retry_policy::eligibility::Availability;
 use betterlite_router::router_core::error::RoutingError;
+use betterlite_router::router_predicates::JsonMap;
+use betterlite_router::router_predicates::mock_testing::raise_mock_rate_limit;
 use betterlite_router::routing_retries::attempt::{
     AttemptDispatch, AttemptFailure, AttemptRequest, ProviderFailure,
 };
 use betterlite_router::simple_shuffle::error::ShuffleError;
 use betterlite_router::simple_shuffle::{Candidate, pick};
 use rand::Rng;
+use serde_json::Number;
 use tokio_util::sync::CancellationToken;
 
 use super::wire::{Call, Deployment, Step};
@@ -25,6 +29,8 @@ pub(super) struct Scripted<'script> {
     pub(super) steps: VecDeque<Step>,
     // the routing's own token, which a disconnect cancels as the caller going away does
     pub(super) routing: CancellationToken,
+    // the request body, holding the mock_testing_rate_limit_error switch the case sets
+    pub(super) request: JsonMap,
     pub(super) calls: Vec<Call>,
     // why the script could not run as written, reported once the routing stops
     pub(super) fault: Option<String>,
@@ -75,7 +81,7 @@ impl AttemptDispatch for Scripted<'_> {
                 error: class,
                 deployment_id: Some(deployment.id.clone()),
                 deployment_num_retries: deployment.num_retries,
-                retry_after: None,
+                retry_after: step.retry_after,
             }))),
             Err(fault) => self.halt(fault).await,
         }
@@ -91,6 +97,23 @@ impl AttemptDispatch for Scripted<'_> {
             regular_fallbacks: None,
         })
     }
+
+    fn mock_rate_limit(&mut self, model_group: &str) -> Result<(), ErrorClass> {
+        let group: Vec<JsonMap> = self.deployments.iter().map(model_list_entry).collect();
+        raise_mock_rate_limit(&mut self.request, Some(model_group), &group)
+    }
+}
+
+// the model_list entry the switch reads: litellm_params, with num_retries where the deployment sets one
+fn model_list_entry(deployment: &Deployment) -> JsonMap {
+    let mut params = JsonMap::new();
+    if let Some(retries) = deployment.num_retries {
+        params.insert(
+            "num_retries".to_owned(),
+            Json::Number(Number::from(retries)),
+        );
+    }
+    JsonMap::from([("litellm_params".to_owned(), Json::Object(params))])
 }
 
 // simple-shuffle over the deployments the retries have not skipped
