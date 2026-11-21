@@ -41,5 +41,10 @@ calls:
     messages:
     - {role: user, content: older}
     - {role: user, content: []}
+- summary_history:
+    action: slicing
+    messages:
+    - {role: user, content: ""}
+    - {role: assistant, content: a}
 env: {}
 compare: {ignore: []}

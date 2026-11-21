@@ -45,6 +45,16 @@ calls:
     edit_spec: {instructions: P}
     tools: null
     system:
+    - {type: text, text: null}
+    - {type: text, text: "Z"}
+    summary: "S"
+    messages: []
+    translation: {messages: translated, tools: translated}
+- summary_history:
+    action: prompts
+    edit_spec: {instructions: P}
+    tools: null
+    system:
     - {type: text, text: a}
     - {type: text, text: ""}
     - {type: image, text: x}
