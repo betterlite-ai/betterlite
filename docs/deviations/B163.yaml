@@ -5,7 +5,8 @@ deviations:
       `httpx.Response` and `httpx.Request`. The bases are copies in `betterlite.exceptions._openai_base` and the HTTP
       objects come from `betterlite.exceptions._http`.
     why: >-
-      The wheel depends only on python-dotenv. `except openai.RateLimitError` does not catch betterlite's error, and
+      The wheel depends on pydantic, python-dotenv and typing-extensions, not on openai or httpx. `except
+      openai.RateLimitError` does not catch betterlite's error, and
       `isinstance(e.response, httpx.Response)` is False. `BadRequestError` therefore accepts only betterlite's
       `Response`, not an httpx one. `_http.Request` percent-encodes spaces the way httpx's URL text does, so the vertex
       URLs read the same as LiteLLM's.
