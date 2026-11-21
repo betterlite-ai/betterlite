@@ -28,6 +28,7 @@ use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::cost_service::name_normalizers;
 use chrono::DateTime;
 use jiff::tz::TimeZoneDatabase;
+use tokio::runtime::{Builder, Runtime};
 
 pub(crate) struct Op;
 
@@ -194,7 +195,7 @@ fn baseline_comparison_value(input: &Input) -> HelperResult {
     ))
 }
 
-fn savings_spend_value(input: &Input, runtime: &tokio::runtime::Runtime) -> HelperResult {
+fn savings_spend_value(input: &Input, runtime: &Runtime) -> HelperResult {
     let usage = input.usage.as_ref().and_then(usage_input);
     let billed_at = BilledAt::Missing;
     let zone = TimeZoneDatabase::none();
@@ -231,8 +232,8 @@ fn savings_spend_input<'input>(
     }
 }
 
-fn current_thread_runtime() -> Result<tokio::runtime::Runtime, Box<HelperError>> {
-    tokio::runtime::Builder::new_current_thread()
+fn current_thread_runtime() -> Result<Runtime, Box<HelperError>> {
+    Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| helper_error("RuntimeError", &error.to_string()))
