@@ -1,8 +1,8 @@
 #![cfg(test)]
 
 use super::support::{
-    Harness, SESSION, content_texts, field_of, inputs, masked, passing, records_of, strings, text,
-    texts_of,
+    Harness, SESSION, content_texts, data_messages, field_of, inputs, masked, passing, records_of,
+    strings, text, texts_of,
 };
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::guardrail_scan_cache::scanned_text_hash;
@@ -34,6 +34,80 @@ async fn only_the_new_segments_reach_bedrock() {
     assert_eq!(
         harness.cache.hashes(SESSION),
         vec![scanned_text_hash("hello"), scanned_text_hash("world")]
+    );
+}
+
+#[tokio::test]
+async fn latest_role_only_does_not_narrow_the_incremental_scan() {
+    let mut harness = Harness::new(vec![passing()]).with_session();
+    harness.incremental();
+    harness.latest_user_only();
+    harness.cache.remember(SESSION, &["sys"]);
+    harness.data.insert(
+        "messages".to_owned(),
+        data_messages(
+            r#"[
+                {"role": "system", "content": "sys"},
+                {"role": "user", "content": "first"},
+                {"role": "assistant", "content": "reply"},
+                {"role": "user", "content": "second"}
+            ]"#,
+        ),
+    );
+
+    let result = harness
+        .apply(
+            inputs(&["sys", "first", "reply", "second"]),
+            GuardrailInputType::Request,
+        )
+        .await
+        .expect("the incremental scan passes");
+
+    assert_eq!(harness.transport.count(), 1);
+    assert_eq!(
+        content_texts(&harness.transport.bodies()[0]),
+        strings(&["first", "reply", "second"])
+    );
+    assert_eq!(
+        texts_of(&result),
+        strings(&["sys", "first", "reply", "second"])
+    );
+}
+
+#[tokio::test]
+async fn tool_results_only_does_not_narrow_the_incremental_scan() {
+    let mut harness = Harness::new(vec![passing()]).with_session();
+    harness.incremental();
+    harness.tool_results_only = true;
+    harness.cache.remember(SESSION, &["sys"]);
+    harness.data.insert(
+        "messages".to_owned(),
+        data_messages(
+            r#"[
+                {"role": "system", "content": "sys"},
+                {"role": "user", "content": "first"},
+                {"role": "tool", "content": "result"},
+                {"role": "assistant", "content": "reply"}
+            ]"#,
+        ),
+    );
+
+    let result = harness
+        .apply(
+            inputs(&["sys", "first", "result", "reply"]),
+            GuardrailInputType::Request,
+        )
+        .await
+        .expect("the incremental scan passes");
+
+    assert_eq!(harness.transport.count(), 1);
+    assert_eq!(
+        content_texts(&harness.transport.bodies()[0]),
+        strings(&["first", "result", "reply"])
+    );
+    assert_eq!(
+        texts_of(&result),
+        strings(&["sys", "first", "result", "reply"])
     );
 }
 
