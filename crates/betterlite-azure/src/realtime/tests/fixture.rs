@@ -1,6 +1,5 @@
 use betterlite_config::tls::Verification;
 use betterlite_openai::openai_base_config::Headers;
-use betterlite_openai::realtime::http_config::RealtimeHttpSettings;
 use betterlite_openai::realtime::url::QueryParams;
 use secrecy::SecretString;
 
@@ -8,6 +7,7 @@ use crate::realtime::connect::{
     RealtimeConnectSettings, RealtimeConnectionPlan, prepare_connection,
 };
 use crate::realtime::error::RealtimeError;
+use crate::realtime::http_config::RealtimeHttpSettings;
 
 pub(super) const MODEL: &str = "realtime-a";
 pub(super) const KEY: &str = "azure-key";
