@@ -1,0 +1,36 @@
+name: unified-lifecycle-image-generation-pre-call-block
+config: |
+  model_list:
+    - model_name: guarded-image
+      litellm_params:
+        model: openai/dall-e-3
+        api_base: "{{upstream}}"
+        api_key: oracle-key
+  guardrails:
+    - guardrail_name: word-filter
+      litellm_params:
+        guardrail: litellm_content_filter
+        mode: pre_call
+        default_on: true
+        blocked_words:
+          - keyword: forbidden
+            action: BLOCK
+env: {}
+request:
+  method: POST
+  path: /v1/images/generations
+  headers:
+    content-type: application/json
+    authorization: Bearer oracle-master
+    x-litellm-call-id: oracle-call-unified-image-pre-block
+  body:
+    model: guarded-image
+    prompt: Draw the forbidden word.
+upstream: []
+compare:
+  headers: [content-type]
+  headers_present: []
+  upstream_headers: []
+  ignore:
+    - pointer: /error/message
+      why: LiteLLM puts the Python repr of the content filter's detail dict in the message, and docs/compatibility.md keeps repr text out of betterlite

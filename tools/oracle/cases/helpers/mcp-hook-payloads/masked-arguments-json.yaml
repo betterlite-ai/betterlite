@@ -1,0 +1,14 @@
+kind: helper
+name: mcp-hook-payloads-masked-arguments-json
+call:
+  b8401: {"scenarios": [
+    {"function": "pre_call", "request": {"tool_name": "send_email", "arguments": {"to": "a@example.com", "body": "call 555-0100", "copies": 2}}, "result": {"data": {"messages": [{"role": "user", "content": "Tool: send_email\nArguments: {\"to\": \"[EMAIL]\", \"body\": \"call [PHONE]\", \"copies\": 1}"}]}}},
+    {"function": "pre_call", "request": {"tool_name": "send_email", "arguments": {"to": "a@example.com"}}, "result": {"data": {"messages": [{"role": "user", "content": "Tool: send_email\nDescription: Sends mail\nArguments: {}"}]}}},
+    {"function": "pre_call", "request": {"tool_name": "send_email", "arguments": {"to": "a@example.com"}}, "result": {"data": {"messages": [{"role": "user", "content": "  Arguments: {\"to\": \"[EMAIL]\"}  "}]}}},
+    {"function": "pre_call", "request": {"tool_name": "send_email", "arguments": {"to": "a@example.com"}}, "result": {"data": {"messages": [{"role": "user", "content": "Tool: send_email\nArguments: null"}]}}},
+    {"function": "pre_call", "request": {"tool_name": "send_email", "arguments": {"to": "a@example.com"}}, "result": {"data": {"messages": [{"role": "user", "content": "Tool: send_email\nArguments: [\"[EMAIL]\"]"}]}}},
+    {"function": "pre_call", "request": {"tool_name": "send_email", "arguments": {"to": "a@example.com"}}, "result": {"data": {"messages": [{"role": "user", "content": "masked everything"}]}}},
+    {"function": "pre_call", "request": {"tool_name": "send_email", "arguments": {"to": "a@example.com"}}, "result": {"data": {"messages": []}}}
+  ]}
+env: {}
+compare: {ignore: []}

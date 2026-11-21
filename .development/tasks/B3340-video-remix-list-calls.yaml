@@ -35,6 +35,7 @@ description: >-
   timeout default, list mock response decoding as list of objects, list pagination
   parameters, and async wrapper execution for both operations.
 
+  B3332's `get_provider_video_config` returns `Result<Option<_>, VideoSelectionError>`. None still raises the ValueError-class error as above; map `VideoSelectionError::Unavailable` (a provider whose video config isn't built yet, such as edenai until B5838 lands) into this task's own error and keep its message.
 scope:
   paths:
     - crates/betterlite-core/src/api/video_remix_call.rs
