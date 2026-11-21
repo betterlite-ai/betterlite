@@ -110,115 +110,72 @@ pub fn benchmark_group(row: &SessionAggRow) -> BenchmarkGroup {
     }
 }
 
+fn summed_counts(rows: &[SessionAggRow], field: impl Fn(&SessionAggRow) -> i64) -> i64 {
+    let mut total = 0_i64;
+    for row in rows {
+        total = total.saturating_add(field(row));
+    }
+    total
+}
+
+fn summed_money(rows: &[SessionAggRow], field: impl Fn(&SessionAggRow) -> Decimal) -> Decimal {
+    let mut total = Decimal::ZERO;
+    for row in rows {
+        total = total.saturating_add(field(row));
+    }
+    total
+}
+
+fn summed_optional_money(
+    rows: &[SessionAggRow],
+    field: impl Fn(&SessionAggRow) -> Option<Decimal>,
+) -> Option<Decimal> {
+    let mut total = Some(Decimal::ZERO);
+    for row in rows {
+        total = total
+            .zip(field(row))
+            .map(|(summed, amount)| summed.saturating_add(amount));
+    }
+    total
+}
+
 #[must_use]
 pub fn summed_agg_row(rows: &[SessionAggRow]) -> SessionAggRow {
-    let savings_classifier_cost = rows
-        .iter()
-        .map(|row| row.savings_estimated_classifier_cost)
-        .try_fold(Decimal::ZERO, |total, cost| {
-            cost.map(|amount| total.saturating_add(amount))
-        });
     SessionAggRow {
         router_name: String::new(),
         router_type: String::new(),
         tier_turns: BTreeMap::new(),
-        sessions: rows
-            .iter()
-            .map(|row| row.sessions)
-            .fold(0_i64, i64::saturating_add),
-        turns: rows
-            .iter()
-            .map(|row| row.turns)
-            .fold(0_i64, i64::saturating_add),
-        unordered_turns: rows
-            .iter()
-            .map(|row| row.unordered_turns)
-            .fold(0_i64, i64::saturating_add),
-        covered_turns: rows
-            .iter()
-            .map(|row| row.covered_turns)
-            .fold(0_i64, i64::saturating_add),
-        cache_hits: rows
-            .iter()
-            .map(|row| row.cache_hits)
-            .fold(0_i64, i64::saturating_add),
-        same_model_turns: rows
-            .iter()
-            .map(|row| row.same_model_turns)
-            .fold(0_i64, i64::saturating_add),
-        same_model_hits: rows
-            .iter()
-            .map(|row| row.same_model_hits)
-            .fold(0_i64, i64::saturating_add),
-        first_visit_turns: rows
-            .iter()
-            .map(|row| row.first_visit_turns)
-            .fold(0_i64, i64::saturating_add),
-        first_visit_hits: rows
-            .iter()
-            .map(|row| row.first_visit_hits)
-            .fold(0_i64, i64::saturating_add),
-        return_turns: rows
-            .iter()
-            .map(|row| row.return_turns)
-            .fold(0_i64, i64::saturating_add),
-        return_hits: rows
-            .iter()
-            .map(|row| row.return_hits)
-            .fold(0_i64, i64::saturating_add),
-        return_expired_misses: rows
-            .iter()
-            .map(|row| row.return_expired_misses)
-            .fold(0_i64, i64::saturating_add),
-        return_within_ttl_misses: rows
-            .iter()
-            .map(|row| row.return_within_ttl_misses)
-            .fold(0_i64, i64::saturating_add),
-        ttl_5m_turns: rows
-            .iter()
-            .map(|row| row.ttl_5m_turns)
-            .fold(0_i64, i64::saturating_add),
-        ttl_1h_turns: rows
-            .iter()
-            .map(|row| row.ttl_1h_turns)
-            .fold(0_i64, i64::saturating_add),
-        total_tokens: rows
-            .iter()
-            .map(|row| row.total_tokens)
-            .fold(0_i64, i64::saturating_add),
-        spend: rows
-            .iter()
-            .map(|row| row.spend)
-            .fold(Decimal::ZERO, Decimal::saturating_add),
-        saved_spend: rows
-            .iter()
-            .map(|row| row.saved_spend)
-            .fold(Decimal::ZERO, Decimal::saturating_add),
-        savings_estimated_turns: rows
-            .iter()
-            .map(|row| row.savings_estimated_turns)
-            .fold(0_i64, i64::saturating_add),
-        savings_estimated_actual_spend: rows
-            .iter()
-            .map(|row| row.savings_estimated_actual_spend)
-            .fold(Decimal::ZERO, Decimal::saturating_add),
-        savings_estimated_classifier_cost: savings_classifier_cost,
-        savings_estimated_saved_spend: rows
-            .iter()
-            .map(|row| row.savings_estimated_saved_spend)
-            .fold(Decimal::ZERO, Decimal::saturating_add),
-        classifier_cost: rows
-            .iter()
-            .map(|row| row.classifier_cost)
-            .fold(Decimal::ZERO, Decimal::saturating_add),
-        classifier_cost_recorded_turns: rows
-            .iter()
-            .map(|row| row.classifier_cost_recorded_turns)
-            .fold(0_i64, i64::saturating_add),
-        session_seconds: rows
-            .iter()
-            .map(|row| row.session_seconds)
-            .fold(Decimal::ZERO, Decimal::saturating_add),
+        sessions: summed_counts(rows, |row| row.sessions),
+        turns: summed_counts(rows, |row| row.turns),
+        unordered_turns: summed_counts(rows, |row| row.unordered_turns),
+        covered_turns: summed_counts(rows, |row| row.covered_turns),
+        cache_hits: summed_counts(rows, |row| row.cache_hits),
+        same_model_turns: summed_counts(rows, |row| row.same_model_turns),
+        same_model_hits: summed_counts(rows, |row| row.same_model_hits),
+        first_visit_turns: summed_counts(rows, |row| row.first_visit_turns),
+        first_visit_hits: summed_counts(rows, |row| row.first_visit_hits),
+        return_turns: summed_counts(rows, |row| row.return_turns),
+        return_hits: summed_counts(rows, |row| row.return_hits),
+        return_expired_misses: summed_counts(rows, |row| row.return_expired_misses),
+        return_within_ttl_misses: summed_counts(rows, |row| row.return_within_ttl_misses),
+        ttl_5m_turns: summed_counts(rows, |row| row.ttl_5m_turns),
+        ttl_1h_turns: summed_counts(rows, |row| row.ttl_1h_turns),
+        total_tokens: summed_counts(rows, |row| row.total_tokens),
+        spend: summed_money(rows, |row| row.spend),
+        saved_spend: summed_money(rows, |row| row.saved_spend),
+        savings_estimated_turns: summed_counts(rows, |row| row.savings_estimated_turns),
+        savings_estimated_actual_spend: summed_money(rows, |row| {
+            row.savings_estimated_actual_spend
+        }),
+        savings_estimated_classifier_cost: summed_optional_money(rows, |row| {
+            row.savings_estimated_classifier_cost
+        }),
+        savings_estimated_saved_spend: summed_money(rows, |row| row.savings_estimated_saved_spend),
+        classifier_cost: summed_money(rows, |row| row.classifier_cost),
+        classifier_cost_recorded_turns: summed_counts(rows, |row| {
+            row.classifier_cost_recorded_turns
+        }),
+        session_seconds: summed_money(rows, |row| row.session_seconds),
     }
 }
 

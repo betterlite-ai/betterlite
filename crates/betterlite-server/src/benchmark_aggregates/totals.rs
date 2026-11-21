@@ -126,9 +126,41 @@ fn average(total: Decimal, sessions: i64) -> Decimal {
         .unwrap_or_default()
 }
 
+fn cache_bucket(turns: i64, hits: i64) -> CacheBucket {
+    let hit_rate_pct = pct(Decimal::from(hits), Decimal::from(turns));
+    CacheBucket {
+        turns,
+        hits,
+        hit_rate_pct,
+    }
+}
+
+fn cache_stats(row: &SessionAggRow) -> CacheStats {
+    let return_misses = row.return_turns.saturating_sub(row.return_hits);
+    let unknown = return_misses
+        .saturating_sub(row.return_expired_misses)
+        .saturating_sub(row.return_within_ttl_misses)
+        .max(0);
+    CacheStats {
+        coverage_pct: pct(Decimal::from(row.covered_turns), Decimal::from(row.turns)),
+        hit_rate_pct: pct(
+            Decimal::from(row.cache_hits),
+            Decimal::from(row.covered_turns),
+        ),
+        same_model: cache_bucket(row.same_model_turns, row.same_model_hits),
+        first_visit: cache_bucket(row.first_visit_turns, row.first_visit_hits),
+        return_to_tier: cache_bucket(row.return_turns, row.return_hits),
+        unordered_turns: row.unordered_turns,
+        return_misses_expired: row.return_expired_misses,
+        return_misses_within_ttl: row.return_within_ttl_misses,
+        return_misses_unknown: unknown,
+        ttl_5m_turns: row.ttl_5m_turns,
+        ttl_1h_turns: row.ttl_1h_turns,
+    }
+}
+
 #[must_use]
 pub fn benchmark_totals(row: &SessionAggRow) -> BenchmarkTotals {
-    let return_misses = row.return_turns.saturating_sub(row.return_hits);
     let (saved_spend, baseline_spend) = savings_cohort(
         row.turns,
         row.savings_estimated_turns,
@@ -154,45 +186,6 @@ pub fn benchmark_totals(row: &SessionAggRow) -> BenchmarkTotals {
             .zip(baseline_spend)
             .map(|(saved, baseline)| pct(saved, baseline)),
         saved_per_session: saved_spend.map(|saved| average(saved, sessions)),
-        cache: CacheStats {
-            coverage_pct: pct(Decimal::from(row.covered_turns), Decimal::from(row.turns)),
-            hit_rate_pct: pct(
-                Decimal::from(row.cache_hits),
-                Decimal::from(row.covered_turns),
-            ),
-            same_model: CacheBucket {
-                turns: row.same_model_turns,
-                hits: row.same_model_hits,
-                hit_rate_pct: pct(
-                    Decimal::from(row.same_model_hits),
-                    Decimal::from(row.same_model_turns),
-                ),
-            },
-            first_visit: CacheBucket {
-                turns: row.first_visit_turns,
-                hits: row.first_visit_hits,
-                hit_rate_pct: pct(
-                    Decimal::from(row.first_visit_hits),
-                    Decimal::from(row.first_visit_turns),
-                ),
-            },
-            return_to_tier: CacheBucket {
-                turns: row.return_turns,
-                hits: row.return_hits,
-                hit_rate_pct: pct(
-                    Decimal::from(row.return_hits),
-                    Decimal::from(row.return_turns),
-                ),
-            },
-            unordered_turns: row.unordered_turns,
-            return_misses_expired: row.return_expired_misses,
-            return_misses_within_ttl: row.return_within_ttl_misses,
-            return_misses_unknown: return_misses
-                .saturating_sub(row.return_expired_misses)
-                .saturating_sub(row.return_within_ttl_misses)
-                .max(0),
-            ttl_5m_turns: row.ttl_5m_turns,
-            ttl_1h_turns: row.ttl_1h_turns,
-        },
+        cache: cache_stats(row),
     }
 }
