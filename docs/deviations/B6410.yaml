@@ -1,0 +1,11 @@
+task: B6410
+deviations:
+  - what: Novita's missing-key failure is a typed NovitaKeyError that carries the LiteLLM message, not a Python ValueError.
+    why: There is no ValueError in Rust. The message and the failure stay the same, and B184 decides how the proxy reports it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/novita/chat/transformation.py#L24-L27
+  - what: Maritalk's per-call settings live on B668's config snapshot, not on the class. LiteLLM's __init__ copies every non-None argument onto the class itself, so one constructed config changes the defaults of every later call; betterlite's MaritalkConfig takes no constructor arguments.
+    why: Class-level mutable state leaks one caller's parameters into another key or request. B668 owns the per-config snapshot that replaces it, and the task keeps the constructor out of this config.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/maritalk.py#L20-L38
+  - what: A reported Nadir cost too large for an f64 is no cost in betterlite, where LiteLLM raises OverflowError from float(cost) once the lookup and the number checks pass.
+    why: The reader returns an Option over the raw bytes and treats a value it cannot represent like the other non-finite costs; a crash on an absurd metadata value is not something a working setup can rely on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nadir/chat/transformation.py#L24-L33

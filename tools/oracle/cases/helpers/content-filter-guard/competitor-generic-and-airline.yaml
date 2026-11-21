@@ -1,0 +1,65 @@
+kind: helper
+name: competitor-generic-and-airline
+call:
+  b8773:
+    builds:
+      - args:
+          patterns: []
+          blocked_words: []
+          event_hook: pre_call
+          default_on: false
+          guardrail_id: null
+          policy_template: null
+          image_model: null
+          competitor_intent_config:
+            competitor_intent_type: generic
+            brand_self:
+              - Acme Air
+            competitors:
+              - Qatar
+            locations:
+              - Qatar
+            policy:
+              competitor_comparison: reframe
+            threshold_high: 0.7
+            threshold_medium: 0.45
+            threshold_low: 0.3
+            refuse_message_template: null
+            reframe_message_template: I can help with our own fares. Would you like details?
+          severity_threshold: medium
+        apply:
+          texts:
+            - Qatar Airways is better
+          tool_calls: null
+          input_type: request
+      - args:
+          patterns: []
+          blocked_words: []
+          event_hook: pre_call
+          default_on: false
+          guardrail_id: null
+          policy_template: null
+          image_model: null
+          competitor_intent_config:
+            competitor_intent_type: airline
+            brand_self:
+              - Acme Air
+            competitors:
+              - Qatar
+            locations:
+              - Qatar
+            policy:
+              competitor_comparison: reframe
+            threshold_high: 0.7
+            threshold_medium: 0.45
+            threshold_low: 0.3
+            refuse_message_template: null
+            reframe_message_template: I can help with our own fares. Would you like details?
+          severity_threshold: medium
+        apply:
+          texts:
+            - Qatar Airways is better
+          tool_calls: null
+          input_type: request
+env: {}
+compare: {ignore: []}

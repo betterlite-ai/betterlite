@@ -1,13 +1,13 @@
 id: B10033
 milestone: R2 bug fixes
 title: Bedrock incremental scans record and pin the selection they skip
-status: todo
+status: done
 depends_on: [B3727]
 file: tasks/B10033-bedrock-incremental-selection-kept-bug.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2804
