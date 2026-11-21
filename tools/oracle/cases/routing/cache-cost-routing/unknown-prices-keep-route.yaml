@@ -1,0 +1,36 @@
+kind: probe
+name: unknown-prices-keep-route
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cache_cost_routing:
+        cache_aware_routing: true
+        cache_aware_routing_output_tokens: 512
+        cache_aware_routing_timeout_ms: 2000
+        tier_labels: {}
+        tiers: {MEDIUM: medium, COMPLEX: complex}
+        params: []
+        response:
+          model: medium
+          routing_decision:
+            router_model_name: probe
+            router_type: complexity
+            routed_model: medium
+            cause: heuristic_scorer
+            tier: MEDIUM
+            conversation_continuing: false
+            signals: ["medium ask (4 tokens)"]
+          session_affinity_ttl_seconds: null
+          litellm_params: {temperature: 0.4}
+        messages: null
+        request_kwargs: {}
+        context_fit:
+          facts: {}
+          needed: null
+          buffer: "0.8"
+        # complex has no published prompt-cache price, so the prediction declines and the route stays
+        choice: null
+        chooser_delay_ms: 0
+compare:
+  ignore: []

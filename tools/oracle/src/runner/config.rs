@@ -10,6 +10,8 @@ use crate::config_include_fixtures;
 use secrecy::ExposeSecret as _;
 use serde::{Deserialize, Serialize};
 
+const LITELLM_ROOT: &str = "litellm.yaml";
+
 #[derive(Deserialize, Serialize)]
 struct ConfigDocument {
     #[serde(default)]
@@ -61,6 +63,12 @@ fn prepare_include_trees(
         path: base_config.clone(),
         source,
     })?;
+    // config_files[litellm.yaml] carries the LiteLLM root, for a key betterlite refuses until B10006
+    let mut config_files = case.config_files.clone();
+    let litellm_text = config_files.remove(LITELLM_ROOT).map_or_else(
+        || root_text.clone(),
+        |text| text.replace("{{upstream}}", upstream),
+    );
     let database_urls = fixtures.databases.as_ref().map(|(first, second)| {
         (
             first.options.url.expose_secret(),
@@ -69,16 +77,16 @@ fn prepare_include_trees(
     });
     let first_config = write_include_tree(
         &group_dir.join("litellm"),
-        &root_text,
+        &litellm_text,
         database_urls.map(|urls| urls.0),
-        &case.config_files,
+        &config_files,
         upstream,
     )?;
     let second_config = write_include_tree(
         &group_dir.join("betterlite"),
         &root_text,
         database_urls.map(|urls| urls.1),
-        &case.config_files,
+        &config_files,
         upstream,
     )?;
     Ok((group_dir, first_config, second_config))

@@ -1,0 +1,13 @@
+kind: helper
+name: key-query-plan-sort-column-denied
+call:
+  key_query_plan: {function: sort, sort_by: spend, sort_order: DESC}
+calls:
+  - key_query_plan: {function: sort, sort_by: create_at, sort_order: asc}
+  - key_query_plan: {function: sort, sort_by: token, sort_order: up}
+  - key_query_plan: {function: sort, sort_by: null, sort_order: sideways}
+  - key_query_plan: {function: sort, sort_by: key_alias, sort_order: Asc}
+  - key_query_plan: {function: sort, sort_by: max_budget, sort_order: desc}
+  - key_query_plan: {function: sort, sort_by: user_id, sort_order: up}
+env: {}
+compare: {ignore: []}

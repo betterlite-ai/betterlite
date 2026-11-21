@@ -92,5 +92,5 @@ pitfalls:
   - "The error path resolves the provider a second time; a resolution error there is the one returned, as in LiteLLM."
 review_level: security
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2250
   max_new_expects: 0

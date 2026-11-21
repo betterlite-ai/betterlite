@@ -1,0 +1,16 @@
+kind: helper
+name: auth-user-lookup-read-error-classification
+call:
+  auth_user_lookup:
+    kind: read_error_classification
+    errors:
+      - {kind: message, message: boom}
+      - {kind: message, message: "cached plan must not change result type"}
+      - {kind: message, message: "CACHED PLAN MUST NOT CHANGE RESULT TYPE"}
+      - {kind: io, message: "connection refused"}
+      - {kind: io, message: "cached plan must not change result type"}
+      - {kind: message, message: "relation \"users\" does not exist"}
+      - {kind: io, message: ""}
+      - {kind: message, message: "deadline exceeded\n  at query"}
+env: {}
+compare: {ignore: []}

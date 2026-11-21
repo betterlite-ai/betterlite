@@ -1,0 +1,11 @@
+model_list:
+  - model_name: cache-aware-router
+    litellm_params:
+      model: openai/gpt-4o
+      complexity_router_config:
+        cache_aware_routing: true
+        cache_aware_routing_output_tokens: 2048
+        cache_aware_routing_timeout_ms: 1500
+        tiers:
+          SIMPLE: gpt-4o-mini
+          MEDIUM: gpt-4o
