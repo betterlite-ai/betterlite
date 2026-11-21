@@ -1,0 +1,17 @@
+kind: helper
+name: refund-tpm-path
+call:
+  b3042:
+    function: refund_reserved_tokens
+    scopes:
+      - ["model_per_key", "key1:gpt-4"]
+    amount: 100
+    reservation_windows: []
+    window_size: 60
+    now: 1700000000
+    groups: {}
+    cache: {}
+env:
+  LITELLM_RATE_LIMIT_WINDOW_SIZE: "60"
+compare:
+  ignore: []
