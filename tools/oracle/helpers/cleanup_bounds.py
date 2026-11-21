@@ -52,7 +52,7 @@ def deadline_timeouts(cleanup: SpendLogCleanup, input_value: Input) -> tuple[lis
             direct.append(timeout)
         for group in input_value["groups"]:
             overall = group["overall_ms"] / 1000
-            share = SpendLogCleanup._group_deadline(overall, group["groups"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/spend_log_cleanup.py#L261
+            share = cleanup._group_deadline(overall, group["groups"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/spend_log_cleanup.py#L261
             timeout = cleanup._timeout_ms(share)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/spend_log_cleanup.py#L243
             shared.append(timeout)
     finally:
@@ -61,7 +61,7 @@ def deadline_timeouts(cleanup: SpendLogCleanup, input_value: Input) -> tuple[lis
 
 
 def run(input_value: Input) -> Output:
-    cleanup = SpendLogCleanup.__new__(SpendLogCleanup)
+    cleanup = SpendLogCleanup.__new__(SpendLogCleanup)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/spend_log_cleanup.py#L124
     cleanup.general_settings = input_value["general_settings"]
     cleanup._refresh_bounds()  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/spend_log_cleanup.py#L146
     retention: list[int | None] = []
