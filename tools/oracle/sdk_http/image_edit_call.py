@@ -1,6 +1,7 @@
 import asyncio
 from contextlib import nullcontext
 from functools import partial
+from types import TracebackType
 from typing import Final, Literal, Protocol, TypeAlias, TypedDict, Unpack, cast
 
 import litellm
@@ -79,6 +80,8 @@ class Call(BaseModel):
 
 # bedrock_image_edit, bfl_image_edit and the generic handler name the same arguments differently
 class Sent(BaseModel):
+    model_config = ConfigDict(validate_by_name=True)
+
     provider: str = Field(validation_alias="custom_llm_provider")
     model: str
     prompt: str | None
@@ -155,7 +158,12 @@ class Recorder:
         bfl_image_edit.image_edit = partial(self.keep, "black_forest_labs")  # type: ignore[method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L924
         base_llm_http_handler.image_edit_handler = partial(self.keep, "")  # type: ignore[method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L937
 
-    def __exit__(self, *_: object) -> None:
+    def __exit__(
+        self,
+        _exc_type: type[BaseException] | None,
+        _exc: BaseException | None,
+        _traceback: TracebackType | None,
+    ) -> None:
         ProviderConfigManager.get_provider_image_edit_config = SELECT_CONFIG  # type: ignore[method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L833-L836
         bedrock_image_edit.image_edit = BEDROCK_EDIT  # type: ignore[method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L888
         bfl_image_edit.image_edit = BFL_EDIT  # type: ignore[method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L924
