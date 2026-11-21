@@ -148,8 +148,7 @@ fn complete<R>(
     call.headers = Some(referer_headers(
         context.headers,
         context.settings.headers,
-        gateway.referer,
-        gateway.title,
+        (gateway.referer, gateway.title),
         values.site_url,
         values.app_name,
     ));

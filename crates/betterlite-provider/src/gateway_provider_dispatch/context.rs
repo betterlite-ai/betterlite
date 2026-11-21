@@ -84,11 +84,11 @@ pub(super) fn first_secret<const N: usize>(candidates: [Option<&SecretString>; N
 pub(super) fn referer_headers(
     headers: Option<&BTreeMap<String, String>>,
     global: Option<&BTreeMap<String, String>>,
-    referer_name: &str,
-    title_name: &str,
+    names: (&str, &str),
     site_url: Option<&str>,
     app_name: Option<&str>,
 ) -> BTreeMap<String, String> {
+    let (referer_name, title_name) = names;
     let site = first_nonempty([site_url]).unwrap_or_else(|| String::from(DEFAULT_SITE_URL));
     let app = first_nonempty([app_name]).unwrap_or_else(|| String::from(DEFAULT_APP_NAME));
     let mut resolved = BTreeMap::from([

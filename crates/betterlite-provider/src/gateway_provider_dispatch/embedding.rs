@@ -63,8 +63,7 @@ fn resolve(
         Which::Openrouter => Some(referer_headers(
             call.headers.as_ref(),
             settings.headers,
-            gateway.referer,
-            gateway.title,
+            (gateway.referer, gateway.title),
             values.site_url,
             values.app_name,
         )),
