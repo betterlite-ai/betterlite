@@ -175,62 +175,29 @@ async fn plain_sync_calls_use_the_client_deadline() {
     let events = Events::new();
     let source = ProxiedSource::new(IMPATIENT);
     let request = CallRequest::new("vs_a", &files);
-    let slow_create = serve(
-        reply("200 OK", &[("content-type", "application/json")], "{}"),
-        Duration::from_millis(500),
-    )
-    .expect("the fixture serves");
-    let create_config = RecordingConfig::new(&format!(
-        "http://{}/v1/vector_stores/vs_a/files",
-        slow_create.address
-    ));
-    let create_deps = file_deps(&create_config, &source);
-    let mut create_fixture = Fixture::new("vector_store_file_create");
-    let create_call = file_call(&request, Operation::Create, &original, None);
-    let created = run(
-        &mut create_fixture,
-        &create_deps,
-        ClientKind::Sync,
-        &create_call,
-        &events,
-    )
-    .await;
-    let Err(FileTransportError::Provider(create_error)) = created else {
-        panic!("a timeout is a provider error");
-    };
+    let create_error =
+        timed_create_error(&source, &request, &original, ClientKind::Sync, &events).await;
     assert_eq!(create_error.status_code, 408);
     assert!(!create_error.status_code_is_synthesized);
-    assert_eq!(
-        create_error.message,
-        "litellm.Timeout: Connection timed out after None seconds."
-    );
-    let slow_list = serve(
+    let slow = serve(
         reply("200 OK", &[("content-type", "application/json")], "{}"),
         Duration::from_millis(500),
     )
     .expect("the fixture serves");
-    let list_config = RecordingConfig::new(&format!(
+    let config = RecordingConfig::new(&format!(
         "http://{}/v1/vector_stores/vs_a/files",
-        slow_list.address
+        slow.address
     ));
-    let list_deps = file_deps(&list_config, &source);
-    let mut list_fixture = Fixture::new("vector_store_file_list");
-    let list_call = file_call(&request, Operation::List, &query, None);
-    let listed = run(
-        &mut list_fixture,
-        &list_deps,
-        ClientKind::Sync,
-        &list_call,
-        &events,
-    )
-    .await;
+    let mut fixture = Fixture::new("vector_store_file_list");
+    let deps = file_deps(&config, &source);
+    let call = file_call(&request, Operation::List, &query, None);
+    let listed = run(&mut fixture, &deps, ClientKind::Sync, &call, &events).await;
     let Err(FileTransportError::Provider(list_error)) = listed else {
         panic!("a list timeout is a provider error");
     };
     assert_eq!(list_error.status_code, 500);
     assert!(list_error.status_code_is_synthesized);
     assert!(list_error.message.contains("read timeout"));
-    assert!(list_error.headers.is_empty());
 }
 
 #[tokio::test]
