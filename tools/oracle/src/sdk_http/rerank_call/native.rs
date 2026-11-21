@@ -137,7 +137,8 @@ struct Operations<'call> {
 impl RerankOperations for Operations<'_> {
     fn map_options(&self, request: OptionsRequest<'_>) -> Result<Params, Box<RawException>> {
         let (params, config, model, provider) = optional_params(request);
-        match family_choice(config) {
+        let return_documents = params.return_documents;
+        let mut mapped = match family_choice(config) {
             FamilyChoice::Family(kind) => map_with(
                 &FamilyRerankConfig {
                     config: kind,
@@ -148,9 +149,14 @@ impl RerankOperations for Operations<'_> {
                 params,
                 model,
                 provider,
-            ),
-            FamilyChoice::Unsupported => Err(Box::new(not_wired(model, provider))),
+            )?,
+            FamilyChoice::Unsupported => return Err(Box::new(not_wired(model, provider))),
+        };
+        // arerank supplies None, and the cohere mapping turns an absent value into rerank's true default
+        if return_documents == ProviderReturnDocuments::Null {
+            mapped.remove("return_documents");
         }
+        Ok(mapped)
     }
 
     fn send(
