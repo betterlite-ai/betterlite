@@ -16,10 +16,14 @@ pub(super) fn policies(args: &PassthroughCallArgs) -> ProviderPolicies {
         .unwrap_or(args.model.as_str());
     let (prefix_region, base_model) = split_region(model);
     let region = prefix_region.unwrap_or(DEFAULT_REGION);
-    let api_base = match args.api_base.as_deref().filter(|base| !base.is_empty()) {
-        Some(base) => base.to_owned(),
-        None => format!("https://bedrock-mantle.{region}.api.aws/v1"),
-    };
+    let api_base = args
+        .api_base
+        .as_deref()
+        .filter(|base| !base.is_empty())
+        .map_or_else(
+            || format!("https://bedrock-mantle.{region}.api.aws/v1"),
+            str::to_owned,
+        );
     ProviderPolicies {
         models: ModelSets::default(),
         mantle: Some(MantleEndpoint {

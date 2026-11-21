@@ -112,7 +112,15 @@ impl From<WatsonxError> for ConfigError {
         let message = error.to_string();
         match error {
             WatsonxError::IamStatus { status, .. } => Self::Message { status, message },
-            other => Self::from(WatsonxPassthroughError::from(other)),
+            other @ (WatsonxError::Api { .. }
+            | WatsonxError::IamApiKeyRequired
+            | WatsonxError::InvalidField { .. }
+            | WatsonxError::InvalidHeader { .. }
+            | WatsonxError::IamUrl(_)
+            | WatsonxError::IamTransport(_)
+            | WatsonxError::IamReply(_)
+            | WatsonxError::IamReplyField { .. }
+            | WatsonxError::Cache(_)) => Self::from(WatsonxPassthroughError::from(other)),
         }
     }
 }
