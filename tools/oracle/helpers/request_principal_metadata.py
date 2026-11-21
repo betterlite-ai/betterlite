@@ -1,4 +1,4 @@
-from typing import Final, Literal, Protocol, TypedDict
+from typing import Final, Literal, TypedDict
 
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.litellm_pre_call_utils import LiteLLMProxyRequestSetup
@@ -9,44 +9,6 @@ from starlette.requests import Request
 from starlette.types import Scope
 
 Slot = Literal["metadata", "litellm_metadata"]
-
-
-class RequestSetup(Protocol):
-    @staticmethod
-    def pre_seed_litellm_metadata_for_route(
-        request_data: dict[str, JsonValue], route: str
-    ) -> None: ...
-
-    @staticmethod
-    def apply_client_tag_policy_pre_auth(
-        request: Request,
-        request_data: dict[str, JsonValue],
-        user_api_key_dict: UserAPIKeyAuth,
-    ) -> None: ...
-
-    @staticmethod
-    def apply_key_tags_pre_auth(
-        request_data: dict[str, JsonValue], user_api_key_dict: UserAPIKeyAuth
-    ) -> None: ...
-
-    @staticmethod
-    def add_user_api_key_auth_to_request_metadata(
-        data: dict[str, JsonValue],
-        user_api_key_dict: UserAPIKeyAuth,
-        _metadata_variable_name: str,
-    ) -> dict[str, JsonValue]: ...
-
-    @staticmethod
-    def add_key_level_controls(
-        key_metadata: dict[str, JsonValue] | None,
-        data: dict[str, JsonValue],
-        _metadata_variable_name: str,
-    ) -> dict[str, JsonValue]: ...
-
-    @staticmethod
-    def add_request_tag_to_metadata(
-        llm_router: None, headers: dict[str, str], data: dict[str, JsonValue]
-    ) -> list[str] | None: ...
 
 
 # the principal travels whole into UserAPIKeyAuth, and only its metadata is read here
@@ -101,9 +63,8 @@ class TeamCallbacks(TypedDict):
     callback_vars: dict[str, str] | None
 
 
-SETUP: Final[RequestSetup] = LiteLLMProxyRequestSetup
 JSON: Final = TypeAdapter(JsonValue)
-AUTH: Final = TypeAdapter(UserAPIKeyAuth)
+AUTH: Final[TypeAdapter[UserAPIKeyAuth]] = TypeAdapter(UserAPIKeyAuth)
 AUTH_VIEW: Final = TypeAdapter(AuthView)
 TEAM_CALLBACKS: Final = TypeAdapter(TeamCallbacks)
 
@@ -122,24 +83,37 @@ def request_for(headers: list[tuple[str, str]]) -> Request:
 
 def pre_auth_tags(call: PreAuthCall) -> JsonValue:
     data = call["data"]
-    principal = UserAPIKeyAuth.model_validate(call["principal"])
-    SETUP.pre_seed_litellm_metadata_for_route(data, call["route"])
-    SETUP.apply_client_tag_policy_pre_auth(request_for(call["headers"]), data, principal)
-    SETUP.apply_key_tags_pre_auth(data, principal)
-    return JSON.validate_python({"data": data})
+    principal = AUTH.validate_python(call["principal"])
+    LiteLLMProxyRequestSetup.pre_seed_litellm_metadata_for_route(  # type: ignore[misc]  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1855
+        data, call["route"]
+    )
+    LiteLLMProxyRequestSetup.apply_client_tag_policy_pre_auth(  # type: ignore[misc]  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1899
+        request_for(call["headers"]), data, principal
+    )
+    LiteLLMProxyRequestSetup.apply_key_tags_pre_auth(  # type: ignore[misc]  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1876
+        data, principal
+    )
+    outcome = {"data": data}
+    return JSON.validate_python(outcome)
 
 
 def request_metadata(call: MetadataCall) -> JsonValue:
-    principal = UserAPIKeyAuth.model_validate(call["principal"])
+    principal = AUTH.validate_python(call["principal"])
     principal.invoked_agent_id = call["invoked_agent_id"]
     context = call["managed_agent_context"]
     if context is not None:
         principal.managed_agent_context = ManagedAgentContext.model_validate(context)
     bucket = call["bucket"]
     data: dict[str, JsonValue] = {**call["data"], call["slot"]: bucket}
-    SETUP.add_user_api_key_auth_to_request_metadata(data, principal, call["slot"])
-    SETUP.add_key_level_controls(call["principal"]["metadata"], data, call["slot"])
-    request_tags = SETUP.add_request_tag_to_metadata(None, dict(call["headers"]), data)
+    LiteLLMProxyRequestSetup.add_user_api_key_auth_to_request_metadata(  # type: ignore[misc]  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1653
+        data, principal, call["slot"]
+    )
+    LiteLLMProxyRequestSetup.add_key_level_controls(  # type: ignore[misc]  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1735
+        call["principal"]["metadata"], data, call["slot"]
+    )
+    request_tags = LiteLLMProxyRequestSetup.add_request_tag_to_metadata(  # type: ignore[misc]  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1834
+        None, dict(call["headers"]), data
+    )
     auth_view = AUTH.validate_python(bucket.pop("user_api_key_auth"))
     outcome = {
         "data": data,
@@ -158,7 +132,8 @@ def team_callbacks(call: TeamCall) -> JsonValue:
             call["team_id"], proxy_config
         )
     except ValidationError:
-        return JSON.validate_python({"error": "invalid callback variable"})
+        error = {"error": "invalid callback variable"}
+        return JSON.validate_python(error)
     if callbacks is None:
         return None
     return JSON.validate_python(TEAM_CALLBACKS.validate_json(callbacks.model_dump_json()))

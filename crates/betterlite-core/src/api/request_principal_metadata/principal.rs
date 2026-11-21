@@ -119,10 +119,16 @@ struct PrincipalEntries<'principal> {
     verified_human_user_id: Option<&'principal str>,
     #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
     user_api_end_user_max_budget: Option<Decimal>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    user_api_key_budget_reservation: Option<&'principal Metadata>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    user_api_key_matched_model_access_groups: Option<&'principal [String]>,
+    #[serde(
+        rename = "user_api_key_budget_reservation",
+        skip_serializing_if = "Option::is_none"
+    )]
+    budget_reservation: Option<&'principal Metadata>,
+    #[serde(
+        rename = "user_api_key_matched_model_access_groups",
+        skip_serializing_if = "Option::is_none"
+    )]
+    access_groups: Option<&'principal [String]>,
 }
 
 // a session token logs under its key alias so the dashboard session never shows up as a key hash
@@ -161,11 +167,9 @@ pub fn add_principal_metadata(
         agent_execution_mode: managed.map(|context| &context.mode),
         verified_human_user_id: managed.and_then(|context| context.user_id.as_deref()),
         user_api_end_user_max_budget: principal.end_user_max_budget,
-        user_api_key_budget_reservation: principal.budget_reservation.as_ref(),
-        user_api_key_matched_model_access_groups: (!principal
-            .matched_model_access_groups
-            .is_empty())
-        .then_some(principal.matched_model_access_groups.as_slice()),
+        budget_reservation: principal.budget_reservation.as_ref(),
+        access_groups: (!principal.matched_model_access_groups.is_empty())
+            .then_some(principal.matched_model_access_groups.as_slice()),
     };
     let encoded = serde_json::to_string(&entries)
         .map_err(|source| RequestPrincipalMetadataError::Encode { source })?;
