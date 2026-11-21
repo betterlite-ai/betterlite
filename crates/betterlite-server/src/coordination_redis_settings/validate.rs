@@ -46,19 +46,20 @@ async fn failure(
     context: &ResolveContext<'_>,
     error: CoordRedisError,
 ) -> ValidationError {
-    match error {
-        CoordRedisError::Params(_) | CoordRedisError::Environment(_) => {
-            match rejected_fields(settings, context).await {
-                Ok(fields) => {
-                    let names: Vec<String> =
-                        fields.iter().map(|field| format!("'{field}'")).collect();
-                    let joined = names.join(", ");
-                    ValidationError::InvalidFields(InvalidFields(format!("[{joined}]")))
-                }
-                Err(other) => ValidationError::Resolution(other),
-            }
+    let is_input_error = matches!(
+        &error,
+        CoordRedisError::Params(_) | CoordRedisError::Environment(_)
+    );
+    if !is_input_error {
+        return ValidationError::Resolution(error);
+    }
+    match rejected_fields(settings, context).await {
+        Ok(fields) => {
+            let names: Vec<String> = fields.iter().map(|field| format!("'{field}'")).collect();
+            let joined = names.join(", ");
+            ValidationError::InvalidFields(InvalidFields(format!("[{joined}]")))
         }
-        other => ValidationError::Resolution(other),
+        Err(other) => ValidationError::Resolution(other),
     }
 }
 
@@ -72,7 +73,7 @@ async fn rejected_fields(
     };
     let mut rejected = BTreeSet::new();
     for (name, value) in members {
-        let probe = JsonValue::Object([(name.clone(), value.clone())].into_iter().collect());
+        let probe = JsonValue::Object(std::iter::once((name.clone(), value.clone())).collect());
         let block = CoordinationRedisBlock { value: probe };
         match resolve_params(&block, context).await {
             Ok(_) => {}

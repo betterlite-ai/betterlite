@@ -13,14 +13,14 @@ pub enum Redaction {
 // litellm's _redact_credentials(settings or {}) and _redact_all_values: one projection, with the audit mode masking every value.
 #[must_use]
 pub fn redact(settings: Option<&JsonValue>, mode: Redaction) -> JsonValue {
-    let members = match mode {
+    let selected = match mode {
         Redaction::Credentials => settings.and_then(JsonValue::as_object),
         Redaction::Audit => settings
             .filter(|value| carries_value(value))
             .and_then(JsonValue::as_object),
     };
-    let Some(members) = members else {
-        return JsonValue::Object([].into_iter().collect());
+    let Some(members) = selected else {
+        return JsonValue::Object(std::iter::empty::<(String, JsonValue)>().collect());
     };
     JsonValue::Object(
         members
@@ -47,7 +47,7 @@ pub fn redact(settings: Option<&JsonValue>, mode: Redaction) -> JsonValue {
 pub fn merge_over_saved(incoming: &JsonValue, saved: Option<&JsonValue>) -> JsonValue {
     let saved_members = saved.and_then(JsonValue::as_object);
     let Some(incoming_members) = incoming.as_object() else {
-        return JsonValue::Object([].into_iter().collect());
+        return JsonValue::Object(std::iter::empty::<(String, JsonValue)>().collect());
     };
     JsonValue::Object(
         incoming_members

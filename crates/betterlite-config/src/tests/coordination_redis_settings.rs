@@ -55,8 +55,8 @@ fn loads_coordination_redis_settings() {
     let empty_block = empty
         .get("coordination_redis")
         .expect("an empty block is still a block");
-    assert_eq!(
-        empty_block.as_object().map(|members| members.len()),
-        Some(0),
-    );
+    let empty_members = empty_block
+        .as_object()
+        .expect("an empty block is an object");
+    assert!(empty_members.is_empty());
 }

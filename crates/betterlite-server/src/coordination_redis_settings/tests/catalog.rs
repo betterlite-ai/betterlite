@@ -4,7 +4,7 @@ use serde_json::json;
 use super::support::object;
 use crate::coordination_redis_settings::REDACTED_VALUE;
 use crate::coordination_redis_settings::catalog::{
-    CATALOG, CoordinationRedisSection, FieldDefault, FieldType, fields,
+    CATALOG, CoordinationRedisSection, FieldType, fields,
 };
 
 #[test]
@@ -36,19 +36,16 @@ fn the_catalog_lists_the_source_fields_in_order() {
 fn the_catalog_carries_the_source_types_and_defaults() {
     let port = CATALOG[1].clone();
     assert_eq!(port.field_type, FieldType::Integer);
-    assert_eq!(port.field_default, Some(FieldDefault::Integer(6379)));
+    assert_eq!(port.field_default, Some(json!(6379_i64)));
     assert_eq!(port.section, CoordinationRedisSection::Connection);
     let ssl = CATALOG[5].clone();
     assert_eq!(ssl.field_type, FieldType::Boolean);
-    assert_eq!(ssl.field_default, Some(FieldDefault::Boolean(false)));
+    assert_eq!(ssl.field_default, Some(JsonValue::Bool(false)));
     assert_eq!(CATALOG[6].field_type, FieldType::List);
     assert_eq!(CATALOG[7].field_type, FieldType::List);
     assert_eq!(CATALOG[6].section, CoordinationRedisSection::Cluster);
     assert_eq!(CATALOG[7].section, CoordinationRedisSection::Sentinel);
-    assert_eq!(
-        CATALOG[14].field_default,
-        Some(FieldDefault::Boolean(false))
-    );
+    assert_eq!(CATALOG[14].field_default, Some(JsonValue::Bool(false)));
     assert_eq!(CATALOG[0].field_default, None);
 }
 
@@ -57,7 +54,7 @@ fn the_catalog_serializes_with_the_source_spellings() {
     let serialized = serde_json::to_value(CATALOG).expect("the catalog serializes");
     assert_eq!(serialized[0]["field_type"], json!("String"));
     assert_eq!(serialized[1]["field_type"], json!("Integer"));
-    assert_eq!(serialized[1]["field_default"], json!(6379));
+    assert_eq!(serialized[1]["field_default"], json!(6379_i64));
     assert_eq!(serialized[5]["field_default"], json!(false));
     assert_eq!(serialized[0]["field_default"], JsonValue::Null);
     assert_eq!(serialized[0]["field_value"], JsonValue::Null);

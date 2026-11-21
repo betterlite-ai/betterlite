@@ -21,22 +21,14 @@ pub enum CoordinationRedisSection {
     Sentinel,
 }
 
-// litellm types the default as Any; only a port and three flags carry one, so the marker is all that variant needs.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-#[serde(untagged)]
-pub enum FieldDefault {
-    Integer(i64),
-    Boolean(bool),
-}
-
 // litellm's CoordinationRedisSettingsField: the admin UI's description of one setting, plus the value a read filled in.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct CoordinationRedisField {
     pub field_name: &'static str,
     pub field_type: FieldType,
     pub field_value: Option<JsonValue>,
     pub field_description: &'static str,
-    pub field_default: Option<FieldDefault>,
+    pub field_default: Option<JsonValue>,
     pub ui_field_name: &'static str,
     pub section: CoordinationRedisSection,
 }
@@ -56,7 +48,7 @@ pub const CATALOG: [CoordinationRedisField; 15] = [
         field_type: FieldType::Integer,
         field_value: None,
         field_description: "Redis server port number",
-        field_default: Some(FieldDefault::Integer(6379)),
+        field_default: Some(JsonValue::from(6379_i64)),
         ui_field_name: "Port",
         section: CoordinationRedisSection::Connection,
     },
@@ -92,7 +84,7 @@ pub const CATALOG: [CoordinationRedisField; 15] = [
         field_type: FieldType::Boolean,
         field_value: None,
         field_description: "Connect to Redis over TLS",
-        field_default: Some(FieldDefault::Boolean(false)),
+        field_default: Some(JsonValue::Bool(false)),
         ui_field_name: "SSL",
         section: CoordinationRedisSection::Connection,
     },
@@ -137,7 +129,7 @@ pub const CATALOG: [CoordinationRedisField; 15] = [
         field_type: FieldType::Boolean,
         field_value: None,
         field_description: "Enable AWS ElastiCache IAM authentication",
-        field_default: Some(FieldDefault::Boolean(false)),
+        field_default: Some(JsonValue::Bool(false)),
         ui_field_name: "AWS IAM Authentication",
         section: CoordinationRedisSection::Connection,
     },
@@ -173,7 +165,7 @@ pub const CATALOG: [CoordinationRedisField; 15] = [
         field_type: FieldType::Boolean,
         field_value: None,
         field_description: "The ElastiCache cache is serverless rather than a self-designed cluster",
-        field_default: Some(FieldDefault::Boolean(false)),
+        field_default: Some(JsonValue::Bool(false)),
         ui_field_name: "AWS IAM Serverless Cache",
         section: CoordinationRedisSection::Connection,
     },
