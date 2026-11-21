@@ -372,11 +372,11 @@ async fn writer_flag_reads_through_the_writer() {
             fields.get("user_id"),
             Some(&JsonData::String("case-user".to_owned()))
         ),
-        other @ JsonData::Null
-        | other @ JsonData::Bool(_)
-        | other @ JsonData::Number(_)
-        | other @ JsonData::String(_)
-        | other @ JsonData::Array(_) => {
+        other @ (JsonData::Null
+        | JsonData::Bool(_)
+        | JsonData::Number(_)
+        | JsonData::String(_)
+        | JsonData::Array(_)) => {
             panic!("the writer returns the stored user row: {other:?}")
         }
     }
