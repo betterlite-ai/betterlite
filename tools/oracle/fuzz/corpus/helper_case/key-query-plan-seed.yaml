@@ -1,0 +1,9 @@
+kind: helper
+name: key-query-plan-seed
+call:
+  key_query_plan:
+    function: filters
+    now: "2026-05-01T10:00:00+00:00"
+    filters: {user_id: alice, team_id: null, organization_id: null, key_alias: null, key_hash: null, exclude_team_id: null, admin_team_ids: [team-a], member_team_ids: [team-a, team-b], include_created_by_keys: true}
+env: {}
+compare: {ignore: []}

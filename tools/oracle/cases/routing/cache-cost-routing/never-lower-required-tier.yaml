@@ -1,0 +1,36 @@
+kind: probe
+name: never-lower-required-tier
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cache_cost_routing:
+        cache_aware_routing: true
+        cache_aware_routing_output_tokens: 1024
+        cache_aware_routing_timeout_ms: 2000
+        tier_labels: {}
+        tiers: {SIMPLE: small, COMPLEX: frontier}
+        params: []
+        response:
+          model: frontier
+          routing_decision:
+            router_model_name: probe
+            router_type: complexity
+            routed_model: frontier
+            cause: heuristic_scorer
+            tier: COMPLEX
+            conversation_continuing: true
+            signals: ["needs reasoning (2 markers)"]
+          session_affinity_ttl_seconds: 900
+          litellm_params: {max_tokens: 4096}
+        messages: [{role: user, content: prove it}]
+        request_kwargs: {seed: 7}
+        context_fit:
+          facts: {small: {window: 200000}, frontier: {window: 200000}}
+          needed: 100
+          buffer: "0.8"
+        # the only warm model sits in SIMPLE, below the required COMPLEX tier, so the prediction declines
+        choice: null
+        chooser_delay_ms: 0
+compare:
+  ignore: []

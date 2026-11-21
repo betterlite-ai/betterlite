@@ -1,0 +1,14 @@
+kind: helper
+name: azure-chat-call-cloudflare-model-null
+call:
+  azure_chat_call:
+    function: completion
+    cases:
+      - model: gpt-4o-deployment
+        messages:
+          - {role: user, content: hi}
+        api_key: key
+        api_base: https://gateway.ai.cloudflare.com/v1/account/gateway
+        optional_params: {temperature: 0.5}
+env: {}
+compare: {ignore: []}

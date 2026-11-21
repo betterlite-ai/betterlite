@@ -1,0 +1,21 @@
+kind: helper
+name: custom-method-four-methods
+call:
+  custom_method:
+    cases:
+      sync_completion:
+        async_fn: false
+        stream: false
+      sync_streaming:
+        async_fn: false
+        stream: true
+      async_completion:
+        async_fn: true
+        stream: false
+      async_streaming:
+        async_fn: true
+        stream: true
+      sync_completion_without_stream:
+        async_fn: false
+env: {}
+compare: {ignore: []}

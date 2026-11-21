@@ -1,0 +1,12 @@
+kind: helper
+name: provider-attribution-coerce-dict-json
+call:
+  b3030:
+    function: coerce_message
+    detail:
+      foo: bar
+env: {}
+compare:
+  ignore:
+    - pointer: /value/message
+      why: betterlite writes compact JSON where Python's json.dumps puts a space after the colon (docs/compatibility.md)

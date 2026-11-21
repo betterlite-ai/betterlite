@@ -1,0 +1,28 @@
+kind: helper
+name: health-persistence-aggregate-results
+call:
+  b7640:
+    function: aggregate_results
+    deployments:
+      - model_name: alpha
+        litellm_params: {model: shared}
+        model_info: {id: dep-a}
+      - model_name: beta
+        litellm_params: {model: shared}
+        model_info: {}
+      - model_name: gamma
+        litellm_params: {model: solo}
+        model_info: {id: dep-g}
+      - model_name: alpha
+        litellm_params: {model: shared}
+        model_info: {id: dep-b}
+    healthy:
+      - {model: shared, status: ok}
+      - {model: solo, status: ok}
+      - {model: unknown, status: ok}
+    unhealthy:
+      - {model: shared, error: "connection refused"}
+      - {model: shared, error: timeout}
+      - {model: solo, error: ""}
+env: {}
+compare: {ignore: []}

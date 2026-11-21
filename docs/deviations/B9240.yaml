@@ -1,0 +1,15 @@
+task: B9240
+deviations:
+  - what: A phase failure escapes reset_budget as SweepError::Phase, which names the phase and keeps the phase's error as its source, instead of LiteLLM's raw exception.
+    why: The task puts sweep errors in budget_sweep/error.rs so a caller can tell which phase failed while the original error stays intact; docs/compatibility.md leaves error types and message text to betterlite.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L544-L552
+  - what: The database handle, the reset settings, the pod lock manager and the task tracker arrive as constructor parameters, and missing settings come from an injected ResetSettingsSource instead of get_budget_reset_settings().
+    why: betterlite has no module-level state; the composition root supplies the shared store, B2317's settings snapshot and B1690's lock manager.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L459-L469
+  - what: A cancelled or dropped sweep releases the lease from a task on the caller's tracker that may finish after the dropped future returns, and shutdown drains the tracker to wait for it; LiteLLM's finally releases inline during cancellation unwinding.
+    why: Rust drops a future at its await point without running the code after it, so the try/finally release cannot run; the tracked task keeps the release alive.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L550-L552
+  - what: All methods are async on tokio instead of asyncio.
+    why: The gateway is built on tokio and the scheduler calls an async job.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L525
+kept_bugs: []

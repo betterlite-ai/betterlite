@@ -1,0 +1,24 @@
+kind: helper
+name: azure-chat-call-string-reply
+call:
+  azure_chat_call:
+    function: completion
+    cases:
+      - model: gpt-4o-deployment
+        messages:
+          - {role: user, content: hi}
+        api_key: key
+        answer:
+          headers: {content-type: text/plain}
+          body: a plain string
+      - model: gpt-4o-deployment
+        messages:
+          - {role: user, content: hi}
+        api_key: key
+        acompletion: true
+        client: async
+        answer:
+          headers: {content-type: text/plain}
+          body: a plain string
+env: {}
+compare: {ignore: []}

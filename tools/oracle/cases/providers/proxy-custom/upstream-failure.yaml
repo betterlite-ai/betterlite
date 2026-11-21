@@ -1,0 +1,65 @@
+name: proxy-custom-upstream-failure
+config: |
+  model_list:
+    - model_name: failing-proxy-model
+      litellm_params:
+        model: litellm_proxy/gemini/gemini-1.5-pro
+        api_base: "{{upstream}}/failure"
+        api_key: oracle-failing-key
+    - model_name: failing-aleph-model
+      litellm_params:
+        model: aleph_alpha/luminous-base-control
+        # betterlite reaches the deprecated handler through the deployment's declared provider until B10006 reads custom_provider_map
+        custom_llm_provider: aleph_alpha
+        api_base: "{{upstream}}/complete"
+        api_key: oracle-failing-aleph-key
+  router_settings: {num_retries: 0}
+config_files:
+  litellm.yaml: |
+    model_list:
+      - model_name: failing-proxy-model
+        litellm_params:
+          model: litellm_proxy/gemini/gemini-1.5-pro
+          api_base: "{{upstream}}/failure"
+          api_key: oracle-failing-key
+      - model_name: failing-aleph-model
+        litellm_params:
+          model: aleph_alpha/luminous-base-control
+          api_base: "{{upstream}}/complete"
+          api_key: oracle-failing-aleph-key
+    litellm_settings:
+      custom_provider_map:
+        - provider: aleph_alpha
+          custom_handler: litellm.llms.deprecated_providers.aleph_alpha.AlephAlphaConfig
+    router_settings: {num_retries: 0}
+env: {}
+upstream:
+  - status: 500
+    headers: {content-type: application/json}
+    body: {error: {message: "The server had an error", type: server_error, param: null, code: null}}
+  - status: 500
+    headers: {content-type: application/json}
+    body: {error: {message: "The server had an error"}}
+steps:
+  - request:
+      method: POST
+      path: /v1/chat/completions
+      headers: {content-type: application/json, authorization: Bearer oracle-master, x-litellm-call-id: oracle-call-failure}
+      body: {model: failing-proxy-model, messages: [{role: user, content: hi}]}
+    compare:
+      headers: [content-type, x-litellm-call-id]
+      headers_present: []
+      upstream_headers: [authorization, content-type]
+      ignore:
+        - {pointer: /error/message, why: betterlite writes its own message}
+  - request:
+      method: POST
+      path: /v1/chat/completions
+      headers: {content-type: application/json, authorization: Bearer oracle-master, x-litellm-call-id: oracle-call-failure-aleph}
+      body: {model: failing-aleph-model, messages: [{role: user, content: hi}]}
+    compare:
+      headers: [content-type, x-litellm-call-id]
+      headers_present: []
+      upstream_headers: [authorization, content-type]
+      ignore:
+        - {pointer: /error/message, why: betterlite writes its own message}

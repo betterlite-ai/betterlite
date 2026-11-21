@@ -1,0 +1,9 @@
+model_list:
+  - model_name: rerank-deployment
+    litellm_params:
+      model: cohere/rerank-v1
+      api_base: os.environ/COHERE_API_BASE
+litellm_settings:
+  drop_params: false
+  headers:
+    x-rerank-seed: second
