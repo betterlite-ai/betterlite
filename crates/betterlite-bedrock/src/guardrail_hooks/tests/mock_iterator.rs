@@ -108,17 +108,17 @@ async fn a_replayed_chunk_drops_the_null_choice_fields() {
     let StreamChunk::Json(GuardrailValue::Object(chunk)) = &output[0] else {
         panic!("expected a json chunk");
     };
-    let Some(GuardrailValue::Array(choices)) = chunk.get("choices") else {
+    let Some(GuardrailValue::Array(out_choices)) = chunk.get("choices") else {
         panic!("expected choices");
     };
-    let GuardrailValue::Object(choice) = &choices[0] else {
+    let GuardrailValue::Object(out_choice) = &out_choices[0] else {
         panic!("expected a choice");
     };
-    let Some(GuardrailValue::Object(delta)) = choice.get("delta") else {
+    let Some(GuardrailValue::Object(delta)) = out_choice.get("delta") else {
         panic!("expected a delta");
     };
     assert!(!delta.contains_key("tool_calls"));
-    assert!(!choice.contains_key("finish_reason"));
+    assert!(!out_choice.contains_key("finish_reason"));
 }
 
 #[tokio::test]
