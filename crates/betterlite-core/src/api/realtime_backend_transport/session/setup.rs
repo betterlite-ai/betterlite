@@ -1,6 +1,5 @@
 use std::error::Error as StdError;
 
-use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
 use crate::api::realtime_backend_transport::error::RealtimeConnectionError;
@@ -28,24 +27,8 @@ where
     Relay: RealtimeSessionRelay,
 {
     if call.provider.requires_session_configuration() {
-        let Some(request) = call
-            .provider
-            .session_configuration_request(call.model)
-            .filter(|request| !request.is_empty())
-        else {
-            return Ok(());
-        };
-        let patched = inject_auto_response_disable(
-            &request,
-            &mut state.setup.turn_detection_update_sent.0,
-            call.callbacks,
-            &state.request_data,
-        )
-        .map_err(RealtimeConnectionError::Guardrail)?;
-        let setup = patched.unwrap_or(request);
-        send_to_backend(state, &setup).await?;
-        state.response.session_configuration_request = Some(setup);
-        return Ok(());
+        let request = call.provider.session_configuration_request(call.model);
+        return send_setup_frame(state, request, call.callbacks).await;
     }
     let Some(event) =
         call.provider
@@ -53,22 +36,7 @@ where
     else {
         return Ok(());
     };
-    deliver_synthetic(call, state, &event).await
-}
-
-// A deferred provider's synthetic session.created is stored before the client send and flagged only after it
-async fn deliver_synthetic<Config, Callback, Relay>(
-    call: &RealtimeCall<'_, Config, Callback, Relay>,
-    state: &mut RealtimeStreaming,
-    event: &Json,
-) -> Result<(), RealtimeConnectionError<Config::Error, Callback::Error, Relay::Error>>
-where
-    Config: BaseRealtimeConfig + 'static,
-    Callback: RealtimeGuardrailCallback + ?Sized,
-    Callback::Error: StdError + Send + Sync + 'static,
-    Relay: RealtimeSessionRelay,
-{
-    let text = serde_json::to_string(event)
+    let text = serde_json::to_string(&event)
         .map_err(|source| RealtimeConnectionError::Contract(RealtimeContractError::Json(source)))?;
     state
         .store_message(SessionMessage::Text(&text))
@@ -82,6 +50,34 @@ where
         .map_err(RealtimeConnectionError::Client)?;
     state.setup.session_created_sent_to_client.0 = true;
     tracing::debug!("Sent synthetic session.created to client to unblock connection");
+    Ok(())
+}
+
+// The setup is patched with the guardrail's disable before the backend send and cached once it is out
+async fn send_setup_frame<Callback, ConfigError, CallbackError, RelayError>(
+    state: &mut RealtimeStreaming,
+    request: Option<String>,
+    callbacks: &[&Callback],
+) -> Result<(), RealtimeConnectionError<ConfigError, CallbackError, RelayError>>
+where
+    Callback: RealtimeGuardrailCallback<Error = CallbackError> + ?Sized,
+    ConfigError: StdError + 'static,
+    CallbackError: StdError + 'static,
+    RelayError: StdError + 'static,
+{
+    let Some(request) = request.filter(|request| !request.is_empty()) else {
+        return Ok(());
+    };
+    let patched = inject_auto_response_disable(
+        &request,
+        &mut state.setup.turn_detection_update_sent.0,
+        callbacks,
+        &state.request_data,
+    )
+    .map_err(RealtimeConnectionError::Guardrail)?;
+    let setup = patched.unwrap_or(request);
+    send_to_backend(state, &setup).await?;
+    state.response.session_configuration_request = Some(setup);
     Ok(())
 }
 
