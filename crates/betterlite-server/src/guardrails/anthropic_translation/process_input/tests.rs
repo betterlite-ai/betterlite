@@ -448,8 +448,46 @@ async fn tools_scan_only_keeps_request_tools_and_appends_new_names() {
         .filter_map(|tool| tool["name"].as_str())
         .collect();
     assert_eq!(names, vec!["get", "other", "new_tool"]);
-    assert_eq!(tools[0]["type"].as_str(), Some("custom"));
+    // The scan-only merge keeps every request tool verbatim and only appends the returned one.
+    assert_eq!(
+        tools[0],
+        json!({"name": "get", "description": "d", "input_schema": {"type": "object", "properties": {}}})
+    );
+    assert_eq!(
+        tools[1],
+        json!({"name": "other", "description": "o", "input_schema": {"type": "object", "properties": {}}})
+    );
     assert_eq!(tools[2]["type"].as_str(), Some("custom"));
+}
+
+#[tokio::test]
+async fn tools_returned_with_a_structured_answer_write_both() {
+    let mut data = body(json!({
+        "model": "claude-sonnet-4-5",
+        "messages": [{"role": "user", "content": "hi"}],
+        "tools": [
+            {"name": "get", "description": "d", "input_schema": {"type": "object", "properties": {}}}
+        ]
+    }));
+    let answer = GuardrailApiInputs {
+        tools: Some(vec![returned_tool("new_tool")]),
+        structured_messages: Some(vec![row("user", "edited")]),
+        ..NO_INPUTS
+    };
+    let guardrail = ScriptedGuardrail::new(answer).covering_full_request();
+    process_input_messages(&mut data, &guardrail, &context(), None)
+        .await
+        .unwrap();
+    // LiteLLM writes data["tools"] before it branches on the structured answer.
+    let written_tools = to_json(data.get("tools").expect("the written tools"));
+    let tools = written_tools.as_array().expect("an array");
+    assert_eq!(tools.len(), 1);
+    assert_eq!(tools[0]["name"].as_str(), Some("new_tool"));
+    assert_eq!(tools[0]["type"].as_str(), Some("custom"));
+    assert_eq!(
+        message_json(&data, 0),
+        json!({"role": "user", "content": [{"type": "text", "text": "edited"}]})
+    );
 }
 
 #[tokio::test]
@@ -730,6 +768,33 @@ async fn structured_path_drops_a_system_row_the_request_never_had() {
     process_input_messages(&mut data, &guardrail, &context(), None)
         .await
         .unwrap();
+    let written = to_json(data.get("messages").expect("the messages"));
+    assert_eq!(
+        written,
+        json!([{"role": "user", "content": [{"type": "text", "text": "edited"}]}])
+    );
+}
+
+#[tokio::test]
+async fn structured_path_drops_an_added_system_row_after_the_top_level_hoist() {
+    let mut data = body(json!({
+        "model": "claude-sonnet-4-5",
+        "system": "trusted",
+        "messages": [{"role": "user", "content": "hi"}]
+    }));
+    let answer = GuardrailApiInputs {
+        structured_messages: Some(vec![row("user", "edited"), row("system", "added")]),
+        ..NO_INPUTS
+    };
+    let guardrail = ScriptedGuardrail::new(answer).covering_full_request();
+    process_input_messages(&mut data, &guardrail, &context(), None)
+        .await
+        .unwrap();
+    // LiteLLM reads the mid-turn system flag before the hoisted row joins the list.
+    assert_eq!(
+        to_json(data.get("system").expect("the system prompt")),
+        json!("trusted")
+    );
     let written = to_json(data.get("messages").expect("the messages"));
     assert_eq!(
         written,
