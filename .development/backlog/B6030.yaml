@@ -1,7 +1,7 @@
 id: B6030
 milestone: M12 python
 title: Python CustomLogger and CustomBatchLogger
-status: done
+status: todo
 depends_on: [B157, B5657, B5658, B9951]
 file: tasks/B6030-python-custom-logger.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/types/integrations/custom_logger.py"
 parent: B164
 split_from: B164
-resolution: merged
+resolution: null
 superseded_by: null
 blocked_reason: null
-pr: 2837
+pr: null
