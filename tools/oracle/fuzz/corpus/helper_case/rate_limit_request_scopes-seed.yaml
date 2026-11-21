@@ -1,0 +1,28 @@
+kind: helper
+name: rate_limit_request_scopes-seed
+call:
+  b3040:
+    function: dynamic_flag
+    rpm_limit_type: dynamic
+    tpm_limit_type: null
+calls:
+  - b3040:
+      function: create
+      auth:
+        api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        rpm_limit: 10
+        budget_throttle_pct: 0.5
+      server: {}
+      data:
+        model: gpt4
+      rpm_limit_type: dynamic
+      tpm_limit_type: null
+      model_has_failures: false
+      call_type: null
+      groups:
+        gpt4: gpt-4
+      registry: []
+      tag_limits: []
+      window_size: 60
+env: {}
+compare: {ignore: []}

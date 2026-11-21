@@ -1,0 +1,14 @@
+kind: helper
+name: vertex-rag-store-seed-multiregion-create
+call:
+  b3455:
+    options:
+      name: seed-corpus
+      vector_store:
+        vertex_project: seed-project
+        vertex_location: us
+    responses:
+      - status: 200
+        body: '{"done":true,"response":{"name":"corpora/seed"}}'
+env: {}
+compare: {ignore: []}

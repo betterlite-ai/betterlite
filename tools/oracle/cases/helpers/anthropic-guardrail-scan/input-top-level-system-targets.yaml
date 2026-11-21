@@ -1,0 +1,6 @@
+kind: helper
+name: anthropic-guardrail-scan-input-top-level-system-targets
+call:
+  b3675: {"function": "top_level_system", "scenarios": [{"hoisted": {"role": "system", "content": ""}}, {"hoisted": {"role": "system", "content": "trusted"}}, {"hoisted": {"role": "system", "content": [{"type": "text", "text": "a"}, {"type": "image", "source": {}}, {"type": "text", "text": ""}, {"type": "text", "text": 5}]}}, {"hoisted": {"role": "system", "content": 5}}, {"hoisted": {}}]}
+env: {}
+compare: {ignore: []}
