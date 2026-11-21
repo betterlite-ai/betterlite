@@ -208,3 +208,10 @@ path = "fuzz_targets/spend_buffer.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "partition_bound"
+path = "fuzz_targets/partition_bound.rs"
+test = false
+doc = false
+bench = false
