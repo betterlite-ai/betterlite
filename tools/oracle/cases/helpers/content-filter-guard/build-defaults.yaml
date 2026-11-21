@@ -1,0 +1,18 @@
+kind: helper
+name: build-defaults
+call:
+  b8773:
+    builds:
+      - args:
+          patterns: []
+          blocked_words: []
+          event_hook: null
+          default_on: false
+          guardrail_id: null
+          policy_template: null
+          image_model: null
+          competitor_intent_config: null
+          severity_threshold: medium
+        apply: null
+env: {}
+compare: {ignore: []}
