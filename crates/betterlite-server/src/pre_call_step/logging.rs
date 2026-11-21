@@ -132,10 +132,10 @@ fn environment_params(data: &JsonMap) -> IndexMap<String, Json> {
         .get("litellm_metadata")
         .filter(|value| value.is_object())
         .map(to_decision);
-    if let Some(litellm_metadata) = litellm_metadata {
-        params.insert(String::from("litellm_metadata"), litellm_metadata.clone());
+    if let Some(resolved) = litellm_metadata {
+        params.insert(String::from("litellm_metadata"), resolved.clone());
         if matches!(params.get("metadata"), None | Some(Json::Null)) {
-            params.insert(String::from("metadata"), litellm_metadata);
+            params.insert(String::from("metadata"), resolved);
         }
     }
     params

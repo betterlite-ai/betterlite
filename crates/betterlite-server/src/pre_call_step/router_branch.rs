@@ -39,11 +39,11 @@ where
 }
 
 fn router_weights(weights: Option<&JsonValue>) -> JsonValue {
-    let Some(weights) = weights else {
+    let Some(stored) = weights else {
         return JsonValue::Null;
     };
     let mut holder = IndexMap::new();
-    holder.insert(String::from("weights"), to_decision(weights));
+    holder.insert(String::from("weights"), to_decision(stored));
     match decode_router_weights(&Json::Object(holder)) {
         Ok(Some(decoded)) => weights_json(&decoded),
         Ok(None) => JsonValue::Null,

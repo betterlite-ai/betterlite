@@ -73,10 +73,7 @@ impl RequestPreparer<TestKey> for Fake {
 impl VectorStoreAccess<TestKey> for Fake {
     async fn assert_access(&self, store_id: &str, _key: &TestKey) -> Result<(), PreCallFailure> {
         self.record(Call::Access(store_id.to_owned()));
-        match self.script.access.clone() {
-            Some(failure) => Err(failure),
-            None => Ok(()),
-        }
+        self.script.access.clone().map_or(Ok(()), Err)
     }
 }
 
@@ -115,10 +112,7 @@ impl RouterView<TestKey> for Fake {
 
     async fn authorize_alias(&self, target: &str, _key: &TestKey) -> Result<(), PreCallFailure> {
         self.record(Call::Authorize(target.to_owned()));
-        match self.script.authorize.clone() {
-            Some(failure) => Err(failure),
-            None => Ok(()),
-        }
+        self.script.authorize.clone().map_or(Ok(()), Err)
     }
 }
 
@@ -239,7 +233,7 @@ impl LoggerResolver for NoLoggers {
 pub(super) struct TestLogger;
 
 impl CallbackLogger for TestLogger {
-    fn callback_name(&self) -> &str {
+    fn callback_name(&self) -> &'static str {
         "test-logger"
     }
 }

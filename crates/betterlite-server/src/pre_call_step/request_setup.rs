@@ -115,8 +115,8 @@ where
     let Some(router) = step.ports.router.as_deref() else {
         return Ok(());
     };
-    let settings = step.ports.router_settings.router_settings(input.key).await;
-    let Some(settings) = held_error(data.clone(), settings)? else {
+    let resolved = step.ports.router_settings.router_settings(input.key).await;
+    let Some(settings) = held_error(data.clone(), resolved)? else {
         return Ok(());
     };
     let held = data.clone();

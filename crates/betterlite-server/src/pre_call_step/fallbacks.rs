@@ -120,7 +120,7 @@ where
             Ok(output) => return Ok(output),
             Err(next) => match next.failure {
                 PreCallFailure::RateLimited(_) => {}
-                failure => {
+                failure @ (PreCallFailure::Proxy(_) | PreCallFailure::Http { .. }) => {
                     return Err(PreCallError {
                         failure,
                         data: plan.rate_limited.data.clone(),
@@ -147,9 +147,7 @@ fn can_fall_back(
     pristine: Option<&JsonMap>,
     configured: Option<&[JsonValue]>,
 ) -> Option<String> {
-    if pristine.is_none() {
-        return None;
-    }
+    pristine?;
     configured.filter(|items| !items.is_empty())?;
     if enabled(data.get("disable_fallbacks")) {
         return None;

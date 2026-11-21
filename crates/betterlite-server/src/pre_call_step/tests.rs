@@ -16,7 +16,9 @@ use http::request::Parts;
 use rstest::rstest;
 
 use super::standalone::{AllowAllBudgets, NoRouterSettings};
-use super::{PreCall, PreCallError, PreCallInput, PreCallOutput, PreCallSettings, PreCallStep};
+use super::{
+    PreCall as _, PreCallError, PreCallInput, PreCallOutput, PreCallSettings, PreCallStep,
+};
 use crate::pre_call::failure::{PreCallFailure, ProxyFailure};
 use crate::pre_call::key::PreCallKey;
 use crate::pre_call::ports::{
@@ -132,8 +134,8 @@ fn data_from(source: &str) -> JsonMap {
 
 fn parts(path: &str, call_id: Option<&str>) -> Parts {
     let mut builder = Request::builder().uri(path);
-    if let Some(call_id) = call_id {
-        builder = builder.header("x-litellm-call-id", call_id);
+    if let Some(id) = call_id {
+        builder = builder.header("x-litellm-call-id", id);
     }
     let request = builder.body(()).unwrap();
     request.into_parts().0
@@ -362,7 +364,7 @@ async fn step_runs_the_ports_in_order() {
     let snapshot = output
         .data
         .get("proxy_server_request")
-        .and_then(|request| request.get("body"));
+        .and_then(|held| held.get("body"));
     assert_eq!(
         snapshot
             .and_then(|body| body.get("model"))
@@ -380,9 +382,8 @@ async fn step_rejects_a_non_string_model_before_any_port() {
     let input = input_for(r#"{"model": 7}"#, &request, &key, RouteType::Completion);
     let expected = input.data.clone();
     let result = step.run(expected.clone(), &input, None).await;
-    let error = match result {
-        Ok(_) => panic!("a non-string model must fail"),
-        Err(error) => error,
+    let Err(error) = result else {
+        panic!("a non-string model must fail")
     };
     assert_eq!(fake.events(), Vec::new());
     assert_eq!(
@@ -409,9 +410,8 @@ async fn step_failure_returns_the_data_as_it_stood() {
     let key = TestKey::default();
     let input = input_for(r#"{"model": "gpt"}"#, &request, &key, RouteType::Completion);
     let result = step.run(input.data.clone(), &input, None).await;
-    let error = match result {
-        Ok(_) => panic!("the hook failure must surface"),
-        Err(error) => error,
+    let Err(error) = result else {
+        panic!("the hook failure must surface")
     };
     assert_eq!(error.failure, boom());
     assert_eq!(text_at(&error.data, "litellm_call_id"), "call-9");
@@ -485,7 +485,7 @@ async fn step_sets_the_call_id_and_tracer_tags() {
     let tracer = Arc::new(TestTracer::default());
     let loggers: Arc<dyn LoggerResolver> = Arc::new(NoLoggers);
     let settings = PreCallSettings::default();
-    let step = step_full(&fake, tracer.clone(), loggers, settings);
+    let step = step_full(&fake, Arc::clone(&tracer), loggers, settings);
     let request = parts("/chat/completions", Some("call-1"));
     let key = TestKey::default();
     let input = input_for(r#"{"model": "gpt"}"#, &request, &key, RouteType::Completion);
@@ -573,9 +573,8 @@ async fn step_returns_a_store_access_failure_with_the_data() {
         r#"{"model": "gpt", "tools": [{"type": "file_search", "vector_store_ids": ["a"]}]}"#;
     let input = input_for(fixture, &request, &key, RouteType::Responses);
     let result = step.run(input.data.clone(), &input, None).await;
-    let error = match result {
-        Ok(_) => panic!("the store failure must surface"),
-        Err(error) => error,
+    let Err(error) = result else {
+        panic!("the store failure must surface")
     };
     assert_eq!(error.failure, boom());
     assert_eq!(text_at(&error.data, "model"), "gpt");
@@ -629,9 +628,8 @@ async fn fallback_returns_the_first_failure_without_fallbacks() {
         ..behavior()
     };
     let (events, result) = fallback_run(script, r#"{"model": "gpt"}"#, TestKey::default()).await;
-    let error = match result {
-        Ok(_) => panic!("the rate limit must surface"),
-        Err(error) => error,
+    let Err(error) = result else {
+        panic!("the rate limit must surface")
     };
     assert_eq!(error.failure, rate_limited());
     assert!(!events.contains(&Call::Fallbacks));
@@ -642,9 +640,8 @@ async fn fallback_returns_the_failure_when_disabled() {
     let script = fallback_script(&["a"], &["gpt"]);
     let fixture = r#"{"model": "gpt", "disable_fallbacks": true}"#;
     let (events, result) = fallback_run(script, fixture, TestKey::default()).await;
-    let error = match result {
-        Ok(_) => panic!("the rate limit must surface"),
-        Err(error) => error,
+    let Err(error) = result else {
+        panic!("the rate limit must surface")
     };
     assert_eq!(error.failure, rate_limited());
     assert!(
@@ -658,10 +655,12 @@ async fn fallback_returns_the_failure_when_disabled() {
 async fn fallback_uses_the_key_router_settings() {
     let mut script = fallback_script(&["key-model"], &["gpt"]);
     script.fallbacks = Some(vec![JsonValue::String(String::from("router-model"))]);
-    let mut key = TestKey::default();
-    key.router_settings = Some(JsonValue::Object(data_from(
-        r#"{"fallbacks": ["key-model"]}"#,
-    )));
+    let key = TestKey {
+        router_settings: Some(JsonValue::Object(data_from(
+            r#"{"fallbacks": ["key-model"]}"#,
+        ))),
+        ..TestKey::default()
+    };
     let (events, result) = fallback_run(script, r#"{"model": "gpt"}"#, key).await;
     result.unwrap();
     assert!(events.contains(&Call::FallbackModels(
@@ -693,9 +692,8 @@ async fn fallback_returns_a_successful_fallback() {
 async fn fallback_returns_the_original_error_after_the_loop() {
     let script = fallback_script(&["a"], &["gpt", "a"]);
     let (_, result) = fallback_run(script, r#"{"model": "gpt"}"#, TestKey::default()).await;
-    let error = match result {
-        Ok(_) => panic!("every fallback is rate limited"),
-        Err(error) => error,
+    let Err(error) = result else {
+        panic!("every fallback is rate limited")
     };
     assert_eq!(error.failure, rate_limited());
     assert_eq!(text_at(&error.data, "model"), "gpt");
@@ -744,7 +742,7 @@ async fn standalone_applies_the_cli_overrides() {
         model_alias_map: aliases,
     };
     let overrides = CliOverrides {
-        temperature: Some(0.25),
+        temperature: Some(0.25_f64),
         request_timeout: None,
         max_tokens: None,
         api_base: None,
@@ -894,13 +892,14 @@ async fn step_rejects_a_url_valued_model_argument() {
     input.model = Some("https://example.com/model");
     let data = input.data.clone();
     let result = step.run(data.clone(), &input, None).await;
-    let error = match result {
-        Ok(_) => panic!("a URL-valued model argument must fail"),
-        Err(error) => error,
+    let Err(error) = result else {
+        panic!("a URL-valued model argument must fail")
     };
     let (status, detail) = match error.failure {
         PreCallFailure::Http { status, detail } => (status, detail),
-        other => panic!("expected an HTTP failure, got {other:?}"),
+        failure @ (PreCallFailure::Proxy(_) | PreCallFailure::RateLimited(_)) => {
+            panic!("expected an HTTP failure, got {failure:?}")
+        }
     };
     assert_eq!(status, 400);
     assert_eq!(
@@ -915,9 +914,8 @@ async fn fallback_returns_another_failure_with_the_rate_limited_data() {
     let mut script = fallback_script(&["a"], &["gpt"]);
     script.fail_models = vec![String::from("a")];
     let (events, result) = fallback_run(script, r#"{"model": "gpt"}"#, TestKey::default()).await;
-    let error = match result {
-        Ok(_) => panic!("the fallback failure must surface"),
-        Err(error) => error,
+    let Err(error) = result else {
+        panic!("the fallback failure must surface")
     };
     assert_eq!(error.failure, boom());
     assert_eq!(text_at(&error.data, "model"), "gpt");
@@ -933,9 +931,8 @@ async fn fallback_returns_the_failure_without_a_router() {
     let key = TestKey::default();
     let input = input_for(r#"{"model": "gpt"}"#, &request, &key, RouteType::Completion);
     let result = step.pre_call(input).await;
-    let error = match result {
-        Ok(_) => panic!("the rate limit must surface"),
-        Err(error) => error,
+    let Err(error) = result else {
+        panic!("the rate limit must surface")
     };
     assert_eq!(error.failure, rate_limited());
     assert!(!fake.events().contains(&Call::Fallbacks));
@@ -946,9 +943,8 @@ async fn fallback_returns_the_failure_when_models_do_not_resolve() {
     let mut script = fallback_script(&["a"], &["gpt"]);
     script.fallback_models = None;
     let (events, result) = fallback_run(script, r#"{"model": "gpt"}"#, TestKey::default()).await;
-    let error = match result {
-        Ok(_) => panic!("the rate limit must surface"),
-        Err(error) => error,
+    let Err(error) = result else {
+        panic!("the rate limit must surface")
     };
     assert_eq!(error.failure, rate_limited());
     assert_eq!(text_at(&error.data, "model"), "gpt");
