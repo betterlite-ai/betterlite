@@ -254,3 +254,32 @@ fn reaches_config_decisions_from_the_base_variable_and_the_default() {
     let defaulted = perplexity::decisions(&call, &request, &environment(&[])).unwrap();
     assert_eq!(defaulted.url, "https://api.perplexity.ai/v1/decisions");
 }
+
+#[test]
+fn reaches_config_decisions_with_the_call_key_over_the_variables() {
+    let params = Object::new();
+    let headers = BTreeMap::new();
+    let request = DecisionRequest {
+        input: DecisionInput::State(DecisionsJson::Text(String::from("ready"))),
+        questions: PerplexityDecisionsConfig.health_check_questions(),
+        safety_identifier: None,
+    };
+    let variables = environment(&[("PERPLEXITYAI_API_KEY", "sk-env")]);
+    let key = SecretString::from(String::from("sk-call"));
+    let keyed = resource_call("pplx-decider", &params, &headers, Some(&key));
+    let from_call = perplexity::decisions(&keyed, &request, &variables).unwrap();
+    assert_eq!(
+        from_call.headers.get("Authorization").map(String::as_str),
+        Some("Bearer sk-call")
+    );
+    let empty = SecretString::from(String::new());
+    let unkeyed = resource_call("pplx-decider", &params, &headers, Some(&empty));
+    let from_variable = perplexity::decisions(&unkeyed, &request, &variables).unwrap();
+    assert_eq!(
+        from_variable
+            .headers
+            .get("Authorization")
+            .map(String::as_str),
+        Some("Bearer sk-env")
+    );
+}
