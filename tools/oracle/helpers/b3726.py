@@ -1,7 +1,7 @@
 import asyncio
 import time
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable
-from typing import Final, Literal, Protocol, TypeAlias, TypedDict
+from typing import Final, Literal, Protocol, TypeAlias, TypedDict, runtime_checkable
 
 import httpx
 import litellm
@@ -11,7 +11,7 @@ from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.guardrails.guardrail_hooks.bedrock_guardrails import BedrockGuardrail
 from litellm.types.guardrails import GuardrailEventHooks
 from litellm.types.utils import CallTypesLiteral, ModelResponse, ModelResponseStream
-from pydantic import JsonValue, TypeAdapter
+from pydantic import ConfigDict, JsonValue, TypeAdapter
 from starlette.exceptions import HTTPException
 
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
@@ -57,6 +57,7 @@ class HookCase(TypedDict):
     replies: list[Reply]
 
 
+@runtime_checkable
 class Hooks(Protocol):
     async def async_pre_call_hook(
         self,
@@ -64,15 +65,15 @@ class Hooks(Protocol):
         cache: DualCache,
         data: Payload,
         call_type: CallTypesLiteral,
-    ) -> object: ...
+    ) -> JsonValue | Exception: ...
 
     async def async_moderation_hook(
         self, data: Payload, user_api_key_dict: UserAPIKeyAuth, call_type: CallTypesLiteral
-    ) -> object: ...
+    ) -> JsonValue | Exception: ...
 
     async def async_post_call_success_hook(
         self, data: Payload, user_api_key_dict: UserAPIKeyAuth, response: ModelResponse
-    ) -> object: ...
+    ) -> JsonValue | Exception: ...
 
     def async_post_call_streaming_iterator_hook(  # ast-grep-ignore: no-long-names
         self,
@@ -80,6 +81,10 @@ class Hooks(Protocol):
         response: AsyncIterator[StreamItem],
         request_data: Payload,
     ) -> AsyncGenerator[StreamItem, None]: ...
+
+
+ARBITRARY: ConfigDict = ConfigDict(arbitrary_types_allowed=True)
+HOOKS: Final = TypeAdapter[Hooks](Hooks, config=ARBITRARY)
 
 
 class Scripted:
@@ -108,7 +113,7 @@ def rejected(error: HTTPException) -> JsonValue:
     }
 
 
-async def attempt(call: Awaitable[object]) -> JsonValue:
+async def attempt(call: Awaitable[JsonValue | Exception]) -> JsonValue:
     try:
         await call
     except HTTPException as error:
@@ -219,7 +224,7 @@ def run(input_value: HookCase) -> JsonValue:
         aws_secret_access_key="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
         aws_region_name="us-west-2",
     )
-    hooks: Hooks = guardrail
+    hooks = HOOKS.validate_python(guardrail)
     seen: list[JsonValue] = []
     guardrail.async_handler.client = httpx.AsyncClient(
         transport=httpx.MockTransport(Scripted(input_value["replies"], seen))
