@@ -202,8 +202,7 @@ fn traceparent_opt_in(
     #[case] data: &str,
     #[case] extra_headers: Option<&str>,
 ) {
-    let mut settings = Settings::default();
-    settings.forward_traceparent_to_llm_provider = forward;
+    let settings = configured(|settings| settings.forward_traceparent_to_llm_provider = forward);
     let result = prepare_with(
         &settings,
         otel_enabled,
@@ -255,9 +254,10 @@ fn user_header_mapping(
     #[case] user: Option<&str>,
     #[case] internal_user_id: Option<&str>,
 ) {
-    let mut settings = Settings::default();
-    settings.user_header_mappings = user_header_mappings;
-    settings.user_header_name = user_header_name.map(str::to_owned);
+    let settings = configured(|settings| {
+        settings.user_header_mappings = user_header_mappings;
+        settings.user_header_name = user_header_name.map(str::to_owned);
+    });
     let result = prepare(&settings, input(headers, "{}"));
     assert_eq!(result.user.as_deref(), user);
     assert_eq!(result.internal_user_id.as_deref(), internal_user_id);
@@ -280,18 +280,27 @@ fn backend(change: fn(&mut Backend)) -> Backend {
     want
 }
 
-fn general(forward_headers: bool, forward_org: bool) -> Settings {
+fn configured<F>(change: F) -> Settings
+where
+    F: FnOnce(&mut Settings),
+{
     let mut settings = Settings::default();
-    settings.forward_client_headers_to_llm_api = forward_headers;
-    settings.forward_openai_org_id = forward_org;
+    change(&mut settings);
     settings
 }
 
+fn general(forward_headers: bool, forward_org: bool) -> Settings {
+    configured(|settings| {
+        settings.forward_client_headers_to_llm_api = forward_headers;
+        settings.forward_openai_org_id = forward_org;
+    })
+}
+
 fn model_group(models: &[&str]) -> Settings {
-    let mut settings = Settings::default();
-    settings.model_group_forwarding =
-        Some(models.iter().map(|model| (*model).to_owned()).collect());
-    settings
+    configured(|settings| {
+        settings.model_group_forwarding =
+            Some(models.iter().map(|model| (*model).to_owned()).collect());
+    })
 }
 
 #[rstest]
@@ -444,8 +453,11 @@ fn header_metadata(#[case] headers: Pairs, #[case] data: &str, #[case] expected:
 #[case::within_limit(13, r#"{"metadata": {"spend_logs_metadata": {"a": 1}}}"#)]
 #[case::over_limit(12, r#"{"metadata": {}}"#)]
 fn header_metadata_json_limit(#[case] max_json_bytes: usize, #[case] expected: &str) {
-    let mut limits = ApiLimits::default();
-    limits.max_json_bytes = max_json_bytes;
+    let limits = ApiLimits {
+        max_json_bytes,
+        max_event_bytes: 1024,
+        max_items: 64,
+    };
     let request = input(
         &[("x-litellm-spend-logs-metadata", r#"{"a":    1  }"#)],
         r#"{"metadata": {}}"#,
