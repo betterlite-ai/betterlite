@@ -11,4 +11,17 @@ deviations:
       this workspace; the provider sees a cancelled request instead of a
       completed one.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L75-L77
+  - what: >-
+      A kwargs api_base that is not text is refused with a BadRequestError
+      (status 400, llm_provider "") before the call. LiteLLM raises that same
+      error only when get_llm_provider infers the provider from the model
+      name; a model with a known prefix takes the early return that hands the
+      non-string api_base through, and the provider handler then fails with a
+      TypeError that exception_type reports as an APIConnectionError.
+    why: >-
+      A non-text api_base is a caller error, so it gets the 400 with the empty
+      provider label that get_llm_provider's own api_base check raises, on
+      every model shape, rather than the APIConnectionError 500 a later
+      URL-building TypeError maps to.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L236-L248
 kept_bugs: []
