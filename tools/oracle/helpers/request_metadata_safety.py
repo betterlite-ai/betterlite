@@ -67,7 +67,6 @@ def request_for(route: str) -> Request:
         "method": "POST",
         "path": route,
         "query_string": b"",
-        "headers": [],
     }
     return Request(scope=scope)
 
@@ -82,16 +81,15 @@ def user_api_key_auth(principal: SanitizePrincipal) -> UserAPIKeyAuth:
 
 
 def proxy_error_facts(error: ProxyException) -> JsonValue:
-    return JSON.validate_python(
-        {
-            "error": {
-                "status": int(error.code),
-                "type": error.type,
-                "param": error.param,
-                "code": error.code,
-            }
+    facts = {
+        "error": {
+            "status": int(error.code),
+            "type": error.type,
+            "param": error.param,
+            "code": error.code,
         }
-    )
+    }
+    return JSON.validate_python(facts)
 
 
 def sanitize_outcome(call: SanitizeCall) -> JsonValue:
@@ -131,13 +129,12 @@ def sanitize_outcome(call: SanitizeCall) -> JsonValue:
     _strip_client_callback_credentials(data)
     if not allow_opt_out and call["settings"]["turn_off_message_logging"]:
         _strip_client_message_redaction_opt_out(data)
-    return JSON.validate_python(
-        {
-            "data": data,
-            "headers": [[name, value] for name, value in headers.items()],
-            "metadata_variable_name": variable,
-        }
-    )
+    outcome = {
+        "data": data,
+        "headers": [[name, value] for name, value in headers.items()],
+        "metadata_variable_name": variable,
+    }
+    return JSON.validate_python(outcome)
 
 
 def sanitize_call(input_value: JsonValue) -> JsonValue:
