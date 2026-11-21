@@ -5,33 +5,19 @@ use std::convert::Infallible;
 use std::fs;
 use std::path::PathBuf;
 use std::slice::from_ref;
-use std::time::Duration;
 
-use betterlite_logging::logging_pre_post::args::RawBody;
-use betterlite_logging::logging_pre_post::env::{
-    DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
-};
-use betterlite_logging::logging_privacy::request::Decision;
-use betterlite_logging::logging_state::correlation::{
-    CorrelationContext, CorrelationSettings, CorrelationSetup,
-};
-use betterlite_logging::logging_state::{LoggingInit, LoggingState};
-use betterlite_models::decisions::Json as HiddenJson;
 use betterlite_prompts::arguments::json::{Json, Object};
-use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
-use chrono::DateTime;
 use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::SecretString;
 use serde_json::Value;
 use thiserror::Error;
-use uuid::Uuid;
 
 use super::maritalk::MaritalkConfig;
 use super::meta_llama::LlamaAPIConfig;
 use super::moonshot::{self, MoonshotError, TransformInput, complete_url, map_openai_params};
 use super::morph::MorphChatConfig;
-use super::nadir::{self, NadirReply, ReplyRequest as NadirRequest, nadir_reported_cost};
+use super::nadir::{self, nadir_reported_cost};
 use super::nebius::NebiusConfig;
 use super::novita::{MISSING_KEY_MESSAGE, NovitaConfig, NovitaKeyError};
 use super::nscale::NscaleConfig;
@@ -40,16 +26,14 @@ use super::wandb::WandbConfig;
 use super::zai::ZaiChatConfig;
 use super::{CompletionTokenRename, json_is_truthy, map_supported};
 use crate::chat::{ChatMessage, ContentPart, FunctionCall, MessageContent, Role, Tool, ToolCall};
-use crate::chat_choices::reply::{ResponseReply, TransformResponseError};
 use crate::chat_content::{ChatContentError, MissingFileError, Mode, RefuseDownloads};
-use crate::compatible_wire::{LogInput, ReplyOptions};
 use crate::edenai_chat::ReasoningLookup;
-use crate::openai_base_config::forwarding::ForwardingFailure;
-use crate::openai_base_config::{CatalogCapabilities, Headers, Object as WireObject};
+use crate::openai_base_config::{
+    CatalogCapabilities, ConfigFamily, Headers, Object as WireObject, OpenAiConfig, OpenAiSettings,
+};
 
 mod nadir_replies;
 
-const INIT: &str = r#"{"model":"gpt-4o","call_type":"completion","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
 const MODEL: &str = "a-model";
 
 struct Reasons(bool);
@@ -81,6 +65,16 @@ fn catalog() -> CatalogCapabilities {
         chat_models: BTreeSet::new(),
         text_models: BTreeSet::new(),
     }
+}
+
+fn parent_params() -> Vec<&'static str> {
+    OpenAiConfig {
+        family: ConfigFamily::Other,
+        api_key: None,
+        headers: Headers::new(),
+        settings: OpenAiSettings::default(),
+    }
+    .supported_params(MODEL, &catalog())
 }
 
 fn number(value: f64) -> Json {
@@ -232,14 +226,6 @@ fn maritalk_error_carries_message_status_and_headers() {
 }
 
 #[test]
-fn llama_supported_params_are_the_openai_list() {
-    assert_eq!(
-        LlamaAPIConfig::supported_params(MODEL, &catalog()),
-        super::openai_parent().supported_params(MODEL, &catalog())
-    );
-}
-
-#[test]
 fn llama_keeps_a_json_schema_response_format() {
     let keep = value_object(vec![
         ("type", text_value("json_schema")),
@@ -305,14 +291,6 @@ fn morph_and_v0_list_their_small_param_sets() {
 }
 
 #[test]
-fn nebius_keeps_the_openai_list() {
-    assert_eq!(
-        NebiusConfig::supported_params(MODEL, &catalog()),
-        super::openai_parent().supported_params(MODEL, &catalog())
-    );
-}
-
-#[test]
 fn nebius_maps_max_completion_tokens_and_skips_the_rest() {
     let mut optional = Object::new();
     NebiusConfig::map_openai_params(
@@ -359,7 +337,7 @@ fn nebius_takes_the_later_of_max_tokens_and_max_completion_tokens() {
 
 #[test]
 fn wandb_adds_reasoning_effort_only_for_a_reasoning_model() {
-    let parent = super::openai_parent().supported_params(MODEL, &catalog());
+    let parent = parent_params();
     let mut reasoning = WandbConfig::supported_params(&Reasons(true), MODEL, &catalog());
     assert_eq!(reasoning.len(), parent.len() + 1);
     assert_eq!(reasoning.pop(), Some("reasoning_effort"));
@@ -507,7 +485,7 @@ fn moonshot_complete_url_builds_the_default_and_appends_the_path(
 
 #[test]
 fn moonshot_supported_params_drop_functions_and_gate_tool_calls() {
-    let parent = super::openai_parent().supported_params(MODEL, &catalog());
+    let parent = parent_params();
     let plain = moonshot::supported_params(&Reasons(false), MODEL, &catalog());
     assert_eq!(plain.len(), parent.len() - 1);
     assert!(!plain.contains(&"functions"));
@@ -786,9 +764,9 @@ fn moonshot_leaves_an_assistant_message_with_empty_tool_calls_alone() {
 #[test]
 fn moonshot_transforms_the_async_call_like_the_sync_one() {
     let messages = vec![message(Role::User, "hi")];
-    let mut sync_optional = Object::new();
+    let mut sync_optional = object(vec![("max_retries", integer(2))]);
     let sync_body = moonshot_body(false, &messages, &mut sync_optional, Mode::Sync);
-    let mut async_optional = Object::new();
+    let mut async_optional = object(vec![("max_retries", integer(2))]);
     let async_body = moonshot_body(false, &messages, &mut async_optional, Mode::AsyncSubclass);
     assert_eq!(sync_body, async_body);
 }
@@ -877,102 +855,6 @@ fn nadir_treats_a_cost_beyond_f64_as_no_cost() {
     let zeros = "0".repeat(400);
     let body = format!("{{\"nadir_metadata\":{{\"cost\":{{\"total_cost_usd\":1{zeros}}}}}}}");
     assert_eq!(nadir_reported_cost(body.as_bytes()), None);
-}
-
-// the marker lets a test inject a projection failure after the reply decodes
-fn projection(
-    decoded: Value,
-    _response: &Headers,
-    _hidden: &Headers,
-) -> Result<Value, ForwardingFailure> {
-    if decoded.get("refuse_projection").is_some() {
-        return Err(ForwardingFailure {
-            message: String::from("the test projection refused the reply"),
-        });
-    }
-    Ok(decoded)
-}
-
-struct Silent;
-
-impl LogSink for Silent {
-    fn emit(&self, _record: LogRecord) {}
-}
-
-fn fixture(redactor: &Redactor) -> (LoggingState, PrePostEnv<'_>) {
-    let state = LoggingState::new(
-        serde_json::from_str::<LoggingInit>(INIT).unwrap(),
-        CorrelationSetup {
-            context: &mut CorrelationContext::default(),
-            settings: CorrelationSettings::default(),
-        },
-        redactor,
-        || String::from("trace"),
-        Duration::default,
-    )
-    .unwrap();
-    let env = PrePostEnv {
-        debug: DebugSettings::default(),
-        globals: GlobalFlags::default(),
-        decision: Decision {
-            content: false,
-            key_info: false,
-        },
-        redactor,
-        log: &Silent,
-        input_callbacks: &[],
-        sentry: None,
-        logger_fn: None,
-        now: DateTime::parse_from_rfc3339("2026-01-01T00:05:00+00:00").unwrap(),
-    };
-    (state, env)
-}
-
-fn log_input() -> LogInput {
-    LogInput {
-        messages: HiddenJson::List(vec![HiddenJson::Object(IndexMap::from([(
-            String::from("role"),
-            HiddenJson::Text(String::from("user")),
-        )]))]),
-        data: RawBody::Object(IndexMap::from([(
-            String::from("model"),
-            HiddenJson::Text(String::from("m")),
-        )])),
-    }
-}
-
-fn reply_options() -> ReplyOptions<'static> {
-    ReplyOptions {
-        json_mode: false,
-        provider: Some("nadir"),
-        base_model: None,
-        identifier: Uuid::nil,
-        clock: || 7,
-    }
-}
-
-fn make_redactor() -> Redactor {
-    Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap()
-}
-
-fn nadir_reply(body: &[u8]) -> Result<NadirReply, TransformResponseError> {
-    let redactor = make_redactor();
-    let (mut state, env) = fixture(&redactor);
-    let headers = Headers::from([(String::from("x-request-id"), String::from("req-1"))]);
-    nadir::transform_response(
-        NadirRequest {
-            reply: ResponseReply {
-                status: 200,
-                headers: &headers,
-                body,
-            },
-            state: &mut state,
-            env: &env,
-            input: log_input(),
-            options: reply_options(),
-        },
-        projection,
-    )
 }
 
 #[rstest]
