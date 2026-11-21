@@ -1,5 +1,6 @@
 use std::convert::Infallible;
 use std::future::{Future, ready};
+use std::io::Error as IoError;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
@@ -56,6 +57,7 @@ pub struct Wire {
 }
 
 impl Wire {
+    #[must_use]
     pub fn new(status: u16, body: &str) -> Self {
         Self {
             status,
@@ -233,7 +235,7 @@ pub struct Harness {
 impl Harness {
     pub fn new() -> Result<Self, HarnessError> {
         let now = DateTime::<FixedOffset>::parse_from_rfc3339(ENV_NOW)
-            .map_err(|source| serde_json::Error::io(std::io::Error::other(source)))?;
+            .map_err(|source| serde_json::Error::io(IoError::other(source)))?;
         let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)?;
         Ok(Self {
             redactor,
@@ -242,6 +244,7 @@ impl Harness {
         })
     }
 
+    #[must_use]
     pub fn env(&self) -> PrePostEnv<'_> {
         PrePostEnv {
             now: self.now,
@@ -277,7 +280,8 @@ impl Harness {
 
     // A leaked Quiet is the same stateless sink, so its answers match the harness's own.
     #[cfg_attr(test, mutants::skip)]
-    pub fn quiet(&self) -> &Quiet {
+    #[must_use]
+    pub const fn quiet(&self) -> &Quiet {
         &self.quiet
     }
 }

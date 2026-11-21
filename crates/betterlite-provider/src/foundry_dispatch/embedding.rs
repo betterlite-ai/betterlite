@@ -47,7 +47,7 @@ where
 {
     let api_base = globals
         .accessors()
-        .api_base(call.api_base.filter(|text| !text.is_empty()));
+        .api_base(call.api_base.filter(|given| !given.is_empty()));
     let api_key = resolve_embedding_key(call.api_key, call.params, globals)?;
     let request = FoundryEmbeddingRequest {
         model: call.model,

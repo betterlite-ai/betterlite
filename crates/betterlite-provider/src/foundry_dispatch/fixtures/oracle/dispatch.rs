@@ -116,10 +116,10 @@ fn deployment(
     let mut params: IndexMap<String, JsonValue> = IndexMap::new();
     params.insert(String::from("model"), JsonValue::Text(case.model.clone()));
     params.insert(String::from("api_base"), JsonValue::Text(url.to_owned()));
-    if let Some(key) = key {
+    if let Some(secret) = key {
         params.insert(
             String::from("api_key"),
-            JsonValue::Text(key.expose_secret().to_owned()),
+            JsonValue::Text(secret.expose_secret().to_owned()),
         );
     }
     Deployment::from_params(params).ok()
@@ -128,7 +128,7 @@ fn deployment(
 // main.py hands the chat post_call an additional_args map on both the failure and stream paths
 #[cfg_attr(test, mutants::skip)]
 fn run_chat(status: Option<u16>, call: chat::Call<'_>, globals: Globals<'_>) -> Vec<PostCall> {
-    let Some(status) = status else {
+    let Some(code) = status else {
         return Vec::new();
     };
     let Ok(runtime) = Builder::new_current_thread().enable_all().build() else {
@@ -136,7 +136,7 @@ fn run_chat(status: Option<u16>, call: chat::Call<'_>, globals: Globals<'_>) -> 
     };
     let mut logger = RecordingLogger::default();
     let answer = Answer::Supplied {
-        status,
+        status: code,
         headers: HeaderMap::new(),
         body: Vec::new(),
     };
@@ -168,12 +168,12 @@ fn claude_case(
     let base = globals
         .accessors()
         .api_base(case.api_base.as_deref().filter(|text| !text.is_empty()));
-    let Some(base) = base else {
+    let Some(resolved) = base else {
         return failed();
     };
     Observation {
         branch: Some("claude"),
-        base: Some(claude::endpoint(&base)),
+        base: Some(claude::endpoint(&resolved)),
         key: credentials::resolve_key(explicit_key, globals)
             .map(|key| key.expose_secret().to_owned()),
         headers: case.headers.clone(),

@@ -23,6 +23,7 @@ pub struct Step {
 }
 
 impl Step {
+    #[must_use]
     pub fn new(status: u16, body: &str) -> Self {
         Self {
             status,
@@ -46,6 +47,7 @@ pub struct Scripted {
 }
 
 impl Scripted {
+    #[must_use]
     pub fn new(steps: Vec<Step>) -> Self {
         Self {
             steps: Mutex::new(VecDeque::from(steps)),

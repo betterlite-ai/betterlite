@@ -52,7 +52,7 @@ pub struct Call<'data> {
     pub api_base: Option<&'data str>,
     pub api_key: Option<&'data SecretString>,
     pub timeout: Duration,
-    pub acompletion: bool,
+    pub style: Style,
     pub stream: bool,
     pub now: i64,
     pub disable_add_prefix_to_prompt: bool,
@@ -133,11 +133,7 @@ pub fn request<'borrow, 'data>(
             sources: globals.sources,
         },
         timeout: call.timeout,
-        style: if call.acompletion {
-            Style::Async
-        } else {
-            Style::Sync
-        },
+        style: call.style,
         now: call.now,
         disable_add_prefix_to_prompt: call.disable_add_prefix_to_prompt,
         model_response: ResponseEnvelope::new(String::from("chatcmpl-foundry")),
@@ -163,13 +159,18 @@ where
         ChatOutcome<Client::Failure, Counter>,
         DispatchError<Client::Failure, Counter::Failure>,
     > {
-        let prepared = prepare(&self.call, &self.globals)?;
+        let Self {
+            call,
+            globals,
+            deps,
+        } = self;
+        let prepared = prepare(&call, &globals)?;
         let result: CompletionResult<Client, Counter> =
-            completion(request(&prepared, &self.call, &self.globals), self.deps).await;
+            completion(request(&prepared, &call, &globals), deps).await;
         let outcome = result.map_err(DispatchError::Handler)?;
         // this branch's post_call is not wrapped in a try, so a handler error reaches the caller unlogged
-        if self.call.stream || self.call.acompletion {
-            logger.post_call(record(&self.call, report(&outcome)));
+        if call.stream || call.style == Style::Async {
+            logger.post_call(record(&call, report(&outcome)));
         }
         Ok(outcome)
     }

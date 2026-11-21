@@ -410,7 +410,7 @@ async fn anthropic_case() {
     }
 
     // an async call with stream opens the stream and logs it, without additional_args headers
-    let stream_wire = Wire::new(200, "");
+    let mut stream_wire = Wire::new(200, "");
     stream_wire.lines = vec![String::from(
         "event: message_stop\ndata: {\"type\":\"message_stop\"}",
     )];

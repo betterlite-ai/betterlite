@@ -103,6 +103,10 @@ fn record(plan: &prepare::Plan, report: Json) -> LoggedCall {
     LoggedCall {
         input: logged_json(&plan.messages),
         original_response: report,
-        headers: post_call::headers_json(plan.headers.as_ref()),
+        headers: plan.headers.as_ref().map(|map| {
+            map.iter()
+                .map(|(name, value)| (name.clone(), Json::Text(value.clone())))
+                .collect()
+        }),
     }
 }

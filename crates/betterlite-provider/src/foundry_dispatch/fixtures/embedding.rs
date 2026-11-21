@@ -1,5 +1,5 @@
 use std::future::{Future, ready};
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use betterlite_azure::image_transport::{ImageReply, ImageRequest, ImageTransport};
@@ -26,7 +26,7 @@ pub struct ImageSent {
 pub struct ImageClient {
     pub status: u16,
     pub body: String,
-    pub sent: std::sync::Arc<Mutex<Vec<ImageSent>>>,
+    pub sent: Arc<Mutex<Vec<ImageSent>>>,
 }
 
 fn record<S>(sent: &Mutex<Vec<S>>, entry: S) {
@@ -68,7 +68,7 @@ impl ImageTransport for ImageClient {
 pub struct Factory {
     pub status: u16,
     pub image_body: String,
-    pub sent: std::sync::Arc<Mutex<Vec<ImageSent>>>,
+    pub sent: Arc<Mutex<Vec<ImageSent>>>,
 }
 
 impl EmbeddingClientFactory for Factory {
@@ -78,7 +78,7 @@ impl EmbeddingClientFactory for Factory {
         ImageClient {
             status: self.status,
             body: self.image_body.clone(),
-            sent: std::sync::Arc::clone(&self.sent),
+            sent: Arc::clone(&self.sent),
         }
     }
 

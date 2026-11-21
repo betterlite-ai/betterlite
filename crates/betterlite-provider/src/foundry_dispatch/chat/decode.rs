@@ -31,18 +31,16 @@ pub fn decode(
             success(response)?;
             Err(unsupported())
         }
-        (PreparedKind::Chat(_), Upstream::Streaming(_))
-        | (PreparedKind::Chat(_), Upstream::Anthropic(_))
-        | (PreparedKind::Stream(_), Upstream::Anthropic(_))
-        | (PreparedKind::Embedding(_), Upstream::Buffered(_))
-        | (PreparedKind::Embedding(_), Upstream::Streaming(_))
-        | (PreparedKind::Embedding(_), Upstream::Anthropic(_))
-        | (PreparedKind::Other, Upstream::Buffered(_))
-        | (PreparedKind::Other, Upstream::Streaming(_))
-        | (PreparedKind::Other, Upstream::Anthropic(_)) => Err(unsupported()),
+        (PreparedKind::Chat(_) | PreparedKind::Stream(_), Upstream::Anthropic(_))
+        | (PreparedKind::Chat(_), Upstream::Streaming(_))
+        | (
+            PreparedKind::Embedding(_) | PreparedKind::Other,
+            Upstream::Buffered(_) | Upstream::Streaming(_) | Upstream::Anthropic(_),
+        ) => Err(unsupported()),
     }
 }
 
+#[must_use]
 pub fn unsupported() -> OperationError {
     OperationError::UnsupportedOperation {
         provider: String::from("azure_ai"),

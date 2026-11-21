@@ -20,11 +20,12 @@ pub struct Globals<'data> {
     pub environment: &'data BTreeMap<String, String>,
     pub credentials: &'data DeploymentSettings,
     pub refresh_enabled: bool,
-    pub sources: &'data dyn CredentialSources,
+    pub sources: &'data (dyn CredentialSources + Sync),
     pub token_provider: Option<Arc<dyn CallableTokenProvider + 'data>>,
 }
 
 impl Globals<'_> {
+    #[must_use]
     pub fn accessors(&self) -> ModelInfoAccessors<'_> {
         ModelInfoAccessors {
             global_api_base: self.api_base.filter(|text| !text.is_empty()),

@@ -33,7 +33,7 @@ pub struct Deps<'data> {
     pub factory: &'data dyn AgentRunClientFactory,
     pub sleeper: &'data dyn Sleeper,
     pub counter: &'data dyn TokenCounter,
-    pub resolver: &'data dyn EntraResolver,
+    pub resolver: &'data (dyn EntraResolver + Sync),
 }
 
 pub struct Dispatch<'data> {

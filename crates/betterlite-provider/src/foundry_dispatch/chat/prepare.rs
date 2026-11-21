@@ -79,20 +79,59 @@ pub struct Plan {
     pub key: Option<SecretString>,
 }
 
+// The messages, optional parameters and api_version main.py hands the Azure AI config
+struct Wire {
+    messages: Vec<Message>,
+    optional: Object,
+    api_version: Option<String>,
+}
+
+// What main.py resolved from the call and the globals before the config runs
+struct Resolved {
+    base: Option<String>,
+    key: Option<SecretString>,
+    headers: Option<Headers>,
+}
+
 pub fn prepare(call: &Call<'_>, globals: &Globals<'_>) -> Result<Plan, PrepareError> {
-    match route::select(call.model) {
-        Route::Chat => {}
-        Route::Agents => {
-            return Err(PrepareError::Route {
-                operation: "agents",
-            });
-        }
-        Route::Claude => {
-            return Err(PrepareError::Route {
-                operation: "claude",
-            });
-        }
+    require_chat(call.model)?;
+    let (wire, extra_headers) = wire_parts(call)?;
+    let resolved = Resolved {
+        base: globals
+            .accessors()
+            .api_base(call.api_base.filter(|text| !text.is_empty())),
+        key: resolve_key(call.api_key, globals),
+        headers: headers_or_global(call.headers, globals).cloned(),
+    };
+    let leaf = leaf_chat(call, globals, &resolved, &wire)?;
+    let chat = assembled(&leaf, call, extra_headers.as_ref())?;
+    let prepared = if call.stream {
+        PreparedRequest::Stream(Box::new(chat))
+    } else {
+        PreparedRequest::Chat(Box::new(chat))
+    };
+    Ok(Plan {
+        prepared,
+        messages: wire.messages,
+        headers: resolved.headers,
+        base: resolved.base,
+        key: resolved.key,
+    })
+}
+
+fn require_chat(model: &str) -> Result<(), PrepareError> {
+    match route::select(model) {
+        Route::Chat => Ok(()),
+        Route::Agents => Err(PrepareError::Route {
+            operation: "agents",
+        }),
+        Route::Claude => Err(PrepareError::Route {
+            operation: "claude",
+        }),
     }
+}
+
+fn wire_parts(call: &Call<'_>) -> Result<(Wire, Option<Headers>), PrepareError> {
     let fields = chat_request_fields(call.request)?;
     let sent: Vec<Message> = serde_json::to_value(fields.messages)
         .and_then(serde_json::from_value)
@@ -113,19 +152,28 @@ pub fn prepare(call: &Call<'_>, globals: &Globals<'_>) -> Result<Plan, PrepareEr
     let extra_headers = take_extra_headers(&mut params)?;
     let api_version = text_field(params.shift_remove(API_VERSION_FIELD));
     let optional = object(JsonValue::Object(params))?;
-    let base = globals
-        .accessors()
-        .api_base(call.api_base.filter(|text| !text.is_empty()));
-    let key = resolve_key(call.api_key, globals);
-    let headers = headers_or_global(call.headers, globals).cloned();
-    let leaf = FoundryChatOptions {
+    let parts = Wire {
+        messages,
+        optional,
+        api_version,
+    };
+    Ok((parts, extra_headers))
+}
+
+fn leaf_chat(
+    call: &Call<'_>,
+    globals: &Globals<'_>,
+    resolved: &Resolved,
+    wire: &Wire,
+) -> Result<LeafPreparedChat, ChatError> {
+    FoundryChatOptions {
         model: call.model,
-        api_version: api_version.as_deref(),
-        messages: &messages,
-        optional_params: &optional,
+        api_version: wire.api_version.as_deref(),
+        messages: &wire.messages,
+        optional_params: &wire.optional,
         environment: EnvironmentRequest {
-            headers: headers.clone().unwrap_or_default(),
-            argument_key: key.as_ref(),
+            headers: resolved.headers.clone().unwrap_or_default(),
+            argument_key: resolved.key.as_ref(),
             params_key: None,
             configured_key: None,
             token: TokenSource {
@@ -134,23 +182,10 @@ pub fn prepare(call: &Call<'_>, globals: &Globals<'_>) -> Result<Plan, PrepareEr
                 provider: globals.token_provider.clone(),
                 sources: globals.sources,
             },
-            api_base: base.as_deref(),
+            api_base: resolved.base.as_deref(),
         },
     }
-    .prepare()?;
-    let prepared = assembled(&leaf, call, extra_headers.as_ref())?;
-    let prepared = if call.stream {
-        PreparedRequest::Stream(Box::new(prepared))
-    } else {
-        PreparedRequest::Chat(Box::new(prepared))
-    };
-    Ok(Plan {
-        prepared,
-        messages,
-        headers,
-        base,
-        key,
-    })
+    .prepare()
 }
 
 // main.py leaves extra_headers in optional_params and the OpenAI-compatible handler moves them onto the wire

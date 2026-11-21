@@ -5,6 +5,7 @@ use std::sync::Arc;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::sections::azure_credentials::DeploymentSettings;
 use betterlite_config::types::ProxyTrust;
+use betterlite_foundry::anthropic::request::Style;
 use betterlite_foundry::chat::sources::NoSources;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::UpstreamResponse;
@@ -107,7 +108,11 @@ pub fn claude_call<'data>(
         api_base: Some("https://res.services.ai.azure.com"),
         api_key: Some(key),
         timeout: TIMEOUT,
-        acompletion,
+        style: if acompletion {
+            Style::Async
+        } else {
+            Style::Sync
+        },
         stream,
         now: NOW,
         disable_add_prefix_to_prompt: false,
