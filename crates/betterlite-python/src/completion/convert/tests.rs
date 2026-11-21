@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use super::{
     CallWire, ConvertError, NativeErrorPayload, OutcomeParts, ProbeCall, SessionWire, TokenCall,
     outcome_parts, parse,

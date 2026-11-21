@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use pyo3::prelude::*;
 
 use super::NativeChatStream;

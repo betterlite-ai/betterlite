@@ -31,12 +31,10 @@ pub(crate) fn request_error(error: ConvertError) -> PyErr {
     }
 }
 pub(crate) fn session_error(error: SessionError) -> PyErr {
-    match &error {
-        SessionError::Json(_) => PyValueError::new_err(error.to_string()),
-        SessionError::Proxy { .. }
-        | SessionError::Client { .. }
-        | SessionError::Tokenizer { .. } => PyRuntimeError::new_err(error.to_string()),
+    if let SessionError::Json(_) = &error {
+        return PyValueError::new_err(error.to_string());
     }
+    PyRuntimeError::new_err(error.to_string())
 }
 // main.py's valid_model raises BadRequestError(message="", model=model, llm_provider="") for every failure
 pub(crate) fn validation_error(model: &str) -> PyErr {

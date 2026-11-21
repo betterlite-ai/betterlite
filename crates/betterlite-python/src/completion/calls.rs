@@ -99,14 +99,14 @@ impl ChatCall for ProviderCalls {
         control: ControlOptions,
     ) -> Result<ChatStreamAnswer, ChatFailure> {
         let (result, upstream_headers, upstream_time) = self.send(&call, control, true).await?;
-        let OperationResult::Stream(stream) = result else {
-            return Err(ChatFailure::Mismatched);
-        };
-        Ok(ChatStreamAnswer {
-            body: stream.body_stream(),
-            upstream_headers,
-            upstream_time,
-        })
+        if let OperationResult::Stream(stream) = result {
+            return Ok(ChatStreamAnswer {
+                body: stream.body_stream(),
+                upstream_headers,
+                upstream_time,
+            });
+        }
+        Err(ChatFailure::Mismatched)
     }
 }
 // the provider framework's error, carried into the chat port the way the server's chat route does it

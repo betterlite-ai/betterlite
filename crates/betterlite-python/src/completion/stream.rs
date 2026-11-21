@@ -3,7 +3,6 @@ use pyo3_async_runtimes::tokio::{future_into_py, get_runtime};
 use std::collections::VecDeque;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-#[cfg(test)]
 mod tests;
 // Every chunk is already buffered by the SDK's request driver, so the stream only hands them out in order.
 struct StreamFeed {

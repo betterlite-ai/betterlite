@@ -9,7 +9,6 @@ use betterlite_sdk::completion_request::args::{CompletionFlags, CompletionSettin
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-#[cfg(test)]
 mod tests;
 // The one text a native method takes: the call's arguments, the settings snapshot and the session's own state.
 #[derive(Debug, Default, Deserialize)]

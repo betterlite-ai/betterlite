@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use betterlite_models::decisions::Json;
 use betterlite_sdk::completion_request::call::PreparedTimeout;
 use betterlite_sdk::completion_request::error::CompletionRequestError;

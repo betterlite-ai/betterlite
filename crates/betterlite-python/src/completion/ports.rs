@@ -20,7 +20,6 @@ use betterlite_tokenizer::count::Counter;
 use betterlite_tokenizer::count::request::{Message, TokenRequest};
 use chrono::{DateTime, FixedOffset, Utc};
 use std::time::{Duration, Instant};
-#[cfg(test)]
 mod tests;
 // LiteLLM reads the clock out of the wrapper: utcnow for the response, monotonic for elapsed time
 pub(crate) struct SystemClock {
@@ -140,14 +139,19 @@ fn number_of(value: &Json, field: &'static str) -> RequestResult<f64> {
 }
 // the shared transport enforces one deadline, so an httpx-style mapping collapses to its read phase
 fn seconds_of(value: Option<&Json>, field: &'static str) -> RequestResult<Option<f64>> {
-    match value {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Object(phases)) => match phases.get("read") {
-            Some(read) => number_of(read, field).map(Some),
-            None => Ok(Some(COMPLETION_FALLBACK)),
-        },
-        Some(given) => number_of(given, field).map(Some),
+    let Some(given) = value else {
+        return Ok(None);
+    };
+    if matches!(given, Json::Null) {
+        return Ok(None);
     }
+    let Json::Object(phases) = given else {
+        return number_of(given, field).map(Some);
+    };
+    let Some(read) = phases.get("read") else {
+        return Ok(Some(COMPLETION_FALLBACK));
+    };
+    number_of(read, field).map(Some)
 }
 // the model's timeout, then the timeout kwarg, then request_timeout, then the configured global or 600 s
 pub(crate) struct SessionTimeouts;
