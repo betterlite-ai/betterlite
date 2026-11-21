@@ -6,7 +6,7 @@ use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use super::fake::base;
 use super::support::{array, message, object, text};
 use crate::guardrail_hooks::errors::{HookFailure, ModifyFailure};
-use crate::guardrail_hooks::input::pre_call_hook;
+use crate::guardrail_hooks::input::{InputHook, scan_input};
 use crate::guardrail_hooks::runtime::{RoleSelection, ScanSource};
 
 fn request(messages: Vec<GuardrailValue>) -> BTreeMap<String, GuardrailValue> {
@@ -31,7 +31,7 @@ async fn scans_the_latest_user_message_and_writes_the_masked_text_back() {
     runtime.scan_result = Ok(object(vec![("action", text("NONE"))]));
     runtime.updated = Some(vec![message("user", text("masked"))]);
     let mut data = request(original.clone());
-    pre_call_hook(&runtime, &mut data, "completion")
+    scan_input(&runtime, &mut data, "completion", InputHook::PreCall)
         .await
         .unwrap();
     assert_eq!(
@@ -63,7 +63,7 @@ async fn replaces_every_message_when_no_latest_only_filter_ran() {
         message("user", text("c")),
     ]);
     let mut data = request(original);
-    pre_call_hook(&runtime, &mut data, "completion")
+    scan_input(&runtime, &mut data, "completion", InputHook::PreCall)
         .await
         .unwrap();
     assert_eq!(
@@ -82,7 +82,7 @@ async fn leaves_the_request_alone_when_the_guardrail_does_not_run() {
     runtime.messages = Some(vec![message("user", text("hi"))]);
     let mut data = request(vec![message("user", text("hi"))]);
     let before = data.clone();
-    pre_call_hook(&runtime, &mut data, "completion")
+    scan_input(&runtime, &mut data, "completion", InputHook::PreCall)
         .await
         .unwrap();
     assert_eq!(data, before);
@@ -94,7 +94,7 @@ async fn leaves_the_request_alone_when_the_call_type_has_no_messages() {
     let mut runtime = base();
     let mut data = request(vec![message("user", text("hi"))]);
     let before = data.clone();
-    pre_call_hook(&runtime, &mut data, "embedding")
+    scan_input(&runtime, &mut data, "embedding", InputHook::PreCall)
         .await
         .unwrap();
     assert_eq!(data, before);
@@ -112,7 +112,7 @@ async fn leaves_the_request_alone_when_no_user_message_is_left() {
     };
     let mut data = request(vec![message("system", text("hi"))]);
     let before = data.clone();
-    pre_call_hook(&runtime, &mut data, "completion")
+    scan_input(&runtime, &mut data, "completion", InputHook::PreCall)
         .await
         .unwrap();
     assert_eq!(data, before);
@@ -134,7 +134,7 @@ async fn propagates_a_block_to_the_endpoint_handler() {
         original_response: None,
     })));
     let mut data = request(vec![message("user", text("hi"))]);
-    let failure = pre_call_hook(&runtime, &mut data, "completion")
+    let failure = scan_input(&runtime, &mut data, "completion", InputHook::PreCall)
         .await
         .unwrap_err();
     match failure {

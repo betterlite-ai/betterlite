@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use betterlite_bedrock::guardrail_hooks::RequestData;
 use betterlite_bedrock::guardrail_hooks::chunks::StreamChunk;
-use betterlite_bedrock::guardrail_hooks::input::{moderation_hook, pre_call_hook};
+use betterlite_bedrock::guardrail_hooks::input::{InputHook, scan_input};
 use betterlite_bedrock::guardrail_hooks::post_call::post_call_success_hook;
 use betterlite_bedrock::guardrail_hooks::streaming::{StreamHook, streaming_iterator_hook};
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -125,9 +125,11 @@ impl Helper for Op {
             .or_value_error()?;
         let outcome = handle.block_on(async {
             match input.hook {
-                HookKind::PreCall => pre_call_hook(&runtime, &mut data, &input.call_type).await,
+                HookKind::PreCall => {
+                    scan_input(&runtime, &mut data, &input.call_type, InputHook::PreCall).await
+                }
                 HookKind::Moderation => {
-                    moderation_hook(&runtime, &mut data, &input.call_type).await
+                    scan_input(&runtime, &mut data, &input.call_type, InputHook::Moderation).await
                 }
                 HookKind::PostCall => {
                     post_call_success_hook(&runtime, &mut data, &mut response).await

@@ -35,7 +35,7 @@ use betterlite_server::guardrails::anthropic_translation::block_continuation::{
 use super::assembly::{assemble, block_chat_chunks};
 use super::replies::Sent;
 use super::support::{Creds, ENVIRONMENT, helper_now};
-use super::values::{decode, encode, failed, hook_failure, to_wire};
+use super::values::{failed, hook_failure, to_wire, via_json};
 
 const BLOCK_MESSAGE_ID: &str = "msg_block";
 
@@ -92,8 +92,8 @@ impl HookRuntime for OracleRuntime {
         };
         let result = prepare_wire(Some(&wire), self.guardrail.latest_role_message_only);
         RoleSelection {
-            payload: result.payload_messages.as_deref().and_then(encode),
-            original: result.original_messages.as_deref().and_then(encode),
+            payload: result.payload_messages.as_deref().and_then(via_json),
+            original: result.original_messages.as_deref().and_then(via_json),
             target_indices: result.target_indices,
         }
     }
@@ -108,7 +108,7 @@ impl HookRuntime for OracleRuntime {
             return updated.to_vec();
         };
         let merged = reconcile::messages(Some(&originals), &replacements, indices);
-        encode(&merged).unwrap_or_else(|| updated.to_vec())
+        via_json(&merged).unwrap_or_else(|| updated.to_vec())
     }
 
     fn update_messages(
@@ -116,27 +116,29 @@ impl HookRuntime for OracleRuntime {
         messages: &[GuardrailValue],
         scan: &GuardrailValue,
     ) -> Vec<GuardrailValue> {
-        let (Ok(items), Some(scan_response)) =
-            (to_wire(messages), decode::<GuardrailResponse>(scan))
-        else {
+        let (Ok(items), Some(scan_response)) = (
+            to_wire(messages),
+            via_json::<GuardrailValue, GuardrailResponse>(scan),
+        ) else {
             return messages.to_vec();
         };
         let flags = Masking {
             request: false,
             response: false,
         };
-        encode(&masking_update(&items, &scan_response, &flags)).unwrap_or_else(|| messages.to_vec())
+        via_json(&masking_update(&items, &scan_response, &flags))
+            .unwrap_or_else(|| messages.to_vec())
     }
 
     fn mask_response(&self, response: &mut GuardrailValue, scan: &GuardrailValue) {
         let (Some(mut model), Some(scan_response)) = (
-            decode::<ModelResponse>(response),
-            decode::<GuardrailResponse>(scan),
+            via_json::<GuardrailValue, ModelResponse>(response),
+            via_json::<GuardrailValue, GuardrailResponse>(scan),
         ) else {
             return;
         };
         apply_to_response(&mut model, &extract_masked_texts(Some(&scan_response)));
-        if let Some(updated) = encode(&model) {
+        if let Some(updated) = via_json(&model) {
             *response = updated;
         }
     }
@@ -186,7 +188,7 @@ impl HookRuntime for OracleRuntime {
                 logging_event_type: Some(event),
             };
             match make_bedrock_api_request(&mut invocation, scan, &Creds, &self.transport).await {
-                Ok(result) => encode(&result)
+                Ok(result) => via_json(&result)
                     .ok_or_else(|| failed("the guardrail response could not be encoded")),
                 Err(failure) => Err(hook_failure(failure)),
             }
@@ -203,7 +205,7 @@ impl HookRuntime for OracleRuntime {
 
     fn reassemble_sse(&self, response: &GuardrailValue) -> Result<Vec<Vec<u8>>, HookFailure> {
         let record: ResponseRecord =
-            decode(response).ok_or_else(|| failed("the masked response could not be encoded"))?;
+            via_json(response).ok_or_else(|| failed("the masked response could not be encoded"))?;
         sse_chunks_from_response(&record).map_err(|error| HookFailure::Failed {
             message: error.to_string(),
         })

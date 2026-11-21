@@ -11,28 +11,18 @@ pub(super) fn failed(message: &str) -> HookFailure {
     }
 }
 
-pub(super) fn encode<T>(value: &T) -> Option<GuardrailValue>
+// Converts a typed value to a guardrail value or back, through the JSON form both sides serialize to.
+pub(super) fn via_json<A, B>(value: &A) -> Option<B>
 where
-    T: Serialize,
+    A: Serialize + ?Sized,
+    B: DeserializeOwned,
 {
-    let Ok(payload) = serde_json::to_value(value) else {
-        return None;
-    };
-    serde_json::from_value(payload).ok()
-}
-
-pub(super) fn decode<T>(value: &GuardrailValue) -> Option<T>
-where
-    T: DeserializeOwned,
-{
-    let Ok(payload) = serde_json::to_value(value) else {
-        return None;
-    };
+    let payload = serde_json::to_value(value).ok()?;
     serde_json::from_value(payload).ok()
 }
 
 pub(super) fn to_wire(messages: &[GuardrailValue]) -> Result<Vec<Message>, HookFailure> {
-    let Some(wire) = encode(messages) else {
+    let Some(wire) = via_json(messages) else {
         return Err(failed("the guardrail messages could not be decoded"));
     };
     Ok(wire)

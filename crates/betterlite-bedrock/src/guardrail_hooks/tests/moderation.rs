@@ -6,7 +6,7 @@ use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use super::fake::base;
 use super::support::{array, message, object, text};
 use crate::guardrail_hooks::errors::{HookFailure, ModifyFailure};
-use crate::guardrail_hooks::input::moderation_hook;
+use crate::guardrail_hooks::input::{InputHook, scan_input};
 use crate::guardrail_hooks::runtime::RoleSelection;
 
 fn request(messages: Vec<GuardrailValue>) -> BTreeMap<String, GuardrailValue> {
@@ -32,7 +32,7 @@ fn scripted_runtime(kind: &str) -> super::fake::FakeRuntime {
 async fn uses_the_during_call_event_for_chat_calls() {
     let runtime = scripted_runtime("hi");
     let mut data = request(vec![message("user", text("hi"))]);
-    moderation_hook(&runtime, &mut data, "completion")
+    scan_input(&runtime, &mut data, "completion", InputHook::Moderation)
         .await
         .unwrap();
     let scans = runtime.scans.lock().unwrap();
@@ -45,7 +45,7 @@ async fn uses_the_during_call_event_for_chat_calls() {
 async fn uses_the_during_mcp_call_event_for_the_mcp_call_type() {
     let runtime = scripted_runtime("hi");
     let mut data = request(vec![message("user", text("hi"))]);
-    moderation_hook(&runtime, &mut data, "call_mcp_tool")
+    scan_input(&runtime, &mut data, "call_mcp_tool", InputHook::Moderation)
         .await
         .unwrap();
     let scans = runtime.scans.lock().unwrap();
@@ -58,7 +58,7 @@ async fn writes_the_masked_message_back_into_the_request() {
     let mut runtime = scripted_runtime("secret");
     runtime.updated = Some(vec![message("user", text("masked"))]);
     let mut data = request(vec![message("user", text("secret"))]);
-    moderation_hook(&runtime, &mut data, "completion")
+    scan_input(&runtime, &mut data, "completion", InputHook::Moderation)
         .await
         .unwrap();
     assert_eq!(
@@ -76,7 +76,7 @@ async fn lets_a_modify_response_propagate_while_the_llm_call_runs() {
         original_response: None,
     })));
     let mut data = request(vec![message("user", text("hi"))]);
-    let failure = moderation_hook(&runtime, &mut data, "completion")
+    let failure = scan_input(&runtime, &mut data, "completion", InputHook::Moderation)
         .await
         .unwrap_err();
     match failure {
@@ -91,7 +91,7 @@ async fn leaves_the_request_alone_when_the_guardrail_does_not_run() {
     runtime.should_run = false;
     let mut data = request(vec![message("user", text("hi"))]);
     let before = data.clone();
-    moderation_hook(&runtime, &mut data, "completion")
+    scan_input(&runtime, &mut data, "completion", InputHook::Moderation)
         .await
         .unwrap();
     assert_eq!(data, before);
@@ -103,7 +103,7 @@ async fn leaves_the_request_alone_when_the_call_type_has_no_messages() {
     let runtime = base();
     let mut data = request(vec![message("user", text("hi"))]);
     let before = data.clone();
-    moderation_hook(&runtime, &mut data, "embedding")
+    scan_input(&runtime, &mut data, "embedding", InputHook::Moderation)
         .await
         .unwrap();
     assert_eq!(data, before);

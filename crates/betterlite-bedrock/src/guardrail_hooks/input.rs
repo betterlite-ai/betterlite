@@ -5,51 +5,37 @@ use super::RequestData;
 use super::errors::HookFailure;
 use super::runtime::{HookRuntime, ScanCall, ScanSource};
 
-// LiteLLM's async_pre_call_hook: scan the user messages before the call and write the guardrail's masked text back.
-pub async fn pre_call_hook<R>(
-    runtime: &R,
-    data: &mut RequestData,
-    call_type: &str,
-) -> Result<(), HookFailure>
-where
-    R: HookRuntime,
-{
-    tracing::debug!("inside the bedrock pre-call hook for call type {call_type}");
-    scan_for_event(runtime, data, call_type, GuardrailEventHooks::PreCall).await
+// Which of LiteLLM's two input hooks runs: async_pre_call_hook or the during-call async_moderation_hook.
+#[derive(Debug, Clone, Copy)]
+pub enum InputHook {
+    PreCall,
+    Moderation,
 }
 
-// LiteLLM's async_moderation_hook: the LLM call is already in flight, so a block propagates to the endpoint handler.
-pub async fn moderation_hook<R>(
+// Both input hooks gate on their event and then scan the user messages the same way, writing the masked text back.
+pub async fn scan_input<R>(
     runtime: &R,
     data: &mut RequestData,
     call_type: &str,
+    hook: InputHook,
 ) -> Result<(), HookFailure>
 where
     R: HookRuntime,
 {
-    // CallTypes::call_mcp_tool is the one call type that runs the MCP during-call event.
-    let event = if call_type == "call_mcp_tool" {
-        GuardrailEventHooks::DuringMcpCall
-    } else {
-        GuardrailEventHooks::DuringCall
-    };
-    scan_for_event(runtime, data, call_type, event).await
-}
-
-// Both input hooks gate on their event and then scan the user messages the same way.
-async fn scan_for_event<R>(
-    runtime: &R,
-    data: &mut RequestData,
-    call_type: &str,
-    event: GuardrailEventHooks,
-) -> Result<(), HookFailure>
-where
-    R: HookRuntime,
-{
+    let event = event_for(call_type, hook);
     if !runtime.should_run(data, event) {
         return Ok(());
     }
     scan_user_messages(runtime, data, call_type, event).await
+}
+
+// LiteLLM's async_moderation_hook runs the during-call event, or the MCP one for CallTypes::call_mcp_tool; the pre-call hook always runs the pre-call event.
+fn event_for(call_type: &str, hook: InputHook) -> GuardrailEventHooks {
+    match hook {
+        InputHook::PreCall => GuardrailEventHooks::PreCall,
+        InputHook::Moderation if call_type == "call_mcp_tool" => GuardrailEventHooks::DuringMcpCall,
+        InputHook::Moderation => GuardrailEventHooks::DuringCall,
+    }
 }
 
 async fn scan_user_messages<R>(
