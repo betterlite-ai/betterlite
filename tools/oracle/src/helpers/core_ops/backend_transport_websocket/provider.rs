@@ -1,6 +1,3 @@
-use std::error::Error as StdError;
-use std::fmt::{self, Display, Formatter};
-
 use async_trait::async_trait;
 use betterlite_core::api::realtime_contracts::config::{BaseRealtimeConfig, Environment};
 use betterlite_core::api::realtime_contracts::error::{HeaderMap, WebSocketError};
@@ -13,19 +10,12 @@ use betterlite_models::decisions::Json;
 use super::input::{ProviderDocument, ProviderKind};
 
 // The provider's own failure, carrying the Python class name the helper reports so both sides raise the same error
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
+#[error("{message}")]
 pub(crate) struct ScriptedError {
     pub(crate) class: String,
     pub(crate) message: String,
 }
-
-impl Display for ScriptedError {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.message)
-    }
-}
-
-impl StdError for ScriptedError {}
 
 pub(crate) struct UnusedBackend;
 

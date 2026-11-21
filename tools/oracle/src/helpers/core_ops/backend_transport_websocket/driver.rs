@@ -27,7 +27,7 @@ use tokio::sync::Mutex as TokioMutex;
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
-use super::input::Input;
+use super::input::{Input, ProviderDocument};
 use super::provider::{ScriptedError, ScriptedProvider};
 use super::transport::{
     DialRecord, Frames, Locked as _, ScriptedClient, ScriptedDialer, ssl_name_of,
@@ -189,6 +189,28 @@ fn build_headers(input: &Input) -> HeaderMap {
         .collect()
 }
 
+struct CallContext<'call> {
+    headers: &'call HeaderMap,
+    redactor: &'call Redactor,
+    probe: &'call Probe,
+    dialer: &'call ScriptedDialer,
+}
+
+fn query_params_of(input: &Input) -> Option<IndexMap<String, String>> {
+    input
+        .intent
+        .as_ref()
+        .map(|intent| IndexMap::from([(String::from("intent"), intent.clone())]))
+}
+
+fn verification_of(input: &Input) -> Verification {
+    if input.ssl_verify {
+        Verification::Enabled
+    } else {
+        Verification::Disabled
+    }
+}
+
 async fn observe(input: &Input) -> HelperResult {
     let Some(document) = input.provider.clone() else {
         return Err(failure(
@@ -197,15 +219,6 @@ async fn observe(input: &Input) -> HelperResult {
         ));
     };
     let headers = build_headers(input);
-    let query_params: Option<IndexMap<String, String>> = input
-        .intent
-        .as_ref()
-        .map(|intent| IndexMap::from([(String::from("intent"), intent.clone())]));
-    let verification = if input.ssl_verify {
-        Verification::Enabled
-    } else {
-        Verification::Disabled
-    };
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
         .map_err(|error| failure("ValueError", error.to_string()))?;
     let probe = Probe::new();
@@ -215,19 +228,37 @@ async fn observe(input: &Input) -> HelperResult {
         sent: Arc::clone(&probe.backend_sent),
         closed: Arc::clone(&probe.backend_closed),
     };
+    let context = CallContext {
+        headers: &headers,
+        redactor: &redactor,
+        probe: &probe,
+        dialer: &dialer,
+    };
+    if let Err(error) = call_of(input, document, &context).await {
+        return Err(connection_failure(input, error));
+    }
+    Ok(probe.snapshot())
+}
+
+async fn call_of(
+    input: &Input,
+    document: ProviderDocument,
+    context: &CallContext<'_>,
+) -> Result<(), RealtimeConnectionError<ScriptedError, Infallible, Infallible>> {
     let callbacks: [&NoCallbacks; 0] = [];
     let mut relay = ScriptedRelay;
-    let outcome = RealtimeCall {
+    let query_params = query_params_of(input);
+    RealtimeCall {
         model: &input.model,
         api_base: input.api_base.as_deref(),
         api_key: input.api_key.as_deref(),
-        headers: &headers,
+        headers: context.headers,
         provider: Arc::new(ScriptedProvider {
             document,
             url: input.url.clone(),
         }),
-        dialer: &dialer,
-        client: probe.client(input),
+        dialer: context.dialer,
+        client: context.probe.client(input),
         relay: &mut relay,
         callbacks: &callbacks,
         logging: None,
@@ -237,17 +268,13 @@ async fn observe(input: &Input) -> HelperResult {
         logged_real_time_event_types: LoggedEventTypes::Default,
         litellm_metadata: input.metadata.as_ref(),
         query_params: query_params.as_ref(),
-        verification,
+        verification: verification_of(input),
         max_message_size_bytes: input.max_message_size_bytes,
-        redactor: &redactor,
+        redactor: context.redactor,
         cancellation: CancellationToken::new(),
     }
     .async_realtime()
-    .await;
-    if let Err(error) = outcome {
-        return Err(connection_failure(input, error));
-    }
-    Ok(probe.snapshot())
+    .await
 }
 
 pub(crate) fn drive(input: &Input) -> HelperResult {

@@ -117,16 +117,37 @@ fn header_pairs(headers: &HeaderMap) -> Vec<(String, String)> {
         .collect()
 }
 
+fn record_dial(records: &Mutex<Vec<DialRecord>>, request: &DialRequest<'_>) {
+    records.locked().push(DialRecord {
+        url: request.url.to_owned(),
+        headers: header_pairs(request.headers),
+        ssl: request.ssl.clone(),
+        max_size: request.max_size,
+        open_timeout: request.open_timeout,
+    });
+}
+
+impl ScriptedDialer {
+    fn connect_success(&self, request: &DialRequest<'_>) -> Result<ConnectedBackend, DialError> {
+        if request.url.starts_with("ws://") {
+            return Err(DialError::Other {
+                message: String::from("ssl argument is incompatible with a ws:// URI"),
+            });
+        }
+        Ok(ConnectedBackend {
+            sender: Box::new(RecordingBackend {
+                sent: Arc::clone(&self.sent),
+                closed: Arc::clone(&self.closed),
+            }),
+            source: Some(Box::new(ClosedSource)),
+        })
+    }
+}
+
 #[async_trait]
 impl RealtimeWebSocketDialer for ScriptedDialer {
     async fn connect(&self, request: &DialRequest<'_>) -> Result<ConnectedBackend, DialError> {
-        self.records.locked().push(DialRecord {
-            url: request.url.to_owned(),
-            headers: header_pairs(request.headers),
-            ssl: request.ssl.clone(),
-            max_size: request.max_size,
-            open_timeout: request.open_timeout,
-        });
+        record_dial(&self.records, request);
         let attempt = self
             .attempts
             .locked()
@@ -135,20 +156,7 @@ impl RealtimeWebSocketDialer for ScriptedDialer {
                 message: String::from("the dial script ran out"),
             });
         match attempt {
-            DialDocument::Connect => {
-                if request.url.starts_with("ws://") {
-                    return Err(DialError::Other {
-                        message: String::from("ssl argument is incompatible with a ws:// URI"),
-                    });
-                }
-                Ok(ConnectedBackend {
-                    sender: Box::new(RecordingBackend {
-                        sent: Arc::clone(&self.sent),
-                        closed: Arc::clone(&self.closed),
-                    }),
-                    source: Some(Box::new(ClosedSource)),
-                })
-            }
+            DialDocument::Connect => self.connect_success(request),
             DialDocument::Timeout { message } => Err(DialError::Timeout { message }),
             DialDocument::Os { message } => Err(DialError::Os { message }),
             DialDocument::WebSocket { message } => Err(DialError::WebSocket { message }),
