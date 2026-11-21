@@ -16,15 +16,15 @@ pub struct ConfigRequest<'request> {
 }
 
 // B157 decides whether a provider has a responses config; the factory builds the object both read
-pub trait CompactConfigFactory {
+pub trait CompactConfigFactory: Send + Sync {
     type Provider: CompactConfig + ResponsesParamProvider<Error = CompactParamError>;
 
     fn compact_config(&self, request: &ConfigRequest<'_>) -> Option<Self::Provider>;
 }
 
 pub struct CompactResponsesDeps<'deps, S: ClientSource, F: CompactConfigFactory> {
-    pub resolver: &'deps dyn ModelResolver,
-    pub lookup: &'deps dyn ConfigLookup,
+    pub resolver: &'deps (dyn ModelResolver + Send + Sync),
+    pub lookup: &'deps (dyn ConfigLookup + Send + Sync),
     pub configs: &'deps F,
     pub source: &'deps S,
     pub environment: &'deps dyn EnvironmentLookup,

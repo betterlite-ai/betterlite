@@ -136,13 +136,12 @@ const fn sdk_class(class: &ErrorClass) -> &'static str {
         ErrorClass::ServiceUnavailable(_) => "ServiceUnavailableError",
         ErrorClass::BadGateway(_) => "BadGatewayError",
         ErrorClass::InternalServer(_) => "InternalServerError",
-        ErrorClass::Api(_) => "APIError",
+        ErrorClass::Api(_) | ErrorClass::Unclassified(_) => "APIError",
         ErrorClass::ApiConnection(_) => "APIConnectionError",
         ErrorClass::ApiResponseValidation(_) => "APIResponseValidationError",
         ErrorClass::JsonSchemaValidation(_) => "JSONSchemaValidationError",
         ErrorClass::UnsupportedParams(_) => "UnsupportedParamsError",
         ErrorClass::GuardrailRaised(_) => "GuardrailRaisedException",
         ErrorClass::MidStreamFallback(_) => "MidStreamFallbackError",
-        ErrorClass::Unclassified(_) => "APIError",
     }
 }
