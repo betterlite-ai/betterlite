@@ -5,6 +5,7 @@ use std::time::Duration;
 use chrono::{DateTime, NaiveDate, Utc};
 use rstest::rstest;
 use tokio::time::Instant;
+use tokio_postgres::types::{ToSql, Type};
 
 use super::SpendLogCleanup;
 use super::cutoff::Cutoff;
@@ -206,6 +207,15 @@ fn day_cutoffs_cast_to_text() {
     let cutoff = Cutoff::Day(NaiveDate::from_ymd_opt(2026, 1, 2).unwrap());
     assert_eq!(cutoff.cast(), "text");
     assert_eq!(cutoff.text(), "2026-01-02");
+}
+
+#[rstest]
+#[case::timestamptz(Type::TIMESTAMPTZ, true)]
+#[case::text(Type::TEXT, true)]
+#[case::integer(Type::INT4, false)]
+#[case::date(Type::DATE, false)]
+fn cutoffs_bind_as_timestamptz_or_text(#[case] ty: Type, #[case] accepted: bool) {
+    assert_eq!(<Cutoff as ToSql>::accepts(&ty), accepted);
 }
 
 #[rstest]
