@@ -151,11 +151,13 @@ impl LoggingState {
         Id: FnOnce() -> String,
         Clock: FnMut() -> Duration,
     {
-        let prepared = prepare(&init, &mut correlation, redactor, next_trace_id, &mut clock)?;
-        Ok(Self::from_prepared(init, prepared))
+        Ok(Self::from_prepared(
+            prepare(&init, &mut correlation, redactor, next_trace_id, &mut clock)?,
+            init,
+        ))
     }
 
-    fn from_prepared(init: LoggingInit, prepared: Prepared) -> Self {
+    fn from_prepared(prepared: Prepared, init: LoggingInit) -> Self {
         Self {
             correlation: prepared.correlation,
             model_call_details: initial_model_call_details(&init, &prepared.trace_id),
