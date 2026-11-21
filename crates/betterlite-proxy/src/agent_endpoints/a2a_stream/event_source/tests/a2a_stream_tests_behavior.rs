@@ -9,7 +9,7 @@ use tokio::time::{sleep, timeout};
 
 use crate::agent_endpoints::a2a_stream::error::StreamError;
 use crate::agent_endpoints::a2a_stream::event_source::{
-    EventSourceRequest, a2a_sse_event_source, data_events,
+    EventSourceRequest, STREAM_DEADLINE, a2a_sse_event_source, data_events,
 };
 use crate::agent_endpoints::a2a_stream::tests::fakes::{
     Agent, CLOSED, CountingConverter, Reply, client, client_with_body_limit, json, serve_agent,
@@ -274,6 +274,12 @@ async fn follows_redirects_like_the_litellm_client() {
         .collect();
     assert_eq!(failures, ["the A2A agent could not be reached"]);
     assert_eq!(server.requests.lock().unwrap().len(), 11);
+}
+
+// LiteLLM sets no total deadline; the whole stream is cut here after a day
+#[test]
+fn the_stream_deadline_is_a_day() {
+    assert_eq!(STREAM_DEADLINE, Duration::from_hours(24));
 }
 
 #[rstest]

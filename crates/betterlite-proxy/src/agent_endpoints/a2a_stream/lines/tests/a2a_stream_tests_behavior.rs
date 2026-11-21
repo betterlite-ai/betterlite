@@ -18,6 +18,7 @@ const NONE: [&str; 0] = [];
 #[case::invalid_utf8(b"a\xffb\xc3\n", 5, &["a\u{fffd}b\u{fffd}"], &NONE, None)]
 #[case::empty_lines(b"\n\r\n\r", 4, &["", ""], &NONE, None)]
 #[case::no_bytes(b"", 0, &NONE, &NONE, None)]
+#[case::vertical_tab(b"a\x0bb\n", 3, &NONE, &["a\u{b}b"], None)]
 fn line_splitter_cuts_at_lf_crlf_and_cr(
     #[case] bytes: &[u8],
     #[case] split: usize,
