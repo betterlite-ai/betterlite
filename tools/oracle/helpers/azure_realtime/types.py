@@ -74,6 +74,7 @@ class ClientSocket(Protocol):
 
 
 # the handler is unannotated for its return, so the runner is named through this protocol
+# the probe never passes client or user_api_key_dict, so those two take only None
 class RealtimeRunner(Protocol):
     async def async_realtime(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/realtime/handler.py#L133-L148
         self,
@@ -84,8 +85,12 @@ class RealtimeRunner(Protocol):
         api_key: str | None = None,
         api_version: str | None = None,
         azure_ad_token: str | None = None,
+        client: None = None,
+        timeout: float | None = None,
         realtime_protocol: str | None = None,
         query_params: RealtimeQueryParams | None = None,
+        user_api_key_dict: None = None,
+        litellm_metadata: dict[str, JsonValue] | None = None,
     ) -> None: ...
 
 
