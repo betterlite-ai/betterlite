@@ -1,4 +1,5 @@
 use betterlite_auth::user_roles::UserRole;
+use betterlite_bedrock::aws_settings::AwsSessionTag;
 use betterlite_secrets::secret_codec::diagnostics::SecretDiagnostics;
 use betterlite_secrets::secret_codec::{
     DecryptPolicy, FailureLog, FailureValue, StoredCipher, StoredValue,
@@ -10,14 +11,6 @@ use super::error::{AdminOnlyField, ModelWriteError};
 use crate::team_access::caller::TeamCaller;
 
 const CREDENTIAL_FIELD: &str = "litellm_credential_name";
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AwsSessionTag {
-    #[serde(rename = "Key")]
-    pub key: String,
-    #[serde(rename = "Value")]
-    pub value: String,
-}
 
 // the litellm_params keys a write needs authority for; an absent credential name keeps it, an explicit null clears it
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
