@@ -79,7 +79,7 @@ fn merge_overrides(args: &mut PassthroughCallArgs, input: &PassthroughRouteInput
 fn router_args(
     args: &mut PassthroughCallArgs,
     input: &PassthroughRouteInput,
-    view: Option<&dyn VideoRouteView>,
+    view: Option<&(dyn VideoRouteView + Send + Sync)>,
     specific_deployment: bool,
 ) {
     // The team mapping runs only where LiteLLM reaches the router, never on the api_key or override branches

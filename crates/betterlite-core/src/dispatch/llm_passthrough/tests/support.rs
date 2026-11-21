@@ -20,7 +20,7 @@ use crate::operation::llm_passthrough::LlmPassthroughRequest;
 
 pub(super) struct Ports {
     pub(super) router: Option<Arc<dyn PassthroughRouterCall>>,
-    pub(super) view: Option<Arc<dyn VideoRouteView>>,
+    pub(super) view: Option<Arc<dyn VideoRouteView + Send + Sync>>,
     pub(super) blocked: Arc<dyn BlockedModels>,
     pub(super) direct: Arc<dyn PassthroughDirectCall>,
 }
@@ -308,7 +308,7 @@ pub(super) fn failing_router_request(
         outcome: Outcome::Fail(status),
         calls: calls.clone(),
     });
-    let view: Arc<dyn VideoRouteView> = Arc::new(FakeView {
+    let view: Arc<dyn VideoRouteView + Send + Sync> = Arc::new(FakeView {
         recognized: RouteFlag(true),
         ..FakeView::default()
     });
@@ -331,6 +331,6 @@ pub(super) fn failing_router_request(
     }
 }
 
-fn view_of(view: FakeView) -> Arc<dyn VideoRouteView> {
+fn view_of(view: FakeView) -> Arc<dyn VideoRouteView + Send + Sync> {
     Arc::new(view)
 }

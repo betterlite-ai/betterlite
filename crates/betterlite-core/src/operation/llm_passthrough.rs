@@ -13,7 +13,7 @@ pub struct LlmPassthroughRequest {
     pub args: PassthroughCallArgs,
     pub route: PassthroughRouteInput,
     pub router: Option<Arc<dyn PassthroughRouterCall>>,
-    pub view: Option<Arc<dyn VideoRouteView>>,
+    pub view: Option<Arc<dyn VideoRouteView + Send + Sync>>,
     pub blocked: Arc<dyn BlockedModels>,
     pub direct: Arc<dyn PassthroughDirectCall>,
 }

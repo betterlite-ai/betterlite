@@ -842,7 +842,7 @@ async fn entry_call_error_types_follow_status() {
 async fn entry_router_missing() {
     let trace = Trace::default();
     let calls = Calls::default();
-    let view: Arc<dyn VideoRouteView> = Arc::new(FakeView {
+    let view: Arc<dyn VideoRouteView + Send + Sync> = Arc::new(FakeView {
         recognized: RouteFlag(true),
         ..FakeView::default()
     });
@@ -878,7 +878,7 @@ async fn entry_router_uses_b8690_trait() {
     let trace = Trace::default();
     let calls = Calls::default();
     let router: Arc<dyn PassthroughRouterCall> = sdk_router(&trace);
-    let view: Arc<dyn VideoRouteView> = Arc::new(FakeView {
+    let view: Arc<dyn VideoRouteView + Send + Sync> = Arc::new(FakeView {
         recognized: RouteFlag(true),
         ..FakeView::default()
     });
