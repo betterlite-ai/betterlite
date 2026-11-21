@@ -38,7 +38,7 @@ mod sweep_assembly {
     use tokio_util::task::TaskTracker;
 
     use crate::budget_sweep::BudgetSweep;
-    use crate::budget_sweep::phase::{PhaseRunner, ResetPhase};
+    use crate::budget_sweep::phase::{PhaseRunner as _, ResetPhase};
     use crate::budget_sweep::production::production;
     use crate::budget_sweep::settings::BudgetResetSettings;
     use crate::postgres_store::session::PostgresStore;

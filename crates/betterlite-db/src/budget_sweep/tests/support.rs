@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::future::{Future, pending};
