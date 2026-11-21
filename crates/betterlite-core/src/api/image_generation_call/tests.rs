@@ -35,8 +35,9 @@ use tokio::runtime::{Builder, Runtime};
 use super::call::{CustomClientKind, GenericParams, ImageGenerationCall, LiteLlmCredentials};
 use super::error::{ImageGenerationException, provider_failure};
 use super::operations::{
-    Branch, BranchAnswer, CustomImageHandler, CustomProviderSlot, CustomRequest, EntraRequest,
-    FoundryAuthRequest, Headers, ImageGenerationOperations,
+    AzureRequest, BedrockRequest, BlackForestLabsRequest, Branch, BranchAnswer, CustomImageHandler,
+    CustomProviderSlot, CustomRequest, EntraRequest, FoundryAuthRequest, FoundryRequest,
+    GenericRequest, Headers, ImageGenerationOperations, OpenAiRequest,
 };
 use super::plan::{
     ImageGenerationAnswer, ImageGenerationPlan, ImageIdentity, ImageResolutionError,
@@ -213,7 +214,7 @@ impl CallableTokenProvider for StaticProvider {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 struct Sent {
     branch: &'static str,
     model: Option<String>,
@@ -256,228 +257,163 @@ impl Sent {
     }
 }
 
+fn pairs<'item, Value, Items>(items: Items) -> Vec<(String, Value)>
+where
+    Items: IntoIterator<Item = (&'item String, &'item Value)>,
+    Value: Clone + 'item,
+{
+    items
+        .into_iter()
+        .map(|(name, value)| (name.clone(), value.clone()))
+        .collect()
+}
+
 fn snapshot(branch: &Branch<'_>) -> Sent {
     match branch {
-        Branch::Azure(request) => Sent {
-            branch: "azure",
-            model: request.model.map(str::to_owned),
-            prompt: request.prompt.to_owned(),
-            timeout: request.timeout,
-            api_key: request.api_key.map(|key| key.expose_secret().to_owned()),
-            api_base: request.api_base.map(str::to_owned),
-            api_version: request.api_version.map(str::to_owned),
-            azure_ad_token: request
-                .azure_ad_token
-                .map(|token| token.expose_secret().to_owned()),
-            has_entra_provider: request.azure_ad_token_provider.is_some(),
-            options: request
-                .optional_params
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect(),
-            headers: request
-                .headers
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect(),
-            litellm_params: request
-                .litellm_params
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect(),
-            base_model: request.base_model.map(str::to_owned),
-            organization: None,
-            asynchronous: request.asynchronous,
-            now_seconds: request.now_seconds,
-            client: None,
-            config: None,
-            provider: None,
-        },
-        Branch::Generic(request) => Sent {
-            branch: "generic",
-            model: request.model.map(str::to_owned),
-            prompt: request.prompt.to_owned(),
-            timeout: request.timeout,
-            api_key: request.api_key.map(|key| key.expose_secret().to_owned()),
-            api_base: request
-                .litellm_params
-                .iter()
-                .find_map(|(k, v)| {
-                    (k == "api_base").then(|| match v {
-                        Json::Text(text) => Some(text.clone()),
-                        Json::Null
-                        | Json::Bool(_)
-                        | Json::Number(_)
-                        | Json::List(_)
-                        | Json::Object(_) => None,
-                    })
-                })
-                .flatten(),
-            api_version: None,
-            azure_ad_token: None,
-            has_entra_provider: false,
-            options: request
-                .optional_params
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect(),
-            headers: Vec::new(),
-            litellm_params: request
-                .litellm_params
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect(),
-            base_model: None,
-            organization: None,
-            asynchronous: false,
-            now_seconds: 0,
-            client: None,
-            config: Some(request.config.clone()),
-            provider: Some(request.provider.to_owned()),
-        },
-        Branch::BlackForestLabs(request) => Sent {
-            branch: "black_forest_labs",
-            model: Some(request.model.to_owned()),
-            prompt: request.prompt.to_owned(),
-            timeout: request.timeout,
-            api_key: None,
-            api_base: None,
-            api_version: None,
-            azure_ad_token: None,
-            has_entra_provider: false,
-            options: request
-                .optional_params
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect(),
-            headers: Vec::new(),
-            litellm_params: request
-                .litellm_params
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect(),
-            base_model: None,
-            organization: None,
-            asynchronous: request.asynchronous,
-            now_seconds: 0,
-            client: None,
-            config: None,
-            provider: None,
-        },
-        Branch::Foundry(request) => Sent {
-            branch: "azure_ai",
-            model: request.model.map(str::to_owned),
-            prompt: request.prompt.to_owned(),
-            timeout: request.timeout,
-            api_key: request.api_key.map(|key| key.expose_secret().to_owned()),
-            api_base: request.api_base.map(str::to_owned),
-            api_version: request.api_version.map(str::to_owned),
-            azure_ad_token: request
-                .azure_ad_token
-                .map(|token| token.expose_secret().to_owned()),
-            has_entra_provider: request.azure_ad_token_provider.is_some(),
-            options: request
-                .optional_params
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect(),
-            headers: request
-                .headers
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect(),
-            litellm_params: request
-                .litellm_params
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect(),
-            base_model: None,
-            organization: None,
-            asynchronous: request.asynchronous,
-            now_seconds: 0,
-            client: None,
-            config: None,
-            provider: None,
-        },
-        Branch::OpenAi(request) => Sent {
-            branch: "openai",
-            model: request.model.map(str::to_owned),
-            prompt: request.prompt.to_owned(),
-            timeout: request.timeout,
-            api_key: request.api_key.map(|key| key.expose_secret().to_owned()),
-            api_base: request.api_base.map(str::to_owned),
-            api_version: None,
-            azure_ad_token: None,
-            has_entra_provider: false,
-            options: request
-                .optional_params
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect(),
-            headers: request
-                .headers
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect(),
-            litellm_params: Vec::new(),
-            base_model: None,
-            organization: request.organization.map(str::to_owned),
-            asynchronous: request.asynchronous,
-            now_seconds: request.now_seconds,
-            client: None,
-            config: None,
-            provider: None,
-        },
-        Branch::Bedrock(request) => Sent {
-            branch: "bedrock",
-            model: request.model.map(str::to_owned),
-            prompt: request.prompt.to_owned(),
-            timeout: request.timeout,
-            api_key: request.api_key.map(|key| key.expose_secret().to_owned()),
-            api_base: request.api_base.map(str::to_owned),
-            api_version: None,
-            azure_ad_token: None,
-            has_entra_provider: false,
-            options: request
-                .optional_params
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect(),
-            headers: Vec::new(),
-            litellm_params: Vec::new(),
-            base_model: None,
-            organization: None,
-            asynchronous: request.asynchronous,
-            now_seconds: 0,
-            client: None,
-            config: None,
-            provider: None,
-        },
-        Branch::Custom(request) => Sent {
-            branch: "custom",
-            model: request.model.map(str::to_owned),
-            prompt: request.prompt.to_owned(),
-            timeout: request.timeout,
-            api_key: request.api_key.map(|key| key.expose_secret().to_owned()),
-            api_base: request.api_base.map(str::to_owned),
-            api_version: None,
-            azure_ad_token: None,
-            has_entra_provider: false,
-            options: request
-                .optional_params
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect(),
-            headers: Vec::new(),
-            litellm_params: Vec::new(),
-            base_model: None,
-            organization: None,
-            asynchronous: request.asynchronous,
-            now_seconds: 0,
-            client: request.client,
-            config: None,
-            provider: Some(request.provider.to_owned()),
-        },
+        Branch::Azure(request) => azure_sent(request),
+        Branch::Generic(request) => generic_sent(request),
+        Branch::BlackForestLabs(request) => black_forest_sent(request),
+        Branch::Foundry(request) => foundry_sent(request),
+        Branch::OpenAi(request) => openai_sent(request),
+        Branch::Bedrock(request) => bedrock_sent(request),
+        Branch::Custom(request) => custom_sent(request),
+    }
+}
+
+fn azure_sent(request: &AzureRequest<'_>) -> Sent {
+    Sent {
+        branch: "azure",
+        model: request.model.map(str::to_owned),
+        prompt: request.prompt.to_owned(),
+        timeout: request.timeout,
+        api_key: request
+            .api_key
+            .map(|secret| secret.expose_secret().to_owned()),
+        api_base: request.api_base.map(str::to_owned),
+        api_version: request.api_version.map(str::to_owned),
+        azure_ad_token: request
+            .azure_ad_token
+            .map(|secret| secret.expose_secret().to_owned()),
+        has_entra_provider: request.azure_ad_token_provider.is_some(),
+        options: pairs(request.optional_params),
+        headers: pairs(request.headers),
+        litellm_params: pairs(request.litellm_params),
+        base_model: request.base_model.map(str::to_owned),
+        asynchronous: request.asynchronous,
+        now_seconds: request.now_seconds,
+        ..Sent::default()
+    }
+}
+
+fn generic_sent(request: &GenericRequest<'_>) -> Sent {
+    let api_base = match request.litellm_params.get("api_base") {
+        Some(Json::Text(text)) => Some(text.clone()),
+        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
+        | None => None,
+    };
+    Sent {
+        branch: "generic",
+        model: request.model.map(str::to_owned),
+        prompt: request.prompt.to_owned(),
+        timeout: request.timeout,
+        api_key: request
+            .api_key
+            .map(|secret| secret.expose_secret().to_owned()),
+        api_base,
+        options: pairs(request.optional_params),
+        litellm_params: pairs(request.litellm_params),
+        config: Some(request.config.clone()),
+        provider: Some(request.provider.to_owned()),
+        ..Sent::default()
+    }
+}
+
+fn black_forest_sent(request: &BlackForestLabsRequest<'_>) -> Sent {
+    Sent {
+        branch: "black_forest_labs",
+        model: Some(request.model.to_owned()),
+        prompt: request.prompt.to_owned(),
+        timeout: request.timeout,
+        options: pairs(request.optional_params),
+        litellm_params: pairs(request.litellm_params),
+        asynchronous: request.asynchronous,
+        ..Sent::default()
+    }
+}
+
+fn foundry_sent(request: &FoundryRequest<'_>) -> Sent {
+    Sent {
+        branch: "azure_ai",
+        model: request.model.map(str::to_owned),
+        prompt: request.prompt.to_owned(),
+        timeout: request.timeout,
+        api_key: request
+            .api_key
+            .map(|secret| secret.expose_secret().to_owned()),
+        api_base: request.api_base.map(str::to_owned),
+        api_version: request.api_version.map(str::to_owned),
+        azure_ad_token: request
+            .azure_ad_token
+            .map(|secret| secret.expose_secret().to_owned()),
+        has_entra_provider: request.azure_ad_token_provider.is_some(),
+        options: pairs(request.optional_params),
+        headers: pairs(request.headers),
+        litellm_params: pairs(request.litellm_params),
+        asynchronous: request.asynchronous,
+        ..Sent::default()
+    }
+}
+
+fn openai_sent(request: &OpenAiRequest<'_>) -> Sent {
+    Sent {
+        branch: "openai",
+        model: request.model.map(str::to_owned),
+        prompt: request.prompt.to_owned(),
+        timeout: request.timeout,
+        api_key: request
+            .api_key
+            .map(|secret| secret.expose_secret().to_owned()),
+        api_base: request.api_base.map(str::to_owned),
+        options: pairs(request.optional_params),
+        headers: pairs(request.headers),
+        organization: request.organization.map(str::to_owned),
+        asynchronous: request.asynchronous,
+        now_seconds: request.now_seconds,
+        ..Sent::default()
+    }
+}
+
+fn bedrock_sent(request: &BedrockRequest<'_>) -> Sent {
+    Sent {
+        branch: "bedrock",
+        model: request.model.map(str::to_owned),
+        prompt: request.prompt.to_owned(),
+        timeout: request.timeout,
+        api_key: request
+            .api_key
+            .map(|secret| secret.expose_secret().to_owned()),
+        api_base: request.api_base.map(str::to_owned),
+        options: pairs(request.optional_params),
+        asynchronous: request.asynchronous,
+        ..Sent::default()
+    }
+}
+
+fn custom_sent(request: &CustomRequest<'_>) -> Sent {
+    Sent {
+        branch: "custom",
+        model: request.model.map(str::to_owned),
+        prompt: request.prompt.to_owned(),
+        timeout: request.timeout,
+        api_key: request
+            .api_key
+            .map(|secret| secret.expose_secret().to_owned()),
+        api_base: request.api_base.map(str::to_owned),
+        options: pairs(request.optional_params),
+        asynchronous: request.asynchronous,
+        client: request.client,
+        provider: Some(request.provider.to_owned()),
+        ..Sent::default()
     }
 }
 
@@ -611,12 +547,10 @@ impl ImageGenerationOperations for FakeOps {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push((
-                request.api_key.map(|key| key.expose_secret().to_owned()),
                 request
-                    .litellm_params
-                    .iter()
-                    .map(|(name, value)| (name.clone(), value.clone()))
-                    .collect(),
+                    .api_key
+                    .map(|secret| secret.expose_secret().to_owned()),
+                pairs(request.litellm_params),
             ));
         let mut headers = Headers::new();
         if let Some(key) = request.api_key {
@@ -714,3 +648,4 @@ fn azure_identity(model: &str) -> FakeIdentity {
 }
 
 mod cases;
+mod credentials;
