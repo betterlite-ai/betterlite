@@ -1,0 +1,27 @@
+task: B8392
+deviations:
+  - what: The unified hooks get the guardrail to apply as an argument of the UnifiedHooks port, and execute_guardrail_hook does not write data["guardrail_to_apply"].
+    why: B3680's unified hooks take the guardrail as a typed argument, so the callback never enters the request JSON; the guardrail that runs is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L1832-L1833
+  - what: run_guardrail_with_metrics takes the typed hook call and the path to run it on, not a coroutine that was already built.
+    why: The hook borrows the request data mutably while it runs, and the wrapper needs the same data afterwards to record a raising guardrail; the timing, status, enrichment and record are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L2719-L2753
+  - what: Parallel pre-call guardrails and during-call guardrails each run on their own copy of the request, and only what they write into the metadata and litellm_metadata buckets (markers, applied guardrails, invocation records) reaches the live request; an in-place edit outside those buckets is dropped.
+    why: Concurrent hooks cannot share one mutable request in Rust. LiteLLM declares parallel pre-call guardrails block-only and discards what they return, and a during-call guardrail runs next to the model call, which already has the request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L2611-L2630
+  - what: during_call_hook raises the first error to come back and drops the hooks still running, where asyncio.gather leaves them running in the background.
+    why: A dropped future stops at its next await instead of running unobserved after the request has failed; the error the client gets is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L2985-L2991
+  - what: A call_mcp_tool during-call hook gets the caller's key as the typed UserAPIKeyAuth, not as the dict _convert_user_api_key_auth_to_dict builds.
+    why: B8390's moderation hook takes the typed key on every call type; the fields it carries are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L2970-L2974
+  - what: A guardrail's own pre-call hook called without the caller's key fails with "the pre-call hook of <class> needs the caller's key" instead of running with user_api_key_dict=None.
+    why: B8390's ProxyCallback::pre_call takes a key, and pre_call_hook, the only caller of the pre-call runners, always has one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L1838-L1844
+  - what: The guardrail metric labels a balancer failure ("No callback found for guardrail", "No guardrail found with name") and any other untyped hook error with error_type "Exception", where LiteLLM names the Python class, such as ValueError.
+    why: ProxyHookError::Other carries no Python class name; every typed error (HTTPException, ProxyException, GuardrailRaisedException, ModifyResponseException, RejectedRequestError) keeps its LiteLLM name.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L1972-L1974
+  - what: The guardrail_name and guardrail_mode enrichment applies to an HTTP error whose detail is a JSON object; a text detail is left as it is.
+    why: ProxyHookError::Http carries its detail as text, and B3663's add_guardrail_context only adds keys to an object detail, as LiteLLM does to a dict detail.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L1975
+kept_bugs: []
