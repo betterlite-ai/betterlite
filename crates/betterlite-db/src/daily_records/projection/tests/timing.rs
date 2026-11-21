@@ -167,7 +167,7 @@ async fn an_unreadable_metadata_string_fails_the_row() {
     let case = Case::with_prices(BTreeMap::new());
     let text = payload_with_metadata("not json");
     let result = project(&case, &text, DailySpendEntity::User).await;
-    assert!(matches!(result, Err(DailyRecordError::Metadata(_))));
+    assert!(matches!(result, Err(DailyRecordError::Metadata { .. })));
 }
 
 #[tokio::test]

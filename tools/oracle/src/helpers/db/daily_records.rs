@@ -84,11 +84,11 @@ fn status_answer(payload: &DailyPayload) -> Value {
 
 async fn common_answer(
     payload: &DailyPayload,
-    entity: Option<DailySpendEntity>,
+    requested_entity: Option<DailySpendEntity>,
     pricing: &DailyPricing<'_, CasePrices>,
     endpoints: &CaseEndpoints,
 ) -> HelperResult {
-    let Some(entity) = entity else {
+    let Some(entity) = requested_entity else {
         return Err(failure("a common operation needs an entity"));
     };
     let (projection, raised) =
@@ -122,16 +122,26 @@ struct CasePrices {
 }
 
 impl PriceLookup for CasePrices {
-    fn effective_model_info(&self, model: &str, provider: Option<&str>) -> Option<PriceRecord> {
-        self.prices.get(&price_key(model, provider)).cloned()
+    fn effective_model_info(
+        &self,
+        model: &str,
+        custom_llm_provider: Option<&str>,
+    ) -> Option<PriceRecord> {
+        self.prices
+            .get(&price_key(model, custom_llm_provider))
+            .cloned()
     }
 
     fn raw_cost_map_entry(&self, key: &str) -> Option<PriceRecord> {
         self.prices.get(key).cloned()
     }
 
-    fn effective_priced_model(&self, model: &str, provider: Option<&str>) -> Option<PricedModel> {
-        let record = self.effective_model_info(model, provider)?;
+    fn effective_priced_model(
+        &self,
+        model: &str,
+        custom_llm_provider: Option<&str>,
+    ) -> Option<PricedModel> {
+        let record = self.effective_model_info(model, custom_llm_provider)?;
         Some(PricedModel {
             record,
             tiered_pricing: Vec::new(),
@@ -142,10 +152,14 @@ impl PriceLookup for CasePrices {
 }
 
 impl SavingsPricingContext for CasePrices {
-    fn resolve_model(&self, model: &str, provider: Option<&str>) -> Option<ModelIdentity> {
+    fn resolve_model(
+        &self,
+        model: &str,
+        custom_llm_provider: Option<&str>,
+    ) -> Option<ModelIdentity> {
         Some(ModelIdentity {
             model: model.to_owned(),
-            provider: provider.unwrap_or_default().to_owned(),
+            provider: custom_llm_provider.unwrap_or_default().to_owned(),
         })
     }
 
@@ -163,10 +177,12 @@ impl SavingsPricingContext for CasePrices {
 }
 
 fn price_key(model: &str, custom_llm_provider: Option<&str>) -> String {
-    match custom_llm_provider.filter(|provider| !provider.is_empty()) {
-        Some(provider) => format!("{provider}/{model}"),
-        None => model.to_owned(),
-    }
+    custom_llm_provider
+        .filter(|provider| !provider.is_empty())
+        .map_or_else(
+            || model.to_owned(),
+            |provider| format!("{provider}/{model}"),
+        )
 }
 
 // ROUTE_ENDPOINT_MAPPING as the case supplies it, since the map B004 owns is read-only here.
