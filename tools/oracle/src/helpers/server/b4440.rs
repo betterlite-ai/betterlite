@@ -5,6 +5,7 @@ use betterlite_server::health_probe_modes::response::health_check_response;
 use outcome::{mode_step, tracking_step, wildcard_step};
 use serde::Deserialize;
 use serde_json::Value;
+use std::collections::BTreeMap;
 use tokio::runtime::Builder;
 const TRACKED: [&str; 7] = [
     "tags",
@@ -51,7 +52,7 @@ struct TrackingStep {
 }
 #[derive(Deserialize)]
 struct ResponseStep {
-    headers: std::collections::BTreeMap<String, String>,
+    headers: BTreeMap<String, String>,
 }
 async fn run_steps(input: &Input) -> Vec<Value> {
     let mut results = Vec::new();

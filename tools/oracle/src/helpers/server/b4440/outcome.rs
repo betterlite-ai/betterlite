@@ -9,7 +9,7 @@ use betterlite_server::health_probe_modes::run::run_health_probe;
 use betterlite_server::health_probe_modes::tracking::add_tracking_information;
 use betterlite_server::health_probe_modes::wildcard::probe_wildcard_model;
 use indexmap::IndexMap;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 use std::sync::{Arc, PoisonError};
 pub(super) async fn mode_step(step: &ModeStep) -> Value {
     let entries: IndexMap<String, Value> = step.params.clone().into_iter().collect();
@@ -21,7 +21,7 @@ pub(super) async fn mode_step(step: &ModeStep) -> Value {
     };
     let updates = Arc::new(UpdateRecorder::default());
     if step.logging {
-        let logging: Arc<dyn HealthProbeLogging> = updates.clone();
+        let logging: Arc<dyn HealthProbeLogging> = Arc::clone(&updates);
         params.litellm_logging_obj = Some(logging);
     }
     let arguments = HealthProbeArguments {
@@ -93,14 +93,14 @@ pub(super) fn tracking_step(step: &TrackingStep) -> Value {
     let Param::Value(Json::Object(metadata)) = tracked.litellm_metadata else {
         return json!({"error": {"kind": "other", "detail": "the tracking metadata is not an object"}});
     };
-    let mut entries = serde_json::Map::new();
+    let mut projected = Map::new();
     for key in TRACKED {
-        let value = metadata.get(key).map_or(Value::Null, |entry| {
-            serde_json::to_value(entry).unwrap_or(Value::Null)
+        let value = metadata.get(key).map_or(Value::Null, |found| {
+            serde_json::to_value(found).unwrap_or(Value::Null)
         });
-        entries.insert(key.to_owned(), value);
+        projected.insert(key.to_owned(), value);
     }
-    Value::Object(entries)
+    Value::Object(projected)
 }
 fn success_outcome(step: &ModeStep, calls: &Recorder, updates: &UpdateRecorder) -> Value {
     let call = calls

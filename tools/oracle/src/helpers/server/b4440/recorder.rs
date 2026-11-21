@@ -13,6 +13,7 @@ use betterlite_server::health_probe_modes::calls::{
 };
 use betterlite_server::health_probe_modes::error::HealthProbeError;
 use betterlite_server::health_probe_modes::logging::{HealthProbeLogging, ProbeLoggingUpdate};
+use serde::Serialize;
 use serde_json::{Value, json};
 use std::io;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -39,44 +40,54 @@ impl Recorder {
         }
     }
 }
-macro_rules! record_calls {
-    ($(($method:ident, $call_type:ty, $name:literal)),+ $(,)?) => {
-        #[async_trait]
-        impl HealthProbeBackend for Recorder {
-            $(
-                async fn $method(&self, call: $call_type) -> Result<HealthProbeReply, HealthProbeError> {
-                    let arguments = serde_json::to_value(&call.parameters).unwrap_or(Value::Null);
-                    self.note($name, arguments)
-                }
-            )+
-        }
-    };
+// the arguments a recorded call carries, as the oracle compares them: arbitrary provider JSON
+fn recorded<T>(parameters: &T) -> Value
+where
+    T: Serialize,
+{
+    serde_json::to_value(parameters).unwrap_or(Value::Null)
 }
-record_calls!(
-    (chat, ProbeCall, "acompletion"),
-    (completion, ProbeCall, "atext_completion"),
-    (embedding, ProbeCall, "aembedding"),
-    (audio_speech, ProbeCall, "aspeech"),
-    (
-        audio_transcription,
-        AudioTranscriptionCall,
-        "atranscription"
-    ),
-    (image_generation, ProbeCall, "aimage_generation"),
-    (video_generation, ProbeCall, "avideo_generation"),
-    (rerank, ProbeCall, "arerank"),
-    (responses, ProbeCall, "aresponses"),
-    (batch, ProbeCall, "alist_batches"),
-    (ocr, OcrCall, "aocr"),
-);
 #[async_trait]
 impl HealthProbeBackend for Recorder {
+    async fn chat(&self, call: ProbeCall) -> Result<HealthProbeReply, HealthProbeError> {
+        self.note("acompletion", recorded(&call.parameters))
+    }
+    async fn completion(&self, call: ProbeCall) -> Result<HealthProbeReply, HealthProbeError> {
+        self.note("atext_completion", recorded(&call.parameters))
+    }
+    async fn embedding(&self, call: ProbeCall) -> Result<HealthProbeReply, HealthProbeError> {
+        self.note("aembedding", recorded(&call.parameters))
+    }
+    async fn audio_speech(&self, call: ProbeCall) -> Result<HealthProbeReply, HealthProbeError> {
+        self.note("aspeech", recorded(&call.parameters))
+    }
+    async fn audio_transcription(
+        &self,
+        call: AudioTranscriptionCall,
+    ) -> Result<HealthProbeReply, HealthProbeError> {
+        self.note("atranscription", recorded(&call.parameters))
+    }
+    async fn image_generation(
+        &self,
+        call: ProbeCall,
+    ) -> Result<HealthProbeReply, HealthProbeError> {
+        self.note("aimage_generation", recorded(&call.parameters))
+    }
     async fn image_edit(&self, call: ImageEditCall) -> Result<HealthProbeReply, HealthProbeError> {
-        let mut arguments = serde_json::to_value(&call.parameters).unwrap_or(Value::Null);
+        let mut arguments = recorded(&call.parameters);
         if let Value::Object(entries) = &mut arguments {
             entries.insert("prompt".to_owned(), Value::String(call.prompt.to_owned()));
         }
         self.note("aimage_edit", arguments)
+    }
+    async fn video_generation(
+        &self,
+        call: ProbeCall,
+    ) -> Result<HealthProbeReply, HealthProbeError> {
+        self.note("avideo_generation", recorded(&call.parameters))
+    }
+    async fn rerank(&self, call: ProbeCall) -> Result<HealthProbeReply, HealthProbeError> {
+        self.note("arerank", recorded(&call.parameters))
     }
     async fn realtime(&self, call: RealtimeCall) -> Result<HealthProbeReply, HealthProbeError> {
         let arguments = json!({
@@ -84,13 +95,21 @@ impl HealthProbeBackend for Recorder {
             "custom_llm_provider": call.custom_llm_provider,
             "api_base": call.api_base,
             "api_version": call.api_version,
-            "model_params": serde_json::to_value(&call.model_params).unwrap_or(Value::Null),
+            "model_params": recorded(&call.model_params),
         });
         self.note("realtime_health_check", arguments)
     }
+    async fn batch(&self, call: ProbeCall) -> Result<HealthProbeReply, HealthProbeError> {
+        self.note("alist_batches", recorded(&call.parameters))
+    }
+    async fn responses(&self, call: ProbeCall) -> Result<HealthProbeReply, HealthProbeError> {
+        self.note("aresponses", recorded(&call.parameters))
+    }
+    async fn ocr(&self, call: OcrCall) -> Result<HealthProbeReply, HealthProbeError> {
+        self.note("aocr", recorded(&call.parameters))
+    }
     async fn evaluation(&self, call: EvaluationCall) -> Result<HealthProbeReply, HealthProbeError> {
-        let arguments = serde_json::to_value(&call.params).unwrap_or(Value::Null);
-        self.note("asystemone", arguments)
+        self.note("asystemone", recorded(&call.params))
     }
 }
 #[derive(Default)]
@@ -99,20 +118,17 @@ pub(super) struct UpdateRecorder {
 }
 impl HealthProbeLogging for UpdateRecorder {
     fn update_from_kwargs(&self, update: ProbeLoggingUpdate) -> Result<(), LoggingStateError> {
-        let kwargs = serde_json::to_value(&update.kwargs).unwrap_or(Value::Null);
-        let optional_params = serde_json::to_value(&update.optional_params).unwrap_or(Value::Null);
-        let litellm_params = update
-            .litellm_params
-            .as_ref()
-            .map(|params| serde_json::to_value(params).unwrap_or(Value::Null));
-        let recorded = json!({
+        let kwargs = recorded(&update.kwargs);
+        let optional_params = recorded(&update.optional_params);
+        let litellm_params = update.litellm_params.as_ref().map(recorded);
+        let logged = json!({
             "kwargs": kwargs,
             "model": update.model,
             "user": update.user,
             "optional_params": optional_params,
             "litellm_params": litellm_params,
         });
-        *self.update.lock().unwrap_or_else(PoisonError::into_inner) = Some(recorded);
+        *self.update.lock().unwrap_or_else(PoisonError::into_inner) = Some(logged);
         Ok(())
     }
     fn logging_state(&self) -> Option<Arc<Mutex<LoggingState>>> {
@@ -123,8 +139,8 @@ pub(super) struct FixedCheapest {
     pub(super) models: Vec<String>,
 }
 impl CheapestChatModels for FixedCheapest {
-    fn cheapest_chat_models(&self, _custom_llm_provider: &str, n: usize) -> Vec<String> {
-        self.models.iter().take(n).cloned().collect()
+    fn cheapest_chat_models(&self, _custom_llm_provider: &str, limit: usize) -> Vec<String> {
+        self.models.iter().take(limit).cloned().collect()
     }
 }
 pub(super) struct MissingDocuments;
