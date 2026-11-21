@@ -70,8 +70,7 @@ impl<Dispatch> Transcriptions<'_, Dispatch>
 where
     Dispatch: TranscriptionDispatch,
 {
-    // transcription(model, file, ...): the sync call, which also measures the request duration; the file is
-    // consumed before the first await, so the returned future stays Send
+    // transcription(model, file, ...): the sync call and its hidden duration, with the file consumed before any await
     pub fn transcription(
         &self,
         call: &TranscriptionCall,
