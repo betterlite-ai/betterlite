@@ -16,8 +16,7 @@ use super::streaming::Direction;
 
 const NOT_AN_OBJECT: &str = "the request body is not a JSON object";
 
-// one buffered call for both directions: the sync path logs before it validates and raises failures
-// unchanged, the async path resolves the client first and logs every failure with post_call
+// one body for both directions; only the async path stores headers and logs failures with post_call
 pub async fn call<Source>(
     source: &Source,
     sent: &SentChat<Source::Client>,
@@ -29,7 +28,8 @@ pub async fn call<Source>(
 where
     Source: ClientSource,
 {
-    if matches!(direction, Direction::Sync) {
+    let is_async = matches!(direction, Direction::Async);
+    if !is_async {
         hooks
             .pre_call(records::sync_pre_call(
                 call,
@@ -41,14 +41,39 @@ where
             return Err(AzureChatError::azure(422, MAX_RETRIES_TYPE.to_owned()));
         }
     }
-    let client = resolve_client(source, sent, call, hooks, direction)?;
+    let request = GetClient {
+        api_key: call.api_key,
+        api_base: Some(call.api_base),
+        api_version: Some(call.api_version),
+        model: Some(sent.model.as_str()),
+        litellm_params: &sent.litellm_params,
+        is_async,
+        supplied: sent.supplied.as_ref(),
+    };
+    let resolved = source
+        .get(request)
+        .map_err(|error| logged_failure(direction, sent, hooks, AzureChatError::from(&error)))?;
+    let client = require_kind(resolved, is_async)
+        .map_err(|failure| logged_failure(direction, sent, hooks, failure))?;
+    if is_async {
+        hooks
+            .pre_call(records::async_pre_call(call, &client, &sent.data))
+            .map_err(|error| {
+                logged_failure(
+                    direction,
+                    sent,
+                    hooks,
+                    AzureChatError::azure(500, error.to_string()),
+                )
+            })?;
+    }
     let raw = send(&client, sent, call, runtime, hooks, direction).await?;
     let headers = SecretHeaders::from_response(&raw.headers);
-    if matches!(direction, Direction::Async) {
+    if is_async {
         hooks.response_headers(&response::raw_headers(&headers));
     }
     if let Some(text) = raw.body.as_str() {
-        return Err(reported(
+        return Err(logged_failure(
             direction,
             sent,
             hooks,
@@ -69,49 +94,10 @@ where
         &original,
         &headers,
         sent.json_mode,
-        matches!(direction, Direction::Async),
+        is_async,
         runtime.identifier,
         runtime.clock,
     )
-}
-
-// get_azure_openai_client plus the isinstance guard, with the async pre_call after the guard
-fn resolve_client<Source>(
-    source: &Source,
-    sent: &SentChat<Source::Client>,
-    call: &ChatCall<'_, Source::Client>,
-    hooks: &mut dyn ChatHooks,
-    direction: Direction,
-) -> Result<ClientHandle<Source::Client>, AzureChatError>
-where
-    Source: ClientSource,
-{
-    let is_async = matches!(direction, Direction::Async);
-    let request = GetClient {
-        api_key: call.api_key,
-        api_base: Some(call.api_base),
-        api_version: Some(call.api_version),
-        model: Some(sent.model.as_str()),
-        litellm_params: &sent.litellm_params,
-        is_async,
-        supplied: sent.supplied.as_ref(),
-    };
-    let resolved = source
-        .get(request)
-        .map_err(|error| reported(direction, sent, hooks, AzureChatError::from(&error)))?;
-    let client = require_kind(resolved, is_async)
-        .map_err(|failure| reported(direction, sent, hooks, failure))?;
-    if !is_async {
-        return Ok(client);
-    }
-    match hooks.pre_call(records::async_pre_call(call, &client, &sent.data)) {
-        Ok(()) => Ok(client),
-        Err(error) => Err(logged_failure(
-            sent,
-            hooks,
-            AzureChatError::azure(500, error.to_string()),
-        )),
-    }
 }
 
 async fn send<Source>(
@@ -127,7 +113,7 @@ where
 {
     let value = serde_json::to_value(&sent.data).map_err(AzureChatError::from)?;
     let Some(object) = value.as_object() else {
-        return Err(reported(
+        return Err(logged_failure(
             direction,
             sent,
             hooks,
@@ -152,12 +138,12 @@ where
                 Some(token) => tokio::select! {
                     biased;
                     answer = pending => answer,
-                    () = token.cancelled() => return Err(logged_failure(sent, hooks, AzureChatError::Cancelled)),
+                    () = token.cancelled() => return Err(logged_failure(direction, sent, hooks, AzureChatError::Cancelled)),
                 },
             }
         }
     };
-    answer.map_err(|error| reported(direction, sent, hooks, AzureChatError::wrapped(&error)))
+    answer.map_err(|error| logged_failure(direction, sent, hooks, AzureChatError::wrapped(&error)))
 }
 
 fn recovery<'runtime>(runtime: &'runtime Runtime<'_>) -> Recovery<'runtime> {
@@ -168,27 +154,18 @@ fn recovery<'runtime>(runtime: &'runtime Runtime<'_>) -> Recovery<'runtime> {
     }
 }
 
-fn reported<Client>(
+// the async except blocks log str(e) before they re-raise or wrap the failure; the sync path raises it
+fn logged_failure<Client>(
     direction: Direction,
     sent: &SentChat<Client>,
     hooks: &mut dyn ChatHooks,
     failure: AzureChatError,
 ) -> AzureChatError {
-    match direction {
-        Direction::Sync => failure,
-        Direction::Async => logged_failure(sent, hooks, failure),
+    if matches!(direction, Direction::Async) {
+        hooks.post_call(records::async_post_call(
+            &sent.data,
+            decisions::Json::Text(failure.text()),
+        ));
     }
-}
-
-// every async except block logs str(e) before it re-raises or wraps the failure
-fn logged_failure<Client>(
-    sent: &SentChat<Client>,
-    hooks: &mut dyn ChatHooks,
-    failure: AzureChatError,
-) -> AzureChatError {
-    hooks.post_call(records::async_post_call(
-        &sent.data,
-        decisions::Json::Text(failure.text()),
-    ));
     failure
 }
