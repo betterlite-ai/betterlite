@@ -2,6 +2,7 @@ use betterlite_core::api::api_boundaries::{
     ApiBoundariesInput, ApiLimitError, ApiLimits, JsonBoundary,
 };
 use betterlite_models::decisions::Json;
+use serde_json::Number;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -19,25 +20,25 @@ pub fn decode_assistant_body(bytes: &[u8], limits: &ApiLimits) -> Result<Json, A
     limits.check(ApiBoundariesInput::Json(JsonBoundary {
         known_bytes: bytes.len(),
     }))?;
-    let value: Json = serde_json::from_slice(bytes).map_err(AssistantBodyError::Invalid)?;
-    finite_floats(&value)?;
+    let mut value: Json = serde_json::from_slice(bytes).map_err(AssistantBodyError::Invalid)?;
+    orjson_numbers(&mut value)?;
     Ok(value)
 }
 
-// orjson refuses a float literal whose double is infinite; serde_json keeps the literal text instead
-fn finite_floats(value: &Json) -> Result<(), AssistantBodyError> {
+// orjson loads an integer beyond i64..=u64 as a double and refuses any number its double cannot hold
+fn orjson_numbers(value: &mut Json) -> Result<(), AssistantBodyError> {
     match value {
         Json::Number(number) => {
-            let literal = number.to_string();
-            // an integer literal of any size stays an integer, as it does in Python
-            let float = literal.contains(['.', 'e', 'E']);
-            if float && !number.as_f64().is_some_and(f64::is_finite) {
+            let Some(double) = number.as_f64() else {
                 return Err(AssistantBodyError::NonFiniteNumber);
+            };
+            if number.as_i64().is_none() && number.as_u64().is_none() {
+                *number = Number::from_f64(double).ok_or(AssistantBodyError::NonFiniteNumber)?;
             }
             Ok(())
         }
-        Json::List(items) => items.iter().try_for_each(finite_floats),
-        Json::Object(fields) => fields.values().try_for_each(finite_floats),
+        Json::List(items) => items.iter_mut().try_for_each(orjson_numbers),
+        Json::Object(fields) => fields.values_mut().try_for_each(orjson_numbers),
         Json::Null | Json::Bool(_) | Json::Text(_) => Ok(()),
     }
 }

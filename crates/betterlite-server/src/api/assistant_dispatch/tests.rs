@@ -322,7 +322,7 @@ fn assistant_body_is_strict() {
         decode_assistant_body(b"[1,2]", &limits).expect("an array parses"),
         Json::List(_)
     ));
-    // a float that fits stays a float, and an integer too large for a double stays an integer
+    // a finite integer beyond the 64-bit range loads as the double orjson produces
     let finite = decode_assistant_body(
         b"{\"temperature\": 1e308, \"seed\": 123456789012345678901234567890}",
         &limits,
@@ -335,7 +335,27 @@ fn assistant_body_is_strict() {
         finite_fields.get("temperature"),
         Some(Json::Number(_))
     ));
-    assert!(matches!(finite_fields.get("seed"), Some(Json::Number(_))));
+    let Some(Json::Number(seed)) = finite_fields.get("seed") else {
+        panic!("the seed is not a number");
+    };
+    let expected = "1.2345678901234568e29"
+        .parse::<f64>()
+        .expect("the expected double parses");
+    assert_eq!(seed.as_f64().map(f64::to_bits), Some(expected.to_bits()));
+    // an integer inside i64..=u64 stays the exact integer
+    let kept = decode_assistant_body(b"{\"small\": -1, \"large\": 18446744073709551615}", &limits)
+        .expect("in-range integers parse");
+    let Json::Object(kept_fields) = kept else {
+        panic!("the integers did not parse as a mapping");
+    };
+    let Some(Json::Number(small)) = kept_fields.get("small") else {
+        panic!("the small integer is not a number");
+    };
+    let Some(Json::Number(large)) = kept_fields.get("large") else {
+        panic!("the large integer is not a number");
+    };
+    assert_eq!(small.as_i64(), Some(-1));
+    assert_eq!(large.as_u64(), Some(u64::MAX));
     // B1087's byte boundary is the decoder's own failure
     let over = vec![b'a'; limits.max_json_bytes.saturating_add(1)];
     let Err(AssistantBodyError::Limits(error)) = decode_assistant_body(&over, &limits) else {
@@ -356,6 +376,8 @@ fn assistant_body_is_strict() {
 #[case::infinite(b"{\"model\": 1e400}")]
 #[case::negative_infinite(b"[-1e400]")]
 #[case::infinite_nested(b"{\"metadata\": {\"temperature\": 1e309}}")]
+#[case::huge_integer(br#"{"model":"gpt-4o","metadata":{"n":10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000}}"#)]
+#[case::negative_huge_integer(br#"{"model":"gpt-4o","metadata":{"n":-99999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999}}"#)]
 #[case::single_quotes(b"{'model': 'x'}")]
 #[case::trailing_comma(b"{\"model\": \"x\",}")]
 fn malformed_assistant_bodies_are_rejected(#[case] malformed: &[u8]) {
