@@ -1,0 +1,20 @@
+kind: helper
+name: responses-id-security-cross-team-forbidden
+call:
+  responses_id_security:
+    operation: authorize
+    settings: {disable: false, allow: false, signing_key: test-master}
+    principal: {user_id: user_a, team_id: team_b, role: null, role_form: value}
+    call_type: aget_responses
+    data:
+      - {field: response_id, value: {kind: owned, original: resp_test, user: user_a, team: team_a, prefix: "", suffix: ""}}
+calls:
+  - responses_id_security:
+      operation: authorize
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: null, role: null, role_form: value}
+      call_type: aresponses
+      data:
+        - {field: previous_response_id, value: {kind: owned, original: resp_test, user: user_a, team: team_a, prefix: "", suffix: ""}}
+env: {}
+compare: {ignore: []}

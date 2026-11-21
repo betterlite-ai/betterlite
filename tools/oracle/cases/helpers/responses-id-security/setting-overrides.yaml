@@ -1,0 +1,48 @@
+kind: helper
+name: responses-id-security-setting-overrides
+call:
+  responses_id_security:
+    operation: authorize
+    settings: {disable: true, allow: false, signing_key: test-master}
+    principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+    call_type: aget_responses
+    data:
+      - {field: response_id, value: {kind: text, text: resp_external}}
+calls:
+  - responses_id_security:
+      operation: authorize
+      settings: {disable: true, allow: false, signing_key: test-master}
+      principal: {user_id: user_b, team_id: team_b, role: null, role_form: value}
+      call_type: aget_responses
+      data:
+        - {field: response_id, value: {kind: owned, original: resp_test, user: user_a, team: team_a, prefix: "", suffix: ""}}
+  - responses_id_security:
+      operation: success
+      settings: {disable: true, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      id: {kind: text, text: resp_test}
+      nested: {shape: absent}
+      route: /v1/responses
+  - responses_id_security:
+      operation: authorize
+      settings: {disable: false, allow: true, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      call_type: aget_responses
+      data:
+        - {field: response_id, value: {kind: text, text: resp_external}}
+  - responses_id_security:
+      operation: authorize
+      settings: {disable: false, allow: true, signing_key: test-master}
+      principal: {user_id: user_b, team_id: team_b, role: null, role_form: value}
+      call_type: aget_responses
+      data:
+        - {field: response_id, value: {kind: owned, original: resp_test, user: user_a, team: team_a, prefix: "", suffix: ""}}
+  - responses_id_security:
+      operation: success
+      settings: {disable: false, allow: true, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      id: {kind: text, text: resp_test}
+      nested: {shape: absent}
+      route: /v1/responses
+env: {}
+compare: {ignore: []}

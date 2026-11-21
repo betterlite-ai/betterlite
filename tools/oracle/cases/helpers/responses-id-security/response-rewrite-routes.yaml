@@ -1,0 +1,146 @@
+kind: helper
+name: responses-id-security-response-rewrite-routes
+call:
+  responses_id_security:
+    operation: success
+    settings: {disable: false, allow: false, signing_key: test-master}
+    principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+    id: {kind: text, text: resp_test}
+    nested: {shape: absent}
+    route: /v1/responses
+calls:
+  - responses_id_security:
+      operation: success
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      id: {kind: text, text: resp_test}
+      nested: {shape: absent}
+      route: /chat/completions
+  - responses_id_security:
+      operation: success
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      id: {kind: text, text: other}
+      nested: {shape: absent}
+      route: /v1/responses
+  - responses_id_security:
+      operation: success
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      id: {kind: text, text: other}
+      nested: {shape: mapping, id: {kind: text, text: resp_test}}
+      route: /v1/responses
+  - responses_id_security:
+      operation: success
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      id: {kind: text, text: other}
+      nested: {shape: null}
+      route: /v1/responses
+  - responses_id_security:
+      operation: success
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      id: {kind: text, text: other}
+      nested: {shape: number, number: 7}
+      route: /v1/responses
+  - responses_id_security:
+      operation: stream
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      route: /v1/responses
+      events:
+        - {kind: generic, top_id: {kind: text, text: resp_test}, nested: {shape: absent}}
+  - responses_id_security:
+      operation: stream
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      route: /responses
+      events:
+        - {kind: generic, top_id: {kind: text, text: resp_test}, nested: {shape: absent}}
+  - responses_id_security:
+      operation: stream
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      route: /openai/responses
+      events:
+        - {kind: generic, top_id: {kind: text, text: resp_test}, nested: {shape: absent}}
+  - responses_id_security:
+      operation: stream
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      route: /openai/v1/responses
+      events:
+        - {kind: generic, top_id: {kind: text, text: resp_test}, nested: {shape: absent}}
+  - responses_id_security:
+      operation: stream
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      route: /v1/responses/resp_test
+      events:
+        - {kind: generic, top_id: {kind: text, text: resp_test}, nested: {shape: absent}}
+  - responses_id_security:
+      operation: stream
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      route: /chat/completions
+      events:
+        - {kind: generic, top_id: {kind: text, text: resp_test}, nested: {shape: absent}}
+  - responses_id_security:
+      operation: stream
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      route:
+      events:
+        - {kind: generic, top_id: {kind: text, text: resp_test}, nested: {shape: absent}}
+  - responses_id_security:
+      operation: stream
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      route: /v1/responses/
+      events:
+        - {kind: generic, top_id: {kind: text, text: resp_test}, nested: {shape: absent}}
+  - responses_id_security:
+      operation: stream
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      route: /azure/v1/responses
+      events:
+        - {kind: generic, top_id: {kind: text, text: resp_test}, nested: {shape: absent}}
+  - responses_id_security:
+      operation: stream
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      route: /v1/responses
+      events:
+        - {kind: generic, top_id: {kind: text, text: other}, nested: {shape: mapping, id: {kind: text, text: resp_test}}}
+  - responses_id_security:
+      operation: stream
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      route: /v1/responses
+      events:
+        - {kind: generic, top_id: {kind: text, text: resp_test}, nested: {shape: mapping, id: {kind: text, text: resp_other}}}
+  - responses_id_security:
+      operation: stream
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      route: /v1/responses
+      events:
+        - {kind: lifecycle, response_id: {kind: text, text: resp_other}, top_id: {kind: text, text: resp_test}}
+  - responses_id_security:
+      operation: stream
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      route: /v1/responses
+      events:
+        - {kind: lifecycle, response_id: {kind: text, text: other}, top_id: null}
+  - responses_id_security:
+      operation: stream
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      route: /v1/responses
+      events:
+        - {kind: lifecycle, response_id: {kind: text, text: resp_test}, top_id: null}
+env: {}
+compare: {ignore: []}

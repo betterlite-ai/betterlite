@@ -1,0 +1,55 @@
+kind: helper
+name: responses-id-security-proxy-admin-unmanaged
+call:
+  responses_id_security:
+    operation: authorize
+    settings: {disable: false, allow: false, signing_key: test-master}
+    principal: {user_id: user_a, team_id: team_a, role: PROXY_ADMIN, role_form: enum}
+    call_type: aget_responses
+    data:
+      - {field: response_id, value: {kind: text, text: resp_external}}
+calls:
+  - responses_id_security:
+      operation: authorize
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: PROXY_ADMIN, role_form: value}
+      call_type: aget_responses
+      data:
+        - {field: response_id, value: {kind: text, text: resp_external}}
+  - responses_id_security:
+      operation: authorize
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: PROXY_ADMIN, role_form: enum}
+      call_type: aget_responses
+      data:
+        - {field: response_id, value: {kind: owned, original: resp_test, user: user_z, team: team_z, prefix: "", suffix: ""}}
+  - responses_id_security:
+      operation: authorize
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: PROXY_ADMIN, role_form: value}
+      call_type: aget_responses
+      data:
+        - {field: response_id, value: {kind: owned, original: resp_test, user: user_z, team: team_z, prefix: "", suffix: ""}}
+  - responses_id_security:
+      operation: authorize
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: PROXY_ADMIN_VIEW_ONLY, role_form: enum}
+      call_type: aget_responses
+      data:
+        - {field: response_id, value: {kind: text, text: resp_external}}
+  - responses_id_security:
+      operation: authorize
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: PROXY_ADMIN_VIEW_ONLY, role_form: enum}
+      call_type: aget_responses
+      data:
+        - {field: response_id, value: {kind: owned, original: resp_test, user: user_z, team: team_z, prefix: "", suffix: ""}}
+  - responses_id_security:
+      operation: success
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: PROXY_ADMIN, role_form: enum}
+      id: {kind: text, text: resp_test}
+      nested: {shape: absent}
+      route: /v1/responses
+env: {}
+compare: {ignore: []}

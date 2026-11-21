@@ -1,0 +1,99 @@
+kind: helper
+name: responses-id-security-retained-addressed-id
+call:
+  responses_id_security:
+    operation: authorize
+    settings: {disable: false, allow: false, signing_key: test-master}
+    principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+    call_type: aresponses
+    data:
+      - {field: previous_response_id, value: {kind: text, text: resp_wrong}}
+      - {field: _litellm_addressed_response_id, value: {kind: owned, original: resp_test, user: user_a, team: team_a, prefix: "", suffix: ""}}
+calls:
+  - responses_id_security:
+      operation: authorize
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      call_type: aresponses
+      data:
+        - {field: previous_response_id, value: {kind: text, text: resp_wrong}}
+  - responses_id_security:
+      operation: authorize
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      call_type: aget_responses
+      data:
+        - {field: response_id, value: {kind: owned, original: resp_test, user: user_a, team: team_a, prefix: "", suffix: ""}}
+  - responses_id_security:
+      operation: authorize
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      call_type: adelete_responses
+      data:
+        - {field: response_id, value: {kind: owned, original: resp_test, user: user_a, team: team_a, prefix: "", suffix: ""}}
+  - responses_id_security:
+      operation: authorize
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      call_type: acancel_responses
+      data:
+        - {field: response_id, value: {kind: owned, original: resp_test, user: user_a, team: team_a, prefix: "", suffix: ""}}
+  - responses_id_security:
+      operation: authorize
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      call_type: alist_input_items
+      data:
+        - {field: response_id, value: {kind: owned, original: resp_test, user: user_a, team: team_a, prefix: "", suffix: ""}}
+  - responses_id_security:
+      operation: authorize
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      call_type: aget_responses
+      data:
+        - {field: _litellm_addressed_response_id, value: {kind: owned, original: resp_test, user: user_a, team: team_a, prefix: "", suffix: ""}}
+  - responses_id_security:
+      operation: authorize
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      call_type: aget_responses
+      data:
+        - {field: _litellm_addressed_response_id, value: {kind: text, text: ""}}
+        - {field: response_id, value: {kind: owned, original: resp_test, user: user_a, team: team_a, prefix: "", suffix: ""}}
+  - responses_id_security:
+      operation: authorize
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      call_type: aget_responses
+      data:
+        - {field: _litellm_addressed_response_id, value: {kind: number, number: 7}}
+        - {field: response_id, value: {kind: owned, original: resp_test, user: user_a, team: team_a, prefix: "", suffix: ""}}
+  - responses_id_security:
+      operation: authorize
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      call_type: aget_responses
+      data: []
+  - responses_id_security:
+      operation: authorize
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      call_type: aget_responses
+      data:
+        - {field: response_id, value: {kind: text, text: ""}}
+  - responses_id_security:
+      operation: authorize
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      call_type: aget_responses
+      data:
+        - {field: response_id, value: {kind: number, number: 7}}
+  - responses_id_security:
+      operation: authorize
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      call_type: acompletion
+      data:
+        - {field: previous_response_id, value: {kind: owned, original: resp_test, user: user_a, team: team_a, prefix: "", suffix: ""}}
+env: {}
+compare: {ignore: []}

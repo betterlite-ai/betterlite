@@ -1,0 +1,57 @@
+kind: helper
+name: responses-id-security-malformed-owned-id-payload
+call:
+  responses_id_security:
+    operation: authorize
+    settings: {disable: false, allow: false, signing_key: test-master}
+    principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+    call_type: aget_responses
+    data:
+      - {field: response_id, value: {kind: sealed, text: "litellm_proxy:responses_api:response_id:resp_test;user_id:user_a", prefix: "", suffix: ""}}
+calls:
+  - responses_id_security:
+      operation: authorize
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      call_type: aget_responses
+      data:
+        - {field: response_id, value: {kind: sealed, text: "litellm_proxy:responses_api:response_id:resp_test", prefix: "", suffix: ""}}
+  - responses_id_security:
+      operation: authorize
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      call_type: aget_responses
+      data:
+        - {field: response_id, value: {kind: sealed, text: not_managed_content, prefix: "", suffix: ""}}
+  - responses_id_security:
+      operation: authorize
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      call_type: aget_responses
+      data:
+        - {field: response_id, value: {kind: owned, original: resp_test, user: user_a, team: team_a, prefix: prefix, suffix: ""}}
+  - responses_id_security:
+      operation: authorize
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      call_type: aget_responses
+      data:
+        - {field: response_id, value: {kind: owned, original: resp_test, user: user_a, team: team_a, prefix: "", suffix: resp_ignored}}
+  - responses_id_security:
+      operation: authorize
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      call_type: aget_responses
+      data:
+        - {field: response_id, value: {kind: text, text: plain_id}}
+  - responses_id_security:
+      operation: authorize
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      call_type: aget_responses
+      data:
+        - {field: response_id, value: {kind: text, text: resp_}}
+env: {}
+compare:
+  ignore:
+    - {pointer: /call/class, why: "betterlite reports a typed internal failure where LiteLLM raises IndexError"}

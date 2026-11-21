@@ -1,0 +1,30 @@
+kind: helper
+name: responses-id-security-stream-id-consistency
+call:
+  responses_id_security:
+    operation: stream
+    settings: {disable: false, allow: false, signing_key: test-master}
+    principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+    route: /v1/responses
+    events:
+      - {kind: lifecycle, response_id: {kind: text, text: resp_test}, top_id: null}
+      - {kind: lifecycle, response_id: {kind: text, text: resp_test}, top_id: null}
+calls:
+  - responses_id_security:
+      operation: stream
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      route: /v1/responses
+      events:
+        - {kind: lifecycle, response_id: {kind: text, text: resp_other}, top_id: null}
+        - {kind: generic, top_id: {kind: text, text: resp_other}, nested: {shape: absent}}
+  - responses_id_security:
+      operation: stream
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      route: /v1/responses
+      events:
+        - {kind: lifecycle, response_id: {kind: text, text: resp_test}, top_id: null}
+        - {kind: lifecycle, response_id: {kind: text, text: resp_other}, top_id: null}
+env: {}
+compare: {ignore: []}

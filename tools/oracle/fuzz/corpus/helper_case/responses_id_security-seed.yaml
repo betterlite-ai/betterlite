@@ -1,0 +1,13 @@
+kind: helper
+name: responses-id-security-seed
+call:
+  responses_id_security:
+    operation: authorize
+    settings: {disable: false, allow: false, signing_key: seed-master}
+    principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+    call_type: aget_responses
+    data:
+      - field: response_id
+        value: {kind: owned, original: resp_seed, user: user_a, team: team_a, prefix: "", suffix: ""}
+env: {}
+compare: {ignore: []}

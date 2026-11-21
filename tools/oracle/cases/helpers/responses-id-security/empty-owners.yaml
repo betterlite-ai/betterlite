@@ -1,0 +1,27 @@
+kind: helper
+name: responses-id-security-empty-owners
+call:
+  responses_id_security:
+    operation: authorize
+    settings: {disable: false, allow: false, signing_key: test-master}
+    principal: {user_id: user_b, team_id: team_b, role: null, role_form: value}
+    call_type: aget_responses
+    data:
+      - {field: response_id, value: {kind: owned, original: resp_test, user: "", team: "", prefix: "", suffix: ""}}
+calls:
+  - responses_id_security:
+      operation: authorize
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: null, team_id: null, role: null, role_form: value}
+      call_type: aget_responses
+      data:
+        - {field: response_id, value: {kind: owned, original: resp_test, user: "", team: "", prefix: "", suffix: ""}}
+  - responses_id_security:
+      operation: success
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: null, team_id: null, role: null, role_form: value}
+      id: {kind: text, text: resp_test}
+      nested: {shape: absent}
+      route: /v1/responses
+env: {}
+compare: {ignore: []}

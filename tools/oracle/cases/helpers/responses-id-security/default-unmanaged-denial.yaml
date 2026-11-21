@@ -1,0 +1,27 @@
+kind: helper
+name: responses-id-security-default-unmanaged-denial
+call:
+  responses_id_security:
+    operation: authorize
+    settings: {disable: false, allow: false, signing_key: test-master}
+    principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+    call_type: aget_responses
+    data:
+      - {field: response_id, value: {kind: text, text: resp_external}}
+calls:
+  - responses_id_security:
+      operation: authorize
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      call_type: aresponses
+      data:
+        - {field: previous_response_id, value: {kind: text, text: resp_external}}
+  - responses_id_security:
+      operation: authorize
+      settings: {disable: false, allow: false, signing_key: test-master}
+      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+      call_type: aget_responses
+      data:
+        - {field: response_id, value: {kind: text, text: external_without_prefix}}
+env: {}
+compare: {ignore: []}
