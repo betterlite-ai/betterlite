@@ -27,178 +27,152 @@ impl DailySpendQueue for DailySpendUpdateQueue {
     }
 }
 
-// add_spend_log_transaction_to_daily_user_transaction: a present null user still rolls up, under the None text of the queue key.
-pub async fn add_daily_user_transaction<C>(
-    queue: Option<&dyn DailySpendQueue>,
-    payload: &DailyPayload,
-    pricing: &DailyPricing<'_, C>,
-    endpoints: &dyn CallTypeEndpoints,
-) -> Result<(), DailyRecordError>
-where
-    C: SavingsPricingContext,
-{
-    let Some(sink) = queue else {
-        return Ok(());
-    };
-    let projection =
-        common_daily_transaction(payload, DailySpendEntity::User, pricing, endpoints).await?;
-    let Some(projection) = projection else {
-        return Ok(());
-    };
-    let identity = projection.identities.first().cloned().flatten();
-    let update = entity_update(
-        &projection,
-        DailySpendEntity::User,
-        identity.as_deref(),
-        None,
-    );
-    enqueue_update(sink, DailySpendEntity::User, update).await
+// How an adapter names the identity its row is queued under, once the source's common base exists.
+enum Charged<'call> {
+    // The projection's first identity, a present null included: the user row is charged either way.
+    First,
+    // An identity the caller already holds: the organization id and the payload's end user.
+    Named(&'call str),
+    // Every identity the projection expands to, each keeping the payload's request id: the tags.
+    Every,
 }
+
+// The queue, payload and pricing state the six adapters hand to the shared charge.
+struct DailyCall<'call, C> {
+    queue: Option<&'call dyn DailySpendQueue>,
+    payload: &'call DailyPayload,
+    pricing: &'call DailyPricing<'call, C>,
+    endpoints: &'call dyn CallTypeEndpoints,
+}
+
+impl<C: SavingsPricingContext> DailyCall<'_, C> {
+    // _common_add_spend_log_transaction_to_daily_transaction, then the identity's own gate and one queue update per charged identity.
+    async fn charge(
+        &self,
+        entity: DailySpendEntity,
+        charged: Charged<'_>,
+    ) -> Result<(), DailyRecordError> {
+        let Some(sink) = self.queue else {
+            return Ok(());
+        };
+        let Some(projection) =
+            common_daily_transaction(self.payload, entity, self.pricing, self.endpoints).await?
+        else {
+            return Ok(());
+        };
+        match charged {
+            Charged::First => {
+                let identity = projection.identities.first().cloned().flatten();
+                let update = entity_update(&projection, entity, identity.as_deref(), None);
+                enqueue_update(sink, entity, update).await
+            }
+            Charged::Named(identity) => {
+                let update = entity_update(&projection, entity, Some(identity), None);
+                enqueue_update(sink, entity, update).await
+            }
+            Charged::Every => {
+                let request_id = self.payload.request_id.as_deref();
+                for identity in projection.identities.iter().flatten() {
+                    let update = entity_update(&projection, entity, Some(identity), request_id);
+                    enqueue_update(sink, entity, update).await?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+// LiteLLM writes each daily adapter out on its own; one table keeps the queue plumbing here, and the two adapters that rewrite the payload keep that rewrite in their own arm.
+#[rustfmt::skip]
+macro_rules! daily_callers {
+    ($name:ident, $entity:expr, $charged:expr) => {
+        pub async fn $name<C>(
+            queue: Option<&dyn DailySpendQueue>,
+            payload: &DailyPayload,
+            pricing: &DailyPricing<'_, C>,
+            endpoints: &dyn CallTypeEndpoints,
+        ) -> Result<(), DailyRecordError>
+        where
+            C: SavingsPricingContext,
+        {
+            let call = DailyCall { queue, payload, pricing, endpoints };
+            call.charge($entity, $charged).await
+        }
+    };
+    (end_user $name:ident) => {
+        pub async fn $name<C>(
+            queue: Option<&dyn DailySpendQueue>,
+            payload: &DailyPayload,
+            pricing: &DailyPricing<'_, C>,
+            endpoints: &dyn CallTypeEndpoints,
+        ) -> Result<(), DailyRecordError>
+        where
+            C: SavingsPricingContext,
+        {
+            let Some(end_user_key) = payload.end_user.as_deref().filter(|value| !value.is_empty()) else {
+                return Ok(());
+            };
+            let mut normalized = payload.clone();
+            normalized.end_user_id = Some(end_user_key.to_owned());
+            let call = DailyCall { queue, payload: &normalized, pricing, endpoints };
+            call.charge(DailySpendEntity::EndUser, Charged::Named(end_user_key)).await
+        }
+    };
+    (org $name:ident) => {
+        pub async fn $name<C>(
+            queue: Option<&dyn DailySpendQueue>,
+            payload: &DailyPayload,
+            org_id: Option<&str>,
+            pricing: &DailyPricing<'_, C>,
+            endpoints: &dyn CallTypeEndpoints,
+        ) -> Result<(), DailyRecordError>
+        where
+            C: SavingsPricingContext,
+        {
+            let Some(org_key) = org_id else {
+                return Ok(());
+            };
+            let mut normalized = payload.clone();
+            normalized.organization_id = Some(org_key.to_owned());
+            let call = DailyCall { queue, payload: &normalized, pricing, endpoints };
+            call.charge(DailySpendEntity::Org, Charged::Named(org_key)).await
+        }
+    };
+}
+
+// add_spend_log_transaction_to_daily_user_transaction: a present null user still rolls up, under the None text of the queue key.
+daily_callers!(
+    add_daily_user_transaction,
+    DailySpendEntity::User,
+    Charged::First
+);
 
 // add_spend_log_transaction_to_daily_team_transaction: a null team_id skips the row, as its own id gate already does.
-pub async fn add_daily_team_transaction<C>(
-    queue: Option<&dyn DailySpendQueue>,
-    payload: &DailyPayload,
-    pricing: &DailyPricing<'_, C>,
-    endpoints: &dyn CallTypeEndpoints,
-) -> Result<(), DailyRecordError>
-where
-    C: SavingsPricingContext,
-{
-    let Some(sink) = queue else {
-        return Ok(());
-    };
-    let projection =
-        common_daily_transaction(payload, DailySpendEntity::Team, pricing, endpoints).await?;
-    let Some(projection) = projection else {
-        return Ok(());
-    };
-    let Some(identity) = projection.identities.first().cloned().flatten() else {
-        return Ok(());
-    };
-    let update = entity_update(&projection, DailySpendEntity::Team, Some(&identity), None);
-    enqueue_update(sink, DailySpendEntity::Team, update).await
-}
+daily_callers!(
+    add_daily_team_transaction,
+    DailySpendEntity::Team,
+    Charged::First
+);
 
 // add_spend_log_transaction_to_daily_org_transaction: the explicit org id is the one the row is charged, even when the payload held another.
-pub async fn add_daily_org_transaction<C>(
-    queue: Option<&dyn DailySpendQueue>,
-    payload: &DailyPayload,
-    org_id: Option<&str>,
-    pricing: &DailyPricing<'_, C>,
-    endpoints: &dyn CallTypeEndpoints,
-) -> Result<(), DailyRecordError>
-where
-    C: SavingsPricingContext,
-{
-    let Some(sink) = queue else {
-        return Ok(());
-    };
-    let Some(org_key) = org_id else {
-        return Ok(());
-    };
-    let mut normalized = payload.clone();
-    normalized.organization_id = Some(org_key.to_owned());
-    let projection =
-        common_daily_transaction(&normalized, DailySpendEntity::Org, pricing, endpoints).await?;
-    let Some(projection) = projection else {
-        return Ok(());
-    };
-    let update = entity_update(&projection, DailySpendEntity::Org, Some(org_key), None);
-    enqueue_update(sink, DailySpendEntity::Org, update).await
-}
+daily_callers!(org add_daily_org_transaction);
 
 // add_spend_log_transaction_to_daily_end_user_transaction: a nonempty end_user becomes end_user_id, and an empty one skips the row.
-pub async fn add_daily_end_user_transaction<C>(
-    queue: Option<&dyn DailySpendQueue>,
-    payload: &DailyPayload,
-    pricing: &DailyPricing<'_, C>,
-    endpoints: &dyn CallTypeEndpoints,
-) -> Result<(), DailyRecordError>
-where
-    C: SavingsPricingContext,
-{
-    let Some(sink) = queue else {
-        return Ok(());
-    };
-    let Some(end_user_key) = payload
-        .end_user
-        .as_deref()
-        .filter(|value| !value.is_empty())
-    else {
-        return Ok(());
-    };
-    let mut normalized = payload.clone();
-    normalized.end_user_id = Some(end_user_key.to_owned());
-    let projection =
-        common_daily_transaction(&normalized, DailySpendEntity::EndUser, pricing, endpoints)
-            .await?;
-    let Some(projection) = projection else {
-        return Ok(());
-    };
-    let update = entity_update(
-        &projection,
-        DailySpendEntity::EndUser,
-        Some(end_user_key),
-        None,
-    );
-    enqueue_update(sink, DailySpendEntity::EndUser, update).await
-}
+daily_callers!(end_user add_daily_end_user_transaction);
 
 // add_spend_log_transaction_to_daily_agent_transaction: only a null agent_id skips the row, so an empty one still charges its agent.
-pub async fn add_daily_agent_transaction<C>(
-    queue: Option<&dyn DailySpendQueue>,
-    payload: &DailyPayload,
-    pricing: &DailyPricing<'_, C>,
-    endpoints: &dyn CallTypeEndpoints,
-) -> Result<(), DailyRecordError>
-where
-    C: SavingsPricingContext,
-{
-    let Some(sink) = queue else {
-        return Ok(());
-    };
-    let Some(agent_key) = payload.agent_id.as_deref() else {
-        return Ok(());
-    };
-    let projection =
-        common_daily_transaction(payload, DailySpendEntity::Agent, pricing, endpoints).await?;
-    let Some(projection) = projection else {
-        return Ok(());
-    };
-    let update = entity_update(&projection, DailySpendEntity::Agent, Some(agent_key), None);
-    enqueue_update(sink, DailySpendEntity::Agent, update).await
-}
+daily_callers!(
+    add_daily_agent_transaction,
+    DailySpendEntity::Agent,
+    Charged::First
+);
 
 // add_spend_log_transaction_to_daily_tag_transaction: one row per deduplicated tag, each keeping the request id, and the source's own null check after the ids gate can no longer fire.
-pub async fn add_daily_tag_transaction<C>(
-    queue: Option<&dyn DailySpendQueue>,
-    payload: &DailyPayload,
-    pricing: &DailyPricing<'_, C>,
-    endpoints: &dyn CallTypeEndpoints,
-) -> Result<(), DailyRecordError>
-where
-    C: SavingsPricingContext,
-{
-    let Some(sink) = queue else {
-        return Ok(());
-    };
-    let projection =
-        common_daily_transaction(payload, DailySpendEntity::Tag, pricing, endpoints).await?;
-    let Some(projection) = projection else {
-        return Ok(());
-    };
-    for tag in projection.identities.iter().flatten() {
-        let update = entity_update(
-            &projection,
-            DailySpendEntity::Tag,
-            Some(tag),
-            payload.request_id.as_deref(),
-        );
-        enqueue_update(sink, DailySpendEntity::Tag, update).await?;
-    }
-    Ok(())
-}
+daily_callers!(
+    add_daily_tag_transaction,
+    DailySpendEntity::Tag,
+    Charged::Every
+);
 
 fn entity_update(
     projection: &DailyProjection,
