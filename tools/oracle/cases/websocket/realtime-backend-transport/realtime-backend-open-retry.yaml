@@ -102,8 +102,8 @@ calls:
       synthetic: null
       error: null
     model: gemini-test
-    url: ws://upstream.test/realtime
-    api_base: null
+    url: ws://upstream.test/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=key-1
+    api_base: ws://upstream.test
     api_key: key-1
     headers:
       Authorization: Bearer test
@@ -137,6 +137,7 @@ calls:
     close_error: null
     metadata: null
     intent: null
-env: {}
+env:
+  REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES: '1024'
 compare:
   ignore: []

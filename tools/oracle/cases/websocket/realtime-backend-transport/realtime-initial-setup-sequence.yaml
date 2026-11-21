@@ -65,8 +65,9 @@ calls:
     close_error: null
     metadata: null
     intent: null
-env: {}
+env:
+  REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES: '1024'
 compare:
   ignore:
-  - pointer: /client/0/value/event_id
+  - pointer: /value/client/0/value/event_id
     why: LiteLLM stamps the synthetic session.created with uuid4, so only its shape is comparable

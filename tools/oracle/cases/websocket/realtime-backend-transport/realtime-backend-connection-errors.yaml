@@ -202,6 +202,7 @@ calls:
     close_error: null
     metadata: null
     intent: null
-env: {}
+env:
+  REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES: '1024'
 compare:
   ignore: []

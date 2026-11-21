@@ -3,7 +3,7 @@ import ssl as ssl_module
 import sys
 from datetime import UTC, datetime
 from types import ModuleType, TracebackType
-from typing import Final, Literal, TypedDict
+from typing import Final, Literal, Protocol, TypedDict
 
 import litellm
 from litellm.litellm_core_utils.litellm_logging import Logging
@@ -13,7 +13,7 @@ from litellm.types.realtime import RealtimeQueryParams
 from litellm.types.utils import LlmProviders
 from litellm.utils import ProviderConfigManager
 from pydantic import JsonValue, TypeAdapter, ValidationError
-from typing_extensions import override
+from typing_extensions import Unpack
 from websockets import exceptions as websockets_exceptions
 from websockets.datastructures import Headers
 from websockets.http11 import Response
@@ -50,7 +50,7 @@ class Input(TypedDict):
     intent: str | None
 
 
-class InvalidStatusCode(websockets_exceptions.WebSocketException):
+class InvalidStatusCodeError(websockets_exceptions.WebSocketException):
     def __init__(self, status_code: int, message: str) -> None:
         super().__init__(message)
         self.status_code: int = status_code
@@ -64,7 +64,7 @@ class FakeExceptions:
         websockets_exceptions.ConnectionClosed
     )
     InvalidStatus: type[websockets_exceptions.InvalidStatus] = websockets_exceptions.InvalidStatus
-    InvalidStatusCode: type[InvalidStatusCode] = InvalidStatusCode
+    InvalidStatusCode: type[InvalidStatusCodeError] = InvalidStatusCodeError
 
 
 class ProbeClient:
@@ -75,7 +75,6 @@ class ProbeClient:
         self._send_error = input_value["send_error"]
         self._close_error = input_value["close_error"]
 
-    @override
     async def send_text(self, data: str) -> None:
         if self._send_error is not None:
             raise RuntimeError(self._send_error)
@@ -84,7 +83,6 @@ class ProbeClient:
     async def receive_text(self) -> str:
         raise RuntimeError("the scripted client disconnected")
 
-    @override
     async def close(self, code: int = 1000, reason: str | None = None) -> None:
         self.closed = {"code": code, "reason": reason}
         document = self._close_error
@@ -167,7 +165,7 @@ class FakeWebsockets(ModuleType):
                 Response(attempt["status_code"], "", Headers(), b"")
             )
         if kind == "invalid_status_code":
-            raise InvalidStatusCode(attempt["status_code"], attempt["message"])
+            raise InvalidStatusCodeError(attempt["status_code"], attempt["message"])
         if kind == "timeout":
             raise TimeoutError(attempt["message"])
         if kind == "websocket":
@@ -176,22 +174,28 @@ class FakeWebsockets(ModuleType):
 
 
 def ssl_kind(*, value: bool | str | ssl_module.SSLContext) -> str:
-    if value is False:
-        return "disabled"
-    if isinstance(value, ssl_module.SSLContext):
-        if value.verify_mode == ssl_module.CERT_NONE and not value.check_hostname:
-            return "insecure"
-        return "shared"
-    return "shared"
+    match value:
+        case False:
+            return "disabled"
+        case ssl_module.SSLContext():
+            if value.verify_mode == ssl_module.CERT_NONE and not value.check_hostname:
+                return "insecure"
+            return "shared"
+        case True | str():
+            return "shared"
 
 
 def frame(payload: str | bytes) -> JsonValue:
-    text = payload.decode() if isinstance(payload, bytes) else payload
+    match payload:
+        case str():
+            text = payload
+        case bytes():
+            text = payload.decode()
     try:
         value = JSON.validate_json(text)
     except ValidationError:
-        return {"kind": "text", "text": text}
-    return {"kind": "json", "value": value}
+        return JSON.validate_python({"kind": "text", "text": text})
+    return JSON.validate_python({"kind": "json", "value": value})
 
 
 def logging_object(input_value: Input) -> Logging:
@@ -228,6 +232,28 @@ def query_params(input_value: Input) -> RealtimeQueryParams | None:
     return {"intent": intent}
 
 
+class RealtimeCall(TypedDict):
+    model: str
+    websocket: ProbeClient
+    logging_obj: Logging
+    provider_config: BaseRealtimeConfig
+    headers: dict[str, str]
+    api_base: str | None
+    api_key: str | None
+    client: None
+    timeout: float | None
+    user_api_key_dict: None
+    litellm_metadata: None
+    query_params: RealtimeQueryParams | None
+
+
+class RealtimeRunner(Protocol):
+    async def async_realtime(self, **call: Unpack[RealtimeCall]) -> None: ...
+
+
+RUNNER: RealtimeRunner = BaseLLMHTTPHandler()
+
+
 def snapshot(
     client: ProbeClient, backend: ProbeBackend, dials: list[JsonValue]
 ) -> JsonValue:
@@ -250,7 +276,20 @@ def run(input_value: Input) -> JsonValue:
     backend = ProbeBackend()
     client = ProbeClient(input_value)
     fake = FakeWebsockets(backend, input_value["dials"])
-    provider = provider_config(input_value)
+    call: RealtimeCall = {
+        "model": input_value["model"],
+        "websocket": client,
+        "logging_obj": logging_object(input_value),
+        "provider_config": provider_config(input_value),
+        "headers": input_value["headers"],
+        "api_base": input_value["api_base"],
+        "api_key": input_value["api_key"],
+        "client": None,
+        "timeout": None,
+        "user_api_key_dict": None,
+        "litellm_metadata": None,
+        "query_params": query_params(input_value),
+    }
     previous_module = sys.modules["websockets"]
     previous_defer = litellm.gemini_live_defer_setup
     previous_ssl_verify = litellm.ssl_verify
@@ -258,22 +297,7 @@ def run(input_value: Input) -> JsonValue:
     litellm.ssl_verify = input_value["ssl_verify"]
     sys.modules["websockets"] = fake
     try:
-        asyncio.run(
-            BaseLLMHTTPHandler().async_realtime(
-                model=input_value["model"],
-                websocket=client,
-                logging_obj=logging_object(input_value),
-                provider_config=provider,
-                headers=input_value["headers"],
-                api_base=input_value["api_base"],
-                api_key=input_value["api_key"],
-                client=None,
-                timeout=None,
-                user_api_key_dict=None,
-                litellm_metadata=None,
-                query_params=query_params(input_value),
-            )
-        )
+        asyncio.run(RUNNER.async_realtime(**call))
     finally:
         sys.modules["websockets"] = previous_module
         litellm.gemini_live_defer_setup = previous_defer
