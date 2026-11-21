@@ -32,6 +32,17 @@ fn fill(payload: Option<JsonValue>, ttl_seconds: u64) -> CacheFill {
     }
 }
 
+fn store(cache: &OAuthMetadataCache, key: &CacheKey, text: &str, ttl_seconds: u64, now: Instant) {
+    assert!(cache.store(key, 0, fill(Some(payload(text)), ttl_seconds), now));
+}
+
+fn store_rest(cache: &OAuthMetadataCache, now: Instant) -> Vec<CacheKey> {
+    (2..MAX_SIZE)
+        .map(|index| key("srv", &url(index)))
+        .inspect(|item| store(cache, item, "rest", TTL_SECONDS, now))
+        .collect()
+}
+
 fn entry_count(cache: &OAuthMetadataCache) -> usize {
     cache.inner.lock().unwrap().entries.len()
 }
@@ -105,47 +116,17 @@ async fn prune_evicts_the_earliest_expiring_entries_and_ties_by_insert_order() {
     let now = Instant::now();
     let early = key("srv", &url(0));
     let tied = key("srv", &url(1));
-    assert!(cache.store(
-        &early,
-        0,
-        fill(Some(payload("early")), NEGATIVE_TTL_SECONDS),
-        now
-    ));
-    assert!(cache.store(
-        &tied,
-        0,
-        fill(Some(payload("tied")), NEGATIVE_TTL_SECONDS),
-        now
-    ));
-    assert!(cache.store(
-        &early,
-        0,
-        fill(Some(payload("early")), NEGATIVE_TTL_SECONDS),
-        now
-    ));
-    let rest: Vec<CacheKey> = (2..MAX_SIZE)
-        .map(|index| key("srv", &url(index)))
-        .inspect(|item| {
-            assert!(cache.store(item, 0, fill(Some(payload("rest")), TTL_SECONDS), now));
-        })
-        .collect();
+    store(&cache, &early, "early", NEGATIVE_TTL_SECONDS, now);
+    store(&cache, &tied, "tied", NEGATIVE_TTL_SECONDS, now);
+    store(&cache, &early, "early", NEGATIVE_TTL_SECONDS, now);
+    let rest = store_rest(&cache, now);
     assert_eq!(entry_count(&cache), MAX_SIZE);
     let first_extra = key("srv", &url(MAX_SIZE));
-    assert!(cache.store(
-        &first_extra,
-        0,
-        fill(Some(payload("extra")), TTL_SECONDS),
-        now
-    ));
+    store(&cache, &first_extra, "extra", TTL_SECONDS, now);
     assert_eq!(cache.lookup(&early, now), None);
     assert_eq!(cache.lookup(&tied, now), Some(Some(payload("tied"))));
     let second_extra = key("srv", &url(200));
-    assert!(cache.store(
-        &second_extra,
-        0,
-        fill(Some(payload("extra")), TTL_SECONDS),
-        now
-    ));
+    store(&cache, &second_extra, "extra", TTL_SECONDS, now);
     assert_eq!(cache.lookup(&tied, now), None);
     assert_eq!(cache.lookup(&rest[0], now), Some(Some(payload("rest"))));
     assert_eq!(
