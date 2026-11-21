@@ -52,13 +52,13 @@ fn with_availability(mut scenario: Scenario, seen: Vec<(usize, usize)>) -> Scena
 }
 
 // (answer, provider calls, attempted retries, max retries, backoff millis, random draws)
-type Expected = (&'static str, usize, i64, i64, &'static [u64], usize);
+type Expected = (&'static str, usize, i64, i64, Vec<u64>, usize);
 
 #[rstest]
-#[case::first_attempt_answers(Scenario::new(vec![Step::Answer("ok")], 2), ("ok", 1, 0, 2, &[], 0))]
+#[case::first_attempt_answers(Scenario::new(vec![Step::Answer("ok")], 2), ("ok", 1, 0, 2, vec![], 0))]
 #[case::rate_limit_then_answer(
     Scenario::new(vec![Step::Fail("a", rate_limit("busy")), Step::Answer("ok")], 2),
-    ("ok", 2, 1, 2, &[500], 1)
+    ("ok", 2, 1, 2, vec![500], 1)
 )]
 #[case::backoff_doubles_per_retry(
     Scenario::new(
@@ -70,28 +70,28 @@ type Expected = (&'static str, usize, i64, i64, &'static [u64], usize);
         ],
         3,
     ),
-    ("ok", 4, 3, 3, &[500, 1000, 2000], 3)
+    ("ok", 4, 3, 3, vec![500, 1000, 2000], 3)
 )]
 #[case::healthy_alternative_retries_at_once(
     with_availability(
         Scenario::new(vec![Step::Fail("a", internal("down")), Step::Answer("ok")], 1),
         vec![(2, 2)],
     ),
-    ("ok", 2, 1, 1, &[0], 0)
+    ("ok", 2, 1, 1, vec![0], 0)
 )]
 #[case::deployment_count_replaces_the_router_count(
     with_deployment_retries(
         Scenario::new(vec![Step::Fail("a", internal("down")), Step::Answer("ok")], 0),
         1,
     ),
-    ("ok", 2, 1, 1, &[500], 1)
+    ("ok", 2, 1, 1, vec![500], 1)
 )]
 #[case::policy_retries_a_bad_request(
     with_policies(
         Scenario::new(vec![Step::Fail("a", bad_request("bad")), Step::Answer("ok")], 0),
         policy(Some(1), None),
     ),
-    ("ok", 2, 1, 1, &[500], 1)
+    ("ok", 2, 1, 1, vec![500], 1)
 )]
 #[case::policy_skips_the_check_on_later_errors(
     with_policies(
@@ -105,7 +105,7 @@ type Expected = (&'static str, usize, i64, i64, &'static [u64], usize);
         ),
         policy(None, Some(2)),
     ),
-    ("ok", 3, 2, 2, &[500, 1000], 2)
+    ("ok", 3, 2, 2, vec![500, 1000], 2)
 )]
 #[case::auth_keeps_the_first_deployment_count(
     with_availability(
@@ -119,7 +119,7 @@ type Expected = (&'static str, usize, i64, i64, &'static [u64], usize);
         ),
         vec![(1, 2), (1, 1)],
     ),
-    ("ok", 3, 2, 2, &[0, 0], 0)
+    ("ok", 3, 2, 2, vec![0, 0], 0)
 )]
 #[case::committed_stream_is_never_attempted_again(
     Scenario::new(
@@ -130,7 +130,7 @@ type Expected = (&'static str, usize, i64, i64, &'static [u64], usize);
         ],
         2,
     ),
-    ("stream", 2, 1, 2, &[500], 1)
+    ("stream", 2, 1, 2, vec![500], 1)
 )]
 #[tokio::test(start_paused = true)]
 async fn retried_success(#[case] scenario: Scenario, #[case] expected: Expected) {
@@ -140,7 +140,7 @@ async fn retried_success(#[case] scenario: Scenario, #[case] expected: Expected)
     assert_eq!(driven.calls.len(), calls);
     assert_eq!(driven.retried.trail.attempted_retries, attempted);
     assert_eq!(driven.retried.trail.max_retries, max);
-    assert_eq!(driven.retried.trail.backoffs, millis(backoffs));
+    assert_eq!(driven.retried.trail.backoffs, millis(&backoffs));
     assert_eq!(driven.draws, draws);
 }
 

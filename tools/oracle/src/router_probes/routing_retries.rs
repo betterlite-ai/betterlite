@@ -71,34 +71,7 @@ async fn scenario(
     payload: &wire::Payload,
     random: &mut InjectedRandom<'_>,
 ) -> Result<wire::Fields, String> {
-    let timeout: f64 = payload
-        .timeout
-        .parse()
-        .map_err(|_source| format!("timeout is not a number: {}", payload.timeout))?;
-    let sources = RouterTimeoutSources {
-        timeout: Some(
-            Seconds::new("router_settings.timeout", timeout).map_err(|error| error.to_string())?,
-        ),
-        stream_timeout: None,
-        default_stream_timeout: None,
-    };
-    let global = GlobalRequestTimeout {
-        seconds: GLOBAL_TIMEOUT,
-        explicitly_set: false,
-    };
-    let request = RequestTimeouts {
-        stream: payload.stream,
-        timeout: None,
-        request_timeout: None,
-        stream_timeout: None,
-    };
-    let plan = TimeoutPlan::new(
-        Instant::now().into_std(),
-        &resolve_router_timeouts(&sources, global),
-        &request,
-        &DeploymentTimeouts::default(),
-    )
-    .map_err(|error| error.to_string())?;
+    let plan = timeout_plan(payload)?;
     let policies = RetryPolicies {
         global: payload.retry_policy.clone(),
         model_group: BTreeMap::new(),
@@ -124,9 +97,51 @@ async fn scenario(
     if let Some(fault) = dispatch.fault {
         return Err(fault);
     }
+    reported(outcome, &trail, dispatch.calls, payload.stream)
+}
+
+// Router(timeout=...) with no request or deployment timeout, started on the paused clock
+fn timeout_plan(payload: &wire::Payload) -> Result<TimeoutPlan, String> {
+    let timeout: f64 = payload
+        .timeout
+        .parse()
+        .map_err(|_source| format!("timeout is not a number: {}", payload.timeout))?;
+    let sources = RouterTimeoutSources {
+        timeout: Some(
+            Seconds::new("router_settings.timeout", timeout).map_err(|error| error.to_string())?,
+        ),
+        stream_timeout: None,
+        default_stream_timeout: None,
+    };
+    let global = GlobalRequestTimeout {
+        seconds: GLOBAL_TIMEOUT,
+        explicitly_set: false,
+    };
+    let request = RequestTimeouts {
+        stream: payload.stream,
+        timeout: None,
+        request_timeout: None,
+        stream_timeout: None,
+    };
+    TimeoutPlan::new(
+        Instant::now().into_std(),
+        &resolve_router_timeouts(&sources, global),
+        &request,
+        &DeploymentTimeouts::default(),
+    )
+    .map_err(|error| error.to_string())
+}
+
+// the outcome the loop answered, with the calls and backoffs it made on the way
+fn reported(
+    outcome: Result<(), RetryError>,
+    trail: &RetryTrail,
+    calls: Vec<wire::Call>,
+    stream: bool,
+) -> Result<wire::Fields, String> {
     let mut fields = wire::Fields {
         outcome: wire::Outcome::Answered,
-        calls: dispatch.calls,
+        calls,
         backoffs: trail
             .backoffs
             .iter()
@@ -136,7 +151,7 @@ async fn scenario(
         error: None,
     };
     match outcome {
-        Ok(()) => fields.headers = Some(headers(payload.stream, &trail)?),
+        Ok(()) => fields.headers = Some(headers(stream, trail)?),
         Err(RetryError::Provider(error)) => {
             fields.outcome = wire::Outcome::Failed;
             fields.error = Some(failure(&error));
@@ -145,7 +160,7 @@ async fn scenario(
             fields.outcome = wire::Outcome::Cancelled;
         }
         Err(RetryError::Timeout(TimeoutError::DeadlineExpired | TimeoutError::AttemptExpired)) => {
-            fields.outcome = wire::Outcome::TimedOut
+            fields.outcome = wire::Outcome::TimedOut;
         }
         Err(
             error @ (RetryError::Routing(_)

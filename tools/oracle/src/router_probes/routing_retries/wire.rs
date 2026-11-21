@@ -5,7 +5,7 @@ use crate::router_probes::retry_policy::ErrorInput;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Payload {
+pub(super) struct Payload {
     pub deployments: Vec<Deployment>,
     pub num_retries: i64,
     #[serde(default)]
@@ -20,7 +20,7 @@ pub struct Payload {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Deployment {
+pub(super) struct Deployment {
     pub id: String,
     #[serde(default)]
     pub num_retries: Option<u32>,
@@ -29,7 +29,7 @@ pub struct Deployment {
 // one attempt's answer: an error, a disconnect while it runs, or a success when neither is set
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Step {
+pub(super) struct Step {
     #[serde(default)]
     pub error: Option<ErrorInput>,
     #[serde(default)]
@@ -38,7 +38,7 @@ pub struct Step {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Outcome {
+pub(super) enum Outcome {
     Answered,
     Failed,
     Cancelled,
@@ -48,7 +48,7 @@ pub enum Outcome {
 // the deployment one attempt reached and the retry metadata its request carried
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Call {
+pub(super) struct Call {
     pub deployment: String,
     pub attempted_retries: i64,
     pub max_retries: i64,
@@ -57,14 +57,14 @@ pub struct Call {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Headers {
+pub(super) struct Headers {
     pub attempted_retries: i64,
     pub max_retries: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Failure {
+pub(super) struct Failure {
     pub status: u16,
     pub code: String,
     pub max_retries: Option<u32>,
@@ -73,7 +73,7 @@ pub struct Failure {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Fields {
+pub(super) struct Fields {
     pub outcome: Outcome,
     pub calls: Vec<Call>,
     pub backoffs: Vec<String>,

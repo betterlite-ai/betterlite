@@ -50,26 +50,8 @@ impl AttemptDispatch for Scripted<'_> {
     where
         R: Rng + Send,
     {
-        let deployments = self.deployments;
-        let open: Vec<&Deployment> = deployments
-            .iter()
-            .filter(|deployment| !request.skipped_deployment_ids.contains(&deployment.id))
-            .collect();
-        // no deployment sets a weight, rpm or tpm, so simple-shuffle picks uniformly as random.choice does
-        let candidates = vec![
-            Candidate {
-                weight: 0,
-                rpm: 0,
-                tpm: 0,
-            };
-            open.len()
-        ];
-        let unroutable =
-            |source: ShuffleError| AttemptFailure::Routing(Box::new(RoutingError::from(source)));
-        let index = pick(&candidates, random).map_err(unroutable)?;
-        let deployment = open
-            .get(index)
-            .ok_or_else(|| unroutable(ShuffleError::NoCandidates))?;
+        let deployment = route(self.deployments, request.skipped_deployment_ids, random)
+            .map_err(|source| AttemptFailure::Routing(Box::new(RoutingError::from(source))))?;
         self.calls.push(Call {
             deployment: deployment.id.clone(),
             attempted_retries: request.trail.attempted_retries,
@@ -109,6 +91,32 @@ impl AttemptDispatch for Scripted<'_> {
             regular_fallbacks: None,
         })
     }
+}
+
+// simple-shuffle over the deployments the retries have not skipped
+fn route<'script, R>(
+    deployments: &'script [Deployment],
+    skipped: &[String],
+    random: &mut R,
+) -> Result<&'script Deployment, ShuffleError>
+where
+    R: Rng,
+{
+    let open: Vec<&Deployment> = deployments
+        .iter()
+        .filter(|deployment| !skipped.contains(&deployment.id))
+        .collect();
+    // no deployment sets a weight, rpm or tpm, so simple-shuffle picks uniformly as random.choice does
+    let candidates = vec![
+        Candidate {
+            weight: 0,
+            rpm: 0,
+            tpm: 0,
+        };
+        open.len()
+    ];
+    let index = pick(&candidates, random)?;
+    open.get(index).copied().ok_or(ShuffleError::NoCandidates)
 }
 
 // the provider's status mapped as exception_type maps it, which must land on the class the case names
