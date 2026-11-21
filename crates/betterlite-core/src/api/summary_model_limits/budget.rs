@@ -50,10 +50,10 @@ where
         .and_then(serde_json::from_value)
         .map_err(SummaryLimitsError::Principal)?;
     for (scope, subject, budget) in budget_scopes(&fields) {
-        let checked = checker
+        let outcome = checker
             .within_model_budget(&subject, budget, summary_model)
             .await;
-        let Err(error) = checked else {
+        let Err(error) = outcome else {
             continue;
         };
         if !matches!(error, ErrorClass::BudgetExceeded(_)) {
