@@ -60,6 +60,19 @@ fn team_then_key_alias(
     assert_eq!(result.diagnostics, Vec::new());
 }
 
+// the data map holds copied credential values, so the debug line names the redaction and never them
+#[test]
+fn result_debug_redacts_credential_values() {
+    let result = RequestModelOverridesResult {
+        data: request(&[("model", "gpt-4o"), ("api_key", "sk-secret")]),
+        enforced_params: None,
+        diagnostics: Vec::new(),
+    };
+    let rendered = format!("{result:?}");
+    assert!(rendered.contains("<redacted>"));
+    assert!(!rendered.contains("sk-secret"));
+}
+
 fn chain_credentials() -> Vec<CredentialEntry> {
     vec![
         credential("project-pre", &[("api_key", "sk-project-pre")]),
