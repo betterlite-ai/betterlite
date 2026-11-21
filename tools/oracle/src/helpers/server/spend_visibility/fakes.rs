@@ -57,6 +57,22 @@ impl CaseStore {
         }
         Ok(())
     }
+
+    async fn read_teams(
+        &self,
+        read: &'static str,
+        team_ids: &[&str],
+        binds: Result<serde_json::Value, serde_json::Error>,
+    ) -> Result<Vec<LiteLLMTeamTable>, VisibilityError> {
+        self.record(read, None, binds).await?;
+        let found = self
+            .teams
+            .iter()
+            .filter(|team| team_ids.contains(&team.fields.base.team_id.as_str()))
+            .cloned()
+            .collect();
+        Ok(found)
+    }
 }
 
 #[async_trait]
@@ -77,24 +93,16 @@ impl VisibilityStore for CaseStore {
     }
 
     async fn team(&self, team_id: &str) -> Result<Option<LiteLLMTeamTable>, VisibilityError> {
-        self.record("team", None, serde_json::to_value([team_id]))
+        let mut found = self
+            .read_teams("team", &[team_id], serde_json::to_value([team_id]))
             .await?;
-        Ok(self
-            .teams
-            .iter()
-            .find(|team| team.fields.base.team_id == team_id)
-            .cloned())
+        Ok(found.pop())
     }
 
     async fn teams(&self, team_ids: &[String]) -> Result<Vec<LiteLLMTeamTable>, VisibilityError> {
-        self.record("teams", None, serde_json::to_value([team_ids]))
-            .await?;
-        Ok(self
-            .teams
-            .iter()
-            .filter(|team| team_ids.contains(&team.fields.base.team_id))
-            .cloned()
-            .collect())
+        let wanted: Vec<&str> = team_ids.iter().map(String::as_str).collect();
+        self.read_teams("teams", &wanted, serde_json::to_value([team_ids]))
+            .await
     }
 }
 

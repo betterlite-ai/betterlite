@@ -21,15 +21,9 @@ pub const fn is_admin_view_safe(caller: &TeamCaller) -> bool {
 // _can_user_view_spend_log: the list routes scope internal users to their own rows
 #[must_use]
 pub const fn can_user_view_spend_log(caller: &TeamCaller) -> bool {
-    match caller.user_role {
-        Some(UserRole::InternalUser | UserRole::InternalUserViewer) => caller.user_id.is_some(),
-        Some(
-            UserRole::ProxyAdmin
-            | UserRole::ProxyAdminViewer
-            | UserRole::OrgAdmin
-            | UserRole::Team
-            | UserRole::Customer,
+    caller.user_id.is_some()
+        && matches!(
+            caller.user_role,
+            Some(UserRole::InternalUser | UserRole::InternalUserViewer)
         )
-        | None => false,
-    }
 }

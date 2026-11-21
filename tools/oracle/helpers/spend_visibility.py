@@ -1,23 +1,24 @@
-import asyncio
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import Final, Literal, TypeAlias, TypedDict, final
 
 import litellm
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from litellm.integrations.additional_logging_utils import AdditionalLoggingUtils
 from litellm.integrations.custom_logger import CustomLogger
 from litellm.litellm_core_utils.logging_callback_manager import LoggingCallbackManager
 from litellm.proxy import proxy_server
 from litellm.proxy._types import LiteLLM_UserTable, LitellmUserRoles, UserAPIKeyAuth
+from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
 from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache
 from litellm.proxy.db.prisma_client import PrismaWrapper
-from litellm.proxy.spend_tracking.spend_management_endpoints import ui_view_request_response_for_request_id
+from litellm.proxy.spend_tracking.spend_management_endpoints import router
 from litellm.proxy.utils import PrismaClient
 from litellm.types.integrations.base_health_check import IntegrationHealthCheckStatus
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
-from starlette.exceptions import HTTPException
 from typing_extensions import override
 
-DETAIL: Final[TypeAdapter[dict[str, str]]] = TypeAdapter(dict[str, str])
 UserRole = Literal[
     "proxy_admin",
     "proxy_admin_viewer",
@@ -29,6 +30,7 @@ UserRole = Literal[
 ]
 Bind: TypeAlias = str | tuple[str, ...] | None
 TeamIds = TypedDict("TeamIds", {"in": list[str]})
+AuthCheck: TypeAlias = Callable[..., Awaitable[UserAPIKeyAuth]]
 
 
 class CallerInput(TypedDict):
@@ -106,6 +108,14 @@ class ManyTeams(TypedDict):
     team_id: TeamIds
 
 
+class Refusal(TypedDict):
+    detail: dict[str, str]
+
+
+BODY: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
+REFUSAL: Final[TypeAdapter[Refusal]] = TypeAdapter(Refusal)
+
+
 class ScriptedFailureError(RuntimeError):
     pass
 
@@ -135,7 +145,9 @@ class Table:
         found = await self.find_many(where={"team_id": {"in": [where["team_id"]]}}, read="team")
         return found.pop() if found else None
 
-    async def find_many(self, *, where: ManyTeams, read: Literal["team", "teams"] = "teams") -> list[TeamRow]:
+    async def find_many(
+        self, *, where: ManyTeams, read: Literal["team", "teams"] = "teams"
+    ) -> list[TeamRow]:
         team_ids = where["team_id"]["in"]
         binds: list[JsonValue] = [*team_ids] if read == "team" else [[*team_ids]]
         self.board.reads.append({"read": read, "sql": None, "binds": binds})
@@ -173,7 +185,6 @@ class Client(PrismaClient):
 # the cold-storage logger the detail route asks, recording the key it is asked for
 class Recorder(CustomLogger, AdditionalLoggingUtils):
     def __init__(self, board: Board) -> None:
-        super().__init__()
         self.board = board
 
     @override
@@ -189,14 +200,28 @@ class Recorder(CustomLogger, AdditionalLoggingUtils):
         return self.board.step["payload"]
 
 
-# the callback manager the detail route asks for its cold-storage loggers
+# the callback lists the detail route searches for cold-storage loggers
 class Loggers(LoggingCallbackManager):
     def __init__(self, recorder: Recorder) -> None:
         self.recorder = recorder
 
     @override
-    def get_active_additional_logging_utils_from_custom_logger(self) -> set[AdditionalLoggingUtils]:
-        return {self.recorder}
+    def _get_all_callbacks(self) -> list[CustomLogger | Callable[..., object] | str]:
+        return [self.recorder]
+
+
+# the spend routes with the step's caller in place of the key check
+class App(FastAPI):
+    dependency_overrides: dict[AuthCheck, AuthCheck]
+
+    def __init__(self, caller: UserAPIKeyAuth) -> None:
+        super().__init__()
+        self.caller = caller
+        self.dependency_overrides = {user_api_key_auth: self.auth}
+        self.include_router(router)
+
+    async def auth(self) -> UserAPIKeyAuth:
+        return self.caller
 
 
 def run(input_value: Input) -> list[StepAnswer]:
@@ -204,26 +229,26 @@ def run(input_value: Input) -> list[StepAnswer]:
     cache = proxy_server.user_api_key_cache
     loggers = litellm.logging_callback_manager
     try:
-        return [asyncio.run(run_step(step)) for step in input_value["steps"]]
+        return [run_step(step) for step in input_value["steps"]]
     finally:
         proxy_server.prisma_client = client
         proxy_server.user_api_key_cache = cache
         litellm.logging_callback_manager = loggers
 
 
-async def run_step(step: Step) -> StepAnswer:
+def run_step(step: Step) -> StepAnswer:
     board = Board(step)
     cache = UserApiKeyCache(default_in_memory_ttl=60.0)
     for user in step["users"]:
         stored = LiteLLM_UserTable(user_id=user["user_id"], teams=user["teams"])
-        await cache.async_set_cache(key=user["user_id"], value=stored)
+        cache.set_cache(key=user["user_id"], value=stored)
     proxy_server.prisma_client = Client(board)
     proxy_server.user_api_key_cache = cache
     litellm.logging_callback_manager = Loggers(Recorder(board))
-    return await view(step, board)
+    return view(step, board)
 
 
-async def view(step: Step, board: Board) -> StepAnswer:
+def view(step: Step, board: Board) -> StepAnswer:
     role = step["caller"]["user_role"]
     caller = UserAPIKeyAuth(
         user_id=step["caller"]["user_id"],
@@ -237,17 +262,17 @@ async def view(step: Step, board: Board) -> StepAnswer:
         "detail": None,
     }
     try:
-        found: JsonValue | None = await ui_view_request_response_for_request_id(
-            request_id=step["lookup_id"], start_date=None, end_date=None, user_api_key_dict=caller
-        )
-    except HTTPException as raised:
-        answer["outcome"] = "http"
-        answer["status"] = raised.status_code
-        answer["detail"] = DETAIL.validate_python(raised.detail)
+        response = TestClient(App(caller)).get(f"/spend/logs/ui/{step['lookup_id']}")
     except ScriptedFailureError:
         answer["outcome"] = "error"
     else:
-        served = board.storage_key is not None and step["payload"] is not None
-        answer["outcome"] = "payload" if served else "none" if found is None else "row"
+        if response.is_success:
+            served = board.storage_key is not None and step["payload"] is not None
+            found = BODY.validate_json(response.content)
+            answer["outcome"] = "payload" if served else "none" if found is None else "row"
+        else:
+            answer["outcome"] = "http"
+            answer["status"] = response.status_code
+            answer["detail"] = REFUSAL.validate_json(response.content)["detail"]
     answer["storage_key"] = board.storage_key
     return answer
