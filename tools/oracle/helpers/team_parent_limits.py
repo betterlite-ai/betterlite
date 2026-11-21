@@ -75,7 +75,7 @@ class Outcome(TypedDict):
     detail: str | None
 
 
-# the allocation checks raise HTTPException(400, detail=<message string>)
+# LiteLLM's allocation checks reject with status 400 and a plain message string
 class Rejected(BaseModel):
     status_code: int
     detail: str
