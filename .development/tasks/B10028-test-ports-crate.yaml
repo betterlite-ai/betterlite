@@ -1,0 +1,79 @@
+id: B10028
+title: Tests hold the port they expect to be refused
+description: >-
+  Fix a flaky test on main. The scheduled gate run https://github.com/betterlite-ai/betterlite/actions/runs/44835631936
+  (head 224ba78f) went red on one test, oidc_token_exchange::tests::exchange::fetches_userinfo_with_the_issued_bearer_token
+  in betterlite-auth, which panicked at exchange.rs:66 with "called `Result::unwrap()` on an `Err` value:
+  UserinfoUnavailable" after 0.070 s. Nothing in that run touched betterlite-auth.
+
+
+  The cause is in two sibling tests, not in the exchange. maps_a_refused_connection_to_token_exchange_401
+  (exchange.rs:249) and falls_back_to_the_id_token_when_userinfo_is_unreachable (exchange.rs:369) bind
+  127.0.0.1:0, read the port, drop the listener and then send a request to that port, expecting the connection to
+  be refused. Once the listener is dropped the port is free, and the next bind to port 0 anywhere on the machine
+  (another test thread, or another nextest process) can get it. The "refused" request then reaches that test's
+  LocalProvider, which answers whichever request comes first, so it takes the reply queued for the other test.
+  That is the CI failure: a stray GET /userinfo took the queued /userinfo reply, the test's own userinfo call got
+  599, the exchange fell back to the id_token, and token_reply(None) has none. The test passes alone (0 failures in
+  2000 local runs of the single test). With the module's tests running side by side, the same signatures show up:
+  unwrap_err on an Ok at exchange.rs:256 (the dead port answered), TokenStatus { status: 599 } and
+  UserinfoUnavailable in fetches_userinfo_with_the_issued_bearer_token, and an extra recorded request at
+  exchange.rs:276.
+
+
+  The same bind-then-drop pattern sits at 55 more places in 16 crates and the oracle, and four tests copy a
+  saturated-listener helper. They get one shared home here: a new dev-only crate crates/betterlite-test-ports with
+  two guards. RefusedPort holds a socket bound to 127.0.0.1:0 without listening: a connect to its address is
+  refused, and no other socket gets the port while the guard lives. FullListener is a listening socket whose
+  accept queue is full, so a connect to it waits; it is built the way the copies in
+  crates/betterlite-core/src/api/container_file_endpoints/tests/support.rs and
+  crates/betterlite-http/src/proxy/tests.rs build it today. Both give their address and return io::Result from
+  their constructor. B10029 and B10030 move the other sites onto them.
+
+
+  In this task, the two betterlite-auth tests above use RefusedPort and keep it alive until the exchange has
+  run. Nothing else in betterlite-auth changes.
+scope:
+  paths:
+  - crates/betterlite-test-ports/**
+  - crates/betterlite-auth/src/oidc_token_exchange/tests/exchange.rs
+  lint_tables: false
+references: []
+dod:
+- text: >-
+    crates/betterlite-test-ports gives RefusedPort (bound, not listening) and FullListener (listening, accept queue
+    full), each with its own tests: a connect to a RefusedPort is refused, binding its address again fails while
+    the guard lives, and a connect to a FullListener is still waiting after 200 ms.
+  proof: [test-ports]
+- text: >-
+    maps_a_refused_connection_to_token_exchange_401 and falls_back_to_the_id_token_when_userinfo_is_unreachable
+    send their request to a RefusedPort that lives until the exchange returns, and no test in exchange.rs binds and
+    drops a listener to get a free port.
+  proof: [oidc-exchange, no-dropped-port]
+checks:
+  optional: []
+  commands:
+  - id: test-ports
+    why: A test port guard does not do what its name says.
+    run: cargo nextest run --locked -p betterlite-test-ports --no-tests=fail
+  - id: oidc-exchange
+    why: An OIDC exchange test broke.
+    run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^oidc_token_exchange::tests::/)'
+  - id: no-dropped-port
+    why: An OIDC exchange test still frees the port it expects to be refused.
+    run: '! grep -n -E "drop\((listener|socket)\);" crates/betterlite-auth/src/oidc_token_exchange/tests/exchange.rs'
+oracle_cases: []
+deviations: []
+out_of_scope:
+- The other bind-then-drop sites and saturated-listener copies; B10029 and B10030 move them onto this crate.
+- LocalProvider in the OIDC tests answers whichever request reaches it first. With the port held, no foreign request reaches it, so it stays as it is.
+- The exchange code; it handles a refused or failed userinfo call the way LiteLLM does.
+pitfalls:
+- std::net::TcpListener::bind and tokio::net::TcpListener::bind set SO_REUSEADDR on Unix, and Linux lets two SO_REUSEADDR sockets share a port while neither listens. The held socket must not set it. tokio::net::TcpSocket::new_v4 followed by bind leaves it off, and those two calls need no runtime, so sync tests can use RefusedPort too.
+- '`let _ = RefusedPort::bind()` drops the guard on the same line. Bind it to a name that lives to the end of the test, for example `let refused = RefusedPort::bind().unwrap();`.'
+- FullListener listens through tokio, so it needs a runtime; the copies it replaces are all called from tokio tests.
+- No crate under crates/ lists betterlite-test-ports under [dependencies]; crates take it as a dev-dependency. Only the oracle guardrail helpers (B10030) depend on it directly, since they are test tooling.
+review_level: standard
+budget:
+  max_changed_lines: 150
+  max_new_expects: 0

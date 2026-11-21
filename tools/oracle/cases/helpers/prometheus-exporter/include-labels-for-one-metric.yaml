@@ -1,0 +1,15 @@
+kind: helper
+name: prometheus-exporter-include-labels-for-one-metric
+call:
+  b3875:
+    prometheus_metrics_config:
+      - group: model
+        metrics: [litellm_spend_metric]
+        include_labels: [api_key_alias, model]
+    prometheus_exclude_metrics: []
+    prometheus_exclude_labels: []
+    prometheus_latency_buckets: null
+    prometheus_emit_input_sequence_length_label: false
+    caller_identity: api_key_alias
+env: {}
+compare: {ignore: []}

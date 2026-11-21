@@ -1,0 +1,6 @@
+kind: helper
+name: anthropic-guardrail-scan-input-extract-tool-use-running-index
+call:
+  b3675: {"function": "extract", "scenarios": [{"message": {"role": "user", "content": [{"type": "tool_use", "id": "toolu_1", "name": "get", "input": {"alpha": 1, "beta": 2}}, {"type": "tool_use", "id": "toolu_2", "name": "no_input"}, {"type": "text", "text": "between"}, {"type": "tool_use", "id": "toolu_3", "name": "other", "input": {}}]}, "msg_idx": 7}, {"message": {"role": "user", "content": [{"type": "tool_use", "id": "toolu_4", "name": "ask", "input": {"q": "x"}, "caller": {"type": "direct"}}]}}, {"message": {"role": "user", "content": [{"type": "tool_use", "id": "toolu_5", "name": "bad", "input": "nope"}]}}]}
+env: {}
+compare: {ignore: []}

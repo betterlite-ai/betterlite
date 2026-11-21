@@ -1,0 +1,22 @@
+kind: helper
+name: prometheus-latency-guardrail-overhead-modes
+call:
+  b3878:
+    function: overhead
+    overhead_calls:
+      - {guardrail_information: {guardrail_mode: pre_call, duration: 2}}
+      - {guardrail_information: {guardrail_mode: post_call, duration: 2}}
+      - {guardrail_information: {guardrail_mode: [pre_call, post_call], duration: 2}}
+      - {guardrail_information: {guardrail_mode: [pre_call, {tags: [pii]}], duration: 2}}
+      - {guardrail_information: {guardrail_mode: during_call, duration: 2}}
+      - {guardrail_information: {guardrail_mode: logging_only, duration: 2}}
+      - {guardrail_information: {guardrail_mode: pre_mcp_call, duration: 2}}
+      - {guardrail_information: {guardrail_mode: [pre_call, during_call], duration: 2}}
+      - {guardrail_information: {guardrail_mode: {tags: [pii]}, duration: 2}}
+      - {guardrail_information: {guardrail_mode: [{tags: [pii]}], duration: 2}}
+      - {guardrail_information: {duration: 2}}
+      - {guardrail_information: {guardrail_mode: null, duration: 2}}
+      - {guardrail_information: {guardrail_mode: 3, duration: 2}}
+      - {guardrail_information: {guardrail_mode: [], duration: 2}}
+env: {}
+compare: {ignore: []}

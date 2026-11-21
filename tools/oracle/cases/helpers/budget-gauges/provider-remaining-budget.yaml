@@ -1,0 +1,10 @@
+kind: helper
+name: budget-gauges-provider-remaining-budget
+call:
+  b3882:
+    function: provider
+    provider: openai
+    spend: 4
+    budget_limit: 10
+env: {}
+compare: {ignore: []}
