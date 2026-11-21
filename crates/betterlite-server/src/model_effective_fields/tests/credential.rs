@@ -145,7 +145,19 @@ async fn an_unknown_credential_is_refused() {
         ModelFieldError::CredentialNotFound { credential_name } => {
             assert_eq!(credential_name, "azure");
         }
-        other => panic!("expected a missing credential: {other:?}"),
+        other @ ModelFieldError::ConfigWrite(_)
+        | other @ ModelFieldError::Placement(_)
+        | other @ ModelFieldError::RouterModel(_)
+        | other @ ModelFieldError::EmptyCredentialName
+        | other @ ModelFieldError::CredentialLookup { .. }
+        | other @ ModelFieldError::RateLimitsMissing { .. }
+        | other @ ModelFieldError::PtuDisabled { .. }
+        | other @ ModelFieldError::PtuInvalid { .. }
+        | other @ ModelFieldError::Database(_)
+        | other @ ModelFieldError::Table(_)
+        | other @ ModelFieldError::Row { .. } => {
+            panic!("expected a missing credential: {other:?}");
+        }
     }
     assert_eq!(error.refusal().status, 400);
     assert_eq!(

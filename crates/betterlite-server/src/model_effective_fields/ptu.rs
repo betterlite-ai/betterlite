@@ -82,10 +82,9 @@ pub fn check_ptu_model_info(model_info: &JsonObject) -> Result<(), ModelFieldErr
             scalars.insert(field.to_owned(), scalar(value));
         }
     }
-    match ptu_config_error(&PtuModelInfo::from(&scalars), None) {
-        Some(message) => Err(ModelFieldError::PtuInvalid { message }),
-        None => Ok(()),
-    }
+    ptu_config_error(&PtuModelInfo::from(&scalars), None).map_or(Ok(()), |message| {
+        Err(ModelFieldError::PtuInvalid { message })
+    })
 }
 
 // the PTU rules read only the scalars, so a list or object keeps just its shape

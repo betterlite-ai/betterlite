@@ -36,8 +36,8 @@ fn effective_model_keeps_a_stored_model_that_does_not_open() {
 #[case::no_model(Some("{}"))]
 #[case::not_text(Some(r#"{"model": 7}"#))]
 fn effective_model_is_absent_without_a_text_model(#[case] existing: Option<&str>) {
-    let existing = existing.map(object);
-    assert_eq!(effective_model(&cipher(), None, existing.as_ref()), None);
+    let stored = existing.map(object);
+    assert_eq!(effective_model(&cipher(), None, stored.as_ref()), None);
 }
 
 #[test]

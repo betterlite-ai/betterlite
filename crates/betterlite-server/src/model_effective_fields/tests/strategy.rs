@@ -38,7 +38,15 @@ fn refusal(incoming: Option<&JsonObject>, existing: Option<&JsonObject>) -> Opti
         ModelFieldError::ConfigWrite(_) => Some(Refusal::Config),
         ModelFieldError::Placement(_) => Some(Refusal::Placement),
         ModelFieldError::RouterModel(_) => Some(Refusal::Model),
-        other => panic!("not a strategy refusal: {other:?}"),
+        other @ ModelFieldError::EmptyCredentialName
+        | other @ ModelFieldError::CredentialNotFound { .. }
+        | other @ ModelFieldError::CredentialLookup { .. }
+        | other @ ModelFieldError::RateLimitsMissing { .. }
+        | other @ ModelFieldError::PtuDisabled { .. }
+        | other @ ModelFieldError::PtuInvalid { .. }
+        | other @ ModelFieldError::Database(_)
+        | other @ ModelFieldError::Table(_)
+        | other @ ModelFieldError::Row { .. } => panic!("not a strategy refusal: {other:?}"),
     }
 }
 
@@ -91,11 +99,8 @@ fn strategy_router_write(
     #[case] existing: Option<&str>,
     #[case] expected: Option<Refusal>,
 ) {
-    let existing = existing.map(object);
-    assert_eq!(
-        refusal(Some(&object(incoming)), existing.as_ref()),
-        expected
-    );
+    let stored = existing.map(object);
+    assert_eq!(refusal(Some(&object(incoming)), stored.as_ref()), expected);
 }
 
 #[test]
@@ -191,7 +196,7 @@ fn member_router_marker_follows_the_write(
     #[case] expected: RouterMarker,
 ) {
     let existing = deployment(&sealed_model(COMPLEXITY), model_info);
-    let incoming = incoming.map(object);
-    let marker = member_router_marker(&cipher(), incoming.as_ref(), &existing, grant);
+    let sent = incoming.map(object);
+    let marker = member_router_marker(&cipher(), sent.as_ref(), &existing, grant);
     assert_eq!(marker, expected);
 }
