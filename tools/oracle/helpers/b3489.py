@@ -27,17 +27,19 @@ def run(input_value: JsonValue) -> JsonValue:
             g.GenerateContentHelper.mock_generate_content_response(mock_response=text)
         )
     if entry == "generate_content":
-        answer: JsonValue = g.generate_content(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L302-L303
+        return VALUE.validate_python(
+            g.generate_content(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L302-L303
+                model=call["model"],
+                contents=call["contents"],
+                custom_llm_provider=call["custom_llm_provider"],
+                mock_response=text,
+            )
+        )
+    return VALUE.validate_python(
+        g.generate_content_stream(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L487-L488
             model=call["model"],
             contents=call["contents"],
             custom_llm_provider=call["custom_llm_provider"],
             mock_response=text,
         )
-        return VALUE.validate_python(answer)
-    streamed: JsonValue = g.generate_content_stream(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L487-L488
-        model=call["model"],
-        contents=call["contents"],
-        custom_llm_provider=call["custom_llm_provider"],
-        mock_response=text,
     )
-    return VALUE.validate_python(streamed)
