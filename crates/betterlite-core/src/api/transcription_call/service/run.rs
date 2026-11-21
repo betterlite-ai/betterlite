@@ -80,7 +80,7 @@ impl<'call> Destination<'call> {
     fn optional_params(self, plan: &'call Plan, call: &'call TranscriptionCall) -> Params {
         let mut params = plan.optional_params.clone();
         if !matches!(self, Self::Injected { .. })
-            && let Some(JsonValue::Object(extra)) = params.shift_remove("extra_body")
+            && let Some(JsonValue::Object(extra)) = params.remove("extra_body")
         {
             params.extend(extra);
         }
