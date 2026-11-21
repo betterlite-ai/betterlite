@@ -9,4 +9,7 @@ deviations:
   - what: A request scheduled through the queue runs its provider call once and never queues itself again, including when default_priority is configured.
     why: LiteLLM calls Router.acompletion without the request's priority, so a configured default_priority makes the inner call schedule the same request again; each nested copy waits for its own timeout and the request ends in a Timeout without reaching the provider.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L4437-L4445
+  - what: A priority outside 0 to 255 is refused at the request and config boundaries with an error that names the field.
+    why: FlowItem documents the range but LiteLLM stores the value unchecked, so an out-of-range priority silently orders the heap by a number the typed queue cannot carry.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/scheduler.py#L14-L18
 kept_bugs: []
