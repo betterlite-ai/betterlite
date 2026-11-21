@@ -1,0 +1,20 @@
+kind: helper
+name: policies-and-index
+call:
+  b3457:
+    step: policies
+    vector:
+      custom_llm_provider: bedrock
+      aws_region_name: us-west-2
+      embedding_model: amazon.titan-embed-text-v2:0
+      aws_access_key_id: AKIDORACLE
+      aws_secret_access_key: oracle-secret
+    environment: {}
+    unique_id: "0123abcd"
+    account_id: "123456789012"
+    caller_arn: "arn:aws:iam::123456789012:role/caller"
+env: {}
+compare:
+  ignore:
+    - pointer: /value/access/0/Principal
+      why: "Python builds the principal list with set(), so its order is random, while betterlite keeps the account root first"

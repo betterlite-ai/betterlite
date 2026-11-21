@@ -1,0 +1,13 @@
+kind: helper
+name: azure-chat-call-deployment-request
+call:
+  azure_chat_call:
+    function: completion
+    cases:
+      - model: gpt-4o-deployment
+        messages:
+          - {role: user, content: hi}
+        api_key: key
+        optional_params: {temperature: 0.2, max_retries: 1, json_mode: false}
+env: {}
+compare: {ignore: []}

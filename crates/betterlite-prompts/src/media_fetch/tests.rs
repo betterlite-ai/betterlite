@@ -19,6 +19,7 @@ use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::{ProxiedClient, base_builder};
 use betterlite_http::user_url::fetch::UserUrlFetcher;
 use betterlite_http::user_url::validate::{SystemResolver, UrlValidator};
+use betterlite_test_ports::refused_port::RefusedPort;
 use futures_util::StreamExt as _;
 use futures_util::stream;
 use futures_util::stream::BoxStream;
@@ -596,13 +597,6 @@ fn fetcher_with_core(core: &CoreSettings, allowed: &[&str], limit: f64) -> Fetch
     Fetcher::new(client, urls, limit, clock).unwrap()
 }
 
-async fn closed_port() -> u16 {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
-    drop(listener);
-    port
-}
-
 #[rstest]
 #[case::data_url_passthrough("data_url_passthrough")]
 #[case::data_url_without_base64_is_not_passed_through("data_without_base64")]
@@ -661,9 +655,9 @@ async fn url_conversion_matches_litellm(#[case] scenario: &str) {
             assert_eq!(server.request_count(), 1);
         }
         "connection_refused" => {
-            let port = closed_port().await;
+            let refused = RefusedPort::bind().unwrap();
             let fetcher = new_fetcher(&["127.0.0.1"], 50.0, TEN_MINUTES);
-            let url = format!("http://127.0.0.1:{port}/image.png");
+            let url = format!("http://{}/image.png", refused.address);
             let error = fetcher.convert(&url).await.unwrap_err();
             assert_eq!(
                 error.to_string(),

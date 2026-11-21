@@ -1,0 +1,13 @@
+general_settings:
+  role_permissions:
+    - role: proxy_admin
+      models: [admin-only-model]
+      routes: [/v1/embeddings]
+    - role: internal_user
+      models: []
+      routes: []
+litellm_settings:
+  default_internal_user_params:
+    user_role: internal_user
+    max_budget: "10.5"
+    budget_duration: 30d

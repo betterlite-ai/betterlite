@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use betterlite_http_fixture::server::serve;
 use betterlite_models::identity::provider_id::ProviderId;
+use betterlite_test_ports::refused_port::RefusedPort;
 use reqwest::blocking::ClientBuilder as BlockingClientBuilder;
 
 use super::AgentRequestError;
@@ -362,7 +363,8 @@ async fn client_get_uses_a_supplied_async_client() {
 
 #[tokio::test]
 async fn client_create_reports_an_unknown_async_provider() {
-    let config = Config::for_address(support::dead_address());
+    let refused = RefusedPort::bind().unwrap();
+    let config = Config::for_address(refused.address);
     let params = base::params(r#"{"custom_llm_provider": "nope"}"#);
     let mut clients = clients();
     let mut logging = Recorder::default();
@@ -387,7 +389,8 @@ async fn client_create_reports_an_unknown_async_provider() {
 
 #[test]
 fn client_create_reports_a_non_boolean_ssl_verify() {
-    let config = Config::for_address(support::dead_address());
+    let refused = RefusedPort::bind().unwrap();
+    let config = Config::for_address(refused.address);
     let params = base::params(r#"{"ssl_verify": "yes"}"#);
     let mut clients = clients();
     let mut logging = Recorder::default();

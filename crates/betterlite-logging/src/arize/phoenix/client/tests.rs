@@ -2,8 +2,8 @@
 
 use std::time::Duration;
 
+use betterlite_test_ports::refused_port::RefusedPort;
 use rstest::rstest;
-use tokio::net::TcpListener;
 
 use super::ClientError;
 use crate::arize::phoenix::tests::server::{PROMPT_BODY, phoenix_client, serve, serve_silently};
@@ -119,9 +119,8 @@ async fn client_error_other_statuses_carry_the_status_line(
 
 #[tokio::test]
 async fn client_error_unreachable_server_is_an_error_fetching() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let base = format!("http://{}", listener.local_addr().unwrap());
-    drop(listener);
+    let refused = RefusedPort::bind().unwrap();
+    let base = format!("http://{}", refused.address);
     let error = phoenix_client(&base)
         .get_prompt_version("v1")
         .await

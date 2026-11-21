@@ -23,9 +23,9 @@ use betterlite_redis::redis_live_client::LiveClientFactory;
 use betterlite_redis::request_batch::batches::POST_CALL_FLUSH_DEADLINE;
 use betterlite_redis::request_batch::batches::RequestRedisBatches;
 use betterlite_redis::request_batch::scope::request_redis_batch_scope;
+use betterlite_test_ports::refused_port::RefusedPort;
 use chrono::{DateTime, FixedOffset, TimeZone as _};
 use tempfile::NamedTempFile;
-use tokio::net::TcpListener;
 use tokio_util::task::TaskTracker;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt;
@@ -280,27 +280,24 @@ pub(crate) fn local_cache(ordinary: Arc<LocalMemoryOps>) -> AuthCache<DualCache<
     gateway_cache(ordinary, memory(), None, dual_cache_settings(), 45.0_f64)
 }
 
-pub(crate) async fn unreachable_cache() -> AuthCache<DualCache<LocalMemoryOps>> {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("a free local port");
-    let port = listener.local_addr().expect("the bound address").port();
-    drop(listener);
+pub(crate) async fn unreachable_cache() -> (AuthCache<DualCache<LocalMemoryOps>>, RefusedPort) {
+    let refused = RefusedPort::bind().expect("a refused port");
     let env = BTreeMap::from([
         ("REDIS_HOST".to_owned(), "127.0.0.1".to_owned()),
-        ("REDIS_PORT".to_owned(), port.to_string()),
+        ("REDIS_PORT".to_owned(), refused.address.port().to_string()),
         ("REDIS_SOCKET_CONNECT_TIMEOUT".to_owned(), "0.05".to_owned()),
     ]);
     let redis = connect(unreachable_options(), &env)
         .await
-        .expect("the cache builds against a closed port");
-    gateway_cache(
+        .expect("the cache builds against a refused port");
+    let cache = gateway_cache(
         memory(),
         memory(),
         Some(Arc::new(redis)),
         dual_cache_settings(),
         45.0_f64,
-    )
+    );
+    (cache, refused)
 }
 
 // The overrides stay at their defaults; the closed port and the short connect timeout arrive through the REDIS_* lookup LiteLLM's RedisCache resolves.

@@ -4,12 +4,13 @@ use betterlite_config::tls::Verification;
 use betterlite_http_fixture::server::serve;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::identity::provider_id::ProviderId;
+use betterlite_test_ports::refused_port::RefusedPort;
 use rstest::rstest;
 use secrecy::ExposeSecret as _;
 
 use super::support::{
-    Call, Fixture, FixtureError, api_key_header, clients, dead_address, posted, provider_error,
-    run_async, transport_error,
+    Call, Fixture, FixtureError, api_key_header, clients, posted, provider_error, run_async,
+    transport_error,
 };
 use crate::interactions::base::clients::HttpClients;
 use crate::interactions::base::tests::support as base;
@@ -174,8 +175,9 @@ async fn async_create_interaction_uses_the_callers_timeout_else_the_request_time
 #[tokio::test]
 async fn async_create_interaction_returns_a_connection_failure_to_the_caller() {
     let fixture = Fixture::new();
+    let refused = RefusedPort::bind().unwrap();
 
-    let (outcome, _logging) = run_async(&fixture, &Call::new(dead_address())).await;
+    let (outcome, _logging) = run_async(&fixture, &Call::new(refused.address)).await;
 
     assert!(matches!(
         transport_error(outcome),
@@ -227,7 +229,8 @@ async fn async_create_interaction_does_not_follow_a_redirect() {
 #[tokio::test]
 async fn async_create_interaction_passes_an_invalid_url_through_the_error_handler() {
     let fixture = Fixture::new();
-    let mut call = Call::new(dead_address());
+    let refused = RefusedPort::bind().unwrap();
+    let mut call = Call::new(refused.address);
     call.params.insert(
         "api_base".to_owned(),
         JsonValue::Text("not a url".to_owned()),
@@ -252,12 +255,13 @@ async fn async_create_interaction_refuses_a_proxy_it_cannot_use_instead_of_conne
         base::proxy_policy(&[("HTTP_PROXY", "https://127.0.0.1:1")]),
     );
 
+    let refused = RefusedPort::bind().unwrap();
     let outcome = async_create_interaction(
         &fixture,
         &mut clients,
         &mut Logging::default(),
         None,
-        &Call::new(dead_address()).request(),
+        &Call::new(refused.address).request(),
     )
     .await;
 
