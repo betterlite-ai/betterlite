@@ -6,6 +6,12 @@ enum Failure {
     TeamRows,
 }
 
+#[derive(Clone, Copy)]
+enum Lookup<'a> {
+    Id(&'a str),
+    Name(&'a str),
+}
+
 #[derive(Default)]
 struct RowStore {
     rows: BTreeMap<String, SubmissionRow>,
@@ -103,6 +109,25 @@ impl FakeRows {
             .failures
             .insert(failure);
     }
+
+    fn lookup(
+        &self,
+        failure: Failure,
+        query: Lookup<'_>,
+    ) -> Result<Option<SubmissionRow>, SubmissionRowsError> {
+        let store = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        if store.failures.contains(&failure) {
+            return Err(SubmissionRowsError::MissingRow);
+        }
+        Ok(match query {
+            Lookup::Id(id) => store.rows.get(id).cloned(),
+            Lookup::Name(name) => store
+                .rows
+                .values()
+                .find(|row| row.guardrail_name == name)
+                .cloned(),
+        })
+    }
 }
 
 fn in_filter(row: &SubmissionRow, filter: &TeamFilter) -> bool {
@@ -135,30 +160,14 @@ impl SubmissionRows for FakeRows {
         &self,
         guardrail_id: &str,
     ) -> impl Future<Output = Result<Option<SubmissionRow>, SubmissionRowsError>> + Send {
-        let store = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        if store.failures.contains(&Failure::Find) {
-            return ready(Err(SubmissionRowsError::MissingRow));
-        }
-        let found = store.rows.get(guardrail_id).cloned();
-        drop(store);
-        ready(Ok(found))
+        ready(self.lookup(Failure::Find, Lookup::Id(guardrail_id)))
     }
 
     fn find_by_name(
         &self,
         guardrail_name: &str,
     ) -> impl Future<Output = Result<Option<SubmissionRow>, SubmissionRowsError>> + Send {
-        let store = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        if store.failures.contains(&Failure::Name) {
-            return ready(Err(SubmissionRowsError::MissingRow));
-        }
-        let found = store
-            .rows
-            .values()
-            .find(|row| row.guardrail_name == guardrail_name)
-            .cloned();
-        drop(store);
-        ready(Ok(found))
+        ready(self.lookup(Failure::Name, Lookup::Name(guardrail_name)))
     }
 
     fn find_team_rows(

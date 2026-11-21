@@ -18,7 +18,7 @@ deviations:
   - what: A failed team lookup during register or list answers 500 with the lookup error text; LiteLLM calls `_get_user_team_ids` outside any try block at those two points, so FastAPI answers a generic "Internal Server Error" body. The single read does catch it, so its 500 carries the text in both.
     why: The status is 500 either way, and the error text is what an operator needs to see the missing database or failed user row. No working setup depends on the generic body.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L907
-  - what: A `guardrail_info.description` that is not a string does not match `search`; LiteLLM runs `str()` over it, so `{"description": 5}` matches `search=5`.
+  - what: A `guardrail_info.description` that is not a string does not match `search`; LiteLLM runs `str()` over it, so a numeric description of 5 matches `search=5`.
     why: docs/compatibility.md keeps Python's `str` text out of parity, and the description a register body writes is a string; searching a rendered number or nested object would invent text no caller wrote.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L946-L949
   - what: A stored `submitted_by_user_id` or `submitted_by_email` that is not a string is projected as null; LiteLLM's pydantic response model rejects it and answers 500.
@@ -28,7 +28,7 @@ deviations:
     why: The seam's `ColumnJson` is the two shapes the task names and a serde untagged decode rejects the rest; the register route and LiteLLM only ever write JSON text, so a working setup's rows decode, and a row another tool broke stays visible as a store error instead of being projected silently.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L811-L821
 kept_bugs:
-  - what: A register body with `"team_id": ""` falls back to the API key's team instead of being refused, because `request.team_id or user_api_key_dict.team_id` treats an empty string as absent.
+  - what: A register body whose `team_id` is an empty string falls back to the API key's team instead of being refused, because `request.team_id or user_api_key_dict.team_id` treats an empty string as absent.
     why: The task pins this Python `or`, and a setup whose client sends an empty team id relies on the key's team being used.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L717-L723
   - what: A summary counts a row with a null status as active, but `status=active` does not match that row, because the filter compares the raw column.

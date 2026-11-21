@@ -63,6 +63,12 @@ impl<'db> PostgresSubmissionRows<'db> {
             .table(ResourceActions::<SubmissionRowsBinding>::new)?;
         Ok(actions)
     }
+
+    async fn rows(&self, filter: KeyFilter<'_>) -> Result<Vec<SubmissionRow>, SubmissionRowsError> {
+        let actions = self.table()?;
+        let found = actions.as_ref().find::<SubmissionRow>(filter).await?;
+        Ok(found)
+    }
 }
 
 impl SubmissionRows for PostgresSubmissionRows<'_> {
@@ -70,11 +76,7 @@ impl SubmissionRows for PostgresSubmissionRows<'_> {
         &self,
         guardrail_id: &str,
     ) -> Result<Option<SubmissionRow>, SubmissionRowsError> {
-        let actions = self.table()?;
-        let rows = actions
-            .as_ref()
-            .find::<SubmissionRow>(KeyFilter::Equal(guardrail_id))
-            .await?;
+        let rows = self.rows(KeyFilter::Equal(guardrail_id)).await?;
         Ok(rows.into_iter().next())
     }
 
@@ -82,11 +84,7 @@ impl SubmissionRows for PostgresSubmissionRows<'_> {
         &self,
         guardrail_name: &str,
     ) -> Result<Option<SubmissionRow>, SubmissionRowsError> {
-        let actions = self.table()?;
-        let rows = actions
-            .as_ref()
-            .find::<SubmissionRow>(KeyFilter::All)
-            .await?;
+        let rows = self.rows(KeyFilter::All).await?;
         Ok(rows
             .into_iter()
             .find(|row| row.guardrail_name == guardrail_name))
@@ -96,11 +94,7 @@ impl SubmissionRows for PostgresSubmissionRows<'_> {
         &self,
         filter: TeamFilter,
     ) -> Result<Vec<SubmissionRow>, SubmissionRowsError> {
-        let actions = self.table()?;
-        let rows = actions
-            .as_ref()
-            .find::<SubmissionRow>(KeyFilter::All)
-            .await?;
+        let rows = self.rows(KeyFilter::All).await?;
         let mut kept: Vec<SubmissionRow> = rows
             .into_iter()
             .filter(|row| visible(row, &filter))
