@@ -31,35 +31,22 @@ class StartupGapInput(TypedDict):
     environment: dict[str, str]
 
 
-class Endpoints(TypedDict):
-    authorization: str | None
-    token: str | None
-    userinfo: str | None
-
-
 class SubjectInput(TypedDict):
     function: Literal["subject"]
     environment: dict[str, str]
     tenant: str | None
     response_id: str | None
-    endpoints: Endpoints
+    endpoints: dict[str, str | None]
 
 
 Input: TypeAlias = ProviderInput | GapInput | StartupGapInput | SubjectInput
 
 
 def subject_projection(input_value: SubjectInput) -> JsonValue:
-    endpoints = input_value["endpoints"]
     response: Mapping[str, str | None] = MappingProxyType(
         {"id": input_value["response_id"]}
     )
-    overrides: Mapping[str, str | None] = MappingProxyType(
-        {
-            "MICROSOFT_AUTHORIZATION_ENDPOINT": endpoints["authorization"],
-            "MICROSOFT_TOKEN_ENDPOINT": endpoints["token"],
-            "MICROSOFT_USERINFO_ENDPOINT": endpoints["userinfo"],
-        }
-    )
+    overrides: Mapping[str, str | None] = MappingProxyType(input_value["endpoints"])
     projected = microsoft_interactive_subject(
         input_value["tenant"], response, overrides
     )

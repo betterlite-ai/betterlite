@@ -2,9 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_config::sso_identity_bridge::load_bridge_settings;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
-use betterlite_server::sso_identity_bridge::microsoft_subject::{
-    MicrosoftEndpoints, microsoft_interactive_subject,
-};
+use betterlite_server::sso_identity_bridge::microsoft_subject::microsoft_interactive_subject;
 use betterlite_server::sso_identity_bridge::provider::{
     active_sso_provider,
     id_jag_assertion_capture_gap,
@@ -35,14 +33,7 @@ pub(crate) struct SubjectInput {
     tenant: Option<String>,
     response_id: Option<String>,
     #[serde(default)]
-    endpoints: EndpointsInput,
-}
-
-#[derive(Debug, Default, Deserialize)]
-pub(crate) struct EndpointsInput {
-    authorization: Option<String>,
-    token: Option<String>,
-    userinfo: Option<String>,
+    endpoints: BTreeMap<String, Option<String>>,
 }
 
 impl Helper for Op {
@@ -63,15 +54,16 @@ impl Helper for Op {
                 Ok(serde_json::json!(gap_at_startup(&settings)))
             }
             Input::Subject(subject) => {
-                let endpoints = MicrosoftEndpoints {
-                    authorization: subject.endpoints.authorization.as_deref(),
-                    token: subject.endpoints.token.as_deref(),
-                    userinfo: subject.endpoints.userinfo.as_deref(),
-                };
+                let overrides: Vec<(&str, Option<&str>)> = subject
+                    .endpoints
+                    .iter()
+                    .map(|(name, value)| (name.as_str(), value.as_deref()))
+                    .collect();
+                let endpoints = overrides.as_slice();
                 let projected = microsoft_interactive_subject(
                     subject.tenant.as_deref(),
                     subject.response_id.as_deref(),
-                    &endpoints,
+                    endpoints,
                 );
                 Ok(serde_json::json!(projected))
             }

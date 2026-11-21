@@ -21,7 +21,7 @@ use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::{MakeWriter, fmt};
 
 use super::enrollment::{InteractiveEnroller, enroll_microsoft_subject};
-use super::microsoft_subject::{MicrosoftEndpoints, microsoft_interactive_subject};
+use super::microsoft_subject::microsoft_interactive_subject;
 use super::provider::{
     ActiveSsoProvider, active_sso_provider, id_jag_assertion_capture_gap,
     id_jag_assertion_capture_gap_at_startup,
@@ -341,10 +341,7 @@ fn projection_needs_parseable_uuids(
     #[case] tenant: Option<&str>,
     #[case] response_id: Option<&str>,
 ) {
-    assert!(
-        microsoft_interactive_subject(tenant, response_id, &MicrosoftEndpoints::default())
-            .is_none()
-    );
+    assert!(microsoft_interactive_subject(tenant, response_id, &[]).is_none());
 }
 
 #[test]
@@ -352,7 +349,7 @@ fn projection_canonicalizes_tenant_and_object_ids() {
     let subject = microsoft_interactive_subject(
         Some("{6F9619FF-8B86-D011-B42D-00C04FC964FF}"),
         Some("AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"),
-        &MicrosoftEndpoints::default(),
+        &[],
     )
     .expect("the canonical subject");
     assert_eq!(
@@ -365,25 +362,34 @@ fn projection_canonicalizes_tenant_and_object_ids() {
 
 #[test]
 fn projection_accepts_absent_and_empty_endpoint_overrides() {
-    let endpoints = MicrosoftEndpoints {
-        authorization: Some(""),
-        token: None,
-        userinfo: Some(""),
-    };
+    let endpoints = [
+        ("MICROSOFT_AUTHORIZATION_ENDPOINT", Some("")),
+        ("MICROSOFT_TOKEN_ENDPOINT", None),
+        ("MICROSOFT_USERINFO_ENDPOINT", Some("")),
+    ];
     assert!(microsoft_interactive_subject(Some(TENANT), Some(OBJECT_ID), &endpoints).is_some());
 }
 
 #[test]
 fn projection_accepts_the_exact_canonical_endpoints() {
-    let endpoints = MicrosoftEndpoints {
-        authorization: Some(
-            "https://login.microsoftonline.com/6f9619ff-8b86-d011-b42d-00c04fc964ff/oauth2/v2.0/authorize",
+    let endpoints = [
+        (
+            "MICROSOFT_AUTHORIZATION_ENDPOINT",
+            Some(
+                "https://login.microsoftonline.com/6f9619ff-8b86-d011-b42d-00c04fc964ff/oauth2/v2.0/authorize",
+            ),
         ),
-        token: Some(
-            "https://login.microsoftonline.com/6f9619ff-8b86-d011-b42d-00c04fc964ff/oauth2/v2.0/token",
+        (
+            "MICROSOFT_TOKEN_ENDPOINT",
+            Some(
+                "https://login.microsoftonline.com/6f9619ff-8b86-d011-b42d-00c04fc964ff/oauth2/v2.0/token",
+            ),
         ),
-        userinfo: Some("https://graph.microsoft.com/v1.0/me"),
-    };
+        (
+            "MICROSOFT_USERINFO_ENDPOINT",
+            Some("https://graph.microsoft.com/v1.0/me"),
+        ),
+    ];
     assert!(microsoft_interactive_subject(Some(TENANT), Some(OBJECT_ID), &endpoints).is_some());
 }
 
@@ -413,12 +419,27 @@ fn projection_rejects_foreign_or_noncanonical_endpoints(
     #[case] token: Option<&str>,
     #[case] userinfo: Option<&str>,
 ) {
-    let endpoints = MicrosoftEndpoints {
-        authorization,
-        token,
-        userinfo,
-    };
+    let endpoints = [
+        ("MICROSOFT_AUTHORIZATION_ENDPOINT", authorization),
+        ("MICROSOFT_TOKEN_ENDPOINT", token),
+        ("MICROSOFT_USERINFO_ENDPOINT", userinfo),
+    ];
     assert!(microsoft_interactive_subject(Some(TENANT), Some(OBJECT_ID), &endpoints).is_none());
+}
+
+#[rstest]
+#[case::nonempty(Some("https://example.test/other"), false)]
+#[case::empty(Some(""), true)]
+#[case::absent(None, true)]
+fn projection_rejects_unknown_endpoint_overrides(
+    #[case] value: Option<&str>,
+    #[case] accepted: bool,
+) {
+    let endpoints = [("MICROSOFT_OTHER_ENDPOINT", value)];
+    assert_eq!(
+        microsoft_interactive_subject(Some(TENANT), Some(OBJECT_ID), &endpoints).is_some(),
+        accepted
+    );
 }
 
 fn microsoft_subject() -> MicrosoftInteractiveSubject {

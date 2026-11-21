@@ -7,9 +7,9 @@ call:
     tenant: "{6F1E4B0A-1D2C-4E5F-8A9B-0C1D2E3F4A5B}"
     response_id: 00112233-4455-6677-8899-AABBCCDDEEFF
     endpoints:
-      authorization: null
-      token: null
-      userinfo: null
+      MICROSOFT_AUTHORIZATION_ENDPOINT: null
+      MICROSOFT_TOKEN_ENDPOINT: null
+      MICROSOFT_USERINFO_ENDPOINT: null
 calls:
   - sso_identity_bridge:
       function: subject
@@ -17,36 +17,36 @@ calls:
       tenant: 6f1e4b0a1d2c4e5f8a9b0c1d2e3f4a5b
       response_id: 00112233445566778899aabbccddeeff
       endpoints:
-        authorization: null
-        token: null
-        userinfo: null
+        MICROSOFT_AUTHORIZATION_ENDPOINT: null
+        MICROSOFT_TOKEN_ENDPOINT: null
+        MICROSOFT_USERINFO_ENDPOINT: null
   - sso_identity_bridge:
       function: subject
       environment: {}
       tenant: not-a-uuid
       response_id: 00112233-4455-6677-8899-aabbccddeeff
       endpoints:
-        authorization: null
-        token: null
-        userinfo: null
+        MICROSOFT_AUTHORIZATION_ENDPOINT: null
+        MICROSOFT_TOKEN_ENDPOINT: null
+        MICROSOFT_USERINFO_ENDPOINT: null
   - sso_identity_bridge:
       function: subject
       environment: {}
       tenant: 6f1e4b0a-1d2c-4e5f-8a9b-0c1d2e3f4a5b
       response_id: null
       endpoints:
-        authorization: null
-        token: null
-        userinfo: null
+        MICROSOFT_AUTHORIZATION_ENDPOINT: null
+        MICROSOFT_TOKEN_ENDPOINT: null
+        MICROSOFT_USERINFO_ENDPOINT: null
   - sso_identity_bridge:
       function: subject
       environment: {}
       tenant: null
       response_id: 00112233-4455-6677-8899-aabbccddeeff
       endpoints:
-        authorization: null
-        token: null
-        userinfo: null
+        MICROSOFT_AUTHORIZATION_ENDPOINT: null
+        MICROSOFT_TOKEN_ENDPOINT: null
+        MICROSOFT_USERINFO_ENDPOINT: null
 env: {}
 compare:
   ignore: []
