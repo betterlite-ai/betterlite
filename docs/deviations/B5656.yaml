@@ -21,6 +21,15 @@ deviations:
   - what: batch_completion_models ends with a named error when every deployment fails, where LiteLLM returns None from completion.
     why: None is the empty answer the fallback and handler code reads as no response, and a caller of the Rust entry cannot tell it from a missing result.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batch_completion/main.py#L127-L200
+  - what: A null answer from one deployment moves on to the next, where LiteLLM returns the first completed future's result even when it is None.
+    why: None is LiteLLM's no-answer marker, so returning it would end the call with the empty result the named error exists to avoid.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batch_completion/main.py#L178-L181
+  - what: A provider stream that grows past the target's body limit fails with HttpError::TooLarge, where LiteLLM relays the chunks with no byte cap.
+    why: A proxy bounds the bytes it buffers for one answer, and the limit is the body bound betterlite-http gives every buffered response.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L757-L771
+  - what: A timeout in the phases form becomes one absolute deadline at dispatch, the sum of the phases it sets, where LiteLLM hands a single timeout or an httpx.Timeout to the provider client.
+    why: The dispatch runs every provider call under one call context deadline, so the sum keeps the call bounded by the time the caller allowed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5149
 kept_bugs:
   - what: A later deployment in a model list inherits the fields of the deployments before it for the keys it leaves out.
     why: LiteLLM mutates the kwargs it passes to completion inside the deployment loop, so a working config can rely on the earlier deployment's api_base or temperature.
