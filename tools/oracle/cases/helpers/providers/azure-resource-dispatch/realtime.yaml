@@ -13,7 +13,7 @@ call:
     queries:
       - api_base: "https://res.test"
         api_version: null
-        realtime_protocol: null
+        realtime_protocol: "GA"
         query_params: null
         api_key: "key-1"
         azure_ad_token: null
