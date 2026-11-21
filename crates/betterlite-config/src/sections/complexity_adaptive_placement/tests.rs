@@ -113,9 +113,11 @@ fn a_missing_environment_value_is_an_error_that_names_it() {
 #[test]
 fn a_negative_or_non_finite_penalty_is_rejected() {
     let negative = router("        tier_distance_penalty: -0.1\n");
-    assert!(settings(&negative, &[]).is_err());
+    let error = settings(&negative, &[]).unwrap_err();
+    assert!(error.contains("tier_distance_penalty"), "{error}");
     let infinite = router("        tier_distance_penalty: .inf\n");
-    assert!(settings(&infinite, &[]).is_err());
+    let error = settings(&infinite, &[]).unwrap_err();
+    assert!(error.contains("tier_distance_penalty"), "{error}");
 }
 
 #[test]

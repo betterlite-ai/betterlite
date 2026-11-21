@@ -41,6 +41,14 @@ fn an_empty_configured_pool_is_rejected() {
 }
 
 #[test]
+fn a_router_whose_only_pool_is_empty_is_rejected() {
+    let empty: &[&str] = &[];
+    let pools: &[(&str, &[&str])] = &[("SIMPLE", empty)];
+    let error = service_error(adaptive_settings(true), pools, &priced(&[]), &[]);
+    assert!(matches!(error, AdaptivePlacementError::NoTierPools));
+}
+
+#[test]
 fn observing_with_adaptive_off_is_rejected() {
     let mut router = adaptive_service(
         adaptive_settings(false),

@@ -315,6 +315,19 @@ fn a_cold_classified_pool_places_from_that_pool_and_records_the_decision() {
         decision.get("quality_weight"),
         Some(&Json::Number(Number::from_f64(0.3).expect("0.3 is finite")))
     );
+    let Some(Json::List(candidates)) = decision.get("candidates") else {
+        panic!("the decision lists its candidates");
+    };
+    assert_eq!(
+        *candidates,
+        vec![Json::Object(IndexMap::from_iter([
+            ("model".to_owned(), Json::Text("mini".to_owned())),
+            (
+                "total_samples".to_owned(),
+                Json::Number(Number::from(0_u64)),
+            ),
+        ]))]
+    );
 }
 
 #[test]
@@ -432,6 +445,10 @@ fn the_distance_penalty_keeps_the_nearer_tier_against_a_higher_sample() {
         decision.get("eligible_mode"),
         Some(&Json::Text("all".to_owned()))
     );
+    let Some(Json::List(candidates)) = decision.get("candidates") else {
+        panic!("the decision lists its candidates");
+    };
+    assert_eq!(candidates.len(), 3);
 }
 
 #[test]
@@ -615,6 +632,23 @@ fn a_filter_that_matches_no_pool_model_places_the_tier() {
             decision: None,
         }
     );
+}
+
+// every draw the tier pool would make is over both models, so a fitting pick keeps choosing small
+#[test]
+fn the_context_filter_overrides_the_tier_draw() {
+    let pools: &[(&str, &[&str])] = &[("SIMPLE", &["mini", "small"])];
+    let facts = priced(&[("mini", 1), ("small", 1)]);
+    let mut harness = Harness::new(adaptive_settings(false), pools, &facts, &[], None)
+        .expect("the router builds without state");
+    let fit = BTreeSet::from(["small".to_owned()]);
+    let classified = tier("SIMPLE");
+    let mut filtered = request(&classified, "hello");
+    filtered.fit_filter = Some(&fit);
+    for _ in 0..64 {
+        let placed = harness.pick(&filtered).expect("the pick succeeds");
+        assert_eq!(placed.model, "small");
+    }
 }
 
 #[test]

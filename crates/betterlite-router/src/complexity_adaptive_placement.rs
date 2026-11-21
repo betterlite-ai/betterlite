@@ -158,13 +158,16 @@ impl AdaptivePlacement {
 // ladder does not name (a custom tier set can only order by its definitions)
 fn available_models(tier_names: &[String], pools: &BTreeMap<String, Vec<String>>) -> Vec<String> {
     let mut models: IndexSet<String> = IndexSet::new();
+    let mut named: IndexSet<&str> = IndexSet::new();
     for tier in tier_names {
+        named.insert(tier.as_str());
         if let Some(pool) = pools.get(tier) {
             models.extend(pool.iter().cloned());
         }
     }
     for (tier, pool) in pools {
-        if !tier_names.contains(tier) {
+        // insert reports whether the ladder already named this tier, so each pool is read once
+        if named.insert(tier.as_str()) {
             models.extend(pool.iter().cloned());
         }
     }
