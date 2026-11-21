@@ -53,18 +53,10 @@ impl<Router: ModelGroupInfoSource> DynamicAdmission<Router> {
         _call_type: CallType,
         stash: &RequestStashSlot,
     ) -> Result<(), PreCallError> {
-        let Some(Json::Text(raw_model)) = data.get("model") else {
+        let Some(model) = request_text(data, "model") else {
             return Ok(());
         };
-        let model = raw_model.as_str();
-        let call_id = match data.get("litellm_call_id") {
-            Some(Json::Text(text)) => Some(text.as_str()),
-            Some(
-                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_),
-            )
-            | None => None,
-        };
-        drop(stash.claim_for_call_id(call_id));
+        drop(stash.claim_for_call_id(request_text(data, "litellm_call_id")));
         let priority = priority_from_key_dict(key.team_metadata, key.key_metadata);
         let Some(model_group_info) = self.router_group_info(model)? else {
             tracing::debug!("No model group info for {model}, allowing request");
@@ -107,6 +99,17 @@ impl<Router: ModelGroupInfoSource> DynamicAdmission<Router> {
         router
             .model_group_info(model)
             .map_err(PreCallError::ModelGroupInfo)
+    }
+}
+
+// a text field of the request, or None when the field is absent or holds any other JSON type
+fn request_text<'data>(data: &'data RequestData, field: &str) -> Option<&'data str> {
+    match data.get(field) {
+        Some(Json::Text(text)) => Some(text.as_str()),
+        None
+        | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+            None
+        }
     }
 }
 
