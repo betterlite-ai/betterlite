@@ -88,14 +88,18 @@ impl LockRegistry {
     pub async fn hold(&self, counter_key: &str) -> OperationGuard {
         loop {
             let operation = self.operation(counter_key);
-            // registers the release notification before the state check, so a release in between still wakes the waiter
-            let released = operation.released.notified();
-            tokio::pin!(released);
-            released.as_mut().enable();
-            if operation.claim() {
-                return OperationGuard { operation };
+            // the pinned notification borrows the operation, so it drops before the guard takes the operation
+            {
+                let released = operation.released.notified();
+                tokio::pin!(released);
+                // registering before the state check means a release in between still wakes this waiter
+                released.as_mut().enable();
+                if !operation.claim() {
+                    released.await;
+                    continue;
+                }
             }
-            released.await;
+            return OperationGuard { operation };
         }
     }
 }
