@@ -6,7 +6,7 @@ use crate::spend_reseed::values::{SpendValueError, cache_amount};
 
 use super::cache::{CounterBatch, CounterCache};
 use super::{
-    CurrentSpend, CurrentSpendError, SPEND_DB_FLOOR_CACHE_TTL_SECONDS, SpendQuery, SpendResult,
+    CurrentSpend, CurrentSpendError, FLOOR_MARKER_TTL_SECONDS, SpendQuery, SpendResult,
     WindowDescriptors,
 };
 
@@ -67,7 +67,7 @@ where
             return Ok(Some(rechecked));
         }
         self.cache
-            .memory_set_expiring(&marker_key, db_spend, SPEND_DB_FLOOR_CACHE_TTL_SECONDS)
+            .memory_set_expiring(&marker_key, db_spend, FLOOR_MARKER_TTL_SECONDS)
             .map_err(CurrentSpendError::Cache)?;
         Ok(Some(db_spend))
     }

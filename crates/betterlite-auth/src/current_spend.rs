@@ -16,7 +16,7 @@ use self::cache::{CounterBatch, CounterCache};
 use self::floor::FloorCheck;
 
 // bounds the authoritative re-reads of a stale-low counter to one per counter per window
-pub const SPEND_DB_FLOOR_CACHE_TTL_SECONDS: u32 = 5;
+pub const FLOOR_MARKER_TTL_SECONDS: u32 = 5;
 
 pub const BUDGET_UNVERIFIABLE_DETAIL: &str = "Budget enforcement unavailable: current spend could not be verified against Redis or the database, and fail_closed_budget_enforcement is enabled, so the request was rejected to avoid exceeding the configured budget. Retry shortly.";
 
