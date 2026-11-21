@@ -414,15 +414,16 @@ async fn tools_returned_replace_the_request_tools_and_keep_native_ones() {
 
 #[tokio::test]
 async fn tools_scan_only_keeps_request_tools_and_appends_new_names() {
+    let request_tools = json!([
+        {"name": "get", "description": "d", "input_schema": {"type": "object", "properties": {}}},
+        {"name": "other", "description": "o", "input_schema": {"type": "object", "properties": {}}}
+    ]);
     let mut data = body(json!({
         "model": "claude-sonnet-4-5",
         "messages": [{"role": "user", "content": [
             {"type": "tool_result", "tool_use_id": "toolu_1", "content": "res"}
         ]}],
-        "tools": [
-            {"name": "get", "description": "d", "input_schema": {"type": "object", "properties": {}}},
-            {"name": "other", "description": "o", "input_schema": {"type": "object", "properties": {}}}
-        ]
+        "tools": request_tools,
     }));
     let scan_only = GuardrailSkipFlags {
         scan_only_tool_results: Some(true),
@@ -443,20 +444,11 @@ async fn tools_scan_only_keeps_request_tools_and_appends_new_names() {
     .unwrap();
     let written_tools = to_json(data.get("tools").expect("the written tools"));
     let tools = written_tools.as_array().expect("an array");
-    let names: Vec<&str> = tools
-        .iter()
-        .filter_map(|tool| tool["name"].as_str())
-        .collect();
-    assert_eq!(names, vec!["get", "other", "new_tool"]);
+    assert_eq!(tools.len(), 3);
     // The scan-only merge keeps every request tool verbatim and only appends the returned one.
-    assert_eq!(
-        tools[0],
-        json!({"name": "get", "description": "d", "input_schema": {"type": "object", "properties": {}}})
-    );
-    assert_eq!(
-        tools[1],
-        json!({"name": "other", "description": "o", "input_schema": {"type": "object", "properties": {}}})
-    );
+    assert_eq!(tools[0], request_tools[0]);
+    assert_eq!(tools[1], request_tools[1]);
+    assert_eq!(tools[2]["name"].as_str(), Some("new_tool"));
     assert_eq!(tools[2]["type"].as_str(), Some("custom"));
 }
 
