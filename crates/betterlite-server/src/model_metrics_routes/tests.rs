@@ -8,7 +8,6 @@ use std::sync::Arc;
 use axum::http::StatusCode;
 use betterlite_db::gateway_request_tracking::GatewayRequestClock;
 use chrono::DateTime;
-use chrono::NaiveDate;
 use chrono::TimeDelta;
 use chrono::Utc;
 
@@ -18,14 +17,12 @@ use super::SLOW_RESPONSES_PATH;
 use super::STREAMING_METRICS_PATH;
 use super::query::MetricsQuery;
 use super::query::normalized;
-use super::store::DailyRow;
 use super::store::ExceptionRow;
 use super::store::ExceptionWindow;
-use super::store::LatencyRequest;
-use super::store::LatencyRow;
-use super::store::SameDayRow;
+use super::store::SeriesValue;
 use super::store::SlowRequest;
 use super::store::SlowRow;
+use super::store::SpendFilters;
 use super::store::StreamingWindow;
 use support::Call;
 use support::DEFAULT_THRESHOLD;
@@ -48,10 +45,6 @@ const INTERNAL_BODY: &str = r#"{"error":{"message":"Internal server error","type
 const EMPTY_SERIES: &str = r#"{"data":[],"all_api_bases":[]}"#;
 
 const EMPTY_EXCEPTIONS: &str = r#"{"data":[],"exception_types":[]}"#;
-
-fn day(year: i32, month: u32, day_of_month: u32) -> NaiveDate {
-    NaiveDate::from_ymd_opt(year, month, day_of_month).expect("the calendar date")
-}
 
 #[tokio::test]
 async fn oneshot_every_route_without_a_key_is_401() {
@@ -162,17 +155,17 @@ async fn oneshot_streaming_metrics_defaults_to_the_last_week_without_a_model_gro
 async fn oneshot_streaming_metrics_a_single_day_lists_each_request() {
     let mut fake = FakeStore::default();
     fake.rows.same_day = vec![
-        SameDayRow {
+        SeriesValue {
+            key: "req-b".to_owned(),
             api_base: Some("https://api.example.com/v1/openai/".to_owned()),
             model: "gpt-4".to_owned(),
-            request_id: "req-b".to_owned(),
-            time_to_first_token: 0.25,
+            value: 0.25,
         },
-        SameDayRow {
+        SeriesValue {
+            key: "req-a".to_owned(),
             api_base: None,
             model: "gpt-4".to_owned(),
-            request_id: "req-a".to_owned(),
-            time_to_first_token: 0.5,
+            value: 0.5,
         },
     ];
     let store = Arc::new(fake);
@@ -201,17 +194,17 @@ async fn oneshot_streaming_metrics_a_single_day_lists_each_request() {
 async fn oneshot_streaming_metrics_several_days_averages_per_day() {
     let mut fake = FakeStore::default();
     fake.rows.daily = vec![
-        DailyRow {
+        SeriesValue {
+            key: "2026-03-02".to_owned(),
             api_base: None,
             model: "gpt-4".to_owned(),
-            day: day(2026, 3, 2),
-            time_to_first_token: 0.125,
+            value: 0.125,
         },
-        DailyRow {
+        SeriesValue {
+            key: "2026-03-01".to_owned(),
             api_base: Some("https://api.example.com/v1".to_owned()),
             model: "gpt-4".to_owned(),
-            day: day(2026, 3, 1),
-            time_to_first_token: 0.5,
+            value: 0.5,
         },
     ];
     let store = Arc::new(fake);
@@ -289,7 +282,7 @@ async fn oneshot_model_metrics_defaults_to_the_configured_group_and_month() {
     assert_eq!(reply.body, EMPTY_SERIES);
     assert_eq!(
         store.calls(),
-        vec![Call::Latency(LatencyRequest {
+        vec![Call::Latency(SpendFilters {
             model_group: "gpt-4-32k".to_owned(),
             start: fixed_now() - TimeDelta::days(28),
             end: fixed_now(),
@@ -303,23 +296,23 @@ async fn oneshot_model_metrics_defaults_to_the_configured_group_and_month() {
 async fn oneshot_model_metrics_sends_the_filters_and_names_bases() {
     let mut fake = FakeStore::default();
     fake.rows.latency = vec![
-        LatencyRow {
+        SeriesValue {
+            key: "2026-03-11".to_owned(),
             api_base: Some("http://plain.example.com".to_owned()),
             model: "claude".to_owned(),
-            day: day(2026, 3, 11),
-            avg_latency_per_token: 0.008,
+            value: 0.008,
         },
-        LatencyRow {
+        SeriesValue {
+            key: "2026-03-10".to_owned(),
             api_base: Some("https://api.example.com/openai/v1".to_owned()),
             model: "gpt-4".to_owned(),
-            day: day(2026, 3, 10),
-            avg_latency_per_token: 0.002,
+            value: 0.002,
         },
-        LatencyRow {
+        SeriesValue {
+            key: "2026-03-10".to_owned(),
             api_base: None,
             model: "claude".to_owned(),
-            day: day(2026, 3, 10),
-            avg_latency_per_token: 0.004,
+            value: 0.004,
         },
     ];
     let store = Arc::new(fake);
@@ -336,7 +329,7 @@ async fn oneshot_model_metrics_sends_the_filters_and_names_bases() {
     );
     assert_eq!(
         store.calls(),
-        vec![Call::Latency(LatencyRequest {
+        vec![Call::Latency(SpendFilters {
             model_group: "chat".to_owned(),
             start: fixed_now() - TimeDelta::days(28),
             end: fixed_now(),
@@ -358,7 +351,7 @@ async fn oneshot_model_metrics_treats_undefined_as_no_filter() {
     assert_eq!(reply.status, StatusCode::OK);
     assert_eq!(
         store.calls(),
-        vec![Call::Latency(LatencyRequest {
+        vec![Call::Latency(SpendFilters {
             model_group: "gpt-4-32k".to_owned(),
             start: fixed_now() - TimeDelta::days(28),
             end: fixed_now(),
@@ -370,7 +363,12 @@ async fn oneshot_model_metrics_treats_undefined_as_no_filter() {
 
 #[tokio::test]
 async fn oneshot_slow_responses_truncates_the_threshold() {
-    for (configured, expected) in [(300.75_f64, 300_i64), (12.9, 12), (-1.5, -1), (0.0, 0)] {
+    for (configured, expected) in [
+        (300.75_f64, 300_i64),
+        (12.9_f64, 12_i64),
+        (-1.5_f64, -1_i64),
+        (0.0_f64, 0_i64),
+    ] {
         let store = Arc::new(FakeStore::default());
         let reply = get(
             app(Some(Arc::<FakeStore>::clone(&store)), configured),
@@ -383,12 +381,14 @@ async fn oneshot_slow_responses_truncates_the_threshold() {
         assert_eq!(
             store.calls(),
             vec![Call::Slow(SlowRequest {
-                model_group: "gpt-4-32k".to_owned(),
-                start: fixed_now() - TimeDelta::days(28),
-                end: fixed_now(),
-                api_key: "null".to_owned(),
-                customer: "null".to_owned(),
-                alerting_threshold_seconds: expected,
+                filters: SpendFilters {
+                    model_group: "gpt-4-32k".to_owned(),
+                    start: fixed_now() - TimeDelta::days(28),
+                    end: fixed_now(),
+                    api_key: "null".to_owned(),
+                    customer: "null".to_owned(),
+                },
+                threshold_seconds: expected,
             })],
             "{configured}"
         );
@@ -441,12 +441,14 @@ async fn oneshot_slow_responses_sends_the_filters_and_names_bases() {
     assert_eq!(
         store.calls(),
         vec![Call::Slow(SlowRequest {
-            model_group: "chat".to_owned(),
-            start: fixed_now() - TimeDelta::days(28),
-            end: fixed_now(),
-            api_key: "sk-1".to_owned(),
-            customer: "alice".to_owned(),
-            alerting_threshold_seconds: 300,
+            filters: SpendFilters {
+                model_group: "chat".to_owned(),
+                start: fixed_now() - TimeDelta::days(28),
+                end: fixed_now(),
+                api_key: "sk-1".to_owned(),
+                customer: "alice".to_owned(),
+            },
+            threshold_seconds: 300,
         })]
     );
 }

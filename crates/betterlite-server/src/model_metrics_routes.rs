@@ -26,11 +26,10 @@ use self::error::ModelMetricsError;
 use self::query::MetricsQuery;
 use self::query::Window;
 use self::query::normalized;
-use self::series::SeriesResponse;
 use self::store::ExceptionWindow;
-use self::store::LatencyRequest;
 use self::store::ModelMetricsStore;
 use self::store::SlowRequest;
+use self::store::SpendFilters;
 use self::store::StreamingWindow;
 
 pub const STREAMING_METRICS_PATH: &str = "/model/streaming_metrics";
@@ -49,17 +48,100 @@ pub struct ModelMetricsState {
     pub alerting_threshold_seconds: f64,
 }
 
+#[derive(Clone, Copy)]
+enum ModelMetricsReport {
+    Streaming,
+    Latency,
+    Slow,
+    Exceptions,
+}
+
+enum ModelMetricsRequest {
+    Streaming(StreamingWindow),
+    Latency(SpendFilters),
+    Slow(SlowRequest),
+    Exceptions(ExceptionWindow),
+}
+
+impl ModelMetricsReport {
+    const fn lookback_days(self) -> u64 {
+        match self {
+            Self::Streaming => STREAMING_LOOKBACK_DAYS,
+            Self::Latency | Self::Slow | Self::Exceptions => METRICS_LOOKBACK_DAYS,
+        }
+    }
+
+    const fn missing_store(self) -> ModelMetricsError {
+        match self {
+            Self::Streaming => ModelMetricsError::StreamingDatabaseMissing,
+            Self::Latency | Self::Slow | Self::Exceptions => ModelMetricsError::DatabaseMissing,
+        }
+    }
+
+    fn read_request(
+        self,
+        requested: &MetricsQuery,
+        window: Window,
+        alerting_threshold_seconds: f64,
+    ) -> Result<ModelMetricsRequest, ModelMetricsError> {
+        Ok(match self {
+            Self::Streaming => ModelMetricsRequest::Streaming(StreamingWindow {
+                model_group: requested.model_group.clone(),
+                start: window.start,
+                end: window.end,
+            }),
+            Self::Latency => ModelMetricsRequest::Latency(SpendFilters {
+                model_group: requested.model_group_or(DEFAULT_MODEL_GROUP),
+                start: window.start,
+                end: window.end,
+                api_key: normalized(requested.api_key.as_deref()),
+                customer: normalized(requested.customer.as_deref()),
+            }),
+            Self::Slow => ModelMetricsRequest::Slow(SlowRequest {
+                filters: SpendFilters {
+                    model_group: requested.model_group_or(DEFAULT_MODEL_GROUP),
+                    start: window.start,
+                    end: window.end,
+                    api_key: normalized(requested.api_key.as_deref()),
+                    customer: normalized(requested.customer.as_deref()),
+                },
+                threshold_seconds: alerting_threshold_seconds
+                    .to_i64()
+                    .ok_or(ModelMetricsError::AlertingThreshold)?,
+            }),
+            Self::Exceptions => ModelMetricsRequest::Exceptions(ExceptionWindow {
+                model_group: requested.model_group.clone(),
+                start: window.start,
+                end: window.end,
+            }),
+        })
+    }
+}
+
 pub fn routes(state: ModelMetricsState) -> Router {
     Router::new()
-        .route(STREAMING_METRICS_PATH, get(streaming_metrics))
-        .route(METRICS_PATH, get(model_metrics))
-        .route(SLOW_RESPONSES_PATH, get(slow_responses))
-        .route(EXCEPTIONS_PATH, get(model_metrics_exceptions))
+        .route(
+            STREAMING_METRICS_PATH,
+            get(respond).layer(Extension(ModelMetricsReport::Streaming)),
+        )
+        .route(
+            METRICS_PATH,
+            get(respond).layer(Extension(ModelMetricsReport::Latency)),
+        )
+        .route(
+            SLOW_RESPONSES_PATH,
+            get(respond).layer(Extension(ModelMetricsReport::Slow)),
+        )
+        .route(
+            EXCEPTIONS_PATH,
+            get(respond).layer(Extension(ModelMetricsReport::Exceptions)),
+        )
         .with_state(state)
 }
 
-async fn streaming_metrics(
+async fn respond(
     State(state): State<ModelMetricsState>,
+    Extension(report): Extension<ModelMetricsReport>,
     caller: Option<Extension<AuthContext>>,
     RawQuery(raw_query): RawQuery,
 ) -> Response {
@@ -67,128 +149,57 @@ async fn streaming_metrics(
         return unauthenticated();
     }
     let requested = MetricsQuery::decode(raw_query.as_deref());
-    let window = match requested.window(state.clock.as_ref(), STREAMING_LOOKBACK_DAYS) {
+    let window = match requested.window(state.clock.as_ref(), report.lookback_days()) {
         Ok(window) => window,
         Err(error) => return error.into_response(),
     };
     let Some(store) = state.store.as_deref() else {
-        return ModelMetricsError::StreamingDatabaseMissing.into_response();
+        return report.missing_store().into_response();
     };
-    match streaming_series(store, requested.model_group.clone(), window).await {
-        Ok(response) => Json(response).into_response(),
+    let request = match report.read_request(&requested, window, state.alerting_threshold_seconds) {
+        Ok(request) => request,
+        Err(error) => return error.into_response(),
+    };
+    match read_response(store, &request).await {
+        Ok(response) => response,
         Err(error) => error.into_response(),
     }
 }
 
-async fn streaming_series(
+async fn read_response(
     store: &dyn ModelMetricsStore,
-    model_group: Option<String>,
-    window: Window,
-) -> Result<SeriesResponse, ModelMetricsError> {
-    let request = StreamingWindow {
-        model_group,
-        start: window.start,
-        end: window.end,
-    };
-    if window.start.date_naive() == window.end.date_naive() {
-        let rows = store
-            .streaming_same_day(&request)
-            .await
+    request: &ModelMetricsRequest,
+) -> Result<Response, ModelMetricsError> {
+    match request {
+        ModelMetricsRequest::Streaming(streaming) => {
+            let rows = if streaming.start.date_naive() == streaming.end.date_naive() {
+                store.streaming_same_day(streaming).await
+            } else {
+                store.streaming_daily(streaming).await
+            }
             .map_err(ModelMetricsError::Store)?;
-        return Ok(series::same_day(&rows));
-    }
-    let rows = store
-        .streaming_daily(&request)
-        .await
-        .map_err(ModelMetricsError::Store)?;
-    Ok(series::daily(&rows))
-}
-
-async fn model_metrics(
-    State(state): State<ModelMetricsState>,
-    caller: Option<Extension<AuthContext>>,
-    RawQuery(raw_query): RawQuery,
-) -> Response {
-    if caller.is_none() {
-        return unauthenticated();
-    }
-    let requested = MetricsQuery::decode(raw_query.as_deref());
-    let window = match requested.window(state.clock.as_ref(), METRICS_LOOKBACK_DAYS) {
-        Ok(window) => window,
-        Err(error) => return error.into_response(),
-    };
-    let Some(store) = state.store.as_deref() else {
-        return ModelMetricsError::DatabaseMissing.into_response();
-    };
-    let request = LatencyRequest {
-        model_group: requested.model_group_or(DEFAULT_MODEL_GROUP),
-        start: window.start,
-        end: window.end,
-        api_key: normalized(requested.api_key.as_deref()),
-        customer: normalized(requested.customer.as_deref()),
-    };
-    match store.latency(&request).await {
-        Ok(rows) => Json(series::latency(&rows)).into_response(),
-        Err(source) => ModelMetricsError::Store(source).into_response(),
-    }
-}
-
-async fn slow_responses(
-    State(state): State<ModelMetricsState>,
-    caller: Option<Extension<AuthContext>>,
-    RawQuery(raw_query): RawQuery,
-) -> Response {
-    if caller.is_none() {
-        return unauthenticated();
-    }
-    let requested = MetricsQuery::decode(raw_query.as_deref());
-    let window = match requested.window(state.clock.as_ref(), METRICS_LOOKBACK_DAYS) {
-        Ok(window) => window,
-        Err(error) => return error.into_response(),
-    };
-    let Some(store) = state.store.as_deref() else {
-        return ModelMetricsError::DatabaseMissing.into_response();
-    };
-    let Some(alerting_threshold_seconds) = state.alerting_threshold_seconds.to_i64() else {
-        return ModelMetricsError::AlertingThreshold.into_response();
-    };
-    let request = SlowRequest {
-        model_group: requested.model_group_or(DEFAULT_MODEL_GROUP),
-        start: window.start,
-        end: window.end,
-        api_key: normalized(requested.api_key.as_deref()),
-        customer: normalized(requested.customer.as_deref()),
-        alerting_threshold_seconds,
-    };
-    match store.slow_responses(&request).await {
-        Ok(rows) => Json(series::slow(&rows)).into_response(),
-        Err(source) => ModelMetricsError::Store(source).into_response(),
-    }
-}
-
-async fn model_metrics_exceptions(
-    State(state): State<ModelMetricsState>,
-    caller: Option<Extension<AuthContext>>,
-    RawQuery(raw_query): RawQuery,
-) -> Response {
-    if caller.is_none() {
-        return unauthenticated();
-    }
-    let requested = MetricsQuery::decode(raw_query.as_deref());
-    let window = match requested.window(state.clock.as_ref(), METRICS_LOOKBACK_DAYS) {
-        Ok(window) => window,
-        Err(error) => return error.into_response(),
-    };
-    let Some(store) = state.store.as_deref() else {
-        return ModelMetricsError::DatabaseMissing.into_response();
-    };
-    let request = ExceptionWindow {
-        model_group: requested.model_group.clone(),
-        start: window.start,
-        end: window.end,
-    };
-    match store.exceptions(&request).await {
-        Ok(rows) => Json(series::exceptions(&rows)).into_response(),
-        Err(source) => ModelMetricsError::Store(source).into_response(),
+            Ok(Json(series::response(&rows)).into_response())
+        }
+        ModelMetricsRequest::Latency(latency) => {
+            let rows = store
+                .latency(latency)
+                .await
+                .map_err(ModelMetricsError::Store)?;
+            Ok(Json(series::response(&rows)).into_response())
+        }
+        ModelMetricsRequest::Slow(slow) => {
+            let rows = store
+                .slow_responses(slow)
+                .await
+                .map_err(ModelMetricsError::Store)?;
+            Ok(Json(series::slow(&rows)).into_response())
+        }
+        ModelMetricsRequest::Exceptions(exceptions) => {
+            let rows = store
+                .exceptions(exceptions)
+                .await
+                .map_err(ModelMetricsError::Store)?;
+            Ok(Json(series::exceptions(&rows)).into_response())
+        }
     }
 }

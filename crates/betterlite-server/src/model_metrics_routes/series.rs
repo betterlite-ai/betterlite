@@ -3,12 +3,11 @@ use std::collections::BTreeSet;
 
 use indexmap::IndexMap;
 
-use super::store::{DailyRow, ExceptionRow, LatencyRow, SameDayRow, SlowRow};
+use super::store::{ExceptionRow, SeriesValue, SlowRow};
 use super::wire::{
     ExceptionDataRow, ExceptionResponse, SeriesResponse, SeriesRow, SlowResponseRow,
 };
 
-const DAY_FORMAT: &str = "%Y-%m-%d";
 const OPENAI_MARKER: &str = "/openai/";
 const HTTPS_MARKER: &str = "https://";
 
@@ -51,40 +50,14 @@ fn without_openai_suffix(name: &str) -> String {
         .map_or_else(|| name.to_owned(), |(head, _rest)| head.to_owned())
 }
 
-pub(super) fn same_day(rows: &[SameDayRow]) -> SeriesResponse {
+pub(super) fn response(rows: &[SeriesValue]) -> SeriesResponse {
     let mut series = Series::default();
     for row in rows {
         series.insert(
-            row.request_id.clone(),
+            row.key.clone(),
             row.api_base.as_deref(),
             &row.model,
-            row.time_to_first_token,
-        );
-    }
-    series.finish()
-}
-
-pub(super) fn daily(rows: &[DailyRow]) -> SeriesResponse {
-    let mut series = Series::default();
-    for row in rows {
-        series.insert(
-            row.day.format(DAY_FORMAT).to_string(),
-            row.api_base.as_deref(),
-            &row.model,
-            row.time_to_first_token,
-        );
-    }
-    series.finish()
-}
-
-pub(super) fn latency(rows: &[LatencyRow]) -> SeriesResponse {
-    let mut series = Series::default();
-    for row in rows {
-        series.insert(
-            row.day.format(DAY_FORMAT).to_string(),
-            row.api_base.as_deref(),
-            &row.model,
-            row.avg_latency_per_token,
+            row.value,
         );
     }
     series.finish()

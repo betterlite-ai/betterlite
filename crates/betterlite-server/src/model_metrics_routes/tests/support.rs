@@ -28,16 +28,14 @@ use tower::ServiceExt as _;
 use crate::auth::auth_identity::AuthContext;
 use crate::model_metrics_routes::ModelMetricsState;
 use crate::model_metrics_routes::routes;
-use crate::model_metrics_routes::store::DailyRow;
 use crate::model_metrics_routes::store::ExceptionRow;
 use crate::model_metrics_routes::store::ExceptionWindow;
-use crate::model_metrics_routes::store::LatencyRequest;
-use crate::model_metrics_routes::store::LatencyRow;
 use crate::model_metrics_routes::store::ModelMetricsStore;
 use crate::model_metrics_routes::store::PostgresModelMetricsStore;
-use crate::model_metrics_routes::store::SameDayRow;
+use crate::model_metrics_routes::store::SeriesValue;
 use crate::model_metrics_routes::store::SlowRequest;
 use crate::model_metrics_routes::store::SlowRow;
+use crate::model_metrics_routes::store::SpendFilters;
 use crate::model_metrics_routes::store::StreamingWindow;
 
 const SPEND_TABLES: &str = r#"
@@ -72,16 +70,16 @@ pub(crate) const DEFAULT_THRESHOLD: f64 = 300.0;
 pub(crate) enum Call {
     SameDay(StreamingWindow),
     Daily(StreamingWindow),
-    Latency(LatencyRequest),
+    Latency(SpendFilters),
     Slow(SlowRequest),
     Exceptions(ExceptionWindow),
 }
 
 #[derive(Default, Clone)]
 pub(crate) struct Rows {
-    pub(crate) same_day: Vec<SameDayRow>,
-    pub(crate) daily: Vec<DailyRow>,
-    pub(crate) latency: Vec<LatencyRow>,
+    pub(crate) same_day: Vec<SeriesValue>,
+    pub(crate) daily: Vec<SeriesValue>,
+    pub(crate) latency: Vec<SeriesValue>,
     pub(crate) slow: Vec<SlowRow>,
     pub(crate) exceptions: Vec<ExceptionRow>,
 }
@@ -112,17 +110,20 @@ impl ModelMetricsStore for FakeStore {
     async fn streaming_same_day(
         &self,
         request: &StreamingWindow,
-    ) -> Result<Vec<SameDayRow>, DbError> {
+    ) -> Result<Vec<SeriesValue>, DbError> {
         self.record(Call::SameDay(request.clone()))?;
         Ok(self.rows.same_day.clone())
     }
 
-    async fn streaming_daily(&self, request: &StreamingWindow) -> Result<Vec<DailyRow>, DbError> {
+    async fn streaming_daily(
+        &self,
+        request: &StreamingWindow,
+    ) -> Result<Vec<SeriesValue>, DbError> {
         self.record(Call::Daily(request.clone()))?;
         Ok(self.rows.daily.clone())
     }
 
-    async fn latency(&self, request: &LatencyRequest) -> Result<Vec<LatencyRow>, DbError> {
+    async fn latency(&self, request: &SpendFilters) -> Result<Vec<SeriesValue>, DbError> {
         self.record(Call::Latency(request.clone()))?;
         Ok(self.rows.latency.clone())
     }

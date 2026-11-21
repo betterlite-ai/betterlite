@@ -52,6 +52,22 @@ deviations:
       microseconds and shift with the process time zone. betterlite reads one UTC clock once, so
       the window ends now and is exactly the lookback long.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L15554-L15555
+  - what: >-
+      A startTime or endTime that cannot be read as a date answers 400 with
+      {"detail":{"error":"startTime must be an ISO 8601 datetime, got \"yesterday\""}}.
+    why: >-
+      FastAPI parses the datetime query parameters before the handler runs, so LiteLLM answers
+      422 with pydantic's validation envelope and never reaches the route body. betterlite reads
+      the parameters inside the route and names the field in the message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L15539-L15543
+  - what: >-
+      The model keys inside one data row of the streaming and latency answers are sorted, while
+      LiteLLM writes them in the order the query returned them, which follows the average
+      latency.
+    why: >-
+      LiteLLM keeps Python dict insertion order, so the member order changes with the data;
+      betterlite uses a sorted map, so the JSON text is stable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L15654-L15657
 kept_bugs:
   - what: >-
       total_exceptions counts the exception types a model raised, not the exceptions: two

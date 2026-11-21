@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use betterlite_db::postgres_store::errors::{DbError, backend};
 use betterlite_db::postgres_store::session::PostgresStore;
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, Utc};
 use tokio_postgres::Row;
 use tokio_postgres::types::ToSql;
 
@@ -21,7 +21,7 @@ pub struct StreamingWindow {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct LatencyRequest {
+pub struct SpendFilters {
     pub model_group: String,
     pub start: DateTime<Utc>,
     pub end: DateTime<Utc>,
@@ -31,12 +31,8 @@ pub struct LatencyRequest {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SlowRequest {
-    pub model_group: String,
-    pub start: DateTime<Utc>,
-    pub end: DateTime<Utc>,
-    pub api_key: String,
-    pub customer: String,
-    pub alerting_threshold_seconds: i64,
+    pub filters: SpendFilters,
+    pub threshold_seconds: i64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -47,27 +43,11 @@ pub struct ExceptionWindow {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct SameDayRow {
+pub struct SeriesValue {
+    pub key: String,
     pub api_base: Option<String>,
     pub model: String,
-    pub request_id: String,
-    pub time_to_first_token: f64,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct DailyRow {
-    pub api_base: Option<String>,
-    pub model: String,
-    pub day: NaiveDate,
-    pub time_to_first_token: f64,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct LatencyRow {
-    pub api_base: Option<String>,
-    pub model: String,
-    pub day: NaiveDate,
-    pub avg_latency_per_token: f64,
+    pub value: f64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -84,16 +64,53 @@ pub struct ExceptionRow {
     pub count: i64,
 }
 
+trait SqlParameters {
+    fn parameters(&self) -> Vec<Parameter<'_>>;
+}
+
+impl SqlParameters for StreamingWindow {
+    fn parameters(&self) -> Vec<Parameter<'_>> {
+        vec![&self.model_group, &self.start, &self.end]
+    }
+}
+
+impl SqlParameters for SpendFilters {
+    fn parameters(&self) -> Vec<Parameter<'_>> {
+        vec![
+            &self.model_group,
+            &self.start,
+            &self.end,
+            &self.api_key,
+            &self.customer,
+        ]
+    }
+}
+
+impl SqlParameters for SlowRequest {
+    fn parameters(&self) -> Vec<Parameter<'_>> {
+        let mut parameters: Vec<Parameter<'_>> = vec![&self.threshold_seconds];
+        parameters.extend(self.filters.parameters());
+        parameters
+    }
+}
+
+impl SqlParameters for ExceptionWindow {
+    fn parameters(&self) -> Vec<Parameter<'_>> {
+        vec![&self.start, &self.end, &self.model_group]
+    }
+}
+
 #[async_trait]
 pub trait ModelMetricsStore: Send + Sync {
     async fn streaming_same_day(
         &self,
         request: &StreamingWindow,
-    ) -> Result<Vec<SameDayRow>, DbError>;
+    ) -> Result<Vec<SeriesValue>, DbError>;
 
-    async fn streaming_daily(&self, request: &StreamingWindow) -> Result<Vec<DailyRow>, DbError>;
+    async fn streaming_daily(&self, request: &StreamingWindow)
+    -> Result<Vec<SeriesValue>, DbError>;
 
-    async fn latency(&self, request: &LatencyRequest) -> Result<Vec<LatencyRow>, DbError>;
+    async fn latency(&self, request: &SpendFilters) -> Result<Vec<SeriesValue>, DbError>;
 
     async fn slow_responses(&self, request: &SlowRequest) -> Result<Vec<SlowRow>, DbError>;
 
@@ -104,99 +121,62 @@ pub struct PostgresModelMetricsStore {
     pub store: Arc<PostgresStore>,
 }
 
+impl PostgresModelMetricsStore {
+    async fn query(&self, sql: &str, parameters: &[Parameter<'_>]) -> Result<Vec<Row>, DbError> {
+        let client = self.store.session().await?;
+        client.query(sql, parameters).await.map_err(backend)
+    }
+
+    async fn streaming_rows(
+        &self,
+        sql: &str,
+        request: &StreamingWindow,
+    ) -> Result<Vec<SeriesValue>, DbError> {
+        let rows = self.query(sql, &request.parameters()).await?;
+        rows.iter().map(series_value).collect()
+    }
+}
+
 #[async_trait]
 impl ModelMetricsStore for PostgresModelMetricsStore {
     async fn streaming_same_day(
         &self,
         request: &StreamingWindow,
-    ) -> Result<Vec<SameDayRow>, DbError> {
-        let client = self.store.session().await?;
-        let parameters: [Parameter<'_>; 2] = [&request.model_group, &request.start];
-        let rows = client
-            .query(STREAMING_SAME_DAY_SQL, &parameters)
-            .await
-            .map_err(backend)?;
-        rows.iter().map(same_day_row).collect()
+    ) -> Result<Vec<SeriesValue>, DbError> {
+        self.streaming_rows(STREAMING_SAME_DAY_SQL, request).await
     }
 
-    async fn streaming_daily(&self, request: &StreamingWindow) -> Result<Vec<DailyRow>, DbError> {
-        let client = self.store.session().await?;
-        let parameters: [Parameter<'_>; 3] = [&request.model_group, &request.start, &request.end];
-        let rows = client
-            .query(STREAMING_DAILY_SQL, &parameters)
-            .await
-            .map_err(backend)?;
-        rows.iter().map(daily_row).collect()
+    async fn streaming_daily(
+        &self,
+        request: &StreamingWindow,
+    ) -> Result<Vec<SeriesValue>, DbError> {
+        self.streaming_rows(STREAMING_DAILY_SQL, request).await
     }
 
-    async fn latency(&self, request: &LatencyRequest) -> Result<Vec<LatencyRow>, DbError> {
-        let client = self.store.session().await?;
-        let parameters: [Parameter<'_>; 5] = [
-            &request.model_group,
-            &request.start,
-            &request.end,
-            &request.api_key,
-            &request.customer,
-        ];
-        let rows = client
-            .query(LATENCY_SQL, &parameters)
-            .await
-            .map_err(backend)?;
-        rows.iter().map(latency_row).collect()
+    async fn latency(&self, request: &SpendFilters) -> Result<Vec<SeriesValue>, DbError> {
+        let rows = self.query(LATENCY_SQL, &request.parameters()).await?;
+        rows.iter().map(series_value).collect()
     }
 
     async fn slow_responses(&self, request: &SlowRequest) -> Result<Vec<SlowRow>, DbError> {
-        let client = self.store.session().await?;
-        let parameters: [Parameter<'_>; 6] = [
-            &request.alerting_threshold_seconds,
-            &request.model_group,
-            &request.start,
-            &request.end,
-            &request.api_key,
-            &request.customer,
-        ];
-        let rows = client
-            .query(SLOW_RESPONSES_SQL, &parameters)
-            .await
-            .map_err(backend)?;
+        let rows = self
+            .query(SLOW_RESPONSES_SQL, &request.parameters())
+            .await?;
         rows.iter().map(slow_row).collect()
     }
 
     async fn exceptions(&self, request: &ExceptionWindow) -> Result<Vec<ExceptionRow>, DbError> {
-        let client = self.store.session().await?;
-        let parameters: [Parameter<'_>; 3] = [&request.start, &request.end, &request.model_group];
-        let rows = client
-            .query(EXCEPTIONS_SQL, &parameters)
-            .await
-            .map_err(backend)?;
+        let rows = self.query(EXCEPTIONS_SQL, &request.parameters()).await?;
         rows.iter().map(exception_row).collect()
     }
 }
 
-fn same_day_row(row: &Row) -> Result<SameDayRow, DbError> {
-    Ok(SameDayRow {
+fn series_value(row: &Row) -> Result<SeriesValue, DbError> {
+    Ok(SeriesValue {
+        key: row.try_get("key").map_err(backend)?,
         api_base: row.try_get("api_base").map_err(backend)?,
         model: row.try_get("model").map_err(backend)?,
-        request_id: row.try_get("request_id").map_err(backend)?,
-        time_to_first_token: row.try_get("time_to_first_token").map_err(backend)?,
-    })
-}
-
-fn daily_row(row: &Row) -> Result<DailyRow, DbError> {
-    Ok(DailyRow {
-        api_base: row.try_get("api_base").map_err(backend)?,
-        model: row.try_get("model").map_err(backend)?,
-        day: row.try_get("day").map_err(backend)?,
-        time_to_first_token: row.try_get("time_to_first_token").map_err(backend)?,
-    })
-}
-
-fn latency_row(row: &Row) -> Result<LatencyRow, DbError> {
-    Ok(LatencyRow {
-        api_base: row.try_get("api_base").map_err(backend)?,
-        model: row.try_get("model").map_err(backend)?,
-        day: row.try_get("day").map_err(backend)?,
-        avg_latency_per_token: row.try_get("avg_latency_per_token").map_err(backend)?,
+        value: row.try_get("value").map_err(backend)?,
     })
 }
 

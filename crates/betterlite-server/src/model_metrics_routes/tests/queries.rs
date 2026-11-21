@@ -1,14 +1,13 @@
 #![cfg(test)]
 
-use super::day;
 use super::support::database;
 use super::support::execute;
 use super::support::instant;
 use super::support::postgres_store;
 use crate::model_metrics_routes::store::ExceptionWindow;
-use crate::model_metrics_routes::store::LatencyRequest;
 use crate::model_metrics_routes::store::ModelMetricsStore;
 use crate::model_metrics_routes::store::SlowRequest;
+use crate::model_metrics_routes::store::SpendFilters;
 use crate::model_metrics_routes::store::StreamingWindow;
 
 const SAME_DAY_SEED: &str = r#"
@@ -96,14 +95,14 @@ async fn query_same_day_lists_one_row_per_request_and_skips_excluded_rows() {
         .await
         .expect("the same-day rows");
     assert_eq!(rows.len(), 2);
-    assert_eq!(rows[0].request_id, "r7");
+    assert_eq!(rows[0].key, "r7");
     assert_eq!(rows[0].api_base.as_deref(), None);
     assert_eq!(rows[0].model, "m2");
-    assert!(rows[0].time_to_first_token.total_cmp(&2.0_f64).is_eq());
-    assert_eq!(rows[1].request_id, "r1");
+    assert!(rows[0].value.total_cmp(&2.0_f64).is_eq());
+    assert_eq!(rows[1].key, "r1");
     assert_eq!(rows[1].api_base.as_deref(), Some("https://a"));
     assert_eq!(rows[1].model, "m");
-    assert!(rows[1].time_to_first_token.total_cmp(&1.0_f64).is_eq());
+    assert!(rows[1].value.total_cmp(&1.0_f64).is_eq());
     pool.close();
     fixture.close_async().await.expect("the fixture close");
 }
@@ -121,11 +120,11 @@ async fn query_daily_averages_the_first_token_per_day_inside_the_window() {
         .await
         .expect("the daily rows");
     assert_eq!(rows.len(), 2);
-    assert_eq!(rows[0].day, day(2026, 3, 2));
+    assert_eq!(rows[0].key, "2026-03-02");
     assert_eq!(rows[0].api_base.as_deref(), Some("https://a"));
-    assert!(rows[0].time_to_first_token.total_cmp(&4.5_f64).is_eq());
-    assert_eq!(rows[1].day, day(2026, 3, 1));
-    assert!(rows[1].time_to_first_token.total_cmp(&2.0_f64).is_eq());
+    assert!(rows[0].value.total_cmp(&4.5_f64).is_eq());
+    assert_eq!(rows[1].key, "2026-03-01");
+    assert!(rows[1].value.total_cmp(&2.0_f64).is_eq());
     pool.close();
     fixture.close_async().await.expect("the fixture close");
 }
@@ -136,7 +135,7 @@ async fn query_latency_divides_seconds_by_completion_tokens_and_filters() {
     execute(&pool, LATENCY_SEED).await;
     let store = postgres_store(&pool);
     let filtered = store
-        .latency(&LatencyRequest {
+        .latency(&SpendFilters {
             model_group: "g".to_owned(),
             start: instant(2026, 3, 1, 0, 0, 0),
             end: instant(2026, 3, 10, 23, 59, 59),
@@ -146,22 +145,12 @@ async fn query_latency_divides_seconds_by_completion_tokens_and_filters() {
         .await
         .expect("the filtered latency rows");
     assert_eq!(filtered.len(), 2);
-    assert_eq!(filtered[0].day, day(2026, 3, 1));
-    assert!(
-        filtered[0]
-            .avg_latency_per_token
-            .total_cmp(&5.0_f64)
-            .is_eq()
-    );
-    assert_eq!(filtered[1].day, day(2026, 3, 10));
-    assert!(
-        filtered[1]
-            .avg_latency_per_token
-            .total_cmp(&2.0_f64)
-            .is_eq()
-    );
+    assert_eq!(filtered[0].key, "2026-03-01");
+    assert!(filtered[0].value.total_cmp(&5.0_f64).is_eq());
+    assert_eq!(filtered[1].key, "2026-03-10");
+    assert!(filtered[1].value.total_cmp(&2.0_f64).is_eq());
     let unfiltered = store
-        .latency(&LatencyRequest {
+        .latency(&SpendFilters {
             model_group: "g".to_owned(),
             start: instant(2026, 3, 1, 0, 0, 0),
             end: instant(2026, 3, 10, 23, 59, 59),
@@ -171,20 +160,10 @@ async fn query_latency_divides_seconds_by_completion_tokens_and_filters() {
         .await
         .expect("the unfiltered latency rows");
     assert_eq!(unfiltered.len(), 2);
-    assert_eq!(unfiltered[0].day, day(2026, 3, 1));
-    assert!(
-        unfiltered[0]
-            .avg_latency_per_token
-            .total_cmp(&5.0_f64)
-            .is_eq()
-    );
-    assert_eq!(unfiltered[1].day, day(2026, 3, 10));
-    assert!(
-        unfiltered[1]
-            .avg_latency_per_token
-            .total_cmp(&2.5_f64)
-            .is_eq()
-    );
+    assert_eq!(unfiltered[0].key, "2026-03-01");
+    assert!(unfiltered[0].value.total_cmp(&5.0_f64).is_eq());
+    assert_eq!(unfiltered[1].key, "2026-03-10");
+    assert!(unfiltered[1].value.total_cmp(&2.5_f64).is_eq());
     pool.close();
     fixture.close_async().await.expect("the fixture close");
 }
@@ -195,12 +174,14 @@ async fn query_slow_responses_counts_at_the_threshold_and_orders_by_slow_count()
     execute(&pool, SLOW_SEED).await;
     let rows = postgres_store(&pool)
         .slow_responses(&SlowRequest {
-            model_group: "g".to_owned(),
-            start: instant(2026, 3, 1, 0, 0, 0),
-            end: instant(2026, 3, 10, 23, 59, 59),
-            api_key: "k1".to_owned(),
-            customer: "u1".to_owned(),
-            alerting_threshold_seconds: 5,
+            filters: SpendFilters {
+                model_group: "g".to_owned(),
+                start: instant(2026, 3, 1, 0, 0, 0),
+                end: instant(2026, 3, 10, 23, 59, 59),
+                api_key: "k1".to_owned(),
+                customer: "u1".to_owned(),
+            },
+            threshold_seconds: 5,
         })
         .await
         .expect("the slow rows");

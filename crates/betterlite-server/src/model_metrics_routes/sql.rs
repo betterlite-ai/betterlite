@@ -2,30 +2,30 @@ pub(super) const STREAMING_SAME_DAY_SQL: &str = r#"
 SELECT
     api_base,
     model,
-    request_id,
-    EXTRACT(epoch FROM ("completionStartTime" - "startTime"))::double precision AS time_to_first_token
+    request_id AS key,
+    EXTRACT(epoch FROM ("completionStartTime" - "startTime"))::double precision AS value
 FROM
     "LiteLLM_SpendLogs"
 WHERE
     "model_group" = $1 AND "cache_hit" != 'True'
     AND "completionStartTime" IS NOT NULL
     AND "completionStartTime" != "endTime"
-    AND DATE("startTime") = DATE($2::timestamptz AT TIME ZONE 'UTC')
+    AND DATE("startTime") BETWEEN DATE($2::timestamptz AT TIME ZONE 'UTC') AND DATE($3::timestamptz AT TIME ZONE 'UTC')
 GROUP BY
     api_base,
     model_group,
     model,
     request_id
 ORDER BY
-    time_to_first_token DESC
+    value DESC
 "#;
 
 pub(super) const STREAMING_DAILY_SQL: &str = r#"
 SELECT
     api_base,
     model,
-    DATE_TRUNC('day', "startTime")::DATE AS day,
-    AVG(EXTRACT(epoch FROM ("completionStartTime" - "startTime")))::double precision AS time_to_first_token
+    TO_CHAR("startTime", 'YYYY-MM-DD') AS key,
+    AVG(EXTRACT(epoch FROM ("completionStartTime" - "startTime")))::double precision AS value
 FROM
     "LiteLLM_SpendLogs"
 WHERE
@@ -37,17 +37,17 @@ GROUP BY
     api_base,
     model_group,
     model,
-    day
+    key
 ORDER BY
-    time_to_first_token DESC
+    value DESC
 "#;
 
 pub(super) const LATENCY_SQL: &str = r#"
 SELECT
     api_base,
     model,
-    DATE_TRUNC('day', "startTime")::DATE AS day,
-    AVG(EXTRACT(epoch FROM ("endTime" - "startTime")) / NULLIF("completion_tokens", 0))::double precision AS avg_latency_per_token
+    TO_CHAR("startTime", 'YYYY-MM-DD') AS key,
+    AVG(EXTRACT(epoch FROM ("endTime" - "startTime")) / NULLIF("completion_tokens", 0))::double precision AS value
 FROM
     "LiteLLM_SpendLogs"
 WHERE
@@ -69,11 +69,11 @@ GROUP BY
     api_base,
     model_group,
     model,
-    day
+    key
 HAVING
     SUM(completion_tokens) > 0
 ORDER BY
-    avg_latency_per_token DESC
+    value DESC
 "#;
 
 pub(super) const SLOW_RESPONSES_SQL: &str = r#"
