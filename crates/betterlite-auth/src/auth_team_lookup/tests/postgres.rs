@@ -132,10 +132,10 @@ async fn relation_projection() {
             .is_some()
     );
 
-    for tasks in [&database.tasks, &writer_only.tasks] {
-        tasks.close();
-        tasks.wait().await;
-    }
+    database.tasks.close();
+    database.tasks.wait().await;
+    writer_only.tasks.close();
+    writer_only.tasks.wait().await;
     if let Some(pool) = store.pool.as_ref() {
         pool.close();
     }

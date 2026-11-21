@@ -29,28 +29,27 @@ type Cached<Model> = Result<Option<Model>, TeamCacheError>;
 type Written = Result<(), TeamCacheError>;
 
 // what one step changes and records; the scripted rows below stay fixed for the whole call
-#[derive(Default)]
-pub(super) struct Board {
-    pub(super) events: Vec<String>,
-    pub(super) logs: Vec<String>,
-    pub(super) fail: Vec<String>,
-    pub(super) now: Duration,
-    pub(super) teams: BTreeMap<String, LiteLLMTeamTableCachedObj>,
-    pub(super) groups: BTreeMap<String, AccessGroupTable>,
+pub(crate) struct Board {
+    pub(crate) events: Vec<String>,
+    pub(crate) logs: Vec<String>,
+    pub(crate) fail: Vec<String>,
+    pub(crate) now: Duration,
+    pub(crate) teams: BTreeMap<String, LiteLLMTeamTableCachedObj>,
+    pub(crate) groups: BTreeMap<String, AccessGroupTable>,
 }
 
-pub(super) struct Script {
-    pub(super) board: Mutex<Board>,
-    pub(super) teams: Vec<JsonData>,
-    pub(super) groups: Vec<JsonData>,
-    pub(super) permissions: Vec<JsonData>,
-    pub(super) created: Option<JsonData>,
+pub(crate) struct Script {
+    pub(crate) board: Mutex<Board>,
+    pub(crate) teams: Vec<JsonData>,
+    pub(crate) groups: Vec<JsonData>,
+    pub(crate) permissions: Vec<JsonData>,
+    pub(crate) created: Option<JsonData>,
 }
 
 // every collaborator the lookup takes, over one script; handle names the Prisma client it stands for
-pub(super) struct Port {
-    pub(super) script: Arc<Script>,
-    pub(super) handle: &'static str,
+pub(crate) struct Port {
+    pub(crate) script: Arc<Script>,
+    pub(crate) handle: &'static str,
 }
 
 impl Port {
@@ -263,8 +262,8 @@ impl CadenceClock for Port {
 }
 
 // the levels auth_team_lookup logged during the step, in order
-pub(super) struct Levels {
-    pub(super) script: Arc<Script>,
+pub(crate) struct Levels {
+    pub(crate) script: Arc<Script>,
 }
 
 impl<S: Subscriber> Layer<S> for Levels {
