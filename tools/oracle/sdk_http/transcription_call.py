@@ -1,5 +1,5 @@
 import asyncio
-from typing import Final, Literal
+from typing import Final, Literal, Protocol, TypedDict, cast
 
 import litellm
 import openai
@@ -8,12 +8,24 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
 from openai_chat import status_code
 
-DURATION: Final = TypeAdapter(float | None)
+HEADERS: TypeAdapter[dict[str, JsonValue] | None] = TypeAdapter(dict[str, JsonValue] | None)
+GRANULARITIES: TypeAdapter[list[JsonValue] | None] = TypeAdapter(list[JsonValue] | None)
 
 
-class UnexpectedResponseError(TypeError):
-    def __init__(self) -> None:
-        super().__init__("litellm returned no TranscriptionResponse")
+class HiddenParams(TypedDict, total=False):
+    audio_transcription_duration: float
+
+
+# both entries are wrapped by @client, which leaves their signatures untyped
+class TranscriptionEntry(Protocol):
+    def transcription(self, *, file: FileTypes, **kwargs: JsonValue) -> TranscriptionResponse: ...
+
+    async def atranscription(
+        self, *, file: FileTypes, **kwargs: JsonValue
+    ) -> TranscriptionResponse: ...
+
+
+ENTRY = cast("TranscriptionEntry", litellm)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1674
 
 
 class File(BaseModel):
@@ -114,57 +126,55 @@ def run(call: Call, api_base: str) -> Outcome:
     return project(response)
 
 
+def call_options(call: Call, api_base: str) -> dict[str, JsonValue]:
+    options: dict[str, JsonValue] = {
+        **call.params,
+        "api_base": api_base,
+        "api_key": call.api_key,
+        "base_url": call.base_url,
+        "api_version": call.api_version,
+        "language": call.language,
+        "prompt": call.prompt,
+        "response_format": call.response_format,
+        "temperature": call.temperature,
+        "user": call.user,
+        "max_retries": call.max_retries,
+        "custom_llm_provider": call.custom_llm_provider,
+        "azure_ad_token": call.azure_ad_token,
+        "extra_headers": HEADERS.validate_python(call.extra_headers),
+        "timestamp_granularities": GRANULARITIES.validate_python(
+            call.timestamp_granularities
+        ),
+    }
+    # transcription's timeout default is 600, so an absent one is left for LiteLLM to apply
+    if call.timeout_seconds is not None:
+        options["timeout"] = call.timeout_seconds
+    return options
+
+
 def sync_transcription(
     call: Call, file: FileTypes, api_base: str
 ) -> TranscriptionResponse:
-    response = litellm.transcription(
-        model=call.model or "",
-        file=file,
-        api_base=api_base,
-        api_key=call.api_key,
-        base_url=call.base_url,
-        api_version=call.api_version,
-        language=call.language,
-        prompt=call.prompt,
-        response_format=call.response_format,
-        timestamp_granularities=call.timestamp_granularities,
-        temperature=call.temperature,
-        user=call.user,
-        timeout=call.timeout_seconds,
-        max_retries=call.max_retries,
-        custom_llm_provider=call.custom_llm_provider,
-        extra_headers=call.extra_headers,
-        azure_ad_token=call.azure_ad_token,
-        **call.params,
-    )
-    if not isinstance(response, TranscriptionResponse):
-        raise UnexpectedResponseError
-    return response
+    options = call_options(call, api_base)
+    options["model"] = call.model if call.model is not None else ""
+    return ENTRY.transcription(file=file, **options)
 
 
 async def async_transcription(
     call: Call, file: FileTypes, api_base: str
 ) -> TranscriptionResponse:
-    values: dict[str, object] = {
-        "file": file,
-        "api_base": api_base,
-        "api_key": call.api_key,
-        "timeout": call.timeout_seconds,
-        "max_retries": call.max_retries,
-        "extra_headers": call.extra_headers,
-        **call.params,
-    }
+    options = call_options(call, api_base)
     if not call.missing_model:
-        values["model"] = call.model or ""
-    return await litellm.atranscription(**values)
+        options["model"] = call.model if call.model is not None else ""
+    return await ENTRY.atranscription(file=file, **options)
 
 
 def project(response: TranscriptionResponse) -> Outcome:
     transcribed = TRANSCRIBED.validate_json(response.model_dump_json())
-    hidden_duration: float | None = DURATION.validate_python(response._hidden_params.get("audio_transcription_duration"))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2748
+    hidden: HiddenParams = cast("HiddenParams", response._hidden_params)  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportAny, reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2748
     return Outcome(
         text=transcribed.text,
         words=transcribed.words,
         public_duration=transcribed.duration,
-        hidden_duration=hidden_duration,
+        hidden_duration=hidden.get("audio_transcription_duration"),
     )
