@@ -27,7 +27,8 @@ async fn cost_text_rounds_to_eight_places(#[case] estimated: &str, #[case] writt
     let Json::List(signals) = &decision["signals"] else {
         panic!("signals is a list");
     };
-    let Json::Text(last) = &signals[2] else {
+    // the classified signal, then the model, the cause and the costs the comparison appends
+    let Json::Text(last) = &signals[3] else {
         panic!("a signal is text");
     };
     assert_eq!(
