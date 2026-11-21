@@ -109,16 +109,20 @@ where
             Ok(connected) => connected,
             Err(RealtimeConnectionError::Dial(DialError::InvalidStatus {
                 status_code, ..
-            })) => {
-                return self.refuse(status_code).await;
-            }
+            })) => return self.refuse(status_code).await,
             Err(error) => return self.handle_failure(&error).await,
         };
         let ConnectedBackend { sender, source } = connected;
         let mut state = self.build_state(sender);
         let relayed = self.forward(&mut state, source).await;
         // the async context manager exits on every path, and a close failure replaces whatever the body was returning
-        let closed = Self::close_backend(&mut state).await;
+        let closed = match state.backend.take() {
+            Some(mut backend) => backend
+                .close()
+                .await
+                .map_err(RealtimeConnectionError::Backend),
+            None => Ok(()),
+        };
         match (relayed, closed) {
             (_, Err(error)) | (Err(error), Ok(())) => self.handle_failure(&error).await,
             (Ok(()), Ok(())) => Ok(()),
@@ -211,18 +215,6 @@ where
             client_wants_beta: client_wants_beta(&self.client.scope),
             backend_uses_beta_protocol: None,
         })
-    }
-
-    async fn close_backend(
-        state: &mut RealtimeStreaming,
-    ) -> Result<(), RealtimeConnectionError<Config::Error, Callback::Error, Relay::Error>> {
-        match state.backend.take() {
-            Some(mut backend) => backend
-                .close()
-                .await
-                .map_err(RealtimeConnectionError::Backend),
-            None => Ok(()),
-        }
     }
 
     // LiteLLM answers a handshake rejection with B1004's error event and the status-mapped close, and any close failure propagates
