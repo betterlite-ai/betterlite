@@ -10,7 +10,7 @@ use betterlite_cache::dual_cache::{DualCacheSettings, MAX_REDIS_BATCH_CACHE_SIZE
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use betterlite_db::postgres_store::errors::backend;
 use betterlite_db::postgres_store::session::PostgresStore;
-use betterlite_db::team_repository::decoder::TeamRecord;
+use betterlite_db::team_repository::decoder::{TeamRecord, TeamRecordError};
 
 use super::ports::{AdminUserReads, TeamReadError, TeamReads, UserReadError};
 
@@ -22,23 +22,6 @@ pub struct LookupUserReads {
     pub lookup: Arc<UserLookup>,
     pub clock: Clock,
     pub management_ttl: f64,
-}
-
-impl LookupUserReads {
-    // the same lookup state under another cache, so a fresh cache never outlives the call that built it
-    fn lookup_with(&self, cache: Arc<dyn UserCache>) -> UserLookup {
-        UserLookup {
-            cache,
-            store: self.lookup.store.clone(),
-            cadence: Arc::clone(&self.lookup.cadence),
-            db_cache_expiry: self.lookup.db_cache_expiry,
-            budget_reset: Arc::clone(&self.lookup.budget_reset),
-            enrollment: Arc::clone(&self.lookup.enrollment),
-            tasks: self.lookup.tasks.clone(),
-            defaults: self.lookup.defaults.clone(),
-            redactor: Arc::clone(&self.lookup.redactor),
-        }
-    }
 }
 
 #[async_trait]
@@ -69,7 +52,19 @@ impl AdminUserReads for LookupUserReads {
         request: UserLookupRequest<'_>,
         cache: Arc<dyn UserCache>,
     ) -> Result<Option<LiteLLMUserTable>, UserReadError> {
-        self.lookup_with(cache)
+        // the same lookup state under the supplied cache, so a fresh cache never outlives the call that built it
+        let lookup = UserLookup {
+            cache,
+            store: self.lookup.store.clone(),
+            cadence: Arc::clone(&self.lookup.cadence),
+            db_cache_expiry: self.lookup.db_cache_expiry,
+            budget_reset: Arc::clone(&self.lookup.budget_reset),
+            enrollment: Arc::clone(&self.lookup.enrollment),
+            tasks: self.lookup.tasks.clone(),
+            defaults: self.lookup.defaults.clone(),
+            redactor: Arc::clone(&self.lookup.redactor),
+        };
+        lookup
             .get_user_object(request)
             .await
             .map_err(UserReadError::Lookup)
@@ -88,9 +83,8 @@ impl TeamReads for PostgresTeamReads {
             .session()
             .await
             .map_err(TeamReadError::Database)?;
-        let ids = team_ids.to_vec();
         let rows = client
-            .query(TEAMS_BY_IDS_SQL, &[&ids])
+            .query(TEAMS_BY_IDS_SQL, &[&team_ids])
             .await
             .map_err(backend)
             .map_err(TeamReadError::Database)?;
@@ -101,9 +95,10 @@ impl TeamReads for PostgresTeamReads {
                 .map_err(backend)
                 .map_err(TeamReadError::Database)?;
             let record = TeamRecord::parse(text.as_bytes()).map_err(TeamReadError::Record)?;
-            if let Some(found) = record {
-                records.push(found);
-            }
+            let Some(found) = record else {
+                return Err(TeamReadError::Record(TeamRecordError::NotAnObject));
+            };
+            records.push(found);
         }
         Ok(records)
     }

@@ -11,8 +11,9 @@ use betterlite_db::team_repository::decoder::{TeamRecord, TeamRecordError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum UserReadError {
-    #[error("the user lookup failed")]
-    Lookup(#[source] UserLookupError),
+    // LiteLLM's debug line prints the exception text, so the lookup error stays transparent
+    #[error(transparent)]
+    Lookup(UserLookupError),
     #[error("the empty user cache could not be built")]
     Cache(#[source] BackendError),
 }

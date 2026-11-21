@@ -102,7 +102,7 @@ where
     match (caller.proxy_admin, teams, caller.user_id) {
         (true, _, _) => true,
         (false, Some(team_reads), Some(user_id)) => {
-            match invite_block(target_user_id, caller, users, team_reads, cache).await {
+            match invite_block(target_user_id, user_id, users, team_reads, cache).await {
                 Ok(granted) => granted,
                 Err(error) => {
                     tracing::debug!("Error checking invite permission for user {user_id}: {error}");
@@ -114,10 +114,10 @@ where
     }
 }
 
-// one cache serves both reads, and the caller row is loaded before the target row
+// the gate resolves the admin id, one cache serves both reads, and the caller row is loaded before the target row
 async fn invite_block<Users, Teams>(
     target_user_id: &str,
-    caller: &AdminCaller<'_>,
+    admin_user_id: &str,
     users: &Users,
     teams: &Teams,
     cache: Option<Arc<dyn UserCache>>,
@@ -126,8 +126,9 @@ where
     Users: AdminUserReads + ?Sized,
     Teams: TeamReads + ?Sized,
 {
-    let Some(admin_user_id) = caller.user_id else {
-        return Ok(false);
+    let caller = AdminCaller {
+        user_id: Some(admin_user_id),
+        proxy_admin: false,
     };
     let read_cache = match cache {
         Some(given) => given,
@@ -159,6 +160,6 @@ where
     if org_admin_can_invite_user(&admin, &target) {
         return Ok(true);
     }
-    let granted = team_admin_can_invite_user(caller, &admin, &target, teams).await?;
+    let granted = team_admin_can_invite_user(&caller, &admin, &target, teams).await?;
     Ok(granted)
 }
