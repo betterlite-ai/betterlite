@@ -1,4 +1,5 @@
 import asyncio
+from functools import partial
 from typing import Final, Literal, Protocol, TypeAlias, cast
 
 import litellm
@@ -12,15 +13,19 @@ from litellm.types.llms.custom_llm import CustomLLMItem
 from litellm.types.router import GenericLiteLLMParams
 from litellm.types.utils import ImageResponse, LlmProviders
 from litellm.utils import ProviderConfigManager, custom_llm_setup
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 from typing_extensions import override
 
 from image_edit_http import FixtureConfig
 from image_variations import Success, api_failure, datum
 from openai_chat import Failure
 
-Argument: TypeAlias = JsonValue | bytes | list[bytes] | HTTPHandler | AsyncHTTPHandler
-Unused: TypeAlias = Logging | ImageResponse | GenericLiteLLMParams | BaseImageEditConfig | Argument
+Client: TypeAlias = HTTPHandler | AsyncHTTPHandler
+Argument: TypeAlias = JsonValue | bytes | list[bytes] | Client
+Seen: TypeAlias = Logging | ImageResponse | GenericLiteLLMParams | BaseImageEditConfig | Argument
+ClientKind: TypeAlias = Literal["sync", "async"]
+Forwarded: TypeAlias = dict[str, Argument | Logging]
+CustomCall: TypeAlias = tuple[str, list[bytes], str | None, float | None, Forwarded, Client | None]
 
 
 class ImageEditEntry(Protocol):
@@ -39,8 +44,6 @@ EDIT_HANDLER: Final = images_main.base_llm_http_handler.image_edit_handler
 
 
 class CustomProvider(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
     name: str
     handlers: list[str] = Field(default_factory=list)
 
@@ -65,26 +68,27 @@ class Run(BaseModel):
     timeout: float | None = None
     custom_llm_provider: str | None = None
     kwargs: dict[str, JsonValue] = Field(default_factory=dict)
-    client: Literal["sync", "async"] | None = None
+    client: ClientKind | None = None
     custom_providers: list[CustomProvider] = Field(default_factory=list)
 
 
 class Call(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
     runs: list[Run]
 
 
+# bedrock_image_edit, bfl_image_edit and the generic handler name the same arguments differently
 class Sent(BaseModel):
-    provider: str
+    provider: str = Field(validation_alias="custom_llm_provider")
     model: str
     prompt: str | None
-    images: list[str]
-    optional_params: dict[str, JsonValue]
+    images: list[str] = Field(validation_alias="image")
+    optional_params: dict[str, JsonValue] = Field(
+        validation_alias=AliasChoices("optional_params", "image_edit_optional_request_params"),
+    )
     extra_headers: dict[str, JsonValue] | None
-    extra_body: dict[str, JsonValue] | None
+    extra_body: dict[str, JsonValue] | None = None
     timeout: float | None
-    asynchronous: bool
+    asynchronous: bool = Field(validation_alias=AliasChoices("aimage_edit", "_is_async"))
 
 
 class CustomRecord(BaseModel):
@@ -94,7 +98,7 @@ class CustomRecord(BaseModel):
     prompt: str | None
     optional_params: dict[str, JsonValue]
     timeout: float | None
-    client: Literal["sync", "async"] | None
+    client: ClientKind | None
     asynchronous: bool
 
 
@@ -121,85 +125,9 @@ class Recorder:
     def __init__(self) -> None:
         self.sent: Sent | None = None
 
-    def bedrock(
-        self,
-        *,
-        model: str,
-        image: list[bytes],
-        prompt: str | None,
-        optional_params: dict[str, JsonValue],
-        timeout: float | None,
-        aimage_edit: bool,
-        extra_headers: dict[str, JsonValue] | None,
-        **_unused: Unused,
-    ) -> ImageResponse:
-        self.sent = Sent(
-            provider="bedrock",
-            model=model,
-            prompt=prompt,
-            images=[part.decode() for part in image],
-            optional_params=PARAMS.validate_python(optional_params),
-            extra_headers=extra_headers,
-            extra_body=None,
-            timeout=timeout,
-            asynchronous=aimage_edit,
-        )
-        return ImageResponse(created=1, data=[])
-
-    def black_forest_labs(
-        self,
-        *,
-        model: str,
-        image: list[bytes],
-        prompt: str | None,
-        # ast-grep-ignore: no-long-names
-        image_edit_optional_request_params: dict[str, JsonValue],
-        timeout: float | None,
-        aimage_edit: bool,
-        extra_headers: dict[str, JsonValue] | None,
-        **_unused: Unused,
-    ) -> ImageResponse:
-        self.sent = Sent(
-            provider="black_forest_labs",
-            model=model,
-            prompt=prompt,
-            images=[part.decode() for part in image],
-            # ast-grep-ignore: no-long-names
-            optional_params=PARAMS.validate_python(image_edit_optional_request_params),
-            extra_headers=extra_headers,
-            extra_body=None,
-            timeout=timeout,
-            asynchronous=aimage_edit,
-        )
-        return ImageResponse(created=1, data=[])
-
-    def handler(
-        self,
-        *,
-        model: str,
-        image: list[bytes],
-        prompt: str | None,
-        # ast-grep-ignore: no-long-names
-        image_edit_optional_request_params: dict[str, JsonValue],
-        custom_llm_provider: str,
-        extra_headers: dict[str, JsonValue] | None,
-        extra_body: dict[str, JsonValue] | None,
-        timeout: float | None,
-        _is_async: bool,
-        **_unused: Unused,
-    ) -> ImageResponse:
-        self.sent = Sent(
-            provider=custom_llm_provider,
-            model=model,
-            prompt=prompt,
-            images=[part.decode() for part in image],
-            # ast-grep-ignore: no-long-names
-            optional_params=PARAMS.validate_python(image_edit_optional_request_params),
-            extra_headers=extra_headers,
-            extra_body=extra_body,
-            timeout=timeout,
-            asynchronous=_is_async,
-        )
+    def keep(self, provider: str, **received: Seen) -> ImageResponse:
+        values = {"custom_llm_provider": provider, "extra_body": None, **received}
+        self.sent = Sent.model_validate(values)
         return ImageResponse(created=1, data=[])
 
 
@@ -209,16 +137,6 @@ def recorded_config(model: str, provider: LlmProviders) -> BaseImageEditConfig |
     return FIXTURE
 
 
-def client_kind(client: HTTPHandler | AsyncHTTPHandler | None) -> Literal["sync", "async"] | None:
-    if client is None:
-        return None
-    match client:
-        case AsyncHTTPHandler():
-            return "async"
-        case HTTPHandler():
-            return "sync"
-
-
 class Handler(CustomLLM):
     def __init__(self, name: str, kwargs: list[str]) -> None:
         super().__init__()
@@ -226,23 +144,23 @@ class Handler(CustomLLM):
         self.kwargs = kwargs
         self.received: CustomRecord | None = None
 
-    def record(
-        self,
-        values: tuple[str, list[bytes], str | None, dict[str, Argument | Logging], float | None],
-        client: HTTPHandler | AsyncHTTPHandler | None,
-        asynchronous: bool,
-    ) -> ImageResponse:
-        model, image, prompt, optional_params, timeout = values
+    def record(self, values: CustomCall, *, asynchronous: bool) -> ImageResponse:
+        model, image, prompt, timeout, optional_params, client = values
+        forwarded = {name: optional_params[name] for name in self.kwargs if name in optional_params}
+        kind: ClientKind | None = None
+        match client:
+            case AsyncHTTPHandler():
+                kind = "async"
+            case HTTPHandler():
+                kind = "sync"
         self.received = CustomRecord(
             handler=self.name,
             model=model,
             images=[part.decode() for part in image],
             prompt=prompt,
-            optional_params=PARAMS.validate_python(
-                {name: optional_params[name] for name in self.kwargs if name in optional_params}
-            ),
+            optional_params=PARAMS.validate_python(forwarded),
             timeout=timeout,
-            client=client_kind(client),
+            client=kind,
             asynchronous=asynchronous,
         )
         return ImageResponse(created=1, data=[])
@@ -256,12 +174,13 @@ class Handler(CustomLLM):
         model_response: ImageResponse,
         api_key: str | None,
         api_base: str | None,
-        optional_params: dict[str, Argument | Logging],
+        optional_params: Forwarded,
         logging_obj: Logging,
         timeout: float | None = None,
         client: HTTPHandler | None = None,
     ) -> ImageResponse:
-        return self.record((model, image, prompt, optional_params, timeout), client, asynchronous=False)
+        called = (model, image, prompt, timeout, optional_params, client)
+        return self.record(called, asynchronous=False)
 
     @override
     async def aimage_edit(
@@ -272,12 +191,13 @@ class Handler(CustomLLM):
         model_response: ImageResponse,
         api_key: str | None,
         api_base: str | None,
-        optional_params: dict[str, Argument | Logging],
+        optional_params: Forwarded,
         logging_obj: Logging,
         timeout: float | None = None,
         client: AsyncHTTPHandler | None = None,
     ) -> ImageResponse:
-        return self.record((model, image, prompt, optional_params, timeout), client, asynchronous=True)
+        called = (model, image, prompt, timeout, optional_params, client)
+        return self.record(called, asynchronous=True)
 
 
 def register(run: Run) -> list[Handler]:
@@ -286,7 +206,7 @@ def register(run: Run) -> list[Handler]:
     for provider in run.custom_providers:
         if not provider.handlers:
             litellm.provider_list.append(provider.name)
-            litellm._custom_providers.append(provider.name)  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L784
+            litellm._custom_providers.append(provider.name)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L784
         for name in provider.handlers:
             handler = Handler(name, list(run.kwargs))
             handlers.append(handler)
@@ -297,16 +217,11 @@ def register(run: Run) -> list[Handler]:
 
 
 def arguments(run: Run, api_base: str) -> dict[str, Argument]:
-    values: dict[str, Argument] = dict(run.kwargs)
+    values: dict[str, Argument] = {**run.kwargs}
     if not run.custom_providers:
         values["api_base"] = api_base
-    match run.client:
-        case "sync":
-            values["client"] = HTTPHandler()
-        case "async":
-            values["client"] = AsyncHTTPHandler()
-        case None:
-            pass
+    if run.client is not None:
+        values["client"] = HTTPHandler() if run.client == "sync" else AsyncHTTPHandler()
     values["image"] = None
     if run.image is not None:
         match run.image:
@@ -341,9 +256,9 @@ def call_entry(run: Run, api_base: str) -> ImageResponse:
 
 def recorded_call(run: Run, api_base: str, recorder: Recorder) -> ImageResponse:
     ProviderConfigManager.get_provider_image_edit_config = recorded_config  # type: ignore[method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L833-L836
-    images_main.bedrock_image_edit.image_edit = recorder.bedrock  # type: ignore[assignment, method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L888
-    images_main.bfl_image_edit.image_edit = recorder.black_forest_labs  # type: ignore[assignment, method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L924
-    images_main.base_llm_http_handler.image_edit_handler = recorder.handler  # type: ignore[assignment, method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L937
+    images_main.bedrock_image_edit.image_edit = partial(recorder.keep, "bedrock")  # type: ignore[assignment, method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L888
+    images_main.bfl_image_edit.image_edit = partial(recorder.keep, "black_forest_labs")  # type: ignore[assignment, method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L924
+    images_main.base_llm_http_handler.image_edit_handler = partial(recorder.keep, "")  # type: ignore[assignment, method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L937
     try:
         return call_entry(run, api_base)
     finally:
@@ -357,14 +272,14 @@ def run_one(run: Run, api_base: str) -> RunOutcome:
     handlers = register(run)
     recorder = Recorder()
     try:
-        if run.recorded:
-            response = recorded_call(run, api_base, recorder)
-        else:
-            response = call_entry(run, api_base)
+        response = (
+            recorded_call(run, api_base, recorder) if run.recorded else call_entry(run, api_base)
+        )
     except openai.APIError as error:
         return RunOutcome(failure=api_failure(error))
     data = response.data if response.data is not None else []
-    outcome = RunOutcome(success=Success(created=response.created, data=[datum(image) for image in data]))
+    success = Success(created=response.created, data=[datum(image) for image in data])
+    outcome = RunOutcome(success=success)
     if recorder.sent is not None:
         outcome.sent = recorder.sent
     for handler in handlers:
@@ -380,6 +295,5 @@ class ImageEditCallRequest(BaseModel):
 
     def serialize(self, api_base: str) -> str:
         runs = [run_one(run, api_base) for run in self.image_edit_call.runs]
-        return Envelope(image_edit_call=ImageEditCallValue(value=Outcome(runs=runs))).model_dump_json(
-            by_alias=True, exclude_unset=True
-        )
+        envelope = Envelope(image_edit_call=ImageEditCallValue(value=Outcome(runs=runs)))
+        return envelope.model_dump_json(by_alias=True, exclude_unset=True)
