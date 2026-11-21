@@ -1,14 +1,22 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::fmt::{self, Debug, Display};
 use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, PoisonError};
 
+use betterlite_config::loader::ConfigLoader;
+use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::types::ProxyTrust;
+use betterlite_http::proxy::ProxiedClient;
+use betterlite_models::catalog::BundledCatalog;
 use betterlite_models::decisions::Json as DecisionJson;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_tokenizer::count::error::CountError;
+use betterlite_tokenizer::count::runtime::runtime_counter;
 use futures_executor::block_on;
 use rstest::rstest;
+use tokio::runtime::Builder;
 use tracing::field::{Field, Visit};
 use tracing::subscriber::with_default;
 use tracing::{Event, Subscriber};
@@ -17,7 +25,10 @@ use tracing_subscriber::registry;
 
 use super::boundary::{slice_around_compaction_block, strip_compaction_blocks};
 use super::client_history::client_compaction_history;
-use super::count::{CountedInput, HistoryTokenCounter, TokenComponents, count_effective_tokens};
+use super::count::{
+    CountedInput, HistoryTokenCounter, TokenComponents, TokenizerHistoryCounter,
+    count_effective_tokens,
+};
 use super::error::SummaryHistoryError;
 use super::last_question::select_last_user_question;
 use super::metadata::{PROPAGATED_METADATA_KEYS, propagate_metadata};
@@ -572,4 +583,36 @@ fn client_compaction_without_edit(
             .expect("re-encodes")
             .is_none()
     );
+}
+
+#[test]
+fn tokenizer_counter_counts_text_and_turns() {
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load("general_settings:\n  master_key: test-master\n")
+    .expect("config");
+    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("proxy");
+    let client = Arc::new(ProxiedClient::outbound(&Arc::new(policy)).expect("client"));
+    let catalog = BundledCatalog::default().get();
+    let counter = TokenizerHistoryCounter {
+        counter: Arc::new(runtime_counter(&config, &client, &catalog).expect("counter")),
+    };
+    let runtime = Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("runtime");
+    let words = runtime
+        .block_on(counter.count("gpt-3.5-turbo", CountedInput::Text("hello world")))
+        .expect("text counts");
+    assert_eq!(words, 2);
+    let turns = list(r#"[{"role":"user","content":"hello world"}]"#);
+    let conversation = CountedInput::Conversation {
+        messages: &turns,
+        tools: None,
+    };
+    let counted = runtime
+        .block_on(counter.count("gpt-3.5-turbo", conversation))
+        .expect("turns count");
+    assert!(counted > words);
 }
