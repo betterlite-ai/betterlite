@@ -31,15 +31,18 @@ pub(crate) fn amount_json(amount: Decimal) -> Value {
         .map_or(Value::Null, Value::Number)
 }
 
-pub(crate) fn memory_json(memory: &Memory, key: &str) -> Value {
-    match memory
+pub(crate) fn stored_value(memory: &Memory, key: &str) -> Option<ReseedCacheValue> {
+    memory
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .get(key)
-        .map(|(value, _ttl)| value)
-    {
-        Some(ReseedCacheValue::Number(amount)) => amount_json(*amount),
-        Some(ReseedCacheValue::Text(text)) => Value::String(text.clone()),
+        .map(|(value, _ttl)| value.clone())
+}
+
+pub(crate) fn memory_json(memory: &Memory, key: &str) -> Value {
+    match stored_value(memory, key) {
+        Some(ReseedCacheValue::Number(amount)) => amount_json(amount),
+        Some(ReseedCacheValue::Text(text)) => Value::String(text),
         Some(ReseedCacheValue::Boolean(_) | ReseedCacheValue::Unreadable) | None => Value::Null,
     }
 }
@@ -51,6 +54,25 @@ pub(crate) struct ScriptedCache<'input> {
 }
 
 impl ScriptedCache<'_> {
+    fn store(&self, key: &str, entry: (ReseedCacheValue, Option<u32>)) {
+        self.memory
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(key.to_owned(), entry);
+    }
+
+    fn record_set_max(
+        &self,
+        counter_key: &str,
+        value: Decimal,
+    ) -> Result<Option<Decimal>, ScriptedFailure> {
+        self.set_max_calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(json!([counter_key, amount_json(value)]));
+        self.redis_answer(self.input.set_max_fails.0, self.input.set_max)
+    }
+
     fn redis_answer<Answer>(&self, fails: bool, answer: Answer) -> Result<Answer, ScriptedFailure> {
         if fails {
             return Err(ScriptedFailure);
@@ -82,16 +104,11 @@ impl ReseedCache for ScriptedCache<'_> {
         ready(Ok(Some(true)))
     }
 
-    async fn memory_get(
+    fn memory_get(
         &self,
         counter_key: &str,
-    ) -> Result<Option<ReseedCacheValue>, ScriptedFailure> {
-        Ok(self
-            .memory
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .get(counter_key)
-            .map(|(value, _ttl)| value.clone()))
+    ) -> impl Future<Output = Result<Option<ReseedCacheValue>, ScriptedFailure>> + Send {
+        ready(Ok(stored_value(&self.memory, counter_key)))
     }
 
     fn memory_set(
@@ -99,13 +116,7 @@ impl ReseedCache for ScriptedCache<'_> {
         counter_key: &str,
         value: Decimal,
     ) -> impl Future<Output = Result<(), ScriptedFailure>> + Send {
-        self.memory
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .insert(
-                counter_key.to_owned(),
-                (ReseedCacheValue::Number(value), None),
-            );
+        self.store(counter_key, (ReseedCacheValue::Number(value), None));
         ready(Ok(()))
     }
 
@@ -126,23 +137,16 @@ impl CounterCache for ScriptedCache<'_> {
         ttl_seconds: u32,
     ) -> Result<(), ScriptedFailure> {
         let entry = (ReseedCacheValue::Number(value), Some(ttl_seconds));
-        self.memory
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .insert(key.to_owned(), entry);
+        self.store(key, entry);
         Ok(())
     }
 
-    async fn redis_set_max(
+    fn redis_set_max(
         &self,
         counter_key: &str,
         value: Decimal,
-    ) -> Result<Option<Decimal>, ScriptedFailure> {
-        self.set_max_calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(json!([counter_key, amount_json(value)]));
-        self.redis_answer(self.input.set_max_fails.0, self.input.set_max)
+    ) -> impl Future<Output = Result<Option<Decimal>, ScriptedFailure>> + Send {
+        ready(self.record_set_max(counter_key, value))
     }
 }
 
@@ -263,15 +267,15 @@ impl SpendCounterRows for ScriptedRows {
         ready(Ok(row))
     }
 
-    async fn window_log_rows(
+    fn window_log_rows(
         &self,
         _entity: WindowEntity,
         _entity_id: &str,
         _window_start: DateTime<Utc>,
-    ) -> Result<Vec<SpendAggregateRow>, ScriptedFailure> {
-        if self.rows.fails.0 {
-            return Err(ScriptedFailure);
+    ) -> impl Future<Output = Result<Vec<SpendAggregateRow>, ScriptedFailure>> + Send {
+        if !self.rows.fails.0 {
+            return ready(Ok(Vec::new()));
         }
-        Ok(Vec::new())
+        ready(Err(ScriptedFailure))
     }
 }

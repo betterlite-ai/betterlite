@@ -13,7 +13,7 @@ use crate::spend_reseed::rows::SpendCounterRows;
 use crate::spend_reseed::values::{SpendValueError, cache_amount};
 
 use self::cache::{CounterBatch, CounterCache};
-use self::floor::FloorCheck;
+use self::floor::{FloorCheck, recheck_floor};
 
 // bounds the authoritative re-reads of a stale-low counter to one per counter per window
 pub const FLOOR_MARKER_TTL_SECONDS: u32 = 5;
@@ -91,7 +91,7 @@ where
         if current >= max_budget {
             return Ok(current);
         }
-        let verified = match self.recheck_floor(query, current).await? {
+        let verified = match recheck_floor(self, query, current).await? {
             FloorCheck::Settled(spend) => return Ok(spend),
             FloorCheck::Verified => true,
             FloorCheck::Skipped => estimate_verified || query.fallback_authoritative,

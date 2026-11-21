@@ -13,6 +13,7 @@ use tokio_postgres::NoTls;
 
 use super::support::{Journal, JournalBatch, Memory, ScriptedCache, money, reseed_over};
 use crate::current_spend::{CurrentSpend, SpendQuery, WindowDescriptors};
+use crate::spend_reseed::reseed::SpendCounterReseed;
 use crate::spend_reseed::rows::{
     SpendAggregateRow, SpendCounterRows, SpendRow, SpendRowLookup, WindowEntity, WindowSpendRow,
 };
@@ -74,8 +75,7 @@ impl SpendCounterRows for ResetDuringRead {
     }
 }
 
-#[tokio::test]
-async fn concurrent_reset_marker_wins() {
+async fn running_fixture() -> (PostgresFixture, Pool) {
     let url = Environment::parse_from(["current-spend-postgres-tests"])
         .url
         .map(SecretString::from);
@@ -93,6 +93,16 @@ async fn concurrent_reset_marker_wins() {
         .max_size(2)
         .build()
         .expect("the database pool");
+    (fixture, pool)
+}
+
+fn scene(
+    pool: Pool,
+) -> (
+    ScriptedCache,
+    JournalBatch,
+    SpendCounterReseed<ResetDuringRead>,
+) {
     let memory: Memory = Arc::new(Mutex::new(BTreeMap::from([(
         COUNTER.to_owned(),
         ReseedCacheValue::Number(money("5")),
@@ -116,24 +126,29 @@ async fn concurrent_reset_marker_wins() {
         pool,
         memory,
     };
-    let reseed = reseed_over(Some(rows));
+    (cache, batch, reseed_over(Some(rows)))
+}
+
+#[tokio::test]
+async fn concurrent_reset_marker_wins() {
+    let (fixture, pool) = running_fixture().await;
+    let (cache, batch, reseed) = scene(pool);
     let service = CurrentSpend {
         cache: &cache,
         batch: &batch,
         reseed: &reseed,
         fail_closed_budget_enforcement: true,
     };
-    let window = WindowDescriptors {
-        entity_type: None,
-        entity_id: None,
-        duration: None,
-        start: None,
-    };
     let query = SpendQuery {
         counter_key: COUNTER,
         fallback_spend: Decimal::ZERO,
         max_budget: Some(money("10")),
-        window,
+        window: WindowDescriptors {
+            entity_type: None,
+            entity_id: None,
+            duration: None,
+            start: None,
+        },
         fallback_authoritative: false,
     };
 

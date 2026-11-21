@@ -37,7 +37,10 @@ pub(super) fn money(text: &str) -> Decimal {
     Decimal::from_str(text).expect("a fixture amount")
 }
 
-pub(super) fn entries<T: Clone>(shared: &Mutex<Vec<T>>) -> Vec<T> {
+pub(super) fn entries<T>(shared: &Mutex<Vec<T>>) -> Vec<T>
+where
+    T: Clone,
+{
     shared
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
@@ -101,13 +104,15 @@ impl ReseedCache for ScriptedCache {
         self.redis.is_some()
     }
 
-    async fn redis_get(
+    fn redis_get(
         &self,
         _counter_key: &str,
-    ) -> Result<Option<ReseedCacheValue>, ScriptFailure> {
-        self.redis
-            .as_ref()
-            .map_or(Ok(None), |redis| redis.get.play())
+    ) -> impl Future<Output = Result<Option<ReseedCacheValue>, ScriptFailure>> + Send {
+        let outcome = match self.redis.as_ref() {
+            Some(redis) => redis.get.play(),
+            None => Ok(None),
+        };
+        ready(outcome)
     }
 
     fn redis_set_nx(
@@ -153,6 +158,7 @@ impl CounterCache for ScriptedCache {
         self.put(key, value);
         let mut expiring = self.expiring.lock().unwrap_or_else(PoisonError::into_inner);
         expiring.push((key.to_owned(), ttl_seconds));
+        drop(expiring);
         Ok(())
     }
 
@@ -183,10 +189,8 @@ impl ActiveSpendBatch for JournalBatch {
         &self,
         _counter_key: &str,
     ) -> impl Future<Output = Result<Option<CounterValue>, SpendCounterBatchError>> + Send {
-        ready(Ok(*self
-            .answer
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)))
+        let answer = *self.answer.lock().unwrap_or_else(PoisonError::into_inner);
+        ready(Ok(answer))
     }
 
     fn record(&self, counter_key: &str, value: Decimal) {
@@ -199,6 +203,7 @@ impl CounterBatch for JournalBatch {
     fn forget(&self, counter_key: &str) {
         let mut journal = self.journal.lock().unwrap_or_else(PoisonError::into_inner);
         journal.push(format!("forget {counter_key}"));
+        drop(journal);
         *self.answer.lock().unwrap_or_else(PoisonError::into_inner) = None;
     }
 }
@@ -211,12 +216,6 @@ pub(super) struct ScriptedRows {
     pub(super) lookups: Journal,
 }
 
-fn stored_row(spend: Option<Decimal>) -> Option<SpendRow> {
-    spend.map(|amount| SpendRow {
-        spend: Some(JsonData::String(amount.to_string())),
-    })
-}
-
 impl ScriptedRows {
     fn note(&self, entry: String) -> Result<(), ScriptFailure> {
         self.lookups
@@ -227,6 +226,13 @@ impl ScriptedRows {
             return Err(ScriptFailure);
         }
         Ok(())
+    }
+}
+
+fn window_spend_row(amount: Decimal) -> WindowSpendRow {
+    WindowSpendRow {
+        window_start: window_start(),
+        spend: Some(JsonData::String(amount.to_string())),
     }
 }
 
@@ -246,7 +252,11 @@ impl SpendCounterRows for ScriptedRows {
             | SpendRowLookup::Organization(_)
             | SpendRowLookup::Project(_) => self.primary,
         };
-        ready(self.note(format!("{lookup:?}")).map(|()| stored_row(spend)))
+        ready(self.note(format!("{lookup:?}")).map(|()| {
+            spend.map(|amount| SpendRow {
+                spend: Some(JsonData::String(amount.to_string())),
+            })
+        }))
     }
 
     fn window_row(
@@ -255,23 +265,23 @@ impl SpendCounterRows for ScriptedRows {
         entity_id: &str,
         window_duration: &str,
     ) -> impl Future<Output = Result<Option<WindowSpendRow>, ScriptFailure>> + Send {
-        let noted = self.note(format!("window {entity:?} {entity_id} {window_duration}"));
-        ready(noted.map(|()| {
-            self.window.map(|amount| WindowSpendRow {
-                window_start: window_start(),
-                spend: Some(JsonData::String(amount.to_string())),
-            })
-        }))
+        ready(
+            self.note(format!("window {entity:?} {entity_id} {window_duration}"))
+                .map(|()| self.window.map(window_spend_row)),
+        )
     }
 
-    async fn window_log_rows(
+    fn window_log_rows(
         &self,
         entity: WindowEntity,
         entity_id: &str,
         _window_start: DateTime<Utc>,
-    ) -> Result<Vec<SpendAggregateRow>, ScriptFailure> {
-        self.note(format!("logs {entity:?} {entity_id}"))
-            .map(|()| Vec::new())
+    ) -> impl Future<Output = Result<Vec<SpendAggregateRow>, ScriptFailure>> + Send {
+        let noted = self.note(format!("logs {entity:?} {entity_id}"));
+        if noted.is_err() {
+            return ready(Err(ScriptFailure));
+        }
+        ready(Ok(Vec::new()))
     }
 }
 
@@ -283,7 +293,10 @@ impl DurationParser for NoDurations {
     }
 }
 
-pub(super) fn reseed_over<Rows: SpendCounterRows>(rows: Option<Rows>) -> SpendCounterReseed<Rows> {
+pub(super) fn reseed_over<Rows>(rows: Option<Rows>) -> SpendCounterReseed<Rows>
+where
+    Rows: SpendCounterRows,
+{
     SpendCounterReseed {
         rows: rows.map(Arc::new),
         locks: LockRegistry::from(10_000_i64),
