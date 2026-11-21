@@ -26,7 +26,7 @@ use crate::team_access::error::TeamAccessError;
 const ROLE: Option<UserRole> = Some(UserRole::InternalUser);
 const ADMIN: Option<UserRole> = Some(UserRole::ProxyAdmin);
 
-fn label(error: &ModelWriteError) -> &'static str {
+const fn label(error: &ModelWriteError) -> &'static str {
     match error {
         ModelWriteError::ViewOnly => "view_only",
         ModelWriteError::TeamMissing { .. } => "team_missing",
