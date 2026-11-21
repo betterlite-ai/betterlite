@@ -4,8 +4,8 @@ description: >-
   Users register a `CustomLLM` subclass in `litellm.custom_provider_map` to serve their own provider. After `import
   betterlite as litellm`, the same subclass and the same `custom_provider_map` entry must work unchanged. This task ports
   the class, its error type, the map item type and the small `BaseLLM` base. It is Python only: no Rust file changes. The
-  other parts of the original entry are B6030 to B6033, and this entry depends on them so a later task can depend on B164
-  for all the extension classes.
+  other parts of the original entry are B6030 to B6033; none of their classes is used here, so a later task that uses
+  one of them names that task directly.
 
 
   Put the code in `python/betterlite/_custom_llm/` (a package with an explicit `__all__`, files under 300 lines):

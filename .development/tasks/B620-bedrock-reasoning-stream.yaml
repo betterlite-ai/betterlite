@@ -48,8 +48,8 @@ description: >-
   families: openai.gpt-oss refuses logit_bias; xai. refuses frequency_penalty,presence_penalty. xai. also refuses
   string reasoning_effort=none; no other effort string is refused by this table. _without_params copies all fields
   except the supplied set; without_refused_reasoning_effort returns the original mapping unless a string exactly
-  matches a refused value, then removes only reasoning_effort. buffered_thinking_split: Call B038 parent buffered
-  response conversion, then B206 set_provider_response_headers_in_hidden_params before inspecting choices. Preserve
+  matches a refused value, then removes only reasoning_effort. buffered_thinking_split: Call B1425 parent buffered
+  response conversion (OpenAILikeChatConfig.transform_response, betterlite-openai compatible_wire::transform_response), then B206 set_provider_response_headers_in_hidden_params before inspecting choices. Preserve
   raw headers under _hidden_params.headers; additional_headers combines processed B206 response headers with any
   existing mapping values winning. For every nonstream Choices whose message.content is a string, run the same splitter
   with finished=True; append nonempty reasoning to existing reasoning_content, and always assign the returned visible
@@ -58,7 +58,7 @@ description: >-
 
 
   decode_reasoning_delta is the production incremental tag decoder over already decoded UTF-8 string fragments;
-  B504/B038 own transport/SSE/JSON decoding. Its fuzz target converts input to valid Unicode fragments at the shared
+  B504/B1425 own transport/SSE/JSON decoding. Its fuzz target converts input to valid Unicode fragments at the shared
   byte boundary and exercises the actual state machine, including partial tags and EOF, without installing a second
   response JSON decoder. Raw invalid UTF-8 remains the prerequisite decoder's error.
 
@@ -179,7 +179,7 @@ dod:
   - case-model-refused-fields
   - oracle
   - helper-python
-- text: 'buffered_thinking_split: Call B038 parent buffered response conversion, then B206 set_provider_response_headers_in_hidden_params
+- text: 'buffered_thinking_split: Call B1425 parent buffered response conversion (OpenAILikeChatConfig.transform_response, betterlite-openai compatible_wire::transform_response), then B206 set_provider_response_headers_in_hidden_params
     before inspecting choices. Preserve raw headers under _hidden_params.headers; additional_headers combines processed
     B206 response headers with any existing mapping values winning. For every nonstream Choices whose message.content
     is a string, run the same splitter with finished=True; append nonempty reasoning to existing reasoning_content,
@@ -241,7 +241,7 @@ checks:
       a string exactly matches a refused value, then removes only reasoning_effort.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::reasoning_stream_cases::case_[0-9]+_model_refused_fields$/)'
   - id: case-buffered-thinking-split
-    why: Call B038 parent buffered response conversion, then B206 set_provider_response_headers_in_hidden_params
+    why: Call B1425 parent buffered response conversion (OpenAILikeChatConfig.transform_response, betterlite-openai compatible_wire::transform_response), then B206 set_provider_response_headers_in_hidden_params
       before inspecting choices. Preserve raw headers under _hidden_params.headers; additional_headers combines
       processed B206 response headers with any existing mapping values winning. For every nonstream Choices whose
       message.content is a string, run the same splitter with finished=True; append nonempty reasoning to existing

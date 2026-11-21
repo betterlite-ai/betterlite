@@ -1,0 +1,8 @@
+general_settings:
+  litellm_jwtauth:
+    admin_jwt_scope: os.environ/JWT_ADMIN_SCOPE
+    enforce_scope_based_access: os.environ/JWT_ENFORCE_SCOPES
+    scope_mappings: []
+    public_key_stale_ttl: -1
+    issuers:
+      - {issuer: https://idp.example.com, audience: litellm, disable_audience_validation: true}

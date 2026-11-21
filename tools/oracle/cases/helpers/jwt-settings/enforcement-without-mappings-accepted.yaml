@@ -1,0 +1,9 @@
+kind: helper
+name: jwt-settings-enforcement-without-mappings-accepted
+call:
+  jwt_settings:
+    scenarios:
+      - {"settings": {"enforce_scope_based_access": true}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"enforce_scope_based_access": true, "scope_mappings": null}, "references": {}, "environment": {}, "issuers": []}
+env: {}
+compare: {ignore: []}

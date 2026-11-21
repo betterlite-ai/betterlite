@@ -28,7 +28,7 @@ description: >-
   These are substring tests; empty/None is false. No raw-catalog flag is required. Base initialization is B2202
   no-op. image_and_mask_fields: Start output_format=png and include non-None/nonempty prompt. Optional image bytes
   become base64, strings pass through unchanged, file-like objects read from their current position (no Canvas seek-to-zero),
-  and other SDK values use bytes conversion in B159. For a case-insensitive style-transfer substring put the image
+  and other SDK values reach this code already converted to bytes by the Python wheel (B6040 to_call_payload). For a case-insensitive style-transfer substring put the image
   under init_image, otherwise image. Missing image is allowed. For mask,init_image,style_image take the first item
   of a nonempty list only, encode bytes/read bytes, retain strings, and otherwise use Python string conversion;
   an empty list becomes the literal [] string. Options can overwrite a generated init_image. native_edit_options:
@@ -131,7 +131,7 @@ dod:
   - helper-python
 - text: 'image_and_mask_fields: Start output_format=png and include non-None/nonempty prompt. Optional image bytes
     become base64, strings pass through unchanged, file-like objects read from their current position (no Canvas
-    seek-to-zero), and other SDK values use bytes conversion in B159. For a case-insensitive style-transfer substring
+    seek-to-zero), and other SDK values reach this code already converted to bytes by the Python wheel (B6040 to_call_payload). For a case-insensitive style-transfer substring
     put the image under init_image, otherwise image. Missing image is allowed. For mask,init_image,style_image take
     the first item of a nonempty list only, encode bytes/read bytes, retain strings, and otherwise use Python string
     conversion; an empty list becomes the literal [] string. Options can overwrite a generated init_image.'
@@ -207,7 +207,7 @@ checks:
   - id: case-image-and-mask-fields
     why: Start output_format=png and include non-None/nonempty prompt. Optional image bytes become base64, strings
       pass through unchanged, file-like objects read from their current position (no Canvas seek-to-zero), and other
-      SDK values use bytes conversion in B159. For a case-insensitive style-transfer substring put the image under
+      SDK values reach this code already converted to bytes by the Python wheel (B6040 to_call_payload). For a case-insensitive style-transfer substring put the image under
       init_image, otherwise image. Missing image is allowed. For mask,init_image,style_image take the first item
       of a nonempty list only, encode bytes/read bytes, retain strings, and otherwise use Python string conversion;
       an empty list becomes the literal [] string. Options can overwrite a generated init_image.

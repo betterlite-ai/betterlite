@@ -19,7 +19,7 @@ description: >-
 
   Named case contracts: managed_upload_object_name: get_object_name requires extracted content not None or ValueError
   file content is required. For purpose exactly batch, _get_content_from_openai_file uses tuple element1 when supplied,
-  retains strings, strictly UTF-8-decodes bytes, and delegates SDK PathLike/current-position file reads to B159.
+  retains strings, strictly UTF-8-decodes bytes, and leaves SDK PathLike and open file objects to the Python wheel, which reads them into bytes before the call (B6040 to_call_payload), so they never reach this code.
   Unsupported values fall back to an empty byte string and hence empty text; short tuples retain their index error.
   Parse every nonblank splitlines line with decode_upload_record before choosing the first record; malformed later
   lines still fail. For a nonempty batch, read first.body default {} and model default empty string, remove one
@@ -76,7 +76,7 @@ description: >-
 
   s3_region_name and s3_endpoint_url default None and have no additional S3-specific environment-variable fallback
   in these functions. Reuse B643 bucket/KMS loader cases, B590 static S3 credential loader cases and B591 AWS region
-  settings. Upload bytes are supplied uploads or explicitly opened SDK files from B159; a request string is content,
+  settings. Upload bytes are supplied uploads or SDK files the Python wheel already read into bytes (B6040 to_call_payload); a request string is content,
   never a filename or URL to fetch.
 
 
@@ -166,7 +166,7 @@ references:
 dod:
 - text: 'managed_upload_object_name: get_object_name requires extracted content not None or ValueError file content
     is required. For purpose exactly batch, _get_content_from_openai_file uses tuple element1 when supplied, retains
-    strings, strictly UTF-8-decodes bytes, and delegates SDK PathLike/current-position file reads to B159. Unsupported
+    strings, strictly UTF-8-decodes bytes, and leaves SDK PathLike and open file objects to the Python wheel, which reads them into bytes before the call (B6040 to_call_payload), so they never reach this code. Unsupported
     values fall back to an empty byte string and hence empty text; short tuples retain their index error. Parse
     every nonblank splitlines line with decode_upload_record before choosing the first record; malformed later lines
     still fail. For a nonempty batch, read first.body default {} and model default empty string, remove one bedrock/
@@ -274,7 +274,7 @@ checks:
   - id: case-managed-upload-object-name
     why: get_object_name requires extracted content not None or ValueError file content is required. For purpose
       exactly batch, _get_content_from_openai_file uses tuple element1 when supplied, retains strings, strictly
-      UTF-8-decodes bytes, and delegates SDK PathLike/current-position file reads to B159. Unsupported values fall
+      UTF-8-decodes bytes, and leaves SDK PathLike and open file objects to the Python wheel, which reads them into bytes before the call (B6040 to_call_payload), so they never reach this code. Unsupported values fall
       back to an empty byte string and hence empty text; short tuples retain their index error. Parse every nonblank
       splitlines line with decode_upload_record before choosing the first record; malformed later lines still fail.
       For a nonempty batch, read first.body default {} and model default empty string, remove one bedrock/ prefix,

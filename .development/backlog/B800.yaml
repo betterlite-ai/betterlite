@@ -1,7 +1,7 @@
 id: B800
 milestone: M4 keys, spend and management
 title: Team roles and member management permissions
-status: todo
+status: done
 depends_on: [B003, B171, B732, B736, B737, B856, B859, B867, B882, B2314]
 file: tasks/B800-team-access.yaml
 covers:
@@ -15,7 +15,7 @@ covers:
   - "litellm/proxy/management_endpoints/common_utils.py"
 parent: B057
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2850
