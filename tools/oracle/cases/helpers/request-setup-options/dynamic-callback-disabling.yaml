@@ -1,0 +1,85 @@
+kind: helper
+name: request-setup-options-dynamic-callback-disabling
+call:
+  request_setup_options:
+    prepare: []
+    destinations:
+      - principal:
+          metadata:
+            logging: [{callback_name: langfuse_otel, callback_type: success, callback_vars: {langfuse_public_key: pk, langfuse_secret_key: sk}}]
+            litellm_disabled_callbacks: [arize]
+          team_metadata: null
+          team_id: null
+        headers: [[x-litellm-disable-callbacks, " LANGFUSE_OTEL , arize"]]
+        callback_disabling: true
+        otel_v2: true
+      - principal:
+          metadata:
+            logging: [{callback_name: langfuse_otel, callback_vars: {langfuse_public_key: pk, langfuse_secret_key: sk}}]
+            litellm_disabled_callbacks: [LangFuse_OTEL, 5, null]
+          team_metadata: null
+          team_id: null
+        headers: []
+        callback_disabling: true
+        otel_v2: true
+      - principal:
+          metadata:
+            logging: [{callback_name: langfuse_otel, callback_vars: {langfuse_public_key: pk, langfuse_secret_key: sk}}]
+            litellm_disabled_callbacks: [langfuse_otel]
+          team_metadata: null
+          team_id: null
+        headers: [[x-litellm-disable-callbacks, langfuse_otel]]
+        callback_disabling: false
+        otel_v2: true
+      - principal:
+          metadata: {otel_service_name: "  "}
+          team_metadata:
+            logging: [{callback_name: langfuse_otel, callback_type: success_and_failure, callback_vars: {langfuse_public_key: pk, langfuse_secret_key: sk}}]
+            litellm_disabled_callbacks: [langfuse_otel]
+            otel_service_name_override: " team-svc "
+          team_id: null
+        headers: []
+        callback_disabling: true
+        otel_v2: true
+      - principal:
+          metadata:
+            logging: []
+            otel_service_name: key-svc
+          team_metadata:
+            logging: [{callback_name: langfuse_otel, callback_vars: {langfuse_public_key: pk, langfuse_secret_key: sk}}]
+          team_id: null
+        headers: [[x-litellm-disable-callbacks, ""]]
+        callback_disabling: true
+        otel_v2: true
+      - principal:
+          metadata:
+            logging:
+              - {callback_name: langfuse_otel, callback_type: success, callback_vars: {langfuse_public_key: pk}}
+              - {callback_name: langfuse_otel, callback_type: failure, callback_vars: {langfuse_secret_key: sk}}
+              - {callback_name: arize, callback_type: failure, callback_vars: {arize_api_key: ak, arize_space_id: sid}}
+              - {callback_name: langfuse_otel, callback_vars: {bogus: x}}
+            otel_service_name: key-svc
+          team_metadata: null
+          team_id: null
+        headers: []
+        callback_disabling: true
+        otel_v2: true
+      - principal:
+          metadata:
+            logging: [{callback_name: langfuse_otel, callback_vars: {langfuse_public_key: pk, langfuse_secret_key: sk, turn_off_message_logging: maybe}}]
+          team_metadata: null
+          team_id: null
+        headers: []
+        callback_disabling: true
+        otel_v2: true
+      - principal:
+          metadata:
+            logging: [{callback_name: langfuse_otel, callback_vars: {langfuse_public_key: pk, langfuse_secret_key: sk}}]
+            litellm_disabled_callbacks: [langfuse_otel]
+          team_metadata: null
+          team_id: null
+        headers: []
+        callback_disabling: true
+        otel_v2: false
+env: {}
+compare: {ignore: []}

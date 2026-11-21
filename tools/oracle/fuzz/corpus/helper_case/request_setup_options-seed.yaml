@@ -1,0 +1,10 @@
+kind: helper
+name: request-setup-options-seed
+call:
+  request_setup_options:
+    prepare:
+      - {data: {metadata: {}}, slot: metadata, route: /v1/chat/completions, query: [[api-version, "2024-06-01"]], user_agent: codex/1, missing_session_id: reject, principal: {metadata: {logging: []}, team_metadata: null, team_id: null}, default_team_settings: []}
+    destinations:
+      - {principal: {metadata: {litellm_disabled_callbacks: [arize]}, team_metadata: null, team_id: null}, headers: [], callback_disabling: true, otel_v2: false}
+env: {}
+compare: {ignore: []}
