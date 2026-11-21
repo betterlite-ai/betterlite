@@ -147,7 +147,7 @@ def expand_value(value: Json) -> Json:
     match value:
         case str() if value.startswith("os.environ/"):
             return os.environ.get(value.replace("os.environ/", ""))
-        case _:
+        case str() | list() | dict() | bool() | int() | float() | None:
             return value
 
 
@@ -260,7 +260,7 @@ async def run_outcome(
     match answer:
         case Run():
             return Step(ids=[answer.id], status=answer.status, events=None, failure=None)
-        case _:
+        case AsyncAssistantStreamManager():
             events = await drain(answer)
             return Step(ids=[], status=None, events=events, failure=None)
 
