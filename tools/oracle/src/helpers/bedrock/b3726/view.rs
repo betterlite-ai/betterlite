@@ -5,6 +5,18 @@ use serde_json::{Value, json};
 
 use super::assembly::{encoded, merge_choices};
 
+pub(super) fn report(
+    result: Result<(), HookFailure>,
+    items: &[StreamChunk],
+    scans: usize,
+) -> Value {
+    json!({
+        "outcome": outcome(result),
+        "chunks": chunks(items),
+        "scans": scans,
+    })
+}
+
 pub(super) fn outcome(result: Result<(), HookFailure>) -> Value {
     match result {
         Ok(()) => json!({"kind": "allowed"}),

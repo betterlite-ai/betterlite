@@ -38,7 +38,7 @@ impl Sent {
     }
 }
 
-fn response(reply: Reply) -> UpstreamResponse {
+fn response(reply: &Reply) -> UpstreamResponse {
     UpstreamResponse {
         status: reply.status,
         headers: HeaderMap::new(),
@@ -62,6 +62,6 @@ impl GuardrailTransport for Sent {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .pop_front();
-        ready(reply.map(response).ok_or(TransportError::Closed))
+        ready(reply.as_ref().map(response).ok_or(TransportError::Closed))
     }
 }

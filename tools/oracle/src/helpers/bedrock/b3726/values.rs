@@ -40,11 +40,11 @@ pub(super) fn hook_failure(failure: GuardrailFailure) -> HookFailure {
             status,
             detail: GuardrailValue::Text(detail),
         },
-        GuardrailFailure::ModifyResponse(failure) => {
+        GuardrailFailure::ModifyResponse(modify) => {
             HookFailure::ModifyResponse(Box::new(ModifyFailure {
-                message: failure.message,
-                model: Some(failure.model),
-                original_response: failure.original_response,
+                message: modify.message,
+                model: Some(modify.model),
+                original_response: modify.original_response,
             }))
         }
         other @ (GuardrailFailure::GuardrailRaised { .. }

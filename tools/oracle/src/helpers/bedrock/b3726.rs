@@ -2,15 +2,15 @@ use std::time::Duration;
 
 use betterlite_bedrock::guardrail_hooks::RequestData;
 use betterlite_bedrock::guardrail_hooks::chunks::StreamChunk;
+use betterlite_bedrock::guardrail_hooks::errors::HookFailure;
 use betterlite_bedrock::guardrail_hooks::input::{InputHook, scan_input};
 use betterlite_bedrock::guardrail_hooks::post_call::post_call_success_hook;
 use betterlite_bedrock::guardrail_hooks::streaming::{StreamHook, streaming_iterator_hook};
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
-use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
-use serde_json::json;
 use tokio::runtime::Builder;
 
 mod assembly;
@@ -98,66 +98,78 @@ impl Helper for Op {
     type Input = Args;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let guardrail = build_guardrail(&input.guardrail)?;
-        let base = base_settings(&input.guardrail);
-        let settings = streaming_settings(
-            &input.guardrail,
-            &guardrail,
-            input.keepalive_interval_seconds,
-        );
-        let elapsed = input
-            .elapsed_seconds
-            .and_then(|seconds| Duration::try_from_secs_f64(seconds).ok())
-            .unwrap_or(Duration::ZERO);
-        let runtime = OracleRuntime::new(
-            guardrail,
-            base,
-            settings,
-            Sent::new(input.replies.clone()),
-            elapsed,
-        );
+        let runtime = build_runtime(input)?;
         let mut data = input.data.clone();
         let mut response = input.response.clone().unwrap_or(GuardrailValue::Null);
-        let mut chunks: Vec<StreamChunk> = Vec::new();
         let handle = Builder::new_current_thread()
             .enable_all()
             .build()
             .or_value_error()?;
-        let outcome = handle.block_on(async {
-            match input.hook {
-                HookKind::PreCall => {
-                    scan_input(&runtime, &mut data, &input.call_type, InputHook::PreCall).await
-                }
-                HookKind::Moderation => {
-                    scan_input(&runtime, &mut data, &input.call_type, InputHook::Moderation).await
-                }
-                HookKind::PostCall => {
-                    post_call_success_hook(&runtime, &mut data, &mut response).await
-                }
-                HookKind::Streaming => {
-                    let routes = Routes::new();
-                    let hook = StreamHook {
-                        runtime: &runtime,
-                        settings: &runtime.settings,
-                        routes: &routes,
-                        request_route: input.request_route.as_deref(),
-                        data: &mut data,
-                        chunks: stream_chunks(input),
-                    };
-                    match streaming_iterator_hook(hook).await {
-                        Ok(items) => {
-                            chunks = items;
-                            Ok(())
-                        }
-                        Err(failure) => Err(failure),
-                    }
-                }
-            }
-        });
-        Ok(json!({
-            "outcome": view::outcome(outcome),
-            "chunks": view::chunks(&chunks),
-            "scans": runtime.transport.bodies().len(),
-        }))
+        let result = handle.block_on(run_hook(&runtime, input, &mut data, &mut response));
+        let (outcome, chunks) = match result {
+            Ok(chunks) => (Ok(()), chunks),
+            Err(failure) => (Err(failure), Vec::new()),
+        };
+        Ok(view::report(
+            outcome,
+            &chunks,
+            runtime.transport.bodies().len(),
+        ))
     }
+}
+
+// Runs the case's hook and returns the chunks a streaming hook produced, which are empty for the other hooks.
+async fn run_hook(
+    runtime: &OracleRuntime,
+    input: &Args,
+    data: &mut RequestData,
+    response: &mut GuardrailValue,
+) -> Result<Vec<StreamChunk>, HookFailure> {
+    match input.hook {
+        HookKind::PreCall => {
+            scan_input(runtime, data, &input.call_type, InputHook::PreCall).await?;
+            Ok(Vec::new())
+        }
+        HookKind::Moderation => {
+            scan_input(runtime, data, &input.call_type, InputHook::Moderation).await?;
+            Ok(Vec::new())
+        }
+        HookKind::PostCall => {
+            post_call_success_hook(runtime, data, response).await?;
+            Ok(Vec::new())
+        }
+        HookKind::Streaming => {
+            let routes = Routes::new();
+            let hook = StreamHook {
+                runtime,
+                settings: &runtime.settings,
+                routes: &routes,
+                request_route: input.request_route.as_deref(),
+                data,
+                chunks: stream_chunks(input),
+            };
+            streaming_iterator_hook(hook).await
+        }
+    }
+}
+
+fn build_runtime(input: &Args) -> Result<OracleRuntime, Box<HelperError>> {
+    let guardrail = build_guardrail(&input.guardrail)?;
+    let base = base_settings(&input.guardrail);
+    let settings = streaming_settings(
+        &input.guardrail,
+        &guardrail,
+        input.keepalive_interval_seconds,
+    );
+    let elapsed = input
+        .elapsed_seconds
+        .and_then(|seconds| Duration::try_from_secs_f64(seconds).ok())
+        .unwrap_or(Duration::ZERO);
+    Ok(OracleRuntime::new(
+        guardrail,
+        base,
+        settings,
+        Sent::new(input.replies.clone()),
+        elapsed,
+    ))
 }
