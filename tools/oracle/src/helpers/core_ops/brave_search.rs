@@ -4,7 +4,7 @@ use betterlite_core::api::search_providers::brave::dates::{DateFlags, DateValue,
 use betterlite_core::api::search_providers::brave::{BraveSearchConfig, BraveSearchError};
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::search::provider::{
-    OutboundSearch, ProviderResponse, SearchProvider as _, SearchQuery,
+    OutboundSearch, ProviderResponse, RequestInput, SearchProvider as _, SearchQuery,
 };
 use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
@@ -85,7 +85,13 @@ fn answer(config: &BraveSearchConfig, call: &Call) -> Result<Value, BraveSearchA
             optional_params,
         } => {
             let key = api_key.clone().map(SecretString::from);
-            let body = config.transform_search_request(query, optional_params)?;
+            let body = config.transform_search_request(&RequestInput {
+                query,
+                optional_params,
+                api_key: key.as_ref(),
+                api_base: api_base.as_deref(),
+                headers,
+            })?;
             let outbound = OutboundSearch {
                 api_base: api_base.as_deref().unwrap_or_default(),
                 api_key: key.as_ref(),
@@ -94,7 +100,12 @@ fn answer(config: &BraveSearchConfig, call: &Call) -> Result<Value, BraveSearchA
             };
             let incoming: Headers = headers.clone().into_iter().collect();
             let signed = config.sign_request(incoming, &outbound)?.0;
-            let url = config.complete_url(api_base.as_deref(), optional_params, Some(&body))?;
+            let url = config.complete_url(
+                api_base.as_deref(),
+                optional_params,
+                Some(&body),
+                key.as_ref(),
+            )?;
             Ok(json!({"headers": signed, "params": body, "url": url}))
         }
         Call::Reply {
@@ -123,11 +134,18 @@ fn reply_answer(
     optional_params: &Object,
     body: &str,
 ) -> Result<Value, BraveSearchAnswerError> {
-    let request = config.transform_search_request(query, optional_params)?;
-    let _url = config.complete_url(None, optional_params, Some(&request))?;
+    let empty_headers = Headers::new();
+    let request = config.transform_search_request(&RequestInput {
+        query,
+        optional_params,
+        api_key: None,
+        api_base: None,
+        headers: &empty_headers,
+    })?;
+    let _url = config.complete_url(None, optional_params, Some(&request), None)?;
     let response = config.transform_search_response(&ProviderResponse {
         status_code: 200,
-        headers: &Headers::new(),
+        headers: &empty_headers,
         text: body,
     })?;
     Ok(serde_json::to_value(response)?)

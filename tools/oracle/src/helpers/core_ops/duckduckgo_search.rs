@@ -4,7 +4,9 @@ use betterlite_core::api::search_providers::duckduckgo::{
     DuckDuckGoSearchConfig, DuckDuckGoSearchError,
 };
 use betterlite_openai::openai_base_config::{Headers, Object};
-use betterlite_openai::search::provider::{ProviderResponse, SearchProvider as _, SearchQuery};
+use betterlite_openai::search::provider::{
+    ProviderResponse, RequestInput, SearchProvider as _, SearchQuery,
+};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use thiserror::Error;
@@ -75,6 +77,7 @@ fn answer(
     config: &DuckDuckGoSearchConfig,
     call: &Call,
 ) -> Result<Value, DuckDuckGoSearchAnswerError> {
+    let empty_headers = Headers::new();
     match call {
         Call::Headers { headers } => {
             let incoming: Headers = headers.clone().into_iter().collect();
@@ -84,16 +87,29 @@ fn answer(
         Call::Request {
             query,
             optional_params,
-        } => Ok(serde_json::to_value(
-            config.transform_search_request(query, optional_params)?,
-        )?),
+        } => Ok(serde_json::to_value(config.transform_search_request(
+            &RequestInput {
+                query,
+                optional_params,
+                api_key: None,
+                api_base: None,
+                headers: &empty_headers,
+            },
+        )?)?),
         Call::Url {
             api_base,
             query,
             optional_params,
         } => {
-            let body = config.transform_search_request(query, optional_params)?;
-            let url = config.complete_url(api_base.as_deref(), optional_params, Some(&body))?;
+            let body = config.transform_search_request(&RequestInput {
+                query,
+                optional_params,
+                api_key: None,
+                api_base: api_base.as_deref(),
+                headers: &empty_headers,
+            })?;
+            let url =
+                config.complete_url(api_base.as_deref(), optional_params, Some(&body), None)?;
             Ok(url_value(&url))
         }
         Call::Reply {
@@ -102,11 +118,16 @@ fn answer(
             body,
         } => {
             // the response decodes with the limit the request transform stored
-            let _request = config.transform_search_request(query, optional_params)?;
-            let headers = Headers::new();
+            let _request = config.transform_search_request(&RequestInput {
+                query,
+                optional_params,
+                api_key: None,
+                api_base: None,
+                headers: &empty_headers,
+            })?;
             let response = config.transform_search_response(&ProviderResponse {
                 status_code: 200,
-                headers: &headers,
+                headers: &empty_headers,
                 text: body,
             })?;
             Ok(serde_json::to_value(response)?)

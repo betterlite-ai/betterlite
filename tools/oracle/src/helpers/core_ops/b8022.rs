@@ -5,7 +5,7 @@ use betterlite_core::api::search_providers::fastcrw::reply::decode_fastcrw_reply
 use betterlite_core::api::search_providers::firecrawl::FirecrawlSearch;
 use betterlite_core::api::search_providers::firecrawl::reply::decode_firecrawl_reply;
 use betterlite_openai::openai_base_config::{Headers, Object};
-use betterlite_openai::search::provider::{SearchProvider as _, SearchQuery};
+use betterlite_openai::search::provider::{RequestInput, SearchProvider as _, SearchQuery};
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -77,10 +77,16 @@ fn request(input: &Input) -> HelperResult {
                 .prepare_headers(Headers::new(), key.as_ref(), base)
                 .map_err(failure)?;
             let body = search
-                .transform_search_request(&query, &input.optional_params)
+                .transform_search_request(&RequestInput {
+                    query: &query,
+                    optional_params: &input.optional_params,
+                    api_key: key.as_ref(),
+                    api_base: base,
+                    headers: &headers,
+                })
                 .map_err(failure)?;
             let url = search
-                .complete_url(base, &input.optional_params, Some(&body))
+                .complete_url(base, &input.optional_params, Some(&body), key.as_ref())
                 .map_err(failure)?;
             Ok(json!({"url": url, "headers": headers, "body": body}))
         }
@@ -90,10 +96,16 @@ fn request(input: &Input) -> HelperResult {
                 .prepare_headers(Headers::new(), key.as_ref(), base)
                 .map_err(failure)?;
             let body = search
-                .transform_search_request(&query, &input.optional_params)
+                .transform_search_request(&RequestInput {
+                    query: &query,
+                    optional_params: &input.optional_params,
+                    api_key: key.as_ref(),
+                    api_base: base,
+                    headers: &headers,
+                })
                 .map_err(failure)?;
             let url = search
-                .complete_url(base, &input.optional_params, Some(&body))
+                .complete_url(base, &input.optional_params, Some(&body), key.as_ref())
                 .map_err(failure)?;
             Ok(json!({"url": url, "headers": headers, "body": body}))
         }
