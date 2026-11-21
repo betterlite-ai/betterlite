@@ -61,14 +61,20 @@ impl Scripted {
     }
 }
 
+// The trait and Arc are foreign to this crate, so a local wrapper carries the shared script into it
+struct SharedScript {
+    script: Arc<Scripted>,
+}
+
 #[async_trait]
-impl AgentRunTransport for Arc<Scripted> {
+impl AgentRunTransport for SharedScript {
     async fn send(&self, request: AgentRunRequest) -> Result<UpstreamResponse, TransportError> {
         let body = request
             .body
             .as_deref()
             .map(|bytes| String::from_utf8(bytes.to_vec()).unwrap_or_default());
-        self.requests
+        self.script
+            .requests
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(Sent {
@@ -82,6 +88,7 @@ impl AgentRunTransport for Arc<Scripted> {
                 body,
             });
         let step = self
+            .script
             .steps
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -102,11 +109,15 @@ pub struct Factory {
 
 impl AgentRunClientFactory for Factory {
     fn sync_client(&self, _ssl_verify: &Json) -> Box<dyn AgentRunTransport> {
-        Box::new(Arc::clone(&self.script))
+        Box::new(SharedScript {
+            script: Arc::clone(&self.script),
+        })
     }
 
     fn async_client(&self, _ssl_verify: &Json) -> Box<dyn AgentRunTransport> {
-        Box::new(Arc::clone(&self.script))
+        Box::new(SharedScript {
+            script: Arc::clone(&self.script),
+        })
     }
 }
 

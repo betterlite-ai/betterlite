@@ -22,7 +22,7 @@ use tokio::runtime::Builder;
 
 use crate::foundry_dispatch::chat::Answer;
 use crate::foundry_dispatch::claude;
-use crate::foundry_dispatch::credentials::Globals;
+use crate::foundry_dispatch::credentials::{Globals, no_credentials};
 use crate::foundry_dispatch::fixtures::claude::{NOW, TIMEOUT};
 use crate::prepared::deployment::Deployment;
 
@@ -168,7 +168,7 @@ impl Env {
             environment_api_base: None,
             environment_api_key: None,
             headers: None,
-            credentials: DeploymentSettings::default(),
+            credentials: no_credentials(),
             environment: BTreeMap::new(),
         }
     }

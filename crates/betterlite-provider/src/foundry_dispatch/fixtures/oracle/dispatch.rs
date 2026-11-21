@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 
-use betterlite_config::sections::azure_credentials::DeploymentSettings;
 use betterlite_foundry::agent_results::reply::AgentReply;
 use betterlite_foundry::chat::sources::NoSources;
 use betterlite_models::controls::json_value::JsonValue;
@@ -24,7 +23,7 @@ use super::{DispatchCase, EmbeddingCase, Observation, PostCall, RewriteCase};
 
 #[cfg_attr(test, mutants::skip)]
 pub(super) fn dispatch_case(case: &DispatchCase) -> Observation {
-    let settings = DeploymentSettings::default();
+    let settings = credentials::no_credentials();
     let global_key = secret(case.globals.api_key.as_deref());
     let explicit_key = secret(case.api_key.as_deref());
     let environment_key = secret(case.environment.get("AZURE_AI_API_KEY").map(String::as_str));
@@ -228,7 +227,7 @@ fn agents_case(
 
 #[cfg_attr(test, mutants::skip)]
 pub(super) fn embedding_case(case: &EmbeddingCase) -> Observation {
-    let settings = DeploymentSettings::default();
+    let settings = credentials::no_credentials();
     let global_key = secret(case.globals.api_key.as_deref());
     let explicit_key = secret(case.api_key.as_deref());
     let environment_key = secret(case.environment.get("AZURE_AI_API_KEY").map(String::as_str));

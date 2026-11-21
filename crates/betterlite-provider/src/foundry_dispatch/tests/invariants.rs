@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::Headers;
@@ -191,21 +189,23 @@ fn foundry_provider_secret_safe_failure() {
         assert!(header.is_sensitive());
 
         let mut logger = RecordingLogger::default();
-        let error = chat::Dispatch {
+        let Err(error) = chat::Dispatch {
             call,
             globals: env.globals(),
             answer: support::supplied(500, r#"{"error":"upstream is down"}"#),
         }
         .run(&mut logger)
         .await
-        .expect_err("a 500 is a failure");
+        else {
+            panic!("a 500 is a failure");
+        };
         assert!(!error.to_string().contains(ALPHA_KEY));
         assert!(!format!("{error:?}").contains(ALPHA_KEY));
         assert_eq!(logger.calls.len(), 1);
-        let Json::Text(logged) = &logger.calls[0].original_response else {
+        let Json::Text(original) = &logger.calls[0].original_response else {
             panic!("the failure log carries the error text");
         };
-        assert!(!logged.contains(ALPHA_KEY));
+        assert!(!original.contains(ALPHA_KEY));
         let headers = logger.calls[0].headers.as_ref().expect("the headers");
         assert_eq!(
             headers.get("x-tenant"),

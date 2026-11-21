@@ -270,7 +270,7 @@ impl Harness {
             correlation,
             &self.redactor,
             || "run".to_owned(),
-            Duration::default(),
+            Duration::default,
         )
         .map_err(HarnessError::State)
     }

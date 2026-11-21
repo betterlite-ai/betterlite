@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 
-use betterlite_config::sections::azure_credentials::DeploymentSettings;
 use betterlite_foundry::chat::sources::NoSources;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_openai::openai_base_config::CatalogCapabilities;
@@ -88,7 +87,7 @@ fn prepare_chat(
     };
     // the adapter carries its own deployment; no process-wide identity is in scope here
     let environment = BTreeMap::new();
-    let credentials = DeploymentSettings::default();
+    let settings = credentials::no_credentials();
     let globals = credentials::Globals {
         api_base: None,
         api_key: None,
@@ -96,7 +95,7 @@ fn prepare_chat(
         environment_api_key: None,
         headers: None,
         environment: &environment,
-        credentials: &credentials,
+        credentials: &settings,
         refresh_enabled: false,
         sources: &NoSources,
         token_provider: None,

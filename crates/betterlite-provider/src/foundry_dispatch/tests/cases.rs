@@ -2,11 +2,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use betterlite_anthropic::chat_call::transport::ChatClients;
-use betterlite_anthropic::chat_call::{ChatDeps, ChatOutcome};
+use betterlite_anthropic::chat_call::{ChatClients, ChatDeps, ChatOutcome};
 use betterlite_foundry::agent_results::reply::AgentReply;
 use betterlite_foundry::agent_runs::transport::AgentRunMethod;
-use betterlite_foundry::embeddings::call::{EmbeddingMode, FoundryEmbeddingOptions};
+use betterlite_foundry::embeddings::call::EmbeddingMode;
+use betterlite_foundry::embeddings::request::FoundryEmbeddingOptions;
 use betterlite_models::controls::control_options::ControlOptions;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
@@ -306,7 +306,7 @@ async fn embedding_case() {
     let token = credentials::resolve_embedding_key(None, &entra_params, &empty.globals())
         .expect("the entra token resolves")
         .expect("the entra token fills the key slot");
-    assert_eq!(token.expose_secret().as_str(), "entra-token");
+    assert_eq!(token.expose_secret(), "entra-token");
 }
 
 async fn anthropic_case() {
@@ -336,8 +336,8 @@ async fn anthropic_case() {
             stream_logger: harness.quiet(),
             counter: Tally,
             ids: harness.quiet(),
-            max_event_bytes: 1_048_576,
-            max_error_body_bytes: 1_048_576,
+            max_event_bytes: 0x0010_0000,
+            max_error_body_bytes: 0x0010_0000,
         },
     }
     .run(&mut logger)
@@ -386,8 +386,8 @@ async fn anthropic_case() {
             stream_logger: harness.quiet(),
             counter: Tally,
             ids: harness.quiet(),
-            max_event_bytes: 1_048_576,
-            max_error_body_bytes: 1_048_576,
+            max_event_bytes: 0x0010_0000,
+            max_error_body_bytes: 0x0010_0000,
         },
     }
     .run(&mut async_logger)
@@ -431,8 +431,8 @@ async fn anthropic_case() {
             stream_logger: harness.quiet(),
             counter: Tally,
             ids: harness.quiet(),
-            max_event_bytes: 1_048_576,
-            max_error_body_bytes: 1_048_576,
+            max_event_bytes: 0x0010_0000,
+            max_error_body_bytes: 0x0010_0000,
         },
     }
     .run(&mut logger)
@@ -461,8 +461,8 @@ async fn anthropic_case() {
             stream_logger: harness.quiet(),
             counter: Tally,
             ids: harness.quiet(),
-            max_event_bytes: 1_048_576,
-            max_error_body_bytes: 1_048_576,
+            max_event_bytes: 0x0010_0000,
+            max_error_body_bytes: 0x0010_0000,
         },
     }
     .run(&mut logger)
@@ -475,22 +475,14 @@ fn agent_messages() -> Vec<PromptObject> {
     vec![serde_json::from_str(r#"{"role":"user","content":"hi"}"#).expect("a message")]
 }
 
-fn agent_step(status: u16, body: &str) -> Step {
-    Step::new(status, body)
-}
-
-fn agent_reply() -> AgentReply {
-    AgentReply::default()
-}
-
 async fn agent_case() {
     let script = Arc::new(Scripted::new(vec![
-        agent_step(201, r#"{"id":"thread_1"}"#),
-        agent_step(201, r#"{"id":"message_1"}"#),
-        agent_step(201, r#"{"id":"run_1"}"#),
-        agent_step(200, r#"{"status":"in_progress"}"#),
-        agent_step(200, r#"{"status":"completed"}"#),
-        agent_step(
+        Step::new(201, r#"{"id":"thread_1"}"#),
+        Step::new(201, r#"{"id":"message_1"}"#),
+        Step::new(201, r#"{"id":"run_1"}"#),
+        Step::new(200, r#"{"status":"in_progress"}"#),
+        Step::new(200, r#"{"status":"completed"}"#),
+        Step::new(
             200,
             r#"{"data":[{"role":"assistant","content":[{"type":"text","text":{"value":"hello"}}]}]}"#,
         ),
@@ -521,7 +513,7 @@ async fn agent_case() {
         api_key: None,
         acompletion: false,
         stream: false,
-        reply: agent_reply(),
+        reply: AgentReply::default(),
     };
     let dispatch = agents::Dispatch {
         call,
@@ -613,7 +605,7 @@ async fn agent_case() {
         api_key: None,
         acompletion: true,
         stream: true,
-        reply: agent_reply(),
+        reply: AgentReply::default(),
     };
     let outcome = agents::Dispatch {
         call,
@@ -662,7 +654,7 @@ async fn agents_missing_base() {
         api_key: None,
         acompletion: false,
         stream: false,
-        reply: agent_reply(),
+        reply: AgentReply::default(),
     };
     let dispatch = agents::Dispatch {
         call,
@@ -674,7 +666,9 @@ async fn agents_missing_base() {
             resolver: &resolver,
         },
     };
-    let error = dispatch.run().await.expect_err("no base is a failure");
+    let Err(error) = dispatch.run().await else {
+        panic!("no base is a failure");
+    };
     assert_eq!(error.to_string(), route::AGENTS_BASE_MESSAGE);
 
     // a supplied map wins over the global map
@@ -693,12 +687,12 @@ async fn agents_missing_base() {
         api_key: None,
         acompletion: false,
         stream: false,
-        reply: agent_reply(),
+        reply: AgentReply::default(),
     };
-    let resolved = agents::resolve(&call, &env.globals()).expect("the base resolves");
-    assert_eq!(resolved.api_base, "https://res.services.ai.azure.com");
-    assert!(resolved.headers.contains_key("x-supplied"));
-    assert!(!resolved.headers.contains_key("x-global"));
+    let authorized = agents::resolve(&call, &env.globals()).expect("the base resolves");
+    assert_eq!(authorized.api_base, "https://res.services.ai.azure.com");
+    assert!(authorized.headers.contains_key("x-supplied"));
+    assert!(!authorized.headers.contains_key("x-global"));
 }
 
 async fn claude_missing_base() {
@@ -962,20 +956,22 @@ async fn post_call_case() {
         ..chat_call(&request, &deployment, "mistral-large", false)
     };
     let mut logger = RecordingLogger::default();
-    let error = chat::Dispatch {
+    let Err(error) = chat::Dispatch {
         call,
         globals: env.globals(),
         answer: support::supplied(500, r#"{"error":"boom"}"#),
     }
     .run(&mut logger)
     .await
-    .expect_err("a 500 is a failure");
+    else {
+        panic!("a 500 is a failure");
+    };
     assert!(matches!(error, OperationError::Provider { .. }));
     assert_eq!(logger.calls.len(), 1);
-    let Json::Text(logged) = &logger.calls[0].original_response else {
+    let Json::Text(text) = &logger.calls[0].original_response else {
         panic!("the failure log carries the error text");
     };
-    assert_eq!(logged, &error.to_string());
+    assert_eq!(text, &error.to_string());
     assert!(logger.calls[0].headers.is_some());
 
     // a preparation failure logs nothing
