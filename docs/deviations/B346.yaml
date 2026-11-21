@@ -5,5 +5,8 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/scheduler.py#L42-L50
   - what: A scheduled request leaves the queue when it completes or is cancelled as well as when it times out.
     why: The async-hygiene rule forbids orphaned entries; LiteLLM removes an entry only on the timeout path, so every completed request and every request that ran through the healthy-deployment poll leaves its entry behind.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L4424-L4451
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L4437-L4453
+  - what: A request scheduled through the queue runs its provider call once and never queues itself again, including when default_priority is configured.
+    why: LiteLLM calls Router.acompletion without the request's priority, so a configured default_priority makes the inner call schedule the same request again; each nested copy waits for its own timeout and the request ends in a Timeout without reaching the provider.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L4437-L4445
 kept_bugs: []
