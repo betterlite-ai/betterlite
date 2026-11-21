@@ -3,13 +3,12 @@ use betterlite_models::decisions::ir::DecisionRequest;
 use betterlite_openai::decisions::transformation::provider_config::DecisionsProviderConfig as _;
 use betterlite_openai::openai_base_config::{Headers, Object as SearchParams};
 use betterlite_openai::perplexity_decisions::{DEFAULT_API_BASE, PerplexityDecisionsConfig};
-use betterlite_openai::perplexity_embedding;
 use betterlite_openai::perplexity_responses;
 use betterlite_openai::perplexity_search::PerplexitySearch;
 use betterlite_openai::response_input::ResponsesInput;
 use betterlite_openai::search::provider::{RequestInput, SearchProvider as _, SearchQuery};
 use betterlite_prompts::arguments::json::Object;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 use serde::Serialize;
 
 use super::call::{EmbeddingCall, ResourceCall};
@@ -18,6 +17,7 @@ use super::logging::convert;
 
 const PROVIDER: &str = "perplexity";
 
+pub mod adapter;
 mod tests;
 
 // the request a Perplexity config builds: no PreparedRequest variant carries search or decisions yet
@@ -28,11 +28,18 @@ pub struct PerplexityRequest {
     pub body: Vec<u8>,
 }
 
-fn json_body<T>(body: &T) -> Result<Vec<u8>, DispatchError>
-where
-    T: Serialize,
-{
-    serde_json::to_vec(body).map_err(|source| DispatchError::Encode { source })
+impl PerplexityRequest {
+    fn encoded<T>(url: String, headers: Headers, body: &T) -> Result<Self, DispatchError>
+    where
+        T: Serialize,
+    {
+        let bytes = serde_json::to_vec(body).map_err(|source| DispatchError::Encode { source })?;
+        Ok(Self {
+            url,
+            headers,
+            body: bytes,
+        })
+    }
 }
 
 // main.py's perplexity embedding arm (L7335-L7348): the base and key as they came, empty litellm_params and no headers
@@ -43,42 +50,20 @@ pub fn embedding(call: &EmbeddingCall) -> Result<EmbeddingCall, DispatchError> {
     Ok(resolved)
 }
 
-// the shared HTTP embedding handler's request for that call, built by perplexity_embedding
-pub fn embedding_request(
-    call: &EmbeddingCall,
-    environment: &dyn EnvironmentLookup,
-) -> Result<PerplexityRequest, DispatchError> {
-    let body = perplexity_embedding::transform_embedding_request(
-        &call.model,
-        &call.input,
-        &call.optional_params,
-    )
-    .map_err(|error| DispatchError::PerplexityEmbedding(Box::new(error)))?;
-    Ok(PerplexityRequest {
-        url: perplexity_embedding::get_complete_url(call.api_base.as_deref()),
-        headers: perplexity_embedding::validate_environment(call.api_key.as_ref(), environment),
-        body: json_body(&body)?,
-    })
-}
-
 // the Perplexity Responses config B5360's tag selects
 pub fn responses(
     call: &ResourceCall<'_>,
     input: &ResponsesInput,
     environment: &dyn EnvironmentLookup,
 ) -> Result<PerplexityRequest, DispatchError> {
+    let caller_headers = call.headers.cloned().unwrap_or_default();
+    let headers =
+        perplexity_responses::validate_environment(caller_headers, call.api_key, environment);
     let body =
         perplexity_responses::transform_request(call.model, input, call.optional_params, None)
             .map_err(|error| DispatchError::PerplexityResponses(Box::new(error)))?;
-    Ok(PerplexityRequest {
-        url: perplexity_responses::get_complete_url(call.api_base, environment),
-        headers: perplexity_responses::validate_environment(
-            call.headers.cloned().unwrap_or_default(),
-            call.api_key,
-            environment,
-        ),
-        body: json_body(&body)?,
-    })
+    let url = perplexity_responses::get_complete_url(call.api_base, environment);
+    PerplexityRequest::encoded(url, headers, &body)
 }
 
 // the Perplexity search config B5360's tag selects; the key check runs first, as in LiteLLM's search call
@@ -106,11 +91,22 @@ pub fn search(
             headers: &caller_headers,
         })
         .map_err(searched)?;
-    Ok(PerplexityRequest {
-        url,
-        headers,
-        body: json_body(&body)?,
-    })
+    PerplexityRequest::encoded(url, headers, &body)
+}
+
+// the first non-empty value among the call's own and the config's variable names, in order
+fn first_set(
+    own: Option<&str>,
+    names: &[&str],
+    environment: &dyn EnvironmentLookup,
+) -> Option<String> {
+    own.filter(|value| !value.is_empty())
+        .map(str::to_owned)
+        .or_else(|| {
+            names
+                .iter()
+                .find_map(|name| environment.lookup(name).filter(|value| !value.is_empty()))
+        })
 }
 
 // the Perplexity decisions config B5360's tag selects: the base and key read the config's variable names in order
@@ -120,32 +116,22 @@ pub fn decisions(
     environment: &dyn EnvironmentLookup,
 ) -> Result<PerplexityRequest, DispatchError> {
     let config = PerplexityDecisionsConfig;
-    let variable = |names: &[&str]| {
-        names
-            .iter()
-            .find_map(|name| environment.lookup(name).filter(|value| !value.is_empty()))
-    };
-    let base = call
-        .api_base
-        .filter(|base| !base.is_empty())
-        .map(str::to_owned)
-        .or_else(|| variable(PerplexityDecisionsConfig::API_BASE_ENV))
-        .unwrap_or_else(|| DEFAULT_API_BASE.to_owned());
-    let key = call
-        .api_key
-        .filter(|key| !key.expose_secret().is_empty())
-        .cloned()
-        .or_else(|| variable(PerplexityDecisionsConfig::API_KEY_ENV).map(SecretString::from));
+    let base = first_set(
+        call.api_base,
+        PerplexityDecisionsConfig::API_BASE_ENV,
+        environment,
+    )
+    .unwrap_or_else(|| DEFAULT_API_BASE.to_owned());
+    let own_key = call.api_key.map(ExposeSecret::expose_secret);
+    let key = first_set(own_key, PerplexityDecisionsConfig::API_KEY_ENV, environment)
+        .map(SecretString::from);
+    let caller_headers = call.headers.cloned().unwrap_or_default();
     let body = config
         .transform_decisions_request(call.model, request, PROVIDER)
         .map_err(|error| DispatchError::Decisions(Box::new(error)))?;
-    Ok(PerplexityRequest {
-        url: config.get_complete_url(&base, &config.canonical_model(call.model)),
-        headers: config.validate_environment(
-            &call.headers.cloned().unwrap_or_default(),
-            call.model,
-            key.as_ref(),
-        ),
-        body: json_body(&body)?,
-    })
+    PerplexityRequest::encoded(
+        config.get_complete_url(&base, &config.canonical_model(call.model)),
+        config.validate_environment(&caller_headers, call.model, key.as_ref()),
+        &body,
+    )
 }

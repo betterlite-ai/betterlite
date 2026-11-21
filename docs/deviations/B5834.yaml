@@ -15,6 +15,12 @@ deviations:
   - what: A Perplexity search reply whose results value is null gives an empty result list, and a result whose title, url or snippet is null gives an empty string for that field.
     why: LiteLLM iterates over None and raises TypeError, or builds a SearchResult with title None and fails pydantic validation, so the proxy answers 500 for a reply it could read. betterlite treats null the way it treats a missing key, as docs/compatibility.md says.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/perplexity/search/transformation.py#L153-L160
+  - what: Through the proxy, a Perplexity embedding reads only the deployment's own api_key; PERPLEXITYAI_API_KEY and PERPLEXITY_API_KEY in the process environment are not consulted, so a deployment without a key sends Bearer None.
+    why: Configuration enters betterlite only through the config crate and the provider adapters receive no process environment, so the adapter passes an empty environment to the config. A deployment that names its key with os.environ/PERPLEXITYAI_API_KEY gets the same request as in LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/perplexity/embedding/transformation.py#L99-L100
+  - what: Through the proxy, a Perplexity embedding reply whose data items lack object or index fails with a decode error instead of passing the items through.
+    why: The proxy's embedding response type requires object, embedding and index on every record. The config's own transform keeps every key, as the helper cases show; only the proxy's typed response drops the reply that misses them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/perplexity/embedding/transformation.py#L156-L162
 kept_bugs:
   - what: A Perplexity embedding or Responses base that already ends in /v1 gets a second /v1, so https://host/v1 becomes https://host/v1/v1/embeddings and https://host/v1/v1/responses.
     why: LiteLLM appends the full /v1 suffix without trimming, and deployments that set the bare host (the documented form) depend on the suffix being added.

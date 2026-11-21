@@ -1,24 +1,38 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
+
+use betterlite_http::proxy::UpstreamResponse;
 
 use betterlite_models::decisions::DecisionsJson;
 use betterlite_models::decisions::ir::{DecisionInput, DecisionRequest};
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::decisions::transformation::provider_config::DecisionsProviderConfig as _;
 use betterlite_openai::embedding::EmbeddingInput;
+use betterlite_openai::openai_base_config::CatalogCapabilities;
 use betterlite_openai::perplexity_decisions::PerplexityDecisionsConfig;
+use betterlite_openai::perplexity_embedding::reply::MAX_REPLY_BYTES;
 use betterlite_openai::response_input::ResponsesInput;
 use betterlite_openai::search::provider::SearchQuery;
 use betterlite_prompts::arguments::json::{Json, Object};
+use http::header::{AUTHORIZATION, CONTENT_TYPE};
+use http::{HeaderMap, Method};
+use rstest::rstest;
 use secrecy::SecretString;
+use url::Url;
 
+use crate::aiohttp_openai_dispatch::{AiohttpOpenAiPrepared, AiohttpOpenAiRequest};
 use crate::hosted_platform_dispatch::call::{EmbeddingCall, ResourceCall};
 use crate::hosted_platform_dispatch::context::DispatchSettings;
 use crate::hosted_platform_dispatch::embedding::dispatch;
 use crate::hosted_platform_dispatch::error::DispatchError;
 use crate::hosted_platform_dispatch::perplexity;
+use crate::hosted_platform_dispatch::perplexity::adapter::Perplexity;
+use crate::operation::{EmbeddingOperation, OperationError, OperationRequest, OperationResult};
+use crate::prepared::deployment::Deployment;
+use crate::prepared::{PreparedRequest, Upstream};
+use crate::provider::{Adapter as _, Provider};
 
 fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
     pairs
@@ -56,6 +70,55 @@ fn embedding_call() -> EmbeddingCall {
     }
 }
 
+fn embedding_operation(text: &str) -> OperationRequest {
+    OperationRequest::Embedding(Box::new(EmbeddingOperation {
+        model: String::from("pplx-embed-v1-0.6b"),
+        request: serde_json::from_str(text).unwrap(),
+    }))
+}
+
+fn perplexity_deployment(api_key: Option<&str>) -> Deployment {
+    Deployment {
+        model: String::from("pplx-embed-v1-0.6b"),
+        api_base: String::from("https://mock.example"),
+        endpoint: Url::parse("https://mock.example").unwrap(),
+        api_key: api_key.map(|key| SecretString::from(key.to_owned())),
+        authorization: None,
+        organization: None,
+        timeout: Duration::from_secs(3),
+        max_retries: None,
+        drop_params: None,
+        global_drop_params: false,
+        provider_affinity_header: None,
+        anthropic: None,
+    }
+}
+
+fn catalog() -> CatalogCapabilities {
+    CatalogCapabilities {
+        chat_models: BTreeSet::new(),
+        text_models: BTreeSet::new(),
+    }
+}
+
+fn prepared_embedding() -> PreparedRequest {
+    Perplexity
+        .prepare(
+            &embedding_operation(r#"{"input":"hello"}"#),
+            &perplexity_deployment(Some("sk-deployment")),
+            &catalog(),
+        )
+        .unwrap()
+}
+
+fn buffered(status: u16, text: &str) -> Upstream {
+    Upstream::Buffered(UpstreamResponse {
+        status,
+        headers: HeaderMap::new(),
+        body: text.as_bytes().to_vec(),
+    })
+}
+
 fn resource_call<'call>(
     model: &'call str,
     optional_params: &'call Object,
@@ -82,25 +145,160 @@ fn reaches_config_embedding_through_the_perplexity_arm() {
     assert_eq!(arm.headers, None);
     assert_eq!(arm.api_base.as_deref(), Some("https://mock.example"));
     assert_eq!(arm.model, call.model);
-    let request = perplexity::embedding_request(&arm, &environment(&[])).unwrap();
-    assert_eq!(request.url, "https://mock.example/v1/embeddings");
+    assert_eq!(arm.optional_params, call.optional_params);
+}
+
+#[test]
+fn reaches_config_embedding_through_the_perplexity_adapter() {
+    let provider = Provider::from_slug("perplexity").unwrap();
+    assert_eq!(provider, Provider::Perplexity(Perplexity));
+    assert_eq!(provider.name(), "perplexity");
+    let operation = embedding_operation(
+        r#"{"model":"pplx","input":"hello","encoding_format":"float","dimensions":8,"user":"u1"}"#,
+    );
+    let prepared = provider
+        .prepare(
+            &operation,
+            &perplexity_deployment(Some("sk-deployment")),
+            &catalog(),
+        )
+        .unwrap();
+    let PreparedRequest::Embedding(sent) = &prepared else {
+        panic!("an embedding request");
+    };
+    assert_eq!(sent.http.method, Method::POST);
+    assert_eq!(sent.http.url.as_str(), "https://mock.example/v1/embeddings");
+    let authorization = sent.http.headers.get(AUTHORIZATION).unwrap();
+    assert_eq!(authorization.to_str().unwrap(), "Bearer sk-deployment");
+    assert!(authorization.is_sensitive());
     assert_eq!(
-        request.headers,
-        BTreeMap::from([
-            (
-                String::from("Authorization"),
-                String::from("Bearer sk-passed")
-            ),
-            (
-                String::from("Content-Type"),
-                String::from("application/json")
-            ),
-        ])
+        sent.http
+            .headers
+            .get(CONTENT_TYPE)
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        "application/json"
+    );
+    assert_eq!(sent.http.headers.len(), 2);
+    assert_eq!(sent.http.deadline, Duration::from_secs(3));
+    assert_eq!(sent.client_model.as_deref(), Some("pplx-embed-v1-0.6b"));
+    assert_eq!(
+        body(&sent.http.body),
+        json(
+            r#"{"model":"pplx-embed-v1-0.6b","input":"hello","encoding_format":"float","dimensions":8}"#
+        )
+    );
+}
+
+#[test]
+fn reaches_config_embedding_without_a_key_sends_bearer_none() {
+    let prepared = Perplexity
+        .prepare(
+            &embedding_operation(r#"{"input":["a","b"]}"#),
+            &perplexity_deployment(None),
+            &catalog(),
+        )
+        .unwrap();
+    let PreparedRequest::Embedding(sent) = &prepared else {
+        panic!("an embedding request");
+    };
+    assert_eq!(
+        sent.http
+            .headers
+            .get(AUTHORIZATION)
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        "Bearer None"
     );
     assert_eq!(
-        body(&request.body),
-        json(r#"{"model":"pplx-embed-v1-0.6b","input":"hello","encoding_format":"float"}"#)
+        body(&sent.http.body),
+        json(r#"{"model":"pplx-embed-v1-0.6b","input":["a","b"]}"#)
     );
+}
+
+#[test]
+fn reaches_config_embedding_and_refuses_other_operations() {
+    let refused = Perplexity
+        .prepare(
+            &OperationRequest::AiohttpOpenAi(AiohttpOpenAiRequest),
+            &perplexity_deployment(None),
+            &catalog(),
+        )
+        .unwrap_err();
+    assert!(matches!(
+        refused,
+        OperationError::UnsupportedOperation { ref provider, .. } if provider == "perplexity"
+    ));
+    let other = PreparedRequest::AiohttpOpenAi(AiohttpOpenAiPrepared);
+    let decoded = Perplexity.decode(&other, buffered(200, "{}")).unwrap_err();
+    assert!(matches!(
+        decoded,
+        OperationError::UnsupportedOperation { .. }
+    ));
+}
+
+#[test]
+fn reaches_config_embedding_reply_decodes_int8_into_floats() {
+    let reply = r#"{"object":"list","data":[{"object":"embedding","index":0,"embedding":"AH+B"}],"usage":{"total_tokens":2}}"#;
+    let OperationResult::Embedding(response) = Perplexity
+        .decode(&prepared_embedding(), buffered(200, reply))
+        .unwrap()
+    else {
+        panic!("an embedding response");
+    };
+    assert_eq!(response.model, "pplx-embed-v1-0.6b");
+    assert_eq!(response.object, "list");
+    assert_eq!(response.usage.prompt_tokens, 2);
+    assert_eq!(response.usage.total_tokens, 2);
+    assert_eq!(
+        serde_json::to_string(&response.data[0].embedding).unwrap(),
+        "[0.0,1.0,-1.0]"
+    );
+}
+
+#[rstest]
+#[case::provider_status(429, r#"{"error":"slow down"}"#)]
+#[case::not_json(200, "upstream broke")]
+fn reaches_config_embedding_reply_keeps_the_provider_failure(
+    #[case] status: u16,
+    #[case] text: &str,
+) {
+    let failed = Perplexity
+        .decode(&prepared_embedding(), buffered(status, text))
+        .unwrap_err();
+    let OperationError::Provider { response } = failed else {
+        panic!("the provider's own failure");
+    };
+    assert_eq!(response.status, status);
+    assert_eq!(response.body, text.as_bytes());
+}
+
+#[rstest]
+#[case::bad_base64(r#"{"data":[{"object":"embedding","index":0,"embedding":"A"}]}"#)]
+#[case::wrong_shape(r#"{"data":"nope"}"#)]
+#[case::missing_record_fields(r#"{"data":[{"embedding":[0.5]}]}"#)]
+fn reaches_config_embedding_reply_of_a_bad_shape_is_a_decode_error(#[case] text: &str) {
+    let failed = Perplexity
+        .decode(&prepared_embedding(), buffered(200, text))
+        .unwrap_err();
+    assert!(matches!(
+        failed,
+        OperationError::Decode {
+            operation: "embedding",
+            ..
+        }
+    ));
+}
+
+#[test]
+fn reaches_config_embedding_reply_over_the_limit_is_too_large() {
+    let text = " ".repeat(MAX_REPLY_BYTES.checked_add(1).unwrap());
+    let failed = Perplexity
+        .decode(&prepared_embedding(), buffered(200, &text))
+        .unwrap_err();
+    assert!(matches!(failed, OperationError::TooLarge { limit } if limit == MAX_REPLY_BYTES));
 }
 
 #[test]
