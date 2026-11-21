@@ -4,6 +4,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
 use super::harness::{HarnessOptions, TestCallback, harness, parse, text_of};
+use crate::api::realtime_session_state::state::SessionFlag;
 
 const SETUP_WITH_DISABLED_DETECTION: &str = "{\"setup\":{\"model\":\"models/m\",\"realtimeInputConfig\":{\"automaticActivityDetection\":{\"disabled\":true}}}}";
 
@@ -25,10 +26,12 @@ async fn injects_the_guardrail_disable_into_the_one_setup() {
         seen: Arc::clone(&seen),
     }];
     let refs: Vec<&TestCallback> = callbacks.iter().collect();
-    let mut options = HarnessOptions::default();
-    options.requires_setup = true;
-    options.setup = Some("{\"setup\":{\"model\":\"models/m\"}}".to_owned());
-    options.metadata = Some(metadata.clone());
+    let options = HarnessOptions {
+        requires_setup: SessionFlag(true),
+        setup: Some("{\"setup\":{\"model\":\"models/m\"}}".to_owned()),
+        metadata: Some(metadata.clone()),
+        ..HarnessOptions::default()
+    };
     let mut setup = harness(options, refs);
     setup.run().await.unwrap();
     let sent = setup.sent();
@@ -47,24 +50,28 @@ async fn injects_the_guardrail_disable_into_the_one_setup() {
         request_data.get("litellm_metadata"),
         Some(&Json::Object(metadata))
     );
-    assert!(observation.turn_detection_update_sent);
-    assert!(observation.source_present);
-    assert!(observation.backend_setup_complete);
+    assert!(observation.turn_detection_update_sent.0);
+    assert!(observation.source_present.0);
+    assert!(observation.backend_setup_complete.0);
     drop(observation);
     assert_eq!(seen.lock().unwrap().as_ref(), Some(&request_data));
 }
 
 async fn skips_a_missing_or_empty_setup() {
-    let mut options = HarnessOptions::default();
-    options.requires_setup = true;
-    let mut no_setup = harness(options, Vec::new());
+    let missing_options = HarnessOptions {
+        requires_setup: SessionFlag(true),
+        ..HarnessOptions::default()
+    };
+    let mut no_setup = harness(missing_options, Vec::new());
     no_setup.run().await.unwrap();
     assert!(no_setup.sent().is_empty());
 
-    let mut options = HarnessOptions::default();
-    options.requires_setup = true;
-    options.setup = Some(String::new());
-    let mut empty_setup = harness(options, Vec::new());
+    let empty_options = HarnessOptions {
+        requires_setup: SessionFlag(true),
+        setup: Some(String::new()),
+        ..HarnessOptions::default()
+    };
+    let mut empty_setup = harness(empty_options, Vec::new());
     empty_setup.run().await.unwrap();
     assert!(empty_setup.sent().is_empty());
 }
@@ -74,8 +81,10 @@ async fn sends_the_synthetic_session_created() {
         "type".to_owned(),
         Json::Text("session.created".to_owned()),
     )]));
-    let mut options = HarnessOptions::default();
-    options.synthetic = Some(synthetic.clone());
+    let options = HarnessOptions {
+        synthetic: Some(synthetic.clone()),
+        ..HarnessOptions::default()
+    };
     let mut deferred = harness(options, Vec::new());
     deferred.run().await.unwrap();
     assert_eq!(
@@ -83,9 +92,9 @@ async fn sends_the_synthetic_session_created() {
         vec![serde_json::to_string(&synthetic).unwrap()]
     );
     let observation = deferred.observation.lock().unwrap();
-    assert!(observation.session_created_sent);
+    assert!(observation.session_created_sent.0);
     assert_eq!(observation.stored_messages, 1);
-    assert!(!observation.backend_setup_complete);
+    assert!(!observation.backend_setup_complete.0);
 }
 
 async fn skips_a_missing_synthetic_event() {
@@ -95,8 +104,10 @@ async fn skips_a_missing_synthetic_event() {
 }
 
 async fn drops_an_empty_metadata_map() {
-    let mut options = HarnessOptions::default();
-    options.metadata = Some(IndexMap::new());
+    let options = HarnessOptions {
+        metadata: Some(IndexMap::new()),
+        ..HarnessOptions::default()
+    };
     let mut empty_metadata = harness(options, Vec::new());
     empty_metadata.run().await.unwrap();
     assert!(
@@ -110,12 +121,14 @@ async fn drops_an_empty_metadata_map() {
 }
 
 async fn sets_or_keeps_the_model_for_an_intent() {
-    let mut options = HarnessOptions::default();
-    options.query_params = Some(IndexMap::from([(
-        "intent".to_owned(),
-        "transcription".to_owned(),
-    )]));
-    let mut transcription = harness(options, Vec::new());
+    let transcription_options = HarnessOptions {
+        query_params: Some(IndexMap::from([(
+            "intent".to_owned(),
+            "transcription".to_owned(),
+        )])),
+        ..HarnessOptions::default()
+    };
+    let mut transcription = harness(transcription_options, Vec::new());
     transcription.run().await.unwrap();
     assert_eq!(
         transcription
@@ -128,12 +141,14 @@ async fn sets_or_keeps_the_model_for_an_intent() {
     );
     assert!(!transcription.dials()[0].url.contains("intent"));
 
-    let mut options = HarnessOptions::default();
-    options.query_params = Some(IndexMap::from([(
-        "intent".to_owned(),
-        "translation".to_owned(),
-    )]));
-    let mut other_intent = harness(options, Vec::new());
+    let translation_options = HarnessOptions {
+        query_params: Some(IndexMap::from([(
+            "intent".to_owned(),
+            "translation".to_owned(),
+        )])),
+        ..HarnessOptions::default()
+    };
+    let mut other_intent = harness(translation_options, Vec::new());
     other_intent.run().await.unwrap();
     assert_eq!(
         other_intent
@@ -146,9 +161,11 @@ async fn sets_or_keeps_the_model_for_an_intent() {
 }
 
 async fn closes_after_a_cancelled_relay() {
-    let mut options = HarnessOptions::default();
-    options.cancellation = true;
-    options.relay_fails = true;
+    let options = HarnessOptions {
+        cancellation: SessionFlag(true),
+        relay_fails: SessionFlag(true),
+        ..HarnessOptions::default()
+    };
     let mut cancelled = harness(options, Vec::new());
     cancelled.run().await.unwrap();
     assert!(cancelled.closed());

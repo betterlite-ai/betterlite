@@ -9,8 +9,10 @@ const HANDSHAKE_401_EVENT: &str = "{\"type\":\"error\",\"error\":{\"type\":\"ser
 #[case::rate_limited(429, 1013)]
 #[tokio::test]
 async fn refusal_closes_with_the_mapped_status(#[case] status: u16, #[case] expected_close: u16) {
-    let mut options = HarnessOptions::default();
-    options.dials = vec![invalid_status(status)];
+    let options = HarnessOptions {
+        dials: vec![invalid_status(status)],
+        ..HarnessOptions::default()
+    };
     let mut refusal = harness(options, Vec::new());
     refusal.run().await.unwrap();
     assert_eq!(refusal.close().map(|close| close.0), Some(expected_close));
@@ -18,8 +20,10 @@ async fn refusal_closes_with_the_mapped_status(#[case] status: u16, #[case] expe
 
 #[tokio::test]
 async fn refusal_answers_401_with_the_handshake_error() {
-    let mut options = HarnessOptions::default();
-    options.dials = vec![invalid_status(401)];
+    let options = HarnessOptions {
+        dials: vec![invalid_status(401)],
+        ..HarnessOptions::default()
+    };
     let mut refusal = harness(options, Vec::new());
     refusal.run().await.unwrap();
     assert_eq!(refusal.texts(), vec![HANDSHAKE_401_EVENT.to_owned()]);
@@ -37,11 +41,13 @@ async fn refusal_answers_401_with_the_handshake_error() {
 #[case::closing("cannot call websocket.close")]
 #[tokio::test]
 async fn ignorable_runtime_close_errors_are_swallowed(#[case] message: &str) {
-    let mut options = HarnessOptions::default();
-    options.dials = vec![os("boom")];
-    options.close_error = Some(ClientCloseError::Runtime {
-        message: message.to_owned(),
-    });
+    let options = HarnessOptions {
+        dials: vec![os("boom")],
+        close_error: Some(ClientCloseError::Runtime {
+            message: message.to_owned(),
+        }),
+        ..HarnessOptions::default()
+    };
     let mut ignorable = harness(options, Vec::new());
     ignorable.run().await.unwrap();
 }
@@ -55,8 +61,10 @@ async fn realtime_backend_connection_errors() {
 
 async fn redacts_the_secret_from_the_error_event() {
     let secret = format!("sk-{}", "a".repeat(48));
-    let mut options = HarnessOptions::default();
-    options.dials = vec![os(&secret), os(&secret), os(&secret)];
+    let options = HarnessOptions {
+        dials: vec![os(&secret), os(&secret), os(&secret)],
+        ..HarnessOptions::default()
+    };
     let mut failed = harness(options, Vec::new());
     failed.run().await.unwrap();
     let texts = failed.texts();
@@ -69,9 +77,11 @@ async fn redacts_the_secret_from_the_error_event() {
 }
 
 async fn closes_a_dead_client_with_the_error() {
-    let mut options = HarnessOptions::default();
-    options.dials = vec![os("boom")];
-    options.send_error = Some("the client is gone".to_owned());
+    let options = HarnessOptions {
+        dials: vec![os("boom")],
+        send_error: Some("the client is gone".to_owned()),
+        ..HarnessOptions::default()
+    };
     let mut unsendable = harness(options, Vec::new());
     unsendable.run().await.unwrap();
     assert!(unsendable.texts().is_empty());
@@ -82,25 +92,29 @@ async fn closes_a_dead_client_with_the_error() {
 }
 
 async fn reports_unexpected_and_other_close_errors() {
-    let mut options = HarnessOptions::default();
-    options.dials = vec![os("boom")];
-    options.close_error = Some(ClientCloseError::Runtime {
-        message: "another runtime failure".to_owned(),
-    });
-    let mut unexpected = harness(options, Vec::new());
+    let unexpected_options = HarnessOptions {
+        dials: vec![os("boom")],
+        close_error: Some(ClientCloseError::Runtime {
+            message: "another runtime failure".to_owned(),
+        }),
+        ..HarnessOptions::default()
+    };
+    let mut unexpected = harness(unexpected_options, Vec::new());
     let error = unexpected.run().await.unwrap_err();
     assert_eq!(
         error.to_string(),
         "Unexpected error while closing WebSocket: another runtime failure"
     );
 
-    let mut options = HarnessOptions::default();
-    options.dials = vec![os("boom")];
-    options.close_error = Some(ClientCloseError::Other {
-        message: "the socket is gone".to_owned(),
-    });
-    let mut other_class = harness(options, Vec::new());
-    let error = other_class.run().await.unwrap_err();
-    assert!(matches!(error, RealtimeConnectionError::Close(_)));
-    assert_eq!(error.to_string(), "the socket is gone");
+    let other_options = HarnessOptions {
+        dials: vec![os("boom")],
+        close_error: Some(ClientCloseError::Other {
+            message: "the socket is gone".to_owned(),
+        }),
+        ..HarnessOptions::default()
+    };
+    let mut other_class = harness(other_options, Vec::new());
+    let other_error = other_class.run().await.unwrap_err();
+    assert!(matches!(other_error, RealtimeConnectionError::Close(_)));
+    assert_eq!(other_error.to_string(), "the socket is gone");
 }

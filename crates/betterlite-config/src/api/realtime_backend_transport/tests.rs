@@ -48,7 +48,7 @@ fn loads_realtime_backend_settings() {
         settings.max_message_size_bytes,
         DEFAULT_MAX_MESSAGE_SIZE_BYTES
     );
-    assert_eq!(settings.max_message_size_bytes, 16_777_216);
+    assert_eq!(settings.max_message_size_bytes, 0x0100_0000);
 
     let numeric = load_realtime_settings(OVERRIDE_SEED, &environment("4096")).unwrap();
     assert_eq!(numeric.max_message_size_bytes, 4096);
@@ -74,6 +74,16 @@ fn rejects_values_outside_usize(#[case] rejected: &str) {
         ConfigError::Environment {
             source: betterlite_env::EnvError::Number { name },
         } => assert_eq!(name, MAX_MESSAGE_SIZE_VARIABLE),
-        other => panic!("unexpected error for {rejected}: {other}"),
+        other @ ConfigError::CustomDimensions(_)
+        | other @ ConfigError::Environment { .. }
+        | other @ ConfigError::Yaml { .. }
+        | other @ ConfigError::Unsupported { .. }
+        | other @ ConfigError::MissingEnvironment { .. }
+        | other @ ConfigError::InvalidFloat { .. }
+        | other @ ConfigError::InvalidInteger { .. }
+        | other @ ConfigError::InvalidScalar { .. }
+        | other @ ConfigError::LoadThread { .. } => {
+            panic!("unexpected error for {rejected}: {other}")
+        }
     }
 }

@@ -32,6 +32,7 @@ use crate::api::realtime_contracts::events::{
 };
 use crate::api::realtime_contracts::transport::{RealtimeBackend, RealtimeMessage, WebSocketScope};
 use crate::api::realtime_guardrail_policy::RealtimeGuardrailCallback;
+use crate::api::realtime_session_state::state::SessionFlag;
 use crate::api::request_destination::RequestData;
 
 fn websocket_error(message: &str) -> WebSocketError {
@@ -351,6 +352,7 @@ pub(super) enum SourceOutcome {
     #[default]
     Unread,
     Text(String),
+    Failed(String),
     Closed {
         code: Option<u16>,
         reason: Option<String>,
@@ -360,14 +362,14 @@ pub(super) enum SourceOutcome {
 
 #[derive(Default)]
 pub(super) struct RelayObservation {
-    pub(super) source_present: bool,
+    pub(super) source_present: SessionFlag,
     pub(super) source_outcome: SourceOutcome,
     pub(super) session_configuration_request: Option<String>,
     pub(super) request_data: RequestData,
     pub(super) force_transcription_model: Option<String>,
-    pub(super) session_created_sent: bool,
-    pub(super) backend_setup_complete: bool,
-    pub(super) turn_detection_update_sent: bool,
+    pub(super) session_created_sent: SessionFlag,
+    pub(super) backend_setup_complete: SessionFlag,
+    pub(super) turn_detection_update_sent: SessionFlag,
     pub(super) stored_messages: usize,
 }
 
@@ -386,37 +388,9 @@ impl RealtimeSessionRelay for RecordingRelay {
     type Error = io::Error;
 
     async fn relay(&mut self, session: SessionRelay<'_>) -> Result<(), io::Error> {
-        {
-            let mut observation = self.observation.lock().unwrap();
-            observation.source_present = session.source.is_some();
-            observation.session_configuration_request =
-                session.state.response.session_configuration_request.clone();
-            observation.request_data = session.state.request_data.clone();
-            observation.force_transcription_model = session.state.force_transcription_model.clone();
-            observation.session_created_sent = session.state.setup.session_created_sent_to_client.0;
-            observation.backend_setup_complete = session.state.setup.backend_setup_complete.0;
-            observation.turn_detection_update_sent =
-                session.state.setup.turn_detection_update_sent.0;
-            observation.stored_messages = session.state.messages.len();
-        }
+        record_observation(&self.observation, &session);
         if let Some(source) = session.source {
-            let outcome = match source.recv(None).await {
-                Ok(RealtimeMessage::Text(text)) => SourceOutcome::Text(text),
-                Ok(RealtimeMessage::Binary(bytes)) => {
-                    SourceOutcome::Text(String::from_utf8_lossy(&bytes).into_owned())
-                }
-                Err(RelayReceiveError::Closed(closed)) => {
-                    let (code, reason) = match closed.received {
-                        Some(frame) => (Some(frame.code), Some(frame.reason)),
-                        None => (None, None),
-                    };
-                    SourceOutcome::Closed {
-                        code,
-                        reason,
-                        message: closed.message,
-                    }
-                }
-            };
+            let outcome = receive_outcome(source).await;
             self.observation.lock().unwrap().source_outcome = outcome;
         }
         match self.outcome {
@@ -426,19 +400,56 @@ impl RealtimeSessionRelay for RecordingRelay {
     }
 }
 
+fn record_observation(shared: &Mutex<RelayObservation>, session: &SessionRelay<'_>) {
+    let mut observation = shared.lock().unwrap();
+    observation.source_present = SessionFlag(session.source.is_some());
+    observation.session_configuration_request =
+        session.state.response.session_configuration_request.clone();
+    observation.request_data = session.state.request_data.clone();
+    observation.force_transcription_model = session.state.force_transcription_model.clone();
+    observation.session_created_sent = session.state.setup.session_created_sent_to_client;
+    observation.backend_setup_complete = session.state.setup.backend_setup_complete;
+    observation.turn_detection_update_sent = session.state.setup.turn_detection_update_sent;
+    observation.stored_messages = session.state.messages.len();
+}
+
+async fn receive_outcome(source: &mut (dyn RealtimeBackendSource + '_)) -> SourceOutcome {
+    match source.recv(None).await {
+        Ok(RealtimeMessage::Text(text)) => SourceOutcome::Text(text),
+        Ok(RealtimeMessage::Binary(bytes)) => {
+            SourceOutcome::Text(String::from_utf8(bytes).expect("the frame is UTF-8"))
+        }
+        Err(RelayReceiveError::UnsupportedDecode) => {
+            SourceOutcome::Failed("the decode argument is unsupported".to_owned())
+        }
+        Err(RelayReceiveError::Failed(failure)) => SourceOutcome::Failed(failure.message),
+        Err(RelayReceiveError::Closed(closed)) => {
+            let (code, reason) = match closed.received {
+                Some(frame) => (Some(frame.code), Some(frame.reason)),
+                None => (None, None),
+            };
+            SourceOutcome::Closed {
+                code,
+                reason,
+                message: closed.message,
+            }
+        }
+    }
+}
+
 pub(super) struct HarnessOptions {
-    pub(super) requires_setup: bool,
+    pub(super) requires_setup: SessionFlag,
     pub(super) setup: Option<String>,
     pub(super) synthetic: Option<Json>,
-    pub(super) own_backend: bool,
+    pub(super) own_backend: SessionFlag,
     pub(super) validate_error: Option<String>,
     pub(super) metadata: Option<IndexMap<String, Json>>,
     pub(super) query_params: Option<IndexMap<String, String>>,
     pub(super) dials: Vec<DialOutcome>,
     pub(super) send_error: Option<String>,
     pub(super) close_error: Option<ClientCloseError>,
-    pub(super) cancellation: bool,
-    pub(super) relay_fails: bool,
+    pub(super) cancellation: SessionFlag,
+    pub(super) relay_fails: SessionFlag,
     pub(super) verification: Verification,
     pub(super) max_message_size_bytes: usize,
     pub(super) source_frames: Vec<RealtimeMessage>,
@@ -449,18 +460,18 @@ pub(super) struct HarnessOptions {
 impl Default for HarnessOptions {
     fn default() -> Self {
         Self {
-            requires_setup: false,
+            requires_setup: SessionFlag(false),
             setup: None,
             synthetic: None,
-            own_backend: false,
+            own_backend: SessionFlag(false),
             validate_error: None,
             metadata: None,
             query_params: None,
             dials: vec![DialOutcome::Connect],
             send_error: None,
             close_error: None,
-            cancellation: false,
-            relay_fails: false,
+            cancellation: SessionFlag(false),
+            relay_fails: SessionFlag(false),
             verification: Verification::Enabled,
             max_message_size_bytes: 1024,
             source_frames: Vec::new(),
@@ -499,10 +510,10 @@ struct SharedLogs {
 
 fn provider_of(options: &HarnessOptions, logs: &SharedLogs) -> Arc<TestProvider> {
     Arc::new(TestProvider {
-        requires_setup: options.requires_setup,
+        requires_setup: options.requires_setup.0,
         setup: options.setup.clone(),
         synthetic: options.synthetic.clone(),
-        own_backend: options.own_backend,
+        own_backend: options.own_backend.0,
         validate_error: options.validate_error.clone(),
         backend_log: Arc::clone(&logs.backend),
         send_error: options.backend_send_error.clone(),
@@ -563,7 +574,7 @@ pub(super) fn harness<'callback>(
 ) -> Harness<'callback> {
     let logs = SharedLogs::default();
     let cancellation = CancellationToken::new();
-    if options.cancellation {
+    if options.cancellation.0 {
         cancellation.cancel();
     }
     let provider = provider_of(&options, &logs);
@@ -580,7 +591,7 @@ pub(super) fn harness<'callback>(
         dialer,
         callback_refs,
         client,
-        relay: relay_of(options.relay_fails, &logs),
+        relay: relay_of(options.relay_fails.0, &logs),
         redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap(),
         cancellation,
         headers: auth_headers(),
