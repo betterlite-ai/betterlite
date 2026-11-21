@@ -409,6 +409,8 @@ async fn create_message_posts_to_the_thread(settings: &Settings) {
         &data(&[
             ("role", text("user")),
             ("content", text("hello")),
+            // a body client key is not forwarded to the wrapper, so it never binds the client argument
+            ("client", object(&[("api_key", text("sk-body"))])),
             ("api_base", text(MOCK_BASE)),
             ("api_key", text("sk-test")),
         ]),
