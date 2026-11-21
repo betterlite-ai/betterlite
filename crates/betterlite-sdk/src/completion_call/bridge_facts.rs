@@ -45,7 +45,6 @@ impl<Rules: FoundryRules + ?Sized> ResponsesBridgeCapabilities for ModelBridgeFa
         is_model_gpt_5_search_model(model)
     }
 }
-// OpenAIResponsesAPIConfig._is_gpt_5_model: a pass-through name from another provider is not one
 #[must_use]
 pub fn is_gpt_5_model(model: &str) -> bool {
     let mut parts = model.split('/');

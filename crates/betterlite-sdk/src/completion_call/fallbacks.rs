@@ -1,5 +1,4 @@
-use super::error::CompletionCallError;
-use super::request::args_to_map;
+use super::{error::CompletionCallError, request::args_to_map};
 use crate::call_setup::RequestMap;
 use crate::call_setup::correlation::CallOutcome;
 use crate::call_wrapper::ports::IdSource;
@@ -13,7 +12,6 @@ use serde_json::Number;
 pub const ATTEMPTED_FALLBACKS_HEADER: &str = "x-litellm-attempted-fallbacks";
 const HIDDEN_PARAMS: &str = "_hidden_params";
 const ADDITIONAL_HEADERS: &str = "additional_headers";
-// filter_internal_params' three names (B2204)
 const INTERNAL_PARAMS: [&str; 3] = [
     "skip_mcp_handler",
     "mcp_handler_context",
@@ -27,8 +25,7 @@ pub async fn run_fallbacks(
 ) -> Result<CallOutcome, CompletionCallError> {
     let original = call.args.model.clone().unwrap_or_default();
     let base = fallback_base(&call.args, ids)?;
-    let mut candidates = Vec::with_capacity(call.fallbacks.len().saturating_add(1));
-    candidates.push(Json::Text(original.clone()));
+    let mut candidates = vec![Json::Text(original.clone())];
     candidates.extend(call.fallbacks);
     let mut last_error: Option<String> = None;
     for (position, candidate) in candidates.iter().enumerate() {
@@ -69,10 +66,8 @@ fn fallback_base(
     base.shift_remove("model");
     base.shift_remove("acompletion");
     base.shift_remove("fallbacks");
-    base.insert(
-        String::from("litellm_call_id"),
-        Json::Text(ids.next_call_id()),
-    );
+    let id = ids.next_call_id();
+    base.insert(String::from("litellm_call_id"), Json::Text(id));
     Ok(filter_internal_params(base))
 }
 fn overlay(mut base: RequestMap, fields: &IndexMap<String, Json>) -> RequestMap {
@@ -82,12 +77,10 @@ fn overlay(mut base: RequestMap, fields: &IndexMap<String, Json>) -> RequestMap 
     base
 }
 fn model_name(value: Json) -> Result<String, CompletionCallError> {
-    match value {
-        Json::Text(name) => Ok(name),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-            Err(CompletionCallError::Field { field: "model" })
-        }
+    if let Json::Text(name) = value {
+        return Ok(name);
     }
+    Err(CompletionCallError::Field { field: "model" })
 }
 fn filter_internal_params(mut request: RequestMap) -> RequestMap {
     for name in INTERNAL_PARAMS {
@@ -95,7 +88,6 @@ fn filter_internal_params(mut request: RequestMap) -> RequestMap {
     }
     request
 }
-// add_fallback_headers_to_response: the zero-based attempt number under _hidden_params.additional_headers
 fn with_attempt_header(outcome: CallOutcome, attempted: usize) -> CallOutcome {
     let value = Json::Number(Number::from(u64::try_from(attempted).unwrap_or(u64::MAX)));
     match outcome {
@@ -110,31 +102,19 @@ fn with_attempt_header(outcome: CallOutcome, attempted: usize) -> CallOutcome {
     }
 }
 fn with_header(json: Json, value: Json) -> Json {
-    match json {
-        Json::Object(mut fields) => {
-            let hidden = fields
-                .entry(String::from(HIDDEN_PARAMS))
-                .or_insert_with(|| Json::Object(IndexMap::new()));
-            match hidden {
-                Json::Object(hidden_fields) => {
-                    let headers = hidden_fields
-                        .entry(String::from(ADDITIONAL_HEADERS))
-                        .or_insert_with(|| Json::Object(IndexMap::new()));
-                    match headers {
-                        Json::Object(header_fields) => {
-                            header_fields.insert(String::from(ATTEMPTED_FALLBACKS_HEADER), value);
-                        }
-                        Json::Null
-                        | Json::Bool(_)
-                        | Json::Number(_)
-                        | Json::Text(_)
-                        | Json::List(_) => {}
-                    }
-                }
-                Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {}
-            }
-            Json::Object(fields)
+    let Json::Object(mut fields) = json else {
+        return json;
+    };
+    let hidden = fields
+        .entry(String::from(HIDDEN_PARAMS))
+        .or_insert_with(|| Json::Object(IndexMap::new()));
+    if let Json::Object(hidden_fields) = hidden {
+        let headers = hidden_fields
+            .entry(String::from(ADDITIONAL_HEADERS))
+            .or_insert_with(|| Json::Object(IndexMap::new()));
+        if let Json::Object(header_fields) = headers {
+            header_fields.insert(String::from(ATTEMPTED_FALLBACKS_HEADER), value);
         }
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => json,
     }
+    Json::Object(fields)
 }

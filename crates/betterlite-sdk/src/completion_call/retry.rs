@@ -8,9 +8,7 @@ use crate::call_wrapper::target::CallTarget;
 use betterlite_models::decisions::Json;
 use serde_json::Number;
 use std::time::Duration;
-// completion_with_retries pops num_retries with this default
 pub const DEFAULT_NUM_RETRIES: i64 = 3;
-// wait_exponential(multiplier=1, max=10)
 pub const MAX_BACKOFF_SECONDS: u64 = 10;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RetryStrategy {
@@ -18,7 +16,6 @@ pub enum RetryStrategy {
     ExponentialBackoff,
 }
 impl RetryStrategy {
-    // LiteLLM names exponential_backoff_retry and takes its else branch for every other string
     pub fn parse(value: Option<&Json>) -> Result<Self, CompletionCallError> {
         match value {
             Some(Json::Text(text)) if text == "exponential_backoff_retry" => {
@@ -32,7 +29,6 @@ impl RetryStrategy {
             }
         }
     }
-    // tenacity's wait_exponential: 2^(attempt-1) seconds, never more than ten
     #[must_use]
     pub fn wait(self, attempt: u32) -> Duration {
         match self {
@@ -48,7 +44,6 @@ impl RetryStrategy {
         }
     }
 }
-// The retry entry: num_retries counts attempts, the inner call gets zero retries, the last error is raised unchanged
 pub async fn with_retries(
     target: &dyn CallTarget,
     mut request: RequestMap,
@@ -59,14 +54,10 @@ pub async fn with_retries(
     let strategy = RetryStrategy::parse(request.shift_remove("retry_strategy").as_ref())
         .map_err(|error| CallError::from(plain_error(&error.to_string())))?;
     request.shift_remove("original_function");
-    request.insert(
-        String::from("num_retries"),
-        Json::Number(Number::from(0_i64)),
-    );
-    request.insert(
-        String::from("max_retries"),
-        Json::Number(Number::from(0_i64)),
-    );
+    let zero = Json::Number(Number::from(0_i64));
+    for name in ["num_retries", "max_retries"] {
+        request.insert(String::from(name), zero.clone());
+    }
     let total = u32::try_from(count.max(1)).unwrap_or(u32::MAX);
     for attempt in 1..=total {
         match target.call(request.clone(), logging).await {

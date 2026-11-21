@@ -86,12 +86,11 @@ impl CompletionProbe<'_, '_> {
             .await
             .map_err(|source| ProbeFailure::Transport { source })?;
         if (200..300).contains(&response.status) {
-            Ok(())
-        } else {
-            Err(ProbeFailure::Status {
-                status: response.status,
-            })
+            return Ok(());
         }
+        Err(ProbeFailure::Status {
+            status: response.status,
+        })
     }
 }
 impl ModelProbe for CompletionProbe<'_, '_> {
@@ -102,16 +101,14 @@ impl ModelProbe for CompletionProbe<'_, '_> {
     async fn complete(&self, request: &ProbeCompletion<'_>) -> Result<(), Self::Failure> {
         let mut map = RequestMap::new();
         map.insert(String::from("model"), Json::Text(request.model.to_owned()));
-        map.insert(
-            String::from("messages"),
-            Json::List(vec![Json::Object(IndexMap::from([
-                (String::from("role"), Json::Text(String::from("user"))),
-                (
-                    String::from("content"),
-                    Json::Text(request.user_message.to_owned()),
-                ),
-            ]))]),
-        );
+        let message = Json::Object(IndexMap::from([
+            (String::from("role"), Json::Text(String::from("user"))),
+            (
+                String::from("content"),
+                Json::Text(request.user_message.to_owned()),
+            ),
+        ]));
+        map.insert(String::from("messages"), Json::List(vec![message]));
         if let Some(tokens) = request.max_tokens {
             map.insert(
                 String::from("max_tokens"),

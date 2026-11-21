@@ -28,7 +28,6 @@ use futures_util::StreamExt as _;
 use futures_util::stream::FuturesUnordered;
 use serde::de::DeserializeOwned;
 use std::sync::Arc;
-// main.py's completion: prepare the call, then run the outcome B5655 chose
 pub struct CompletionTarget<'ports> {
     pub settings: CompletionSettings,
     pub ports: CompletionPorts<'ports>,
@@ -60,7 +59,6 @@ impl CompletionTarget<'_> {
             PreparedCompletion::ModelList(call) => self.model_list(call, logging).await,
         }
     }
-    // The provider chain's end: palm raised its ValueError, and everything else goes to B014's dispatch
     pub(crate) async fn dispatch_call(
         &self,
         call: &PreparedCall,
@@ -133,7 +131,6 @@ impl CompletionTarget<'_> {
         let encoded = serde_json::to_value(&response)?;
         Ok(CallOutcome::Response(serde_json::from_value(encoded)?))
     }
-    // LiteLLM's batch_completion_models races the deployments and answers the first one that does
     async fn model_list(
         &self,
         call: ModelListCall,
@@ -198,19 +195,14 @@ impl CallTarget for CompletionTarget<'_> {
         retry::with_retries(self, request, logging, self.sleeper).await
     }
 }
-fn optional_kwarg<T>(
+fn optional_kwarg<T: DeserializeOwned>(
     call: &PreparedCall,
     name: &'static str,
-) -> Result<Option<T>, CompletionCallError>
-where
-    T: DeserializeOwned,
-{
-    match call.kwargs.get(name) {
-        None | Some(Json::Null) => Ok(None),
-        Some(value) => {
-            let encoded = serde_json::to_value(value)?;
-            serde_json::from_value(encoded)
-                .map_err(|_error| CompletionCallError::Field { field: name })
-        }
-    }
+) -> Result<Option<T>, CompletionCallError> {
+    let value = match call.kwargs.get(name) {
+        None | Some(Json::Null) => return Ok(None),
+        Some(value) => value,
+    };
+    let encoded = serde_json::to_value(value)?;
+    serde_json::from_value(encoded).map_err(|_error| CompletionCallError::Field { field: name })
 }

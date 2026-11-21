@@ -18,7 +18,6 @@ use betterlite_openai::stream::chunk::Chunk;
 use futures_util::{StreamExt as _, stream, stream::BoxStream};
 use indexmap::IndexMap;
 use serde_json::value::{RawValue, to_raw_value};
-// the provider-agnostic dispatch point for the chat-completions agentic loop
 pub(super) async fn agentic(
     target: &AsyncCompletionTarget<'_>,
     outcome: CallOutcome,
@@ -114,36 +113,30 @@ impl ChatContinuation for AsyncCompletionTarget<'_> {
     }
 }
 fn followup_messages(messages: &[Json]) -> Result<Vec<FollowupMessage>, CompletionCallError> {
-    let mut list = Vec::with_capacity(messages.len());
-    for message in messages {
-        list.push(FollowupMessage(to_raw_value(message)?));
-    }
-    Ok(list)
+    messages
+        .iter()
+        .map(|message| Ok(FollowupMessage(to_raw_value(message)?)))
+        .collect()
 }
 fn raw_map(values: &IndexMap<String, Json>) -> Result<JsonMap, CompletionCallError> {
-    let mut map = JsonMap::new();
-    for (name, value) in values {
-        map.insert(name.clone(), to_raw_value(value)?);
-    }
-    Ok(map)
+    values
+        .iter()
+        .map(|(name, value)| Ok((name.clone(), to_raw_value(value)?)))
+        .collect()
 }
 fn optional_params(args: &CompletionArgs) -> Result<JsonMap, CompletionCallError> {
     let encoded = serde_json::to_value(args)?;
     let fields: IndexMap<String, Json> = serde_json::from_value(encoded)?;
-    let mut map = JsonMap::new();
-    for (name, value) in fields {
-        if matches!(
-            name.as_str(),
-            "model" | "messages" | "stream" | "acompletion" | "deployment_id"
-        ) {
-            continue;
-        }
-        if matches!(value, Json::Null) {
-            continue;
-        }
-        map.insert(name, to_raw_value(&value)?);
-    }
-    Ok(map)
+    fields
+        .into_iter()
+        .filter(|(name, value)| {
+            !matches!(
+                name.as_str(),
+                "model" | "messages" | "stream" | "acompletion" | "deployment_id"
+            ) && !matches!(value, Json::Null)
+        })
+        .map(|(name, value)| Ok((name, to_raw_value(&value)?)))
+        .collect()
 }
 async fn chunk_outcome(
     stream: BoxStream<'static, Chunk>,

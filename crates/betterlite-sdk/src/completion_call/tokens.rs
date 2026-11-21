@@ -8,7 +8,6 @@ use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 pub const LOCAL_TOKENIZER: &str = "local_tokenizer";
-// litellm.types.utils.TokenCountResponse
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TokenCountResponse {
     pub total_tokens: u64,
@@ -32,7 +31,6 @@ pub struct TokenCountRequest<'request> {
     pub api_key: Option<&'request SecretString>,
     pub api_base: Option<&'request str>,
 }
-// the token count: the provider's count when it works, B196's local count otherwise
 pub async fn count_tokens(
     request: &TokenCountRequest<'_>,
     metadata: &dyn ModelMetadata,
@@ -65,7 +63,6 @@ pub async fn count_tokens(
     }
     Ok(local_answer(request, resolved.model.as_str(), local).await)
 }
-// the fallback the token count builds when no provider counter answered
 async fn local_answer(
     request: &TokenCountRequest<'_>,
     model_used: &str,

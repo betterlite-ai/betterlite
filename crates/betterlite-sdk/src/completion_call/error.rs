@@ -7,8 +7,7 @@ use betterlite_core::operation::chat::ChatFailure;
 use betterlite_error::dispatch::{DispatchInput, RawException, dispatch};
 use betterlite_http::error::HttpError;
 use betterlite_models::resolution::ResolutionError;
-use betterlite_openai::chat::RequestError;
-use betterlite_openai::chat::execution::ChatError;
+use betterlite_openai::chat::{RequestError, execution::ChatError};
 use betterlite_redact::secret::Redactor;
 use thiserror::Error;
 #[derive(Debug, Error)]
@@ -33,7 +32,6 @@ pub enum CompletionCallError {
     Resolution(#[from] ResolutionError),
     #[error(transparent)]
     Call(#[from] CallError),
-    // main.py's palm branch raises a ValueError with this text
     #[error(
         "Palm was decommi\u{73}ioned on October 2024. Please use the `gemini/` route for Gemini Google AI Studio Models. Announcement: https://ai.google.dev/palm_docs/palm?hl=en"
     )]
@@ -67,13 +65,8 @@ pub fn into_call_error(
     if let CompletionCallError::Dispatch(source) = error {
         return dispatch_error(source, model, provider, redactor);
     }
-    classify(
-        model,
-        provider,
-        error.to_string(),
-        status_of(error),
-        redactor,
-    )
+    let status = status_of(error);
+    classify(model, provider, error.to_string(), status, redactor)
 }
 fn dispatch_error(
     error: &DispatchError,
@@ -81,15 +74,11 @@ fn dispatch_error(
     provider: &str,
     redactor: &Redactor,
 ) -> CallError {
-    if let DispatchError::Chat { source } = error {
-        return chat_failure(source, model, provider, redactor);
-    }
     let status = match error {
+        DispatchError::Chat { source } => return chat_failure(source, model, provider, redactor),
         DispatchError::DeadlineExpired { .. } => 408,
         DispatchError::Rejected { status, .. } => *status,
-        DispatchError::Chat { .. }
-        | DispatchError::Embedding { .. }
-        | DispatchError::Rules { .. } => 500,
+        DispatchError::Embedding { .. } | DispatchError::Rules { .. } => 500,
         DispatchError::MissingDeployment { .. }
         | DispatchError::NotBuilt { .. }
         | DispatchError::UnknownOperation { .. }
@@ -136,7 +125,6 @@ fn chat_failure(
 }
 fn status_of(error: &CompletionCallError) -> Option<u16> {
     match error {
-        // exceptions.py raises litellm.Timeout for a mock timeout, and its status is 408
         CompletionCallError::Request(CompletionRequestError::MockTimeout) => Some(408),
         CompletionCallError::Request(_)
         | CompletionCallError::ChatRequest(_)

@@ -22,14 +22,12 @@ const TEXT_COMPLETION_PROVIDERS: [&str; 3] = [
     "text-completion-codestral",
     "text-completion-inception",
 ];
-// main.py's acompletion: prepare the async call, then the tail that follows the provider answer
 pub struct AsyncCompletionTarget<'ports> {
     pub inner: CompletionTarget<'ports>,
     pub callbacks: &'ports [Arc<dyn AgenticCallback>],
     pub fake_stream: &'ports dyn FakeStreamPort,
 }
 impl AsyncCompletionTarget<'_> {
-    // acompletion's except branch sets custom_llm_provider = custom_llm_provider or "openai"
     fn async_error(
         &self,
         error: &CompletionCallError,
@@ -72,10 +70,7 @@ impl AsyncCompletionTarget<'_> {
         provider: Option<&str>,
         outcome: CallOutcome,
     ) -> Result<CallOutcome, CompletionCallError> {
-        let Some(name) = provider else {
-            return Ok(outcome);
-        };
-        if !TEXT_COMPLETION_PROVIDERS.contains(&name) {
+        if !provider.is_some_and(|name| TEXT_COMPLETION_PROVIDERS.contains(&name)) {
             return Ok(outcome);
         }
         let CallOutcome::Response(json) = &outcome else {
@@ -97,7 +92,6 @@ impl AsyncCompletionTarget<'_> {
         )?;
         Ok(CallOutcome::Response(serde_json::from_slice(&body)?))
     }
-    // the fallback loop's answer, or acompletion's no-response error
     async fn fallbacks_answer(
         &self,
         call: FallbackCall,
@@ -165,7 +159,6 @@ impl CallTarget for AsyncCompletionTarget<'_> {
             .await
             .map_err(|error| self.async_error(&error, &model, provider.as_deref()))
     }
-    // acompletion_with_retries defaults original_function to completion, so the blocking entry runs
     async fn retry(
         &self,
         request: RequestMap,
@@ -174,7 +167,6 @@ impl CallTarget for AsyncCompletionTarget<'_> {
         retry::with_retries(&self.inner, request, logging, self.inner.sleeper).await
     }
 }
-// LiteLLM converts only a TextCompletionResponse, so a chat-shaped answer from a text provider keeps its message
 fn is_text_completion_body(json: &Json) -> bool {
     let Json::Object(fields) = json else {
         return false;

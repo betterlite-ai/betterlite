@@ -21,7 +21,6 @@ use secrecy::ExposeSecret as _;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use uuid::Uuid;
-// The call's kwargs as the map completion() was handed, with the secret the struct never serializes
 pub fn args_to_map(args: &CompletionArgs) -> Result<RequestMap, CompletionCallError> {
     let encoded = serde_json::to_value(args)?;
     let mut map: RequestMap = serde_json::from_value(encoded)?;
@@ -68,7 +67,6 @@ pub fn call_id(call: &PreparedCall, ids: &dyn IdSource) -> String {
         | None => ids.next_call_id(),
     }
 }
-// The prepared timeout as one total deadline: the phases form adds up, since a request cannot outlast their sum
 pub(crate) fn timeout_duration(timeout: &PreparedTimeout) -> Option<Duration> {
     match timeout {
         PreparedTimeout::Seconds(seconds) => Duration::try_from_secs_f64(*seconds).ok(),
@@ -104,34 +102,16 @@ async fn outcome_of(
     result: CallResult,
     body_bytes: usize,
 ) -> Result<CallOutcome, CompletionCallError> {
-    match result {
-        CallResult::Chat(ChatResult::Completion(answer)) => {
+    let CallResult::Chat(chat) = result else {
+        return Err(CompletionCallError::UnexpectedResult { entry: "non-chat" });
+    };
+    match chat {
+        ChatResult::Completion(answer) => {
             Ok(CallOutcome::Response(serde_json::from_slice(&answer.body)?))
         }
-        CallResult::Chat(ChatResult::Stream(answer)) => stream_outcome(answer, body_bytes).await,
-        CallResult::Embedding(_)
-        | CallResult::TextCompletion(_)
-        | CallResult::TextStream(_)
-        | CallResult::Moderation(_)
-        | CallResult::Responses(_)
-        | CallResult::ImageGeneration(_)
-        | CallResult::ImageEdit(_)
-        | CallResult::VideoGeneration(_)
-        | CallResult::VideoList(_)
-        | CallResult::VideoStatus(_)
-        | CallResult::VideoContent(_)
-        | CallResult::VideoRemix(_)
-        | CallResult::VideoCreateCharacter(_)
-        | CallResult::VideoGetCharacter(_)
-        | CallResult::VideoEdit(_)
-        | CallResult::VideoExtension(_)
-        | CallResult::LlmPassthrough(_)
-        | CallResult::ContainerCall(_) => {
-            Err(CompletionCallError::UnexpectedResult { entry: "non-chat" })
-        }
+        ChatResult::Stream(answer) => stream_outcome(answer, body_bytes).await,
     }
 }
-// The provider SSE stream through the fuzzed parser, capped at the transport body limit as it accumulates
 async fn stream_outcome(
     answer: ChatStreamAnswer,
     body_bytes: usize,
