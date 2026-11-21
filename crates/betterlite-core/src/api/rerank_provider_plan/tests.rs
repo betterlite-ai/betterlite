@@ -812,6 +812,11 @@ fn the_logger_gets_the_call_user() {
     "ranking/nvidia/rerank-qa",
     SelectedConfig::NvidiaRanking
 )]
+#[case::cohere_v2("cohere", "rerank-v1", SelectedConfig::CohereV2)]
+#[case::cohere_chat_v2("cohere_chat", "rerank-v1", SelectedConfig::CohereV2)]
+#[case::voyage("voyage", "rerank-v1", SelectedConfig::Voyage)]
+#[case::jina_ai("jina_ai", "rerank-v1", SelectedConfig::JinaAi)]
+#[case::infinity("infinity", "rerank-v1", SelectedConfig::Infinity)]
 #[case::unknown_falls_back("openai", "rerank-v1", SelectedConfig::Cohere)]
 fn every_provider_slug_selects_its_config(
     #[case] slug: &str,

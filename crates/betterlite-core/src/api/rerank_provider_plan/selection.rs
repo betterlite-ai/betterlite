@@ -1,4 +1,5 @@
 use crate::embedding_rerank_providers::{RerankConfig, rerank_config};
+use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_models::resolution::ProviderIdentity;
 // LiteLLM's ProviderConfigManager.get_provider_rerank_config, every arm it selects a config class for
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,8 +30,14 @@ pub fn selected_config(
     api_base: Option<&str>,
     present_version_params: &[String],
 ) -> SelectedConfig {
-    if let ProviderIdentity::Known(provider) = identity
-        && let Some(config) = rerank_config(*provider, api_base, present_version_params)
+    // LiteLLM builds LlmProviders(name) from the provider string, so a declared name reaches its family config too
+    let known = match identity {
+        ProviderIdentity::Known(provider) => Some(*provider),
+        ProviderIdentity::Custom(slug) => slug.parse::<ProviderId>().ok(),
+        ProviderIdentity::Anyscale => None,
+    };
+    if let Some(provider) = known
+        && let Some(config) = rerank_config(provider, api_base, present_version_params)
     {
         return match config {
             RerankConfig::Cohere => SelectedConfig::Cohere,
