@@ -102,7 +102,7 @@ fn settings(bytes: &[u8], custom_validate: Option<String>) -> Result<Settings, J
     let teams = decode(bytes)?;
     let claims = decode(bytes)?;
     let keys: KeyFields = decode(bytes)?;
-    if keys.public_key_stale_ttl < 0.0 {
+    if keys.public_key_stale_ttl < 0.0_f64 {
         return Err(JwtSettingsError::Invalid {
             location: Location(vec![Step::Key("public_key_stale_ttl".to_owned())]),
         });

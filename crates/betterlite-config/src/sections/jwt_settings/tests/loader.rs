@@ -5,12 +5,13 @@ use std::sync::Mutex;
 use rstest::rstest;
 
 use super::super::Settings;
-use super::super::construct::{Context, RawJwtAuth, construct};
+use super::super::construct::{Context, construct};
 use super::super::error::JwtSettingsError;
 use super::super::records::{Selector, UnregisteredClientBehavior};
 use super::super::validator::{
     LoadFailure, ReturnAnnotation, UnregisteredLoader, ValidatorLoader, ValidatorRequest,
 };
+use super::parsed;
 use crate::loader::{ConfigError, ConfigLoader};
 
 fn load(yaml: &str, environment: &[(&str, &str)]) -> Result<Settings, ConfigError> {
@@ -73,7 +74,7 @@ general_settings:
 ";
 
 #[test]
-fn loads_all_jwt_fields() {
+fn loads_route_and_team_fields() {
     let loaded = load(ALL_FIELDS, &[]).unwrap();
     assert_eq!(loaded.routes.admin_jwt_scope, "admin.scope");
     assert_eq!(loaded.routes.admin_allowed_routes, ["management_routes"]);
@@ -89,6 +90,15 @@ fn loads_all_jwt_fields() {
         loaded.teams.team_alias_jwt_field.as_deref(),
         Some("team.name")
     );
+    assert_eq!(
+        loaded.routes.public_allowed_routes,
+        ["public_routes", "info_routes"]
+    );
+}
+
+#[test]
+fn loads_claim_fields() {
+    let loaded = load(ALL_FIELDS, &[]).unwrap();
     assert_eq!(loaded.claims.org_id_jwt_field.as_deref(), Some("org.id"));
     assert_eq!(
         loaded.claims.org_alias_jwt_field.as_deref(),
@@ -115,14 +125,15 @@ fn loads_all_jwt_fields() {
         loaded.claims.mcp_client_id_jwt_field.as_deref(),
         Some("client_id")
     );
+}
+
+#[test]
+fn loads_key_rbac_and_scope_fields() {
+    let loaded = load(ALL_FIELDS, &[]).unwrap();
     assert_eq!(loaded.keys.public_key_ttl.to_bits(), 60.0_f64.to_bits());
     assert_eq!(
         loaded.keys.public_key_stale_ttl.to_bits(),
         0.0_f64.to_bits()
-    );
-    assert_eq!(
-        loaded.routes.public_allowed_routes,
-        ["public_routes", "info_routes"]
     );
     assert!(loaded.rbac.enforce_rbac);
     assert_eq!(loaded.rbac.roles_jwt_field.as_deref(), Some("realm.roles"));
@@ -135,6 +146,11 @@ fn loads_all_jwt_fields() {
         loaded.sync.jwt_litellm_role_map.as_ref().map(Vec::len),
         Some(1)
     );
+}
+
+#[test]
+fn loads_userinfo_key_and_routing_fields() {
+    let loaded = load(ALL_FIELDS, &[]).unwrap();
     assert!(loaded.sync.sync_user_role_and_teams && loaded.userinfo.oidc_userinfo_enabled);
     assert_eq!(
         loaded.userinfo.oidc_userinfo_endpoint.as_deref(),
@@ -262,10 +278,12 @@ struct RecordingLoader {
 
 impl ValidatorLoader for RecordingLoader {
     fn load(&self, request: &ValidatorRequest<'_>) -> Result<ReturnAnnotation, LoadFailure> {
-        self.requests.lock().unwrap().push((
-            request.module.to_owned(),
-            request.config_file_path.map(Path::to_path_buf),
-        ));
+        if let Ok(mut requests) = self.requests.lock() {
+            requests.push((
+                request.module.to_owned(),
+                request.config_file_path.map(Path::to_path_buf),
+            ));
+        }
         self.answer.clone().ok_or_else(|| LoadFailure::Import {
             instance: "validate".to_owned(),
             module: "hooks".to_owned(),
@@ -278,10 +296,9 @@ fn construct_with(
     loader: &dyn ValidatorLoader,
     config_file_path: Option<&Path>,
 ) -> Result<Settings, JwtSettingsError> {
-    let raw: RawJwtAuth = serde_saphyr::from_str(yaml).unwrap();
     let lookup = BTreeMap::from([("VALIDATOR".to_owned(), "hooks.from_env".to_owned())]);
     construct(
-        raw,
+        parsed(yaml),
         &Context {
             loader,
             config_file_path,

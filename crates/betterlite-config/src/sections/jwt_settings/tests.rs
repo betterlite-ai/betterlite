@@ -20,8 +20,11 @@ use super::groups::DEFAULT_JWKS_STALE_TTL;
 use super::records::UnregisteredClientBehavior;
 use super::validator::UnregisteredLoader;
 
+fn parsed(yaml: &str) -> RawJwtAuth {
+    serde_saphyr::from_str(yaml).unwrap()
+}
+
 fn build(yaml: &str, environment: &[(&str, &str)]) -> Result<Settings, JwtSettingsError> {
-    let raw: RawJwtAuth = serde_saphyr::from_str(yaml).unwrap();
     let lookup: BTreeMap<String, String> = environment
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
@@ -31,7 +34,7 @@ fn build(yaml: &str, environment: &[(&str, &str)]) -> Result<Settings, JwtSettin
         config_file_path: None,
         lookup: &lookup,
     };
-    construct(raw, &context)
+    construct(parsed(yaml), &context)
 }
 
 fn dump(settings: &Settings) -> BTreeMap<String, JsonData> {
@@ -207,9 +210,9 @@ fn flag_rows(#[case] name: &str) {
 }
 
 #[rstest]
-#[case::field_public_key_ttl("public_key_ttl", 600.0)]
-#[case::field_oidc_userinfo_cache_ttl("oidc_userinfo_cache_ttl", 300.0)]
-#[case::field_virtual_key_mapping_cache_ttl("virtual_key_mapping_cache_ttl", 300.0)]
+#[case::field_public_key_ttl("public_key_ttl", 600.0_f64)]
+#[case::field_oidc_userinfo_cache_ttl("oidc_userinfo_cache_ttl", 300.0_f64)]
+#[case::field_virtual_key_mapping_cache_ttl("virtual_key_mapping_cache_ttl", 300.0_f64)]
 fn unbounded_ttl_rows(#[case] name: &str, #[case] default: f64) {
     assert_eq!(field("{}", &[], name), number(default));
     assert_eq!(
@@ -229,10 +232,10 @@ fn unbounded_ttl_rows(#[case] name: &str, #[case] default: f64) {
 }
 
 #[rstest]
-#[case::field_public_key_stale_ttl_default("{}", Some(3600.0))]
-#[case::field_public_key_stale_ttl_null("{public_key_stale_ttl: null}", Some(3600.0))]
-#[case::field_public_key_stale_ttl_zero("{public_key_stale_ttl: 0}", Some(0.0))]
-#[case::field_public_key_stale_ttl_positive("{public_key_stale_ttl: 0.5}", Some(0.5))]
+#[case::field_public_key_stale_ttl_default("{}", Some(3_600.0_f64))]
+#[case::field_public_key_stale_ttl_null("{public_key_stale_ttl: null}", Some(3_600.0_f64))]
+#[case::field_public_key_stale_ttl_zero("{public_key_stale_ttl: 0}", Some(0.0_f64))]
+#[case::field_public_key_stale_ttl_positive("{public_key_stale_ttl: 0.5}", Some(0.5_f64))]
 #[case::field_public_key_stale_ttl_negative("{public_key_stale_ttl: -1}", None)]
 #[case::field_public_key_stale_ttl_small_negative("{public_key_stale_ttl: -0.001}", None)]
 #[case::field_public_key_stale_ttl_nan("{public_key_stale_ttl: .nan}", None)]
