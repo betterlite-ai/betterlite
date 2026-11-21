@@ -77,10 +77,25 @@ pub struct SweepPhases<Schedule, Cache, Failures, Successes, Reconnect, Clock, D
     pub ports: SweepPorts<Schedule, Cache, Failures, Successes, Reconnect, Clock, Durations>,
 }
 
-// The phase services share seven SweepPorts fields; the macro writes them once and each method names only its extras.
+// The hook-carrying phase services share failure, success and the seven SweepPorts fields, so the macro writes them once.
 macro_rules! sweep_service {
-    ($service:ident $(, $field:ident: $value:expr)* $(,)?) => {
+    (hooks $service:ident $(, $field:ident: $value:expr)* $(,)?) => {
         $service {
+            store: self.store.clone(),
+            limits: self.ports.limits,
+            rollover: self.ports.rollover,
+            schedule: &self.ports.schedule,
+            cache: &self.ports.cache,
+            failure: &self.ports.failure,
+            success: &self.ports.success,
+            reconnect: self.ports.reconnect.as_mut(),
+            clock: &self.ports.clock,
+            $($field: $value,)*
+        }
+    };
+    // The window phase has no failure or success hook, and reads its spend through WindowSpendStore.
+    (window) => {
+        BudgetWindowReset {
             store: self.store.clone(),
             limits: self.ports.limits,
             rollover: self.ports.rollover,
@@ -88,7 +103,8 @@ macro_rules! sweep_service {
             cache: &self.ports.cache,
             reconnect: self.ports.reconnect.as_mut(),
             clock: &self.ports.clock,
-            $($field: $value,)*
+            window_spend: WindowSpendStore::from_store(self.store.clone()),
+            durations: &self.ports.durations,
         }
     };
 }
@@ -105,54 +121,30 @@ where
     Durations: WindowDurationSeconds + Send + Sync,
 {
     async fn reset_keys(&mut self) {
-        sweep_service!(
-            IdentityBudgetReset,
-            failure: &self.ports.failure,
-            success: &self.ports.success,
-        )
-        .reset(IdentityPhase::Keys)
-        .await;
+        sweep_service!(hooks IdentityBudgetReset)
+            .reset(IdentityPhase::Keys)
+            .await;
     }
 
     async fn reset_users(&mut self) {
-        sweep_service!(
-            IdentityBudgetReset,
-            failure: &self.ports.failure,
-            success: &self.ports.success,
-        )
-        .reset(IdentityPhase::Users)
-        .await;
+        sweep_service!(hooks IdentityBudgetReset)
+            .reset(IdentityPhase::Users)
+            .await;
     }
 
     async fn reset_teams(&mut self) {
-        sweep_service!(
-            TeamBudgetReset,
-            failure: &self.ports.failure,
-            success: &self.ports.success,
-        )
-        .reset_teams()
-        .await;
+        sweep_service!(hooks TeamBudgetReset).reset_teams().await;
     }
 
     async fn reset_tiers(&mut self) {
-        sweep_service!(
-            BudgetTierSweep,
-            failure: &self.ports.failure,
-            success: &self.ports.success,
-            default_enduser_budget_id: self.ports.default_enduser_budget_id.as_deref(),
-        )
-        .reset()
-        .await;
+        let default = self.ports.default_enduser_budget_id.as_deref();
+        sweep_service!(hooks BudgetTierSweep, default_enduser_budget_id: default)
+            .reset()
+            .await;
     }
 
     async fn reset_windows(&mut self) {
-        sweep_service!(
-            BudgetWindowReset,
-            window_spend: WindowSpendStore::from_store(self.store.clone()),
-            durations: &self.ports.durations,
-        )
-        .reset_windows()
-        .await;
+        sweep_service!(window).reset_windows().await;
     }
 }
 

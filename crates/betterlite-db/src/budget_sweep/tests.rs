@@ -212,11 +212,7 @@ fn election_lock_manager(
     )))
 }
 
-fn assert_election_operations(
-    case: ElectionCase,
-    cache: Option<&RecordingLeaseCache>,
-    operations: &[LeaseOperation],
-) {
+fn assert_election_operations(case: ElectionCase, operations: &[LeaseOperation]) {
     assert!(operations.iter().all(|operation| match operation {
         LeaseOperation::Set(key, _) | LeaseOperation::Read(key) | LeaseOperation::Delete(key) => {
             key.as_str() == LEASE_KEY
@@ -231,15 +227,20 @@ fn assert_election_operations(
     } else {
         vec![900_i64]
     };
-    assert_eq!(
-        cache.map_or_else(Vec::new, RecordingLeaseCache::set_ttls),
-        expected_ttls
-    );
+    let ttls: Vec<i64> = operations
+        .iter()
+        .filter_map(|operation| match operation {
+            LeaseOperation::Set(_, ttl) => Some(*ttl),
+            LeaseOperation::Read(_) | LeaseOperation::Delete(_) => None,
+        })
+        .collect();
+    assert_eq!(ttls, expected_ttls);
     let released = matches!(case, ElectionCase::Acquired | ElectionCase::Reentrant);
-    assert_eq!(
-        cache.map_or(0, RecordingLeaseCache::deletes),
-        usize::from(released)
-    );
+    let delete_count = operations
+        .iter()
+        .filter(|operation| matches!(operation, LeaseOperation::Delete(_)))
+        .count();
+    assert_eq!(delete_count, usize::from(released));
 }
 
 fn assert_election_logs(case: ElectionCase, operations: &[LeaseOperation], text: &str) {
@@ -304,7 +305,7 @@ async fn sweep_lease_election(#[case] case: ElectionCase) {
     drop(guard);
     outcome.unwrap();
     let operations = lease_cache.map_or_else(Vec::new, RecordingLeaseCache::operations);
-    assert_election_operations(case, lease_cache, &operations);
+    assert_election_operations(case, &operations);
     assert_election_logs(case, &operations, &logs.text());
     let calls = phases.phases();
     let skip = case == ElectionCase::HeldByOther;
@@ -405,6 +406,14 @@ fn cleanup_phases(case: CleanupCase, started: &Arc<Notify>) -> RecordingPhases {
     }
 }
 
+fn deletes(cache: &RecordingLeaseCache) -> usize {
+    cache
+        .operations()
+        .iter()
+        .filter(|operation| matches!(operation, LeaseOperation::Delete(_)))
+        .count()
+}
+
 async fn run_cleanup(
     case: CleanupCase,
     mut sweep: BudgetSweep<RecordingLeaseCache, RecordingPhases>,
@@ -421,7 +430,7 @@ async fn run_cleanup(
             tasks.close();
             timeout(Duration::from_secs(1), tasks.wait()).await.unwrap();
             assert!(tasks.is_empty());
-            return (None, cache.deletes());
+            return (None, deletes(cache));
         }
         CleanupCase::LeaderSuccess
         | CleanupCase::LeaderFailure
@@ -429,10 +438,10 @@ async fn run_cleanup(
         | CleanupCase::Unguarded => sweep.reset_budget().await,
     };
     // The source awaits release_lock in its finally block, so the delete lands before reset_budget returns.
-    let deletes = cache.deletes();
+    let released = deletes(cache);
     tasks.close();
     tasks.wait().await;
-    (result.err(), deletes)
+    (result.err(), released)
 }
 
 fn assert_cleanup(
@@ -455,7 +464,7 @@ fn assert_cleanup(
         CleanupCase::LeaderSuccess | CleanupCase::LeaderFailure | CleanupCase::LeaderCancel
     );
     assert_eq!(deletes_on_return, usize::from(released));
-    assert_eq!(cache.deletes(), usize::from(released));
+    assert_eq!(deletes(cache), usize::from(released));
     let expected_phases: Vec<ResetPhase> = match case {
         CleanupCase::LeaderSuccess | CleanupCase::Unguarded => ResetPhase::ALL.to_vec(),
         CleanupCase::LeaderFailure => ResetPhase::ALL.into_iter().take(3).collect(),

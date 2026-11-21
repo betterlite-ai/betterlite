@@ -54,6 +54,31 @@ pub(crate) fn pod_id() -> PodId {
     PodId::try_from(Uuid::new_v4()).unwrap()
 }
 
+#[derive(Clone)]
+pub(crate) struct Recorder<T>(Arc<Mutex<Vec<T>>>);
+
+impl<T> Default for Recorder<T> {
+    fn default() -> Self {
+        Self(Arc::new(Mutex::new(Vec::new())))
+    }
+}
+
+impl<T: Clone> Recorder<T> {
+    fn push(&self, value: T) {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(value);
+    }
+
+    fn values(&self) -> Vec<T> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+}
+
 pub(crate) struct FixedSchedule {
     pub(crate) next: DateTime<Utc>,
 }
@@ -108,25 +133,21 @@ impl DbReconnect for NoReconnect {
 }
 
 #[derive(Clone, Default)]
-pub(crate) struct RecordingFailures(Arc<Mutex<Vec<PhaseFailureEvent>>>);
+pub(crate) struct RecordingFailures(Recorder<PhaseFailureEvent>);
 
 impl RecordingFailures {
     pub(crate) fn call_types(&self) -> Vec<String> {
         self.0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .iter()
-            .map(|event| event.call_type.clone())
+            .values()
+            .into_iter()
+            .map(|event| event.call_type)
             .collect()
     }
 }
 
 impl PhaseFailureSink for RecordingFailures {
     fn emit(&self, event: PhaseFailureEvent) {
-        self.0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(event);
+        self.0.push(event);
     }
 }
 
@@ -195,7 +216,7 @@ pub(crate) enum LeaseOperation {
 }
 
 pub(crate) struct RecordingLeaseCache {
-    operations: Mutex<Vec<LeaseOperation>>,
+    operations: Recorder<LeaseOperation>,
     granted: bool,
     read_fails: bool,
     owner: Mutex<Option<Vec<u8>>>,
@@ -224,7 +245,7 @@ impl RecordingLeaseCache {
 
     fn held_by(owner: Option<Vec<u8>>, granted: bool, read_fails: bool) -> Self {
         Self {
-            operations: Mutex::new(Vec::new()),
+            operations: Recorder::default(),
             granted,
             read_fails,
             owner: Mutex::new(owner),
@@ -232,34 +253,11 @@ impl RecordingLeaseCache {
     }
 
     fn record(&self, operation: LeaseOperation) {
-        self.operations
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(operation);
+        self.operations.push(operation);
     }
 
     pub(crate) fn operations(&self) -> Vec<LeaseOperation> {
-        self.operations
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-
-    pub(crate) fn deletes(&self) -> usize {
-        self.operations()
-            .iter()
-            .filter(|operation| matches!(operation, LeaseOperation::Delete(_)))
-            .count()
-    }
-
-    pub(crate) fn set_ttls(&self) -> Vec<i64> {
-        self.operations()
-            .iter()
-            .filter_map(|operation| match operation {
-                LeaseOperation::Set(_, ttl) => Some(*ttl),
-                LeaseOperation::Read(_) | LeaseOperation::Delete(_) => None,
-            })
-            .collect()
+        self.operations.values()
     }
 }
 
@@ -308,6 +306,15 @@ pub(crate) enum PhaseEvent {
     End(ResetPhase),
 }
 
+impl PhaseEvent {
+    const fn started(self) -> Option<ResetPhase> {
+        match self {
+            Self::Start(phase) => Some(phase),
+            Self::End(_) => None,
+        }
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("{message}")]
 pub(crate) struct PhaseFault {
@@ -328,7 +335,7 @@ struct Blocking {
 
 #[derive(Clone, Default)]
 pub(crate) struct RecordingPhases {
-    timeline: Arc<Mutex<Vec<PhaseEvent>>>,
+    timeline: Recorder<PhaseEvent>,
     inside: Arc<AtomicBool>,
     overlapped: Arc<AtomicBool>,
     failure: Option<FailureAt>,
@@ -338,7 +345,7 @@ pub(crate) struct RecordingPhases {
 impl RecordingPhases {
     fn new(failure: Option<FailureAt>, blocking: Option<Blocking>) -> Self {
         Self {
-            timeline: Arc::new(Mutex::new(Vec::new())),
+            timeline: Recorder::default(),
             inside: Arc::new(AtomicBool::new(false)),
             overlapped: Arc::new(AtomicBool::new(false)),
             failure,
@@ -361,27 +368,18 @@ impl RecordingPhases {
     }
 
     fn record(&self, event: PhaseEvent) {
-        self.timeline
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(event);
+        self.timeline.push(event);
     }
 
     pub(crate) fn phases(&self) -> Vec<ResetPhase> {
         self.timeline()
             .into_iter()
-            .filter_map(|event| match event {
-                PhaseEvent::Start(phase) => Some(phase),
-                PhaseEvent::End(_) => None,
-            })
+            .filter_map(PhaseEvent::started)
             .collect()
     }
 
     pub(crate) fn timeline(&self) -> Vec<PhaseEvent> {
-        self.timeline
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+        self.timeline.values()
     }
 
     pub(crate) fn overlapped(&self) -> bool {
@@ -487,13 +485,12 @@ pub(crate) struct CapturedLogs(Arc<Mutex<Vec<u8>>>);
 
 impl CapturedLogs {
     pub(crate) fn text(&self) -> String {
-        String::from_utf8(
-            self.0
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .clone(),
-        )
-        .unwrap()
+        let bytes = self
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        String::from_utf8(bytes).unwrap()
     }
 }
 
