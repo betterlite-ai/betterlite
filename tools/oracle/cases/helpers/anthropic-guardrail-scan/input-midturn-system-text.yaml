@@ -1,0 +1,6 @@
+kind: helper
+name: anthropic-guardrail-scan-input-midturn-system-text
+call:
+  b3675: {"function": "extract", "scenarios": [{"message": {"role": "system", "content": "mid"}, "msg_idx": 3}, {"message": {"role": "system", "content": ""}}, {"message": {"role": "system", "content": [{"type": "text", "text": "s1"}, {"type": "text", "text": ""}, {"type": "text", "text": 5}, {"type": "image", "source": {}}, {"type": "text", "text": "s3"}]}, "msg_idx": 2}, {"message": {"role": "system", "content": 5}}, {"message": {"role": "system", "content": "mid"}, "flags": {"skip_system_message": true}}]}
+env: {}
+compare: {ignore: []}

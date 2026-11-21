@@ -1,0 +1,28 @@
+task: B3882
+deviations:
+  - what: >-
+      Each setter takes a plain input record (TeamBudgetGaugeInput and the like) instead of LiteLLM_TeamTable, UserAPIKeyAuth, LiteLLM_UserTable or a prisma row.
+    why: >-
+      betterlite-logging cannot depend on the auth or table crates, and the caller already holds typed data.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4017-L4020
+  - what: >-
+      spend and max_budget are rust_decimal::Decimal, and the gauge value is converted once at the collector call; an unlimited budget is written as the collector's explicit positive-infinity value rather than float("inf").
+    why: >-
+      money is never a float in betterlite, and Decimal has no infinity, so LiteLLM's float("inf") needs the collector's explicit form (see B3874's deviation).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3608-L3615
+  - what: >-
+      budget_reset_at is a DateTime<Utc>, so a reset time without a timezone is not accepted; LiteLLM's datetime.now(reset_at.tzinfo) runs in local time when the reset time is naive.
+    why: >-
+      the carried snapshots (B3890) and the stored columns are UTC, and a local-time clock would make the gauge depend on the host.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4515-L4519
+  - what: >-
+      hours_until_reset takes `now` as an argument from an injected clock instead of reading the wall clock.
+    why: >-
+      tests and oracle cases need exact values, and the per-request path already carries a clock for the series tracker.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4519
+kept_bugs:
+  - what: >-
+      A supported label the entity does not fill reaches the gauge as the literal string "None", because LiteLLM's label factory fills the missing labels with None and prometheus_client renders every label value with str().
+    why: >-
+      Metrics scraped from a working LiteLLM deployment carry "None" in those label values, and dashboards and recording rules match on them, so betterlite keeps the literal rather than rendering an empty string.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4679-L4681
