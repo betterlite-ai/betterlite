@@ -8,8 +8,11 @@ use super::{default_label_settings, registered};
 #[test]
 fn an_excluded_metric_is_a_no_op_and_absent_from_the_registry() {
     let settings = PrometheusExporterSettings {
+        prometheus_metrics_config: Vec::new(),
         prometheus_exclude_metrics: vec!["litellm_spend_metric".to_owned()],
-        ..PrometheusExporterSettings::default()
+        prometheus_exclude_labels: Vec::new(),
+        prometheus_latency_buckets: None,
+        prometheus_emit_input_sequence_length_label: false,
     };
     let (registry, collectors) = registered(&settings, &default_label_settings());
     assert!(matches!(
@@ -24,8 +27,11 @@ fn an_excluded_metric_is_a_no_op_and_absent_from_the_registry() {
 #[test]
 fn an_excluded_label_is_dropped_from_schema_labels() {
     let settings = PrometheusExporterSettings {
+        prometheus_metrics_config: Vec::new(),
+        prometheus_exclude_metrics: Vec::new(),
         prometheus_exclude_labels: vec!["model".to_owned()],
-        ..PrometheusExporterSettings::default()
+        prometheus_latency_buckets: None,
+        prometheus_emit_input_sequence_length_label: false,
     };
     let (registry, collectors) = registered(&settings, &default_label_settings());
     let metric = registry
@@ -44,8 +50,11 @@ fn an_excluded_label_is_dropped_from_schema_labels() {
 #[test]
 fn an_excluded_label_is_dropped_from_fixed_labels() {
     let settings = PrometheusExporterSettings {
+        prometheus_metrics_config: Vec::new(),
+        prometheus_exclude_metrics: Vec::new(),
         prometheus_exclude_labels: vec!["status".to_owned()],
-        ..PrometheusExporterSettings::default()
+        prometheus_latency_buckets: None,
+        prometheus_emit_input_sequence_length_label: false,
     };
     let (registry, _collectors) = registered(&settings, &default_label_settings());
     let metric = registry
@@ -60,8 +69,11 @@ fn an_excluded_label_is_dropped_from_fixed_labels() {
 #[test]
 fn an_excluded_label_on_a_no_label_metric_leaves_it_a_real_collector() {
     let settings = PrometheusExporterSettings {
+        prometheus_metrics_config: Vec::new(),
+        prometheus_exclude_metrics: Vec::new(),
         prometheus_exclude_labels: vec!["model".to_owned()],
-        ..PrometheusExporterSettings::default()
+        prometheus_latency_buckets: None,
+        prometheus_emit_input_sequence_length_label: false,
     };
     let (_registry, collectors) = registered(&settings, &default_label_settings());
     assert!(matches!(
@@ -78,7 +90,10 @@ fn include_labels_narrow_the_named_metric_only() {
             metrics: vec!["litellm_spend_metric".to_owned()],
             include_labels: vec!["hashed_api_key".to_owned()],
         }],
-        ..PrometheusExporterSettings::default()
+        prometheus_exclude_metrics: Vec::new(),
+        prometheus_exclude_labels: Vec::new(),
+        prometheus_latency_buckets: None,
+        prometheus_emit_input_sequence_length_label: false,
     };
     let (registry, collectors) = registered(&settings, &default_label_settings());
     assert_eq!(registry.descriptions().len(), 1);
@@ -104,7 +119,10 @@ fn include_labels_keep_the_schema_order_of_the_kept_labels() {
             metrics: vec!["litellm_cache_hits_metric".to_owned()],
             include_labels: vec!["api_key_alias".to_owned(), "model".to_owned()],
         }],
-        ..PrometheusExporterSettings::default()
+        prometheus_exclude_metrics: Vec::new(),
+        prometheus_exclude_labels: Vec::new(),
+        prometheus_latency_buckets: None,
+        prometheus_emit_input_sequence_length_label: false,
     };
     let (registry, _collectors) = registered(&settings, &default_label_settings());
     let metric = registry

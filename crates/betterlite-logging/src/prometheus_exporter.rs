@@ -61,54 +61,54 @@ pub struct PrometheusCollectors {
     pub litellm_proxy_failed_requests_metric: Handle, // ast-grep-ignore: no-long-names
     pub litellm_proxy_total_requests_metric: Handle,  // ast-grep-ignore: no-long-names
     pub litellm_request_total_latency_metric: Handle, // ast-grep-ignore: no-long-names
-    pub litellm_llm_api_latency_metric: Handle,       // ast-grep-ignore: no-long-names
+    pub litellm_llm_api_latency_metric: Handle,
     pub litellm_llm_api_time_to_first_token_metric: Handle, // ast-grep-ignore: no-long-names
-    pub litellm_spend_metric: Handle,                 // ast-grep-ignore: no-long-names
-    pub litellm_tokens_metric: Handle,                // ast-grep-ignore: no-long-names
-    pub litellm_input_tokens_metric: Handle,          // ast-grep-ignore: no-long-names
-    pub litellm_output_tokens_metric: Handle,         // ast-grep-ignore: no-long-names
-    pub litellm_input_cached_tokens_metric: Handle,   // ast-grep-ignore: no-long-names
+    pub litellm_spend_metric: Handle,
+    pub litellm_tokens_metric: Handle,
+    pub litellm_input_tokens_metric: Handle,
+    pub litellm_output_tokens_metric: Handle,
+    pub litellm_input_cached_tokens_metric: Handle, // ast-grep-ignore: no-long-names
     pub litellm_input_cache_creation_tokens_metric: Handle, // ast-grep-ignore: no-long-names
-    pub litellm_input_audio_tokens_metric: Handle,    // ast-grep-ignore: no-long-names
+    pub litellm_input_audio_tokens_metric: Handle,  // ast-grep-ignore: no-long-names
     pub litellm_output_reasoning_tokens_metric: Handle, // ast-grep-ignore: no-long-names
-    pub litellm_output_audio_tokens_metric: Handle,   // ast-grep-ignore: no-long-names
+    pub litellm_output_audio_tokens_metric: Handle, // ast-grep-ignore: no-long-names
     pub litellm_video_duration_seconds_metric: Handle, // ast-grep-ignore: no-long-names
-    pub litellm_images_generated_metric: Handle,      // ast-grep-ignore: no-long-names
+    pub litellm_images_generated_metric: Handle,    // ast-grep-ignore: no-long-names
     pub litellm_remaining_team_budget_metric: Handle, // ast-grep-ignore: no-long-names
-    pub litellm_team_max_budget_metric: Handle,       // ast-grep-ignore: no-long-names
+    pub litellm_team_max_budget_metric: Handle,
     pub litellm_team_budget_remaining_hours_metric: Handle, // ast-grep-ignore: no-long-names
-    pub litellm_team_members_metric: Handle,          // ast-grep-ignore: no-long-names
-    pub litellm_remaining_org_budget_metric: Handle,  // ast-grep-ignore: no-long-names
-    pub litellm_org_max_budget_metric: Handle,        // ast-grep-ignore: no-long-names
+    pub litellm_team_members_metric: Handle,
+    pub litellm_remaining_org_budget_metric: Handle, // ast-grep-ignore: no-long-names
+    pub litellm_org_max_budget_metric: Handle,
     pub litellm_org_budget_remaining_hours_metric: Handle, // ast-grep-ignore: no-long-names
-    pub litellm_remaining_api_key_budget_metric: Handle, // ast-grep-ignore: no-long-names
-    pub litellm_api_key_max_budget_metric: Handle,    // ast-grep-ignore: no-long-names
+    pub litellm_remaining_api_key_budget_metric: Handle,   // ast-grep-ignore: no-long-names
+    pub litellm_api_key_max_budget_metric: Handle,         // ast-grep-ignore: no-long-names
     pub litellm_api_key_budget_remaining_hours_metric: Handle, // ast-grep-ignore: no-long-names
-    pub litellm_remaining_user_budget_metric: Handle, // ast-grep-ignore: no-long-names
-    pub litellm_user_max_budget_metric: Handle,       // ast-grep-ignore: no-long-names
+    pub litellm_remaining_user_budget_metric: Handle,      // ast-grep-ignore: no-long-names
+    pub litellm_user_max_budget_metric: Handle,
     pub litellm_user_budget_remaining_hours_metric: Handle, // ast-grep-ignore: no-long-names
-    pub litellm_remaining_customer_budget_metric: Handle, // ast-grep-ignore: no-long-names
-    pub litellm_customer_max_budget_metric: Handle,   // ast-grep-ignore: no-long-names
+    pub litellm_remaining_customer_budget_metric: Handle,   // ast-grep-ignore: no-long-names
+    pub litellm_customer_max_budget_metric: Handle,         // ast-grep-ignore: no-long-names
     pub litellm_customer_budget_remaining_hours_metric: Handle, // ast-grep-ignore: no-long-names
     pub litellm_remaining_api_key_requests_for_model: Handle, // ast-grep-ignore: no-long-names
     pub litellm_remaining_api_key_tokens_for_model: Handle, // ast-grep-ignore: no-long-names
-    pub litellm_api_key_rate_limit_allowed_metric: Handle, // ast-grep-ignore: no-long-names
-    pub litellm_api_key_rate_limit_used_metric: Handle, // ast-grep-ignore: no-long-names
-    pub litellm_team_rate_limit_allowed_metric: Handle, // ast-grep-ignore: no-long-names
-    pub litellm_team_rate_limit_used_metric: Handle,  // ast-grep-ignore: no-long-names
-    pub litellm_remaining_requests_metric: Handle,    // ast-grep-ignore: no-long-names
-    pub litellm_remaining_tokens_metric: Handle,      // ast-grep-ignore: no-long-names
-    pub litellm_overhead_latency_metric: Handle,      // ast-grep-ignore: no-long-names
+    pub litellm_api_key_rate_limit_allowed_metric: Handle,  // ast-grep-ignore: no-long-names
+    pub litellm_api_key_rate_limit_used_metric: Handle,     // ast-grep-ignore: no-long-names
+    pub litellm_team_rate_limit_allowed_metric: Handle,     // ast-grep-ignore: no-long-names
+    pub litellm_team_rate_limit_used_metric: Handle,        // ast-grep-ignore: no-long-names
+    pub litellm_remaining_requests_metric: Handle,          // ast-grep-ignore: no-long-names
+    pub litellm_remaining_tokens_metric: Handle,            // ast-grep-ignore: no-long-names
+    pub litellm_overhead_latency_metric: Handle,            // ast-grep-ignore: no-long-names
     pub litellm_overhead_with_guardrails_latency_metric: Handle, // ast-grep-ignore: no-long-names
-    pub litellm_request_queue_time_metric: Handle,    // ast-grep-ignore: no-long-names
-    pub litellm_guardrail_latency_metric: Handle,     // ast-grep-ignore: no-long-names
-    pub litellm_guardrail_errors_total: Handle,       // ast-grep-ignore: no-long-names
-    pub litellm_guardrail_requests_total: Handle,     // ast-grep-ignore: no-long-names
+    pub litellm_request_queue_time_metric: Handle,          // ast-grep-ignore: no-long-names
+    pub litellm_guardrail_latency_metric: Handle,           // ast-grep-ignore: no-long-names
+    pub litellm_guardrail_errors_total: Handle,
+    pub litellm_guardrail_requests_total: Handle, // ast-grep-ignore: no-long-names
     pub litellm_provider_remaining_budget_metric: Handle, // ast-grep-ignore: no-long-names
-    pub litellm_deployment_state: Handle,             // ast-grep-ignore: no-long-names
-    pub litellm_deployment_tpm_limit: Handle,         // ast-grep-ignore: no-long-names
-    pub litellm_deployment_rpm_limit: Handle,         // ast-grep-ignore: no-long-names
-    pub litellm_deployment_cooled_down: Handle,       // ast-grep-ignore: no-long-names
+    pub litellm_deployment_state: Handle,
+    pub litellm_deployment_tpm_limit: Handle,
+    pub litellm_deployment_rpm_limit: Handle,
+    pub litellm_deployment_cooled_down: Handle,
     pub litellm_deployment_success_responses: Handle, // ast-grep-ignore: no-long-names
     pub litellm_deployment_failure_responses: Handle, // ast-grep-ignore: no-long-names
     pub litellm_deployment_total_requests: Handle,    // ast-grep-ignore: no-long-names
@@ -117,27 +117,27 @@ pub struct PrometheusCollectors {
     pub litellm_deployment_failed_fallbacks: Handle,  // ast-grep-ignore: no-long-names
     pub litellm_callback_logging_failures_metric: Handle, // ast-grep-ignore: no-long-names
     pub litellm_llm_api_failed_requests_metric: Handle, // ast-grep-ignore: no-long-names
-    pub litellm_requests_metric: Handle,              // ast-grep-ignore: no-long-names
-    pub litellm_zero_cost_requests_total: Handle,     // ast-grep-ignore: no-long-names
-    pub litellm_spend_capture_rate: Handle,           // ast-grep-ignore: no-long-names
-    pub litellm_cache_hits_metric: Handle,            // ast-grep-ignore: no-long-names
-    pub litellm_cache_misses_metric: Handle,          // ast-grep-ignore: no-long-names
-    pub litellm_cached_tokens_metric: Handle,         // ast-grep-ignore: no-long-names
+    pub litellm_requests_metric: Handle,
+    pub litellm_zero_cost_requests_total: Handle, // ast-grep-ignore: no-long-names
+    pub litellm_spend_capture_rate: Handle,
+    pub litellm_cache_hits_metric: Handle,
+    pub litellm_cache_misses_metric: Handle,
+    pub litellm_cached_tokens_metric: Handle,
     pub litellm_provider_cache_read_input_tokens_metric: Handle, // ast-grep-ignore: no-long-names
     pub litellm_provider_cache_creation_input_tokens_metric: Handle, // ast-grep-ignore: no-long-names
-    pub litellm_total_users_metric: Handle, // ast-grep-ignore: no-long-names
-    pub litellm_active_users_metric: Handle, // ast-grep-ignore: no-long-names
-    pub litellm_teams_count_metric: Handle, // ast-grep-ignore: no-long-names
+    pub litellm_total_users_metric: Handle,
+    pub litellm_active_users_metric: Handle,
+    pub litellm_teams_count_metric: Handle,
     pub litellm_managed_batch_created_total: Handle, // ast-grep-ignore: no-long-names
-    pub litellm_managed_file_size_bytes: Handle, // ast-grep-ignore: no-long-names
+    pub litellm_managed_file_size_bytes: Handle,     // ast-grep-ignore: no-long-names
     pub litellm_managed_batch_duration_seconds: Handle, // ast-grep-ignore: no-long-names
-    pub litellm_managed_file_created_total: Handle, // ast-grep-ignore: no-long-names
-    pub litellm_managed_file_deleted_total: Handle, // ast-grep-ignore: no-long-names
+    pub litellm_managed_file_created_total: Handle,  // ast-grep-ignore: no-long-names
+    pub litellm_managed_file_deleted_total: Handle,  // ast-grep-ignore: no-long-names
     pub litellm_check_batch_cost_jobs_polled: Handle, // ast-grep-ignore: no-long-names
     pub litellm_check_batch_cost_jobs_processed_total: Handle, // ast-grep-ignore: no-long-names
     pub litellm_check_batch_cost_errors_total: Handle, // ast-grep-ignore: no-long-names
     pub litellm_check_batch_cost_last_run_timestamp: Handle, // ast-grep-ignore: no-long-names
-    pub litellm_mcp_tool_calls_total: Handle, // ast-grep-ignore: no-long-names
+    pub litellm_mcp_tool_calls_total: Handle,
     pub litellm_mcp_tool_call_spend_metric: Handle, // ast-grep-ignore: no-long-names
     pub label_filters: BTreeMap<String, Vec<String>>,
     pub exclude_metrics: MetricSet,

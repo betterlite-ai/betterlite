@@ -53,8 +53,11 @@ fn toggles_after_register_do_not_change_the_registered_labelnames() {
 #[test]
 fn the_emit_flag_controls_the_input_sequence_length_label() {
     let settings = PrometheusExporterSettings {
+        prometheus_metrics_config: Vec::new(),
+        prometheus_exclude_metrics: Vec::new(),
+        prometheus_exclude_labels: Vec::new(),
+        prometheus_latency_buckets: None,
         prometheus_emit_input_sequence_length_label: true,
-        ..PrometheusExporterSettings::default()
     };
     let mut labels = default_label_settings();
     labels.budget_and_length.emit_input_sequence_length = true;
@@ -91,8 +94,10 @@ fn the_cache_drops_excluded_labels_and_keeps_the_include_filter() {
             metrics: vec!["litellm_cache_hits_metric".to_owned()],
             include_labels: vec!["model".to_owned(), "api_key_alias".to_owned()],
         }],
+        prometheus_exclude_metrics: Vec::new(),
         prometheus_exclude_labels: vec!["model".to_owned()],
-        ..PrometheusExporterSettings::default()
+        prometheus_latency_buckets: None,
+        prometheus_emit_input_sequence_length_label: false,
     };
     let (_registry, collectors) = registered(&settings, &default_label_settings());
     assert_eq!(

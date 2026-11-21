@@ -78,7 +78,10 @@ fn an_unsupported_include_label_reports_the_caller_identity_mode() {
             metrics: vec!["litellm_spend_metric".to_owned()],
             include_labels: vec!["not_a_label".to_owned()],
         }],
-        ..PrometheusExporterSettings::default()
+        prometheus_exclude_metrics: Vec::new(),
+        prometheus_exclude_labels: Vec::new(),
+        prometheus_latency_buckets: None,
+        prometheus_emit_input_sequence_length_label: false,
     };
     let registry = CollectorRegistry::default();
     let error = registration_error(&settings, &default_label_settings(), &registry);
@@ -99,8 +102,11 @@ fn an_unsupported_include_label_reports_the_caller_identity_mode() {
 #[test]
 fn an_empty_latency_bucket_list_fails_at_the_first_latency_histogram() {
     let settings = PrometheusExporterSettings {
+        prometheus_metrics_config: Vec::new(),
+        prometheus_exclude_metrics: Vec::new(),
+        prometheus_exclude_labels: Vec::new(),
         prometheus_latency_buckets: Some(Vec::new()),
-        ..PrometheusExporterSettings::default()
+        prometheus_emit_input_sequence_length_label: false,
     };
     let registry = CollectorRegistry::default();
     let error = registration_error(&settings, &default_label_settings(), &registry);
@@ -115,8 +121,11 @@ fn an_empty_latency_bucket_list_fails_at_the_first_latency_histogram() {
 #[test]
 fn unsorted_latency_buckets_fail_before_any_histogram_is_registered() {
     let settings = PrometheusExporterSettings {
+        prometheus_metrics_config: Vec::new(),
+        prometheus_exclude_metrics: Vec::new(),
+        prometheus_exclude_labels: Vec::new(),
         prometheus_latency_buckets: Some(vec![2.5_f64, 0.5_f64]),
-        ..PrometheusExporterSettings::default()
+        prometheus_emit_input_sequence_length_label: false,
     };
     let registry = CollectorRegistry::default();
     let error = registration_error(&settings, &default_label_settings(), &registry);
@@ -131,8 +140,11 @@ fn unsorted_latency_buckets_fail_before_any_histogram_is_registered() {
 #[test]
 fn a_nan_latency_bucket_is_not_sorted() {
     let settings = PrometheusExporterSettings {
+        prometheus_metrics_config: Vec::new(),
+        prometheus_exclude_metrics: Vec::new(),
+        prometheus_exclude_labels: Vec::new(),
         prometheus_latency_buckets: Some(vec![f64::NAN, 1.0_f64]),
-        ..PrometheusExporterSettings::default()
+        prometheus_emit_input_sequence_length_label: false,
     };
     let registry = CollectorRegistry::default();
     let error = registration_error(&settings, &default_label_settings(), &registry);
@@ -145,12 +157,14 @@ fn a_nan_latency_bucket_is_not_sorted() {
 #[test]
 fn excluding_every_latency_histogram_skips_bucket_validation() {
     let settings = PrometheusExporterSettings {
-        prometheus_latency_buckets: Some(Vec::new()),
+        prometheus_metrics_config: Vec::new(),
         prometheus_exclude_metrics: LATENCY_METRICS
             .iter()
             .map(|metric| (*metric).to_owned())
             .collect(),
-        ..PrometheusExporterSettings::default()
+        prometheus_exclude_labels: Vec::new(),
+        prometheus_latency_buckets: Some(Vec::new()),
+        prometheus_emit_input_sequence_length_label: false,
     };
     let registry = CollectorRegistry::default();
     let collectors =

@@ -110,8 +110,11 @@ fn the_managed_batch_duration_uses_the_batch_duration_buckets() {
 #[case::guardrail_latency("litellm_guardrail_latency_seconds")]
 fn custom_latency_buckets_replace_the_default_for_latency_histograms(#[case] metric: &str) {
     let settings = PrometheusExporterSettings {
+        prometheus_metrics_config: Vec::new(),
+        prometheus_exclude_metrics: Vec::new(),
+        prometheus_exclude_labels: Vec::new(),
         prometheus_latency_buckets: Some(vec![0.5_f64, 2.5_f64]),
-        ..PrometheusExporterSettings::default()
+        prometheus_emit_input_sequence_length_label: false,
     };
     assert_eq!(
         registered_buckets(&settings, metric),
@@ -122,8 +125,11 @@ fn custom_latency_buckets_replace_the_default_for_latency_histograms(#[case] met
 #[test]
 fn custom_latency_buckets_leave_the_other_histograms_alone() {
     let settings = PrometheusExporterSettings {
+        prometheus_metrics_config: Vec::new(),
+        prometheus_exclude_metrics: Vec::new(),
+        prometheus_exclude_labels: Vec::new(),
         prometheus_latency_buckets: Some(vec![0.5_f64, 2.5_f64]),
-        ..PrometheusExporterSettings::default()
+        prometheus_emit_input_sequence_length_label: false,
     };
     assert_eq!(
         registered_buckets(&settings, "litellm_deployment_latency_per_output_token"),
@@ -138,8 +144,11 @@ fn custom_latency_buckets_leave_the_other_histograms_alone() {
 #[test]
 fn the_latency_buckets_field_keeps_the_configured_list() {
     let settings = PrometheusExporterSettings {
+        prometheus_metrics_config: Vec::new(),
+        prometheus_exclude_metrics: Vec::new(),
+        prometheus_exclude_labels: Vec::new(),
         prometheus_latency_buckets: Some(vec![0.5_f64, 2.5_f64]),
-        ..PrometheusExporterSettings::default()
+        prometheus_emit_input_sequence_length_label: false,
     };
     let (_registry, collectors) = registered(&settings, &default_label_settings());
     assert_eq!(
