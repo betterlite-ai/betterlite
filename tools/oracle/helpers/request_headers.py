@@ -91,9 +91,9 @@ AUTH: Final[TypeAdapter[UserAPIKeyAuth]] = TypeAdapter(UserAPIKeyAuth)
 
 
 def clean(call: CleanCall) -> JsonValue:
-    # the proxy hands clean_headers the request's Headers, and they keep each name as the caller sent it
+    # the proxy passes clean_headers the request's Headers, so names keep the caller's case
     raw_headers = Headers(raw=[(name.encode(), value.encode()) for name, value in call["headers"]])
-    cleaned: dict[str, str] = clean_headers(
+    cleaned: dict[str, str] = clean_headers(  # pyright: ignore[reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1178
         raw_headers,
         litellm_key_header_name=call["litellm_key_header_name"],
         forward_llm_provider_auth_headers=call["forward_auth_headers"],
@@ -106,38 +106,45 @@ def clean(call: CleanCall) -> JsonValue:
 # dispatch.py runs one call per process, so the LiteLLM globals set below never reach another call
 def backend(call: BackendCall) -> JsonValue:
     litellm.add_user_information_to_llm_headers = call["add_user_information"]
+    headers = dict(call["headers"])
+    principal = AUTH.validate_python(call["principal"])
     try:
-        arguments: LitellmDataForBackendLLMCall = LiteLLMProxyRequestSetup.add_litellm_data_for_backend_llm_call(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1481
-            headers=dict(call["headers"]),
-            request_data=call["request_data"],
-            user_api_key_dict=AUTH.validate_python(call["principal"]),
-            general_settings=call["general_settings"],
+        arguments: LitellmDataForBackendLLMCall = (
+            LiteLLMProxyRequestSetup.add_litellm_data_for_backend_llm_call(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1481
+                headers=headers,
+                request_data=call["request_data"],
+                user_api_key_dict=principal,
+                general_settings=call["general_settings"],
+            )
         )
     except ValueError:
         error = {"error": "invalid header"}
         return JSON.validate_python(error)
-    return JSON.validate_python(arguments)
+    return JSON.validate_python(arguments)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4980
 
 
 def model_group(call: ModelGroupCall) -> JsonValue:
     principal = AUTH.validate_python(call["principal"])
     principal.team_model_aliases = call["team_model_aliases"]
     models = call["models"]
-    forwarding = None if models is None else ModelGroupSettings(forward_client_headers_to_llm_api=models)
-    litellm.model_group_settings = forwarding
+    litellm.model_group_settings = None
+    if models is not None:
+        litellm.model_group_settings = ModelGroupSettings(forward_client_headers_to_llm_api=models)
     litellm.add_user_information_to_llm_headers = call["add_user_information"]
     data = dict(call["data"])
+    headers = dict(call["headers"])
     LiteLLMProxyRequestSetup.add_headers_to_llm_call_by_model_group(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1438
-        data, dict(call["headers"]), principal
+        data, headers, principal
     )
-    outcome = {"headers": data["headers"] if "headers" in data else None}
+    outcome = {"headers": data.get("headers")}
     return JSON.validate_python(outcome)
 
 
 def metadata(call: MetadataCall) -> JsonValue:
     data = dict(call["data"])
+    headers = dict(call["headers"])
     LiteLLMProxyRequestSetup.add_litellm_metadata_from_request_headers(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1538
-        dict(call["headers"]), data, call["slot"]
+        headers, data, call["slot"]
     )
     return JSON.validate_python(data)
 
@@ -153,12 +160,15 @@ def otel_trace_id(call: OtelCall) -> JsonValue:
 
 
 def traceparent(call: TraceparentCall) -> JsonValue:
+    proxy_server.open_telemetry_logger = None
     # only the logger's presence matters here, so it is never started
-    proxy_server.open_telemetry_logger = OpenTelemetry.__new__(OpenTelemetry) if call["otel_enabled"] else None
+    if call["otel_enabled"]:
+        proxy_server.open_telemetry_logger = OpenTelemetry.__new__(OpenTelemetry)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L381
     litellm.forward_traceparent_to_llm_provider = call["forward"]
     raw_headers = [(name.lower().encode(), value.encode()) for name, value in call["headers"]]
+    scope: dict[str, str | list[tuple[bytes, bytes]]] = {"type": "http", "headers": raw_headers}
     data = dict(call["data"])
-    _add_otel_traceparent_to_data(data, Request({"type": "http", "headers": raw_headers}))
+    _add_otel_traceparent_to_data(data, Request(scope))
     return JSON.validate_python(data)
 
 
@@ -175,16 +185,17 @@ def user(call: UserCall) -> JsonValue:
     return JSON.validate_python(outcome)
 
 
-def provider(headers: Pairs) -> JsonValue:
+def provider(pairs: Pairs) -> JsonValue:
     data: dict[str, JsonValue] = {}
-    used: bool = add_provider_specific_headers_to_request(data, dict(headers))
+    headers = dict(pairs)
+    used: bool = add_provider_specific_headers_to_request(data, headers)
     outcome = {"data": data, "used_client_oauth_token": used}
     return JSON.validate_python(outcome)
 
 
 def cache_control(text: str) -> JsonValue:
     try:
-        parsed: dict[str, str | bool] = parse_cache_control(text)
+        parsed: dict[str, str | bool] = parse_cache_control(text)  # type: ignore[no-untyped-call]  # pyright: ignore[reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L225
     except ValueError:
         error = {"error": "invalid directive"}
         return JSON.validate_python(error)
