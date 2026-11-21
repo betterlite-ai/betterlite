@@ -12,9 +12,9 @@ use betterlite_openai::perplexity_embedding::error::PerplexityEmbeddingError;
 use betterlite_openai::perplexity_embedding::reply::transform_embedding_response;
 use betterlite_openai::perplexity_responses::error::PerplexityResponsesError;
 use betterlite_openai::perplexity_responses::transform_response;
-use betterlite_openai::response_events::{RawResponse, ReplyBody};
+use betterlite_openai::response_events::{RawResponse, ReplyBody, ResponsesReply};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
-use chrono::DateTime;
+use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
 use serde_json::{Value, json};
 
@@ -61,55 +61,66 @@ pub(super) fn responses_replies(calls: &[ReplyCall]) -> Result<Value, Box<Helper
     let now = DateTime::parse_from_rfc3339(NOW).or_value_error()?;
     let mut values = Vec::with_capacity(calls.len());
     for call in calls {
-        let mut state = LoggingState::new(
-            serde_json::from_str::<LoggingInit>(INIT).or_value_error()?,
-            CorrelationSetup {
-                context: &mut CorrelationContext::default(),
-                settings: CorrelationSettings::default(),
-            },
-            &redactor,
-            || String::from("trace"),
-            Duration::default,
-        )
-        .or_value_error()?;
-        let env = PrePostEnv {
-            debug: DebugSettings::default(),
-            globals: GlobalFlags::default(),
-            decision: Decision {
-                content: false,
-                key_info: false,
-            },
-            redactor: &redactor,
-            log: &Silent,
-            input_callbacks: &[],
-            sentry: None,
-            logger_fn: None,
-            now,
-        };
-        let headers: IndexMap<String, String> = call
-            .headers
-            .iter()
-            .map(|(name, value)| (name.to_ascii_lowercase(), value.clone()))
-            .collect();
-        let reply = RawResponse {
-            status: call.status,
-            headers: &headers,
-            text: &call.body,
-        };
-        values.push(
-            match transform_response(&reply, CREATED, &mut state, &env) {
-                Ok(transformed) => match transformed.response {
-                    ReplyBody::Typed(response) => json!({"ok": true, "id": response.id}),
-                    ReplyBody::Lax(fields) => json!({"ok": true, "id": fields.get("id")}),
-                },
-                Err(PerplexityResponsesError::Failed { error }) => {
-                    json!({"raised": error.status_code})
-                }
-                Err(PerplexityResponsesError::Input(_) | PerplexityResponsesError::Reply(_)) => {
-                    json!({"raised": null})
-                }
-            },
-        );
+        values.push(one_reply(call, &redactor, now)?);
     }
     Ok(Value::Array(values))
+}
+
+// LiteLLM builds a logging state per call, so each reply gets its own
+fn one_reply(
+    call: &ReplyCall,
+    redactor: &Redactor,
+    now: DateTime<FixedOffset>,
+) -> Result<Value, Box<HelperError>> {
+    let mut state = LoggingState::new(
+        serde_json::from_str::<LoggingInit>(INIT).or_value_error()?,
+        CorrelationSetup {
+            context: &mut CorrelationContext::default(),
+            settings: CorrelationSettings::default(),
+        },
+        redactor,
+        || String::from("trace"),
+        Duration::default,
+    )
+    .or_value_error()?;
+    let env = PrePostEnv {
+        debug: DebugSettings::default(),
+        globals: GlobalFlags::default(),
+        decision: Decision {
+            content: false,
+            key_info: false,
+        },
+        redactor,
+        log: &Silent,
+        input_callbacks: &[],
+        sentry: None,
+        logger_fn: None,
+        now,
+    };
+    let headers: IndexMap<String, String> = call
+        .headers
+        .iter()
+        .map(|(name, value)| (name.to_ascii_lowercase(), value.clone()))
+        .collect();
+    let reply = RawResponse {
+        status: call.status,
+        headers: &headers,
+        text: &call.body,
+    };
+    Ok(reply_value(transform_response(
+        &reply, CREATED, &mut state, &env,
+    )))
+}
+
+fn reply_value(outcome: Result<ResponsesReply, PerplexityResponsesError>) -> Value {
+    match outcome {
+        Ok(transformed) => match transformed.response {
+            ReplyBody::Typed(response) => json!({"ok": true, "id": response.id}),
+            ReplyBody::Lax(fields) => json!({"ok": true, "id": fields.get("id")}),
+        },
+        Err(PerplexityResponsesError::Failed { error }) => json!({"raised": error.status_code}),
+        Err(PerplexityResponsesError::Input(_) | PerplexityResponsesError::Reply(_)) => {
+            json!({"raised": null})
+        }
+    }
 }

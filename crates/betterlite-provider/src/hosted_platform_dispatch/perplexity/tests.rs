@@ -171,15 +171,8 @@ fn reaches_config_embedding_through_the_perplexity_adapter() {
     let authorization = sent.http.headers.get(AUTHORIZATION).unwrap();
     assert_eq!(authorization.to_str().unwrap(), "Bearer sk-deployment");
     assert!(authorization.is_sensitive());
-    assert_eq!(
-        sent.http
-            .headers
-            .get(CONTENT_TYPE)
-            .unwrap()
-            .to_str()
-            .unwrap(),
-        "application/json"
-    );
+    let content_type = sent.http.headers.get(CONTENT_TYPE).unwrap();
+    assert_eq!(content_type.to_str().unwrap(), "application/json");
     assert_eq!(sent.http.headers.len(), 2);
     assert_eq!(sent.http.deadline, Duration::from_secs(3));
     assert_eq!(sent.client_model.as_deref(), Some("pplx-embed-v1-0.6b"));

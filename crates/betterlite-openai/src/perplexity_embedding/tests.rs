@@ -201,14 +201,14 @@ fn prompt_tokens_fall_back_to_total_tokens(
 fn a_reply_that_is_not_json_keeps_the_status_and_the_text() {
     let error = transform_embedding_response("m", 502, b"upstream down").unwrap_err();
     assert_eq!(error.status_code(), 502);
-    let PerplexityEmbeddingError::Provider { error } = error else {
+    let PerplexityEmbeddingError::Provider { error: provider } = error else {
         panic!("a provider error");
     };
-    assert_eq!(error.message, "upstream down");
-    assert_eq!(error.request.method, "POST");
-    assert_eq!(error.request.url, "https://docs.litellm.ai/docs");
-    assert_eq!(error.response.status_code, 502);
-    assert_eq!(error.headers, Some(Vec::new()));
+    assert_eq!(provider.message, "upstream down");
+    assert_eq!(provider.request.method, "POST");
+    assert_eq!(provider.request.url, "https://docs.litellm.ai/docs");
+    assert_eq!(provider.response.status_code, 502);
+    assert_eq!(provider.headers, Some(Vec::new()));
 }
 
 #[rstest]

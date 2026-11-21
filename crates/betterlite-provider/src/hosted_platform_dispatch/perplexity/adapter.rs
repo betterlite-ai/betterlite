@@ -9,6 +9,7 @@ use betterlite_openai::perplexity_embedding::reply::transform_embedding_response
 use betterlite_prompts::arguments::json::Object;
 use http::header::{AUTHORIZATION, CONTENT_TYPE};
 use http::{HeaderMap, HeaderValue, Method};
+use secrecy::SecretString;
 use serde::de::Error as _;
 use url::Url;
 
@@ -89,22 +90,7 @@ fn prepared_embedding(
     operation: &EmbeddingOperation,
     deployment: &Deployment,
 ) -> Result<PreparedRequest, OperationError> {
-    let requested: Object = serde_json::to_vec(&operation.request)
-        .and_then(|bytes| serde_json::from_slice(&bytes))
-        .map_err(|source| OperationError::Encode { source })?;
-    let mut optional_params = Object::new();
-    perplexity_embedding::map_openai_params(&requested, &mut optional_params);
-    let call = EmbeddingCall {
-        model: deployment.model.clone(),
-        input: operation.request.input.clone(),
-        optional_params,
-        litellm_params: Object::new(),
-        api_key: deployment.api_key.clone(),
-        api_base: Some(deployment.api_base.clone()),
-        headers: None,
-        timeout: deployment.timeout,
-        aembedding: false,
-    };
+    let call = embedding_call(operation, deployment)?;
     let Ok(resolved) = embedding(&call) else {
         return Err(unsupported());
     };
@@ -116,23 +102,10 @@ fn prepared_embedding(
     .map_err(|error| OperationError::Encode {
         source: serde_json::Error::custom(error),
     })?;
-    let url = perplexity_embedding::get_complete_url(resolved.api_base.as_deref());
-    // the proxy hands no process environment to an adapter, so only the deployment's own key is read
-    let wire_headers = perplexity_embedding::validate_environment(
-        resolved.api_key.as_ref(),
-        &BTreeMap::<String, String>::new(),
-    );
-    let mut headers = HeaderMap::new();
-    if let Some(bearer) = wire_headers.get("Authorization") {
-        headers.insert(AUTHORIZATION, authorization_value(bearer)?);
-    }
-    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
     let http = PreparedHttp {
         method: Method::POST,
-        url: Url::parse(&url).map_err(|source| OperationError::Encode {
-            source: serde_json::Error::custom(source),
-        })?,
-        headers,
+        url: embedding_url(&resolved)?,
+        headers: embedding_headers(resolved.api_key.as_ref())?,
         body: serde_json::to_vec(&body).map_err(|source| OperationError::Encode { source })?,
         deadline: resolved.timeout,
         body_limit: None,
@@ -142,6 +115,47 @@ fn prepared_embedding(
         retry: TransformRetry::DISABLED,
         client_model: Some(resolved.model),
     })))
+}
+
+fn embedding_call(
+    operation: &EmbeddingOperation,
+    deployment: &Deployment,
+) -> Result<EmbeddingCall, OperationError> {
+    let requested: Object = serde_json::to_vec(&operation.request)
+        .and_then(|bytes| serde_json::from_slice(&bytes))
+        .map_err(|source| OperationError::Encode { source })?;
+    let mut optional_params = Object::new();
+    perplexity_embedding::map_openai_params(&requested, &mut optional_params);
+    Ok(EmbeddingCall {
+        model: deployment.model.clone(),
+        input: operation.request.input.clone(),
+        optional_params,
+        litellm_params: Object::new(),
+        api_key: deployment.api_key.clone(),
+        api_base: Some(deployment.api_base.clone()),
+        headers: None,
+        timeout: deployment.timeout,
+        aembedding: false,
+    })
+}
+
+fn embedding_url(resolved: &EmbeddingCall) -> Result<Url, OperationError> {
+    let url = perplexity_embedding::get_complete_url(resolved.api_base.as_deref());
+    Url::parse(&url).map_err(|source| OperationError::Encode {
+        source: serde_json::Error::custom(source),
+    })
+}
+
+// the proxy hands no process environment to an adapter, so only the deployment's own key is read
+fn embedding_headers(api_key: Option<&SecretString>) -> Result<HeaderMap, OperationError> {
+    let wire =
+        perplexity_embedding::validate_environment(api_key, &BTreeMap::<String, String>::new());
+    let mut headers = HeaderMap::new();
+    if let Some(bearer) = wire.get("Authorization") {
+        headers.insert(AUTHORIZATION, authorization_value(bearer)?);
+    }
+    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    Ok(headers)
 }
 
 // a non-JSON reply keeps its status and text the way PerplexityEmbeddingError carries them

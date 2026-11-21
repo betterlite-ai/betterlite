@@ -61,24 +61,8 @@ pub fn transform_embedding_response(
             limit: MAX_REPLY_BYTES,
         });
     }
-    let wire: WireReply = match serde_json::from_slice(raw) {
-        Ok(wire) => wire,
-        Err(source) if source.classify() == Category::Data => {
-            return Err(PerplexityEmbeddingError::Shape { source });
-        }
-        Err(_not_json) => {
-            // httpx decodes the body as UTF-8 with replacement characters for raw_response.text
-            let text = String::from_utf8_lossy(raw);
-            return Err(PerplexityEmbeddingError::Provider {
-                error: Box::new(get_error_class(&text, status_code, &Headers::new())),
-            });
-        }
-    };
-    let mut data = wire.data.unwrap_or_default();
-    for item in &mut data {
-        let decoded = decoded_embedding(item.get("embedding"))?;
-        item.insert(String::from("embedding"), decoded);
-    }
+    let wire = decode_wire(status_code, raw)?;
+    let data = decoded_data(wire.data)?;
     let (prompt_tokens, total_tokens) = wire.usage.map_or((None, None), |usage| {
         (usage.prompt_tokens, usage.total_tokens)
     });
@@ -98,6 +82,45 @@ pub fn transform_embedding_response(
     })
 }
 
+// a reply that is not JSON raises through the Perplexity error class, and one of the wrong shape is a Shape error
+fn decode_wire(status_code: u16, raw: &[u8]) -> Result<WireReply, PerplexityEmbeddingError> {
+    match serde_json::from_slice(raw) {
+        Ok(wire) => Ok(wire),
+        Err(source) if source.classify() == Category::Data => {
+            Err(PerplexityEmbeddingError::Shape { source })
+        }
+        Err(_not_json) => {
+            // httpx reads raw_response.text with errors="replace", so each invalid sequence reads as one U+FFFD
+            let text = replaced_text(raw);
+            Err(PerplexityEmbeddingError::Provider {
+                error: Box::new(get_error_class(&text, status_code, &Headers::new())),
+            })
+        }
+    }
+}
+
+// every data item is copied with all of its keys, and only its embedding is rewritten
+fn decoded_data(items: Option<Vec<Object>>) -> Result<Vec<Object>, PerplexityEmbeddingError> {
+    let mut data = items.unwrap_or_default();
+    for item in &mut data {
+        let decoded = decoded_embedding(item.get("embedding"))?;
+        item.insert(String::from("embedding"), decoded);
+    }
+    Ok(data)
+}
+
+// httpx replaces each invalid sequence with one U+FFFD, which clippy.toml keeps String::from_utf8_lossy from doing
+fn replaced_text(body: &[u8]) -> String {
+    let mut text = String::with_capacity(body.len());
+    for chunk in body.utf8_chunks() {
+        text.push_str(chunk.valid());
+        if !chunk.invalid().is_empty() {
+            text.push(char::REPLACEMENT_CHARACTER);
+        }
+    }
+    text
+}
+
 // a string is base64 of signed bytes, each divided by 127; a list or any other value stays as sent
 fn decoded_embedding(embedding: Option<&Json>) -> Result<Json, PerplexityEmbeddingError> {
     let Some(value) = embedding else {
@@ -109,10 +132,11 @@ fn decoded_embedding(embedding: Option<&Json>) -> Result<Json, PerplexityEmbeddi
     let bytes = STANDARD
         .decode(encoded)
         .map_err(|source| PerplexityEmbeddingError::Base64 { source })?;
+    // struct.unpack(f"{count}b") reads each byte as a signed value, which is cast_signed's two's complement
     // float_arithmetic is denied; Div::div is the same IEEE division as LiteLLM's float(v) / 127.0
     let floats = bytes
         .into_iter()
-        .map(|byte| f64::from(i8::from_ne_bytes([byte])).div(INT8_SCALE))
+        .map(|byte| f64::from(byte.cast_signed()).div(INT8_SCALE))
         .filter_map(Number::from_f64)
         .map(Json::Number)
         .collect();

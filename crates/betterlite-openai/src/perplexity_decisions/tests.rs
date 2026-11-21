@@ -40,8 +40,10 @@ fn the_config_names_the_perplexity_decisions_endpoint() {
 
 #[test]
 fn the_other_attributes_keep_the_trait_defaults() {
-    assert!(PerplexityDecisionsConfig::API_KEY_REQUIRED);
-    assert!(!PerplexityDecisionsConfig::SUPPORTS_SAFETY_IDENTIFIER);
+    let required: bool = PerplexityDecisionsConfig::API_KEY_REQUIRED;
+    assert!(required);
+    let safety_identifier: bool = PerplexityDecisionsConfig::SUPPORTS_SAFETY_IDENTIFIER;
+    assert!(!safety_identifier);
     assert_eq!(PerplexityDecisionsConfig.canonical_model("pplx"), "pplx");
     assert_eq!(
         PerplexityDecisionsConfig.missing_api_base_message("perplexity"),

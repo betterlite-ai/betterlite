@@ -56,7 +56,10 @@ fn body_text(body: &Object) -> String {
     serde_json::to_string(body).unwrap()
 }
 
-fn decode(text: &str, status: u16) -> Result<ReplyBody, PerplexityResponsesError> {
+fn with_state<T, A>(action: A) -> T
+where
+    A: FnOnce(&mut LoggingState, &PrePostEnv<'_>) -> T,
+{
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
     let mut state = LoggingState::new(
         serde_json::from_str::<LoggingInit>(INIT).unwrap(),
@@ -83,13 +86,19 @@ fn decode(text: &str, status: u16) -> Result<ReplyBody, PerplexityResponsesError
         logger_fn: None,
         now: DateTime::parse_from_rfc3339("2026-01-01T00:05:00+00:00").unwrap(),
     };
-    let headers = IndexMap::new();
-    let reply = RawResponse {
-        status,
-        headers: &headers,
-        text,
-    };
-    transform_response(&reply, 1_700_000_000, &mut state, &env).map(|decoded| decoded.response)
+    action(&mut state, &env)
+}
+
+fn decode(text: &str, status: u16) -> Result<ReplyBody, PerplexityResponsesError> {
+    with_state(|state, env| {
+        let headers = IndexMap::new();
+        let reply = RawResponse {
+            status,
+            headers: &headers,
+            text,
+        };
+        transform_response(&reply, 1_700_000_000, state, env).map(|decoded| decoded.response)
+    })
 }
 
 fn failure(text: &str, status: u16) -> (u16, String) {
@@ -115,7 +124,7 @@ fn the_config_names_perplexity_and_no_websocket() {
         ]
     );
     assert_eq!(PROVIDER, ProviderId::Perplexity);
-    assert!(!SUPPORTS_NATIVE_WEBSOCKET);
+    const { assert!(!SUPPORTS_NATIVE_WEBSOCKET) };
 }
 
 #[rstest]

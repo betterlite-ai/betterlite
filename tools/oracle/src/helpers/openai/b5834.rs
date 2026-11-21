@@ -136,22 +136,7 @@ impl Helper for Op {
                 urls,
                 requests,
                 replies,
-            } => {
-                let url_values: Vec<String> = urls
-                    .iter()
-                    .map(|call| {
-                        perplexity_responses::get_complete_url(call.api_base.as_deref(), &call.env)
-                    })
-                    .collect();
-                Ok(json!({
-                    "supported": perplexity_responses::SUPPORTED_OPENAI_PARAMS,
-                    "websocket": perplexity_responses::SUPPORTS_NATIVE_WEBSOCKET,
-                    "headers": headers.iter().map(responses_headers).collect::<Vec<_>>(),
-                    "urls": url_values,
-                    "requests": requests.iter().map(responses_request).collect::<Vec<_>>(),
-                    "replies": replies::responses_replies(replies)?,
-                }))
-            }
+            } => responses(headers, urls, requests, replies),
             Input::Search {
                 headers,
                 urls,
@@ -161,6 +146,26 @@ impl Helper for Op {
             Input::Decisions { bases } => Ok(decisions(bases)),
         }
     }
+}
+
+fn responses(
+    headers: &[HeaderCall],
+    urls: &[BaseCall],
+    requests: &[ResponsesCall],
+    replies: &[ReplyCall],
+) -> HelperResult {
+    let url_values: Vec<String> = urls
+        .iter()
+        .map(|call| perplexity_responses::get_complete_url(call.api_base.as_deref(), &call.env))
+        .collect();
+    Ok(json!({
+        "supported": perplexity_responses::SUPPORTED_OPENAI_PARAMS,
+        "websocket": perplexity_responses::SUPPORTS_NATIVE_WEBSOCKET,
+        "headers": headers.iter().map(responses_headers).collect::<Vec<_>>(),
+        "urls": url_values,
+        "requests": requests.iter().map(responses_request).collect::<Vec<_>>(),
+        "replies": replies::responses_replies(replies)?,
+    }))
 }
 
 // LiteLLM's helper clears the environment and sets only the case's variables
