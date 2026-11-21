@@ -1,0 +1,10 @@
+kind: helper
+name: foundry-rejected-fields-repair-seed
+call:
+  foundry_rejected_fields:
+    repairs:
+      - error: |-
+          {"error":{"message":"{\"detail\":[{\"loc\":[\"body\",\"top_p\"],\"type\":\"extra_forbidden\"}],\"msg\":\"Extra inputs are not permitted\"}","type":"invalid_request_error"}}
+        body: {model: deployment, messages: [{role: user, content: hi}], top_p: 0.5}
+env: {}
+compare: {ignore: []}

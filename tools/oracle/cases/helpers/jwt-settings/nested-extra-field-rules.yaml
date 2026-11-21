@@ -1,0 +1,15 @@
+kind: helper
+name: jwt-settings-nested-extra-field-rules
+call:
+  jwt_settings:
+    scenarios:
+      - {"settings": {"object_id_jwt_field": "oid", "role_mappings": [{"role": "admin", "internal_role": "proxy_admin", "note": "kept out"}], "jwt_litellm_role_map": [{"jwt_role": "viewer", "litellm_role": "internal_user_viewer", "note": "kept out"}]}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"scope_mappings": [{"scope": "litellm.read", "note": "forbidden"}], "enforce_scope_based_access": true}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"issuers": [{"issuer": "https://idp-a.example.com", "audience": "litellm", "note": "forbidden"}]}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"issuers": [{"issuer": "https://idp-a.example.com", "note": "forbidden"}]}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"role_mappings": [{"role": "admin", "internal_role": "org_admin"}]}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"role_mappings": [{"internal_role": "team"}]}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"jwt_litellm_role_map": [{"jwt_role": "viewer", "litellm_role": "superuser"}]}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"jwt_litellm_role_map": [{"jwt_role": "viewer", "litellm_role": "customer"}, {"jwt_role": "ops", "litellm_role": "org_admin"}]}, "references": {}, "environment": {}, "issuers": []}
+env: {}
+compare: {ignore: []}

@@ -1,7 +1,7 @@
 id: B3051
 milestone: M4 keys, spend and management
 title: Dynamic priority allocation and saturation policy
-status: todo
+status: done
 depends_on: [B002, B732, B846, B3030, B3031]
 file: tasks/B3051-dynamic-rate-limit-policy.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/hooks/README.dynamic_rate_limiter_v3.md"
 parent: B072
 split_from: B072
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2839

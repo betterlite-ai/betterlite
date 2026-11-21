@@ -1,0 +1,26 @@
+kind: helper
+name: partition-calendar-monday-december-and-negative-ahead
+call:
+  partition_calendar:
+    function: upcoming
+    today: "2026-12-28"
+    interval: week
+    ahead: 1
+calls:
+  - partition_calendar:
+      function: upcoming
+      today: "2026-12-31"
+      interval: day
+      ahead: 2
+  - partition_calendar:
+      function: upcoming
+      today: "2026-12-15"
+      interval: month
+      ahead: 1
+  - partition_calendar:
+      function: upcoming
+      today: "2026-12-28"
+      interval: week
+      ahead: -1
+env: {}
+compare: {ignore: []}

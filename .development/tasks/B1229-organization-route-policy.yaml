@@ -45,8 +45,9 @@ description: >-
 
   Compare the pure membership projections, role checks and all-requested-organizations predicate under
   B856 Management::auth, seeding B171 helper_case. Native tests cover asynchronous context lookup and
-  booted HTTP cases cover integration through B757's auth error conversion, which preserves these
-  ProxyException fields. This module takes typed membership rows and does not fetch them itself.
+  booted HTTP cases cover integration through this stage's own StageFailure variant rendered by B749's
+  denial_response, which preserves these B8410 ProxyException fields as LiteLLM's auth exception
+  handler passes a ProxyException through unchanged. This module takes typed membership rows and does not fetch them itself.
 
 
   The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions

@@ -1,0 +1,19 @@
+kind: helper
+name: azure-realtime-connect-seed
+call:
+  azure_realtime:
+    kind: connect
+    model: realtime-a
+    scope_headers: []
+    ssl_verification: enabled
+    max_message_size_bytes: 4096
+    azure_api_base: null
+    azure_api_key: null
+    azure_api_version: null
+    queries:
+      - {api_base: "https://example.test", api_version: "2024-10-01-preview", realtime_protocol: null, query_params: null, api_key: "k", azure_ad_token: null}
+    protocols: []
+    failures: []
+    http_setups: []
+env: {}
+compare: {ignore: []}

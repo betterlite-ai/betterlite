@@ -1,8 +1,8 @@
 id: B359
 title: Keyword, plan-mode and stall overrides
 description: 'Build a typed per-turn override result for B335''s session lifecycle: lexical and semantic
-  keywords, plan/housekeeping recognition and bounded tool-failure stall detection. Reuse B330''s structured
-  message/context handling and B327''s semantic index. Keep this module pure except its injected semantic
+  keywords, plan/housekeeping recognition and bounded tool-failure stall detection. Reuse B384''s message helpers
+  (classifier_message_text: matched_plan_mode_sentinel, reminder_markers_for_request), B328''s keyword matching and tier names (complexity_scoring), B375''s parent_session_kwargs (classifier_verdict) and B327''s semantic index. Keep this module pure except its injected semantic
   lookup; it must not read or mutate session pins. Configuration boundary keys introduced or consumed
   here: keyword_tier_rules, stall_escalation_enabled, stall_escalation_window, stall_escalation_repeat_threshold,
   semantic_keyword_matching, embedding_model, match_threshold, route_housekeeping_to_cheapest_tier. Pinned
