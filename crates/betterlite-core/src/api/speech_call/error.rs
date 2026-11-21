@@ -68,14 +68,14 @@ impl From<SpeechError> for SpeechCallError {
             | SpeechError::Transport { .. }
             | SpeechError::Logging { .. }
             | SpeechError::Body { .. }
-            | SpeechError::TooLarge) => sdk(error),
+            | SpeechError::TooLarge) => sdk(&error),
         }
     }
 }
 
 // the class the OpenAI SDK raises for each failure B514 can report
-fn sdk(error: SpeechError) -> SpeechCallError {
-    let class = match &error {
+fn sdk(error: &SpeechError) -> SpeechCallError {
+    let class = match error {
         SpeechError::MissingApiKey
         | SpeechError::BaseUrl { .. }
         | SpeechError::Header { .. }

@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::{Future, ready};
+use std::mem;
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
@@ -205,7 +206,7 @@ impl RecordingTransport {
 
     pub(super) fn sent(&self) -> Vec<OutboundRequest> {
         let mut sent = self.sent.lock().unwrap_or_else(PoisonError::into_inner);
-        std::mem::take(&mut *sent)
+        mem::take(&mut *sent)
     }
 }
 
@@ -292,7 +293,7 @@ impl ScriptedConfig {
 
     pub(super) fn calls(&self) -> Vec<MappingCall> {
         let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
-        std::mem::take(&mut *calls)
+        mem::take(&mut *calls)
     }
 }
 
@@ -432,7 +433,7 @@ impl ScriptedOperations {
 
     pub(super) fn take(&self) -> Vec<OperationRecord> {
         let mut executed = self.executed.lock().unwrap_or_else(PoisonError::into_inner);
-        std::mem::take(&mut *executed)
+        mem::take(&mut *executed)
     }
 }
 

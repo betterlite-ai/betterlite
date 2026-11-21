@@ -37,14 +37,14 @@ pub(crate) fn rules(provider: &str) -> Option<Rules> {
 }
 
 // every family shares one branch shape and differs only in these five answers
-pub(super) fn kind(family: Rules) -> SpeechOperationKind {
+pub(super) const fn kind(family: Rules) -> SpeechOperationKind {
     match family {
         Rules::Edenai | Rules::Minimax | Rules::Mistral => SpeechOperationKind::Generic,
         Rules::RunwayMl | Rules::Polly | Rules::AzureSpeech => SpeechOperationKind::Dispatch,
     }
 }
 
-pub(super) fn voice_rule(family: Rules) -> VoiceRule {
+pub(super) const fn voice_rule(family: Rules) -> VoiceRule {
     match family {
         Rules::Edenai | Rules::Mistral => VoiceRule::String,
         Rules::Minimax => VoiceRule::FirstOf(&["voice_id", "id", "name"]),
@@ -52,14 +52,14 @@ pub(super) fn voice_rule(family: Rules) -> VoiceRule {
     }
 }
 
-pub(super) fn overwrites_credentials(family: Rules) -> bool {
+pub(super) const fn overwrites_credentials(family: Rules) -> bool {
     match family {
         Rules::Minimax | Rules::Mistral => true,
         Rules::Edenai | Rules::RunwayMl | Rules::Polly | Rules::AzureSpeech => false,
     }
 }
 
-pub(super) fn carries_base(family: Rules) -> bool {
+pub(super) const fn carries_base(family: Rules) -> bool {
     match family {
         Rules::Edenai => true,
         Rules::Minimax | Rules::Mistral | Rules::RunwayMl | Rules::Polly | Rules::AzureSpeech => {
@@ -68,7 +68,7 @@ pub(super) fn carries_base(family: Rules) -> bool {
     }
 }
 
-pub(super) fn required_config(family: Rules) -> Option<&'static str> {
+pub(super) const fn required_config(family: Rules) -> Option<&'static str> {
     match family {
         Rules::RunwayMl => Some("RunwayML Text-to-Speech configuration not found"),
         Rules::AzureSpeech => Some("Azure Speech Service configuration not found"),

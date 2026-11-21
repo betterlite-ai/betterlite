@@ -69,7 +69,7 @@ where
     // the rules table: the one branch shape the simple provider families share
     pub(crate) async fn generic(
         &self,
-        branch: BranchCall<'service, '_>,
+        branch: &BranchCall<'service, '_>,
         family: Rules,
     ) -> Result<BinaryContent, SpeechCallError> {
         if let Some(message) = required_config(family)
@@ -79,7 +79,7 @@ where
                 message: message.to_owned(),
             });
         }
-        let mut operation = self.operation(&branch, kind(family));
+        let mut operation = self.operation(branch, kind(family));
         operation.voice = match voice_rule(family) {
             VoiceRule::Keep => operation.voice,
             VoiceRule::String => string_voice(branch.voice.as_ref()),
@@ -96,14 +96,14 @@ where
             );
         }
         if overwrites_credentials(family) {
-            overwrite_credentials(&mut operation.litellm_params, &branch);
+            overwrite_credentials(&mut operation.litellm_params, branch);
         }
         self.operations.execute(operation).await
     }
 
     pub(crate) async fn elevenlabs(
         &self,
-        branch: BranchCall<'service, '_>,
+        branch: &BranchCall<'service, '_>,
     ) -> Result<BinaryContent, SpeechCallError> {
         let Some(SpeechVoice::Name(name)) = &branch.voice else {
             return Err(SpeechCallError::BadRequest {
@@ -133,8 +133,8 @@ where
             String::from("__elevenlabs_voice_id__"),
             Value::String(voice.to_owned()),
         );
-        overwrite_credentials(&mut litellm_params, &branch);
-        let mut operation = self.operation(&branch, SpeechOperationKind::Generic);
+        overwrite_credentials(&mut litellm_params, branch);
+        let mut operation = self.operation(branch, SpeechOperationKind::Generic);
         operation.voice = Some(SpeechVoice::Name(voice.to_owned()));
         operation.kwargs = kwargs;
         operation.litellm_params = litellm_params;
@@ -143,7 +143,7 @@ where
 
     pub(crate) async fn azure(
         &self,
-        branch: BranchCall<'service, '_>,
+        branch: &BranchCall<'service, '_>,
     ) -> Result<BinaryContent, SpeechCallError> {
         if branch.resolved.model.starts_with("speech/") {
             return self.generic(branch, Rules::AzureSpeech).await;
@@ -154,15 +154,15 @@ where
     // Azure OpenAI: the voice check, then the Azure credential chains on the shared operation
     async fn azure_openai(
         &self,
-        branch: BranchCall<'service, '_>,
+        branch: &BranchCall<'service, '_>,
     ) -> Result<BinaryContent, SpeechCallError> {
         let Some(SpeechVoice::Name(_voice)) = &branch.voice else {
             return Err(SpeechCallError::BadRequest {
                 message: String::from("'voice' is required to be passed as a string for Azure TTS"),
             });
         };
-        let mut operation = self.operation(&branch, SpeechOperationKind::AzureOpenAi);
-        self.azure_credentials(&branch, &mut operation);
+        let mut operation = self.operation(branch, SpeechOperationKind::AzureOpenAi);
+        self.azure_credentials(branch, &mut operation);
         self.operations.execute(operation).await
     }
 
@@ -211,13 +211,13 @@ where
 
     pub(crate) async fn vertex(
         &self,
-        branch: BranchCall<'service, '_>,
+        branch: &BranchCall<'service, '_>,
         logging: &mut dyn SpeechCallLogging,
     ) -> Result<BinaryContent, SpeechCallError> {
         if branch.resolved.model.contains("gemini") {
             return self.bridge(branch, logging).await;
         }
-        let mut operation = self.operation(&branch, SpeechOperationKind::Dispatch);
+        let mut operation = self.operation(branch, SpeechOperationKind::Dispatch);
         operation.extra_headers = branch.call.headers.clone();
         operation.api_key = None;
         operation.api_base = branch.resolved.api_base.clone();

@@ -119,7 +119,7 @@ where
     // B514 over the credential chains speech applies before the OpenAI SDK call
     pub(crate) async fn openai_branch(
         &self,
-        branch: BranchCall<'_, '_>,
+        branch: &BranchCall<'_, '_>,
         logging: &mut dyn SpeechCallLogging,
     ) -> Result<BinaryContent, SpeechCallError> {
         let Some(SpeechVoice::Name(name)) = &branch.voice else {
@@ -155,6 +155,6 @@ where
         };
         let response =
             audio_speech(call, &mut SpeechLoggerAdapter { logging }, self.transport)?.await?;
-        self.content(response).await
+        Self::content(response).await
     }
 }

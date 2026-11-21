@@ -69,12 +69,14 @@ impl SpeechCall {
     }
 
     // timeout=None takes litellm.request_timeout, and an explicit zero stays zero
+    #[must_use]
     pub fn timeout_seconds(&self, settings: &Settings) -> f64 {
         self.timeout_seconds
             .unwrap_or(settings.request_timeout_seconds)
     }
 
     // max_retries=None takes litellm.num_retries or 2, while an explicit zero stays zero
+    #[must_use]
     pub fn max_retries(&self, settings: &Settings) -> u32 {
         match self.max_retries {
             Some(value) => value,

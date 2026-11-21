@@ -52,11 +52,11 @@ pub(super) fn settings(
         .api_base
         .as_deref()
         .map(|value| harness(value, api_base));
-    load(&source(globals, base), environment)
+    load(&source(globals, base.as_deref()), environment)
 }
 
 // litellm_settings as the case sets it, with the base already resolved to the mock origin
-fn source(globals: &Globals, base: Option<String>) -> String {
+fn source(globals: &Globals, base: Option<&str>) -> String {
     serde_json::json!({
         "litellm_settings": {
             "api_base": base,

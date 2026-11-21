@@ -13,7 +13,7 @@ use super::error::SpeechCallError;
 use super::values;
 
 // the logging object speech() receives: its state for the call record, and the pre-call hook B514 may write
-pub trait SpeechCallLogging {
+pub trait SpeechCallLogging: Send {
     fn state(&mut self) -> &mut LoggingState;
 
     fn pre_call(&mut self, record: SpeechLogRecord<'_>) -> Result<(), PrePostError>;

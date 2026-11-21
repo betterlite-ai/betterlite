@@ -12,7 +12,7 @@ use betterlite_models::resolution::{
 use betterlite_openai::api::speech_provider_contract::SpeechVoice;
 use betterlite_openai::files::records::BinaryContent;
 use betterlite_openai::openai_base_config::Object;
-use betterlite_openai::speech::result::SpeechTransport;
+use betterlite_openai::speech::result::{SpeechResponse, SpeechTransport};
 use betterlite_redact::secret::Redactor;
 use secrecy::ExposeSecret as _;
 use serde_json::Value;
@@ -109,7 +109,7 @@ where
             }
         }
         let branch = self.prepare(call, resolved, logging)?;
-        self.route(resolved.provider.slug(), branch, logging).await
+        self.route(resolved.provider.slug(), &branch, logging).await
     }
 
     // tags drop, the options map, the call logs, and then the branch record every provider reads
@@ -141,7 +141,7 @@ where
             resolved,
             voice,
             optional_params,
-            litellm_params: self.litellm_params(call, resolved),
+            litellm_params: Self::litellm_params(call, resolved),
             kwargs,
             selected,
         })
@@ -150,7 +150,7 @@ where
     async fn route(
         &self,
         provider: &str,
-        branch: BranchCall<'service, '_>,
+        branch: &BranchCall<'service, '_>,
         logging: &mut dyn SpeechCallLogging,
     ) -> Result<BinaryContent, SpeechCallError> {
         match provider {
@@ -190,7 +190,7 @@ where
     }
 
     // the provider dict get_litellm_params builds, limited to the slots speech and its providers read
-    fn litellm_params(&self, call: &SpeechCall, resolved: &ResolvedModel) -> Object {
+    fn litellm_params(call: &SpeechCall, resolved: &ResolvedModel) -> Object {
         let mut params = Object::new();
         let api_key = call.api_key.as_ref().or(resolved.api_key.as_ref());
         params.insert(
@@ -227,8 +227,7 @@ where
     }
 
     pub(crate) async fn content(
-        &self,
-        response: betterlite_openai::speech::result::SpeechResponse,
+        response: SpeechResponse,
     ) -> Result<BinaryContent, SpeechCallError> {
         let status = response.status;
         let headers = response.headers.clone();

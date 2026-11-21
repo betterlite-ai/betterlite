@@ -43,7 +43,7 @@ where
     // B1003's bridge over the injected completion pipeline, with the headers speech passes it
     pub(crate) async fn bridge(
         &self,
-        branch: BranchCall<'_, '_>,
+        branch: &BranchCall<'_, '_>,
         logging: &mut dyn SpeechCallLogging,
     ) -> Result<BinaryContent, SpeechCallError> {
         let model = Json::Text(branch.resolved.model.clone());
