@@ -1,7 +1,6 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::fmt::Write as _;
 use std::io;
 use std::io::Error as IoError;
 use std::sync::{Arc, Mutex};
@@ -10,7 +9,8 @@ use betterlite_db::budget_permission_rows::JsonData;
 use rstest::rstest;
 use tracing::subscriber::{DefaultGuard, set_default};
 
-use super::{DEFAULT_USER_PARAMS_PATH, ROLE_PERMISSIONS_PATH, RbacRole, Settings};
+use super::resolve_json::resolved;
+use super::{DEFAULT_USER_PARAMS_PATH, ROLE_PERMISSIONS_PATH, RawValue, RbacRole, Settings};
 use crate::loader::{ConfigError, ConfigLoader};
 
 fn load(source: &str, environment: &[(&str, &str)]) -> Result<Settings, ConfigError> {
@@ -280,32 +280,32 @@ fn budget_reset_absent_from_scalar_defaults() {
     assert!(!defaults.values.contains_key("budget_reset_at"));
 }
 
-fn nested_defaults(depth: usize) -> String {
-    let mut source = String::from("litellm_settings:\n  default_internal_user_params:\n");
-    for level in 0..depth {
-        let indent = " ".repeat(level.saturating_mul(2).saturating_add(4));
-        let leaf = if level.saturating_add(1) == depth {
-            " 1"
-        } else {
-            ""
-        };
-        writeln!(source, "{indent}k:{leaf}").unwrap();
+// the YAML layer caps document depth first, so the resolver's own guard is tested directly
+fn nested_value(depth: usize) -> RawValue {
+    let mut value = RawValue::Integer(1);
+    for _ in 0..depth {
+        let mut fields = BTreeMap::new();
+        fields.insert("k".to_owned(), value);
+        value = RawValue::Object(fields);
     }
-    source
+    value
 }
 
 #[test]
 fn deeply_nested_defaults_up_to_the_cap_load() {
-    let source = nested_defaults(64);
-    let settings = load(&source, &[]).unwrap();
-    assert!(settings.default_internal_user_params.is_some());
+    let lookup: BTreeMap<String, String> = BTreeMap::new();
+    let tree = resolved(nested_value(64), DEFAULT_USER_PARAMS_PATH, &lookup)
+        .expect("a value at the depth cap resolves");
+    assert!(matches!(tree, JsonData::Object(_)));
 }
 
 #[test]
 fn defaults_nested_past_the_cap_fail() {
-    let source = nested_defaults(65);
-    match load(&source, &[]) {
-        Err(ConfigError::InvalidScalar { .. }) => {}
+    let lookup: BTreeMap<String, String> = BTreeMap::new();
+    match resolved(nested_value(65), DEFAULT_USER_PARAMS_PATH, &lookup) {
+        Err(ConfigError::InvalidScalar { path, .. }) => {
+            assert_eq!(path, DEFAULT_USER_PARAMS_PATH);
+        }
         other => panic!("a mapping past the depth cap fails startup: {other:?}"),
     }
 }
