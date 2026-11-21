@@ -314,6 +314,7 @@ async fn direct_executor_waits_600_seconds_for_a_model_no_deployment_serves() {
             api_keys: Vec::new(),
             request_timeout: Some(7.0_f64),
             organization: None,
+            global_drop_params: false,
         },
     );
     let unmatched = executor
@@ -371,6 +372,7 @@ async fn direct_executor_falls_back_to_the_environment_defaults_without_a_deploy
             api_keys: vec![SecretString::from("sk-default")],
             request_timeout: None,
             organization: None,
+            global_drop_params: false,
         },
     );
     let configuration = Params::new();
@@ -526,6 +528,7 @@ async fn direct_executor_reports_defaults_that_make_no_deployment() {
             api_keys: Vec::new(),
             request_timeout: None,
             organization: None,
+            global_drop_params: false,
         },
     );
     let error = executor

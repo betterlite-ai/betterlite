@@ -1,0 +1,27 @@
+kind: helper
+name: dispatcher-routes-to-apply
+call:
+  b3724:
+    source: INPUT
+    messages:
+      - {role: user, content: hello}
+    response: null
+    logging_event_type: null
+    guardrail_identifier: gr-abc123
+    guardrail_version: "1"
+    checks: null
+    chunk_budget_chars: 25000
+    contextual_grounding: false
+    disable_exception_on_block: false
+    data: {model: gpt-4o}
+    replies:
+      - status: 200
+        body:
+          action: NONE
+          usage: {textUnits: 3}
+        raw: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/requests/0/authorization
+      why: "Each side signs its own request at its own clock time, so the SigV4 signature differs"

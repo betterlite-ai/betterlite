@@ -26,7 +26,7 @@ pub enum RedisSpendError {
     ScalarReply,
 }
 
-// RedisUpdateBuffer: the buffer handle itself. Transaction publishing belongs to B1738; this side parks and drains.
+// RedisUpdateBuffer: the buffer handle itself. Transaction publishing has its own handle; this side parks and drains.
 pub struct RedisUpdateBuffer {
     pub lists: Option<Arc<dyn SpendBufferLists>>,
     pub enabled: bool,

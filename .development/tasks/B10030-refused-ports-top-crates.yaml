@@ -1,0 +1,87 @@
+id: B10030
+title: Server, CLI, binary and oracle helpers hold the ports they expect to be refused
+description: >-
+  Move the top crates and the oracle guardrail helpers onto the port guards from B10028. Tests in 8 betterlite-server
+  files, 6 betterlite-cli files and 2 betterlite files, and 3 test files of the oracle guardrails helpers, get a
+  "dead" address by binding 127.0.0.1:0, reading the port and dropping the listener, then expect a connection to
+  it to fail. Once dropped, the port is free, and any test that binds port 0 at the same moment can get it. The
+  request then reaches that test's server and takes the reply it queued. That is how
+  fetches_userinfo_with_the_issued_bearer_token went red in
+  https://github.com/betterlite-ai/betterlite/actions/runs/44835631936 (B10028 has the details).
+
+
+  Two oracle helpers do the same outside tests. tools/oracle/src/helpers/guardrails/b8215.rs start_mock returns a
+  dead URL when the case scripts no answer, and tools/oracle/src/helpers/guardrails/b3752/endpoint.rs builds
+  Endpoint::Refused from a dropped listener while its Endpoint::Silent already keeps its listener. Both keep a
+  betterlite_test_ports::RefusedPort alive for as long as the URL is in use, the way Silent keeps its listener; the
+  oracle guardrails package lists betterlite-test-ports under [dependencies], since its helpers are not tests.
+
+
+  Each test site holds a RefusedPort for as long as the request may go out and uses its address. A local helper
+  that only produced the dead address goes, and its callers hold the guard; a helper that also builds something
+  keeps that job and takes or returns the guard with it. Each changed crate lists betterlite-test-ports under
+  [dev-dependencies].
+scope:
+  paths:
+  - crates/betterlite-cli/src/agent_setup/tests/listing.rs
+  - crates/betterlite-cli/src/cli/tests/support.rs
+  - crates/betterlite-cli/src/commands/chat/tests.rs
+  - crates/betterlite-cli/src/commands/keys/tests/generate_tests.rs
+  - crates/betterlite-cli/src/commands/teams/tests.rs
+  - crates/betterlite-cli/src/commands/tests.rs
+  - crates/betterlite-server/src/cache_settings_test/tests/support.rs
+  - crates/betterlite-server/src/coord_redis_boot/tests/support.rs
+  - crates/betterlite-server/src/mcp/outbound_credentials/client_credentials/token_post/tests.rs
+  - crates/betterlite-server/src/mcp/outbound_credentials/token_endpoint/tests/http.rs
+  - crates/betterlite-server/src/middleware/redis_request_batch/tests/support.rs
+  - crates/betterlite-server/src/redis_cache_wiring/tests/support.rs
+  - crates/betterlite-server/src/spend_cache_update/tests/support.rs
+  - crates/betterlite-server/src/sso_pkce/tests.rs
+  - crates/betterlite/src/diagnostic_commands/tests.rs
+  - crates/betterlite/src/startup_input/tests.rs
+  - tools/oracle/src/helpers/guardrails/b3752/endpoint.rs
+  - tools/oracle/src/helpers/guardrails/b3767/tests.rs
+  - tools/oracle/src/helpers/guardrails/b3771/tests.rs
+  - tools/oracle/src/helpers/guardrails/b3778/tests.rs
+  - tools/oracle/src/helpers/guardrails/b8215.rs
+  lint_tables: false
+references: []
+dod:
+- text: >-
+    No test or oracle helper in these crates frees a port it then expects to be refused, and the oracle helpers'
+    refused endpoints keep their guard alive while the case runs.
+  proof: [no-dropped-port, oracle]
+- text: The tests in every changed test module pass.
+  proof: [top-tests]
+checks:
+  optional: []
+  commands:
+  - id: top-tests
+    why: A test in a changed module broke.
+    run: cargo nextest run --locked -p betterlite -p betterlite-cli -p betterlite-oracle-guardrails -p betterlite-server --no-tests=fail -E 'test(/^(agent_setup::tests::listing|b3767::tests|b3771::tests|b3778::tests|cache_settings_test::tests|cli::tests|commands::chat::tests|commands::keys::tests::generate_tests|commands::teams::tests|commands::tests|coord_redis_boot::tests|diagnostic_commands::tests|mcp::outbound_credentials::client_credentials::token_post::tests|mcp::outbound_credentials::token_endpoint::tests::http|middleware::redis_request_batch::tests|redis_cache_wiring::tests|spend_cache_update::tests|sso_pkce::tests|startup_input::tests)::/)'
+  - id: no-dropped-port
+    why: A test or helper still drops a listener soon after reading its port and then uses the freed port.
+    run: '! git grep -h -B8 -E "drop\((listener|socket)\);" -- crates/betterlite crates/betterlite-cli crates/betterlite-server tools/oracle/src/helpers/guardrails | grep -F local_addr'
+oracle_cases:
+- tools/oracle/cases/guardrails/alice/outage-connection-failure.yaml
+- tools/oracle/cases/guardrails/alice/outage-timeout.yaml
+- tools/oracle/cases/guardrails/alice/fail-open-policy.yaml
+- tools/oracle/cases/guardrails/alice/fail-closed-policy.yaml
+- tools/oracle/cases/guardrails/singulr-http-error.yaml
+- tools/oracle/cases/guardrails/singulr-mcp-request.yaml
+- tools/oracle/cases/guardrails/singulr-mcp-response.yaml
+- tools/oracle/cases/guardrails/singulr-request-allowed.yaml
+- tools/oracle/cases/guardrails/singulr-request-blocked.yaml
+- tools/oracle/cases/guardrails/singulr-response-tool-calls.yaml
+deviations: []
+out_of_scope:
+- The lower crates; B10029 moves those.
+- The code under test and the helpers' answers. Only how a refused address is made changes.
+pitfalls:
+- '`let _ = RefusedPort::bind()` drops the guard on the same line. Bind it to a name that lives until the request has failed, for example `let refused = RefusedPort::bind().unwrap();`.'
+- In b8215.rs and b3752/endpoint.rs the guard has to outlive the function that builds the URL, so it travels in the returned value next to the URL, as Endpoint::Silent carries its listener. Map a bind error to the helper's existing OSError failure.
+- If a site in scope drops a listener for another reason (it stops a server the test already used), it is not this pattern. Leave it, say so in the report, and the no-dropped-port check then needs the architect.
+review_level: standard
+budget:
+  max_changed_lines: 150
+  max_new_expects: 0

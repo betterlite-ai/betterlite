@@ -8,17 +8,16 @@ use secrecy::SecretString;
 
 use super::{prefetch_tag_budgets, resolver_for, stage_input};
 use crate::auth::auth_identity::{
-    AuthBackend, AuthContext, INSTALLED_STAGES, StageInput, dispatch,
+    AuthBackend, AuthContext, INSTALLED_STAGES, StageFailure, StageInput, dispatch,
 };
 use crate::auth::body_buffering::{BufferError, max_body_bytes, read_body};
-use crate::auth::failures::{
-    body_too_large_response, stage_failure_response, unreadable_body_response,
-};
+use crate::auth::failures::{body_too_large_response, unreadable_body_response};
 
 // The stages borrow the request only while building their input, so the loop owns it across every await.
 pub(crate) async fn run_stages(
     mut request: Request<Body>,
     master_key: &SecretString,
+    failure_response: fn(&StageFailure) -> Response,
 ) -> Result<(Request<Body>, Option<AuthContext>, Option<Bytes>), Box<Response>> {
     let resolver = resolver_for(&request);
     let mut authenticated: Option<AuthContext> = None;
@@ -41,9 +40,9 @@ pub(crate) async fn run_stages(
             body.as_ref(),
         ) {
             Ok(input) => input,
-            Err(failure) => return Err(Box::new(stage_failure_response(&failure))),
+            Err(failure) => return Err(Box::new(failure_response(&failure))),
         };
-        match run_stage(*backend, input, master_key).await {
+        match run_stage(*backend, input, master_key, failure_response).await {
             Ok(context) => authenticated = Some(context),
             Err(response) => return Err(response),
         }
@@ -87,10 +86,11 @@ async fn run_stage(
     backend: AuthBackend,
     input: StageInput,
     master_key: &SecretString,
+    failure_response: fn(&StageFailure) -> Response,
 ) -> Result<AuthContext, Box<Response>> {
     let prefetched = prefetch_tag_budgets(input)
         .await
-        .map_err(|failure| Box::new(stage_failure_response(&failure)))?;
+        .map_err(|failure| Box::new(failure_response(&failure)))?;
     dispatch(backend, &prefetched, master_key)
-        .map_err(|failure| Box::new(stage_failure_response(&failure)))
+        .map_err(|failure| Box::new(failure_response(&failure)))
 }
