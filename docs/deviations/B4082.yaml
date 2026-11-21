@@ -1,0 +1,65 @@
+task: B4082
+deviations:
+  - what: >-
+      request_has_hosted_web_search mirrors B4111's is_web_search_tool_responses (type exactly web_search,
+      or any type starting with web_search_) inside betterlite-core instead of calling the function from
+      betterlite-websearch.
+    why: >-
+      betterlite-websearch declares betterlite-core as a dependency (crates/betterlite-websearch/Cargo.toml:13,
+      used at websearch_request_hooks.rs:8), so adding the edge the task asks for makes core depend on itself
+      and cargo metadata exits 101 with a cyclic package dependency. betterlite-websearch's
+      websearch_request_hooks/tool_rewrite.rs:106 mirrors the same predicate for the same reason. Only B4111's
+      non-function branch is mirrored; the type == "function" exclusion stays in the caller, as in LiteLLM,
+      so a function tool is never hosted search.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/tools.py#L126-L160
+  - what: >-
+      The Anthropic row treats only a missing or null kwargs.messages as an empty conversation; any other
+      value that is not an array of objects, including "", 0, false and {}, is a rejected shape
+      (ShadowRequestError::MessagesNotObjects, so the sample is skipped).
+    why: >-
+      LiteLLM writes kwargs.get("messages") or (), so every falsy value becomes the empty tuple; betterlite
+      follows docs/compatibility.md, where a value of the wrong type is an error that names the field, and the
+      task text keeps null and missing as the empty conversation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L93-L168
+  - what: >-
+      A model that is present but not text is a rejected shape (ShadowRequestError::ModelNotText, so the
+      sample is skipped) instead of str(kwargs.get("model") or ""); a missing or null model is the empty string.
+    why: >-
+      LiteLLM stringifies whatever value it finds, so the number 7 becomes "7"; betterlite follows
+      docs/compatibility.md, where a wrong-typed field is an error, and a working setup sends a string model.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L93-L168
+  - what: >-
+      Every request normalization failure (a wrong-typed JSON value, a transform error, an encode error)
+      is a typed ShadowRequestError that skips the sample with a debug log, where LiteLLM wraps its
+      lenient adapters in a blanket except Exception.
+    why: >-
+      The skip outcome is the same and no panic is caught; the log line names the typed cause instead of
+      the exception text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L420-L439
+  - what: >-
+      The shadow normalizer resolves no model metadata: the Responses row's transformer is given a completion
+      bridge probe that answers false for every model (NoBridge in
+      crates/betterlite-core/src/shadow_requests/surfaces/environment.rs), so a request for a model whose
+      metadata is mode responses, such as azure/codex-mini, loses reasoning.summary from the normalized chat
+      request. LiteLLM asks responses_api_bridge_check, which reads the model map, and keeps the summary for
+      those models so litellm.completion can route them back through the Responses API.
+    why: >-
+      The production probe (SdkBridgeProbe) needs a ResponsesBridgeCapabilities over the model map, which is
+      the model-metadata work of B5655 and B5656 and is not reachable from the betterlite-core shadow module;
+      the task calls the transformer with no provider and the shadow call carries no model metadata. A model
+      the map does not route back matches LiteLLM, because both sides drop a summary that has no chat
+      equivalent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L327-L357
+  - what: >-
+      The Anthropic row's translate_anthropic_to_openai call is given capability predicates that answer false
+      for every model (NoCapabilities in the same file), so a system message after the first user turn is
+      converted to a user message even for a model whose metadata declares
+      supports_mid_conversation_system, such as claude-sonnet-5. LiteLLM's
+      target_supports_mid_conversation_system reads the model map, so the system role survives there.
+    why: >-
+      The capability environment the production path uses (CapabilityEnvironment over model metadata) is the
+      model-metadata work of B2217, B2219 and B2220 and is not reachable from the betterlite-core shadow
+      module; the shadow call carries no provider or model metadata. A conversation with no system turn after
+      the first user turn matches LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/transformation.py#L213-L216
+kept_bugs: []

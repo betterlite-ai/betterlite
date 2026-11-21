@@ -256,7 +256,7 @@ async fn a_real_cache_without_redis_does_not_arm() {
 
 #[tokio::test]
 async fn a_real_cache_with_redis_declares_the_batch_read() {
-    let cache = unreachable_cache().await;
+    let (cache, _refused) = unreachable_cache().await;
     let keys = vec!["user-1".to_owned(), GLOBAL_PROXY_SPEND_CACHE_KEY.to_owned()];
     let armed = in_request_scope(async {
         arm_cache_read(&keys, &cache).expect("arming");
@@ -269,7 +269,7 @@ async fn a_real_cache_with_redis_declares_the_batch_read() {
 
 #[tokio::test]
 async fn a_real_cache_with_redis_arms_one_read_per_partition() {
-    let cache = unreachable_cache().await;
+    let (cache, _refused) = unreachable_cache().await;
     let keys = vec!["user-1".to_owned(), HASHED_TEST_TOKEN.to_owned()];
     let armed = in_request_scope(async {
         arm_cache_read(&keys, &cache).expect("arming");
@@ -320,7 +320,7 @@ async fn a_real_cache_whose_batch_read_fails_logs_the_warning_and_returns_no_val
 
 #[tokio::test]
 async fn the_real_armed_read_resolves_the_cached_values() {
-    let cache = unreachable_cache().await;
+    let (cache, _refused) = unreachable_cache().await;
     let keys = vec!["user-1".to_owned()];
     cache
         .async_set(

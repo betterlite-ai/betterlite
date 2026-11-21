@@ -28,6 +28,7 @@ betterlite-prompts = { path = "../../../../../crates/betterlite-prompts" }
 betterlite-redact = { path = "../../../../../crates/betterlite-redact" }
 betterlite-server = { path = "../../../../../crates/betterlite-server" }
 betterlite-streaming = { path = "../../../../../crates/betterlite-streaming" }
+betterlite-test-ports = { path = "../../../../../crates/betterlite-test-ports" }
 betterlite-tokenizer = { path = "../../../../../crates/betterlite-tokenizer" }
 chrono.workspace = true
 futures-util = { version = "0.3.34", default-features = false }

@@ -1,0 +1,72 @@
+kind: helper
+name: vertex-rag-store-poll-timeout
+call:
+  b3455:
+    options:
+      vector_store:
+        vertex_project: proj
+    responses:
+      - status: 200
+        body: '{"done":false,"name":"operations/1"}'
+      - status: 200
+        body: '{"done":false,"name":"operations/1"}'
+      - status: 200
+        body: '{"done":false,"name":"operations/1"}'
+      - status: 200
+        body: '{"done":false,"name":"operations/1"}'
+      - status: 200
+        body: '{"done":false,"name":"operations/1"}'
+      - status: 200
+        body: '{"done":false,"name":"operations/1"}'
+      - status: 200
+        body: '{"done":false,"name":"operations/1"}'
+      - status: 200
+        body: '{"done":false,"name":"operations/1"}'
+      - status: 200
+        body: '{"done":false,"name":"operations/1"}'
+      - status: 200
+        body: '{"done":false,"name":"operations/1"}'
+      - status: 200
+        body: '{"done":false,"name":"operations/1"}'
+      - status: 200
+        body: '{"done":false,"name":"operations/1"}'
+      - status: 200
+        body: '{"done":false,"name":"operations/1"}'
+      - status: 200
+        body: '{"done":false,"name":"operations/1"}'
+      - status: 200
+        body: '{"done":false,"name":"operations/1"}'
+      - status: 200
+        body: '{"done":false,"name":"operations/1"}'
+      - status: 200
+        body: '{"done":false,"name":"operations/1"}'
+      - status: 200
+        body: '{"done":false,"name":"operations/1"}'
+      - status: 200
+        body: '{"done":false,"name":"operations/1"}'
+      - status: 200
+        body: '{"done":false,"name":"operations/1"}'
+      - status: 200
+        body: '{"done":false,"name":"operations/1"}'
+      - status: 200
+        body: '{"done":false,"name":"operations/1"}'
+      - status: 200
+        body: '{"done":false,"name":"operations/1"}'
+      - status: 200
+        body: '{"done":false,"name":"operations/1"}'
+      - status: 200
+        body: '{"done":false,"name":"operations/1"}'
+      - status: 200
+        body: '{"done":false,"name":"operations/1"}'
+      - status: 200
+        body: '{"done":false,"name":"operations/1"}'
+      - status: 200
+        body: '{"done":false,"name":"operations/1"}'
+      - status: 200
+        body: '{"done":false,"name":"operations/1"}'
+      - status: 200
+        body: '{"done":false,"name":"operations/1"}'
+      - status: 200
+        body: '{"done":false,"name":"operations/1"}'
+env: {}
+compare: {ignore: []}

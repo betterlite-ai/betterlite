@@ -1,0 +1,34 @@
+kind: helper
+name: prometheus-usage-request-and-spend
+call:
+  b3877:
+    function: request_and_spend
+    values: {user: alice, team: blue}
+    supported_labels:
+      litellm_requests_metric: [user, team]
+      litellm_spend_metric: [user, team]
+    response_cost: 0.05
+calls:
+  - b3877:
+      function: request_and_spend
+      values: {user: alice, team: blue}
+      supported_labels:
+        litellm_requests_metric: [user, team]
+        litellm_spend_metric: [user, team]
+      response_cost: 0
+  - b3877:
+      function: request_and_spend
+      values: {requested_model: gpt-4o}
+      supported_labels:
+        litellm_requests_metric: [requested_model]
+        litellm_spend_metric: [requested_model]
+      response_cost: 1.5
+  - b3877:
+      function: request_and_spend
+      values: {user: null}
+      supported_labels:
+        litellm_requests_metric: [user, team]
+        litellm_spend_metric: [user, team]
+      response_cost: 0.25
+env: {}
+compare: {ignore: []}

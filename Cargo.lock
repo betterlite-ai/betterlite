@@ -985,6 +985,7 @@ dependencies = [
  "betterlite-router",
  "betterlite-secret-managers",
  "betterlite-server",
+ "betterlite-test-ports",
  "chrono",
  "clap",
  "croner",
@@ -1154,6 +1155,7 @@ dependencies = [
  "betterlite-redis",
  "betterlite-routes",
  "betterlite-secrets",
+ "betterlite-test-ports",
  "chrono",
  "clap",
  "deadpool-postgres",
@@ -1456,6 +1458,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-redact",
  "betterlite-secrets",
+ "betterlite-test-ports",
  "chrono",
  "clap",
  "comfy-table",
@@ -3164,6 +3167,7 @@ dependencies = [
  "betterlite-redact",
  "betterlite-server",
  "betterlite-streaming",
+ "betterlite-test-ports",
  "betterlite-tokenizer",
  "chrono",
  "futures-util",
@@ -4569,6 +4573,7 @@ dependencies = [
  "betterlite-secrets",
  "betterlite-semantic",
  "betterlite-streaming",
+ "betterlite-test-ports",
  "betterlite-tokenizer",
  "betterlite-tracing",
  "betterlite-transcribe",
@@ -4691,6 +4696,13 @@ version = "0.0.0"
 dependencies = [
  "betterlite-streaming",
  "libfuzzer-sys",
+]
+
+[[package]]
+name = "betterlite-test-ports"
+version = "0.1.0"
+dependencies = [
+ "tokio",
 ]
 
 [[package]]
