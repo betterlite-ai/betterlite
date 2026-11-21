@@ -115,7 +115,10 @@ pub(crate) fn parse<'text, T>(text: &'text str) -> Result<T, ConvertError>
 where
     T: Deserialize<'text>,
 {
-    serde_json::from_str(text).map_err(|source| ConvertError::Json { source })
+    match serde_json::from_str(text) {
+        Ok(value) => Ok(value),
+        Err(source) => Err(ConvertError::Json { source }),
+    }
 }
 // What a finished native call hands to Python: JSON text for a response, chunk texts for a stream.
 #[derive(Debug, PartialEq, Eq)]
