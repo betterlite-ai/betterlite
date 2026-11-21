@@ -1,6 +1,8 @@
 mod logging;
 mod world;
 
+use std::collections::BTreeSet;
+
 use betterlite_config::env_integer::timeout::RequestTimeout;
 use betterlite_core::api::genai::generate_content::error::GenerateContentFailure;
 use betterlite_core::api::genai::generate_content::{
@@ -14,6 +16,7 @@ use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
 };
 use betterlite_logging::logging_privacy::request::Decision;
+use betterlite_openai::openai_base_config::CatalogCapabilities;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
@@ -63,7 +66,7 @@ impl Helper for Op {
 }
 
 async fn call(input: &Input) -> HelperResult {
-    let world = World::new();
+    let (world, capabilities) = stubbed_world();
     let kwargs = kwargs_of(input);
     let request = request_of(input, &kwargs);
     let resolution = world.resolution();
@@ -72,7 +75,7 @@ async fn call(input: &Input) -> HelperResult {
     let deps = GenerateContentDeps {
         configs: &configs,
         resolution: &resolution,
-        capabilities: &world.capabilities,
+        capabilities: &capabilities,
         limits: SchemaLimits::default(),
         source: &world.source,
         supplied_client: None,
@@ -90,11 +93,27 @@ async fn call(input: &Input) -> HelperResult {
         env: &env,
     };
     let outcome = match input.entry {
-        Entry::Mock => return mock_answer(input),
+        Entry::Mock => {
+            let answer = mock_generate_content_response(input.mock_response.as_deref());
+            return serde_json::to_value(answer).or_value_error();
+        }
         Entry::GenerateContent => generate_content(&deps, &request, &mut log).await,
         Entry::GenerateContentStream => generate_content_stream(&deps, &request, &mut log).await,
     };
     answer_of(outcome)
+}
+
+// The two provider names a case resolves through, with no capabilities, catalog or provider behind them
+fn stubbed_world() -> (World, CatalogCapabilities) {
+    let world = World {
+        names: BTreeSet::from([String::from("gemini"), String::from("openai")]),
+        ..Default::default()
+    };
+    let capabilities = CatalogCapabilities {
+        chat_models: BTreeSet::new(),
+        text_models: BTreeSet::new(),
+    };
+    (world, capabilities)
 }
 
 fn kwargs_of(input: &Input) -> Object {
@@ -126,11 +145,6 @@ const fn request_timeout() -> RequestTimeout {
         seconds: 6000.0_f64,
         explicitly_set: false,
     }
-}
-
-fn mock_answer(input: &Input) -> HelperResult {
-    let answer = mock_generate_content_response(input.mock_response.as_deref());
-    serde_json::to_value(answer).or_value_error()
 }
 
 // Compare strips the class and the message; the status is the one exception_type maps the failure to

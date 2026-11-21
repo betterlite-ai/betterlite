@@ -23,7 +23,6 @@ use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
-use betterlite_openai::openai_base_config::CatalogCapabilities;
 use betterlite_prompts::arguments::json::{Json, Object};
 
 #[derive(Debug, thiserror::Error)]
@@ -34,6 +33,7 @@ pub(super) struct ConfigError;
 #[error("the oracle does not run completions")]
 pub(super) struct ExecutorError;
 
+#[derive(Default)]
 pub(super) struct Config;
 
 impl GenerateContentProviderConfig for Config {
@@ -80,6 +80,7 @@ impl GenerateContentHttpConfig for Config {
     }
 }
 
+#[derive(Default)]
 pub(super) struct Source;
 
 pub(super) struct StubClient;
@@ -106,6 +107,7 @@ impl GenAiTransport for StubClient {
     }
 }
 
+#[derive(Default)]
 pub(super) struct Executor;
 
 impl CompletionExecutor for Executor {
@@ -124,32 +126,17 @@ impl CompletionExecutor for Executor {
 }
 
 // Every collaborator the entry points take, over stubs that fail when a case reaches a real provider
+#[derive(Default)]
 pub(super) struct World {
-    catalog: ModelCatalog,
-    names: BTreeSet<String>,
-    environment: BTreeMap<String, String>,
-    pub(super) capabilities: CatalogCapabilities,
-    config: Config,
+    pub(super) catalog: ModelCatalog,
+    pub(super) names: BTreeSet<String>,
+    pub(super) environment: BTreeMap<String, String>,
+    pub(super) config: Config,
     pub(super) source: Source,
     pub(super) executor: Executor,
 }
 
 impl World {
-    pub(super) fn new() -> Self {
-        Self {
-            catalog: ModelCatalog::default(),
-            names: BTreeSet::from([String::from("gemini"), String::from("openai")]),
-            environment: BTreeMap::new(),
-            capabilities: CatalogCapabilities {
-                chat_models: BTreeSet::new(),
-                text_models: BTreeSet::new(),
-            },
-            config: Config,
-            source: Source,
-            executor: Executor,
-        }
-    }
-
     pub(super) fn resolution(&self) -> ResolutionContext<'_> {
         ResolutionContext {
             catalog: &self.catalog,

@@ -73,12 +73,14 @@ where
     let message = error.to_string();
     let class = match &error {
         GenerateContentError::Fields(field) => named_field_class(message, field.field, model, name),
-        GenerateContentError::Resolve(source) => resolution_class(source, model, name, redactor),
+        // get_llm_provider raises its own 400 before the call reaches any provider
+        GenerateContentError::Resolve(source)
+        | GenerateContentError::Setup(GenAiSetupError::Resolution(source)) => {
+            let raw = exception_raw(source.to_string(), model, name, Some(400));
+            dispatch(&DispatchInput::Raw(Box::new(raw)), redactor)
+        }
         GenerateContentError::Setup(GenAiSetupError::RequestField(field)) => {
             named_field_class(message, field.field, model, name)
-        }
-        GenerateContentError::Setup(GenAiSetupError::Resolution(source)) => {
-            resolution_class(source, model, name, redactor)
         }
         GenerateContentError::Setup(
             GenAiSetupError::MockResponseHandledByCaller
@@ -101,17 +103,6 @@ where
         GenerateContentError::Timeout(_) => value_error(message, model, name, redactor),
     };
     GenerateContentFailure { error, class }
-}
-
-// get_llm_provider raises its own 400 before the call reaches any provider
-fn resolution_class(
-    source: &ResolutionError,
-    model: &str,
-    provider: &str,
-    redactor: &Redactor,
-) -> ErrorClass {
-    let raw = exception_raw(source.to_string(), model, provider, Some(400));
-    dispatch(&DispatchInput::Raw(Box::new(raw)), redactor)
 }
 
 // a BaseLLMException keeps the status the provider answered, synthesized or not
