@@ -6,7 +6,6 @@ from azure_realtime.types import Input as RealtimeInput
 
 from .contracts import FIELDS, REALTIME_IN, RealtimeCase
 
-
 litellm.suppress_debug_info = True
 
 

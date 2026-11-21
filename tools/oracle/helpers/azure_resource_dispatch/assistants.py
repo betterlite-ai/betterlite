@@ -49,7 +49,7 @@ def assistant_value(kind: str, row: dict[str, JsonValue]) -> JsonValue:
     return {"id": result["id"]}
 
 
-def definition_answer(kind: str, step: dict[str, JsonValue]) -> JsonValue:
+def definition_answer(kind: str, step: dict[str, JsonValue]) -> dict[str, JsonValue]:
     payload = arguments(step)
     payload["reply"] = assistant_reply(step)
     if kind == "definitions_create":
@@ -57,30 +57,33 @@ def definition_answer(kind: str, step: dict[str, JsonValue]) -> JsonValue:
     if kind == "definitions_delete":
         payload["assistant_id"] = STRING.validate_python(step["target_id"])
     variant = DEFINITION_CALLS[kind]
-    answer = definitions_run(DEFINITIONS_IN.validate_python({variant: [payload]}))
+    argument: dict[str, JsonValue] = {variant: [payload]}
+    answer = definitions_run(DEFINITIONS_IN.validate_python(argument))
     return first_step(answer, "steps")
 
 
-def thread_answer(step: dict[str, JsonValue]) -> JsonValue:
+def thread_answer(step: dict[str, JsonValue]) -> dict[str, JsonValue]:
     payload = arguments(step)
     payload["reply"] = assistant_reply(step)
     payload["messages"] = [{"role": "user", "content": "hello"}]
-    answer = threads_run(THREADS_IN.validate_python({"thread_create": [payload]}))
+    argument: dict[str, JsonValue] = {"thread_create": [payload]}
+    answer = threads_run(THREADS_IN.validate_python(argument))
     return first_step(answer, "steps")
 
 
-def message_answer(kind: str, step: dict[str, JsonValue]) -> JsonValue:
+def message_answer(kind: str, step: dict[str, JsonValue]) -> dict[str, JsonValue]:
     payload = arguments(step)
     payload["reply"] = assistant_reply(step)
     payload["thread_id"] = STRING.validate_python(step["target_id"])
     if kind == "message_create":
         payload["data"] = {"role": "user", "content": "hello"}
     variant = MESSAGE_CALLS[kind]
-    answer = messages_run(MESSAGES_IN.validate_python({variant: [payload]}))
+    argument: dict[str, JsonValue] = {variant: [payload]}
+    answer = messages_run(MESSAGES_IN.validate_python(argument))
     return first_step(answer, "steps")
 
 
-def run_answer(step: dict[str, JsonValue]) -> JsonValue:
+def run_answer(step: dict[str, JsonValue]) -> dict[str, JsonValue]:
     payload = arguments(step)
     payload["run"] = {
         "thread_id": "thread_1",
@@ -89,7 +92,8 @@ def run_answer(step: dict[str, JsonValue]) -> JsonValue:
         "instructions": "base",
     }
     payload["replies"] = ROWS.validate_python(step["replies"])
-    answer = assistants_run(ASSISTANTS_IN.validate_python({"run_poll": [payload]}))
+    argument: dict[str, JsonValue] = {"run_poll": [payload]}
+    answer = assistants_run(ASSISTANTS_IN.validate_python(argument))
     return first_step(answer, "steps")
 
 

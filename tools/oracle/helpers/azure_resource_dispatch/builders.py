@@ -1,10 +1,11 @@
+from litellm.llms.azure.common_utils import BaseAzureLLM
+
 import azure_batches.fake
 import azure_files
 import azure_fine_tuning
-from litellm.llms.azure.common_utils import BaseAzureLLM
 
 # a leaf saved whichever builder ran before it; restore the untouched one before its run
-UNPATCHED_CLIENT_BUILDER = azure_batches.fake.REAL_AZURE_CLIENT  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L480-L489
+UNPATCHED_CLIENT_BUILDER = azure_batches.fake.REAL_AZURE_CLIENT  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L480-L489
 
 
 def use_files_builder() -> None:

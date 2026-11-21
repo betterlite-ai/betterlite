@@ -23,7 +23,6 @@ from .contracts import (
     returned_of,
 )
 
-
 litellm.suppress_debug_info = True
 
 
@@ -57,7 +56,8 @@ def file_step(kind: str, step: dict[str, JsonValue]) -> dict[str, JsonValue]:
 
 def file_answer(kind: str, step: dict[str, JsonValue]) -> JsonValue:
     use_files_builder()
-    answer = files_run(FILES_IN.validate_python({"steps": [file_step(kind, step)]}))
+    argument: dict[str, JsonValue] = {"steps": [file_step(kind, step)]}
+    answer = files_run(FILES_IN.validate_python(argument))
     row = first_step(answer, "steps")
     raise_error(row)
     return file_value(kind, row)
@@ -86,7 +86,8 @@ def batch_step(kind: str, step: dict[str, JsonValue]) -> dict[str, JsonValue]:
 
 def batch_answer(kind: str, step: dict[str, JsonValue]) -> JsonValue:
     use_batches_builder()
-    answer = batches_run(BATCHES_IN.validate_python({"steps": [batch_step(kind, step)]}))
+    argument: dict[str, JsonValue] = {"steps": [batch_step(kind, step)]}
+    answer = batches_run(BATCHES_IN.validate_python(argument))
     return batch_value(kind, first_step(answer, "steps"))
 
 

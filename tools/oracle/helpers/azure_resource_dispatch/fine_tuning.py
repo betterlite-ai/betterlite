@@ -16,7 +16,6 @@ from .contracts import (
     returned_of,
 )
 
-
 litellm.suppress_debug_info = True
 
 
@@ -50,5 +49,6 @@ def job_step(kind: str, step: dict[str, JsonValue]) -> dict[str, JsonValue]:
 
 def job_answer(kind: str, step: dict[str, JsonValue]) -> JsonValue:
     use_fine_tuning_builder()
-    answer = fine_tuning_run(FINE_TUNING_IN.validate_python({"steps": [job_step(kind, step)]}))
+    argument: dict[str, JsonValue] = {"steps": [job_step(kind, step)]}
+    answer = fine_tuning_run(FINE_TUNING_IN.validate_python(argument))
     return job_value(kind, first_step(answer, "steps"))
