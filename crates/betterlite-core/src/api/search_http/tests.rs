@@ -517,6 +517,7 @@ async fn step_order() {
         served.finish().expect("the fixture answers").line,
         "POST /search HTTP/1.1"
     );
+    list_query_logs_as_json_text().await;
 }
 
 async fn reject_with_429() -> (SearchHttpError<TestError>, TestProvider, Serving) {
@@ -877,7 +878,6 @@ async fn client_selection() {
     get_uses_the_client_timeout().await;
 }
 
-#[tokio::test]
 async fn list_query_logs_as_json_text() {
     let served = serve(reply("200 OK", &[], ANSWER), Duration::ZERO).expect("the fixture serves");
     let base = format!("http://{}/search", served.address);
