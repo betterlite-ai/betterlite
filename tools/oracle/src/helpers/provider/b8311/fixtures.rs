@@ -45,7 +45,7 @@ pub(super) fn logging(
         },
         redactor,
         || String::from("trace"),
-        Duration::default(),
+        Duration::default,
     )
     .or_value_error()?;
     let env = PrePostEnv {

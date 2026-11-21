@@ -163,17 +163,11 @@ fn gateway_provider_keys_resolve_os_environ_references() {
     .unwrap();
     assert_eq!(settings.api_base.as_deref(), Some("http://from-env:4000"));
     assert_eq!(
-        settings
-            .api_key
-            .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+        read(&settings, Setting::ApiKey).as_deref(),
         Some("sk-from-env")
     );
     assert_eq!(
-        settings
-            .openrouter_key
-            .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+        read(&settings, Setting::OpenrouterKey).as_deref(),
         Some("sk-openrouter-env")
     );
     assert_eq!(
