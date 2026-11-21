@@ -2,9 +2,9 @@
 
 use betterlite_core::agents::AgentConfig;
 use betterlite_core::agents::AgentResponse;
+use betterlite_core::agents::json::AgentJson;
 use betterlite_redact::structured::SensitiveDataMasker;
 use chrono::DateTime;
-use serde_json::json;
 
 use super::ConfigMode;
 use super::ConfigSource;
@@ -19,21 +19,20 @@ use crate::agent_rows::codec::StoredAgent;
 const STORED_AGENT: &str =
     r#"{"agent_id": "agent-stored", "agent_name": "stored-agent", "agent_card_params": {}}"#;
 
+fn value(source: &str) -> AgentJson {
+    serde_json::from_str(source).expect("a valid agent JSON")
+}
+
 fn stored() -> StoredAgent {
     let decoded: AgentResponse =
         serde_json::from_str(STORED_AGENT).expect("the stored agent JSON parses");
     StoredAgent {
         agent: decoded,
         object_permission_id: None,
-        litellm_params_column: Some(json!({"api_key": "sk-stored", "model": "m"})),
-        kill_switch_column: Some(json!({
-            "url": "https://example.test/hook",
-            "method": "POST",
-            "headers": {},
-            "query_params": {},
-            "body": null,
-            "auth": {"type": "bearer", "token": "stored-token"}
-        })),
+        litellm_params_column: Some(value(r#"{"api_key": "sk-stored", "model": "m"}"#)),
+        kill_switch_column: Some(value(
+            r#"{"url": "https://example.test/hook", "method": "POST", "headers": {}, "query_params": {}, "body": null, "auth": {"type": "bearer", "token": "stored-token"}}"#,
+        )),
     }
 }
 

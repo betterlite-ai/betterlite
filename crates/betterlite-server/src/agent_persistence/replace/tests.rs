@@ -9,9 +9,13 @@ use crate::agent_persistence::error::AgentPersistenceError;
 use crate::agent_persistence::support::Database;
 use crate::agent_persistence::support::RecordingPublisher;
 use crate::agent_persistence::support::agent;
+use crate::agent_persistence::support::agent_column_json;
+use crate::agent_persistence::support::agent_column_text;
 use crate::agent_persistence::support::store_with;
 
 const FULL_AGENT: &str = r#"{"agent_name": "a", "agent_card_params": {}, "litellm_params": {"api_key": "sk-real"}, "static_headers": {"x": "1"}, "extra_headers": ["old"], "access_group_ids": ["team"], "tpm_limit": 3, "kill_switch": {"url": "https://example.test/hook", "auth": {"type": "bearer", "token": "s3cret"}}}"#;
+const EXTRA_HEADERS: &str = "cardinality(extra_headers)::text";
+const ACCESS_GROUPS: &str = "cardinality(access_group_ids)::text";
 
 fn object_field(value: Option<JsonData>, name: &str) -> Option<JsonData> {
     match value {
@@ -43,50 +47,20 @@ async fn replace_restores_a_marker_secret_and_clears_omitted_columns() {
         .update_agent_in_db(&created.agent_id, &put, "editor")
         .await
         .expect("the agent is replaced");
-    let params = database
-        .json(
-            r#"SELECT litellm_params::text FROM "LiteLLM_AgentsTable" WHERE agent_id = $1"#,
-            &[&created.agent_id],
-        )
-        .await;
+    let params = agent_column_json(&database, "litellm_params", &created.agent_id).await;
     assert_eq!(
         object_field(params, "api_key"),
         Some(JsonData::String(String::from("sk-real")))
     );
-    let headers = database
-        .json(
-            r#"SELECT static_headers::text FROM "LiteLLM_AgentsTable" WHERE agent_id = $1"#,
-            &[&created.agent_id],
-        )
-        .await;
+    let headers = agent_column_json(&database, "static_headers", &created.agent_id).await;
     assert_eq!(headers, Some(JsonData::Object(BTreeMap::new())));
-    let groups = database
-        .text(
-            r#"SELECT cardinality(extra_headers)::text FROM "LiteLLM_AgentsTable" WHERE agent_id = $1"#,
-            &[&created.agent_id],
-        )
-        .await;
+    let groups = agent_column_text(&database, EXTRA_HEADERS, &created.agent_id).await;
     assert_eq!(groups.as_deref(), Some("0"));
-    let access = database
-        .text(
-            r#"SELECT cardinality(access_group_ids)::text FROM "LiteLLM_AgentsTable" WHERE agent_id = $1"#,
-            &[&created.agent_id],
-        )
-        .await;
+    let access = agent_column_text(&database, ACCESS_GROUPS, &created.agent_id).await;
     assert_eq!(access.as_deref(), Some("0"));
-    let switch = database
-        .json(
-            r#"SELECT kill_switch::text FROM "LiteLLM_AgentsTable" WHERE agent_id = $1"#,
-            &[&created.agent_id],
-        )
-        .await;
+    let switch = agent_column_json(&database, "kill_switch", &created.agent_id).await;
     assert_eq!(switch, Some(JsonData::Null));
-    let limit = database
-        .text(
-            r#"SELECT tpm_limit::text FROM "LiteLLM_AgentsTable" WHERE agent_id = $1"#,
-            &[&created.agent_id],
-        )
-        .await;
+    let limit = agent_column_text(&database, "tpm_limit::text", &created.agent_id).await;
     assert_eq!(limit.as_deref(), Some("3"));
     assert_eq!(publisher.calls(), 2);
     database.close().await;
@@ -101,12 +75,10 @@ async fn replace_reports_a_missing_agent() {
         .update_agent_in_db("missing", &put, "editor")
         .await
         .expect_err("the agent does not exist");
-    match failure {
-        AgentPersistenceError::NotFound(text) => {
-            assert_eq!(text, "Agent not found, passed agent_id=missing");
-        }
-        other => panic!("unexpected failure: {other}"),
-    }
+    let AgentPersistenceError::NotFound(text) = failure else {
+        panic!("unexpected failure: {failure}");
+    };
+    assert_eq!(text, "Agent not found, passed agent_id=missing");
     database.close().await;
 }
 
@@ -124,19 +96,9 @@ async fn replace_without_a_card_behaves_as_a_patch() {
         .update_agent_in_db(&created.agent_id, &put, "editor")
         .await
         .expect("the agent is patched through the replace");
-    let extra = database
-        .text(
-            r#"SELECT extra_headers::text FROM "LiteLLM_AgentsTable" WHERE agent_id = $1"#,
-            &[&created.agent_id],
-        )
-        .await;
+    let extra = agent_column_text(&database, "extra_headers::text", &created.agent_id).await;
     assert_eq!(extra.as_deref(), Some("{old}"));
-    let headers = database
-        .json(
-            r#"SELECT static_headers::text FROM "LiteLLM_AgentsTable" WHERE agent_id = $1"#,
-            &[&created.agent_id],
-        )
-        .await;
+    let headers = agent_column_json(&database, "static_headers", &created.agent_id).await;
     assert_eq!(
         object_field(headers, "y"),
         Some(JsonData::String(String::from("2")))

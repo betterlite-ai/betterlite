@@ -8,11 +8,11 @@ use betterlite_redis::config_sync::publish::PublishChange;
 
 use super::AGENTS_OBJECT_TYPE;
 use super::ConfigSyncAgentPublisher;
-use crate::agent_persistence::AgentChangePublisher;
+use crate::agent_persistence::AgentChangePublisher as _;
 
-fn recording_publisher(journal: Arc<Mutex<Vec<String>>>) -> PublishChange<TableError> {
+fn recording_publisher(recorded: Arc<Mutex<Vec<String>>>) -> PublishChange<TableError> {
     Arc::new(move |object_type| {
-        let journal = Arc::clone(&journal);
+        let journal = Arc::clone(&recorded);
         let name = object_type.to_owned();
         Box::pin(async move {
             journal.lock().expect("the journal lock").push(name);

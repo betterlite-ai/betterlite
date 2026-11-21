@@ -120,6 +120,76 @@ impl Database {
     }
 }
 
+pub(crate) async fn count_where(
+    database: &Database,
+    table: &str,
+    column: &str,
+    value: &str,
+) -> i64 {
+    let sql = format!(r#"SELECT count(*)::bigint FROM "{table}" WHERE {column} = $1"#);
+    database.count(&sql, &[&value]).await
+}
+
+pub(crate) async fn agent_column_text(
+    database: &Database,
+    column: &str,
+    agent_id: &str,
+) -> Option<String> {
+    let sql = format!(r#"SELECT {column} FROM "LiteLLM_AgentsTable" WHERE agent_id = $1"#);
+    database.text(&sql, &[&agent_id]).await
+}
+
+pub(crate) async fn agent_column_json(
+    database: &Database,
+    column: &str,
+    agent_id: &str,
+) -> Option<JsonData> {
+    let sql = format!(
+        r#"SELECT to_jsonb({column})::text FROM "LiteLLM_AgentsTable" WHERE agent_id = $1"#
+    );
+    database.json(&sql, &[&agent_id]).await
+}
+
+pub(crate) async fn identity_column_text(
+    database: &Database,
+    column: &str,
+    agent_id: &str,
+) -> Option<String> {
+    let sql = format!(r#"SELECT {column} FROM "LiteLLM_AgentIdentity" WHERE agent_id = $1"#);
+    database.text(&sql, &[&agent_id]).await
+}
+
+pub(crate) async fn identity_column_json(
+    database: &Database,
+    column: &str,
+    agent_id: &str,
+) -> Option<JsonData> {
+    let sql = format!(
+        r#"SELECT to_jsonb({column})::text FROM "LiteLLM_AgentIdentity" WHERE agent_id = $1"#
+    );
+    database.json(&sql, &[&agent_id]).await
+}
+
+pub(crate) async fn history_column_text(
+    database: &Database,
+    column: &str,
+    agent_id: &str,
+) -> Option<String> {
+    let sql = format!(r#"SELECT {column} FROM "LiteLLM_RetiredAgentIdentity" WHERE agent_id = $1"#);
+    database.text(&sql, &[&agent_id]).await
+}
+
+pub(crate) async fn permission_column_json(
+    database: &Database,
+    column: &str,
+    permission_id: &str,
+) -> Option<JsonData> {
+    let sql = format!(
+        r#"SELECT to_jsonb({column})::text FROM "LiteLLM_ObjectPermissionTable" WHERE object_permission_id = $1"#
+    );
+    database.json(&sql, &[&permission_id]).await
+}
+
 #[derive(Clone, Default)]
 pub(crate) struct RecordingPublisher {
     calls: Arc<Mutex<usize>>,
@@ -135,7 +205,8 @@ impl AgentChangePublisher for RecordingPublisher {
     fn agents_changed(&self) -> impl Future<Output = ()> + Send {
         let calls = Arc::clone(&self.calls);
         async move {
-            *calls.lock().expect("the counter lock") += 1;
+            let mut count = calls.lock().expect("the counter lock");
+            *count = count.saturating_add(1);
         }
     }
 }

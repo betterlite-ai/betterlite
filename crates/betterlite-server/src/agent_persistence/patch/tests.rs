@@ -10,10 +10,14 @@ use crate::agent_persistence::support::Database;
 use crate::agent_persistence::support::IDENTITY;
 use crate::agent_persistence::support::RecordingPublisher;
 use crate::agent_persistence::support::agent;
+use crate::agent_persistence::support::agent_column_json;
+use crate::agent_persistence::support::identity_column_text;
 use crate::agent_persistence::support::patch;
+use crate::agent_persistence::support::permission_column_json;
 use crate::agent_persistence::support::store_with;
 
 const FULL_AGENT: &str = r#"{"agent_name": "a", "litellm_params": {"api_key": "sk-real"}, "static_headers": {"x": "1"}, "extra_headers": ["old"], "tpm_limit": 3}"#;
+const STAMPED_CLEARED: &str = "(last_authenticated_at IS NULL)::text";
 
 #[tokio::test]
 async fn patch_updates_the_carried_fields_and_publishes_once() {
@@ -32,21 +36,11 @@ async fn patch_updates_the_carried_fields_and_publishes_once() {
     assert_eq!(patched.agent_name, "b");
     assert_eq!(patched.created_by.as_deref(), Some("author"));
     assert_eq!(patched.updated_by.as_deref(), Some("editor"));
-    let headers = database
-        .json(
-            r#"SELECT static_headers::text FROM "LiteLLM_AgentsTable" WHERE agent_id = $1"#,
-            &[&created.agent_id],
-        )
-        .await;
+    let headers = agent_column_json(&database, "static_headers", &created.agent_id).await;
     assert_eq!(headers, Some(JsonData::Object(BTreeMap::new())));
     let decoded = database.decode_agent(&created.agent_id).await;
     assert_eq!(decoded.agent.tpm_limit, Some(3));
-    let params = database
-        .json(
-            r#"SELECT litellm_params::text FROM "LiteLLM_AgentsTable" WHERE agent_id = $1"#,
-            &[&created.agent_id],
-        )
-        .await;
+    let params = agent_column_json(&database, "litellm_params", &created.agent_id).await;
     assert_eq!(
         params,
         Some(JsonData::Object(BTreeMap::from([(
@@ -68,12 +62,10 @@ async fn patch_reports_a_missing_agent_with_its_own_text() {
         .patch_agent_in_db("missing", &request, "editor")
         .await
         .expect_err("the agent does not exist");
-    match failure {
-        AgentPersistenceError::NotFound(text) => {
-            assert_eq!(text, "Agent with ID missing not found");
-        }
-        other => panic!("unexpected failure: {other}"),
-    }
+    let AgentPersistenceError::NotFound(text) = failure else {
+        panic!("unexpected failure: {failure}");
+    };
+    assert_eq!(text, "Agent with ID missing not found");
     assert_eq!(publisher.calls(), 0);
     database.close().await;
 }
@@ -95,7 +87,6 @@ async fn patch_links_a_permission_row_and_reuses_it_on_the_next_patch() {
     let linked = database.decode_agent(&created.agent_id).await;
     let permission_id = linked
         .object_permission_id
-        .clone()
         .expect("the agent links a permission row");
     let second = patch(r#"{"object_permission": {"models": ["gpt-4o"]}}"#);
     store
@@ -107,22 +98,12 @@ async fn patch_links_a_permission_row_and_reuses_it_on_the_next_patch() {
         updated.object_permission_id.as_deref(),
         Some(permission_id.as_str())
     );
-    let servers = database
-        .json(
-            r#"SELECT to_jsonb(mcp_servers)::text FROM "LiteLLM_ObjectPermissionTable" WHERE object_permission_id = $1"#,
-            &[&permission_id],
-        )
-        .await;
+    let servers = permission_column_json(&database, "mcp_servers", &permission_id).await;
     assert_eq!(
         servers,
         Some(JsonData::Array(vec![JsonData::String(String::from("srv"))]))
     );
-    let models = database
-        .json(
-            r#"SELECT to_jsonb(models)::text FROM "LiteLLM_ObjectPermissionTable" WHERE object_permission_id = $1"#,
-            &[&permission_id],
-        )
-        .await;
+    let models = permission_column_json(&database, "models", &permission_id).await;
     assert_eq!(
         models,
         Some(JsonData::Array(vec![JsonData::String(String::from(
@@ -157,10 +138,10 @@ async fn patch_rejects_a_retired_identity_of_another_agent() {
         .patch_agent_in_db(&created.agent_id, &request, "editor")
         .await
         .expect_err("the application belongs to another agent");
-    match failure {
-        AgentPersistenceError::Conflict(text) => assert_eq!(text, APPLICATION_CONFLICT),
-        other => panic!("unexpected failure: {other}"),
-    }
+    let AgentPersistenceError::Conflict(text) = failure else {
+        panic!("unexpected failure: {failure}");
+    };
+    assert_eq!(text, APPLICATION_CONFLICT);
     assert_eq!(publisher.calls(), 1);
     database.close().await;
 }
@@ -175,53 +156,33 @@ async fn patch_unbinds_an_identity_and_refuses_to_enable_it_again() {
         .add_agent_to_db(&config, "author", None)
         .await
         .expect("the agent is created");
-    let revision = database
-        .text(
-            r#"SELECT revision FROM "LiteLLM_AgentIdentity" WHERE agent_id = $1"#,
-            &[&created.agent_id],
-        )
+    let agent_id = created.agent_id.as_str();
+    let revision = identity_column_text(&database, "revision", agent_id)
         .await
         .expect("the identity row exists");
     let unbind = patch(r#"{"identity": null}"#);
     store
-        .patch_agent_in_db(&created.agent_id, &unbind, "editor")
+        .patch_agent_in_db(agent_id, &unbind, "editor")
         .await
         .expect("the identity is unbound");
-    let inactive = database
-        .text(
-            r#"SELECT active::text FROM "LiteLLM_AgentIdentity" WHERE agent_id = $1"#,
-            &[&created.agent_id],
-        )
-        .await;
+    let inactive = identity_column_text(&database, "active::text", agent_id).await;
     assert_eq!(inactive.as_deref(), Some("false"));
-    let stamped = database
-        .text(
-            r#"SELECT (last_authenticated_at IS NULL)::text FROM "LiteLLM_AgentIdentity" WHERE agent_id = $1"#,
-            &[&created.agent_id],
-        )
-        .await;
+    let stamped = identity_column_text(&database, STAMPED_CLEARED, agent_id).await;
     assert_eq!(stamped.as_deref(), Some("true"));
-    let changed = database
-        .text(
-            r#"SELECT revision FROM "LiteLLM_AgentIdentity" WHERE agent_id = $1"#,
-            &[&created.agent_id],
-        )
-        .await;
+    let changed = identity_column_text(&database, "revision", agent_id).await;
     assert_ne!(changed, Some(revision));
     let enable = patch(r#"{"enabled": true}"#);
     let refusal = store
-        .patch_agent_in_db(&created.agent_id, &enable, "editor")
+        .patch_agent_in_db(agent_id, &enable, "editor")
         .await
         .expect_err("an unbound managed agent cannot be enabled");
-    match refusal {
-        AgentPersistenceError::Identity(denied) => {
-            assert_eq!(
-                denied.message,
-                "Bind an identity before enabling this managed agent"
-            );
-        }
-        other => panic!("unexpected failure: {other}"),
-    }
+    let AgentPersistenceError::Identity(denied) = refusal else {
+        panic!("unexpected failure: {refusal}");
+    };
+    assert_eq!(
+        denied.message,
+        "Bind an identity before enabling this managed agent"
+    );
     assert_eq!(publisher.calls(), 2);
     database.close().await;
 }

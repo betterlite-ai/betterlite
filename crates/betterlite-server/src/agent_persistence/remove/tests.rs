@@ -5,7 +5,12 @@ use crate::agent_persistence::support::Database;
 use crate::agent_persistence::support::IDENTITY;
 use crate::agent_persistence::support::RecordingPublisher;
 use crate::agent_persistence::support::agent;
+use crate::agent_persistence::support::count_where;
 use crate::agent_persistence::support::store_with;
+
+const AGENTS: &str = "LiteLLM_AgentsTable";
+const RETIRED: &str = "LiteLLM_RetiredAgent";
+const TOKENS: &str = "LiteLLM_VerificationToken";
 
 #[tokio::test]
 async fn remove_retires_a_managed_agent_and_deletes_its_keys() {
@@ -27,33 +32,12 @@ async fn remove_retires_a_managed_agent_and_deletes_its_keys() {
         .delete_agent_from_db(&created.agent_id)
         .await
         .expect("the agent is deleted");
-    assert_eq!(
-        database
-            .count(
-                r#"SELECT count(*)::bigint FROM "LiteLLM_AgentsTable" WHERE agent_id = $1"#,
-                &[&created.agent_id],
-            )
-            .await,
-        0
-    );
-    assert_eq!(
-        database
-            .count(
-                r#"SELECT count(*)::bigint FROM "LiteLLM_RetiredAgent" WHERE original_agent_id = $1"#,
-                &[&created.agent_id],
-            )
-            .await,
-        1
-    );
-    assert_eq!(
-        database
-            .count(
-                r#"SELECT count(*)::bigint FROM "LiteLLM_VerificationToken" WHERE agent_id = $1"#,
-                &[&created.agent_id],
-            )
-            .await,
-        0
-    );
+    let agents = count_where(&database, AGENTS, "agent_id", &created.agent_id).await;
+    assert_eq!(agents, 0);
+    let retired = count_where(&database, RETIRED, "original_agent_id", &created.agent_id).await;
+    assert_eq!(retired, 1);
+    let keys = count_where(&database, TOKENS, "agent_id", &created.agent_id).await;
+    assert_eq!(keys, 0);
     assert_eq!(publisher.calls(), 1);
     database.close().await;
 }
@@ -78,24 +62,10 @@ async fn remove_keeps_the_keys_of_an_unmanaged_agent() {
         .delete_agent_from_db(&created.agent_id)
         .await
         .expect("the agent is deleted");
-    assert_eq!(
-        database
-            .count(
-                r#"SELECT count(*)::bigint FROM "LiteLLM_RetiredAgent" WHERE original_agent_id = $1"#,
-                &[&created.agent_id],
-            )
-            .await,
-        0
-    );
-    assert_eq!(
-        database
-            .count(
-                r#"SELECT count(*)::bigint FROM "LiteLLM_VerificationToken" WHERE agent_id = $1"#,
-                &[&created.agent_id],
-            )
-            .await,
-        1
-    );
+    let retired = count_where(&database, RETIRED, "original_agent_id", &created.agent_id).await;
+    assert_eq!(retired, 0);
+    let keys = count_where(&database, TOKENS, "agent_id", &created.agent_id).await;
+    assert_eq!(keys, 1);
     assert_eq!(publisher.calls(), 1);
     database.close().await;
 }
@@ -109,21 +79,12 @@ async fn remove_reports_a_missing_agent() {
         .delete_agent_from_db("missing")
         .await
         .expect_err("the agent does not exist");
-    match failure {
-        AgentPersistenceError::NotFound(text) => {
-            assert_eq!(text, "Agent not found, passed agent_id=missing");
-        }
-        other => panic!("unexpected failure: {other}"),
-    }
-    assert_eq!(
-        database
-            .count(
-                r#"SELECT count(*)::bigint FROM "LiteLLM_RetiredAgent" WHERE original_agent_id = $1"#,
-                &[&"missing"],
-            )
-            .await,
-        0
-    );
+    let AgentPersistenceError::NotFound(text) = failure else {
+        panic!("unexpected failure: {failure}");
+    };
+    assert_eq!(text, "Agent not found, passed agent_id=missing");
+    let retired = count_where(&database, RETIRED, "original_agent_id", "missing").await;
+    assert_eq!(retired, 0);
     assert_eq!(publisher.calls(), 0);
     database.close().await;
 }
