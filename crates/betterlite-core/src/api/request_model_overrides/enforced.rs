@@ -33,9 +33,9 @@ pub(crate) fn resolve_enforced_params(
 
 // the key metadata list is appended last, and a present empty list still turns None into an empty list
 fn key_metadata_params(
-    metadata: Option<&JsonObject>,
+    key_metadata: Option<&JsonObject>,
 ) -> Result<Option<Vec<String>>, RequestModelOverridesError> {
-    let Some(metadata) = metadata else {
+    let Some(metadata) = key_metadata else {
         return Ok(None);
     };
     match metadata.get(ENFORCED_PARAMS_KEY) {

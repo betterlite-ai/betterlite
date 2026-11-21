@@ -178,7 +178,7 @@ fn call_value(service: &RequestModelOverridesService, call: &CallInput) -> Value
             "enforced_params": result.enforced_params,
             "diagnostics": diagnostics_json(&result.diagnostics),
         }),
-        Err(error) => json!({ "error": facts_json(error.facts()) }),
+        Err(error) => json!({ "error": facts_json(&error.facts()) }),
     }
 }
 
@@ -229,7 +229,7 @@ fn diagnostic_json(diagnostic: &OverrideDiagnostic) -> Value {
     }
 }
 
-fn facts_json(facts: ErrorFacts) -> Value {
+fn facts_json(facts: &ErrorFacts) -> Value {
     json!({
         "status": facts.status,
         "type": facts.error_type,

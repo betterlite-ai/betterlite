@@ -20,13 +20,13 @@ pub(crate) fn provider_hint(
     if let Some((provider, _rest)) = model.split_once('/') {
         return (!provider.is_empty()).then(|| provider.to_owned());
     }
-    let catalog = catalog?;
+    let router = catalog?;
     let mut candidates = vec![model];
     if let Some(pre_alias) = pre_alias_model.filter(|pre_alias| *pre_alias != model) {
         candidates.push(pre_alias);
     }
     for name in candidates {
-        let Some(params) = catalog.deployment_params(name) else {
+        let Some(params) = router.deployment_params(name) else {
             continue;
         };
         if let Some(provider) = params

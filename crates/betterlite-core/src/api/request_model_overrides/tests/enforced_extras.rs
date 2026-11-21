@@ -2,7 +2,7 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use rstest::rstest;
 
-use super::support::{alias_map, build_service, enforced_settings, request, texts};
+use super::support::{alias_map, build_service, enforced_settings, request};
 use crate::api::request_model_overrides::error::RequestModelOverridesError;
 use crate::api::request_model_overrides::{OverridesPrincipal, RequestModelOverridesInput};
 
@@ -43,7 +43,7 @@ fn service_account_params_reach_service_accounts_only() {
     };
     assert_eq!(
         service.apply(&ordinary).unwrap().enforced_params,
-        texts(Some(&["user"]))
+        Some(vec!["user".to_owned()])
     );
     let account = RequestModelOverridesInput {
         data: body,
@@ -95,7 +95,10 @@ fn enforced_params_keep_the_general_service_and_key_order() {
     )
     .apply(&input)
     .unwrap();
-    assert_eq!(result.enforced_params, texts(Some(&["a", "b", "c"])));
+    assert_eq!(
+        result.enforced_params,
+        Some(vec!["a".to_owned(), "b".to_owned(), "c".to_owned()])
+    );
 }
 
 #[test]
@@ -121,7 +124,7 @@ fn empty_key_metadata_params_still_pin_an_empty_list() {
     let result = build_service(enforced_settings(None, None), None, Vec::new())
         .apply(&input)
         .unwrap();
-    assert_eq!(result.enforced_params, texts(Some(&[])));
+    assert_eq!(result.enforced_params, Some(Vec::new()));
 }
 
 #[rstest]

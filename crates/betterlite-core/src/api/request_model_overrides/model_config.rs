@@ -49,9 +49,7 @@ impl ModelEntry {
         if let Some(Some(credential)) = provider.and_then(|name| self.providers.get(name)) {
             return Some(credential.clone());
         }
-        self.providers
-            .values()
-            .find_map(|credential| credential.clone())
+        self.providers.values().flatten().next().cloned()
     }
 }
 
@@ -60,14 +58,11 @@ pub(crate) fn model_config_from_metadata(
     metadata: Option<&JsonObject>,
     slot: MetadataSlot,
 ) -> Result<Option<ModelConfig>, RequestModelOverridesError> {
-    let Some(metadata) = metadata else {
+    let Some(config_value) = metadata.and_then(|source| source.get(MODEL_CONFIG_KEY)) else {
         return Ok(None);
     };
-    let Some(value) = metadata.get(MODEL_CONFIG_KEY) else {
-        return Ok(None);
-    };
-    let Json::Object(entries) = value else {
-        if matches!(value, Json::Null) {
+    let Json::Object(entries) = config_value else {
+        if matches!(config_value, Json::Null) {
             return Ok(None);
         }
         return Err(RequestModelOverridesError::InvalidField {
@@ -92,22 +87,22 @@ fn parse_model_entry(
     providers: &Json,
     path: &str,
 ) -> Result<ModelEntry, RequestModelOverridesError> {
-    let Json::Object(providers) = providers else {
+    let Json::Object(provider_entries) = providers else {
         return Err(RequestModelOverridesError::InvalidField {
             field: path.to_owned(),
             expected: "an object",
         });
     };
-    let mut provider_map = IndexMap::with_capacity(providers.len());
-    for (provider, fields) in providers {
+    let mut provider_map = IndexMap::with_capacity(provider_entries.len());
+    for (provider, fields) in provider_entries {
         let provider_path = format!("{path}.{provider}");
-        let Json::Object(fields) = fields else {
+        let Json::Object(provider_fields) = fields else {
             return Err(RequestModelOverridesError::InvalidField {
                 field: provider_path,
                 expected: "an object",
             });
         };
-        let credential = credential_name_from(fields, &provider_path)?;
+        let credential = credential_name_from(provider_fields, &provider_path)?;
         provider_map.insert(provider.clone(), credential);
     }
     Ok(ModelEntry {

@@ -121,12 +121,10 @@ impl RequestModelOverridesService {
         };
         apply_model_aliases(&mut data, &input.principal, &inputs, &mut diagnostics)?;
         if self.settings.credential_overrides {
-            let aliased_model = requested_model(&data)?;
             self.apply_credential_override(
                 &mut data,
                 &input.principal,
                 pre_alias_model.as_deref(),
-                aliased_model.as_deref(),
                 &mut diagnostics,
             )?;
         }
@@ -144,7 +142,6 @@ impl RequestModelOverridesService {
         data: &mut RequestData,
         principal: &OverridesPrincipal,
         pre_alias_model: Option<&str>,
-        aliased_model: Option<&str>,
         diagnostics: &mut Vec<OverrideDiagnostic>,
     ) -> Result<(), RequestModelOverridesError> {
         // clientside credentials are the highest precedence, and a null one counts as absent
@@ -155,10 +152,10 @@ impl RequestModelOverridesService {
         if client_credentials {
             return Ok(());
         }
-        let Some(model) = aliased_model else {
+        let Some(model) = requested_model(data)? else {
             return Ok(());
         };
-        let name = self.credential_name(principal, pre_alias_model, model, diagnostics)?;
+        let name = self.credential_name(principal, pre_alias_model, &model, diagnostics)?;
         let Some(credential) = name else {
             return Ok(());
         };
@@ -168,10 +165,7 @@ impl RequestModelOverridesService {
             return Ok(());
         }
         apply_credential_values(data, &values);
-        diagnostics.push(OverrideDiagnostic::CredentialApplied {
-            credential,
-            model: model.to_owned(),
-        });
+        diagnostics.push(OverrideDiagnostic::CredentialApplied { credential, model });
         Ok(())
     }
 

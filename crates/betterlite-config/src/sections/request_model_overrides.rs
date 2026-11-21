@@ -100,12 +100,22 @@ impl Section for Raw {
             None => None,
             Some(slot) => text_list(slot.enforced_params()?, SERVICE_ACCOUNT_PARAMS_PATH)?,
         };
+        let credential_overrides = match self.litellm_settings.credential_overrides {
+            None => false,
+            Some(RawFlag::Bool(enabled)) => enabled,
+            Some(RawFlag::Other(_)) => {
+                return Err(ConfigError::InvalidScalar {
+                    path: CREDENTIAL_OVERRIDES_PATH.to_owned(),
+                    value: false,
+                });
+            }
+        };
         // LiteLLM caches this flag on first use and keeps False when the variable is unset or empty
         let bypass_text = lookup
             .lookup(STALE_ALIAS_BYPASS_VARIABLE)
             .unwrap_or_default();
         Ok(Settings {
-            credential_overrides: credential_flag(self.litellm_settings.credential_overrides)?,
+            credential_overrides,
             enforced_params,
             service_account_params,
             team_stale_alias_bypass: betterlite_env::flag(
@@ -114,17 +124,6 @@ impl Section for Raw {
             )?
             .unwrap_or(false),
         })
-    }
-}
-
-fn credential_flag(value: Option<RawFlag>) -> Result<bool, ConfigError> {
-    match value {
-        None => Ok(false),
-        Some(RawFlag::Bool(enabled)) => Ok(enabled),
-        Some(RawFlag::Other(_)) => Err(ConfigError::InvalidScalar {
-            path: CREDENTIAL_OVERRIDES_PATH.to_owned(),
-            value: false,
-        }),
     }
 }
 

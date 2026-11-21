@@ -20,10 +20,6 @@ fn load(source: &str, env: &[(&str, &str)]) -> Result<Settings, ConfigError> {
         .request_model_overrides)
 }
 
-fn texts(values: Option<&[&str]>) -> Option<Vec<String>> {
-    values.map(|items| items.iter().map(|item| (*item).to_owned()).collect())
-}
-
 #[derive(Debug)]
 enum Expected {
     Loaded(Settings),
@@ -87,7 +83,7 @@ enum Expected {
     &[],
     Expected::Loaded(Settings {
         credential_overrides: false,
-        enforced_params: texts(Some(&["user", "metadata.generation_name"])),
+        enforced_params: Some(vec!["user".to_owned(), "metadata.generation_name".to_owned()]),
         service_account_params: None,
         team_stale_alias_bypass: false,
     })
@@ -97,7 +93,7 @@ enum Expected {
     &[],
     Expected::Loaded(Settings {
         credential_overrides: false,
-        enforced_params: texts(Some(&[])),
+        enforced_params: Some(Vec::new()),
         service_account_params: None,
         team_stale_alias_bypass: false,
     })
@@ -128,7 +124,7 @@ enum Expected {
     Expected::Loaded(Settings {
         credential_overrides: false,
         enforced_params: None,
-        service_account_params: texts(Some(&["user"])),
+        service_account_params: Some(vec!["user".to_owned()]),
         team_stale_alias_bypass: false,
     })
 )]
@@ -207,6 +203,13 @@ fn reports_unknown_sibling_key() {
         ConfigError::Unsupported { paths } => {
             assert_eq!(paths, vec!["general_settings.enforced_paramz".to_owned()]);
         }
-        other => panic!("Unsupported expected, got {other:?}"),
+        other @ ConfigError::CustomDimensions(_)
+        | other @ ConfigError::Environment { .. }
+        | other @ ConfigError::Yaml { .. }
+        | other @ ConfigError::MissingEnvironment { .. }
+        | other @ ConfigError::InvalidFloat { .. }
+        | other @ ConfigError::InvalidInteger { .. }
+        | other @ ConfigError::InvalidScalar { .. }
+        | other @ ConfigError::LoadThread { .. } => panic!("Unsupported expected, got {other:?}"),
     }
 }

@@ -83,14 +83,12 @@ pub(super) fn enforced_settings(
 ) -> ModelOverridesSettings {
     ModelOverridesSettings {
         credential_overrides: false,
-        enforced_params: texts(enforced),
-        service_account_params: texts(service_account),
+        enforced_params: enforced
+            .map(|items| items.iter().map(|item| (*item).to_owned()).collect()),
+        service_account_params: service_account
+            .map(|items| items.iter().map(|item| (*item).to_owned()).collect()),
         team_stale_alias_bypass: false,
     }
-}
-
-pub(super) fn texts(values: Option<&[&str]>) -> Option<Vec<String>> {
-    values.map(|items| items.iter().map(|item| (*item).to_owned()).collect())
 }
 
 pub(super) fn alias_map(pairs: &[(&str, &str)]) -> IndexMap<String, String> {

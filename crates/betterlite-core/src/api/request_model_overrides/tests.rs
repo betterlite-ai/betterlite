@@ -25,7 +25,7 @@ use crate::api::request_model_overrides::{
 
 use support::{
     alias_map, build_service, credential, credential_settings, enforced_settings, model_config,
-    request, requested, text_field, texts,
+    request, requested, text_field,
 };
 
 #[rstest]
@@ -172,7 +172,7 @@ enum Expected {
     Forbidden,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 enum BodyMetadata {
     Absent,
     Keys(&'static [&'static str]),
@@ -259,7 +259,10 @@ fn assert_enforced_outcome(
     enforced: &[&str],
 ) {
     match (result, expected) {
-        (Ok(result), Expected::Passed) => assert_eq!(result.enforced_params, texts(Some(enforced))),
+        (Ok(result), Expected::Passed) => assert_eq!(
+            result.enforced_params,
+            Some(enforced.iter().map(|item| (*item).to_owned()).collect::<Vec<String>>())
+        ),
         (Err(error), Expected::Missing(param)) => {
             assert_eq!(
                 error,
