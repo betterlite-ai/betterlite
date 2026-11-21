@@ -166,6 +166,7 @@ fn assert_entra_records(ops: &FakeOps) {
     );
     assert_eq!(entra[1].3, "scope.custom");
     let sent = ops.sends();
+    assert_eq!(sent.len(), 4);
     assert!(sent[0].has_entra_provider);
     assert!(!sent[3].has_entra_provider);
 }
@@ -198,6 +199,7 @@ fn foundry_caller_authorization() {
     lowered.kwargs = kwargs(vec![("headers", object(&[("API-KEY", "caller")]))]);
     case.run(lowered).0.unwrap();
     let sent = ops.sends();
+    assert_eq!(sent.len(), 2);
     assert_eq!(sent[0].header("Authorization"), Some("Bearer caller"));
     assert_eq!(sent[0].header("Content-Type"), Some("application/json"));
     assert_eq!(sent[0].header("X-Trace"), Some("t"));

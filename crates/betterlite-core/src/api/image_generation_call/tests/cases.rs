@@ -125,7 +125,7 @@ fn explicit_call() -> ImageGenerationCall {
     explicit
 }
 
-// an empty mock_response still answers, and both spellings become the generated url
+// an empty mock_response still answers, both spellings become the generated url, and no hidden model is recorded
 fn assert_mock_answer(case: &Case<'_>, mock: &str) {
     let mut mocked = call(None, None);
     mocked.kwargs = kwargs(vec![("mock_response", Json::Text(mock.to_owned()))]);
@@ -139,7 +139,7 @@ fn assert_mock_answer(case: &Case<'_>, mock: &str) {
             .and_then(|entry| entry.url.clone()),
         Some(mock.to_owned())
     );
-    assert_eq!(answered.hidden_model.as_deref(), Some("dall-e-2"));
+    assert_eq!(answered.hidden_model, None);
 }
 
 #[rstest]
@@ -219,6 +219,7 @@ fn generation_provider_selection(
         vec![(model.clone(), slug.to_owned()), (model, slug.to_owned())]
     );
     let sent = ops.sends();
+    assert_eq!(sent.len(), 2);
     assert_eq!(sent[0].branch, "generic");
     assert_eq!(sent[0].config, Some(tag));
     assert_eq!(sent[0].provider.as_deref(), Some(slug));

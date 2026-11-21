@@ -73,8 +73,14 @@ where
     let from_kwargs = prepared.generic.azure_ad_token.clone();
     let azure_ad_token = match from_options.or(from_kwargs) {
         Some(Json::Text(text)) if !text.is_empty() => Some(SecretString::from(text)),
-        Some(Json::Text(_) | Json::Null)
-        | Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
+        Some(
+            Json::Text(_)
+            | Json::Null
+            | Json::Bool(_)
+            | Json::Number(_)
+            | Json::List(_)
+            | Json::Object(_),
+        )
         | None => plan.settings.azure_ad_token.clone(),
     };
     Credentials {

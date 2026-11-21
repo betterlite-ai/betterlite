@@ -123,7 +123,7 @@ where
         drop_params: prepared.generic.drop_params,
         litellm_drop_params: plan.drop_params,
     };
-    let mapper = config
+    let provider_mapper = config
         .as_ref()
         .and_then(|tag| plan.operations.options_mapper(tag));
     let values = to_values(&passed);
@@ -133,7 +133,7 @@ where
         params: &values,
         additional_drop_params: &prepared.generic.additional_drop_params,
         drop_policy,
-        provider_config: mapper.as_deref(),
+        provider_config: provider_mapper.as_deref(),
         bedrock_config: plan.operations.bedrock_mapper(),
     })
     .map_err(|error| {

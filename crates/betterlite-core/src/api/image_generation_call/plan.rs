@@ -134,8 +134,12 @@ where
     let prepared = prepare(plan.identity, plan.redactor, &call)?;
     let mapped = map_options(plan, &prepared, &call)?;
     log(plan.redactor, logging, &prepared, &mapped, &call)?;
-    if let Some(answer) = mock_answer(&prepared.generic, &call) {
-        return Ok(answer);
+    // mock_image_generation builds a fresh ImageResponse, so the mock records no hidden model
+    if let Some(mocked) = mock_answer(&prepared.generic, &call) {
+        return Ok(ImageGenerationAnswer {
+            response: mocked.response,
+            hidden_model: mocked.hidden_model,
+        });
     }
     let answer = send_branch(plan, &prepared, &mapped, &call, logging).await?;
     Ok(ImageGenerationAnswer {

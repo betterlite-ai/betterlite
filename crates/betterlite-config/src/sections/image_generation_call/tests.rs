@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use rstest::rstest;
-use secrecy::ExposeSecret as _;
+use secrecy::ExposeSecret;
 
 use super::Settings;
 use crate::loader::ConfigLoader;
@@ -19,15 +19,15 @@ fn settings(source: &str, variables: &[(&str, &str)]) -> Result<Settings, String
         .map_err(|error| error.to_string())
 }
 
-// each fallback tier of the Azure and Foundry chains, and the default that names no provider key
+// each Azure environment tier and the azure default, expected as [base, version, openai key, api key, ad token]
 #[rstest]
-#[case::unset(&[], None, None, None, None, None, "azure")]
-#[case::azure_api_base(&[("AZURE_API_BASE", "https://env.example")], Some("https://env.example"), None, None, None, None, "azure")]
-#[case::azure_api_version(&[("AZURE_API_VERSION", "2024-02-01")], None, Some("2024-02-01"), None, None, None, "azure")]
-#[case::azure_openai_key(&[("AZURE_OPENAI_API_KEY", "openai-env")], None, None, Some("openai-env"), None, None, "azure")]
-#[case::azure_api_key(&[("AZURE_API_KEY", "azure-env")], None, None, None, Some("azure-env"), None, "azure")]
-#[case::azure_ad_token(&[("AZURE_AD_TOKEN", "token-env")], None, None, None, None, Some("token-env"), "azure")]
-#[case::azure_api_type(&[("AZURE_API_TYPE", "azure_ad")], None, None, None, None, None, "azure_ad")]
+#[case::unset(&[], [None, None, None, None, None], "azure")]
+#[case::azure_api_base(&[("AZURE_API_BASE", "https://env.example")], [Some("https://env.example"), None, None, None, None], "azure")]
+#[case::azure_api_version(&[("AZURE_API_VERSION", "2024-02-01")], [None, Some("2024-02-01"), None, None, None], "azure")]
+#[case::azure_openai_key(&[("AZURE_OPENAI_API_KEY", "openai-env")], [None, None, Some("openai-env"), None, None], "azure")]
+#[case::azure_api_key(&[("AZURE_API_KEY", "azure-env")], [None, None, None, Some("azure-env"), None], "azure")]
+#[case::azure_ad_token(&[("AZURE_AD_TOKEN", "token-env")], [None, None, None, None, Some("token-env")], "azure")]
+#[case::azure_api_type(&[("AZURE_API_TYPE", "azure_ad")], [None, None, None, None, None], "azure_ad")]
 #[case::empty_is_unset(
     &[
         ("AZURE_API_BASE", ""),
@@ -37,46 +37,32 @@ fn settings(source: &str, variables: &[(&str, &str)]) -> Result<Settings, String
         ("AZURE_AD_TOKEN", ""),
         ("AZURE_API_TYPE", ""),
     ],
-    None,
-    None,
-    None,
-    None,
-    None,
+    [None, None, None, None, None],
     "azure"
 )]
 fn loads_settings(
     #[case] variables: &[(&str, &str)],
-    #[case] api_base: Option<&str>,
-    #[case] api_version: Option<&str>,
-    #[case] openai_key: Option<&str>,
-    #[case] azure_key: Option<&str>,
-    #[case] ad_token: Option<&str>,
+    #[case] expected: [Option<&str>; 5],
     #[case] api_type: &str,
 ) {
     let settings = settings("litellm_settings: {}\n", variables).expect("settings load");
-    assert_eq!(settings.azure_api_base.as_deref(), api_base);
-    assert_eq!(settings.azure_api_version.as_deref(), api_version);
-    assert_eq!(
+    let loaded = [
+        settings.azure_api_base.as_deref(),
+        settings.azure_api_version.as_deref(),
         settings
             .azure_openai_api_key
             .as_ref()
-            .map(|key| key.expose_secret()),
-        openai_key
-    );
-    assert_eq!(
+            .map(ExposeSecret::expose_secret),
         settings
             .azure_api_key
             .as_ref()
-            .map(|key| key.expose_secret()),
-        azure_key
-    );
-    assert_eq!(
+            .map(ExposeSecret::expose_secret),
         settings
             .azure_ad_token
             .as_ref()
-            .map(|key| key.expose_secret()),
-        ad_token
-    );
+            .map(ExposeSecret::expose_secret),
+    ];
+    assert_eq!(loaded, expected);
     assert_eq!(settings.azure_api_type, api_type);
 }
 
