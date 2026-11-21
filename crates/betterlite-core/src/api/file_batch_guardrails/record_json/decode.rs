@@ -17,33 +17,37 @@ pub fn line_code_points(line: &[u8]) -> Option<Vec<u32>> {
     }
 }
 
-// surrogatepass lets a surrogate through like any other three-byte form; overlong and out-of-range forms still fail
 #[must_use]
 pub fn utf8_code_points(bytes: &[u8]) -> Option<Vec<u32>> {
     let mut code_points = Vec::with_capacity(bytes.len());
     let mut rest = bytes;
-    while let Some((&lead, tail)) = rest.split_first() {
-        let (extra, payload, minimum) = match lead.leading_ones() {
-            0 => (0_usize, lead, 0_u32),
-            2 => (1, lead & 0x1F, 0x80),
-            3 => (2, lead & 0x0F, 0x0800),
-            4 => (3, lead & 0x07, 0x0001_0000),
-            _ => return None,
-        };
-        let mut code_point = u32::from(payload);
-        for byte in tail.get(..extra)? {
-            if byte.leading_ones() != 1 {
-                return None;
-            }
-            code_point = code_point.wrapping_shl(6) | u32::from(byte & 0x3F);
-        }
-        if !(minimum..=MAX_CODE_POINT).contains(&code_point) {
-            return None;
-        }
+    while !rest.is_empty() {
+        let (code_point, tail) = utf8_sequence(rest)?;
         code_points.push(code_point);
-        rest = tail.get(extra..)?;
+        rest = tail;
     }
     Some(code_points)
+}
+
+// surrogatepass lets a surrogate through like any other three-byte form; overlong and out-of-range forms still fail
+fn utf8_sequence(bytes: &[u8]) -> Option<(u32, &[u8])> {
+    let (&lead, tail) = bytes.split_first()?;
+    let (extra, payload, minimum) = match lead.leading_ones() {
+        0 => (0_usize, lead, 0_u32),
+        2 => (1, lead & 0x1F, 0x80),
+        3 => (2, lead & 0x0F, 0x0800),
+        4 => (3, lead & 0x07, 0x0001_0000),
+        _ => return None,
+    };
+    let (continuation, rest) = tail.split_at_checked(extra)?;
+    let code_point = continuation
+        .iter()
+        .try_fold(u32::from(payload), |value, byte| {
+            (byte.leading_ones() == 1).then(|| value.wrapping_shl(6) | u32::from(byte & 0x3F))
+        })?;
+    (minimum..=MAX_CODE_POINT)
+        .contains(&code_point)
+        .then_some((code_point, rest))
 }
 
 fn utf16_code_points(bytes: &[u8], read: fn([u8; 2]) -> u16) -> Option<Vec<u32>> {

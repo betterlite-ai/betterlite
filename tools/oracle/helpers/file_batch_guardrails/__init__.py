@@ -10,6 +10,7 @@ from litellm.exceptions import (
 )
 from litellm.proxy.openai_files_endpoints import batch_guardrails
 from litellm.proxy.openai_files_endpoints.batch_guardrails import (
+    BatchScanFailure,
     BatchScanResult,
     RecordDropped,
     RecordRedacted,
@@ -21,6 +22,7 @@ from litellm.proxy.openai_files_endpoints.batch_guardrails import (
     raise_public,
 )
 from pydantic import JsonValue, TypeAdapter
+from starlette.exceptions import HTTPException as RaisedHTTPException
 
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 
@@ -122,7 +124,8 @@ def run(input_value: Input) -> JsonValue:
         if call["function"] == "call_type":
             answers.append(batch_guardrails._scannable_call_type(call["url"], call["body"]))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/batch_guardrails.py#L310
         elif call["function"] == "scan_metadata":
-            answers.append(JSON.validate_python(dict(build_scan_metadata(call["metadata"]))))
+            narrowed = build_scan_metadata(call["metadata"])
+            answers.append(JSON.validate_python({key: narrowed[key] for key in narrowed}))
         elif call["function"] == "custom_id":
             record = next(batch_guardrails._iter_records(BytesIO(call["line"].encode())))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/batch_guardrails.py#L277
             custom_id = batch_guardrails._custom_id_of(record.payload)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/batch_guardrails.py#L322
@@ -161,8 +164,9 @@ def content_block(item: RaisedItem) -> JsonValue:
     elif item["kind"] == "blocked_pii":
         raised = BlockedPiiEntityError(entity_type="EMAIL_ADDRESS", guardrail_name=name)
     elif item["kind"] == "modify_response":
+        request_data: dict[str, JsonValue] = {}
         raised = ModifyResponseException(
-            message="blocked", model="m", request_data={}, guardrail_name=name
+            message="blocked", model="m", request_data=request_data, guardrail_name=name
         )
     elif item["kind"] == "sensitive_data_route":
         raised = SensitiveDataRouteException(
@@ -201,17 +205,18 @@ def report(call: ReportCall) -> JsonValue:
 def public_failure(item: FailureItem) -> JsonValue:
     line_number = item["line_number"]
     custom_id = item["custom_id"]
+    failures: dict[str, BatchScanFailure] = {
+        "unparseable": UnparseableRecord(line_number),
+        "unscannable": UnscannableRecord(line_number, custom_id, item["url"]),
+        "unroutable": UnroutableRecord(line_number, custom_id, item["guardrail_name"]),
+    }
     status: int | None = None
     detail: JsonValue = None
     try:
-        if item["kind"] == "unparseable":
-            raise_public(UnparseableRecord(line_number))
-        if item["kind"] == "unscannable":
-            raise_public(UnscannableRecord(line_number, custom_id, item["url"]))
-        if item["kind"] == "unroutable":
-            raise_public(UnroutableRecord(line_number, custom_id, item["guardrail_name"]))
-        raise_nothing_to_submit()
-    except HTTPException as error:
+        if item["kind"] == "nothing_to_submit":
+            raise_nothing_to_submit()
+        raise_public(failures[item["kind"]])
+    except RaisedHTTPException as error:
         status = error.status_code
         detail = JSON.validate_python(error.detail)
     return {"status": status, "detail": detail}

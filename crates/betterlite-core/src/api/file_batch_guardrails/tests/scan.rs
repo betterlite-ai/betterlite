@@ -88,56 +88,13 @@ fn drop_injected(mut data: RecordObject) -> RecordObject {
     data
 }
 
-fn add_null(mut data: RecordObject) -> RecordObject {
-    data.insert(RecordText::from("user"), RecordJson::Null);
-    data
-}
-
 fn drop_model(mut data: RecordObject) -> RecordObject {
     data.shift_remove(&RecordText::from("model"));
     data
 }
 
-fn reroute(mut data: RecordObject) -> RecordObject {
-    set(
-        &mut data,
-        "metadata",
-        r#"{"sensitive_data_routing_applied":true,"sensitive_data_routing_guardrail":"router"}"#,
-    );
-    data
-}
-
-fn reroute_unnamed(mut data: RecordObject) -> RecordObject {
-    set(
-        &mut data,
-        "metadata",
-        r#"{"sensitive_data_routing_applied":true}"#,
-    );
-    data
-}
-
-fn reroute_not_applied(mut data: RecordObject) -> RecordObject {
-    set(
-        &mut data,
-        "metadata",
-        r#"{"sensitive_data_routing_applied":false,"sensitive_data_routing_guardrail":"router"}"#,
-    );
-    data
-}
-
-fn reroute_list_metadata(mut data: RecordObject) -> RecordObject {
-    data.insert(RecordText::from("metadata"), RecordJson::List(Vec::new()));
-    data
-}
-
-fn reroute_in_scan_bag(mut data: RecordObject) -> RecordObject {
-    set(
-        &mut data,
-        "litellm_metadata",
-        r#"{"sensitive_data_routing_applied":true}"#,
-    );
-    data
-}
+const ROUTED: &str =
+    r#"{"sensitive_data_routing_applied":true,"sensitive_data_routing_guardrail":"router"}"#;
 
 #[tokio::test]
 async fn the_hook_sees_the_body_with_trusted_metadata_only() {
@@ -169,7 +126,7 @@ async fn a_rewrite_ships_with_the_records_own_injected_keys() {
 async fn a_rewrite_adds_no_injected_keys_the_record_lacked() {
     let line =
         r#"{"custom_id":7,"url":"/v1/embeddings","body":{"input":"x","encoding_format":"float"}}"#;
-    let result = scanned(line, Answer::Rewrite(add_null)).await;
+    let result = scanned(line, Answer::Insert("user", "null")).await;
     assert_eq!(
         result.seen.first().map(|call| call.call_type),
         Some(CallType::Aembedding)
@@ -183,24 +140,27 @@ async fn a_rewrite_adds_no_injected_keys_the_record_lacked() {
 }
 
 #[rstest]
-#[case::reordered(reorder)]
-#[case::only_injected_keys_changed(touch_injected)]
-#[case::injected_keys_dropped(drop_injected)]
-#[case::rerouted_flag_false(reroute_not_applied)]
-#[case::metadata_not_an_object(reroute_list_metadata)]
-#[case::flag_only_in_the_scan_bag(reroute_in_scan_bag)]
+#[case::reordered(Answer::Rewrite(reorder))]
+#[case::only_injected_keys_changed(Answer::Rewrite(touch_injected))]
+#[case::injected_keys_dropped(Answer::Rewrite(drop_injected))]
+#[case::rerouted_flag_false(Answer::Insert(
+    "metadata",
+    r#"{"sensitive_data_routing_applied":false,"sensitive_data_routing_guardrail":"router"}"#
+))]
+#[case::metadata_not_an_object(Answer::Insert("metadata", "[]"))]
+#[case::flag_only_in_the_scan_bag(Answer::Insert("litellm_metadata", ROUTED))]
 #[tokio::test]
-async fn an_unchanged_record_ships_as_written(#[case] rewrite: fn(RecordObject) -> RecordObject) {
-    let result = scanned(CHAT, Answer::Rewrite(rewrite)).await;
+async fn an_unchanged_record_ships_as_written(#[case] answer: Answer) {
+    let result = scanned(CHAT, answer).await;
     assert_eq!(result.outcome, Ok(None));
 }
 
 #[rstest]
-#[case::null_key_added(add_null)]
-#[case::key_dropped(drop_model)]
+#[case::null_key_added(Answer::Insert("user", "null"))]
+#[case::key_dropped(Answer::Rewrite(drop_model))]
 #[tokio::test]
-async fn a_null_or_missing_key_is_a_change(#[case] rewrite: fn(RecordObject) -> RecordObject) {
-    let result = scanned(CHAT, Answer::Rewrite(rewrite)).await;
+async fn a_null_or_missing_key_is_a_change(#[case] answer: Answer) {
+    let result = scanned(CHAT, answer).await;
     assert!(
         matches!(result.outcome, Ok(Some(ScanOutcome::Redaction(_)))),
         "{:?}",
@@ -209,14 +169,14 @@ async fn a_null_or_missing_key_is_a_change(#[case] rewrite: fn(RecordObject) -> 
 }
 
 #[rstest]
-#[case::named(reroute, Some("router"))]
-#[case::unnamed(reroute_unnamed, None)]
+#[case::named(ROUTED, Some("router"))]
+#[case::unnamed(r#"{"sensitive_data_routing_applied":true}"#, None)]
 #[tokio::test]
 async fn a_rerouted_record_cannot_ship(
-    #[case] rewrite: fn(RecordObject) -> RecordObject,
+    #[case] metadata: &'static str,
     #[case] guardrail: Option<&str>,
 ) {
-    let result = scanned(CHAT, Answer::Rewrite(rewrite)).await;
+    let result = scanned(CHAT, Answer::Insert("metadata", metadata)).await;
     let failure = BatchScanFailure::Unroutable(UnroutableRecord {
         line_number: 2,
         custom_id: Some("a".to_owned()),

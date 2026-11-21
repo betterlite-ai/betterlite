@@ -10,6 +10,20 @@ use super::{RecordJson, RecordObject};
 // Python stops near its recursion limit, and the upload validation already refused anything deeper than this
 pub const MAX_DEPTH: usize = 512;
 
+// The bare words json's scanner accepts; NaN and the infinities stay number literals
+const WORDS: [&str; 6] = ["null", "true", "false", "NaN", "Infinity", "-Infinity"];
+
+const ESCAPES: [(char, char); 8] = [
+    ('"', '"'),
+    ('\\', '\\'),
+    ('/', '/'),
+    ('b', '\u{8}'),
+    ('f', '\u{c}'),
+    ('n', '\n'),
+    ('r', '\r'),
+    ('t', '\t'),
+];
+
 enum Frame {
     List(Vec<RecordJson>),
     Object(RecordObject, RecordText),
@@ -39,13 +53,15 @@ impl Parser<'_> {
     fn document(&mut self) -> Result<RecordJson, RecordJsonError> {
         let mut frames = Vec::new();
         loop {
-            match self.open(frames.len())? {
-                Step::Open(frame) => frames.push(frame),
-                Step::Done(value) => {
-                    if let Some(document) = self.attach(&mut frames, value)? {
-                        return Ok(document);
-                    }
+            let value = match self.open(frames.len())? {
+                Step::Open(frame) => {
+                    frames.push(frame);
+                    continue;
                 }
+                Step::Done(value) => value,
+            };
+            if let Some(document) = self.attach(&mut frames, value)? {
+                return Ok(document);
             }
         }
     }
@@ -85,31 +101,28 @@ impl Parser<'_> {
         Ok(opened)
     }
 
+    // A comma reopens the container for its next value, and its own closer finishes it
     fn close(&mut self, frame: Frame, value: RecordJson) -> Result<Step, RecordJsonError> {
         self.skip_whitespace();
         let separator = self.points.next().and_then(char::from_u32);
-        let closed = match (frame, separator) {
-            (Frame::List(mut items), Some(',')) => {
+        match (frame, separator) {
+            (Frame::List(mut items), Some(mark @ (',' | ']'))) => {
                 items.push(value);
-                Step::Open(Frame::List(items))
-            }
-            (Frame::List(mut items), Some(']')) => {
-                items.push(value);
-                Step::Done(RecordJson::List(items))
+                if mark == ']' {
+                    return Ok(Step::Done(RecordJson::List(items)));
+                }
+                Ok(Step::Open(Frame::List(items)))
             }
             (Frame::Object(mut members, key), Some(',')) => {
                 members.insert(key, value);
-                Step::Open(Frame::Object(members, self.key()?))
+                Ok(Step::Open(Frame::Object(members, self.key()?)))
             }
             (Frame::Object(mut members, key), Some('}')) => {
                 members.insert(key, value);
-                Step::Done(RecordJson::Object(members))
+                Ok(Step::Done(RecordJson::Object(members)))
             }
-            (Frame::List(_) | Frame::Object(..), Some(_) | None) => {
-                return Err(RecordJsonError::Syntax);
-            }
-        };
-        Ok(closed)
+            (Frame::List(_) | Frame::Object(..), Some(_) | None) => Err(RecordJsonError::Syntax),
+        }
     }
 
     fn closes(&mut self, close: char) -> bool {
@@ -138,29 +151,25 @@ impl Parser<'_> {
         {}
     }
 
-    fn eat(&mut self, word: &str) -> bool {
-        for expected in word.chars() {
-            if self.points.next_if_eq(&u32::from(expected)).is_none() {
-                return false;
-            }
-        }
-        true
+    // The rest of a word whose first character was already read
+    fn rest(&mut self, word: &str) -> bool {
+        word.chars()
+            .skip(1)
+            .all(|expected| self.points.next_if_eq(&u32::from(expected)).is_some())
     }
 
     fn scalar(&mut self, first: char) -> Result<RecordJson, RecordJsonError> {
-        let scalar = match first {
-            'n' => self.eat("ull").then_some(RecordJson::Null),
-            't' => self.eat("rue").then_some(RecordJson::Bool(true)),
-            'f' => self.eat("alse").then_some(RecordJson::Bool(false)),
-            'N' => self.eat("aN").then(|| RecordJson::Number("NaN".to_owned())),
-            'I' => self
-                .eat("nfinity")
-                .then(|| RecordJson::Number("Infinity".to_owned())),
-            '-' if self.eat("Infinity") => Some(RecordJson::Number("-Infinity".to_owned())),
-            '-' | '0'..='9' => Some(RecordJson::Number(self.number(first)?)),
-            _ => None,
-        };
-        scalar.ok_or(RecordJsonError::Syntax)
+        let found = WORDS
+            .into_iter()
+            .find(|word| word.starts_with(first) && self.rest(word));
+        if let Some(word) = found {
+            return Ok(word_value(word));
+        }
+        let numeric = first == '-' || first.is_ascii_digit();
+        let literal = numeric.then(|| self.number(first));
+        literal
+            .ok_or(RecordJsonError::Syntax)?
+            .map(RecordJson::Number)
     }
 
     // json's number pattern with ASCII digits only, as the C scanner reads it
@@ -213,24 +222,25 @@ impl Parser<'_> {
     }
 
     fn escape(&mut self) -> Result<u32, RecordJsonError> {
-        let escaped = match self.points.next().and_then(char::from_u32) {
-            Some(same @ ('"' | '\\' | '/')) => same,
-            Some('b') => '\u{8}',
-            Some('f') => '\u{c}',
-            Some('n') => '\n',
-            Some('r') => '\r',
-            Some('t') => '\t',
-            Some('u') => return self.unicode(),
-            Some(_) | None => return Err(RecordJsonError::Syntax),
-        };
-        Ok(u32::from(escaped))
+        let written = self.points.next().and_then(char::from_u32);
+        if written == Some('u') {
+            return self.unicode();
+        }
+        let found = ESCAPES.iter().find(|(escape, _)| Some(*escape) == written);
+        found
+            .map(|(_, decoded)| u32::from(*decoded))
+            .ok_or(RecordJsonError::Syntax)
     }
 
     // json pairs a high surrogate escape with a low one right after it and keeps either alone otherwise
     fn unicode(&mut self) -> Result<u32, RecordJsonError> {
         let high = self.hex()?;
         let before_pair = self.points.clone();
-        if (0xD800..=0xDBFF).contains(&high) && self.eat("\\u") {
+        let escaped = |parser: &mut Self, mark: char| parser.points.next_if_eq(&u32::from(mark));
+        if (0xD800..=0xDBFF).contains(&high)
+            && escaped(self, '\\').is_some()
+            && escaped(self, 'u').is_some()
+        {
             let low = self.hex()?;
             if let Some(Ok(paired)) = char::decode_utf16([high, low]).next() {
                 return Ok(u32::from(paired));
@@ -240,18 +250,28 @@ impl Parser<'_> {
         Ok(u32::from(high))
     }
 
+    // Exactly four hex digits; from_str_radix alone would also take a sign
     fn hex(&mut self) -> Result<u16, RecordJsonError> {
-        let mut value = 0_u16;
-        for _ in 0..4_u8 {
-            let digit = self
-                .points
-                .next()
-                .and_then(char::from_u32)
-                .and_then(|character| character.to_digit(16))
-                .and_then(|digit| u16::try_from(digit).ok())
-                .ok_or(RecordJsonError::Syntax)?;
-            value = value.wrapping_shl(4) | digit;
-        }
-        Ok(value)
+        let digits: String = self
+            .points
+            .by_ref()
+            .take(4)
+            .filter_map(char::from_u32)
+            .collect();
+        let valid =
+            digits.chars().count() == 4 && digits.chars().all(|digit| digit.is_ascii_hexdigit());
+        let value = valid
+            .then(|| u16::from_str_radix(&digits, 16).ok())
+            .flatten();
+        value.ok_or(RecordJsonError::Syntax)
+    }
+}
+
+fn word_value(word: &str) -> RecordJson {
+    match word {
+        "null" => RecordJson::Null,
+        "true" => RecordJson::Bool(true),
+        "false" => RecordJson::Bool(false),
+        special => RecordJson::Number(special.to_owned()),
     }
 }

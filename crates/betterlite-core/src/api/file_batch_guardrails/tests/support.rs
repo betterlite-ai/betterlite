@@ -84,6 +84,8 @@ impl RaisedGuardrail for FakeFailure {
 
 pub(super) enum Answer {
     Rewrite(fn(RecordObject) -> RecordObject),
+    // Sets one key of the scanned body to this JSON text
+    Insert(&'static str, &'static str),
     Raise(FakeFailure),
 }
 
@@ -111,6 +113,12 @@ impl GuardrailsOnlyPreCall for FakeHook {
         });
         match &self.answer {
             Answer::Rewrite(rewrite) => Ok(rewrite(input.data)),
+            Answer::Insert(key, value) => {
+                let mut data = input.data;
+                let wrapped = object(&format!(r#"{{"value":{value}}}"#));
+                data.insert(RecordText::from(*key), member(&wrapped, "value").clone());
+                Ok(data)
+            }
             Answer::Raise(failure) => Err(failure.clone()),
         }
     }

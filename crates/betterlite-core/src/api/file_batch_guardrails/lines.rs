@@ -45,15 +45,19 @@ pub fn iter_records<Source>(
 where
     Source: BufRead,
 {
-    iter_lines(file_source).map(|line| {
-        let raw = line?;
-        let payload = load_record(&raw.bytes).map_err(|source| BatchGuardrailError::Record {
-            line_number: raw.line_number,
-            source,
-        })?;
-        Ok(ParsedRecord {
-            line_number: raw.line_number,
+    iter_lines(file_source).map(|line| line.and_then(parsed_record))
+}
+
+fn parsed_record(raw: RawLine) -> Result<ParsedRecord, BatchGuardrailError> {
+    let line_number = raw.line_number;
+    match load_record(&raw.bytes) {
+        Ok(payload) => Ok(ParsedRecord {
+            line_number,
             payload,
-        })
-    })
+        }),
+        Err(source) => Err(BatchGuardrailError::Record {
+            line_number,
+            source,
+        }),
+    }
 }
