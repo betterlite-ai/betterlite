@@ -1,0 +1,169 @@
+use betterlite_error::dispatch::{DispatchInput, RawException, dispatch};
+use betterlite_error::error::ErrorClass;
+use betterlite_logging::logging_pre_post::error::PrePostError;
+use betterlite_models::controls::multipart::FormFieldError;
+use betterlite_models::resolution::ResolutionError;
+use betterlite_redact::secret::Redactor;
+use thiserror::Error;
+
+use crate::api::image_input_options::selection::ImageInputOptionsError;
+
+// image_edit's own failures: every message is the one its ValueError or handler error carries in LiteLLM
+#[derive(Debug, Error)]
+pub enum ImageEditError {
+    #[error(transparent)]
+    Resolution(#[from] ResolutionError),
+    #[error("image edit is not supported for {provider}")]
+    UnsupportedConfig { provider: String },
+    #[error("Model needs to be set for {provider}")]
+    ModelRequired { provider: &'static str },
+    #[error(
+        "Unmapped LLM provider for this endpoint. You passed model={model}, custom_llm_provider={provider}. Check supported provider and route: https://docs.litellm.ai/docs/providers"
+    )]
+    UnknownProvider { model: String, provider: String },
+    #[error(transparent)]
+    Options(#[from] ImageInputOptionsError),
+    #[error(transparent)]
+    FormField(#[from] FormFieldError),
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
+    #[error("the {name} header value must be text")]
+    HeaderText { name: String },
+    #[error("timeout must be a non-negative number of seconds, got {seconds}")]
+    InvalidTimeout { seconds: f64 },
+    #[error("{message}")]
+    Invalid { message: String },
+    #[error(transparent)]
+    Provider(#[from] ProviderFailure),
+    #[error("the image edit transport failed: {message}")]
+    Transport { message: String },
+    #[error(transparent)]
+    Logging(#[from] PrePostError),
+}
+
+impl ImageEditError {
+    #[must_use]
+    pub const fn status(&self) -> Option<u16> {
+        match self {
+            Self::Provider(source) => Some(source.status_code),
+            Self::Resolution(_)
+            | Self::UnsupportedConfig { .. }
+            | Self::ModelRequired { .. }
+            | Self::UnknownProvider { .. }
+            | Self::Options(_)
+            | Self::FormField(_)
+            | Self::Json(_)
+            | Self::HeaderText { .. }
+            | Self::InvalidTimeout { .. }
+            | Self::Invalid { .. }
+            | Self::Transport { .. }
+            | Self::Logging(_) => None,
+        }
+    }
+}
+
+// what a provider send reports: the status, the reply text, and whether the handler invented the status
+#[derive(Debug, Clone, Error)]
+#[error("{message}")]
+pub struct ProviderFailure {
+    pub status_code: u16,
+    pub message: String,
+    pub status_code_is_synthesized: bool,
+}
+
+// aimage_edit's failure, after litellm's exception_type has mapped the sync exception
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImageEditException {
+    pub class: ErrorClass,
+    pub message: String,
+}
+
+impl ImageEditException {
+    #[must_use]
+    pub fn mapped(
+        error: &ImageEditError,
+        model: Option<&str>,
+        provider: &str,
+        redactor: &Redactor,
+    ) -> Self {
+        match error {
+            ImageEditError::Resolution(source) => {
+                let message = source.to_string();
+                project(
+                    raw_exception(&message, Some(400), model, provider),
+                    &message,
+                    redactor,
+                )
+            }
+            ImageEditError::Provider(source) => {
+                let error_str = format!("Error code: {} - {}", source.status_code, source.message);
+                project(
+                    raw_exception(
+                        &error_str,
+                        Some(source.status_code),
+                        source.status_code_is_synthesized,
+                        model,
+                        provider,
+                    ),
+                    &source.message,
+                    redactor,
+                )
+            }
+            ImageEditError::UnknownProvider { .. } => {
+                let message = error.to_string();
+                project(
+                    raw_exception(&message, Some(400), false, model, provider),
+                    &message,
+                    redactor,
+                )
+            }
+            ImageEditError::UnsupportedConfig { .. }
+            | ImageEditError::ModelRequired { .. }
+            | ImageEditError::Options(_)
+            | ImageEditError::FormField(_)
+            | ImageEditError::Json(_)
+            | ImageEditError::HeaderText { .. }
+            | ImageEditError::InvalidTimeout { .. }
+            | ImageEditError::Invalid { .. }
+            | ImageEditError::Transport { .. }
+            | ImageEditError::Logging(_) => {
+                let message = error.to_string();
+                project(
+                    raw_exception(&message, None, false, model, provider),
+                    &message,
+                    redactor,
+                )
+            }
+        }
+    }
+}
+
+// the attributes exception_type reads off the original exception before any provider branch runs
+#[must_use]
+pub(crate) fn raw_exception(
+    error_str: &str,
+    status_code: Option<u16>,
+    status_code_is_synthesized: bool,
+    model: Option<&str>,
+    provider: &str,
+) -> RawException {
+    RawException {
+        model: model.unwrap_or_default().to_owned(),
+        custom_llm_provider: provider.to_owned(),
+        error_str: error_str.to_owned(),
+        status_code,
+        status_code_is_synthesized,
+        message: Some(error_str.to_owned()),
+        body: None,
+        exception_type: String::new(),
+    }
+}
+
+// exception_type's full dispatch: the timeout preamble, every provider family, then _map_exception_by_status
+#[must_use]
+pub(crate) fn project(raw: RawException, message: &str, redactor: &Redactor) -> ImageEditException {
+    ImageEditException {
+        class: dispatch(&DispatchInput::Raw(Box::new(raw)), redactor),
+        message: message.to_owned(),
+    }
+}
