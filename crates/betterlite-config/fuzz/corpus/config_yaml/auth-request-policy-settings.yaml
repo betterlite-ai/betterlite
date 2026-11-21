@@ -1,0 +1,15 @@
+# allowed_ips and allowed_routes are exact string lists, use_x_forwarded_for selects the whole
+# x-forwarded-for header, and both size limits take any number.
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  allowed_ips: [10.0.0.1, 203.0.113.0/24]
+  use_x_forwarded_for: true
+  max_request_size_mb: 2.5
+  max_response_size_mb: 0
+  allowed_routes:
+    - /v1/chat/completions
+model_list:
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY

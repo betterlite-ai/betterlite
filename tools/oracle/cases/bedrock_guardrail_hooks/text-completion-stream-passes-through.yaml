@@ -1,0 +1,65 @@
+kind: helper
+name: text-completion-stream-passes-through
+call:
+  b3726:
+    hook: streaming
+    call_type: acompletion
+    guardrail:
+      name: bedrock-hooks
+      identifier: gr-abc123
+      version: "1"
+      disable_exception_on_block: false
+      latest_role_message_only: false
+      event_hook: post_call
+      buffer_until_moderated: true
+      streaming_end_of_stream_only: null
+      buffer_release_on_scan: null
+    data:
+      model: gpt-3.5-turbo-instruct
+      messages:
+        - role: user
+          content: hello
+    response: null
+    chunks:
+      - id: cmpl-1
+        object: text_completion
+        created: 1
+        model: gpt-3.5-turbo-instruct
+        choices:
+          - index: 0
+            text: Hello
+            finish_reason: null
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+      - id: cmpl-1
+        object: text_completion
+        created: 1
+        model: gpt-3.5-turbo-instruct
+        choices:
+          - index: 0
+            text: " world"
+            finish_reason: null
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+      - id: cmpl-1
+        object: text_completion
+        created: 1
+        model: gpt-3.5-turbo-instruct
+        choices:
+          - index: 0
+            text: ""
+            finish_reason: stop
+        usage:
+          prompt_tokens: 3
+          completion_tokens: 2
+          total_tokens: 5
+    sse_chunks: []
+    request_route: null
+    keepalive_interval_seconds: null
+    replies: []
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,51 @@
+kind: helper
+name: model-limit-precedence-and-zero
+call:
+  team_parent_limits:
+    calls:
+      - check: model_specific
+        teams: &siblings
+          - {team_id: team-a, metadata: {model_rpm_limit: {gpt: 4}}}
+          - {team_id: team-b, metadata: {model_rpm_limit: {gpt: 2}}}
+        organization: &budgeted
+          {organization_id: org-1, budget_id: budget-1, created_by: admin, updated_by: admin, litellm_budget_table: {rpm_limit: 10}}
+        request: {kind: new, body: {model_rpm_limit: {gpt: 1}, metadata: {model_rpm_limit: {gpt: 100}}}}
+      - check: model_specific
+        teams: *siblings
+        organization: *budgeted
+        request: {kind: new, body: {metadata: {model_rpm_limit: {gpt: 100}}}}
+      - check: model_specific
+        teams: *siblings
+        organization: *budgeted
+        request: {kind: new, body: {model_rpm_limit: {}, metadata: {model_rpm_limit: {gpt: 5}}}}
+      - check: model_specific
+        teams: *siblings
+        organization: *budgeted
+        request: {kind: new, body: {model_rpm_limit: {}}}
+      - check: model_specific
+        teams: *siblings
+        organization: *budgeted
+        request: {kind: update, body: {team_id: team-a, metadata: {model_rpm_limit: {gpt: 5}}}}
+      - check: model_specific
+        teams: *siblings
+        organization: *budgeted
+        request: {kind: update, body: {team_id: team-a, model_rpm_limit: {gpt: 1}, metadata: {model_rpm_limit: {gpt: 100}}}}
+      - check: model_specific
+        teams: *siblings
+        organization: {organization_id: org-1, budget_id: budget-1, created_by: admin, updated_by: admin, metadata: {model_rpm_limit: {gpt: 0}, model_tpm_limit: {gpt: 0}}}
+        request: {kind: new, body: {model_rpm_limit: {gpt: 1000}, model_tpm_limit: {gpt: 1000}}}
+      - check: model_specific
+        teams: *siblings
+        organization: {organization_id: org-1, budget_id: budget-1, created_by: admin, updated_by: admin, metadata: {model_rpm_limit: {gpt: null}}}
+        request: {kind: new, body: {model_rpm_limit: {gpt: 1000}}}
+      - check: model_specific
+        teams: []
+        organization: &zero
+          {organization_id: org-1, budget_id: budget-1, created_by: admin, updated_by: admin, litellm_budget_table: {rpm_limit: 0, tpm_limit: 0}}
+        request: {kind: new, body: {model_rpm_limit: {gpt: 1}}}
+      - check: model_specific
+        teams: []
+        organization: *zero
+        request: {kind: new, body: {model_tpm_limit: {gpt: 0}}}
+env: {}
+compare: {ignore: []}

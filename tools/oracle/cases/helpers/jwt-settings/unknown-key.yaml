@@ -1,0 +1,10 @@
+kind: helper
+name: jwt-settings-unknown-key
+call:
+  jwt_settings:
+    scenarios:
+      - {"settings": {"zeta": 1, "alpha": null, "admin_jwt_scope": "scope"}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"user_roles_jwt_field": "realm.roles", "extra_key": true}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"scope_mappings": [], "team_jwt_scope": "team"}, "references": {}, "environment": {}, "issuers": []}
+env: {}
+compare: {ignore: []}
