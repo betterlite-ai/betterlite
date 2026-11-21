@@ -44,6 +44,8 @@ pub struct ContainerOperationRequest<'request> {
     pub litellm_call_id: Option<&'request str>,
     pub litellm_metadata: Option<&'request IndexMap<String, Json>>,
     pub mock_response: Option<&'request Json>,
+    // the remaining keyword arguments LiteLLM spreads into GenericLiteLLMParams, such as ssl_verify or a preset model_id
+    pub extras: Option<&'request IndexMap<String, Json>>,
 }
 
 // the collaborators the operations call: B3365's handler, B3361's decoder and config lookup, and B247's logging

@@ -74,6 +74,26 @@ fn logging_the_resolved_provider_is_recorded_not_the_callers_default() {
     );
 }
 
+// LiteLLM hands update_from_kwargs the same kwargs dict, so an extra metadata entry reaches litellm_params
+#[test]
+fn logging_an_extra_metadata_reaches_the_state() {
+    let mut fixture = Fixture::new();
+    fixture.extras = Some(IndexMap::from([(
+        "metadata".to_owned(),
+        Json::Object(IndexMap::from([(
+            "team".to_owned(),
+            Json::Text("core".to_owned()),
+        )])),
+    )]));
+
+    fixture.retrieve().expect("the call runs");
+
+    let state = fixture.logging.lock().unwrap();
+    let metadata = state.litellm_params.get("metadata").cloned();
+    drop(state);
+    assert!(matches!(metadata, Some(Json::Object(_))));
+}
+
 #[test]
 fn logging_an_absent_call_id_is_recorded_as_null() {
     let mut fixture = Fixture::new();

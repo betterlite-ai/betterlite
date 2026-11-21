@@ -74,6 +74,25 @@ fn encode_the_decoded_model_id_replaces_a_metadata_id_for_a_managed_input() {
     );
 }
 
+// containers/utils.py keeps the caller's model_id over the decoded one, and main.py re-encodes with the params' model_id
+#[test]
+fn encode_a_preset_model_id_wins_over_the_decoded_one() {
+    let mut fixture = Fixture::new();
+    fixture.container_id = build_container_id(Some("openai"), Some("old-model"), CONTAINER_ID);
+    fixture.decoder = StubDecoder::answering(decoding_to(CONTAINER_ID, "openai", Some("decoded")));
+    fixture.extras = Some(IndexMap::from([(
+        "model_id".to_owned(),
+        Json::Text("preset".to_owned()),
+    )]));
+
+    let object = fixture.retrieve().expect("the call runs");
+
+    assert_eq!(
+        object.id,
+        build_container_id(Some("openai"), Some("preset"), CONTAINER_ID)
+    );
+}
+
 // LiteLLM mutates the caller's kwargs dict; betterlite holds a shared reference, so the map cannot change
 #[test]
 fn encode_the_callers_metadata_is_left_untouched() {

@@ -76,11 +76,16 @@ impl Prepared<'_> {
     }
 }
 
-// GenericLiteLLMParams(api_key=api_key, api_base=api_base, api_version=api_version, **kwargs): the named credentials and the kwargs LiteLLM never pops
+// GenericLiteLLMParams(api_key=api_key, api_base=api_base, api_version=api_version, **kwargs): every extra kwarg, then the named arguments that win
 pub(crate) fn call_params(
     request: &ContainerOperationRequest<'_>,
 ) -> Result<Object, serde_json::Error> {
     let mut params = Object::new();
+    if let Some(extras) = request.extras {
+        for (name, value) in extras {
+            params.insert(name.clone(), serde_json::to_value(value)?);
+        }
+    }
     if let Some(key) = &request.api_key {
         params.insert("api_key".to_owned(), json!(key.expose_secret()));
     }
@@ -113,6 +118,11 @@ pub(crate) fn log_call(
     call_type: &str,
 ) -> Result<(), LoggingStateError> {
     let mut kwargs = IndexMap::new();
+    if let Some(extras) = request.extras {
+        for (name, value) in extras {
+            kwargs.insert(name.clone(), value.clone());
+        }
+    }
     if let Some(metadata) = request.litellm_metadata {
         kwargs.insert(
             "litellm_metadata".to_owned(),

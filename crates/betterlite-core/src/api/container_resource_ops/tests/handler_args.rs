@@ -103,6 +103,41 @@ fn handler_args_the_callers_kwargs_travel_in_the_params() {
     assert!(params.get("extra_body").is_none());
 }
 
+// GenericLiteLLMParams keeps every extra kwarg, and B3365 reads ssl_verify from the params to pick its TLS client
+#[test]
+fn handler_args_an_extra_ssl_verify_reaches_the_handler_params() {
+    let mut fixture = Fixture::new();
+    fixture.extras = Some(IndexMap::from([(
+        "ssl_verify".to_owned(),
+        Json::Bool(false),
+    )]));
+
+    fixture.retrieve().expect("the call runs");
+
+    let calls = fixture.calls();
+    let params = &calls.first().expect("one call").params;
+    assert_eq!(params["ssl_verify"].as_bool(), Some(false));
+}
+
+#[test]
+fn handler_args_a_named_argument_wins_over_an_extra_with_the_same_name() {
+    let mut fixture = Fixture::new();
+    fixture.api_key = Some(SecretString::from("sk-named"));
+    fixture.extras = Some(IndexMap::from([(
+        "api_key".to_owned(),
+        Json::Text("sk-extra".to_owned()),
+    )]));
+
+    fixture.retrieve().expect("the call runs");
+
+    let calls = fixture.calls();
+    let params = &calls.first().expect("one call").params;
+    assert_eq!(
+        params.get("api_key").and_then(|key| key.as_str()),
+        Some("sk-named")
+    );
+}
+
 #[test]
 fn handler_args_extra_body_is_accepted_and_never_reaches_the_handler() {
     let mut fixture = Fixture::new();

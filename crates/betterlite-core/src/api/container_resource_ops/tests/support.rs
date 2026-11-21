@@ -359,8 +359,14 @@ impl ContainerIdDecoder for StubDecoder {
                 model_id,
             } => {
                 let mut litellm_params = params.clone();
-                if let Some(deployment) = model_id {
-                    litellm_params.insert("model_id".to_owned(), serde_json::json!(deployment));
+                // B3361 keeps a preset model_id over the decoded one, as containers/utils.py does
+                if let Some(deployment) = model_id
+                    && !litellm_params.contains_key("model_id")
+                {
+                    litellm_params.insert(
+                        "model_id".to_owned(),
+                        serde_json::to_value(deployment).expect("a model id is JSON"),
+                    );
                 }
                 Ok(DecodedContainerCall {
                     container_id: decoded_id.clone(),
@@ -511,6 +517,7 @@ pub(crate) struct Fixture {
     pub(crate) litellm_call_id: Option<String>,
     pub(crate) litellm_metadata: Option<IndexMap<String, Json>>,
     pub(crate) mock_response: Option<Json>,
+    pub(crate) extras: Option<IndexMap<String, Json>>,
     pub(crate) handler: StubHandler,
     pub(crate) decoder: StubDecoder,
     pub(crate) lookup: StubLookup,
@@ -536,6 +543,7 @@ impl Fixture {
             litellm_call_id: Some(CALL_ID.to_owned()),
             litellm_metadata: None,
             mock_response: None,
+            extras: None,
             handler,
             decoder,
             lookup,
@@ -558,6 +566,7 @@ impl Fixture {
             litellm_call_id: self.litellm_call_id.as_deref(),
             litellm_metadata: self.litellm_metadata.as_ref(),
             mock_response: self.mock_response.as_ref(),
+            extras: self.extras.as_ref(),
         }
     }
 

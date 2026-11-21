@@ -42,9 +42,11 @@ deviations:
       `timeout or DEFAULT_REQUEST_TIMEOUT` reads it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L562-L577
   - what: >-
-      The params the decoder and the handler receive are the caller's named credentials plus the kwargs the request
-      models (the call id, the metadata and a null mock response). Pydantic fields the caller did not set are left
-      out instead of appearing as null.
+      The params the decoder and the handler receive are the caller's named credentials, the kwargs the request models
+      (the call id, the metadata and a null mock response) and the request's extras map, which carries every other
+      kwarg such as ssl_verify; a named argument wins when an extra repeats its name, where Python refuses the
+      duplicate with a TypeError. Pydantic fields the caller did not set are left out instead of appearing as null.
+      The same extras are handed to the logging update as its kwargs.
     why: >-
       GenericLiteLLMParams is a pydantic model whose dict() carries a None for every declared field; betterlite's
       params are a JSON object, where docs/compatibility.md makes an absent and a null value the same, and every
