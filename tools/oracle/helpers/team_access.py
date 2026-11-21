@@ -1,10 +1,9 @@
 import asyncio
 from dataclasses import dataclass, field
-from typing import Literal, TypedDict
+from typing import Literal, Protocol, TypedDict, runtime_checkable
 
-from fastapi import HTTPException
 from litellm.models.team import LiteLLM_TeamTableCachedObj, Member
-from litellm.proxy._types import LitellmUserRoles, ProxyException, UserAPIKeyAuth
+from litellm.proxy._types import LitellmUserRoles, UserAPIKeyAuth
 from litellm.proxy.management.teams.access import (
     TeamAccess,
     TeamRole,
@@ -14,6 +13,7 @@ from litellm.proxy.management.teams.access import (
 from litellm.proxy.management_helpers.team_member_permission_checks import (
     TeamMemberPermissionChecks,
 )
+from starlette.exceptions import HTTPException
 
 UserRole = Literal[
     "proxy_admin",
@@ -109,22 +109,36 @@ def run(input_value: Input) -> list[StepResult]:
     return results
 
 
+# the ProxyException fields the helper reads; its class type carries Any, so it is matched by shape
+@runtime_checkable
+class RaisedDenial(Protocol):
+    type: str
+    param: str | None
+    code: str
+
+
 async def run_step(step: Step, roles: CaseOrgRoles) -> StepResult:
+    caller = build_caller(step["caller"])
+    team = build_team(step["team"])
+    (outcome,) = await asyncio.gather(answer(step, caller, team, roles), return_exceptions=True)
     value: Answer = None
     error: ErrorOut | None = None
-    try:
-        value = await answer(step, build_caller(step["caller"]), build_team(step["team"]), roles)
-    except ProxyException as denial:
-        error = {
-            "status": int(denial.code),
-            "error_type": denial.type,
-            "param": denial.param,
-            "code": denial.code,
-        }
-    except HTTPException as denial:
-        error = {"status": denial.status_code, "error_type": None, "param": None, "code": None}
-    except ValueError:
-        error = {"status": None, "error_type": None, "param": None, "code": None}
+    match outcome:
+        case RaisedDenial():
+            error = {
+                "status": int(outcome.code),
+                "error_type": outcome.type,
+                "param": outcome.param,
+                "code": outcome.code,
+            }
+        case HTTPException():
+            error = {"status": outcome.status_code, "error_type": None, "param": None, "code": None}
+        case ValueError():
+            error = {"status": None, "error_type": None, "param": None, "code": None}
+        case BaseException():
+            raise outcome
+        case bool() | str() | list() | None:
+            value = outcome
     return {"value": value, "error": error, "org_lookups": roles.lookups}
 
 
