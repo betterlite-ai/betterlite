@@ -27,25 +27,11 @@ async fn async_execution_keeps_each_call_in_its_own_logging_state() {
     );
     first_result.unwrap();
     second_result.unwrap();
-    let logged = [&first_harness.state, &second_harness.state].map(|state| {
-        (
-            state.litellm_params.get("litellm_call_id").cloned(),
-            Json::Object(state.optional_params.clone()),
-        )
-    });
-    assert_eq!(
-        logged,
-        [
-            (
-                Some(Json::Text("first".to_owned())),
-                json(r#"{"lang":"en"}"#)
-            ),
-            (
-                Some(Json::Text("second".to_owned())),
-                json(r#"{"lang":"de"}"#)
-            ),
-        ]
-    );
+    let states = [&first_harness.state, &second_harness.state];
+    let ids = states.map(|state| state.litellm_params.get("litellm_call_id").cloned());
+    assert_eq!(ids, [Some(json(r#""first""#)), Some(json(r#""second""#))]);
+    let params = states.map(|state| Json::Object(state.optional_params.clone()));
+    assert_eq!(params, [json(r#"{"lang":"en"}"#), json(r#"{"lang":"de"}"#)]);
     let bodies = [first_server, second_server]
         .map(|served| served.finish().expect("the fixture answers").body);
     assert_eq!(bodies, [r#""rust""#, r#""go""#]);
