@@ -130,13 +130,17 @@ class AssistantDispatchRequest(BaseModel):
         ).model_dump_json(by_alias=True, exclude_unset=True)
 
 
-def dispatch_run(run: OperationCall, api_base: str) -> Step:
-    # Router stores the mapping as given and the factory later reads both keys as plain dict entries
-    stored = cast(AssistantsTypedDict | None, assistants_config(run))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L820-L822
-    router = cast(AssistantCalls, Router(model_list=[], assistants_config=stored))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1899-L1908
-    data = request_data(run, api_base)
+# Router stores the mapping as given and the factory later reads both keys as plain dict entries
+def assistant_router(call: OperationCall) -> AssistantCalls:
+    stored = cast(AssistantsTypedDict | None, assistants_config(call))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L820-L822
+    return cast(AssistantCalls, Router(model_list=[], assistants_config=stored))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1899-L1908
+
+
+def dispatch_run(call: OperationCall, base_url: str) -> Step:
+    router = assistant_router(call)
+    body = request_data(call, base_url)
     try:
-        return asyncio.run(invoke(router, run, data))
+        return asyncio.run(invoke(router, call, body))
     except openai.APIError as error:
         return Step(ids=[], status=None, events=None, failure=project_failure(error).failure)
     except Exception as error:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7183-L7190
