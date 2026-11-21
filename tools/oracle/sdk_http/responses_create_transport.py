@@ -34,6 +34,7 @@ from responses_compact_transport import (
 StreamKind = Literal["live", "synthetic"]
 
 JSON_MAP: Final = TypeAdapter(dict[str, JsonValue])
+MESSAGES: Final = TypeAdapter(list[JsonValue])
 NULLABLE_JSON: Final = TypeAdapter(dict[str, JsonValue] | None)
 COMPLETED: Final[TypeAdapter[ResponseCompletedEvent]] = TypeAdapter(ResponseCompletedEvent)
 LITELLM_PARAMS: Final[TypeAdapter[GenericLiteLLMParams]] = TypeAdapter(GenericLiteLLMParams)
@@ -136,10 +137,25 @@ class PatchHook(CustomLogger):
         return merged
 
 
+# messages=(input if isinstance(input, list) else [{"role": "user", "content": input}])
+def followup_messages(value: str | ResponseInputParam) -> list[JsonValue]:
+    match value:
+        case str():
+            return [{"role": "user", "content": value}]
+        case list():
+            return MESSAGES.validate_python(value)
+
+
 # The scripted async_should_run_agentic_loop and async_run_agentic_loop pair
 class ScriptedAgentic(CustomLogger):
-    def __init__(self, result: JsonValue) -> None:
+    def __init__(self, result: JsonValue, messages: list[JsonValue]) -> None:
         self.result = result
+        self.messages = messages
+
+    def check_messages(self, messages: list[dict[str, JsonValue]]) -> None:
+        found: list[JsonValue] = [*messages]
+        if found != self.messages:
+            raise ValueError(f"the agentic messages are {found!r}, not {self.messages!r}")
 
     @override
     async def async_should_run_agentic_loop(
@@ -153,6 +169,7 @@ class ScriptedAgentic(CustomLogger):
         custom_llm_provider: str,
         kwargs: dict[str, JsonValue],
     ) -> tuple[bool, dict[str, JsonValue]]:
+        self.check_messages(messages)
         return True, {}
 
     @override
@@ -171,6 +188,7 @@ class ScriptedAgentic(CustomLogger):
         stream: bool,
         kwargs: dict[str, JsonValue],
     ) -> ResponsesAPIResponse | None:
+        self.check_messages(messages)
         if self.result is None:
             return None
         return RESPONSES_API.validate_python(self.result)
@@ -181,7 +199,8 @@ def install(call: TransportCall) -> None:
     if call.pre_hook is not None:
         callbacks.append(PatchHook(call.pre_hook))
     if call.agentic:
-        callbacks.append(ScriptedAgentic(call.agentic_result))
+        messages = followup_messages(INPUT.validate_python(call.input))
+        callbacks.append(ScriptedAgentic(call.agentic_result, messages))
     litellm.callbacks = [*callbacks]
 
 
