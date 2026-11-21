@@ -5,7 +5,7 @@ use crate::api::vector_store_http_write::service::LogContext;
 use crate::genai_setup::logging::mark_async_entrypoint;
 
 use super::answered::answered;
-use super::caller::{Caller, STREAM_ENTRY, moved_config, pop_flag};
+use super::caller::{Caller, STREAM_ENTRY, flag_value, moved_config};
 use super::error::GenerateContentFailure;
 use super::fields::field_failure;
 use super::{GenerateContentAnswer, GenerateContentDeps, GenerateContentRequest};
@@ -22,7 +22,7 @@ where
     Executor: CompletionExecutor + Sync,
 {
     let mut kwargs = request.kwargs.clone();
-    let is_async = pop_flag(&mut kwargs, STREAM_ENTRY)
+    let is_async = flag_value(kwargs.shift_remove(STREAM_ENTRY).as_ref(), STREAM_ENTRY)
         .map_err(|error| field_failure(error, request, request.custom_llm_provider, deps))?;
     mark_async_entrypoint(Some(&mut *log.state), STREAM_ENTRY, is_async);
     let config = moved_config(&mut kwargs, request.config)

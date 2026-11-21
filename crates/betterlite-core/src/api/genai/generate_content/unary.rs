@@ -6,7 +6,7 @@ use crate::genai_setup::logging::mark_async_entrypoint;
 use crate::genai_setup::params::GenerateContentLiteLLMParams;
 
 use super::answered::answered;
-use super::caller::{ASYNC_ENTRY, Caller, moved_config, pop_flag, string_mock};
+use super::caller::{ASYNC_ENTRY, Caller, flag_value, moved_config, string_mock};
 use super::error::GenerateContentFailure;
 use super::fields::field_failure;
 use super::mock_generate_content_response;
@@ -24,7 +24,7 @@ where
     Executor: CompletionExecutor + Sync,
 {
     let mut kwargs = request.kwargs.clone();
-    let is_async = pop_flag(&mut kwargs, ASYNC_ENTRY)
+    let is_async = flag_value(kwargs.shift_remove(ASYNC_ENTRY).as_ref(), ASYNC_ENTRY)
         .map_err(|error| field_failure(error, request, request.custom_llm_provider, deps))?;
     mark_async_entrypoint(Some(&mut *log.state), ASYNC_ENTRY, is_async);
     let config = moved_config(&mut kwargs, request.config)

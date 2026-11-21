@@ -27,21 +27,11 @@ pub(super) struct Caller {
     pub(super) mock: Option<String>,
 }
 
-// kwargs.pop(marker, False): a present marker that is not a boolean is rejected by name
-pub(super) fn pop_flag(
-    kwargs: &mut Object,
+// kwargs.pop(marker, False) at the entry points, kwargs.get(marker, False) at the adapter
+pub(super) fn flag_value(
+    value: Option<&Json>,
     marker: &'static str,
 ) -> Result<bool, RequestFieldError> {
-    let removed = kwargs.shift_remove(marker);
-    flag_value(removed.as_ref(), marker)
-}
-
-// kwargs.get("stream", False): the adapter's own parameter stays in the loose fields for setup
-pub(super) fn read_flag(kwargs: &Object, marker: &'static str) -> Result<bool, RequestFieldError> {
-    flag_value(kwargs.get(marker), marker)
-}
-
-fn flag_value(value: Option<&Json>, marker: &'static str) -> Result<bool, RequestFieldError> {
     match value {
         None | Some(Json::Null) => Ok(false),
         Some(Json::Bool(given)) => Ok(*given),
