@@ -41,9 +41,8 @@ impl AdmissionFacts {
     pub(super) fn read(principal: &UserAPIKeyAuth) -> Self {
         let view = principal.request_quota_view();
         let account = account_limits(principal);
-        let record = SessionRecord::from_auth(principal);
         Self {
-            api_key: logged_key(account.hashed_api_key, record),
+            api_key: logged_key(principal),
             max_parallel_requests: view.max_parallel_requests.unwrap_or(UNLIMITED),
             tpm_limit: throttled_limit(view.tpm_limit, view.throttle_pct).unwrap_or(UNLIMITED),
             rpm_limit: throttled_limit(view.rpm_limit, view.throttle_pct).unwrap_or(UNLIMITED),
@@ -62,10 +61,12 @@ impl AdmissionFacts {
 
 // the key the counters log under: B1106's session-token alias when it has one, else the hashed key
 #[must_use]
-fn logged_key(api_key_hash: Option<&str>, record: SessionRecord) -> Option<String> {
+fn logged_key(principal: &UserAPIKeyAuth) -> Option<String> {
+    let account = account_limits(principal);
+    let record = SessionRecord::from_auth(principal);
     // only the three facts logged_api_key reads are filled; every other budget field is irrelevant here
     let facts = PrincipalFacts {
-        api_key_hash: api_key_hash.map(str::to_owned),
+        api_key_hash: account.hashed_api_key.map(str::to_owned),
         is_session_token: record.is_session_token,
         key_alias: record.key_alias,
         spend: Decimal::ZERO,
