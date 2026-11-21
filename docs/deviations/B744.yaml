@@ -11,10 +11,11 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L605-L618
   - what: >-
       max_response_size_mb measures the serialized UTF-8 response bytes and returns 400 bad_request_error with
-      param content-length when they exceed the limit.
+      param content-length when they exceed the limit, with or without a license.
     why: >-
       LiteLLM calls sys.getsizeof on the response object, which is shallow Python object memory and has no
-      Rust equivalent. response_wire_byte_limit makes the wire-byte unit explicit.
+      Rust equivalent, and it skips the check unless premium_user is true. response_wire_byte_limit makes
+      the wire-byte unit and the license-free 400 explicit.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L919-L937
   - what: >-
       The request policy stage runs after the master key stage authenticates the caller, where LiteLLM's
