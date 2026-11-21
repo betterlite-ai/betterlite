@@ -3,13 +3,12 @@ use serde_json::json;
 
 use super::support::object;
 use crate::coordination_redis_settings::REDACTED_VALUE;
-use crate::coordination_redis_settings::catalog::{
-    CATALOG, CoordinationRedisSection, FieldType, fields,
-};
+use crate::coordination_redis_settings::catalog::{CoordinationRedisSection, FieldType, fields};
 
 #[test]
 fn the_catalog_lists_the_source_fields_in_order() {
-    let names: Vec<&str> = CATALOG.iter().map(|field| field.field_name).collect();
+    let listed = fields(None);
+    let names: Vec<&str> = listed.iter().map(|field| field.field_name).collect();
     assert_eq!(
         names,
         vec![
@@ -34,24 +33,26 @@ fn the_catalog_lists_the_source_fields_in_order() {
 
 #[test]
 fn the_catalog_carries_the_source_types_and_defaults() {
-    let port = CATALOG[1].clone();
+    let listed = fields(None);
+    let port = listed[1].clone();
     assert_eq!(port.field_type, FieldType::Integer);
-    assert_eq!(port.field_default, Some(json!(6379_i64)));
+    assert_eq!(port.field_default, Some(JsonValue::from(6379_i64)));
     assert_eq!(port.section, CoordinationRedisSection::Connection);
-    let ssl = CATALOG[5].clone();
+    let ssl = listed[5].clone();
     assert_eq!(ssl.field_type, FieldType::Boolean);
     assert_eq!(ssl.field_default, Some(JsonValue::Bool(false)));
-    assert_eq!(CATALOG[6].field_type, FieldType::List);
-    assert_eq!(CATALOG[7].field_type, FieldType::List);
-    assert_eq!(CATALOG[6].section, CoordinationRedisSection::Cluster);
-    assert_eq!(CATALOG[7].section, CoordinationRedisSection::Sentinel);
-    assert_eq!(CATALOG[14].field_default, Some(JsonValue::Bool(false)));
-    assert_eq!(CATALOG[0].field_default, None);
+    assert_eq!(listed[6].field_type, FieldType::List);
+    assert_eq!(listed[7].field_type, FieldType::List);
+    assert_eq!(listed[6].section, CoordinationRedisSection::Cluster);
+    assert_eq!(listed[7].section, CoordinationRedisSection::Sentinel);
+    assert_eq!(listed[10].field_default, Some(JsonValue::Bool(false)));
+    assert_eq!(listed[14].field_default, Some(JsonValue::Bool(false)));
+    assert_eq!(listed[0].field_default, None);
 }
 
 #[test]
 fn the_catalog_serializes_with_the_source_spellings() {
-    let serialized = serde_json::to_value(CATALOG).expect("the catalog serializes");
+    let serialized = serde_json::to_value(fields(None)).expect("the catalog serializes");
     assert_eq!(serialized[0]["field_type"], json!("String"));
     assert_eq!(serialized[1]["field_type"], json!("Integer"));
     assert_eq!(serialized[1]["field_default"], json!(6379_i64));
