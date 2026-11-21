@@ -211,7 +211,7 @@ def resolve_answer(step: ResolveStep) -> tuple[JsonValue, ErrorOut | None]:
         return None, {"status": None, "detail": None}
     finally:
         del os.environ[SALT_KEY_ENV]
-    return JSON.validate_python(resolved.model_dump_json()), None
+    return JSON.validate_json(resolved.model_dump_json()), None
 
 
 def row_view(model: LiteLLM_AuditLogs) -> JsonValue:
