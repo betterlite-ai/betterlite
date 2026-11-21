@@ -52,6 +52,8 @@ pub enum CompletionCallError {
     MissingMock,
     #[error("the model list answered nothing")]
     NoModelListAnswer,
+    #[error("the request names {count} model list deployments; the maximum is {maximum}")]
+    TooManyDeployments { count: usize, maximum: usize },
     #[error("the {field} value is not valid here")]
     Field { field: &'static str },
 }
@@ -112,6 +114,7 @@ fn status_of(error: &CompletionCallError) -> Option<u16> {
         | CompletionCallError::ChatRequest(_)
         | CompletionCallError::Field { .. }
         | CompletionCallError::MissingMock
+        | CompletionCallError::TooManyDeployments { .. }
         | CompletionCallError::NoMcpLoop => Some(400),
         CompletionCallError::NoFallbackResponse
         | CompletionCallError::AllFallbacksFailed { .. }

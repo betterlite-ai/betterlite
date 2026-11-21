@@ -25,9 +25,11 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::chat::MockSettings;
 use betterlite_redact::secret::Redactor;
 use futures_util::StreamExt as _;
-use futures_util::stream::FuturesUnordered;
+use futures_util::stream;
 use serde::de::DeserializeOwned;
 use std::sync::Arc;
+const MAX_MODEL_LIST_DEPLOYMENTS: usize = 100;
+const MODEL_LIST_CONCURRENCY: usize = 10;
 pub struct CompletionTarget<'ports> {
     pub settings: CompletionSettings,
     pub ports: CompletionPorts<'ports>,
@@ -136,15 +138,23 @@ impl CompletionTarget<'_> {
         call: ModelListCall,
         logging: Option<&LoggingHandle>,
     ) -> Result<CallOutcome, CompletionCallError> {
+        let deployment_count = call.deployments.len();
+        if deployment_count > MAX_MODEL_LIST_DEPLOYMENTS {
+            return Err(CompletionCallError::TooManyDeployments {
+                count: deployment_count,
+                maximum: MAX_MODEL_LIST_DEPLOYMENTS,
+            });
+        }
         let mut base = request::args_to_map(&call.args)?;
         base.shift_remove("model_list");
-        let mut attempts = FuturesUnordered::new();
-        for entry in &call.deployments {
+        let mut attempts = stream::iter(call.deployments.iter().map(|entry| {
+            let mut attempt = base.clone();
             for (name, value) in entry {
-                base.insert(name.clone(), value.clone());
+                attempt.insert(name.clone(), value.clone());
             }
-            attempts.push(self.call(base.clone(), logging));
-        }
+            self.call(attempt, logging)
+        }))
+        .buffer_unordered(MODEL_LIST_CONCURRENCY);
         let mut last_failure: Option<CompletionCallError> = None;
         while let Some(result) = attempts.next().await {
             match result {
