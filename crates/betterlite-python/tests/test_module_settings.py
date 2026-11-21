@@ -2,12 +2,12 @@ import ast
 import importlib
 import inspect
 import json
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from types import ModuleType
-from typing import Final, get_args, get_origin, get_type_hints
+from typing import Final, TypeAlias, get_type_hints
 
 import litellm
 import pytest
@@ -27,6 +27,7 @@ MIN_PROVIDER_SETS = 100
 
 STRINGS: Final = TypeAdapter(list[str])
 MODEL_SETS: Final = TypeAdapter(set[str])
+Rule: TypeAlias = Callable[[str], JsonValue | Awaitable[JsonValue] | Mapping[str, JsonValue]]
 
 COST_MAP_URL = (
     "https://raw.githubusercontent.com/BerriAI/litellm/main/"
@@ -516,16 +517,13 @@ def test_module_helper_callback_lists_accept_typed_functions() -> None:
 
 # ast-grep-ignore: no-long-names
 def test_module_helper_call_rules_accept_typed_functions() -> None:
+    hints: dict[str, type] = get_type_hints(settings_callbacks)
     for rules in (betterlite.pre_call_rules, betterlite.post_call_rules):
         rules.append(_call_rule)
         assert _call_rule in rules
         rules.pop()
-    hints: dict[str, type] = get_type_hints(settings_callbacks)
-    for name in ("pre_call_rules", "post_call_rules"):
-        element: type = get_args(hints[name])[0]
-        parameters: list[type[str]] = get_args(element)[0]
-        assert get_origin(element) is Callable
-        assert parameters == [str]
+    assert hints["pre_call_rules"] == list[Rule]
+    assert hints["post_call_rules"] == list[Rule]
 
 
 # ast-grep-ignore: no-long-names
