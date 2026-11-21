@@ -38,29 +38,29 @@ pub struct ProxyRuntimeInputs<'config> {
 pub fn build_proxy_runtime(
     inputs: ProxyRuntimeInputs<'_>,
 ) -> Result<Arc<LoggerRuntime>, ProxyRuntimeError> {
-    let ProxyRuntimeInputs {
-        config,
-        environment,
-        http_clients,
-        callback_settings,
-        configured_exclusions,
-        assembler,
-        utc_offset,
-        sources,
-    } = inputs;
-    let base = Settings::from_config(config)?;
-    let v2_enabled = FeatureFlag::default().enabled(environment.as_ref())?;
-    let attribute_limit = span_attribute_limit(environment.as_ref())?;
-    let registered = Arc::new(V2Registry::default());
-    let hooks = Arc::clone(&registered);
-    let trace = Arc::clone(&sources);
-    let scope = Arc::clone(&sources);
-    let roots = Arc::clone(&sources);
-    let constructor = Arc::new(CallbackConstructor {
-        raw_config: config.sections.otel_settings.clone(),
-        callback_settings,
+    let base = Settings::from_config(inputs.config)?;
+    let v2_enabled = FeatureFlag::default().enabled(inputs.environment.as_ref())?;
+    let attribute_limit = span_attribute_limit(inputs.environment.as_ref())?;
+    let constructor = Arc::new(callback_constructor(&inputs, attribute_limit)?);
+    Ok(Arc::new(assemble_runtime(
+        inputs,
+        base,
+        v2_enabled,
+        constructor,
+    )))
+}
+
+fn callback_constructor(
+    inputs: &ProxyRuntimeInputs<'_>,
+    attribute_limit: Option<usize>,
+) -> Result<CallbackConstructor, ProxyRuntimeError> {
+    let roots = Arc::clone(&inputs.sources);
+    Ok(CallbackConstructor {
+        raw_config: inputs.config.sections.otel_settings.clone(),
+        callback_settings: Arc::clone(&inputs.callback_settings),
         allowed_hosts: Arc::from(
-            config
+            inputs
+                .config
                 .sections
                 .provider_url_destination
                 .allowed_hosts
@@ -70,26 +70,38 @@ pub fn build_proxy_runtime(
         attribute_limit,
         redactor: Some(Arc::new(Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)?)),
         log_client_error_tracebacks: false,
-        utc_offset,
-    });
-    Ok(Arc::new(LoggerRuntime {
+        utc_offset: inputs.utc_offset,
+    })
+}
+
+fn assemble_runtime(
+    inputs: ProxyRuntimeInputs<'_>,
+    base: Settings,
+    v2_enabled: bool,
+    constructor: Arc<CallbackConstructor>,
+) -> LoggerRuntime {
+    let registered = Arc::new(V2Registry::default());
+    let hooks = Arc::clone(&registered);
+    let trace = Arc::clone(&inputs.sources);
+    let scope = Arc::clone(&inputs.sources);
+    LoggerRuntime {
         registered,
         loggers: Mutex::new(Vec::new()),
         fan_out: Arc::new(Mutex::new(TenantFanOutRegistry::default())),
         constructor,
         base,
-        environment,
+        environment: inputs.environment,
         trace,
-        factories: Arc::new(ExporterFactories::new(http_clients, BTreeMap::new())),
+        factories: Arc::new(ExporterFactories::new(inputs.http_clients, BTreeMap::new())),
         scope,
-        assembler,
+        assembler: inputs.assembler,
         hooks: Some(hooks),
-        configured_exclusions,
+        configured_exclusions: inputs.configured_exclusions,
         v2_enabled,
         sdk_provider: SdkTracerProvider::builder().build(),
         generic: Mutex::new(None),
         published: Mutex::new(None),
-    }))
+    }
 }
 
 // litellm.integrations.otel.emitter.span_attribute_limit: the SDK's SpanLimits resolves the span count from its own variable, then the global one, else 128
