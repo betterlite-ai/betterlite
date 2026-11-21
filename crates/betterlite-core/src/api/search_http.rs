@@ -13,7 +13,9 @@ use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
 use betterlite_models::decisions::Json;
 use betterlite_openai::error::ProviderError;
 use betterlite_openai::openai_base_config::{Headers, Object};
-use betterlite_openai::search::provider::{OutboundSearch, SearchProvider, SearchQuery};
+use betterlite_openai::search::provider::{
+    OutboundSearch, RequestInput, SearchProvider, SearchQuery,
+};
 use betterlite_openai::search::records::SearchResponse;
 use indexmap::IndexMap;
 use secrecy::SecretString;
@@ -101,13 +103,13 @@ where
     let api_base = call.api_base.as_deref();
     let validated = provider.validate_environment(call.headers.clone(), call.api_key, api_base);
     let body = provider
-        .transform_search_request(
-            call.query,
-            call.optional_params,
-            call.api_key,
+        .transform_search_request(&RequestInput {
+            query: call.query,
+            optional_params: call.optional_params,
+            api_key: call.api_key,
             api_base,
-            &validated,
-        )
+            headers: &validated,
+        })
         .map_err(SearchHttpError::Hook)?;
     let complete_url = provider
         .complete_url(api_base, call.optional_params, Some(&body), call.api_key)

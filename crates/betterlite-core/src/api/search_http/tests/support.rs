@@ -22,7 +22,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::error::ProviderError;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::search::provider::{
-    HttpMethod, OutboundSearch, ProviderResponse, SearchProvider, SearchQuery,
+    HttpMethod, OutboundSearch, ProviderResponse, RequestInput, SearchProvider, SearchQuery,
 };
 use betterlite_openai::search::records::SearchResponse;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
@@ -282,19 +282,12 @@ impl SearchProvider for TestProvider {
         Ok(self.complete.clone())
     }
 
-    fn transform_search_request(
-        &self,
-        _query: &SearchQuery,
-        _optional_params: &Object,
-        api_key: Option<&SecretString>,
-        api_base: Option<&str>,
-        headers: &Headers,
-    ) -> Result<Object, TestError> {
+    fn transform_search_request(&self, input: &RequestInput<'_>) -> Result<Object, TestError> {
         record(&self.events, "transform");
         let mut observed = self.seen.lock().unwrap_or_else(PoisonError::into_inner);
-        observed.transform_api_key = api_key.map(|key| key.expose_secret().to_owned());
-        observed.transform_api_base = api_base.map(str::to_owned);
-        observed.transform_headers = headers.clone();
+        observed.transform_api_key = input.api_key.map(|key| key.expose_secret().to_owned());
+        observed.transform_api_base = input.api_base.map(str::to_owned);
+        observed.transform_headers = input.headers.clone();
         drop(observed);
         Ok(self.body.clone())
     }

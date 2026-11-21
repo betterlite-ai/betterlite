@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::search::credentials::CredentialError;
 use betterlite_openai::search::provider::{
-    HttpMethod, OutboundSearch, ProviderResponse, SearchProvider, SearchQuery,
+    HttpMethod, OutboundSearch, ProviderResponse, RequestInput, SearchProvider, SearchQuery,
 };
 use betterlite_openai::search::records::SearchResult;
 use rstest::rstest;
@@ -271,13 +271,13 @@ fn outbound<'call>(
 
 fn empty_body(search: &FirecrawlSearch) -> SearchBody {
     search
-        .transform_search_request(
-            &SearchQuery::Single("rust".to_owned()),
-            &Object::new(),
-            None,
-            None,
-            &Headers::new(),
-        )
+        .transform_search_request(&RequestInput {
+            query: &SearchQuery::Single("rust".to_owned()),
+            optional_params: &Object::new(),
+            api_key: None,
+            api_base: None,
+            headers: &Headers::new(),
+        })
         .unwrap()
 }
 
@@ -343,7 +343,13 @@ fn trait_sign_request_rejects_an_untrusted_base() {
 )]
 fn body_joins_the_query(#[case] query: SearchQuery, #[case] expected: &str) {
     let body = load(&[])
-        .transform_search_request(&query, &Object::new(), None, None, &Headers::new())
+        .transform_search_request(&RequestInput {
+            query: &query,
+            optional_params: &Object::new(),
+            api_key: None,
+            api_base: None,
+            headers: &Headers::new(),
+        })
         .unwrap();
     assert_eq!(
         body_object(&body),
@@ -359,13 +365,13 @@ fn body_maps_limit_and_keeps_country_as_given() {
         r#"{"max_results":7,"country":"US","search_domain_filter":["docs.rs"],"max_tokens_per_page":512,"sources":["web","news"],"timeout":30000}"#,
     );
     let body = load(&[])
-        .transform_search_request(
-            &SearchQuery::Single("rust".to_owned()),
-            &optional_params,
-            None,
-            None,
-            &Headers::new(),
-        )
+        .transform_search_request(&RequestInput {
+            query: &SearchQuery::Single("rust".to_owned()),
+            optional_params: &optional_params,
+            api_key: None,
+            api_base: None,
+            headers: &Headers::new(),
+        })
         .unwrap();
     assert_eq!(
         body_object(&body),
@@ -379,13 +385,13 @@ fn body_maps_limit_and_keeps_country_as_given() {
 fn body_keeps_a_lowercase_country_as_given() {
     let optional_params = params(r#"{"country":"us"}"#);
     let body = load(&[])
-        .transform_search_request(
-            &SearchQuery::Single("q".to_owned()),
-            &optional_params,
-            None,
-            None,
-            &Headers::new(),
-        )
+        .transform_search_request(&RequestInput {
+            query: &SearchQuery::Single("q".to_owned()),
+            optional_params: &optional_params,
+            api_key: None,
+            api_base: None,
+            headers: &Headers::new(),
+        })
         .unwrap();
     assert_eq!(
         body_object(&body),
@@ -399,13 +405,13 @@ fn body_keeps_a_lowercase_country_as_given() {
 fn body_keeps_a_caller_scrape_options_even_when_empty() {
     let empty = params(r#"{"scrapeOptions":{}}"#);
     let body = load(&[])
-        .transform_search_request(
-            &SearchQuery::Single("q".to_owned()),
-            &empty,
-            None,
-            None,
-            &Headers::new(),
-        )
+        .transform_search_request(&RequestInput {
+            query: &SearchQuery::Single("q".to_owned()),
+            optional_params: &empty,
+            api_key: None,
+            api_base: None,
+            headers: &Headers::new(),
+        })
         .unwrap();
     assert_eq!(
         body_object(&body),
@@ -413,13 +419,13 @@ fn body_keeps_a_caller_scrape_options_even_when_empty() {
     );
     let custom = params(r#"{"scrapeOptions":{"formats":["html"]}}"#);
     let custom_body = load(&[])
-        .transform_search_request(
-            &SearchQuery::Single("q".to_owned()),
-            &custom,
-            None,
-            None,
-            &Headers::new(),
-        )
+        .transform_search_request(&RequestInput {
+            query: &SearchQuery::Single("q".to_owned()),
+            optional_params: &custom,
+            api_key: None,
+            api_base: None,
+            headers: &Headers::new(),
+        })
         .unwrap();
     assert_eq!(
         body_object(&custom_body),
@@ -431,13 +437,13 @@ fn body_keeps_a_caller_scrape_options_even_when_empty() {
 fn body_never_overwrites_a_mapped_name() {
     let optional_params = params(r#"{"max_results":3,"limit":9,"country":"US","query":"x"}"#);
     let body = load(&[])
-        .transform_search_request(
-            &SearchQuery::Single("rust".to_owned()),
-            &optional_params,
-            None,
-            None,
-            &Headers::new(),
-        )
+        .transform_search_request(&RequestInput {
+            query: &SearchQuery::Single("rust".to_owned()),
+            optional_params: &optional_params,
+            api_key: None,
+            api_base: None,
+            headers: &Headers::new(),
+        })
         .unwrap();
     assert_eq!(
         body_object(&body),

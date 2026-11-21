@@ -8,7 +8,7 @@ use betterlite_config::loader::EnvironmentLookup;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::search::credentials::ServerCredential;
 use betterlite_openai::search::provider::{
-    OutboundSearch, ProviderResponse, SearchProvider, SearchQuery,
+    OutboundSearch, ProviderResponse, RequestInput, SearchProvider, SearchQuery,
 };
 use betterlite_openai::search::records::SearchResponse;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -130,15 +130,8 @@ impl SearchProvider for YouComSearch {
         Ok(YOU_COM_FREE_API_BASE.to_owned())
     }
 
-    fn transform_search_request(
-        &self,
-        query: &SearchQuery,
-        optional_params: &Object,
-        _api_key: Option<&SecretString>,
-        _api_base: Option<&str>,
-        _headers: &Headers,
-    ) -> Result<Object, YouComError> {
-        search_body(query, optional_params)
+    fn transform_search_request(&self, input: &RequestInput<'_>) -> Result<Object, YouComError> {
+        search_body(input.query, input.optional_params)
     }
 
     fn transform_search_response(

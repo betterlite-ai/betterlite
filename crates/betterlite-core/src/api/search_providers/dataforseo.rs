@@ -10,7 +10,7 @@ use betterlite_config::loader::EnvironmentLookup;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::search::credentials::{CredentialError, ServerCredential};
 use betterlite_openai::search::provider::{
-    OutboundSearch, ProviderResponse, SearchProvider, SearchQuery,
+    OutboundSearch, ProviderResponse, RequestInput, SearchProvider, SearchQuery,
 };
 use betterlite_openai::search::records::SearchResponse;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -240,13 +240,13 @@ impl SearchProvider for DataForSeoSearchConfig {
 
     fn transform_search_request(
         &self,
-        query: &SearchQuery,
-        optional_params: &Object,
-        _api_key: Option<&SecretString>,
-        _api_base: Option<&str>,
-        _headers: &Headers,
+        input: &RequestInput<'_>,
     ) -> Result<Self::Body, Self::Error> {
-        request::build(query, optional_params, self.settings.location_code)
+        request::build(
+            input.query,
+            input.optional_params,
+            self.settings.location_code,
+        )
     }
 
     fn transform_search_response(

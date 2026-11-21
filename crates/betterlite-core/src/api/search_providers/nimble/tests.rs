@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::search::credentials::CredentialError;
 use betterlite_openai::search::provider::{
-    HttpMethod, OutboundSearch, ProviderResponse, SearchProvider, SearchQuery,
+    HttpMethod, OutboundSearch, ProviderResponse, RequestInput, SearchProvider, SearchQuery,
 };
 use rstest::rstest;
 use secrecy::{ExposeSecret, SecretString};
@@ -34,13 +34,13 @@ fn headers(entries: &[(&str, &str)]) -> Headers {
 
 fn single_body(options: &str) -> SearchBody {
     load(&[])
-        .transform_search_request(
-            &SearchQuery::Single("rust".to_owned()),
-            &serde_json::from_str::<Object>(options).unwrap(),
-            None,
-            None,
-            &Headers::new(),
-        )
+        .transform_search_request(&RequestInput {
+            query: &SearchQuery::Single("rust".to_owned()),
+            optional_params: &serde_json::from_str::<Object>(options).unwrap(),
+            api_key: None,
+            api_base: None,
+            headers: &Headers::new(),
+        })
         .unwrap()
 }
 
@@ -303,13 +303,16 @@ fn sign_request_rejects_an_untrusted_base() {
 #[test]
 fn body_keeps_the_source_key_order() {
     let body = load(&[])
-        .transform_search_request(
-            &SearchQuery::Multiple(vec!["rust".to_owned(), "search".to_owned()]),
-            &serde_json::from_str::<Object>(
+        .transform_search_request(&RequestInput {
+    query: &SearchQuery::Multiple(vec!["rust".to_owned(), "search".to_owned()]),
+    optional_params: &serde_json::from_str::<Object>(
                 r#"{"location":"us","max_results":5,"country":"us","search_domain_filter":["news.test","-spam.test","","-","docs.test"],"max_tokens_per_page":100}"#,
             )
             .unwrap(),
-        None, None, &Headers::new())
+    api_key: None,
+    api_base: None,
+    headers: &Headers::new(),
+})
         .unwrap();
     assert_eq!(
         serde_json::to_string(&body).unwrap(),

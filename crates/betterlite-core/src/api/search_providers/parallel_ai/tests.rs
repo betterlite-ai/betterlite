@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::search::credentials::CredentialError;
 use betterlite_openai::search::provider::{
-    HttpMethod, OutboundSearch, ProviderResponse, SearchProvider, SearchQuery,
+    HttpMethod, OutboundSearch, ProviderResponse, RequestInput, SearchProvider, SearchQuery,
 };
 use rstest::rstest;
 use secrecy::{ExposeSecret, SecretString};
@@ -34,13 +34,13 @@ fn headers(entries: &[(&str, &str)]) -> Headers {
 
 fn string_body(options: &str) -> SearchBody {
     load(&[])
-        .transform_search_request(
-            &SearchQuery::Single("rust".to_owned()),
-            &serde_json::from_str::<Object>(options).unwrap(),
-            None,
-            None,
-            &Headers::new(),
-        )
+        .transform_search_request(&RequestInput {
+            query: &SearchQuery::Single("rust".to_owned()),
+            optional_params: &serde_json::from_str::<Object>(options).unwrap(),
+            api_key: None,
+            api_base: None,
+            headers: &Headers::new(),
+        })
         .unwrap()
 }
 
@@ -306,13 +306,13 @@ fn body_maps_a_string_query_to_queries_and_objective() {
 #[test]
 fn body_maps_a_list_query_without_objective() {
     let body = load(&[])
-        .transform_search_request(
-            &SearchQuery::Multiple(vec!["rust".to_owned(), "search".to_owned()]),
-            &serde_json::from_str::<Object>("{}").unwrap(),
-            None,
-            None,
-            &Headers::new(),
-        )
+        .transform_search_request(&RequestInput {
+            query: &SearchQuery::Multiple(vec!["rust".to_owned(), "search".to_owned()]),
+            optional_params: &serde_json::from_str::<Object>("{}").unwrap(),
+            api_key: None,
+            api_base: None,
+            headers: &Headers::new(),
+        })
         .unwrap();
     assert_eq!(
         serde_json::to_string(&body).unwrap(),
@@ -423,13 +423,13 @@ fn body_accepts_a_missing_advanced_settings(#[case] options: &str) {
 #[case::text(r#"{"advanced_settings":"x"}"#)]
 fn body_rejects_a_non_object_advanced_settings(#[case] options: &str) {
     let error = load(&[])
-        .transform_search_request(
-            &SearchQuery::Single("rust".to_owned()),
-            &serde_json::from_str::<Object>(options).unwrap(),
-            None,
-            None,
-            &Headers::new(),
-        )
+        .transform_search_request(&RequestInput {
+            query: &SearchQuery::Single("rust".to_owned()),
+            optional_params: &serde_json::from_str::<Object>(options).unwrap(),
+            api_key: None,
+            api_base: None,
+            headers: &Headers::new(),
+        })
         .unwrap_err();
     assert!(matches!(
         error,

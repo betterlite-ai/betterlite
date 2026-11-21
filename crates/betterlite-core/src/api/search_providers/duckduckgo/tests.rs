@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::search::provider::{
-    HttpMethod, ProviderResponse, SearchProvider as _, SearchQuery,
+    HttpMethod, ProviderResponse, RequestInput, SearchProvider as _, SearchQuery,
 };
 use betterlite_openai::search::records::{SearchObject, SearchResponse};
 use rstest::rstest;
@@ -764,7 +764,13 @@ fn the_config_decodes_with_the_query_it_built() {
     let request_options = options(&[("max_results", JsonValue::from(1_i64))]);
     let headers = Headers::new();
     loaded
-        .transform_search_request(&single("q"), &request_options, None, None, &Headers::new())
+        .transform_search_request(&RequestInput {
+            query: &single("q"),
+            optional_params: &request_options,
+            api_key: None,
+            api_base: None,
+            headers: &Headers::new(),
+        })
         .unwrap();
 
     let body = r#"{"RelatedTopics":[

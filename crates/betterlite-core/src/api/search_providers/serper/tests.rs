@@ -8,7 +8,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::search::credentials::CredentialError;
 use betterlite_openai::search::provider::{
-    HttpMethod, OutboundSearch, SearchProvider as _, SearchQuery,
+    HttpMethod, OutboundSearch, RequestInput, SearchProvider as _, SearchQuery,
 };
 use indexmap::IndexMap;
 use rstest::rstest;
@@ -131,7 +131,13 @@ fn serper_sign_request_fails_before_sending_without_a_key() {
     let config = config(&[]);
     let text = SearchQuery::Single(String::from("rust"));
     let request = config
-        .transform_search_request(&text, &Object::new(), None, None, &Headers::new())
+        .transform_search_request(&RequestInput {
+            query: &text,
+            optional_params: &Object::new(),
+            api_key: None,
+            api_base: None,
+            headers: &Headers::new(),
+        })
         .unwrap();
     let outbound = OutboundSearch {
         api_base: "https://google.serper.dev/search",
@@ -148,7 +154,13 @@ fn serper_sign_request_blocks_the_server_key_for_an_untrusted_base() {
     let config = config(&[("SERPER_API_KEY", "sk-server")]);
     let text = SearchQuery::Single(String::from("rust"));
     let request = config
-        .transform_search_request(&text, &Object::new(), None, None, &Headers::new())
+        .transform_search_request(&RequestInput {
+            query: &text,
+            optional_params: &Object::new(),
+            api_key: None,
+            api_base: None,
+            headers: &Headers::new(),
+        })
         .unwrap();
     let outbound = OutboundSearch {
         api_base: "https://evil.test/search",
@@ -174,7 +186,13 @@ fn serper_sign_request_signs_with_the_key_and_content_type(
     let config = config(&[("SERPER_API_KEY", "sk-server")]);
     let text = SearchQuery::Single(String::from("rust"));
     let request = config
-        .transform_search_request(&text, &Object::new(), None, None, &Headers::new())
+        .transform_search_request(&RequestInput {
+            query: &text,
+            optional_params: &Object::new(),
+            api_key: None,
+            api_base: None,
+            headers: &Headers::new(),
+        })
         .unwrap();
     let caller_secret = caller_key.map(SecretString::from);
     let outbound = OutboundSearch {
@@ -285,7 +303,13 @@ fn serper_request_maps_gl_and_domains(
     let optional_params: Object = serde_json::from_str(options).unwrap();
     let query: SearchQuery = serde_json::from_str(text).unwrap();
     let request = config(&[])
-        .transform_search_request(&query, &optional_params, None, None, &Headers::new())
+        .transform_search_request(&RequestInput {
+            query: &query,
+            optional_params: &optional_params,
+            api_key: None,
+            api_base: None,
+            headers: &Headers::new(),
+        })
         .unwrap();
     let serialized = serde_json::to_string(&request).unwrap();
     let actual: IndexMap<String, Json> = serde_json::from_str(&serialized).unwrap();
@@ -300,7 +324,13 @@ fn serper_request_rejects_a_non_string_country(#[case] options: &str) {
     let optional_params: Object = serde_json::from_str(options).unwrap();
     let query: SearchQuery = serde_json::from_str("\"q\"").unwrap();
     let error = config(&[])
-        .transform_search_request(&query, &optional_params, None, None, &Headers::new())
+        .transform_search_request(&RequestInput {
+            query: &query,
+            optional_params: &optional_params,
+            api_key: None,
+            api_base: None,
+            headers: &Headers::new(),
+        })
         .unwrap_err();
     assert!(matches!(
         error,
@@ -313,7 +343,13 @@ fn serper_request_rejects_a_non_string_domain() {
     let optional_params: Object = serde_json::from_str(r#"{"search_domain_filter": [1]}"#).unwrap();
     let query: SearchQuery = serde_json::from_str("\"q\"").unwrap();
     let error = config(&[])
-        .transform_search_request(&query, &optional_params, None, None, &Headers::new())
+        .transform_search_request(&RequestInput {
+            query: &query,
+            optional_params: &optional_params,
+            api_key: None,
+            api_base: None,
+            headers: &Headers::new(),
+        })
         .unwrap_err();
     assert!(matches!(
         error,

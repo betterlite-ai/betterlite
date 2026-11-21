@@ -4,7 +4,7 @@ use betterlite_config::loader::EnvironmentLookup;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::search::credentials::{CredentialError, ServerCredential};
 use betterlite_openai::search::provider::{
-    HttpMethod, PERPLEXITY_PARAMS, ProviderResponse, SearchProvider, SearchQuery,
+    HttpMethod, PERPLEXITY_PARAMS, ProviderResponse, RequestInput, SearchProvider, SearchQuery,
 };
 use betterlite_openai::search::records::{SearchObject, SearchResponse, SearchResult};
 use secrecy::{ExposeSecret as _, SecretString};
@@ -117,13 +117,9 @@ impl SearchProvider for SearxngSearchConfig {
 
     fn transform_search_request(
         &self,
-        query: &SearchQuery,
-        optional_params: &Object,
-        _api_key: Option<&SecretString>,
-        _api_base: Option<&str>,
-        _headers: &Headers,
+        input: &RequestInput<'_>,
     ) -> Result<SearxngSearchRequest, SearxngSearchError> {
-        build_request(query, optional_params)
+        build_request(input.query, input.optional_params)
     }
 
     fn transform_search_response(

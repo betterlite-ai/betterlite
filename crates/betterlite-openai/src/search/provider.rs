@@ -51,6 +51,14 @@ pub struct ProviderResponse<'call> {
     pub text: &'call str,
 }
 
+pub struct RequestInput<'call> {
+    pub query: &'call SearchQuery,
+    pub optional_params: &'call Object,
+    pub api_key: Option<&'call SecretString>,
+    pub api_base: Option<&'call str>,
+    pub headers: &'call Headers,
+}
+
 pub trait SearchProvider {
     type Body: Serialize;
     type Error: Error;
@@ -93,14 +101,8 @@ pub trait SearchProvider {
         api_key: Option<&SecretString>,
     ) -> Result<String, Self::Error>;
 
-    fn transform_search_request(
-        &self,
-        query: &SearchQuery,
-        optional_params: &Object,
-        api_key: Option<&SecretString>,
-        api_base: Option<&str>,
-        headers: &Headers,
-    ) -> Result<Self::Body, Self::Error>;
+    fn transform_search_request(&self, input: &RequestInput<'_>)
+    -> Result<Self::Body, Self::Error>;
 
     fn transform_search_response(
         &self,

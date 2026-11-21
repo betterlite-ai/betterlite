@@ -12,7 +12,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::search::credentials::CredentialError;
 use betterlite_openai::search::provider::{
-    HttpMethod, OutboundSearch, SearchProvider as _, SearchQuery,
+    HttpMethod, OutboundSearch, RequestInput, SearchProvider as _, SearchQuery,
 };
 use indexmap::IndexMap;
 use rstest::rstest;
@@ -323,7 +323,13 @@ fn dataforseo_sign_request_signs_with_the_server_pair() {
     let config = pair();
     let text = SearchQuery::Single(String::from("rust"));
     let request = config
-        .transform_search_request(&text, &Object::new(), None, None, &Headers::new())
+        .transform_search_request(&RequestInput {
+            query: &text,
+            optional_params: &Object::new(),
+            api_key: None,
+            api_base: None,
+            headers: &Headers::new(),
+        })
         .unwrap();
     let outbound = OutboundSearch {
         api_base: DATAFORSEO_API_BASE,
@@ -348,7 +354,13 @@ fn dataforseo_sign_request_fails_before_sending_without_credentials() {
     let config = config(&[]);
     let text = SearchQuery::Single(String::from("rust"));
     let request = config
-        .transform_search_request(&text, &Object::new(), None, None, &Headers::new())
+        .transform_search_request(&RequestInput {
+            query: &text,
+            optional_params: &Object::new(),
+            api_key: None,
+            api_base: None,
+            headers: &Headers::new(),
+        })
         .unwrap();
     let outbound = OutboundSearch {
         api_base: DATAFORSEO_API_BASE,
@@ -365,7 +377,13 @@ fn dataforseo_sign_request_blocks_the_server_pair_for_an_untrusted_base() {
     let config = pair();
     let text = SearchQuery::Single(String::from("rust"));
     let request = config
-        .transform_search_request(&text, &Object::new(), None, None, &Headers::new())
+        .transform_search_request(&RequestInput {
+            query: &text,
+            optional_params: &Object::new(),
+            api_key: None,
+            api_base: None,
+            headers: &Headers::new(),
+        })
         .unwrap();
     let outbound = OutboundSearch {
         api_base: "https://evil.test/v3",
@@ -403,7 +421,13 @@ fn dataforseo_url_ignores_the_parameters_and_the_body() {
     let config = config(&[]);
     let text = SearchQuery::Single(String::from("rust"));
     let body = config
-        .transform_search_request(&text, &Object::new(), None, None, &Headers::new())
+        .transform_search_request(&RequestInput {
+            query: &text,
+            optional_params: &Object::new(),
+            api_key: None,
+            api_base: None,
+            headers: &Headers::new(),
+        })
         .unwrap();
     let options: Object = serde_json::from_str(r#"{"max_results": 5}"#).unwrap();
     let url = config
@@ -416,7 +440,13 @@ fn request_tasks(text: &str, options: &str) -> Vec<IndexMap<String, Json>> {
     let optional_params: Object = serde_json::from_str(options).unwrap();
     let query: SearchQuery = serde_json::from_str(text).unwrap();
     let body = config(&[])
-        .transform_search_request(&query, &optional_params, None, None, &Headers::new())
+        .transform_search_request(&RequestInput {
+            query: &query,
+            optional_params: &optional_params,
+            api_key: None,
+            api_base: None,
+            headers: &Headers::new(),
+        })
         .unwrap();
     serde_json::from_str(&serde_json::to_string(&body).unwrap()).unwrap()
 }
@@ -429,7 +459,13 @@ fn request_error(options: &str) -> DataForSeoSearchError {
     let optional_params: Object = serde_json::from_str(options).unwrap();
     let query = SearchQuery::Single(String::from("q"));
     config(&[])
-        .transform_search_request(&query, &optional_params, None, None, &Headers::new())
+        .transform_search_request(&RequestInput {
+            query: &query,
+            optional_params: &optional_params,
+            api_key: None,
+            api_base: None,
+            headers: &Headers::new(),
+        })
         .unwrap_err()
 }
 
@@ -439,7 +475,13 @@ fn dataforseo_request_is_a_one_element_task_array() {
     let optional_params: Object = serde_json::from_str(options).unwrap();
     let query = SearchQuery::Single(String::from("q"));
     let body = config(&[])
-        .transform_search_request(&query, &optional_params, None, None, &Headers::new())
+        .transform_search_request(&RequestInput {
+            query: &query,
+            optional_params: &optional_params,
+            api_key: None,
+            api_base: None,
+            headers: &Headers::new(),
+        })
         .unwrap();
     assert_eq!(body.0.len(), 1);
 }

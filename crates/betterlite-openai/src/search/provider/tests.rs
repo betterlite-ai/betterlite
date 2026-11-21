@@ -7,7 +7,8 @@ use serde_json::Error;
 
 use crate::openai_base_config::{Headers, Object};
 use crate::search::provider::{
-    HttpMethod, OutboundSearch, PERPLEXITY_PARAMS, ProviderResponse, SearchProvider, SearchQuery,
+    HttpMethod, OutboundSearch, PERPLEXITY_PARAMS, ProviderResponse, RequestInput, SearchProvider,
+    SearchQuery,
 };
 use crate::search::records::SearchResponse;
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,16 +53,9 @@ impl SearchProvider for EchoSearch {
         Ok(format!("{base}/search"))
     }
 
-    fn transform_search_request(
-        &self,
-        query: &SearchQuery,
-        _optional_params: &Object,
-        api_key: Option<&SecretString>,
-        api_base: Option<&str>,
-        headers: &Headers,
-    ) -> Result<SearchQuery, Error> {
-        self.remember(api_key, api_base, headers);
-        Ok(query.clone())
+    fn transform_search_request(&self, input: &RequestInput<'_>) -> Result<SearchQuery, Error> {
+        self.remember(input.api_key, input.api_base, input.headers);
+        Ok(input.query.clone())
     }
 
     fn transform_search_response(
@@ -103,7 +97,13 @@ fn provider_hooks_build_url_body_and_response() {
     assert_eq!(single, SearchQuery::Single(String::from("latest rust")));
     let many: SearchQuery = serde_json::from_str(r#"["a", "b"]"#).unwrap();
     let body = echo()
-        .transform_search_request(&many, &Object::new(), None, None, &Headers::new())
+        .transform_search_request(&RequestInput {
+            query: &many,
+            optional_params: &Object::new(),
+            api_key: None,
+            api_base: None,
+            headers: &Headers::new(),
+        })
         .unwrap();
     assert_eq!(serde_json::to_string(&body).unwrap(), r#"["a","b"]"#);
     let url = echo().complete_url(None, &Object::new(), Some(&body), None);
@@ -144,13 +144,13 @@ fn transform_sees_key_base_and_validated_headers() {
     let validated = headers("x-validated", "yes");
     let provider = echo();
     let body = provider
-        .transform_search_request(
-            &SearchQuery::Single(String::from("rust")),
-            &Object::new(),
-            Some(&key),
-            Some("https://record.example"),
-            &validated,
-        )
+        .transform_search_request(&RequestInput {
+            query: &SearchQuery::Single(String::from("rust")),
+            optional_params: &Object::new(),
+            api_key: Some(&key),
+            api_base: Some("https://record.example"),
+            headers: &validated,
+        })
         .unwrap();
     assert_eq!(body, SearchQuery::Single(String::from("rust")));
     let seen = provider.seen.lock().unwrap().clone().unwrap();

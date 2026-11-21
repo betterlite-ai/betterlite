@@ -8,7 +8,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::search::credentials::CredentialError;
 use betterlite_openai::search::provider::{
-    HttpMethod, OutboundSearch, SearchProvider as _, SearchQuery,
+    HttpMethod, OutboundSearch, RequestInput, SearchProvider as _, SearchQuery,
 };
 use indexmap::IndexMap;
 use rstest::rstest;
@@ -56,13 +56,13 @@ fn request(
     query_text: &str,
     options_json: &str,
 ) -> Result<IndexMap<String, Json>, ApiserpentSearchError> {
-    let record = config(&[]).transform_search_request(
-        &query(query_text),
-        &optional_params(options_json),
-        None,
-        None,
-        &Headers::new(),
-    )?;
+    let record = config(&[]).transform_search_request(&RequestInput {
+        query: &query(query_text),
+        optional_params: &optional_params(options_json),
+        api_key: None,
+        api_base: None,
+        headers: &Headers::new(),
+    })?;
     Ok(expected(&serde_json::to_string(&record).unwrap()))
 }
 
@@ -81,7 +81,13 @@ fn complete(api_base: Option<&str>, options_json: &str, values: &[(&str, &str)])
     let params = optional_params(options_json);
     let config = config(values);
     let record = config
-        .transform_search_request(&query("\"q\""), &params, None, None, &Headers::new())
+        .transform_search_request(&RequestInput {
+            query: &query("\"q\""),
+            optional_params: &params,
+            api_key: None,
+            api_base: None,
+            headers: &Headers::new(),
+        })
         .unwrap();
     config
         .complete_url(api_base, &params, Some(&record), None)
@@ -197,7 +203,13 @@ fn apiserpent_missing_key_reports_the_source_message() {
 fn apiserpent_sign_request_fails_before_sending_without_a_key() {
     let config = config(&[]);
     let record = config
-        .transform_search_request(&query("\"q\""), &Object::new(), None, None, &Headers::new())
+        .transform_search_request(&RequestInput {
+            query: &query("\"q\""),
+            optional_params: &Object::new(),
+            api_key: None,
+            api_base: None,
+            headers: &Headers::new(),
+        })
         .unwrap();
     let empty = Object::new();
     let outbound = OutboundSearch {
@@ -214,7 +226,13 @@ fn apiserpent_sign_request_fails_before_sending_without_a_key() {
 fn apiserpent_sign_request_blocks_the_server_key_for_an_untrusted_base() {
     let config = config(&[("APISERPENT_API_KEY", "sk-server")]);
     let record = config
-        .transform_search_request(&query("\"q\""), &Object::new(), None, None, &Headers::new())
+        .transform_search_request(&RequestInput {
+            query: &query("\"q\""),
+            optional_params: &Object::new(),
+            api_key: None,
+            api_base: None,
+            headers: &Headers::new(),
+        })
         .unwrap();
     let empty = Object::new();
     let outbound = OutboundSearch {
@@ -240,7 +258,13 @@ fn apiserpent_sign_request_signs_with_the_key_and_content_type(
 ) {
     let config = config(&[("APISERPENT_API_KEY", "sk-server")]);
     let record = config
-        .transform_search_request(&query("\"q\""), &Object::new(), None, None, &Headers::new())
+        .transform_search_request(&RequestInput {
+            query: &query("\"q\""),
+            optional_params: &Object::new(),
+            api_key: None,
+            api_base: None,
+            headers: &Headers::new(),
+        })
         .unwrap();
     let caller_secret = caller_key.map(SecretString::from);
     let empty = Object::new();
