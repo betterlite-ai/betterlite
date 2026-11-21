@@ -72,7 +72,7 @@ async fn a_failed_alias_write_does_not_skip_the_next_row() {
         failing_id: 1,
     };
     let error = delete_team_model_alias("old", &failing).await.unwrap_err();
-    assert!(matches!(error, CleanupError::Aliases { id: 1 }));
+    assert!(matches!(error, CleanupError::Aliases { id: 1_i32 }));
     assert_eq!(
         failing.store.remaining_aliases(),
         vec![Some(aliases(r#"{"first":"old"}"#)), Some(aliases("{}"))]

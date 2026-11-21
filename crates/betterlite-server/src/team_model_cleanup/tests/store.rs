@@ -152,7 +152,7 @@ async fn a_non_object_alias_column_is_an_error() {
         .alias_rows()
         .await
         .expect_err("a list is not an alias mapping");
-    assert!(matches!(error, CleanupError::Aliases { id: 9 }));
+    assert!(matches!(error, CleanupError::Aliases { id: 9_i32 }));
     close(fixture, pool).await;
 }
 
