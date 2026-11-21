@@ -1,0 +1,17 @@
+kind: helper
+name: key-query-plan-blocked-versus-active
+call:
+  key_query_plan:
+    function: status
+    blocked: true
+    expires: "2020-01-01T00:00:00"
+    now: "2025-06-01T00:00:00+00:00"
+calls:
+  - key_query_plan: {function: status, blocked: true, expires: null, now: "2025-06-01T00:00:00+00:00"}
+  - key_query_plan: {function: status, blocked: false, expires: null, now: "2025-06-01T00:00:00+00:00"}
+  - key_query_plan: {function: status, blocked: null, expires: "2025-06-02T00:00:00", now: "2025-06-01T00:00:00+00:00"}
+  - key_query_plan: {function: status_clause, status_filter: revoked, now: "2025-06-01T00:00:00+00:00"}
+  - key_query_plan: {function: status_clause, status_filter: deleted, now: "2025-06-01T00:00:00+00:00"}
+  - key_query_plan: {function: status_clause, status_filter: null, now: "2025-06-01T00:00:00+00:00"}
+env: {}
+compare: {ignore: []}
