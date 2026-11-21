@@ -7,6 +7,7 @@ use betterlite_core::api::file_batch_guardrails::lines::iter_records;
 use betterlite_core::api::file_batch_guardrails::record_json::dumps::{Rendering, dumps};
 use betterlite_core::api::file_batch_guardrails::record_json::text::RecordText;
 use betterlite_core::api::file_batch_guardrails::record_json::{RecordJson, RecordObject};
+use betterlite_core::api::file_batch_guardrails::records::BatchRejection;
 use betterlite_core::routes::catalog::{CATALOG, RouteCatalog};
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
@@ -139,7 +140,10 @@ fn answer(call: &Call) -> HelperResult {
             scanned_records,
             changes,
         } => records::report(*scanned_records, changes),
-        Call::PublicFailure { failure } => Ok(records::public_failure(failure)),
+        Call::PublicFailure { failure } => {
+            let error = records::rejection(failure).to_string();
+            Ok(json!({"status": BatchRejection::STATUS, "detail": {"error": error}}))
+        }
     }
 }
 

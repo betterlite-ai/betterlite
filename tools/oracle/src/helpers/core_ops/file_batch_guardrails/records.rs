@@ -3,7 +3,7 @@ use betterlite_core::api::file_batch_guardrails::records::{
     UnparseableRecord, UnroutableRecord, UnscannableRecord,
 };
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::json;
 
 use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::HelperResult;
@@ -48,13 +48,8 @@ fn change(item: &Item<Action>) -> RecordChange {
     }
 }
 
-// The 400 raise_public and raise_nothing_to_submit answer with
-pub(super) fn public_failure(item: &Item<Failure>) -> Value {
-    let error = rejection(item).to_string();
-    json!({"status": BatchRejection::STATUS, "detail": {"error": error}})
-}
-
-fn rejection(item: &Item<Failure>) -> BatchRejection {
+// The failure raise_public and raise_nothing_to_submit answer for
+pub(super) fn rejection(item: &Item<Failure>) -> BatchRejection {
     let line_number = item.line_number;
     let custom_id = item.custom_id.clone();
     let failure = match item.kind {

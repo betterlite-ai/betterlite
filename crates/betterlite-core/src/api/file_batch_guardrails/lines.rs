@@ -18,25 +18,24 @@ pub fn iter_lines<Source>(
 where
     Source: BufRead,
 {
-    let mut line_number = 0_usize;
-    iter::from_fn(move || {
-        loop {
-            let mut bytes = Vec::new();
-            match file_source.read_until(b'\n', &mut bytes) {
-                Ok(0) => return None,
-                Ok(_) => {}
-                Err(source) => return Some(Err(BatchGuardrailError::Read { source })),
-            }
-            line_number = line_number.saturating_add(1);
-            // bytes.strip() also drops the vertical tab that u8::is_ascii_whitespace keeps
-            let blank = bytes
-                .iter()
-                .all(|byte| matches!(byte, b' ' | b'\t' | b'\n' | b'\r' | 0x0B | 0x0C));
-            if !blank {
-                return Some(Ok(RawLine { line_number, bytes }));
-            }
-        }
-    })
+    let reads = iter::from_fn(move || {
+        let mut bytes = Vec::new();
+        let read = file_source.read_until(b'\n', &mut bytes);
+        read.map(|count| (count > 0).then_some(bytes)).transpose()
+    });
+    // bytes.strip() also drops the vertical tab that u8::is_ascii_whitespace keeps
+    let blank = |bytes: &[u8]| {
+        bytes
+            .iter()
+            .all(|byte| matches!(byte, b' ' | b'\t' | b'\n' | b'\r' | 0x0B | 0x0C))
+    };
+    (1_usize..)
+        .zip(reads)
+        .filter_map(move |(line_number, read)| match read {
+            Ok(bytes) if blank(bytes.as_slice()) => None,
+            Ok(bytes) => Some(Ok(RawLine { line_number, bytes })),
+            Err(source) => Some(Err(BatchGuardrailError::Read { source })),
+        })
 }
 
 pub fn iter_records<Source>(
@@ -45,19 +44,15 @@ pub fn iter_records<Source>(
 where
     Source: BufRead,
 {
-    iter_lines(file_source).map(|line| line.and_then(parsed_record))
-}
-
-fn parsed_record(raw: RawLine) -> Result<ParsedRecord, BatchGuardrailError> {
-    let line_number = raw.line_number;
-    match load_record(&raw.bytes) {
-        Ok(payload) => Ok(ParsedRecord {
-            line_number,
-            payload,
-        }),
-        Err(source) => Err(BatchGuardrailError::Record {
+    iter_lines(file_source).map(|line| {
+        let RawLine { line_number, bytes } = line?;
+        let payload = load_record(&bytes).map_err(|source| BatchGuardrailError::Record {
             line_number,
             source,
-        }),
-    }
+        })?;
+        Ok(ParsedRecord {
+            line_number,
+            payload,
+        })
+    })
 }
