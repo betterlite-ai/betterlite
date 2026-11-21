@@ -1,3 +1,5 @@
+use std::convert::Infallible;
+
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_objects::ResponseOutputItem;
 use indexmap::IndexMap;
@@ -6,6 +8,8 @@ use crate::api::api_boundaries::{ApiBoundariesInput, ApiLimits, ItemsBoundary};
 use crate::api::chat_response_stream_tools::fields::string_value;
 use crate::api::responses_file_search_tools::error::FileSearchToolsError;
 
+use super::error::FileSearchLoopError;
+
 // _build_follow_up_input (L489-L512): the caller's items, the first response's output items with
 // their null fields dropped, then one function_call_output per tool call
 pub fn build_follow_up_input(
@@ -13,7 +17,7 @@ pub fn build_follow_up_input(
     first_output: &[ResponseOutputItem],
     tool_results: &[Json],
     limits: ApiLimits,
-) -> Result<Json, FileSearchToolsError> {
+) -> Result<Json, FileSearchLoopError<Infallible>> {
     let mut items = original_items(input);
     let known_count = items
         .len()

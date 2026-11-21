@@ -28,6 +28,7 @@ use tracing_subscriber::registry;
 
 use super::decoder::tool_call_arguments;
 use super::error::FileSearchLoopError;
+use super::follow_up::build_follow_up_input;
 use super::ports::{FollowUpRequest, ResponsesFollowUp, SearchRequest, VectorStoreSearches};
 use super::records::{DiagnosticMessage, FollowUpCall, SearchAuthorization, UpstreamSearch};
 use super::{
@@ -361,6 +362,7 @@ async fn file_search_follow_up() {
         .unwrap();
 
     assert!(result.diagnostics.is_empty());
+    assert!(result.hidden_params.is_empty());
     let calls = follow_up.calls();
     assert_eq!(calls.len(), 2);
     assert!(calls[0].internal);
@@ -886,6 +888,24 @@ fn arguments_beyond_the_json_limit_are_refused() {
     assert!(matches!(
         error,
         FileSearchLoopError::Limit(ApiLimitError::JsonTooLarge { .. })
+    ));
+}
+
+#[test]
+fn oversized_follow_up_input_is_refused() {
+    let first = response(
+        "resp_first",
+        &[function_call_item(&queries_arguments(&["q"]), "call_1")],
+    );
+    let limits = ApiLimits {
+        max_items: 2,
+        ..ApiLimits::default()
+    };
+    let error = build_follow_up_input(&json(r#""question""#), &first.output, &[Json::Null], limits)
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        FileSearchLoopError::Limit(ApiLimitError::TooManyItems { .. })
     ));
 }
 

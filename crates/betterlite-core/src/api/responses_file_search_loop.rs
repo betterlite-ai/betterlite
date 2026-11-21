@@ -230,7 +230,8 @@ where
             &round.response.output,
             &executed.outputs,
             self.limits,
-        )?;
+        )
+        .map_err(widen)?;
         Ok(FollowUpCall {
             input: follow_up_input,
             model: input.model.clone(),
