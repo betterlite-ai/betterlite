@@ -7,20 +7,6 @@ deviations:
       One write path for the typed record; B10012's row codec reads the parsed value and a JSON string of
       it alike, so the response JSON is the same either way.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_registry.py#L581-L665
-  - what: >-
-      A PATCH body with `litellm_params: null` leaves the stored params unchanged. LiteLLM sees the key,
-      restores it against the stored secrets and writes the stored map back.
-    why: >-
-      B4770's typed PatchAgentRequest reads null and absent litellm_params as the same thing, so the
-      column is left out. A client that wants to reset the params sends an empty object.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_registry.py#L733-L739
-  - what: >-
-      A PUT body with `agent_card_params: null` takes the patch branch and leaves the stored card alone.
-      LiteLLM sees the key, so it replaces the row and writes an empty card.
-    why: >-
-      The typed AgentConfig cannot tell null from absent, and docs/compatibility.md says a null value
-      takes the default; the default here is the patch branch LiteLLM also takes when the key is missing.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_registry.py#L796
   - what: delete_agent_from_db returns nothing.
     why: >-
       LiteLLM returns the deleted row's dump, and no caller at the pin reads it.

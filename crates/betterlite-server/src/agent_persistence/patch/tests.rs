@@ -140,6 +140,11 @@ async fn patch_rejects_a_retired_identity_of_another_agent() {
     let store = store_with(&database, publisher.clone());
     database
         .run(
+            r#"INSERT INTO "LiteLLM_AgentsTable" (agent_id, agent_name, agent_card_params, created_by, updated_by) VALUES ('other-agent', 'other-agent', '{}'::jsonb, 'seed', 'seed')"#,
+        )
+        .await;
+    database
+        .run(
             r#"INSERT INTO "LiteLLM_RetiredAgentIdentity" (binding_id, agent_id, provider, issuer, tenant_id, client_id) VALUES ('binding-kept', 'other-agent', 'microsoft_entra', 'issuer-old', '11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222')"#,
         )
         .await;

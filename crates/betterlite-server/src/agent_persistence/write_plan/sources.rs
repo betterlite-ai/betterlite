@@ -25,7 +25,7 @@ use super::values::stored_params;
 
 impl ColumnSource for ConfigSource<'_> {
     fn identity(&self) -> Option<&Option<EntraIdentityConfig>> {
-        Some(&self.agent.identity)
+        self.agent.identity.as_ref()
     }
 
     fn execution_mode(&self) -> Option<&ExecutionMode> {
