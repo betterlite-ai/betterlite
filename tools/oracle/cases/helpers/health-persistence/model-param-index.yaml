@@ -1,0 +1,24 @@
+kind: helper
+name: health-persistence-model-param-index
+call:
+  b7640:
+    function: model_param_index
+    deployments:
+      - model_name: alpha
+        litellm_params: {model: gpt-4o}
+        model_info: {id: dep-a}
+      - model_name: beta
+        litellm_params: {model: gpt-4o}
+        model_info: {id: dep-b}
+      - model_name: gamma
+        litellm_params: {model: claude-3}
+        model_info: {}
+      - model_name: no-param
+        litellm_params: {api_base: "http://localhost:4000"}
+      - model_name: ""
+        litellm_params: {model: empty-name}
+      - model_name: empty-param
+        litellm_params: {model: ""}
+      - litellm_params: {model: no-name}
+env: {}
+compare: {ignore: []}

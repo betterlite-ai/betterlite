@@ -1,0 +1,21 @@
+kind: helper
+name: foundry-rejected-fields-unrelated-error-no-retry
+call:
+  foundry_rejected_fields:
+    triggers:
+      - error: |-
+          {"error":{"message":"a field the model does not know","type":"invalid_request_error"}}
+        request_drop_params: false
+        global_drop_params: false
+      # a drop policy is no reason to retry a text without a known marker
+      - error: |-
+          {"error":{"message":"a field the model does not know","type":"invalid_request_error"}}
+        request_drop_params: true
+        global_drop_params: true
+      # the extra-inputs marker alone needs a drop policy or a tool-level field
+      - error: |-
+          {"error":{"message":"Extra inputs are not permitted","type":"invalid_request_error"}}
+        request_drop_params: false
+        global_drop_params: false
+env: {}
+compare: {ignore: []}

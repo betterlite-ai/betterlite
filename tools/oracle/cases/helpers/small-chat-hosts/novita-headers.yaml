@@ -1,0 +1,30 @@
+kind: helper
+name: small-chat-hosts-novita-headers
+call:
+  b6410:
+    supported: []
+    params: []
+    moonshot_urls: []
+    moonshot_requests: []
+    nadir_cost: []
+    novita_headers:
+      - {api_key: sk-test-123, headers: {}}
+      - {api_key: sk-test-123, headers: {X-Custom: "1", Accept: application/json}}
+      - {api_key: "", headers: {}}
+      - {api_key: null, headers: {X-Custom: "1"}}
+    zai_cache:
+      - model: zai/glm-4.6
+        messages:
+          - {role: user, content: hi, cache_control: {type: ephemeral}}
+          - {role: assistant, content: hello}
+        tools:
+          - {type: function, function: {name: lookup}, cache_control: {type: ephemeral}}
+      - model: zai/glm-4.6
+        messages:
+          - {role: user, content: hi}
+        tools: null
+    maritalk_errors:
+      - {message: bad request, status: 400, headers: {x-request-id: req-1}}
+      - {message: server error, status: 500, headers: {}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,8 @@
+task: B3030
+deviations:
+  - what: A limiter clock before 1970-01-01T00:00:00Z is a typed error instead of the pre-epoch timestamp LiteLLM formats.
+    why: Python's datetime.fromtimestamp still prints a pre-1970 second, so a limiter clock set before the epoch is the one input where betterlite refuses what LiteLLM would format; no working setup reaches it. A reset outside Python's datetime range, past year 9999 or before year 1, is refused on both sides, since fromtimestamp raises there too and betterlite returns ResetOutOfRange.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3509-L3513
+  - what: A priority value past f64's finite range, such as 1e400, is a typed parse error instead of the infinity Python's float() makes of it.
+    why: serde_json's Number holds no finite f64 for that literal, so there is nothing to divide by a capacity; betterlite's config layer refuses non-finite floats for the same reason, and no working setup can rely on an infinite priority.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/rate_limiter_utils.py#L146-L154

@@ -1,7 +1,7 @@
 id: B897
 milestone: M4 keys, spend and management
 title: Key SQL filters and paging query plans
-status: todo
+status: done
 depends_on: [B171, B700, B720, B722, B723, B726, B770, B816, B856, B860, B2314]
 file: tasks/B897-key-query-plan.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/_types.py"
 parent: B055
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2805

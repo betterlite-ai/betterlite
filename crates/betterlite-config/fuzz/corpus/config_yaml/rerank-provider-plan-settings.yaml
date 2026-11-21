@@ -1,0 +1,7 @@
+litellm_settings:
+  api_key: os.environ/RERANK_PROVIDER_API_KEY
+  api_base: os.environ/RERANK_PROVIDER_API_BASE
+  headers:
+    x-rerank-seed: seed
+  togetherai_api_key: os.environ/TOGETHERAI_API_KEY
+  drop_params: true

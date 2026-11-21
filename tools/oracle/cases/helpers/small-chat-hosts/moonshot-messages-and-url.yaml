@@ -1,0 +1,62 @@
+kind: helper
+name: small-chat-hosts-moonshot-messages-and-url
+call:
+  b6410:
+    supported: []
+    params: []
+    moonshot_urls:
+      - {api_base: null}
+      - {api_base: ""}
+      - {api_base: "https://api.moonshot.ai/v1"}
+      - {api_base: "https://api.example.com/v1"}
+      - {api_base: "https://api.example.com/v1/chat/completions"}
+      - {api_base: "https://api.example.com/v1/"}
+      - {api_base: "https://api.example.com/v1/chat/completions/"}
+    moonshot_requests:
+      - model: moonshot/moonshot-v1-8k
+        reasoning: false
+        messages:
+          - role: user
+            content:
+              - {type: text, text: "hello "}
+              - {type: text, text: world}
+        optional_params: {}
+      - model: moonshot/moonshot-v1-8k
+        reasoning: false
+        messages:
+          - role: user
+            content:
+              - {type: text, text: see}
+              - {type: image_url, image_url: {url: "https://example.com/a.png"}}
+        optional_params: {}
+      - model: moonshot/moonshot-v1-8k
+        reasoning: false
+        messages:
+          - role: system
+            content:
+              - {type: text, text: system prompt}
+          - role: user
+            content:
+              - {type: image_url, image_url: {url: "https://example.com/b.png"}}
+        optional_params: {}
+      - model: moonshot/moonshot-v1-8k
+        reasoning: false
+        messages:
+          - role: assistant
+            content:
+              - {type: text, text: "look "}
+              - {type: text, text: here}
+        optional_params: {}
+      - model: moonshot/moonshot-v1-8k
+        reasoning: false
+        messages:
+          - role: user
+            content:
+              - {type: text, text: solo}
+        optional_params: {top_p: 0.5}
+    nadir_cost: []
+    novita_headers: []
+    zai_cache: []
+    maritalk_errors: []
+env: {}
+compare: {ignore: []}

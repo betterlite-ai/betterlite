@@ -1,0 +1,32 @@
+kind: sdk_http
+name: rerank-defaults-and-options
+env: {}
+call:
+  rerank_provider_plan:
+    model: rerank-v1
+    query: q
+    documents: [a, b]
+    custom_llm_provider: cohere
+    top_n: 0
+    max_chunks_per_doc: 0
+    max_tokens_per_doc: 0
+    kwargs:
+      instruction: brief
+      timeout: "2.5"
+      api_key: sk-call
+      api_base: "{mock}"
+upstream:
+  - status: 200
+    headers: {content-type: application/json, x-request-id: req-1}
+    body:
+      id: r
+      results:
+        - index: 1
+          relevance_score: 0.5
+        - index: 0
+          relevance_score: 0.25
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, accept, content-type]
+  ignore: []

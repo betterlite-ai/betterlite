@@ -1,12 +1,14 @@
 use std::error::Error;
 use std::sync::Arc;
 
+use betterlite_db::budget_sweep::lease_guard::LeaseGuard;
+
 use super::error::{InitError, MavvrikError};
 use super::export::{
     MAVVRIK_FOCUS_EXPORT_JOB_NAME, MavvrikEngineFactory, MavvrikExporter, MavvrikFocusLogger,
 };
 use super::scheduled_export::run_scheduled_export;
-use crate::finops::focus::export_schedule::{PodLockLease, ScheduleTrigger, daily_cron_trigger};
+use crate::finops::focus::export_schedule::{ScheduleTrigger, daily_cron_trigger};
 
 #[path = "schedule/tests/exact_type_match.rs"]
 mod exact_type_match;
@@ -39,7 +41,7 @@ where
                 tracing::debug!("Mavvrik FOCUS export: unable to acquire pod lock");
                 return Ok(());
             }
-            Some(PodLockLease::start(
+            Some(LeaseGuard::start(
                 Arc::clone(pod_lock),
                 MAVVRIK_FOCUS_EXPORT_JOB_NAME,
                 &logger.tasks,

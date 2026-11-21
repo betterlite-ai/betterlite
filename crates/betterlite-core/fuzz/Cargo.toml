@@ -506,3 +506,10 @@ path = "fuzz_targets/brave_search.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "create_timeout_text"
+path = "fuzz_targets/create_timeout_text.rs"
+test = false
+doc = false
+bench = false
