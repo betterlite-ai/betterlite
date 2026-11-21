@@ -108,10 +108,6 @@ impl RecordingCache {
             effects,
         }
     }
-
-    pub(crate) fn value(&self, key: &str) -> Option<CacheCounterValue> {
-        locked(&self.values).get(key).cloned()
-    }
 }
 
 #[async_trait::async_trait]
@@ -419,7 +415,6 @@ pub(crate) fn auth(fields: &str) -> UserAPIKeyAuth {
 
 pub(crate) struct ReservationFixture {
     pub(crate) effects: Arc<Effects>,
-    pub(crate) cache: Arc<RecordingCache>,
     adjustments: TokenAdjustments,
     descriptors: ModelDescriptorBuilder,
     clock: Arc<FixedClock>,
@@ -437,12 +432,10 @@ impl ReservationFixture {
         groups: &[(&str, &str)],
     ) -> Self {
         let effects = Arc::new(Effects::default());
-        let cache = Arc::new(RecordingCache::new(entries, Arc::clone(&effects)));
         let usage = Arc::new(RecordingUsage::new(Arc::clone(&effects)));
-        let store_cache = Arc::clone(&cache);
         let adjustments = TokenAdjustments {
             windows: WindowStore {
-                cache: store_cache,
+                cache: Arc::new(RecordingCache::new(entries, Arc::clone(&effects))),
                 rate_limiter_script: None,
                 counter_read_script: None,
                 request_batch: None,
@@ -455,7 +448,6 @@ impl ReservationFixture {
         };
         Self {
             effects,
-            cache,
             adjustments,
             descriptors: ModelDescriptorBuilder {
                 window_size: WINDOW,
