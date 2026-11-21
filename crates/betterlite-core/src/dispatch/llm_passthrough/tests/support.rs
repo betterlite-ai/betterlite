@@ -159,11 +159,11 @@ impl VideoRouteView for FakeView {
     }
 
     fn team_public_model_names_has(&self, model: &str) -> bool {
-        self.team_public.iter().any(|name| *name == model)
+        self.team_public.contains(&model)
     }
 
     fn model_names_has(&self, model: &str) -> bool {
-        self.model_names.iter().any(|name| *name == model)
+        self.model_names.contains(&model)
     }
 
     fn pass_through_all_models(&self) -> bool {
@@ -175,7 +175,7 @@ impl VideoRouteView for FakeView {
     }
 
     fn deployment_names_has(&self, model: &str) -> bool {
-        self.deployment_names.iter().any(|name| *name == model)
+        self.deployment_names.contains(&model)
     }
 }
 
@@ -200,7 +200,7 @@ impl BlockedModels for RecordingBlocked {
     fn all_blocked(&self, model: &str, team_id: Option<&str>) -> bool {
         self.trace
             .push(&format!("blocked:{model}:{}", team_id.unwrap_or("")));
-        self.blocked.iter().any(|name| *name == model)
+        self.blocked.contains(&model)
     }
 }
 
@@ -282,7 +282,7 @@ pub(super) fn request(
     ports: &Ports,
 ) -> LlmPassthroughRequest {
     LlmPassthroughRequest {
-        args,
+        args: Box::new(args),
         route,
         router: ports.router.clone(),
         view: ports.view.clone(),
@@ -317,7 +317,7 @@ pub(super) fn failing_router_request(
         calls: calls.clone(),
     });
     LlmPassthroughRequest {
-        args: call_args("gpt-upstream"),
+        args: Box::new(call_args("gpt-upstream")),
         route: route_input("gpt-upstream"),
         router: Some(router),
         view: Some(view),

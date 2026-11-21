@@ -7,7 +7,7 @@ use crate::api::video_router_calls::route::VideoRouteView;
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct RouteFlag(pub bool);
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PassthroughRouteInput {
     pub model: String,
     pub team_id: Option<String>,
@@ -67,7 +67,9 @@ fn plan_with_router(
     if !input.model.is_empty() && blocked.all_blocked(&input.model, input.team_id.as_deref()) {
         return PassthroughRoute::Blocked;
     }
-    if team_model(input, view).is_some() {
+    if let Some(team_id) = input.team_id.as_deref()
+        && view.map_team_model(&input.model, team_id).is_some()
+    {
         return PassthroughRoute::Router {
             specific_deployment: false,
         };
@@ -105,15 +107,4 @@ fn plan_unlisted(
         };
     }
     PassthroughRoute::NotFound
-}
-
-// The route enum records only that the team maps the model, so the entry asks again for the mapped name
-pub(super) fn team_model(
-    input: &PassthroughRouteInput,
-    view: &(dyn VideoRouteView + Send + Sync),
-) -> Option<String> {
-    let Some(team_id) = input.team_id.as_deref() else {
-        return None;
-    };
-    view.map_team_model(&input.model, team_id)
 }

@@ -1,8 +1,7 @@
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_error::proxy_model_not_found::{ProxyModelNotFoundError, route_endpoint};
-use betterlite_openai::openai_base_config::Object;
 
-use super::route::{PassthroughRoute, PassthroughRouteInput, plan_passthrough_route, team_model};
+use super::route::{PassthroughRoute, PassthroughRouteInput, plan_passthrough_route};
 use super::{BlockedModel, LlmPassthroughError};
 use crate::api::passthrough_call::{PassthroughCallArgs, PassthroughReply};
 use crate::api::video_router_calls::route::VideoRouteView;
@@ -53,9 +52,9 @@ pub async fn execute(
                 return Err(LlmPassthroughError::RouterMissing);
             };
             router_args(&mut args, &input, view.as_deref(), specific_deployment);
-            port.call(args).await.map_err(LlmPassthroughError::Call)
+            port.call(*args).await.map_err(LlmPassthroughError::Call)
         }
-        PassthroughRoute::Direct => direct.call(args).await.map_err(LlmPassthroughError::Call),
+        PassthroughRoute::Direct => direct.call(*args).await.map_err(LlmPassthroughError::Call),
     }
 }
 
@@ -86,7 +85,8 @@ fn router_args(
     if input.router_settings_override.is_none()
         && !input.has_api_key_or_base.0
         && let Some(router_view) = view
-        && let Some(mapped) = team_model(input, router_view)
+        && let Some(team_id) = input.team_id.as_deref()
+        && let Some(mapped) = router_view.map_team_model(&input.model, team_id)
     {
         args.model = mapped;
     }

@@ -786,12 +786,14 @@ async fn rejected_call(status: u16) -> (u16, String) {
         panic!("a failed call reaches the caller");
     };
     let DispatchError::Rejected {
-        status, error_type, ..
+        status: http_status,
+        error_type,
+        ..
     } = error.rejected()
     else {
         panic!("the dispatch answer is a rejected call");
     };
-    (status, error_type)
+    (http_status, error_type)
 }
 
 #[tokio::test]

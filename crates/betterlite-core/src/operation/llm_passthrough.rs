@@ -8,7 +8,7 @@ use crate::dispatch::llm_passthrough::{BlockedModels, PassthroughCallPort};
 pub type LlmPassthroughResult = PassthroughReply;
 
 pub struct LlmPassthroughRequest {
-    pub args: PassthroughCallArgs,
+    pub args: Box<PassthroughCallArgs>,
     pub route: PassthroughRouteInput,
     pub router: Option<Arc<dyn PassthroughCallPort>>,
     pub view: Option<Arc<dyn VideoRouteView + Send + Sync>>,
