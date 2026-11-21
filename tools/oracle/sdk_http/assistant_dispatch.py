@@ -4,6 +4,7 @@ from typing import Literal, Protocol, TypeAlias, cast
 
 import openai
 from litellm.router import Router
+from litellm.types.router import AssistantsTypedDict
 from openai.lib.streaming import AsyncAssistantStreamManager
 from openai.pagination import AsyncCursorPage
 from openai.types.beta.assistant import Assistant
@@ -130,8 +131,9 @@ class AssistantDispatchRequest(BaseModel):
 
 
 def dispatch_run(run: OperationCall, api_base: str) -> Step:
-    router = cast(AssistantCalls, Router(model_list=[]))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1899-L1908
-    object.__setattr__(router, "assistants_config", assistants_config(run))
+    # Router stores the mapping as given and the factory later reads both keys as plain dict entries
+    stored = cast(AssistantsTypedDict | None, assistants_config(run))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L820-L822
+    router = cast(AssistantCalls, Router(model_list=[], assistants_config=stored))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1899-L1908
     data = request_data(run, api_base)
     try:
         return asyncio.run(invoke(router, run, data))

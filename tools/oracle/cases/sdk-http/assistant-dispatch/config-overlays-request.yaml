@@ -67,3 +67,7 @@ compare:
   ignore:
     - pointer: /assistant_dispatch/value/results/2/failure/message
       why: LiteLLM prefixes the mapped exception text and betterlite writes its own
+    - pointer: /assistant_dispatch/value/results/3/failure/message
+      why: the rule compares an error's class, status, type, param and code, not the interpreter's TypeError wording
+    - pointer: /assistant_dispatch/value/results/4/failure/message
+      why: the rule compares an error's class, status, type, param and code, not the interpreter's TypeError wording
