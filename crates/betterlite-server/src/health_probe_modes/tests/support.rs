@@ -1,11 +1,21 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_error::error::details::ResponseDetails;
 use betterlite_error::error::{ErrorClass, ErrorContext};
-use betterlite_logging::logging_state::{LoggingState, LoggingStateError};
+use betterlite_logging::logging_state::correlation::{
+    CorrelationContext, CorrelationSettings, CorrelationSetup,
+};
+use betterlite_logging::logging_state::types::{
+    CallbackPolicy, DynamicCallbacks, RequestLoggingFlags,
+};
+use betterlite_logging::logging_state::{LoggingInit, LoggingState, LoggingStateError};
 use betterlite_ocr::ocr_document::OcrDocument;
+use betterlite_redact::secret::Redactor;
+use chrono::DateTime;
+use indexmap::IndexMap;
 
 use crate::health_probe_modes::backend::{
     CheapestChatModels, HealthProbeBackend, OcrHealthDocuments,
@@ -15,7 +25,7 @@ use crate::health_probe_modes::calls::{
     RealtimeCall,
 };
 use crate::health_probe_modes::error::HealthProbeError;
-use crate::health_probe_modes::logging::{HealthProbeLogging, ProbeLoggingUpdate};
+use crate::health_probe_modes::logging::{HealthProbeLogging, ProbeLogging, ProbeLoggingUpdate};
 use crate::health_probe_modes::params::HealthProbeParams;
 use crate::health_probe_modes::plan::{HealthProbeArguments, plan_health_probe};
 use crate::health_probe_modes::run::run_health_probe;
@@ -369,6 +379,48 @@ impl HealthProbeLogging for FakeLogging {
 
     fn logging_state(&self) -> Option<Arc<Mutex<LoggingState>>> {
         None
+    }
+}
+
+// The real logging object a health check builds, with an empty state to update
+pub(super) fn probe_logging() -> ProbeLogging {
+    let redactor = Redactor::new(16).expect("a valid redactor");
+    let mut correlation_context = CorrelationContext::default();
+    let setup = CorrelationSetup {
+        context: &mut correlation_context,
+        settings: CorrelationSettings::default(),
+    };
+    let state = LoggingState::new(
+        health_logging_init(),
+        setup,
+        &redactor,
+        || "generated-trace".to_owned(),
+        || Duration::ZERO,
+    )
+    .expect("a valid logging state");
+    ProbeLogging::from(state)
+}
+
+fn health_logging_init() -> LoggingInit {
+    LoggingInit {
+        model: String::new(),
+        call_type: "health_check".to_owned(),
+        start_time: DateTime::parse_from_rfc3339("2024-01-01T00:00:00+00:00")
+            .expect("a valid timestamp"),
+        litellm_call_id: "call-1".to_owned(),
+        function_id: "function-1".to_owned(),
+        messages: None,
+        stream: Some(false),
+        litellm_trace_id: Some("trace-1".to_owned()),
+        kwargs: IndexMap::new(),
+        litellm_params: IndexMap::new(),
+        callback_dynamic_params: IndexMap::new(),
+        trusted_callback_vars: Vec::new(),
+        standard_built_in_tools_params: IndexMap::new(),
+        dynamic_callbacks: DynamicCallbacks::default(),
+        applied_guardrails: None,
+        request_logging: RequestLoggingFlags::default(),
+        callback_policy: CallbackPolicy::default(),
     }
 }
 

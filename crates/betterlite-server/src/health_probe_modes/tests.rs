@@ -5,20 +5,21 @@ use std::sync::Arc;
 
 use betterlite_error::error::ErrorClass;
 use betterlite_models::decisions::{DecisionsJson, Json};
+use indexmap::IndexMap;
 use rstest::rstest;
 
 use self::support::{
     FakeBackend, FakeCheapestModels, FakeLogging, IMAGE_BYTES, bad_request_class,
-    content_policy_class, context_window_class, evaluation_params_with_questions, probe_params,
-    probe_params_from_json, run_mode, unclassified_class, unsupported_params_class, with_logging,
-    with_prompt,
+    content_policy_class, context_window_class, evaluation_params_with_questions, probe_logging,
+    probe_params, probe_params_from_json, run_mode, unclassified_class, unsupported_params_class,
+    with_logging, with_prompt,
 };
 use super::batch::BATCH_PROVIDERS;
 use super::calls::HealthProbeReply;
 use super::error::HealthProbeError;
 use super::evaluation::{HEALTH_CHECK_QUESTION, evaluation_questions};
 use super::image_data::{IMAGE_EDIT_HEALTH_CHECK_PROMPT, health_check_image};
-use super::logging::HealthProbeLogging;
+use super::logging::{HealthProbeLogging, ProbeLoggingUpdate};
 use super::params::Param;
 use super::plan::{HealthProbeArguments, plan_health_probe};
 use super::response::{
@@ -718,4 +719,23 @@ async fn response_run_returns_the_backend_headers_or_nothing() {
     .await
     .unwrap();
     assert!(empty_reply.hidden_headers.is_empty());
+}
+
+#[test]
+fn logging_object_records_the_health_update() {
+    let logging = probe_logging();
+    let update = ProbeLoggingUpdate {
+        kwargs: IndexMap::new(),
+        model: Some("health-model".to_owned()),
+        user: Some("health-check".to_owned()),
+        optional_params: IndexMap::new(),
+        litellm_params: None,
+    };
+    logging.update_from_kwargs(update).unwrap();
+    let guard = logging
+        .logging_state()
+        .expect("the health logging state is present");
+    let state = guard.lock().unwrap();
+    assert_eq!(state.model, "health-model");
+    assert_eq!(state.user.as_deref(), Some("health-check"));
 }
