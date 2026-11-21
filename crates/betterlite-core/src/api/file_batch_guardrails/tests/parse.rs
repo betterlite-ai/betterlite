@@ -62,6 +62,7 @@ fn reads_what_json_loads_reads(#[case] text: &str, #[case] expected: &str) {
 #[case::unknown_escape(r#""\q""#)]
 #[case::short_unicode(r#""\u12""#)]
 #[case::bad_hex(r#""\u12g4""#)]
+#[case::signed_hex(r#""\u+123""#)]
 #[case::bad_low_hex(r#""\ud800\uzzzz""#)]
 #[case::unterminated(r#""abc"#)]
 #[case::truncated_true(r#"tr"#)]

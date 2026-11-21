@@ -43,7 +43,8 @@ fn utf8_sequence(bytes: &[u8]) -> Option<(u32, &[u8])> {
     let code_point = continuation
         .iter()
         .try_fold(u32::from(payload), |value, byte| {
-            (byte.leading_ones() == 1).then(|| value.wrapping_shl(6) | u32::from(byte & 0x3F))
+            let low_bits = u32::from(byte & 0x3F);
+            (byte.leading_ones() == 1).then(|| value.wrapping_shl(6).wrapping_add(low_bits))
         })?;
     (minimum..=MAX_CODE_POINT)
         .contains(&code_point)

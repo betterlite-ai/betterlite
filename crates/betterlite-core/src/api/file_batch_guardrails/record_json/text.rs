@@ -43,8 +43,10 @@ fn push_code_point(bytes: &mut Vec<u8>, code_point: u32) {
         bytes.extend_from_slice(character.encode_utf8(&mut buffer).as_bytes());
     } else {
         // a surrogate takes the three-byte form UTF-8 would give it if it were a scalar value
-        let continuation =
-            |shift: u32| 0x80 | u8::try_from(code_point.wrapping_shr(shift) & 0x3F).unwrap_or(0);
+        let continuation = |shift: u32| {
+            let low_bits = u8::try_from(code_point.wrapping_shr(shift) & 0x3F).unwrap_or(0);
+            0x80_u8.wrapping_add(low_bits)
+        };
         bytes.extend([0xED, continuation(6), continuation(0)]);
     }
 }
