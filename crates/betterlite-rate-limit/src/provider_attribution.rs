@@ -62,7 +62,7 @@ pub struct ModelGroupLimits {
 }
 
 // convert_priority_to_percent's argument: a plain number is already a fraction of capacity, a mapping says what its value counts.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
 #[serde(try_from = "PriorityValueRaw")]
 pub enum PriorityValue {
     Percent(f64),
