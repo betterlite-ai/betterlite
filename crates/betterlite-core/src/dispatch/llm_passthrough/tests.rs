@@ -836,6 +836,10 @@ async fn entry_call_error_types_follow_status() {
         rejected_call(429).await,
         (429, String::from("rate_limit_error"))
     );
+    assert_eq!(
+        rejected_call(503).await,
+        (503, String::from("internal_server_error"))
+    );
 }
 
 #[tokio::test]
