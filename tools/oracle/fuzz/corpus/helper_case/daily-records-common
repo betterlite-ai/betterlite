@@ -1,0 +1,11 @@
+kind: helper
+name: daily-records-seed-common
+call:
+  daily_records:
+    operation: common
+    entity: user
+    payload: '{"user": null, "startTime": 5, "api_key": null, "mcp_namespaced_tool_name": null, "metadata": "{}", "prompt_tokens": 1, "completion_tokens": 2, "spend": 0.5}'
+    prices: {}
+    endpoints: {}
+env: {}
+compare: {ignore: []}

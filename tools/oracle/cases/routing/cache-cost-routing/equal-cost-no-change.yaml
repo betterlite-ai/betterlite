@@ -1,0 +1,36 @@
+kind: probe
+name: equal-cost-no-change
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cache_cost_routing:
+        cache_aware_routing: true
+        cache_aware_routing_output_tokens: 1024
+        cache_aware_routing_timeout_ms: 2000
+        tier_labels: {}
+        tiers: {SIMPLE: small, MEDIUM: medium}
+        params: []
+        response:
+          model: small
+          routing_decision:
+            router_model_name: probe
+            router_type: complexity
+            routed_model: small
+            cause: heuristic_scorer
+            tier: SIMPLE
+            conversation_continuing: true
+            signals: ["short (2 tokens)"]
+          session_affinity_ttl_seconds: 3600
+          litellm_params: {max_tokens: 512}
+        messages: [{role: user, content: hello}]
+        request_kwargs: {}
+        context_fit:
+          facts: {medium: {window: 200000}}
+          needed: 100
+          buffer: "0.8"
+        # a warm medium costs exactly what small costs, so the prediction declines and the route stays
+        choice: null
+        chooser_delay_ms: 0
+compare:
+  ignore: []

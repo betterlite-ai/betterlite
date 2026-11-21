@@ -1,0 +1,1 @@
+{"internal_call_origin":"autorouter_classifier","status":"failure","usage_object":{"prompt_tokens":10,"cache_read_input_tokens":4,"cache_creation_input_tokens":2},"routing_decision":{"classifier_cost":0.25,"savings_baseline_model":"gpt-4o"},"cost_breakdown":{"service_tier":"batch"},"compression_savings":{"tokens_saved":3},"autorouter_savings":0.5}

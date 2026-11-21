@@ -1,0 +1,185 @@
+kind: helper
+name: estimated_to_unknown_retracts_deltas
+call:
+  baseline_publication:
+    function: change
+    record: |
+      {
+        "scope": "autorouter-baseline:v3:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "api_key": "key",
+        "session_id": "session",
+        "router_name": "router",
+        "baseline_model": "claude-sonnet-4-20250514",
+        "observation": {
+          "request_id": "req-1",
+          "started_at": 1.0,
+          "available_at": 1.0,
+          "outcome": "complete",
+          "baseline_equivalent": true
+        },
+        "pricing": {
+          "model": "claude-sonnet-4-20250514",
+          "provider": "anthropic",
+          "prices": null,
+          "actual_spend": 0.25,
+          "classifier_cost": 0.0
+        },
+        "turn": null,
+        "daily": {
+          "date": "2026-01-02",
+          "api_key": "key",
+          "model": "claude-sonnet-4-20250514",
+          "targets": [
+            {"entity": "user", "entity_id": "u1"},
+            {"entity": "tag", "entity_id": null}
+          ]
+        }
+      }
+    old: |
+      {
+        "version": 3,
+        "comparison_id": "autorouter-baseline:v3:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "comparison_started_at": 1.0,
+        "status": "estimated",
+        "reason": "cache_prefix_cold",
+        "provenance": "observed_identical",
+        "actual_spend": 0.5,
+        "baseline_spend": 0.25,
+        "input_tokens": 10,
+        "cache_read_input_tokens": 2,
+        "cache_creation_5m_input_tokens": 1,
+        "cache_creation_1h_input_tokens": 2
+      }
+    new: |
+      {
+        "version": 3,
+        "comparison_id": "autorouter-baseline:v3:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "comparison_started_at": 1.0,
+        "status": "unknown",
+        "reason": "pricing_unavailable",
+        "provenance": null,
+        "actual_spend": null,
+        "baseline_spend": null,
+        "input_tokens": 10,
+        "cache_read_input_tokens": 2,
+        "cache_creation_5m_input_tokens": 1,
+        "cache_creation_1h_input_tokens": 2
+      }
+calls:
+  - baseline_publication:
+      function: change
+      record: |
+        {
+          "scope": "autorouter-baseline:v3:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          "api_key": "key",
+          "session_id": "session",
+          "router_name": "router",
+          "baseline_model": "claude-sonnet-4-20250514",
+          "observation": {
+            "request_id": "req-1",
+            "started_at": 1.0,
+            "available_at": 1.0,
+            "outcome": "complete",
+            "baseline_equivalent": true
+          },
+          "pricing": {
+            "model": "claude-sonnet-4-20250514",
+            "provider": "anthropic",
+            "prices": null,
+            "actual_spend": 0.25,
+            "classifier_cost": 0.0
+          },
+          "turn": null,
+          "daily": null
+        }
+      old: null
+      new: |
+        {
+          "version": 3,
+          "comparison_id": "autorouter-baseline:v3:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          "comparison_started_at": 2.0,
+          "status": "estimated",
+          "reason": "cache_prefix_cold",
+          "provenance": "observed_identical",
+          "actual_spend": 0.25,
+          "baseline_spend": 0.5,
+          "input_tokens": 10,
+          "cache_read_input_tokens": 2,
+          "cache_creation_5m_input_tokens": 1,
+          "cache_creation_1h_input_tokens": 2
+        }
+  - baseline_publication:
+      function: change
+      record: |
+        {
+          "scope": "autorouter-baseline:v3:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          "api_key": "key",
+          "session_id": "session",
+          "router_name": "router",
+          "baseline_model": "claude-sonnet-4-20250514",
+          "observation": {
+            "request_id": "req-1",
+            "started_at": 1.0,
+            "available_at": 1.0,
+            "outcome": "complete",
+            "baseline_equivalent": true
+          },
+          "pricing": {
+            "model": "claude-sonnet-4-20250514",
+            "provider": "anthropic",
+            "prices": null,
+            "actual_spend": 0.25,
+            "classifier_cost": 0.0
+          },
+          "turn": {
+            "api_key": "key",
+            "session_id": "session",
+            "router_name": "router",
+            "router_type": "simple-shuffle",
+            "model": "claude-sonnet-4-20250514",
+            "turn_at": "2026-01-02T03:04:05Z",
+            "baseline_model": "claude-sonnet-4-20250514",
+            "total_tokens": 15,
+            "spend": 0.25,
+            "saved_spend": 0.0,
+            "classifier_cost": 0.0,
+            "covered": true,
+            "cache_hit": false,
+            "cache_ttl_seconds": 300,
+            "cache_touched": true,
+            "user_id": "user-1"
+          },
+          "daily": null
+        }
+      old: |
+        {
+          "version": 3,
+          "comparison_id": "autorouter-baseline:v3:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          "comparison_started_at": 2.0,
+          "status": "unknown",
+          "reason": "pricing_unavailable",
+          "provenance": null,
+          "actual_spend": null,
+          "baseline_spend": null,
+          "input_tokens": 10,
+          "cache_read_input_tokens": 2,
+          "cache_creation_5m_input_tokens": 1,
+          "cache_creation_1h_input_tokens": 2
+        }
+      new: |
+        {
+          "version": 3,
+          "comparison_id": "autorouter-baseline:v3:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          "comparison_started_at": 2.0,
+          "status": "estimated",
+          "reason": "cache_prefix_cold",
+          "provenance": "observed_identical",
+          "actual_spend": 0.5,
+          "baseline_spend": 1.0,
+          "input_tokens": 10,
+          "cache_read_input_tokens": 2,
+          "cache_creation_5m_input_tokens": 1,
+          "cache_creation_1h_input_tokens": 2
+        }
+env: {}
+compare: {ignore: []}

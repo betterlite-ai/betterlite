@@ -23,8 +23,12 @@ pub(crate) async fn run_stages(
     let mut authenticated: Option<AuthContext> = None;
     let mut body: Option<Bytes> = None;
     for backend in INSTALLED_STAGES {
-        // the safety stage is the one body reader; only an authenticated caller makes it buffer anything
-        if *backend == AuthBackend::RequestBodySafety && body.is_none() {
+        // the policy and safety stages read the body; only an authenticated caller makes them buffer anything
+        if matches!(
+            *backend,
+            AuthBackend::AuthRequestPolicy | AuthBackend::RequestBodySafety
+        ) && body.is_none()
+        {
             let limit = max_body_bytes(&request);
             let stream = mem::replace(request.body_mut(), Body::empty());
             body = Some(match read_body(stream, limit).await {

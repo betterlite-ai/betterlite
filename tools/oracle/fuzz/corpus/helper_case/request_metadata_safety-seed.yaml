@@ -1,0 +1,8 @@
+kind: helper
+name: request-metadata-safety-seed
+call:
+  request_metadata_safety:
+    calls:
+      - {function: sanitize, data: {metadata: '{"kept": true}', input_cost_per_token: "0.001"}, headers: [[litellm-disable-message-redaction, "1"]], route: /v1/chat/completions, principal: {metadata: null, team_metadata: null}, settings: {missing_session_id: omit, turn_off_message_logging: true}}
+env: {}
+compare: {ignore: []}

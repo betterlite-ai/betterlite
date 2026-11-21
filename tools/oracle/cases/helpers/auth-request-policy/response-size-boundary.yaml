@@ -1,0 +1,10 @@
+kind: helper
+name: auth-request-policy-response-size-boundary
+call:
+  auth_request_policy:
+    calls:
+      - function: bytes_to_mb
+        values: [-1, 524288, 1048576, 1572864, 2147483648]
+env: {}
+compare:
+  ignore: []
