@@ -1,0 +1,17 @@
+kind: helper
+name: budget-gauges-key-no-alias-empty-label
+call:
+  b3882:
+    function: key
+    token: sk-2
+    key_alias: null
+    spend: 5
+    max_budget: null
+    budget_reset_at: "2026-11-20T02:00:00Z"
+    now: "2026-11-20T00:00:00Z"
+    labels_by_metric:
+      litellm_remaining_api_key_budget_metric: [api_key_alias, hashed_api_key]
+      litellm_api_key_max_budget_metric: [api_key_alias, hashed_api_key]
+      litellm_api_key_budget_remaining_hours_metric: [api_key_alias, hashed_api_key]
+env: {}
+compare: {ignore: []}

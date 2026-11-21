@@ -1,0 +1,17 @@
+kind: helper
+name: budget-gauges-team-no-max-no-reset
+call:
+  b3882:
+    function: team
+    team_id: t1
+    team_alias: null
+    spend: 4
+    max_budget: null
+    budget_reset_at: null
+    now: "2026-11-20T00:00:00Z"
+    labels_by_metric:
+      litellm_remaining_team_budget_metric: [team, team_alias]
+      litellm_team_max_budget_metric: [team, team_alias]
+      litellm_team_budget_remaining_hours_metric: [team, team_alias]
+env: {}
+compare: {ignore: []}

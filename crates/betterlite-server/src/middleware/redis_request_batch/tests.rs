@@ -21,7 +21,7 @@ use super::RedisBatchLayer;
 
 #[tokio::test]
 async fn scope_is_active_inside_the_inner_service_and_closed_after() {
-    let cache = unreachable_cache().await;
+    let (cache, _refused) = unreachable_cache().await;
     let (handler, seen) = Inner::for_test(Arc::clone(&cache), Reply::Responded, false);
     let mut service = RedisBatchLayer.layer(handler);
     let response = service.call(support::request()).await.expect("a response");
@@ -38,7 +38,7 @@ async fn scope_is_active_inside_the_inner_service_and_closed_after() {
 
 #[tokio::test]
 async fn scope_is_closed_after_the_inner_service_fails() {
-    let cache = unreachable_cache().await;
+    let (cache, _refused) = unreachable_cache().await;
     let (handler, seen) = Inner::for_test(Arc::clone(&cache), Reply::Failed, false);
     let mut service = RedisBatchLayer.layer(handler);
     let error = service
@@ -55,7 +55,7 @@ async fn scope_is_closed_after_the_inner_service_fails() {
 
 #[tokio::test]
 async fn scope_is_fresh_for_each_call() {
-    let cache = unreachable_cache().await;
+    let (cache, _refused) = unreachable_cache().await;
     let (handler, seen) = Inner::for_test(Arc::clone(&cache), Reply::Responded, false);
     let mut service = RedisBatchLayer.layer(handler);
     service.call(support::request()).await.expect("a response");
@@ -70,7 +70,7 @@ async fn scope_is_fresh_for_each_call() {
 
 #[tokio::test]
 async fn flush_runs_after_the_response() {
-    let cache = unreachable_cache().await;
+    let (cache, _refused) = unreachable_cache().await;
     let (handler, seen) = Inner::for_test(Arc::clone(&cache), Reply::Responded, true);
     let mut service = RedisBatchLayer.layer(handler);
     let response = service.call(support::request()).await.expect("a response");
@@ -87,7 +87,7 @@ async fn flush_runs_after_the_response() {
 
 #[tokio::test]
 async fn flush_runs_after_an_inner_error() {
-    let cache = unreachable_cache().await;
+    let (cache, _refused) = unreachable_cache().await;
     let (handler, seen) = Inner::for_test(Arc::clone(&cache), Reply::Failed, true);
     let mut service = RedisBatchLayer.layer(handler);
     let error = service
@@ -106,7 +106,7 @@ async fn flush_runs_after_an_inner_error() {
 
 #[tokio::test]
 async fn flush_failure_is_logged_and_keeps_the_response() {
-    let cache = unreachable_cache().await;
+    let (cache, _refused) = unreachable_cache().await;
     let (handler, seen) = Inner::for_test(Arc::clone(&cache), Reply::Responded, true);
     let mut service = RedisBatchLayer.layer(handler);
     let records = Arc::new(Mutex::new(String::new()));
@@ -132,7 +132,7 @@ async fn flush_failure_is_logged_and_keeps_the_response() {
 
 #[tokio::test]
 async fn flush_runs_when_the_response_head_returns_not_when_the_body_ends() {
-    let cache = unreachable_cache().await;
+    let (cache, _refused) = unreachable_cache().await;
     let (handler, seen) = Inner::for_test(Arc::clone(&cache), Reply::Streaming, true);
     let mut service = RedisBatchLayer.layer(handler);
     let response = service
@@ -151,7 +151,7 @@ async fn flush_runs_when_the_response_head_returns_not_when_the_body_ends() {
 
 #[tokio::test]
 async fn flush_runs_when_the_call_is_dropped_before_the_response() {
-    let cache = unreachable_cache().await;
+    let (cache, _refused) = unreachable_cache().await;
     let (handler, seen) = Inner::for_test(Arc::clone(&cache), Reply::Stalled, true);
     let mut service = RedisBatchLayer.layer(handler);
     let stalled = timeout(Duration::from_millis(20), service.call(support::request())).await;
@@ -169,7 +169,7 @@ async fn flush_runs_when_the_call_is_dropped_before_the_response() {
 
 #[tokio::test]
 async fn nested_layers_share_the_outer_scope_batches() {
-    let cache = unreachable_cache().await;
+    let (cache, _refused) = unreachable_cache().await;
     let (handler, handler_seen) = Inner::for_test(Arc::clone(&cache), Reply::Responded, true);
     let mut inner_layer = RedisBatchLayer.layer(handler);
     let probe_seen = Arc::new(Mutex::new(None));
@@ -203,7 +203,7 @@ async fn nested_layers_share_the_outer_scope_batches() {
 
 #[tokio::test]
 async fn poll_ready_waits_for_the_inner_service() {
-    let cache = unreachable_cache().await;
+    let (cache, _refused) = unreachable_cache().await;
     let (handler, _seen) = Inner::for_test(Arc::clone(&cache), Reply::Responded, false);
     let mut service = RedisBatchLayer.layer(NotReadyOnce {
         inner: handler,

@@ -129,6 +129,7 @@ fn openai_defaults(config: &Config) -> OpenAiDefaults {
             .organization
             .clone()
             .or_else(|| sdk.openai_organization.clone()),
+        global_drop_params: config.sections.drop_params.policy.global_drop_params,
     }
 }
 

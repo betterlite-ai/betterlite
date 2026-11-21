@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::guardrail_identity::enums::PiiAction;
-use tokio::net::TcpListener;
+use betterlite_test_ports::refused_port::RefusedPort;
 
 use super::shared::{
     NO_PARAMS, analyzer, anonymizer, anthropic_texts, chat_content, context, request_data,
@@ -207,11 +207,8 @@ async fn a_blocked_entity_in_the_output_reports_400() {
 
 #[tokio::test]
 async fn an_analyzer_failure_in_the_output_reports_500() {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("an unused local port");
-    let base = format!("http://{}", listener.local_addr().expect("address"));
-    drop(listener);
+    let refused = RefusedPort::bind().expect("a refused port");
+    let base = format!("http://{}", refused.address);
     let mut analyzer = analyzer(&base, None);
     analyzer.settings.apply_to_output = true;
     let anonymizer = anonymizer(&base);

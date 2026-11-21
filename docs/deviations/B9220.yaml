@@ -1,0 +1,6 @@
+task: B9220
+deviations:
+  - what: The multipart file part is sent as name="file" with filename="upload" and Content-Type application/octet-stream, where LiteLLM sends the prepared audio file's own name and media type on that part.
+    why: B1122's AudioTranscriptionFiles values hold text or bytes only, so B2453's encoder names a bytes part the way httpx names a plain value and the filename and media type B1001 and B5842 prepare never reach the encoder.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/watsonx/audio_transcription/transformation.py#L118-L123
+kept_bugs: []

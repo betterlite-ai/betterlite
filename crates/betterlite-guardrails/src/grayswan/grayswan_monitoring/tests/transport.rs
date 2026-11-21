@@ -174,10 +174,12 @@ async fn call_grayswan_api_times_out() {
 
 #[tokio::test]
 async fn call_grayswan_api_reports_a_connection_failure() {
-    let listener = StdTcpListener::bind(("127.0.0.1", 0)).unwrap();
-    let addr = listener.local_addr().unwrap();
-    drop(listener);
-    let settings = configured(&format!("http://{addr}"), OnFlaggedAction::Monitor, true);
+    let refused = RefusedPort::bind().unwrap();
+    let settings = configured(
+        &format!("http://{}", refused.address),
+        OnFlaggedAction::Monitor,
+        true,
+    );
     let error = call_grayswan_api(&reqwest::Client::default(), &settings, &payload())
         .await
         .expect_err("an unreachable server is an error");

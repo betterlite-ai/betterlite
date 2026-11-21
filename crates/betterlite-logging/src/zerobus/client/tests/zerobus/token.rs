@@ -1,12 +1,11 @@
 use std::time::Duration;
 
 use betterlite_logging::zerobus::client::types::{ZerobusAccessToken, ZerobusIngestFailure};
+use betterlite_test_ports::refused_port::RefusedPort;
 use futures_util::future::join_all;
 use secrecy::{ExposeSecret as _, SecretString};
 
-use super::support::{
-    FakeClock, FakeZerobus, Reply, client, client_with, closed_endpoint, connection, token_reply,
-};
+use super::support::{FakeClock, FakeZerobus, Reply, client, client_with, connection, token_reply};
 
 fn accepted() -> Vec<Reply> {
     vec![Reply::new(202, "{}")]
@@ -175,8 +174,9 @@ async fn a_transport_failure_on_the_token_request_is_retryable() {
         accepted(),
     )
     .await;
+    let refused = RefusedPort::bind().unwrap();
     let mut connection = connection(&fake.base);
-    connection.workspace_url = closed_endpoint().await;
+    connection.workspace_url = format!("http://{}", refused.address);
     let clock = FakeClock::new(1_000.0);
     let client = client_with(connection, &clock, Duration::from_secs(5));
 

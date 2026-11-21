@@ -1,0 +1,50 @@
+kind: helper
+name: last-auth-param-present
+call:
+  model_group_info:
+    {
+      "model_group": "g",
+      "model_list": [
+        {
+          "model_name": "g",
+          "litellm_params": {
+            "model": "openai/b846-alpha"
+          },
+          "model_info": {
+            "id": "a"
+          }
+        },
+        {
+          "model_name": "g",
+          "litellm_params": {
+            "model": "anthropic/b846-beta",
+            "configurable_clientside_auth_params": [
+              "temperature",
+              {
+                "api_base": "https://b846",
+                "extra": 1
+              }
+            ]
+          },
+          "model_info": {
+            "id": "b"
+          }
+        }
+      ],
+      "model_group_alias": {},
+      "deployment_info": {
+        "a": {
+          "mode": "chat"
+        },
+        "b": {
+          "mode": "chat"
+        }
+      },
+      "model_cost": {},
+      "parameters": {},
+      "lookup_error": false,
+      "provider_error": "none",
+      "missing_ids": []
+    }
+env: {}
+compare: {ignore: []}

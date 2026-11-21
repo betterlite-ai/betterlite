@@ -15,6 +15,7 @@ use betterlite_config::sections::guardrail_identity::config_models::GuardrailCon
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::message_content::{Content, Message};
+use betterlite_test_ports::refused_port::RefusedPort;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::net::TcpListener;
@@ -181,13 +182,11 @@ fn constructor_resolves_env_defaults_and_overrides(
 async fn hook_extraction_returns_early_without_messages_or_text(
     #[case] messages: Option<Vec<Message>>,
 ) {
-    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
-    let base = format!("http://{}", listener.local_addr().expect("addr"));
-    drop(listener);
+    let refused = RefusedPort::bind().expect("a refused port");
     let guardrail = javelin(
         JavelinGuardrailParams {
             api_key: None,
-            api_base: Some(base),
+            api_base: Some(format!("http://{}", refused.address)),
             api_version: None,
             default_on: None,
             guardrail_name: None,
@@ -511,13 +510,11 @@ async fn applied_header_records_guardrail_when_request_passes() {
 
 #[tokio::test]
 async fn fail_open_returns_empty_assessments_on_connection_error() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
-    let base = format!("http://{}", listener.local_addr().expect("addr"));
-    drop(listener);
+    let refused = RefusedPort::bind().expect("a refused port");
     let guardrail = javelin(
         JavelinGuardrailParams {
             api_key: None,
-            api_base: Some(base),
+            api_base: Some(format!("http://{}", refused.address)),
             api_version: None,
             default_on: None,
             guardrail_name: None,

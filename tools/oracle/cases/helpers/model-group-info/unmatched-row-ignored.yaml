@@ -1,0 +1,43 @@
+kind: helper
+name: unmatched-row-ignored
+call:
+  model_group_info:
+    {
+      "model_group": "anthropic/claude-b846",
+      "model_list": [
+        {
+          "model_name": "openai/*",
+          "litellm_params": {
+            "model": "openai/*"
+          },
+          "model_info": {
+            "id": "wild"
+          }
+        },
+        {
+          "model_name": "other",
+          "litellm_params": {
+            "model": "openai/b846-other"
+          },
+          "model_info": {
+            "id": "o"
+          }
+        }
+      ],
+      "model_group_alias": {},
+      "deployment_info": {
+        "wild": {
+          "mode": "chat"
+        },
+        "o": {
+          "mode": "chat"
+        }
+      },
+      "model_cost": {},
+      "parameters": {},
+      "lookup_error": false,
+      "provider_error": "none",
+      "missing_ids": []
+    }
+env: {}
+compare: {ignore: []}

@@ -1,10 +1,10 @@
 use std::time::Duration;
 
+use betterlite_test_ports::refused_port::RefusedPort;
 use reqwest::blocking::ClientBuilder as BlockingClientBuilder;
 
 use super::support::{
-    Call, Fixture, FixtureError, api_key_header, async_handler, build_handler, dead_address,
-    sync_handler,
+    Call, Fixture, FixtureError, api_key_header, async_handler, build_handler, sync_handler,
 };
 use crate::interactions::base::RequestFailure;
 use crate::interactions::base::tests::support as base;
@@ -164,9 +164,10 @@ fn cancel_interaction_uses_a_supplied_client() {
 fn cancel_interaction_passes_a_transport_failure_through_the_error_handler() {
     let fixture = Fixture::new();
     let mut handler = sync_handler(&fixture);
+    let refused = RefusedPort::bind().unwrap();
 
     let error = handler
-        .cancel_interaction(&Call::new(dead_address()).request())
+        .cancel_interaction(&Call::new(refused.address).request())
         .unwrap_err();
 
     assert!(matches!(

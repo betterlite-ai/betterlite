@@ -1,0 +1,9 @@
+kind: helper
+name: model-allowlist-rename-team-empty-alias
+call:
+  model_allowlist_rename:
+    kind: team
+    object_id: team-1
+    team_alias: ""
+env: {}
+compare: {ignore: []}

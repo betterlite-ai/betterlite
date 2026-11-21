@@ -11,6 +11,7 @@ use axum::body::to_bytes;
 use axum::extract::{Request, State};
 use axum::http::{HeaderMap, StatusCode as AxumStatus};
 use axum::routing::post;
+use betterlite_test_ports::refused_port::RefusedPort;
 use reqwest::StatusCode;
 use tokio::io::AsyncWriteExt as _;
 use tokio::net::TcpListener;
@@ -358,11 +359,9 @@ async fn akto_guardrail_fire_and_forget_sends_the_request() {
 
 #[tokio::test]
 async fn akto_guardrail_fire_and_forget_swallows_a_transport_error() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
-    let address = listener.local_addr().expect("address");
-    drop(listener);
+    let refused = RefusedPort::bind().expect("a refused port");
     let mut guardrail = guardrail();
-    guardrail.base_url = format!("http://{address}");
+    guardrail.base_url = format!("http://{}", refused.address);
     let payload =
         build_akto_payload(&guardrail, &inputs(), &BTreeMap::new(), 200, false).expect("payload");
     fire_and_forget_request(

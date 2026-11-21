@@ -13,6 +13,7 @@ use axum::routing::post;
 use betterlite_config::sections::guardrail_identity::config_models::GuardrailConfigModelIdentity as _;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
+use betterlite_test_ports::refused_port::RefusedPort;
 use rstest::rstest;
 use secrecy::ExposeSecret as _;
 use secrecy::SecretString;
@@ -615,9 +616,8 @@ async fn apply_guardrail_reports_a_scan_error_as_an_other_failure() {
 
 #[tokio::test]
 async fn apply_guardrail_fails_open_with_the_request_fields_but_drops_tool_calls_and_model() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let base = format!("http://{}", listener.local_addr().unwrap());
-    drop(listener);
+    let refused = RefusedPort::bind().unwrap();
+    let base = format!("http://{}", refused.address);
     let mut nexus = build_with_base(&base);
     nexus.generic.settings.unreachable_fallback = UnreachableFallback::FailOpen;
     let mut inputs = text_inputs(&["hello"]);
