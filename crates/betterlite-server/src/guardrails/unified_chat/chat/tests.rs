@@ -115,6 +115,20 @@ async fn adapter_chat_input_rewrites_text_and_honours_skip_flags() {
 }
 
 #[tokio::test]
+async fn adapter_chat_input_ignores_a_request_with_nothing_to_scan() {
+    let fake = Arc::new(FakeGuardrail::replying(texts_reply(&["masked"])));
+    let mut applied = context(&fake, Some("guard"));
+    applied.skip_flags.skip_system_message = Some(true);
+    let mut data = object(r#"{"model":"gpt-4o","messages":[{"role":"system","content":"sys"}]}"#);
+    translation()
+        .process_input_messages(&mut data, &applied, None)
+        .await
+        .unwrap();
+    assert!(fake.calls().is_empty());
+    assert_eq!(message_content(&data, 0), "sys");
+}
+
+#[tokio::test]
 async fn adapter_chat_output_rewrites_text_and_keeps_unknown_fields() {
     let fake = Arc::new(FakeGuardrail::replying(texts_reply(&["masked"])));
     let applied = context(&fake, Some("guard"));

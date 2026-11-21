@@ -136,6 +136,12 @@ fn adapter_responses_structured_messages_absent_is_none() {
 }
 
 #[test]
+fn adapter_responses_tool_names_keep_the_trait_default() {
+    let data = object(r#"{"tools":[{"type":"function","name":"lookup"}]}"#);
+    assert!(translation().extract_request_tool_names(&data).is_empty());
+}
+
+#[test]
 fn flags_responses_match_pinned_handler() {
     assert!(Responses::DELIVERS_ENDED_STREAM_REWRITES);
     assert!(Responses::ASSEMBLES_STREAMED_RESPONSE);

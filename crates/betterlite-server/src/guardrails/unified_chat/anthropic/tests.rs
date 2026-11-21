@@ -133,6 +133,15 @@ fn adapter_anthropic_post_call_hook_leaves_a_message_alone() {
 }
 
 #[test]
+fn adapter_anthropic_post_call_hook_keeps_a_response_it_cannot_translate() {
+    let unreadable = value(r#"{"choices":[5],"keep":true}"#);
+    assert_eq!(
+        translation().post_call_hook_response(unreadable.clone()),
+        unreadable
+    );
+}
+
+#[test]
 fn adapter_anthropic_structured_messages_keep_the_trait_default() {
     let messages = translation().get_structured_messages(&object(REQUEST));
     assert!(messages.is_none());
