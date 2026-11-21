@@ -132,7 +132,7 @@ async def run_step(step: Step) -> StepResult:
             }
         case BaseException():
             error = {"status": None, "detail": None, "type": None, "param": None, "code": None}
-        case _:
+        case bool() | str() | int() | float() | list() | dict() | None:
             value = outcome
     return {"value": value, "error": error}
 
