@@ -66,16 +66,17 @@ pub fn check_request_size(
     if max_request_size_mb.is_none() {
         return Ok(());
     }
-    let bytes = match content_length.filter(|value| !value.is_empty()) {
-        Some(header) => {
-            header
-                .parse::<i64>()
-                .map_err(|source| SizeError::InvalidContentLength {
-                    value: header.to_owned(),
-                    source,
-                })?
-        }
-        None => body_length(body)?,
+    if let Some(header) = content_length.filter(|value| !value.is_empty()) {
+        let declared = header
+            .parse::<i64>()
+            .map_err(|source| SizeError::InvalidContentLength {
+                value: header.to_owned(),
+                source,
+            })?;
+        return check_size(declared, max_request_size_mb, Direction::Request);
+    }
+    let Ok(bytes) = i64::try_from(body.len()) else {
+        return Err(SizeError::UnrepresentableBytes);
     };
     check_size(bytes, max_request_size_mb, Direction::Request)
 }
@@ -84,15 +85,10 @@ pub fn check_response_size(
     body: &[u8],
     max_response_size_mb: Option<f64>,
 ) -> Result<(), SizeError> {
-    let bytes = body_length(body)?;
-    check_size(bytes, max_response_size_mb, Direction::Response)
-}
-
-fn body_length(body: &[u8]) -> Result<i64, SizeError> {
     let Ok(bytes) = i64::try_from(body.len()) else {
         return Err(SizeError::UnrepresentableBytes);
     };
-    Ok(bytes)
+    check_size(bytes, max_response_size_mb, Direction::Response)
 }
 
 fn check_size(bytes: i64, max_size_mb: Option<f64>, direction: Direction) -> Result<(), SizeError> {
