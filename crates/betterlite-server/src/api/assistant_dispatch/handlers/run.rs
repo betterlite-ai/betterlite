@@ -44,7 +44,7 @@ pub(super) async fn thread<T: Deps, S: Sources>(
         "arun_thread",
         &["thread_id", "assistant_id"],
     )?;
-    let call = thread_call(merged.kwargs, merged.provider, request)?;
+    let call = thread_call(&merged.kwargs, merged.provider, request)?;
     let resources = ResourceSdkSettings::from(dispatcher.resources);
     let sdk = AssistantRunSdk {
         operations: ProviderRuns {
@@ -64,30 +64,30 @@ pub(super) async fn thread<T: Deps, S: Sources>(
 
 // arun_thread's named arguments, the supplied client and the connection parameters left in kwargs
 fn thread_call(
-    kwargs: BTreeMap<String, Json>,
+    kwargs: &BTreeMap<String, Json>,
     provider: String,
     request: &AssistantRequest<'_>,
 ) -> Result<RunThreadCall, AssistantDispatchError> {
-    let thread_id = text(&kwargs, "thread_id")?
+    let thread_id = text(kwargs, "thread_id")?
         .ok_or_else(|| AssistantDispatchError::missing_arguments("arun_thread", &["thread_id"]))?;
-    let assistant_id = text(&kwargs, "assistant_id")?.ok_or_else(|| {
+    let assistant_id = text(kwargs, "assistant_id")?.ok_or_else(|| {
         AssistantDispatchError::missing_arguments("arun_thread", &["assistant_id"])
     })?;
     Ok(RunThreadCall {
         provider,
         thread_id,
         assistant_id,
-        additional_instructions: text(&kwargs, "additional_instructions")?,
-        instructions: text(&kwargs, "instructions")?,
-        metadata: optional(&kwargs, "metadata")?,
-        model: text(&kwargs, "model")?,
+        additional_instructions: text(kwargs, "additional_instructions")?,
+        instructions: text(kwargs, "instructions")?,
+        metadata: optional(kwargs, "metadata")?,
+        model: text(kwargs, "model")?,
         stream: kwargs.get("stream").map(parse_value).transpose()?,
-        tools: optional(&kwargs, "tools")?,
+        tools: optional(kwargs, "tools")?,
         client: request.client.as_ref().map(AssistantClient::run),
         event_handler: request.event_handler.clone(),
         arun_thread: None,
         params: parse_value(&Json::Object(
-            subset(&kwargs, &RUN_PARAMS).into_iter().collect(),
+            subset(kwargs, &RUN_PARAMS).into_iter().collect(),
         ))?,
     })
 }
