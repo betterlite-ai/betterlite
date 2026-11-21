@@ -4,7 +4,7 @@ use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
 use betterlite_core::api::rerank_call::AsyncRerankArgs;
 use betterlite_core::api::rerank_provider_plan::dispatch::{
-    Params, SendRequest, provider_failure, value_failure,
+    Params, provider_failure, value_failure,
 };
 use betterlite_error::dispatch::RawException;
 use betterlite_http::proxy::ProxiedClient;
@@ -20,7 +20,7 @@ use betterlite_logging::logging_state::correlation::{
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::rerank_contracts::records::RerankResponse;
 use betterlite_provider::api::rerank_contracts::{
-    BaseRerankConfig, OptionalRerankParams, RerankLogging, get_optional_rerank_params,
+    BaseRerankConfig, OptionalRerankParams, get_optional_rerank_params,
 };
 use betterlite_provider::api::rerank_http::client::ClientSource;
 use betterlite_provider::api::rerank_http::error::{ClientError, RerankHttpError};
@@ -91,26 +91,13 @@ pub(super) fn not_wired(model: &str, provider: &str) -> RawException {
 
 pub(super) async fn send_with<C>(
     config: &C,
-    request: SendRequest<'_>,
+    call: HttpCall<'_>,
     logging: &mut LoggingState,
     http: &HttpState<'_>,
-) -> Result<RerankResponse, Box<RawException>>
+) -> Result<RerankResponse, RerankHttpError<C::Error>>
 where
     C: BaseRerankConfig,
 {
-    let mut http_logging = RerankLogging::default();
-    let call = HttpCall {
-        model: request.model,
-        optional_params: request.optional_params,
-        api_base: request.api_base,
-        api_key: request.api_key,
-        litellm_params: Some(request.litellm_params),
-        headers: Some(request.headers),
-        timeout: timeout_seconds(request.timeout_seconds),
-        is_async: Json::Bool(request.is_async),
-        model_response: RerankResponse::default(),
-        logging: &mut http_logging,
-    };
     let sink = Sink;
     let env = PrePostEnv {
         debug: DebugSettings::default(),
@@ -135,13 +122,10 @@ where
         source: http.source,
         supplied: None,
     };
-    match rerank_http(call, deps, &mut log).await {
-        Ok(response) => Ok(response),
-        Err(error) => Err(http_failure(error, request.model, request.provider)),
-    }
+    rerank_http(call, deps, &mut log).await
 }
 
-fn http_failure<Failure>(
+pub(super) fn http_failure<Failure>(
     error: RerankHttpError<Failure>,
     model: &str,
     provider: &str,
@@ -168,7 +152,7 @@ where
     }
 }
 
-fn timeout_seconds(value: Option<f64>) -> Option<Duration> {
+pub(super) fn timeout_seconds(value: Option<f64>) -> Option<Duration> {
     match value {
         Some(seconds) if seconds.is_finite() && seconds >= 0.0 => {
             Duration::try_from_secs_f64(seconds).ok()

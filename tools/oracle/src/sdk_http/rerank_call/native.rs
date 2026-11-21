@@ -2,7 +2,8 @@ use super::super::error::SdkHttpError;
 use super::super::result::kinds::SdkResult;
 use super::report::outcome;
 use super::support::{
-    Direct, HttpState, args, direct, logging_state, map_with, not_wired, send_with,
+    Direct, HttpState, args, direct, http_failure, logging_state, map_with, not_wired, send_with,
+    timeout_seconds,
 };
 use super::{Call, Outcome, RunOutcome};
 use betterlite_config::api::rerank_provider_plan::RerankSettings;
@@ -21,14 +22,16 @@ use betterlite_core::embedding_rerank_providers::RerankConfig;
 use betterlite_error::dispatch::RawException;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::catalog::BundledCatalog;
+use betterlite_models::decisions::Json;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
 use betterlite_openai::api::rerank_contracts::records::RerankResponse;
 use betterlite_provider::api::rerank_contracts::{
-    OptionalRerankParams, ReturnDocuments as ProviderReturnDocuments,
+    OptionalRerankParams, RerankLogging, ReturnDocuments as ProviderReturnDocuments,
 };
+use betterlite_provider::api::rerank_http::RerankCall as HttpCall;
 use betterlite_provider::embedding_rerank_providers::rerank::FamilyRerankConfig;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
@@ -187,7 +190,23 @@ impl Operations<'_> {
                     host: &self.config.sections.jina_infinity_rerank,
                     environment: self.environment,
                 };
-                send_with(&config, request, logging, &http).await
+                let mut http_logging = RerankLogging::default();
+                let call = HttpCall {
+                    model: request.model,
+                    optional_params: request.optional_params,
+                    api_base: request.api_base,
+                    api_key: request.api_key,
+                    litellm_params: Some(request.litellm_params),
+                    headers: Some(request.headers),
+                    timeout: timeout_seconds(request.timeout_seconds),
+                    is_async: Json::Bool(request.is_async),
+                    model_response: RerankResponse::default(),
+                    logging: &mut http_logging,
+                };
+                match send_with(&config, call, logging, &http).await {
+                    Ok(response) => Ok(response),
+                    Err(error) => Err(http_failure(error, request.model, request.provider)),
+                }
             }
             FamilyChoice::Unsupported => Err(Box::new(not_wired(request.model, request.provider))),
         }
