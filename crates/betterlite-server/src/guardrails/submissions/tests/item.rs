@@ -28,12 +28,14 @@ fn json_field_gives_none_for_bad_text() {
     assert_eq!(parse_json_field(Some(&column)), None);
 }
 
-#[test]
-fn json_field_gives_none_for_a_non_object() {
-    for stored in ["[1,2]", "\"text\"", "42", "true"] {
-        let column = ColumnJson::Text(stored.to_owned());
-        assert_eq!(parse_json_field(Some(&column)), None, "{stored}");
-    }
+#[rstest]
+#[case::array("[1,2]")]
+#[case::string("\"text\"")]
+#[case::number("42")]
+#[case::boolean("true")]
+fn json_field_gives_none_for_a_non_object(#[case] stored: &str) {
+    let column = ColumnJson::Text(stored.to_owned());
+    assert_eq!(parse_json_field(Some(&column)), None, "{stored}");
 }
 
 #[test]

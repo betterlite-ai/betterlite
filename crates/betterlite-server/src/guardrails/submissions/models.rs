@@ -63,7 +63,7 @@ pub struct GuardrailSubmissionSummary {
 }
 
 #[derive(Debug, Serialize)]
-pub struct ListGuardrailSubmissionsResponse {
+pub struct SubmissionListResponse {
     pub submissions: Vec<GuardrailSubmissionItem>,
     pub summary: GuardrailSubmissionSummary,
 }

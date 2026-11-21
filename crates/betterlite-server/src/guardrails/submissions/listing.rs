@@ -10,9 +10,8 @@ use super::SubmissionsState;
 use super::error::{SubmissionError, logged};
 use super::json_field::parse_json_field;
 use super::models::{
-    ACTIVE, DESCRIPTION, GuardrailSubmissionItem, GuardrailSubmissionSummary,
-    ListGuardrailSubmissionsResponse, PENDING_REVIEW, REJECTED, SUBMITTED_BY_EMAIL,
-    SUBMITTED_BY_USER_ID,
+    ACTIVE, DESCRIPTION, GuardrailSubmissionItem, GuardrailSubmissionSummary, PENDING_REVIEW,
+    REJECTED, SUBMITTED_BY_EMAIL, SUBMITTED_BY_USER_ID, SubmissionListResponse,
 };
 use super::rows::{ColumnJson, SubmissionRow, SubmissionRows, TeamFilter};
 use super::teams::{authenticated, caller, has_admin_view, user_team_ids};
@@ -34,7 +33,7 @@ pub(super) async fn list_submissions<S: SubmissionRows + 'static>(
     State(state): State<Arc<SubmissionsState<S>>>,
     auth: Option<Extension<AuthContext>>,
     Query(query): Query<SubmissionQuery>,
-) -> Result<Json<ListGuardrailSubmissionsResponse>, SubmissionError> {
+) -> Result<Json<SubmissionListResponse>, SubmissionError> {
     let context = authenticated(auth)?;
     let database = state.database.as_ref().ok_or(SubmissionError::NoDatabase)?;
     let visible = if has_admin_view(&context.principal) {
@@ -67,7 +66,7 @@ pub(super) async fn list_submissions<S: SubmissionRows + 'static>(
         .filter(|row| kept(row, &query))
         .map(item)
         .collect();
-    Ok(Json(ListGuardrailSubmissionsResponse {
+    Ok(Json(SubmissionListResponse {
         submissions,
         summary,
     }))
@@ -102,8 +101,8 @@ pub(super) async fn get_submission<S: SubmissionRows + 'static>(
     Ok(Json(item(&row)))
 }
 
-fn empty_answer() -> ListGuardrailSubmissionsResponse {
-    ListGuardrailSubmissionsResponse {
+fn empty_answer() -> SubmissionListResponse {
+    SubmissionListResponse {
         submissions: Vec::new(),
         summary: GuardrailSubmissionSummary {
             total: 0,

@@ -146,7 +146,7 @@ impl RegisterBodyError {
     pub(super) fn invalid_json() -> Self {
         Self {
             issue_type: "json_invalid",
-            loc: body_location(),
+            loc: vec![Location::Field(BODY.to_owned())],
             msg: JSON_DECODE_ERROR.to_owned(),
             input: JsonData::Object(BTreeMap::new()),
         }
@@ -157,11 +157,11 @@ impl RegisterBodyError {
         source: &serde_path_to_error::Error<serde_json::Error>,
     ) -> Self {
         let message = source.inner().to_string();
-        let mut loc = body_location();
+        let mut loc = vec![Location::Field(BODY.to_owned())];
         append_path(&mut loc, source.path());
         if let Some(field) = missing_field(&message) {
             loc.push(Location::Field(field.to_owned()));
-            let input = value_at(bytes, &body_location());
+            let input = value_at(bytes, &[Location::Field(BODY.to_owned())]);
             return Self {
                 issue_type: "missing",
                 loc,
@@ -195,10 +195,6 @@ fn missing_field(message: &str) -> Option<&str> {
         .strip_prefix("missing field `")
         .and_then(|rest| rest.split_once('`'))
         .map(|(field, _position)| field)
-}
-
-fn body_location() -> Vec<Location> {
-    vec![Location::Field(BODY.to_owned())]
 }
 
 fn append_path(loc: &mut Vec<Location>, path: &Path) {

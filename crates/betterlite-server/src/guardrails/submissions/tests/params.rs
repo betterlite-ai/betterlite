@@ -8,126 +8,115 @@ fn params_with(api_base: &str) -> String {
     format!(r#"{{"guardrail":"generic_guardrail_api","mode":"pre_call","api_base":{api_base}}}"#)
 }
 
+#[rstest]
+#[case::wrong_type(
+    r#"{"guardrail":"bedrock","mode":"pre_call","api_base":"https://guard.example.com/check"}"#
+)]
+#[case::missing_type(r#"{"mode":"pre_call","api_base":"https://guard.example.com/check"}"#)]
 #[tokio::test]
-async fn register_requires_the_generic_guardrail_api_type() {
+async fn register_requires_the_generic_guardrail_api_type(#[case] stored: &str) {
     let harness = harness();
-    let wrong =
-        r#"{"guardrail":"bedrock","mode":"pre_call","api_base":"https://guard.example.com/check"}"#;
-    let missing = r#"{"mode":"pre_call","api_base":"https://guard.example.com/check"}"#;
-    for stored in [wrong, missing] {
-        let answer = register(
-            &harness,
-            admin(),
-            &register_request("guard", stored, Some("team-a")),
-        )
-        .await;
-        assert_error(&answer, StatusCode::BAD_REQUEST, GUARDRAIL_TYPE);
-    }
+    let answer = register(
+        &harness,
+        admin(),
+        &register_request("guard", stored, Some("team-a")),
+    )
+    .await;
+    assert_error(&answer, StatusCode::BAD_REQUEST, GUARDRAIL_TYPE);
     assert!(harness.rows.created().is_empty());
 }
 
+#[rstest]
+#[case::missing(r#"{"guardrail":"generic_guardrail_api","mode":"pre_call"}"#)]
+#[case::null(r#"{"guardrail":"generic_guardrail_api","mode":"pre_call","api_base":null}"#)]
+#[case::empty(r#"{"guardrail":"generic_guardrail_api","mode":"pre_call","api_base":""}"#)]
 #[tokio::test]
-async fn register_requires_an_api_base() {
+async fn register_requires_an_api_base(#[case] stored: &str) {
     let harness = harness();
-    let bodies = [
-        r#"{"guardrail":"generic_guardrail_api","mode":"pre_call"}"#,
-        r#"{"guardrail":"generic_guardrail_api","mode":"pre_call","api_base":null}"#,
-        r#"{"guardrail":"generic_guardrail_api","mode":"pre_call","api_base":""}"#,
-    ];
-    for stored in bodies {
-        let answer = register(
-            &harness,
-            admin(),
-            &register_request("guard", stored, Some("team-a")),
-        )
-        .await;
-        assert_error(&answer, StatusCode::BAD_REQUEST, API_BASE_REQUIRED);
+    let answer = register(
+        &harness,
+        admin(),
+        &register_request("guard", stored, Some("team-a")),
+    )
+    .await;
+    assert_error(&answer, StatusCode::BAD_REQUEST, API_BASE_REQUIRED);
+}
+
+#[rstest]
+#[case::number("42")]
+#[case::float("42.5")]
+#[case::boolean("true")]
+#[case::array(r#"["https://guard.example.com"]"#)]
+#[case::object(r#"{"url":"https://guard.example.com"}"#)]
+#[tokio::test]
+async fn register_answers_a_non_text_api_base_as_a_scheme_error(#[case] value: &str) {
+    let harness = harness();
+    let answer = register(
+        &harness,
+        admin(),
+        &register_request("guard", &params_with(value), Some("team-a")),
+    )
+    .await;
+    assert_error(&answer, StatusCode::BAD_REQUEST, API_BASE_SCHEME);
+}
+
+#[rstest]
+#[case::plain("plain", "\"http://guard.example.com/check\"", None)]
+#[case::secure("secure", "\"https://guard.example.com/check\"", None)]
+#[case::ftp("refused", "\"ftp://guard.example.com/check\"", Some(API_BASE_SCHEME))]
+#[case::host_only("refused", "\"guard.example.com/check\"", Some(API_BASE_SCHEME))]
+#[case::authority("refused", "\"//guard.example.com/check\"", Some(API_BASE_SCHEME))]
+#[tokio::test]
+async fn register_accepts_http_and_https_and_refuses_other_schemes(
+    #[case] name: &str,
+    #[case] base: &str,
+    #[case] refused: Option<&str>,
+) {
+    let harness = harness();
+    let answer = register(
+        &harness,
+        admin(),
+        &register_request(name, &params_with(base), Some("team-a")),
+    )
+    .await;
+    match refused {
+        Some(message) => assert_error(&answer, StatusCode::BAD_REQUEST, message),
+        None => assert_eq!(answer.0, StatusCode::OK, "{}", answer.1),
     }
 }
 
+#[rstest]
+#[case::blank_host("\"http://\"")]
+#[case::empty_host("\"https:///check\"")]
 #[tokio::test]
-async fn register_answers_a_non_text_api_base_as_a_scheme_error() {
+async fn register_requires_a_hostname(#[case] base: &str) {
     let harness = harness();
-    let values = [
-        "42",
-        "42.5",
-        "true",
-        r#"["https://guard.example.com"]"#,
-        r#"{"url":"https://guard.example.com"}"#,
-    ];
-    for value in values {
-        let answer = register(
-            &harness,
-            admin(),
-            &register_request("guard", &params_with(value), Some("team-a")),
-        )
-        .await;
-        assert_error(&answer, StatusCode::BAD_REQUEST, API_BASE_SCHEME);
-    }
+    let answer = register(
+        &harness,
+        admin(),
+        &register_request("guard", &params_with(base), Some("team-a")),
+    )
+    .await;
+    assert_error(&answer, StatusCode::BAD_REQUEST, API_BASE_HOST);
 }
 
+#[rstest]
+#[case::missing(
+    r#"{"guardrail":"generic_guardrail_api","api_base":"https://guard.example.com/check"}"#
+)]
+#[case::null(
+    r#"{"guardrail":"generic_guardrail_api","api_base":"https://guard.example.com/check","mode":null}"#
+)]
 #[tokio::test]
-async fn register_accepts_http_and_https_and_refuses_other_schemes() {
+async fn register_requires_a_mode(#[case] stored: &str) {
     let harness = harness();
-    let accepted = [
-        ("plain", "\"http://guard.example.com/check\""),
-        ("secure", "\"https://guard.example.com/check\""),
-    ];
-    for (name, base) in accepted {
-        let answer = register(
-            &harness,
-            admin(),
-            &register_request(name, &params_with(base), Some("team-a")),
-        )
-        .await;
-        assert_eq!(answer.0, StatusCode::OK, "{}", answer.1);
-    }
-    let refused = [
-        "\"ftp://guard.example.com/check\"",
-        "\"guard.example.com/check\"",
-        "\"//guard.example.com/check\"",
-    ];
-    for base in refused {
-        let answer = register(
-            &harness,
-            admin(),
-            &register_request("refused", &params_with(base), Some("team-a")),
-        )
-        .await;
-        assert_error(&answer, StatusCode::BAD_REQUEST, API_BASE_SCHEME);
-    }
-}
-
-#[tokio::test]
-async fn register_requires_a_hostname() {
-    let harness = harness();
-    for base in ["\"http://\"", "\"https:///check\""] {
-        let answer = register(
-            &harness,
-            admin(),
-            &register_request("guard", &params_with(base), Some("team-a")),
-        )
-        .await;
-        assert_error(&answer, StatusCode::BAD_REQUEST, API_BASE_HOST);
-    }
-}
-
-#[tokio::test]
-async fn register_requires_a_mode() {
-    let harness = harness();
-    let bodies = [
-        r#"{"guardrail":"generic_guardrail_api","api_base":"https://guard.example.com/check"}"#,
-        r#"{"guardrail":"generic_guardrail_api","api_base":"https://guard.example.com/check","mode":null}"#,
-    ];
-    for stored in bodies {
-        let answer = register(
-            &harness,
-            admin(),
-            &register_request("guard", stored, Some("team-a")),
-        )
-        .await;
-        assert_error(&answer, StatusCode::BAD_REQUEST, MODE_REQUIRED);
-    }
+    let answer = register(
+        &harness,
+        admin(),
+        &register_request("guard", stored, Some("team-a")),
+    )
+    .await;
+    assert_error(&answer, StatusCode::BAD_REQUEST, MODE_REQUIRED);
 }
 
 #[tokio::test]
