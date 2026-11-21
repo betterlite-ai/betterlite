@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Awaitable, Sequence
 from typing import Literal, Protocol, TypeAlias, TypedDict
 
 from litellm.proxy._types import UserAPIKeyAuth
@@ -6,7 +6,7 @@ from litellm.proxy.hooks.parallel_request_limiter_v3 import (
     RateLimitDescriptor,
     RateLimitResponse,
 )
-from litellm.types.caching import RedisPipelineIncrementOperation
+from litellm.types.caching import RedisPipelineIncrementOperation as PipelineOp
 from pydantic import BaseModel, JsonValue, TypeAdapter
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
@@ -76,7 +76,7 @@ class UsageCache(Protocol):
     async def async_set_cache(
         self,
         key: str,
-        value: int | float | str,
+        value: float | str,
         ttl: int,
         *,
         litellm_parent_otel_span: JsonValue,
@@ -95,7 +95,7 @@ class IncrementPipeline(Protocol):
 
     async def async_increment_cache_pipeline(
         self,
-        increment_list: list[RedisPipelineIncrementOperation],
+        increment_list: list[PipelineOp],
         *,
         litellm_parent_otel_span: JsonValue,
     ) -> None: ...
@@ -120,13 +120,13 @@ class Operations(Protocol):
         reservation_windows: frozenset[tuple[str, str, Literal["redis", "local"]]],
     ) -> None: ...
 
-    async def enforce_project_io_token_quota_for_frame(  # ast-grep-ignore: no-long-names
+    def enforce_project_io_token_quota_for_frame(  # ast-grep-ignore: no-long-names
         self,
         user_api_key_dict: UserAPIKeyAuth | None,
         requested_model: str | None,
         estimated_input_tokens: int,
         estimated_output_tokens: int,
-    ) -> None: ...
+    ) -> Awaitable[None]: ...
 
     async def refund_reserved(
         self,

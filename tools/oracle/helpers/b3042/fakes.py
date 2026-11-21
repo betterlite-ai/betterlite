@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from litellm.types.caching import RedisPipelineIncrementOperation
+from litellm.types.caching import RedisPipelineIncrementOperation as PipelineOp
 from pydantic import JsonValue
 from typing_extensions import override
 
@@ -12,7 +12,7 @@ def read_json(key: str, *, local_only: bool) -> JsonValue:
     return record
 
 
-def write_json(key: str, value: int | float | str, ttl: int, *, local_only: bool) -> JsonValue:
+def write_json(key: str, value: float | str, ttl: int, *, local_only: bool) -> JsonValue:
     record: dict[str, JsonValue] = {
         "key": key,
         "value": value,
@@ -22,7 +22,7 @@ def write_json(key: str, value: int | float | str, ttl: int, *, local_only: bool
     return record
 
 
-def increment_json(operation: RedisPipelineIncrementOperation) -> JsonValue:
+def increment_json(operation: PipelineOp) -> JsonValue:
     record: dict[str, JsonValue] = {
         "key": operation["key"],
         "increment_value": float(operation["increment_value"]),
@@ -41,7 +41,7 @@ class RecordingCache(UsageCache):
         self.dual_cache = RecordingDualCache(self)
 
     def record_increment(self, key: str, value: float, ttl: int | None) -> None:
-        record = RedisPipelineIncrementOperation(key=key, increment_value=value, ttl=ttl)
+        record = PipelineOp(key=key, increment_value=value, ttl=ttl)
         self.increments.append(increment_json(record))
 
     @override
@@ -55,7 +55,7 @@ class RecordingCache(UsageCache):
     async def async_set_cache(
         self,
         key: str,
-        value: int | float | str,
+        value: float | str,
         ttl: int,
         *,
         litellm_parent_otel_span: JsonValue,
@@ -86,7 +86,7 @@ class RecordingDualCache(IncrementPipeline):
     @override
     async def async_increment_cache_pipeline(
         self,
-        increment_list: list[RedisPipelineIncrementOperation],
+        increment_list: list[PipelineOp],
         *,
         litellm_parent_otel_span: JsonValue,
     ) -> None:

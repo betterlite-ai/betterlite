@@ -1,4 +1,5 @@
-from litellm.exceptions import RateLimitError
+import asyncio
+
 from litellm.proxy._types import UserAPIKeyAuth
 from pydantic import JsonValue, TypeAdapter
 
@@ -35,14 +36,15 @@ async def enforce_frame(limiter: Operations, cache: RecordingCache, call: FrameI
     auth: UserAPIKeyAuth | None = None
     if fields is not None:
         auth = TypeAdapter(UserAPIKeyAuth).validate_python(fields)
-    raised: JsonValue = None
-    try:
-        await limiter.enforce_project_io_token_quota_for_frame(
+    task: asyncio.Future[None] = asyncio.ensure_future(
+        limiter.enforce_project_io_token_quota_for_frame(
             auth,
             call["requested_model"],
             call["estimated_input_tokens"],
             call["estimated_output_tokens"],
         )
-    except RateLimitError as error:
-        raised = raised_json(error)
+    )
+    _done, _pending = await asyncio.wait({task})
+    error = task.exception()
+    raised: JsonValue = None if error is None else raised_json(error)
     return answer(None, 0, 0, raised, cache)

@@ -1,11 +1,16 @@
 import asyncio
 
+import litellm
 from pydantic import JsonValue
 
 from .calls import enforce_frame, refund, reserve_io, reserve_tpm
 from .fakes import RecordingCache
 from .limiter import make_limiter
 from .types import Input
+
+litellm.suppress_debug_info = True
+
+__all__ = ["run"]
 
 
 async def handle(input_value: Input) -> JsonValue:

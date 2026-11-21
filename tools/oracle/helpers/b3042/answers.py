@@ -1,8 +1,8 @@
-from litellm.exceptions import RateLimitError
+from litellm.proxy.hooks.parallel_request_limiter_v3 import RateLimitResponse
 from pydantic import JsonValue
 
 from .fakes import RecordingCache
-from .types import JSON, RaisedFields, RateLimitResponse
+from .types import JSON, RaisedFields
 
 
 def window_json(counter_key: str, window_start: str, backend: str) -> JsonValue:
@@ -30,16 +30,6 @@ def response_json(response: RateLimitResponse) -> JsonValue:
     return rendered
 
 
-def effects_json(cache: RecordingCache) -> JsonValue:
-    rendered: dict[str, JsonValue] = {
-        "reads": cache.reads,
-        "writes": cache.writes,
-        "increments": cache.increments,
-        "pipelines": cache.pipelines,
-    }
-    return rendered
-
-
 def answer(
     response: JsonValue,
     itpm_reserved: int,
@@ -52,12 +42,17 @@ def answer(
         "itpm_reserved": itpm_reserved,
         "otpm_reserved": otpm_reserved,
         "raised": raised,
-        "effects": effects_json(cache),
+        "effects": {
+            "reads": cache.reads,
+            "writes": cache.writes,
+            "increments": cache.increments,
+            "pipelines": cache.pipelines,
+        },
     }
     return rendered
 
 
-def raised_json(error: RateLimitError) -> JsonValue:
+def raised_json(error: BaseException) -> JsonValue:
     fields = RaisedFields.model_validate(error, from_attributes=True)
     rendered: dict[str, JsonValue] = {
         "status": fields.status_code,
