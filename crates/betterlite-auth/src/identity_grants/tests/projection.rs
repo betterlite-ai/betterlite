@@ -46,10 +46,8 @@ fn aliases(pairs: &[(&str, &str)]) -> ModelAliasMap {
 }
 
 #[test]
-fn team_grants_project_all_eighteen_fields() {
-    let team = team_row(FULL_TEAM);
-    let membership: LiteLLMTeamMembership = serde_json::from_str(MEMBERSHIP).unwrap();
-    let grants = team_grants(&team, Some(&membership), Some("user-1"));
+fn team_grants_project_team_row_fields() {
+    let grants = team_grants(&team_row(FULL_TEAM), None, Some("user-1"));
     assert_eq!(grants.team_alias.as_deref(), Some("Team One"));
     let limits = (
         grants.team_tpm_limit,
@@ -77,6 +75,13 @@ fn team_grants_project_all_eighteen_fields() {
         grants.team_model_aliases,
         Some(aliases(&[("fast", "gpt-4o")]))
     );
+}
+
+#[test]
+fn team_grants_project_permission_and_member_fields() {
+    let team = team_row(FULL_TEAM);
+    let membership: LiteLLMTeamMembership = serde_json::from_str(MEMBERSHIP).unwrap();
+    let grants = team_grants(&team, Some(&membership), Some("user-1"));
     let permission = grants.team_object_permission.unwrap().object_permission_id;
     let permission_ids = (
         grants.team_object_permission_id.as_deref(),
