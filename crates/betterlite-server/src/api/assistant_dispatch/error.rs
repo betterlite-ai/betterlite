@@ -74,7 +74,9 @@ impl AssistantDispatchError {
     #[must_use]
     pub fn duplicate_argument(function: &str, name: &str) -> Self {
         Self::TypeError {
-            message: format!("{function}() got multiple values for keyword argument '{name}'"),
+            message: format!(
+                "litellm.assistants.main.{function}() got multiple values for keyword argument '{name}'"
+            ),
         }
     }
 

@@ -41,7 +41,7 @@ const THREAD: &str =
     r#"{"id":"thread_a","object":"thread","created_at":1,"metadata":{},"tool_resources":{}}"#;
 const MESSAGE: &str = r#"{"id":"msg_a","object":"thread.message","thread_id":"thread_a","role":"user","content":[],"created_at":1}"#;
 const MESSAGE_PAGE: &str = r#"{"object":"list","data":[{"id":"msg_a","object":"thread.message","thread_id":"thread_a","role":"user","content":[],"created_at":1}],"has_more":false,"first_id":"msg_a","last_id":"msg_a"}"#;
-const RUN: &str = r#"{"id":"run_a","object":"thread.run","created_at":1,"assistant_id":"asst_a","thread_id":"thread_a","status":"queued","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[]}"#;
+const RUN: &str = r#"{"id":"run_a","object":"thread.run","created_at":1,"assistant_id":"asst_a","thread_id":"thread_a","status":"completed","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[]}"#;
 const MOCK_BASE: &str = "https://mock.test/v1";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -243,6 +243,15 @@ fn data(fields: &[(&str, Json)]) -> BTreeMap<String, Json> {
         .iter()
         .map(|(name, value)| ((*name).to_owned(), value.clone()))
         .collect()
+}
+
+fn object(fields: &[(&str, Json)]) -> Json {
+    Json::Object(
+        fields
+            .iter()
+            .map(|(name, value)| ((*name).to_owned(), value.clone()))
+            .collect(),
+    )
 }
 
 fn configured(provider: &str, params: &[(&str, Json)]) -> Settings {
@@ -455,7 +464,7 @@ async fn a_polled_run_returns_the_reply(settings: &Settings) {
             thread_id: Some("thread_a"),
             ..Route::default()
         },
-        &[(200, RUN)],
+        &[(200, RUN), (200, RUN)],
     )
     .await;
     let AssistantOutcome::Run(RunOutcome::Polled(reply)) = outcome.result.expect("run succeeds")
@@ -516,7 +525,7 @@ async fn dispatch_all_assistant_operations() {
 async fn a_supplied_client_reaches_the_run_owner() {
     let settings = configured("openai", &[]);
     let fixtures = fixture(&settings);
-    let metadata = Json::Object(BTreeMap::from([(String::from("suite"), text("b2489"))]));
+    let metadata = object(&[("suite", text("b2489"))]);
     let outcome = dispatch(
         &fixtures,
         AssistantOperation::RunThread,
@@ -531,7 +540,7 @@ async fn a_supplied_client_reaches_the_run_owner() {
             client: Some(supplied("sk-supplied")),
             ..Route::default()
         },
-        &[(200, RUN)],
+        &[(200, RUN), (200, RUN)],
     )
     .await;
     let AssistantOutcome::Run(RunOutcome::Polled(reply)) = outcome.result.expect("run succeeds")
@@ -683,7 +692,9 @@ async fn a_configured_keyword_collides_with_the_installed_function(#[case] name:
     };
     assert_eq!(
         message,
-        format!("acreate_assistants() got multiple values for keyword argument '{name}'")
+        format!(
+            "litellm.assistants.main.acreate_assistants() got multiple values for keyword argument '{name}'"
+        )
     );
     assert!(outcome.seen.is_empty());
 }
@@ -861,6 +872,27 @@ async fn a_missing_assistant_id_is_a_single_error(settings: &Settings) {
     assert!(outcome.seen.is_empty());
 }
 
+// the route always carries the path id, so only a caller that builds the request itself reaches this
+async fn a_delete_without_a_path_id_is_a_single_error(settings: &Settings) {
+    let fixtures = fixture(settings);
+    let outcome = dispatch(
+        &fixtures,
+        AssistantOperation::DeleteAssistant,
+        &openai_data(),
+        Route::default(),
+        &[],
+    )
+    .await;
+    let Err(AssistantDispatchError::TypeError { message }) = outcome.result else {
+        panic!("the missing assistant id did not raise");
+    };
+    assert_eq!(
+        message,
+        "delete_assistant() missing 1 required positional argument: 'assistant_id'"
+    );
+    assert!(outcome.seen.is_empty());
+}
+
 async fn a_missing_thread_id_lists_every_argument(settings: &Settings) {
     let fixtures = fixture(settings);
     let outcome = dispatch(
@@ -886,6 +918,7 @@ async fn missing_arguments_use_the_interpreter_wording() {
     let settings = configured("openai", &[]);
     missing_role_and_content_are_a_paired_error(&settings).await;
     a_missing_assistant_id_is_a_single_error(&settings).await;
+    a_delete_without_a_path_id_is_a_single_error(&settings).await;
     a_missing_thread_id_lists_every_argument(&settings).await;
 }
 
