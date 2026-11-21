@@ -26,18 +26,6 @@ pub struct PublicationPricing<'ctx, C> {
     pub moment: DateTime<Utc>,
 }
 
-impl<'ctx, C> PublicationPricing<'ctx, C> {
-    // The process-wide zone database is what the source's price call reads when no caller supplies one.
-    #[must_use]
-    pub fn new(context: &'ctx C, moment: DateTime<Utc>) -> Self {
-        Self {
-            context,
-            database: TimeZoneDatabase::from_env(),
-            moment,
-        }
-    }
-}
-
 // baseline_publication: price the estimate against the recorded snapshot, keeping its token evidence either way.
 #[must_use]
 pub fn baseline_publication<C>(

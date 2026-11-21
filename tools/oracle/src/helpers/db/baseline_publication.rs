@@ -16,6 +16,7 @@ use betterlite_models::savings_pricing::context::{ModelIdentity, SavingsPricingC
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use chrono::DateTime;
+use jiff::tz::TimeZoneDatabase;
 use rust_decimal::Decimal;
 
 pub(crate) struct Op;
@@ -184,7 +185,11 @@ fn canonical(text: &str) -> HelperResult {
 }
 
 fn publication(text: &str, estimate: &str, first_at: f64) -> HelperResult {
-    let pricing = PublicationPricing::new(&NO_PRICING, DateTime::UNIX_EPOCH);
+    let pricing = PublicationPricing {
+        context: &NO_PRICING,
+        database: TimeZoneDatabase::from_env(),
+        moment: DateTime::UNIX_EPOCH,
+    };
     let record =
         decode_baseline_record(text.as_bytes()).map_err(|error| failure(error.to_string()))?;
     let decoded_estimate = validated_estimate(estimate)?;
@@ -216,7 +221,11 @@ fn project(history: &str, stored: &[StoredInput]) -> HelperResult {
             started_at: row.started_at,
         })
         .collect();
-    let pricing = PublicationPricing::new(&NO_PRICING, DateTime::UNIX_EPOCH);
+    let pricing = PublicationPricing {
+        context: &NO_PRICING,
+        database: TimeZoneDatabase::from_env(),
+        moment: DateTime::UNIX_EPOCH,
+    };
     let (_, changes) = project_group(&pricing, &(decoded, Vec::new()), &rows).or_value_error()?;
     serde_json::to_value(changes).or_value_error()
 }

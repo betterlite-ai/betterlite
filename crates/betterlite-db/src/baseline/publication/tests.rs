@@ -17,6 +17,7 @@ use betterlite_models::savings_pricing::context::{ModelIdentity, SavingsPricingC
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use chrono::{DateTime, TimeZone as _, Utc};
 use deadpool_postgres::{Client, Pool};
+use jiff::tz::TimeZoneDatabase;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
@@ -77,7 +78,11 @@ impl SavingsPricingContext for NoPricing {
 }
 
 fn pricing() -> PublicationPricing<'static, NoPricing> {
-    PublicationPricing::new(&NO_PRICING, DateTime::UNIX_EPOCH)
+    PublicationPricing {
+        context: &NO_PRICING,
+        database: TimeZoneDatabase::from_env(),
+        moment: DateTime::UNIX_EPOCH,
+    }
 }
 
 fn usage() -> Usage {
