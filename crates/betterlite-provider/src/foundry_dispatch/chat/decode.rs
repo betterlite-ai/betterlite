@@ -1,9 +1,7 @@
 use std::io::Error as IoError;
 
 use betterlite_foundry::chat::response::{ResponseError, transform_response};
-use betterlite_openai::chat::response::ChatResponse;
 use betterlite_prompts::arguments::json::Json;
-use indexmap::IndexMap;
 
 use crate::operation::{ChatCompletion, OperationError, OperationResult, success};
 use crate::prepared::{PreparedKind, PreparedRequest, Upstream};
@@ -43,22 +41,6 @@ pub fn decode(
             Upstream::Buffered(_) | Upstream::Streaming(_) | Upstream::Anthropic(_),
         ) => Err(unsupported()),
     }
-}
-
-// What main.py handed post_call as original_response, in the two fields a case compares
-#[must_use]
-pub fn reply_json(response: &ChatResponse) -> Json {
-    let content = response
-        .choices
-        .first()
-        .and_then(|choice| choice.message.content.clone());
-    Json::Object(IndexMap::from([
-        (String::from("model"), Json::Text(response.model.clone())),
-        (
-            String::from("content"),
-            content.map_or(Json::Null, Json::Text),
-        ),
-    ]))
 }
 
 pub fn unsupported() -> OperationError {
