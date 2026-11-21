@@ -3,7 +3,7 @@ deviations:
   - what: precise_minute is built from one clock reading. LiteLLM reads the clock three times (date, hour, minute).
     why: Three reads can straddle a midnight, hour or minute change and build an id that never existed. One reading cannot, and it matches LiteLLM whenever the reads agree.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter.py#L305-L308
-  - what: A failure of the final batch write is logged at error level under LiteLLM's own "LiteLLM Cache: exception in async add_cache" line, and the request is still admitted.
+  - what: "A failure of the final batch write is logged at error level under LiteLLM's own \"LiteLLM Cache: exception in async add_cache\" line, and the request is still admitted."
     why: The write no longer runs in a detached task (see the entry below), so the error is available to the hook; LiteLLM's DualCache logs the same failure and admits too.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter.py#L484-L490
   - what: The arguments `cache` and `call_type` are not accepted.
