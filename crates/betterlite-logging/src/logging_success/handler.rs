@@ -55,19 +55,18 @@ struct DeliveryPlan {
 }
 
 pub fn success_handler(
-    success: &SuccessHandler<'_>,
+    handler: &SuccessHandler<'_>,
     state: &mut LoggingState,
     correlation: &mut CorrelationContext,
     request: &SuccessRequest,
 ) {
     let slot = state.request_slot.clone();
-    let body = move || {
-        if let Some(plan) = begin(success, state, request, SuccessMode::Sync) {
-            run_sync_callbacks(success, state, &plan);
+    enter_request_slot_sync(slot, move || {
+        if let Some(plan) = begin(handler, state, request, SuccessMode::Sync) {
+            run_sync_callbacks(handler, state, &plan);
         }
         restore_correlation_context(state, correlation);
-    };
-    enter_request_slot_sync(slot, body);
+    });
 }
 
 pub async fn async_success_handler(
@@ -76,14 +75,33 @@ pub async fn async_success_handler(
     context: &mut CorrelationContext,
     call: &SuccessRequest,
 ) {
-    enter_request_slot(logging.request_slot.clone(), async move {
-        tracing::debug!(cache_hit = ?call.cache_hit, "LiteLLM-Async Success Call");
-        if let Some(plan) = begin(handler, logging, call, SuccessMode::Async) {
-            run_async_callbacks(handler, logging, &plan).await;
-        }
-        restore_correlation_context(logging, context);
-    })
+    tracing::debug!(cache_hit = ?call.cache_hit, "LiteLLM-Async Success Call");
+    enter_request_slot(
+        logging.request_slot.clone(),
+        run_async_success(handler, logging, call, context),
+    )
     .await;
+}
+
+async fn run_async_success(
+    handler: &SuccessHandler<'_>,
+    logging: &mut LoggingState,
+    call: &SuccessRequest,
+    context: &mut CorrelationContext,
+) {
+    if let Some(plan) = begin(handler, logging, call, SuccessMode::Async) {
+        for logger in plan.callbacks.iter().filter_map(callback_logger) {
+            if !may_run_callback(logging, logger.as_ref()) {
+                continue;
+            }
+            if let Some(event) = callback_event(handler, logging, &plan, logger, SuccessMode::Async)
+                && let Err(failure) = deliver_async(logger.as_ref(), event, plan.stream_event).await
+            {
+                handle_callback_failure(handler, logger.callback_name(), &failure);
+            }
+        }
+    }
+    restore_correlation_context(logging, context);
 }
 
 const fn stream_key(mode: SuccessMode) -> &'static str {
@@ -155,24 +173,6 @@ fn run_sync_callbacks(handler: &SuccessHandler<'_>, state: &LoggingState, plan: 
             && let Err(error) = deliver_sync(logger.as_ref(), &event, plan.stream_event)
         {
             handle_callback_failure(handler, logger.callback_name(), &error);
-        }
-    }
-}
-
-async fn run_async_callbacks(
-    handler: &SuccessHandler<'_>,
-    logging: &LoggingState,
-    plan: &DeliveryPlan,
-) {
-    for logger in plan.callbacks.iter().filter_map(callback_logger) {
-        if !may_run_callback(logging, logger.as_ref()) {
-            continue;
-        }
-        let Some(event) = callback_event(handler, logging, plan, logger, SuccessMode::Async) else {
-            continue;
-        };
-        if let Err(failure) = deliver_async(logger.as_ref(), event, plan.stream_event).await {
-            handle_callback_failure(handler, logger.callback_name(), &failure);
         }
     }
 }
