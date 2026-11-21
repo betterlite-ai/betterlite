@@ -91,14 +91,15 @@ async fn target_stream_over_the_body_limit_fails_typed() {
     assert_eq!(chunks.len(), 1);
     let mut over = Harness::new();
     over.chat.streams(&[frame]);
-    over.stream_bytes = frame.len() - 1;
+    let room = frame.len().saturating_sub(1);
+    over.stream_bytes = room;
     let bounded = over.target();
     let error = Box::pin(bounded.run(PreparedCompletion::Dispatch(streaming_call()), false, None))
         .await
         .unwrap_err();
     assert!(matches!(
         error,
-        CompletionCallError::Http(HttpError::TooLarge { limit }) if limit == frame.len() - 1
+        CompletionCallError::Http(HttpError::TooLarge { limit }) if limit == room
     ));
 }
 

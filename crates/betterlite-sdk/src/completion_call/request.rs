@@ -92,7 +92,9 @@ pub async fn execute(
     let context = CallContext::start(CallInputs {
         now: || started,
         id: Uuid::new_v4,
-        deadline: timeout_duration(timeout).and_then(|wait| started.checked_add(wait)),
+        deadline: timeout
+            .and_then(timeout_duration)
+            .and_then(|wait| started.checked_add(wait)),
         privacy: false,
     });
     let result = dispatch.execute(operation, &context).await?;
