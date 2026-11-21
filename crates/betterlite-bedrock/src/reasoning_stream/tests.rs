@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 use std::fs;
+use std::io;
 use std::iter;
 use std::path::Path;
 use std::time::Duration;
@@ -16,7 +17,9 @@ use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::call_helpers::headers::AdditionalHeaders;
 use betterlite_models::decisions::Json;
 use betterlite_openai::chat_choices::stream::CHUNK_OBJECT;
-use betterlite_openai::chat_choices::wire::{StreamChoice, StreamDelta, StreamReply};
+use betterlite_openai::chat_choices::wire::{
+    ProviderField, StreamChoice, StreamDelta, StreamReply,
+};
 use betterlite_openai::compatible_wire::{LogInput, NEW_ID, ReplyOptions, system_clock};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::DateTime;
@@ -105,6 +108,10 @@ fn tag_split_every_byte() {
     assert_eq!(
         split_reasoning_tag("<reasoning>héllo</reasoning>\n\n  grüße"),
         (Some(String::from("héllo")), String::from("grüße"))
+    );
+    assert_eq!(
+        split_reasoning_tag("<reasoning>a</reasoning>\u{1c}\u{1f}\u{a0} b"),
+        (Some(String::from("a")), String::from("b"))
     );
 }
 
@@ -197,12 +204,19 @@ fn reply(choices: Vec<StreamChoice>) -> StreamReply {
 }
 
 fn choice(index: i64, content: Option<&str>, finish: Option<&str>) -> StreamChoice {
-    let mut delta = StreamDelta::default();
-    delta.content = content.map(str::to_owned);
     StreamChoice {
         index,
         finish_reason: finish.map(str::to_owned),
-        delta,
+        delta: StreamDelta {
+            role: None,
+            content: content.map(str::to_owned),
+            function_call: None,
+            tool_calls: None,
+            audio: None,
+            reasoning_content: None,
+            reasoning: ProviderField::Absent,
+            passthrough: StreamDelta::default().passthrough,
+        },
         logprobs: None,
     }
 }
@@ -596,8 +610,8 @@ fn replay(text: &str) -> (String, String) {
     while !rest.is_empty() {
         let mut take = 0;
         for (count, (at, character)) in rest.char_indices().enumerate() {
-            take = at + character.len_utf8();
-            if count + 1 == width {
+            take = at.saturating_add(character.len_utf8());
+            if count.saturating_add(1) == width {
                 break;
             }
         }
@@ -607,7 +621,11 @@ fn replay(text: &str) -> (String, String) {
         reasoning.push_str(&fed_reasoning);
         content.push_str(&fed_content);
         rest = back;
-        width = if width == 3 { 1 } else { width + 1 };
+        width = if width == 3 {
+            1
+        } else {
+            width.saturating_add(1)
+        };
     }
     let (_, flushed_reasoning, flushed_content) = decode_reasoning_delta(&state, None, true);
     reasoning.push_str(&flushed_reasoning);
@@ -631,19 +649,22 @@ fn category(bytes: &[u8]) -> &'static str {
 #[test]
 fn replays_the_bedrock_reasoning_stream_corpus() {
     let corpus = Path::new(CORPUS);
-    let mut seen = 0;
-    let entries = fs::read_dir(corpus).unwrap();
-    for entry in entries {
-        let path = entry.unwrap().path();
-        if path.is_dir() {
-            continue;
-        }
-        let bytes = fs::read(&path).unwrap();
-        let name = path.file_name().unwrap().to_str().unwrap();
-        let expected = name.rsplit('-').next().unwrap();
-        assert_eq!(category(&bytes), expected, "seed {name}");
-        seen += 1;
-    }
+    let mut seen = 0_usize;
+    fs::read_dir(corpus)
+        .unwrap()
+        .try_for_each(|entry| {
+            let path = entry?.path();
+            if path.is_dir() {
+                return Ok(());
+            }
+            let bytes = fs::read(&path)?;
+            let name = path.file_name().unwrap().to_str().unwrap();
+            let expected = name.rsplit('-').next().unwrap();
+            assert_eq!(category(&bytes), expected, "seed {name}");
+            seen = seen.saturating_add(1);
+            Ok::<(), io::Error>(())
+        })
+        .unwrap();
     assert!(seen > 0, "no seeds under {}", corpus.display());
 }
 

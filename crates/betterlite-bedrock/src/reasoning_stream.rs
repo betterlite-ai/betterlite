@@ -41,7 +41,12 @@ impl ReasoningTagState {
         match self.phase {
             ReasoningPhase::Content => (self.clone(), String::new(), text.to_owned()),
             ReasoningPhase::AfterClose => {
-                let content = text.trim_start().to_owned();
+                // str.lstrip also strips U+001C..U+001F, four characters Unicode does not treat as whitespace
+                let content = text
+                    .trim_start_matches(|character: char| {
+                        character.is_whitespace() || matches!(character, '\u{1c}'..='\u{1f}')
+                    })
+                    .to_owned();
                 if content.is_empty() {
                     (self.clone(), String::new(), content)
                 } else {
