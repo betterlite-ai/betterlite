@@ -44,7 +44,7 @@ pub fn anchor_request_root(span: AnchoredSpan, live: Context) {
     if !span.context.is_valid() {
         return;
     }
-    if let Some(slot) = ACTIVE_REQUEST_SLOT.try_with(Arc::clone).ok() {
+    if let Ok(slot) = ACTIVE_REQUEST_SLOT.try_with(Arc::clone) {
         slot.trace().anchor_request_root(span);
         *slot.live_root() = live;
     }
@@ -52,7 +52,7 @@ pub fn anchor_request_root(span: AnchoredSpan, live: Context) {
 
 // litellm.integrations.otel.plumbing.context.set_request_destinations
 pub fn set_destinations(destinations: Vec<OtelDestination>) {
-    if let Some(slot) = ACTIVE_REQUEST_SLOT.try_with(Arc::clone).ok() {
+    if let Ok(slot) = ACTIVE_REQUEST_SLOT.try_with(Arc::clone) {
         slot.trace().destinations = destinations;
     }
 }
