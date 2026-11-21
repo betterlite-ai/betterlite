@@ -1,0 +1,51 @@
+kind: helper
+name: org-model-rate-ceiling
+call:
+  team_parent_limits:
+    calls:
+      - check: model_specific
+        teams: &siblings
+          - {team_id: team-a, metadata: {model_rpm_limit: {gpt: 4}, model_tpm_limit: {gpt: 40}}}
+          - {team_id: team-b, metadata: {model_rpm_limit: {gpt: 2, claude: 9}, model_tpm_limit: null}}
+          - {team_id: team-c}
+        organization: &budgeted
+          {organization_id: org-1, budget_id: budget-1, created_by: admin, updated_by: admin, litellm_budget_table: {rpm_limit: 10, tpm_limit: 50}}
+        request: {kind: new, body: {model_rpm_limit: {gpt: 4}}}
+      - check: model_specific
+        teams: *siblings
+        organization: *budgeted
+        request: {kind: new, body: {model_rpm_limit: {gpt: 5}}}
+      - check: model_specific
+        teams: *siblings
+        organization: *budgeted
+        request: {kind: new, body: {model_rpm_limit: {llama: 11}}}
+      - check: model_specific
+        teams: *siblings
+        organization: {organization_id: org-1, budget_id: budget-1, created_by: admin, updated_by: admin, metadata: {model_rpm_limit: {gpt: 9}}}
+        request: {kind: new, body: {model_rpm_limit: {gpt: 4}}}
+      - check: model_specific
+        teams: *siblings
+        organization: {organization_id: org-1, budget_id: budget-1, created_by: admin, updated_by: admin, litellm_budget_table: {rpm_limit: 100}, metadata: {model_rpm_limit: {gpt: 9}}}
+        request: {kind: new, body: {model_rpm_limit: {gpt: 3}}}
+      - check: model_specific
+        teams: *siblings
+        organization: {organization_id: org-1, budget_id: budget-1, created_by: admin, updated_by: admin, litellm_budget_table: {rpm_limit: 100}, metadata: {model_rpm_limit: {gpt: 9}}}
+        request: {kind: new, body: {model_rpm_limit: {gpt: 4}}}
+      - check: model_specific
+        teams: *siblings
+        organization: *budgeted
+        request: {kind: new, body: {model_tpm_limit: {gpt: 10}}}
+      - check: model_specific
+        teams: *siblings
+        organization: *budgeted
+        request: {kind: new, body: {model_tpm_limit: {gpt: 11}}}
+      - check: model_specific
+        teams: *siblings
+        organization: {organization_id: org-1, budget_id: budget-1, created_by: admin, updated_by: admin, litellm_budget_table: {tpm_limit: 1000}, metadata: {model_tpm_limit: {gpt: 45}}}
+        request: {kind: new, body: {model_tpm_limit: {gpt: 6}}}
+      - check: model_specific
+        teams: *siblings
+        organization: *budgeted
+        request: {kind: new, body: {model_rpm_limit: {gpt: 5}, model_tpm_limit: {gpt: 11}}}
+env: {}
+compare: {ignore: []}
