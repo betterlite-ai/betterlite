@@ -17,8 +17,9 @@ use crate::agent_endpoints::a2a_stream::keepalive::{PING, coerce_keepalive_inter
 #[case::not_a_number(Some(f64::NAN), None)]
 #[case::infinite(Some(f64::INFINITY), None)]
 #[case::negative_infinite(Some(f64::NEG_INFINITY), None)]
+// one ulp below 2^64 seconds, the largest f64 a Duration holds
 #[case::just_inside(
-    Some(18_446_744_073_709_549_568.0_f64),
+    Some(Duration::from_secs(18_446_744_073_709_549_568).as_secs_f64()),
     Some(Duration::from_secs(18_446_744_073_709_549_568))
 )]
 #[case::too_large(Some(1e20_f64), Some(Duration::MAX))]
