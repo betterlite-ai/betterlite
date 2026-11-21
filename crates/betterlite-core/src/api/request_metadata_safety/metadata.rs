@@ -1,6 +1,3 @@
-use betterlite_auth::auxiliary_routes::MCP_ROUTES;
-use betterlite_auth::route_match::classifier::is_llm_api_route;
-use betterlite_auth::route_match::templates::{RouteValue, check_route_access};
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
@@ -40,6 +37,7 @@ impl MetadataField {
 }
 
 #[must_use]
+// ast-grep-ignore: no-long-names
 pub fn metadata_variable_name_for_route(route: &str) -> MetadataField {
     if route.contains("thread") || route.contains("assistant") {
         return MetadataField::LitellmMetadata;
@@ -54,17 +52,12 @@ pub fn metadata_variable_name_for_route(route: &str) -> MetadataField {
 }
 
 #[must_use]
-pub fn metadata_variable_name_from_data(data: &RequestData) -> MetadataField {
+pub fn metadata_name_from_data(data: &RequestData) -> MetadataField {
     if data.contains_key(MetadataField::LitellmMetadata.as_str()) {
         MetadataField::LitellmMetadata
     } else {
         MetadataField::Metadata
     }
-}
-
-#[must_use]
-pub fn is_llm_inference_route(route: &str) -> bool {
-    is_llm_api_route(&RouteValue::Text(route)) && !check_route_access(route, MCP_ROUTES)
 }
 
 // the JSON type names a metadata error reports, which keeps the 400 actionable without echoing the value

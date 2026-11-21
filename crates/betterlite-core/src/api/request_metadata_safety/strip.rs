@@ -3,9 +3,8 @@ use indexmap::IndexMap;
 
 use crate::api::request_destination::RequestData;
 use crate::api::request_metadata_safety::fields::{
-    BLOCKED_CALLBACK_PARAMS, CLIENT_PRICING_METADATA_FIELDS, ROUTER_RESERVED_METADATA_FIELDS,
-    TRUSTED_CALLBACK_VARS_FIELD, UNTRUSTED_REQUEST_HEADER_CONTROL_FIELDS,
-    is_client_pricing_control,
+    BLOCKED_CALLBACK_PARAMS, CLIENT_PRICING_METADATA_FIELDS, ROUTER_RESERVED_FIELDS,
+    TRUSTED_CALLBACK_VARS_FIELD, UNTRUSTED_HEADER_CONTROLS, is_client_pricing_control,
 };
 
 const TURN_OFF_MESSAGE_LOGGING_KEY: &str = "turn_off_message_logging";
@@ -16,18 +15,19 @@ const LITELLM_METADATA_KEY: &str = "litellm_metadata";
 const CLIENT_CALLBACK_METADATA_SLOTS: [&str; 2] = [LITELLM_METADATA_KEY, METADATA_KEY];
 const PRICING_METADATA_SLOTS: [&str; 2] = [METADATA_KEY, LITELLM_METADATA_KEY];
 
+// ast-grep-ignore: no-long-names
 pub fn strip_untrusted_request_header_controls<V>(
     headers: &mut IndexMap<String, V>,
-    allow_client_message_redaction_opt_out: bool,
+    allow_opt_out: bool,
 ) {
-    if allow_client_message_redaction_opt_out {
+    if allow_opt_out {
         return;
     }
-    headers.retain(|name, _value| {
-        !UNTRUSTED_REQUEST_HEADER_CONTROL_FIELDS.contains(&name.to_lowercase().as_str())
-    });
+    headers
+        .retain(|name, _value| !UNTRUSTED_HEADER_CONTROLS.contains(&name.to_lowercase().as_str()));
 }
 
+// ast-grep-ignore: no-long-names
 pub fn strip_client_message_redaction_opt_out(data: &mut RequestData) {
     let mut stripped: Vec<String> = Vec::new();
     if strip_false_like(data) {
@@ -50,6 +50,7 @@ pub fn strip_client_message_redaction_opt_out(data: &mut RequestData) {
     );
 }
 
+// ast-grep-ignore: no-long-names
 pub fn strip_client_callback_credentials(data: &mut RequestData) {
     let mut stripped: Vec<String> = Vec::new();
     remove_callback_credentials("body", data, &mut stripped);
@@ -105,7 +106,7 @@ pub fn strip_router_reserved_metadata(data: &mut RequestData) {
         let Some(Json::Object(metadata)) = data.get_mut(slot) else {
             continue;
         };
-        for field in ROUTER_RESERVED_METADATA_FIELDS {
+        for field in ROUTER_RESERVED_FIELDS {
             if metadata.shift_remove(field).is_some() {
                 tracing::debug!(
                     "stripped router-reserved metadata field from request body: {slot}.{field}"
@@ -135,6 +136,7 @@ fn strip_false_like(metadata: &mut IndexMap<String, Json>) -> bool {
 fn is_false_like(value: &Json) -> bool {
     match value {
         Json::Bool(value) => !*value,
+        // ast-grep-ignore: no-python-habits - LiteLLM's _is_false_like lowercases the text and matches these four spellings
         Json::Text(text) => matches!(
             text.trim().to_lowercase().as_str(),
             "false" | "0" | "no" | "off"

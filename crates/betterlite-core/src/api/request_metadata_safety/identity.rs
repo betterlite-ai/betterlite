@@ -67,13 +67,16 @@ pub fn get_chain_id_from_headers(headers: &IndexMap<String, String>) -> Option<S
 }
 
 #[must_use]
+// ast-grep-ignore: no-long-names
 pub fn anthropic_session_id_from_metadata(metadata: &Json) -> Option<String> {
     let Json::Object(metadata) = metadata else {
         return None;
     };
     match metadata.get(USER_ID_KEY) {
         Some(Json::Object(user)) => match user.get(SESSION_ID_KEY) {
-            Some(Json::Text(session_id)) if is_anthropic_session_id(session_id) => {
+            Some(Json::Text(session_id))
+                if !session_id.is_empty() && is_session_id_text(session_id) =>
+            {
                 Some(session_id.clone())
             }
             Some(
@@ -96,14 +99,10 @@ fn session_id_after_marker(user_id: &str) -> Option<String> {
     let marker_index = user_id.rfind(ANTHROPIC_SESSION_MARKER)?;
     let remainder = user_id.get(marker_index..)?;
     let session_id = remainder.strip_prefix(ANTHROPIC_SESSION_MARKER)?;
-    if is_anthropic_session_id(session_id) {
+    if !session_id.is_empty() && is_session_id_text(session_id) {
         return Some(session_id.to_owned());
     }
     None
-}
-
-fn is_anthropic_session_id(value: &str) -> bool {
-    !value.is_empty() && is_session_id_text(value)
 }
 
 fn is_sha256_hex(value: &str) -> bool {
@@ -117,7 +116,7 @@ fn generic_session_id(normalized: &IndexMap<String, String>) -> Option<&str> {
     normalized.iter().find_map(|(name, value)| {
         if EXPLICIT_SESSION_HEADERS.contains(&name.as_str())
             || !is_generic_session_header(name)
-            || !is_session_id_value(value)
+            || !(value.len() >= MINIMUM_SESSION_ID_LENGTH && is_session_id_text(value))
         {
             return None;
         }
@@ -133,7 +132,9 @@ fn codex_session_id(normalized: &IndexMap<String, String>) -> Option<&str> {
     CODEX_SESSION_ID_HEADERS.iter().find_map(|header| {
         normalized
             .get(*header)
-            .filter(|value| is_session_id_value(value.as_str()))
+            .filter(|value| {
+                value.len() >= MINIMUM_SESSION_ID_LENGTH && is_session_id_text(value.as_str())
+            })
             .map(String::as_str)
     })
 }
@@ -141,7 +142,9 @@ fn codex_session_id(normalized: &IndexMap<String, String>) -> Option<&str> {
 fn bare_session_id(normalized: &IndexMap<String, String>) -> Option<&str> {
     normalized
         .get(BARE_SESSION_HEADER)
-        .filter(|value| is_session_id_value(value.as_str()))
+        .filter(|value| {
+            value.len() >= MINIMUM_SESSION_ID_LENGTH && is_session_id_text(value.as_str())
+        })
         .map(String::as_str)
 }
 
@@ -153,10 +156,6 @@ fn is_generic_session_header(name: &str) -> bool {
         return false;
     };
     !middle.is_empty() && !middle.contains('\n')
-}
-
-fn is_session_id_value(value: &str) -> bool {
-    value.len() >= MINIMUM_SESSION_ID_LENGTH && is_session_id_text(value)
 }
 
 fn is_session_id_text(value: &str) -> bool {

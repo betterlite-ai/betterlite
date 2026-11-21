@@ -29,16 +29,16 @@ use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
 
 use super::admin::{
-    ALLOW_CLIENT_MESSAGE_REDACTION_OPT_OUT_KEY, ALLOW_CLIENT_MOCK_RESPONSE_KEY,
-    ALLOW_CLIENT_PRICING_OVERRIDE_KEY, key_or_team_metadata_flag_is_true,
+    ALLOW_CLIENT_MOCK_RESPONSE_KEY, ALLOW_PRICING_OVERRIDE_KEY, ALLOW_REDACTION_OPT_OUT_KEY,
+    key_or_team_metadata_flag_is_true,
 };
 use super::identity::{
     anthropic_session_id_from_metadata, get_chain_id_from_headers, sanitize_for_log,
     stampable_key_hash,
 };
 use super::metadata::{
-    MetadataField, is_llm_inference_route, metadata_variable_name_for_route,
-    metadata_variable_name_from_data, promoted_trace_control_fields,
+    MetadataField, metadata_name_from_data, metadata_variable_name_for_route,
+    promoted_trace_control_fields,
 };
 use super::session::apply_missing_session_id_policy;
 use super::snapshot::refresh_proxy_server_request_body_snapshot;
@@ -47,6 +47,7 @@ use super::{
     MetadataPrincipal, MetadataSafetySettings, RequestMetadataSafetyInput,
     sanitize_request_metadata,
 };
+use crate::api::api_boundaries::ApiLimits;
 use crate::api::request_destination::RequestData;
 
 pub(super) fn text(value: &str) -> Json {
@@ -81,8 +82,9 @@ pub(super) fn field<'data>(data: &'data RequestData, name: &str) -> &'data Index
 
 pub(super) fn settings() -> MetadataSafetySettings {
     MetadataSafetySettings {
+        limits: ApiLimits::default(),
+        missing_session_id: None,
         turn_off_message_logging: true,
-        ..MetadataSafetySettings::default()
     }
 }
 
@@ -376,14 +378,14 @@ fn metadata_variable_name_follows_the_route(#[case] route: &str, #[case] expecte
 }
 
 #[test]
-fn metadata_variable_name_from_data_checks_the_key() {
+fn metadata_name_from_data_checks_the_key() {
     let with_litellm_metadata = body(vec![("litellm_metadata", Json::Null)]);
     assert_eq!(
-        metadata_variable_name_from_data(&with_litellm_metadata),
+        metadata_name_from_data(&with_litellm_metadata),
         MetadataField::LitellmMetadata
     );
     assert_eq!(
-        metadata_variable_name_from_data(&body(vec![])),
+        metadata_name_from_data(&body(vec![])),
         MetadataField::Metadata
     );
 }
@@ -394,7 +396,18 @@ fn metadata_variable_name_from_data_checks_the_key() {
 #[case::mcp_route_is_not_inference("/mcp/tools/call", false)]
 #[case::management_route("/health", false)]
 fn inference_route_classification(#[case] route: &str, #[case] expected: bool) {
-    assert_eq!(is_llm_inference_route(route), expected);
+    let data = body(vec![("litellm_session_id", text("body-session"))]);
+    let omit = MetadataSafetySettings {
+        missing_session_id: Some(MissingSessionIdPolicy::Omit),
+        ..settings()
+    };
+    let result =
+        sanitize_request_metadata(&input(data, route), &omit).expect("the slots are objects");
+    let slot = match result.metadata_variable_name {
+        MetadataField::Metadata => field(&result.data, "metadata"),
+        MetadataField::LitellmMetadata => field(&result.data, "litellm_metadata"),
+    };
+    assert_eq!(slot.contains_key("litellm_session_id_omitted"), expected);
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -413,11 +426,8 @@ impl OptIn {
             Self::FalseValue => Json::Bool(false),
         };
         let flags = IndexMap::from([
-            (ALLOW_CLIENT_PRICING_OVERRIDE_KEY.to_owned(), value.clone()),
-            (
-                ALLOW_CLIENT_MESSAGE_REDACTION_OPT_OUT_KEY.to_owned(),
-                value.clone(),
-            ),
+            (ALLOW_PRICING_OVERRIDE_KEY.to_owned(), value.clone()),
+            (ALLOW_REDACTION_OPT_OUT_KEY.to_owned(), value.clone()),
             (ALLOW_CLIENT_MOCK_RESPONSE_KEY.to_owned(), value),
         ]);
         let mut principal = MetadataPrincipal::default();
@@ -550,7 +560,8 @@ fn principal_with_key(api_key: Option<&str>, via_virtual_key: bool) -> MetadataP
     MetadataPrincipal {
         api_key: api_key.map(|value| SecretString::from(value.to_owned())),
         via_virtual_key,
-        ..MetadataPrincipal::default()
+        metadata: None,
+        team_metadata: None,
     }
 }
 
@@ -612,6 +623,9 @@ fn chain(headers: &[(&str, &str)]) -> Option<String> {
 #[case::empty_map(&[], None)]
 #[case::empty_vendor_rejected(&[("x--session-id", "vendor-1234")], None)]
 #[case::codex_prefix_needs_a_separator(&[("user-agent", "codex1.0"), ("session-id", "codex-1234")], None)]
+#[case::codex_invalid_value_rejected(&[("user-agent", "codex_cli/1.0"), ("session-id", "not a session id")], None)]
+#[case::generic_invalid_value_rejected(&[("x-vendor-session-id", "not a session id")], None)]
+#[case::generic_short_value_rejected(&[("x-vendor-session-id", "short")], None)]
 fn chain_id_priority(#[case] headers: &[(&str, &str)], #[case] expected: Option<&str>) {
     assert_eq!(chain(headers).as_deref(), expected);
 }

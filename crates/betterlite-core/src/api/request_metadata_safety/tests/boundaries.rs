@@ -2,6 +2,7 @@
 
 use betterlite_config::sections::request_metadata_safety::MissingSessionIdPolicy;
 use betterlite_models::decisions::Json;
+use rstest::rstest;
 
 use super::super::metadata::MetadataField;
 use super::super::session::apply_missing_session_id_policy;
@@ -30,20 +31,22 @@ fn true_redaction_opt_outs_are_kept() {
     );
 }
 
-#[test]
-fn metadata_string_length_boundary() {
+#[rstest]
+#[case::fits("{\"a\":\"bc\"}", true)]
+#[case::one_byte_over("{\"a\":\"bcd\"}", false)]
+fn metadata_string_length_boundary(#[case] raw: &str, #[case] accepted: bool) {
     let bounded = MetadataSafetySettings {
         limits: ApiLimits {
             max_json_bytes: 10,
-            ..ApiLimits::default()
+            max_event_bytes: 1024 * 1024,
+            max_items: 64 * 1024,
         },
-        ..settings()
+        missing_session_id: None,
+        turn_off_message_logging: settings().turn_off_message_logging,
     };
-    for (raw, accepted) in [("{\"a\":\"bc\"}", true), ("{\"a\":\"bcd\"}", false)] {
-        let data = body(vec![("metadata", text(raw))]);
-        let outcome = sanitize_request_metadata(&input(data, "/v1/chat/completions"), &bounded);
-        assert_eq!(outcome.is_ok(), accepted);
-    }
+    let data = body(vec![("metadata", text(raw))]);
+    let outcome = sanitize_request_metadata(&input(data, "/v1/chat/completions"), &bounded);
+    assert_eq!(outcome.is_ok(), accepted);
 }
 
 #[test]

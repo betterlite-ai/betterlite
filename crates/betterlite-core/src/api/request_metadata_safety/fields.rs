@@ -1,5 +1,3 @@
-// The tables a strip reads, kept as whitespace-separated names so a name change is a one-word diff.
-
 // CustomPricingLiteLLMParams.model_fields, the per-request pricing controls a client may not set
 const CLIENT_PRICING_CONTROL_NAMES: &str = concat!(
     "input_cost_per_token output_cost_per_token input_cost_per_character output_cost_per_character",
@@ -94,7 +92,7 @@ pub(super) const TRANSPORT_ONLY_CREDENTIAL_KEYS: [&str; 3] =
 pub(super) const CLIENT_PRICING_METADATA_FIELDS: [&str; 2] =
     ["model_info", "standard_logging_guardrail_information"];
 
-pub(super) const ROUTER_RESERVED_METADATA_FIELDS: [&str; 5] = [
+pub(super) const ROUTER_RESERVED_FIELDS: [&str; 5] = [
     "attempted_fallbacks",
     "original_model_group",
     "request_retry_count",
@@ -102,8 +100,7 @@ pub(super) const ROUTER_RESERVED_METADATA_FIELDS: [&str; 5] = [
     "_litellm_router_usage_counted_tokens",
 ];
 
-pub(super) const UNTRUSTED_REQUEST_HEADER_CONTROL_FIELDS: [&str; 1] =
-    ["litellm-disable-message-redaction"];
+pub(super) const UNTRUSTED_HEADER_CONTROLS: [&str; 1] = ["litellm-disable-message-redaction"];
 
 pub(super) const TRUSTED_CALLBACK_VARS_FIELD: &str = "litellm_trusted_callback_vars";
 
