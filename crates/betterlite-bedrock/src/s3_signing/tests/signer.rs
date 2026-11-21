@@ -344,13 +344,15 @@ fn signed_request_debug() -> String {
     debug
 }
 
-#[rstest::rstest]
-#[case::unsignable_url(unsignable_url)]
-#[case::failed_lookup(failed_lookup)]
-#[case::wrong_secret_type(wrong_secret_type)]
-#[case::signed_request_debug(signed_request_debug)]
-fn bedrock_services_s3_signing_secret_safe_failure(#[case] rendered: fn() -> String) {
-    let text = rendered();
+#[test]
+fn bedrock_services_s3_signing_secret_safe_failure() {
+    assert_no_secrets(&unsignable_url());
+    assert_no_secrets(&failed_lookup());
+    assert_no_secrets(&wrong_secret_type());
+    assert_no_secrets(&signed_request_debug());
+}
+
+fn assert_no_secrets(text: &str) {
     let leaked: Vec<&str> = ["AKIDLEAK", "leaked-secret-value", "kms-secret-key"]
         .into_iter()
         .filter(|secret| text.contains(secret))
