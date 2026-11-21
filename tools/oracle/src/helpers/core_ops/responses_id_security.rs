@@ -1,10 +1,16 @@
 use betterlite_auth::auth_identity::records::Principal;
 use betterlite_auth::auth_identity::roles::Role;
 use betterlite_config::sections::responses_id_security::Settings;
+use betterlite_core::api::api_boundaries::ApiLimits;
+use betterlite_core::api::responses_id_security::ResponsesIdSecurity;
+use betterlite_models::decisions::Json;
+use betterlite_openai::api::responses_event_records::records::ResponsesAPIStreamingResponse;
+use betterlite_openai::api::responses_objects::ResponsesApiResponse;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces, StoredCipher};
+use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -23,13 +29,12 @@ pub(crate) enum Input {
         principal: PrincipalInput,
         call_type: String,
         #[serde(default)]
-        data: Vec<FieldInput>,
+        data: IndexMap<String, Json>,
     },
     Success {
         settings: SettingsInput,
         principal: PrincipalInput,
-        id: ValueSpec,
-        nested: NestedSpec,
+        response: ResponsesApiResponse,
         // the success hook takes no route; the case records one to show it stays unused
         #[serde(rename = "route")]
         _route: Option<String>,
@@ -39,7 +44,7 @@ pub(crate) enum Input {
         principal: PrincipalInput,
         route: Option<String>,
         #[serde(default)]
-        events: Vec<EventSpec>,
+        events: Vec<ResponsesAPIStreamingResponse>,
     },
 }
 
@@ -63,62 +68,9 @@ pub(crate) struct PrincipalInput {
     team_id: Option<String>,
     #[serde(default)]
     role: Option<String>,
-    // the Python side picks the enum or the raw-value form; Rust reads roles the same way either way
+    // the Python side picks the enum or the raw-value form; Rust reads the role the same way
     #[serde(rename = "role_form")]
     _role_form: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct FieldInput {
-    field: String,
-    value: ValueSpec,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub(crate) enum ValueSpec {
-    Text {
-        text: String,
-    },
-    Number {
-        number: i64,
-    },
-    Null,
-    Owned {
-        original: String,
-        user: String,
-        team: String,
-        prefix: String,
-        suffix: String,
-    },
-    Sealed {
-        text: String,
-        prefix: String,
-        suffix: String,
-    },
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(tag = "shape", rename_all = "snake_case", deny_unknown_fields)]
-pub(crate) enum NestedSpec {
-    Absent,
-    Null,
-    Number { number: i64 },
-    Mapping { id: ValueSpec },
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub(crate) enum EventSpec {
-    Lifecycle {
-        response_id: ValueSpec,
-        top_id: Option<ValueSpec>,
-    },
-    Generic {
-        top_id: Option<ValueSpec>,
-        nested: NestedSpec,
-    },
 }
 
 pub(crate) struct Op;
@@ -137,10 +89,9 @@ impl Helper for Op {
             Input::Success {
                 settings,
                 principal,
-                id,
-                nested,
+                response,
                 _route,
-            } => ops::success(settings, principal, id, nested),
+            } => ops::success(settings, principal, response),
             Input::Stream {
                 settings,
                 principal,
@@ -152,8 +103,18 @@ impl Helper for Op {
 }
 
 pub(crate) struct Session {
-    pub(crate) settings: Settings,
-    pub(crate) cipher: Cipher,
+    settings: Settings,
+    cipher: Cipher,
+}
+
+impl Session {
+    pub(crate) fn policy(&self) -> ResponsesIdSecurity<'_, OsNonces, TracingDiagnostics> {
+        ResponsesIdSecurity {
+            settings: &self.settings,
+            cipher: &self.cipher,
+            limits: ApiLimits::default(),
+        }
+    }
 }
 
 pub(crate) fn session(input: &SettingsInput) -> Session {

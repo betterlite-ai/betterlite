@@ -1,46 +1,32 @@
 use std::collections::BTreeMap;
 
 use betterlite_auth::auth_identity::records::Principal;
-use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::responses_id_security::error::{Error, Forbidden};
 use betterlite_core::api::responses_id_security::{
-    ADDRESSED_RESPONSE_ID_FIELD, CallOutcome, ResponsesCall, ResponsesIdSecurity,
+    ADDRESSED_RESPONSE_ID_FIELD, CallOutcome, ResponsesCall,
 };
 use betterlite_models::decisions::Json;
+use betterlite_openai::api::responses_event_records::records::ResponsesAPIStreamingResponse;
 use betterlite_openai::api::responses_objects::ResponsesApiResponse;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use indexmap::IndexMap;
 use serde_json::{Value, json};
 
-use super::values::{build_event, materialize, nested_json, project, project_nested, view_event};
-use super::{
-    Cipher, EventSpec, FieldInput, NestedSpec, PrincipalInput, SettingsInput, ValueSpec, failure,
-    principal, session,
-};
+use super::values::{EventView, project, project_nested, project_text, view_event};
+use super::{Cipher, PrincipalInput, SettingsInput, failure, principal, session};
 
 pub(crate) fn authorize(
     settings: &SettingsInput,
     principal_input: &PrincipalInput,
     call_type: &str,
-    fields: &[FieldInput],
+    data: &IndexMap<String, Json>,
 ) -> HelperResult {
     let state = session(settings);
     let caller = principal(principal_input)?;
-    let mut data = IndexMap::new();
-    for field in fields {
-        data.insert(
-            field.field.clone(),
-            materialize(&state.cipher, &field.value)?,
-        );
-    }
+    let mut data = data.clone();
     let call = ResponsesCall::from_call_type(call_type);
-    let policy = ResponsesIdSecurity {
-        settings: &state.settings,
-        cipher: &state.cipher,
-        limits: ApiLimits::default(),
-    };
-    let outcome = policy.authorize_call(call, &mut data, &caller);
+    let outcome = state.policy().authorize_call(call, &mut data, &caller);
     let field_name = addressed_field(call_type);
     let answer = call_answer(&data, field_name, &outcome, &state.cipher)?;
     Ok(json!({ "call": answer }))
@@ -49,47 +35,28 @@ pub(crate) fn authorize(
 pub(crate) fn success(
     settings: &SettingsInput,
     principal_input: &PrincipalInput,
-    id: &ValueSpec,
-    nested: &NestedSpec,
+    response: &ResponsesApiResponse,
 ) -> HelperResult {
     let state = session(settings);
     let caller = principal(principal_input)?;
-    let Json::Text(response_id) = materialize(&state.cipher, id)? else {
-        return Err(failure(
-            "InvalidInput",
-            "the response id must be a string".to_owned(),
-        ));
-    };
-    let mut response: ResponsesApiResponse = serde_json::from_value(json!({
-        "id": response_id,
-        "created_at": 0,
-        "output": [],
-    }))
-    .map_err(|error| failure("InvalidInput", error.to_string()))?;
-    if let Some(value) = nested_json(&state.cipher, nested)? {
-        response.extra.insert("response".to_owned(), value);
-    }
-    let policy = ResponsesIdSecurity {
-        settings: &state.settings,
-        cipher: &state.cipher,
-        limits: ApiLimits::default(),
-    };
-    policy
+    let mut response = response.clone();
+    state
+        .policy()
         .encrypt_response(&mut response, &caller)
         .map_err(|error| internal_failure(&error))?;
-    let id_out = project(&Json::Text(response.id.clone()), &state.cipher)?;
-    let nested_out = match response.extra.get("response") {
+    let nested = match response.extra.get("response") {
         Some(value) => Some(project_nested(value, &state.cipher)?),
         None => None,
     };
-    Ok(json!({ "response": { "id": id_out, "nested": nested_out } }))
+    let id = project_text(&response.id, &state.cipher);
+    Ok(json!({ "response": { "id": id, "nested": nested } }))
 }
 
 pub(crate) fn stream(
     settings: &SettingsInput,
     principal_input: &PrincipalInput,
     route: Option<&str>,
-    events: &[EventSpec],
+    events: &[ResponsesAPIStreamingResponse],
 ) -> HelperResult {
     let caller = principal(principal_input)?;
     let first = run_stream(settings, &caller, route, events)?;
@@ -111,28 +78,28 @@ fn run_stream(
     settings: &SettingsInput,
     caller: &Principal,
     route: Option<&str>,
-    events: &[EventSpec],
+    events: &[ResponsesAPIStreamingResponse],
 ) -> Result<StreamRun, Box<HelperError>> {
     let state = session(settings);
-    let policy = ResponsesIdSecurity {
-        settings: &state.settings,
-        cipher: &state.cipher,
-        limits: ApiLimits::default(),
-    };
+    let policy = state.policy();
     let mut cache = BTreeMap::new();
     let mut views = Vec::new();
     let mut raw = Vec::new();
     let mut advertised = Vec::new();
-    for spec in events {
-        let (mut event, built) = build_event(&state.cipher, spec)?;
+    for event in events {
+        let mut event = event.clone();
         policy
             .rewrite_stream_chunk(route, &mut event, caller, &mut cache)
             .map_err(|error| internal_failure(&error))?;
         let serialized = serde_json::to_value(&event)
             .map_err(|error| failure("SerializeFailed", error.to_string()))?;
-        let view = view_event(&serialized, built, &state.cipher)?;
-        views.push(json!({ "top": view.top, "nested": view.nested }));
-        advertised.push(view.advertised);
+        let EventView {
+            top,
+            nested,
+            advertised: event_id,
+        } = view_event(&serialized, &state.cipher)?;
+        views.push(json!({ "top": top, "nested": nested }));
+        advertised.push(event_id);
         let text = serde_json::to_string(&serialized)
             .map_err(|error| failure("SerializeFailed", error.to_string()))?;
         raw.push(text);
