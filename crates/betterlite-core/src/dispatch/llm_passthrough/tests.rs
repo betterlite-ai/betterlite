@@ -9,14 +9,12 @@ use betterlite_error::proxy_model_not_found::ProxyModelNotFoundError;
 use betterlite_openai::openai_base_config::Object;
 
 use self::support::{
-    Calls, FakeView, Outcome, Ports, RecordingBlocked, RecordingDirect, call_args,
+    Calls, FakeView, Outcome, Ports, RecordingBlocked, RecordingCallee, call_args, empty_view,
     failing_router_request, override_settings, ports_with, request, route_input, sdk_router,
 };
 use super::entry;
 use super::route::{PassthroughRoute, PassthroughRouteInput, RouteFlag, plan_passthrough_route};
-use super::{
-    BlockedModel, BlockedModels, LlmPassthroughError, PassthroughDirectCall, PassthroughRouterCall,
-};
+use super::{BlockedModel, BlockedModels, LlmPassthroughError, PassthroughCallPort};
 use crate::api::passthrough_call::{PassthroughBody, PassthroughCallError};
 use crate::api::video_router_calls::route::VideoRouteView;
 use crate::dispatch::Dispatch;
@@ -129,7 +127,7 @@ fn plan_override_with_router_is_router() {
     let trace = Trace::default();
     let view = FakeView {
         deployment_names: vec!["gpt-upstream"],
-        ..FakeView::default()
+        ..empty_view()
     };
     let blocked = RecordingBlocked {
         blocked: vec!["gpt-upstream"],
@@ -184,7 +182,7 @@ fn plan_blocked_model_is_blocked() {
     let trace = Trace::default();
     let view = FakeView {
         recognized: RouteFlag(true),
-        ..FakeView::default()
+        ..empty_view()
     };
     let blocked = RecordingBlocked {
         blocked: vec!["gpt-upstream"],
@@ -203,7 +201,7 @@ fn plan_blocked_check_gets_team_id() {
     let trace = Trace::default();
     let view = FakeView {
         recognized: RouteFlag(true),
-        ..FakeView::default()
+        ..empty_view()
     };
     let blocked = RecordingBlocked {
         blocked: vec!["team-model"],
@@ -240,7 +238,7 @@ fn plan_blocked_skips_empty_model() {
 fn plan_blocked_before_team_mapping() {
     let view = FakeView {
         team_map: vec![("team-model", "team-1", "global-model")],
-        ..FakeView::default()
+        ..empty_view()
     };
     let blocked = RecordingBlocked {
         blocked: vec!["team-model"],
@@ -260,7 +258,7 @@ fn plan_blocked_before_team_mapping() {
 fn plan_team_model_is_router() {
     let view = FakeView {
         team_map: vec![("team-model", "team-1", "global-model")],
-        ..FakeView::default()
+        ..empty_view()
     };
     let blocked = RecordingBlocked {
         blocked: Vec::new(),
@@ -282,7 +280,7 @@ fn plan_team_model_is_router() {
 fn plan_recognized_model_is_router() {
     let view = FakeView {
         recognized: RouteFlag(true),
-        ..FakeView::default()
+        ..empty_view()
     };
     let blocked = RecordingBlocked {
         blocked: Vec::new(),
@@ -301,7 +299,7 @@ fn plan_recognized_model_is_router() {
 fn plan_admin_team_public_model_is_router() {
     let view = FakeView {
         team_public: vec!["secret-model"],
-        ..FakeView::default()
+        ..empty_view()
     };
     let blocked = RecordingBlocked {
         blocked: Vec::new(),
@@ -324,7 +322,7 @@ fn plan_admin_model_in_names_is_not_team_public_router() {
     let view = FakeView {
         team_public: vec!["gpt-upstream"],
         model_names: vec!["gpt-upstream"],
-        ..FakeView::default()
+        ..empty_view()
     };
     let blocked = RecordingBlocked {
         blocked: Vec::new(),
@@ -344,7 +342,7 @@ fn plan_admin_model_in_names_is_not_team_public_router() {
 fn plan_pass_through_all_is_direct() {
     let view = FakeView {
         pass_through_all: RouteFlag(true),
-        ..FakeView::default()
+        ..empty_view()
     };
     let blocked = RecordingBlocked {
         blocked: Vec::new(),
@@ -361,7 +359,7 @@ fn plan_pass_through_all_is_direct() {
 fn plan_default_or_pattern_is_router() {
     let view = FakeView {
         default_or_pattern: RouteFlag(true),
-        ..FakeView::default()
+        ..empty_view()
     };
     let blocked = RecordingBlocked {
         blocked: Vec::new(),
@@ -380,7 +378,7 @@ fn plan_default_or_pattern_is_router() {
 fn plan_deployment_name_is_specific() {
     let view = FakeView {
         deployment_names: vec!["deployment-7"],
-        ..FakeView::default()
+        ..empty_view()
     };
     let blocked = RecordingBlocked {
         blocked: Vec::new(),
@@ -400,7 +398,7 @@ fn plan_wildcard_beats_deployment() {
     let view = FakeView {
         default_or_pattern: RouteFlag(true),
         deployment_names: vec!["deployment-7"],
-        ..FakeView::default()
+        ..empty_view()
     };
     let blocked = RecordingBlocked {
         blocked: Vec::new(),
@@ -433,7 +431,7 @@ fn plan_unknown_model_is_not_found() {
 fn plan_model_in_names_is_not_found() {
     let view = FakeView {
         model_names: vec!["gpt-upstream"],
-        ..FakeView::default()
+        ..empty_view()
     };
     let blocked = RecordingBlocked {
         blocked: Vec::new(),
@@ -452,7 +450,7 @@ async fn entry_router_plan_calls_router() {
     let calls = Calls::default();
     let view = FakeView {
         recognized: RouteFlag(true),
-        ..FakeView::default()
+        ..empty_view()
     };
     let ports = ports_with(Some(view), Vec::new(), &calls, &trace);
     let request = request(
@@ -589,7 +587,7 @@ async fn entry_team_model_written() {
     let calls = Calls::default();
     let view = FakeView {
         team_map: vec![("team-model", "team-1", "global-model")],
-        ..FakeView::default()
+        ..empty_view()
     };
     let ports = ports_with(Some(view), Vec::new(), &calls, &trace);
     let input = PassthroughRouteInput {
@@ -607,7 +605,7 @@ async fn entry_api_key_keeps_model() {
     let calls = Calls::default();
     let view = FakeView {
         team_map: vec![("team-model", "team-1", "global-model")],
-        ..FakeView::default()
+        ..empty_view()
     };
     let ports = ports_with(Some(view), Vec::new(), &calls, &trace);
     let input = PassthroughRouteInput {
@@ -626,7 +624,7 @@ async fn entry_override_keeps_model() {
     let calls = Calls::default();
     let view = FakeView {
         team_map: vec![("team-model", "team-1", "global-model")],
-        ..FakeView::default()
+        ..empty_view()
     };
     let ports = ports_with(Some(view), Vec::new(), &calls, &trace);
     let input = PassthroughRouteInput {
@@ -645,7 +643,7 @@ async fn entry_specific_deployment_in_extra() {
     let calls = Calls::default();
     let view = FakeView {
         deployment_names: vec!["deployment-7"],
-        ..FakeView::default()
+        ..empty_view()
     };
     let ports = ports_with(Some(view), Vec::new(), &calls, &trace);
     let request = request(
@@ -666,7 +664,7 @@ async fn entry_specific_deployment_overwrites() {
     let calls = Calls::default();
     let view = FakeView {
         deployment_names: vec!["deployment-7"],
-        ..FakeView::default()
+        ..empty_view()
     };
     let ports = ports_with(Some(view), Vec::new(), &calls, &trace);
     let mut args = call_args("deployment-7");
@@ -686,7 +684,7 @@ async fn entry_router_plan_keeps_specific_absent() {
     let calls = Calls::default();
     let view = FakeView {
         recognized: RouteFlag(true),
-        ..FakeView::default()
+        ..empty_view()
     };
     let ports = ports_with(Some(view), Vec::new(), &calls, &trace);
     let request = request(
@@ -704,7 +702,7 @@ async fn entry_blocked_is_403() {
     let calls = Calls::default();
     let view = FakeView {
         recognized: RouteFlag(true),
-        ..FakeView::default()
+        ..empty_view()
     };
     let ports = ports_with(Some(view), vec!["gpt-upstream"], &calls, &trace);
     let request = request(
@@ -848,13 +846,14 @@ async fn entry_router_missing() {
     let calls = Calls::default();
     let view: Arc<dyn VideoRouteView + Send + Sync> = Arc::new(FakeView {
         recognized: RouteFlag(true),
-        ..FakeView::default()
+        ..empty_view()
     });
     let blocked: Arc<dyn BlockedModels> = Arc::new(RecordingBlocked {
         blocked: Vec::new(),
         trace: trace.clone(),
     });
-    let direct: Arc<dyn PassthroughDirectCall> = Arc::new(RecordingDirect {
+    let direct: Arc<dyn PassthroughCallPort> = Arc::new(RecordingCallee {
+        label: "direct",
         trace: trace.clone(),
         outcome: Outcome::Reply,
         calls: calls.clone(),
@@ -881,16 +880,17 @@ async fn entry_router_missing() {
 async fn entry_router_uses_b8690_trait() {
     let trace = Trace::default();
     let calls = Calls::default();
-    let router: Arc<dyn PassthroughRouterCall> = sdk_router(&trace);
+    let router: Arc<dyn PassthroughCallPort> = sdk_router(&trace);
     let view: Arc<dyn VideoRouteView + Send + Sync> = Arc::new(FakeView {
         recognized: RouteFlag(true),
-        ..FakeView::default()
+        ..empty_view()
     });
     let blocked: Arc<dyn BlockedModels> = Arc::new(RecordingBlocked {
         blocked: Vec::new(),
         trace: trace.clone(),
     });
-    let direct: Arc<dyn PassthroughDirectCall> = Arc::new(RecordingDirect {
+    let direct: Arc<dyn PassthroughCallPort> = Arc::new(RecordingCallee {
+        label: "direct",
         trace: trace.clone(),
         outcome: Outcome::Reply,
         calls: calls.clone(),
@@ -917,7 +917,7 @@ async fn entry_dispatch_blocked_is_403() {
     let calls = Calls::default();
     let view = FakeView {
         recognized: RouteFlag(true),
-        ..FakeView::default()
+        ..empty_view()
     };
     let ports = ports_with(Some(view), vec!["gpt-upstream"], &calls, &trace);
     let request = request(

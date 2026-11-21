@@ -12,23 +12,24 @@ use crate::api::passthrough_call::{
 };
 use crate::api::video_router_calls::route::VideoRouteView;
 use crate::dispatch::llm_passthrough::route::{PassthroughRouteInput, RouteFlag};
-use crate::dispatch::llm_passthrough::{
-    BlockedModels, PassthroughDirectCall, PassthroughRouterCall,
-};
+use crate::dispatch::llm_passthrough::{BlockedModels, PassthroughCallPort};
 use crate::dispatch::tests::support::Trace;
 use crate::operation::llm_passthrough::LlmPassthroughRequest;
 
 pub(super) struct Ports {
-    pub(super) router: Option<Arc<dyn PassthroughRouterCall>>,
+    pub(super) router: Option<Arc<dyn PassthroughCallPort>>,
     pub(super) view: Option<Arc<dyn VideoRouteView + Send + Sync>>,
     pub(super) blocked: Arc<dyn BlockedModels>,
-    pub(super) direct: Arc<dyn PassthroughDirectCall>,
+    pub(super) direct: Arc<dyn PassthroughCallPort>,
 }
 
 pub(super) fn call_args(model: &str) -> PassthroughCallArgs {
+    let method = String::from("POST");
+    let endpoint = String::from("/v1/messages");
+    let extra = Object::new();
     PassthroughCallArgs {
-        method: String::from("POST"),
-        endpoint: String::from("/v1/messages"),
+        method,
+        endpoint,
         model: model.to_owned(),
         custom_llm_provider: None,
         api_base: None,
@@ -42,7 +43,7 @@ pub(super) fn call_args(model: &str) -> PassthroughCallArgs {
         params: None,
         cookies: None,
         client: None,
-        extra: Object::new(),
+        extra,
     }
 }
 
@@ -118,14 +119,12 @@ pub(super) struct Calls {
 
 impl Calls {
     pub(super) fn push(&self, args: &PassthroughCallArgs) {
-        let recorded = RecordedCall {
-            model: args.model.clone(),
-            extra: args.extra.clone(),
-        };
+        let model = args.model.clone();
+        let extra = args.extra.clone();
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(recorded);
+            .push(RecordedCall { model, extra });
     }
 
     pub(super) fn recorded(&self) -> Vec<RecordedCall> {
@@ -180,6 +179,18 @@ impl VideoRouteView for FakeView {
     }
 }
 
+pub(super) const fn empty_view() -> FakeView {
+    FakeView {
+        recognized: RouteFlag(false),
+        team_map: Vec::new(),
+        team_public: Vec::new(),
+        model_names: Vec::new(),
+        pass_through_all: RouteFlag(false),
+        default_or_pattern: RouteFlag(false),
+        deployment_names: Vec::new(),
+    }
+}
+
 pub(super) struct RecordingBlocked {
     pub(super) blocked: Vec<&'static str>,
     pub(super) trace: Trace,
@@ -193,40 +204,20 @@ impl BlockedModels for RecordingBlocked {
     }
 }
 
-pub(super) struct RecordingRouter {
+pub(super) struct RecordingCallee {
+    pub(super) label: &'static str,
     pub(super) trace: Trace,
     pub(super) outcome: Outcome,
     pub(super) calls: Calls,
 }
 
 #[async_trait]
-impl PassthroughRouterCall for RecordingRouter {
+impl PassthroughCallPort for RecordingCallee {
     async fn call(
         &self,
         args: PassthroughCallArgs,
     ) -> Result<PassthroughReply, PassthroughCallError> {
-        self.trace.push("router");
-        self.calls.push(&args);
-        match self.outcome {
-            Outcome::Reply => Ok(reply()),
-            Outcome::Fail(status) => Err(failure(status)),
-        }
-    }
-}
-
-pub(super) struct RecordingDirect {
-    pub(super) trace: Trace,
-    pub(super) outcome: Outcome,
-    pub(super) calls: Calls,
-}
-
-#[async_trait]
-impl PassthroughDirectCall for RecordingDirect {
-    async fn call(
-        &self,
-        args: PassthroughCallArgs,
-    ) -> Result<PassthroughReply, PassthroughCallError> {
-        self.trace.push("direct");
+        self.trace.push(self.label);
         self.calls.push(&args);
         match self.outcome {
             Outcome::Reply => Ok(reply()),
@@ -249,7 +240,7 @@ impl PassthroughRouterCalls for SdkRouter {
     }
 }
 
-pub(super) fn sdk_router(trace: &Trace) -> Arc<dyn PassthroughRouterCall> {
+pub(super) fn sdk_router(trace: &Trace) -> Arc<dyn PassthroughCallPort> {
     Arc::new(SdkRouter {
         trace: trace.clone(),
     })
@@ -261,12 +252,14 @@ pub(super) fn ports_with(
     calls: &Calls,
     trace: &Trace,
 ) -> Ports {
-    let router: Arc<dyn PassthroughRouterCall> = Arc::new(RecordingRouter {
+    let router: Arc<dyn PassthroughCallPort> = Arc::new(RecordingCallee {
+        label: "router",
         trace: trace.clone(),
         outcome: Outcome::Reply,
         calls: calls.clone(),
     });
-    let direct: Arc<dyn PassthroughDirectCall> = Arc::new(RecordingDirect {
+    let direct: Arc<dyn PassthroughCallPort> = Arc::new(RecordingCallee {
+        label: "direct",
         trace: trace.clone(),
         outcome: Outcome::Reply,
         calls: calls.clone(),
@@ -303,20 +296,22 @@ pub(super) fn failing_router_request(
     trace: &Trace,
     calls: &Calls,
 ) -> LlmPassthroughRequest {
-    let router: Arc<dyn PassthroughRouterCall> = Arc::new(RecordingRouter {
+    let router: Arc<dyn PassthroughCallPort> = Arc::new(RecordingCallee {
+        label: "router",
         trace: trace.clone(),
         outcome: Outcome::Fail(status),
         calls: calls.clone(),
     });
     let view: Arc<dyn VideoRouteView + Send + Sync> = Arc::new(FakeView {
         recognized: RouteFlag(true),
-        ..FakeView::default()
+        ..empty_view()
     });
     let blocked: Arc<dyn BlockedModels> = Arc::new(RecordingBlocked {
         blocked: Vec::new(),
         trace: trace.clone(),
     });
-    let direct: Arc<dyn PassthroughDirectCall> = Arc::new(RecordingDirect {
+    let direct: Arc<dyn PassthroughCallPort> = Arc::new(RecordingCallee {
+        label: "direct",
         trace: trace.clone(),
         outcome: Outcome::Reply,
         calls: calls.clone(),

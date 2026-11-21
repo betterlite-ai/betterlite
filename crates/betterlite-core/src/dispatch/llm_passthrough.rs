@@ -19,17 +19,18 @@ pub trait BlockedModels: Send + Sync {
     fn all_blocked(&self, model: &str, team_id: Option<&str>) -> bool;
 }
 
-// The dyn-compatible twin of PassthroughRouterCalls, whose impl Future return no trait object can hold
+// The call port the plan hands the args to; litellm.allm_passthrough_route needs the logging state and HTTP pool this crate does not hold
 #[async_trait]
-pub trait PassthroughRouterCall: Send + Sync {
+pub trait PassthroughCallPort: Send + Sync {
     async fn call(
         &self,
         args: PassthroughCallArgs,
     ) -> Result<PassthroughReply, PassthroughCallError>;
 }
 
+// B8690's PassthroughRouterCalls has an impl Future return no trait object can hold, so its ports get the boxed form
 #[async_trait]
-impl<Calls> PassthroughRouterCall for Calls
+impl<Calls> PassthroughCallPort for Calls
 where
     Calls: PassthroughRouterCalls,
 {
@@ -39,15 +40,6 @@ where
     ) -> Result<PassthroughReply, PassthroughCallError> {
         self.allm_passthrough_route(args).await
     }
-}
-
-// litellm.allm_passthrough_route, which needs the logging state and the HTTP pool this crate does not hold
-#[async_trait]
-pub trait PassthroughDirectCall: Send + Sync {
-    async fn call(
-        &self,
-        args: PassthroughCallArgs,
-    ) -> Result<PassthroughReply, PassthroughCallError>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
