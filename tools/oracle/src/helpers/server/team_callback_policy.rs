@@ -104,14 +104,16 @@ impl Helper for Op {
                     error: None,
                     warnings: lines,
                 },
-                Err(error) => StepResult {
-                    value: Answer::Nothing,
-                    error: Some(ErrorOut {
-                        status: error.status().map(|code| code.as_u16()),
-                        detail: error.detail(),
-                    }),
-                    warnings: lines,
-                },
+                Err(error) => {
+                    let failure = error.failure();
+                    let status = failure.as_ref().map(|http| http.status.as_u16());
+                    let detail = failure.map(|http| http.detail);
+                    StepResult {
+                        value: Answer::Nothing,
+                        error: Some(ErrorOut { status, detail }),
+                        warnings: lines,
+                    }
+                }
             });
         }
         Ok(serde_json::to_value(results)?)
