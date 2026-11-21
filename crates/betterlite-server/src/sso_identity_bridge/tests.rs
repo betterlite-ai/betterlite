@@ -90,12 +90,12 @@ impl LogBuffer {
 }
 
 impl io::Write for LogBuffer {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .extend_from_slice(buffer);
-        Ok(buffer.len())
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -461,12 +461,7 @@ impl InteractiveEnroller for FakeEnroller {
         *self.recorded.lock().unwrap_or_else(PoisonError::into_inner) =
             Some((subject.clone(), user_id.to_owned()));
         let failure = self.failure.clone();
-        async move {
-            match failure {
-                Some(failure) => Err(failure),
-                None => Ok(()),
-            }
-        }
+        async move { failure.map_or(Ok(()), Err) }
     }
 }
 

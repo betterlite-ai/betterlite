@@ -32,16 +32,16 @@ pub async fn enroll_microsoft_subject<E>(
     store: &E,
 ) -> Result<(), AgentIdentityError>
 where
-    E: InteractiveEnroller,
+    E: InteractiveEnroller + Sync,
 {
-    let Some(subject) = subject else {
+    let Some(identity) = subject else {
         return Ok(());
     };
-    let Some(user_id) = user_id.filter(|value| !value.is_empty()) else {
+    let Some(caller) = user_id.filter(|value| !value.is_empty()) else {
         return Ok(());
     };
     store
-        .enroll_interactive_human(subject, user_id)
+        .enroll_interactive_human(identity, caller)
         .await
         .map_err(|failure| raise_identity_failure(failure, IDENTITY_DENIED_STATUS))
 }

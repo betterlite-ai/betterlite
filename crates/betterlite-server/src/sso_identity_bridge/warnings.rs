@@ -29,7 +29,7 @@ where
     type Error = SsoAssertionStoreError<R::Error>;
 
     fn retention_enabled(&self) -> impl Future<Output = Result<bool, Self::Error>> + Send {
-        DbSsoAssertionStore::retention_enabled(self)
+        Self::retention_enabled(self)
     }
 }
 
@@ -39,7 +39,7 @@ pub async fn warn_if_id_jag_assertion_uncaptured<C>(
     assertion: Option<&SsoIdentityAssertion>,
     retention: &C,
 ) where
-    C: RetentionCheck,
+    C: RetentionCheck + Sync,
 {
     if assertion.is_some() {
         return;
@@ -63,7 +63,7 @@ pub async fn warn_if_id_jag_assertion_uncaptured<C>(
 // the page's own diagnostic: it names the gap before asking the retention gate, so generic OIDC never queries
 pub async fn warn_if_id_jag_capture_gap<C>(settings: &SsoIdentityBridgeSettings, retention: &C)
 where
-    C: RetentionCheck,
+    C: RetentionCheck + Sync,
 {
     let Some(gap) = id_jag_assertion_capture_gap(settings) else {
         return;
