@@ -900,6 +900,23 @@ async fn final_write_returns_before_the_tracker_drains() {
 }
 
 #[tokio::test]
+async fn order_passes_no_parent_span_to_the_cache() {
+    let current = minute(1, 0, 1);
+    let fixture = answered(global_count(1), every_dimension(current));
+    let caller = auth_with_hash(
+        r#"{"api_key":"key-1","user_id":"user-1","team_id":"team-1","end_user_id":"end-user-1","metadata":{"model_tpm_limit":{"gpt-4":1000}}}"#,
+    );
+    let mut request = request_body(Some("gpt-4"), r#"{"global_max_parallel_requests": 5}"#);
+    admit(&fixture, &caller.auth, &mut request).await.unwrap();
+    let spans = fixture.cache.spans();
+    assert_eq!(spans.len(), 9);
+    assert!(
+        !spans.iter().any(|seen| *seen),
+        "the hook passes no parent span"
+    );
+}
+
+#[tokio::test]
 async fn model_limit_deployment_default_applies() {
     let catalog = DeploymentCatalog::model_default(
         "gpt-4",

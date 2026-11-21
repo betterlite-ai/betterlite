@@ -71,6 +71,8 @@ pub(crate) struct RecordingCache {
     write_failure: WriteFailure,
     // a test gate the detached write waits on, so pre_call can be watched returning first
     remote_gate: Option<Arc<Semaphore>>,
+    // whether each cache call carried a span, so a test can see the hook sends none
+    spans: Mutex<Vec<bool>>,
 }
 
 impl RecordingCache {
@@ -92,6 +94,7 @@ impl RecordingCache {
             objects_answer: Mutex::new(BatchAnswer::None),
             write_failure: failure,
             remote_gate: None,
+            spans: Mutex::new(Vec::new()),
         })
     }
 
@@ -102,11 +105,16 @@ impl RecordingCache {
             objects_answer: Mutex::new(BatchAnswer::None),
             write_failure: WriteFailure::Never,
             remote_gate: Some(gate),
+            spans: Mutex::new(Vec::new()),
         })
     }
 
     pub(crate) fn calls(&self) -> Vec<CacheCall> {
         self.calls.lock().expect("the cache lock").clone()
+    }
+
+    pub(crate) fn spans(&self) -> Vec<bool> {
+        self.spans.lock().expect("the span lock").clone()
     }
 
     fn answer(&self, key_count: usize) -> &Mutex<BatchAnswer> {
@@ -134,8 +142,12 @@ impl LegacyUsageCache for RecordingCache {
     async fn batch_get(
         &self,
         keys: &[Option<String>],
-        _parent_otel_span: Option<&ParentOtelSpan>,
+        parent_otel_span: Option<&ParentOtelSpan>,
     ) -> Result<Option<Vec<Option<LegacyCacheValue>>>, UsageCacheError> {
+        self.spans
+            .lock()
+            .expect("the span lock")
+            .push(parent_otel_span.is_some());
         self.record(CacheCall::BatchGet(keys.to_vec()));
         let answer = self
             .answer(keys.len())
@@ -155,9 +167,13 @@ impl LegacyUsageCache for RecordingCache {
         &self,
         entries: &[(String, LegacyCacheValue)],
         ttl: u64,
-        _parent_otel_span: Option<&ParentOtelSpan>,
+        parent_otel_span: Option<&ParentOtelSpan>,
         local_only: bool,
     ) -> Result<(), UsageCacheError> {
+        self.spans
+            .lock()
+            .expect("the span lock")
+            .push(parent_otel_span.is_some());
         self.record(CacheCall::BatchSet {
             entries: entries.to_vec(),
             ttl,
