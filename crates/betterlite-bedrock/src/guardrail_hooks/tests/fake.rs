@@ -124,7 +124,7 @@ impl HookRuntime for FakeRuntime {
     ) -> Vec<GuardrailValue> {
         self.updated
             .as_ref()
-            .map_or_else(|| messages.to_vec(), std::clone::Clone::clone)
+            .map_or_else(|| messages.to_vec(), Clone::clone)
     }
 
     fn mask_response(&self, response: &mut GuardrailValue, _scan: &GuardrailValue) {

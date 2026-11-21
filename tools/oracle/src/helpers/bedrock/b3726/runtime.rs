@@ -159,7 +159,7 @@ impl HookRuntime for OracleRuntime {
     ) -> impl Future<Output = Result<GuardrailValue, HookFailure>> + Send {
         let messages = call.messages.map(to_wire);
         let response = call.response.map(|value| {
-            decode::<ModelResponse>(value)
+            via_json::<GuardrailValue, ModelResponse>(value)
                 .ok_or_else(|| failed("the guardrail response could not be decoded"))
         });
         let source = match call.source {
