@@ -20,10 +20,6 @@ _UNKNOWN_PROVIDER_MESSAGE: Final[str] = (
 )
 # ast-grep-ignore: no-long-names
 VECTOR_STORE_SEARCH_FAILED_CODE: Final[str] = "vector_store_search_failed"
-_VECTOR_STORE_SEARCH_BODY: Final[dict[str, JsonValue]] = {
-    "type": "invalid_request_error",
-    "code": VECTOR_STORE_SEARCH_FAILED_CODE,  # ast-grep-ignore: no-long-names
-}
 class VectorStoreSearchFailure(TypedDict):
     vector_store_id: ReadOnly[str]
     custom_llm_provider: ReadOnly[str | None]
@@ -126,6 +122,10 @@ class VectorStoreSearchError(BadRequestError):
         detail = "; ".join(
             f"{failure['vector_store_id']}: {failure['error']}" for failure in self.failures
         )
+        body: dict[str, JsonValue] = {
+            "type": "invalid_request_error",
+            "code": VECTOR_STORE_SEARCH_FAILED_CODE,  # ast-grep-ignore: no-long-names
+        }
         super().__init__(
             message=(
                 "The request could not be grounded in every configured vector store. "
@@ -133,7 +133,7 @@ class VectorStoreSearchError(BadRequestError):
             ),
             model=model,
             llm_provider=llm_provider,
-            body=_VECTOR_STORE_SEARCH_BODY,
+            body=body,
         )
 @dataclass(eq=False, repr=False)
 class UnprocessableEntityError(RetryText, base.UnprocessableEntityError):
