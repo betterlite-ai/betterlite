@@ -268,8 +268,7 @@ def nonempty_text(value: JsonValue) -> bool:
 
 
 def json_text(value: JsonValue) -> str:
-    text = json.dumps(value, sort_keys=True, separators=(",", ":"))
-    return text
+    return json.dumps(value, sort_keys=True, separators=(",", ":"))
 
 
 def decrypted_text(ciphertext: str) -> str:

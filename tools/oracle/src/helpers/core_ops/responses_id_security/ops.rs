@@ -209,7 +209,7 @@ fn addressed_field(call_type: &str) -> Option<&'static str> {
     }
 }
 
-fn forbidden_kind(forbidden: Forbidden) -> &'static str {
+const fn forbidden_kind(forbidden: Forbidden) -> &'static str {
     match forbidden {
         Forbidden::Unmanaged => "unmanaged_forbidden",
         Forbidden::User => "user_forbidden",
