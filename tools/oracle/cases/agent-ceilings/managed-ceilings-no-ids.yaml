@@ -1,0 +1,9 @@
+kind: helper
+name: managed-ceilings-no-ids
+call:
+  b4778:
+    operation: managed_ceilings
+    access_group_ids: []
+env: {}
+compare:
+  ignore: []

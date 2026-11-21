@@ -234,17 +234,9 @@ pub mod includes;
 pub mod io_token_reservations;
 pub mod jev_classifier;
 pub mod jina_infinity_rerank;
-pub mod jwt_auth;
-pub mod jwt_claims;
-pub mod jwt_db_teams;
-pub mod jwt_key_resolution;
 pub mod jwt_keys;
-pub mod jwt_permissions;
-pub mod jwt_provisioning;
-pub mod jwt_role_claims;
 pub mod jwt_settings;
 pub mod jwt_team_authorization;
-pub mod jwt_team_selection;
 pub mod jwt_verification;
 pub mod key_access;
 pub mod key_context;
@@ -459,7 +451,6 @@ pub mod vertex_image_identity_settings;
 pub mod vertex_schema_shaping;
 pub mod vigil_runtime;
 pub mod virtual_key_auth;
-pub mod virtual_key_routes;
 pub mod voyage_credentials;
 pub mod websearch_request_hooks;
 pub mod weighted_failover;
@@ -617,9 +608,7 @@ sections! {
     health_services, hiddenlayer_evaluation, host_identity_settings, hosted_chat_settings, huggingface_hub,
     huggingface_oidc, ibm_guardrails, image_edit_call, image_generation_call, image_url_download,
     image_variations, includes, io_token_reservations, jev_classifier, jina_infinity_rerank,
-    jwt_auth, jwt_claims, jwt_db_teams, jwt_key_resolution, jwt_keys, jwt_permissions,
-    jwt_provisioning, jwt_role_claims, jwt_settings, jwt_team_authorization, jwt_team_selection,
-    jwt_verification, key_access, key_context, key_create, key_event_sinks, key_limit_policy,
+    jwt_keys, jwt_settings, jwt_team_authorization, jwt_verification, key_access, key_context, key_create, key_event_sinks, key_limit_policy,
     key_management_settings, key_persistence, key_policy_fields, key_rotation, key_rotation_write, lakera_callback,
     langfuse_settings, langsmith_settings, lar1_routing, lasso_classification, latency_observations, latency_routing, least_busy, legacy_guardrails,
     lemonade_model_metadata, llm_classifier, local_ttl_cache, logging_privacy, login_form,
@@ -655,7 +644,7 @@ sections! {
     two_solver_classifier, ui_discovery, ui_session_cleanup, usage_routing, usage_routing_v2,
     usage_v2_accounting, user_delete, user_fields, user_info, user_update, user_url_policy,
     vector_context_shaping, vector_store_registry, verbose_hooks, vertex_credential_sources, vertex_embedding_dispatch,
-    vertex_gcs_settings, vertex_image_credentials, vertex_schema_shaping, vigil_runtime, virtual_key_auth, virtual_key_routes, voyage_credentials,
+    vertex_gcs_settings, vertex_image_credentials, vertex_schema_shaping, vigil_runtime, virtual_key_auth, voyage_credentials,
     websearch_request_hooks, worker_options_reload, xai_identity, xai_oauth_settings, xecguard_runtime,
     config_param_cache, data_cloud_credentials, db_watchdog, enterprise_ml_credentials, fallback_errors, gateway_provider_keys, hosted_platform_keys, mcp_discovery, model_hub_credentials, prompts, public_skills_index, regional_host_keys, smtp_transport, weighted_failover,
 }

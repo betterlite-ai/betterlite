@@ -1,0 +1,22 @@
+kind: probe
+name: routing-retries-stream-before-first-chunk
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    operation:
+      routing_retries:
+        deployments: [{id: a}]
+        num_retries: 1
+        timeout: "30"
+        stream: true
+        steps:
+          - error: {class: service_unavailable, status: 503}
+          - {}
+compare:
+  ignore: []
+  expected_difference:
+    - pointer: /warnings
+      reference: ["Item 'summary' on TypedDict class 'ChatCompletionReasoningItem' is using the `ReadOnly` qualifier. Pydantic will not protect items from any mutation on dictionary instances."]
+      rust: []
+      why: pydantic warns while LiteLLM builds its stream chunk types, and betterlite has no pydantic schema to warn about
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L664-L670

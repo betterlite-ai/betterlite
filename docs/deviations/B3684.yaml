@@ -1,0 +1,27 @@
+task: B3684
+deviations:
+  - what: A config guardrail's `guardrail_id` in the v2 and info responses is the one the registry assigned at startup, while the v1 list shows the id exactly as the config file wrote it, which can be absent.
+    why: LiteLLM reads the raw file for v1 and the in-memory handler for v2 and info, so its two responses differ in the same way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L117-L130
+  - what: Masking is a `pub(crate)` helper at `crate::guardrails::admin_reads::masking::mask_sensitive_values`, not a function shared with the logging code.
+    why: betterlite has no Rust owner for LiteLLM's `_get_masked_values`; this task owns the single copy and B3686 reuses it for submission items.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4346-L4404
+  - what: A database row's `litellm_params` are the stored dict decoded into B3662's typed `LitellmParams` and encoded again, so `mode`, `default_action` and `on_disallowed_action` come back lowercased, an absent `default_on` comes back as false, and a text `timeout` comes back as a number.
+    why: B3682's registry hands the routes a typed `Guardrail` and does not expose the raw column text, so B3662's decode is the only way the record is read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_registry.py#L379-L383
+  - what: A config-sourced entry's `litellm_params` carry the base fields and every key the config set, but not the provider mixin fields whose pydantic default is not None, such as bedrock's `disable_exception_on_block` defaulting to false or presidio's `presidio_language` defaulting to "en", which LiteLLM includes when it dumps the whole typed `LitellmParams` with `exclude_none=True`.
+    why: B3662's `LitellmParams` serializer leaves the mixin fields out by design; a client reading a parameter it declared gets the same value, and the base defaults are present.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1192-L1200
+  - what: The `content_filter_settings` object and the `supported_modes_by_provider` map are written with sorted keys, while LiteLLM keeps dict insertion order (patterns, pattern categories, actions, content categories, and registry order with hide-secrets last).
+    why: B3662's `OpaqueParams` and `GuardrailUiAddSettings` hold BTreeMaps; the JSON parses to the same value and only the key order in the body differs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1424-L1446
+  - what: The `DEFAULT_MAX_RECURSE_DEPTH` variable is read on every provider-form request through the environment port, an empty value counts as unset and means 100, and a value that is not a number answers 500 for that request. LiteLLM reads it once at import with `int()`, and a bad value stops the process from starting.
+    why: betterlite reads its environment at use, as docs/compatibility.md says; the route must not take the server down for a bad value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L85
+  - what: A 500 from the v2 list or from info carries the Rust error chain's text as `detail`, where LiteLLM carries `str()` of the Python exception, including the database driver's own message.
+    why: The driver error text has no Rust equivalent; the registry and team ports name the failing step, and the response shape (500 with a `detail`) is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L326-L328
+kept_bugs:
+  - what: Any valid key can read any guardrail by id through `GET /guardrails/{guardrail_id}` and its `/info` alias, including a guardrail scoped to another team that the v2 list hides, and the masked params still show the first and last two characters of secrets.
+    why: A setup whose clients fetch a guardrail by an id they already hold relies on the route answering, and the task pins LiteLLM's behavior; the list routes still filter by team, so ids are only exposed to the caller's own teams.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1351-L1361

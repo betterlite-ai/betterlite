@@ -1,0 +1,52 @@
+name: unified-lifecycle-anthropic-messages-post-call-block
+config: |
+  model_list:
+    - model_name: guarded-model
+      litellm_params:
+        model: openai/guarded-upstream
+        api_base: "{{upstream}}"
+        api_key: oracle-key
+  guardrails:
+    - guardrail_name: word-filter
+      litellm_params:
+        guardrail: litellm_content_filter
+        mode: post_call
+        default_on: true
+        blocked_words:
+          - keyword: forbidden
+            action: BLOCK
+env: {}
+request:
+  method: POST
+  path: /v1/messages
+  headers:
+    content-type: application/json
+    authorization: Bearer oracle-master
+    x-litellm-call-id: oracle-call-unified-anthropic-post-block
+  body:
+    model: guarded-model
+    max_tokens: 64
+    messages:
+      - {role: user, content: Say anything.}
+upstream:
+  - status: 200
+    headers: {content-type: application/json, x-request-id: upstream-request-unified-anthropic-post}
+    body:
+      id: chatcmpl-unified-anthropic-post
+      object: chat.completion
+      created: 1700000000
+      model: guarded-upstream-2024
+      system_fingerprint: fp_oracle
+      choices:
+        - index: 0
+          message: {role: assistant, content: Here is the forbidden word., refusal: null, annotations: []}
+          logprobs: null
+          finish_reason: stop
+      usage: {prompt_tokens: 4, completion_tokens: 6, total_tokens: 10}
+compare:
+  headers: [content-type]
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore:
+    - pointer: /error/message
+      why: LiteLLM puts the Python repr of the content filter's detail dict in the message, and docs/compatibility.md keeps repr text out of betterlite
