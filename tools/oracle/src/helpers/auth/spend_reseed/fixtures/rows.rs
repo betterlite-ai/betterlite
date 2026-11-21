@@ -2,11 +2,16 @@ use std::collections::BTreeMap;
 use std::future::{Future, ready};
 
 use betterlite_auth::spend_reseed::rows::{
-    SpendAggregateRow, SpendCounterRows, SpendRow, SpendRowLookup, WindowEntity, WindowSpendRow,
+    SpendAggregateRow, SpendCounterRows, WindowEntity, WindowSpendRow,
 };
 use betterlite_db::budget_permission_rows::{JsonData, Timestamp};
+use betterlite_db::spend_rows::rows::{
+    SpendCounterRows as DbSpendCounterRows, SpendRow, SpendRowLookup,
+};
 use betterlite_oracle_helper_api::error::HelperError;
 use chrono::{DateTime, Utc};
+use rust_decimal::Decimal;
+use rust_decimal::prelude::FromPrimitive as _;
 use serde_json::Number;
 
 use super::fakes::{FakeError, timestamp};
@@ -55,18 +60,6 @@ impl FakeRows {
 impl SpendCounterRows for FakeRows {
     type Error = FakeError;
 
-    fn spend_row(
-        &self,
-        _lookup: SpendRowLookup<'_>,
-    ) -> impl Future<Output = Result<Option<SpendRow>, FakeError>> + Send {
-        if self.fails {
-            return ready(Err(FakeError));
-        }
-        ready(Ok(self.row.map(|amount| SpendRow {
-            spend: stored(amount),
-        })))
-    }
-
     fn window_row(
         &self,
         _entity: WindowEntity,
@@ -102,5 +95,21 @@ impl SpendCounterRows for FakeRows {
         }
         let total: f64 = matching.iter().sum();
         ready(Ok(vec![aggregate(total)]))
+    }
+}
+
+impl DbSpendCounterRows for FakeRows {
+    type Error = FakeError;
+
+    fn spend_row(
+        &self,
+        _lookup: SpendRowLookup<'_>,
+    ) -> impl Future<Output = Result<Option<SpendRow>, FakeError>> + Send {
+        if self.fails {
+            return ready(Err(FakeError));
+        }
+        ready(Ok(self.row.map(|amount| SpendRow {
+            spend: Decimal::from_f64(amount),
+        })))
     }
 }

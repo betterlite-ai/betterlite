@@ -213,7 +213,7 @@ pub(crate) fn counter(rows: Option<Arc<FakeRows>>) -> SpendCounterReseed<FakeRow
         clock: Box::new(BudgetSystemClock {
             started: Instant::now(),
         }),
-        durations: Box::new(FixedDurations),
+        durations: Arc::new(FixedDurations),
         tasks: TaskTracker::new(),
         gate: Arc::new(LoopBoundSemaphore {
             value: 25,
