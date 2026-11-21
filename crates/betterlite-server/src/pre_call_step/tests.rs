@@ -29,6 +29,7 @@ use crate::pre_call::ports::{
 use crate::pre_call::rewrites::{CliOverrides, RequestModel};
 use crate::pre_call::route_type::RouteType;
 
+mod fallback_guard;
 mod redaction;
 mod support;
 
