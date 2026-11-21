@@ -289,7 +289,12 @@ class VectorStoreSearchCreateRequest(BaseModel):
             litellm.vector_store_registry = held
         payload: dict[str, JsonValue] = {
             "vector_store_search_create": {
-                "value": {"runs": [JSON.validate_json(run.model_dump_json()) for run in runs]}
+                "value": {
+                    "runs": [
+                        JSON.validate_json(run.model_dump_json(by_alias=True))
+                        for run in runs
+                    ]
+                }
             }
         }
         return json.dumps(payload, separators=(",", ":"))
