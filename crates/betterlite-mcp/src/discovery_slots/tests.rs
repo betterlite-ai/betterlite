@@ -5,6 +5,7 @@ use std::future::{Future, pending};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use betterlite_env::EnvError;
 use http::{HeaderMap, StatusCode};
 use rstest::rstest;
 use tokio::sync::{RwLock, Semaphore};

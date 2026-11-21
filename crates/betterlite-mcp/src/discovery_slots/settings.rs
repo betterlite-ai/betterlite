@@ -1,12 +1,11 @@
 use std::time::Duration;
 
 use betterlite_config::loader::EnvironmentLookup;
+use betterlite_env::{EnvError, flag};
 
 use crate::oauth_discovery::settings::DiscoverySettings as FetchSettings;
 
 pub const ON_STARTUP_VARIABLE: &str = "LITELLM_MCP_OAUTH_DISCOVERY_ON_STARTUP";
-
-const TRUE_VALUES: [&str; 4] = ["1", "true", "yes", "on"];
 const RETRY_DELAYS: [Duration; 2] = [Duration::from_millis(50), Duration::from_millis(150)];
 const BACKOFF_BASE: Duration = Duration::from_secs(30);
 const BACKOFF_CAP: Duration = Duration::from_secs(900);
@@ -36,22 +35,22 @@ impl Default for DiscoverySettings {
 }
 
 impl DiscoverySettings {
-    #[must_use]
-    pub fn from_lookup<E>(environment: &E) -> Self
+    pub fn from_lookup<E>(environment: &E) -> Result<Self, EnvError>
     where
         E: EnvironmentLookup,
     {
         let on_startup = environment
             .lookup(ON_STARTUP_VARIABLE)
-            .is_some_and(|value| TRUE_VALUES.contains(&value.trim().to_lowercase().as_str()));
-        Self {
+            .map_or(Ok(None), |text| flag(ON_STARTUP_VARIABLE, &text))?
+            .unwrap_or(false);
+        Ok(Self {
             on_startup,
             retry_delays: RETRY_DELAYS.to_vec(),
             backoff_base: BACKOFF_BASE,
             backoff_cap: BACKOFF_CAP,
             temporary_ttl: TEMPORARY_TTL,
             fetch: FetchSettings::from_lookup(environment),
-        }
+        })
     }
 
     #[must_use]

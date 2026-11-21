@@ -10,12 +10,25 @@
 #[case::zero("0", false)]
 #[case::false_word("false", false)]
 #[case::off("off", false)]
-#[case::other_word("enabled", false)]
-fn settings_on_startup_accepts_only_the_truthy_values(#[case] value: &str, #[case] expected: bool) {
+fn settings_on_startup_reads_the_shared_flag_values(#[case] value: &str, #[case] expected: bool) {
     let environment = BTreeMap::from([(String::from(ON_STARTUP_VARIABLE), value.to_owned())]);
     assert_eq!(
-        DiscoverySettings::from_lookup(&environment).on_startup,
+        DiscoverySettings::from_lookup(&environment)
+            .unwrap()
+            .on_startup,
         expected
+    );
+}
+
+#[test]
+fn settings_on_startup_rejects_a_word_that_is_not_a_bool() {
+    let environment =
+        BTreeMap::from([(String::from(ON_STARTUP_VARIABLE), String::from("enabled"))]);
+    assert_eq!(
+        DiscoverySettings::from_lookup(&environment),
+        Err(EnvError::Bool {
+            name: String::from(ON_STARTUP_VARIABLE)
+        })
     );
 }
 
@@ -32,7 +45,7 @@ fn settings_absent_variables_give_the_defaults() {
     let environment = BTreeMap::<String, String>::new();
     assert_eq!(
         DiscoverySettings::from_lookup(&environment),
-        settings_with(false, litellm_delays())
+        Ok(settings_with(false, litellm_delays()))
     );
 }
 
@@ -52,7 +65,7 @@ fn settings_lookup_keeps_the_default_numbers_and_reads_the_fetch_timeout() {
             metadata_timeout: Duration::from_secs(2),
         },
     };
-    assert_eq!(DiscoverySettings::from_lookup(&environment), expected);
+    assert_eq!(DiscoverySettings::from_lookup(&environment), Ok(expected));
 }
 
 #[rstest]
