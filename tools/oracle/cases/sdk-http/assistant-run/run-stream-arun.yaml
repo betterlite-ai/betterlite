@@ -1,0 +1,24 @@
+kind: sdk_http
+name: run-stream-arun
+env: {}
+call:
+  assistant_run:
+    mode: arun_stream
+    provider: openai
+    thread_id: thread_a
+    assistant_id: asst_a
+    params: {api_key: 'sk-test'}
+upstream:
+  - status: 200
+    headers: {content-type: text/event-stream}
+    events:
+      - '{"event": "thread.run.created", "data": {"id": "run_1", "object": "thread.run", "created_at": 1700000000, "assistant_id": "asst_a", "thread_id": "thread_a", "status": "queued", "instructions": "base", "model": "gpt-4o-mini", "parallel_tool_calls": true, "tools": [{"type": "code_interpreter"}]}}'
+      - '{"event": "thread.message.created", "data": {"id": "msg_1", "object": "thread.message", "status": "in_progress", "thread_id": "thread_a", "content": []}}'
+      - '{"event": "thread.message.delta", "data": {"id": "msg_1", "object": "thread.message.delta", "delta": {}}}'
+      - '{"event": "thread.run.completed", "data": {"id": "run_1", "object": "thread.run", "created_at": 1700000000, "completed_at": 1700000005, "assistant_id": "asst_a", "thread_id": "thread_a", "status": "completed", "instructions": "base", "model": "gpt-4o-mini", "parallel_tool_calls": true, "metadata": {"tag": "x"}, "tools": [{"type": "code_interpreter"}]}}'
+      - '[DONE]'
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, openai-beta]
+  ignore: []

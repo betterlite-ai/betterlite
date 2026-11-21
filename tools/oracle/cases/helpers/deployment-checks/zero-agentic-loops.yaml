@@ -1,0 +1,14 @@
+kind: helper
+name: deployment-checks-zero-agentic-loops
+call:
+  b8378:
+    operation: max_agentic_loops
+    model:
+      model_name: zero-loops
+      litellm_params:
+        model: openai/gpt-4o
+        max_agentic_loops: 0
+    model_list: []
+    limit: null
+env: {}
+compare: {ignore: []}

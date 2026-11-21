@@ -1,0 +1,7 @@
+kind: helper
+name: foundry-resource-dispatch-vector-search
+call:
+  foundry_resource_dispatch:
+    case: vector_search
+env: {}
+compare: {ignore: []}

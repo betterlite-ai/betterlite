@@ -1,14 +1,14 @@
 id: B1694
 milestone: M4 keys, spend and management
 title: Price optimization savings against recorded usage and deployment rates
-status: todo
+status: done
 depends_on: [B068, B171, B174, B198, B204, B845, B1668, B1670, B1672, B1673, B1675, B1678, B1693]
 file: tasks/B1694-optimization-savings-pricing.yaml
 covers:
   - "litellm/proxy/spend_tracking/savings.py"
 parent: B068
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2774

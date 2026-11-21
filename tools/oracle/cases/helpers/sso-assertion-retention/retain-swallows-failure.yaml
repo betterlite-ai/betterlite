@@ -1,0 +1,44 @@
+kind: helper
+name: retain-swallows-failure
+call:
+  b10011:
+    database: true
+    config_servers: []
+    db_servers: []
+    failure: null
+    steps:
+      - {step: retain, user_id: alice, assertion: null}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/logs
+      why: The warning's suffix is each implementation's own storage error text; the native store tests pin the fixed prefix.
+calls:
+  - b10011:
+      database: true
+      config_servers: []
+      db_servers: ['api_key']
+      failure: null
+      steps:
+        - {step: retain, user_id: alice, assertion: {id_token: ignored-token}}
+  - b10011:
+      database: true
+      config_servers: ['oauth2_id_jag']
+      db_servers: []
+      failure: {method: upsert, call: 0}
+      steps:
+        - {step: retain, user_id: alice, assertion: {id_token: dropped-token}}
+  - b10011:
+      database: true
+      config_servers: []
+      db_servers: ['oauth2_id_jag']
+      failure: {method: find_first, call: 0}
+      steps:
+        - {step: retain, user_id: alice, assertion: {id_token: dropped-token}}
+  - b10011:
+      database: true
+      config_servers: ['oauth2_id_jag']
+      db_servers: []
+      failure: null
+      steps:
+        - {step: retain, user_id: alice, assertion: {id_token: kept-token, refresh_token: kept-refresh, issuer: 'https://idp.test'}}
