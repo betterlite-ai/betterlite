@@ -182,10 +182,13 @@ impl ProjectAdmission<'_> {
             native: self.reservations.attribution.native,
             router: self.reservations.attribution.router,
         };
-        match handle_rate_limit_error(response, request.descriptors, window, &attribution)? {
-            Some(error) => Err(ProjectAdmissionError::RateLimited(Box::new(error))),
-            None => Ok(()),
-        }
+        // LiteLLM's handler raises only for an OVER_LIMIT status, so a response without one falls through to the stash
+        let Some(error) =
+            handle_rate_limit_error(response, request.descriptors, window, &attribution)?
+        else {
+            return Ok(());
+        };
+        Err(ProjectAdmissionError::RateLimited(Box::new(error)))
     }
 }
 

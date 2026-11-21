@@ -1,6 +1,5 @@
 import asyncio
-from collections.abc import Sequence
-from typing import Protocol, TypedDict, runtime_checkable
+from typing import Protocol, TypedDict, Unpack, runtime_checkable
 
 import litellm
 from b3042.answers import raised_json, response_json, window_json
@@ -20,6 +19,7 @@ litellm.suppress_debug_info = True
 
 __all__ = ["run"]
 
+
 class Input(TypedDict):
     descriptors: list[RateLimitDescriptor]
     data: JsonValue
@@ -33,29 +33,33 @@ class Input(TypedDict):
     rate_limit_response: RateLimitResponse | None
 
 
+class ReserveArgs(TypedDict):
+    descriptors: list[RateLimitDescriptor]
+    data: JsonValue
+    requested_model: str | None
+    user_api_key_dict: UserAPIKeyAuth
+    tpm_reservation_scopes: list[tuple[str, str]]
+    tpm_reservation_amount: int
+    call_type: str | None
+
+
 class ProjectAdmission(Protocol):
-    async def _reserve_project_io_tokens_or_raise(
-        self,
-        descriptors: Sequence[RateLimitDescriptor],
-        data: JsonValue,
-        requested_model: str | None,
-        user_api_key_dict: UserAPIKeyAuth,
-        tpm_reservation_scopes: Sequence[tuple[str, str]],
-        tpm_reservation_amount: int,
-        call_type: str | None,
+    async def _reserve_project_io_tokens_or_raise(  # ast-grep-ignore: no-long-names
+        self, **arguments: Unpack[ReserveArgs]
     ) -> None: ...
 
     async def admit(self, call: Input) -> None:
         scopes = [(scope[0], scope[1]) for scope in call["tpm_reservation_scopes"]]
-        await self._reserve_project_io_tokens_or_raise(
-            call["descriptors"],
-            call["data"],
-            call["requested_model"],
-            UserAPIKeyAuth(),
-            scopes,
-            call["tpm_reservation_amount"],
-            call["call_type"],
+        arguments = ReserveArgs(
+            descriptors=call["descriptors"],
+            data=call["data"],
+            requested_model=call["requested_model"],
+            user_api_key_dict=UserAPIKeyAuth(),
+            tpm_reservation_scopes=scopes,
+            tpm_reservation_amount=call["tpm_reservation_amount"],
+            call_type=call["call_type"],
         )
+        await self._reserve_project_io_tokens_or_raise(**arguments)
 
 
 @runtime_checkable
@@ -77,13 +81,13 @@ def stash_json(stash: RequestRateLimiterStash) -> JsonValue:
         "reservation_released": stash.reservation_released,
         "parallel_slot_released": stash.parallel_slot is None,
         "itpm_reserved_tokens": stash.itpm_reserved_tokens,
-        "itpm_reserved_scopes": [list(scope) for scope in sorted(stash.itpm_reserved_scopes)],
+        "itpm_reserved_scopes": [[key, value] for key, value in sorted(stash.itpm_reserved_scopes)],
         "itpm_reserved_windows": [
             window_json(key, start, backend)
             for key, start, backend in sorted(stash.itpm_reserved_window_identities)
         ],
         "otpm_reserved_tokens": stash.otpm_reserved_tokens,
-        "otpm_reserved_scopes": [list(scope) for scope in sorted(stash.otpm_reserved_scopes)],
+        "otpm_reserved_scopes": [[key, value] for key, value in sorted(stash.otpm_reserved_scopes)],
         "otpm_reserved_windows": [
             window_json(key, start, backend)
             for key, start, backend in sorted(stash.otpm_reserved_window_identities)
