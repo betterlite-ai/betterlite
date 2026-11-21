@@ -20,7 +20,7 @@ use self::support::{
     custom_call, gpt_image_tag, image, redactor, response, settings, upload,
 };
 use super::call::{DEFAULT_MODEL, DEFAULT_REQUEST_TIMEOUT, ImageEditClientKind, ImageInput};
-use super::entry::{aimage_edit, image_edit};
+use super::entry::ImageEditEntry;
 use super::error::ImageEditError;
 use super::service::{ImageEdits, branch_timeout, check_branch_model};
 use crate::api::image_input_options::options::{Quality, ResponseFormat};
@@ -57,9 +57,14 @@ async fn edit_openai_upload() {
         global_drop_params: false,
     };
     let mut logger = RecordingLogger::new();
-    let answer = image_edit(&service, &upload(), &mut logger, &redactor())
-        .await
-        .expect("the edit succeeds");
+    let answer = ImageEditEntry {
+        operation: &service,
+        logger: &mut logger,
+        redactor: &redactor(),
+    }
+    .image_edit(&upload())
+    .await
+    .expect("the edit succeeds");
     assert_eq!(answer, response());
     let recorded = provider.take();
     let [sent] = recorded.as_slice() else {
@@ -134,15 +139,25 @@ async fn edit_openai_upload_normalizes_images_and_defaults_the_model() {
     single.size = None;
     single.user = None;
     single.prompt = Some(String::from("single"));
-    image_edit(&service, &single, &mut logger, &redactor())
-        .await
-        .expect("the single-image edit succeeds");
+    ImageEditEntry {
+        operation: &service,
+        logger: &mut logger,
+        redactor: &redactor(),
+    }
+    .image_edit(&single)
+    .await
+    .expect("the single-image edit succeeds");
     let mut absent = single.clone();
     absent.image = ImageInput::Absent;
     absent.prompt = Some(String::from("none"));
-    image_edit(&service, &absent, &mut logger, &redactor())
-        .await
-        .expect("the image-less edit succeeds");
+    ImageEditEntry {
+        operation: &service,
+        logger: &mut logger,
+        redactor: &redactor(),
+    }
+    .image_edit(&absent)
+    .await
+    .expect("the image-less edit succeeds");
     let recorded = provider.take();
     let [single_sent, absent_sent] = recorded.as_slice() else {
         panic!("one send per edit");
@@ -222,9 +237,14 @@ async fn edit_option_merge() {
         ),
         (String::from("api_key"), Json::Text(String::from("sk-test"))),
     ]);
-    image_edit(&service, &call, &mut logger, &redactor())
-        .await
-        .expect("the merged edit succeeds");
+    ImageEditEntry {
+        operation: &service,
+        logger: &mut logger,
+        redactor: &redactor(),
+    }
+    .image_edit(&call)
+    .await
+    .expect("the merged edit succeeds");
     let recorded = provider.take();
     let [sent] = recorded.as_slice() else {
         panic!("exactly one send");
@@ -315,9 +335,14 @@ async fn edit_option_merge_json_provider() {
             )])),
         ),
     ]);
-    image_edit(&service, &call, &mut logger, &redactor())
-        .await
-        .expect("the JSON edit succeeds");
+    ImageEditEntry {
+        operation: &service,
+        logger: &mut logger,
+        redactor: &redactor(),
+    }
+    .image_edit(&call)
+    .await
+    .expect("the JSON edit succeeds");
     let recorded = provider.take();
     let [sent] = recorded.as_slice() else {
         panic!("exactly one send");
@@ -353,9 +378,14 @@ async fn edit_option_merge_rejects_a_non_text_header() {
         String::from("x"),
         Json::Number(Number::from(1)),
     )]));
-    let error = image_edit(&service, &call, &mut RecordingLogger::new(), &redactor())
-        .await
-        .expect_err("a numeric header value is refused");
+    let error = ImageEditEntry {
+        operation: &service,
+        logger: &mut RecordingLogger::new(),
+        redactor: &redactor(),
+    }
+    .image_edit(&call)
+    .await
+    .expect_err("a numeric header value is refused");
     assert_eq!(error.message, "the x header value must be text");
     assert_eq!(provider.take().len(), 0);
 }
@@ -403,9 +433,14 @@ async fn edit_dispatch_and_timeout(
     call.image = ImageInput::One(Box::new(image("a.png", b"abc")));
     call.mask = None;
     call.timeout = timeout;
-    image_edit(&service, &call, &mut RecordingLogger::new(), &redactor())
-        .await
-        .expect("the fixture branch answers");
+    ImageEditEntry {
+        operation: &service,
+        logger: &mut RecordingLogger::new(),
+        redactor: &redactor(),
+    }
+    .image_edit(&call)
+    .await
+    .expect("the fixture branch answers");
     let provider = match model {
         "stability/edit-model" => &stability,
         "bedrock/edit-model" => &bedrock,
@@ -434,9 +469,14 @@ async fn edit_dispatch_and_timeout_defaults_to_6000() {
     };
     let mut call = upload();
     call.model = Some(String::from("stability/edit-model"));
-    image_edit(&service, &call, &mut RecordingLogger::new(), &redactor())
-        .await
-        .expect("the fixture branch answers");
+    ImageEditEntry {
+        operation: &service,
+        logger: &mut RecordingLogger::new(),
+        redactor: &redactor(),
+    }
+    .image_edit(&call)
+    .await
+    .expect("the fixture branch answers");
     assert_eq!(stability.take()[0].timeout, Some(6000.0));
 }
 
@@ -455,17 +495,27 @@ async fn edit_dispatch_and_timeout_without_a_config() {
     };
     let mut call = upload();
     call.model = Some(String::from("anthropic/claude-3-5-haiku-20241022"));
-    let error = image_edit(&service, &call, &mut RecordingLogger::new(), &redactor())
-        .await
-        .expect_err("anthropic has no image edit config");
+    let error = ImageEditEntry {
+        operation: &service,
+        logger: &mut RecordingLogger::new(),
+        redactor: &redactor(),
+    }
+    .image_edit(&call)
+    .await
+    .expect_err("anthropic has no image edit config");
     assert_eq!(error.message, "image edit is not supported for anthropic");
     assert!(matches!(error.class, ErrorClass::ApiConnection(_)));
     let metadata = error.class.metadata();
     assert_eq!(metadata.model.as_deref(), Some("claude-3-5-haiku-20241022"));
     assert_eq!(metadata.provider.as_deref(), Some("anthropic"));
-    let exception = aimage_edit(&service, &call, &mut RecordingLogger::new(), &redactor())
-        .await
-        .expect_err("the async entry maps the same failure");
+    let exception = ImageEditEntry {
+        operation: &service,
+        logger: &mut RecordingLogger::new(),
+        redactor: &redactor(),
+    }
+    .aimage_edit(&call)
+    .await
+    .expect_err("the async entry maps the same failure");
     assert_eq!(
         exception.message,
         "image edit is not supported for anthropic"
@@ -522,9 +572,14 @@ async fn edit_dispatch_and_timeout_logs_before_the_branch_merge() {
         )])),
     )]);
     let mut logger = RecordingLogger::new();
-    image_edit(&service, &call, &mut logger, &redactor())
-        .await
-        .expect("the fixture branch answers");
+    ImageEditEntry {
+        operation: &service,
+        logger: &mut logger,
+        redactor: &redactor(),
+    }
+    .image_edit(&call)
+    .await
+    .expect("the fixture branch answers");
     let [record] = logger.records.as_slice() else {
         panic!("exactly one logged pre-call");
     };
@@ -567,9 +622,14 @@ async fn edit_custom_and_async() {
     let mut call = custom_call();
     call.kwargs
         .insert(String::from("async_call"), Json::Number(Number::from(1)));
-    image_edit(&service, &call, &mut RecordingLogger::new(), &redactor())
-        .await
-        .expect("the custom handler answers");
+    ImageEditEntry {
+        operation: &service,
+        logger: &mut RecordingLogger::new(),
+        redactor: &redactor(),
+    }
+    .image_edit(&call)
+    .await
+    .expect("the custom handler answers");
     assert!(first.take().is_empty());
     let calls = second.take();
     let [sent] = calls.as_slice() else {
@@ -596,9 +656,14 @@ async fn edit_custom_and_async() {
     assert_eq!(sent.client, Some(ImageEditClientKind::Sync));
     let mut wrong = call.clone();
     wrong.client = Some(ImageEditClientKind::Asynchronous);
-    image_edit(&service, &wrong, &mut RecordingLogger::new(), &redactor())
-        .await
-        .expect("the custom handler answers");
+    ImageEditEntry {
+        operation: &service,
+        logger: &mut RecordingLogger::new(),
+        redactor: &redactor(),
+    }
+    .image_edit(&wrong)
+    .await
+    .expect("the custom handler answers");
     assert_eq!(second.take()[0].client, None);
 }
 
@@ -620,9 +685,14 @@ async fn edit_custom_and_async_forces_async() {
     let mut call = custom_call();
     call.image = ImageInput::One(Box::new(image("a.png", b"abc")));
     call.client = Some(ImageEditClientKind::Asynchronous);
-    let answer = aimage_edit(&service, &call, &mut RecordingLogger::new(), &redactor())
-        .await
-        .expect("the async handler answers");
+    let answer = ImageEditEntry {
+        operation: &service,
+        logger: &mut RecordingLogger::new(),
+        redactor: &redactor(),
+    }
+    .aimage_edit(&call)
+    .await
+    .expect("the async handler answers");
     assert_eq!(answer, response());
     assert_eq!(call.kwargs.get("async_call"), None);
     let calls = handler.take();
@@ -652,15 +722,25 @@ async fn edit_custom_and_async_missing_handler() {
     call.model = Some(String::from("ghost-model"));
     call.custom_llm_provider = Some(String::from("ghost-provider"));
     call.image = ImageInput::Absent;
-    let error = image_edit(&service, &call, &mut RecordingLogger::new(), &redactor())
-        .await
-        .expect_err("a listed provider without a handler is unknown");
+    let error = ImageEditEntry {
+        operation: &service,
+        logger: &mut RecordingLogger::new(),
+        redactor: &redactor(),
+    }
+    .image_edit(&call)
+    .await
+    .expect_err("a listed provider without a handler is unknown");
     let expected = "Unmapped LLM provider for this endpoint. You passed model=ghost-model, custom_llm_provider=ghost-provider. Check supported provider and route: https://docs.litellm.ai/docs/providers";
     assert_eq!(error.message, expected);
     assert!(matches!(error.class, ErrorClass::BadRequest(_)));
-    let exception = aimage_edit(&service, &call, &mut RecordingLogger::new(), &redactor())
-        .await
-        .expect_err("the async entry maps the same failure");
+    let exception = ImageEditEntry {
+        operation: &service,
+        logger: &mut RecordingLogger::new(),
+        redactor: &redactor(),
+    }
+    .aimage_edit(&call)
+    .await
+    .expect_err("the async entry maps the same failure");
     assert_eq!(exception.message, expected);
     assert!(matches!(exception.class, ErrorClass::BadRequest(_)));
 }
@@ -679,12 +759,12 @@ async fn image_edit_awaits_a_pending_provider() {
         custom: &NoCustom,
         global_drop_params: false,
     };
-    let answer = image_edit(
-        &service,
-        &upload(),
-        &mut RecordingLogger::new(),
-        &redactor(),
-    )
+    let answer = ImageEditEntry {
+        operation: &service,
+        logger: &mut RecordingLogger::new(),
+        redactor: &redactor(),
+    }
+    .image_edit(&upload())
     .await
     .expect("the pending provider answers");
     assert_eq!(answer, response());
@@ -705,9 +785,14 @@ async fn image_edit_reports_a_logger_failure() {
         custom: &NoCustom,
         global_drop_params: false,
     };
-    let error = image_edit(&service, &upload(), &mut FailingLogger, &redactor())
-        .await
-        .expect_err("the logger's refusal is reported");
+    let error = ImageEditEntry {
+        operation: &service,
+        logger: &mut FailingLogger,
+        redactor: &redactor(),
+    }
+    .image_edit(&upload())
+    .await
+    .expect_err("the logger's refusal is reported");
     assert_eq!(
         error.message,
         ImageEditError::Logging(PrePostError::RawRequestCaptured).to_string()
@@ -756,9 +841,14 @@ async fn image_edit_attributes_an_unresolved_model_to_the_arguments() {
     };
     let mut call = upload();
     call.model = Some(String::from("unlisted-edit-model"));
-    let error = image_edit(&service, &call, &mut RecordingLogger::new(), &redactor())
-        .await
-        .expect_err("an unknown model has no provider");
+    let error = ImageEditEntry {
+        operation: &service,
+        logger: &mut RecordingLogger::new(),
+        redactor: &redactor(),
+    }
+    .image_edit(&call)
+    .await
+    .expect_err("an unknown model has no provider");
     assert!(matches!(error.class, ErrorClass::BadRequest(_)));
     let metadata = error.class.metadata();
     assert_eq!(metadata.model.as_deref(), Some("unlisted-edit-model"));

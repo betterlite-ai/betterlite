@@ -24,7 +24,6 @@ use crate::api::image_edit_call::call::{
 };
 use crate::api::image_edit_call::error::ImageEditError;
 use crate::api::image_edit_call::logging::{ImageEditLogger, PreCallRecord};
-use crate::api::image_edit_call::options::image_edit_params;
 use crate::api::image_edit_call::send::{
     CustomEditHandler, CustomEditLookup, CustomEditProviders, CustomEditRequest, ImageEditProvider,
     ImageEditProviderSource, ImageEditSendRequest,
@@ -116,7 +115,8 @@ impl ImageEditProvider for Provider {
         _model: &str,
         _policy: &OptionalParamsPolicy,
     ) -> Result<ImageParams, ImageEditError> {
-        image_edit_params(options)
+        // the OpenAI config's map_openai_params: a dict copy in the TypedDict's order
+        Ok(serde_json::from_slice(&serde_json::to_vec(options)?)?)
     }
 
     fn send(&self, request: ImageEditSendRequest<'_>) -> Result<ImageEditStep<'_>, ImageEditError> {

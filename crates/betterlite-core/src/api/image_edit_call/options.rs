@@ -68,13 +68,6 @@ fn additional_drop_params(value: Option<&Json>) -> Vec<String> {
         .collect()
 }
 
-// The OpenAI config's map_openai_params: a dict copy of the requested options, in the TypedDict's order
-pub fn image_edit_params(
-    options: &ImageEditOptionalRequestParams,
-) -> Result<ImageParams, ImageEditError> {
-    Ok(serde_json::from_slice(&serde_json::to_vec(options)?)?)
-}
-
 // the name the OpenAI transform uploads a mask file under
 fn mask_name(mask: &ImageFile) -> String {
     mask.filename

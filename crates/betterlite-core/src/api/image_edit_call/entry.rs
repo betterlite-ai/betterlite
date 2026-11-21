@@ -27,50 +27,52 @@ pub trait ImageEditOperation {
     fn attribution(&self, call: &ImageEditCall) -> Attribution;
 }
 
-// the sync entry: preparation once, then a ready answer or the one coroutine a provider returned, every failure mapped by exception_type
-pub async fn image_edit<O>(
-    operation: &O,
-    call: &ImageEditCall,
-    logger: &mut dyn ImageEditLogger,
-    redactor: &Redactor,
-) -> Result<ImageResponse, ImageEditException>
-where
-    O: ImageEditOperation + Sync,
-{
-    let (asynchronous, kwargs) = split_async_call(&call.kwargs);
-    let prepared = ImageEditCall {
-        kwargs,
-        ..call.clone()
-    };
-    let answer = match operation.begin(&prepared, asynchronous, logger) {
-        Ok(ImageEditStep::Answer(answer)) => Ok(answer),
-        Ok(ImageEditStep::Pending(pending)) => pending.await,
-        Err(error) => Err(error),
-    };
-    answer.map_err(|error| {
-        let attribution = operation.attribution(&prepared);
-        ImageEditException::mapped(
-            &error,
-            attribution.model.as_deref(),
-            attribution.provider.as_deref().unwrap_or_default(),
-            redactor,
-        )
-    })
+// what both entries share: the operation, the caller's logger and the redactor exception_type writes with
+pub struct ImageEditEntry<'run, O> {
+    pub operation: &'run O,
+    pub logger: &'run mut dyn ImageEditLogger,
+    pub redactor: &'run Redactor,
 }
 
-// forces async_call=true and preserves the call; image_edit already mapped any failure, and exception_type passes a mapped one through
-pub async fn aimage_edit<O>(
-    operation: &O,
-    call: &ImageEditCall,
-    logger: &mut dyn ImageEditLogger,
-    redactor: &Redactor,
-) -> Result<ImageResponse, ImageEditException>
+impl<O> ImageEditEntry<'_, O>
 where
     O: ImageEditOperation + Sync,
 {
-    let mut asynchronous = call.clone();
-    asynchronous
-        .kwargs
-        .insert(String::from("async_call"), Json::Bool(true));
-    image_edit(operation, &asynchronous, logger, redactor).await
+    // the sync entry: preparation once, then a ready answer or the one coroutine a provider returned, every failure mapped by exception_type
+    pub async fn image_edit(
+        self,
+        call: &ImageEditCall,
+    ) -> Result<ImageResponse, ImageEditException> {
+        let (asynchronous, kwargs) = split_async_call(&call.kwargs);
+        let prepared = ImageEditCall {
+            kwargs,
+            ..call.clone()
+        };
+        let answer = match self.operation.begin(&prepared, asynchronous, self.logger) {
+            Ok(ImageEditStep::Answer(answer)) => Ok(answer),
+            Ok(ImageEditStep::Pending(pending)) => pending.await,
+            Err(error) => Err(error),
+        };
+        answer.map_err(|error| {
+            let attribution = self.operation.attribution(&prepared);
+            ImageEditException::mapped(
+                &error,
+                attribution.model.as_deref(),
+                attribution.provider.as_deref().unwrap_or_default(),
+                self.redactor,
+            )
+        })
+    }
+
+    // forces async_call=true and preserves the call; image_edit already mapped any failure, and exception_type passes a mapped one through
+    pub async fn aimage_edit(
+        self,
+        call: &ImageEditCall,
+    ) -> Result<ImageResponse, ImageEditException> {
+        let mut asynchronous = call.clone();
+        asynchronous
+            .kwargs
+            .insert(String::from("async_call"), Json::Bool(true));
+        self.image_edit(&asynchronous).await
+    }
 }
