@@ -19,12 +19,13 @@ use betterlite_openai::passthrough::transformation::types::{
 };
 use bytes::Bytes;
 use rstest::rstest;
+use secrecy::SecretString;
 use url::Url;
 use url::form_urlencoded;
 
 use self::support::{
-    MODEL, bedrock_args, client_timeouts, header, logging_state, object, proxy_client, resolved,
-    vllm_args,
+    MODEL, bedrock_args, client_timeouts, header, logging_state, mantle_args, object, proxy_client,
+    resolved, vllm_args,
 };
 use super::config::PassthroughCallConfig;
 use super::params;
@@ -79,6 +80,30 @@ async fn call_vllm_gets_the_url_the_headers_and_the_swapped_model() {
     assert!(sent.head.contains("content-type: application/json"));
     assert!(sent.body.contains("\"model\":\"my-model\""));
     assert!(!sent.body.contains("vllm/original"));
+}
+
+#[tokio::test]
+async fn call_mantle_signs_the_body_before_the_model_swap() {
+    let serving = serve(reply("200 fixture", &[], "pong"), Duration::ZERO).unwrap();
+    let mut args = mantle_args(&format!("http://{}", serving.address));
+    args.api_key = Some(SecretString::from("mantle-key"));
+    args.content = Some(Bytes::from_static(b"ignored"));
+    args.json = Some(JsonValue::Object(json_object(&[(
+        "model",
+        "bedrock_mantle/original",
+    )])));
+    let mut state = logging_state();
+    let http = proxy_client(1024);
+    let answer = allm_passthrough_route(args, &mut state, &http)
+        .await
+        .expect("the upstream answers");
+    assert_eq!(answer.status, 200);
+    assert_eq!(state.model, "original");
+    let sent = serving.finish().unwrap();
+    assert_eq!(sent.line, "POST /chat/completions HTTP/1.1");
+    assert!(sent.head.contains("authorization: Bearer mantle-key"));
+    assert!(sent.head.contains("content-type: application/json"));
+    assert_eq!(sent.body, r#"{"model": "bedrock_mantle/original"}"#);
 }
 
 #[tokio::test]

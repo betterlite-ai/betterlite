@@ -1,6 +1,7 @@
 mod auth;
 pub mod config;
 pub mod logging;
+mod mantle;
 mod params;
 mod send;
 mod urls;
@@ -24,7 +25,6 @@ use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
-use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::{
     ProviderIdentity, ResolutionContext, ResolutionError, ResolutionRequest, ResolvedModel, resolve,
@@ -147,7 +147,7 @@ pub async fn allm_passthrough_route(
     }
 }
 
-// get_llm_provider: the catalog, the registered names and the credentials all come from outside the call
+// get_llm_provider: the catalog, names and credentials come from outside; the Mantle endpoint comes from the call
 fn resolve_provider(args: &PassthroughCallArgs) -> Result<ResolvedModel, ResolutionError> {
     let catalog = ModelCatalog::default();
     let known_model_names = BTreeSet::new();
@@ -166,7 +166,7 @@ fn resolve_provider(args: &PassthroughCallArgs) -> Result<ResolvedModel, Resolut
             custom_providers: &custom_providers,
             environment: &environment,
             registry: JSONProviderRegistry::default(),
-            policies: ProviderPolicies::default(),
+            policies: mantle::policies(args),
             globals: GlobalCredentials::default(),
         },
     )

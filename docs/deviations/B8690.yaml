@@ -98,6 +98,22 @@ deviations:
       The call needs the params now; the local builder sets the same keys from the same arguments,
       and this can be replaced when B176 merges.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_litellm_params.py#L1-L200
+  - what: >-
+      A refused Watsonx IAM token keeps its upstream status, but not the IAM reply's body and headers,
+      and its message is betterlite's own text. LiteLLM re-raises the IAM httpx.HTTPStatusError
+      unchanged, so its caller sees that response.
+    why: >-
+      WatsonxError::IamStatus holds the status and headers but not the body, and ConfigError's Message
+      variant carries a status and a message only; betterlite-openai is outside this task's scope.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/watsonx/common_utils.py#L59-L61
+  - what: >-
+      The Mantle endpoint the call derives when api_base is absent always uses the /v1 path, where
+      LiteLLM picks /openai/v1 for the models its model cost map marks with use_openai_responses_path.
+    why: >-
+      The call resolves with an empty model catalog, and betterlite-core cannot import
+      betterlite-bedrock's Mantle inputs; the passthrough request still goes to bedrock-runtime, so
+      only the resolved api_base in litellm_params and the logs differs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/chat/transformation.py#L58-L82
 kept_bugs:
   - what: >-
       The signed body is built before the model swap, so a Bedrock Mantle request signs, and sends,

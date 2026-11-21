@@ -99,16 +99,21 @@ pub(super) async fn watsonx_headers(
         .collect())
 }
 
-// only a provider API failure carries an upstream status; an IAM or pre-flight failure is a ValueError
+// the merged config's status(): only its provider API failure carries an upstream status
 impl From<WatsonxPassthroughError> for ConfigError {
     fn from(error: WatsonxPassthroughError) -> Self {
         status_error(error.status(), error.to_string())
     }
 }
 
+// LiteLLM re-raises the IAM httpx.HTTPStatusError unchanged, so its 401 reaches _handle_error as the status
 impl From<WatsonxError> for ConfigError {
     fn from(error: WatsonxError) -> Self {
-        Self::from(WatsonxPassthroughError::from(error))
+        let message = error.to_string();
+        match error {
+            WatsonxError::IamStatus { status, .. } => Self::Message { status, message },
+            other => Self::from(WatsonxPassthroughError::from(other)),
+        }
     }
 }
 

@@ -18,17 +18,18 @@ use betterlite_openai::passthrough::transformation::types::{
 };
 use indexmap::IndexMap;
 use rstest::rstest;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Number;
 
 use super::super::allm_passthrough_route;
 use super::super::auth;
 use super::super::config::{ConfigError, PassthroughCallConfig};
 use super::super::logging;
+use super::super::mantle;
 use super::super::params;
 use super::MODEL_ARN;
 use super::support::{
-    MODEL, logging_state, object, proxy_client, resolved, vllm_args, watsonx_environment,
+    MODEL, base_args, logging_state, object, proxy_client, resolved, vllm_args, watsonx_environment,
 };
 
 const EAST_ARN: &str = "arn:aws:bedrock:us-east-2:123456789012:application-inference-profile/abc";
@@ -391,11 +392,12 @@ async fn auth_watsonx_reports_a_refused_iam_token() {
         panic!("a refused IAM token is an error");
     };
     match error {
-        ConfigError::ValueError { message } => {
+        ConfigError::Message { status, message } => {
+            assert_eq!(status, 401);
             assert_eq!(message, "the IAM token request failed with status 401");
         }
-        other @ (ConfigError::Passthrough(_)
-        | ConfigError::Message { .. }
+        other @ (ConfigError::ValueError { .. }
+        | ConfigError::Passthrough(_)
         | ConfigError::Provider(_)) => panic!("unexpected error: {other}"),
     }
 }
@@ -572,4 +574,78 @@ async fn call_sends_the_cookies_it_is_given_and_none_for_an_empty_list() {
         .expect("the upstream answers");
     assert_eq!(empty_answer.status, 200);
     assert!(!empty_server.finish().unwrap().head.contains("cookie:"));
+}
+
+#[test]
+fn mantle_policies_strip_the_provider_and_region_prefixes() {
+    let mut args = base_args();
+    args.model = String::from("bedrock_mantle/us-east-1/openai.gpt-oss-120b");
+    args.custom_llm_provider = Some(String::from("bedrock_mantle"));
+    let policies = mantle::policies(&args);
+    let endpoint = policies
+        .mantle
+        .expect("the call builds the Mantle endpoint");
+    assert_eq!(endpoint.base_model, "openai.gpt-oss-120b");
+    assert_eq!(
+        endpoint.api_base,
+        "https://bedrock-mantle.us-east-1.api.aws/v1"
+    );
+}
+
+// get_llm_provider gets no litellm_params from the passthrough call, so aws_region_name never reaches this
+#[test]
+fn mantle_policies_take_the_region_from_the_model_prefix_alone() {
+    let mut args = base_args();
+    args.model = String::from("bedrock_mantle/eu-west-1/original");
+    args.custom_llm_provider = Some(String::from("bedrock_mantle"));
+    args.extra.insert(
+        "aws_region_name".to_owned(),
+        JsonValue::String(String::from("us-west-2")),
+    );
+    let policies = mantle::policies(&args);
+    let endpoint = policies
+        .mantle
+        .expect("the call builds the Mantle endpoint");
+    assert_eq!(
+        endpoint.api_base,
+        "https://bedrock-mantle.eu-west-1.api.aws/v1"
+    );
+    assert_eq!(endpoint.base_model, "original");
+    args.model = String::from("bedrock_mantle/original");
+    let policies = mantle::policies(&args);
+    let endpoint = policies
+        .mantle
+        .expect("the call builds the Mantle endpoint");
+    assert_eq!(
+        endpoint.api_base,
+        "https://bedrock-mantle.us-east-1.api.aws/v1"
+    );
+}
+
+#[test]
+fn mantle_policies_keep_the_given_base_and_ignore_an_empty_one() {
+    let mut args = base_args();
+    args.model = String::from("bedrock_mantle/original");
+    args.custom_llm_provider = Some(String::from("bedrock_mantle"));
+    args.api_base = Some(String::from("http://127.0.0.1:8080"));
+    args.api_key = Some(SecretString::from("mantle-key"));
+    let policies = mantle::policies(&args);
+    let endpoint = policies
+        .mantle
+        .expect("the call builds the Mantle endpoint");
+    assert_eq!(endpoint.api_base, "http://127.0.0.1:8080");
+    assert_eq!(endpoint.base_model, "original");
+    assert_eq!(
+        endpoint.api_key.map(|key| key.expose_secret().to_owned()),
+        Some(String::from("mantle-key"))
+    );
+    args.api_base = Some(String::new());
+    let policies = mantle::policies(&args);
+    let endpoint = policies
+        .mantle
+        .expect("the call builds the Mantle endpoint");
+    assert_eq!(
+        endpoint.api_base,
+        "https://bedrock-mantle.us-east-1.api.aws/v1"
+    );
 }
