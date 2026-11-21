@@ -429,10 +429,12 @@ async fn lifecycle_write_rejections(#[case] operation: LifecycleOperation) {
     .await
     .map(drop)
     .expect_err("a success reply that is not JSON fails the transform");
-    let LifecycleWriteError::Transport(WriteError::Resource(error)) = &unparsed_error.error else {
+    let LifecycleWriteError::Transport(WriteError::Resource(unparsed_resource)) =
+        &unparsed_error.error
+    else {
         panic!("the transform's own exception reaches the boundary");
     };
-    assert_eq!(error.http_status(), Some(200));
+    assert_eq!(unparsed_resource.http_status(), Some(200));
     let unparsed_class = harness.class(&unparsed_error);
     let ErrorClass::Api(_) = &unparsed_class else {
         panic!("the transform's OpenAIError becomes the SDK's APIError");
@@ -458,11 +460,15 @@ async fn lifecycle_write_rejections(#[case] operation: LifecycleOperation) {
     .await
     .map(drop)
     .expect_err("a decoded reply that does not match the record fails the transform");
-    let LifecycleWriteError::Transport(WriteError::Resource(error)) = &record_error.error else {
+    let LifecycleWriteError::Transport(WriteError::Resource(record_resource)) = &record_error.error
+    else {
         panic!("the transform's own exception reaches the boundary");
     };
-    assert!(matches!(error, ResponseResourceError::Record { .. }));
-    assert_eq!(error.http_status(), None);
+    assert!(matches!(
+        record_resource,
+        ResponseResourceError::Record { .. }
+    ));
+    assert_eq!(record_resource.http_status(), None);
     assert_api_connection(&harness.class(&record_error));
     assert_eq!(record_wire.requests().len(), 1);
 }
