@@ -267,7 +267,8 @@ async fn team_labels_db_and_config_entries() {
         .await;
     let (status, body) = get(&harness, LIST_V2_PATH, Some(admin())).await;
     assert_eq!(status, StatusCode::OK);
-    let listed = listed_entries(&parse(&body));
+    let parsed = parse(&body);
+    let listed = listed_entries(&parsed);
     assert_eq!(listed.len(), 2);
     let db_entry = &listed[0];
     assert_eq!(text(field(db_entry, "guardrail_definition_location")), "db");

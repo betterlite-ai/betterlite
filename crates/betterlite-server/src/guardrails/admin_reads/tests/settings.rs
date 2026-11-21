@@ -150,7 +150,8 @@ async fn settings_content_filter_settings_match_the_catalog() {
     let harness = harness(Setup::default());
     let (status, body) = get(&harness, SETTINGS_PATH, Some(admin())).await;
     assert_eq!(status, StatusCode::OK);
-    let settings = field(&parse(&body), "content_filter_settings");
+    let parsed = parse(&body);
+    let settings = field(&parsed, "content_filter_settings");
     let patterns = field(settings, "prebuilt_patterns")
         .as_array()
         .expect("the pattern list");
@@ -170,7 +171,8 @@ async fn settings_lists_the_content_filter_pattern_categories() {
     let harness = harness(Setup::default());
     let (status, body) = get(&harness, SETTINGS_PATH, Some(admin())).await;
     assert_eq!(status, StatusCode::OK);
-    let settings = field(&parse(&body), "content_filter_settings");
+    let parsed = parse(&body);
+    let settings = field(&parsed, "content_filter_settings");
     assert_strings(
         field(settings, "pattern_categories"),
         &[
