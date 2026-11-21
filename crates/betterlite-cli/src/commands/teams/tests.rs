@@ -1,9 +1,9 @@
 #![cfg(test)]
 
 use std::collections::VecDeque;
-use std::net::TcpListener;
 use std::sync::Mutex;
 
+use betterlite_test_ports::refused_port::RefusedPort;
 use console::Key;
 
 use crate::commands::Client;
@@ -440,10 +440,8 @@ fn list_error_prints_a_non_json_error_body_as_raw_text() {
 
 #[test]
 fn list_error_from_a_transport_failure_prints_one_line_and_aborts() {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
-    let api = client(&format!("http://{address}"), Some("sk-test"));
+    let refused = RefusedPort::bind().unwrap();
+    let api = client(&format!("http://{}", refused.address), Some("sk-test"));
     let mut input = ScriptedInput::quiet();
     let echoed = Mutex::new(Vec::new());
 

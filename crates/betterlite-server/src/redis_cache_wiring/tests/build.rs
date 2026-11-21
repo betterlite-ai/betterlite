@@ -5,11 +5,12 @@ use std::sync::Arc;
 use betterlite_redis::redis_client_reuse::store::RedisClientStore;
 use betterlite_redis::redis_client_reuse::transport::RedisCacheFamily;
 use betterlite_redis::redis_live_client::LiveClientFactory;
+use betterlite_test_ports::refused_port::RefusedPort;
 
 use crate::redis_cache_wiring::build::{RedisCacheRequest, RedisCacheWiring};
 
 use super::support::{
-    FakeClock, NoopHooks, closed_port, connection_error, empty_environment, overrides, settings,
+    FakeClock, NoopHooks, connection_error, empty_environment, overrides, settings,
 };
 
 const DEFAULT_TTL: i64 = 120;
@@ -27,21 +28,24 @@ fn wiring(failure_threshold: u32) -> RedisCacheWiring {
     }
 }
 
-fn request(namespace: Option<&str>) -> RedisCacheRequest {
-    RedisCacheRequest {
-        overrides: overrides(closed_port()),
+fn request(namespace: Option<&str>) -> (RedisCacheRequest, RefusedPort) {
+    let refused = RefusedPort::bind().expect("a refused port");
+    let built = RedisCacheRequest {
+        overrides: overrides(refused.address.port()),
         family: RedisCacheFamily::Standalone,
         namespace: namespace.map(str::to_owned),
         redis_flush_size: Some(50),
-    }
+    };
+    (built, refused)
 }
 
 #[tokio::test]
 async fn build_returns_a_cache_while_redis_is_unreachable() {
     let wiring = wiring(3);
     let environment = empty_environment();
+    let (built, _refused) = request(Some("cache"));
     let cache = wiring
-        .build(request(Some("cache")), &environment)
+        .build(built, &environment)
         .await
         .expect("the cache builds without a reachable redis");
     assert_eq!(cache.default_ttl, DEFAULT_TTL);
@@ -54,12 +58,14 @@ async fn build_returns_a_cache_while_redis_is_unreachable() {
 async fn two_caches_get_two_gates() {
     let wiring = wiring(1);
     let environment = empty_environment();
+    let (first_request, _first_refused) = request(None);
     let first = wiring
-        .build(request(None), &environment)
+        .build(first_request, &environment)
         .await
         .expect("the first cache builds");
+    let (second_request, _second_refused) = request(None);
     let second = wiring
-        .build(request(None), &environment)
+        .build(second_request, &environment)
         .await
         .expect("the second cache builds");
     assert!(!Arc::ptr_eq(&first.gate, &second.gate));

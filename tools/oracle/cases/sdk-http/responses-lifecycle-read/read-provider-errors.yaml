@@ -1,0 +1,83 @@
+kind: sdk_http
+name: responses-lifecycle-read-provider-errors
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  responses_lifecycle_read:
+    steps:
+      - get_responses:
+          call:
+            response_id: resp_a
+      - aget_responses:
+          call:
+            response_id: resp_a
+      - get_responses:
+          call:
+            response_id: resp_a
+            custom_llm_provider: anthropic
+      - list_input_items:
+          call:
+            response_id: resp_a
+            custom_llm_provider: anthropic
+      - alist_input_items:
+          call:
+            response_id: resp_a
+            custom_llm_provider: anthropic
+      - get_responses:
+          call:
+            response_id: resp_a
+            custom_llm_provider: openai
+      - get_responses:
+          call:
+            response_id: resp_a
+            custom_llm_provider: openai
+      - get_responses:
+          call:
+            response_id: resp_a
+            custom_llm_provider: openai
+      - get_responses:
+          call:
+            response_id: resp_a
+            custom_llm_provider: openai
+upstream:
+  - status: 404
+    headers: {content-type: application/json}
+    body:
+      error:
+        message: gone
+        type: invalid_request_error
+        param: response_id
+        code: not_found
+  - status: 404
+    headers: {content-type: application/json}
+    body:
+      error:
+        message: gone
+  - status: 500
+    headers: {content-type: text/plain}
+    body: not json
+  - status: 401
+    headers: {content-type: text/plain}
+    body: unauthorized
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization]
+  ignore:
+    - pointer: /responses_lifecycle_read/value/steps/0/failure/message
+      why: betterlite reports the mapped exception's bounded message, LiteLLM carries its traceback text
+    - pointer: /responses_lifecycle_read/value/steps/1/failure/message
+      why: betterlite reports the mapped exception's bounded message, LiteLLM carries its traceback text
+    - pointer: /responses_lifecycle_read/value/steps/2/failure/message
+      why: betterlite reports the mapped exception's bounded message, LiteLLM carries its traceback text
+    - pointer: /responses_lifecycle_read/value/steps/3/failure/message
+      why: betterlite reports the mapped exception's bounded message, LiteLLM carries its traceback text
+    - pointer: /responses_lifecycle_read/value/steps/4/failure/message
+      why: betterlite reports the mapped exception's bounded message, LiteLLM carries its traceback text
+    - pointer: /responses_lifecycle_read/value/steps/5/failure/message
+      why: LiteLLM prefixes every exception message with litellm.<Class>:, betterlite reports the mapper's text
+    - pointer: /responses_lifecycle_read/value/steps/6/failure/message
+      why: LiteLLM prefixes every exception message with litellm.<Class>:, betterlite reports the mapper's text
+    - pointer: /responses_lifecycle_read/value/steps/7/failure/message
+      why: LiteLLM prefixes every exception message with litellm.<Class>:, betterlite reports the mapper's text
+    - pointer: /responses_lifecycle_read/value/steps/8/failure/message
+      why: LiteLLM prefixes every exception message with litellm.<Class>:, betterlite reports the mapper's text

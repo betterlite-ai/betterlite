@@ -1,0 +1,48 @@
+kind: sdk_http
+name: responses-lifecycle-read-input-items-sdk-pagination
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  responses_lifecycle_read:
+    steps:
+      - list_input_items:
+          call:
+            response_id: resp_a
+            custom_llm_provider: openai
+      - list_input_items:
+          call:
+            response_id: resp_a
+            custom_llm_provider: openai
+            after: ""
+            before: item_b
+            include: [message.input_image.image_url]
+            limit: 2
+            order: asc
+      - list_input_items:
+          call:
+            response_id: resp_a
+            custom_llm_provider: openai
+            include: []
+            limit: null
+            order: null
+      - alist_input_items:
+          call:
+            response_id: resp_a
+            custom_llm_provider: openai
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [{id: item_a, type: message}], has_more: false}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [{id: item_b, type: message}], has_more: false}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [], has_more: false}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [{id: item_c, type: message}], has_more: false}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization]
+  ignore: []
