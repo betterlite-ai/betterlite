@@ -216,7 +216,7 @@ fn the_default_latency_buckets_are_the_latency_table() {
 
 #[test]
 fn custom_latency_buckets_replace_the_default() {
-    let (registry, _logger) = build(Some(&[0.5, 2.5]));
+    let (registry, _logger) = build(Some(&[0.5_f64, 2.5_f64]));
     assert_eq!(
         registered(&registry, "litellm_redis_latency")
             .description
@@ -227,7 +227,7 @@ fn custom_latency_buckets_replace_the_default() {
 
 #[test]
 fn a_single_custom_bucket_gets_the_infinite_bound() {
-    let (registry, _logger) = build(Some(&[0.25]));
+    let (registry, _logger) = build(Some(&[0.25_f64]));
     assert_eq!(
         registered(&registry, "litellm_redis_latency")
             .description
@@ -239,8 +239,8 @@ fn a_single_custom_bucket_gets_the_infinite_bound() {
 #[test]
 fn unsorted_custom_buckets_fail_the_constructor() {
     let registry = Arc::new(CollectorRegistry::default());
-    let error =
-        PrometheusServicesLogger::new(Arc::clone(&registry), Some(&[2.5, 0.5])).unwrap_err();
+    let error = PrometheusServicesLogger::new(Arc::clone(&registry), Some(&[2.5_f64, 0.5_f64]))
+        .unwrap_err();
     assert!(matches!(
         error,
         PrometheusServicesError::Buckets(BucketError::NotSorted)
@@ -297,13 +297,12 @@ fn a_second_logger_skips_bucket_validation_for_reused_collectors() {
     let registry = Arc::new(CollectorRegistry::default());
     let _first = PrometheusServicesLogger::new(Arc::clone(&registry), None)
         .expect("the first logger builds");
-    let second = PrometheusServicesLogger::new(Arc::clone(&registry), Some(&[2.5, 0.5]))
+    let second = PrometheusServicesLogger::new(Arc::clone(&registry), Some(&[2.5_f64, 0.5_f64]))
         .expect("the reused histograms never validate the new bucket list");
     assert!(second.payload_to_prometheus_map.contains_key("redis"));
 }
 
-#[test]
-fn metric_factories_return_an_existing_registered_metric() {
+fn register_test_service_metrics() -> Arc<CollectorRegistry> {
     let registry = Arc::new(CollectorRegistry::default());
     let bounds = prepare_buckets(&[Bucket::Seconds(0.5)]).expect("the bounds are valid");
     registry
@@ -333,7 +332,12 @@ fn metric_factories_return_an_existing_registered_metric() {
             Vec::new(),
         ))
         .expect("the counter name is free");
+    registry
+}
 
+#[test]
+fn metric_factories_return_an_existing_registered_metric() {
+    let registry = register_test_service_metrics();
     let logger = PrometheusServicesLogger::new(Arc::clone(&registry), None)
         .expect("the service logger builds");
 
@@ -508,7 +512,7 @@ fn service_success_hook_leaves_a_gauge_service_alone() {
     let payload = ServiceLoggerPayload {
         event_metadata: Some(ServiceEventMetadata {
             gauge_labels: Some("queue_a".to_owned()),
-            gauge_value: Some(3.0),
+            gauge_value: Some(3.0_f64),
         }),
         ..success(ServiceType::PodLockManager, 1.0)
     };
@@ -553,7 +557,7 @@ fn service_failure_hook_leaves_a_gauge_service_alone() {
     let payload = ServiceLoggerPayload {
         event_metadata: Some(ServiceEventMetadata {
             gauge_labels: Some("queue_a".to_owned()),
-            gauge_value: Some(3.0),
+            gauge_value: Some(3.0_f64),
         }),
         ..failure(ServiceType::PodLockManager, 1.0)
     };
@@ -570,7 +574,7 @@ fn async_service_failure_hook_leaves_a_gauge_service_alone() {
     let payload = ServiceLoggerPayload {
         event_metadata: Some(ServiceEventMetadata {
             gauge_labels: Some("queue_a".to_owned()),
-            gauge_value: Some(3.0),
+            gauge_value: Some(3.0_f64),
         }),
         ..failure(ServiceType::PodLockManager, 1.0)
     };
@@ -610,7 +614,7 @@ fn async_service_success_hook_updates_the_gauge_from_metadata() {
     let mut event = success(ServiceType::PodLockManager, 0.0);
     event.event_metadata = Some(ServiceEventMetadata {
         gauge_labels: Some("queue_a".to_owned()),
-        gauge_value: Some(3.0),
+        gauge_value: Some(3.0_f64),
     });
     logger.async_service_success_hook(&event);
 
