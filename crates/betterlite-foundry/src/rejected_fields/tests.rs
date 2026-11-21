@@ -78,8 +78,8 @@ fn tool_level_fields_are_read_left_to_right() {
         vec![String::from("extra")]
     );
     assert_eq!(
-        tool_level_field_names("tools[0].caf\u{e9}_9-x"),
-        vec![String::from("caf\u{e9}_9-x")]
+        tool_level_field_names("tools[0].v2\u{e9}_9-x"),
+        vec![String::from("v2\u{e9}_9-x")]
     );
     // \w keeps a letter-number like \u{2163} and stops at a combining mark, other-alphabetic ones included
     assert_eq!(
