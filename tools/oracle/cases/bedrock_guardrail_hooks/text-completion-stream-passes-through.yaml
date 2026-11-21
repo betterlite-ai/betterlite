@@ -11,7 +11,7 @@ call:
       disable_exception_on_block: false
       latest_role_message_only: false
       event_hook: post_call
-      buffer_until_moderated: null
+      buffer_until_moderated: true
       streaming_end_of_stream_only: null
       buffer_release_on_scan: null
     data:

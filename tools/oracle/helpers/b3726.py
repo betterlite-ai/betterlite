@@ -198,12 +198,11 @@ def item_json(item: StreamItem) -> JsonValue:
 
 # LiteLLM's stream_chunk_builder sends a stream whose first choice carries text to text completion.
 def stream_item(chunk: Payload) -> StreamItem:
-    choices = chunk.get("choices")
-    if isinstance(choices, list) and choices:
-        first = choices[0]
-        if isinstance(first, dict) and "text" in first:
+    match chunk.get("choices"):
+        case [{"text": _}, *_]:
             return TEXT_CHUNK.validate_python(chunk)
-    return CHUNK.validate_python(chunk)
+        case None | bool() | int() | float() | str() | dict() | list():
+            return CHUNK.validate_python(chunk)
 
 
 async def stream_items(case: HookCase) -> AsyncGenerator[StreamItem, None]:
