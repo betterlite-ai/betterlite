@@ -120,10 +120,7 @@ where
             let variable = rest.replace(ENVIRONMENT_PREFIX, "");
             lookup.lookup(&variable).map_or(Json::Null, Json::Text)
         }
-        other @ Json::Null
-        | other @ Json::Bool(_)
-        | other @ Json::Number(_)
-        | other @ Json::List(_)
-        | other @ Json::Object(_) => other,
+        other
+        @ (Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => other,
     }
 }
