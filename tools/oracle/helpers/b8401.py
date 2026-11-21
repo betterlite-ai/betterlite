@@ -20,6 +20,7 @@ PRE_CALL: Final = cast(Callable[[ProxyLogging, LlmResult, MCPPreCallRequestObjec
 DURING_CALL: Final = cast(Callable[[ProxyLogging, LlmResult, MCPDuringCallRequestObject], MCPDuringCallResponseObject | None], ProxyLogging._convert_llm_result_to_mcp_during_response)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownArgumentType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L1660-L1695
 
 OBJECT: Final = TypeAdapter(dict[str, JsonValue])
+AUTH: Final[TypeAdapter[UserAPIKeyAuth]] = TypeAdapter(UserAPIKeyAuth)
 
 
 class ToolRequest(TypedDict):
@@ -99,7 +100,7 @@ def to_llm_answer(proxy: ProxyLogging, scenario: ToLlmScenario) -> JsonValue:
     kwargs: dict[str, JsonValue | UserAPIKeyAuth] = dict(scenario["kwargs"])
     auth = scenario["kwargs"].get("user_api_key_auth")
     if auth is not None:
-        kwargs["user_api_key_auth"] = UserAPIKeyAuth.model_validate(auth)
+        kwargs["user_api_key_auth"] = AUTH.validate_python(auth)
     return OBJECT.validate_python(TO_LLM(proxy, request, kwargs))
 
 

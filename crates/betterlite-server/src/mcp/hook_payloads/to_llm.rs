@@ -182,44 +182,35 @@ fn auth_policy_input(
             team_alias: None,
             key_alias: None,
         },
-        key_metadata: guardrail_metadata(auth, "metadata")?,
-        team_metadata: guardrail_metadata(auth, "team_metadata")?,
-        project_metadata: guardrail_metadata(auth, "project_metadata")?,
+        key_metadata: GuardrailMetadata {
+            guardrails: names(auth, "metadata", GUARDRAILS)?,
+            policies: names(auth, "metadata", POLICIES)?,
+        },
+        team_metadata: GuardrailMetadata {
+            guardrails: names(auth, "team_metadata", GUARDRAILS)?,
+            policies: names(auth, "team_metadata", POLICIES)?,
+        },
+        project_metadata: GuardrailMetadata {
+            guardrails: names(auth, "project_metadata", GUARDRAILS)?,
+            policies: names(auth, "project_metadata", POLICIES)?,
+        },
         metadata_variable_name: METADATA.to_owned(),
     })
 }
 
-fn guardrail_metadata(
-    auth: &IndexMap<String, Json>,
-    field: &'static str,
-) -> Result<GuardrailMetadata, HookPayloadError> {
-    let metadata = match auth.get(field) {
-        None | Some(Json::Null) => {
-            return Ok(GuardrailMetadata {
-                guardrails: Vec::new(),
-                policies: Vec::new(),
-            });
-        }
-        Some(Json::Object(found)) => found,
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            return Err(HookPayloadError::AuthMetadata {
-                field,
-                key: GUARDRAILS,
-            });
-        }
-    };
-    Ok(GuardrailMetadata {
-        guardrails: names(metadata, field, GUARDRAILS)?,
-        policies: names(metadata, field, POLICIES)?,
-    })
-}
-
 fn names(
-    metadata: &IndexMap<String, Json>,
+    auth: &IndexMap<String, Json>,
     field: &'static str,
     key: &'static str,
 ) -> Result<Vec<String>, HookPayloadError> {
-    let items = match metadata.get(key) {
+    let found = match auth.get(field) {
+        None | Some(Json::Null) => None,
+        Some(Json::Object(metadata)) => metadata.get(key),
+        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+            return Err(HookPayloadError::AuthMetadata { field, key });
+        }
+    };
+    let items = match found {
         None | Some(Json::Null) => return Ok(Vec::new()),
         Some(Json::List(list)) => list,
         Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {

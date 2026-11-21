@@ -84,22 +84,17 @@ fn answer(content: Option<&str>) -> GuardrailOutcome {
     }))
 }
 
-fn pre_call(outcome: &GuardrailOutcome, original: &str) -> Option<McpPreCallResponse> {
+fn checked<Response>(
+    convert: fn(&GuardrailOutcome, McpToolCall<'_>) -> Result<Option<Response>, HookPayloadError>,
+    outcome: &GuardrailOutcome,
+    original: &str,
+) -> Option<Response> {
     let tool_arguments = arguments(original);
     let call = McpToolCall {
         tool_name: "search",
         arguments: &tool_arguments,
     };
-    llm_result_to_pre_call(outcome, call).unwrap()
-}
-
-fn during_call(outcome: &GuardrailOutcome, original: &str) -> Option<McpDuringCallResponse> {
-    let tool_arguments = arguments(original);
-    let call = McpToolCall {
-        tool_name: "search",
-        arguments: &tool_arguments,
-    };
-    llm_result_to_during_call(outcome, call).unwrap()
+    convert(outcome, call).unwrap()
 }
 
 fn proceeds_with(modified: &str) -> Option<McpPreCallResponse> {
@@ -391,9 +386,12 @@ fn parent_guardrails_that_are_not_a_list_are_refused() {
 #[case::raised(GuardrailOutcome::Raised("guardrail said no".to_owned()))]
 #[case::text(GuardrailOutcome::Text("guardrail said no".to_owned()))]
 fn an_error_or_a_string_stops_the_call(#[case] outcome: GuardrailOutcome) {
-    assert_eq!(pre_call(&outcome, "{}"), stopped_with("guardrail said no"));
     assert_eq!(
-        during_call(&outcome, "{}"),
+        checked(llm_result_to_pre_call, &outcome, "{}"),
+        stopped_with("guardrail said no")
+    );
+    assert_eq!(
+        checked(llm_result_to_during_call, &outcome, "{}"),
         stopped_during("guardrail said no")
     );
 }
@@ -401,8 +399,14 @@ fn an_error_or_a_string_stops_the_call(#[case] outcome: GuardrailOutcome) {
 #[test]
 fn an_unchanged_message_leaves_the_call_alone() {
     let outcome = answer(Some("Tool: search\nArguments: {\"q\":\"docs\"}"));
-    assert_eq!(pre_call(&outcome, r#"{"q": "docs"}"#), None);
-    assert_eq!(during_call(&outcome, r#"{"q": "docs"}"#), None);
+    assert_eq!(
+        checked(llm_result_to_pre_call, &outcome, r#"{"q": "docs"}"#),
+        None
+    );
+    assert_eq!(
+        checked(llm_result_to_during_call, &outcome, r#"{"q": "docs"}"#),
+        None
+    );
 }
 
 #[test]
@@ -412,8 +416,8 @@ fn an_answer_without_messages_leaves_the_call_alone() {
         modified_arguments: None,
         extra_headers: None,
     }));
-    assert_eq!(pre_call(&outcome, "{}"), None);
-    assert_eq!(during_call(&outcome, "{}"), None);
+    assert_eq!(checked(llm_result_to_pre_call, &outcome, "{}"), None);
+    assert_eq!(checked(llm_result_to_during_call, &outcome, "{}"), None);
 }
 
 #[rstest]
@@ -422,7 +426,7 @@ fn an_answer_without_messages_leaves_the_call_alone() {
 #[case::empty("")]
 fn pre_call_blocks_on_its_words_or_empty_content(#[case] content: &str) {
     assert_eq!(
-        pre_call(&answer(Some(content)), "{}"),
+        checked(llm_result_to_pre_call, &answer(Some(content)), "{}"),
         stopped_with("Content blocked by guardrail")
     );
 }
@@ -430,7 +434,7 @@ fn pre_call_blocks_on_its_words_or_empty_content(#[case] content: &str) {
 #[test]
 fn pre_call_blocks_a_message_without_content() {
     assert_eq!(
-        pre_call(&answer(None), "{}"),
+        checked(llm_result_to_pre_call, &answer(None), "{}"),
         stopped_with("Content blocked by guardrail")
     );
 }
@@ -441,7 +445,11 @@ fn masked_json_arguments_replace_the_originals() {
         "Tool: search\nArguments: {\"q\": \"[MASKED]\", \"limit\": 3}",
     ));
     assert_eq!(
-        pre_call(&outcome, r#"{"q": "secret", "limit": 2}"#),
+        checked(
+            llm_result_to_pre_call,
+            &outcome,
+            r#"{"q": "secret", "limit": 2}"#
+        ),
         proceeds_with(r#"{"q": "[MASKED]", "limit": 3}"#)
     );
 }
@@ -450,7 +458,7 @@ fn masked_json_arguments_replace_the_originals() {
 fn the_arguments_line_is_found_after_the_content_is_trimmed() {
     let outcome = answer(Some("  Arguments: {\"q\": \"[MASKED]\"}  \r\n"));
     assert_eq!(
-        pre_call(&outcome, r#"{"q": "secret"}"#),
+        checked(llm_result_to_pre_call, &outcome, r#"{"q": "secret"}"#),
         proceeds_with(r#"{"q": "[MASKED]"}"#)
     );
 }
@@ -461,7 +469,7 @@ fn an_echoed_described_message_counts_as_changed() {
         "Tool: search\nDescription: Search the docs\nArguments: {\"q\":\"docs\"}",
     ));
     assert_eq!(
-        pre_call(&outcome, r#"{"q": "docs"}"#),
+        checked(llm_result_to_pre_call, &outcome, r#"{"q": "docs"}"#),
         proceeds_with(r#"{"q": "docs"}"#)
     );
 }
@@ -472,7 +480,8 @@ fn the_manual_fallback_replaces_only_named_string_arguments() {
         "Tool: search\nArguments: {'EMAIL': '[EMAIL]', 'limit': '9', 'note': ''}",
     ));
     assert_eq!(
-        pre_call(
+        checked(
+            llm_result_to_pre_call,
             &outcome,
             r#"{"email": "a@b.co", "limit": 5, "note": "keep", "name": "Jo"}"#
         ),
@@ -484,7 +493,11 @@ fn the_manual_fallback_replaces_only_named_string_arguments() {
 fn the_manual_fallback_trims_but_keeps_what_the_pattern_reads() {
     let outcome = answer(Some("Tool: search\nArguments: {email: [EMAIL] , name: J*}"));
     assert_eq!(
-        pre_call(&outcome, r#"{"email": "a@b.co", "name": "Jo"}"#),
+        checked(
+            llm_result_to_pre_call,
+            &outcome,
+            r#"{"email": "a@b.co", "name": "Jo"}"#
+        ),
         proceeds_with(r#"{"email": "[EMAIL]", "name": "J*}"}"#)
     );
 }
@@ -495,7 +508,14 @@ fn the_manual_fallback_trims_but_keeps_what_the_pattern_reads() {
 #[case::json_null("Tool: search\nArguments: null")]
 #[case::json_list("Tool: search\nArguments: [1]")]
 fn an_answer_without_readable_arguments_leaves_the_call_alone(#[case] content: &str) {
-    assert_eq!(pre_call(&answer(Some(content)), r#"{"q": "docs"}"#), None);
+    assert_eq!(
+        checked(
+            llm_result_to_pre_call,
+            &answer(Some(content)),
+            r#"{"q": "docs"}"#
+        ),
+        None
+    );
 }
 
 #[rstest]
@@ -511,7 +531,11 @@ fn an_answer_without_readable_arguments_leaves_the_call_alone(#[case] content: &
 )]
 fn a_changed_answer_stops_the_running_call(#[case] content: &str, #[case] message: &str) {
     assert_eq!(
-        during_call(&answer(Some(content)), r#"{"q": "docs"}"#),
+        checked(
+            llm_result_to_during_call,
+            &answer(Some(content)),
+            r#"{"q": "docs"}"#
+        ),
         stopped_during(message)
     );
 }
@@ -519,7 +543,7 @@ fn a_changed_answer_stops_the_running_call(#[case] content: &str, #[case] messag
 #[test]
 fn a_running_call_stops_on_a_message_without_content() {
     assert_eq!(
-        during_call(&answer(None), "{}"),
+        checked(llm_result_to_during_call, &answer(None), "{}"),
         stopped_during("Content blocked by guardrail during execution")
     );
 }

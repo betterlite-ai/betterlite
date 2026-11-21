@@ -115,30 +115,25 @@ fn modified_arguments(content: &str, original: &ToolArguments) -> Option<ToolArg
 
 // LiteLLM's fallback for text that is not JSON: only string arguments the text names, with a non-empty value
 fn manual_arguments(arguments_text: &str, original: &ToolArguments) -> Option<ToolArguments> {
-    let mut modified = original.clone();
-    for (key, value) in original {
-        if !matches!(value, Json::Text(_)) {
-            continue;
-        }
-        let escaped = regex::escape(key);
-        let pattern = Regex::new(&format!(
-            r#"(?i)['"]?{escaped}['"]?\s*:\s*['"]?([^,'"]*)['"]?"#
-        ));
-        let matcher = match pattern {
-            Ok(matcher) => matcher,
-            Err(error) => {
-                tracing::error!("Error in manual argument parsing: {error}");
-                return None;
-            }
-        };
-        let replacement = matcher
-            .captures(arguments_text)
-            .and_then(|captures| captures.get(1))
-            .map(|group| group.as_str().trim())
-            .filter(|text| !text.is_empty());
-        if let Some(text) = replacement {
-            modified.insert(key.clone(), Json::Text(text.to_owned()));
-        }
-    }
-    Some(modified)
+    original
+        .iter()
+        .map(|(key, value)| {
+            let Json::Text(_) = value else {
+                return Some((key.clone(), value.clone()));
+            };
+            let escaped = regex::escape(key);
+            let matcher = Regex::new(&format!(
+                r#"(?i)['"]?{escaped}['"]?\s*:\s*['"]?([^,'"]*)['"]?"#
+            ))
+            .inspect_err(|error| tracing::error!("Error in manual argument parsing: {error}"))
+            .ok()?;
+            let replaced = matcher
+                .captures(arguments_text)
+                .and_then(|captures| captures.get(1))
+                .map(|group| group.as_str().trim())
+                .filter(|text| !text.is_empty())
+                .map_or_else(|| value.clone(), |text| Json::Text(text.to_owned()));
+            Some((key.clone(), replaced))
+        })
+        .collect()
 }
