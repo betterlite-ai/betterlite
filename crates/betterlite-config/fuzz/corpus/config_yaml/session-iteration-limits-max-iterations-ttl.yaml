@@ -1,0 +1,2 @@
+model_list: []
+# session_iteration_limits.max_iterations_ttl is LITELLM_MAX_ITERATIONS_TTL, in seconds, 3600 when unset

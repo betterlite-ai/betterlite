@@ -1,13 +1,13 @@
 id: B10034
 milestone: R2 bug fixes
 title: An unknown search provider answers 400, not 500
-status: todo
+status: done
 depends_on: [B3272]
 file: tasks/B10034-search-unknown-provider.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2861
