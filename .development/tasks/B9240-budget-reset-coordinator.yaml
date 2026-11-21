@@ -58,6 +58,8 @@ description: >-
   booted HTTP comparisons after B8372 has registered the real callable.
 scope:
   paths:
+    - "crates/betterlite-db/src/queues/pod_lock.rs"
+    - "crates/betterlite-db/src/queues/pod_lock"
     - crates/betterlite-db/src/budget_sweep.rs
     - crates/betterlite-db/src/budget_sweep/**
   lint_tables: false
