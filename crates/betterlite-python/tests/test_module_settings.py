@@ -160,7 +160,7 @@ SETTING_NAMES: tuple[str, ...] = (
     "openai_video_generation_models", "adapters", "vector_store_registry",
     "vector_store_index_registry", "vector_store_search_failure_mode", "custom_provider_map",
     "_custom_providers", "disable_hf_tokenizer_download", "global_disable_no_log_param",
-    "global_bitbucket_config", "global_gitlab_config", "_async_client_cleanup_registered",
+    "global_bitbucket_config", "global_gitlab_config",
 )
 
 IMPORTED_SETTINGS: tuple[str, ...] = (
@@ -172,7 +172,12 @@ IMPORTED_SETTINGS: tuple[str, ...] = (
 SORTED_SETTINGS: tuple[str, ...] = ("model_list",)
 
 # litellm.caching is its subpackage at runtime and _thread_context a threading.local.
-NOT_COMPARED: tuple[str, ...] = ("caching", "_thread_context")
+NOT_COMPARED: tuple[str, ...] = (
+    "caching",
+    "_thread_context",
+    # pytest probes __test__ on module attributes, so litellm's __getattr__ flips the flag.
+    "_async_client_cleanup_registered",
+)
 
 PLACEHOLDER_SETTINGS: dict[str, str] = {
     "CALLBACK_TYPES": "a typing alias over CustomLogger, which its own task builds",
@@ -310,6 +315,7 @@ def test_setting_defaults_match_litellm() -> None:
     assert missing == []
     unbound = [name for name in (*NOT_COMPARED, *PLACEHOLDER_SETTINGS) if name not in ours]
     assert unbound == []
+    assert ours["_async_client_cleanup_registered"] is False
     differing = [name for name in names if ours[name] != theirs[name]]
     assert differing == []
 
@@ -493,7 +499,7 @@ def test_model_data_empty_lists_are_separate_objects() -> None:
 
 
 # ast-grep-ignore: no-long-names
-def test_module_callback_lists_accept_typed_functions() -> None:
+def test_module_helper_callback_lists_accept_typed_functions() -> None:
     betterlite.input_callback.append(_input_callback)
     betterlite.success_callback.append(_event_callback)
     assert _input_callback in betterlite.input_callback
@@ -503,7 +509,7 @@ def test_module_callback_lists_accept_typed_functions() -> None:
 
 
 # ast-grep-ignore: no-long-names
-def test_module_call_rules_accept_typed_functions() -> None:
+def test_module_helper_call_rules_accept_typed_functions() -> None:
     betterlite.pre_call_rules.append(_call_rule)
     betterlite.post_call_rules.append(_call_rule)
     assert _call_rule in betterlite.pre_call_rules
