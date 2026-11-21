@@ -1,0 +1,19 @@
+kind: helper
+name: falsy-disabled-short-circuit
+call:
+  management_rbac:
+    calls:
+      - role: internal_user
+        feature: agents
+        general_settings: {disable_agents_for_internal_users: false, allow_agents_for_team_admins: true}
+      - role: org_admin
+        feature: vector_stores
+        general_settings: {disable_vector_stores_for_internal_users: null, allow_vector_stores_for_team_admins: true}
+      - role: null
+        feature: agents
+        general_settings: {disable_agents_for_internal_users: "", allow_agents_for_team_admins: "yes"}
+      - role: customer
+        feature: vector_stores
+        general_settings: {}
+env: {}
+compare: {ignore: []}

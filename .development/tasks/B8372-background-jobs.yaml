@@ -42,7 +42,7 @@ description: >-
   spend_capture_rate_check_job, first run now plus two minutes; each run re-reads general_settings.spend_capture_rate_check
   and, when it is absent, clears the gauge for every provider instead of running B1712's check), then B1692's PTU rollup at
   00:15 UTC when PTU cost attribution is enabled, alerting at level High with alert type failed_tracking_spend, then B8371's
-  register_cleanup_job. Finally attach B4172's job timing logger, apply its stagger with the settings parsed from general
+  register_cleanup_job. Its job is B1741's cleanup_old_spend_logs run, wrapped as B8370's JobFn. Finally attach B4172's job timing logger, apply its stagger with the settings parsed from general
   settings, and start the scheduler, logging "APScheduler started with memory leak prevention settings: removed jitter,
   increased intervals, misfire_grace_time={n}".
 
