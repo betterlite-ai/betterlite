@@ -219,8 +219,7 @@ where
             return self.bridge(branch, logging).await;
         }
         let mut operation = self.operation(branch, SpeechOperationKind::Dispatch);
-        // the selector mirrors a manager that answers nothing for vertex_ai_beta, and LiteLLM fills
-        // that missing config after the parameter mapping: Lyria for its models, VertexAI otherwise
+        // the selector answers nothing for vertex_ai_beta, and LiteLLM fills that config after the mapping
         if branch.selected.is_none() {
             let tag = if self.configs.is_lyria_model(&branch.resolved.model) {
                 TextToSpeechConfigTag::VertexAILyria
