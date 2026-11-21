@@ -26,6 +26,7 @@ use betterlite_openai::api::rerank_contracts::records::{RerankDocument, RerankRe
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::DateTime;
 use indexmap::IndexMap;
+use rstest::rstest;
 use secrecy::SecretString;
 use serde_json::Number;
 use tokio::runtime::Builder;
@@ -367,7 +368,10 @@ fn logging_state(call_id: &str) -> LoggingState {
     .expect("the logging fixture builds")
 }
 
-fn block_on<Output>(future: impl Future<Output = Output>) -> Output {
+fn block_on<Output, Pending>(future: Pending) -> Output
+where
+    Pending: Future<Output = Output>,
+{
     Builder::new_current_thread()
         .enable_all()
         .build()
@@ -577,18 +581,18 @@ fn a_non_integer_max_tokens_per_doc_is_refused() {
     assert_eq!(entry.begins(), 0);
 }
 
-#[test]
-fn immediate_and_deferred_failures_keep_their_class() {
+#[rstest]
+#[case::immediate_failure(Mode::Failing)]
+#[case::deferred_failure(Mode::DeferredFailing)]
+fn immediate_and_deferred_failures_keep_their_class(#[case] mode: Mode) {
     let identity = FakeIdentity::resolved();
     let redactor = redactor();
     let mut logging = logging_state("rerank-context");
-    for mode in [Mode::Failing, Mode::DeferredFailing] {
-        let entry = FakeEntry::new(mode);
-        let error = run(&identity, &entry, &redactor, call_args(), &mut logging)
-            .expect_err("the provider failure raises");
-        assert!(matches!(error.class, ErrorClass::RateLimit(_)));
-        assert_eq!(error.message, "slow down");
-    }
+    let entry = FakeEntry::new(mode);
+    let error = run(&identity, &entry, &redactor, call_args(), &mut logging)
+        .expect_err("the provider failure raises");
+    assert!(matches!(error.class, ErrorClass::RateLimit(_)));
+    assert_eq!(error.message, "slow down");
 }
 
 #[test]
