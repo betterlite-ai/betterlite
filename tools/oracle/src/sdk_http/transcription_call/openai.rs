@@ -46,13 +46,8 @@ pub(super) async fn transcribe(
     let mut logger = Silent;
     let (mut outbound, pending) =
         audio_transcriptions(&call, &request, &mut logger).map_err(publish)?;
-    // LiteLLM applies openai.organization per request; the OpenAI SDK sends it as this header
     if let Some(organization) = operation.organization {
-        let name = HeaderName::from_static("openai-organization");
-        let value =
-            HeaderValue::from_str(organization).map_err(|error| DispatchFailure::Unsupported {
-                message: error.to_string(),
-            })?;
+        let (name, value) = organization_header(organization)?;
         outbound.headers.insert(name, value);
     }
     let sent = TranscriptionTransport::send(client, outbound).await;
@@ -65,13 +60,32 @@ pub(super) async fn transcribe(
     )))
 }
 
+// The OpenAI SDK sends openai.organization as this header on every request
+fn organization_header(organization: &str) -> Result<(HeaderName, HeaderValue), DispatchFailure> {
+    let name = HeaderName::from_static("openai-organization");
+    let value =
+        HeaderValue::from_str(organization).map_err(|error| DispatchFailure::Unsupported {
+            message: error.to_string(),
+        })?;
+    Ok((name, value))
+}
+
 fn publish(error: TranscriptionError) -> DispatchFailure {
     match error {
         TranscriptionError::Status(status) => DispatchFailure::Provider {
             status: Some(status.status),
             message: status.message,
         },
-        other => DispatchFailure::Unsupported {
+        other @ TranscriptionError::MissingApiKey
+        | other @ TranscriptionError::BaseUrl { .. }
+        | other @ TranscriptionError::Field { .. }
+        | other @ TranscriptionError::Header { .. }
+        | other @ TranscriptionError::Transport { .. }
+        | other @ TranscriptionError::Logging { .. }
+        | other @ TranscriptionError::Utf8 { .. }
+        | other @ TranscriptionError::Json { .. }
+        | other @ TranscriptionError::NotObject
+        | other @ TranscriptionError::NoResponseFields => DispatchFailure::Unsupported {
             message: other.to_string(),
         },
     }

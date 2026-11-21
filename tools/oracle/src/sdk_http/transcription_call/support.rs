@@ -35,7 +35,6 @@ impl TranscriptionDispatchError for DispatchFailure {
     }
 }
 
-// The two provider operations this task's cases reach; every other injected target stays unbuilt here
 pub(super) struct Dispatch<'client> {
     pub(super) client: &'client ProxiedClient,
 }
@@ -47,23 +46,27 @@ impl TranscriptionDispatch for Dispatch<'_> {
         &self,
         target: TranscriptionTarget<'_>,
     ) -> impl Future<Output = Result<TranscriptionAnswer, Self::Error>> + Send {
-        async move {
-            match target {
-                TranscriptionTarget::OpenAi(operation) => {
-                    openai::transcribe(operation, self.client).await
-                }
-                TranscriptionTarget::Native(operation) => {
-                    xai::transcribe(operation, self.client).await
-                }
-                TranscriptionTarget::Azure(_)
-                | TranscriptionTarget::NvidiaRiva(_)
-                | TranscriptionTarget::Soniox(_)
-                | TranscriptionTarget::Bedrock(_)
-                | TranscriptionTarget::Watsonx(_) => Err(DispatchFailure::Unsupported {
-                    message: String::from("the oracle serves only the openai and native branches"),
-                }),
-            }
+        transcribe(self, target)
+    }
+}
+
+// The two provider operations this task's cases reach; every other injected target stays unbuilt here
+async fn transcribe(
+    dispatch: &Dispatch<'_>,
+    target: TranscriptionTarget<'_>,
+) -> Result<TranscriptionAnswer, DispatchFailure> {
+    match target {
+        TranscriptionTarget::OpenAi(operation) => {
+            openai::transcribe(operation, dispatch.client).await
         }
+        TranscriptionTarget::Native(operation) => xai::transcribe(operation, dispatch.client).await,
+        TranscriptionTarget::Azure(_)
+        | TranscriptionTarget::NvidiaRiva(_)
+        | TranscriptionTarget::Soniox(_)
+        | TranscriptionTarget::Bedrock(_)
+        | TranscriptionTarget::Watsonx(_) => Err(DispatchFailure::Unsupported {
+            message: String::from("the oracle serves only the openai and native branches"),
+        }),
     }
 }
 

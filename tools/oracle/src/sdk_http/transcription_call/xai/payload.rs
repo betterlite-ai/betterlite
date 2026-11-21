@@ -54,8 +54,8 @@ impl AudioTranscriptionConfig for XaiConfig {
             filename: audio_file.filename.to_owned(),
             content_type: audio_file.content_type.to_owned(),
         };
-        let (extra_body, direct) = form_params(optional_params)?;
-        let form = transcription_form(model, &processed, &extra_body, &direct);
+        let maps = form_params(optional_params)?;
+        let form = transcription_form(model, &processed, &maps.extra_body, &maps.direct);
         let mut data = Object::new();
         for (name, value) in form.fields {
             let converted = match value.form_text() {
@@ -128,15 +128,20 @@ fn contract_response(
 }
 
 // extra_body flattens first and a direct option of the same name replaces it in place
-fn form_params(
-    params: &Object,
-) -> Result<(IndexMap<String, FormValue>, IndexMap<String, FormValue>), TranscriptionContractError>
-{
+struct FormMaps {
+    extra_body: IndexMap<String, FormValue>,
+    direct: IndexMap<String, FormValue>,
+}
+
+fn form_params(params: &Object) -> Result<FormMaps, TranscriptionContractError> {
     let extra_body = match params.get("extra_body") {
         Some(serde_json::Value::Object(fields)) => form_map(fields)?,
         Some(_) | None => IndexMap::new(),
     };
-    Ok((extra_body, form_map(params)?))
+    Ok(FormMaps {
+        extra_body,
+        direct: form_map(params)?,
+    })
 }
 
 fn form_map(fields: &Object) -> Result<IndexMap<String, FormValue>, TranscriptionContractError> {

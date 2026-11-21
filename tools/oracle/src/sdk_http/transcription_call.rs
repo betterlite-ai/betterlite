@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::future::Future;
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::transcription_call::Settings;
@@ -178,13 +179,28 @@ async fn execute(
         logging: None,
         identify: uuid::Uuid::new_v4,
     };
-    let outcome = match input.mode {
-        Mode::Sync => sync_outcome(service.transcription(&call, audio(input)).await)?,
-        Mode::Async => async_outcome(input, &call, audio(input), &service).await?,
-    };
+    let outcome = dispatch_outcome(input, &call, &service).await?;
     Ok(SdkResult::TranscriptionCall {
         value: Box::new(outcome),
     })
+}
+
+// The audio file is consumed before each await, since only a sync prologue keeps this future Send
+async fn dispatch_outcome(
+    input: &Call,
+    call: &TranscriptionCall,
+    service: &Transcriptions<'_, Dispatch<'_>>,
+) -> Result<Outcome, SdkHttpError> {
+    match input.mode {
+        Mode::Sync => {
+            let pending = service.transcription(call, audio(input));
+            sync_outcome(pending.await)
+        }
+        Mode::Async => {
+            let pending = async_outcome(input, call, audio(input), service);
+            pending.await
+        }
+    }
 }
 
 fn settings(env: &BTreeMap<String, String>) -> Result<Settings, SdkHttpError> {
@@ -250,28 +266,34 @@ fn sync_outcome(
                         "the provider failure has no status",
                     )))
                 },
-                |status| Ok(Outcome::status(status)),
+                |code| Ok(Outcome::status(code)),
             ),
         Err(error) => Err(SdkHttpError::Invalid(error.to_string())),
     }
 }
 
-async fn async_outcome(
+// The audio file is consumed before the await, since only a sync prologue keeps this future Send
+fn async_outcome(
     input: &Call,
     call: &TranscriptionCall,
     file: AudioFile<'_>,
     service: &Transcriptions<'_, Dispatch<'_>>,
-) -> Result<Outcome, SdkHttpError> {
+) -> impl Future<Output = Result<Outcome, SdkHttpError>> + Send {
     let model = if input.missing_model {
         None
     } else {
         Some(call.model.as_str())
     };
-    match service.atranscription(model, call, file, true).await {
-        Ok(response) => Ok(outcome_of(&response)),
-        Err(AsyncTranscriptionError::MissingModel) => Ok(Outcome::raised("KeyError", "'model'")),
-        Err(AsyncTranscriptionError::Exception(exception)) => {
-            Err(SdkHttpError::Invalid(exception.message))
+    let pending = service.atranscription(model, call, file, true);
+    async move {
+        match pending.await {
+            Ok(response) => Ok(outcome_of(&response)),
+            Err(AsyncTranscriptionError::MissingModel) => {
+                Ok(Outcome::raised("KeyError", "'model'"))
+            }
+            Err(AsyncTranscriptionError::Exception(exception)) => {
+                Err(SdkHttpError::Invalid(exception.message))
+            }
         }
     }
 }
@@ -288,10 +310,10 @@ fn outcome_of(response: &TranscriptionResponse) -> Outcome {
 }
 
 fn field(response: &TranscriptionResponse, name: &str) -> Option<Json> {
-    response
-        .extra
-        .get(name)
-        .and_then(|value| serde_json::from_value(value.clone()).ok())
+    match response.extra.get(name) {
+        Some(value) => serde_json::from_value(value.clone()).ok(),
+        None => None,
+    }
 }
 
 fn hidden_duration(response: &TranscriptionResponse) -> Option<Json> {
