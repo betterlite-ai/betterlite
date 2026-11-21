@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
 use betterlite_auth::auth_limit_inputs::account::account_limits;
+use betterlite_auth::auth_limit_inputs::deployment::{DeploymentLimitCatalog, DeploymentLimits};
 use betterlite_auth::rejection_provider::ProviderResolution;
 use betterlite_auth::resolved_key::auth::{AuthInput, ParentOtelSpan, UserAPIKeyAuth};
 use betterlite_cache::dual_cache::DualCacheError;
@@ -14,6 +15,8 @@ use betterlite_models::resolution::{ResolutionError, ResolvedModel};
 use betterlite_openai::openai_base_config::Object as JsonMap;
 use betterlite_redact::structured::Payload;
 use chrono::{DateTime, FixedOffset};
+use tokio::sync::Semaphore;
+use tokio_util::task::TaskTracker;
 use tracing::Level;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt;
@@ -66,6 +69,8 @@ pub(crate) struct RecordingCache {
     global_answer: Mutex<BatchAnswer>,
     objects_answer: Mutex<BatchAnswer>,
     write_failure: WriteFailure,
+    // a test gate the detached write waits on, so pre_call can be watched returning first
+    remote_gate: Option<Arc<Semaphore>>,
 }
 
 impl RecordingCache {
@@ -86,6 +91,17 @@ impl RecordingCache {
             global_answer: Mutex::new(BatchAnswer::None),
             objects_answer: Mutex::new(BatchAnswer::None),
             write_failure: failure,
+            remote_gate: None,
+        })
+    }
+
+    pub(crate) fn with_remote_gate(gate: Arc<Semaphore>) -> Arc<Self> {
+        Arc::new(Self {
+            calls: Mutex::new(Vec::new()),
+            global_answer: Mutex::new(BatchAnswer::None),
+            objects_answer: Mutex::new(BatchAnswer::None),
+            write_failure: WriteFailure::Never,
+            remote_gate: Some(gate),
         })
     }
 
@@ -147,6 +163,9 @@ impl LegacyUsageCache for RecordingCache {
             ttl,
             local_only,
         });
+        if let (false, Some(gate)) = (local_only, &self.remote_gate) {
+            let _permit = gate.acquire().await.expect("the test gate stays open");
+        }
         if self.refuse(local_only) {
             return Err(UsageCacheError::Transport(
                 DualCacheError::UnrepresentableValue,
@@ -241,17 +260,61 @@ pub(crate) struct Fixture {
     pub(crate) cache: Arc<RecordingCache>,
     pub(crate) clock: Arc<FixedClock>,
     pub(crate) console: Arc<RecordingConsole>,
+    pub(crate) tasks: TaskTracker,
     pub(crate) admission: LegacyAdmission,
 }
 
 pub(crate) fn fixture_with(cache: Arc<RecordingCache>, clock: Arc<FixedClock>) -> Fixture {
+    fixture_with_catalog(cache, clock, None)
+}
+
+pub(crate) fn fixture_with_catalog(
+    cache: Arc<RecordingCache>,
+    clock: Arc<FixedClock>,
+    catalog: Option<Arc<dyn DeploymentLimitCatalog + Send + Sync>>,
+) -> Fixture {
     let console = RecordingConsole::new();
     let handler = handler_with(&cache, &clock, &console);
+    let tasks = TaskTracker::new();
     Fixture {
         cache,
         clock,
         console,
-        admission: LegacyAdmission { handler },
+        tasks: tasks.clone(),
+        admission: LegacyAdmission::new(handler, tasks, catalog),
+    }
+}
+
+// run the hook and wait for its detached write, so a test sees every call the hook makes
+pub(crate) async fn admit(
+    fixture: &Fixture,
+    auth: &UserAPIKeyAuth,
+    request: &mut AdmissionRequest,
+) -> Result<(), LegacyAdmissionError> {
+    let result = fixture.admission.pre_call(auth, request).await;
+    fixture.tasks.close();
+    fixture.tasks.wait().await;
+    result
+}
+
+// a deployment catalog holding one model with its two defaults, as B302 serves them
+pub(crate) struct DeploymentCatalog {
+    model: String,
+    limits: DeploymentLimits,
+}
+
+impl DeploymentCatalog {
+    pub(crate) fn model_default(model: &str, limits: DeploymentLimits) -> Arc<Self> {
+        Arc::new(Self {
+            model: model.to_owned(),
+            limits,
+        })
+    }
+}
+
+impl DeploymentLimitCatalog for DeploymentCatalog {
+    fn model_list(&self, model_name: &str) -> Option<Vec<DeploymentLimits>> {
+        (model_name == self.model).then(|| vec![self.limits.clone()])
     }
 }
 

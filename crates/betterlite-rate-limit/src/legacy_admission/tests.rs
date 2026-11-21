@@ -2,15 +2,22 @@
 
 mod support;
 
+use std::sync::Arc;
+use std::time::Duration;
+
+use betterlite_auth::auth_limit_inputs::deployment::{DeploymentLimitValue, DeploymentLimits};
+use betterlite_auth::auth_limit_inputs::error::AuthLimitInputsError;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_error::rate_limit::RateLimitDimension;
 use rstest::rstest;
+use tokio::sync::Semaphore;
+use tokio::time::timeout;
 
 use self::support::{
-    BatchAnswer, FULL_KEY, FixedClock, LogCapture, MINUTE, NEAR_MAX, RecordingCache,
-    START_OF_MINUTE, WriteFailure, answered, auth_with_hash, detail_text, every_dimension,
-    final_write, fixture_with, global_count, id, minute, new_fixture, objects, principal,
-    rejection, request_body, split_calls, written_ids,
+    BatchAnswer, DeploymentCatalog, FULL_KEY, FixedClock, LogCapture, MINUTE, NEAR_MAX,
+    RecordingCache, START_OF_MINUTE, WriteFailure, admit, answered, auth_with_hash, detail_text,
+    every_dimension, final_write, fixture_with, fixture_with_catalog, global_count, id, minute,
+    new_fixture, objects, principal, rejection, request_body, split_calls, written_ids,
 };
 use super::facts::GLOBAL_KEY;
 use crate::legacy_admission::error::LegacyAdmissionError;
@@ -21,11 +28,7 @@ async fn global_cap_absent_leaves_counter_untouched() {
     let fixture = new_fixture();
     let auth = principal("{}");
     let mut request = request_body(None, "{}");
-    fixture
-        .admission
-        .pre_call(&auth, &mut request)
-        .await
-        .unwrap();
+    admit(&fixture, &auth, &mut request).await.unwrap();
     let calls = fixture.cache.calls();
     assert_eq!(split_calls(&calls).gets, vec![vec![None; 6]]);
     let (entries, ttl, local_only) = final_write(&calls);
@@ -38,11 +41,7 @@ async fn global_cap_below_increments_local_only() {
     let fixture = answered(global_count(2), objects(&[None; 6]));
     let auth = principal("{}");
     let mut request = request_body(None, r#"{"global_max_parallel_requests": 5}"#);
-    fixture
-        .admission
-        .pre_call(&auth, &mut request)
-        .await
-        .unwrap();
+    admit(&fixture, &auth, &mut request).await.unwrap();
     let sets = split_calls(&fixture.cache.calls()).sets;
     assert_eq!(
         sets[0].0,
@@ -59,11 +58,7 @@ async fn global_cap_missing_counter_counts_as_one(#[case] answer: BatchAnswer) {
     let fixture = answered(answer, objects(&[None; 6]));
     let auth = principal("{}");
     let mut request = request_body(None, r#"{"global_max_parallel_requests": 2}"#);
-    fixture
-        .admission
-        .pre_call(&auth, &mut request)
-        .await
-        .unwrap();
+    admit(&fixture, &auth, &mut request).await.unwrap();
     let sets = split_calls(&fixture.cache.calls()).sets;
     assert_eq!(
         sets[0].0,
@@ -76,7 +71,7 @@ async fn global_cap_missing_counter_reaches_a_cap_of_one() {
     let fixture = answered(BatchAnswer::None, objects(&[None; 6]));
     let auth = principal("{}");
     let mut request = request_body(None, r#"{"global_max_parallel_requests": 1}"#);
-    let error = rejection(fixture.admission.pre_call(&auth, &mut request).await);
+    let error = rejection(admit(&fixture, &auth, &mut request).await);
     assert_eq!(
         error.rate_limit_type,
         Some(RateLimitDimension::ConcurrentRequests)
@@ -99,7 +94,7 @@ async fn global_cap_at_or_above_raises(#[case] cap: i64, #[case] current: i64) {
         Some("gpt-4"),
         &format!(r#"{{"global_max_parallel_requests": {cap}}}"#),
     );
-    let error = rejection(fixture.admission.pre_call(&auth, &mut request).await);
+    let error = rejection(admit(&fixture, &auth, &mut request).await);
     assert_eq!(
         error.rate_limit_type,
         Some(RateLimitDimension::ConcurrentRequests)
@@ -120,11 +115,7 @@ async fn global_cap_read_error_is_cache_error() {
     let fixture = answered(BatchAnswer::Failed, objects(&[None; 6]));
     let auth = principal("{}");
     let mut request = request_body(None, r#"{"global_max_parallel_requests": 2}"#);
-    let error = fixture
-        .admission
-        .pre_call(&auth, &mut request)
-        .await
-        .unwrap_err();
+    let error = admit(&fixture, &auth, &mut request).await.unwrap_err();
     assert!(matches!(error, LegacyAdmissionError::Cache(_)));
 }
 
@@ -136,11 +127,7 @@ async fn global_cap_write_error_is_cache_error() {
     );
     let auth = principal("{}");
     let mut request = request_body(None, r#"{"global_max_parallel_requests": 5}"#);
-    let error = fixture
-        .admission
-        .pre_call(&auth, &mut request)
-        .await
-        .unwrap_err();
+    let error = admit(&fixture, &auth, &mut request).await.unwrap_err();
     assert!(matches!(error, LegacyAdmissionError::Cache(_)));
     assert_eq!(split_calls(&fixture.cache.calls()).gets.len(), 1);
 }
@@ -150,11 +137,7 @@ async fn global_cap_non_integer_is_no_cap() {
     let fixture = new_fixture();
     let auth = principal("{}");
     let mut request = request_body(None, r#"{"global_max_parallel_requests": "2"}"#);
-    fixture
-        .admission
-        .pre_call(&auth, &mut request)
-        .await
-        .unwrap();
+    admit(&fixture, &auth, &mut request).await.unwrap();
     assert_eq!(
         split_calls(&fixture.cache.calls()).gets,
         vec![vec![None; 6]]
@@ -169,11 +152,7 @@ async fn global_cap_counter_value_counts_as_one() {
     );
     let auth = principal("{}");
     let mut request = request_body(None, r#"{"global_max_parallel_requests": 5}"#);
-    fixture
-        .admission
-        .pre_call(&auth, &mut request)
-        .await
-        .unwrap();
+    admit(&fixture, &auth, &mut request).await.unwrap();
     let sets = split_calls(&fixture.cache.calls()).sets;
     assert_eq!(
         sets[0].0,
@@ -186,11 +165,7 @@ async fn cache_key_ids_use_minute_and_every_part() {
     let fixture = answered(global_count(0), objects(&[None; 6]));
     let caller = auth_with_hash(FULL_KEY);
     let mut request = request_body(Some("gpt-4"), r#"{"global_max_parallel_requests": 1}"#);
-    fixture
-        .admission
-        .pre_call(&caller.auth, &mut request)
-        .await
-        .unwrap();
+    admit(&fixture, &caller.auth, &mut request).await.unwrap();
     let reads = split_calls(&fixture.cache.calls()).gets;
     assert_eq!(
         reads[1],
@@ -213,11 +188,7 @@ async fn cache_key_minute_is_local_and_read_once() {
     );
     let auth = principal(r#"{"user_id":"user-1"}"#);
     let mut request = request_body(None, "{}");
-    fixture
-        .admission
-        .pre_call(&auth, &mut request)
-        .await
-        .unwrap();
+    admit(&fixture, &auth, &mut request).await.unwrap();
     let reads = split_calls(&fixture.cache.calls()).gets;
     assert_eq!(
         reads[0][3],
@@ -262,11 +233,7 @@ async fn cache_key_absent_parts_skip_ids(
         "{}"
     };
     let mut request = request_body(model, metadata);
-    fixture
-        .admission
-        .pre_call(&caller.auth, &mut request)
-        .await
-        .unwrap();
+    admit(&fixture, &caller.auth, &mut request).await.unwrap();
     let keys = split_calls(&fixture.cache.calls())
         .gets
         .pop()
@@ -292,11 +259,7 @@ async fn cache_key_session_token_logs_under_its_alias(
     let fixture = new_fixture();
     let caller = auth_with_hash(text);
     let mut request = request_body(Some("gpt-4"), "{}");
-    fixture
-        .admission
-        .pre_call(&caller.auth, &mut request)
-        .await
-        .unwrap();
+    admit(&fixture, &caller.auth, &mut request).await.unwrap();
     let logged = alias.unwrap_or(caller.hash.as_str());
     let keys = split_calls(&fixture.cache.calls())
         .gets
@@ -314,11 +277,7 @@ async fn key_limit_defaults_are_unlimited() {
     );
     let caller = auth_with_hash(r#"{"api_key":"key-1"}"#);
     let mut request = request_body(None, "{}");
-    fixture
-        .admission
-        .pre_call(&caller.auth, &mut request)
-        .await
-        .unwrap();
+    admit(&fixture, &caller.auth, &mut request).await.unwrap();
     let sets = split_calls(&fixture.cache.calls()).sets;
     assert_eq!(
         sets[0].0,
@@ -339,7 +298,7 @@ async fn key_limit_zero_is_enforced(#[case] text: &str, #[case] dimension: RateL
     let fixture = new_fixture();
     let caller = auth_with_hash(text);
     let mut request = request_body(None, "{}");
-    let error = rejection(fixture.admission.pre_call(&caller.auth, &mut request).await);
+    let error = rejection(admit(&fixture, &caller.auth, &mut request).await);
     assert_eq!(error.rate_limit_type, Some(dimension));
     assert!(detail_text(&error).contains("Hit limit for key"));
 }
@@ -355,7 +314,7 @@ async fn key_limit_throttle_halves_the_key_limits() {
         r#"{"api_key":"key-1","tpm_limit":100,"rpm_limit":100,"budget_throttle_pct":0.5}"#,
     );
     let mut request = request_body(None, "{}");
-    let error = rejection(fixture.admission.pre_call(&caller.auth, &mut request).await);
+    let error = rejection(admit(&fixture, &caller.auth, &mut request).await);
     assert_eq!(error.rate_limit_type, Some(RateLimitDimension::Tokens));
 }
 
@@ -368,11 +327,7 @@ async fn key_limit_without_percentage_keeps_the_limit() {
     );
     let caller = auth_with_hash(r#"{"api_key":"key-1","tpm_limit":100,"rpm_limit":100}"#);
     let mut request = request_body(None, "{}");
-    fixture
-        .admission
-        .pre_call(&caller.auth, &mut request)
-        .await
-        .unwrap();
+    admit(&fixture, &caller.auth, &mut request).await.unwrap();
     let sets = split_calls(&fixture.cache.calls()).sets;
     assert_eq!(sets[0].0, vec![(id(&caller.hash), minute(1, 50, 1))]);
 }
@@ -382,11 +337,7 @@ async fn key_limit_skips_without_api_key() {
     let fixture = new_fixture();
     let auth = principal(r#"{"user_id":"user-1"}"#);
     let mut request = request_body(None, "{}");
-    fixture
-        .admission
-        .pre_call(&auth, &mut request)
-        .await
-        .unwrap();
+    admit(&fixture, &auth, &mut request).await.unwrap();
     let sets = split_calls(&fixture.cache.calls()).sets;
     assert_eq!(sets.len(), 2);
     assert_eq!(sets[0].0, vec![(id("user-1"), minute(1, 0, 1))]);
@@ -407,11 +358,7 @@ async fn key_limit_bare_count_is_a_missing_counter() {
     );
     let caller = auth_with_hash(r#"{"api_key":"key-1","tpm_limit":10}"#);
     let mut request = request_body(None, "{}");
-    fixture
-        .admission
-        .pre_call(&caller.auth, &mut request)
-        .await
-        .unwrap();
+    admit(&fixture, &caller.auth, &mut request).await.unwrap();
     let sets = split_calls(&fixture.cache.calls()).sets;
     assert_eq!(sets[0].0, vec![(id(&caller.hash), minute(1, 0, 1))]);
 }
@@ -425,11 +372,7 @@ async fn model_limit_absent_maps_skip_the_check() {
     );
     let caller = auth_with_hash(r#"{"api_key":"key-1"}"#);
     let mut request = request_body(Some("gpt-4"), "{}");
-    fixture
-        .admission
-        .pre_call(&caller.auth, &mut request)
-        .await
-        .unwrap();
+    admit(&fixture, &caller.auth, &mut request).await.unwrap();
     assert_eq!(split_calls(&fixture.cache.calls()).sets.len(), 2);
     assert!(request.metadata.is_empty());
 }
@@ -457,7 +400,7 @@ async fn model_limit_either_map_runs_the_check(
     );
     let caller = auth_with_hash(text);
     let mut request = request_body(Some("gpt-4"), "{}");
-    let error = rejection(fixture.admission.pre_call(&caller.auth, &mut request).await);
+    let error = rejection(admit(&fixture, &caller.auth, &mut request).await);
     assert_eq!(error.rate_limit_type, Some(dimension));
     assert!(detail_text(&error).contains("rate limit type = model_per_key"));
 }
@@ -473,11 +416,7 @@ async fn model_limit_zero_is_unlimited() {
         r#"{"api_key":"key-1","metadata":{"model_tpm_limit":{"gpt-4":0},"model_rpm_limit":{"gpt-4":0}}}"#,
     );
     let mut request = request_body(Some("gpt-4"), "{}");
-    fixture
-        .admission
-        .pre_call(&caller.auth, &mut request)
-        .await
-        .unwrap();
+    admit(&fixture, &caller.auth, &mut request).await.unwrap();
     let sets = split_calls(&fixture.cache.calls()).sets;
     assert_eq!(
         sets[1].0,
@@ -501,11 +440,7 @@ async fn model_limit_missing_model_is_unlimited() {
     let caller =
         auth_with_hash(r#"{"api_key":"key-1","metadata":{"model_tpm_limit":{"other":1}}}"#);
     let mut request = request_body(Some("gpt-4"), "{}");
-    fixture
-        .admission
-        .pre_call(&caller.auth, &mut request)
-        .await
-        .unwrap();
+    admit(&fixture, &caller.auth, &mut request).await.unwrap();
     assert_eq!(
         request.metadata.get("litellm-key-remaining-tokens-gpt-4"),
         Some(&JsonValue::Null)
@@ -526,11 +461,7 @@ async fn model_limit_empty_team_map_counts_as_present() {
         r#"{"api_key":"key-1","team_metadata":{"model_tpm_limit":{},"model_rpm_limit":{}}}"#,
     );
     let mut request = request_body(Some("gpt-4"), "{}");
-    fixture
-        .admission
-        .pre_call(&caller.auth, &mut request)
-        .await
-        .unwrap();
+    admit(&fixture, &caller.auth, &mut request).await.unwrap();
     let sets = split_calls(&fixture.cache.calls()).sets;
     assert_eq!(sets.len(), 3);
     assert_eq!(
@@ -563,11 +494,7 @@ async fn model_limit_id_uses_none_text(
     let fixture = new_fixture();
     let caller = auth_with_hash(text);
     let mut request = request_body(model, "{}");
-    fixture
-        .admission
-        .pre_call(&caller.auth, &mut request)
-        .await
-        .unwrap();
+    admit(&fixture, &caller.auth, &mut request).await.unwrap();
     let prefix = if has_key {
         caller.hash.as_str()
     } else {
@@ -597,11 +524,7 @@ async fn remaining_metadata_counts_from_the_returned_counters() {
         r#"{"api_key":"key-1","metadata":{"model_tpm_limit":{"gpt-4":1000},"model_rpm_limit":{"gpt-4":500}}}"#,
     );
     let mut request = request_body(Some("gpt-4"), "{}");
-    fixture
-        .admission
-        .pre_call(&caller.auth, &mut request)
-        .await
-        .unwrap();
+    admit(&fixture, &caller.auth, &mut request).await.unwrap();
     assert_eq!(
         request
             .metadata
@@ -629,11 +552,7 @@ async fn remaining_metadata_zero_limit_is_negative() {
         r#"{"api_key":"key-1","metadata":{"model_tpm_limit":{"gpt-4":0},"model_rpm_limit":{"gpt-4":0}}}"#,
     );
     let mut request = request_body(Some("gpt-4"), "{}");
-    fixture
-        .admission
-        .pre_call(&caller.auth, &mut request)
-        .await
-        .unwrap();
+    admit(&fixture, &caller.auth, &mut request).await.unwrap();
     assert_eq!(
         request
             .metadata
@@ -656,11 +575,7 @@ async fn remaining_metadata_null_when_the_limit_is_absent() {
     let caller =
         auth_with_hash(r#"{"api_key":"key-1","metadata":{"model_tpm_limit":{"gpt-4":1000}}}"#);
     let mut request = request_body(Some("gpt-4"), "{}");
-    fixture
-        .admission
-        .pre_call(&caller.auth, &mut request)
-        .await
-        .unwrap();
+    admit(&fixture, &caller.auth, &mut request).await.unwrap();
     assert_eq!(
         request.metadata.get("litellm-key-remaining-tokens-gpt-4"),
         Some(&JsonValue::from(1000_i64))
@@ -677,11 +592,7 @@ async fn remaining_metadata_uses_none_text_without_model() {
     let caller =
         auth_with_hash(r#"{"api_key":"key-1","metadata":{"model_tpm_limit":{"gpt-4":10}}}"#);
     let mut request = request_body(None, "{}");
-    fixture
-        .admission
-        .pre_call(&caller.auth, &mut request)
-        .await
-        .unwrap();
+    admit(&fixture, &caller.auth, &mut request).await.unwrap();
     assert_eq!(
         request.metadata.get("litellm-key-remaining-tokens-None"),
         Some(&JsonValue::Null)
@@ -697,7 +608,7 @@ async fn user_limit_empty_user_id_is_checked() {
     let fixture = new_fixture();
     let auth = principal(r#"{"user_id":"","user_rpm_limit":0}"#);
     let mut request = request_body(None, "{}");
-    let error = rejection(fixture.admission.pre_call(&auth, &mut request).await);
+    let error = rejection(admit(&fixture, &auth, &mut request).await);
     assert_eq!(error.rate_limit_type, Some(RateLimitDimension::Requests));
     assert!(detail_text(&error).contains("Hit limit for user"));
 }
@@ -711,11 +622,7 @@ async fn user_limit_defaults_are_unlimited() {
     );
     let auth = principal(r#"{"user_id":"user-1"}"#);
     let mut request = request_body(None, "{}");
-    fixture
-        .admission
-        .pre_call(&auth, &mut request)
-        .await
-        .unwrap();
+    admit(&fixture, &auth, &mut request).await.unwrap();
     let sets = split_calls(&fixture.cache.calls()).sets;
     assert_eq!(
         sets[0].0,
@@ -732,11 +639,7 @@ async fn user_limit_is_not_throttled() {
     );
     let auth = principal(r#"{"user_id":"user-1","user_tpm_limit":100,"budget_throttle_pct":0.5}"#);
     let mut request = request_body(None, "{}");
-    fixture
-        .admission
-        .pre_call(&auth, &mut request)
-        .await
-        .unwrap();
+    admit(&fixture, &auth, &mut request).await.unwrap();
     let sets = split_calls(&fixture.cache.calls()).sets;
     assert_eq!(sets[0].0, vec![(id("user-1"), minute(1, 60, 1))]);
 }
@@ -746,7 +649,7 @@ async fn team_limit_zero_is_enforced() {
     let fixture = new_fixture();
     let auth = principal(r#"{"team_id":"team-1","team_tpm_limit":0}"#);
     let mut request = request_body(None, "{}");
-    let error = rejection(fixture.admission.pre_call(&auth, &mut request).await);
+    let error = rejection(admit(&fixture, &auth, &mut request).await);
     assert_eq!(error.rate_limit_type, Some(RateLimitDimension::Tokens));
     assert!(detail_text(&error).contains("Hit limit for team"));
 }
@@ -760,11 +663,7 @@ async fn team_limit_defaults_are_unlimited() {
     );
     let auth = principal(r#"{"team_id":"team-1"}"#);
     let mut request = request_body(None, "{}");
-    fixture
-        .admission
-        .pre_call(&auth, &mut request)
-        .await
-        .unwrap();
+    admit(&fixture, &auth, &mut request).await.unwrap();
     let sets = split_calls(&fixture.cache.calls()).sets;
     assert_eq!(
         sets[0].0,
@@ -789,7 +688,7 @@ async fn end_user_limit_truthy_runs_as_customer(
     let fixture = new_fixture();
     let auth = principal(text);
     let mut request = request_body(None, "{}");
-    let error = rejection(fixture.admission.pre_call(&auth, &mut request).await);
+    let error = rejection(admit(&fixture, &auth, &mut request).await);
     assert_eq!(error.rate_limit_type, Some(dimension));
     assert!(detail_text(&error).contains("Hit limit for customer"));
 }
@@ -799,11 +698,7 @@ async fn end_user_limit_empty_id_skips_the_check() {
     let fixture = new_fixture();
     let auth = principal(r#"{"end_user_id":"","end_user_rpm_limit":0}"#);
     let mut request = request_body(None, "{}");
-    fixture
-        .admission
-        .pre_call(&auth, &mut request)
-        .await
-        .unwrap();
+    admit(&fixture, &auth, &mut request).await.unwrap();
     let keys = split_calls(&fixture.cache.calls())
         .gets
         .pop()
@@ -823,11 +718,7 @@ async fn end_user_limit_defaults_are_unlimited() {
     );
     let auth = principal(r#"{"end_user_id":"end-user-1"}"#);
     let mut request = request_body(None, "{}");
-    fixture
-        .admission
-        .pre_call(&auth, &mut request)
-        .await
-        .unwrap();
+    admit(&fixture, &auth, &mut request).await.unwrap();
     let sets = split_calls(&fixture.cache.calls()).sets;
     assert_eq!(
         sets[0].0,
@@ -843,11 +734,7 @@ async fn order_runs_each_dimension_then_writes_the_batch() {
         r#"{"api_key":"key-1","user_id":"user-1","team_id":"team-1","end_user_id":"end-user-1","metadata":{"model_tpm_limit":{"gpt-4":1000}}}"#,
     );
     let mut request = request_body(Some("gpt-4"), r#"{"global_max_parallel_requests": 5}"#);
-    fixture
-        .admission
-        .pre_call(&caller.auth, &mut request)
-        .await
-        .unwrap();
+    admit(&fixture, &caller.auth, &mut request).await.unwrap();
     assert_eq!(
         fixture.console.printed(),
         vec![String::from("Inside Max Parallel Request Pre-Call Hook")]
@@ -873,11 +760,7 @@ async fn order_accumulates_every_pair_into_the_final_write() {
         r#"{"api_key":"key-1","user_id":"user-1","team_id":"team-1","end_user_id":"end-user-1","metadata":{"model_tpm_limit":{"gpt-4":1000}}}"#,
     );
     let mut request = request_body(Some("gpt-4"), r#"{"global_max_parallel_requests": 5}"#);
-    fixture
-        .admission
-        .pre_call(&caller.auth, &mut request)
-        .await
-        .unwrap();
+    admit(&fixture, &caller.auth, &mut request).await.unwrap();
     let sets = split_calls(&fixture.cache.calls()).sets;
     assert_eq!(sets[5].0, sets[6].0, "the final write repeats every pair");
     let (entries, ttl, local_only) = final_write(&fixture.cache.calls());
@@ -916,7 +799,7 @@ async fn order_later_raise_keeps_earlier_counters() {
         r#"{"api_key":"key-1","user_id":"user-1","metadata":{"model_rpm_limit":{"gpt-4":10}}}"#,
     );
     let mut request = request_body(Some("gpt-4"), r#"{"global_max_parallel_requests": 1}"#);
-    let error = rejection(fixture.admission.pre_call(&caller.auth, &mut request).await);
+    let error = rejection(admit(&fixture, &caller.auth, &mut request).await);
     assert_eq!(error.rate_limit_type, Some(RateLimitDimension::Requests));
     let sets = split_calls(&fixture.cache.calls()).sets;
     assert_eq!(sets.len(), 2);
@@ -936,11 +819,7 @@ async fn final_write_carries_every_pair_with_ttl_60() {
     );
     let caller = auth_with_hash(FULL_KEY);
     let mut request = request_body(Some("gpt-4"), "{}");
-    fixture
-        .admission
-        .pre_call(&caller.auth, &mut request)
-        .await
-        .unwrap();
+    admit(&fixture, &caller.auth, &mut request).await.unwrap();
     let calls = fixture.cache.calls();
     let (entries, ttl, local_only) = final_write(&calls);
     assert_eq!((ttl, local_only), (60, false));
@@ -965,11 +844,7 @@ async fn final_write_empty_list_still_sent() {
     let fixture = new_fixture();
     let auth = principal("{}");
     let mut request = request_body(None, "{}");
-    fixture
-        .admission
-        .pre_call(&auth, &mut request)
-        .await
-        .unwrap();
+    admit(&fixture, &auth, &mut request).await.unwrap();
     let calls = fixture.cache.calls();
     assert_eq!(calls.len(), 2);
     let (entries, ttl, local_only) = final_write(&calls);
@@ -986,15 +861,97 @@ async fn final_write_failure_is_logged_and_admitted() {
     );
     let auth = principal("{}");
     let mut request = request_body(None, "{}");
-    fixture
-        .admission
-        .pre_call(&auth, &mut request)
-        .await
-        .unwrap();
+    admit(&fixture, &auth, &mut request).await.unwrap();
     let (_, ttl, local_only) = final_write(&fixture.cache.calls());
     assert_eq!((ttl, local_only), (60, false));
     assert!(
         logs.text()
             .contains("LiteLLM Cache: exception in async add_cache")
     );
+}
+
+#[tokio::test]
+async fn final_write_returns_before_the_tracker_drains() {
+    let gate = Arc::new(Semaphore::new(0));
+    let fixture = fixture_with(
+        RecordingCache::with_remote_gate(Arc::clone(&gate)),
+        FixedClock::at(START_OF_MINUTE),
+    );
+    let caller = auth_with_hash(FULL_KEY);
+    let mut request = request_body(Some("gpt-4"), "{}");
+    let result = timeout(
+        Duration::from_secs(5),
+        fixture.admission.pre_call(&caller.auth, &mut request),
+    )
+    .await
+    .expect("pre_call returns without waiting for the detached write");
+    result.unwrap();
+    assert!(
+        !fixture.tasks.is_empty(),
+        "the write is still pending after pre_call returns"
+    );
+    gate.add_permits(1);
+    fixture.tasks.close();
+    fixture.tasks.wait().await;
+    assert!(fixture.tasks.is_empty());
+    let (entries, ttl, local_only) = final_write(&fixture.cache.calls());
+    assert_eq!((ttl, local_only), (60, false));
+    assert_eq!(entries.len(), 4);
+}
+
+#[tokio::test]
+async fn model_limit_deployment_default_applies() {
+    let catalog = DeploymentCatalog::model_default(
+        "gpt-4",
+        DeploymentLimits {
+            default_api_key_rpm_limit: Some(DeploymentLimitValue::Integer(5)),
+            default_api_key_tpm_limit: None,
+        },
+    );
+    let fixture = fixture_with_catalog(
+        RecordingCache::new(),
+        FixedClock::at(START_OF_MINUTE),
+        Some(catalog),
+    );
+    let caller = auth_with_hash(r#"{"api_key":"key-1"}"#);
+    let mut request = request_body(Some("gpt-4"), "{}");
+    admit(&fixture, &caller.auth, &mut request).await.unwrap();
+    assert_eq!(
+        request
+            .metadata
+            .get("litellm-key-remaining-requests-gpt-4")
+            .and_then(JsonValue::as_i64),
+        Some(4)
+    );
+    assert_eq!(
+        request.metadata.get("litellm-key-remaining-tokens-gpt-4"),
+        Some(&JsonValue::Null)
+    );
+    let model_id = format!("{}::gpt-4::{MINUTE}::request_count", caller.hash);
+    assert!(written_ids(&fixture.cache.calls()).contains(&model_id));
+}
+
+#[tokio::test]
+async fn model_limit_deployment_default_overflow_is_an_error() {
+    let catalog = DeploymentCatalog::model_default(
+        "gpt-4",
+        DeploymentLimits {
+            default_api_key_rpm_limit: Some(DeploymentLimitValue::Unsigned(u64::MAX)),
+            default_api_key_tpm_limit: None,
+        },
+    );
+    let fixture = fixture_with_catalog(
+        RecordingCache::new(),
+        FixedClock::at(START_OF_MINUTE),
+        Some(catalog),
+    );
+    let caller = auth_with_hash(r#"{"api_key":"key-1"}"#);
+    let mut request = request_body(Some("gpt-4"), "{}");
+    let error = admit(&fixture, &caller.auth, &mut request)
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        LegacyAdmissionError::LimitInputs(AuthLimitInputsError::LimitOverflow { .. })
+    ));
 }
