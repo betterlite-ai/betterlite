@@ -1,3 +1,4 @@
+use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 
 use super::support::{
@@ -45,8 +46,11 @@ pub(super) async fn sync_and_async() {
             .and_then(|value| value.to_str().ok()),
         Some("Bearer sk-provider")
     );
-    let logged = log
-        .state
+    logged_metadata(log.state);
+}
+
+fn logged_metadata(state: &LoggingState) {
+    let logged = state
         .litellm_params
         .get("litellm_metadata")
         .expect("update_from_kwargs logs the caller's litellm_metadata");
