@@ -50,7 +50,7 @@ struct RawPrioritySettings {
 }
 
 // PriorityReservationDict's "type": what a reservation's value counts against the model group's capacity
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ReservationKind {
     Percent,
     Rpm,
@@ -146,7 +146,7 @@ fn reservation_setting(
         RawPriorityValue::Percent(percent) => (ReservationKind::Percent, percent),
         RawPriorityValue::Reservation(reservation) => (
             ReservationKind::from_wire(reservation.kind.as_deref()),
-            reservation.value.unwrap_or(1.0),
+            reservation.value.unwrap_or(1.0_f64),
         ),
     };
     let path = format!("litellm_settings.priority_reservation.{priority}");

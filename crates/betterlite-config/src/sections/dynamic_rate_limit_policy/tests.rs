@@ -105,7 +105,7 @@ fn reservation_forms(#[case] entry: &str, #[case] kind: ReservationKind, #[case]
 fn non_finite_settings_are_rejected(#[case] settings: RawPrioritySettings, #[case] path: &str) {
     let error = convert(raw(settings, None)).expect_err("a non-finite setting should be rejected");
     assert!(
-        matches!(error, ConfigError::InvalidScalar { path: reported, .. } if reported == path),
+        matches!(&error, ConfigError::InvalidScalar { path: reported, .. } if reported.as_str() == path),
         "unexpected error: {error}"
     );
 }
@@ -119,7 +119,7 @@ fn a_non_finite_reservation_value_is_rejected() {
     let error = convert(raw(RawPrioritySettings::default(), Some(reservation)))
         .expect_err("a non-finite reservation should be rejected");
     assert!(
-        matches!(error, ConfigError::InvalidScalar { path, .. } if path == "litellm_settings.priority_reservation.key_a"),
+        matches!(&error, ConfigError::InvalidScalar { path, .. } if path.as_str() == "litellm_settings.priority_reservation.key_a"),
         "unexpected error: {error}"
     );
 }
