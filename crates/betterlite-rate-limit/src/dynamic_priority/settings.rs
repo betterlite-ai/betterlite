@@ -76,7 +76,7 @@ fn reservation_values(
     values
 }
 
-fn priority_value(setting: config_policy::PriorityReservationSetting) -> PriorityValue {
+const fn priority_value(setting: config_policy::PriorityReservationSetting) -> PriorityValue {
     match setting.kind {
         config_policy::ReservationKind::Percent => PriorityValue::Percent(setting.value),
         config_policy::ReservationKind::Rpm => PriorityValue::Reservation(PriorityReservation {

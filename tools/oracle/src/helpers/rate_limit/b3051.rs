@@ -129,12 +129,13 @@ struct SaturationCase<'a> {
 fn encodable_values(values: &[String]) -> Vec<bool> {
     values
         .iter()
-        .map(|value| is_latin1_encodable(value))
+        .map(String::as_str)
+        .map(is_latin1_encodable)
         .collect()
 }
 
 fn allocation_answer(case: &AllocationCase<'_>) -> HelperResult {
-    let policy = policy(case.reservation);
+    let policy = priority_policy(case.reservation);
     let priority = priority_from_key_dict(case.team_metadata, case.key_metadata);
     let weights = normalize_priority_weights(&policy, Some(&case.limits));
     let allocation =
@@ -155,7 +156,7 @@ fn allocation_answer(case: &AllocationCase<'_>) -> HelperResult {
     }))
 }
 
-fn policy(reservation: Option<&BTreeMap<String, PriorityValue>>) -> PriorityPolicy {
+fn priority_policy(reservation: Option<&BTreeMap<String, PriorityValue>>) -> PriorityPolicy {
     PriorityPolicy {
         settings: PrioritySettings::default(),
         reservation: reservation.cloned(),
