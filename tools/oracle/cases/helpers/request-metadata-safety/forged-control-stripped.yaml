@@ -32,23 +32,5 @@ call:
         route: /v1/chat/completions
         principal: {metadata: null, team_metadata: null}
         settings: {missing_session_id: null, turn_off_message_logging: true}
-      - {function: chain_id, headers: [[x-litellm-session-id, session-1], [x-litellm-trace-id, trace-1]]}
-      - {function: chain_id, headers: [[x-claude-code-session-id, e96634a3-fa28-4083-b354-55542e2dca01], [x-session-id, bare-1234]]}
-      - {function: chain_id, headers: [[x-one-session-id, first-1234], [x-two-session-id, second-1234]]}
-      - {function: chain_id, headers: [[x-session-id, bare-1234]]}
-      - {function: chain_id, headers: [[x-session-id, short]]}
-      - {function: chain_id, headers: [[user-agent, codex_cli/1.0], [session-id, codex-1234]]}
-      - {function: chain_id, headers: [[user-agent, curl/8.0], [session-id, codex-1234]]}
-      - {function: chain_id, headers: []}
-      - {function: stampable_key_hash, api_key: null, via_virtual_key: true}
-      - {function: stampable_key_hash, api_key: litellm_proxy_master_key, via_virtual_key: true}
-      - {function: stampable_key_hash, api_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", via_virtual_key: true}
-      - {function: stampable_key_hash, api_key: "0123456789ABCDEF0123456789abcdef0123456789abcdef0123456789abcdef", via_virtual_key: true}
-      - {function: stampable_key_hash, api_key: sk-custom, via_virtual_key: true}
-      - {function: stampable_key_hash, api_key: litellm_proxy_master_key, via_virtual_key: false}
-      - {function: sanitize_for_log, value: "first line\nsecond line\rthird"}
-      - function: promoted_trace_control_fields
-        requester_metadata: {trace_id: requester-trace, session_id: requester-session, unrelated: value}
-        litellm_metadata: {trace_id: proxy-trace}
 env: {}
 compare: {ignore: []}

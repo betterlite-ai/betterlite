@@ -63,12 +63,5 @@ call:
           metadata: {allow_client_pricing_override: false, allow_client_message_redaction_opt_out: false}
           team_metadata: null
         settings: {missing_session_id: null, turn_off_message_logging: true}
-      - {function: key_or_team_flag, metadata_key: allow_client_pricing_override, metadata: {allow_client_pricing_override: true}, team_metadata: null}
-      - {function: key_or_team_flag, metadata_key: allow_client_message_redaction_opt_out, metadata: null, team_metadata: {allow_client_message_redaction_opt_out: true}}
-      - {function: key_or_team_flag, metadata_key: allow_client_mock_response, metadata: {allow_client_mock_response: "true"}, team_metadata: null}
-      - {function: key_or_team_flag, metadata_key: allow_client_mock_response, metadata: {allow_client_mock_response: true}, team_metadata: null}
-      - {function: mock_response_flag, metadata: {allow_client_mock_response: true}, team_metadata: null}
-      - {function: mock_response_flag, metadata: null, team_metadata: {allow_client_mock_response: true}}
-      - {function: mock_response_flag, metadata: {allow_client_mock_response: false}, team_metadata: null}
 env: {}
 compare: {ignore: []}

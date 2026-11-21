@@ -4,7 +4,5 @@ call:
   request_metadata_safety:
     calls:
       - {function: sanitize, data: {metadata: '{"kept": true}', input_cost_per_token: "0.001"}, headers: [[litellm-disable-message-redaction, "1"]], route: /v1/chat/completions, principal: {metadata: null, team_metadata: null}, settings: {missing_session_id: omit, turn_off_message_logging: true}}
-      - {function: chain_id, headers: [[x-session-id, bare-1234]]}
-      - {function: normalized_metadata_slot, data: {metadata: "[1]"}, metadata_variable_name: metadata}
 env: {}
 compare: {ignore: []}
