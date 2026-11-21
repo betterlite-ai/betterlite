@@ -265,14 +265,15 @@ impl RealtimeEventNormalizer for ScriptedNormalizer {
     }
 
     fn patch_outgoing_session(&self, session: Json) -> Json {
-        lock(&self.sessions).push(session.clone());
-        match session {
+        let patched = match session {
             Json::Object(mut fields) => {
                 fields.insert("xai_patch".to_owned(), Json::Bool(true));
                 Json::Object(fields)
             }
             other => other,
-        }
+        };
+        lock(&self.sessions).push(patched.clone());
+        patched
     }
 }
 
@@ -282,7 +283,6 @@ pub(super) struct ScriptedGuardrail {
     pub(super) block_on: Option<String>,
     pub(super) custom: bool,
     pub(super) policy: RealtimeGuardrailPolicy,
-    pub(super) checks: Arc<Mutex<Vec<(GuardrailEventHooks, String)>>>,
     pub(super) applied: Arc<Mutex<Vec<Vec<String>>>>,
 }
 
@@ -293,7 +293,6 @@ impl ScriptedGuardrail {
             block_on: None,
             custom: true,
             policy: RealtimeGuardrailPolicy::default(),
-            checks: Arc::new(Mutex::new(Vec::new())),
             applied: Arc::new(Mutex::new(Vec::new())),
         }
     }
@@ -302,10 +301,6 @@ impl ScriptedGuardrail {
         let mut guardrail = Self::allowing(hooks);
         guardrail.block_on = Some(block_on.to_owned());
         guardrail
-    }
-
-    pub(super) fn checked(&self) -> Vec<(GuardrailEventHooks, String)> {
-        lock(&self.checks).clone()
     }
 
     pub(super) fn applied(&self) -> Vec<Vec<String>> {
@@ -322,17 +317,9 @@ impl RealtimeGuardrailCallback for ScriptedGuardrail {
 
     fn should_run_guardrail(
         &self,
-        data: &RequestData,
+        _data: &RequestData,
         event: GuardrailEventHooks,
     ) -> Result<bool, Infallible> {
-        let transcript = match data.get("transcript") {
-            Some(Json::Text(text)) => text.clone(),
-            Some(
-                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_),
-            )
-            | None => String::new(),
-        };
-        lock(&self.checks).push((event, transcript));
         Ok(self.hooks.contains(&event))
     }
 }
@@ -499,11 +486,6 @@ impl Fixture {
 
     pub(super) fn with_turn_detection_sent(mut self, sent: bool) -> Self {
         self.state.setup.turn_detection_update_sent.0 = sent;
-        self
-    }
-
-    pub(super) fn with_pending_guardrail(mut self, message: &str) -> Self {
-        self.state.setup.pending_guardrail_message = Some(message.to_owned());
         self
     }
 

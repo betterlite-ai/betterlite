@@ -15,7 +15,7 @@ enum CloseDeliveryError {
 }
 
 // LiteLLM sends the redacted error event for any code but 1000, then closes with the legal code and a safe reason
-pub(crate) async fn deliver(
+async fn deliver(
     socket: &mut dyn ClientWebSocket,
     code: u16,
     message: &str,
