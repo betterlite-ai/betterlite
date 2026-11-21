@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::marker::PhantomData;
 use std::sync::Arc;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -8,7 +9,9 @@ use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::guardrail_base::failure::{GuardrailFailure, ModifyResponseFailure};
 use betterlite_guardrails::guardrail_base::inputs::GuardrailLogTarget;
 use betterlite_guardrails::guardrail_message_scope::Object;
-use betterlite_guardrails::guardrail_translation::{BaseTranslation as _, TranslationCall};
+use betterlite_guardrails::guardrail_translation::{
+    BaseTranslation as _, StreamTransformSink, TranslationCall,
+};
 use rstest::rstest;
 
 use super::support::write_back;
@@ -38,7 +41,11 @@ const RUNNING: &str = r#"[{"id":"chatcmpl-1","object":"chat.completion.chunk","c
 const FINISHED: &str = r#"[{"id":"chatcmpl-1","object":"chat.completion.chunk","created":7,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":"one"},"finish_reason":"stop"}]}]"#;
 
 fn translation() -> Chat {
-    ChatTranslation::new(stamp(), ScriptedAssembler(chat_response(ASSEMBLED)))
+    ChatTranslation {
+        stamps: stamp(),
+        assembler: ScriptedAssembler(chat_response(ASSEMBLED)),
+        _guardrail: PhantomData,
+    }
 }
 
 fn call(deliver: bool) -> TranslationCall<'static, GuardrailLogTarget> {
@@ -291,8 +298,11 @@ fn stamp_chat_block_chunks_use_the_injected_stamp() {
     assert!(text.contains("chatcmpl-"));
     assert!(text.contains("\"created\":1234"));
     assert!(text.contains("blocked"));
-    let other: Chat =
-        ChatTranslation::new(other_stamp(), ScriptedAssembler(chat_response(ASSEMBLED)));
+    let other: Chat = ChatTranslation {
+        stamps: other_stamp(),
+        assembler: ScriptedAssembler(chat_response(ASSEMBLED)),
+        _guardrail: PhantomData,
+    };
     let other_frames = other.build_block_sse_chunks(&failure, false, None).unwrap();
     let other_text = String::from_utf8(other_frames.concat()).unwrap();
     assert!(other_text.contains("\"created\":99"));
@@ -332,6 +342,48 @@ fn stamp_chat_error_items_carry_the_failure_status_and_message() {
         "401",
         "denied",
     );
+}
+
+#[test]
+fn stream_chat_mid_stream_block_continues_the_started_stream() {
+    let failure = ChatTranslationError::Guardrail(blocked("blocked"));
+    let stream = items(
+        r#"[{"id":"chatcmpl-9","object":"chat.completion.chunk","created":42,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":"one"},"finish_reason":null}]}]"#,
+    );
+    let frames = translation()
+        .build_block_sse_chunks(&failure, true, Some(&stream))
+        .unwrap();
+    let text = String::from_utf8(frames.concat()).unwrap();
+    assert!(!text.contains("\"role\""));
+    assert!(text.contains("chatcmpl-9"));
+    assert!(text.contains("\"created\":42"));
+}
+
+#[tokio::test]
+async fn stream_chat_transform_sink_carries_the_guardrail_text() {
+    let fake = Arc::new(FakeGuardrail::replying(texts_reply(&["masked"])));
+    let applied = context(&fake, Some("guard"));
+    let mut stream = items(FINISHED);
+    let mut sink = StreamTransformSink::default();
+    translation()
+        .process_streaming_response(
+            &mut stream,
+            &applied,
+            TranslationCall {
+                user_api_key_dict: None,
+                request_data: None,
+                logging_obj: None,
+                stream_transform_sink: Some(&mut sink),
+                deliver_ended_stream_rewrites: true,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        sink.mutated_text_per_choice.get(&0),
+        Some(&String::from("masked"))
+    );
+    assert_eq!(delta_content(&stream[0]), "one");
 }
 
 #[test]

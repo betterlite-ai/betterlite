@@ -19,7 +19,7 @@ use thiserror::Error;
 
 use super::stamps::StampSource;
 use super::undeliverable;
-use super::{GuardrailToApply, failure_message, modify_response, to_json};
+use super::{GuardrailToApply, failure_message, modify_response};
 use crate::guardrails::responses_translation::block_events;
 use crate::guardrails::responses_translation::block_events::guardrail_json::to_guardrail;
 use crate::guardrails::responses_translation::output_rewrite;
@@ -42,6 +42,8 @@ pub enum ResponsesTranslationError {
     Stream(#[from] StreamOutputError),
     #[error(transparent)]
     Undeliverable(#[from] UndeliverableStreamRewrite),
+    #[error("the guardrail data could not be read as JSON")]
+    Json(#[from] serde_json::Error),
 }
 
 impl ResponsesTranslationError {
@@ -50,28 +52,20 @@ impl ResponsesTranslationError {
             Self::Request(RequestRewriteError::Guardrail { source })
             | Self::Output(OutputRewriteError::Guardrail { source }) => Some(source.as_ref()),
             Self::Stream(StreamOutputError::Guardrail(failure)) => Some(failure),
-            Self::Request(_) | Self::Output(_) | Self::Stream(_) | Self::Undeliverable(_) => None,
+            Self::Request(_)
+            | Self::Output(_)
+            | Self::Stream(_)
+            | Self::Undeliverable(_)
+            | Self::Json(_) => None,
         }
     }
 }
 
 pub struct ResponsesTranslation<G, S> {
-    stamps: S,
-    limits: ApiLimits,
-    cache: Arc<DualLocalCache>,
-    _guardrail: PhantomData<fn() -> G>,
-}
-
-impl<G, S> ResponsesTranslation<G, S> {
-    #[must_use]
-    pub fn new(stamps: S, limits: ApiLimits, cache: Arc<DualLocalCache>) -> Self {
-        Self {
-            stamps,
-            limits,
-            cache,
-            _guardrail: PhantomData,
-        }
-    }
+    pub(crate) stamps: S,
+    pub(crate) limits: ApiLimits,
+    pub(crate) cache: Arc<DualLocalCache>,
+    pub(crate) _guardrail: PhantomData<fn() -> G>,
 }
 
 impl<G, S> BaseTranslation for ResponsesTranslation<G, S>
@@ -139,7 +133,10 @@ where
         guardrail: &Self::Guardrail,
         call: TranslationCall<'_, Self::LogTarget>,
     ) -> Result<(), Self::Failure> {
-        let mut events: Vec<JsonValue> = responses_so_far.iter().map(to_json).collect();
+        let mut events: Vec<JsonValue> = responses_so_far
+            .iter()
+            .map(serde_json::to_value)
+            .collect::<Result<_, _>>()?;
         let name = guardrail.guardrail_name.as_deref();
         let applied = guardrail.guardrail.as_ref();
         let logged = call.logging_obj;
@@ -171,7 +168,12 @@ where
         &self,
         responses_so_far: &[GuardrailValue],
     ) -> Option<StreamingScanKey> {
-        stream_scan::streaming_scan_key(&responses_so_far.iter().map(to_json).collect::<Vec<_>>())
+        let events: Vec<JsonValue> = responses_so_far
+            .iter()
+            .map(serde_json::to_value)
+            .collect::<Result<_, _>>()
+            .ok()?;
+        stream_scan::streaming_scan_key(&events)
     }
 
     fn build_block_sse_chunks(
@@ -181,9 +183,16 @@ where
         responses_so_far: Option<&[GuardrailValue]>,
     ) -> Option<Vec<Vec<u8>>> {
         let details = modify_response(failure.guardrail()?)?;
-        let original = details.original_response.as_ref().map(to_json);
-        let events: Option<Vec<JsonValue>> =
-            responses_so_far.map(|items| items.iter().map(to_json).collect());
+        let original = serde_json::to_value(details.original_response.as_ref()).ok()?;
+        let events: Option<Vec<JsonValue>> = responses_so_far
+            .map(|items| {
+                items
+                    .iter()
+                    .map(serde_json::to_value)
+                    .collect::<Result<_, _>>()
+            })
+            .transpose()
+            .ok()?;
         block_events::build_block_sse_chunks(
             &details.message,
             &details.model,
@@ -201,8 +210,15 @@ where
         responses_so_far: Option<&[GuardrailValue]>,
     ) -> Option<Vec<GuardrailValue>> {
         let (status, message) = failure_message(failure.guardrail()?)?;
-        let events: Option<Vec<JsonValue>> =
-            responses_so_far.map(|items| items.iter().map(to_json).collect());
+        let events: Option<Vec<JsonValue>> = responses_so_far
+            .map(|items| {
+                items
+                    .iter()
+                    .map(serde_json::to_value)
+                    .collect::<Result<_, _>>()
+            })
+            .transpose()
+            .ok()?;
         block_events::build_stream_error_items(status, &message, events.as_deref())
             .into_iter()
             .map(|event| {

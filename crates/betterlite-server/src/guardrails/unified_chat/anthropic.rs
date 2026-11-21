@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::marker::PhantomData;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_config::sections::settings::JsonValue;
 use betterlite_guardrails::guardrail_base::contract::GuardrailContract;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::guardrail_base::inputs::GuardrailLogTarget;
@@ -11,7 +12,7 @@ use betterlite_guardrails::guardrail_translation::{
 use thiserror::Error;
 
 use super::stamps::StampSource;
-use super::{GuardrailToApply, failure_message, frames_into_items, modify_response, to_json};
+use super::{GuardrailToApply, failure_message, frames_into_items, modify_response};
 use crate::guardrails::anthropic_translation::block_continuation::{self, BlockedException};
 use crate::guardrails::anthropic_translation::output_scan;
 use crate::guardrails::anthropic_translation::output_scan::error::ProcessOutputError;
@@ -48,18 +49,8 @@ impl AnthropicTranslationError {
 }
 
 pub struct AnthropicTranslation<G, S> {
-    stamps: S,
-    _guardrail: PhantomData<fn() -> G>,
-}
-
-impl<G, S> AnthropicTranslation<G, S> {
-    #[must_use]
-    pub fn new(stamps: S) -> Self {
-        Self {
-            stamps,
-            _guardrail: PhantomData,
-        }
-    }
+    pub(crate) stamps: S,
+    pub(crate) _guardrail: PhantomData<fn() -> G>,
 }
 
 impl<G, S> BaseTranslation for AnthropicTranslation<G, S>
@@ -130,7 +121,7 @@ where
         guardrail: &Self::Guardrail,
         call: TranslationCall<'_, Self::LogTarget>,
     ) -> Result<(), Self::Failure> {
-        let mut chunks = to_chunks(responses_so_far);
+        let mut chunks = to_chunks(responses_so_far).map_err(ProcessStreamError::Convert)?;
         let name = guardrail.guardrail_name.as_deref();
         let applied = guardrail.guardrail.as_ref();
         let logged = call.logging_obj;
@@ -157,7 +148,8 @@ where
         &self,
         responses_so_far: &[GuardrailValue],
     ) -> Option<StreamingScanKey> {
-        Some(sse_events::streaming_scan_key(&to_chunks(responses_so_far)))
+        let chunks = to_chunks(responses_so_far).ok()?;
+        Some(sse_events::streaming_scan_key(&chunks))
     }
 
     fn build_block_sse_chunks(
@@ -168,9 +160,9 @@ where
     ) -> Option<Vec<Vec<u8>>> {
         let details = modify_response(failure.guardrail()?)?;
         let stamp = self.stamps.stamp();
-        let original = details.original_response.as_ref().map(to_json);
+        let original = serde_json::to_value(details.original_response.as_ref()).ok()?;
         let original_response = blocked_original_response(original.as_ref());
-        let chunks = responses_so_far.map(to_chunks);
+        let chunks = responses_so_far.map(to_chunks).transpose().ok()?;
         let blocked = BlockedException {
             message: &details.message,
             model: &details.model,
@@ -193,23 +185,16 @@ where
 }
 
 // The chat handler needs every chunk, so a value that is not an object stays a chunk B3676 leaves alone
-fn to_chunks(items: &[GuardrailValue]) -> Vec<SseChunk> {
+fn to_chunks(items: &[GuardrailValue]) -> Result<Vec<SseChunk>, serde_json::Error> {
     items
         .iter()
-        .map(|item| match item {
-            GuardrailValue::Object(fields) => SseChunk::Event(
-                fields
-                    .iter()
-                    .map(|(key, value)| (key.clone(), to_json(value)))
-                    .collect(),
-            ),
-            GuardrailValue::Null
-            | GuardrailValue::Boolean(_)
-            | GuardrailValue::SignedInteger(_)
-            | GuardrailValue::UnsignedInteger(_)
-            | GuardrailValue::Decimal(_)
-            | GuardrailValue::Text(_)
-            | GuardrailValue::Array(_) => SseChunk::Other,
+        .map(|item| match serde_json::to_value(item)? {
+            JsonValue::Object(fields) => Ok(SseChunk::Event(fields)),
+            JsonValue::Null
+            | JsonValue::Bool(_)
+            | JsonValue::Number(_)
+            | JsonValue::String(_)
+            | JsonValue::Array(_) => Ok(SseChunk::Other),
         })
         .collect()
 }

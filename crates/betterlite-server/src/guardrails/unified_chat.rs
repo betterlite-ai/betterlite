@@ -65,32 +65,6 @@ impl<G: GuardrailContract + Send + Sync> GuardrailContract for GuardrailToApply<
     }
 }
 
-// The one conversion from a guardrail value to the JSON the handler modules work on
-#[must_use]
-pub(crate) fn to_json(input: &GuardrailValue) -> JsonValue {
-    match input {
-        GuardrailValue::Null => JsonValue::Null,
-        GuardrailValue::Boolean(flag) => JsonValue::Bool(*flag),
-        GuardrailValue::SignedInteger(number) => {
-            JsonValue::Number(serde_json::Number::from(*number))
-        }
-        GuardrailValue::UnsignedInteger(number) => {
-            JsonValue::Number(serde_json::Number::from(*number))
-        }
-        GuardrailValue::Decimal(number) => {
-            serde_json::Number::from_f64(*number).map_or(JsonValue::Null, JsonValue::Number)
-        }
-        GuardrailValue::Text(text) => JsonValue::String(text.clone()),
-        GuardrailValue::Array(items) => JsonValue::Array(items.iter().map(to_json).collect()),
-        GuardrailValue::Object(fields) => JsonValue::Object(
-            fields
-                .iter()
-                .map(|(name, value)| (name.clone(), to_json(value)))
-                .collect(),
-        ),
-    }
-}
-
 // The status and detail LiteLLM's sse_error_payload and build_stream_error_items read off the exception
 #[must_use]
 pub(crate) fn failure_parts(failure: &GuardrailFailure) -> Option<(u16, JsonValue)> {
@@ -103,7 +77,8 @@ pub(crate) fn failure_parts(failure: &GuardrailFailure) -> Option<(u16, JsonValu
                 .iter()
                 .map(|(key, value)| (key.clone(), value.clone()))
                 .collect();
-            Some((*status, to_json(&GuardrailValue::Object(fields))))
+            let encoded = serde_json::to_value(GuardrailValue::Object(fields)).ok()?;
+            Some((*status, encoded))
         }
         GuardrailFailure::ModifyResponse(details) => {
             Some((400, JsonValue::String(details.message.clone())))

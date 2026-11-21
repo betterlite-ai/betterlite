@@ -35,9 +35,7 @@ use crate::guardrails::chat_guardrail_translation::streaming::streaming_scan_key
 use crate::guardrails::responses_translation::block_events::guardrail_json::blocked_original_response;
 
 use super::stamps::StampSource;
-use super::{
-    GuardrailToApply, UNKNOWN_GUARDRAIL_NAME, frames_into_items, modify_response, to_json,
-};
+use super::{GuardrailToApply, UNKNOWN_GUARDRAIL_NAME, frames_into_items, modify_response};
 
 #[derive(Debug, Error)]
 pub enum ChatTranslationError {
@@ -66,20 +64,9 @@ impl ChatTranslationError {
 }
 
 pub struct ChatTranslation<G, S, A> {
-    stamps: S,
-    assembler: A,
-    _guardrail: PhantomData<fn() -> G>,
-}
-
-impl<G, S, A> ChatTranslation<G, S, A> {
-    #[must_use]
-    pub fn new(stamps: S, assembler: A) -> Self {
-        Self {
-            stamps,
-            assembler,
-            _guardrail: PhantomData,
-        }
-    }
+    pub(crate) stamps: S,
+    pub(crate) assembler: A,
+    pub(crate) _guardrail: PhantomData<fn() -> G>,
 }
 
 impl<G, S, A> BaseTranslation for ChatTranslation<G, S, A>
@@ -122,7 +109,7 @@ where
         guardrail: &Self::Guardrail,
         _call: TranslationCall<'_, Self::LogTarget>,
     ) -> Result<GuardrailValue, Self::Failure> {
-        let mut parsed: ChatResponse = serde_json::from_value(to_json(&response))?;
+        let mut parsed: ChatResponse = serde_json::from_value(serde_json::to_value(&response)?)?;
         let before = parsed.clone();
         chat_rewrites::process_output_response(
             &mut parsed,
@@ -183,7 +170,7 @@ where
     ) -> Option<Vec<Vec<u8>>> {
         let details = modify_response(failure.guardrail()?)?;
         let stamp = self.stamps.stamp();
-        let original = details.original_response.as_ref().map(to_json);
+        let original = serde_json::to_value(details.original_response.as_ref()).ok()?;
         let blocked = BlockedResponse {
             message: details.message.clone(),
             model: details.model.clone(),

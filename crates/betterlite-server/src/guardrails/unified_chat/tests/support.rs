@@ -30,6 +30,7 @@ use crate::guardrails::unified_chat::stamps::StampSource;
 pub(crate) struct RecordedCall {
     pub(crate) inputs: GuardrailApiInputs,
     pub(crate) input_type: GuardrailInputType,
+    pub(crate) request_data: BTreeMap<String, GuardrailValue>,
 }
 
 #[derive(Default)]
@@ -75,7 +76,7 @@ impl GuardrailContract for FakeGuardrail {
     fn apply_guardrail(
         &self,
         inputs: GuardrailApiInputs,
-        _request_data: &mut BTreeMap<String, GuardrailValue>,
+        request_data: &mut BTreeMap<String, GuardrailValue>,
         input_type: GuardrailInputType,
         _logging_obj: Option<&mut GuardrailLogTarget>,
     ) -> impl Future<Output = Result<GuardrailApiInputs, GuardrailFailure>> + Send {
@@ -84,6 +85,7 @@ impl GuardrailContract for FakeGuardrail {
             state.calls.push(RecordedCall {
                 inputs: inputs.clone(),
                 input_type,
+                request_data: request_data.clone(),
             });
             (state.reply.clone(), state.failure.clone())
         };

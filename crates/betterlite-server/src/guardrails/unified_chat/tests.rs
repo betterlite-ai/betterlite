@@ -21,9 +21,7 @@ use betterlite_guardrails::guardrail_message_scope::scoped_indices::{
 use indexmap::IndexMap;
 
 use self::support::{FakeGuardrail, context, principal, texts_reply};
-use super::{
-    GuardrailToApply, failure_message, failure_parts, frames_into_items, modify_response, to_json,
-};
+use super::{GuardrailToApply, failure_message, failure_parts, frames_into_items, modify_response};
 
 struct DefaultGuardrail;
 
@@ -48,27 +46,6 @@ fn modify_failure(message: &str) -> ModifyResponseFailure {
         detection_info: BTreeMap::new(),
         original_response: None,
     }
-}
-
-#[test]
-fn helper_to_json_covers_every_variant() {
-    let value = GuardrailValue::Array(vec![
-        GuardrailValue::Null,
-        GuardrailValue::Boolean(true),
-        GuardrailValue::SignedInteger(-3),
-        GuardrailValue::UnsignedInteger(4),
-        GuardrailValue::Decimal(0.5_f64),
-        GuardrailValue::Text(String::from("hi")),
-        GuardrailValue::Object(BTreeMap::from([(
-            String::from("k"),
-            GuardrailValue::Boolean(false),
-        )])),
-    ]);
-    assert_eq!(
-        to_json(&value).to_string(),
-        r#"[null,true,-3,4,0.5,"hi",{"k":false}]"#
-    );
-    assert_eq!(to_json(&GuardrailValue::Decimal(f64::NAN)), JsonValue::Null);
 }
 
 #[test]

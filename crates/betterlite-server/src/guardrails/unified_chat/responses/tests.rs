@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::marker::PhantomData;
 use std::sync::Arc;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -32,8 +33,15 @@ const ROUND_TRIP: &str = r#"["raw",{"type":"response.output_text.delta","output_
 
 const UNPLACEABLE: &str = r#"[{"type":"response.output_text.delta","delta":"one"}]"#;
 
+const TERMINAL: &str = r#"[{"type":"response.output_text.delta","item_id":"m1","output_index":0,"content_index":0,"delta":"one"},{"type":"response.completed","response":{"model":"gpt-4o","output":[{"type":"message","id":"m1","content":[{"type":"output_text","text":"one"}]}]}}]"#;
+
 fn translation() -> Responses {
-    ResponsesTranslation::new(stamp(), ApiLimits::default(), Arc::new(cache()))
+    ResponsesTranslation {
+        stamps: stamp(),
+        limits: ApiLimits::default(),
+        cache: Arc::new(cache()),
+        _guardrail: PhantomData,
+    }
 }
 
 fn call(deliver: bool) -> TranslationCall<'static, GuardrailLogTarget> {
@@ -183,7 +191,8 @@ async fn flags_responses_undeliverable_rewrite_keeps_the_name() {
         }
         other @ (ResponsesTranslationError::Request(_)
         | ResponsesTranslationError::Output(_)
-        | ResponsesTranslationError::Stream(_)) => {
+        | ResponsesTranslationError::Stream(_)
+        | ResponsesTranslationError::Json(_)) => {
             panic!("expected the undeliverable rewrite, got {other:?}")
         }
     }
@@ -222,8 +231,12 @@ fn stamp_responses_block_chunks_use_the_injected_stamp() {
     assert!(text.contains("msg_fixed"));
     assert!(text.contains("\"created_at\":1234"));
     assert!(text.contains("blocked"));
-    let other: Responses =
-        ResponsesTranslation::new(other_stamp(), ApiLimits::default(), Arc::new(cache()));
+    let other: Responses = ResponsesTranslation {
+        stamps: other_stamp(),
+        limits: ApiLimits::default(),
+        cache: Arc::new(cache()),
+        _guardrail: PhantomData,
+    };
     let other_frames = other.build_block_sse_chunks(&failure, false, None).unwrap();
     let other_text = String::from_utf8(other_frames.concat()).unwrap();
     assert!(other_text.contains("resp_other"));
@@ -234,13 +247,119 @@ fn stamp_responses_block_chunks_use_the_injected_stamp() {
 #[test]
 fn stamp_responses_error_items_use_the_failure_status() {
     let failure = ResponsesTranslationError::Output(blocked("blocked"));
-    let items = translation()
+    let built = translation()
         .build_stream_error_items(&failure, None)
         .unwrap();
-    let [GuardrailValue::Object(_)] = items.as_slice() else {
-        panic!("expected one error item, got {items:?}");
+    let [GuardrailValue::Object(_)] = built.as_slice() else {
+        panic!("expected one error item, got {built:?}");
     };
-    assert_eq!(text_at(&items[0], &["error", "code"]), "400");
-    assert_eq!(text_at(&items[0], &["error", "message"]), "blocked");
-    assert_eq!(text_at(&items[0], &["error", "type"]), "guardrail_error");
+    assert_eq!(text_at(&built[0], &["error", "code"]), "400");
+    assert_eq!(text_at(&built[0], &["error", "message"]), "blocked");
+    assert_eq!(text_at(&built[0], &["error", "type"]), "guardrail_error");
+}
+
+#[tokio::test]
+async fn adapter_responses_output_forwards_the_api_key_and_request_data() {
+    let fake = Arc::new(FakeGuardrail::replying(texts_reply(&["masked"])));
+    let applied = context(&fake, Some("guard"));
+    let user = BTreeMap::from([(
+        String::from("user_id"),
+        GuardrailValue::Text(String::from("u1")),
+    )]);
+    let mut request_data = BTreeMap::from([(
+        String::from("caller"),
+        GuardrailValue::Text(String::from("kept")),
+    )]);
+    let translated = translation()
+        .process_output_response(
+            value(RESPONSE),
+            &applied,
+            TranslationCall {
+                user_api_key_dict: Some(&user),
+                request_data: Some(&mut request_data),
+                logging_obj: None,
+                stream_transform_sink: None,
+                deliver_ended_stream_rewrites: false,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(output_text(&translated), "masked");
+    let sent = GuardrailValue::Object(fake.calls()[0].request_data.clone());
+    assert_eq!(
+        nested(&sent, &["litellm_metadata", "user_api_key_user_id"]),
+        Some(&GuardrailValue::Text(String::from("u1")))
+    );
+    assert_eq!(
+        nested(&sent, &["caller"]),
+        Some(&GuardrailValue::Text(String::from("kept")))
+    );
+}
+
+#[tokio::test]
+async fn stream_responses_forwards_the_api_key_and_request_data() {
+    let fake = Arc::new(FakeGuardrail::replying(texts_reply(&["masked"])));
+    let applied = context(&fake, Some("guard"));
+    let user = BTreeMap::from([(
+        String::from("user_id"),
+        GuardrailValue::Text(String::from("u1")),
+    )]);
+    let mut request_data = BTreeMap::from([(
+        String::from("caller"),
+        GuardrailValue::Text(String::from("kept")),
+    )]);
+    let mut stream = items(TERMINAL);
+    translation()
+        .process_streaming_response(
+            &mut stream,
+            &applied,
+            TranslationCall {
+                user_api_key_dict: Some(&user),
+                request_data: Some(&mut request_data),
+                logging_obj: None,
+                stream_transform_sink: None,
+                deliver_ended_stream_rewrites: true,
+            },
+        )
+        .await
+        .unwrap();
+    let sent = GuardrailValue::Object(fake.calls()[0].request_data.clone());
+    assert_eq!(
+        nested(&sent, &["litellm_metadata", "user_api_key_user_id"]),
+        Some(&GuardrailValue::Text(String::from("u1")))
+    );
+    assert_eq!(
+        nested(&sent, &["caller"]),
+        Some(&GuardrailValue::Text(String::from("kept")))
+    );
+}
+
+#[test]
+fn stamp_responses_block_chunks_continue_a_started_stream() {
+    let failure = ResponsesTranslationError::Output(blocked("blocked"));
+    let stream = items(
+        r#"[{"type":"response.created","response":{"id":"resp_stream","model":"gpt-4o"}},{"type":"response.output_text.delta","item_id":"m1","output_index":0,"content_index":0,"delta":"one","sequence_number":41}]"#,
+    );
+    let frames = translation()
+        .build_block_sse_chunks(&failure, true, Some(&stream))
+        .unwrap();
+    let text = String::from_utf8(frames.concat()).unwrap();
+    assert!(!text.contains("response.created"));
+    assert!(text.contains("resp_stream"));
+    assert!(text.contains("response.completed"));
+}
+
+#[test]
+fn stamp_responses_error_items_continue_the_stream_sequence() {
+    let failure = ResponsesTranslationError::Output(blocked("blocked"));
+    let stream = items(
+        r#"[{"type":"response.output_text.delta","item_id":"m1","output_index":0,"content_index":0,"delta":"one","sequence_number":41}]"#,
+    );
+    let built = translation()
+        .build_stream_error_items(&failure, Some(&stream))
+        .unwrap();
+    assert_eq!(
+        nested(&built[0], &["sequence_number"]),
+        Some(&GuardrailValue::SignedInteger(42))
+    );
 }

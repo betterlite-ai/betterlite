@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::marker::PhantomData;
 use std::sync::Arc;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -35,7 +36,10 @@ const NO_TEXT_DELTA: &str =
     r#"[{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}]"#;
 
 fn translation() -> Anthropic {
-    AnthropicTranslation::new(stamp())
+    AnthropicTranslation {
+        stamps: stamp(),
+        _guardrail: PhantomData,
+    }
 }
 
 fn call(deliver: bool) -> TranslationCall<'static, GuardrailLogTarget> {
@@ -233,7 +237,10 @@ fn stamp_anthropic_block_chunks_use_the_message_id() {
     let text = String::from_utf8(frames.concat()).unwrap();
     assert!(text.contains("msg_fixed"));
     assert!(text.contains("blocked"));
-    let other: Anthropic = AnthropicTranslation::new(other_stamp());
+    let other: Anthropic = AnthropicTranslation {
+        stamps: other_stamp(),
+        _guardrail: PhantomData,
+    };
     let other_frames = other.build_block_sse_chunks(&failure, false, None).unwrap();
     let other_text = String::from_utf8(other_frames.concat()).unwrap();
     assert!(other_text.contains("msg_other"));
@@ -254,6 +261,99 @@ fn stamp_anthropic_error_items_carry_the_failure_message() {
         panic!("expected one error frame, got {items:?}");
     };
     assert!(frame.contains("quota"));
+}
+
+#[test]
+fn stream_anthropic_mid_stream_block_continues_without_a_new_message() {
+    let failure =
+        AnthropicTranslationError::from(ProcessStreamError::Guardrail(blocked("blocked")));
+    let stream = items(
+        r#"[{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}]"#,
+    );
+    let frames = translation()
+        .build_block_sse_chunks(&failure, true, Some(&stream))
+        .unwrap();
+    let text = String::from_utf8(frames.concat()).unwrap();
+    assert!(!text.contains("message_start"));
+    assert!(text.contains("content_block_start"));
+    assert!(text.contains("blocked"));
+}
+
+#[tokio::test]
+async fn adapter_anthropic_output_forwards_the_api_key_and_request_data() {
+    let fake = Arc::new(FakeGuardrail::replying(texts_reply(&["masked"])));
+    let applied = context(&fake, Some("guard"));
+    let user = BTreeMap::from([(
+        String::from("user_id"),
+        GuardrailValue::Text(String::from("u1")),
+    )]);
+    let mut request_data = BTreeMap::from([(
+        String::from("caller"),
+        GuardrailValue::Text(String::from("kept")),
+    )]);
+    let translated = translation()
+        .process_output_response(
+            value(MESSAGE),
+            &applied,
+            TranslationCall {
+                user_api_key_dict: Some(&user),
+                request_data: Some(&mut request_data),
+                logging_obj: None,
+                stream_transform_sink: None,
+                deliver_ended_stream_rewrites: false,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(response_text(&translated), "masked");
+    let sent = GuardrailValue::Object(fake.calls()[0].request_data.clone());
+    assert_eq!(
+        nested(&sent, &["litellm_metadata", "user_api_key_user_id"]),
+        Some(&GuardrailValue::Text(String::from("u1")))
+    );
+    assert_eq!(
+        nested(&sent, &["caller"]),
+        Some(&GuardrailValue::Text(String::from("kept")))
+    );
+}
+
+#[tokio::test]
+async fn stream_anthropic_forwards_the_api_key_and_request_data() {
+    let fake = Arc::new(FakeGuardrail::replying(texts_reply(&["masked"])));
+    let applied = context(&fake, Some("guard"));
+    let user = BTreeMap::from([(
+        String::from("user_id"),
+        GuardrailValue::Text(String::from("u1")),
+    )]);
+    let mut request_data = BTreeMap::from([(
+        String::from("caller"),
+        GuardrailValue::Text(String::from("kept")),
+    )]);
+    let mut stream = items(DELTA);
+    translation()
+        .process_streaming_response(
+            &mut stream,
+            &applied,
+            TranslationCall {
+                user_api_key_dict: Some(&user),
+                request_data: Some(&mut request_data),
+                logging_obj: None,
+                stream_transform_sink: None,
+                deliver_ended_stream_rewrites: true,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(text_at(&stream[0], &["delta", "text"]), "masked");
+    let sent = GuardrailValue::Object(fake.calls()[0].request_data.clone());
+    assert_eq!(
+        nested(&sent, &["litellm_metadata", "user_api_key_user_id"]),
+        Some(&GuardrailValue::Text(String::from("u1")))
+    );
+    assert_eq!(
+        nested(&sent, &["caller"]),
+        Some(&GuardrailValue::Text(String::from("kept")))
+    );
 }
 
 #[test]
