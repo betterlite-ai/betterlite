@@ -1,0 +1,31 @@
+task: B930
+deviations:
+  - what: >-
+      An encryption boundary is a pair of non-empty text values. A litellm_params api_base or api_key of
+      another JSON type (a number or an object) forms no boundary, so the request falls back to the pool,
+      while LiteLLM compares those values by Python truthiness and identity.
+    why: >-
+      docs/compatibility.md stops parity at the types LiteLLM declares and refuses Python truthiness and
+      duck typing. litellm_params declares both fields as text, and a healthy candidate in betterlite is a
+      typed DeploymentSpec, so the Pydantic get-capable objects LiteLLM also accepts cannot reach the
+      comparison.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/encrypted_content_affinity_check.py#L208-L231
+  - what: >-
+      An empty request_kwargs object is the object the check mutates, so a pin records
+      _encrypted_content_affinity_pinned on it. LiteLLM's `request_kwargs = request_kwargs or {}` replaces
+      an empty dict with a new one, so the pin and the metadata flag never reach the caller's empty dict.
+    why: >-
+      compatibility.md does not copy Python truthiness. The difference is visible only when the marker
+      arrives through the messages argument and request_kwargs is empty, where LiteLLM returns its pinned
+      candidate list while leaving the caller's dict unmarked; betterlite records the pin on the supplied
+      object.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/encrypted_content_affinity_check.py#L322
+kept_bugs:
+  - what: >-
+      litellm_metadata that is present but not an object raises TypeError "'<type>' object does not
+      support item assignment" instead of ignoring the enabled flag.
+    why: >-
+      A working Responses API setup always sends a metadata object, and the TypeError is what an operator
+      sees today for a null or string metadata; the task keeps that failure, with the Python type name in
+      the message, rather than silently differing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/encrypted_content_affinity_check.py#L334-L335
