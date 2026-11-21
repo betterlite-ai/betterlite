@@ -158,21 +158,29 @@ fn mapping_v2_keeps_the_token_limit_instead() {
     assert_eq!(mapped.get("max_tokens_per_doc"), Some(&number(9)));
     assert!(!mapped.contains_key("max_chunks_per_doc"));
     assert!(!mapped.contains_key("instruction"));
-    assert_eq!(mapped.get("return_documents"), Some(&Json::Bool(true)));
+    assert_eq!(mapped.get("return_documents"), Some(&Json::Null));
 }
 
 #[rstest]
-#[case::absent(None, true)]
-#[case::null(Some(Json::Null), true)]
-#[case::explicit_true(Some(Json::Bool(true)), true)]
-#[case::explicit_false(Some(Json::Bool(false)), false)]
-fn mapping_defaults_return_documents_to_true(#[case] given: Option<Json>, #[case] expected: bool) {
+#[case::absent(None, None)]
+#[case::null(Some(Json::Null), None)]
+#[case::explicit_true(Some(Json::Bool(true)), Some(true))]
+#[case::explicit_false(Some(Json::Bool(false)), Some(false))]
+fn mapping_passes_return_documents_through_and_the_body_omits_none(
+    #[case] given: Option<Json>,
+    #[case] expected: Option<bool>,
+) {
     let mut options = options("why", Vec::new());
     if let Some(value) = given {
         options.insert("return_documents".to_owned(), value);
     }
     let mapped = map_rerank_params(RerankVersion::V1, &options, &RerankParams::new());
-    assert_eq!(mapped.get("return_documents"), Some(&Json::Bool(expected)));
+    let body = transform_rerank_request(RerankVersion::V1, "rerank-v3", &mapped)
+        .expect("the mapped params project");
+    assert_eq!(
+        body.get("return_documents"),
+        expected.map(Json::Bool).as_ref()
+    );
 }
 
 #[test]
@@ -182,6 +190,7 @@ fn mapping_retains_nullable_keys_and_the_projection_removes_them() {
     assert_eq!(mapped.get("top_n"), Some(&Json::Null));
     assert_eq!(mapped.get("rank_fields"), Some(&Json::Null));
     assert_eq!(mapped.get("max_chunks_per_doc"), Some(&Json::Null));
+    assert_eq!(mapped.get("return_documents"), Some(&Json::Null));
 
     let body = transform_rerank_request(RerankVersion::V1, "rerank-v3", &mapped)
         .expect("the mapped params project");
@@ -191,7 +200,6 @@ fn mapping_retains_nullable_keys_and_the_projection_removes_them() {
             ("model", text("rerank-v3")),
             ("query", text("why")),
             ("documents", Json::List(vec![text("first")])),
-            ("return_documents", Json::Bool(true)),
         ])
     );
     assert!(!body.values().any(|value| matches!(value, Json::Null)));
@@ -493,5 +501,5 @@ fn the_plan_composes_the_v2_url_from_a_configured_base() {
         Some("Bearer env-key")
     );
     assert!(!body.contains_key("max_chunks_per_doc"));
-    assert_eq!(body.get("return_documents"), Some(&Json::Bool(true)));
+    assert!(!body.contains_key("return_documents"));
 }
