@@ -1,0 +1,22 @@
+kind: helper
+name: model-allowlist-rename-empty-ids
+call:
+  model_allowlist_rename:
+    kind: key
+    object_id: ""
+calls:
+  - model_allowlist_rename:
+      kind: team
+      object_id: ""
+      team_alias: ""
+  - model_allowlist_rename:
+      kind: org
+      object_id: ""
+  - model_allowlist_rename:
+      kind: project
+      object_id: ""
+  - model_allowlist_rename:
+      kind: user
+      object_id: ""
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,40 @@
+kind: helper
+name: bisection-fallback-when-bin-pack-fails
+call:
+  b3724:
+    source: INPUT
+    messages:
+      - {role: user, content: aaaa bbbb}
+    response: null
+    logging_event_type: null
+    guardrail_identifier: gr-abc123
+    guardrail_version: "1"
+    checks: null
+    chunk_budget_chars: 100
+    contextual_grounding: false
+    disable_exception_on_block: false
+    data: {model: gpt-4o}
+    replies:
+      - status: 429
+        body:
+          message: "Input is too long for requested model."
+        raw: null
+      - status: 200
+        body:
+          action: NONE
+          outputs: [{text: "aaaa "}]
+        raw: null
+      - status: 200
+        body:
+          action: NONE
+          outputs: [{text: bbbb}]
+        raw: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/requests/0/authorization
+      why: "Each side signs its own request at its own clock time, so the SigV4 signature differs"
+    - pointer: /value/requests/1/authorization
+      why: "Each side signs its own request at its own clock time, so the SigV4 signature differs"
+    - pointer: /value/requests/2/authorization
+      why: "Each side signs its own request at its own clock time, so the SigV4 signature differs"

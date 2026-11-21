@@ -1,0 +1,24 @@
+task: B3875
+deviations:
+  - what: >-
+      Collectors register in a betterlite CollectorRegistry that register takes as an argument, not in
+      prometheus_client's process-global default registry; the sample-name and duplicate rules are prometheus_client's,
+      so a second register against the same registry fails as a second PrometheusLogger() does in LiteLLM.
+    why: >-
+      Dependencies come in through constructors and module-level state is forbidden; the visible registry content and
+      the failure on a name clash are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L304-L306
+  - what: >-
+      A constructor that fails returns a typed PrometheusExporterError and logs one debug line, instead of printing
+      through print_verbose and re-raising the exception.
+    why: >-
+      Errors surface as typed values here; what a caller sees is the same, construction fails and the collectors
+      created before the failure stay registered with no rollback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L878-L880
+  - what: >-
+      Collector values are Decimal or integer types from the collector interface, never Python floats.
+    why: >-
+      Money must not pass through binary floats. This task only creates the collectors, and the listing carries no
+      values.
+    link: ""
+kept_bugs: []

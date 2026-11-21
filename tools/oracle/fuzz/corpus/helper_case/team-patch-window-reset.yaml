@@ -1,0 +1,9 @@
+kind: helper
+name: team-patch-window-reset
+call:
+  team_patch:
+    calls:
+      - {request: {team_id: seed, budget_duration: 1d}, now: "2026-05-01T10:00:00+00:00"}
+      - {request: {team_id: seed, budget_limits: [{budget_duration: 1d, max_budget: 10.0}]}, now: "2026-05-01T10:00:00+00:00"}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,45 @@
+name: chat-openai-output-limit-completions
+config: |
+  model_list:
+    - model_name: chat-model
+      litellm_params:
+        model: openai/gpt-3.5-turbo
+        api_base: "{{upstream}}"
+        api_key: oracle-key
+env: {}
+request:
+  method: POST
+  path: /v1/completions
+  headers:
+    content-type: application/json
+    authorization: Bearer oracle-master
+  body:
+    model: chat-model
+    prompt: hello world
+upstream:
+  - status: 400
+    headers:
+      content-type: application/json
+      x-request-id: upstream-output-limit
+    body:
+      error:
+        message: "Could not finish the message because max_tokens or model output limit was reached."
+        type: invalid_request_error
+        param: max_tokens
+        code: invalid_value
+compare:
+  headers:
+    - content-type
+    - x-litellm-model-group
+    - x-litellm-model-id
+    - x-litellm-model-name
+  headers_present:
+    - x-litellm-call-id
+  upstream_headers:
+    - authorization
+    - content-type
+  ignore:
+    - pointer: /id
+      why: LiteLLM draws a uuid4 for the recovered reply and betterlite draws its own.
+    - pointer: /created
+      why: The recovered reply is timestamped by each process's clock.

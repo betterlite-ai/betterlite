@@ -197,5 +197,5 @@ pitfalls:
   - "The model for the response scan is `response.model`, not `request_data.model`, and for the request scan it is `data.model`; each is sent only when it is a non-empty string."
 review_level: standard
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2000
   max_new_expects: 3

@@ -1,0 +1,28 @@
+kind: helper
+name: dispatcher-routes-to-checks
+call:
+  b3724:
+    source: INPUT
+    messages:
+      - {role: user, content: hate}
+    response: null
+    logging_event_type: null
+    guardrail_identifier: null
+    guardrail_version: null
+    checks: {contentFilter: {}}
+    chunk_budget_chars: 25000
+    contextual_grounding: false
+    disable_exception_on_block: false
+    data: {model: gpt-4o}
+    replies:
+      - status: 200
+        body:
+          results:
+            contentFilter:
+              results: [{category: VIOLENCE, severityScore: 1}]
+        raw: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/requests/0/authorization
+      why: "Each side signs its own request at its own clock time, so the SigV4 signature differs"
