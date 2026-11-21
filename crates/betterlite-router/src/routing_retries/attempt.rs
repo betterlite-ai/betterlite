@@ -2,6 +2,7 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use betterlite_error::error::ErrorClass;
+use rand::Rng;
 use tokio_util::sync::CancellationToken;
 
 use crate::cooldown_decisions::failure::FailureClass;
@@ -83,10 +84,14 @@ impl From<&ErrorClass> for Observed {
 pub trait AttemptDispatch: Send {
     type Response: Send;
 
-    async fn attempt(
+    // the selection draws from the same source as the backoff jitter, as LiteLLM's one random module does
+    async fn attempt<R>(
         &mut self,
         request: AttemptRequest<'_>,
-    ) -> Result<Self::Response, AttemptFailure>;
+        random: &mut R,
+    ) -> Result<Self::Response, AttemptFailure>
+    where
+        R: Rng + Send;
 
     // _async_get_healthy_deployments for the logical model group, with the fallback lists the retry check reads
     async fn availability(&mut self) -> Result<Availability, RoutingError>;

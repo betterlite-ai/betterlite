@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use betterlite_error::error::details::{GuardrailDetails, RateLimitDetails, ResponseDetails};
 use betterlite_error::error::{ErrorClass, ErrorContext};
 use betterlite_error::rate_limit::RateLimitCategory;
-use rand::TryRng;
+use rand::{Rng, TryRng};
 use tokio::join;
 use tokio::time::{Instant, sleep};
 use tokio_util::sync::CancellationToken;
@@ -84,10 +84,14 @@ pub(super) struct Scripted {
 impl AttemptDispatch for Scripted {
     type Response = &'static str;
 
-    async fn attempt(
+    async fn attempt<R>(
         &mut self,
         request: AttemptRequest<'_>,
-    ) -> Result<&'static str, AttemptFailure> {
+        _random: &mut R,
+    ) -> Result<&'static str, AttemptFailure>
+    where
+        R: Rng + Send,
+    {
         self.attempt_tokens.push(request.cancellation.clone());
         self.calls.push(Call {
             skipped: request.skipped_deployment_ids.to_vec(),

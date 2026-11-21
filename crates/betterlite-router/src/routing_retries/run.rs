@@ -153,7 +153,7 @@ where
         };
         let bounded = timeout_at(
             Instant::from_std(timeouts.deadline),
-            self.dispatch.attempt(request),
+            self.dispatch.attempt(request, self.random),
         );
         let Some(finished) = timeouts.cancellation.run_until_cancelled(bounded).await else {
             return Err(RetryError::Timeout(TimeoutError::Cancelled));
