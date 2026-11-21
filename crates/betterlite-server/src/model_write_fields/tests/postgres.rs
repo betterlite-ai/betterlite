@@ -9,7 +9,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::{Config, NoTls};
 
 use super::support::{CountedOrgRoles, caller, team_access};
-use crate::model_write_fields::access::{MissingTeam, ModelWriteAccess};
+use crate::model_write_fields::access::{ModelCall, ModelWriteAccess};
 use crate::model_write_fields::error::ModelWriteError;
 use crate::model_write_fields::teams::{TeamRows, WriterTeamRows};
 
@@ -78,19 +78,11 @@ pub(super) async fn writer_team_rows_read_stored_teams() {
         team_access: &access,
     };
     writes
-        .can_make_model_call(
-            &caller("admin-1", None),
-            Some("team-1"),
-            MissingTeam::Refuse,
-        )
+        .can_make_model_call(&caller("admin-1", None), Some("team-1"), ModelCall::Write)
         .await
         .unwrap();
     let refused = writes
-        .can_make_model_call(
-            &caller("member-1", None),
-            Some("team-1"),
-            MissingTeam::Refuse,
-        )
+        .can_make_model_call(&caller("member-1", None), Some("team-1"), ModelCall::Write)
         .await;
     assert!(matches!(refused, Err(ModelWriteError::NotTeamAdmin { .. })));
     pool.close();

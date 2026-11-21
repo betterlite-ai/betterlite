@@ -15,7 +15,7 @@ use self::support::{
     CountedOrgRoles, FakeTeams, RecordingPolicy, SEALED_NAME, caller, cipher, proxy_fields,
     rejection, team, team_access,
 };
-use crate::model_write_fields::access::{MissingTeam, ModelWriteAccess, can_make_team_model_call};
+use crate::model_write_fields::access::{ModelCall, ModelWriteAccess, can_make_team_model_call};
 use crate::model_write_fields::error::{
     AdminOnlyField, Detail, MemberCallError, ModelWriteError, Rejection,
 };
@@ -75,27 +75,27 @@ async fn model_admin_write(
         team_access: &access,
     };
     let result = writes
-        .can_make_model_call(&caller("admin-1", role), team_id, MissingTeam::Refuse)
+        .can_make_model_call(&caller("admin-1", role), team_id, ModelCall::Write)
         .await;
     assert_eq!(outcome(result), expected);
     assert!(teams.reads().is_empty());
 }
 
 #[rstest]
-#[case::team_admin("admin-1", ROLE, "team-1", MissingTeam::Refuse, None)]
-#[case::roleless_team_admin("admin-1", None, "team-1", MissingTeam::Refuse, None)]
-#[case::member("member-1", ROLE, "team-1", MissingTeam::Refuse, Some(("not_team_admin", 403, "error")))]
-#[case::member_may_not_delete("member-1", ROLE, "team-1", MissingTeam::AdminMayAct, Some(("not_team_admin", 403, "error")))]
-#[case::proxy_admin_off_roster("outsider", ADMIN, "team-1", MissingTeam::Refuse, None)]
-#[case::missing_team("admin-1", ADMIN, "gone", MissingTeam::Refuse, Some(("team_missing", 400, "error")))]
-#[case::orphan_proxy_admin("outsider", ADMIN, "gone", MissingTeam::AdminMayAct, None)]
-#[case::orphan_team_admin("admin-1", ROLE, "gone", MissingTeam::AdminMayAct, Some(("orphaned_model", 403, "error")))]
+#[case::team_admin("admin-1", ROLE, "team-1", ModelCall::Write, None)]
+#[case::roleless_team_admin("admin-1", None, "team-1", ModelCall::Write, None)]
+#[case::member("member-1", ROLE, "team-1", ModelCall::Write, Some(("not_team_admin", 403, "error")))]
+#[case::member_may_not_delete("member-1", ROLE, "team-1", ModelCall::Delete, Some(("not_team_admin", 403, "error")))]
+#[case::proxy_admin_off_roster("outsider", ADMIN, "team-1", ModelCall::Write, None)]
+#[case::missing_team("admin-1", ADMIN, "gone", ModelCall::Write, Some(("team_missing", 400, "error")))]
+#[case::orphan_proxy_admin("outsider", ADMIN, "gone", ModelCall::Delete, None)]
+#[case::orphan_team_admin("admin-1", ROLE, "gone", ModelCall::Delete, Some(("orphaned_model", 403, "error")))]
 #[tokio::test]
 async fn team_model_owner(
     #[case] user_id: &str,
     #[case] role: Option<UserRole>,
     #[case] team_id: &str,
-    #[case] missing_team: MissingTeam,
+    #[case] call: ModelCall,
     #[case] expected: Option<(&'static str, u16, &'static str)>,
 ) {
     let teams = FakeTeams::holding(&["team-1"]);
@@ -106,7 +106,7 @@ async fn team_model_owner(
         team_access: &access,
     };
     let result = writes
-        .can_make_model_call(&caller(user_id, role), Some(team_id), missing_team)
+        .can_make_model_call(&caller(user_id, role), Some(team_id), call)
         .await;
     assert_eq!(outcome(result), expected);
     assert_eq!(teams.reads(), vec![team_id.to_owned()]);
@@ -135,7 +135,7 @@ async fn team_model_action(
         team_access: &access,
     };
     let result = writes
-        .allow_team_model_action(&caller(user_id, role), team_id)
+        .can_make_model_call(&caller(user_id, role), team_id, ModelCall::TeamAction)
         .await;
     assert_eq!(outcome(result), expected);
     assert_eq!(teams.reads().len(), reads);
@@ -463,11 +463,11 @@ async fn native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_
     let stored = team("team-1");
     can_make_team_model_call("team-1", &owner, Some(&stored.fields.base)).unwrap();
     writes
-        .allow_team_model_action(&owner, Some("team-1"))
+        .can_make_model_call(&owner, Some("team-1"), ModelCall::TeamAction)
         .await
         .unwrap();
     writes
-        .can_make_model_call(&owner, Some("team-1"), MissingTeam::Refuse)
+        .can_make_model_call(&owner, Some("team-1"), ModelCall::Write)
         .await
         .unwrap();
     assert_eq!(

@@ -139,11 +139,13 @@ async def run_step(step: Step) -> StepResult:
     table = Table([build_team(team) for team in step["teams"]])
     caller = build_caller(step["caller"])
     (outcome,) = await asyncio.gather(answer(step, caller, table), return_exceptions=True)
-    error: ErrorOut | None = None
+    if outcome is None:
+        return {"value": True, "error": None, "team_reads": table.reads}
+    error: ErrorOut
     match outcome:
         case HTTPException():
             raised = RaisedDetail.model_validate(outcome, from_attributes=True)
-            shape: Literal["message", "error"] = "message"
+            shape: Literal["message", "error"]
             match raised.detail:
                 case str():
                     shape = "message"
@@ -165,9 +167,7 @@ async def run_step(step: Step) -> StepResult:
                 "param": denial.param,
                 "code": denial.code,
             }
-        case None:
-            pass
-    return {"value": True if error is None else None, "error": error, "team_reads": table.reads}
+    return {"value": None, "error": error, "team_reads": table.reads}
 
 
 def build_caller(caller: CallerInput) -> UserAPIKeyAuth:
@@ -201,8 +201,8 @@ async def answer(step: Step, caller: UserAPIKeyAuth, table: Table) -> None:
         model_info=ModelInfo(team_id=team_id),
     )
     patch_input, stored_input = step["patch"], step["stored"]
-    patch = None if patch_input is None else GenericLiteLLMParams.model_validate(patch_input)
-    stored = None if stored_input is None else GenericLiteLLMParams.model_validate(stored_input)
+    patch = None if patch_input is None else GenericLiteLLMParams(**patch_input)
+    stored = None if stored_input is None else GenericLiteLLMParams(**stored_input)
     match step["function"]:
         case "model_call":
             await checks.can_user_make_model_call(

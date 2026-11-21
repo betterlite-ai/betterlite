@@ -10,7 +10,7 @@ use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces, StoredCipher};
 use betterlite_server::model_write_fields::access::{
-    MissingTeam, ModelWriteAccess, can_make_team_model_call,
+    ModelCall, ModelWriteAccess, can_make_team_model_call,
 };
 use betterlite_server::model_write_fields::error::{
     Detail, MemberCallError, ModelWriteError, Rejection,
@@ -179,7 +179,11 @@ async fn answer(
             };
             member_write(&writes, caller, team_id, write).await
         }
-        Function::TeamAction => writes.allow_team_model_action(caller, team_id).await,
+        Function::TeamAction => {
+            writes
+                .can_make_model_call(caller, team_id, ModelCall::TeamAction)
+                .await
+        }
         Function::TeamCall => team_call(step, caller)?,
         Function::AttachCredential => attach_credential(step, caller),
         Function::SessionTags => {
@@ -193,13 +197,13 @@ async fn model_call(
     step: &Step,
     caller: &TeamCaller,
 ) -> Result<(), ModelWriteError> {
-    let missing_team = if step.allow_missing_team {
-        MissingTeam::AdminMayAct
+    let call = if step.allow_missing_team {
+        ModelCall::Delete
     } else {
-        MissingTeam::Refuse
+        ModelCall::Write
     };
     writes
-        .can_make_model_call(caller, step.team_id.as_deref(), missing_team)
+        .can_make_model_call(caller, step.team_id.as_deref(), call)
         .await
 }
 
