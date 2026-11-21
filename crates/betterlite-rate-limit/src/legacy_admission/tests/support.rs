@@ -88,23 +88,20 @@ impl RecordingCache {
     }
 
     pub(crate) fn with_write_failure(failure: WriteFailure) -> Arc<Self> {
-        Arc::new(Self {
-            calls: Mutex::new(Vec::new()),
-            global_answer: Mutex::new(BatchAnswer::None),
-            objects_answer: Mutex::new(BatchAnswer::None),
-            write_failure: failure,
-            remote_gate: None,
-            spans: Mutex::new(Vec::new()),
-        })
+        Self::build(failure, None)
     }
 
     pub(crate) fn with_remote_gate(gate: Arc<Semaphore>) -> Arc<Self> {
+        Self::build(WriteFailure::Never, Some(gate))
+    }
+
+    fn build(write_failure: WriteFailure, remote_gate: Option<Arc<Semaphore>>) -> Arc<Self> {
         Arc::new(Self {
             calls: Mutex::new(Vec::new()),
             global_answer: Mutex::new(BatchAnswer::None),
             objects_answer: Mutex::new(BatchAnswer::None),
-            write_failure: WriteFailure::Never,
-            remote_gate: Some(gate),
+            write_failure,
+            remote_gate,
             spans: Mutex::new(Vec::new()),
         })
     }
