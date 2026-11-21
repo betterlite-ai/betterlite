@@ -280,7 +280,7 @@ fn record_run_counts_each_outcome_under_its_label(
 }
 
 #[rstest]
-#[case::finite(0.5, MetricValue::Finite(Decimal::new(5, 1)))]
+#[case::finite(0.5_f64, MetricValue::Finite(Decimal::new(5, 1)))]
 #[case::nan(f64::NAN, MetricValue::NotANumber)]
 #[case::positive_infinity(f64::INFINITY, MetricValue::PositiveInfinity)]
 #[case::negative_infinity(f64::NEG_INFINITY, MetricValue::NegativeInfinity)]
