@@ -12,6 +12,9 @@ deviations:
   - what: A websocket upgrade is released when the upgrade response is returned, not when the socket closes.
     why: An axum upgrade handler returns before the socket task ends. The realtime route (B1125) releases its own reservation on close.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/budget_reservation_release_middleware.py#L6
+  - what: The release runs as a task on the server's TaskTracker, and the layer awaits that task before returning the response; a request whose future is dropped, as when the client disconnects, leaves the task running instead of releasing inline in a finally block as LiteLLM does.
+    why: Rust drops a future at its await point and never runs the code after it, so a finally-style release would be skipped on a disconnect and the reservation would pin the spend counters until its TTL. The server drains the tracker at shutdown, and a release that fails is logged from the task.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/budget_reservation_release_middleware.py#L27-L33
   - what: An error from the releaser is logged at error level and the inner response or error is returned unchanged, where LiteLLM's finally block lets the exception from release propagate out of the middleware.
     why: B3003's release function already catches its own failures and invalidates the counters, so nothing is left for the caller to act on, and the response is already built.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/budget_reservation_release_middleware.py#L29-L33

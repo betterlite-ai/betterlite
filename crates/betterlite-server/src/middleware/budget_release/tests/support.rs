@@ -10,9 +10,11 @@ use axum::body::{Body, Bytes, to_bytes};
 use axum::http::{Request, Response, StatusCode};
 use futures_util::stream;
 use tokio::sync::Barrier;
+use tokio_util::task::TaskTracker;
 use tower::Service;
 use tracing_subscriber::fmt::MakeWriter;
 
+use crate::middleware::budget_release::BudgetReleaseLayer;
 use crate::middleware::budget_release::ReservationReleaser;
 use crate::middleware::budget_release::slot::ReservationSlot;
 
@@ -170,6 +172,13 @@ pub(super) fn recorder(events: &Events, refuse: bool) -> Arc<Recorder> {
         events: Arc::clone(events),
         refuse,
     })
+}
+
+pub(super) fn release_layer(releaser: &Arc<Recorder>) -> BudgetReleaseLayer<Recorder> {
+    BudgetReleaseLayer {
+        releaser: Arc::clone(releaser),
+        tasks: TaskTracker::new(),
+    }
 }
 
 pub(super) fn handler(reply: Reply, events: &Events) -> Handler {
