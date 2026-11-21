@@ -111,19 +111,19 @@ impl Helper for Op {
     }
 }
 
-struct AllocationCase<'a> {
-    model: &'a String,
+struct AllocationCase<'case> {
+    model: &'case String,
     limits: ModelGroupLimits,
     window_size: i64,
-    reservation: Option<&'a BTreeMap<String, PriorityValue>>,
-    team_metadata: Option<&'a BTreeMap<String, JsonData>>,
-    key_metadata: &'a BTreeMap<String, JsonData>,
+    reservation: Option<&'case BTreeMap<String, PriorityValue>>,
+    team_metadata: Option<&'case BTreeMap<String, JsonData>>,
+    key_metadata: &'case BTreeMap<String, JsonData>,
 }
 
-struct SaturationCase<'a> {
-    model: &'a String,
+struct SaturationCase<'case> {
+    model: &'case String,
     limits: ModelGroupLimits,
-    cache: &'a BTreeMap<String, CounterInput>,
+    cache: &'case BTreeMap<String, CounterInput>,
 }
 
 fn encodable_values(values: &[String]) -> Vec<bool> {
