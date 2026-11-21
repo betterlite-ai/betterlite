@@ -64,6 +64,7 @@ impl<L: RequestBudgetLookups> RemainingBudgetFanOut<L> {
         }
     }
 
+    // ast-grep-ignore: no-long-names - LiteLLM's method name, so B8561's caller reads the same as its Python
     pub async fn increment_remaining_budget_metrics(&self, request: RemainingBudgetRequest<'_>) {
         if !self.enabled {
             return;
@@ -91,44 +92,76 @@ impl<L: RequestBudgetLookups> RemainingBudgetFanOut<L> {
 fn lookups_for(request: RemainingBudgetRequest<'_>) -> BudgetLookups<'_> {
     let metadata = request.metadata;
     BudgetLookups {
-        key: KeyBudgetLookup {
-            key: request.key,
-            key_alias: request.key_alias,
-            response_cost: request.response_cost,
-            max_budget: metadata_decimal(metadata, "user_api_key_max_budget"),
-            spend: metadata_decimal(metadata, "user_api_key_spend"),
-            carried: KeyBudgetSnapshot::from_metadata(metadata),
-        },
-        team: TeamBudgetLookup {
-            team: request.team,
-            team_alias: request.team_alias,
-            spend: metadata_decimal(metadata, "user_api_key_team_spend"),
-            max_budget: metadata_decimal(metadata, "user_api_key_team_max_budget"),
-            response_cost: request.response_cost,
-            carried: TeamBudgetSnapshot::from_metadata(metadata),
-        },
-        user: UserBudgetLookup {
-            user_id: request.user_id,
-            spend: metadata_decimal(metadata, "user_api_key_user_spend"),
-            max_budget: metadata_decimal(metadata, "user_api_key_user_max_budget"),
-            response_cost: request.response_cost,
-            carried: UserBudgetSnapshot::from_metadata(metadata),
-            user_email: metadata
-                .get("user_api_key_user_email")
-                .and_then(AgentJson::as_str),
-        },
-        org: OrgBudgetLookup {
-            org_id: request.org_id,
-            response_cost: request.response_cost,
-            carried: OrgBudgetSnapshot::from_metadata(metadata),
-            org_alias: metadata
-                .get("user_api_key_org_alias")
-                .and_then(AgentJson::as_str),
-        },
-        customer: CustomerBudgetLookup {
-            end_user_id: request.end_user_id,
-            response_cost: request.response_cost,
-        },
+        key: key_lookup(request, metadata),
+        team: team_lookup(request, metadata),
+        user: user_lookup(request, metadata),
+        org: org_lookup(request, metadata),
+        customer: customer_lookup(request),
+    }
+}
+
+fn key_lookup<'request>(
+    request: RemainingBudgetRequest<'request>,
+    metadata: &'request BTreeMap<String, AgentJson>,
+) -> KeyBudgetLookup<'request> {
+    KeyBudgetLookup {
+        key: request.key,
+        key_alias: request.key_alias,
+        response_cost: request.response_cost,
+        max_budget: metadata_decimal(metadata, "user_api_key_max_budget"),
+        spend: metadata_decimal(metadata, "user_api_key_spend"),
+        carried: KeyBudgetSnapshot::from_metadata(metadata),
+    }
+}
+
+fn team_lookup<'request>(
+    request: RemainingBudgetRequest<'request>,
+    metadata: &'request BTreeMap<String, AgentJson>,
+) -> TeamBudgetLookup<'request> {
+    TeamBudgetLookup {
+        team: request.team,
+        team_alias: request.team_alias,
+        spend: metadata_decimal(metadata, "user_api_key_team_spend"),
+        max_budget: metadata_decimal(metadata, "user_api_key_team_max_budget"),
+        response_cost: request.response_cost,
+        carried: TeamBudgetSnapshot::from_metadata(metadata),
+    }
+}
+
+fn user_lookup<'request>(
+    request: RemainingBudgetRequest<'request>,
+    metadata: &'request BTreeMap<String, AgentJson>,
+) -> UserBudgetLookup<'request> {
+    UserBudgetLookup {
+        user_id: request.user_id,
+        spend: metadata_decimal(metadata, "user_api_key_user_spend"),
+        max_budget: metadata_decimal(metadata, "user_api_key_user_max_budget"),
+        response_cost: request.response_cost,
+        carried: UserBudgetSnapshot::from_metadata(metadata),
+        user_email: metadata
+            .get("user_api_key_user_email")
+            .and_then(AgentJson::as_str),
+    }
+}
+
+fn org_lookup<'request>(
+    request: RemainingBudgetRequest<'request>,
+    metadata: &'request BTreeMap<String, AgentJson>,
+) -> OrgBudgetLookup<'request> {
+    OrgBudgetLookup {
+        org_id: request.org_id,
+        response_cost: request.response_cost,
+        carried: OrgBudgetSnapshot::from_metadata(metadata),
+        org_alias: metadata
+            .get("user_api_key_org_alias")
+            .and_then(AgentJson::as_str),
+    }
+}
+
+fn customer_lookup(request: RemainingBudgetRequest<'_>) -> CustomerBudgetLookup<'_> {
+    CustomerBudgetLookup {
+        end_user_id: request.end_user_id,
+        response_cost: request.response_cost,
     }
 }
 

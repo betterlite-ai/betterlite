@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use rstest::rstest;
 use tempfile::NamedTempFile;
+use tracing::Level;
 use tracing::subscriber::with_default;
 
 use crate::loader::{ConfigError, ConfigLoader};
@@ -30,6 +31,7 @@ where
     let log = NamedTempFile::new().unwrap();
     let subscriber = tracing_subscriber::fmt()
         .with_ansi(false)
+        .with_max_level(Level::DEBUG)
         .with_writer(Arc::new(log.reopen().unwrap()))
         .finish();
     let result = with_default(subscriber, action);
