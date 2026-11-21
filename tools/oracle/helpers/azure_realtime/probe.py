@@ -29,7 +29,6 @@ from .types import (
     Input,
     ProtocolSetup,
     QuerySetup,
-    RealtimeCall,
     RealtimeRunner,
     Scope,
     SslKind,
@@ -195,20 +194,19 @@ async def probe_call(input_value: Input, server: ProbeServer, setup: QuerySetup)
         function_id="fn-1",
         litellm_trace_id="trace-1",
     )
-    call: RealtimeCall = {
-        "model": input_value["model"],
-        "websocket": server.client,
-        "logging_obj": logging_obj,
-        "api_base": setup["api_base"],
-        "api_key": setup["api_key"],
-        "api_version": setup["api_version"],
-        "azure_ad_token": setup["azure_ad_token"],
-        "realtime_protocol": setup["realtime_protocol"],
-        "query_params": setup["query_params"],
-    }
     sys.modules["websockets"] = FakeWebsockets(server)
     try:
-        await RUNNER.async_realtime(**call)
+        await RUNNER.async_realtime(
+            model=input_value["model"],
+            websocket=server.client,
+            logging_obj=logging_obj,
+            api_base=setup["api_base"],
+            api_key=setup["api_key"],
+            api_version=setup["api_version"],
+            azure_ad_token=setup["azure_ad_token"],
+            realtime_protocol=setup["realtime_protocol"],
+            query_params=setup["query_params"],
+        )
     finally:
         sys.modules["websockets"] = REAL_WEBSOCKETS
 

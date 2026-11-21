@@ -1,5 +1,6 @@
 import asyncio
 
+import litellm
 from pydantic import JsonValue
 
 from .http import http_answer
@@ -31,6 +32,7 @@ def failure_answer(input_value: Input) -> JsonValue:
 
 
 def run(input_value: Input) -> JsonValue:
+    litellm.suppress_debug_info = True
     kind = input_value["kind"]
     if kind == "http":
         return http_answer(input_value)

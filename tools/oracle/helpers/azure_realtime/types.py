@@ -1,4 +1,4 @@
-from typing import Literal, Protocol, TypeAlias, TypedDict, Unpack
+from typing import Literal, Protocol, TypeAlias, TypedDict
 
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.types.realtime import RealtimeQueryParams
@@ -73,21 +73,24 @@ class ClientSocket(Protocol):
     async def close(self, code: int = 1000, reason: str | None = None) -> None: ...
 
 
-class RealtimeCall(TypedDict):
-    model: str
-    websocket: ClientSocket
-    logging_obj: Logging
-    api_base: str | None
-    api_key: str | None
-    api_version: str | None
-    azure_ad_token: str | None
-    realtime_protocol: str | None
-    query_params: RealtimeQueryParams | None
-
-
 # the handler is unannotated for its return, so the runner is named through this protocol
 class RealtimeRunner(Protocol):
-    async def async_realtime(self, **call: Unpack[RealtimeCall]) -> None: ...
+    async def async_realtime(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/realtime/handler.py#L133-L148
+        self,
+        model: str,
+        websocket: ClientSocket,
+        logging_obj: Logging,
+        api_base: str | None = None,
+        api_key: str | None = None,
+        api_version: str | None = None,
+        azure_ad_token: str | None = None,
+        client: object | None = None,
+        timeout: float | None = None,
+        realtime_protocol: str | None = None,
+        query_params: RealtimeQueryParams | None = None,
+        user_api_key_dict: object | None = None,
+        litellm_metadata: dict[str, JsonValue] | None = None,
+    ) -> None: ...
 
 
 class RealtimeHttpConfig(Protocol):
