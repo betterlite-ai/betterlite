@@ -101,15 +101,13 @@ impl ReseedCache for ScriptedCache {
         self.redis.is_some()
     }
 
-    fn redis_get(
+    async fn redis_get(
         &self,
         _counter_key: &str,
-    ) -> impl Future<Output = Result<Option<ReseedCacheValue>, ScriptFailure>> + Send {
-        ready(
-            self.redis
-                .as_ref()
-                .map_or(Ok(None), |redis| redis.get.play()),
-        )
+    ) -> Result<Option<ReseedCacheValue>, ScriptFailure> {
+        self.redis
+            .as_ref()
+            .map_or(Ok(None), |redis| redis.get.play())
     }
 
     fn redis_set_nx(
@@ -266,16 +264,14 @@ impl SpendCounterRows for ScriptedRows {
         }))
     }
 
-    fn window_log_rows(
+    async fn window_log_rows(
         &self,
         entity: WindowEntity,
         entity_id: &str,
         _window_start: DateTime<Utc>,
-    ) -> impl Future<Output = Result<Vec<SpendAggregateRow>, ScriptFailure>> + Send {
-        ready(
-            self.note(format!("logs {entity:?} {entity_id}"))
-                .map(|()| Vec::new()),
-        )
+    ) -> Result<Vec<SpendAggregateRow>, ScriptFailure> {
+        self.note(format!("logs {entity:?} {entity_id}"))
+            .map(|()| Vec::new())
     }
 }
 

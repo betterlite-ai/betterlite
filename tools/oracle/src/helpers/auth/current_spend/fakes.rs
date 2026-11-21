@@ -82,16 +82,16 @@ impl ReseedCache for ScriptedCache<'_> {
         ready(Ok(Some(true)))
     }
 
-    fn memory_get(
+    async fn memory_get(
         &self,
         counter_key: &str,
-    ) -> impl Future<Output = Result<Option<ReseedCacheValue>, ScriptedFailure>> + Send {
-        ready(Ok(self
+    ) -> Result<Option<ReseedCacheValue>, ScriptedFailure> {
+        Ok(self
             .memory
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .get(counter_key)
-            .map(|(value, _ttl)| value.clone())))
+            .map(|(value, _ttl)| value.clone()))
     }
 
     fn memory_set(
@@ -133,16 +133,16 @@ impl CounterCache for ScriptedCache<'_> {
         Ok(())
     }
 
-    fn redis_set_max(
+    async fn redis_set_max(
         &self,
         counter_key: &str,
         value: Decimal,
-    ) -> impl Future<Output = Result<Option<Decimal>, ScriptedFailure>> + Send {
+    ) -> Result<Option<Decimal>, ScriptedFailure> {
         self.set_max_calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(json!([counter_key, amount_json(value)]));
-        ready(self.redis_answer(self.input.set_max_fails.0, self.input.set_max))
+        self.redis_answer(self.input.set_max_fails.0, self.input.set_max)
     }
 }
 
@@ -263,15 +263,15 @@ impl SpendCounterRows for ScriptedRows {
         ready(Ok(row))
     }
 
-    fn window_log_rows(
+    async fn window_log_rows(
         &self,
         _entity: WindowEntity,
         _entity_id: &str,
         _window_start: DateTime<Utc>,
-    ) -> impl Future<Output = Result<Vec<SpendAggregateRow>, ScriptedFailure>> + Send {
+    ) -> Result<Vec<SpendAggregateRow>, ScriptedFailure> {
         if self.rows.fails.0 {
-            return ready(Err(ScriptedFailure));
+            return Err(ScriptedFailure);
         }
-        ready(Ok(Vec::new()))
+        Ok(Vec::new())
     }
 }

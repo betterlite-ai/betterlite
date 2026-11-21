@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::future::Future;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_db::postgres_store::session::PostgresStore;
@@ -63,15 +64,13 @@ impl SpendCounterRows for ResetDuringRead {
             .await
     }
 
-    async fn window_log_rows(
+    fn window_log_rows(
         &self,
         entity: WindowEntity,
         entity_id: &str,
         window_start: DateTime<Utc>,
-    ) -> Result<Vec<SpendAggregateRow>, SpendRowsError> {
-        self.inner
-            .window_log_rows(entity, entity_id, window_start)
-            .await
+    ) -> impl Future<Output = Result<Vec<SpendAggregateRow>, SpendRowsError>> + Send {
+        self.inner.window_log_rows(entity, entity_id, window_start)
     }
 }
 
