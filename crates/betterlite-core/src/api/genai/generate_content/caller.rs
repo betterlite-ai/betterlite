@@ -32,9 +32,19 @@ pub(super) fn pop_flag(
     kwargs: &mut Object,
     marker: &'static str,
 ) -> Result<bool, RequestFieldError> {
-    match kwargs.shift_remove(marker) {
+    let removed = kwargs.shift_remove(marker);
+    flag_value(removed.as_ref(), marker)
+}
+
+// kwargs.get("stream", False): the adapter's own parameter stays in the loose fields for setup
+pub(super) fn read_flag(kwargs: &Object, marker: &'static str) -> Result<bool, RequestFieldError> {
+    flag_value(kwargs.get(marker), marker)
+}
+
+fn flag_value(value: Option<&Json>, marker: &'static str) -> Result<bool, RequestFieldError> {
+    match value {
         None | Some(Json::Null) => Ok(false),
-        Some(Json::Bool(flag)) => Ok(flag),
+        Some(Json::Bool(given)) => Ok(*given),
         Some(Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
             Err(RequestFieldError {
                 field: marker,

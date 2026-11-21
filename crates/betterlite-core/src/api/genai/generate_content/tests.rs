@@ -233,6 +233,84 @@ async fn dispatch_adapter_call_falls_through_an_empty_system_instruction() {
 }
 
 #[tokio::test]
+async fn dispatch_generate_content_passes_tools_to_the_adapter() {
+    let harness = Harness::new();
+    let contents = contents();
+    let kwargs = object("{}");
+    let tools = json(TOOLS);
+    let mut request = request(ADAPTER_MODEL, &contents, None, &kwargs);
+    request.tools = Some(&tools);
+
+    harness
+        .call(Entry::Generate, &request)
+        .await
+        .answer
+        .expect("the call succeeds");
+
+    let seen = harness.executor.seen();
+    assert_eq!(seen[0].0, Operation::Completion);
+    assert!(!seen[0].1.request.stream);
+    assert_eq!(seen[0].1.request.tools.as_ref().map(Vec::len), Some(1));
+}
+
+#[tokio::test]
+async fn dispatch_agenerate_content_passes_tools_and_awaits_async() {
+    let harness = Harness::new();
+    let contents = contents();
+    let kwargs = object("{}");
+    let tools = json(TOOLS);
+    let mut request = request(ADAPTER_MODEL, &contents, None, &kwargs);
+    request.tools = Some(&tools);
+
+    harness
+        .call(Entry::Agenerate, &request)
+        .await
+        .answer
+        .expect("the call succeeds");
+
+    let seen = harness.executor.seen();
+    assert_eq!(seen[0].0, Operation::Acompletion);
+    assert!(!seen[0].1.request.stream);
+    assert_eq!(seen[0].1.request.tools.as_ref().map(Vec::len), Some(1));
+}
+
+#[tokio::test]
+async fn dispatch_generate_content_streams_when_the_loose_stream_flag_is_set() {
+    let mut harness = Harness::new();
+    harness.executor = Scripted::answering(stream_output());
+    let contents = contents();
+    let kwargs = object(r#"{"stream":true}"#);
+    let request = request(ADAPTER_MODEL, &contents, None, &kwargs);
+
+    let dispatch = harness.call(Entry::Generate, &request).await;
+
+    assert!(matches!(
+        dispatch.answer.expect("the call succeeds"),
+        GenerateContentAnswer::Adapter(AdapterOutcome::Stream(_))
+    ));
+    let seen = harness.executor.seen();
+    assert_eq!(seen[0].0, Operation::Completion);
+    assert!(seen[0].1.request.stream);
+}
+
+#[tokio::test]
+async fn dispatch_native_call_ignores_the_loose_stream_flag() {
+    let harness = Harness::new();
+    let contents = contents();
+    let kwargs = object(r#"{"stream":true}"#);
+    let request = request(NATIVE_MODEL, &contents, None, &kwargs);
+
+    let dispatch = harness.call(Entry::Generate, &request).await;
+
+    assert!(matches!(
+        dispatch.answer.expect("the native call succeeds"),
+        GenerateContentAnswer::Native(GenerateContentOutcome::Response(_))
+    ));
+    let seen = harness.source.requests();
+    assert!(!seen[0].streaming);
+}
+
+#[tokio::test]
 async fn dispatch_sync_stream_passes_stream_and_no_tools() {
     let harness = Harness::new();
     let contents = contents();

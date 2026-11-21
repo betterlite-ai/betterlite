@@ -7,7 +7,7 @@ use crate::api::genai_http::service::ClientSource;
 use crate::genai_setup::setup::GenerateContentSetupResult;
 
 use super::adapter_input::{adapter_input, adapter_params};
-use super::caller::Caller;
+use super::caller::{Caller, read_flag};
 use super::error::GenerateContentError;
 use super::{GenerateContentAnswer, GenerateContentDeps, GenerateContentRequest};
 
@@ -34,7 +34,7 @@ where
         request: &input.request,
         litellm_params: &params,
         context: &context,
-        stream: caller.stream,
+        stream: caller.stream || read_flag(&caller.kwargs, "stream")?,
         forwarded: input.forwarded,
     };
     let handled = generate_content_handler(deps.executor, call, caller.is_async)?;
