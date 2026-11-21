@@ -1,0 +1,9 @@
+task: B017
+deviations:
+  - what: A retry backoff that would reach the routing deadline is not slept, and the latest provider error is raised at once without the exhausted retry counts.
+    why: LiteLLM's retry loop has no overall deadline, so it sleeps and retries past the request timeout; betterlite keeps every attempt and wait inside the one routing deadline the request owns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7784-L7792
+  - what: No backoff runs after the last retry fails; the error is raised as soon as the retries run out.
+    why: LiteLLM sleeps once more after the final failure although no attempt follows, which only delays the error the caller gets.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7854-L7861
+kept_bugs: []
