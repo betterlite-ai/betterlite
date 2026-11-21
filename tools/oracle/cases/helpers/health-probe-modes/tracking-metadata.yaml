@@ -1,0 +1,12 @@
+kind: helper
+name: tracking_metadata
+call:
+  b4440:
+    mode: []
+    wildcard: []
+    tracking:
+      - params: {model: gpt-4o, tags: [old], litellm_metadata: {previous: true}}
+      - params: {model: gpt-4o}
+    response: []
+env: {}
+compare: {ignore: []}

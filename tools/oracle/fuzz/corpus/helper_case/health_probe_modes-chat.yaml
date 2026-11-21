@@ -1,0 +1,18 @@
+kind: helper
+name: health-probe-modes-chat-seed
+call:
+  b4440:
+    mode:
+      - mode: chat
+        model: gpt-4o
+        custom_llm_provider: openai
+        params: {model: gpt-4o, messages: [{role: user, content: hi}]}
+        prompt: null
+        inputs: null
+        logging: false
+        failure: null
+    wildcard: []
+    tracking: []
+    response: []
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,106 @@
+kind: helper
+name: mode_arguments
+call:
+  b4440:
+    mode:
+      - mode: chat
+        model: gpt-4o
+        custom_llm_provider: openai
+        params: {model: gpt-4o, messages: [{role: user, content: hi}], temperature: 0.5, api_key: sk-test}
+        prompt: null
+        inputs: null
+        logging: false
+        failure: null
+      - mode: completion
+        model: gpt-4o
+        custom_llm_provider: openai
+        params: {model: gpt-4o, messages: [{role: user, content: hi}], max_tokens: 10}
+        prompt: say hi
+        inputs: null
+        logging: false
+        failure: null
+      - mode: embedding
+        model: text-embedding-3-small
+        custom_llm_provider: openai
+        params: {model: text-embedding-3-small, encoding_format: float}
+        prompt: null
+        inputs: [a, b]
+        logging: false
+        failure: null
+      - mode: audio_speech
+        model: tts-1
+        custom_llm_provider: openai
+        params: {model: tts-1}
+        prompt: null
+        inputs: null
+        logging: false
+        failure: null
+      - mode: audio_speech
+        model: tts-1
+        custom_llm_provider: openai
+        params: {model: tts-1, voice: nova}
+        prompt: hello
+        inputs: null
+        logging: false
+        failure: null
+      - mode: audio_transcription
+        model: whisper-1
+        custom_llm_provider: openai
+        params: {model: whisper-1}
+        prompt: null
+        inputs: null
+        logging: false
+        failure: null
+      - mode: image_generation
+        model: dall-e-3
+        custom_llm_provider: openai
+        params: {model: dall-e-3, size: 1024x1024}
+        prompt: null
+        inputs: null
+        logging: false
+        failure: null
+      - mode: image_generation
+        model: dall-e-3
+        custom_llm_provider: openai
+        params: {model: dall-e-3}
+        prompt: a blue circle
+        inputs: null
+        logging: false
+        failure: null
+      - mode: video_generation
+        model: sora-2
+        custom_llm_provider: openai
+        params: {model: sora-2}
+        prompt: null
+        inputs: null
+        logging: false
+        failure: null
+      - mode: rerank
+        model: rerank-v3
+        custom_llm_provider: cohere
+        params: {model: rerank-v3}
+        prompt: null
+        inputs: null
+        logging: false
+        failure: null
+      - mode: responses
+        model: gpt-5
+        custom_llm_provider: openai
+        params: {model: gpt-5}
+        prompt: null
+        inputs: null
+        logging: false
+        failure: null
+      - mode: realtime
+        model: gpt-realtime
+        custom_llm_provider: openai
+        params: {model: realtime-model, api_base: https://api.openai.com, api_version: v1, voice: alloy}
+        prompt: null
+        inputs: null
+        logging: false
+        failure: null
+    wildcard: []
+    tracking: []
+    response: []
+env: {}
+compare: {ignore: []}
