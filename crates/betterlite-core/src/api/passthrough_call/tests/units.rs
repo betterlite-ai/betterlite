@@ -16,6 +16,7 @@ use betterlite_openai::passthrough::transformation::BasePassthroughConfig as _;
 use betterlite_openai::passthrough::transformation::types::{
     PassthroughSigning, PassthroughTarget, PassthroughUrlRequest,
 };
+use betterlite_openai::watsonx_auth::environment::WatsonxEnvironment;
 use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::SecretString;
@@ -343,6 +344,43 @@ fn auth_mantle_without_a_key_is_refused() {
         panic!("a mantle call without a key is refused");
     };
     assert!(error.to_string().contains("Bedrock Mantle auth failed"));
+}
+
+#[tokio::test]
+async fn auth_watsonx_mints_the_iam_token_from_the_key() {
+    let serving = serve(
+        reply(
+            "200 fixture",
+            &[],
+            r#"{"access_token":"iam-token","expires_in":3600}"#,
+        ),
+        Duration::ZERO,
+    )
+    .unwrap();
+    let environment = WatsonxEnvironment {
+        watsonx_iam_url: Some(format!("http://{}/identity/token", serving.address)),
+        ..WatsonxEnvironment::default()
+    };
+    let key = SecretString::from("watsonx-key");
+    let http = proxy_client(1024);
+    let headers = auth::watsonx_headers(environment, Some(&key), &http)
+        .await
+        .unwrap();
+    assert_eq!(
+        headers.get("authorization"),
+        Some(&String::from("Bearer iam-token"))
+    );
+    assert_eq!(
+        headers.get("content-type"),
+        Some(&String::from("application/json"))
+    );
+    assert_eq!(
+        headers.get("accept"),
+        Some(&String::from("application/json"))
+    );
+    let sent = serving.finish().unwrap();
+    assert_eq!(sent.line, "POST /identity/token HTTP/1.1");
+    assert!(sent.body.contains("apikey=watsonx-key"));
 }
 
 #[test]

@@ -62,7 +62,9 @@ pub(crate) async fn validate(
         PassthroughConfigTag::VLLM
         | PassthroughConfigTag::Bedrock
         | PassthroughConfigTag::BedrockMantle => Ok(Headers::new()),
-        PassthroughConfigTag::Watsonx => watsonx_headers(api_key, http).await,
+        PassthroughConfigTag::Watsonx => {
+            watsonx_headers(WatsonxEnvironment::default(), api_key, http).await
+        }
         PassthroughConfigTag::Azure => azure_headers(AzureKind::Key, api_key, params, base),
         PassthroughConfigTag::AzureAI => azure_headers(AzureKind::Entra, api_key, params, base),
         PassthroughConfigTag::GigaChat => gigachat_headers(api_key, params, http).await,
@@ -77,13 +79,11 @@ pub(crate) async fn validate(
 }
 
 // WatsonxPassthroughConfig's validate_environment: content type and accept, then the Bearer or ZenApiKey header
-// minting the IAM token needs a live identity endpoint; betterlite-openai tests that flow
-#[cfg_attr(test, mutants::skip)]
-async fn watsonx_headers(
+pub(super) async fn watsonx_headers(
+    environment: WatsonxEnvironment,
     api_key: Option<&SecretString>,
     http: &ProxiedClient,
 ) -> Result<Headers, ConfigError> {
-    let environment = WatsonxEnvironment::default();
     let config = WatsonxPassthroughConfig {
         environment: &environment,
     };
@@ -109,7 +109,7 @@ fn watsonx_error(error: WatsonxError) -> ConfigError {
     status_error(failure.status(), failure.to_string())
 }
 
-// the wall clock only seeds the IAM token cache, which no test in this module can read
+// the wall clock only seeds the IAM token cache, whose TTL no test in this module can read
 #[cfg_attr(test, mutants::skip)]
 fn epoch_seconds() -> f64 {
     SystemTime::now()
