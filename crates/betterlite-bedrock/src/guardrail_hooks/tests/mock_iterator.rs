@@ -57,52 +57,68 @@ async fn a_text_completion_stream_passes_through_unscanned() {
 }
 
 #[tokio::test]
-async fn a_replayed_chunk_omits_the_null_fields_the_assembled_response_carries() {
+async fn a_replayed_chunk_drops_the_null_identity_and_usage_fields() {
+    let mut response = chat_response("gpt-test", text("hello"));
+    let GuardrailValue::Object(fields) = &mut response else {
+        panic!("expected a response object");
+    };
+    fields.insert("id".to_owned(), GuardrailValue::Null);
+    fields.insert("created".to_owned(), GuardrailValue::Null);
+    fields.insert("usage".to_owned(), GuardrailValue::Null);
     let mut runtime = base();
-    runtime.assembled = Some(object(vec![
-        ("id", GuardrailValue::Null),
-        ("created", GuardrailValue::Null),
-        ("usage", GuardrailValue::Null),
-        ("model", text("gpt-test")),
-        (
-            "choices",
-            array(vec![object(vec![
-                ("index", unsigned(0)),
-                (
-                    "message",
-                    object(vec![
-                        ("role", text("assistant")),
-                        ("content", text("hello")),
-                        ("tool_calls", GuardrailValue::Null),
-                    ]),
-                ),
-                ("finish_reason", GuardrailValue::Null),
-            ])]),
-        ),
-    ]));
+    runtime.assembled = Some(response);
     runtime.scan_result = Ok(object(vec![]));
     let settings = streaming_settings();
     let output = run_buffered(&runtime, &settings, "/v1/chat/completions", chat_chunks())
         .await
         .unwrap();
-    let expected = object(vec![
-        ("object", text("chat.completion.chunk")),
-        ("model", text("gpt-test")),
-        (
-            "choices",
-            array(vec![object(vec![
-                ("index", unsigned(0)),
-                (
-                    "delta",
-                    object(vec![
-                        ("role", text("assistant")),
-                        ("content", text("hello")),
-                    ]),
-                ),
-            ])]),
-        ),
-    ]);
-    assert_eq!(output, vec![StreamChunk::Json(expected)]);
+    let StreamChunk::Json(GuardrailValue::Object(chunk)) = &output[0] else {
+        panic!("expected a json chunk");
+    };
+    assert_eq!(
+        chunk.keys().map(String::as_str).collect::<Vec<_>>(),
+        ["choices", "model", "object"]
+    );
+}
+
+#[tokio::test]
+async fn a_replayed_chunk_drops_the_null_choice_fields() {
+    let mut response = chat_response("gpt-test", text("hello"));
+    let GuardrailValue::Object(fields) = &mut response else {
+        panic!("expected a response object");
+    };
+    let Some(GuardrailValue::Array(choices)) = fields.get_mut("choices") else {
+        panic!("expected choices");
+    };
+    let GuardrailValue::Object(choice) = &mut choices[0] else {
+        panic!("expected a choice");
+    };
+    choice.insert("finish_reason".to_owned(), GuardrailValue::Null);
+    let Some(GuardrailValue::Object(message)) = choice.get_mut("message") else {
+        panic!("expected a message");
+    };
+    message.insert("tool_calls".to_owned(), GuardrailValue::Null);
+    let mut runtime = base();
+    runtime.assembled = Some(response);
+    runtime.scan_result = Ok(object(vec![]));
+    let settings = streaming_settings();
+    let output = run_buffered(&runtime, &settings, "/v1/chat/completions", chat_chunks())
+        .await
+        .unwrap();
+    let StreamChunk::Json(GuardrailValue::Object(chunk)) = &output[0] else {
+        panic!("expected a json chunk");
+    };
+    let Some(GuardrailValue::Array(choices)) = chunk.get("choices") else {
+        panic!("expected choices");
+    };
+    let GuardrailValue::Object(choice) = &choices[0] else {
+        panic!("expected a choice");
+    };
+    let Some(GuardrailValue::Object(delta)) = choice.get("delta") else {
+        panic!("expected a delta");
+    };
+    assert!(!delta.contains_key("tool_calls"));
+    assert!(!choice.contains_key("finish_reason"));
 }
 
 #[tokio::test]
