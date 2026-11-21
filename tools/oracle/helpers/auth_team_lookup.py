@@ -88,7 +88,7 @@ class Answer(TypedDict):
     steps: list[StepAnswer]
 
 
-# what one step records, the log handler that records it and the clock LiteLLM reads through time.time
+# one step's record, its log handler and the clock LiteLLM reads through time.time
 class Board(logging.Handler):
     def __init__(self, call: Call) -> None:
         super().__init__(logging.DEBUG)
@@ -126,7 +126,9 @@ class KeyCache(UserApiKeyCache):
         self.board = board
 
     @override
-    async def async_set_cache(self, key: str, value: BaseModel, *, model_type: type[BaseModel], ttl: float) -> None:  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/user_api_key_cache.py#L215-L233
+    async def async_set_cache(  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/user_api_key_cache.py#L215-L233
+        self, key: str, value: BaseModel, *, model_type: type[BaseModel], ttl: float
+    ) -> None:
         del model_type
         if f"write {key}" in self.board.fail:
             raise RuntimeError(key)
@@ -139,17 +141,23 @@ class Row(BaseModel):
 
 
 class Table:
-    def __init__(self, board: Board, name: str, handle: str, rows: list[dict[str, JsonValue]]) -> None:
+    def __init__(
+        self, board: Board, name: str, handle: str, rows: list[dict[str, JsonValue]]
+    ) -> None:
         self.board = board
         self.name = name
         self.handle = handle
         self.rows = rows
 
-    async def find_unique(self, *, where: dict[str, str], include: Mapping[str, bool] | None = None) -> Row | None:
+    async def find_unique(
+        self, *, where: dict[str, str], include: Mapping[str, bool] | None = None
+    ) -> Row | None:
         found = await self.find_many(where=where, include=include)
         return found.pop() if found else None
 
-    async def find_many(self, *, where: dict[str, str], include: Mapping[str, bool] | None = None) -> list[Row]:
+    async def find_many(
+        self, *, where: dict[str, str], include: Mapping[str, bool] | None = None
+    ) -> list[Row]:
         del include
         field, value = next(iter(where.items()))
         self.board.events.append(f"db {self.name} {self.handle} {value}")
@@ -160,11 +168,12 @@ class Table:
 
 class Db(PrismaWrapper):
     def __init__(self, board: Board, call: Call, handle: str) -> None:
-        self.tables = {
-            "litellm_teamtable": Table(board, "litellm_teamtable", handle, call["teams"]),
-            "litellm_accessgrouptable": Table(board, "litellm_accessgrouptable", handle, call["groups"]),
-            "litellm_objectpermissiontable": Table(board, "litellm_objectpermissiontable", handle, call["permissions"]),
-        }
+        tables = (
+            ("litellm_teamtable", call["teams"]),
+            ("litellm_accessgrouptable", call["groups"]),
+            ("litellm_objectpermissiontable", call["permissions"]),
+        )
+        self.tables = {name: Table(board, name, handle, rows) for name, rows in tables}
 
     @override
     def __getattr__(self, name: str) -> Table:
@@ -195,7 +204,7 @@ class Provisioner:
     ) -> dict[str, JsonValue]:
         del http_request
         role = user_api_key_dict.user_role
-        self.board.events.append(f"provision {data.team_id} {'' if role is None else role.value}")
+        self.board.events.append(f"provision {data.team_id} {'' if role is None else str(role)}")
         if "provision" in self.board.fail or self.board.created is None:
             raise RuntimeError("provision")
         return self.board.created
@@ -203,7 +212,9 @@ class Provisioner:
 
 # get_object_permission catches its own read failures, so a failed load is scripted in its place
 class Refusal:
-    async def __call__(self, **_kwargs: str | bool | PrismaClient | UserApiKeyCache | None) -> NoReturn:
+    async def __call__(
+        self, **_kwargs: str | bool | PrismaClient | UserApiKeyCache | None
+    ) -> NoReturn:
         raise RuntimeError("permission")
 
 
@@ -241,7 +252,8 @@ async def answer(call: Call, board: Board) -> Answer:
         board.fail = list(step["fail"])
         board.events = []
         board.logs = []
-        auth_checks.get_object_permission = Refusal() if "permission" in board.fail else get_object_permission  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3981
+        refused = "permission" in board.fail
+        auth_checks.get_object_permission = Refusal() if refused else get_object_permission  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3981
         value: TeamView | GroupView | None = None
         error: Failure | None = None
         try:
@@ -252,7 +264,8 @@ async def answer(call: Call, board: Board) -> Answer:
             error = failure("http", raised)
         except Exception:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3275-L3276
             error = {"kind": "exception", "status": None, "detail": None}
-        steps.append({"value": value, "error": error, "events": list(board.events), "logs": list(board.logs)})
+        events = list(board.events)
+        steps.append({"value": value, "error": error, "events": events, "logs": list(board.logs)})
     return {"row": call["row"], "steps": steps}
 
 
@@ -265,15 +278,23 @@ async def lookup(call: Call, client: Client | None, cache: KeyCache) -> TeamView
         case "team":
             upsert = "upsert" in flags
             team = await get_team_object(
-                target, client, cache, check_cache_only=cache_only, check_db_only=db_only, team_id_upsert=upsert
+                target,
+                client,
+                cache,
+                check_cache_only=cache_only,
+                check_db_only=db_only,
+                team_id_upsert=upsert,
             )
             return team_view(team)
         case "alias":
-            named: LiteLLM_TeamTableCachedObj = await get_team_object_by_alias(target, client, cache)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3419-L3420
+            named: LiteLLM_TeamTableCachedObj
+            named = await get_team_object_by_alias(target, client, cache)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3419-L3420
             return team_view(named)
         case "access":
-            group: LiteLLM_AccessGroupTable = await get_access_object(target, client, cache, check_db_only=db_only)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3348-L3349
-            return {"access_group_id": group.access_group_id, "access_group_name": group.access_group_name}
+            group: LiteLLM_AccessGroupTable
+            group = await get_access_object(target, client, cache, check_db_only=db_only)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3348-L3349
+            group_id = group.access_group_id
+            return {"access_group_id": group_id, "access_group_name": group.access_group_name}
 
 
 def team_view(team: LiteLLM_TeamTableCachedObj) -> TeamView:
