@@ -18,8 +18,8 @@ use crate::api::summary_model_limits::budget::SummaryModelBudgets;
 use crate::api::summary_model_limits::error::LimiterFailure;
 use crate::api::summary_model_limits::fields::BudgetMap;
 use crate::api::summary_model_limits::rate::{
-    BaseDescriptorRequest, LimiterCapability, ProxyHooks, ReadOnlyCheck, SummaryDescriptor,
-    SummaryRateLimiter,
+    BaseDescriptorRequest, DescriptorScope, LimiterCapability, ProxyHooks, ReadOnlyCheck,
+    SummaryDescriptor, SummaryRateLimiter,
 };
 
 pub(super) fn principal(fields: serde_json::Value) -> UserAPIKeyAuth {
@@ -88,37 +88,35 @@ impl SummaryModelBudgets for FakeBudgets {
             model: model.to_owned(),
         });
         let outcome = match self.failing {
-            Some((failing, Verdict::Exceeded)) if failing == scope => Err(exceeded()),
-            Some((failing, Verdict::Offline)) if failing == scope => Err(offline()),
+            Some((failing, verdict)) if failing == scope => Err(verdict_error(verdict)),
             Some(_) | None => Ok(()),
         };
         ready(outcome)
     }
 }
 
-fn exceeded() -> ErrorClass {
-    ErrorClass::BudgetExceeded(Box::new(BudgetExceededDetails {
-        current_cost: Decimal::TWO,
-        max_budget: Decimal::ONE,
-        message: Some("exceeded".to_owned()),
-        provider: String::new(),
-        entity_type: None,
-        entity_id: None,
-        status_code: 429,
-    }))
-}
-
-fn offline() -> ErrorClass {
-    ErrorClass::Unclassified(Box::new(ErrorContext {
-        message: "offline".to_owned(),
-        model: None,
-        provider: None,
-        max_retries: None,
-        num_retries: None,
-        body_type: None,
-        body_param: None,
-        body_code: None,
-    }))
+fn verdict_error(verdict: Verdict) -> ErrorClass {
+    match verdict {
+        Verdict::Exceeded => ErrorClass::BudgetExceeded(Box::new(BudgetExceededDetails {
+            current_cost: Decimal::TWO,
+            max_budget: Decimal::ONE,
+            message: Some("exceeded".to_owned()),
+            provider: String::new(),
+            entity_type: None,
+            entity_id: None,
+            status_code: 429,
+        })),
+        Verdict::Offline => ErrorClass::Unclassified(Box::new(ErrorContext {
+            message: "offline".to_owned(),
+            model: None,
+            provider: None,
+            max_retries: None,
+            num_retries: None,
+            body_type: None,
+            body_param: None,
+            body_code: None,
+        })),
+    }
 }
 
 pub(super) fn descriptor(key: &str, limits: Option<serde_json::Value>) -> SummaryDescriptor {
@@ -147,19 +145,11 @@ pub(super) enum LimiterCall {
         tpm_limit_type: Option<JsonData>,
         model_has_failures: bool,
     },
-    Team {
+    Add {
+        scope: DescriptorScope,
         token: Option<String>,
         model: String,
         seen: Vec<SummaryDescriptor>,
-    },
-    Project {
-        token: Option<String>,
-        model: String,
-        seen: Vec<SummaryDescriptor>,
-    },
-    Organization {
-        token: Option<String>,
-        model: String,
     },
     Check {
         descriptors: Vec<SummaryDescriptor>,
@@ -244,49 +234,27 @@ impl SummaryRateLimiter for FakeLimiter {
         Ok(self.base.clone())
     }
 
-    fn add_team_model_descriptor(
+    fn add_scope_descriptors(
         &self,
+        scope: DescriptorScope,
         principal: &UserAPIKeyAuth,
         requested_model: &str,
         descriptors: &mut Vec<SummaryDescriptor>,
     ) -> Result<(), LimiterFailure<Offline>> {
-        let call = LimiterCall::Team {
+        let (stage, added) = match scope {
+            DescriptorScope::Team => (Stage::Team, &self.team),
+            DescriptorScope::Project => (Stage::Project, &self.project),
+            DescriptorScope::Organization => (Stage::Organization, &self.organization),
+        };
+        let call = LimiterCall::Add {
+            scope,
             token: token(principal),
             model: requested_model.to_owned(),
             seen: descriptors.clone(),
         };
-        self.record(Stage::Team, call)?;
-        descriptors.extend(self.team.iter().cloned());
+        self.record(stage, call)?;
+        descriptors.extend(added.iter().cloned());
         Ok(())
-    }
-
-    fn add_project_model_descriptor(
-        &self,
-        principal: &UserAPIKeyAuth,
-        requested_model: &str,
-        descriptors: &mut Vec<SummaryDescriptor>,
-    ) -> Result<(), LimiterFailure<Offline>> {
-        let call = LimiterCall::Project {
-            token: token(principal),
-            model: requested_model.to_owned(),
-            seen: descriptors.clone(),
-        };
-        self.record(Stage::Project, call)?;
-        descriptors.extend(self.project.iter().cloned());
-        Ok(())
-    }
-
-    fn create_organization_descriptors(
-        &self,
-        principal: &UserAPIKeyAuth,
-        requested_model: &str,
-    ) -> Result<Vec<SummaryDescriptor>, LimiterFailure<Offline>> {
-        let call = LimiterCall::Organization {
-            token: token(principal),
-            model: requested_model.to_owned(),
-        };
-        self.record(Stage::Organization, call)?;
-        Ok(self.organization.clone())
     }
 
     fn should_rate_limit(

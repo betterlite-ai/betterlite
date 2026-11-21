@@ -15,7 +15,8 @@ use tracing_subscriber::registry;
 
 use super::budget::summary_model_within_budget;
 use super::rate::{
-    LimiterCapability, PARALLEL_REQUEST_LIMITER, SummaryDescriptor, summary_model_within_rate_limit,
+    DescriptorScope, LimiterCapability, PARALLEL_REQUEST_LIMITER, SummaryDescriptor,
+    summary_within_rate_limit,
 };
 use support::{
     BudgetCall, FakeBudgets, FakeHooks, FakeLimiter, LimiterCall, RateFailure, Stage, Verdict,
@@ -201,7 +202,7 @@ fn limiter_with(base: Vec<SummaryDescriptor>, overall_code: &str) -> FakeLimiter
 
 async fn rate_check(hooks: &FakeHooks, fields: serde_json::Value) -> bool {
     let auth = principal(fields);
-    summary_model_within_rate_limit(Some(&auth), Some(hooks), MODEL)
+    summary_within_rate_limit(Some(&auth), Some(hooks), MODEL)
         .await
         .unwrap()
 }
@@ -223,19 +224,27 @@ async fn rate_descriptor_order_builds_then_appends_team_project_and_organization
             tpm_limit_type: Some(JsonData::String("guaranteed_throughput".to_owned())),
             model_has_failures: false,
         },
-        LimiterCall::Team {
+        LimiterCall::Add {
+            scope: DescriptorScope::Team,
             token: token.clone(),
             model: MODEL.to_owned(),
             seen: vec![gauged("api_key")],
         },
-        LimiterCall::Project {
+        LimiterCall::Add {
+            scope: DescriptorScope::Project,
             token: token.clone(),
             model: MODEL.to_owned(),
             seen: vec![gauged("api_key"), gauged("model_per_team")],
         },
-        LimiterCall::Organization {
+        LimiterCall::Add {
+            scope: DescriptorScope::Organization,
             token,
             model: MODEL.to_owned(),
+            seen: vec![
+                gauged("api_key"),
+                gauged("model_per_team"),
+                gauged("model_per_project"),
+            ],
         },
         LimiterCall::Check {
             descriptors: vec![
@@ -292,7 +301,12 @@ async fn parallel_gauge_filter(
     let hooks = proxy_with(Some(limiter));
     assert!(rate_check(&hooks, rate_principal()).await);
     let calls = hooks.limiter.unwrap().calls();
-    let Some(LimiterCall::Project { seen, .. }) = calls.get(2) else {
+    let Some(LimiterCall::Add {
+        scope: DescriptorScope::Project,
+        seen,
+        ..
+    }) = calls.get(2)
+    else {
         panic!("the project descriptor was not added: {calls:?}");
     };
     let unchanged = vec![built, descriptor("second", None), gauged("model_per_team")];
@@ -328,11 +342,10 @@ async fn unavailable_rate_capabilities_allow_without_calls(#[case] missing: Limi
 async fn unavailable_rate_capabilities_allow_without_principal_proxy_or_hook() {
     let auth = principal(rate_principal());
     let registered = proxy_with(Some(limiter_with(vec![gauged("api_key")], "OVER_LIMIT")));
-    let without_principal = summary_model_within_rate_limit(None, Some(&registered), MODEL).await;
+    let without_principal = summary_within_rate_limit(None, Some(&registered), MODEL).await;
     assert!(without_principal.unwrap());
     assert_eq!(registered.requested.lock().unwrap().len(), 0);
-    let without_proxy =
-        summary_model_within_rate_limit::<FakeHooks>(Some(&auth), None, MODEL).await;
+    let without_proxy = summary_within_rate_limit::<FakeHooks>(Some(&auth), None, MODEL).await;
     assert!(without_proxy.unwrap());
     let unregistered = proxy_with(None);
     assert!(rate_check(&unregistered, rate_principal()).await);
@@ -361,7 +374,7 @@ async fn unavailable_rate_capabilities_propagate_a_hook_lookup_failure() {
     let mut registered = proxy_with(Some(limiter_with(vec![gauged("api_key")], "OK")));
     registered.raises = true;
     let auth = principal(rate_principal());
-    let failed = summary_model_within_rate_limit(Some(&auth), Some(&registered), MODEL).await;
+    let failed = summary_within_rate_limit(Some(&auth), Some(&registered), MODEL).await;
     assert_eq!(
         failed.unwrap_err().to_string(),
         "the parallel request limiter hook lookup failed"

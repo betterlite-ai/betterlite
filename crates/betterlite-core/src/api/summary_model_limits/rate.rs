@@ -61,6 +61,14 @@ pub struct BaseDescriptorRequest<'call> {
     pub model_has_failures: bool,
 }
 
+// team and project descriptors join the base list in place; organization descriptors are appended after them
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DescriptorScope {
+    Team,
+    Project,
+    Organization,
+}
+
 pub struct ReadOnlyCheck<'call> {
     pub descriptors: &'call [SummaryDescriptor],
     pub parent_otel_span: Option<&'call ParentOtelSpan>,
@@ -86,25 +94,13 @@ pub trait SummaryRateLimiter: Sync {
         request: &BaseDescriptorRequest<'_>,
     ) -> Result<Vec<SummaryDescriptor>, LimiterFailure<Self::Failure>>;
 
-    fn add_team_model_descriptor(
+    fn add_scope_descriptors(
         &self,
+        scope: DescriptorScope,
         principal: &UserAPIKeyAuth,
         requested_model: &str,
         descriptors: &mut Vec<SummaryDescriptor>,
     ) -> Result<(), LimiterFailure<Self::Failure>>;
-
-    fn add_project_model_descriptor(
-        &self,
-        principal: &UserAPIKeyAuth,
-        requested_model: &str,
-        descriptors: &mut Vec<SummaryDescriptor>,
-    ) -> Result<(), LimiterFailure<Self::Failure>>;
-
-    fn create_organization_descriptors(
-        &self,
-        principal: &UserAPIKeyAuth,
-        requested_model: &str,
-    ) -> Result<Vec<SummaryDescriptor>, LimiterFailure<Self::Failure>>;
 
     // the response's overall_code, absent when the response carries none
     fn should_rate_limit(
@@ -114,7 +110,7 @@ pub trait SummaryRateLimiter: Sync {
 }
 
 // only OVER_LIMIT and an unverifiable counter deny; any other limiter failure lets the summary run
-pub async fn summary_model_within_rate_limit<Hooks>(
+pub async fn summary_within_rate_limit<Hooks>(
     principal: Option<&UserAPIKeyAuth>,
     hooks: Option<&Hooks>,
     summary_model: &str,
@@ -173,9 +169,13 @@ where
         model_has_failures: false,
     };
     let mut descriptors = limiter.create_rate_limit_descriptors(&request)?;
-    limiter.add_team_model_descriptor(principal, summary_model, &mut descriptors)?;
-    limiter.add_project_model_descriptor(principal, summary_model, &mut descriptors)?;
-    descriptors.extend(limiter.create_organization_descriptors(principal, summary_model)?);
+    for scope in [
+        DescriptorScope::Team,
+        DescriptorScope::Project,
+        DescriptorScope::Organization,
+    ] {
+        limiter.add_scope_descriptors(scope, principal, summary_model, &mut descriptors)?;
+    }
     // the summary runs inside the caller's admitted request, so its own parallel slot would count against it
     for limits in descriptors
         .iter_mut()

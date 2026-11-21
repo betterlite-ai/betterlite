@@ -9,7 +9,7 @@ use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_core::api::summary_model_limits::budget::summary_model_within_budget;
 use betterlite_core::api::summary_model_limits::error::SummaryLimitsError;
 use betterlite_core::api::summary_model_limits::rate::{
-    SummaryDescriptor, summary_model_within_rate_limit,
+    SummaryDescriptor, summary_within_rate_limit,
 };
 use betterlite_db::budget_permission_rows::JsonData;
 use serde::{Deserialize, Serialize};
@@ -98,8 +98,7 @@ async fn evaluate(summary_model: &str, scenario: &Scenario) -> Result<Outcome, B
     let budget = summary_model_within_budget(principal.as_ref(), Some(&budgets), summary_model)
         .await
         .or_value_error()?;
-    let checked =
-        summary_model_within_rate_limit(principal.as_ref(), Some(&hooks), summary_model).await;
+    let checked = summary_within_rate_limit(principal.as_ref(), Some(&hooks), summary_model).await;
     let (rate, raised) = match checked {
         Ok(allowed) => (Some(allowed), None),
         Err(SummaryLimitsError::Hook(failure)) => (None, Some(failure.to_string())),

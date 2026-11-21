@@ -4,8 +4,8 @@ use std::sync::{Mutex, PoisonError};
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use betterlite_core::api::summary_model_limits::error::LimiterFailure;
 use betterlite_core::api::summary_model_limits::rate::{
-    BaseDescriptorRequest, LimiterCapability, ProxyHooks, ReadOnlyCheck, SummaryDescriptor,
-    SummaryRateLimiter,
+    BaseDescriptorRequest, DescriptorScope, LimiterCapability, ProxyHooks, ReadOnlyCheck,
+    SummaryDescriptor, SummaryRateLimiter,
 };
 use betterlite_db::budget_permission_rows::JsonData;
 use serde::{Deserialize, Serialize};
@@ -125,26 +125,6 @@ impl ScriptedLimiter<'_> {
             FailureKind::Offline => Err(LimiterFailure::Other(ScriptedError(detail))),
         }
     }
-
-    // LiteLLM's limiter keeps the list it built, so the helper reports it after the call
-    fn append(
-        &self,
-        stage: Stage,
-        call: Call,
-        descriptors: &mut Vec<SummaryDescriptor>,
-    ) -> Result<(), LimiterFailure<ScriptedError>> {
-        let mut call_with_seen = call;
-        call_with_seen.descriptors = Some(descriptors.clone());
-        self.record(stage, call_with_seen)?;
-        let added = match stage {
-            Stage::Team => &self.script.team,
-            Stage::Project => &self.script.project,
-            Stage::Create | Stage::Organization | Stage::Check => return Ok(()),
-        };
-        descriptors.extend(added.iter().cloned());
-        *self.retained.lock().unwrap_or_else(PoisonError::into_inner) = Some(descriptors.clone());
-        Ok(())
-    }
 }
 
 impl SummaryRateLimiter for ScriptedLimiter<'_> {
@@ -169,37 +149,34 @@ impl SummaryRateLimiter for ScriptedLimiter<'_> {
         Ok(self.script.base.clone())
     }
 
-    fn add_team_model_descriptor(
+    // LiteLLM's limiter keeps the base list it built, so the helper reports it after the call
+    fn add_scope_descriptors(
         &self,
+        scope: DescriptorScope,
         principal: &UserAPIKeyAuth,
         requested_model: &str,
         descriptors: &mut Vec<SummaryDescriptor>,
     ) -> Result<(), LimiterFailure<ScriptedError>> {
-        let mut call = blank("team", Some(principal));
+        let (name, stage, added) = match scope {
+            DescriptorScope::Team => ("team", Stage::Team, &self.script.team),
+            DescriptorScope::Project => ("project", Stage::Project, &self.script.project),
+            DescriptorScope::Organization => (
+                "organization",
+                Stage::Organization,
+                &self.script.organization,
+            ),
+        };
+        let in_place = scope != DescriptorScope::Organization;
+        let mut call = blank(name, Some(principal));
         call.model = Some(requested_model.to_owned());
-        self.append(Stage::Team, call, descriptors)
-    }
-
-    fn add_project_model_descriptor(
-        &self,
-        principal: &UserAPIKeyAuth,
-        requested_model: &str,
-        descriptors: &mut Vec<SummaryDescriptor>,
-    ) -> Result<(), LimiterFailure<ScriptedError>> {
-        let mut call = blank("project", Some(principal));
-        call.model = Some(requested_model.to_owned());
-        self.append(Stage::Project, call, descriptors)
-    }
-
-    fn create_organization_descriptors(
-        &self,
-        principal: &UserAPIKeyAuth,
-        requested_model: &str,
-    ) -> Result<Vec<SummaryDescriptor>, LimiterFailure<ScriptedError>> {
-        let mut call = blank("organization", Some(principal));
-        call.model = Some(requested_model.to_owned());
-        self.record(Stage::Organization, call)?;
-        Ok(self.script.organization.clone())
+        call.descriptors = in_place.then(|| descriptors.clone());
+        self.record(stage, call)?;
+        descriptors.extend(added.iter().cloned());
+        if in_place {
+            *self.retained.lock().unwrap_or_else(PoisonError::into_inner) =
+                Some(descriptors.clone());
+        }
+        Ok(())
     }
 
     fn should_rate_limit(
