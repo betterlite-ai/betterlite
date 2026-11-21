@@ -161,7 +161,7 @@ where
         let details = modify_response(failure.guardrail()?)?;
         let stamp = self.stamps.stamp();
         let original = serde_json::to_value(details.original_response.as_ref()).ok()?;
-        let original_response = blocked_original_response(original.as_ref());
+        let original_response = blocked_original_response(Some(&original));
         let chunks = responses_so_far.map(to_chunks).transpose().ok()?;
         let blocked = BlockedException {
             message: &details.message,

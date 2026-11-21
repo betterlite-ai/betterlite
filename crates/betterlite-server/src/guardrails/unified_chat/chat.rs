@@ -174,7 +174,7 @@ where
         let blocked = BlockedResponse {
             message: details.message.clone(),
             model: details.model.clone(),
-            original_response: blocked_original_response(original.as_ref()),
+            original_response: blocked_original_response(Some(&original)),
         };
         let (_, chunks) = object_chunks(responses_so_far.unwrap_or(&[]));
         let items: Vec<StreamItem> = chunks

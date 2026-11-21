@@ -196,7 +196,7 @@ where
         block_events::build_block_sse_chunks(
             &details.message,
             &details.model,
-            original.as_ref(),
+            Some(&original),
             stream_started,
             events.as_deref(),
             &self.stamps.stamp(),
