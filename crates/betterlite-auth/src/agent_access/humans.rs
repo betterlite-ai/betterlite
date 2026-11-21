@@ -23,15 +23,16 @@ pub struct DelegatedTeamRequest<'request> {
     pub allowed_team_ids: Option<&'request BTreeSet<String>>,
 }
 
-pub async fn verified_human_sources<
-    Grants: GrantSources,
-    Targets: TargetAgents,
-    Humans: HumanSources,
->(
+pub async fn verified_human_sources<Grants, Targets, Humans>(
     resolver: &AgentAccessResolver<Grants, Targets, Humans>,
     user_id: Option<&str>,
     allowed_team_ids: Option<&BTreeSet<String>>,
-) -> Result<Vec<HumanGrant>, AgentAccessError> {
+) -> Result<Vec<HumanGrant>, AgentAccessError>
+where
+    Grants: GrantSources,
+    Targets: TargetAgents,
+    Humans: HumanSources,
+{
     let Some(subject) = user_id else {
         return Ok(Vec::new());
     };

@@ -27,12 +27,12 @@ fn human_resolver() -> FakeResolver {
         .key_team
         .insert(String::from("team-2"), Ok(restricted(&["b", "shared"])));
     let mut humans = FakeHumans::default();
-    humans.sources = Ok(vec![
+    humans.sources = vec![
         auth(r#"{"user_id":"human"}"#),
         auth(r#"{"user_id":"human","team_id":"team-2"}"#),
         auth(r#"{"user_id":"human","team_id":"team-1"}"#),
         auth(r#"{"user_id":"human","team_id":"team-3"}"#),
-    ]);
+    ];
     resolver(grants, FakeTargets::default(), humans)
 }
 

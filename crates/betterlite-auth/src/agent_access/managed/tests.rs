@@ -188,11 +188,11 @@ async fn a_delegated_context_keeps_what_the_human_may_reach_through_the_key_team
         .key_team
         .insert(String::from("team-2"), Ok(restricted(&["c"])));
     let mut humans = FakeHumans::default();
-    humans.sources = Ok(vec![
+    humans.sources = vec![
         auth(r#"{"user_id":"human"}"#),
         auth(r#"{"user_id":"human","team_id":"team-1"}"#),
         auth(r#"{"user_id":"human","team_id":"team-2"}"#),
-    ]);
+    ];
     let access_resolver = resolver(grants, FakeTargets::default(), humans);
     let mut key = declared_key();
     key.extra.managed_agent_context = Some(context(

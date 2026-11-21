@@ -149,7 +149,7 @@ async fn managed_target_reloads_a_plain_key_and_answers_from_its_fresh_strict_gr
     let mut reloaded = auth(r#"{"user_id":"reloaded"}"#);
     reloaded.extra.agent_caller = None;
     let mut humans = FakeHumans::default();
-    humans.reloaded_key = Ok(reloaded);
+    humans.reloaded_key = Some(reloaded);
     let access_resolver = managed_resolver(
         managed_row("bot"),
         granting("reloaded", &["bot", "other"]),
@@ -188,7 +188,7 @@ fn context_auth(access_resolver: &FakeResolver) -> UserAPIKeyAuth {
 async fn managed_target_falls_back_to_the_token_when_there_is_no_api_key() {
     let key = auth(r#"{"token":"hashed-token","user_id":"alice"}"#);
     let mut humans = FakeHumans::default();
-    humans.reloaded_key = Ok(auth(r#"{"user_id":"alice"}"#));
+    humans.reloaded_key = Some(auth(r#"{"user_id":"alice"}"#));
     let access_resolver = managed_resolver(managed_row("bot"), granting("alice", &["bot"]), humans);
     let allowed = is_agent_allowed(&access_resolver, "bot", Some(&key))
         .await
@@ -234,7 +234,7 @@ async fn managed_target_uses_the_auth_as_given(#[case] given: GivenAuthority) {
     let mut grants = granting("alice", &["bot"]);
     grants.key_strict = Ok(restricted(&["bot"]));
     let mut humans = FakeHumans::default();
-    humans.reloaded_key = Ok(auth(r#"{"user_id":"reloaded"}"#));
+    humans.reloaded_key = Some(auth(r#"{"user_id":"reloaded"}"#));
     let access_resolver = managed_resolver(managed_row("bot"), grants, humans);
     let allowed = is_agent_allowed(&access_resolver, "bot", Some(&key))
         .await

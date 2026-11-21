@@ -165,21 +165,21 @@ def install_sources(sources: list[SourceFields]) -> None:
     sys.modules[CHECKS_MODULE] = TeamsModule(sources)
 
 
-def listed_agent(agent: AgentFields) -> AgentResponse:
-    fields: dict[str, JsonValue] = {
-        "agent_id": agent["agent_id"],
-        "agent_name": agent["agent_id"],
-        "agent_card_params": {},
-        "identity_managed": agent["identity_managed"],
-    }
-    return AGENT.validate_python(fields)
-
-
 def accessible(call: AccessibleCall) -> JsonValue:
     role = call["user_role"]
     lister = UserAPIKeyAuth(user_role=None if role is None else LitellmUserRoles(role))
     case = CaseAccess(call, lister)
-    agents = tuple(listed_agent(agent) for agent in call["agents"])
+    agents = tuple(
+        AGENT.validate_python(
+            {
+                "agent_id": agent["agent_id"],
+                "agent_name": agent["agent_id"],
+                "agent_card_params": {},
+                "identity_managed": agent["identity_managed"],
+            }
+        )
+        for agent in call["agents"]
+    )
     listing = accessible_agents(
         lister,
         all_agents=agents,
