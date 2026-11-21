@@ -121,15 +121,28 @@ struct CasePrices {
     prices: BTreeMap<String, PriceRecord>,
 }
 
+// One exact key, with a nonempty provider prefix exactly as the catalog spells it.
+fn injected<'a>(
+    prices: &'a BTreeMap<String, PriceRecord>,
+    model: &str,
+    custom_llm_provider: Option<&str>,
+) -> Option<&'a PriceRecord> {
+    let key = custom_llm_provider
+        .filter(|provider| !provider.is_empty())
+        .map_or_else(
+            || model.to_owned(),
+            |provider| format!("{provider}/{model}"),
+        );
+    prices.get(&key)
+}
+
 impl PriceLookup for CasePrices {
     fn effective_model_info(
         &self,
         model: &str,
         custom_llm_provider: Option<&str>,
     ) -> Option<PriceRecord> {
-        self.prices
-            .get(&price_key(model, custom_llm_provider))
-            .cloned()
+        injected(&self.prices, model, custom_llm_provider).cloned()
     }
 
     fn raw_cost_map_entry(&self, key: &str) -> Option<PriceRecord> {
@@ -141,13 +154,17 @@ impl PriceLookup for CasePrices {
         model: &str,
         custom_llm_provider: Option<&str>,
     ) -> Option<PricedModel> {
-        let record = self.effective_model_info(model, custom_llm_provider)?;
-        Some(PricedModel {
-            record,
-            tiered_pricing: Vec::new(),
-            off_peak_pricing: None,
-            off_peak_cache_read_present: false,
-        })
+        injected(&self.prices, model, custom_llm_provider).map(priced)
+    }
+}
+
+// An injected public rate carries no tiering, off-peak block or cache-read override.
+fn priced(record: &PriceRecord) -> PricedModel {
+    PricedModel {
+        record: record.clone(),
+        tiered_pricing: Vec::new(),
+        off_peak_pricing: None,
+        off_peak_cache_read_present: false,
     }
 }
 
@@ -174,15 +191,6 @@ impl SavingsPricingContext for CasePrices {
     fn public_lookup(&self) -> &dyn PriceLookup {
         self
     }
-}
-
-fn price_key(model: &str, custom_llm_provider: Option<&str>) -> String {
-    custom_llm_provider
-        .filter(|provider| !provider.is_empty())
-        .map_or_else(
-            || model.to_owned(),
-            |provider| format!("{provider}/{model}"),
-        )
 }
 
 // ROUTE_ENDPOINT_MAPPING as the case supplies it, since the map B004 owns is read-only here.
