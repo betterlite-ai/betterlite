@@ -147,10 +147,10 @@ impl CallTarget for AsyncCompletionTarget<'_> {
                     .map_err(|error| self.async_error(&error, &model, provider.as_deref()))?;
                 PreparedCompletion::Mock(call)
             }
-            other @ PreparedCompletion::Dispatch(_)
-            | other @ PreparedCompletion::ModelList(_)
-            | other @ PreparedCompletion::ResponsesBridge(_)
-            | other @ PreparedCompletion::McpLoop(_) => other,
+            other @ (PreparedCompletion::Dispatch(_)
+            | PreparedCompletion::ModelList(_)
+            | PreparedCompletion::ResponsesBridge(_)
+            | PreparedCompletion::McpLoop(_)) => other,
         };
         let outcome = Box::pin(self.inner.run(hooked, true, logging))
             .await
