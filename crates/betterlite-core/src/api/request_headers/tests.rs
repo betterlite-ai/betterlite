@@ -305,9 +305,9 @@ fn model_group(models: &[&str]) -> Settings {
     }),
     &[("x-litellm-timeout", " 90 "), ("x-litellm-stream-timeout", "1e1"), ("x-litellm-num-retries", "3"), ("x-litellm-keepalive-seconds", "0.5"), ("OpenAI-Organization", "org-1"), ("x-stainless-os", "mac"), ("anthropic-beta-extra", "b"), ("accept", "*/*")],
     "{}",
-    Backend { headers: Some(&[("x-litellm-timeout", " 90 "), ("x-litellm-stream-timeout", "1e1"), ("x-litellm-num-retries", "3"), ("x-litellm-keepalive-seconds", "0.5"), ("anthropic-beta-extra", "b")]), organization: Some("org-1"), timeout: Some(90.0), stream_timeout: Some(10.0), client_side_timeout: true, num_retries: Some(3), keepalive_seconds: Some(0.5) }
+    Backend { headers: Some(&[("x-litellm-timeout", " 90 "), ("x-litellm-stream-timeout", "1e1"), ("x-litellm-num-retries", "3"), ("x-litellm-keepalive-seconds", "0.5"), ("anthropic-beta-extra", "b")]), organization: Some("org-1"), timeout: Some(90.0_f64), stream_timeout: Some(10.0_f64), client_side_timeout: true, num_retries: Some(3), keepalive_seconds: Some(0.5_f64) }
 )]
-#[case::stream_timeout_alone(Settings::default(), &[("x-litellm-stream-timeout", "5")], "{}", backend(|want| { want.stream_timeout = Some(5.0); want.client_side_timeout = true; }))]
+#[case::stream_timeout_alone(Settings::default(), &[("x-litellm-stream-timeout", "5")], "{}", backend(|want| { want.stream_timeout = Some(5.0_f64); want.client_side_timeout = true; }))]
 #[case::body_timeout(Settings::default(), &[], r#"{"request_timeout": 3}"#, backend(|want| want.client_side_timeout = true))]
 #[case::body_stream_timeout(Settings::default(), &[], r#"{"stream_timeout": 3}"#, backend(|want| want.client_side_timeout = true))]
 #[case::null_body_timeout(Settings::default(), &[], r#"{"timeout": null}"#, Backend::default())]
