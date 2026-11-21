@@ -47,7 +47,11 @@ fn stamp(text: &str) -> NaiveDateTime {
 }
 
 const fn daily_manager(ahead: i64, today: NaiveDate) -> SpendPartitionManager<FixedClock> {
-    SpendPartitionManager::new(PartitionInterval::Day, ahead, FixedClock(today))
+    SpendPartitionManager {
+        interval: PartitionInterval::Day,
+        precreate_ahead: ahead,
+        clock: FixedClock(today),
+    }
 }
 
 fn budgets(values: Vec<Option<u64>>) -> impl FnMut() -> Option<u64> + Send {

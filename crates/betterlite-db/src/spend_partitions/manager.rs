@@ -26,15 +26,6 @@ pub enum PartitionMaintenanceError {
 }
 
 impl<Clock: PartitionClock> SpendPartitionManager<Clock> {
-    #[must_use]
-    pub const fn new(interval: PartitionInterval, precreate_ahead: i64, clock: Clock) -> Self {
-        Self {
-            interval,
-            precreate_ahead,
-            clock,
-        }
-    }
-
     // ensure_partitions: a fresh budget before each CREATE, and a failed one is left for the next run
     pub async fn ensure_partitions(
         &self,
