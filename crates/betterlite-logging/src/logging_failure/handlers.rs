@@ -93,31 +93,40 @@ pub async fn async_failure_handler(
     callbacks: &FailureCallbacks<'_>,
     deps: &FailureDeps<'_>,
 ) {
-    let slot = call.state.request_slot.clone();
-    enter_request_slot(slot, async move {
-        if let Some(baseline) = deps.baseline
-            && let Err(error) = baseline.invalidate_baseline(FAILED_REQUEST_REASON).await
-        {
-            tracing::warn!(%error, "the baseline cache estimate could not be invalidated");
-        }
-        special_failure_handlers(call.state, report, deps.special_listeners).await;
-        if prepare_failure(call, report, deps, LoggingEvent::AsyncFailure) {
-            if let Some(delivery) = deliverable(call, deps) {
-                let mut loggers = callbacks.async_loggers();
-                loggers.retain(|logger| logger_may_run(call.state, logger.as_ref()));
-                for logger in loggers {
-                    deliver_async_logger(&delivery, logger.as_ref(), &deps.counters).await;
-                }
-            }
-            if let Some(flush) = deps.flush
-                && let Err(error) = flush.flush_post_call().await
-            {
-                tracing::warn!(%error, "the post-call redis batches could not be flushed");
-            }
-        }
-        restore_correlation_context(call.state, call.context);
-    })
+    enter_request_slot(
+        call.state.request_slot.clone(),
+        run_async_failure(call, report, callbacks, deps),
+    )
     .await;
+}
+
+async fn run_async_failure(
+    call: &mut FailureCall<'_>,
+    report: &FailureReport,
+    callbacks: &FailureCallbacks<'_>,
+    deps: &FailureDeps<'_>,
+) {
+    if let Some(baseline) = deps.baseline
+        && let Err(error) = baseline.invalidate_baseline(FAILED_REQUEST_REASON).await
+    {
+        tracing::warn!(%error, "the baseline cache estimate could not be invalidated");
+    }
+    special_failure_handlers(call.state, report, deps.special_listeners).await;
+    if prepare_failure(call, report, deps, LoggingEvent::AsyncFailure) {
+        if let Some(delivery) = deliverable(call, deps) {
+            let mut loggers = callbacks.async_loggers();
+            loggers.retain(|logger| logger_may_run(call.state, logger.as_ref()));
+            for logger in loggers {
+                deliver_async_logger(&delivery, logger.as_ref(), &deps.counters).await;
+            }
+        }
+        if let Some(flush) = deps.flush
+            && let Err(error) = flush.flush_post_call().await
+        {
+            tracing::warn!(%error, "the post-call redis batches could not be flushed");
+        }
+    }
+    restore_correlation_context(call.state, call.context);
 }
 
 pub async fn dispatch_failure_handlers(

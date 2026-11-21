@@ -55,19 +55,19 @@ struct DeliveryPlan {
 }
 
 pub fn success_handler(
-    handler: &SuccessHandler<'_>,
+    success: &SuccessHandler<'_>,
     state: &mut LoggingState,
     correlation: &mut CorrelationContext,
     request: &SuccessRequest,
 ) {
     let slot = state.request_slot.clone();
-    enter_request_slot_sync(slot, || {
-        let pending = begin(handler, state, request, SuccessMode::Sync);
-        if let Some(plan) = pending {
-            run_sync_callbacks(handler, state, &plan);
+    let body = move || {
+        if let Some(plan) = begin(success, state, request, SuccessMode::Sync) {
+            run_sync_callbacks(success, state, &plan);
         }
         restore_correlation_context(state, correlation);
-    });
+    };
+    enter_request_slot_sync(slot, body);
 }
 
 pub async fn async_success_handler(
@@ -76,8 +76,7 @@ pub async fn async_success_handler(
     context: &mut CorrelationContext,
     call: &SuccessRequest,
 ) {
-    let slot = logging.request_slot.clone();
-    enter_request_slot(slot, async move {
+    enter_request_slot(logging.request_slot.clone(), async move {
         tracing::debug!(cache_hit = ?call.cache_hit, "LiteLLM-Async Success Call");
         if let Some(plan) = begin(handler, logging, call, SuccessMode::Async) {
             run_async_callbacks(handler, logging, &plan).await;
