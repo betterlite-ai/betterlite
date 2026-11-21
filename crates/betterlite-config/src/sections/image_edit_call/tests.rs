@@ -55,5 +55,5 @@ fn loads_settings_reads_the_shipped_seed() {
         6_000.0_f64.to_bits()
     );
     // the seed also exercises the existing decoder for litellm_settings.request_timeout
-    assert_eq!(lookup.litellm_settings.request_timeout, Some(7.0));
+    assert_eq!(lookup.litellm_settings.request_timeout, Some(7.0_f64));
 }

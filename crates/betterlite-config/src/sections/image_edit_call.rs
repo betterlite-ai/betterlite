@@ -1,6 +1,9 @@
 mod tests;
 
+use std::collections::BTreeMap;
+
 use betterlite_env::number;
+use serde::de::IgnoredAny;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
@@ -8,8 +11,10 @@ use crate::sections::Section;
 // LiteLLM's constants.request_timeout: REQUEST_TIMEOUT or 6000, read once at import
 const DEFAULT_REQUEST_TIMEOUT: f64 = 6000.0;
 
-#[derive(Debug, Default, serde::Deserialize)]
-pub struct Raw {}
+// env-only section: no YAML key is read here, and the newtype keeps this Section impl off other sections' map type
+#[derive(Default, serde::Deserialize)]
+#[serde(transparent)]
+pub struct Raw(pub BTreeMap<String, Box<IgnoredAny>>);
 
 // The module globals the image edit entry points read: the generic timeout fallback.
 #[derive(Debug, Clone)]
