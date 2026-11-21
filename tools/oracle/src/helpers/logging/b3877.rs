@@ -6,7 +6,6 @@ use betterlite_logging::prometheus_label_projection::label_factory_context::Prom
 use betterlite_logging::prometheus_label_schema::PrometheusLabelSettings;
 use betterlite_logging::prometheus_usage::cache::increment_cache_metrics;
 use betterlite_logging::prometheus_usage::counters::UsageLabels;
-use betterlite_logging::prometheus_usage::error::PrometheusUsageError;
 use betterlite_logging::prometheus_usage::media::increment_media_metrics;
 use betterlite_logging::prometheus_usage::request_spend::{
     increment_request_and_spend, increment_zero_cost_requests,
@@ -25,13 +24,17 @@ use betterlite_prometheus::label_value_record::{LabelDumpValue, UserApiKeyLabelV
 use serde_json::json;
 
 use output::events_value;
-use probe::{ProbeCounters, ProbeError};
+use probe::ProbeCounters;
 
 mod output;
 mod payload;
 mod probe;
 
-type Outcome = Result<(), PrometheusUsageError<ProbeError>>;
+const ZERO_DIAG: ZeroCostDiagnostic = ZeroCostDiagnostic {
+    reason: ZeroCostReason::MissingPricingKey,
+    pricing_model: String::new(),
+    missing_pricing_keys: Vec::new(),
+};
 
 pub(crate) struct Op;
 
@@ -88,102 +91,40 @@ impl Helper for Op {
 fn emit(input: &Input, function: Emit) -> HelperResult {
     let counters = ProbeCounters::new(&input.supported_labels);
     let labels = labels_for(input)?;
+    let usage = input.usage_object.as_ref();
+    let now = Instant::now();
     let usage_labels = labels.usage_labels();
     let outcome = match function {
-        Emit::RequestAndSpend => request_and_spend(input, &counters, usage_labels)?,
-        Emit::ZeroCost => zero_cost(&counters, usage_labels),
-        Emit::TokenMetrics => token_metrics(input, &counters, usage_labels)?,
-        Emit::TokenDetail => token_detail(input, &counters, usage_labels)?,
-        Emit::Media => media(input, &counters, usage_labels)?,
-        Emit::Cache => cache(input, &counters, usage_labels)?,
+        Emit::RequestAndSpend => {
+            let payload = payload::payload(input.response_cost.as_ref(), (0, 0, 0), None, None)?;
+            increment_request_and_spend(&counters, &payload, usage_labels, now)
+        }
+        Emit::ZeroCost => increment_zero_cost_requests(&counters, Some(&ZERO_DIAG), usage_labels),
+        Emit::TokenMetrics => {
+            let counts = (
+                input.total_tokens,
+                input.prompt_tokens,
+                input.completion_tokens,
+            );
+            let payload = payload::payload(None, counts, None, usage)?;
+            increment_token_metrics(&counters, &payload, usage_labels, now)
+        }
+        Emit::TokenDetail => {
+            let payload = payload::payload(None, (0, 0, 0), None, usage)?;
+            increment_token_detail_metrics(&counters, &payload, usage_labels, now)
+        }
+        Emit::Media => {
+            let payload = payload::payload(None, (0, 0, 0), None, usage)?;
+            increment_media_metrics(&counters, &payload, usage_labels, now)
+        }
+        Emit::Cache => {
+            let counts = (input.total_tokens, 0, 0);
+            let payload = payload::payload(None, counts, input.cache_hit, usage)?;
+            increment_cache_metrics(&counters, &payload, usage_labels, now)
+        }
     };
     outcome.map_err(|error| helper_error("RuntimeError", &error.to_string()))?;
     Ok(events_value(&counters))
-}
-
-fn request_and_spend(
-    input: &Input,
-    counters: &ProbeCounters,
-    labels: UsageLabels<'_>,
-) -> Result<Outcome, Box<HelperError>> {
-    let payload = payload::payload(input.response_cost.as_ref(), (0, 0, 0), None, None)?;
-    Ok(increment_request_and_spend(
-        counters,
-        &payload,
-        labels,
-        Instant::now(),
-    ))
-}
-
-fn zero_cost(counters: &ProbeCounters, labels: UsageLabels<'_>) -> Outcome {
-    let diagnostic = ZeroCostDiagnostic {
-        reason: ZeroCostReason::MissingPricingKey,
-        pricing_model: String::new(),
-        missing_pricing_keys: Vec::new(),
-    };
-    increment_zero_cost_requests(counters, Some(&diagnostic), labels)
-}
-
-fn token_metrics(
-    input: &Input,
-    counters: &ProbeCounters,
-    labels: UsageLabels<'_>,
-) -> Result<Outcome, Box<HelperError>> {
-    let counts = (
-        input.total_tokens,
-        input.prompt_tokens,
-        input.completion_tokens,
-    );
-    let payload = payload::payload(None, counts, None, input.usage_object.as_ref())?;
-    Ok(increment_token_metrics(
-        counters,
-        &payload,
-        labels,
-        Instant::now(),
-    ))
-}
-
-fn token_detail(
-    input: &Input,
-    counters: &ProbeCounters,
-    labels: UsageLabels<'_>,
-) -> Result<Outcome, Box<HelperError>> {
-    let payload = payload::payload(None, (0, 0, 0), None, input.usage_object.as_ref())?;
-    Ok(increment_token_detail_metrics(
-        counters,
-        &payload,
-        labels,
-        Instant::now(),
-    ))
-}
-
-fn media(
-    input: &Input,
-    counters: &ProbeCounters,
-    labels: UsageLabels<'_>,
-) -> Result<Outcome, Box<HelperError>> {
-    let payload = payload::payload(None, (0, 0, 0), None, input.usage_object.as_ref())?;
-    Ok(increment_media_metrics(
-        counters,
-        &payload,
-        labels,
-        Instant::now(),
-    ))
-}
-
-fn cache(
-    input: &Input,
-    counters: &ProbeCounters,
-    labels: UsageLabels<'_>,
-) -> Result<Outcome, Box<HelperError>> {
-    let counts = (input.total_tokens, 0, 0);
-    let payload = payload::payload(None, counts, input.cache_hit, input.usage_object.as_ref())?;
-    Ok(increment_cache_metrics(
-        counters,
-        &payload,
-        labels,
-        Instant::now(),
-    ))
 }
 
 fn provider_cache_tokens(input: &Input) -> HelperResult {
