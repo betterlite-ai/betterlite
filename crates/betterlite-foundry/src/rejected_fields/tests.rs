@@ -72,7 +72,7 @@ fn tool_level_fields_are_read_left_to_right() {
         tool_level_field_names("tools[0].extra tools[1].extra"),
         vec![String::from("extra")]
     );
-    assert_eq!(tool_level_field_names("tools[0]."), Vec::new());
+    assert!(tool_level_field_names("tools[0].").is_empty());
     assert_eq!(
         tool_level_field_names("tools[\u{663}].extra"),
         vec![String::from("extra")]

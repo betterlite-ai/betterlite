@@ -55,9 +55,12 @@ pub enum RepairError {
 // LiteLLM's transform_request_on_unprocessable_entity_error: the three repairs run in its order, then B505 drops the loc fields
 pub fn repair(error_text: &str, request: &Object) -> Result<Object, RepairError> {
     let mut repaired = request.clone();
-    if error_text.contains(INVALID_TOOL_CALL_INDEX_MARKER) && has_messages(&repaired) {
+    let takes_index_branch =
+        error_text.contains(INVALID_TOOL_CALL_INDEX_MARKER) && has_messages(&repaired);
+    if takes_index_branch {
         remove_tool_call_indexes(&mut repaired)?;
-    } else if error_text.contains(PASS_THROUGH_HINT) {
+    }
+    if !takes_index_branch && error_text.contains(PASS_THROUGH_HINT) {
         drop_extra_parameters(&mut repaired, error_text);
     }
     if error_text.contains(EXTRA_INPUTS_MARKER) && has_tool_level_extra_fields(error_text) {
