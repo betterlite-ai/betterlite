@@ -1,0 +1,100 @@
+task: B6030
+deviations:
+  - what: >-
+      CustomLogger.__init__ takes turn_off_message_logging and message_logging as keyword-only
+      parameters. LiteLLM declares both positional-or-keyword, so CustomLogger(True) sets
+      turn_off_message_logging there and raises TypeError here.
+    why: >-
+      Ruff FBT001 and FBT002 reject a bool parameter that can be passed positionally, and the task's
+      suppression budget is zero. Every caller that names the parameters behaves the same, and the
+      defaults, the attribute names and the values stored are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L87-L93
+  - what: >-
+      async_get_chat_completion_prompt, get_chat_completion_prompt, async_pre_routing_hook,
+      async_should_run_agentic_loop, async_run_agentic_loop, async_build_agentic_loop_plan,
+      async_should_run_chat_completion_agentic_loop, async_run_chat_completion_agentic_loop,
+      async_build_chat_completion_agentic_loop_plan, log_event and async_log_event take
+      **params with an Unpack[TypedDict] annotation instead of LiteLLM's named parameters. Each
+      TypedDict key is one of LiteLLM's parameter names with its type, so a keyword call behaves
+      the same and a positional call raises TypeError.
+    why: >-
+      These methods have six to thirteen parameters, ruff PLR0913 and PLR0917 cap a definition at
+      five, and the suppression budget is zero.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L200-L262
+  - what: >-
+      CustomBatchLogger reads its default batch_size and flush_interval from
+      betterlite._integrations.custom_logger_types.DEFAULT_BATCH_SIZE and
+      DEFAULT_FLUSH_INTERVAL_SECONDS when the constructor runs. LiteLLM reads
+      litellm.DEFAULT_BATCH_SIZE and litellm.DEFAULT_FLUSH_INTERVAL_SECONDS at construction, so
+      assigning litellm.DEFAULT_BATCH_SIZE before building a logger changes the default there and
+      has no effect here.
+    why: >-
+      betterlite has no top-level DEFAULT_BATCH_SIZE or DEFAULT_FLUSH_INTERVAL_SECONDS;
+      betterlite/__init__.py belongs to the architect and no module it star-imports is in this
+      task's scope. The environment variables (DEFAULT_BATCH_SIZE, DEFAULT_FLUSH_INTERVAL_SECONDS),
+      their fallbacks (512, 5) and the construction-time read are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_batch_logger.py#L40-L41
+  - what: >-
+      get_callback_env_vars always returns []. LiteLLM lowercases the name, maps langfuse_otel and
+      s3_v2 to their registry names and returns that callback's litellm_callback_params.
+    why: >-
+      betterlite has no Python callback registry (B189, B256), so no name resolves. None and an
+      unknown name also return [] in LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L103-L139
+  - what: >-
+      handle_callback_failure writes the "No callback with increment_callback_logging_failure
+      method found" debug line without walking the callback manager. LiteLLM first increments the
+      registered Prometheus callback's failure counter when one is registered.
+    why: >-
+      The callback manager and the Prometheus callback belong to the callback registry, B189 and
+      B256.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L984-L1010
+  - what: >-
+      log_input_event, async_log_input_event, log_event and async_log_event let an exception from
+      the user's callback propagate. LiteLLM catches every exception, formats the traceback and
+      passes "Custom Logger Error - <traceback>" to print_verbose, then returns.
+    why: >-
+      Ruff BLE001 rejects the blind except and the suppression budget is zero; the project rules
+      make errors surface instead of being swallowed. The success path is identical: the callback
+      gets the same dict with model, messages and log_event_type set or the same four arguments,
+      and print_verbose gets the same "Custom Logger - model call details: ..." text. Handling a
+      failing callback belongs to the registry that registers it (B189, B256).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L533-L581
+  - what: >-
+      redact_standard_logging_payload_from_model_call_details raises
+      TypeError("standard_logging_object must be a dict") when standard_logging_object is neither
+      None nor a dict. LiteLLM calls .items() on it and raises AttributeError.
+    why: >-
+      The declared type is a dict, and betterlite's documented error names the field and the type
+      it needs. Both are a hard error on input the declared type rejects.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L921-L930
+  - what: >-
+      The proxy and core types CustomLogger annotates with are local Protocols in
+      custom_logger_types.py: Span, UserAPIKeyAuth, DualCache, LiteLLMLoggingObj,
+      MCPPostCallResponseObject, PreRoutingHookResponse, HTTPException, BaseAnthropicMessagesConfig
+      and CustomStreamWrapper. StandardLoggingPayload, StandardCallbackDynamicParams,
+      StandardAuditLogPayload, CallTypes and LLMResponseTypes are local aliases there. LiteLLM
+      imports the real classes from litellm.types, litellm.proxy._types and litellm.types.utils and
+      binds the TYPE_CHECKING ones to Any at runtime.
+    why: >-
+      Those ports do not exist in betterlite yet (types/utils is B5657, the proxy types are B6032
+      and B6033, the streaming wrapper is B158). Each Protocol declares only the members
+      CustomLogger's own code reaches, which is what the task asks for, and the module-level Any
+      aliases are not re-exported from betterlite.integrations.custom_logger.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L29-L56
+  - what: >-
+      AgenticLoopRequestPatch.messages, .tools, .optional_params and .kwargs, AgenticLoopPlan.metadata
+      and .response_override, and the request_patch lists hold JsonValue instead of Any.
+    why: >-
+      The Python rules forbid Any. Every field carries a JSON value in a working setup, so a JSON
+      body validates the same and a non-JSON Python object, which Any accepted, is rejected here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/custom_logger.py#L65-L88
+  - what: >-
+      CustomBatchLogger.__init__ annotates **kwargs as bool. LiteLLM leaves **kwargs untyped, so
+      any keyword passes its type check.
+    why: >-
+      The keywords the constructor forwards are CustomLogger's turn_off_message_logging and
+      message_logging, both bool, and mypy strict rejects forwarding a JsonValue mapping into them.
+      A keyword of another type still passes at runtime, as it does in LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_batch_logger.py#L26-L46
+kept_bugs: []
