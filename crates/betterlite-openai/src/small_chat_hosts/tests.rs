@@ -44,9 +44,10 @@ use crate::chat_choices::reply::{ResponseReply, TransformResponseError};
 use crate::chat_content::{ChatContentError, MissingFileError, Mode, RefuseDownloads};
 use crate::compatible_wire::{LogInput, ReplyOptions};
 use crate::edenai_chat::ReasoningLookup;
-use crate::edenai_common::RESPONSE_COST_HEADER;
 use crate::openai_base_config::forwarding::ForwardingFailure;
 use crate::openai_base_config::{CatalogCapabilities, Headers, Object as WireObject};
+
+mod nadir_replies;
 
 const INIT: &str = r#"{"model":"gpt-4o","call_type":"completion","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
 const MODEL: &str = "a-model";
@@ -123,6 +124,10 @@ fn mapped(pairs: Vec<(&str, Json)>) -> Object {
         &catalog(),
     );
     optional
+}
+
+fn temperature(pairs: Vec<(&str, Json)>) -> Option<Json> {
+    mapped(pairs).get("temperature").cloned()
 }
 
 fn message(role: Role, text: &str) -> ChatMessage {
@@ -206,21 +211,8 @@ fn only_message(body: &Object) -> Json {
 #[test]
 fn maritalk_lists_exactly_the_twelve_params_in_order() {
     assert_eq!(
-        MaritalkConfig::supported_params(),
-        vec![
-            "frequency_penalty",
-            "presence_penalty",
-            "top_p",
-            "top_k",
-            "temperature",
-            "max_tokens",
-            "n",
-            "stop",
-            "stream",
-            "stream_options",
-            "tools",
-            "tool_choice",
-        ]
+        MaritalkConfig::supported_params().join(","),
+        "frequency_penalty,presence_penalty,top_p,top_k,temperature,max_tokens,n,stop,stream,stream_options,tools,tool_choice"
     );
 }
 
@@ -301,13 +293,13 @@ fn llama_maps_the_other_params_through_the_parent() {
 #[test]
 fn morph_and_v0_list_their_small_param_sets() {
     assert_eq!(
-        MorphChatConfig::supported_params(MODEL),
-        vec!["messages", "model", "stream"]
+        MorphChatConfig::supported_params(MODEL).join(","),
+        "messages,model,stream"
     );
     assert_eq!(super::morph::PROVIDER, "morph");
     assert_eq!(
-        V0ChatConfig::supported_params(MODEL),
-        vec!["messages", "model", "stream", "tools", "tool_choice"]
+        V0ChatConfig::supported_params(MODEL).join(","),
+        "messages,model,stream,tools,tool_choice"
     );
     assert_eq!(super::v0::PROVIDER, "v0");
 }
@@ -402,16 +394,16 @@ fn novita_sets_the_three_headers_on_a_copy() {
     let key = SecretString::from(String::from("sk-novita"));
     let headers = NovitaConfig::validate_environment(Some(&key), &given).expect("a key is present");
     assert_eq!(
-        headers.get("Authorization"),
-        Some(&String::from("Bearer sk-novita"))
+        headers.get("Authorization").map(String::as_str),
+        Some("Bearer sk-novita")
     );
     assert_eq!(
-        headers.get("Content-Type"),
-        Some(&String::from("application/json"))
+        headers.get("Content-Type").map(String::as_str),
+        Some("application/json")
     );
     assert_eq!(
-        headers.get("X-Novita-Source"),
-        Some(&String::from("litellm"))
+        headers.get("X-Novita-Source").map(String::as_str),
+        Some("litellm")
     );
     assert_eq!(headers.get("X-Caller"), Some(&String::from("kept")));
     assert_eq!(given.len(), 1);
@@ -436,44 +428,22 @@ fn novita_fails_without_a_key_and_keeps_the_litellm_message() {
 #[test]
 fn nscale_lists_exactly_the_twelve_params_in_order() {
     assert_eq!(
-        NscaleConfig::supported_params(MODEL),
-        vec![
-            "max_tokens",
-            "n",
-            "temperature",
-            "top_p",
-            "stream",
-            "logprobs",
-            "top_logprobs",
-            "frequency_penalty",
-            "presence_penalty",
-            "response_format",
-            "stop",
-            "logit_bias",
-        ]
+        NscaleConfig::supported_params(MODEL).join(","),
+        "max_tokens,n,temperature,top_p,stream,logprobs,top_logprobs,frequency_penalty,presence_penalty,response_format,stop,logit_bias"
     );
     assert_eq!(super::nscale::PROVIDER, "nscale");
 }
 
 #[test]
 fn zai_lists_eight_params_then_thinking_for_a_reasoning_model() {
-    let base = vec![
-        "max_tokens",
-        "stream",
-        "stream_options",
-        "temperature",
-        "top_p",
-        "stop",
-        "tools",
-        "tool_choice",
-    ];
+    const BASE: &str = "max_tokens,stream,stream_options,temperature,top_p,stop,tools,tool_choice";
     assert_eq!(
-        ZaiChatConfig::supported_params(&Reasons(false), MODEL),
-        base
+        ZaiChatConfig::supported_params(&Reasons(false), MODEL).join(","),
+        BASE
     );
     let mut reasoning = ZaiChatConfig::supported_params(&Reasons(true), MODEL);
     assert_eq!(reasoning.pop(), Some("thinking"));
-    assert_eq!(reasoning, base);
+    assert_eq!(reasoning.join(","), BASE);
     assert_eq!(super::zai::PROVIDER, "zai");
 }
 
@@ -509,33 +479,30 @@ fn zai_keeps_cache_control_on_messages_and_tools() {
     assert_eq!(tools, Some(vec![tool]));
 }
 
-#[test]
-fn moonshot_complete_url_builds_the_default_and_appends_the_path() {
-    assert_eq!(
-        complete_url(None),
-        "https://api.moonshot.ai/v1/chat/completions"
-    );
-    assert_eq!(
-        complete_url(Some("")),
-        "https://api.moonshot.ai/v1/chat/completions"
-    );
-    assert_eq!(
-        complete_url(Some("https://api.moonshot.ai/v1")),
-        "https://api.moonshot.ai/v1/chat/completions"
-    );
-    assert_eq!(
-        complete_url(Some("https://proxy.example/v1")),
-        "https://proxy.example/v1/chat/completions"
-    );
-    assert_eq!(
-        complete_url(Some("https://proxy.example/chat/completions")),
-        "https://proxy.example/chat/completions"
-    );
-    // the base is never trimmed
-    assert_eq!(
-        complete_url(Some("https://proxy.example/v1/")),
-        "https://proxy.example/v1//chat/completions"
-    );
+#[rstest]
+#[case::no_base(None, "https://api.moonshot.ai/v1/chat/completions")]
+#[case::empty_base(Some(""), "https://api.moonshot.ai/v1/chat/completions")]
+#[case::moonshot_base(
+    Some("https://api.moonshot.ai/v1"),
+    "https://api.moonshot.ai/v1/chat/completions"
+)]
+#[case::proxy_base(
+    Some("https://proxy.example/v1"),
+    "https://proxy.example/v1/chat/completions"
+)]
+#[case::path_present(
+    Some("https://proxy.example/chat/completions"),
+    "https://proxy.example/chat/completions"
+)]
+#[case::trailing_slash_kept(
+    Some("https://proxy.example/v1/"),
+    "https://proxy.example/v1//chat/completions"
+)]
+fn moonshot_complete_url_builds_the_default_and_appends_the_path(
+    #[case] base: Option<&str>,
+    #[case] expected: &str,
+) {
+    assert_eq!(complete_url(base), expected);
 }
 
 #[test]
@@ -599,13 +566,10 @@ fn moonshot_unwraps_reasoning_effort() {
     map_openai_params(
         &Reasons(true),
         MODEL,
-        &object(vec![
-            (
-                "reasoning_effort",
-                Json::Object(object(vec![("effort", text("low"))])),
-            ),
-            ("reasoning_effort_object", Json::Null),
-        ]),
+        &object(vec![(
+            "reasoning_effort",
+            Json::Object(object(vec![("effort", text("low"))])),
+        )]),
         &mut unwrapped,
         &catalog(),
     );
@@ -646,28 +610,28 @@ fn moonshot_removes_temperature_for_a_reasoning_model() {
 #[test]
 fn moonshot_caps_temperature_and_raises_the_low_pair() {
     assert_eq!(
-        mapped(vec![("temperature", number(1.5))]).get("temperature"),
-        Some(&integer(1))
+        temperature(vec![("temperature", number(1.5))]),
+        Some(integer(1))
     );
     assert_eq!(
-        mapped(vec![("temperature", number(1.0))]).get("temperature"),
-        Some(&number(1.0))
+        temperature(vec![("temperature", number(1.0))]),
+        Some(number(1.0))
     );
     assert_eq!(
-        mapped(vec![("temperature", number(0.2)), ("n", number(2.0))]).get("temperature"),
-        Some(&number(0.3))
+        temperature(vec![("temperature", number(0.2)), ("n", number(2.0))]),
+        Some(number(0.3))
     );
     assert_eq!(
-        mapped(vec![("temperature", number(0.3)), ("n", number(2.0))]).get("temperature"),
-        Some(&number(0.3))
+        temperature(vec![("temperature", number(0.3)), ("n", number(2.0))]),
+        Some(number(0.3))
     );
     assert_eq!(
-        mapped(vec![("temperature", number(0.2)), ("n", number(1.0))]).get("temperature"),
-        Some(&number(0.2))
+        temperature(vec![("temperature", number(0.2)), ("n", number(1.0))]),
+        Some(number(0.2))
     );
     assert_eq!(
-        mapped(vec![("temperature", number(0.2))]).get("temperature"),
-        Some(&number(0.2))
+        temperature(vec![("temperature", number(0.2))]),
+        Some(number(0.2))
     );
     assert_eq!(
         mapped(vec![("temperature", number(0.2)), ("n", number(2.0))]).get("n"),
@@ -870,18 +834,8 @@ fn map_supported_copies_only_a_listed_param() {
 #[test]
 fn nadir_lists_exactly_the_nine_params_in_order() {
     assert_eq!(
-        nadir::NadirConfig::supported_params(),
-        vec![
-            "extra_headers",
-            "frequency_penalty",
-            "max_retries",
-            "max_tokens",
-            "presence_penalty",
-            "response_format",
-            "stream",
-            "temperature",
-            "top_p",
-        ]
+        nadir::NadirConfig::supported_params().join(","),
+        "extra_headers,frequency_penalty,max_retries,max_tokens,presence_penalty,response_format,stream,temperature,top_p"
     );
 }
 
@@ -1019,42 +973,6 @@ fn nadir_reply(body: &[u8]) -> Result<NadirReply, TransformResponseError> {
         },
         projection,
     )
-}
-
-#[test]
-fn nadir_records_the_cost_after_the_parent_reply() {
-    let reply = nadir_reply(br#"{"choices":[],"nadir_metadata":{"cost":{"total_cost_usd":0.25}}}"#)
-        .expect("the parent transforms the reply");
-    assert_eq!(
-        reply.response.get("choices"),
-        Some(&Value::Array(Vec::new()))
-    );
-    let hidden = serde_json::to_value(&reply.hidden_params).unwrap();
-    assert_eq!(
-        hidden["additional_headers"][RESPONSE_COST_HEADER],
-        Value::from(0.25_f64)
-    );
-}
-
-#[test]
-fn nadir_records_no_cost_when_the_bytes_carry_none() {
-    let reply = nadir_reply(br#"{"choices":[],"nadir_metadata":{"cost":{"total_cost_usd":true}}}"#)
-        .expect("the parent transforms the reply");
-    assert!(reply.hidden_params.is_empty());
-}
-
-#[test]
-fn nadir_returns_the_parent_error_before_reading_any_cost() {
-    let result = nadir_reply(b"not json");
-    assert!(matches!(result, Err(TransformResponseError::Json(_))));
-}
-
-#[test]
-fn nadir_returns_a_projection_failure_before_reading_any_cost() {
-    let result = nadir_reply(
-        br#"{"refuse_projection":true,"nadir_metadata":{"cost":{"total_cost_usd":0.25}}}"#,
-    );
-    assert!(matches!(result, Err(TransformResponseError::Projection(_))));
 }
 
 #[rstest]
