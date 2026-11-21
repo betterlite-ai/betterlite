@@ -13,7 +13,9 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::chat::ChatMessage;
 use betterlite_router::affinity_claims::AffinityClaims;
 use betterlite_router::affinity_claims::local::LocalPins;
-use betterlite_router::cache_cost_routing::{CacheAwareChoice, CachedModelChooser, ChooseCached};
+use betterlite_router::cache_cost_routing::{
+    CacheAwareChoice, CachedModelChooser, ChooseCached, TierParams,
+};
 use betterlite_router::catalog_updates::catalog::DeploymentCatalog;
 use betterlite_router::complexity_placement::TierPlacement;
 use betterlite_router::complexity_scoring::tier::ComplexityTier;
