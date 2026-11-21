@@ -1,0 +1,15 @@
+task: B8270
+deviations:
+  - what: The reservation moves from the request to the layer through a ReservationSlot in the request extensions, where LiteLLM reads request.state.budget_reservation after the app returns.
+    why: A Rust request is moved into the handler, so state written during the request cannot be read from the request afterwards. The layer keeps a clone of the shared slot instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/budget_reservation_release_middleware.py#L29-L33
+  - what: The release runs when the inner service returns, which for a streaming response is when the response head is built, before the last body chunk is sent.
+    why: The layer sees the response head only. Streaming calls are claimed by their cost callback (callback_bound), so the early call finds a bound reservation and B3003's release function does nothing for it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/budget_reservation_release_middleware.py#L27-L33
+  - what: A websocket upgrade is released when the upgrade response is returned, not when the socket closes.
+    why: An axum upgrade handler returns before the socket task ends. The realtime route (B1125) releases its own reservation on close.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/budget_reservation_release_middleware.py#L6
+  - what: An error from the releaser is logged at error level and the inner response or error is returned unchanged, where LiteLLM's finally block lets the exception from release propagate out of the middleware.
+    why: B3003's release function already catches its own failures and invalidates the counters, so nothing is left for the caller to act on, and the response is already built.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/budget_reservation_release_middleware.py#L29-L33
+kept_bugs: []
