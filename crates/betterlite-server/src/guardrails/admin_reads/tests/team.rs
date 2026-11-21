@@ -50,6 +50,24 @@ async fn team_the_master_key_sees_every_row_and_skips_the_team_lookup() {
 }
 
 #[tokio::test]
+async fn team_a_key_with_the_admin_view_role_sees_every_row() {
+    let setup = Setup {
+        database: true,
+        rows: vec![
+            row("row1", "one", BEDROCK_PRE, None, Some("team-a")),
+            row("row2", "two", BEDROCK_PRE, None, Some("team-b")),
+        ],
+        teams: Err("the lookup must not run"),
+        ..Setup::default()
+    };
+    let harness = harness(setup);
+    let (status, body) = get(&harness, LIST_V2_PATH, Some(key_caller("proxy_admin"))).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(entry_ids(&parse(&body)), ["row1", "row2"]);
+    assert_eq!(harness.teams.calls(), 0);
+}
+
+#[tokio::test]
 async fn team_a_non_admin_sees_its_own_team_memory_entry() {
     let setup = Setup {
         database: true,

@@ -13,13 +13,14 @@ use betterlite_auth::auth_identity::records::{
     CredentialRef, NetworkContext, Principal, SourceKey, UserIdentity,
 };
 use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType, Role};
+use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::decode::decode_litellm_params;
 use betterlite_config::sections::guardrail_params::opaque::OpaqueParams;
 use betterlite_config::sections::guardrail_params::records::{
     Guardrail, GuardrailDefinitionLocation,
 };
-use betterlite_db::budget_permission_rows::Timestamp;
+use betterlite_db::budget_permission_rows::{JsonData, Timestamp};
 use betterlite_guardrails::guardrail_registry::build::GuardrailFactories;
 use betterlite_guardrails::guardrail_registry::handler::{
     HandlerSettings, InMemoryGuardrailHandler,
@@ -430,6 +431,17 @@ fn user_caller(id: &str) -> AuthContext {
 
 fn anonymous() -> AuthContext {
     principal("some-key", Vec::new(), None)
+}
+
+fn key_caller(role: &str) -> AuthContext {
+    let fields: BTreeMap<String, JsonData> =
+        serde_json::from_str(&format!(r#"{{"user_role": "{role}"}}"#))
+            .expect("the key fixture parses");
+    let key =
+        UserAPIKeyAuth::construct(AuthInput::Dict(fields)).expect("the key fixture constructs");
+    let mut context = principal("key-owner", Vec::new(), None);
+    context.principal.source_key = SourceKey(Some(key));
+    context
 }
 
 async fn get(harness: &Harness, uri: &str, caller: Option<AuthContext>) -> (StatusCode, String) {
