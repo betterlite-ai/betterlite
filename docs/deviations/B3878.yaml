@@ -1,0 +1,23 @@
+task: B3878
+deviations:
+  - what: >-
+      Timestamps are Decimal epoch seconds, the typed instant the standard logging payload already carries, so LiteLLM's mixed naive and timezone-aware datetime subtraction (a TypeError the success hook swallows) cannot occur.
+    why: >-
+      The typed payload from B254 stores one Decimal per timestamp; Python only fails there because datetimes carry two kinds.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4521-L4534
+  - what: >-
+      The current time used when end_time is absent arrives from the caller as one injected clock reading, a Decimal epoch second next to a monotonic Instant, where LiteLLM calls datetime.now() inside _set_latency_metrics.
+    why: >-
+      Tests need a fixed time, and the module never reads the system clock.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L2274
+  - what: >-
+      Durations, the additive guardrail sum and the overhead milliseconds are exact decimal arithmetic, where LiteLLM adds binary floats. A value that is not a binary fraction keeps every digit here, and a difference or sum outside the decimal range yields no duration or a typed overflow error instead of a rounded or infinite float.
+    why: >-
+      The payload types every timestamp and guardrail duration as a decimal, and a float cannot hold the values the payload carries.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L1264-L1267
+  - what: >-
+      record_guardrail_metrics takes status as a three-value enum (success, error, intervened), where LiteLLM takes any string and only compares it with "error". A fourth status cannot be passed.
+    why: >-
+      LiteLLM's docstring and B786's callers produce only these three values, and a typed status makes a stray one a compile error instead of a series nobody queries.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3211-L3218
+kept_bugs: []

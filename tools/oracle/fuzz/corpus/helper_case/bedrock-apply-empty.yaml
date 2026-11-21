@@ -1,0 +1,19 @@
+kind: helper
+name: bedrock-apply-empty-seed
+call:
+  b3724:
+    source: INPUT
+    messages: []
+    response: null
+    logging_event_type: null
+    guardrail_identifier: gr-abc123
+    guardrail_version: "1"
+    checks: null
+    chunk_budget_chars: 25000
+    contextual_grounding: false
+    disable_exception_on_block: false
+    data: {model: gpt-4o}
+    replies: []
+env: {}
+compare:
+  ignore: []

@@ -59,6 +59,7 @@ uuid.workspace = true
 zeroize = "1.9.1"
 
 [dev-dependencies]
+betterlite-azure = { path = "../betterlite-azure" }
 betterlite-http-fixture = { path = "../../tools/http-fixture" }
 mutants = "0.0.4"
 rstest = "=0.27.0"

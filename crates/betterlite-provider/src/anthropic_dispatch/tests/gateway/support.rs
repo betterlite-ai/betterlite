@@ -127,6 +127,7 @@ pub(super) fn deployment(
         timeout,
         max_retries: None,
         drop_params: None,
+        global_drop_params: false,
         provider_affinity_header: None,
         anthropic: Some(runtime(client)),
     }
