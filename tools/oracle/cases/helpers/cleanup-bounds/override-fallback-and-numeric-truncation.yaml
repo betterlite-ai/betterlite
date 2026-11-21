@@ -1,0 +1,20 @@
+kind: helper
+name: cleanup-bounds-override-fallback-and-numeric-truncation
+call:
+  cleanup_bounds:
+    general_settings:
+      maximum_spend_logs_cleanup_batch_size: 2.9
+      maximum_spend_logs_cleanup_max_batches: true
+      maximum_spend_logs_cleanup_run_budget: 45s
+      maximum_spend_logs_cleanup_batch_timeout: 0s
+      maximum_spend_logs_retention_period: "-3"
+    retention:
+      - maximum_spend_logs_retention_period
+      - maximum_health_check_retention_period
+    now_ms: 0
+    deadlines_ms: []
+    groups: []
+    timestamps: []
+    days: []
+env: {}
+compare: {ignore: []}
