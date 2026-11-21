@@ -99,7 +99,7 @@ pub(super) async fn watsonx_headers(
         .collect())
 }
 
-// an IAM failure keeps its upstream status; a pre-flight failure maps to a ValueError
+// only a provider API failure carries an upstream status; an IAM or pre-flight failure is a ValueError
 impl From<WatsonxPassthroughError> for ConfigError {
     fn from(error: WatsonxPassthroughError) -> Self {
         status_error(error.status(), error.to_string())
