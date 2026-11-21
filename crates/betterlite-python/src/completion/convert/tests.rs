@@ -123,7 +123,7 @@ fn request_wrong_shape_is_a_json_error() {
     assert!(matches!(call_error, ConvertError::Json { .. }));
     let token_error = parse::<TokenCall>(r#"{"model": 3}"#).unwrap_err();
     assert!(matches!(token_error, ConvertError::Json { .. }));
-    let session_error = parse::<SessionWire>("[]").unwrap_err();
+    let session_error = parse::<SessionWire>(r#"{"environment": 3}"#).unwrap_err();
     assert!(matches!(session_error, ConvertError::Json { .. }));
 }
 
