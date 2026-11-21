@@ -1,0 +1,44 @@
+kind: sdk_http
+name: vector-store-write-update-accepts-create-fields
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  vector_store_write:
+    runs:
+      - operation: update
+        mode: sync
+        vector_store_id: vs_a
+        name: notes
+        expires_after: {anchor: last_active_at, days: 3}
+        metadata: {owner: alice, count: 2}
+        file_ids: [file_a]
+        chunking_strategy: {type: auto}
+        unknown: 1
+      - operation: update
+        mode: async
+        vector_store_id: vs_a
+        name: notes
+        expires_after: {anchor: last_active_at, days: 3}
+        metadata: {owner: alice, count: 2}
+        file_ids: [file_a]
+        chunking_strategy: {type: auto}
+        unknown: 1
+      - operation: update
+        mode: sync
+        vector_store_id: vs_a
+        name: ""
+        metadata: {}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: vs_a, object: vector_store, name: notes}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: vs_a, object: vector_store, name: notes}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: vs_a, object: vector_store, name: notes}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization]
+  ignore: []

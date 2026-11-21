@@ -1,0 +1,21 @@
+kind: helper
+name: foundry-resource-dispatch-image-generation
+call:
+  foundry_resource_dispatch:
+    case: image_generation
+    model: gpt-image-1
+calls:
+  - foundry_resource_dispatch:
+      case: image_generation
+      model: flux-pro-1.1
+  - foundry_resource_dispatch:
+      case: image_generation
+      model: dall-e-3
+  - foundry_resource_dispatch:
+      case: image_generation
+      model: mai-image-1
+  - foundry_resource_dispatch:
+      case: image_generation
+      model: ""
+env: {}
+compare: {ignore: []}

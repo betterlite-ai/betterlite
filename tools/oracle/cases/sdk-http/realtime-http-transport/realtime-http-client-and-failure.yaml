@@ -1,0 +1,27 @@
+kind: sdk_http
+name: realtime-http-transport-client-and-failure
+call:
+  realtime_http_transport:
+    handler: calls
+    ephemeral_key: ep-test
+    sdp: [118, 61, 48, 13, 10]
+    session: {voice: alloy}
+    model: m
+    timeout_seconds: 30
+upstream:
+  - status: 429
+    headers: {content-type: text/plain, retry-after: "2"}
+    body: {error: slow}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore:
+    - pointer: /upstream/0/body
+      why: LiteLLM writes the session part through json.dumps spacing and this side through standard JSON, and each side picks its own boundary
+    - pointer: /realtime_http_transport/value/failure/headers/date
+      why: each side answers from its own mock, so a server-stamped date differs while answering nothing
+    - pointer: /realtime_http_transport/value/logged/api_base
+      why: each side answers from its own mock, so the complete URL the pre-call logs differs
+    - pointer: /realtime_http_transport/value/logged/litellm_api_base
+      why: each side answers from its own mock, so the masked api_base the logger records differs

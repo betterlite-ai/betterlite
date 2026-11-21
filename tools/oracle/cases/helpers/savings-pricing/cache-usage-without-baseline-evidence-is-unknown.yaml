@@ -1,0 +1,15 @@
+kind: helper
+name: cache-usage-without-baseline-evidence-is-unknown
+call:
+  savings_pricing:
+    operation: compute_autorouter_savings
+    baseline_model: anthropic/baseline-model
+    selected_model: anthropic/selected-model
+    usage:
+      prompt_tokens: 10
+      completion_tokens: 4
+      total_tokens: 14
+      prompt_tokens_details:
+        cached_tokens: 4
+compare: {ignore: []}
+env: {}
