@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::marker::PhantomData;
+use std::str;
 use std::sync::Arc;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -273,10 +274,36 @@ fn stream_anthropic_mid_stream_block_continues_without_a_new_message() {
     let frames = translation()
         .build_block_sse_chunks(&failure, true, Some(&stream))
         .unwrap();
+    assert_eq!(frames.len(), 6);
+    assert_eq!(
+        str::from_utf8(&frames[0]).unwrap(),
+        "event: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\n"
+    );
+    assert_eq!(
+        str::from_utf8(&frames[1]).unwrap(),
+        "event: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 1, \"content_block\": {\"type\": \"text\", \"text\": \"\"}}\n\n"
+    );
+    assert!(
+        str::from_utf8(&frames[2])
+            .unwrap()
+            .contains("\"text\": \"blocked\"")
+    );
+    assert!(
+        str::from_utf8(&frames[3])
+            .unwrap()
+            .starts_with("event: content_block_stop\n")
+    );
+    assert!(
+        str::from_utf8(&frames[4])
+            .unwrap()
+            .starts_with("event: message_delta\n")
+    );
+    assert_eq!(
+        str::from_utf8(&frames[5]).unwrap(),
+        "event: message_stop\ndata: {\"type\": \"message_stop\"}\n\n"
+    );
     let text = String::from_utf8(frames.concat()).unwrap();
     assert!(!text.contains("message_start"));
-    assert!(text.contains("content_block_start"));
-    assert!(text.contains("blocked"));
 }
 
 #[tokio::test]
