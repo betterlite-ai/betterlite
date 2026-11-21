@@ -347,6 +347,7 @@ async fn dimension_precedence_treats_each_limit_as_exclusive(
     #[case] dimension: Option<RateLimitDimension>,
 ) {
     let fixture = fixture_with(RecordingCache::new(), FixedClock::at(START_OF_MINUTE));
+    let capture = LogCapture::start();
     let (result, _updates) = checked(
         &fixture,
         Some(current),
@@ -357,6 +358,11 @@ async fn dimension_precedence_treats_each_limit_as_exclusive(
         },
     )
     .await;
+    assert!(
+        capture
+            .text()
+            .contains("Current Usage of key in this minute: requests ")
+    );
     match dimension {
         None => assert_eq!(
             result.expect("inside every limit"),
@@ -376,6 +382,7 @@ async fn dimension_precedence_treats_each_limit_as_exclusive(
 #[tokio::test]
 async fn dimension_precedence_initializes_a_missing_counter() {
     let fixture = fixture_with(RecordingCache::new(), FixedClock::at(START_OF_MINUTE));
+    let capture = LogCapture::start();
     let (result, updates) = checked(
         &fixture,
         None,
@@ -386,6 +393,11 @@ async fn dimension_precedence_initializes_a_missing_counter() {
         },
     )
     .await;
+    assert!(
+        capture
+            .text()
+            .contains("Current Usage of key in this minute: none")
+    );
     assert_eq!(
         result.expect("no limit is zero"),
         MinuteCounter {
