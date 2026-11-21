@@ -25,7 +25,23 @@ fn unset_settings_take_their_defaults() {
     assert_eq!(text(settings.togetherai_api_key.as_ref()), None);
     assert!(!settings.drop_params);
     assert_default_environment_bases(&settings.environment);
-    assert_default_environment_secrets(&settings.environment);
+    let environment = &settings.environment;
+    assert_eq!(
+        [
+            environment.togetherai_api_key.is_none(),
+            environment.jina_ai_api_key.is_none(),
+            environment.nvidia_nim_api_key.is_none(),
+            environment.hosted_vllm_api_key.is_none(),
+            environment.deepinfra_api_key.is_none(),
+            environment.fireworks_api_key.is_none(),
+            environment.fireworks_ai_api_key.is_none(),
+            environment.fireworksai_api_key.is_none(),
+            environment.fireworks_ai_token.is_none(),
+            environment.voyage_api_key.is_none(),
+            environment.voyage_ai_api_key.is_none(),
+        ],
+        [true; 11]
+    );
 }
 
 fn assert_default_environment_bases(environment: &Environment) {
@@ -38,20 +54,6 @@ fn assert_default_environment_bases(environment: &Environment) {
     assert_eq!(environment.deepinfra_api_base, None);
     assert_eq!(environment.fireworks_ai_api_base, None);
     assert_eq!(environment.voyage_api_base, None);
-}
-
-fn assert_default_environment_secrets(environment: &Environment) {
-    assert_eq!(text(environment.togetherai_api_key.as_ref()), None);
-    assert_eq!(text(environment.jina_ai_api_key.as_ref()), None);
-    assert_eq!(text(environment.nvidia_nim_api_key.as_ref()), None);
-    assert_eq!(text(environment.hosted_vllm_api_key.as_ref()), None);
-    assert_eq!(text(environment.deepinfra_api_key.as_ref()), None);
-    assert_eq!(text(environment.fireworks_api_key.as_ref()), None);
-    assert_eq!(text(environment.fireworks_ai_api_key.as_ref()), None);
-    assert_eq!(text(environment.fireworksai_api_key.as_ref()), None);
-    assert_eq!(text(environment.fireworks_ai_token.as_ref()), None);
-    assert_eq!(text(environment.voyage_api_key.as_ref()), None);
-    assert_eq!(text(environment.voyage_ai_api_key.as_ref()), None);
 }
 
 #[test]
