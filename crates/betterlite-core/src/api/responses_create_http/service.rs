@@ -229,8 +229,7 @@ where
     };
     let client = request::select_client(deps, mode, &applied.params, call.shared_session)?;
     let (headers, api_base) = request::validated_environment(deps.config, call, &applied)?;
-    let mut data = request::transformed_data(deps.config, mode, &applied, &headers).await?;
-    data = request::overlaid(deps.config, call, &applied, data)?;
+    let mut data = request::transformed_data(deps.config, mode, call, &applied, &headers).await?;
     let (stream_requested, effective_stream) =
         request::stream_flags(call, &applied.optional_params, &mut data);
     let params = applied.params.to_map();

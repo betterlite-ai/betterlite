@@ -13,10 +13,10 @@ use crate::api::vector_store_http_write::error::display_facts;
 
 use super::super::config::{
     CreateConfig, CreateParams, CreateSignRequest, CreateTransformRequest, ExtraBodyRequest,
-    Headers,
+    Headers, Signed,
 };
 use super::super::convert::{FloatError, float_value};
-use super::super::error::{CreateError, Stage, provider_error, step};
+use super::super::error::{CreateError, Stage, provider_error};
 use super::hook::{self, Applied};
 use super::{ClientSource, CreateCall, CreateDeps, CreateRequest, LogContext, Selected, Staged};
 
@@ -61,21 +61,29 @@ where
     C: CreateConfig,
 {
     let optional = hook::optional_headers(&applied.optional_params)?;
-    let mut headers = step(
-        config.validate_environment(optional, &applied.model, &applied.params),
-        Stage::Validate,
-    )?;
+    let mut headers = config
+        .validate_environment(optional, &applied.model, &applied.params)
+        .map_err(|source| CreateError::Step {
+            stage: Stage::Validate,
+            source,
+        })?;
     if let Some(extra_headers) = call.extra_headers.filter(|supplied| !supplied.is_empty()) {
         headers.extend(extra_headers.clone());
     }
-    let api_base = step(config.complete_url(&applied.params), Stage::Url)?;
+    let api_base = config
+        .complete_url(&applied.params)
+        .map_err(|source| CreateError::Step {
+            stage: Stage::Url,
+            source,
+        })?;
     Ok((headers, api_base))
 }
 
-// The provider's transform step and normalize step; the async handler awaits the off-loop transform
+// The provider's transform, normalize and extra_body steps; the async handler awaits the off-loop transform
 pub(super) async fn transformed_data<C>(
     config: &C,
     mode: ClientKind,
+    call: &CreateCall<'_>,
     applied: &Applied,
     headers: &Headers,
 ) -> Result<Object, CreateError>
@@ -89,39 +97,37 @@ where
         params: &applied.params,
         headers,
     };
-    let transformed = step(
-        match mode {
-            ClientKind::Sync => config.transform_request(&transform),
-            ClientKind::Asynchronous => config.transform_request_off_loop(&transform).await,
-        },
-        Stage::Transform,
-    )?;
-    step(config.normalize_request(transformed), Stage::Normalize)
-}
-
-// transform_extra_body gets the normalized data and its result overwrites the matching keys, as {**data, **extra}
-pub(super) fn overlaid<C>(
-    config: &C,
-    call: &CreateCall<'_>,
-    applied: &Applied,
-    data: Object,
-) -> Result<Object, CreateError>
-where
-    C: CreateConfig,
-{
+    let transformed = match mode {
+        ClientKind::Sync => config.transform_request(&transform),
+        ClientKind::Asynchronous => config.transform_request_off_loop(&transform).await,
+    }
+    .map_err(|source| CreateError::Step {
+        stage: Stage::Transform,
+        source,
+    })?;
+    let mut data = config
+        .normalize_request(transformed)
+        .map_err(|source| CreateError::Step {
+            stage: Stage::Normalize,
+            source,
+        })?;
+    // transform_extra_body gets the normalized data and its result overwrites the matching keys, as {**data, **extra}
     let Some(extra_body) = call.extra_body.filter(|body| !body.is_empty()) else {
         return Ok(data);
     };
-    let request = ExtraBodyRequest {
-        extra_body,
-        request: &data,
-        model: &applied.model,
-        params: &applied.params,
-    };
-    let transformed = step(config.transform_extra_body(&request), Stage::Normalize)?;
-    let mut merged = data;
-    merged.extend(transformed);
-    Ok(merged)
+    let transformed = config
+        .transform_extra_body(&ExtraBodyRequest {
+            extra_body,
+            request: &data,
+            model: &applied.model,
+            params: &applied.params,
+        })
+        .map_err(|source| CreateError::Step {
+            stage: Stage::Normalize,
+            source,
+        })?;
+    data.extend(transformed);
+    Ok(data)
 }
 
 // stream is bool(optional stream) or bool(body stream); an exact fake_stream=true buffers and drops body.stream
@@ -139,6 +145,25 @@ pub(super) fn stream_flags(
         return (stream_requested, false);
     }
     (stream_requested, stream_requested)
+}
+
+// The async handler awaits sign_request_off_loop; the sync handler calls sign_request directly
+async fn sign<C>(
+    config: &C,
+    mode: ClientKind,
+    request: &CreateSignRequest<'_>,
+) -> Result<Signed, CreateError>
+where
+    C: CreateConfig,
+{
+    match mode {
+        ClientKind::Sync => config.sign_request(request),
+        ClientKind::Asynchronous => config.sign_request_off_loop(request).await,
+    }
+    .map_err(|source| CreateError::Step {
+        stage: Stage::Sign,
+        source,
+    })
 }
 
 // The signing step sees the final body; a signed byte string replaces it, then pre-call logs the request
@@ -162,13 +187,7 @@ where
         stream: staged.effective_stream,
         fake_stream: call.fake_stream,
     };
-    let signed = step(
-        match mode {
-            ClientKind::Sync => config.sign_request(&signing),
-            ClientKind::Asynchronous => config.sign_request_off_loop(&signing).await,
-        },
-        Stage::Sign,
-    )?;
+    let signed = sign(config, mode, &signing).await?;
     let body = wire_body(&signed_body_kwargs(signed.body.as_deref(), &staged.data))?;
     hook::pre_call(
         &staged.applied.input,

@@ -27,7 +27,7 @@ use crate::api::responses_stream_hooks::cache::{converted_stream_requested, valu
 use crate::api::vector_store_http_write::error::{header_text, status_facts};
 
 use super::super::config::CreateConfig;
-use super::super::error::{CreateError, Stage, provider_error, step};
+use super::super::error::{CreateError, Stage, provider_error};
 use super::hook::Applied;
 use super::{CreateOutcome, CreateSynthetic, LogContext, SentReply, StreamSetup};
 
@@ -89,10 +89,12 @@ where
         headers,
         text,
     };
-    step(
-        config.transform_response(&raw, log.state, log.env),
-        Stage::Response,
-    )
+    config
+        .transform_response(&raw, log.state, log.env)
+        .map_err(|source| CreateError::Step {
+            stage: Stage::Response,
+            source,
+        })
 }
 
 // The buffered reply reaches transform_response_api_response after the send catch, as the source does
