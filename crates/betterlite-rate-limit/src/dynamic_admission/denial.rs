@@ -48,42 +48,52 @@ pub fn build_over_limit_error(
         .iter()
         .filter(|status| status.code == OVER_LIMIT_CODE)
     {
-        match status.descriptor_key.as_str() {
-            SATURATION_DESCRIPTOR_KEY => {
-                let detail = format!(
-                    "Model capacity reached for {}. Priority: {}, Rate limit type: {}, Model TPM: {}, Model RPM: {}, Remaining: {}",
-                    facts.model,
-                    facts.priority.unwrap_or(NO_PRIORITY),
-                    status.rate_limit_type.as_str(),
-                    configured_limit(facts.model_tpm),
-                    configured_limit(facts.model_rpm),
-                    status.limit_remaining,
-                );
-                return known_key_error(detail, None, status, facts);
-            }
-            PRIORITY_DESCRIPTOR_KEY => {
-                tracing::debug!(
-                    "Enforcing priority limits for {}, saturation: {:.1}%, priority: {}",
-                    facts.model,
-                    facts.saturation.mul(100.0_f64),
-                    facts.priority.unwrap_or(NO_PRIORITY),
-                );
-                let detail = format!(
-                    "Priority-based rate limit exceeded. Model: {}, Priority: {}, Rate limit type: {}, Model TPM: {}, Model RPM: {}, Remaining: {}, Model saturation: {:.1}%",
-                    facts.model,
-                    facts.priority.unwrap_or(NO_PRIORITY),
-                    status.rate_limit_type.as_str(),
-                    configured_limit(facts.model_tpm),
-                    configured_limit(facts.model_rpm),
-                    status.limit_remaining,
-                    facts.saturation.mul(100.0_f64),
-                );
-                return known_key_error(detail, Some(facts.saturation), status, facts);
-            }
-            _ => {}
+        if let Some((detail, saturation)) = known_key_detail(status, facts) {
+            return known_key_error(detail, saturation, status, facts);
         }
     }
     unknown_descriptor_error(response, facts)
+}
+
+// the detail of the 429 a known descriptor key names, and the saturation its header adds, or None for a key the loop skips
+fn known_key_detail(
+    status: &RateLimitStatus,
+    facts: &OverLimitFacts<'_>,
+) -> Option<(String, Option<f64>)> {
+    match status.descriptor_key.as_str() {
+        SATURATION_DESCRIPTOR_KEY => {
+            let detail = format!(
+                "Model capacity reached for {}. Priority: {}, Rate limit type: {}, Model TPM: {}, Model RPM: {}, Remaining: {}",
+                facts.model,
+                facts.priority.unwrap_or(NO_PRIORITY),
+                status.rate_limit_type.as_str(),
+                configured_limit(facts.model_tpm),
+                configured_limit(facts.model_rpm),
+                status.limit_remaining,
+            );
+            Some((detail, None))
+        }
+        PRIORITY_DESCRIPTOR_KEY => {
+            tracing::debug!(
+                "Enforcing priority limits for {}, saturation: {:.1}%, priority: {}",
+                facts.model,
+                facts.saturation.mul(100.0_f64),
+                facts.priority.unwrap_or(NO_PRIORITY),
+            );
+            let detail = format!(
+                "Priority-based rate limit exceeded. Model: {}, Priority: {}, Rate limit type: {}, Model TPM: {}, Model RPM: {}, Remaining: {}, Model saturation: {:.1}%",
+                facts.model,
+                facts.priority.unwrap_or(NO_PRIORITY),
+                status.rate_limit_type.as_str(),
+                configured_limit(facts.model_tpm),
+                configured_limit(facts.model_rpm),
+                status.limit_remaining,
+                facts.saturation.mul(100.0_f64),
+            );
+            Some((detail, Some(facts.saturation)))
+        }
+        _ => None,
+    }
 }
 
 // the shared tail of the two known-key 429s: the status headers, the optional saturation and the priority
