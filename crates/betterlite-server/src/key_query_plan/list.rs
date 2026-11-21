@@ -55,7 +55,7 @@ async fn load_user_map<S>(
     query: &KeyListQuery,
 ) -> Result<BTreeMap<String, LiteLLMUserTable>, KeyQueryPlanError>
 where
-    S: KeyListSource,
+    S: KeyListSource + Sync,
 {
     if !query.expand.iter().any(|name| name == "user") {
         return Ok(BTreeMap::new());
@@ -88,7 +88,7 @@ async fn render_rows<S>(
     query: &KeyListQuery,
 ) -> Result<Vec<KeyListEntry>, KeyQueryPlanError>
 where
-    S: KeyListSource,
+    S: KeyListSource + Sync,
 {
     let expand_user = query.expand.iter().any(|name| name == "user");
     let full_object = query.return_full_object || expand_user;

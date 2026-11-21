@@ -75,23 +75,26 @@ pub fn attach_user_expansion(
             String::from("user_id"),
             JsonData::String(user.user_id.clone()),
         );
-        fields.insert(String::from("user_email"), optional_text(&user.user_email));
-        fields.insert(String::from("user_alias"), optional_text(&user.user_alias));
+        fields.insert(
+            String::from("user_email"),
+            optional_text(user.user_email.as_deref()),
+        );
+        fields.insert(
+            String::from("user_alias"),
+            optional_text(user.user_alias.as_deref()),
+        );
         row.insert(String::from("created_by_user"), JsonData::Object(fields));
     }
     Ok(())
 }
 
 fn non_empty_text(value: Option<&JsonData>) -> Option<&str> {
-    let Some(JsonData::String(text)) = value else {
+    let JsonData::String(text) = value? else {
         return None;
     };
     Some(text.as_str()).filter(|entry| !entry.is_empty())
 }
 
-fn optional_text(value: &Option<String>) -> JsonData {
-    let Some(text) = value else {
-        return JsonData::Null;
-    };
-    JsonData::String(text.clone())
+fn optional_text(value: Option<&str>) -> JsonData {
+    value.map_or(JsonData::Null, |text| JsonData::String(text.to_owned()))
 }

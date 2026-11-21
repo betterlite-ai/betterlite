@@ -101,10 +101,9 @@ pub fn validate_sort_params(
     sort_by: Option<&str>,
     sort_order: &str,
 ) -> Result<Option<SortBy>, SortError> {
-    match sort_by {
-        None => Ok(None),
-        Some(column) => validate_sort_column(column, sort_order).map(Some),
-    }
+    sort_by.map_or(Ok(None), |column| {
+        validate_sort_column(column, sort_order).map(Some)
+    })
 }
 
 pub fn validate_sort_column(sort_by: &str, sort_order: &str) -> Result<SortBy, SortError> {

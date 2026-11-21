@@ -24,7 +24,9 @@ pub fn build_key_filter_conditions(filters: &KeyFilters, now: DateTime<Utc>) -> 
     if globals.is_empty() {
         return combined;
     }
-    vec![Where::And([combined].into_iter().chain(globals).collect())]
+    let mut conditions = vec![combined];
+    conditions.extend(globals);
+    vec![Where::And(conditions)]
 }
 
 fn global_filters(filters: &KeyFilters, now: DateTime<Utc>) -> Vec<WhereClause> {
@@ -48,15 +50,15 @@ fn text_globals(filters: &KeyFilters) -> Vec<WhereClause> {
             let matching = Where::matching(KeyColumn::KeyAlias, filters.key_alias_matching, alias);
             vec![matching]
         }),
-        equals_text(KeyColumn::Token, &filters.key_hash),
+        equals_text(KeyColumn::Token, filters.key_hash.as_deref()),
         non_empty(&filters.search).map(build_key_search_where),
-        equals_text(KeyColumn::TeamId, &filters.team_id),
-        equals_text(KeyColumn::ProjectId, &filters.project_id),
+        equals_text(KeyColumn::TeamId, filters.team_id.as_deref()),
+        equals_text(KeyColumn::ProjectId, filters.project_id.as_deref()),
         non_empty(&filters.access_group_id).map(|group| {
             let values = vec![String::from(group)];
             vec![Where::HasSome(KeyColumn::AccessGroupIds, values)]
         }),
-        equals_text(KeyColumn::AgentId, &filters.agent_id),
+        equals_text(KeyColumn::AgentId, filters.agent_id.as_deref()),
     ]
     .into_iter()
     .flatten()
@@ -64,10 +66,8 @@ fn text_globals(filters: &KeyFilters) -> Vec<WhereClause> {
 }
 
 // an absent or empty value skips the filter, as it does everywhere else in the builder
-fn equals_text(column: KeyColumn, value: &Option<String>) -> Option<WhereClause> {
-    let Some(text) = non_empty(value) else {
-        return None;
-    };
+fn equals_text(column: KeyColumn, value: Option<&str>) -> Option<WhereClause> {
+    let text = value.filter(|text| !text.is_empty())?;
     Some(vec![Where::Equals(
         column,
         KeyScalar::Text(String::from(text)),

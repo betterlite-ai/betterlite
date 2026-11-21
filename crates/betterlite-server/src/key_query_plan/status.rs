@@ -16,13 +16,6 @@ pub enum KeyStatus {
     Deleted,
 }
 
-pub const VALID_STATUS_FILTER_VALUES: [KeyStatus; 4] = [
-    KeyStatus::Active,
-    KeyStatus::Expired,
-    KeyStatus::Revoked,
-    KeyStatus::Deleted,
-];
-
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct KeyStatusSource {

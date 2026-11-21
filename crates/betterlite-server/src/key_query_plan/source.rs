@@ -50,33 +50,38 @@ impl KeyListSource for PrismaClient<'_> {
         &self,
         plan: &KeyQueryPlan,
     ) -> impl Future<Output = Result<Vec<KeyRow>, KeyQueryPlanError>> + Send {
-        async move { fetch_page(*self, plan).await }
+        fetch_page(*self, plan)
     }
 
     fn count(
         &self,
         plan: &KeyQueryPlan,
     ) -> impl Future<Output = Result<i64, KeyQueryPlanError>> + Send {
-        async move { count(*self, plan).await }
+        count(*self, plan)
     }
 
     fn find_users(
         &self,
         ids: Vec<String>,
     ) -> impl Future<Output = Result<Vec<LiteLLMUserTable>, KeyQueryPlanError>> + Send {
-        async move { find_users(*self, ids).await }
+        find_users(*self, ids)
     }
 
     fn attach_object_permission(
         &self,
         row: &mut KeyRow,
     ) -> impl Future<Output = Result<(), KeyQueryPlanError>> + Send {
-        async move {
-            // ast-grep-ignore: no-long-names
-            attach_object_permission_to_dict(row, Some(*self)).await?;
-            Ok(())
-        }
+        attach_permission(row, *self)
     }
+}
+
+async fn attach_permission(
+    row: &mut KeyRow,
+    client: PrismaClient<'_>,
+) -> Result<(), KeyQueryPlanError> {
+    // ast-grep-ignore: no-long-names
+    attach_object_permission_to_dict(row, Some(client)).await?;
+    Ok(())
 }
 
 async fn fetch_page(
@@ -127,7 +132,7 @@ async fn run(
         .map_err(backend::<Infallible>)?)
 }
 
-fn read_store<'db>(client: PrismaClient<'db>) -> &'db PostgresStore {
+fn read_store(client: PrismaClient<'_>) -> &PostgresStore {
     let availability = client.availability;
     if availability.reader_unavailable.load(Ordering::SeqCst) {
         client.writer

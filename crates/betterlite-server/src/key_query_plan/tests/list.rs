@@ -146,8 +146,10 @@ impl KeyListSource for FakeSource {
         _row: &mut KeyRow,
     ) -> impl Future<Output = Result<(), KeyQueryPlanError>> + Send {
         self.record("attach");
-        let mut count = self.attach_calls.lock().unwrap();
-        *count = count.saturating_add(1);
+        {
+            let mut count = self.attach_calls.lock().unwrap();
+            *count = count.saturating_add(1);
+        }
         async move { self.answer(Failure::Attach, ()) }
     }
 }
@@ -240,12 +242,12 @@ fn archived_row() -> KeyRow {
 struct Captured(Arc<Mutex<Vec<u8>>>);
 
 impl io::Write for Captured {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0
             .lock()
             .map_err(|poisoned| io::Error::other(poisoned.to_string()))?
-            .extend_from_slice(buffer);
-        Ok(buffer.len())
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -264,9 +266,11 @@ async fn page_then_count_not_snapshot() {
         .with_writer(move || writer.clone())
         .finish();
     let guard = set_default(subscriber);
-    let mut source = FakeSource::default();
-    source.page = vec![row(r#"{"token":"k1"}"#)];
-    source.total = 7;
+    let source = FakeSource {
+        page: vec![row(r#"{"token":"k1"}"#)],
+        total: 7,
+        ..FakeSource::default()
+    };
     let response = list_keys_with(&source, &query(2, 2)).await.unwrap();
     assert_eq!(
         source.calls(),
@@ -293,15 +297,17 @@ async fn page_then_count_not_snapshot() {
 
 #[tokio::test]
 async fn expand_owner_and_creator() {
-    let mut source = FakeSource::default();
-    source.page = vec![row(
-        r#"{"token":"k1","user_id":"alice","created_by":"bob"}"#,
-    )];
-    source.total = 1;
-    source.users = vec![
-        user_table("alice", Some("alice@example.com"), Some("Alice")),
-        user_table("bob", Some("bob@example.com"), None),
-    ];
+    let source = FakeSource {
+        page: vec![row(
+            r#"{"token":"k1","user_id":"alice","created_by":"bob"}"#,
+        )],
+        total: 1,
+        users: vec![
+            user_table("alice", Some("alice@example.com"), Some("Alice")),
+            user_table("bob", Some("bob@example.com"), None),
+        ],
+        ..FakeSource::default()
+    };
     let mut request = query(1, 10);
     request.expand = vec![String::from("user")];
     let response = list_keys_with(&source, &request).await.unwrap();
@@ -327,11 +333,13 @@ async fn expand_owner_and_creator() {
 
 #[tokio::test]
 async fn expand_missing_users_and_unknown_names() {
-    let mut source = FakeSource::default();
-    source.page = vec![row(
-        r#"{"token":"k1","user_id":"ghost","created_by":"phantom"}"#,
-    )];
-    source.total = 1;
+    let source = FakeSource {
+        page: vec![row(
+            r#"{"token":"k1","user_id":"ghost","created_by":"phantom"}"#,
+        )],
+        total: 1,
+        ..FakeSource::default()
+    };
     let mut request = query(1, 10);
     request.expand = vec![String::from("user")];
     let response = list_keys_with(&source, &request).await.unwrap();
@@ -341,9 +349,11 @@ async fn expand_missing_users_and_unknown_names() {
     assert_eq!(fields.get("created_by_user"), Some(&JsonData::Null));
     assert!(source.calls().contains(&String::from("users")));
 
-    let mut unknown = FakeSource::default();
-    unknown.page = vec![row(r#"{"token":"k1","user_id":"alice"}"#)];
-    unknown.total = 1;
+    let unknown = FakeSource {
+        page: vec![row(r#"{"token":"k1","user_id":"alice"}"#)],
+        total: 1,
+        ..FakeSource::default()
+    };
     let mut unknown_request = query(1, 10);
     unknown_request.expand = vec![String::from("bogus")];
     let unknown_response = list_keys_with(&unknown, &unknown_request).await.unwrap();
@@ -353,9 +363,11 @@ async fn expand_missing_users_and_unknown_names() {
 
 #[tokio::test]
 async fn empty_identifiers_skip_user_lookup() {
-    let mut source = FakeSource::default();
-    source.page = vec![row(r#"{"token":"k1","user_id":"","created_by":""}"#)];
-    source.total = 1;
+    let source = FakeSource {
+        page: vec![row(r#"{"token":"k1","user_id":"","created_by":""}"#)],
+        total: 1,
+        ..FakeSource::default()
+    };
     let mut request = query(1, 10);
     request.expand = vec![String::from("user")];
     let response = list_keys_with(&source, &request).await.unwrap();
@@ -368,9 +380,11 @@ async fn empty_identifiers_skip_user_lookup() {
 
 #[tokio::test]
 async fn token_only_still_attaches_permission() {
-    let mut source = FakeSource::default();
-    source.page = vec![row(r#"{"token":"k1"}"#), row(r#"{"token":"k2"}"#)];
-    source.total = 2;
+    let source = FakeSource {
+        page: vec![row(r#"{"token":"k1"}"#), row(r#"{"token":"k2"}"#)],
+        total: 2,
+        ..FakeSource::default()
+    };
     let request = query(1, 10);
     let response = list_keys_with(&source, &request).await.unwrap();
     assert_eq!(source.attach_calls(), 2);
@@ -381,10 +395,12 @@ async fn token_only_still_attaches_permission() {
             .all(|entry| matches!(entry, KeyListEntry::Token(_)))
     );
 
-    let mut failing = FakeSource::default();
-    failing.page = vec![row(r#"{"token":"k1"}"#)];
-    failing.total = 1;
-    failing.failure = Some(Failure::Attach);
+    let failing = FakeSource {
+        page: vec![row(r#"{"token":"k1"}"#)],
+        total: 1,
+        failure: Some(Failure::Attach),
+        ..FakeSource::default()
+    };
     let failure = list_keys_with(&failing, &request).await.unwrap_err();
     assert!(matches!(failure, KeyQueryPlanError::MissingToken));
 }
@@ -407,10 +423,12 @@ async fn query_failures_propagate() {
     failed_stage(Failure::Page, 0, &["page"]).await;
     failed_stage(Failure::Count, 3, &["page", "count"]).await;
 
-    let mut users_failure = FakeSource::default();
-    users_failure.page = vec![row(r#"{"token":"k1","user_id":"alice"}"#)];
-    users_failure.total = 1;
-    users_failure.failure = Some(Failure::Users);
+    let users_failure = FakeSource {
+        page: vec![row(r#"{"token":"k1","user_id":"alice"}"#)],
+        total: 1,
+        failure: Some(Failure::Users),
+        ..FakeSource::default()
+    };
     let mut expanded = query(1, 10);
     expanded.expand = vec![String::from("user")];
     let users_error = list_keys_with(&users_failure, &expanded).await.unwrap_err();
@@ -425,9 +443,11 @@ async fn query_failures_propagate() {
 }
 
 async fn failed_stage(stage: Failure, total: i64, expected: &[&str]) {
-    let mut source = FakeSource::default();
-    source.total = total;
-    source.failure = Some(stage);
+    let source = FakeSource {
+        total,
+        failure: Some(stage),
+        ..FakeSource::default()
+    };
     let error = list_keys_with(&source, &query(1, 10)).await.unwrap_err();
     assert!(matches!(error, KeyQueryPlanError::MissingToken));
     assert_eq!(source.calls(), expected);
