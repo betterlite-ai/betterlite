@@ -31,7 +31,7 @@ use crate::api::realtime_contracts::close::{CloseFrame, ConnectionClosed};
 use crate::api::realtime_contracts::config::{BaseRealtimeConfig, Environment};
 use crate::api::realtime_contracts::error::{HeaderMap, WebSocketError};
 use crate::api::realtime_contracts::events::{
-    RealtimeResponseTransformInput, RealtimeResponseTypedDict,
+    AudioTranscriptionUsage, RealtimeResponseTransformInput, RealtimeResponseTypedDict,
 };
 use crate::api::realtime_contracts::transport::{RealtimeBackend, RealtimeMessage, WebSocketScope};
 use crate::api::realtime_guardrail_policy::RealtimeGuardrailCallback;
@@ -244,6 +244,7 @@ struct TestProvider {
     backend_log: Arc<Mutex<BackendLog>>,
     send_error: Option<String>,
     close_error: Option<String>,
+    close_usage: Option<AudioTranscriptionUsage>,
 }
 
 #[async_trait]
@@ -308,6 +309,10 @@ impl BaseRealtimeConfig for TestProvider {
         _session_configuration_request: Option<&str>,
     ) -> Option<Json> {
         self.synthetic.clone()
+    }
+
+    fn session_close_usage(&self, _model: &str) -> Option<AudioTranscriptionUsage> {
+        self.close_usage.clone()
     }
 
     fn transform_realtime_response(
@@ -392,10 +397,15 @@ impl RealtimeSessionRelay for RecordingRelay {
 
     async fn relay(&mut self, session: SessionRelay<'_>) -> Result<(), io::Error> {
         record_observation(&self.observation, &session);
+        let state = session.state;
         if let Some(source) = session.source {
             let outcome = receive_outcome(source).await;
             self.observation.lock().unwrap().source_outcome = outcome;
         }
+        state
+            .flush_unbilled_usage()
+            .map_err(|error| io::Error::other(error.to_string()))?;
+        self.observation.lock().unwrap().stored_messages = state.messages.len();
         match self.outcome {
             RelayOutcome::Ok => Ok(()),
             RelayOutcome::Fail => Err(io::Error::other("the relay failed")),
@@ -458,6 +468,7 @@ pub(super) struct HarnessOptions {
     pub(super) source_frames: Vec<RealtimeMessage>,
     pub(super) backend_send_error: Option<String>,
     pub(super) backend_close_error: Option<String>,
+    pub(super) close_usage: Option<AudioTranscriptionUsage>,
 }
 
 impl Default for HarnessOptions {
@@ -480,6 +491,7 @@ impl Default for HarnessOptions {
             source_frames: Vec::new(),
             backend_send_error: None,
             backend_close_error: None,
+            close_usage: None,
         }
     }
 }
@@ -572,6 +584,11 @@ impl HarnessOptions {
         self.backend_close_error = backend_close_error;
         self
     }
+
+    pub(super) fn with_close_usage(mut self, close_usage: Option<AudioTranscriptionUsage>) -> Self {
+        self.close_usage = close_usage;
+        self
+    }
 }
 
 pub(super) struct Harness<'callback> {
@@ -611,6 +628,7 @@ fn provider_of(options: &HarnessOptions, logs: &SharedLogs) -> Arc<TestProvider>
         backend_log: Arc::clone(&logs.backend),
         send_error: options.backend_send_error.clone(),
         close_error: options.backend_close_error.clone(),
+        close_usage: options.close_usage.clone(),
     })
 }
 
