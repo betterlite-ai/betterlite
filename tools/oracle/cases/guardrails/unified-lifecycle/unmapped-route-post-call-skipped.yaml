@@ -1,0 +1,41 @@
+name: unified-lifecycle-unmapped-route-post-call-skipped
+config: |
+  model_list:
+    - model_name: guarded-ocr
+      litellm_params:
+        model: mistral/mistral-ocr-latest
+        api_base: "{{upstream}}/v1"
+        api_key: oracle-key
+  guardrails:
+    - guardrail_name: word-filter
+      litellm_params:
+        guardrail: litellm_content_filter
+        mode: post_call
+        default_on: true
+        blocked_words:
+          - keyword: forbidden
+            action: BLOCK
+env: {}
+request:
+  method: POST
+  path: /v1/ocr
+  headers:
+    content-type: application/json
+    authorization: Bearer oracle-master
+    x-litellm-call-id: oracle-call-unified-unmapped-post
+  body:
+    model: guarded-ocr
+    document:
+      type: document_url
+      document_url: https://example.com/a.pdf
+upstream:
+  - status: 200
+    headers: {content-type: application/json, x-request-id: upstream-request-unified-unmapped}
+    body:
+      pages:
+        - index: 0
+          markdown: The forbidden word stays because aocr has no guardrail translation.
+          dimensions: {width: 612, height: 792, dpi: 72}
+      model: mistral-ocr-2505
+      usage_info: {pages_processed: 1}
+compare: {headers: [content-type], headers_present: [], upstream_headers: [authorization, content-type], ignore: []}
