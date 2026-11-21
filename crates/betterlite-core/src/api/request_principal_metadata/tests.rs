@@ -19,7 +19,10 @@ use crate::api::api_boundaries::ApiLimits;
 use crate::api::request_destination::RequestData;
 use crate::api::request_metadata_safety::metadata::MetadataField;
 
-fn parsed<T: DeserializeOwned>(text: &str) -> T {
+fn parsed<T>(text: &str) -> T
+where
+    T: DeserializeOwned,
+{
     serde_json::from_str(text).unwrap()
 }
 
