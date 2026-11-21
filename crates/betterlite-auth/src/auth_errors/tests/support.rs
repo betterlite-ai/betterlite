@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::database_faults::{DbError, ErrorType};
 use betterlite_error::proxy_error_types::ProxyErrorTypes;
+use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
 use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_models::model_registration::JsonObject;
@@ -258,6 +259,22 @@ pub(super) fn http(status_code: u16, invalid_virtual_key: bool) -> AuthFailure {
         detail: "Invalid proxy server token passed.".to_owned(),
         param: None,
         status_code,
+        invalid_virtual_key,
+    }
+}
+
+pub(super) fn proxy(invalid_virtual_key: bool) -> AuthFailure {
+    let exception = ProxyException::new(ProxyExceptionInit {
+        message: "Invalid proxy server token passed.".to_owned(),
+        error_type: "auth_error".to_owned(),
+        param: None,
+        code: ExceptionCode::Status(401_i64),
+        headers: BTreeMap::new(),
+        openai_code: None,
+        provider_specific_fields: BTreeMap::new(),
+    });
+    AuthFailure::Proxy {
+        exception,
         invalid_virtual_key,
     }
 }

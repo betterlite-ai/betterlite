@@ -12,7 +12,7 @@ use serde_json::Number;
 
 use super::support::{
     CLIENT_IP, Event, Fixture, OUTAGE_ALLOWED, RESPONSE_ROUTE, Recorder, Reply, budget, database,
-    handle, http, identity_with, object, rejected, seeded, settings,
+    handle, http, identity_with, object, proxy, rejected, seeded, settings,
 };
 use crate::auth_errors::conversion::AuthFailure;
 use crate::auth_errors::handler::{HandlerError, OUTAGE_USER_ID};
@@ -175,6 +175,8 @@ async fn log_before_raising_callback() {
 #[case::tracebacks_enabled(http(401, true), true, Logger::Proxy, Level::Error, true)]
 #[case::unmarked_401(http(401, false), false, Logger::Proxy, Level::Error, false)]
 #[case::marked_non_401(http(403, true), false, Logger::Proxy, Level::Error, false)]
+#[case::marked_proxy(proxy(true), false, Logger::ProxyStdout, Level::Warning, false)]
+#[case::unmarked_proxy(proxy(false), false, Logger::Proxy, Level::Error, false)]
 #[case::unexpected_error(
     AuthFailure::Other { message: "boom".to_owned(), param: None },
     false,
