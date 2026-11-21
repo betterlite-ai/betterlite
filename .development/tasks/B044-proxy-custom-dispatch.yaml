@@ -73,6 +73,8 @@ description: >-
   prepared.rs as they are; provider.rs only gains the slugs that select Provider::Legacy.
 scope:
   paths:
+    - "tools/oracle/src/runner/config.rs"
+    - "tools/oracle/src/case.rs"
     - "tools/oracle/src/gateway.rs"
     - "crates/betterlite-provider/src/provider/tests.rs"
     - "crates/betterlite-provider/src/provider.rs"
