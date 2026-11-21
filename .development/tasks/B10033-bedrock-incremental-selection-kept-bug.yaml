@@ -1,0 +1,66 @@
+id: B10033
+title: Bedrock incremental scans record and pin the selection they skip
+description: >-
+  Found in B3727's review (https://github.com/betterlite-ai/betterlite/pull/2789), decided by the architect as a kept
+  LiteLLM bug. With only_scan_new_messages on, apply_incremental_request_scan in
+  crates/betterlite-guardrails/src/bedrock_incremental_guardrail/scan.rs sends every new segment of the session to
+  Bedrock and returns before select_messages in selection.rs runs. So experimental_use_latest_role_message_only and
+  scan_only_tool_results have no effect on an incremental request scan: all new segments are scanned, not only the
+  latest user message or only the tool results.
+
+
+  LiteLLM does the same. Its request path calls _apply_incremental_request_scan and returns before
+  _select_messages_for_apply_guardrail, and its own test suite marks test_latest_role_only_is_respected_with_incremental
+  as an expected failure for PR #33278, with the intended behavior still waiting on a decision. betterlite keeps the
+  wider scan: a setup that runs both flags is blocked on what Bedrock finds in every new segment today, and a narrower
+  scan would let through content it blocks now.
+
+
+  B3727 copied the behavior but left kept_bugs empty in docs/deviations/B3727.yaml and has no test with both flags on,
+  so a later change could narrow the scan without anyone noticing. This task adds the kept_bugs row and two tests in
+  the incremental tests: latest-role-only plus only_scan_new_messages, and tool-results-only plus
+  only_scan_new_messages, each asserting that every new segment reaches Bedrock. No production code changes.
+scope:
+  paths:
+  - crates/betterlite-guardrails/src/bedrock_incremental_guardrail/tests/incremental_scan.rs
+  - crates/betterlite-guardrails/src/bedrock_incremental_guardrail/tests/support.rs
+  - docs/deviations/B3727.yaml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L3178-L3186
+  why: The request path returns the incremental result before message selection runs.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/unit/proxy/guardrails/guardrail_hooks/test_bedrock_guardrails.py#L5007-L5029
+  why: LiteLLM's own xfail for the ignored latest-role selection under incremental mode.
+dod:
+- text: >-
+    A test with experimental_use_latest_role_message_only and only_scan_new_messages both on, in a session with earlier
+    scanned segments and several new ones, asserts that every new segment reaches Bedrock, not only the latest user
+    message. A second test does the same with scan_only_tool_results.
+  proof: [incremental-tests]
+- text: >-
+    docs/deviations/B3727.yaml has a kept_bugs row for the ignored latest-role and tool-results selection under
+    incremental scans, with the reason a setup relies on the wider scan and the pinned LiteLLM link.
+  proof: [kept-bug-row]
+checks:
+  optional: []
+  commands:
+  - id: incremental-tests
+    why: An incremental scan test broke, or a new test does not pin the wider scan.
+    run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^bedrock_incremental_guardrail::tests::/)'
+  - id: kept-bug-row
+    why: The kept bug is not recorded with its pinned LiteLLM link.
+    run: >-
+      grep -q -F 'bedrock_guardrails.py#L3178-L3186' docs/deviations/B3727.yaml
+      && ! grep -q -x 'kept_bugs: \[\]' docs/deviations/B3727.yaml
+oracle_cases: []
+deviations: []
+out_of_scope:
+- Changing the scan to honor the selection flags. LiteLLM hasn't decided the intended behavior, and betterlite keeps the scan it has today.
+- The full-context path, where select_messages already applies both flags.
+pitfalls:
+- The test support builds the invocation with tool_results_only and the guardrail settings; set the flags there instead of a new builder.
+- A new segment is one the session cache has not seen. Seed the cache with the earlier segments first, as only_the_new_segments_reach_bedrock does, or every segment counts as new for a reason other than the one under test.
+review_level: standard
+budget:
+  max_changed_lines: 40
+  max_new_expects: 0
