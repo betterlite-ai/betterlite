@@ -3,7 +3,6 @@ use std::sync::{Arc, Mutex};
 
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::otel_settings::FeatureFlag;
-use betterlite_config::sections::provider_url_destination::pattern::AllowedDestination;
 use betterlite_config::types::Config;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::FixedOffset;
