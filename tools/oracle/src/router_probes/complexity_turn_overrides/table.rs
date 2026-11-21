@@ -3,7 +3,6 @@ use std::future::Future;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Mutex, PoisonError};
 
-use betterlite_models::decisions::Json;
 use betterlite_router::semantic_router::service::{CallerContext, RouteEmbedder};
 
 use super::Input;
