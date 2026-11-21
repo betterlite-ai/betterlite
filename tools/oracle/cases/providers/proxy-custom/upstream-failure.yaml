@@ -9,6 +9,8 @@ config: |
     - model_name: failing-aleph-model
       litellm_params:
         model: aleph_alpha/luminous-base-control
+        # betterlite reaches the deprecated handler through the deployment's declared provider until B10006 reads custom_provider_map
+        custom_llm_provider: aleph_alpha
         api_base: "{{upstream}}/complete"
         api_key: oracle-failing-aleph-key
   router_settings: {num_retries: 0}

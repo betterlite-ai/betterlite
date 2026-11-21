@@ -236,7 +236,7 @@ fn unbuilt_chain_stops_startup(#[case] params: &str, #[case] provider: &str, #[c
 
 #[rstest]
 #[case::aleph_alpha(
-    "      model: aleph_alpha/luminous-base-control\n      api_key: k\n      api_base: https://api.aleph-alpha.com/complete\n"
+    "      model: aleph_alpha/luminous-base-control\n      custom_llm_provider: aleph_alpha\n      api_key: k\n      api_base: https://api.aleph-alpha.com/complete\n"
 )]
 #[case::litellm_proxy(
     "      model: litellm_proxy/gemini/gemini-1.5-pro\n      api_key: k\n      api_base: https://proxy.example\n"
