@@ -83,7 +83,7 @@ pub struct PreDbRequest<'scan> {
 }
 
 pub fn pre_db_read_auth_checks(
-    request: PreDbRequest<'_>,
+    request: &PreDbRequest<'_>,
     settings: &Settings,
 ) -> Result<(), PolicyError> {
     check_request_size(

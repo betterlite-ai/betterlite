@@ -170,7 +170,7 @@ fn pre_db(call: &PreDbCase) -> Value {
         },
         body_safety: Some(safety),
     };
-    match pre_db_read_auth_checks(request, &settings) {
+    match pre_db_read_auth_checks(&request, &settings) {
         Ok(()) => accepted(),
         Err(error) => rejected(error.into_proxy_exception()),
     }

@@ -27,7 +27,7 @@ pub struct ErrorFacts<'facts> {
 
 impl<'facts> ErrorFacts<'facts> {
     #[must_use]
-    pub fn proxy(exception: &'facts ProxyException) -> Self {
+    pub const fn proxy(exception: &'facts ProxyException) -> Self {
         Self {
             class: ErrorClass::Proxy,
             code: Some(exception.code.as_str()),
@@ -38,7 +38,7 @@ impl<'facts> ErrorFacts<'facts> {
 
     // mark_invalid_virtual_key_error sets the marker on the copy it returns, so the outcome carries it
     #[must_use]
-    pub fn marked(exception: &'facts ProxyException) -> Self {
+    pub const fn marked(exception: &'facts ProxyException) -> Self {
         Self {
             marker: Marker::ExactTrue,
             ..Self::proxy(exception)

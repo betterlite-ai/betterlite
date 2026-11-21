@@ -52,7 +52,7 @@ fn helper_seeds_select_auth_request_policy() {
 fn byte_projection_divides_by_a_mebibyte() {
     let one_byte_over = 1_048_577.0_f64.div(1_048_576.0_f64);
     let output = Op::decode_and_run(&json!({
-        "calls": [{"function": "bytes_to_mb", "values": [0, 524_288, 1_048_576, 1_048_577]}],
+        "calls": [{"function": "bytes_to_mb", "values": [0, 0x0008_0000, 0x0010_0000, 0x0010_0001]}],
     }))
     .expect("the projection runs");
     assert_eq!(output, json!([[0.0, 0.5, 1.0, one_byte_over]]));

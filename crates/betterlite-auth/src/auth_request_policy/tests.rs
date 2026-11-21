@@ -131,7 +131,7 @@ fn safety_request<'scan>(
 }
 
 fn denial(settings: &Settings, provenance: RequestProvenance<'_>) -> PolicyError {
-    pre_db_read_auth_checks(policy_request(ROUTE, provenance), settings).unwrap_err()
+    pre_db_read_auth_checks(&policy_request(ROUTE, provenance), settings).unwrap_err()
 }
 
 fn proxy_exception(code: &str) -> ProxyException {
@@ -211,7 +211,7 @@ fn size_before_body_safety() {
         &metadata,
         provenance(None, Some("10.0.0.9")),
     );
-    let error = pre_db_read_auth_checks(request, &settings).unwrap_err();
+    let error = pre_db_read_auth_checks(&request, &settings).unwrap_err();
     assert!(matches!(
         error,
         PolicyError::Size(SizeError::RequestTooLarge { .. })
@@ -231,7 +231,7 @@ fn body_before_ip() {
         &metadata,
         provenance(None, Some("203.0.113.9")),
     );
-    let error = pre_db_read_auth_checks(request, &settings).unwrap_err();
+    let error = pre_db_read_auth_checks(&request, &settings).unwrap_err();
     assert!(matches!(error, PolicyError::BodySafety(_)));
 }
 
@@ -251,7 +251,7 @@ fn ip_before_routes() {
 #[test]
 fn allowed_ips_none_skips_ip() {
     let request = policy_request(ROUTE, provenance(None, None));
-    pre_db_read_auth_checks(request, &Settings::default()).unwrap();
+    pre_db_read_auth_checks(&request, &Settings::default()).unwrap();
     let verdict = check_valid_ip(None, &provenance(None, None), true);
     assert_eq!(verdict.passed_in_ip, None);
     assert!(verdict.allowed);
@@ -267,7 +267,7 @@ fn empty_ip_list_denies() {
 fn forwarded_header_entire_value() {
     let combined = "10.0.0.1, 203.0.113.7";
     let request = policy_request(ROUTE, provenance(Some(combined), Some("10.0.0.9")));
-    pre_db_read_auth_checks(request, &ip_settings(&[combined], true)).unwrap();
+    pre_db_read_auth_checks(&request, &ip_settings(&[combined], true)).unwrap();
     // the header is one string, so the first hop alone does not match
     let error = denial(
         &ip_settings(&["10.0.0.1"], true),
@@ -279,7 +279,7 @@ fn forwarded_header_entire_value() {
 #[test]
 fn forwarded_empty_value() {
     let request = policy_request(ROUTE, provenance(Some(""), Some("10.0.0.9")));
-    pre_db_read_auth_checks(request, &ip_settings(&[""], true)).unwrap();
+    pre_db_read_auth_checks(&request, &ip_settings(&[""], true)).unwrap();
     let error = denial(
         &ip_settings(&["10.0.0.9"], true),
         provenance(Some(""), Some("10.0.0.9")),
@@ -290,7 +290,7 @@ fn forwarded_empty_value() {
 #[test]
 fn forwarded_toggle_exact_true() {
     let request = policy_request(ROUTE, provenance(Some("203.0.113.7"), Some("10.0.0.9")));
-    pre_db_read_auth_checks(request, &ip_settings(&["10.0.0.9"], false)).unwrap();
+    pre_db_read_auth_checks(&request, &ip_settings(&["10.0.0.9"], false)).unwrap();
     let error = denial(
         &ip_settings(&["10.0.0.9"], true),
         provenance(Some("203.0.113.7"), Some("10.0.0.9")),
@@ -301,20 +301,20 @@ fn forwarded_toggle_exact_true() {
 #[test]
 fn client_host_fallback() {
     let request = policy_request(ROUTE, provenance(None, Some("10.0.0.9")));
-    pre_db_read_auth_checks(request, &ip_settings(&["10.0.0.9"], true)).unwrap();
+    pre_db_read_auth_checks(&request, &ip_settings(&["10.0.0.9"], true)).unwrap();
 }
 
 #[test]
 fn no_client_empty_ip() {
     let request = policy_request(ROUTE, provenance(None, None));
-    pre_db_read_auth_checks(request, &ip_settings(&[""], true)).unwrap();
+    pre_db_read_auth_checks(&request, &ip_settings(&[""], true)).unwrap();
     assert_eq!(request_ip_address(&provenance(None, None), true), "");
 }
 
 #[test]
 fn routes_absent_vs_empty() {
     pre_db_read_auth_checks(
-        policy_request(ROUTE, provenance(None, None)),
+        &policy_request(ROUTE, provenance(None, None)),
         &Settings::default(),
     )
     .unwrap();
@@ -330,7 +330,7 @@ fn exact_route_no_wildcards() {
     );
     assert!(matches!(error, PolicyError::RouteDenied { .. }));
     pre_db_read_auth_checks(
-        policy_request(ROUTE, provenance(None, None)),
+        &policy_request(ROUTE, provenance(None, None)),
         &route_settings(&[ROUTE]),
     )
     .unwrap();
@@ -379,17 +379,17 @@ fn mb_is_1048576() {
     check_request_size(Some(""), &vec![0_u8; 1_000_001], Some(1.0_f64)).unwrap();
     check_response_size(&vec![0_u8; 1_000_001], Some(1.0_f64)).unwrap();
     check_request_size(Some("1048576"), &[], Some(1.0_f64)).unwrap();
-    check_response_size(&vec![0_u8; 524_288], Some(0.5_f64)).unwrap();
-    let error = check_response_size(&vec![0_u8; 524_289], Some(0.5_f64)).unwrap_err();
+    check_response_size(&vec![0_u8; 0x0008_0000], Some(0.5_f64)).unwrap();
+    let error = check_response_size(&vec![0_u8; 0x0008_0001], Some(0.5_f64)).unwrap_err();
     assert!(matches!(error, SizeError::ResponseTooLarge { .. }));
-    let error = check_request_size(Some("1048577"), &[], Some(1.0_f64)).unwrap_err();
-    assert!(matches!(error, SizeError::RequestTooLarge { .. }));
+    let request_error = check_request_size(Some("1048577"), &[], Some(1.0_f64)).unwrap_err();
+    assert!(matches!(request_error, SizeError::RequestTooLarge { .. }));
 }
 
 #[test]
 fn header_prevents_body_read() {
     // the header wins even though the body alone would exceed the limit
-    let body = vec![0_u8; 2_097_152];
+    let body = vec![0_u8; 0x0020_0000];
     check_request_size(Some("100"), &body, Some(1.0_f64)).unwrap();
     let error = check_request_size(Some("1048577"), &[], Some(1.0_f64)).unwrap_err();
     assert!(matches!(error, SizeError::RequestTooLarge { .. }));
@@ -397,7 +397,7 @@ fn header_prevents_body_read() {
 
 #[test]
 fn empty_header_reads_body() {
-    let body = vec![0_u8; 1_048_577];
+    let body = vec![0_u8; 0x0010_0001];
     let error = check_request_size(Some(""), &body, Some(1.0_f64)).unwrap_err();
     assert!(matches!(error, SizeError::RequestTooLarge { .. }));
     check_request_size(Some(""), &[0_u8; 1024], Some(1.0_f64)).unwrap();
@@ -422,8 +422,8 @@ fn negative_limit_not_clamped() {
     // 0 MB is over a negative limit, so a clamp to zero would let the empty request through
     let error = check_request_size(Some("0"), &[], Some(-1.0_f64)).unwrap_err();
     assert!(matches!(error, SizeError::RequestTooLarge { .. }));
-    let error = check_request_size(Some("1"), &[], Some(-1.0_f64)).unwrap_err();
-    assert!(matches!(error, SizeError::RequestTooLarge { .. }));
+    let byte_error = check_request_size(Some("1"), &[], Some(-1.0_f64)).unwrap_err();
+    assert!(matches!(byte_error, SizeError::RequestTooLarge { .. }));
 }
 
 #[test]
@@ -573,8 +573,8 @@ fn size_checks_without_license() {
 
 #[test]
 fn response_wire_byte_limit() {
-    check_response_size(&vec![0_u8; 1_048_576], Some(1.0_f64)).unwrap();
-    let error = check_response_size(&vec![0_u8; 1_048_577], Some(1.0_f64)).unwrap_err();
+    check_response_size(&vec![0_u8; 0x0010_0000], Some(1.0_f64)).unwrap();
+    let error = check_response_size(&vec![0_u8; 0x0010_0001], Some(1.0_f64)).unwrap_err();
     let exception = error.into_proxy_exception();
     assert_eq!(exception.error_type, "bad_request_error");
     assert_eq!(exception.param.as_deref(), Some("content-length"));

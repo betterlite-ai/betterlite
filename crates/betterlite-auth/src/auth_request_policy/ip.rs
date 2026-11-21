@@ -27,14 +27,14 @@ pub fn check_valid_ip<'request>(
     provenance: &RequestProvenance<'request>,
     use_x_forwarded_for: bool,
 ) -> IpVerdict<'request> {
-    let Some(allowed_ips) = allowed_ips else {
+    let Some(permitted) = allowed_ips else {
         return IpVerdict {
             allowed: true,
             passed_in_ip: None,
         };
     };
     let client_ip = request_ip_address(provenance, use_x_forwarded_for);
-    let allowed = allowed_ips
+    let allowed = permitted
         .iter()
         .any(|candidate| candidate.as_str() == client_ip);
     IpVerdict {

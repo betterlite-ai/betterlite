@@ -105,7 +105,7 @@ pub(crate) fn run_stage(
         },
         body_safety: safety,
     };
-    pre_db_read_auth_checks(request, &slot.settings)
+    pre_db_read_auth_checks(&request, &slot.settings)
         .map_err(|error| Box::new(error.into_proxy_exception()))?;
     Ok(stage.context.clone())
 }
