@@ -177,8 +177,9 @@ impl Helper for Op {
             input.window_size,
         );
         let limiter = Arc::new(StubLimiter::new(input));
+        let limiter_port = Arc::clone(&limiter);
         let admission = DynamicAdmission {
-            limiter: Arc::clone(&limiter),
+            limiter: limiter_port,
             handler,
             providers: Arc::new(FixedProviders),
         };
@@ -202,6 +203,6 @@ impl Helper for Op {
         };
         let runtime = Builder::new_current_thread().build()?;
         let outcome = runtime.block_on(admission.check_rate_limits(&check));
-        output::answer(outcome, &limiter, &stash)
+        output::answer(&outcome, &limiter, &stash)
     }
 }

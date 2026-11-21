@@ -13,19 +13,19 @@ use super::{RecordedCall, StubLimiter};
 fn calls_json(calls: &[RecordedCall]) -> Result<(Vec<Value>, Vec<Value>), serde_json::Error> {
     let mut atomic = Vec::new();
     let mut tracking = Vec::new();
-    for call in calls {
-        match call {
-            RecordedCall::Atomic(call) => atomic.push(json!({
-                "descriptors": serde_json::to_value(&call.descriptors)?,
-                "increments": call
+    for recorded in calls {
+        match recorded {
+            RecordedCall::Atomic(atomic_call) => atomic.push(json!({
+                "descriptors": serde_json::to_value(&atomic_call.descriptors)?,
+                "increments": atomic_call
                     .increments
                     .iter()
                     .map(|amount| json!({"requests": amount.requests, "tokens": amount.tokens}))
                     .collect::<Vec<Value>>(),
             })),
-            RecordedCall::Tracking(call) => tracking.push(json!({
-                "descriptors": serde_json::to_value(&call.descriptors)?,
-                "read_only": call.read_only,
+            RecordedCall::Tracking(tracking_call) => tracking.push(json!({
+                "descriptors": serde_json::to_value(&tracking_call.descriptors)?,
+                "read_only": tracking_call.read_only,
             })),
         }
     }
@@ -40,16 +40,16 @@ fn stash_json(stash: &RequestStashSlot) -> Value {
         let state = stored.state.lock().unwrap_or_else(PoisonError::into_inner);
         state.rate_limit_response.clone()
     };
-    response.map_or(Value::Null, |response| {
+    response.map_or(Value::Null, |stored_response| {
         json!({
-            "overall_code": response.overall_code,
-            "statuses": response.statuses,
+            "overall_code": stored_response.overall_code,
+            "statuses": stored_response.statuses,
         })
     })
 }
 
-fn headers_json(headers: &CheckRateLimitError) -> BTreeMap<String, String> {
-    match headers {
+fn headers_json(failure: &CheckRateLimitError) -> BTreeMap<String, String> {
+    match failure {
         CheckRateLimitError::Rejection(error) => error
             .headers
             .iter()
@@ -77,7 +77,7 @@ fn unexpected(message: &str) -> HelperResult {
 }
 
 pub(super) fn answer(
-    outcome: Result<(), CheckRateLimitError>,
+    outcome: &Result<(), CheckRateLimitError>,
     limiter: &StubLimiter,
     stash: &RequestStashSlot,
 ) -> HelperResult {
@@ -85,15 +85,15 @@ pub(super) fn answer(
         let calls = limiter.calls.lock().unwrap_or_else(PoisonError::into_inner);
         calls_json(&calls)?
     };
-    let error = match &outcome {
+    let error = match outcome {
         Ok(()) => Value::Null,
-        Err(error @ CheckRateLimitError::Rejection(rejection)) => json!({
+        Err(failure @ CheckRateLimitError::Rejection(rejection)) => json!({
             "status": 429_u16,
             "detail": rejection.detail.clone(),
-            "headers": headers_json(error),
+            "headers": headers_json(failure),
         }),
-        Err(error @ (CheckRateLimitError::Denial(_) | CheckRateLimitError::Limiter(_))) => {
-            return unexpected(&error.to_string());
+        Err(other @ (CheckRateLimitError::Denial(_) | CheckRateLimitError::Limiter(_))) => {
+            return unexpected(&other.to_string());
         }
     };
     Ok(json!({
