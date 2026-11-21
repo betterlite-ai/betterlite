@@ -36,7 +36,9 @@ use crate::audit_events::sink::{
 };
 use crate::member_request_contracts::callbacks::{CallbackSecrets, TeamCallbackMetadata};
 use crate::team_callback_policy::audit::{TeamAuditWriter, TeamCallbackAudit, TeamCallbackChange};
-use crate::team_callback_policy::error::{ErrorDetail, TeamCallbackError, unknown_team_error};
+use crate::team_callback_policy::error::{
+    ErrorDetail, HttpFailure, TeamCallbackError, unknown_team_error,
+};
 use crate::team_callback_policy::redaction::redact_callback_secrets;
 use crate::team_callback_policy::resolve::resolve_team_callbacks;
 use crate::team_callback_policy::{CALLBACK_VARS_REDACTED, validate_team_callback};
@@ -125,8 +127,9 @@ fn warned(log: &NamedTempFile, message: &str) -> usize {
 #[case::span_scope_callback("langfuse", &[("langfuse_span_scope", "full")])]
 fn invalid_callback_400(#[case] name: &str, #[case] pairs: &[(&str, &str)]) {
     let error = validate_team_callback(name, &vars(pairs), FLAGS).unwrap_err();
-    assert_eq!(error.status(), Some(StatusCode::BAD_REQUEST));
-    let Some(ErrorDetail::Error { error: message }) = error.detail() else {
+    let failure = error.failure().unwrap();
+    assert_eq!(failure.status, StatusCode::BAD_REQUEST);
+    let ErrorDetail::Error { error: message } = failure.detail else {
         panic!("a rejected callback answers with detail.error");
     };
     assert!(!message.is_empty());
@@ -357,8 +360,7 @@ fn invalid_legacy_raises(#[case] settings: &str) {
     let metadata = json(&format!(r#"{{"callback_settings": {settings}}}"#));
     let error = resolve(&metadata).unwrap_err();
     assert!(matches!(error, TeamCallbackError::CallbackSettings { .. }));
-    assert_eq!(error.status(), None);
-    assert_eq!(error.detail(), None);
+    assert_eq!(error.failure(), None);
 }
 
 #[rstest]
@@ -366,11 +368,13 @@ fn invalid_legacy_raises(#[case] settings: &str) {
 #[case::admin_bad_request(StatusCode::BAD_REQUEST)]
 fn admin_unknown_team_status(#[case] status: StatusCode) {
     let error = unknown_team_error("team-9", Some(UserRole::ProxyAdmin), status);
-    assert_eq!(error.status(), Some(status));
     assert_eq!(
-        error.detail(),
-        Some(ErrorDetail::Error {
-            error: "Team id = team-9 does not exist.".to_owned()
+        error.failure(),
+        Some(HttpFailure {
+            status,
+            detail: ErrorDetail::Error {
+                error: "Team id = team-9 does not exist.".to_owned()
+            }
         })
     );
 }
@@ -382,12 +386,12 @@ fn admin_unknown_team_status(#[case] status: StatusCode) {
 #[case::internal_user(Some(UserRole::InternalUser))]
 fn nonadmin_unknown_team_403(#[case] role: Option<UserRole>) {
     let error = unknown_team_error("team-9", role, StatusCode::NOT_FOUND);
-    assert_eq!(error.status(), Some(StatusCode::FORBIDDEN));
     assert_eq!(
-        error.detail(),
-        Some(ErrorDetail::Text(
-            "You do not have access to this team".to_owned()
-        ))
+        error.failure(),
+        Some(HttpFailure {
+            status: StatusCode::FORBIDDEN,
+            detail: ErrorDetail::Text("You do not have access to this team".to_owned())
+        })
     );
 }
 
@@ -559,9 +563,12 @@ async fn audit_identity_and_json(
         team_metadata: None,
     };
     emit(&fixture, &caller, header);
-    for task in fixture.tasks.take() {
-        task.await;
-    }
+    let mut tasks = fixture.tasks.take();
+    let Some(task) = tasks.pop() else {
+        panic!("one audit task is scheduled");
+    };
+    assert!(tasks.is_empty());
+    task.await;
     let rows = fixture.rows.0.lock().unwrap().clone();
     let [row] = rows.as_slice() else {
         panic!("one audit row is written");
@@ -590,11 +597,12 @@ async fn audit_task_failure_warns() {
     let fixture = audit_fixture(audit_settings(Some(true), None), true, None);
     let (log, _guard) = capture_warnings();
     emit(&fixture, &CallerIdentity::default(), None);
-    let tasks = fixture.tasks.take();
-    assert_eq!(tasks.len(), 1);
-    for task in tasks {
-        task.await;
-    }
+    let mut tasks = fixture.tasks.take();
+    let Some(task) = tasks.pop() else {
+        panic!("one audit task is scheduled");
+    };
+    assert!(tasks.is_empty());
+    task.await;
     let warning = "Failed to write team-callback audit log: no database connection";
     assert_eq!(warned(&log, warning), 1);
 }

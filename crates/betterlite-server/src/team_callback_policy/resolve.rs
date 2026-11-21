@@ -26,10 +26,14 @@ where
     if !matches!(team_metadata, Json::Object(_)) {
         return Ok(TeamCallbackMetadata::default());
     }
-    let mut decrypted = decrypt_callback_vars(team_metadata, cipher)?;
+    let encoded = serde_json::to_value(team_metadata)
+        .map_err(|source| TeamCallbackError::Metadata { source })?;
+    let plain = transform_callback_vars(&encoded, &Transform::Decrypt(cipher));
+    let mut decrypted: IndexMap<String, Json> =
+        serde_json::from_value(plain).map_err(|source| TeamCallbackError::Metadata { source })?;
     let mut settings = match decrypted.shift_remove(LOGGING_KEY) {
         None | Some(Json::Null) => match decrypted.shift_remove(CALLBACK_SETTINGS_KEY) {
-            Some(Json::Object(stored)) => stored,
+            Some(Json::Object(legacy)) => legacy,
             Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
             | None => IndexMap::new(),
         },
@@ -39,20 +43,6 @@ where
     mask_sensitive_callback_vars(&mut settings);
     TeamCallbackMetadata::from_value(&Json::Object(settings))
         .map_err(|source| TeamCallbackError::CallbackSettings { source })
-}
-
-fn decrypt_callback_vars<N, D>(
-    team_metadata: &Json,
-    cipher: &StoredCipher<N, D>,
-) -> Result<IndexMap<String, Json>, TeamCallbackError>
-where
-    N: NonceSource,
-    D: SecretDiagnostics,
-{
-    let stored = serde_json::to_value(team_metadata)
-        .map_err(|source| TeamCallbackError::Metadata { source })?;
-    let plain = transform_callback_vars(&stored, &Transform::Decrypt(cipher));
-    serde_json::from_value(plain).map_err(|source| TeamCallbackError::Metadata { source })
 }
 
 // a non-list slot folds nothing and a non-object entry is passed over without a warning

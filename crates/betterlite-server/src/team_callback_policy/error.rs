@@ -45,28 +45,34 @@ pub enum ErrorDetail {
     Text(String),
 }
 
+// _callback_error's HTTPException: a status and the detail the body carries
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HttpFailure {
+    pub status: StatusCode,
+    pub detail: ErrorDetail,
+}
+
 impl TeamCallbackError {
     // None is a ValueError or ValidationError LiteLLM raises past the route, which the caller's handler maps
     #[must_use]
-    pub const fn status(&self) -> Option<StatusCode> {
+    pub fn failure(&self) -> Option<HttpFailure> {
         match self {
-            Self::Config { .. } => Some(StatusCode::BAD_REQUEST),
-            Self::Callback { status, .. } => Some(*status),
-            Self::TeamAccessDenied => Some(StatusCode::FORBIDDEN),
-            Self::CallbackSettings { .. }
-            | Self::Metadata { .. }
-            | Self::Snapshot { .. }
-            | Self::AuditRecord { .. } => None,
-        }
-    }
-
-    #[must_use]
-    pub fn detail(&self) -> Option<ErrorDetail> {
-        match self {
-            Self::Config { .. } | Self::Callback { .. } => Some(ErrorDetail::Error {
-                error: self.to_string(),
+            Self::Config { .. } => Some(HttpFailure {
+                status: StatusCode::BAD_REQUEST,
+                detail: ErrorDetail::Error {
+                    error: self.to_string(),
+                },
             }),
-            Self::TeamAccessDenied => Some(ErrorDetail::Text(self.to_string())),
+            Self::Callback { status, .. } => Some(HttpFailure {
+                status: *status,
+                detail: ErrorDetail::Error {
+                    error: self.to_string(),
+                },
+            }),
+            Self::TeamAccessDenied => Some(HttpFailure {
+                status: StatusCode::FORBIDDEN,
+                detail: ErrorDetail::Text(self.to_string()),
+            }),
             Self::CallbackSettings { .. }
             | Self::Metadata { .. }
             | Self::Snapshot { .. }
