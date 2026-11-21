@@ -42,11 +42,17 @@ struct BackendLog {
 
 struct FakeBackend {
     log: Arc<Mutex<BackendLog>>,
+    send_error: Option<String>,
 }
 
 #[async_trait]
 impl RealtimeBackend for FakeBackend {
     async fn send(&mut self, message: RealtimeMessage) -> Result<(), WebSocketError> {
+        if let Some(error) = &self.send_error {
+            return Err(WebSocketError {
+                message: error.clone(),
+            });
+        }
         self.log.lock().unwrap().sent.push(message);
         Ok(())
     }
@@ -143,6 +149,7 @@ struct ScriptedDialer {
     records: Arc<Mutex<Vec<DialRecord>>>,
     backend_log: Arc<Mutex<BackendLog>>,
     source_frames: Vec<RealtimeMessage>,
+    send_error: Option<String>,
 }
 
 #[async_trait]
@@ -172,6 +179,7 @@ impl RealtimeWebSocketDialer for ScriptedDialer {
             DialOutcome::Connect => Ok(ConnectedBackend {
                 sender: Box::new(FakeBackend {
                     log: Arc::clone(&self.backend_log),
+                    send_error: self.send_error.clone(),
                 }),
                 source: Some(if self.source_frames.is_empty() {
                     Box::new(ClosedSource)
@@ -231,6 +239,7 @@ struct TestProvider {
     own_backend: bool,
     validate_error: Option<String>,
     backend_log: Arc<Mutex<BackendLog>>,
+    send_error: Option<String>,
 }
 
 #[async_trait]
@@ -281,6 +290,7 @@ impl BaseRealtimeConfig for TestProvider {
         if self.own_backend {
             return Ok(Some(FakeBackend {
                 log: Arc::clone(&self.backend_log),
+                send_error: self.send_error.clone(),
             }));
         }
         Ok(None)
@@ -430,6 +440,7 @@ pub(super) struct HarnessOptions {
     pub(super) relay_fails: bool,
     pub(super) max_message_size_bytes: usize,
     pub(super) source_frames: Vec<RealtimeMessage>,
+    pub(super) backend_send_error: Option<String>,
 }
 
 impl Default for HarnessOptions {
@@ -449,6 +460,7 @@ impl Default for HarnessOptions {
             relay_fails: false,
             max_message_size_bytes: 1024,
             source_frames: Vec::new(),
+            backend_send_error: None,
         }
     }
 }
@@ -487,6 +499,7 @@ pub(super) fn harness<'callback>(
     for dial in options.dials {
         outcomes.push_back(dial);
     }
+    let backend_send_error = options.backend_send_error;
     Harness {
         provider: Arc::new(TestProvider {
             requires_setup: options.requires_setup,
@@ -495,12 +508,14 @@ pub(super) fn harness<'callback>(
             own_backend: options.own_backend,
             validate_error: options.validate_error,
             backend_log: Arc::clone(&backend_log),
+            send_error: backend_send_error.clone(),
         }),
         dialer: ScriptedDialer {
             outcomes: Mutex::new(outcomes),
             records: Arc::clone(&records),
             backend_log: Arc::clone(&backend_log),
             source_frames: options.source_frames,
+            send_error: backend_send_error,
         },
         callback_refs,
         client: ClientHandle {

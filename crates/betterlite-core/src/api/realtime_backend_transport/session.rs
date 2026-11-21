@@ -151,17 +151,25 @@ where
         let source_ref = limited
             .as_mut()
             .map(|limited| limited as &mut dyn RealtimeBackendSource);
-        self.send_setup(&mut state).await?;
-        self.send_synthetic(&mut state).await?;
-        let relayed = self
-            .relay
-            .relay(SessionRelay {
-                state: &mut state,
-                source: source_ref,
-                cancellation: &self.cancellation,
-            })
-            .await
-            .map_err(RealtimeConnectionError::Relay);
+        let setup = self.send_setup(&mut state).await;
+        let relayed = match setup {
+            Ok(()) => {
+                let synthetic = self.send_synthetic(&mut state).await;
+                match synthetic {
+                    Ok(()) => self
+                        .relay
+                        .relay(SessionRelay {
+                            state: &mut state,
+                            source: source_ref,
+                            cancellation: &self.cancellation,
+                        })
+                        .await
+                        .map_err(RealtimeConnectionError::Relay),
+                    Err(error) => Err(error),
+                }
+            }
+            Err(error) => Err(error),
+        };
         // the async context manager exits on every path, and a close failure replaces whatever the body was returning
         let closed = self.close_backend(&mut state).await;
         closed?;

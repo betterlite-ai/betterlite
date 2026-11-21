@@ -80,4 +80,14 @@ async fn realtime_backend_open_retry() {
     assert!(invalid_headers.dials().is_empty());
     assert!(invalid_headers.texts().is_empty());
     assert!(invalid_headers.close().is_none());
+
+    let mut options = HarnessOptions::default();
+    options.requires_setup = true;
+    options.setup = Some("{\"setup\":{}}".to_owned());
+    options.backend_send_error = Some("the backend is gone".to_owned());
+    let mut setup_failed = harness(options, Vec::new());
+    setup_failed.run().await.unwrap();
+    assert!(setup_failed.sent().is_empty());
+    assert!(setup_failed.closed());
+    assert_eq!(setup_failed.close().map(|close| close.0), Some(1011));
 }
