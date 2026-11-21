@@ -3,8 +3,8 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::Object;
 use betterlite_openai::output_limits::{ErrorBody, RejectedFieldsError, without_rejected_fields};
 use indexmap::IndexMap;
+use regex::Regex;
 use thiserror::Error;
-use unicode_general_category::{GeneralCategory, get_general_category};
 
 // LiteLLM's AzureFoundryErrorStrings.SET_EXTRA_PARAMETERS_TO_PASS_THROUGH
 pub const PASS_THROUGH_HINT: &str = "Set extra-parameters to 'pass-through'";
@@ -16,8 +16,12 @@ pub const INVALID_TOOL_CALL_INDEX_MARKER: &str =
 // max_retry_on_unprocessable_entity_error: LiteLLM's range(max(2, 1)) makes two sends, so one repair
 pub const MAX_ATTEMPTS: u32 = 2;
 
-const TOOL_INDEX_PREFIX: &str = "tools[";
-const TOOL_INDEX_SUFFIX: &str = "].";
+// LiteLLM's re.search(r"tools\[\d+\]\."): \d is the decimal-digit category
+const TOOL_INDEX_PATTERN: &str = r"tools\[\p{Nd}+\]\.";
+// LiteLLM's re.findall(r"tools\[\d+\]\.([\w-]+)"): \w is Python's str.isalnum letter and number categories plus the underscore
+const TOOL_FIELD_PATTERN: &str = r"tools\[\p{Nd}+\]\.([\p{L}\p{N}_-]+)";
+// LiteLLM's re.search(r"\[(.*?)\]"): the dot stops at a newline
+const BRACKET_PATTERN: &str = r"\[(.*?)\]";
 const PARAMETER_SEPARATOR: char = ',';
 
 // AzureAIStudioConfig's retry policy: a truthy per-call drop_params or the proxy-wide litellm.drop_params
@@ -118,18 +122,10 @@ fn extra_parameters(error_text: &str) -> Vec<String> {
 
 // re's `\[(.*?)\]` searched left to right: the dot stops at a newline, so an unclosed bracket is skipped and a later one can match
 fn first_bracket_group(error_text: &str) -> Option<&str> {
-    let mut from = 0_usize;
-    while let Some(offset) = error_text.get(from..).and_then(|rest| rest.find('[')) {
-        let open = from.saturating_add(offset);
-        let rest = error_text.get(open.saturating_add(1)..)?;
-        let line_end = rest.find('\n').unwrap_or(rest.len());
-        let line = rest.get(..line_end)?;
-        if let Some(close) = line.find(']') {
-            return line.get(..close);
-        }
-        from = open.saturating_add(1);
-    }
-    None
+    let pattern = compiled(BRACKET_PATTERN)?;
+    let found = pattern.captures(error_text)?;
+    let group = found.get(1)?;
+    Some(group.as_str())
 }
 
 fn drop_tool_level_extra_fields(request: &mut Object, error_text: &str) {
@@ -152,87 +148,30 @@ fn drop_tool_level_extra_fields(request: &mut Object, error_text: &str) {
 
 // LiteLLM's _error_has_tool_level_extra_fields: re.search(r"tools\[\d+\]\.")
 fn has_tool_level_extra_fields(error_text: &str) -> bool {
-    let mut from = 0_usize;
-    while let Some(offset) = error_text
-        .get(from..)
-        .and_then(|rest| rest.find(TOOL_INDEX_PREFIX))
-    {
-        let start = from.saturating_add(offset);
-        if tool_index_end(error_text, start).is_some() {
-            return true;
-        }
-        from = start.saturating_add(1);
-    }
-    false
+    compiled(TOOL_INDEX_PATTERN).is_some_and(|pattern| pattern.is_match(error_text))
 }
 
 // re.findall(r"tools\[\d+\]\.([\w-]+)"): every non-overlapping field name, the same one only once
 fn tool_level_field_names(error_text: &str) -> Vec<String> {
-    let mut names = Vec::new();
-    let mut from = 0_usize;
-    while let Some(offset) = error_text
-        .get(from..)
-        .and_then(|rest| rest.find(TOOL_INDEX_PREFIX))
-    {
-        let start = from.saturating_add(offset);
-        let Some(after_index) = tool_index_end(error_text, start) else {
-            from = start.saturating_add(1);
+    let Some(pattern) = compiled(TOOL_FIELD_PATTERN) else {
+        return Vec::new();
+    };
+    let mut names: Vec<&str> = Vec::new();
+    for found in pattern.captures_iter(error_text) {
+        let Some(name) = found.get(1) else {
             continue;
         };
-        let rest = error_text.get(after_index..).unwrap_or_default();
-        let name: String = rest
-            .chars()
-            .take_while(|character| is_tool_field_char(*character))
-            .collect();
-        if name.is_empty() {
-            from = start.saturating_add(1);
-            continue;
-        }
-        from = after_index.saturating_add(name.len());
-        if !names.contains(&name) {
-            names.push(name);
+        let text = name.as_str();
+        if !names.contains(&text) {
+            names.push(text);
         }
     }
-    names
+    names.into_iter().map(str::to_owned).collect()
 }
 
-// Python's \d is the Unicode decimal-digit category
-fn tool_index_end(error_text: &str, start: usize) -> Option<usize> {
-    let digits_start = start.saturating_add(TOOL_INDEX_PREFIX.len());
-    let rest = error_text.get(digits_start..)?;
-    let digits: usize = rest
-        .chars()
-        .take_while(|character| get_general_category(*character) == GeneralCategory::DecimalNumber)
-        .map(char::len_utf8)
-        .sum();
-    if digits == 0 {
-        return None;
-    }
-    let after_digits = digits_start.saturating_add(digits);
-    if !error_text
-        .get(after_digits..)?
-        .starts_with(TOOL_INDEX_SUFFIX)
-    {
-        return None;
-    }
-    Some(after_digits.saturating_add(TOOL_INDEX_SUFFIX.len()))
-}
-
-// Python's [\w-]: str.isalnum()'s letter and number categories, the underscore and the hyphen
-fn is_tool_field_char(character: char) -> bool {
-    character == '_'
-        || character == '-'
-        || matches!(
-            get_general_category(character),
-            GeneralCategory::UppercaseLetter
-                | GeneralCategory::LowercaseLetter
-                | GeneralCategory::TitlecaseLetter
-                | GeneralCategory::ModifierLetter
-                | GeneralCategory::OtherLetter
-                | GeneralCategory::DecimalNumber
-                | GeneralCategory::LetterNumber
-                | GeneralCategory::OtherNumber
-        )
+// the three patterns are constants, so a compile failure is a typo here; matching nothing is the safe reading
+fn compiled(source: &str) -> Option<Regex> {
+    Regex::new(source).ok()
 }
 
 mod tests;

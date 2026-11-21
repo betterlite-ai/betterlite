@@ -1930,6 +1930,7 @@ dependencies = [
  "jiff",
  "mutants",
  "percent-encoding",
+ "regex",
  "rstest",
  "rust_decimal",
  "secrecy",
@@ -1939,7 +1940,6 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
- "unicode-general-category",
  "url",
  "uuid",
 ]

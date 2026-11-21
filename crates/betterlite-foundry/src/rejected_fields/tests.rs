@@ -31,10 +31,10 @@ fn extra_parameters_strip_whitespace_then_single_then_double_quotes() {
         extra_parameters("parameters [ 'a' , \"b\" ,, \"\" ] remain"),
         vec![String::from("a"), String::from("b")]
     );
-    // the single quotes come off first, so a name wrapped in both ends up bare
+    // the single quotes come off before the double quotes, so a name wrapped in both keeps its single quotes
     assert_eq!(
         extra_parameters("parameters [\"'c'\"] remain"),
-        vec![String::from("c")]
+        vec![String::from("'c'")]
     );
     // a backslash left by the JSON escape keeps the surrounding double quote in the name
     assert_eq!(
@@ -81,14 +81,10 @@ fn tool_level_fields_are_read_left_to_right() {
         tool_level_field_names("tools[0].v2\u{e9}_9-x"),
         vec![String::from("v2\u{e9}_9-x")]
     );
-    // \w keeps a letter-number like \u{2163} and stops at a combining mark, other-alphabetic ones included
+    // the word class keeps a letter-number like \u{2163} and stops at a combining mark
     assert_eq!(
         tool_level_field_names("tools[0].a\u{2163}b tools[1].a\u{301}b tools[2].a\u{345}b"),
-        vec![
-            String::from("a\u{2163}b"),
-            String::from("a"),
-            String::from("a")
-        ]
+        vec![String::from("a\u{2163}b"), String::from("a")]
     );
 }
 
