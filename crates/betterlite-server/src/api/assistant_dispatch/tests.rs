@@ -305,7 +305,7 @@ enum Answered {
 }
 
 // the request one operation sends, as far as its case checks it
-struct Sent {
+struct Posted {
     method: &'static str,
     url: Option<&'static str>,
     authorization: Option<&'static str>,
@@ -317,7 +317,7 @@ struct OpCase {
     fields: BTreeMap<String, Json>,
     route: Route<'static>,
     replies: &'static [(u16, &'static str)],
-    sent: Option<Sent>,
+    posted: Option<Posted>,
     answered: Answered,
 }
 
@@ -333,7 +333,7 @@ struct OpCase {
     ]),
     route: Route::default(),
     replies: &[(200, ASSISTANT)],
-    sent: Some(Sent {
+    posted: Some(Posted {
         method: "POST",
         url: Some("https://mock.test/v1/assistants"),
         authorization: Some("Bearer sk-test"),
@@ -349,7 +349,7 @@ struct OpCase {
         client: Some(supplied("sk-supplied")),
     },
     replies: &[(200, PAGE)],
-    sent: Some(Sent {
+    posted: Some(Posted {
         method: "GET",
         url: None,
         // a supplied client's own key reaches the SDK owner unchanged
@@ -366,7 +366,7 @@ struct OpCase {
         client: None,
     },
     replies: &[(200, DELETED)],
-    sent: Some(Sent {
+    posted: Some(Posted {
         method: "DELETE",
         url: Some("https://mock.test/v1/assistants/asst_a"),
         authorization: None,
@@ -378,7 +378,7 @@ struct OpCase {
     fields: openai_data(),
     route: Route::default(),
     replies: &[(200, THREAD)],
-    sent: Some(Sent {
+    posted: Some(Posted {
         method: "POST",
         url: Some("https://mock.test/v1/threads"),
         authorization: None,
@@ -394,7 +394,7 @@ struct OpCase {
         client: Some(supplied("sk-supplied")),
     },
     replies: &[(200, THREAD)],
-    sent: Some(Sent {
+    posted: Some(Posted {
         method: "GET",
         url: Some("https://mock.test/v1/threads/thread_a"),
         // a supplied client's own key reaches the thread facade unchanged
@@ -418,7 +418,7 @@ struct OpCase {
         client: None,
     },
     replies: &[(200, MESSAGE)],
-    sent: Some(Sent {
+    posted: Some(Posted {
         method: "POST",
         url: Some("https://mock.test/v1/threads/thread_a/messages"),
         authorization: None,
@@ -434,7 +434,7 @@ struct OpCase {
         client: None,
     },
     replies: &[(200, MESSAGE_PAGE)],
-    sent: Some(Sent {
+    posted: Some(Posted {
         method: "GET",
         url: None,
         authorization: None,
@@ -454,7 +454,7 @@ struct OpCase {
         client: None,
     },
     replies: &[(200, RUN), (200, RUN)],
-    sent: Some(Sent {
+    posted: Some(Posted {
         method: "POST",
         url: Some("https://mock.test/v1/threads/thread_a/runs"),
         authorization: None,
@@ -475,7 +475,7 @@ struct OpCase {
         client: None,
     },
     replies: &[(200, RUN)],
-    sent: None,
+    posted: None,
     answered: Answered::Streaming,
 })]
 #[tokio::test]
@@ -489,23 +489,23 @@ async fn dispatch_all_assistant_operations(#[case] case: OpCase) {
         case.replies,
     )
     .await;
-    assert_sent(&outcome, case.sent.as_ref());
+    assert_posted(&outcome, case.posted.as_ref());
     assert_answered(outcome, case.answered);
 }
 
 // the request the operation sent, or none when the case expects the lazy stream
-fn assert_sent(outcome: &OutcomeView, sent: Option<&Sent>) {
-    let Some(sent) = sent else {
+fn assert_posted(outcome: &OutcomeView, posted: Option<&Posted>) {
+    let Some(posted) = posted else {
         // stream=true stays a lazy manager until its owner enters it; no provider request happened yet
         assert!(outcome.seen.is_empty());
         return;
     };
     let seen = outcome.seen.first().expect("the operation sent a request");
-    assert_eq!(seen.method, sent.method);
-    if let Some(url) = sent.url {
+    assert_eq!(seen.method, posted.method);
+    if let Some(url) = posted.url {
         assert_eq!(seen.url, url);
     }
-    if let Some(authorization) = sent.authorization {
+    if let Some(authorization) = posted.authorization {
         assert_eq!(seen.authorization.as_deref(), Some(authorization));
     }
 }
