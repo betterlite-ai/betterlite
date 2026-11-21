@@ -1,14 +1,14 @@
 id: B1739
 milestone: M4 keys, spend and management
 title: Maintain spend partitions within a shrinking statement budget
-status: done
+status: todo
 depends_on: [B002, B3874, B3875, B171, B198, B700, B860]
 file: tasks/B1739-spend-partitions.yaml
 covers:
   - "litellm/proxy/db/db_transaction_queue/{spend_logs_partition_manager,spend_log_cleanup_metrics}.py"
 parent: B070
 split_from: null
-resolution: merged
+resolution: null
 superseded_by: null
 blocked_reason: null
-pr: 2824
+pr: null
