@@ -10,6 +10,9 @@ use betterlite_db::budget_permission_rows::{JsonData, Timestamp};
 use betterlite_db::database_failures::gate::{
     DbLookupStallTracker, LoopBoundSemaphore, SystemClock,
 };
+use betterlite_db::spend_rows::rows::{
+    SpendCounterRows as DbSpendCounterRows, SpendRow as DbSpendRow, SpendRowLookup,
+};
 use betterlite_redis::redis_cache::RedisCache;
 use betterlite_redis::redis_cache::connect::{RedisCacheOptions, connect};
 use betterlite_redis::redis_client_reuse::breaker::{BreakerAdmission, BreakerOpen};
@@ -38,9 +41,9 @@ use crate::spend_reseed::cache::{ActiveSpendBatch, ReseedCache, WindowReseedCach
 use crate::spend_reseed::locks::LockRegistry;
 use crate::spend_reseed::reseed::SpendCounterReseed;
 use crate::spend_reseed::rows::{
-    SpendAggregateRow, SpendCounterRows, SpendRow, SpendRowLookup, WindowEntity, WindowSpendRow,
+    SpendAggregateRow, SpendCounterRows, SpendRow, WindowEntity, WindowSpendRow,
 };
-use crate::spend_reseed::values::ReseedCacheValue;
+use crate::spend_reseed::values::{ReseedCacheValue, stored_amount};
 
 #[derive(Debug, thiserror::Error)]
 #[error("the fake store failed")]
@@ -213,10 +216,10 @@ impl FakeRows {
     }
 }
 
-impl SpendCounterRows for FakeRows {
+impl DbSpendCounterRows for FakeRows {
     type Error = FakeError;
 
-    async fn spend_row(&self, lookup: SpendRowLookup<'_>) -> Result<Option<SpendRow>, FakeError> {
+    async fn spend_row(&self, lookup: SpendRowLookup<'_>) -> Result<Option<DbSpendRow>, FakeError> {
         self.lookups
             .lock()
             .expect("the fake lookup lock")
@@ -229,8 +232,20 @@ impl SpendCounterRows for FakeRows {
             self.read_started.add_permits(2);
             self.read_release.notified().await;
         }
-        Ok(self.row.lock().expect("the fake row lock").clone())
+        let row = self.row.lock().expect("the fake row lock").clone();
+        let Some(stored) = row else {
+            return Ok(None);
+        };
+        let spend = match stored_amount(stored.spend.as_ref()) {
+            Ok(spend) => spend,
+            Err(_error) => return Err(FakeError),
+        };
+        Ok(Some(DbSpendRow { spend: Some(spend) }))
     }
+}
+
+impl SpendCounterRows for FakeRows {
+    type Error = FakeError;
 
     async fn window_row(
         &self,
@@ -641,7 +656,7 @@ pub(crate) fn reseed_with(
                 .single()
                 .expect("a fixture instant"),
         }),
-        durations: Box::new(FakeDurations),
+        durations: Arc::new(FakeDurations),
         tasks: services.tasks,
         gate: services.gate,
         stall_tracker: services.stall_tracker,

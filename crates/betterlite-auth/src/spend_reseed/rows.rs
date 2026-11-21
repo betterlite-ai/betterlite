@@ -27,66 +27,6 @@ pub enum SpendAggregateRow {
     Attribute { sum: Option<JsonData> },
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SpendRowLookup<'key> {
-    Key(&'key str),
-    TeamMember {
-        user_id: &'key str,
-        team_id: &'key str,
-    },
-    Team(&'key str),
-    User(&'key str),
-    Organization(&'key str),
-    Project(&'key str),
-    EndUser(&'key str),
-}
-
-// the bounded lookup future must be 'static, so the decoded lookup owns the ids it reads
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) enum OwnedLookup {
-    Key(String),
-    TeamMember { user_id: String, team_id: String },
-    Team(String),
-    User(String),
-    Organization(String),
-    Project(String),
-    EndUser(String),
-}
-
-impl OwnedLookup {
-    #[must_use]
-    pub(super) fn borrowed(&self) -> SpendRowLookup<'_> {
-        match self {
-            Self::Key(id) => SpendRowLookup::Key(id),
-            Self::TeamMember { user_id, team_id } => {
-                SpendRowLookup::TeamMember { user_id, team_id }
-            }
-            Self::Team(id) => SpendRowLookup::Team(id),
-            Self::User(id) => SpendRowLookup::User(id),
-            Self::Organization(id) => SpendRowLookup::Organization(id),
-            Self::Project(id) => SpendRowLookup::Project(id),
-            Self::EndUser(id) => SpendRowLookup::EndUser(id),
-        }
-    }
-}
-
-impl From<SpendRowLookup<'_>> for OwnedLookup {
-    fn from(lookup: SpendRowLookup<'_>) -> Self {
-        match lookup {
-            SpendRowLookup::Key(id) => Self::Key(id.to_owned()),
-            SpendRowLookup::TeamMember { user_id, team_id } => Self::TeamMember {
-                user_id: user_id.to_owned(),
-                team_id: team_id.to_owned(),
-            },
-            SpendRowLookup::Team(id) => Self::Team(id.to_owned()),
-            SpendRowLookup::User(id) => Self::User(id.to_owned()),
-            SpendRowLookup::Organization(id) => Self::Organization(id.to_owned()),
-            SpendRowLookup::Project(id) => Self::Project(id.to_owned()),
-            SpendRowLookup::EndUser(id) => Self::EndUser(id.to_owned()),
-        }
-    }
-}
-
 // _WINDOW_SPEND_ENTITY_TYPES and _WINDOW_SPEND_LOG_FIELDS: only key and team window counters have a row
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WindowEntity {
@@ -119,18 +59,8 @@ impl WindowEntity {
     }
 }
 
-pub enum LookupAnswer<Row, Failure> {
-    Row(Option<Row>),
-    Failed(Failure),
-}
-
 pub trait SpendCounterRows: Send + Sync + 'static {
     type Error: Error + Send + Sync + 'static;
-
-    fn spend_row(
-        &self,
-        lookup: SpendRowLookup<'_>,
-    ) -> impl Future<Output = Result<Option<SpendRow>, Self::Error>> + Send;
 
     fn window_row(
         &self,

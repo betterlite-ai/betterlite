@@ -1,10 +1,9 @@
-use std::error::Error as StdError;
-use std::future::Future;
 use std::sync::Arc;
 
 use betterlite_db::budget_permission_rows::Timestamp;
-use betterlite_db::database_failures::deadline::{DbLookupError, LookupRequest};
 use betterlite_db::database_failures::gate::{DbLookupStallTracker, LoopBoundSemaphore};
+use betterlite_db::spend_rows::reader::SpendCounterReader;
+use betterlite_db::spend_rows::rows::SpendCounterRows as DbSpendCounterRows;
 use rust_decimal::Decimal;
 use thiserror::Error;
 use tokio_util::task::TaskTracker;
@@ -16,14 +15,11 @@ use crate::spend_counter_batch::batch::{CounterValue, SpendCounterBatchError};
 
 use super::cache::{ActiveSpendBatch, ReseedCache, WindowReseedCache};
 use super::locks::LockRegistry;
-use super::reads::{CounterRead, bounded_row, cached_amount, counter_lookup, counter_row};
-use super::rows::{LookupAnswer, OwnedLookup, SpendCounterRows, SpendRow, WindowEntity};
+use super::reads::{CounterDurations, cached_amount};
+use super::rows::{SpendCounterRows, WindowEntity};
 use super::values::{SpendValueError, aggregate_amount, stored_amount};
 use super::warm::warm;
 use super::windows::{WindowQuery, WindowReseed, warm_window};
-
-pub const SPEND_COUNTER_LOOKUP: &str = "spend_counter";
-pub const END_USER_SPEND_LOOKUP: &str = "end_user_spend";
 
 #[derive(Debug, Error)]
 pub enum CoalescedError<CacheError> {
@@ -39,7 +35,7 @@ pub struct SpendCounterReseed<Rows: SpendCounterRows> {
     pub rows: Option<Arc<Rows>>,
     pub locks: LockRegistry,
     pub clock: Box<dyn BudgetClock>,
-    pub durations: Box<dyn DurationParser + Send + Sync>,
+    pub durations: Arc<dyn DurationParser + Send + Sync>,
     pub tasks: TaskTracker,
     pub gate: Arc<LoopBoundSemaphore>,
     pub stall_tracker: Arc<DbLookupStallTracker>,
@@ -47,67 +43,36 @@ pub struct SpendCounterReseed<Rows: SpendCounterRows> {
 }
 
 impl<Rows: SpendCounterRows> SpendCounterReseed<Rows> {
-    pub async fn from_db(&self, counter_key: &str) -> Result<Option<Decimal>, SpendValueError> {
-        let Some(rows) = self.rows.as_ref().map(Arc::clone) else {
-            return Ok(None);
-        };
-        self.counter_amount(rows, counter_key, CounterRead::Primary)
-            .await
-    }
-
-    pub async fn end_user_from_db(
-        &self,
-        counter_key: &str,
-    ) -> Result<Option<Decimal>, SpendValueError> {
-        let Some(rows) = self.rows.as_ref().map(Arc::clone) else {
-            return Ok(None);
-        };
-        self.counter_amount(rows, counter_key, CounterRead::EndUser)
-            .await
-    }
-
-    async fn counter_amount(
-        &self,
-        rows: Arc<Rows>,
-        counter_key: &str,
-        read: CounterRead,
-    ) -> Result<Option<Decimal>, SpendValueError> {
-        let (gate, name) = match read {
-            CounterRead::Primary => (Some(Arc::clone(&self.gate)), SPEND_COUNTER_LOOKUP),
-            CounterRead::EndUser => (None, END_USER_SPEND_LOOKUP),
-        };
-        let Some(lookup) =
-            counter_lookup(counter_key, self.durations.as_ref(), self.clock.now(), read)
-        else {
-            return Ok(None);
-        };
-        let owned = OwnedLookup::from(lookup);
-        let request = async move {
-            let answer = counter_row(gate.as_deref(), rows.as_ref(), owned).await;
-            Ok::<_, DbLookupError>(answer)
-        };
-        self.bounded_amount(request, name, counter_key).await
-    }
-
-    async fn bounded_amount<Failure, Lookup>(
-        &self,
-        lookup: Lookup,
-        name: &str,
-        counter_key: &str,
-    ) -> Result<Option<Decimal>, SpendValueError>
+    // B1735's reader owns both reads: the primary entity row and the end-user budget floor
+    fn reader(&self) -> SpendCounterReader<Rows>
     where
-        Failure: StdError + Send + Sync + 'static,
-        Lookup: Future<Output = Result<LookupAnswer<SpendRow, Failure>, DbLookupError>>
-            + Send
-            + 'static,
+        Rows: DbSpendCounterRows,
     {
-        let Some(row) =
-            bounded_row(lookup, self.lookup_request(name), &self.tasks, counter_key).await
-        else {
-            return Ok(None);
-        };
-        row.map(|stored| stored_amount(stored.spend.as_ref()))
-            .transpose()
+        SpendCounterReader {
+            rows: self.rows.as_ref().map(Arc::clone),
+            durations: Arc::new(CounterDurations {
+                durations: Arc::clone(&self.durations),
+                now: self.clock.now(),
+            }),
+            tasks: self.tasks.clone(),
+            gate: Arc::clone(&self.gate),
+            stall_tracker: Arc::clone(&self.stall_tracker),
+            deadline_seconds: self.deadline_seconds,
+        }
+    }
+
+    pub async fn from_db(&self, counter_key: &str) -> Option<Decimal>
+    where
+        Rows: DbSpendCounterRows,
+    {
+        self.reader().from_db(counter_key).await
+    }
+
+    pub async fn end_user_from_db(&self, counter_key: &str) -> Option<Decimal>
+    where
+        Rows: DbSpendCounterRows,
+    {
+        self.reader().end_user_from_db(counter_key).await
     }
 
     pub async fn increment_in_memory<Cache>(
@@ -131,6 +96,7 @@ impl<Rows: SpendCounterRows> SpendCounterReseed<Rows> {
         require_cache_warm: bool,
     ) -> Result<Option<Decimal>, CoalescedError<Cache::Error>>
     where
+        Rows: DbSpendCounterRows,
         Cache: ReseedCache + ?Sized,
         Batch: ActiveSpendBatch + ?Sized,
     {
@@ -138,7 +104,7 @@ impl<Rows: SpendCounterRows> SpendCounterReseed<Rows> {
         if let Some(amount) = cached_answer(cache, batch, counter_key).await? {
             return Ok(Some(amount));
         }
-        let Some(db_spend) = self.from_db(counter_key).await? else {
+        let Some(db_spend) = self.from_db(counter_key).await else {
             return Ok(None);
         };
         warm(cache, batch, counter_key, db_spend, require_cache_warm).await
@@ -172,15 +138,6 @@ impl<Rows: SpendCounterRows> SpendCounterReseed<Rows> {
             Some(window_spend) => {
                 warm_window(cache, batch, request.counter_key, window_spend).await
             }
-        }
-    }
-
-    fn lookup_request<'request>(&'request self, name: &'request str) -> LookupRequest<'request> {
-        LookupRequest {
-            name,
-            deadline_seconds: None,
-            default_deadline_seconds: self.deadline_seconds,
-            tracker: self.stall_tracker.as_ref(),
         }
     }
 

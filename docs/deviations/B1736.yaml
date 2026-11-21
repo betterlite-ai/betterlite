@@ -18,6 +18,16 @@ deviations:
       The workspace requires checked Decimal money and the active batch carries Decimals; the
       amount becomes a float only where the Redis and local tiers store one.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/spend_counter_reseed.py#L251-L277
+  - what: >-
+      A stored spend row whose spend field is not a number answers as no row: betterlite_db's
+      SpendCounterReader logs the failed read and returns None, so the caller keeps its own
+      fallback, where LiteLLM's float(getattr(row, "spend", 0.0) or 0.0) raises out of from_db
+      and float(row.spend or 0.0) raises out of end_user_from_db, failing the request.
+    why: >-
+      B1735's reader owns both reads and documents a failed row read as None; the conversion
+      happens in the auth row source, which reports it the way it reports a database failure.
+      The spend columns are numeric in the schema, so a working setup never stores such a row.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/spend_counter_reseed.py#L143-L145
 kept_bugs:
   - what: >-
       A failed or stale window table read falls back to the spend-logs aggregate, and a failed
