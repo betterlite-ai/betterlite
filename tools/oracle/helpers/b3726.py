@@ -27,6 +27,9 @@ EVENT: Final[TypeAdapter[GuardrailEventHooks | None]] = TypeAdapter(GuardrailEve
 CHUNK: Final[TypeAdapter[ModelResponseStream]] = TypeAdapter(ModelResponseStream)
 TEXT_CHUNK: Final[TypeAdapter[TextCompletionResponse]] = TypeAdapter(TextCompletionResponse)
 MODEL: Final[TypeAdapter[ModelResponse]] = TypeAdapter(ModelResponse)
+ITEM: Final[TypeAdapter[bytes | ModelResponseStream | TextCompletionResponse]] = TypeAdapter(
+    bytes | ModelResponseStream | TextCompletionResponse
+)
 SIGNING: Final = {"aws_secret_access_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"}
 
 Payload: TypeAlias = dict[str, JsonValue]
@@ -183,11 +186,14 @@ def frames_json(text: str) -> JsonValue:
 
 
 def item_json(item: StreamItem) -> JsonValue:
-    if isinstance(item, bytes):
-        return frames_json(item.decode("utf-8"))
-    if isinstance(item, TextCompletionResponse):
-        return chunk_json(DICT.validate_python(JSON.validate_json(item.model_dump_json())))
-    return chunk_json(DICT.validate_python(JSON.validate_json(CHUNK.dump_json(item))))
+    payload = JSON.validate_json(ITEM.dump_json(item))
+    match payload:
+        case str():
+            return frames_json(payload)
+        case dict():
+            return chunk_json(DICT.validate_python(payload))
+        case None | bool() | int() | float() | list():
+            return None
 
 
 # LiteLLM's stream_chunk_builder sends a stream whose first choice carries text to text completion.
