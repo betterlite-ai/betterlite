@@ -167,7 +167,7 @@ def answer(row: Row, recorder: Recorder) -> JsonValue:
     litellm.log_auth_failure_key_identity = "log_auth_failure_key_identity" in switches
     try:
         return unparsable(row) if row["step"] == "unparsable" else handled(row)
-    except DeniedError as denied:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4374
+    except DeniedError as denied:
         return {"raised": wire(denied, denied.sanitized_internal_message())}
     except ProxyException as raised:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325
         return {"raised": wire(raised, None)}
