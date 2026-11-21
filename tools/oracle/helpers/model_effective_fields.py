@@ -76,6 +76,7 @@ MARKER_CALL: Final = TypeAdapter(MarkerCall)
 CREDENTIAL_CALL: Final = TypeAdapter(CredentialCall)
 RATE_LIMIT_CALL: Final = TypeAdapter(RateLimitCall)
 PTU_CALL: Final = TypeAdapter(PtuCall)
+CREDENTIALS: Final[TypeAdapter[list[CredentialItem]]] = TypeAdapter(list[CredentialItem])
 
 
 class FakeCredentialTable:
@@ -86,14 +87,12 @@ class FakeCredentialTable:
         self.names = names
         self.lookups = []
 
-    async def find_unique(self, *, where: dict[str, str]) -> CredentialItem | None:
+    async def find_unique(self, *, where: dict[str, str]) -> CredentialRow | None:
         name = where["credential_name"]
         self.lookups.append(name)
         if name not in self.names:
             return None
-        return CredentialItem.model_validate(
-            CredentialRow(credential_name=name, credential_values={}, credential_info={})
-        )
+        return CredentialRow(credential_name=name, credential_values={}, credential_info={})
 
 
 class FakeDatabase(PrismaWrapper):
@@ -152,12 +151,12 @@ def marker_answer(call: MarkerCall) -> JsonValue:
 
 
 def credential_answer(call: CredentialCall) -> JsonValue:
-    litellm.credential_list = [
-        CredentialItem.model_validate(
+    litellm.credential_list = CREDENTIALS.validate_python(
+        [
             CredentialRow(credential_name=name, credential_values={}, credential_info={})
-        )
-        for name in call["loaded"]
-    ]
+            for name in call["loaded"]
+        ]
+    )
     table = FakeCredentialTable(call["stored"])
     refusal: JsonValue = None
     try:
