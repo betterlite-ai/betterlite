@@ -136,7 +136,10 @@ pub(super) fn lifecycle_event(response_id: &str) -> ResponsesAPIStreamingRespons
     serde_json::from_str(&source).unwrap()
 }
 
-pub(super) fn json_of(value: &impl Serialize) -> Json {
+pub(super) fn json_of<T>(value: &T) -> Json
+where
+    T: Serialize,
+{
     serde_json::from_str(&serde_json::to_string(value).unwrap()).unwrap()
 }
 
