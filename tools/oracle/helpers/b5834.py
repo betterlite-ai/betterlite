@@ -214,10 +214,6 @@ def search_headers(call: SearchKeyCall) -> JsonValue:
     return {"ok": True, "headers": JSON.validate_python(headers)}
 
 
-def search_request(call: SearchCall) -> JsonValue:
-    return SEARCH.transform_search_request(call["query"], dict(call["optional_params"]))
-
-
 def search_reply(call: ReplyCall) -> JsonValue:
     reply = SEARCH.transform_search_response(response_of(call), LOG)
     view = SEARCH_VIEW.validate_json(reply.model_dump_json())
@@ -257,7 +253,10 @@ def search(input_value: SearchInput) -> JsonValue:
     return {
         "headers": [guarded(search_headers, item) for item in input_value["headers"]],
         "urls": [base_url(SEARCH, item) for item in input_value["urls"]],
-        "requests": [search_request(item) for item in input_value["requests"]],
+        "requests": [
+            SEARCH.transform_search_request(item["query"], dict(item["optional_params"]))
+            for item in input_value["requests"]
+        ],
         "replies": [guarded(search_reply, item) for item in input_value["replies"]],
     }
 
