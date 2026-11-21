@@ -10,6 +10,7 @@ use betterlite_guardrails::guardrail_base::failure::{GuardrailFailure, ModifyRes
 use betterlite_guardrails::guardrail_base::inputs::GuardrailLogTarget;
 use betterlite_guardrails::guardrail_message_scope::Object;
 use betterlite_guardrails::guardrail_translation::{BaseTranslation, TranslationCall};
+use rstest::rstest;
 
 use super::{ResponsesTranslation, ResponsesTranslationError};
 use crate::guardrails::responses_translation::output_rewrite::error::OutputRewriteError;
@@ -25,11 +26,11 @@ const REQUEST: &str = r#"{"model":"gpt-4o","instructions":"be brief","input":[{"
 const RESPONSE: &str = r#"{"id":"resp_1","object":"response","model":"gpt-4o","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"hello"}]}]}"#;
 
 const DELTA: &str =
-    r#"[{"type":"response.output_text.delta","output_index":0,"content_index":0,"delta":"hel"}]"#;
+    r#"[{"type":"response.output_text.delta","output_index":0,"content_index":0,"delta":"one"}]"#;
 
-const ROUND_TRIP: &str = r#"["raw",{"type":"response.output_text.delta","output_index":0,"content_index":0,"delta":"hel"}]"#;
+const ROUND_TRIP: &str = r#"["raw",{"type":"response.output_text.delta","output_index":0,"content_index":0,"delta":"one"}]"#;
 
-const UNPLACEABLE: &str = r#"[{"type":"response.output_text.delta","delta":"hel"}]"#;
+const UNPLACEABLE: &str = r#"[{"type":"response.output_text.delta","delta":"one"}]"#;
 
 fn translation() -> Responses {
     ResponsesTranslation::new(stamp(), ApiLimits::default(), Arc::new(cache()))
@@ -147,18 +148,22 @@ fn flags_responses_match_pinned_handler() {
     assert!(Responses::ASSEMBLES_STREAMED_RESPONSE);
 }
 
+#[rstest]
+#[case::delivery_off(false, "one")]
+#[case::delivery_on(true, "masked")]
 #[tokio::test]
-async fn flags_responses_delivery_flag_reaches_handler() {
-    for (deliver, expected) in [(false, "hel"), (true, "masked")] {
-        let fake = Arc::new(FakeGuardrail::replying(texts_reply(&["masked"])));
-        let applied = context(&fake, Some("guard"));
-        let mut stream = items(DELTA);
-        translation()
-            .process_streaming_response(&mut stream, &applied, call(deliver))
-            .await
-            .unwrap();
-        assert_eq!(text_at(&stream[0], &["delta"]), expected);
-    }
+async fn flags_responses_delivery_flag_reaches_handler(
+    #[case] deliver: bool,
+    #[case] expected: &str,
+) {
+    let fake = Arc::new(FakeGuardrail::replying(texts_reply(&["masked"])));
+    let applied = context(&fake, Some("guard"));
+    let mut stream = items(DELTA);
+    translation()
+        .process_streaming_response(&mut stream, &applied, call(deliver))
+        .await
+        .unwrap();
+    assert_eq!(text_at(&stream[0], &["delta"]), expected);
 }
 
 #[tokio::test]
@@ -196,7 +201,7 @@ async fn stream_responses_events_edit_in_place() {
 fn stream_responses_scan_key_follows_the_events() {
     let stream = items(DELTA);
     let key = translation().get_streaming_scan_key(&stream).unwrap();
-    assert_eq!(key.texts, vec![String::from("hel")]);
+    assert_eq!(key.texts, vec![String::from("one")]);
     assert!(!key.stream_ended);
 }
 

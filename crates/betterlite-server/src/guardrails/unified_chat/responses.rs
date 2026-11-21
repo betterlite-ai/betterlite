@@ -138,7 +138,7 @@ where
         guardrail: &Self::Guardrail,
         call: TranslationCall<'_, Self::LogTarget>,
     ) -> impl Future<Output = Result<(), Self::Failure>> + Send {
-        let mut events = to_events(responses_so_far);
+        let mut events: Vec<JsonValue> = responses_so_far.iter().map(to_json).collect();
         let name = guardrail.guardrail_name.as_deref();
         let applied = guardrail.guardrail.as_ref();
         let logged = call.logging_obj;
@@ -146,6 +146,8 @@ where
         let request_data = call.request_data;
         let deliver = call.deliver_ended_stream_rewrites;
         async move {
+            // B3672's handler function; its name is fixed by the handler task
+            // ast-grep-ignore: no-long-names
             let result = stream_output::process_output_streaming_response(
                 &mut events,
                 applied,
@@ -171,7 +173,7 @@ where
         &self,
         responses_so_far: &[GuardrailValue],
     ) -> Option<StreamingScanKey> {
-        stream_scan::streaming_scan_key(&to_events(responses_so_far))
+        stream_scan::streaming_scan_key(&responses_so_far.iter().map(to_json).collect::<Vec<_>>())
     }
 
     fn build_block_sse_chunks(
@@ -182,7 +184,8 @@ where
     ) -> Option<Vec<Vec<u8>>> {
         let details = modify_response(failure.guardrail()?)?;
         let original = details.original_response.as_ref().map(to_json);
-        let events = responses_so_far.map(to_events);
+        let events: Option<Vec<JsonValue>> =
+            responses_so_far.map(|items| items.iter().map(to_json).collect());
         block_events::build_block_sse_chunks(
             &details.message,
             &details.model,
@@ -200,7 +203,8 @@ where
         responses_so_far: Option<&[GuardrailValue]>,
     ) -> Option<Vec<GuardrailValue>> {
         let (status, message) = failure_message(failure.guardrail()?)?;
-        let events = responses_so_far.map(to_events);
+        let events: Option<Vec<JsonValue>> =
+            responses_so_far.map(|items| items.iter().map(to_json).collect());
         block_events::build_stream_error_items(status, &message, events.as_deref())
             .into_iter()
             .map(|event| {
@@ -227,10 +231,6 @@ where
             .map(|message| serde_json::from_value(message).ok())
             .collect()
     }
-}
-
-fn to_events(items: &[GuardrailValue]) -> Vec<JsonValue> {
-    items.iter().map(to_json).collect()
 }
 
 fn write_events(items: &mut [GuardrailValue], events: &[JsonValue]) {

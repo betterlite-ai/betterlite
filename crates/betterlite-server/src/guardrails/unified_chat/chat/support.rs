@@ -8,7 +8,7 @@ use uuid::Uuid;
 use super::super::{failure_parts, to_json};
 use crate::guardrails::chat_guardrail_translation::block_framing::blocked_identity::FreshIdentity;
 use crate::guardrails::chat_guardrail_translation::rewrites::response::{
-    ChatResponse, ContentPart, MessageContent, ResponseMessage,
+    ChatResponse, ContentPart, MessageContent, ResponseMessage, ResponseToolCall,
 };
 use crate::guardrails::responses_translation::block_events::BlockStamp;
 use crate::guardrails::responses_translation::block_events::guardrail_json::to_guardrail;
@@ -98,18 +98,18 @@ fn write_content(slot: Option<&mut GuardrailValue>, was: &ResponseMessage, now: 
     let Some(slot) = slot else {
         return;
     };
-    match (was.content.as_ref(), now.content.as_ref()) {
-        (Some(was_content), Some(now_content)) => match (was_content, now_content) {
-            (MessageContent::Text(old), MessageContent::Text(new)) => {
-                if old != new {
-                    *slot = GuardrailValue::Text(new.clone());
-                }
-            }
-            (MessageContent::Parts(old), MessageContent::Parts(new)) => write_parts(slot, old, new),
-            (MessageContent::Text(_), MessageContent::Parts(_))
-            | (MessageContent::Parts(_), MessageContent::Text(_)) => {}
-        },
-        (Some(_), None) | (None, Some(_)) | (None, None) => {}
+    let (Some(was_content), Some(now_content)) = (was.content.as_ref(), now.content.as_ref())
+    else {
+        return;
+    };
+    if let (MessageContent::Text(old), MessageContent::Text(new)) = (was_content, now_content) {
+        if old != new {
+            *slot = GuardrailValue::Text(new.clone());
+        }
+        return;
+    }
+    if let (MessageContent::Parts(old), MessageContent::Parts(new)) = (was_content, now_content) {
+        write_parts(slot, old, new);
     }
 }
 
@@ -136,10 +136,8 @@ fn write_tool_calls(
     was: &ResponseMessage,
     now: &ResponseMessage,
 ) {
-    let Some(slot) = slot else {
-        return;
-    };
-    let (Some(was_calls), Some(now_calls)) = (was.tool_calls.as_ref(), now.tool_calls.as_ref())
+    let (Some(slot), Some(was_calls), Some(now_calls)) =
+        (slot, was.tool_calls.as_ref(), now.tool_calls.as_ref())
     else {
         return;
     };
@@ -147,30 +145,33 @@ fn write_tool_calls(
         return;
     };
     for (call, (was_call, now_call)) in calls.iter_mut().zip(was_calls.iter().zip(now_calls)) {
-        let (Some(was_function), Some(now_function)) =
-            (was_call.function.as_ref(), now_call.function.as_ref())
-        else {
-            continue;
-        };
-        let GuardrailValue::Object(call_fields) = call else {
-            continue;
-        };
-        let Some(GuardrailValue::Object(function)) = call_fields.get_mut("function") else {
-            continue;
-        };
-        write_function_text(
-            function,
-            "name",
-            was_function.name.as_deref(),
-            now_function.name.as_deref(),
-        );
-        write_function_text(
-            function,
-            "arguments",
-            was_function.arguments.as_deref(),
-            now_function.arguments.as_deref(),
-        );
+        write_call(call, was_call, now_call);
     }
+}
+
+fn write_call(call: &mut GuardrailValue, was: &ResponseToolCall, now: &ResponseToolCall) {
+    let (Some(was_function), Some(now_function)) = (was.function.as_ref(), now.function.as_ref())
+    else {
+        return;
+    };
+    let GuardrailValue::Object(call_fields) = call else {
+        return;
+    };
+    let Some(GuardrailValue::Object(function)) = call_fields.get_mut("function") else {
+        return;
+    };
+    write_function_text(
+        function,
+        "name",
+        was_function.name.as_deref(),
+        now_function.name.as_deref(),
+    );
+    write_function_text(
+        function,
+        "arguments",
+        was_function.arguments.as_deref(),
+        now_function.arguments.as_deref(),
+    );
 }
 
 fn write_function_text(fields: &mut Object, key: &str, was: Option<&str>, now: Option<&str>) {

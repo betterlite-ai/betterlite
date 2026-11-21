@@ -135,6 +135,8 @@ where
         let request_data = call.request_data;
         let deliver = call.deliver_ended_stream_rewrites;
         async move {
+            // B3676's handler function; its name is fixed by the handler task
+            // ast-grep-ignore: no-long-names
             let result = process_stream::process_output_streaming_response(
                 &mut chunks,
                 applied,

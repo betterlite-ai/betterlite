@@ -23,7 +23,6 @@ pub mod stamps;
 pub mod tables;
 pub mod undeliverable;
 
-#[cfg(test)]
 mod tests;
 
 pub(crate) const UNKNOWN_GUARDRAIL_NAME: &str = "unknown";

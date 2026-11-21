@@ -9,6 +9,7 @@ use betterlite_guardrails::guardrail_base::failure::{GuardrailFailure, ModifyRes
 use betterlite_guardrails::guardrail_base::inputs::GuardrailLogTarget;
 use betterlite_guardrails::guardrail_message_scope::Object;
 use betterlite_guardrails::guardrail_translation::{BaseTranslation, TranslationCall};
+use rstest::rstest;
 
 use super::support::write_back;
 use super::{ChatTranslation, ChatTranslationError};
@@ -22,19 +23,19 @@ use crate::guardrails::unified_chat::tests::support::{
 
 type Chat = ChatTranslation<FakeGuardrail, FixedStamp, ScriptedAssembler>;
 
-const ASSEMBLED: &str = r#"{"model":"gpt-4o","choices":[{"index":0,"message":{"content":"hel"}}]}"#;
+const ASSEMBLED: &str = r#"{"model":"gpt-4o","choices":[{"index":0,"message":{"content":"one"}}]}"#;
 
 const REQUEST: &str = r#"{"model":"gpt-4o","messages":[{"role":"system","content":"sys"},{"role":"user","content":"hi"}]}"#;
 
 const COMPLETION: &str = r#"{"id":"chatcmpl-1","object":"chat.completion","created":7,"model":"gpt-4o","choices":[{"index":0,"message":{"role":"assistant","content":"hello"},"finish_reason":"stop"}],"vendor_extra":{"keep":true}}"#;
 
-const PARTS: &str = r#"{"id":"chatcmpl-1","object":"chat.completion","created":7,"model":"gpt-4o","choices":[{"index":0,"message":{"role":"assistant","content":[{"type":"text","text":"hel"},{"type":"text","text":"lo"},{"type":"image_url"}],"tool_calls":[{"id":"call_0","type":"function","function":{"name":"lookup","arguments":"{}"}},{"id":"call_1","type":"function","function":{}}]},"finish_reason":"stop"}],"vendor_extra":{"keep":true}}"#;
+const PARTS: &str = r#"{"id":"chatcmpl-1","object":"chat.completion","created":7,"model":"gpt-4o","choices":[{"index":0,"message":{"role":"assistant","content":[{"type":"text","text":"one"},{"type":"text","text":"lo"},{"type":"image_url"}],"tool_calls":[{"id":"call_0","type":"function","function":{"name":"lookup","arguments":"{}"}},{"id":"call_1","type":"function","function":{}}]},"finish_reason":"stop"}],"vendor_extra":{"keep":true}}"#;
 
 const PARTS_AFTER: &str = r#"{"model":"gpt-4o","choices":[{"index":0,"message":{"content":[{"type":"text","text":"masked"},{"type":"text","text":"lo"},{"type":"image_url"}],"tool_calls":[{"id":"call_0","type":"function","function":{"name":"search","arguments":"{\"q\":1}"}},{"id":"call_1","type":"function","function":{}}]}}]}"#;
 
-const RUNNING: &str = r#"[{"id":"chatcmpl-1","object":"chat.completion.chunk","created":7,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":"hel"},"finish_reason":null}]},"raw"]"#;
+const RUNNING: &str = r#"[{"id":"chatcmpl-1","object":"chat.completion.chunk","created":7,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":"one"},"finish_reason":null}]},"raw"]"#;
 
-const FINISHED: &str = r#"[{"id":"chatcmpl-1","object":"chat.completion.chunk","created":7,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":"hel"},"finish_reason":"stop"}]}]"#;
+const FINISHED: &str = r#"[{"id":"chatcmpl-1","object":"chat.completion.chunk","created":7,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":"one"},"finish_reason":"stop"}]}]"#;
 
 fn translation() -> Chat {
     ChatTranslation::new(stamp(), ScriptedAssembler(chat_response(ASSEMBLED)))
@@ -213,18 +214,19 @@ fn flags_chat_match_pinned_handler() {
     assert!(Chat::ASSEMBLES_STREAMED_RESPONSE);
 }
 
+#[rstest]
+#[case::delivery_off(false, "one")]
+#[case::delivery_on(true, "masked")]
 #[tokio::test]
-async fn flags_chat_delivery_flag_reaches_handler() {
-    for (deliver, expected) in [(false, "hel"), (true, "masked")] {
-        let fake = Arc::new(FakeGuardrail::replying(texts_reply(&["masked"])));
-        let applied = context(&fake, Some("guard"));
-        let mut stream = items(FINISHED);
-        translation()
-            .process_streaming_response(&mut stream, &applied, call(deliver))
-            .await
-            .unwrap();
-        assert_eq!(delta_content(&stream[0]), expected);
-    }
+async fn flags_chat_delivery_flag_reaches_handler(#[case] deliver: bool, #[case] expected: &str) {
+    let fake = Arc::new(FakeGuardrail::replying(texts_reply(&["masked"])));
+    let applied = context(&fake, Some("guard"));
+    let mut stream = items(FINISHED);
+    translation()
+        .process_streaming_response(&mut stream, &applied, call(deliver))
+        .await
+        .unwrap();
+    assert_eq!(delta_content(&stream[0]), expected);
 }
 
 #[tokio::test]
@@ -245,7 +247,7 @@ async fn stream_chat_chunks_round_trip() {
 fn stream_chat_scan_key_follows_the_chunk_text() {
     let stream = items(RUNNING);
     let key = translation().get_streaming_scan_key(&stream).unwrap();
-    assert_eq!(key.texts, vec![String::from("hel")]);
+    assert_eq!(key.texts, vec![String::from("one")]);
     assert!(!key.stream_ended);
     assert!(key.tool_calls.is_empty());
 }

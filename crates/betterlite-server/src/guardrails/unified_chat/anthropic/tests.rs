@@ -9,6 +9,7 @@ use betterlite_guardrails::guardrail_base::failure::{GuardrailFailure, ModifyRes
 use betterlite_guardrails::guardrail_base::inputs::GuardrailLogTarget;
 use betterlite_guardrails::guardrail_message_scope::Object;
 use betterlite_guardrails::guardrail_translation::{BaseTranslation, TranslationCall};
+use rstest::rstest;
 
 use super::{AnthropicTranslation, AnthropicTranslationError};
 use crate::guardrails::anthropic_translation::process_stream::error::ProcessStreamError;
@@ -26,9 +27,9 @@ const MESSAGE: &str = r#"{"id":"msg_1","type":"message","role":"assistant","mode
 const CHAT_COMPLETION: &str = r#"{"id":"chatcmpl-1","model":"gpt-4o","choices":[{"index":0,"message":{"role":"assistant","content":"hello"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}"#;
 
 const DELTA: &str =
-    r#"[{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hel"}}]"#;
+    r#"[{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"one"}}]"#;
 
-const ROUND_TRIP: &str = r#"["raw",{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hel"}}]"#;
+const ROUND_TRIP: &str = r#"["raw",{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"one"}}]"#;
 
 const NO_TEXT_DELTA: &str =
     r#"[{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}]"#;
@@ -159,18 +160,22 @@ fn flags_anthropic_match_pinned_handler() {
     assert!(Anthropic::ASSEMBLES_STREAMED_RESPONSE);
 }
 
+#[rstest]
+#[case::delivery_off(false, "one")]
+#[case::delivery_on(true, "masked")]
 #[tokio::test]
-async fn flags_anthropic_delivery_flag_reaches_handler() {
-    for (deliver, expected) in [(false, "hel"), (true, "masked")] {
-        let fake = Arc::new(FakeGuardrail::replying(texts_reply(&["masked"])));
-        let applied = context(&fake, Some("guard"));
-        let mut stream = items(DELTA);
-        translation()
-            .process_streaming_response(&mut stream, &applied, call(deliver))
-            .await
-            .unwrap();
-        assert_eq!(text_at(&stream[0], &["delta", "text"]), expected);
-    }
+async fn flags_anthropic_delivery_flag_reaches_handler(
+    #[case] deliver: bool,
+    #[case] expected: &str,
+) {
+    let fake = Arc::new(FakeGuardrail::replying(texts_reply(&["masked"])));
+    let applied = context(&fake, Some("guard"));
+    let mut stream = items(DELTA);
+    translation()
+        .process_streaming_response(&mut stream, &applied, call(deliver))
+        .await
+        .unwrap();
+    assert_eq!(text_at(&stream[0], &["delta", "text"]), expected);
 }
 
 #[tokio::test]
@@ -208,7 +213,7 @@ async fn stream_anthropic_events_round_trip() {
 fn stream_anthropic_scan_key_follows_the_deltas() {
     let stream = items(DELTA);
     let key = translation().get_streaming_scan_key(&stream).unwrap();
-    assert_eq!(key.texts, vec![String::from("hel")]);
+    assert_eq!(key.texts, vec![String::from("one")]);
     assert!(!key.stream_ended);
 }
 

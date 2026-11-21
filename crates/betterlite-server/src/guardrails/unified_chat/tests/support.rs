@@ -53,14 +53,16 @@ impl FakeGuardrail {
     pub(crate) fn replying(reply: GuardrailApiInputs) -> Self {
         Self::with(FakeState {
             reply: Some(reply),
-            ..FakeState::default()
+            failure: None,
+            calls: Vec::new(),
         })
     }
 
     pub(crate) fn failing(failure: GuardrailFailure) -> Self {
         Self::with(FakeState {
+            reply: None,
             failure: Some(failure),
-            ..FakeState::default()
+            calls: Vec::new(),
         })
     }
 
@@ -130,7 +132,12 @@ pub(crate) fn context(
 pub(crate) fn texts_reply(texts: &[&str]) -> GuardrailApiInputs {
     GuardrailApiInputs {
         texts: Some(texts.iter().map(|text| (*text).to_owned()).collect()),
-        ..GuardrailApiInputs::default()
+        images: None,
+        tools: None,
+        tool_calls: None,
+        structured_messages: None,
+        model: None,
+        stream_holdback_chars: None,
     }
 }
 
