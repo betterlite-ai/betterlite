@@ -260,10 +260,8 @@ impl Parser<'_> {
             .collect();
         let valid =
             digits.chars().count() == 4 && digits.chars().all(|digit| digit.is_ascii_hexdigit());
-        let value = valid
-            .then(|| u16::from_str_radix(&digits, 16).ok())
-            .flatten();
-        value.ok_or(RecordJsonError::Syntax)
+        let value = u16::from_str_radix(&digits, 16).ok();
+        value.filter(|_| valid).ok_or(RecordJsonError::Syntax)
     }
 }
 
