@@ -314,14 +314,16 @@ async fn repeated_headers_are_joined() {
         .expect_err("the reply fails the call");
     let error = provider_error(&rejection);
     assert_eq!(error.status_code, 429);
-    assert_eq!(
-        error
-            .headers
-            .as_ref()
-            .and_then(|headers| headers.get("warning"))
-            .map(String::as_str),
-        Some("199 first, 299 second")
-    );
+    let headers = error
+        .headers
+        .as_ref()
+        .expect("the provider error keeps the reply headers");
+    let joined = headers
+        .iter()
+        .filter(|(name, _)| name.as_str() == "warning")
+        .map(|(_, value)| value.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(joined, ["199 first, 299 second"]);
     served.finish().expect("the fixture answers");
 }
 
@@ -598,7 +600,7 @@ async fn connect_timeout_is_a_timeout() {
             .message
             .starts_with("litellm.Timeout: Connection timed out. Timeout passed=2, time taken=")
     );
-    assert_eq!(error.headers.as_ref().map(BTreeMap::len), Some(0));
+    assert_eq!(error.headers.as_ref().map(Vec::len), Some(0));
     assert!(recorded_errors(&provider).is_empty());
 }
 
