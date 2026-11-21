@@ -1,0 +1,9 @@
+kind: helper
+name: budget-gauges-remaining-hours-past-reset
+call:
+  b3882:
+    function: remaining_hours
+    reset_at: "2026-11-20T00:00:00Z"
+    now: "2026-11-20T02:00:00Z"
+env: {}
+compare: {ignore: []}

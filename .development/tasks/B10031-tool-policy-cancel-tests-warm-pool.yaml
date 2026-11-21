@@ -1,0 +1,62 @@
+id: B10031
+title: Tool policy cancel tests take their connection before the deadline starts
+description: >-
+  Fix a flaky test on main. The scheduled gate run https://github.com/betterlite-ai/betterlite/actions/runs/44860334651
+  (head c21431c3) went red on one test, tool_policy_store::tests::cancel::a_cancel_that_never_answers_discards_the_connection
+  in betterlite-db. It panicked at cancel.rs:238 after 0.552 s: the result was the expected Deadline error, but the
+  log had no "cancelling the timed out statement did not answer in time" line. The other 5596 tests passed.
+
+
+  The cause is in the test setup, not in the cancel code. read_rows in crates/betterlite-db/src/tool_policy_store/refresh.rs
+  bounds the pool checkout and the statement with the same StatementBounds deadline (refresh.rs:238, then
+  bounded_statement). The test's deadline is 100 ms, and the store's pool has no idle connection when the read starts:
+  the table-lock holder took the only open one, so the checkout opens a new connection inside those 100 ms. On a loaded
+  runner that connect takes longer, the checkout times out, read_rows returns ReadFault::Expired before any statement
+  runs, and cancel_statement never runs, so its warning is never written. The Deadline error is the same on both paths.
+
+
+  Four tests in cancel.rs are meant to exercise the statement deadline and all get their connection inside the bounded
+  read: refresh_cancels_a_read_past_the_deadline (100 ms), a_cancel_that_never_answers_discards_the_connection (100 ms),
+  a_tls_required_cancel_stops_the_read_over_tls (500 ms) and an_undeliverable_cancel_discards_the_connection (500 ms).
+  refresh_cancels_a_read_past_the_deadline checks only the Deadline error, so on the checkout path it passes without
+  testing the cancel at all. Each of the four gets one session from the store it reads through and returns it to the
+  pool before the read starts, so the read reuses that idle connection and the whole deadline goes to the locked
+  statement. The pools use deadpool's default fast recycling, so taking an idle connection does no network I/O. Each
+  test asserts that the pool has one available connection right before the read. discovery_stops_at_the_deadline passes its client in
+  and a_pool_checkout_past_the_deadline_fails_the_tools_read tests the checkout deadline on purpose; both stay as they are.
+scope:
+  paths:
+  - crates/betterlite-db/src/tool_policy_store/tests/cancel.rs
+  - crates/betterlite-db/src/tool_policy_store/tests/support.rs
+  lint_tables: false
+references: []
+dod:
+- text: >-
+    refresh_cancels_a_read_past_the_deadline, a_cancel_that_never_answers_discards_the_connection,
+    a_tls_required_cancel_stops_the_read_over_tls and an_undeliverable_cancel_discards_the_connection each return one
+    session to the pool of the store they read through before the bounded read, and assert that the pool has one
+    available connection right before it. Their existing assertions after the read stay.
+  proof: [tool-policy-store, cancel-stress]
+checks:
+  optional: []
+  commands:
+  - id: tool-policy-store
+    why: A tool policy store test broke.
+    run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^tool_policy_store::tests::/)'
+  - id: cancel-stress
+    why: A tool policy cancel test still fails now and then.
+    run: cargo nextest run --locked -p betterlite-db --no-tests=fail --stress-count 30 -E 'test(/^tool_policy_store::tests::cancel::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+- read_rows and the other production code in tool_policy_store. One deadline for the checkout and the statement is the store's behavior, and a_pool_checkout_past_the_deadline_fails_the_tools_read tests it.
+- discovery_stops_at_the_deadline, which takes its client before the bounds apply, and a_pool_checkout_past_the_deadline_fails_the_tools_read.
+- Raising the deadlines instead. A longer deadline only makes the slow checkout rarer, and the four tests wait on a table lock, so the statement never finishes whatever the deadline is.
+pitfalls:
+- Db::client takes a session from db.store, the same pool the read uses (max_size 2). Return the warm session to the pool by dropping it, and take it while the pool still has room next to the lock holder.
+- The TLS tests read through the TlsFront store (max_size 1), not db.store. Warm that store's pool. The warm session is the read's TLS handshake, so a_tls_required_cancel_stops_the_read_over_tls still expects 2 handshakes in all, the session and the cancel request.
+- After a_cancel_that_never_answers_discards_the_connection the pool must still hold only the lock holder (size 1, available 0), so the warmed connection must be the one the read takes and discards.
+review_level: standard
+budget:
+  max_changed_lines: 60
+  max_new_expects: 0

@@ -1,0 +1,15 @@
+kind: helper
+name: store_no_filename
+call:
+  b3459:
+    step: store
+    vector: {vector_bucket_name: store-bucket, index_name: store-index, dimension: 2}
+    environment: {}
+    calls:
+      - chunks: [first]
+        embeddings: [[0.5, 0.25]]
+      - filename: ""
+        chunks: [second]
+        embeddings: [[0.25, 0.5]]
+env: {}
+compare: {ignore: []}

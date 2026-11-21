@@ -18,7 +18,7 @@ use crate::tool_policy_store::refresh::{ToolPolicyStore, sync_tool_policy_from_d
 use crate::tool_policy_store::registry::ToolPolicyRegistry;
 use crate::tool_records::queries::get_tool;
 
-use super::support::{Db, TlsFront, captured_logs};
+use super::support::{Db, TlsFront, captured_logs, warm_pool};
 use super::{FixedIds, Reconnect, instant, item};
 
 const TABLE_LOCK: &str = "BEGIN; LOCK TABLE \"LiteLLM_ToolTable\" IN ACCESS EXCLUSIVE MODE";
@@ -132,6 +132,7 @@ async fn refresh_cancels_a_read_past_the_deadline() {
             canceller: &TlsCanceller { tls: NoTls },
         },
     };
+    warm_pool(&db.store).await;
     let mut reconnect = Reconnect::default();
     let result = sync_tool_policy_from_db(&store, Some(&mut reconnect)).await;
     assert!(matches!(result, Err(ToolPolicyStoreError::Deadline { .. })));
@@ -159,6 +160,7 @@ async fn a_tls_required_cancel_stops_the_read_over_tls() {
             canceller: &TlsCanceller { tls: canceller },
         },
     };
+    warm_pool(&store).await;
     let (logs, guard) = captured_logs();
     let result = sync_tool_policy_from_db(&policy_store, None::<&mut Reconnect>).await;
     drop(guard);
@@ -231,6 +233,7 @@ async fn a_cancel_that_never_answers_discards_the_connection() {
             canceller: &HangingCanceller,
         },
     };
+    warm_pool(&db.store).await;
     let (logs, guard) = captured_logs();
     let result = sync_tool_policy_from_db(&store, None::<&mut Reconnect>).await;
     drop(guard);
@@ -263,6 +266,7 @@ async fn an_undeliverable_cancel_discards_the_connection() {
             canceller: &TlsCanceller { tls: canceller },
         },
     };
+    warm_pool(&store).await;
     let (logs, guard) = captured_logs();
     let result = sync_tool_policy_from_db(&policy_store, None::<&mut Reconnect>).await;
     drop(guard);

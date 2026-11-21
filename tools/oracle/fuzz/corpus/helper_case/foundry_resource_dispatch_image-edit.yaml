@@ -1,0 +1,12 @@
+kind: helper
+name: foundry-resource-dispatch-image-edit-seed
+call:
+  foundry_resource_dispatch:
+    case: image_edit
+    model: mai-image-1
+    prompt: add a hat
+    images:
+      - text: aGk=
+    options: {}
+env: {}
+compare: {ignore: []}
