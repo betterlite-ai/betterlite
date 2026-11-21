@@ -1,0 +1,12 @@
+task: B1694
+deviations:
+  - what: Optimization amounts are calculated with Decimal and checked finite values; the source's initial-equivalence tolerance is retained in Decimal rather than binary float.
+    why: Savings and daily spend must share a monetary representation without manufacturing rounding differences between the logged and persisted totals.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/savings.py#L362-L378
+  - what: Observed-initial equivalence compares price tables field by field and treats a nested array or object as never equal, so a comparison whose effective prices carry one reports an unavailable estimate where the source's dict equality can report a zero.
+    why: B1693's Scalar keeps nested values opaque, so betterlite cannot prove two nested tables equal and takes the fail-closed answer rather than claiming the baseline and selected prices matched.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/savings.py#L362-L365
+  - what: Spend-time prompt-cache savings price every cache write at the ordinary cache-creation rate; a recorded 5m/1h split is priced at the 1h rate only when the caller supplies it beside the parsed usage record, because a spend log's usage object keeps the nested split opaque.
+    why: B1693 owns the spend-log usage parser and stores cache_creation_token_details as an opaque scalar, so the 1h rate cannot be read back from a recorded row; without a split the source also charges every write the ordinary rate.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/savings.py#L595-L616
+kept_bugs: []
