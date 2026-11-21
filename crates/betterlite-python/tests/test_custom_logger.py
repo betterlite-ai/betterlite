@@ -486,6 +486,7 @@ def helpers_report(package):
         error_type = type(error).__name__
     s["stripped"] = asyncio.run(
         logger._strip_base64_from_messages(json.loads(json.dumps(strip_payload))))
+    s["stripped_empty"] = asyncio.run(logger._strip_base64_from_messages({"model": "m"}))
     return {"shared": s, "error_type": error_type}
 
 def batch_report(package):
@@ -532,6 +533,9 @@ def batch_report(package):
         await ok.flush_queue()
         results["send_ok"] = {"queue": list(ok.log_queue), "sent": len(records) - start,
                               "advanced": ok.last_flush_time >= before}
+        await ok.flush_queue()
+        results["send_ok"]["resend"] = {"queue": list(ok.log_queue),
+                                        "sent": len(records) - start}
         raising = batch_cls(flush_lock=asyncio.Lock(), max_queue_size=2)
         raising.log_queue.extend([1, 2, 3, 4, 5])
         raising.async_send_batch = failing
@@ -557,6 +561,18 @@ def batch_report(package):
         clearing.async_send_batch = adding_clear
         await clearing.flush_queue()
         results["not_preserve"] = {"queue": list(clearing.log_queue)}
+        periodic = batch_cls(flush_lock=asyncio.Lock(), flush_interval=0.01)
+        periodic.log_queue.append("p"); periodic_sends = []
+        async def periodic_send(*args, **kwargs): periodic_sends.append(1)
+        periodic.async_send_batch = periodic_send
+        periodic_task = asyncio.create_task(periodic.periodic_flush())
+        for _ in range(500):
+            if periodic_sends: break
+            await asyncio.sleep(0.01)
+        periodic_task.cancel()
+        try: await periodic_task
+        except asyncio.CancelledError: pass
+        results["periodic"] = {"sent": len(periodic_sends), "queue": list(periodic.log_queue)}
         results["default_send"] = await batch_cls().async_send_batch()
         return results
     s.update(asyncio.run(run_all()))
@@ -907,6 +923,7 @@ def test_logger_helper_base64(helpers_report: JsonValue) -> None:
     assert processed[2] == {"role": "system", "content": ZERO}
     assert ours["stripped"] == ours["stripped_sync"]
     assert ours["stripped"] == {"model": "m", "messages": processed}
+    assert ours["stripped_empty"] == {"model": "m"}
     responses = mapping(ours["redact_responses_api"])
     assert responses["id"] == "resp"
     assert dig(responses, "output") == [
@@ -959,6 +976,7 @@ def test_batch_logger_send_ok(batch_report: JsonValue) -> None:
     assert send_ok["queue"] == []
     assert send_ok["sent"] == ONE
     assert send_ok["advanced"] is True
+    assert mapping(send_ok["resend"]) == {"queue": [], "sent": ONE}
 
 
 def test_batch_logger_raises(batch_report: JsonValue) -> None:
@@ -966,6 +984,13 @@ def test_batch_logger_raises(batch_report: JsonValue) -> None:
     assert mapping(shared["send_raises"])["queue"] == [4, 5]
     assert mapping(shared["send_under_cap"])["queue"] == [1, 2]
     assert shared["default_send"] is None
+
+
+def test_batch_logger_periodic(batch_report: JsonValue) -> None:
+    shared = mapping(dig(batch_report, "betterlite", "shared"))
+    periodic = mapping(shared["periodic"])
+    assert periodic["sent"] == ONE
+    assert periodic["queue"] == []
 
 
 def test_batch_logger_preserve(batch_report: JsonValue) -> None:
