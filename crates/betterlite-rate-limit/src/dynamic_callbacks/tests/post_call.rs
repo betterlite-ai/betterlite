@@ -103,16 +103,16 @@ async fn prefers_the_team_priority_over_the_key_priority() {
 
 #[tokio::test]
 async fn keeps_a_priority_at_the_last_latin1_code_point() {
-    let key_metadata = metadata_map(&[("priority", JsonData::String("ÿ".to_owned()))]);
+    let key_metadata = metadata_map(&[("priority", JsonData::String("\u{ff}".to_owned()))]);
     let mut response_headers = AdditionalHeaders::new();
     assert!(run_hook(&key_metadata, None, Some(&mut response_headers)).await);
-    assert_eq!(response_headers.get(PRIORITY_HEADER), Some(&text("ÿ")));
+    assert_eq!(response_headers.get(PRIORITY_HEADER), Some(&text("\u{ff}")));
 }
 
 #[tokio::test]
 async fn skips_a_priority_one_code_point_past_latin1() {
     let capture = Capture::start();
-    let key_metadata = metadata_map(&[("priority", JsonData::String("Ā".to_owned()))]);
+    let key_metadata = metadata_map(&[("priority", JsonData::String("\u{100}".to_owned()))]);
     let mut response_headers = AdditionalHeaders::new();
     assert!(run_hook(&key_metadata, None, Some(&mut response_headers)).await);
     assert!(response_headers.get(PRIORITY_HEADER).is_none());
@@ -122,6 +122,6 @@ async fn skips_a_priority_one_code_point_past_latin1() {
             .messages()
             .iter()
             .any(|message| message.contains("not Latin-1 encodable")
-                && message.contains("priority=Ā"))
+                && message.contains("priority=\u{100}"))
     );
 }

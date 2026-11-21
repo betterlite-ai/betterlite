@@ -5,6 +5,7 @@ use std::sync::{Arc, PoisonError};
 use betterlite_logging::fields::payload::records::StandardLoggingMetadata;
 use betterlite_models::call_helpers::headers::AdditionalHeaders;
 use betterlite_models::decisions::Json;
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_rate_limit::concurrency_gauges::ConcurrencyGauges;
 use betterlite_rate_limit::dynamic_callbacks::{
@@ -21,7 +22,7 @@ use betterlite_rate_limit::request_stash::RequestStashSlot;
 use betterlite_rate_limit::token_adjustments::store::{TokenAdjustments, UsageIncrements};
 use betterlite_rate_limit::usage_resolution::ResponseObject;
 use betterlite_redis::cache_primitives::pipeline_increment::IncrementOperation;
-use serde_json::{Value, json};
+use serde_json::{Value, from_value, json};
 use tokio::runtime::Builder;
 use tokio::sync::Mutex as AsyncMutex;
 use tracing::subscriber::set_default;
@@ -100,11 +101,7 @@ async fn post_call_run(case: &PostCallCase) -> Option<AdditionalHeaders> {
         team_metadata: case.team_metadata.as_ref(),
         key_metadata: &case.key_metadata,
     };
-    let mut headers = if case.hidden_params {
-        Some(headers_map(&case.headers))
-    } else {
-        None
-    };
+    let mut headers = case.hidden_params.then(|| headers_map(&case.headers));
     post_call_success_hook(&fixture.settlement(), &hook, &priority, headers.as_mut()).await;
     headers
 }
@@ -133,7 +130,7 @@ pub(crate) fn log_success_answer(case: &LogSuccessCase) -> HelperResult {
     let logs = PriorityLogs::default();
     let runtime = Builder::new_current_thread().build()?;
     let guard = set_default(registry().with(logs.clone()));
-    let pipelines = runtime.block_on(log_success_run(case));
+    let pipelines = runtime.block_on(log_success_run(case))?;
     drop(guard);
     let priority_logged = logs
         .0
@@ -147,9 +144,11 @@ pub(crate) fn log_success_answer(case: &LogSuccessCase) -> HelperResult {
     }))
 }
 
-async fn log_success_run(case: &LogSuccessCase) -> Vec<Vec<IncrementOperation>> {
+async fn log_success_run(
+    case: &LogSuccessCase,
+) -> Result<Vec<Vec<IncrementOperation>>, Box<HelperError>> {
     let fixture = dependencies();
-    let metadata = standard_metadata(case);
+    let metadata = standard_metadata(case)?;
     let response = response_object(case);
     let event = LogSuccessEvent {
         metadata: &metadata,
@@ -164,52 +163,12 @@ async fn log_success_run(case: &LogSuccessCase) -> Vec<Vec<IncrementOperation>> 
         .lines
         .lock()
         .unwrap_or_else(PoisonError::into_inner);
-    take(&mut *lines)
+    Ok(take(&mut *lines))
 }
 
-fn standard_metadata(case: &LogSuccessCase) -> StandardLoggingMetadata {
-    StandardLoggingMetadata {
-        user_api_key_hash: None,
-        user_api_key_alias: None,
-        user_api_key_spend: None,
-        user_api_key_max_budget: None,
-        user_api_key_budget_reset_at: None,
-        user_api_key_user_spend: None,
-        user_api_key_user_max_budget: None,
-        user_api_key_team_spend: None,
-        user_api_key_team_max_budget: None,
-        user_api_key_org_id: None,
-        user_api_key_org_alias: None,
-        user_api_key_team_id: None,
-        user_api_key_project_id: None,
-        user_api_key_project_alias: None,
-        user_api_key_user_id: None,
-        user_api_key_user_email: None,
-        user_api_key_team_alias: None,
-        user_api_key_end_user_id: None,
-        user_api_key_request_route: None,
-        user_api_key_auth_metadata: case.auth_metadata.as_ref().map(|entries| {
-            entries
-                .iter()
-                .map(|(name, value)| (name.clone(), value.clone()))
-                .collect()
-        }),
-        spend_logs_metadata: None,
-        requester_ip_address: None,
-        user_agent: None,
-        requester_metadata: None,
-        requester_custom_headers: None,
-        prompt_management_metadata: None,
-        mcp_tool_call_metadata: None,
-        vector_store_request_metadata: None,
-        routing_decision: None,
-        applied_guardrails: None,
-        usage_object: None,
-        cold_storage_object_key: None,
-        team_alias: None,
-        team_id: None,
-        used_client_oauth_token: None,
-    }
+fn standard_metadata(case: &LogSuccessCase) -> Result<StandardLoggingMetadata, Box<HelperError>> {
+    let wire = json!({"user_api_key_auth_metadata": &case.auth_metadata});
+    from_value(wire).or_value_error()
 }
 
 fn response_object(case: &LogSuccessCase) -> ResponseObject {

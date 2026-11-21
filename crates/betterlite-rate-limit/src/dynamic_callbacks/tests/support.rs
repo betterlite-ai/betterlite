@@ -245,11 +245,15 @@ pub(crate) fn metadata_map(entries: &[(&str, JsonData)]) -> BTreeMap<String, Jso
         .collect()
 }
 
-pub(crate) fn logging_metadata(priority: Option<&str>) -> StandardLoggingMetadata {
-    let mut auth_metadata = IndexMap::new();
+fn priority_entries(priority: Option<&str>) -> IndexMap<String, String> {
+    let mut entries = IndexMap::new();
     if let Some(name) = priority {
-        auth_metadata.insert("priority".to_owned(), name.to_owned());
+        entries.insert("priority".to_owned(), name.to_owned());
     }
+    entries
+}
+
+pub(crate) fn logging_metadata(priority: Option<&str>) -> StandardLoggingMetadata {
     StandardLoggingMetadata {
         user_api_key_hash: None,
         user_api_key_alias: None,
@@ -270,7 +274,7 @@ pub(crate) fn logging_metadata(priority: Option<&str>) -> StandardLoggingMetadat
         user_api_key_team_alias: None,
         user_api_key_end_user_id: None,
         user_api_key_request_route: None,
-        user_api_key_auth_metadata: Some(auth_metadata),
+        user_api_key_auth_metadata: Some(priority_entries(priority)),
         spend_logs_metadata: None,
         requester_ip_address: None,
         user_agent: None,
