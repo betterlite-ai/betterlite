@@ -5,6 +5,7 @@ use betterlite_context::non_default_params::Params;
 use betterlite_context::non_default_params::mapper::DropPolicy;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::audio_file_input::{AudioFile, ProcessedAudioFile};
+use betterlite_openai::transcription::config::TranscriptionFamily;
 use indexmap::IndexMap;
 
 use super::support::request_for;
@@ -296,5 +297,24 @@ fn compatible_providers_use_the_openai_transport() {
             .await
             .expect("the compatible provider uses the openai transport");
         assert_eq!(harness.dispatch.last().kind, TargetKind::OpenAi);
+    });
+}
+
+// an openai gpt-4o model selects the gpt family, where whisper's models select their own
+#[test]
+fn gpt_transcription_selects_the_gpt_family() {
+    runtime().block_on(async {
+        let harness = Harness::new();
+        harness.dispatch.reply(response(r#"{"text":"Hello"}"#));
+        let request = request_for("openai/gpt-4o-transcribe");
+        harness
+            .service()
+            .transcription(&request, AudioFile::Bytes(&wav(1)))
+            .await
+            .expect("the gpt transcription succeeds");
+        assert_eq!(
+            harness.dispatch.last().family,
+            Some(TranscriptionFamily::Gpt)
+        );
     });
 }
