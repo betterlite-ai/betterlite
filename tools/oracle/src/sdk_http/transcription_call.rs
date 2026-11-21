@@ -10,7 +10,6 @@ use betterlite_core::api::transcription_call::error::{
 };
 use betterlite_core::api::transcription_call::service::{DurationDecoder, Transcriptions};
 use betterlite_models::catalog::BundledCatalog;
-use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
@@ -18,7 +17,6 @@ use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
 use betterlite_openai::api::audio_file_input::{AudioFile, AudioTuple, TupleContent};
 use betterlite_openai::api::transcription_contract::TranscriptionResponse;
-use betterlite_openai::openai_base_config::Headers;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
@@ -28,66 +26,20 @@ use super::error::SdkHttpError;
 use super::result::kinds::SdkResult;
 use super::vector_query_embedding::outbound_client;
 
+pub mod call;
 mod openai;
 mod support;
 mod xai;
 
 use self::support::{Dispatch, DispatchFailure};
 
+pub type Call = call::Call;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Mode {
     Sync,
     Async,
-}
-
-// litellm.transcription's arguments, as the case files write them; the harness supplies the api_base
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct Call {
-    pub mode: Mode,
-    #[serde(default)]
-    pub model: Option<String>,
-    #[serde(default)]
-    pub missing_model: bool,
-    pub file: File,
-    #[serde(default)]
-    pub language: Option<String>,
-    #[serde(default)]
-    pub prompt: Option<String>,
-    #[serde(default)]
-    pub response_format: Option<String>,
-    #[serde(default)]
-    pub timestamp_granularities: Option<Vec<String>>,
-    #[serde(default)]
-    pub temperature: Option<i64>,
-    #[serde(default)]
-    pub user: Option<String>,
-    #[serde(default)]
-    pub api_key: Option<String>,
-    #[serde(default)]
-    pub api_version: Option<String>,
-    #[serde(default)]
-    pub timeout_seconds: Option<f64>,
-    #[serde(default)]
-    pub max_retries: Option<i64>,
-    #[serde(default)]
-    pub custom_llm_provider: Option<String>,
-    #[serde(default)]
-    pub base_url: Option<String>,
-    #[serde(default)]
-    pub azure_ad_token: Option<String>,
-    #[serde(default)]
-    pub extra_headers: Option<Headers>,
-    #[serde(default)]
-    pub params: BTreeMap<String, JsonValue>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct File {
-    pub filename: String,
-    pub content: String,
 }
 
 // What both SDKs hand back for one call: the public record, the duration main.py hides, or the failure
@@ -204,12 +156,9 @@ async fn dispatch_outcome(
 }
 
 fn settings(env: &BTreeMap<String, String>) -> Result<Settings, SdkHttpError> {
-    let loader = ConfigLoader {
-        lookup: env.clone(),
-    };
-    let config = loader
-        .load("model_list: []")
-        .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?;
+    let lookup = env.clone();
+    let loaded = ConfigLoader { lookup }.load("model_list: []");
+    let config = loaded.map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?;
     Ok(config.sections.transcription_call)
 }
 
@@ -279,11 +228,7 @@ fn async_outcome(
     file: AudioFile<'_>,
     service: &Transcriptions<'_, Dispatch<'_>>,
 ) -> impl Future<Output = Result<Outcome, SdkHttpError>> + Send {
-    let model = if input.missing_model {
-        None
-    } else {
-        Some(call.model.as_str())
-    };
+    let model = (!input.missing_model).then_some(call.model.as_str());
     let pending = service.atranscription(model, call, file, true);
     async move {
         match pending.await {
@@ -310,16 +255,13 @@ fn outcome_of(response: &TranscriptionResponse) -> Outcome {
 }
 
 fn field(response: &TranscriptionResponse, name: &str) -> Option<Json> {
-    match response.extra.get(name) {
-        Some(value) => serde_json::from_value(value.clone()).ok(),
-        None => None,
-    }
+    let value = response.extra.get(name)?;
+    let decoded = serde_json::from_value(value.clone());
+    decoded.ok()
 }
 
 fn hidden_duration(response: &TranscriptionResponse) -> Option<Json> {
-    response
-        .extra
-        .get("_hidden_params")?
-        .get("audio_transcription_duration")
-        .and_then(|value| serde_json::from_value(value.clone()).ok())
+    let params = response.extra.get("_hidden_params")?;
+    let hidden = params.get("audio_transcription_duration")?;
+    serde_json::from_value(hidden.clone()).ok()
 }
