@@ -1,7 +1,7 @@
 id: B3030
 milestone: M4 keys, spend and management
 title: Proxy rate-limit errors and provider attribution
-status: todo
+status: done
 depends_on: [B184, B2327, B3031, B846]
 file: tasks/B3030-proxy-rate-limit-errors.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/proxy/hooks/parallel_request_limiter_v3.py"
 parent: B072
 split_from: B072
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2801

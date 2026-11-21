@@ -1,0 +1,52 @@
+kind: helper
+name: auth-user-lookup-cadence-capacity
+call:
+  auth_user_lookup:
+    kind: cadence
+    max_size: 2
+    times_ms: [0, 0, 0, 0, 0]
+    operations:
+      - {op: update, key: "user_id:a", value: null}
+      - {op: update, key: "user_id:b", value: null}
+      - {op: update, key: "user_id:a", value: null}
+      - {op: should_check, key: "user_id:b", expiry: 1000}
+      - {op: should_check, key: "user_id:a", expiry: 1000}
+calls:
+  - auth_user_lookup:
+      kind: cadence
+      max_size: 3
+      times_ms: [0, 0, 0, 0, 0, 0, 0, 0, 0]
+      operations:
+        - {op: update, key: "user_id:a", value: null}
+        - {op: update, key: "user_id:b", value: null}
+        - {op: update, key: "user_id:c", value: null}
+        - {op: update, key: "user_id:d", value: null}
+        - {op: should_check, key: "user_id:a", expiry: 1000}
+        - {op: should_check, key: "user_id:b", expiry: 1000}
+        - {op: should_check, key: "user_id:c", expiry: 1000}
+        - {op: should_check, key: "user_id:d", expiry: 1000}
+  - auth_user_lookup:
+      kind: cadence
+      max_size: 3
+      times_ms: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+      operations:
+        - {op: update, key: "user_id:a", value: null}
+        - {op: update, key: "user_id:b", value: null}
+        - {op: update, key: "user_id:c", value: null}
+        - {op: update, key: "user_id:a", value: null}
+        - {op: update, key: "user_id:d", value: null}
+        - {op: should_check, key: "user_id:b", expiry: 1000}
+        - {op: should_check, key: "user_id:c", expiry: 1000}
+        - {op: should_check, key: "user_id:a", expiry: 1000}
+        - {op: should_check, key: "user_id:d", expiry: 1000}
+  - auth_user_lookup:
+      kind: cadence
+      max_size: 1
+      times_ms: [0, 0, 0, 0]
+      operations:
+        - {op: update, key: "user_id:a", value: null}
+        - {op: update, key: "user_id:b", value: null}
+        - {op: should_check, key: "user_id:a", expiry: 1000}
+        - {op: should_check, key: "user_id:b", expiry: 1000}
+env: {}
+compare: {ignore: []}

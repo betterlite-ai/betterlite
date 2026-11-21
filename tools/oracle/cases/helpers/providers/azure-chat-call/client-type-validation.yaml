@@ -1,0 +1,19 @@
+kind: helper
+name: azure-chat-call-client-type-validation
+call:
+  azure_chat_call:
+    function: completion
+    cases:
+      - model: gpt-4o-deployment
+        messages:
+          - {role: user, content: hi}
+        api_key: key
+        client: async
+      - model: gpt-4o-deployment
+        messages:
+          - {role: user, content: hi}
+        api_key: key
+        acompletion: true
+        client: sync
+env: {}
+compare: {ignore: []}
