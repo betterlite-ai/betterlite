@@ -1,6 +1,9 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
+use std::io;
+use std::sync::{Arc, Mutex};
 
 use betterlite_db::budget_permission_rows::JsonData;
 use rstest::rstest;
@@ -273,4 +276,110 @@ fn budget_reset_absent_from_scalar_defaults() {
     .unwrap();
     let defaults = settings.default_internal_user_params.unwrap();
     assert!(!defaults.values.contains_key("budget_reset_at"));
+}
+
+fn nested_defaults(depth: usize) -> String {
+    let mut source = String::from("litellm_settings:\n  default_internal_user_params:\n");
+    for level in 0..depth {
+        let indent = " ".repeat(4 + level * 2);
+        let leaf = if level + 1 == depth { " 1" } else { "" };
+        writeln!(source, "{indent}k:{leaf}").unwrap();
+    }
+    source
+}
+
+#[test]
+fn deeply_nested_defaults_up_to_the_cap_load() {
+    let source = nested_defaults(64);
+    let settings = load(&source, &[]).unwrap();
+    assert!(settings.default_internal_user_params.is_some());
+}
+
+#[test]
+fn defaults_nested_past_the_cap_fail() {
+    let source = nested_defaults(65);
+    match load(&source, &[]) {
+        Err(ConfigError::InvalidScalar { .. }) => {}
+        other => panic!("a mapping past the depth cap fails startup: {other:?}"),
+    }
+}
+
+#[test]
+fn environment_reference_in_a_plain_list_stays_text() {
+    let settings = load(
+        "litellm_settings:
+  default_internal_user_params:
+    models:
+      - os.environ/PLAIN_MODEL
+",
+        &[("PLAIN_MODEL", "gpt-4")],
+    )
+    .unwrap();
+    let defaults = settings.default_internal_user_params.unwrap();
+    match defaults.values.get("models") {
+        Some(JsonData::Array(items)) => {
+            assert_eq!(items.len(), 1);
+            assert_eq!(
+                items[0],
+                JsonData::String("os.environ/PLAIN_MODEL".to_owned())
+            );
+        }
+        other => panic!("models should load as a list: {other:?}"),
+    }
+}
+
+struct CapturedBuffer(Arc<Mutex<Vec<u8>>>);
+
+impl io::Write for CapturedBuffer {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+struct LogCapture {
+    buffer: Arc<Mutex<Vec<u8>>>,
+    _guard: tracing::subscriber::DefaultGuard,
+}
+
+fn capture_debug_log() -> LogCapture {
+    let buffer = Arc::new(Mutex::new(Vec::new()));
+    let writer = Arc::clone(&buffer);
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::DEBUG)
+        .with_ansi(false)
+        .with_writer(move || CapturedBuffer(Arc::clone(&writer)))
+        .finish();
+    let guard = tracing::subscriber::set_default(subscriber);
+    LogCapture {
+        buffer,
+        _guard: guard,
+    }
+}
+
+#[test]
+fn user_defaults_diagnostic_is_redacted() {
+    let capture = capture_debug_log();
+    let settings = load(
+        "litellm_settings:
+  default_internal_user_params:
+    api_key: sk-live-secret
+    user_role: internal_user
+",
+        &[],
+    )
+    .unwrap();
+    assert!(settings.default_internal_user_params.is_some());
+    let logged =
+        String::from_utf8(capture.buffer.lock().unwrap().clone()).expect("the log is UTF-8");
+    assert!(
+        logged.contains("litellm.default_internal_user_params is set"),
+        "{logged}"
+    );
+    assert!(logged.contains("REDACTED"), "{logged}");
+    assert!(!logged.contains("sk-live-secret"), "{logged}");
 }
