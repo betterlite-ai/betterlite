@@ -9,7 +9,7 @@ use serde::Deserialize;
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Input {
+pub(crate) struct Input {
     #[serde(default)]
     pub(super) supported: Vec<SupportedCall>,
     #[serde(default)]
