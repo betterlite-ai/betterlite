@@ -339,7 +339,7 @@ async fn a_scan_raw_request_guardrail_reads_the_snapshot_and_its_edits_are_dropp
     let harness = harness();
     let mut callback = shaped(Class::Plain, answer, &harness);
     if let Some(held) = callback.guardrail.as_mut() {
-        held.knobs.scan_raw_request = true;
+        held.knobs.switches.scan_raw_request = true;
     }
     let raw = snapshot.map(map);
     let user = auth();
@@ -366,7 +366,7 @@ async fn a_scan_raw_request_guardrail_reads_the_snapshot_and_its_edits_are_dropp
 async fn a_skipped_scan_raw_request_guardrail_leaves_no_mark() {
     let harness = harness();
     let mut held = guardrail(Some(NAME));
-    held.knobs.scan_raw_request = true;
+    held.knobs.switches.scan_raw_request = true;
     held.knobs.gate = Gate::Skip;
     let callback = fake(CLASS, Some(held), Answer::Pass, &harness.log);
     let user = auth();
@@ -414,7 +414,7 @@ async fn a_sequential_raise_records_the_guardrail_but_a_reroute_does_not(
     let harness = harness();
     let mut callback = shaped(Class::Plain, Answer::Fail(error.clone()), &harness);
     if let Some(held) = callback.guardrail.as_mut() {
-        held.knobs.scan_raw_request = scan_raw_request;
+        held.knobs.switches.scan_raw_request = scan_raw_request;
     }
     let user = auth();
     let mut data = map("{}");
@@ -468,7 +468,7 @@ async fn parallel_guardrails_merge_their_marks_and_drop_their_edits() {
         &harness.log,
     ));
     let mut held = guardrail(Some("raw"));
-    held.knobs.scan_raw_request = true;
+    held.knobs.switches.scan_raw_request = true;
     let scanner = Arc::new(fake("Scanner", Some(held), Answer::Edit, &harness.log));
     let guardrails: Vec<Arc<dyn ProxyCallback>> =
         vec![Arc::<Fake>::clone(&first), Arc::<Fake>::clone(&scanner)];

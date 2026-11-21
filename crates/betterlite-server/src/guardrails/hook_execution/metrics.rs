@@ -108,7 +108,7 @@ pub async fn run_guardrail_with_metrics(
     let guardrail_name = callback
         .guardrail()
         .and_then(GuardrailCallback::guardrail_name)
-        .unwrap_or(callback.class_name());
+        .unwrap_or_else(|| callback.class_name());
     observe(execution, guardrail_name, started_at, &outcome, hook_type);
     outcome
 }

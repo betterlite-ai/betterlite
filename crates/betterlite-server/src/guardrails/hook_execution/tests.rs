@@ -40,10 +40,10 @@ enum Class {
 
 fn shaped(class: Class, answer: Answer, harness: &Harness) -> Fake {
     let mut held = guardrail(Some(NAME));
-    held.knobs.native_during_call = matches!(class, Class::NativeDuringCall);
+    held.knobs.switches.native_during_call = matches!(class, Class::NativeDuringCall);
     let mut callback = fake(CLASS, Some(held), answer, &harness.log);
-    callback.apply_guardrail = !matches!(class, Class::Plain);
-    callback.native_lifecycle = matches!(class, Class::NativeLifecycle);
+    callback.switches.apply_guardrail = !matches!(class, Class::Plain);
+    callback.switches.native_lifecycle = matches!(class, Class::NativeLifecycle);
     callback
 }
 
@@ -139,7 +139,7 @@ fn hook_path_follows_the_litellm_rule(
 fn a_unified_callback_without_a_guardrail_keeps_the_unified_during_call() {
     let harness = harness();
     let mut callback = fake(CLASS, None, Answer::Pass, &harness.log);
-    callback.apply_guardrail = true;
+    callback.switches.apply_guardrail = true;
     let user = auth();
     let scope = context(Some(&user), CallType::Acompletion);
     assert_eq!(

@@ -174,7 +174,7 @@ async fn a_decorated_class_on_the_unified_path_records_nothing_here() {
         Answer::Pass,
         &harness.log,
     );
-    callback.apply_guardrail = true;
+    callback.switches.apply_guardrail = true;
     let mut data = map("{}");
     let answer = execute(&harness, &callback, GuardrailHook::PreCall, &mut data).await;
     assert_eq!(answer, Ok(HookAnswer::PreCall(PreCallReturn::Unchanged)));

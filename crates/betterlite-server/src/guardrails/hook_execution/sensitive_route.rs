@@ -33,21 +33,20 @@ pub async fn handle_sensitive_data_route(
         route.sticky_session_routing
     );
     if route.sticky_session_routing {
-        match &execution.sensitive_routing {
-            Some(routing) => {
-                routing
-                    .set_session_routing(
-                        &route.session_id,
-                        &route.route_to_model,
-                        user_api_key_dict,
-                        guardrail_name,
-                    )
-                    .await;
-            }
-            None => tracing::warn!(
+        if let Some(routing) = &execution.sensitive_routing {
+            routing
+                .set_session_routing(
+                    &route.session_id,
+                    &route.route_to_model,
+                    user_api_key_dict,
+                    guardrail_name,
+                )
+                .await;
+        } else {
+            tracing::warn!(
                 "SensitiveDataRouteException requested sticky routing for session_id={} but the 'sensitive_data_routing' hook is not registered. Only this request will be rerouted; subsequent requests will not be sticky.",
                 route.session_id
-            ),
+            );
         }
     }
     reroute(route, data);

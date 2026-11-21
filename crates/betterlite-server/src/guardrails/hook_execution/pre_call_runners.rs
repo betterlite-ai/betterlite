@@ -139,7 +139,9 @@ async fn run_on_raw_snapshot(
         if input != expected {
             tracing::warn!(
                 "Guardrail '{}' has scan_raw_request=True but returned a modified payload; scan_raw_request is for block-only guardrails and this mutation is being discarded. Remove scan_raw_request from this guardrail's config if it needs to mask/rewrite content.",
-                guardrail.guardrail_name().unwrap_or(callback.class_name())
+                guardrail
+                    .guardrail_name()
+                    .unwrap_or_else(|| callback.class_name())
             );
         }
         guardrail.mark_pre_call_hook_ran(data);

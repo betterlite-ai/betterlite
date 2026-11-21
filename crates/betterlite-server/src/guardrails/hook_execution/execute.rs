@@ -13,12 +13,12 @@ use super::metrics::GuardrailMetrics;
 use super::own_hook::run_own_hook;
 use super::sensitive_route::SensitiveRouting;
 use crate::guardrails::callback_caps::errors::ProxyHookError;
-use crate::guardrails::callback_caps::traits::{PreCallReturn, ProxyCallback};
+use crate::guardrails::callback_caps::traits::{GuardrailCallback, PreCallReturn, ProxyCallback};
 use crate::guardrails::unified_guardrail::apply_record::InvocationClock;
 use crate::guardrails::unified_guardrail::recorder::AppliedGuardrailRecorder;
 
 // LiteLLM's hook_type; the post-call hook carries the response it checks
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GuardrailHook {
     PreCall,
     DuringCall,
@@ -36,7 +36,7 @@ impl GuardrailHook {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HookAnswer {
     PreCall(PreCallReturn),
     DuringCall,
@@ -119,7 +119,7 @@ pub fn hook_path(
     let native_during_call = matches!(hook, GuardrailHook::DuringCall)
         && callback
             .guardrail()
-            .is_some_and(|guardrail| guardrail.use_native_during_call_hook());
+            .is_some_and(GuardrailCallback::use_native_during_call_hook);
     // _run_during_call_guardrail takes the unified path only when it holds the caller's key
     let unkeyed_during_call =
         matches!(hook, GuardrailHook::DuringCall) && context.user_api_key_dict.is_none();

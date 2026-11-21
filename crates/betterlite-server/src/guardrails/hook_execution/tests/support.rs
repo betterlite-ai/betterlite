@@ -82,10 +82,16 @@ pub(crate) enum Gate {
     Fail(GuardrailGateError),
 }
 
+// the guardrail capabilities the hooks under test read
 #[derive(Default)]
-pub(crate) struct GuardrailKnobs {
+pub(crate) struct KnobSwitches {
     pub(crate) scan_raw_request: bool,
     pub(crate) native_during_call: bool,
+}
+
+#[derive(Default)]
+pub(crate) struct GuardrailKnobs {
+    pub(crate) switches: KnobSwitches,
     pub(crate) event_hook_unset: bool,
     pub(crate) moderation_check: Option<&'static str>,
     pub(crate) gate: Gate,
@@ -114,11 +120,11 @@ impl GuardrailCallback for FakeGuardrail {
     }
 
     fn scan_raw_request(&self) -> bool {
-        self.knobs.scan_raw_request
+        self.knobs.switches.scan_raw_request
     }
 
     fn use_native_during_call_hook(&self) -> bool {
-        self.knobs.native_during_call
+        self.knobs.switches.native_during_call
     }
 
     fn event_hook_is_set(&self) -> bool {
@@ -166,12 +172,18 @@ impl GuardrailCallback for FakeGuardrail {
     }
 }
 
+// the hook overrides the callback reports, apart from the moderation one
+#[derive(Default)]
+pub(crate) struct CallbackSwitches {
+    pub(crate) apply_guardrail: bool,
+    pub(crate) native_lifecycle: bool,
+}
+
 pub(crate) struct Fake {
     pub(crate) class_name: &'static str,
     pub(crate) guardrail: Option<FakeGuardrail>,
-    pub(crate) apply_guardrail: bool,
     pub(crate) moderation_override: bool,
-    pub(crate) native_lifecycle: bool,
+    pub(crate) switches: CallbackSwitches,
     pub(crate) answer: Answer,
     pub(crate) delay: Duration,
     pub(crate) log: Arc<CallLog>,
@@ -187,9 +199,8 @@ pub(crate) fn fake(
     Fake {
         class_name,
         guardrail,
-        apply_guardrail: false,
         moderation_override: false,
-        native_lifecycle: false,
+        switches: CallbackSwitches::default(),
         answer,
         delay: Duration::ZERO,
         log: Arc::clone(log),
@@ -232,7 +243,7 @@ impl Fake {
 impl ProxyCallback for Fake {
     fn overrides(&self) -> HookOverrides {
         HookOverrides {
-            apply_guardrail: self.apply_guardrail,
+            apply_guardrail: self.switches.apply_guardrail,
             filter_listed_models: false,
             request: RequestHooks {
                 pre_call: true,
@@ -257,7 +268,7 @@ impl ProxyCallback for Fake {
     }
 
     fn use_native_lifecycle_hooks(&self) -> bool {
-        self.native_lifecycle
+        self.switches.native_lifecycle
     }
 
     fn guardrail(&self) -> Option<&dyn GuardrailCallback> {
