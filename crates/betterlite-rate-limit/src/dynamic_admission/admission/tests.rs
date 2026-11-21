@@ -1,11 +1,17 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
+use betterlite_auth::rejection_provider::{PROXY_LLM_PROVIDER_FALLBACK, ProviderResolution};
 use betterlite_auth::resolved_key::auth::ParentOtelSpan;
+use betterlite_models::resolution::{ResolutionError, ResolvedModel};
 use tokio::runtime::Builder;
 
-use super::{AdmissionKey, CheckRateLimitError, RateLimitCheck};
+use super::{
+    AdmissionKey, AttributionProviderResolver, CheckRateLimitError, RateLimitCheck,
+    RateLimitProviderResolver as _,
+};
 use crate::atomic_counter::payload::IncrementAmounts;
 use crate::dynamic_admission::limiter_port::AdmissionLimiterError;
 use crate::dynamic_admission::tests::support::{
@@ -90,6 +96,32 @@ fn reservation_windows() -> BTreeSet<ReservationWindowIdentity> {
         window_start: String::from("1700000000"),
         backend: ReservationBackend::Redis,
     }])
+}
+
+// a native resolver that cannot name a provider, so the pair falls back the way LiteLLM's resolver does
+struct FailingResolver;
+
+impl ProviderResolution for FailingResolver {
+    fn resolve(&self, model: &str) -> Result<ResolvedModel, ResolutionError> {
+        Err(ResolutionError::MissingProvider {
+            model: model.to_owned(),
+        })
+    }
+}
+
+#[test]
+fn admission_attribution_resolver_falls_back_to_the_proxy_provider() {
+    let resolver = AttributionProviderResolver {
+        native: Arc::new(FailingResolver),
+        router: None,
+    };
+    assert_eq!(
+        resolver.resolve(MODEL),
+        (
+            String::from(MODEL),
+            String::from(PROXY_LLM_PROVIDER_FALLBACK)
+        )
+    );
 }
 
 #[tokio::test]
