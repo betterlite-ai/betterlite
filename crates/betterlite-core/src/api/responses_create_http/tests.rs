@@ -351,7 +351,10 @@ async fn check_stream(scenario: StreamScenario, outcome: CreateOutcome, wire: &W
     let sent = wire.requests();
     match scenario.expect {
         StreamExpect::Live => check_live(outcome, &sent).await,
-        StreamExpect::LiveGuard => check_live_guard(&outcome, &sent),
+        StreamExpect::LiveGuard => {
+            assert!(matches!(outcome, CreateOutcome::Live(_)));
+            assert!(sent[0].stream);
+        }
         StreamExpect::Synthetic => check_synthetic(outcome, &sent),
         StreamExpect::Plain => {
             assert_eq!(
@@ -389,11 +392,6 @@ async fn check_live(outcome: CreateOutcome, sent: &[Sent]) {
         vec![String::from("hello"), String::from("[DONE]")]
     );
     assert_live_setup(&live);
-}
-
-fn check_live_guard(outcome: &CreateOutcome, sent: &[Sent]) {
-    assert!(matches!(outcome, CreateOutcome::Live(_)));
-    assert!(sent[0].stream);
 }
 
 // A prepared fake stream drops the body's stream key and returns synthetic events with the request
