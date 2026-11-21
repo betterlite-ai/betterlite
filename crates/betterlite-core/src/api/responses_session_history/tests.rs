@@ -310,7 +310,17 @@ fn session_query_debug_records(#[case] replies: &[&str], #[case] expected: &[&st
     Some(r#"[{"role": "user", "content": "hi"}]"#),
     None
 )]
-#[case::nothing_to_replay(r#"{"input": "", "messages": []}"#, None, None)]
+#[case::list_input(
+    r#"{"input": [{"role": "user", "content": "hi"}], "messages": [{"role": "user", "content": "old"}]}"#,
+    Some(r#"[{"role": "user", "content": "hi"}]"#),
+    None
+)]
+#[case::nothing_to_replay(r#"{"input": "", "messages": [], "instructions": "x"}"#, None, None)]
+#[case::empty_text_messages(r#"{"messages": "", "instructions": "x"}"#, None, None)]
+#[case::zero_messages(r#"{"messages": 0, "instructions": "x"}"#, None, None)]
+#[case::false_messages(r#"{"messages": false, "instructions": "x"}"#, None, None)]
+#[case::empty_object_messages(r#"{"messages": {}, "instructions": "x"}"#, None, None)]
+#[case::number_input(r#"{"input": 5, "instructions": "x"}"#, None, None)]
 #[case::empty_request("{}", None, None)]
 fn stored_turn_replay(
     #[case] request: &str,
@@ -327,6 +337,19 @@ fn stored_turn_replay(
         .unwrap_or_default();
     assert!(!history.is_empty() || replayed.is_none());
     assert_eq!(history, expected);
+}
+
+// LiteLLM hands any truthy messages value to the input transform, which only takes text or a list
+#[rstest]
+#[case::number(r#"{"messages": 1}"#)]
+#[case::flag(r#"{"messages": true}"#)]
+#[case::object(r#"{"messages": {"role": "user"}}"#)]
+fn stored_turn_replay_rejects_truthy_messages(#[case] request: &str) {
+    let setup = fixture(&[]);
+    let mut log = logged("{}");
+    log.proxy_server_request = Some(Json::Text(request.to_owned()));
+    let outcome = block_on(replay_turn(&setup.service(), &log, &mut Vec::new()));
+    assert!(matches!(outcome, Err(SessionHistoryError::Input(_))));
 }
 
 #[rstest]
