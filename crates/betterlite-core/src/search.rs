@@ -78,9 +78,32 @@ where
     HookError<Lookup>: 'static,
 {
     let redactor = log.env.redactor;
-    run(request, services, log)
-        .await
-        .map_err(|error| failure(error, &request.search_provider, redactor))
+    let outcome = async {
+        let prepared = prepare(request, services.lookup, log.state)?;
+        let call = SearchHttpCall {
+            query: &prepared.query,
+            optional_params: &prepared.params,
+            timeout: resolved_timeout(request.timeout, services.core)?,
+            api_key: request.api_key.as_ref(),
+            api_base: Some(prepared.complete_url),
+            headers: prepared.headers,
+            client: None,
+            tls: services.tls,
+            proxy: services.proxy,
+        };
+        let response = execute_search(
+            call,
+            &prepared.config,
+            services.pool,
+            log,
+            services.network_mock,
+        )
+        .await?;
+        record_provider_usage(log.state, &response).map_err(SearchCallError::Encode)?;
+        Ok::<_, SearchCallError<HookError<Lookup>>>(response)
+    }
+    .await;
+    outcome.map_err(|error| failure(error, &request.search_provider, redactor))
 }
 
 struct PreparedCall<Config> {
@@ -89,39 +112,6 @@ struct PreparedCall<Config> {
     params: Object,
     headers: Headers,
     complete_url: String,
-}
-
-async fn run<Lookup>(
-    request: &SearchRequest,
-    services: &SearchServices<'_, Lookup>,
-    log: &mut LogContext<'_, '_>,
-) -> Result<SearchResponse, SearchCallError<HookError<Lookup>>>
-where
-    Lookup: SearchConfigLookup,
-    HookError<Lookup>: 'static,
-{
-    let prepared = prepare(request, services.lookup, log.state)?;
-    let call = SearchHttpCall {
-        query: &prepared.query,
-        optional_params: &prepared.params,
-        timeout: resolved_timeout(request.timeout, services.core)?,
-        api_key: request.api_key.as_ref(),
-        api_base: Some(prepared.complete_url),
-        headers: prepared.headers,
-        client: None,
-        tls: services.tls,
-        proxy: services.proxy,
-    };
-    let response = execute_search(
-        call,
-        &prepared.config,
-        services.pool,
-        log,
-        services.network_mock,
-    )
-    .await?;
-    record_provider_usage(log.state, &response).map_err(SearchCallError::Encode)?;
-    Ok(response)
 }
 
 fn prepare<Lookup>(
