@@ -35,7 +35,9 @@ use indexmap::IndexMap;
 use secrecy::SecretString;
 
 use crate::api::responses_compact_call::call::CompactResponsesCall;
-use crate::api::responses_compact_call::deps::{CompactConfigFactory, ConfigRequest};
+use crate::api::responses_compact_call::deps::{
+    CompactConfigFactory, CompactResponsesDeps, ConfigRequest,
+};
 use crate::api::responses_compact_call::error::CompactParamError;
 use crate::api::responses_compact_http::config::{
     CompactConfig, CompactParams, CompactTransformRequest, Headers, SignRequest, Signed,
@@ -197,12 +199,12 @@ impl CompactTransport for Wire {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(Arc::new(request));
-        let reply = self
+        let queued = self
             .replies
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .pop_front();
-        let Some(reply) = reply else {
+        let Some(reply) = queued else {
             panic!("the test must queue a reply per request");
         };
         ready(Ok(UpstreamResponse {
@@ -213,10 +215,13 @@ impl CompactTransport for Wire {
     }
 }
 
+// The ssl_verify argument and the shared-session flag of each client the call asked for
+type ClientCreations = Vec<(Option<bool>, bool)>;
+
 #[derive(Clone)]
 pub(crate) struct Source {
     wire: Wire,
-    created: Arc<Mutex<Vec<(Option<bool>, bool)>>>,
+    created: Arc<Mutex<ClientCreations>>,
 }
 
 impl Source {
@@ -227,7 +232,7 @@ impl Source {
         }
     }
 
-    pub(crate) fn created(&self) -> Vec<(Option<bool>, bool)> {
+    pub(crate) fn created(&self) -> ClientCreations {
         self.created
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -369,7 +374,7 @@ impl CompactConfig for TestConfig {
 impl ResponsesParamProvider for TestConfig {
     type Error = CompactParamError;
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "openai"
     }
 
@@ -464,20 +469,19 @@ impl ModelResolver for ModelNames {
                 custom_llm_provider: request.custom_llm_provider.map(str::to_owned),
                 api_base: request.api_base.map(str::to_owned),
             });
-        let (model, provider) = match request.custom_llm_provider {
-            Some(given) => (request.model.to_owned(), given.to_owned()),
-            None => {
-                let Some((prefix, rest)) = request.model.split_once('/') else {
-                    return Err(ResolutionError::MissingProvider {
-                        model: request.model.to_owned(),
-                    });
-                };
-                let provider = match prefix {
-                    "none" => String::new(),
-                    other => other.to_owned(),
-                };
-                (rest.to_owned(), provider)
-            }
+        let (model, provider) = if let Some(given) = request.custom_llm_provider {
+            (request.model.to_owned(), given.to_owned())
+        } else {
+            let Some((prefix, rest)) = request.model.split_once('/') else {
+                return Err(ResolutionError::MissingProvider {
+                    model: request.model.to_owned(),
+                });
+            };
+            let provider = match prefix {
+                "none" => String::new(),
+                other => other.to_owned(),
+            };
+            (rest.to_owned(), provider)
         };
         Ok(ResolvedModel {
             model,
@@ -485,6 +489,53 @@ impl ModelResolver for ModelNames {
             api_base: None,
             api_key: None,
         })
+    }
+}
+
+// One compact fixture: the mock wire, the resolver's record, the config registry and the case env
+pub(crate) struct Rig {
+    pub(crate) events: Events,
+    pub(crate) wire: Wire,
+    pub(crate) source: Source,
+    pub(crate) resolver: ModelNames,
+    pub(crate) lookup: Registry,
+    pub(crate) configs: Configs,
+    pub(crate) variables: BTreeMap<String, String>,
+    pub(crate) drop_params: bool,
+}
+
+impl Default for Rig {
+    fn default() -> Self {
+        let events = Events::new();
+        let wire = Wire::new(&events);
+        let source = Source::new(&wire);
+        let configs = Configs {
+            events: events.clone(),
+            supported: None,
+        };
+        Self {
+            events,
+            wire,
+            source,
+            resolver: ModelNames::default(),
+            lookup: Registry,
+            configs,
+            variables: env_vars(&[("OPENAI_API_KEY", "sk-provider")]),
+            drop_params: false,
+        }
+    }
+}
+
+impl Rig {
+    pub(crate) fn deps(&self) -> CompactResponsesDeps<'_, Source, Configs> {
+        CompactResponsesDeps {
+            resolver: &self.resolver,
+            lookup: &self.lookup,
+            configs: &self.configs,
+            source: &self.source,
+            environment: &self.variables,
+            drop_params: self.drop_params,
+        }
     }
 }
 
