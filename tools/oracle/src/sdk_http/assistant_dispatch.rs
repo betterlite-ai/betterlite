@@ -33,7 +33,7 @@ mod projection;
 
 pub use model::{Call, ConfigProjection, OperationCall, Outcome, Payload, Step};
 
-use projection::{named, nullable, record};
+use projection::{failed_step, named, nullable, record};
 
 // the assistant_settings mapping the startup block reads
 #[derive(Serialize)]
@@ -203,33 +203,6 @@ async fn project(
     answer: Result<AssistantOutcome<RunStream<ProxiedClient>>, AssistantDispatchError>,
 ) -> Result<Step, SdkHttpError> {
     match answer {
-        Ok(AssistantOutcome::Assistant(assistant)) => Ok(record(vec![assistant.id], None)),
-        Ok(AssistantOutcome::Assistants(page)) => Ok(record(
-            page.data
-                .into_iter()
-                .map(|assistant| assistant.id)
-                .collect(),
-            None,
-        )),
-        Ok(AssistantOutcome::Deleted(deleted)) => Ok(record(vec![deleted.id], None)),
-        Ok(AssistantOutcome::Thread(thread)) => Ok(record(
-            thread
-                .map(|thread_record| thread_record.id)
-                .into_iter()
-                .collect(),
-            None,
-        )),
-        Ok(AssistantOutcome::Message(message)) => Ok(record(vec![message.id], None)),
-        Ok(AssistantOutcome::Messages(page)) => Ok(record(
-            page.data.into_iter().map(|message| message.id).collect(),
-            None,
-        )),
-        Ok(AssistantOutcome::Run(RunOutcome::Polled(reply))) => {
-            let (ids, status) = (*reply).as_ref().map_or((Vec::new(), None), |run| {
-                (vec![run.id.clone()], Some(run.status.clone()))
-            });
-            Ok(record(ids, status))
-        }
         // entering the manager starts the request, so a consumed stream has issued it by the time it returns
         Ok(AssistantOutcome::Run(RunOutcome::Streaming(stream))) => {
             let consumed = stream
@@ -248,7 +221,44 @@ async fn project(
                 failure: None,
             })
         }
+        Ok(outcome) => {
+            let (ids, status) = answered(outcome);
+            Ok(record(ids, status))
+        }
         Err(error) => dropped(error),
+    }
+}
+
+// The ids each non-streaming answer returns, and the status a polled run carries.
+fn answered(outcome: AssistantOutcome<RunStream<ProxiedClient>>) -> (Vec<String>, Option<String>) {
+    match outcome {
+        AssistantOutcome::Assistant(assistant) => (vec![assistant.id], None),
+        AssistantOutcome::Assistants(page) => (
+            page.data
+                .into_iter()
+                .map(|assistant| assistant.id)
+                .collect(),
+            None,
+        ),
+        AssistantOutcome::Deleted(deleted) => (vec![deleted.id], None),
+        AssistantOutcome::Thread(thread) => (
+            thread
+                .map(|thread_record| thread_record.id)
+                .into_iter()
+                .collect(),
+            None,
+        ),
+        AssistantOutcome::Message(message) => (vec![message.id], None),
+        AssistantOutcome::Messages(page) => (
+            page.data.into_iter().map(|message| message.id).collect(),
+            None,
+        ),
+        AssistantOutcome::Run(RunOutcome::Polled(reply)) => {
+            (*reply).as_ref().map_or((Vec::new(), None), |run| {
+                (vec![run.id.clone()], Some(run.status.clone()))
+            })
+        }
+        AssistantOutcome::Run(RunOutcome::Streaming(_)) => (Vec::new(), None),
     }
 }
 
@@ -284,10 +294,5 @@ fn dropped(error: AssistantDispatchError) -> Result<Step, SdkHttpError> {
             )));
         }
     };
-    Ok(Step {
-        ids: Vec::new(),
-        status: None,
-        events: None,
-        failure: Some(failure),
-    })
+    Ok(failed_step(failure))
 }

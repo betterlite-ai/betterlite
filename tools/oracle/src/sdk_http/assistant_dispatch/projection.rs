@@ -13,6 +13,16 @@ pub(super) const fn record(ids: Vec<String>, status: Option<String>) -> Step {
     }
 }
 
+// A wrapper call that raised reports no ids, status or events.
+pub(super) fn failed_step(failure: Failure) -> Step {
+    Step {
+        ids: Vec::new(),
+        status: None,
+        events: None,
+        failure: Some(failure),
+    }
+}
+
 // The factory's own exceptions carry no status, type, param or code.
 pub(super) fn named(class: &str, message: String) -> Failure {
     Failure {

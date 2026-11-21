@@ -29,51 +29,22 @@ Operation: TypeAlias = Literal[
 
 # The eight wrappers Router.initialize_assistants_endpoint installs, as the factory calls them.
 class AssistantCalls(Protocol):
-    async def acreate_assistants(
-        self, client: openai.AsyncOpenAI | None = None, **kwargs: Json
-    ) -> Assistant: ...
+    async def acreate_assistants(self, **kwargs: Json) -> Assistant: ...
 
-    async def aget_assistants(
-        self, client: openai.AsyncOpenAI | None = None, **kwargs: Json
-    ) -> AsyncCursorPage[Assistant]: ...
+    async def aget_assistants(self, **kwargs: Json) -> AsyncCursorPage[Assistant]: ...
 
-    async def adelete_assistant(
-        self,
-        assistant_id: str | None,
-        client: openai.AsyncOpenAI | None = None,
-        **kwargs: Json,
-    ) -> AssistantDeleted: ...
+    async def adelete_assistant(self, **kwargs: Json) -> AssistantDeleted: ...
 
-    async def acreate_thread(
-        self, client: openai.AsyncOpenAI | None = None, **kwargs: Json
-    ) -> Thread: ...
+    async def acreate_thread(self, **kwargs: Json) -> Thread: ...
 
-    async def aget_thread(
-        self,
-        thread_id: str | None,
-        client: openai.AsyncOpenAI | None = None,
-        **kwargs: Json,
-    ) -> Thread: ...
+    async def aget_thread(self, **kwargs: Json) -> Thread: ...
 
-    async def a_add_message(
-        self,
-        thread_id: str | None,
-        client: openai.AsyncOpenAI | None = None,
-        **kwargs: Json,
-    ) -> Message: ...
+    async def a_add_message(self, **kwargs: Json) -> Message: ...
 
-    async def aget_messages(
-        self,
-        thread_id: str | None,
-        client: openai.AsyncOpenAI | None = None,
-        **kwargs: Json,
-    ) -> AsyncCursorPage[Message]: ...
+    async def aget_messages(self, **kwargs: Json) -> AsyncCursorPage[Message]: ...
 
     async def arun_thread(
-        self,
-        thread_id: str | None,
-        client: openai.AsyncOpenAI | None = None,
-        **kwargs: Json,
+        self, **kwargs: Json
     ) -> Run | AsyncAssistantStreamManager[openai.AsyncAssistantEventHandler]: ...
 
 
@@ -150,14 +121,12 @@ class AssistantDispatchRequest(BaseModel):
     assistant_dispatch: Call
 
     def serialize(self, api_base: str) -> str:
-        value = dispatch(self.assistant_dispatch, api_base)
+        value = Outcome(
+            results=[dispatch_run(run, api_base) for run in self.assistant_dispatch.runs]
+        )
         return Result(
             assistant_dispatch=AssistantDispatchValue(value=value)
         ).model_dump_json(by_alias=True, exclude_unset=True)
-
-
-def dispatch(call: Call, api_base: str) -> Outcome:
-    return Outcome(results=[dispatch_run(run, api_base) for run in call.runs])
 
 
 def dispatch_run(run: OperationCall, api_base: str) -> Step:
@@ -173,7 +142,16 @@ def dispatch_run(run: OperationCall, api_base: str) -> Step:
         return Step(ids=[], status=None, events=None, failure=failure)
 
 
-# The startup block expands shallow os.environ/ values and keeps only a truthy mapping.
+# one expanded value: the startup block replaces every os.environ/ occurrence in a string
+def expand_value(value: Json) -> Json:
+    match value:
+        case str() if value.startswith("os.environ/"):
+            return os.environ.get(value.replace("os.environ/", ""))
+        case _:
+            return value
+
+
+# The startup block expands litellm_params values and keeps only a truthy mapping.
 def assistants_config(run: OperationCall) -> dict[str, Json] | None:
     config = run.config
     if config is None:
@@ -190,12 +168,7 @@ def assistants_config(run: OperationCall) -> dict[str, Json] | None:
     params = config.litellm_params
     if params is None:
         raise KeyError("litellm_params")
-    expanded: dict[str, Json] = {}
-    for name, value in params.items():
-        if isinstance(value, str) and value.startswith("os.environ/"):
-            expanded[name] = os.environ.get(value.replace("os.environ/", ""))
-        else:
-            expanded[name] = value
+    expanded = {name: expand_value(value) for name, value in params.items()}
     startup: dict[str, Json] = {"litellm_params": expanded}
     if config.custom_llm_provider is not None:
         startup["custom_llm_provider"] = config.custom_llm_provider
@@ -220,9 +193,7 @@ def request_data(run: OperationCall, api_base: str) -> dict[str, Json]:
         ("stream", payload.stream),
         ("tools", payload.tools),
     ]
-    for name, value in fields:
-        if value is not None:
-            data[name] = value
+    data.update({name: value for name, value in fields if value is not None})
     if run.provider is not None:
         data["custom_llm_provider"] = run.provider
     data["api_base"] = api_base
@@ -286,10 +257,12 @@ async def run_outcome(
     router: AssistantCalls, run: OperationCall, data: dict[str, Json]
 ) -> Step:
     answer = await router.arun_thread(thread_id=run.thread_id, **data)
-    if isinstance(answer, Run):
-        return Step(ids=[answer.id], status=answer.status, events=None, failure=None)
-    events = await drain(answer)
-    return Step(ids=[], status=None, events=events, failure=None)
+    match answer:
+        case Run():
+            return Step(ids=[answer.id], status=answer.status, events=None, failure=None)
+        case _:
+            events = await drain(answer)
+            return Step(ids=[], status=None, events=events, failure=None)
 
 
 async def drain(
