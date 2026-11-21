@@ -177,14 +177,10 @@ def scripted_failure(failure: Failure) -> Exception:
     return RuntimeError(failure["message"])
 
 
-def model_json(value: BaseModel) -> JsonValue:
-    return REPLY.validate_json(value.model_dump_json())
-
-
 def clean(value: JsonValue | BaseModel) -> JsonValue:
     match value:
         case BaseModel():  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_helpers.py#L277-L287
-            return model_json(value)
+            return REPLY.validate_json(value.model_dump_json())
         case dict():
             return {key: clean(item) for key, item in value.items() if key not in DROPPED}
         case list():
@@ -194,7 +190,7 @@ def clean(value: JsonValue | BaseModel) -> JsonValue:
 
 
 def project(params: JsonValue) -> JsonValue:
-    text = json.dumps(clean(params), default=model_json)
+    text = json.dumps(clean(params))
     return REPLY.validate_json(text)
 
 
@@ -280,19 +276,20 @@ async def wildcard_step(step: WildcardStep) -> JsonValue:
 
 def tracking_step(step: dict[str, dict[str, JsonValue]]) -> JsonValue:
     tracked = TRACK(step["params"].copy())
-    metadata = METADATA.validate_json(json.dumps(tracked["litellm_metadata"], default=model_json))
+    metadata = METADATA.validate_json(json.dumps(clean(tracked["litellm_metadata"])))
     answer: dict[str, JsonValue] = {key: metadata.get(key) for key in TRACKED}
     return answer
 
 
-async def run_steps(input_value: Input) -> list[JsonValue]:
+async def run_modes(input_value: Input) -> list[JsonValue]:
     results: list[JsonValue] = [await mode_step(step) for step in input_value["mode"]]
     wildcards: list[JsonValue] = [await wildcard_step(step) for step in input_value["wildcard"]]
     results.extend(wildcards)
-    results.extend(tracking_step(step) for step in input_value["tracking"])
-    results.extend(CREATE_RESPONSE(step["headers"]) for step in input_value["response"])
     return results
 
 
 def run(input_value: Input) -> JsonValue:
-    return asyncio.run(run_steps(input_value))
+    results: list[JsonValue] = asyncio.run(run_modes(input_value))
+    results.extend(tracking_step(step) for step in input_value["tracking"])
+    results.extend(CREATE_RESPONSE(step["headers"]) for step in input_value["response"])
+    return results
