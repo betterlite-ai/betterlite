@@ -1,0 +1,18 @@
+kind: helper
+name: store_no_content
+call:
+  b3459:
+    step: store
+    vector: {vector_bucket_name: store-bucket, index_name: store-index, dimension: 2}
+    environment: {}
+    calls:
+      - filename: a.txt
+        chunks: []
+        embeddings: [[0.5, 0.25]]
+      - filename: a.txt
+        chunks: [one]
+      - filename: a.txt
+        chunks: [one]
+        embeddings: []
+env: {}
+compare: {ignore: []}
