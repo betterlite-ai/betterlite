@@ -2,8 +2,8 @@ from typing import Literal, TypedDict
 
 from fastapi import HTTPException
 from litellm.proxy._experimental.mcp_server.discoverable_endpoints import (
-    _append_query_params,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L518-L522
-    _validate_token_response,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L568-L615
+    _append_query_params,  # noqa: E501  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L518-L522
+    _validate_token_response,  # noqa: E501  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L568-L615
     client_supplied_redirect_uris,
 )
 from pydantic import BaseModel, JsonValue, TypeAdapter

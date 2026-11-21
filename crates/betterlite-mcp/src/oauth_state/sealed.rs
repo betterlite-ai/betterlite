@@ -28,7 +28,7 @@ pub struct PassthroughAuthorizationCode {
     pub upstream_code: String,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub struct PassthroughClient<'code> {
     pub client_id: &'code str,
     pub client_secret: Option<&'code str>,

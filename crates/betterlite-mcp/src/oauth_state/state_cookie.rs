@@ -71,7 +71,7 @@ pub fn set_state_cookie(base_url: &str, relay_state: &str, encoded_state: &str) 
 pub fn resolve_encoded_state(cookies: &dyn Fn(&str) -> Option<String>, state: &str) -> String {
     match cookies(&state_cookie_name(state)) {
         Some(encoded) if !encoded.is_empty() => encoded,
-        Some(_empty) | None => state.to_owned(),
+        Some(_) | None => state.to_owned(),
     }
 }
 
