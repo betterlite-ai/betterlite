@@ -629,12 +629,10 @@ fn mantle_policies_take_the_region_from_the_model_prefix_alone() {
     );
     assert_eq!(endpoint.base_model, "original");
     args.model = String::from("bedrock_mantle/original");
-    let policies = mantle::policies(&args);
-    let endpoint = policies
-        .mantle
-        .expect("the call builds the Mantle endpoint");
+    let plain = mantle::policies(&args);
+    let plain_endpoint = plain.mantle.expect("the call builds the Mantle endpoint");
     assert_eq!(
-        endpoint.api_base,
+        plain_endpoint.api_base,
         "https://bedrock-mantle.us-east-1.api.aws/v1"
     );
 }
@@ -657,12 +655,10 @@ fn mantle_policies_keep_the_given_base_and_ignore_an_empty_one() {
         Some(String::from("mantle-key"))
     );
     args.api_base = Some(String::new());
-    let policies = mantle::policies(&args);
-    let endpoint = policies
-        .mantle
-        .expect("the call builds the Mantle endpoint");
+    let derived = mantle::policies(&args);
+    let derived_endpoint = derived.mantle.expect("the call builds the Mantle endpoint");
     assert_eq!(
-        endpoint.api_base,
+        derived_endpoint.api_base,
         "https://bedrock-mantle.us-east-1.api.aws/v1"
     );
 }

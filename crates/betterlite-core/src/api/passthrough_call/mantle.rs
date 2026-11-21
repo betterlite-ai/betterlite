@@ -40,7 +40,7 @@ fn split_region(model: &str) -> (Option<&str>, &str) {
         return (None, model);
     };
     let regions = AmazonBedrockGlobalConfig.get_all_regions();
-    if regions.iter().any(|region| *region == head) {
+    if regions.contains(&head) {
         (Some(head), tail)
     } else {
         (None, model)
