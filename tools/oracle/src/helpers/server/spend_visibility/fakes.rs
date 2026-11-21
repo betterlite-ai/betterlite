@@ -58,20 +58,13 @@ impl CaseStore {
         Ok(())
     }
 
-    async fn read_teams(
-        &self,
-        read: &'static str,
-        team_ids: &[&str],
-        binds: Result<serde_json::Value, serde_json::Error>,
-    ) -> Result<Vec<LiteLLMTeamTable>, VisibilityError> {
-        self.record(read, None, binds).await?;
-        let found = self
-            .teams
+    // the stored team rows whose ids came back for the read
+    fn matching_teams(&self, team_ids: &[&str]) -> Vec<LiteLLMTeamTable> {
+        self.teams
             .iter()
             .filter(|team| team_ids.contains(&team.fields.base.team_id.as_str()))
             .cloned()
-            .collect();
-        Ok(found)
+            .collect()
     }
 }
 
@@ -93,16 +86,16 @@ impl VisibilityStore for CaseStore {
     }
 
     async fn team(&self, team_id: &str) -> Result<Option<LiteLLMTeamTable>, VisibilityError> {
-        let mut found = self
-            .read_teams("team", &[team_id], serde_json::to_value([team_id]))
+        self.record("team", None, serde_json::to_value([team_id]))
             .await?;
-        Ok(found.pop())
+        Ok(self.matching_teams(&[team_id]).pop())
     }
 
     async fn teams(&self, team_ids: &[String]) -> Result<Vec<LiteLLMTeamTable>, VisibilityError> {
         let wanted: Vec<&str> = team_ids.iter().map(String::as_str).collect();
-        self.read_teams("teams", &wanted, serde_json::to_value([team_ids]))
-            .await
+        self.record("teams", None, serde_json::to_value([team_ids]))
+            .await?;
+        Ok(self.matching_teams(&wanted))
     }
 }
 

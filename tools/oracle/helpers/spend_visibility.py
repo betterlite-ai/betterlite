@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Final, Literal, TypeAlias, TypedDict, final
 
 import litellm
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 from litellm.integrations.additional_logging_utils import AdditionalLoggingUtils
 from litellm.integrations.custom_logger import CustomLogger
@@ -30,7 +30,8 @@ UserRole = Literal[
 ]
 Bind: TypeAlias = str | tuple[str, ...] | None
 TeamIds = TypedDict("TeamIds", {"in": list[str]})
-AuthCheck: TypeAlias = Callable[..., Awaitable[UserAPIKeyAuth]]
+AuthCheck: TypeAlias = Callable[[Request], Awaitable[UserAPIKeyAuth]]
+AuthAnswer: TypeAlias = Callable[[], UserAPIKeyAuth]
 
 
 class CallerInput(TypedDict):
@@ -200,19 +201,19 @@ class Recorder(CustomLogger, AdditionalLoggingUtils):
         return self.board.step["payload"]
 
 
-# the callback lists the detail route searches for cold-storage loggers
+# the callbacks the detail route searches, with the base's bare Callable spelled Any-free
 class Loggers(LoggingCallbackManager):
     def __init__(self, recorder: Recorder) -> None:
         self.recorder = recorder
 
     @override
-    def _get_all_callbacks(self) -> list[CustomLogger | Callable[..., object] | str]:
+    def _get_all_callbacks(self) -> list[CustomLogger | Callable[[], None] | str]:
         return [self.recorder]
 
 
 # the spend routes with the step's caller in place of the key check
 class App(FastAPI):
-    dependency_overrides: dict[AuthCheck, AuthCheck]
+    dependency_overrides: dict[AuthCheck, AuthAnswer]
 
     def __init__(self, caller: UserAPIKeyAuth) -> None:
         super().__init__()
@@ -220,7 +221,7 @@ class App(FastAPI):
         self.dependency_overrides = {user_api_key_auth: self.auth}
         self.include_router(router)
 
-    async def auth(self) -> UserAPIKeyAuth:
+    def auth(self) -> UserAPIKeyAuth:
         return self.caller
 
 
