@@ -24,6 +24,8 @@ use betterlite_core::operation::responses::ResponsesRequest;
 use betterlite_models::decisions::Json;
 use betterlite_openai::chat::MockSettings;
 use betterlite_redact::secret::Redactor;
+use futures_util::StreamExt as _;
+use futures_util::stream::FuturesUnordered;
 use serde::de::DeserializeOwned;
 use std::sync::Arc;
 // main.py's completion: prepare the call, then run the outcome B5655 chose
@@ -38,6 +40,7 @@ pub struct CompletionTarget<'ports> {
     pub redactor: Redactor,
     pub mcp: &'ports dyn McpLoopRunner,
     pub sleeper: &'ports dyn Sleeper,
+    pub stream_bytes: usize,
 }
 impl CompletionTarget<'_> {
     pub(crate) async fn run(
@@ -52,7 +55,7 @@ impl CompletionTarget<'_> {
             PreparedCompletion::McpLoop(call) => self.mcp.run(&call, acompletion).await,
             PreparedCompletion::Mock(call) => self.mock_call(&call),
             PreparedCompletion::Fallbacks(call) => {
-                super::fallbacks::run_fallbacks(self, call, logging).await
+                super::fallbacks::run_fallbacks(self, call, logging, self.ids.as_ref()).await
             }
             PreparedCompletion::ModelList(call) => self.model_list(call, logging).await,
         }
@@ -66,14 +69,27 @@ impl CompletionTarget<'_> {
             return Err(CompletionCallError::Palm);
         }
         let body = request::chat_body(call)?;
-        let operation = request::chat_operation(call, &body, Arc::clone(&self.calls))?;
-        request::execute(&self.dispatch, operation).await
+        let operation =
+            request::chat_operation(call, &body, Arc::clone(&self.calls), self.ids.as_ref())?;
+        request::execute(
+            &self.dispatch,
+            operation,
+            call.timeout.as_ref(),
+            self.stream_bytes,
+        )
+        .await
     }
     async fn bridge_call(&self, call: &PreparedCall) -> Result<CallOutcome, CompletionCallError> {
         if call.custom_llm_provider.as_deref() == Some("palm") {
             return Err(CompletionCallError::Palm);
         }
-        request::execute(&self.dispatch, Operation::Responses(ResponsesRequest)).await
+        request::execute(
+            &self.dispatch,
+            Operation::Responses(ResponsesRequest),
+            call.timeout.as_ref(),
+            self.stream_bytes,
+        )
+        .await
     }
     fn mock_call(&self, call: &MockCall) -> Result<CallOutcome, CompletionCallError> {
         let mock_response: Option<MockResponse> = optional_kwarg(&call.call, "mock_response")?;
@@ -117,23 +133,26 @@ impl CompletionTarget<'_> {
         let encoded = serde_json::to_value(&response)?;
         Ok(CallOutcome::Response(serde_json::from_value(encoded)?))
     }
+    // LiteLLM's batch_completion_models races the deployments and answers the first one that does
     async fn model_list(
         &self,
         call: ModelListCall,
         logging: Option<&LoggingHandle>,
     ) -> Result<CallOutcome, CompletionCallError> {
-        let mut last_failure: Option<CompletionCallError> = None;
-        let mut request = request::args_to_map(&call.args)?;
-        request.shift_remove("model_list");
+        let mut base = request::args_to_map(&call.args)?;
+        base.shift_remove("model_list");
+        let mut attempts = FuturesUnordered::new();
         for entry in &call.deployments {
             for (name, value) in entry {
-                request.insert(name.clone(), value.clone());
+                base.insert(name.clone(), value.clone());
             }
-            match self.call(request.clone(), logging).await {
-                Ok(outcome) if !matches!(&outcome, CallOutcome::Response(Json::Null)) => {
-                    return Ok(outcome);
-                }
-                Ok(_) => {}
+            attempts.push(self.call(base.clone(), logging));
+        }
+        let mut last_failure: Option<CompletionCallError> = None;
+        while let Some(result) = attempts.next().await {
+            match result {
+                Ok(outcome) if matches!(&outcome, CallOutcome::Response(Json::Null)) => {}
+                Ok(outcome) => return Ok(outcome),
                 Err(error) => last_failure = Some(CompletionCallError::Call(error)),
             }
         }

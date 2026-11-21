@@ -136,6 +136,8 @@ fn chat_failure(
 }
 fn status_of(error: &CompletionCallError) -> Option<u16> {
     match error {
+        // exceptions.py raises litellm.Timeout for a mock timeout, and its status is 408
+        CompletionCallError::Request(CompletionRequestError::MockTimeout) => Some(408),
         CompletionCallError::Request(_)
         | CompletionCallError::ChatRequest(_)
         | CompletionCallError::Field { .. }

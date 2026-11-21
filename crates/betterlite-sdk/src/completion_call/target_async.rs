@@ -81,6 +81,9 @@ impl AsyncCompletionTarget<'_> {
         let CallOutcome::Response(json) = &outcome else {
             return Ok(outcome);
         };
+        if !is_text_completion_body(json) {
+            return Ok(outcome);
+        }
         let Ok(response) =
             serde_json::from_value::<CompletionResponse>(serde_json::to_value(json)?)
         else {
@@ -102,7 +105,7 @@ impl AsyncCompletionTarget<'_> {
         provider: Option<&str>,
         logging: Option<&LoggingHandle>,
     ) -> Result<CallOutcome, CallError> {
-        let outcome = super::fallbacks::run_fallbacks(self, call, logging)
+        let outcome = super::fallbacks::run_fallbacks(self, call, logging, self.inner.ids.as_ref())
             .await
             .map_err(|error| self.async_error(&error, model, provider))?;
         if matches!(&outcome, CallOutcome::Response(Json::Null)) {
@@ -170,6 +173,23 @@ impl CallTarget for AsyncCompletionTarget<'_> {
     ) -> Result<CallOutcome, CallError> {
         retry::with_retries(&self.inner, request, logging, self.inner.sleeper).await
     }
+}
+// LiteLLM converts only a TextCompletionResponse, so a chat-shaped answer from a text provider keeps its message
+fn is_text_completion_body(json: &Json) -> bool {
+    let Json::Object(fields) = json else {
+        return false;
+    };
+    if matches!(fields.get("object"), Some(Json::Text(object)) if object == "text_completion") {
+        return true;
+    }
+    let Some(Json::List(choices)) = fields.get("choices") else {
+        return false;
+    };
+    !choices.is_empty()
+        && choices.iter().all(|choice| {
+            matches!(choice, Json::Object(choice_fields)
+                if choice_fields.contains_key("text") && !choice_fields.contains_key("message"))
+        })
 }
 pub(crate) fn provider_of(prepared: &PreparedCompletion) -> Option<&str> {
     match prepared {

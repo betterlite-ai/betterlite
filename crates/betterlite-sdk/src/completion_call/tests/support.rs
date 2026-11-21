@@ -10,6 +10,7 @@ use betterlite_context::agentic_callback::{
 };
 use betterlite_context::agentic_loop_plan::JsonMap;
 use betterlite_context::non_default_params::mapper::OptionalParamsMapper;
+use betterlite_context::non_default_params::names::DEFAULT_CHAT_COMPLETION_PARAMS;
 use betterlite_core::api::chat_agentic_loop::fake_stream::FakeStreamPort;
 use betterlite_core::api::chat_agentic_loop::{
     ChatLoopResult, LoggingHandle as AgenticLoggingHandle,
@@ -22,13 +23,17 @@ use betterlite_core::operation::chat::{
 use betterlite_core::responses_bridge::{
     ModelInfoError, ReasoningEffort, ResponsesBridgeCapabilities,
 };
+use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_models::call_helpers::headers::AdditionalHeaders;
 use betterlite_models::controls::call_params::CallParams;
 use betterlite_models::controls::control_options::ControlOptions;
 use betterlite_models::controls::optional_params::OptionalParams;
 use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
-use betterlite_models::params::{ParameterError, ParameterMapping};
+use betterlite_models::params::classification::RESERVED_PARAMETER_NAMES;
+use betterlite_models::params::{
+    CallType, ParameterError, ParameterMapping, map_listed_parameters,
+};
 use betterlite_models::request_pricing::register::CustomPricingRequest;
 use betterlite_models::resolution::{ProviderIdentity, ResolutionError, ResolvedModel};
 use betterlite_openai::chat::ChatRequest as ClientChatRequest;
@@ -54,7 +59,7 @@ use crate::completion_call::ports::{
 };
 use crate::completion_call::target::CompletionTarget;
 use crate::completion_call::target_async::AsyncCompletionTarget;
-use crate::completion_call::tokens::TokenCountResponse;
+use crate::completion_call::tokens::{LOCAL_TOKENIZER, TokenCountResponse};
 use crate::completion_request::args::{
     CompletionArgs, CompletionFlags, CompletionSettings, JsonObject,
 };
@@ -262,9 +267,20 @@ impl ModelMetadata for FakeMetadata {
 
     fn parameter_mapping(
         &self,
-        _request: &ParameterMappingRequest<'_>,
+        request: &ParameterMappingRequest<'_>,
     ) -> Result<ParameterMapping, ParameterError> {
-        Ok(ParameterMapping::default())
+        let supported: Vec<_> = DEFAULT_CHAT_COMPLETION_PARAMS.split_whitespace().collect();
+        // a reserved control such as max_retries is spent by the call and never reaches a provider
+        let mut kept = request.parameters.clone();
+        kept.passthrough
+            .retain(|name, _v| !RESERVED_PARAMETER_NAMES.contains(&name.as_str()));
+        map_listed_parameters(
+            &supported,
+            request.model,
+            CallType::ChatCompletion,
+            &kept,
+            request.policy,
+        )
     }
 }
 
@@ -864,6 +880,7 @@ pub(super) struct Harness {
     pub mcp: NoMcpLoop,
     pub callbacks: Vec<Arc<dyn AgenticCallback>>,
     pub fake_stream: FakeStream,
+    pub stream_bytes: usize,
 }
 
 impl Harness {
@@ -891,6 +908,7 @@ impl Harness {
             mcp: NoMcpLoop,
             callbacks: Vec::new(),
             fake_stream: FakeStream,
+            stream_bytes: TransportLimits::DEFAULT.body_bytes,
         }
     }
 
@@ -930,6 +948,7 @@ impl Harness {
             redactor,
             mcp: &self.mcp,
             sleeper: &self.sleeper,
+            stream_bytes: self.stream_bytes,
         }
     }
 
@@ -953,6 +972,23 @@ pub(super) fn text_of(value: Option<&Json>) -> Option<&str> {
         | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
             None
         }
+    }
+}
+
+pub(super) fn token_response(
+    total_tokens: u64,
+    request_model: &str,
+    model_used: &str,
+) -> TokenCountResponse {
+    TokenCountResponse {
+        total_tokens,
+        request_model: request_model.to_owned(),
+        model_used: model_used.to_owned(),
+        tokenizer_type: String::from(LOCAL_TOKENIZER),
+        original_response: None,
+        error: false,
+        error_message: None,
+        status_code: None,
     }
 }
 

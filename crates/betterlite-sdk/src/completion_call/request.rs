@@ -1,8 +1,9 @@
 use super::error::CompletionCallError;
 use crate::call_setup::RequestMap;
 use crate::call_setup::correlation::{CallOutcome, ChatStream};
+use crate::call_wrapper::ports::IdSource;
 use crate::completion_request::args::CompletionArgs;
-use crate::completion_request::call::PreparedCall;
+use crate::completion_request::call::{PreparedCall, PreparedTimeout};
 use betterlite_context::call_context::{CallContext, CallInputs};
 use betterlite_core::dispatch::Dispatch;
 use betterlite_core::operation::chat::first_message::first_message_has_content;
@@ -10,13 +11,15 @@ use betterlite_core::operation::chat::{
     ChatCall, ChatRequest as DispatchChatRequest, ChatResult, ChatStreamAnswer,
 };
 use betterlite_core::operation::{CallResult, Operation};
+use betterlite_http::error::HttpError;
 use betterlite_models::decisions::Json;
 use betterlite_openai::chat::ChatRequest;
+use betterlite_openai::stream::SseParser;
 use futures_util::StreamExt as _;
 use indexmap::IndexMap;
 use secrecy::ExposeSecret as _;
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 use uuid::Uuid;
 // The call's kwargs as the map completion() was handed, with the secret the struct never serializes
 pub fn args_to_map(args: &CompletionArgs) -> Result<RequestMap, CompletionCallError> {
@@ -46,10 +49,11 @@ pub fn chat_operation(
     call: &PreparedCall,
     body: &[u8],
     calls: Arc<dyn ChatCall>,
+    ids: &dyn IdSource,
 ) -> Result<Operation, CompletionCallError> {
     let request = ChatRequest::parse(body)?;
     Ok(Operation::Chat(DispatchChatRequest {
-        call_id: call_id(call),
+        call_id: call_id(call, ids),
         model_id: call.model.clone(),
         request: Box::new(request),
         first_message_has_content: first_message_has_content(body),
@@ -57,29 +61,52 @@ pub fn chat_operation(
     }))
 }
 #[must_use]
-pub fn call_id(call: &PreparedCall) -> String {
+pub fn call_id(call: &PreparedCall, ids: &dyn IdSource) -> String {
     match call.kwargs.get("litellm_call_id") {
         Some(Json::Text(id)) => id.clone(),
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
-        | None => Uuid::new_v4().to_string(),
+        | None => ids.next_call_id(),
+    }
+}
+// The prepared timeout as one total deadline: the phases form adds up, since a request cannot outlast their sum
+pub(crate) fn timeout_duration(timeout: &PreparedTimeout) -> Option<Duration> {
+    match timeout {
+        PreparedTimeout::Seconds(seconds) => Duration::try_from_secs_f64(*seconds).ok(),
+        PreparedTimeout::Phases(phases) => {
+            let parts = [phases.connect, phases.read, phases.write, phases.pool];
+            if parts.iter().all(Option::is_none) {
+                return None;
+            }
+            let total: f64 = parts.into_iter().flatten().sum();
+            Duration::try_from_secs_f64(total).ok()
+        }
     }
 }
 pub async fn execute(
     dispatch: &Dispatch,
     operation: Operation,
+    timeout: Option<&PreparedTimeout>,
+    body_bytes: usize,
 ) -> Result<CallOutcome, CompletionCallError> {
+    let started = SystemTime::now();
     let context = CallContext::start(CallInputs {
-        now: SystemTime::now,
+        now: || started,
         id: Uuid::new_v4,
-        deadline: None,
+        deadline: timeout_duration(timeout).and_then(|wait| started.checked_add(wait)),
         privacy: false,
     });
     let result = dispatch.execute(operation, &context).await?;
+    outcome_of(result, body_bytes).await
+}
+async fn outcome_of(
+    result: CallResult,
+    body_bytes: usize,
+) -> Result<CallOutcome, CompletionCallError> {
     match result {
         CallResult::Chat(ChatResult::Completion(answer)) => {
             Ok(CallOutcome::Response(serde_json::from_slice(&answer.body)?))
         }
-        CallResult::Chat(ChatResult::Stream(answer)) => stream_outcome(answer).await,
+        CallResult::Chat(ChatResult::Stream(answer)) => stream_outcome(answer, body_bytes).await,
         CallResult::Embedding(_)
         | CallResult::TextCompletion(_)
         | CallResult::TextStream(_)
@@ -102,33 +129,46 @@ pub async fn execute(
         }
     }
 }
-async fn stream_outcome(answer: ChatStreamAnswer) -> Result<CallOutcome, CompletionCallError> {
+// The provider SSE stream through the fuzzed parser, capped at the transport body limit as it accumulates
+async fn stream_outcome(
+    answer: ChatStreamAnswer,
+    body_bytes: usize,
+) -> Result<CallOutcome, CompletionCallError> {
     let mut body = answer.body;
-    let mut bytes = Vec::new();
+    let mut parser = SseParser::default();
+    let mut chunks = Vec::new();
+    let mut received = 0_usize;
     while let Some(item) = body.next().await {
-        bytes.extend_from_slice(&item?);
+        let bytes = item?;
+        received = received.saturating_add(bytes.len());
+        if received > body_bytes {
+            return Err(CompletionCallError::Http(HttpError::TooLarge {
+                limit: body_bytes,
+            }));
+        }
+        let events = parser.push(&bytes).map_err(|_error| {
+            CompletionCallError::Http(HttpError::TooLarge { limit: body_bytes })
+        })?;
+        append_payloads(&mut chunks, &events)?;
     }
+    let rest = parser.finish();
+    append_payloads(&mut chunks, &rest)?;
     Ok(CallOutcome::ChatStream(ChatStream {
-        model_response: sse_chunks(&bytes)?,
+        model_response: Json::List(chunks),
         json_mode: false,
         converted_from_mock: false,
     }))
 }
-pub fn sse_chunks(bytes: &[u8]) -> Result<Json, CompletionCallError> {
-    let text = String::from_utf8(bytes.to_vec())
-        .map_err(|_error| CompletionCallError::Field { field: "stream" })?;
-    let mut chunks = Vec::new();
-    for event in text.split("\n\n") {
-        for line in event.lines() {
-            let Some(field) = line.strip_prefix("data:") else {
-                continue;
-            };
-            let payload = field.trim();
-            if payload.is_empty() || payload == "[DONE]" {
-                continue;
-            }
-            chunks.push(serde_json::from_str::<Json>(payload)?);
+fn append_payloads(
+    chunks: &mut Vec<Json>,
+    payloads: &[Vec<u8>],
+) -> Result<(), CompletionCallError> {
+    for payload in payloads {
+        let data = payload.trim_ascii();
+        if data.is_empty() || data == b"[DONE]" {
+            continue;
         }
+        chunks.push(serde_json::from_slice(data)?);
     }
-    Ok(Json::List(chunks))
+    Ok(())
 }

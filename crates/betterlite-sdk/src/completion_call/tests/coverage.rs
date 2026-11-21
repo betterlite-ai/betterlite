@@ -10,12 +10,11 @@ use betterlite_openai::chat::execution::ChatError;
 use betterlite_openai::stream::chunk::Chunk;
 use futures_util::StreamExt as _;
 use serde_json::value::RawValue;
-use uuid::Uuid;
 
 use super::USER;
 use super::support::{
-    CheckingCallback, FakeFacts, FakeFoundry, Harness, RecordingTarget, args_from, chat_body, dig,
-    json, prepared_call, request,
+    CheckingCallback, FakeFacts, FakeFoundry, FakeIds, Harness, RecordingTarget, args_from,
+    chat_body, dig, json, prepared_call, request,
 };
 use crate::call_setup::correlation::CallOutcome;
 use crate::call_wrapper::error::class_status;
@@ -66,14 +65,14 @@ async fn target_route_failure_keeps_its_status() {
 }
 
 #[test]
-fn target_call_id_comes_from_the_kwarg_or_a_fresh_uuid() {
+fn target_call_id_comes_from_the_kwarg_or_the_id_source() {
     let mut call = PreparedCall::default();
-    Uuid::parse_str(&request::call_id(&call)).unwrap();
+    assert_eq!(request::call_id(&call, &FakeIds), "call-1");
     call.kwargs.insert(
         String::from("litellm_call_id"),
         Json::Text(String::from("given-id")),
     );
-    assert_eq!(request::call_id(&call), "given-id");
+    assert_eq!(request::call_id(&call, &FakeIds), "given-id");
 }
 
 #[test]
@@ -152,7 +151,7 @@ async fn fallback_an_empty_answer_tries_the_next_entry() {
         fallbacks: vec![json(r#""gpt-3.5-turbo""#)],
         args,
     };
-    let outcome = run_fallbacks(&target, call, None).await.unwrap();
+    let outcome = run_fallbacks(&target, call, None, &FakeIds).await.unwrap();
     assert_eq!(target.call_map().len(), 2);
     let CallOutcome::Response(answer) = outcome else {
         panic!("the fallback answers");
@@ -179,7 +178,7 @@ async fn fallback_keeps_the_original_request_parameters() {
         fallbacks: vec![json(r#""gpt-3.5-turbo""#)],
         args,
     };
-    run_fallbacks(&target, call, None).await.unwrap();
+    run_fallbacks(&target, call, None, &FakeIds).await.unwrap();
     let calls = target.call_map();
     assert_eq!(calls.len(), 2);
     assert!(calls[0].contains_key("messages"));

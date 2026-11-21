@@ -24,22 +24,6 @@ pub struct TokenCountResponse {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status_code: Option<u16>,
 }
-impl TokenCountResponse {
-    // the fallback the token count builds when no provider counter answered
-    #[must_use]
-    pub fn local(total_tokens: usize, request_model: &str, model_used: &str) -> Self {
-        Self {
-            total_tokens: u64::try_from(total_tokens).unwrap_or(u64::MAX),
-            request_model: request_model.to_owned(),
-            model_used: model_used.to_owned(),
-            tokenizer_type: String::from(LOCAL_TOKENIZER),
-            original_response: None,
-            error: false,
-            error_message: None,
-            status_code: None,
-        }
-    }
-}
 pub struct TokenCountRequest<'request> {
     pub model: &'request str,
     pub messages: Option<&'request [Json]>,
@@ -79,6 +63,14 @@ pub async fn count_tokens(
         }
         tracing::debug!(provider = %provider, "provider counting failed; counting locally");
     }
+    Ok(local_answer(request, resolved.model.as_str(), local).await)
+}
+// the fallback the token count builds when no provider counter answered
+async fn local_answer(
+    request: &TokenCountRequest<'_>,
+    model_used: &str,
+    local: &dyn LocalTokenCounter,
+) -> TokenCountResponse {
     let mut messages: Vec<Json> = request.messages.map(<[Json]>::to_vec).unwrap_or_default();
     if let Some(system) = request.system.filter(|_given| !messages.is_empty()) {
         messages.insert(0, system_message(system));
@@ -89,8 +81,16 @@ pub async fn count_tokens(
         tools: request.tools,
     };
     let total = local.count(&local_request).await;
-    let model_used = resolved.model.as_str();
-    Ok(TokenCountResponse::local(total, request.model, model_used))
+    TokenCountResponse {
+        total_tokens: u64::try_from(total).unwrap_or(u64::MAX),
+        request_model: request.model.to_owned(),
+        model_used: model_used.to_owned(),
+        tokenizer_type: String::from(LOCAL_TOKENIZER),
+        original_response: None,
+        error: false,
+        error_message: None,
+        status_code: None,
+    }
 }
 fn system_message(system: &str) -> Json {
     Json::Object(IndexMap::from([

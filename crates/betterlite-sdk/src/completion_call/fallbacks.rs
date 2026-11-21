@@ -2,6 +2,7 @@ use super::error::CompletionCallError;
 use super::request::args_to_map;
 use crate::call_setup::RequestMap;
 use crate::call_setup::correlation::CallOutcome;
+use crate::call_wrapper::ports::IdSource;
 use crate::call_wrapper::state::LoggingHandle;
 use crate::call_wrapper::target::CallTarget;
 use crate::completion_request::args::CompletionArgs;
@@ -9,7 +10,6 @@ use crate::completion_request::call::FallbackCall;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde_json::Number;
-use uuid::Uuid;
 pub const ATTEMPTED_FALLBACKS_HEADER: &str = "x-litellm-attempted-fallbacks";
 const HIDDEN_PARAMS: &str = "_hidden_params";
 const ADDITIONAL_HEADERS: &str = "additional_headers";
@@ -23,9 +23,10 @@ pub async fn run_fallbacks(
     requester: &dyn CallTarget,
     call: FallbackCall,
     logging: Option<&LoggingHandle>,
+    ids: &dyn IdSource,
 ) -> Result<CallOutcome, CompletionCallError> {
     let original = call.args.model.clone().unwrap_or_default();
-    let base = fallback_base(&call.args)?;
+    let base = fallback_base(&call.args, ids)?;
     let mut candidates = Vec::with_capacity(call.fallbacks.len().saturating_add(1));
     candidates.push(Json::Text(original.clone()));
     candidates.extend(call.fallbacks);
@@ -60,14 +61,17 @@ pub async fn run_fallbacks(
     let last = last_error.unwrap_or_else(|| String::from("None"));
     Err(CompletionCallError::AllFallbacksFailed { last })
 }
-fn fallback_base(args: &CompletionArgs) -> Result<RequestMap, CompletionCallError> {
+fn fallback_base(
+    args: &CompletionArgs,
+    ids: &dyn IdSource,
+) -> Result<RequestMap, CompletionCallError> {
     let mut base = args_to_map(args)?;
     base.shift_remove("model");
     base.shift_remove("acompletion");
     base.shift_remove("fallbacks");
     base.insert(
         String::from("litellm_call_id"),
-        Json::Text(Uuid::new_v4().to_string()),
+        Json::Text(ids.next_call_id()),
     );
     Ok(filter_internal_params(base))
 }

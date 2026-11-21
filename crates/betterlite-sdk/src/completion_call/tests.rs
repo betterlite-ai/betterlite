@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 mod coverage;
+mod review;
 mod support;
 
 use std::collections::BTreeMap;
@@ -32,16 +33,15 @@ use crate::completion_call::error::{CompletionCallError, into_call_error};
 use crate::completion_call::fallbacks::run_fallbacks;
 use crate::completion_call::probe::{CompletionProbe, ProbeFailure};
 use crate::completion_call::retry::{RetryStrategy, with_retries};
-use crate::completion_call::tokens::{
-    LOCAL_TOKENIZER, TokenCountRequest, TokenCountResponse, count_tokens,
-};
+use crate::completion_call::tokens::{LOCAL_TOKENIZER, TokenCountRequest, count_tokens};
 use crate::completion_request::args::JsonObject;
 use crate::completion_request::call::{
     FallbackCall, MockCall, ModelListCall, PreparedCall, PreparedCompletion,
 };
 use support::{
-    FakeCallback, FakeFacts, FakeFoundry, FakeLocalCounter, FakeProviderCounter, Harness,
+    FakeCallback, FakeFacts, FakeFoundry, FakeIds, FakeLocalCounter, FakeProviderCounter, Harness,
     RecordingTarget, args_from, chat_body, dig, json, prepared_call, request, secret, text_of,
+    token_response,
 };
 
 const USER: &str = r#"{"role":"user","content":"hi"}"#;
@@ -300,7 +300,7 @@ async fn fallback_tries_the_original_each_entry_and_keeps_overrides() {
         ],
         args,
     };
-    let outcome = run_fallbacks(&target, call, None).await.unwrap();
+    let outcome = run_fallbacks(&target, call, None, &FakeIds).await.unwrap();
     let calls = target.call_map();
     assert_eq!(calls.len(), 3);
     assert_eq!(text_of(calls[0].get("model")), Some("gpt-4o"));
@@ -337,7 +337,7 @@ async fn fallback_dict_without_a_model_keeps_the_original() {
         fallbacks: vec![json(r#"{"temperature":0.2}"#)],
         args,
     };
-    run_fallbacks(&target, call, None).await.unwrap();
+    run_fallbacks(&target, call, None, &FakeIds).await.unwrap();
     let calls = target.call_map();
     assert_eq!(text_of(calls[1].get("model")), Some("gpt-4o"));
     assert!(matches!(
@@ -360,7 +360,7 @@ async fn fallback_internal_params_never_reach_an_attempt() {
         fallbacks: vec![json(r#""gpt-3.5-turbo""#)],
         args,
     };
-    run_fallbacks(&target, call, None).await.unwrap();
+    run_fallbacks(&target, call, None, &FakeIds).await.unwrap();
     let attempts = target.call_map();
     assert_eq!(attempts.len(), 2);
     assert!(!attempts[0].contains_key("skip_mcp_handler"));
@@ -383,7 +383,9 @@ async fn fallback_all_fail_reports_litellms_text() {
         fallbacks: vec![json(r#""gpt-3.5-turbo""#)],
         args,
     };
-    let error = run_fallbacks(&target, call, None).await.unwrap_err();
+    let error = run_fallbacks(&target, call, None, &FakeIds)
+        .await
+        .unwrap_err();
     let CompletionCallError::AllFallbacksFailed { last } = error else {
         panic!("every attempt failed");
     };
@@ -825,7 +827,7 @@ fn token_messages() -> Vec<Json> {
 #[tokio::test]
 async fn tokens_uses_the_provider_counter_when_it_answers() {
     let metadata = support::FakeMetadata::resolving("gpt-4o-2024");
-    let mut answer = TokenCountResponse::local(11, "gpt-4o", "gpt-4o-provider");
+    let mut answer = token_response(11, "gpt-4o", "gpt-4o-provider");
     answer.tokenizer_type = String::from("provider_tokenizer");
     let counter = FakeProviderCounter::answering(answer);
     let local = FakeLocalCounter::new(99);
@@ -850,7 +852,7 @@ async fn tokens_uses_the_provider_counter_when_it_answers() {
 #[tokio::test]
 async fn tokens_provider_error_falls_back_to_the_local_count() {
     let metadata = support::FakeMetadata::resolving("gpt-4o-2024");
-    let mut answer = TokenCountResponse::local(11, "gpt-4o", "gpt-4o-provider");
+    let mut answer = token_response(11, "gpt-4o", "gpt-4o-provider");
     answer.error = true;
     let counter = FakeProviderCounter::answering(answer);
     let local = FakeLocalCounter::new(7);
@@ -936,7 +938,7 @@ async fn tokens_system_message_is_prepended_only_with_messages() {
 async fn tokens_explicit_key_and_base_win_over_the_resolution() {
     let metadata =
         support::FakeMetadata::resolving_credentials("https://resolved.test/v1", "resolved-key");
-    let counter = FakeProviderCounter::answering(TokenCountResponse::local(4, "gpt-4o", "m"));
+    let counter = FakeProviderCounter::answering(token_response(4, "gpt-4o", "m"));
     let local = FakeLocalCounter::new(0);
     let key = secret("explicit-key");
     let messages = token_messages();
@@ -982,7 +984,7 @@ async fn tokens_absent_provider_answer_falls_back_to_the_local_count() {
 
 #[test]
 fn tokens_local_answer_carries_litellms_shape() {
-    let response = TokenCountResponse::local(12, "gpt-4o", "gpt-4o-2024");
+    let response = token_response(12, "gpt-4o", "gpt-4o-2024");
     assert_eq!(response.total_tokens, 12);
     assert_eq!(response.tokenizer_type, "local_tokenizer");
     assert!(!response.error);
