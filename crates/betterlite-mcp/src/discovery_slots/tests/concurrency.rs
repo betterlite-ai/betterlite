@@ -36,7 +36,7 @@ async fn concurrency_publish_leaves_the_registry_writable_during_a_fetch() {
     let gate = Arc::new(Semaphore::new(0));
     let harness = gated_harness(&alpha, &gate);
     harness.slots.set_deferred("alpha", true);
-    harness.slots.prime(&[alpha.clone()]);
+    harness.slots.prime(from_ref(&alpha));
     wait_for_calls(&harness.fetcher, SERVER_URL, 1).await;
     drop(harness.registry.try_write().unwrap());
     gate.add_permits(1);
@@ -91,9 +91,9 @@ async fn concurrency_reconcile_keeps_the_run_of_an_unchanged_server() {
     let gate = Arc::new(Semaphore::new(0));
     let harness = gated_harness(&alpha, &gate);
     harness.slots.set_deferred("alpha", true);
-    harness.slots.prime(&[alpha.clone()]);
+    harness.slots.prime(from_ref(&alpha));
     wait_for_calls(&harness.fetcher, SERVER_URL, 1).await;
-    harness.slots.reconcile(&[alpha.clone()]);
+    harness.slots.reconcile(from_ref(&alpha));
     gate.add_permits(1);
     let resolved = harness.slots.ensure_discovered(&alpha).await.unwrap();
     assert_eq!(resolved, discovered(alpha));
@@ -112,7 +112,7 @@ async fn concurrency_reconcile_drops_the_run_of_a_changed_server(
     let gate = Arc::new(Semaphore::new(0));
     let harness = gated_harness(&alpha, &gate);
     harness.slots.set_deferred("alpha", true);
-    harness.slots.prime(&[alpha.clone()]);
+    harness.slots.prime(from_ref(&alpha));
     wait_for_calls(&harness.fetcher, SERVER_URL, 1).await;
     let mut changed = server("alpha", auth_type);
     changed.fields.url = Some(url.to_owned());
@@ -135,7 +135,7 @@ async fn concurrency_invalidate_drops_the_slot_and_cancels_the_run() {
     let gate = Arc::new(Semaphore::new(0));
     let harness = gated_harness(&alpha, &gate);
     harness.slots.set_deferred("alpha", true);
-    harness.slots.prime(&[alpha.clone()]);
+    harness.slots.prime(from_ref(&alpha));
     wait_for_calls(&harness.fetcher, SERVER_URL, 1).await;
     harness.slots.invalidate_state("alpha");
     assert!(!harness.slots.slot_exists("alpha"));

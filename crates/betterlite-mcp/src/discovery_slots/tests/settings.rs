@@ -59,7 +59,7 @@ fn settings_lookup_keeps_the_default_numbers_and_reads_the_fetch_timeout() {
         on_startup: true,
         retry_delays: litellm_delays(),
         backoff_base: Duration::from_secs(30),
-        backoff_cap: Duration::from_secs(900),
+        backoff_cap: Duration::from_mins(15),
         temporary_ttl: Duration::from_secs(300),
         fetch: FetchSettings {
             metadata_timeout: Duration::from_secs(2),

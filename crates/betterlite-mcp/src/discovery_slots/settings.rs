@@ -8,7 +8,7 @@ use crate::oauth_discovery::settings::DiscoverySettings as FetchSettings;
 pub const ON_STARTUP_VARIABLE: &str = "LITELLM_MCP_OAUTH_DISCOVERY_ON_STARTUP";
 const RETRY_DELAYS: [Duration; 2] = [Duration::from_millis(50), Duration::from_millis(150)];
 const BACKOFF_BASE: Duration = Duration::from_secs(30);
-const BACKOFF_CAP: Duration = Duration::from_secs(900);
+const BACKOFF_CAP: Duration = Duration::from_mins(15);
 const TEMPORARY_TTL: Duration = Duration::from_secs(300);
 
 #[derive(Clone, Debug, Eq, PartialEq)]

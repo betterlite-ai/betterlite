@@ -78,14 +78,13 @@ impl ScriptedFetcher {
 
     fn next_answer(&self, url: &str) -> Answer {
         let mut scripts = self.scripts.lock().unwrap();
-        let Some(answers) = scripts.get_mut(url) else {
-            return Answer::Document(StatusCode::NOT_FOUND, "");
+        let answer = match scripts.get_mut(url) {
+            None => Answer::Document(StatusCode::NOT_FOUND, ""),
+            Some(answers) if answers.len() > 1 => answers.pop_front().unwrap(),
+            Some(answers) => *answers.front().unwrap(),
         };
-        if answers.len() > 1 {
-            answers.pop_front().unwrap()
-        } else {
-            *answers.front().unwrap()
-        }
+        drop(scripts);
+        answer
     }
 }
 
@@ -175,7 +174,7 @@ const fn settings_with(on_startup: bool, retry_delays: Vec<Duration>) -> Discove
         on_startup,
         retry_delays,
         backoff_base: Duration::from_secs(30),
-        backoff_cap: Duration::from_secs(900),
+        backoff_cap: Duration::from_mins(15),
         temporary_ttl: Duration::from_secs(300),
         fetch: FetchSettings {
             metadata_timeout: Duration::from_secs(10),

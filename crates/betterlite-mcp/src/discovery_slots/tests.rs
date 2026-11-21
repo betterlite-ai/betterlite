@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, VecDeque};
 use std::future::{Future, pending};
+use std::slice::from_ref;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
