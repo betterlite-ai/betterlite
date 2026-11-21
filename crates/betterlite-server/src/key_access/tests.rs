@@ -282,6 +282,23 @@ fn logging_metadata_rejected() {
     .unwrap();
 }
 
+#[test]
+fn logging_metadata_list_variable_rejected() {
+    let listed: Payload = serde_json::from_str(
+        r#"{"logging":[{"callback_name":"langfuse","callback_vars":{"langfuse_tags":["a"]}}]}"#,
+    )
+    .unwrap();
+    let flags = FeatureFlags {
+        otel_v2_enabled: false,
+    };
+    let error = check_key_logging_config(Some(&listed), flags).unwrap_err();
+    assert!(
+        matches!(&error, KeyAccessError::LoggingMetadata(inner) if matches!(**inner, PayloadError::Parse(_)))
+    );
+    assert_eq!(error.status(), Some(400_u16));
+    assert_eq!(error.detail(), Some(DetailShape::Error));
+}
+
 #[rstest]
 #[case::absent(None)]
 #[case::empty(Some("{}"))]
