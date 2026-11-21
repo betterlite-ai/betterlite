@@ -1,0 +1,435 @@
+use std::sync::Arc;
+
+use betterlite_models::decisions::Json;
+
+use crate::cooldown_decisions::failure::{ErrorStatus, FailureClass, Seconds, TimeoutFacts};
+use crate::routing_read_batch::{RequestReads, RoutingReadBatch};
+
+use super::support::{
+    FailingObserver, Fixture, attempt, attempt_with, deployment, deployment_with, failure,
+    fallback, float, harness, harness_with, number, policy, rate_limit, ratio_policy,
+    stored_record, text,
+};
+
+pub(super) async fn strict_threshold_and_one_event() {
+    let failure = rate_limit(429);
+    let harness = harness(Fixture::new(vec![deployment("gpt", "a")]), policy(1_u32));
+    let lookup = harness.fixture.lookup();
+    let attempt = attempt("a", &failure);
+    assert!(
+        !harness
+            .service
+            .deployment_callback_on_failure(&lookup, &attempt)
+            .await
+            .unwrap()
+    );
+    assert!(
+        harness
+            .service
+            .deployment_callback_on_failure(&lookup, &attempt)
+            .await
+            .unwrap()
+    );
+    let record = stored_record(&harness.shared, "a").unwrap();
+    assert_eq!(record.status_code, "429");
+    assert_eq!(record.exception_received, "probe failure");
+    assert_eq!(record.timestamp, 1000.0_f64);
+    assert_eq!(record.cooldown_time, 5.0_f64);
+    assert_eq!(harness.events.recorded().len(), 1);
+}
+
+pub(super) async fn disabled_cooldowns_count_the_failure_but_never_cool() {
+    let mut settings = policy(0_u32);
+    settings.disable_cooldowns = true;
+    let failure = rate_limit(429);
+    let harness = harness(Fixture::new(vec![deployment("gpt", "a")]), settings);
+    let lookup = harness.fixture.lookup();
+    let attempt = attempt("a", &failure);
+    assert!(
+        !harness
+            .service
+            .deployment_callback_on_failure(&lookup, &attempt)
+            .await
+            .unwrap()
+    );
+    assert!(stored_record(&harness.shared, "a").is_none());
+    assert!(harness.events.recorded().is_empty());
+    assert_eq!(harness.service.counters().failures_for_minute("a"), 1);
+}
+
+pub(super) async fn a_failing_observer_does_not_mask_the_cooldown() {
+    let failure = rate_limit(429);
+    let harness = harness_with(
+        Fixture::new(vec![deployment("gpt", "a")]),
+        policy(0_u32),
+        vec![Arc::new(FailingObserver)],
+    );
+    let lookup = harness.fixture.lookup();
+    let cooled = harness
+        .service
+        .deployment_callback_on_failure(&lookup, &attempt("a", &failure))
+        .await
+        .unwrap();
+    assert!(cooled);
+    assert!(stored_record(&harness.shared, "a").is_some());
+    assert_eq!(harness.events.recorded().len(), 1);
+}
+
+pub(super) async fn fallback_cools_the_server_stamped_deployment() {
+    let failure = rate_limit(429);
+    let harness = harness(Fixture::new(vec![deployment("gpt", "a")]), policy(0_u32));
+    let lookup = harness.fixture.lookup();
+    assert!(
+        harness
+            .service
+            .trigger_for_failed_deployment(&lookup, &fallback(Some("a"), &failure))
+            .await
+    );
+    assert_eq!(harness.events.recorded().len(), 1);
+}
+
+pub(super) async fn generic_404_and_caller_timeout_never_cool() {
+    let generic = rate_limit(404);
+    let harness = harness(Fixture::new(vec![deployment("gpt", "a")]), policy(0_u32));
+    let lookup = harness.fixture.lookup();
+    let mut generic_fallback = fallback(Some("a"), &generic);
+    generic_fallback.original_generic_function = true;
+    assert!(
+        !harness
+            .service
+            .trigger_for_failed_deployment(&lookup, &generic_fallback)
+            .await
+    );
+    let timed_out = failure(FailureClass::Timeout, ErrorStatus::Code(408));
+    let mut caller = timed_out.clone();
+    caller.caller_timeout = Some(TimeoutFacts {
+        client_side_timeout: true,
+        timeout_seconds: Some(Seconds(1.0_f64)),
+        elapsed_seconds: Some(Seconds(2.0_f64)),
+    });
+    assert!(
+        !harness
+            .service
+            .deployment_callback_on_failure(&lookup, &attempt("a", &caller))
+            .await
+            .unwrap()
+    );
+    assert_eq!(harness.service.counters().failures_for_minute("a"), 0);
+    assert!(harness.events.recorded().is_empty());
+}
+
+pub(super) async fn deployment_cooldown_time_beats_the_header() {
+    let failure = rate_limit(429);
+    let deployment = deployment_with(
+        "gpt",
+        "a",
+        vec![("cooldown_time", float(4.0_f64))],
+        vec![("cooldown_time", float(3.0_f64))],
+    );
+    let harness = harness(Fixture::new(vec![deployment]), policy(0_u32));
+    let lookup = harness.fixture.lookup();
+    let attempt = attempt_with("a", &failure, Some(Seconds(9.0_f64)), None);
+    assert!(
+        harness
+            .service
+            .deployment_callback_on_failure(&lookup, &attempt)
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        stored_record(&harness.shared, "a").unwrap().cooldown_time,
+        3.0_f64
+    );
+}
+
+pub(super) async fn params_cooldown_time_beats_the_header() {
+    let failure = rate_limit(429);
+    let deployment = deployment_with(
+        "gpt",
+        "a",
+        vec![("cooldown_time", float(4.0_f64))],
+        Vec::new(),
+    );
+    let harness = harness(Fixture::new(vec![deployment]), policy(0_u32));
+    let lookup = harness.fixture.lookup();
+    let attempt = attempt_with("a", &failure, Some(Seconds(9.0_f64)), None);
+    assert!(
+        harness
+            .service
+            .deployment_callback_on_failure(&lookup, &attempt)
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        stored_record(&harness.shared, "a").unwrap().cooldown_time,
+        4.0_f64
+    );
+}
+
+pub(super) async fn event_fields_come_from_the_deployment() {
+    let failure = rate_limit(429);
+    let deployment = deployment_with(
+        "gpt",
+        "a",
+        vec![
+            ("api_base", text("https://probe.example/v1")),
+            ("custom_llm_provider", text("azure")),
+        ],
+        Vec::new(),
+    );
+    let harness = harness(Fixture::new(vec![deployment]), policy(0_u32));
+    let lookup = harness.fixture.lookup();
+    assert!(
+        harness
+            .service
+            .deployment_callback_on_failure(&lookup, &attempt("a", &failure))
+            .await
+            .unwrap()
+    );
+    let events = harness.events.recorded();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].model_name, "gpt");
+    assert_eq!(events[0].model_id, "a");
+    assert_eq!(events[0].api_base, "https://probe.example/v1");
+    assert_eq!(events[0].provider, "azure");
+    assert_eq!(events[0].exception_status, "429");
+}
+
+pub(super) async fn base_url_alias_and_openai_default_feed_the_event() {
+    let failure = rate_limit(429);
+    let aliased = deployment_with(
+        "gpt",
+        "a",
+        vec![("base_url", text("https://alias.example"))],
+        Vec::new(),
+    );
+    let harness = harness(Fixture::new(vec![aliased]), policy(0_u32));
+    let lookup = harness.fixture.lookup();
+    assert!(
+        harness
+            .service
+            .deployment_callback_on_failure(&lookup, &attempt("a", &failure))
+            .await
+            .unwrap()
+    );
+    let events = harness.events.recorded();
+    assert_eq!(events[0].api_base, "https://alias.example");
+    assert_eq!(events[0].provider, "openai");
+    let plain = harness_with(Fixture::new(vec![deployment("gpt", "b")]), policy(0_u32));
+    let lookup = plain.fixture.lookup();
+    assert!(
+        plain
+            .service
+            .deployment_callback_on_failure(&lookup, &attempt("b", &failure))
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        plain.events.recorded()[0].api_base,
+        "https://api.openai.com"
+    );
+}
+
+pub(super) async fn routing_group_alternatives_lift_the_single_deployment_net() {
+    let failure = rate_limit(429);
+    let fixture = Fixture::new(vec![deployment("gpt", "a"), deployment("other", "b")])
+        .with_group("alt-group", &["gpt", "other"]);
+    let harness = harness(fixture, ratio_policy());
+    let lookup = harness.fixture.lookup();
+    let grouped = attempt_with("a", &failure, None, Some("alt-group"));
+    assert!(
+        harness
+            .service
+            .deployment_callback_on_failure(&lookup, &grouped)
+            .await
+            .unwrap()
+    );
+    let alone = harness_with(Fixture::new(vec![deployment("gpt", "a")]), ratio_policy());
+    let lookup = alone.fixture.lookup();
+    assert!(
+        !alone
+            .service
+            .deployment_callback_on_failure(&lookup, &attempt("a", &failure))
+            .await
+            .unwrap()
+    );
+}
+
+pub(super) async fn team_siblings_lift_the_single_deployment_net() {
+    let failure = rate_limit(429);
+    let team = vec![
+        ("team_id", text("probe-team")),
+        ("team_public_model_name", text("probe-public")),
+    ];
+    let fixture = Fixture::new(vec![
+        deployment_with("gpt", "a", Vec::new(), team.clone()),
+        deployment_with("other", "b", Vec::new(), team),
+    ]);
+    let harness = harness(fixture, ratio_policy());
+    let lookup = harness.fixture.lookup();
+    assert!(
+        harness
+            .service
+            .deployment_callback_on_failure(&lookup, &attempt("a", &failure))
+            .await
+            .unwrap()
+    );
+    let blocked = vec![
+        ("team_id", text("probe-team")),
+        ("team_public_model_name", text("probe-public")),
+        ("blocked", Json::Bool(true)),
+    ];
+    let fixture = Fixture::new(vec![
+        deployment_with("gpt", "a", Vec::new(), blocked[..2].to_vec()),
+        deployment_with("other", "b", Vec::new(), blocked),
+    ]);
+    let harness = harness(fixture, ratio_policy());
+    let lookup = harness.fixture.lookup();
+    assert!(
+        !harness
+            .service
+            .deployment_callback_on_failure(&lookup, &attempt("a", &failure))
+            .await
+            .unwrap()
+    );
+}
+
+pub(super) async fn provider_default_deployments_never_cool() {
+    let failure = rate_limit(429);
+    let fixture = Fixture::new(vec![deployment("gpt", "a")]).with_provider_default("a");
+    let harness = harness(fixture, ratio_policy());
+    let lookup = harness.fixture.lookup();
+    assert!(
+        !harness
+            .service
+            .deployment_callback_on_failure(&lookup, &attempt("a", &failure))
+            .await
+            .unwrap()
+    );
+}
+
+pub(super) async fn debug_info_lists_only_the_cooling_deployment() {
+    let failure = rate_limit(429);
+    let harness = harness(
+        Fixture::new(vec![deployment("gpt", "a"), deployment("gpt", "b")]),
+        policy(0_u32),
+    );
+    let lookup = harness.fixture.lookup();
+    assert!(
+        harness
+            .service
+            .deployment_callback_on_failure(&lookup, &attempt("a", &failure))
+            .await
+            .unwrap()
+    );
+    let model_ids = vec!["a".to_owned(), "b".to_owned()];
+    let mut batch = RoutingReadBatch::default();
+    let mut request = RequestReads::default();
+    let cooling = harness
+        .service
+        .cooldown_debug_info(&mut batch, &mut request, &model_ids)
+        .await
+        .unwrap();
+    assert_eq!(cooling.len(), 1);
+    assert_eq!(cooling[0].model_id, "a");
+    assert_eq!(cooling[0].record.status_code, "429");
+    let mut batch = RoutingReadBatch::default();
+    let mut request = RequestReads::default();
+    let ids = harness
+        .service
+        .cooldown_ids(&mut batch, &mut request, &model_ids)
+        .await
+        .unwrap();
+    assert_eq!(ids, vec!["a".to_owned()]);
+}
+
+pub(super) async fn advisor_failures_skip_both_paths() {
+    let mut failure = rate_limit(429);
+    failure.advisor_orchestration = true;
+    let harness = harness(Fixture::new(vec![deployment("gpt", "a")]), policy(0_u32));
+    let lookup = harness.fixture.lookup();
+    assert!(
+        !harness
+            .service
+            .trigger_for_failed_deployment(&lookup, &fallback(Some("a"), &failure))
+            .await
+    );
+    assert!(
+        !harness
+            .service
+            .deployment_callback_on_failure(&lookup, &attempt("a", &failure))
+            .await
+            .unwrap()
+    );
+    assert_eq!(harness.service.counters().failures_for_minute("a"), 0);
+}
+
+pub(super) async fn an_explicit_policy_cools_without_a_status() {
+    let deployment = deployment_with(
+        "gpt",
+        "a",
+        Vec::new(),
+        vec![(
+            "allowed_fails_policy",
+            Json::Object(
+                [("RateLimitErrorAllowedFails".to_owned(), number(0_u32))]
+                    .into_iter()
+                    .collect(),
+            ),
+        )],
+    );
+    let harness = harness(Fixture::new(vec![deployment]), policy(1_u32));
+    let lookup = harness.fixture.lookup();
+    let failure = failure(FailureClass::RateLimit, ErrorStatus::Text(String::new()));
+    assert!(
+        harness
+            .service
+            .deployment_callback_on_failure(&lookup, &attempt("a", &failure))
+            .await
+            .unwrap()
+    );
+    assert_eq!(stored_record(&harness.shared, "a").unwrap().status_code, "");
+    assert_eq!(harness.events.recorded()[0].exception_status, "");
+}
+
+pub(super) async fn a_team_id_without_a_public_name_does_not_lift_the_net() {
+    let failure = rate_limit(429);
+    let fixture = Fixture::new(vec![
+        deployment_with(
+            "gpt",
+            "a",
+            Vec::new(),
+            vec![("team_id", text("probe-team"))],
+        ),
+        deployment("other", "b"),
+    ]);
+    let harness = harness(fixture, ratio_policy());
+    let lookup = harness.fixture.lookup();
+    assert!(
+        !harness
+            .service
+            .deployment_callback_on_failure(&lookup, &attempt("a", &failure))
+            .await
+            .unwrap()
+    );
+}
+
+pub(super) async fn unknown_deployments_never_cool() {
+    let failure = rate_limit(429);
+    let harness = harness(Fixture::new(vec![deployment("gpt", "a")]), policy(0_u32));
+    let lookup = harness.fixture.lookup();
+    let cooled = harness
+        .service
+        .set_cooldown_deployments(&lookup, "missing", &failure, "probe failure", None, None)
+        .await
+        .unwrap();
+    assert!(!cooled);
+    assert!(
+        !harness
+            .service
+            .deployment_callback_on_failure(&lookup, &attempt("missing", &failure))
+            .await
+            .unwrap()
+    );
+    assert!(harness.events.recorded().is_empty());
+}
