@@ -19,4 +19,14 @@ deviations:
       argument; betterlite keeps the client argument out of the body's type domain, as
       docs/compatibility.md allows for values outside the declared type.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7175-L7191
+  - what: >-
+      A delete call without the assistant_id raises the interpreter's TypeError with the sync
+      delete_assistant() wording. LiteLLM's adelete_assistant catches that same TypeError inside
+      its executor and re-raises it through exception_type as an APIConnectionError.
+    why: >-
+      The HTTP route always passes the path id, so no proxy request reaches this input and no
+      working setup can rely on the wrapped error. betterlite keeps the interpreter's own error
+      for a typed call whose request omits an id the route's type makes required, instead of
+      emulating the async wrapper's exception mapping.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L374-L407
 kept_bugs: []
