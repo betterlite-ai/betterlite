@@ -224,6 +224,17 @@ fn custom_latency_buckets_replace_the_default() {
 }
 
 #[test]
+fn a_single_custom_bucket_gets_the_infinite_bound() {
+    let (registry, _logger) = build(Some(&[0.25]));
+    assert_eq!(
+        registered(&registry, "litellm_redis_latency")
+            .description
+            .buckets,
+        vec![Bucket::Seconds(0.25), Bucket::Infinite]
+    );
+}
+
+#[test]
 fn unsorted_custom_buckets_fail_the_constructor() {
     let registry = Arc::new(CollectorRegistry::default());
     let error =
