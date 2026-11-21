@@ -3,6 +3,7 @@ mod error;
 mod forms;
 mod info;
 mod list;
+mod list_config;
 pub(crate) mod masking;
 mod projection;
 mod provider_modes;
@@ -19,7 +20,8 @@ use betterlite_guardrails::guardrail_registry::rows::GuardrailRows;
 
 use self::forms::provider_specific_params;
 use self::info::guardrail_info;
-use self::list::{list_guardrails, list_guardrails_v2};
+use self::list::list_guardrails_v2;
+use self::list_config::list_guardrails;
 use self::settings::guardrail_ui_settings;
 use self::state::ReadState;
 

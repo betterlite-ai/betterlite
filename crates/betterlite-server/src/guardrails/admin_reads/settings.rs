@@ -161,7 +161,9 @@ fn settings_body() -> Result<GuardrailUiAddSettings, SettingsError> {
     let patterns = get_pattern_metadata()?;
     let content_filter_settings = content_filter_settings(&patterns)?;
     Ok(GuardrailUiAddSettings {
-        supported_entities: serde_json::from_slice(&serde_json::to_vec(&PII_ENTITY_TYPES)?)?,
+        supported_entities: serde_json::from_slice(&serde_json::to_vec(
+            PII_ENTITY_TYPES.as_slice(),
+        )?)?,
         supported_actions: serde_json::from_slice(&serde_json::to_vec(&PII_ACTIONS)?)?,
         supported_modes: serde_json::from_slice(&serde_json::to_vec(&SUPPORTED_MODES)?)?,
         supported_modes_by_provider: provider_modes(),

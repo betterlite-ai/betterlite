@@ -20,7 +20,7 @@ pub(super) fn validated(
     if masked.is_empty() {
         return Ok(None);
     }
-    Ok(BaseLitellmParams::from_map(opaque_params(masked)?.0))
+    Ok(Some(BaseLitellmParams::from_map(opaque_params(masked)?.0)?))
 }
 
 pub(super) fn opaque_params(values: &JsonObject) -> Result<OpaqueParams, GuardrailParamsError> {
