@@ -1,66 +1,45 @@
 use std::collections::BTreeMap;
-use std::future::{Future, ready};
 use std::sync::Arc;
-use std::time::Duration;
 
-use async_trait::async_trait;
 use betterlite_auth::agent_access_groups::access::AgentAccess;
 use betterlite_auth::agent_access_groups::ceiling::AgentAccessGroups;
-use betterlite_auth::agent_access_groups::reads::AccessGroupReads;
 use betterlite_auth::agent_permission_handler::AgentGrants;
 use betterlite_auth::agent_permission_handler::AgentGrantsApi as _;
 use betterlite_auth::agent_permission_handler::error::GrantError;
-use betterlite_auth::agent_permission_handler::reads::AgentTableReads;
 use betterlite_auth::agent_registry::{AgentRegistry, AgentRegistryApi as _};
-use betterlite_auth::auth_model_patterns::access_groups::{
-    AccessGroupError, AccessGroupLookup, AccessGroupResources,
-};
-use betterlite_auth::auth_prefetch::permission::lookup::{
-    ObjectPermissionCache, PermissionAnswer, PermissionCacheError, PermissionError,
-};
+use betterlite_auth::auth_prefetch::permission::lookup::ObjectPermissionCache;
 use betterlite_auth::auth_prefetch::permission::store::ObjectPermissionStore;
-use betterlite_auth::auth_read::table::AuthReadError;
-use betterlite_auth::auth_team_lookup::error::TeamLookupError;
 use betterlite_auth::auth_team_lookup::lookup::{TeamDatabase, TeamLookup};
-use betterlite_auth::auth_team_lookup::ports::{
-    StoreAnswer, TeamCache, TeamCacheError, TeamStore, TeamStoreError,
-};
+use betterlite_auth::auth_team_lookup::ports::{TeamCache, TeamStore};
 use betterlite_auth::auth_user_lookup::cadence::{Cadence, CadenceClock};
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
-use betterlite_db::budget_permission_rows::{JsonData, LiteLLMObjectPermissionTable};
-use betterlite_db::postgres_store::errors::DbError;
-use betterlite_db::resource_rows::access_group::AccessGroupTable;
-use betterlite_db::team_rows::archived::LiteLLMTeamTableCachedObj;
+use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_models::decisions::Json;
 use serde::Deserialize;
 use serde_json::json;
-use tokio::runtime::{Builder, Runtime};
+use tokio::runtime::Builder;
 
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
+mod ports;
 mod tests;
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct Input {
-    operation: Operation,
-    method: Method,
-    strict: bool,
-    database: bool,
-    key: Option<KeySpec>,
-    team: Option<GroupSpec>,
-    db_agents: Vec<DbAgent>,
-    groups: BTreeMap<String, Vec<String>>,
-    config_agents: Vec<Json>,
-    fail: Option<Failure>,
-}
 
 // the case names its helper operation so a case copied under another helper fails to parse
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum Operation {
-    Grants,
+#[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
+pub(crate) enum Input {
+    Grants {
+        method: Method,
+        strict: bool,
+        database: bool,
+        key: Option<KeySpec>,
+        team: Option<GroupSpec>,
+        db_agents: Vec<DbAgent>,
+        groups: BTreeMap<String, Vec<String>>,
+        config_agents: Vec<Json>,
+        fail: Option<Failure>,
+    },
 }
 
 #[derive(Debug, Deserialize)]
@@ -70,7 +49,7 @@ pub(crate) enum Method {
     KeyTeam,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Failure {
     Table,
@@ -94,7 +73,7 @@ pub(crate) struct GroupSpec {
     access_group_ids: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct DbAgent {
     agent_id: String,
@@ -103,8 +82,11 @@ pub(crate) struct DbAgent {
 
 // one case's reads behind every port AgentGrants takes, so the scripted rows alone decide the answer
 #[derive(Clone, Debug)]
-struct CaseWorld<'case> {
-    case: &'case Input,
+struct CaseWorld {
+    database: bool,
+    groups: BTreeMap<String, Vec<String>>,
+    db_agents: Vec<DbAgent>,
+    fail: Option<Failure>,
     team: Option<JsonData>,
 }
 
@@ -114,18 +96,36 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Input) -> HelperResult {
+        let Input::Grants {
+            method,
+            strict,
+            database,
+            key,
+            team,
+            db_agents,
+            groups,
+            config_agents,
+            fail,
+        } = input;
         let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
             .or_value_error()?;
-        let grants = agent_grants(input)?;
-        let key = key_auth(input.key.as_ref())?;
-        let access = match input.method {
+        let case = CaseWorld {
+            database: *database,
+            groups: groups.clone(),
+            db_agents: db_agents.clone(),
+            fail: *fail,
+            team: team.as_ref().map(team_row).transpose()?,
+        };
+        let grants = agent_grants(config_agents, &case)?;
+        let auth = key_auth(key.as_ref())?;
+        let access = match method {
             Method::Key => {
-                runtime.block_on(grants.get_allowed_agents_for_key(key.as_ref(), input.strict))
+                runtime.block_on(grants.get_allowed_agents_for_key(auth.as_ref(), *strict))
             }
             Method::KeyTeam => {
-                runtime.block_on(grants.resolve_key_team_agent_access(key.as_ref(), input.strict))
+                runtime.block_on(grants.resolve_key_team_agent_access(auth.as_ref(), *strict))
             }
         };
         match access {
@@ -137,14 +137,14 @@ impl Helper for Op {
 }
 
 fn agent_grants(
-    case: &Input,
-) -> Result<AgentGrants<CaseWorld<'_>, CaseWorld<'_>, CaseWorld<'_>>, Box<HelperError>> {
+    config_agents: &[Json],
+    case: &CaseWorld,
+) -> Result<AgentGrants<CaseWorld, CaseWorld, CaseWorld>, Box<HelperError>> {
     let registry = AgentRegistry::default();
     registry
-        .load_agents_from_config(Some(case.config_agents.as_slice()))
+        .load_agents_from_config(Some(config_agents))
         .or_value_error()?;
-    let team = case.team.as_ref().map(team_row).transpose()?;
-    let world = CaseWorld { case, team };
+    let world = case.clone();
     let clock: Arc<dyn CadenceClock> = Arc::new(world.clone());
     let cache: Arc<dyn TeamCache> = Arc::new(world.clone());
     let permission_cache: Arc<dyn ObjectPermissionCache> = Arc::new(world.clone());
@@ -225,191 +225,5 @@ fn grant_error(error: &GrantError) -> HelperError {
         param: None,
         code: None,
         message: error.to_string(),
-    }
-}
-
-fn store_failure() -> TeamStoreError {
-    TeamStoreError::Read(Box::new(AuthReadError::Repository(DbError::NoDbConnected)))
-}
-
-impl AccessGroupReads for CaseWorld<'_> {
-    fn has_database(&self) -> bool {
-        self.case.database
-    }
-
-    fn agent_access_group_ids(&self, _agent_id: &str) -> impl Future<Output = Vec<String>> + Send {
-        ready(Vec::new())
-    }
-
-    fn access_group(
-        &self,
-        access_group_id: &str,
-        _check_db_only: bool,
-    ) -> impl Future<Output = Result<AccessGroupTable, TeamLookupError>> + Send {
-        let found = self.case.groups.get(access_group_id).cloned();
-        let Some(agent_ids) = found else {
-            let error = TeamLookupError::AccessGroupNotFound {
-                access_group_id: access_group_id.to_owned(),
-            };
-            return ready(Err(error));
-        };
-        let row = AccessGroupTable {
-            access_group_id: access_group_id.to_owned(),
-            access_group_name: access_group_id.to_owned(),
-            description: None,
-            access_model_names: Vec::new(),
-            access_mcp_server_ids: Vec::new(),
-            access_agent_ids: agent_ids,
-            assigned_team_ids: Vec::new(),
-            assigned_key_ids: Vec::new(),
-            created_at: None,
-            created_by: None,
-            updated_at: None,
-            updated_by: None,
-        };
-        ready(Ok(row))
-    }
-}
-
-impl AgentTableReads for CaseWorld<'_> {
-    fn has_database(&self) -> bool {
-        self.case.database
-    }
-
-    fn agent_ids_with_access_groups(
-        &self,
-        groups: &[String],
-        _check_db_only: bool,
-    ) -> impl Future<Output = Result<Vec<String>, DbError>> + Send {
-        let answer: Result<Vec<String>, DbError> = match self.case.fail {
-            Some(Failure::Table) => Err(DbError::NoDbConnected),
-            Some(Failure::Team) | None => Ok(self
-                .case
-                .db_agents
-                .iter()
-                .filter(|row| {
-                    row.agent_access_groups
-                        .iter()
-                        .any(|group| groups.contains(group))
-                })
-                .map(|row| row.agent_id.clone())
-                .collect()),
-        };
-        ready(answer)
-    }
-}
-
-impl AccessGroupLookup for CaseWorld<'_> {
-    fn access_group(
-        &self,
-        access_group_id: &str,
-    ) -> Result<AccessGroupResources, AccessGroupError> {
-        let found = self.case.groups.get(access_group_id);
-        let Some(agent_ids) = found else {
-            return Err(AccessGroupError::Unavailable {
-                access_group_id: access_group_id.to_owned(),
-            });
-        };
-        Ok(AccessGroupResources {
-            agent_ids: agent_ids.clone(),
-            ..AccessGroupResources::default()
-        })
-    }
-}
-
-#[async_trait]
-impl TeamCache for CaseWorld<'_> {
-    async fn read_team(
-        &self,
-        _key: &str,
-    ) -> Result<Option<LiteLLMTeamTableCachedObj>, TeamCacheError> {
-        Ok(None)
-    }
-
-    async fn write_team(
-        &self,
-        _key: &str,
-        _team: &LiteLLMTeamTableCachedObj,
-        _ttl: f64,
-    ) -> Result<(), TeamCacheError> {
-        Ok(())
-    }
-
-    async fn cache_team(
-        &self,
-        _team_id: &str,
-        _team: &mut LiteLLMTeamTableCachedObj,
-    ) -> Result<(), TeamCacheError> {
-        Ok(())
-    }
-
-    async fn read_access_group(
-        &self,
-        _key: &str,
-    ) -> Result<Option<AccessGroupTable>, TeamCacheError> {
-        Ok(None)
-    }
-
-    async fn cache_access_group(
-        &self,
-        _access_group_id: &str,
-        _table: &AccessGroupTable,
-    ) -> Result<(), TeamCacheError> {
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl TeamStore for CaseWorld<'_> {
-    async fn find_team(&self, _team_id: &str, _use_writer: bool) -> StoreAnswer<Option<JsonData>> {
-        if matches!(self.case.fail, Some(Failure::Team)) {
-            return Err(store_failure());
-        }
-        Ok(self.team.clone())
-    }
-
-    async fn find_by_alias(&self, _team_alias: &str) -> StoreAnswer<Vec<JsonData>> {
-        Ok(Vec::new())
-    }
-
-    async fn find_access_group(
-        &self,
-        _access_group_id: &str,
-        _use_writer: bool,
-    ) -> StoreAnswer<Option<JsonData>> {
-        Ok(None)
-    }
-}
-
-#[async_trait]
-impl ObjectPermissionCache for CaseWorld<'_> {
-    async fn read(&self, _key: &str) -> PermissionAnswer {
-        Ok(None)
-    }
-
-    async fn write(
-        &self,
-        _key: &str,
-        _permission: &LiteLLMObjectPermissionTable,
-        _ttl: f64,
-    ) -> Result<(), PermissionCacheError> {
-        Ok(())
-    }
-
-    fn management_ttl(&self) -> f64 {
-        60.0_f64
-    }
-}
-
-#[async_trait]
-impl ObjectPermissionStore for CaseWorld<'_> {
-    async fn find_permission(&self, _id: &str) -> Result<Option<JsonData>, PermissionError> {
-        Ok(None)
-    }
-}
-
-impl CadenceClock for CaseWorld<'_> {
-    fn now(&self) -> Duration {
-        Duration::from_secs(100)
     }
 }

@@ -10,7 +10,7 @@ from litellm.models.access_group import LiteLLM_AccessGroupTable
 from litellm.models.object_permission import LiteLLM_ObjectPermissionTable
 from litellm.models.team import LiteLLM_TeamTableCachedObj
 from litellm.proxy._types import UserAPIKeyAuth
-from litellm.proxy.agent_endpoints.agent_permission_handler import (
+from litellm.proxy.agent_endpoints.auth.agent_permission_handler import (
     AgentRequestHandler,
     RestrictedAgentAccess,
     UnrestrictedAgentAccess,
@@ -18,11 +18,14 @@ from litellm.proxy.agent_endpoints.agent_permission_handler import (
 from litellm.proxy.agent_endpoints.agent_registry import global_agent_registry
 from litellm.proxy.auth import auth_checks
 from litellm.proxy.auth.auth_checks import TeamNotFoundError
+from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache
+from litellm.proxy.utils import PrismaClient, ProxyLogging
+from litellm.repositories.prisma_protocols import DatabaseClient
+from opentelemetry.trace import Span
 from pydantic import ConfigDict, JsonValue, TypeAdapter
 
 PROXY_MODULE: Final = "litellm.proxy.proxy_server"
 JSON: Final = TypeAdapter(JsonValue)
-TEXT: Final = TypeAdapter(str)
 AGENT_GROUPS: Final = TypeAdapter(dict[str, list[str]])
 
 
@@ -58,6 +61,11 @@ class Input(TypedDict):
 
 
 AgentAccess: TypeAlias = UnrestrictedAgentAccess | RestrictedAgentAccess
+
+# every argument type the two lookups take, so the fakes accept their keyword calls
+LookupArgument: TypeAlias = (
+    str | bool | None | Span | PrismaClient | DatabaseClient | UserApiKeyCache | ProxyLogging
+)
 
 
 @runtime_checkable
@@ -106,8 +114,8 @@ class FakePrisma:
 
 class ProxyServer(ModuleType):
     prisma_client: FakePrisma | None = None
-    user_api_key_cache: object | None = None
-    proxy_logging_obj: object | None = None
+    user_api_key_cache: UserApiKeyCache | None = None
+    proxy_logging_obj: ProxyLogging | None = None
 
 
 class FakeTeamLookup:
@@ -115,10 +123,13 @@ class FakeTeamLookup:
         self.team = team
         self.fail = fail
 
-    async def __call__(self, *args: object, **kwargs: object) -> LiteLLM_TeamTableCachedObj:
-        _ = args
+    async def __call__(
+        self,
+        team_id: str,
+        *_args: LookupArgument,
+        **_kwargs: LookupArgument,
+    ) -> LiteLLM_TeamTableCachedObj:
         await asyncio.sleep(0)
-        team_id = TEXT.validate_python(kwargs["team_id"])
         team = self.team
         if team is None or self.fail:
             raise TeamNotFoundError(team_id=team_id)
@@ -139,17 +150,20 @@ class FakeAccessLookup:
         self.groups = groups
         self.fail = fail
 
-    async def __call__(self, *args: object, **kwargs: object) -> LiteLLM_AccessGroupTable:
-        _ = args
+    async def __call__(
+        self,
+        access_group_id: str,
+        *_args: LookupArgument,
+        **_kwargs: LookupArgument,
+    ) -> LiteLLM_AccessGroupTable:
         await asyncio.sleep(0)
-        group_id = TEXT.validate_python(kwargs["access_group_id"])
-        members = self.groups.get(group_id)
+        members = self.groups.get(access_group_id)
         if members is None or self.fail:
-            detail = {"error": f"Access group doesn't exist in db. Access group={group_id}."}
+            detail = {"error": f"Access group doesn't exist in db. Access group={access_group_id}."}
             raise HTTPException(status_code=404, detail=detail)
         return LiteLLM_AccessGroupTable(
-            access_group_id=group_id,
-            access_group_name=group_id,
+            access_group_id=access_group_id,
+            access_group_name=access_group_id,
             access_agent_ids=members,
         )
 
@@ -179,8 +193,7 @@ def patched(
     table = AgentTable(rows, fail=call["fail"] == "table")
     proxy_server = ProxyServer(PROXY_MODULE)
     proxy_server.prisma_client = FakePrisma(table) if call["database"] else None
-    proxy_server.user_api_key_cache = object() if call["database"] else None
-    proxy_server.proxy_logging_obj = object()
+    proxy_server.user_api_key_cache = UserApiKeyCache() if call["database"] else None
     saved_module = sys.modules.get(PROXY_MODULE)
     saved_lookup = auth_checks.get_team_object
     saved_access = auth_checks.get_access_object
@@ -208,21 +221,17 @@ async def method_access(call: Input, key: UserAPIKeyAuth | None) -> AgentAccess:
     )
 
 
-def grants(call: Input) -> JsonValue:
+def run(input_value: Input) -> JsonValue:
     REGISTRY.validate_python(global_agent_registry).load_agents_from_config(
-        call["config_agents"]
+        input_value["config_agents"]
     )
-    lookup = FakeTeamLookup(call["team"], fail=call["fail"] == "team")
-    access = FakeAccessLookup(call["groups"], fail=False)
-    with patched(call, lookup, access):
-        key = key_auth(call["key"])
-        result = asyncio.run(method_access(call, key))
+    lookup = FakeTeamLookup(input_value["team"], fail=input_value["fail"] == "team")
+    access = FakeAccessLookup(input_value["groups"], fail=False)
+    with patched(input_value, lookup, access):
+        key = key_auth(input_value["key"])
+        result = asyncio.run(method_access(input_value, key))
     match result:
         case UnrestrictedAgentAccess():
             return "unrestricted"
         case RestrictedAgentAccess(agent_ids=agent_ids):
             return JSON.validate_python(sorted(agent_ids))
-
-
-def run(input_value: Input) -> JsonValue:
-    return grants(input_value)

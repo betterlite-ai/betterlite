@@ -9,11 +9,11 @@ deviations:
   - what: The unified access group lookup is an optional port (Option<Unified>), so no database and no cache both mean an absent lookup and contribute no agents.
     why: LiteLLM returns [] when user_api_key_cache is None and separately when prisma_client is None; betterlite models the lookup object the server wires instead of two lazily imported globals. A working proxy has both or neither.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L4262-L4276
-  - what: The agents table read is a port method, AgentTableReads::agent_ids_with_access_groups(groups, check_db_only), instead of building AgentsRepository(...).table.find_many(where={agent_access_groups: {hasSome: groups}}) here.
+  - what: The agents table read is a port method, AgentTableReads::agent_ids_with_access_groups(groups, check_db_only), instead of building the repository find_many call with a hasSome filter on agent_access_groups here.
     why: betterlite reads tables through constructor ports so no task owns a Prisma builder. The filter and the writer routing are the port's job, exactly as B737 splits the team reads.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_permission_handler.py#L437-L453
-  - what: The config-agent half of _get_agents_from_access_groups contributes nothing, because betterlite's AgentResponse has no agent_access_groups field and its config loader rejects that key.
-    why: LiteLLM matches getattr(agent, "agent_access_groups", None) on config records; no betterlite config record can carry the field, and the agents table read covers the same rows. A config that sets it fails to load instead of matching.
+  - what: The config-agent half of _get_agents_from_access_groups has no read, so agent_ids_for_groups resolves the declared groups from the agents table alone.
+    why: LiteLLM matches getattr(agent, "agent_access_groups", None) on config records, but its AgentResponse model drops that undeclared key, and betterlite's AgentResponse has no such field and its loader rejects it. No config record on either side can match, and a betterlite config that sets the key fails to load instead.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_permission_handler.py#L422-L435
   - what: A strict team read uses TeamSource::Writer and a non-strict one uses TeamSource::CacheThenDatabase, where LiteLLM passes check_db_only=strict to get_team_object.
     why: B737's TeamLookup takes the source as a three-way enum instead of two booleans; Writer is check_db_only=True and CacheThenDatabase is both false, so the read paths are the same.
