@@ -7,7 +7,7 @@ use betterlite_core::api::responses_file_search_loop::ports::{
     FollowUpRequest, ResponsesFollowUp, SearchRequest, VectorStoreSearches,
 };
 use betterlite_core::api::responses_file_search_loop::records::{
-    FileSearchDiagnostic, FollowUpCall, SearchAuthorization, UpstreamSearch,
+    FollowUpCall, SearchAuthorization,
 };
 use betterlite_core::api::responses_file_search_loop::{
     ResponsesFileSearchLoop, ResponsesFileSearchLoopInput,
@@ -88,8 +88,16 @@ impl Helper for Op {
         Ok(json!({
             "response": serde_json::to_value(&result.response)?,
             "calls": result.calls.iter().map(call_value).collect::<Vec<Value>>(),
-            "searches": result.searches.iter().map(search_value).collect::<Vec<Value>>(),
-            "diagnostics": result.diagnostics.iter().map(line_value).collect::<Vec<Value>>(),
+            "searches": result
+                .searches
+                .iter()
+                .map(|search| json!({"vector_store_id": &search.vector_store_id, "query": &search.query}))
+                .collect::<Vec<Value>>(),
+            "diagnostics": result
+                .diagnostics
+                .iter()
+                .map(|line| json!({"level": line.level, "message": &line.message}))
+                .collect::<Vec<Value>>(),
         }))
     }
 }
@@ -101,14 +109,6 @@ fn call_value(call: &FollowUpCall) -> Value {
         "tools": &call.tools,
         "kwargs": &call.kwargs,
     })
-}
-
-fn search_value(search: &UpstreamSearch) -> Value {
-    json!({"vector_store_id": &search.vector_store_id, "query": &search.query})
-}
-
-fn line_value(line: &FileSearchDiagnostic) -> Value {
-    json!({"level": line.level, "message": &line.message})
 }
 
 #[derive(Debug, Error)]
