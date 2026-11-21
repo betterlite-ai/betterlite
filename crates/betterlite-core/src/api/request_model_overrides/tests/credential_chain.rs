@@ -237,6 +237,59 @@ fn no_model_config_copies_nothing() {
 }
 
 #[test]
+fn null_model_config_copies_nothing() {
+    let principal = OverridesPrincipal {
+        team_id: None,
+        team_model_aliases: alias_map(&[]),
+        aliases: alias_map(&[]),
+        metadata: None,
+        team_metadata: Some(JsonObject::from([("model_config".to_owned(), Json::Null)])),
+        project_metadata: None,
+    };
+    let service = build_service(credential_settings(), None, team_credentials());
+    let result = service.apply(&input(principal, "gpt-4o")).unwrap();
+    assert_eq!(text_field(&result.data, "api_key"), None);
+    assert_eq!(result.diagnostics, Vec::new());
+}
+
+#[test]
+fn an_empty_model_entry_counts_as_absent() {
+    let default_credential = JsonObject::from([(
+        "litellm_credentials".to_owned(),
+        Json::Text("team-azure".to_owned()),
+    )]);
+    let default_entry = Json::Object(JsonObject::from([(
+        "azure".to_owned(),
+        Json::Object(default_credential),
+    )]));
+    let entries = JsonObject::from([
+        ("gpt-4o".to_owned(), Json::Object(JsonObject::new())),
+        ("defaultconfig".to_owned(), default_entry),
+    ]);
+    let principal = OverridesPrincipal {
+        team_id: None,
+        team_model_aliases: alias_map(&[]),
+        aliases: alias_map(&[]),
+        metadata: None,
+        team_metadata: Some(JsonObject::from([(
+            "model_config".to_owned(),
+            Json::Object(entries),
+        )])),
+        project_metadata: None,
+    };
+    let service = build_service(credential_settings(), None, team_credentials());
+    let result = service.apply(&input(principal, "gpt-4o")).unwrap();
+    assert_eq!(text_field(&result.data, "api_key"), Some("sk-team"));
+    assert_eq!(
+        result.diagnostics,
+        vec![OverrideDiagnostic::CredentialApplied {
+            credential: "team-azure".to_owned(),
+            model: "gpt-4o".to_owned(),
+        }]
+    );
+}
+
+#[test]
 fn client_api_version_survives_and_does_not_gate() {
     let data = request(&[("model", "gpt-4o"), ("api_version", "2024-01-01")]);
     let principal = principal_with(&[("defaultconfig", "azure", Some("team-azure"))]);
