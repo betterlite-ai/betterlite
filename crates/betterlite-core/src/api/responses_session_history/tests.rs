@@ -3,6 +3,7 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt::Debug;
 use std::fs;
+use std::future::{Future, ready};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -45,16 +46,21 @@ struct ScriptedQuery {
 }
 
 impl SpendLogQuery for ScriptedQuery {
-    async fn session_logs(
+    fn session_logs(
         &self,
         sql: &'static str,
         request_id: &str,
-    ) -> Result<Vec<SessionLog>, TableError> {
+    ) -> impl Future<Output = Result<Vec<SessionLog>, TableError>> + Send {
         self.calls
             .lock()
             .unwrap()
             .push((sql.to_owned(), request_id.to_owned()));
-        Ok(self.replies.lock().unwrap().pop_front().unwrap_or_default())
+        ready(Ok(self
+            .replies
+            .lock()
+            .unwrap()
+            .pop_front()
+            .unwrap_or_default()))
     }
 }
 
@@ -72,15 +78,15 @@ struct ScriptedCold {
 impl ColdStorageReader for ScriptedCold {
     type Error = Unreachable;
 
-    async fn proxy_server_request(
+    fn proxy_server_request(
         &self,
         object_key: &str,
-    ) -> Result<Option<IndexMap<String, Json>>, Unreachable> {
+    ) -> impl Future<Output = Result<Option<IndexMap<String, Json>>, Unreachable>> + Send {
         self.reads.lock().unwrap().push(object_key.to_owned());
         if self.failing {
-            return Err(Unreachable);
+            return ready(Err(Unreachable));
         }
-        Ok(self.objects.get(object_key).cloned().flatten())
+        ready(Ok(self.objects.get(object_key).cloned().flatten()))
     }
 }
 
@@ -88,8 +94,9 @@ impl ColdStorageReader for ScriptedCold {
 struct RecordingSleeper(Mutex<Vec<Duration>>);
 
 impl PollSleeper for RecordingSleeper {
-    async fn sleep(&self, duration: Duration) {
+    fn sleep(&self, duration: Duration) -> impl Future<Output = ()> + Send {
         self.0.lock().unwrap().push(duration);
+        ready(())
     }
 }
 

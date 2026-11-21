@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -62,11 +63,11 @@ struct Script<'input> {
 }
 
 impl SpendLogQuery for Script<'_> {
-    async fn session_logs(
+    fn session_logs(
         &self,
         sql: &'static str,
         request_id: &str,
-    ) -> Result<Vec<SessionLog>, TableError> {
+    ) -> impl Future<Output = Result<Vec<SessionLog>, TableError>> + Send {
         // LiteLLM indents its query over several lines; both sides record it with single spaces
         let flat_sql = sql.split_whitespace().collect::<Vec<_>>().join(" ");
         let mut effects = self.effects.lock().unwrap_or_else(PoisonError::into_inner);
@@ -75,22 +76,24 @@ impl SpendLogQuery for Script<'_> {
             .push(json!({"sql": flat_sql, "request_id": request_id}));
         let position = effects.queries.len().saturating_sub(1);
         drop(effects);
-        Ok(self
-            .input
-            .replies
-            .get(position)
-            .cloned()
-            .unwrap_or_default())
+        ready(
+            self.input
+                .replies
+                .get(position)
+                .cloned()
+                .unwrap_or_default(),
+        )
     }
 }
 
 impl ColdStorageReader for Script<'_> {
     type Error = ColdStorageFailure;
 
-    async fn proxy_server_request(
+    fn proxy_server_request(
         &self,
         object_key: &str,
-    ) -> Result<Option<IndexMap<String, Json>>, ColdStorageFailure> {
+    ) -> impl Future<Output = Result<Option<IndexMap<String, Json>>, ColdStorageFailure>> + Send
+    {
         self.effects
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -102,21 +105,22 @@ impl ColdStorageReader for Script<'_> {
             .iter()
             .any(|failing| failing == object_key)
         {
-            return Err(ColdStorageFailure {
+            return ready(Err(ColdStorageFailure {
                 object_key: object_key.to_owned(),
-            });
+            }));
         }
-        Ok(self.input.cold_objects.get(object_key).cloned().flatten())
+        ready(self.input.cold_objects.get(object_key).cloned().flatten())
     }
 }
 
 impl PollSleeper for Script<'_> {
-    async fn sleep(&self, duration: Duration) {
+    fn sleep(&self, duration: Duration) -> impl Future<Output = ()> + Send {
         self.effects
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .sleeps
             .push(duration.as_secs_f64());
+        ready(())
     }
 }
 
