@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeSet;
+use std::sync::Arc;
 
 use betterlite_redis::cache_primitives::protocol::RedisScalar;
 use rstest::rstest;
@@ -102,7 +103,7 @@ async fn increments_unguarded_when_the_window_names_another_counter() {
 #[tokio::test]
 async fn sends_a_guard_script_call_for_a_redis_window() {
     let script = RecordingScript::new();
-    let fixture = ReservationFixture::seeded(&[]).with_guarded_script(script.clone());
+    let fixture = ReservationFixture::seeded(&[]).with_guarded_script(Arc::clone(&script));
     let windows = BTreeSet::from([identity(
         &tokens_key(ITPM, VALUE),
         &START.to_string(),

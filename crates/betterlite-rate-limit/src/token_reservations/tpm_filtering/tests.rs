@@ -8,7 +8,8 @@ use crate::limiter_records::{
     ReservationWindowIdentity,
 };
 use crate::token_reservations::tests::support::{
-    ReservationFixture, START, count, counter_write, descriptor, text, tokens_key, window_key,
+    ReservationFixture, START, WriteRecord, count, counter_write, descriptor, text, tokens_key,
+    window_key,
 };
 use crate::token_reservations::tpm_filtering::tpm_descriptors;
 
@@ -29,6 +30,39 @@ fn window(key: &str, value: &str, start: &str) -> ReservationWindowIdentity {
         window_start: start.to_owned(),
         backend: ReservationBackend::Local,
     }
+}
+
+fn charging_descriptors() -> Vec<RateLimitDescriptor> {
+    vec![
+        descriptor("model_per_key", "key1:gpt-4", Some(500), Some(60)),
+        descriptor(
+            PROJECT_ITPM_DESCRIPTOR_KEY,
+            "proj:gpt-4",
+            Some(1000),
+            Some(60),
+        ),
+        descriptor(
+            PROJECT_OTPM_DESCRIPTOR_KEY,
+            "proj:gpt-4",
+            Some(1000),
+            Some(60),
+        ),
+        descriptor("model_per_team", "team1:gpt-4", Some(800), Some(60)),
+    ]
+}
+
+fn charging_statuses() -> Vec<RateLimitStatus> {
+    vec![
+        tpm_status("model_per_key", "key1:gpt-4", 500, 130),
+        tpm_status("model_per_team", "team1:gpt-4", 800, 580),
+    ]
+}
+
+fn charging_writes() -> Vec<WriteRecord> {
+    vec![
+        counter_write(&tokens_key("model_per_key", "key1:gpt-4"), count(370), 60),
+        counter_write(&tokens_key("model_per_team", "team1:gpt-4"), count(220), 60),
+    ]
 }
 
 #[test]
@@ -130,22 +164,7 @@ async fn charges_each_tpm_descriptor_and_skips_the_project_ones() {
         (&tokens_key("model_per_team", "team1:gpt-4"), count(100)),
         (&window_key("model_per_team", "team1:gpt-4"), text(START)),
     ]);
-    let descriptors = vec![
-        descriptor("model_per_key", "key1:gpt-4", Some(500), Some(60)),
-        descriptor(
-            PROJECT_ITPM_DESCRIPTOR_KEY,
-            "proj:gpt-4",
-            Some(1000),
-            Some(60),
-        ),
-        descriptor(
-            PROJECT_OTPM_DESCRIPTOR_KEY,
-            "proj:gpt-4",
-            Some(1000),
-            Some(60),
-        ),
-        descriptor("model_per_team", "team1:gpt-4", Some(800), Some(60)),
-    ];
+    let descriptors = charging_descriptors();
 
     let response = fixture
         .reservations()
@@ -154,20 +173,8 @@ async fn charges_each_tpm_descriptor_and_skips_the_project_ones() {
         .unwrap();
 
     assert_eq!(response.overall_code, "OK");
-    assert_eq!(
-        response.statuses,
-        vec![
-            tpm_status("model_per_key", "key1:gpt-4", 500, 130),
-            tpm_status("model_per_team", "team1:gpt-4", 800, 580),
-        ]
-    );
-    assert_eq!(
-        fixture.effects.writes(),
-        vec![
-            counter_write(&tokens_key("model_per_key", "key1:gpt-4"), count(370), 60),
-            counter_write(&tokens_key("model_per_team", "team1:gpt-4"), count(220), 60),
-        ]
-    );
+    assert_eq!(response.statuses, charging_statuses());
+    assert_eq!(fixture.effects.writes(), charging_writes());
     assert_eq!(
         response.reservation_windows,
         Some(

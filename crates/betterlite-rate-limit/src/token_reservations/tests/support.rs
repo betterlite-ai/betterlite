@@ -13,9 +13,9 @@ use tokio::sync::Mutex as AsyncMutex;
 
 use crate::fail_closed::FailClosedPolicy;
 use crate::limiter_records::{
-    CacheCounterValue, LimiterClock, ModelGroupResolver, RateLimitDescriptor,
-    RateLimitDescriptorRateLimit, RateLimitType, ReservationBackend, ReservationWindowIdentity,
-    ScriptReply, create_rate_limit_keys,
+    CacheCounterValue, LimiterClock, ModelGroupResolver, PROJECT_ITPM_DESCRIPTOR_KEY,
+    PROJECT_OTPM_DESCRIPTOR_KEY, RateLimitDescriptor, RateLimitDescriptorRateLimit, RateLimitType,
+    ReservationBackend, ReservationWindowIdentity, ScriptReply, create_rate_limit_keys,
 };
 use crate::model_descriptors::ModelDescriptorBuilder;
 use crate::provider_attribution::RateLimitErrorAttribution;
@@ -297,6 +297,64 @@ pub(crate) fn identity(
 
 pub(crate) fn scope(key: &str, value: &str) -> (String, String) {
     (key.to_owned(), value.to_owned())
+}
+
+pub(crate) const PROJECT_VALUE: &str = "p1:gpt-4";
+pub(crate) const KEY_VALUE: &str = "key1:gpt-4";
+const PROJECT_IO_KEYS: [&str; 2] = [PROJECT_ITPM_DESCRIPTOR_KEY, PROJECT_OTPM_DESCRIPTOR_KEY];
+
+pub(crate) fn project_io_descriptors(itpm_limit: i64, otpm_limit: i64) -> Vec<RateLimitDescriptor> {
+    PROJECT_IO_KEYS
+        .into_iter()
+        .zip([itpm_limit, otpm_limit])
+        .map(|(key, limit)| descriptor(key, PROJECT_VALUE, Some(limit), Some(60)))
+        .collect()
+}
+
+pub(crate) fn itpm_descriptors(limit: i64) -> Vec<RateLimitDescriptor> {
+    vec![descriptor(
+        PROJECT_ITPM_DESCRIPTOR_KEY,
+        PROJECT_VALUE,
+        Some(limit),
+        Some(60),
+    )]
+}
+
+pub(crate) fn key_descriptors(limit: i64, window_size: Option<i64>) -> Vec<RateLimitDescriptor> {
+    vec![descriptor(
+        "model_per_key",
+        KEY_VALUE,
+        Some(limit),
+        window_size,
+    )]
+}
+
+pub(crate) fn project_itpm_reads() -> Vec<ReadRecord> {
+    vec![
+        read(&window_key(PROJECT_ITPM_DESCRIPTOR_KEY, PROJECT_VALUE)),
+        read(&tokens_key(PROJECT_ITPM_DESCRIPTOR_KEY, PROJECT_VALUE)),
+    ]
+}
+
+pub(crate) fn project_io_reads() -> Vec<ReadRecord> {
+    let mut reads = project_itpm_reads();
+    reads.push(read(&window_key(
+        PROJECT_OTPM_DESCRIPTOR_KEY,
+        PROJECT_VALUE,
+    )));
+    reads.push(read(&tokens_key(
+        PROJECT_OTPM_DESCRIPTOR_KEY,
+        PROJECT_VALUE,
+    )));
+    reads
+}
+
+pub(crate) fn project_io_writes(itpm: i64, otpm: i64) -> Vec<WriteRecord> {
+    PROJECT_IO_KEYS
+        .into_iter()
+        .zip([itpm, otpm])
+        .map(|(key, tokens)| counter_write(&tokens_key(key, PROJECT_VALUE), count(tokens), 60))
+        .collect()
 }
 
 pub(crate) fn read(key: &str) -> ReadRecord {

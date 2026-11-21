@@ -7,11 +7,32 @@ use crate::limiter_records::{
     ReservationBackend,
 };
 use crate::token_reservations::tests::support::{
-    ReservationFixture, START, count, counter_write, descriptor, identity, read, text, tokens_key,
-    window_key,
+    ReservationFixture, START, count, identity, project_io_descriptors, project_io_reads,
+    project_io_writes, text, tokens_key, window_key,
 };
 
 const VALUE: &str = "p1:gpt-4";
+
+fn both_bucket_statuses() -> Vec<RateLimitStatus> {
+    vec![
+        RateLimitStatus {
+            code: String::from("OK"),
+            current_limit: 500,
+            limit_remaining: 280,
+            rate_limit_type: RateLimitType::Tokens,
+            descriptor_key: String::from(PROJECT_ITPM_DESCRIPTOR_KEY),
+            descriptor_value: Some(String::from(VALUE)),
+        },
+        RateLimitStatus {
+            code: String::from("OK"),
+            current_limit: 900,
+            limit_remaining: 630,
+            rate_limit_type: RateLimitType::Tokens,
+            descriptor_key: String::from(PROJECT_OTPM_DESCRIPTOR_KEY),
+            descriptor_value: Some(String::from(VALUE)),
+        },
+    ]
+}
 
 #[tokio::test]
 async fn charges_both_buckets_and_merges_their_statuses_and_windows() {
@@ -24,39 +45,12 @@ async fn charges_both_buckets_and_merges_their_statuses_and_windows() {
 
     let reservation = fixture
         .reservations()
-        .reserve_io_tokens(
-            &[
-                descriptor(PROJECT_ITPM_DESCRIPTOR_KEY, VALUE, Some(500), Some(60)),
-                descriptor(PROJECT_OTPM_DESCRIPTOR_KEY, VALUE, Some(900), Some(60)),
-            ],
-            120,
-            70,
-        )
+        .reserve_io_tokens(&project_io_descriptors(500, 900), 120, 70)
         .await
         .unwrap();
 
     assert_eq!(reservation.response.overall_code, "OK");
-    assert_eq!(
-        reservation.response.statuses,
-        vec![
-            RateLimitStatus {
-                code: String::from("OK"),
-                current_limit: 500,
-                limit_remaining: 280,
-                rate_limit_type: RateLimitType::Tokens,
-                descriptor_key: String::from(PROJECT_ITPM_DESCRIPTOR_KEY),
-                descriptor_value: Some(String::from(VALUE)),
-            },
-            RateLimitStatus {
-                code: String::from("OK"),
-                current_limit: 900,
-                limit_remaining: 630,
-                rate_limit_type: RateLimitType::Tokens,
-                descriptor_key: String::from(PROJECT_OTPM_DESCRIPTOR_KEY),
-                descriptor_value: Some(String::from(VALUE)),
-            },
-        ]
-    );
+    assert_eq!(reservation.response.statuses, both_bucket_statuses());
     assert_eq!(
         reservation.response.reservation_windows,
         Some(BTreeSet::from([
@@ -74,21 +68,7 @@ async fn charges_both_buckets_and_merges_their_statuses_and_windows() {
     );
     assert_eq!(reservation.itpm_reserved, 120);
     assert_eq!(reservation.otpm_reserved, 70);
-    assert_eq!(
-        fixture.effects.writes(),
-        vec![
-            counter_write(
-                &tokens_key(PROJECT_ITPM_DESCRIPTOR_KEY, VALUE),
-                count(220),
-                60
-            ),
-            counter_write(
-                &tokens_key(PROJECT_OTPM_DESCRIPTOR_KEY, VALUE),
-                count(270),
-                60
-            ),
-        ]
-    );
+    assert_eq!(fixture.effects.writes(), project_io_writes(220, 270));
 }
 
 #[tokio::test]
@@ -100,41 +80,14 @@ async fn reserves_each_bucket_against_its_own_estimate() {
         (&tokens_key(PROJECT_OTPM_DESCRIPTOR_KEY, VALUE), count(0)),
     ]);
 
-    fixture
+    let reservation = fixture
         .reservations()
-        .reserve_io_tokens(
-            &[
-                descriptor(PROJECT_ITPM_DESCRIPTOR_KEY, VALUE, Some(500), Some(60)),
-                descriptor(PROJECT_OTPM_DESCRIPTOR_KEY, VALUE, Some(900), Some(60)),
-            ],
-            120,
-            70,
-        )
+        .reserve_io_tokens(&project_io_descriptors(500, 900), 120, 70)
         .await
         .unwrap();
 
-    assert_eq!(
-        fixture.effects.reads(),
-        vec![
-            read(&window_key(PROJECT_ITPM_DESCRIPTOR_KEY, VALUE)),
-            read(&tokens_key(PROJECT_ITPM_DESCRIPTOR_KEY, VALUE)),
-            read(&window_key(PROJECT_OTPM_DESCRIPTOR_KEY, VALUE)),
-            read(&tokens_key(PROJECT_OTPM_DESCRIPTOR_KEY, VALUE)),
-        ]
-    );
-    assert_eq!(
-        fixture.effects.writes(),
-        vec![
-            counter_write(
-                &tokens_key(PROJECT_ITPM_DESCRIPTOR_KEY, VALUE),
-                count(120),
-                60
-            ),
-            counter_write(
-                &tokens_key(PROJECT_OTPM_DESCRIPTOR_KEY, VALUE),
-                count(70),
-                60
-            ),
-        ]
-    );
+    assert_eq!(reservation.itpm_reserved, 120);
+    assert_eq!(reservation.otpm_reserved, 70);
+    assert_eq!(fixture.effects.reads(), project_io_reads());
+    assert_eq!(fixture.effects.writes(), project_io_writes(120, 70));
 }

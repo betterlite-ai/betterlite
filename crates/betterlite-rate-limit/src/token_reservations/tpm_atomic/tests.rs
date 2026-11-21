@@ -5,12 +5,25 @@ use crate::limiter_records::{
     ReservationBackend, ReservationWindowIdentity, create_rate_limit_keys,
 };
 use crate::token_reservations::tests::support::{
-    NOW, ReservationFixture, START, count, counter_write, descriptor, read, text, tokens_key,
-    window_key,
+    NOW, ReservationFixture, START, count, counter_write, descriptor, key_descriptors, read, text,
+    tokens_key, window_key,
 };
 
 fn requests_key(key: &str, value: &str) -> String {
     create_rate_limit_keys(key, value, RateLimitType::Requests)
+}
+
+fn descriptor_with_requests() -> RateLimitDescriptor {
+    RateLimitDescriptor {
+        key: String::from("model_per_key"),
+        value: String::from("key1:gpt-4"),
+        rate_limit: Some(RateLimitDescriptorRateLimit {
+            requests_per_unit: Some(5),
+            tokens_per_unit: Some(500),
+            max_parallel_requests: None,
+            window_size: Some(60),
+        }),
+    }
 }
 
 fn token_status(code: &str, value: &str, limit: i64, remaining: i64) -> RateLimitStatus {
@@ -31,16 +44,7 @@ async fn never_charges_the_requests_counter_of_a_descriptor() {
         (&requests_key("model_per_key", "key1:gpt-4"), count(3)),
         (&tokens_key("model_per_key", "key1:gpt-4"), count(250)),
     ]);
-    let descriptors = vec![RateLimitDescriptor {
-        key: String::from("model_per_key"),
-        value: String::from("key1:gpt-4"),
-        rate_limit: Some(RateLimitDescriptorRateLimit {
-            requests_per_unit: Some(5),
-            tokens_per_unit: Some(500),
-            max_parallel_requests: None,
-            window_size: Some(60),
-        }),
-    }];
+    let descriptors = vec![descriptor_with_requests()];
 
     let response = fixture
         .reservations()
@@ -142,15 +146,7 @@ async fn starts_a_new_window_and_resets_the_sibling_counters() {
 
     let response = fixture
         .reservations()
-        .reserve_tpm_tokens(
-            &[descriptor(
-                "model_per_key",
-                "key1:gpt-4",
-                Some(500),
-                Some(60),
-            )],
-            100,
-        )
+        .reserve_tpm_tokens(&key_descriptors(500, Some(60)), 100)
         .await
         .unwrap();
 

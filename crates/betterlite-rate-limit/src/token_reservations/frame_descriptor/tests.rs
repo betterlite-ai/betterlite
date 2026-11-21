@@ -2,7 +2,8 @@
 
 use crate::limiter_records::{PROJECT_ITPM_DESCRIPTOR_KEY, PROJECT_OTPM_DESCRIPTOR_KEY};
 use crate::token_reservations::tests::support::{
-    NOW, ReservationFixture, START, auth, count, counter_write, read, text, tokens_key, window_key,
+    NOW, ReservationFixture, START, auth, count, project_io_reads, project_io_writes, text,
+    tokens_key, window_key,
 };
 
 const VALUE: &str = "p1:gpt-4";
@@ -29,28 +30,6 @@ async fn reserves_the_project_descriptors_built_from_project_metadata() {
         .await
         .unwrap();
 
-    assert_eq!(
-        fixture.effects.reads(),
-        vec![
-            read(&window_key(PROJECT_ITPM_DESCRIPTOR_KEY, VALUE)),
-            read(&tokens_key(PROJECT_ITPM_DESCRIPTOR_KEY, VALUE)),
-            read(&window_key(PROJECT_OTPM_DESCRIPTOR_KEY, VALUE)),
-            read(&tokens_key(PROJECT_OTPM_DESCRIPTOR_KEY, VALUE)),
-        ]
-    );
-    assert_eq!(
-        fixture.effects.writes(),
-        vec![
-            counter_write(
-                &tokens_key(PROJECT_ITPM_DESCRIPTOR_KEY, VALUE),
-                count(120),
-                60
-            ),
-            counter_write(
-                &tokens_key(PROJECT_OTPM_DESCRIPTOR_KEY, VALUE),
-                count(70),
-                60
-            ),
-        ]
-    );
+    assert_eq!(fixture.effects.reads(), project_io_reads());
+    assert_eq!(fixture.effects.writes(), project_io_writes(120, 70));
 }

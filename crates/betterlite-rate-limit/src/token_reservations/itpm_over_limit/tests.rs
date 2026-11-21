@@ -6,10 +6,22 @@ use crate::limiter_records::{
     PROJECT_ITPM_DESCRIPTOR_KEY, PROJECT_OTPM_DESCRIPTOR_KEY, RateLimitStatus, RateLimitType,
 };
 use crate::token_reservations::tests::support::{
-    ReservationFixture, START, count, descriptor, read, text, tokens_key, window_key,
+    ReservationFixture, START, count, itpm_descriptors, project_io_descriptors, project_itpm_reads,
+    text, tokens_key, window_key,
 };
 
 const VALUE: &str = "p1:gpt-4";
+
+fn itpm_over_limit_statuses() -> Vec<RateLimitStatus> {
+    vec![RateLimitStatus {
+        code: String::from("OVER_LIMIT"),
+        current_limit: 50,
+        limit_remaining: 10,
+        rate_limit_type: RateLimitType::Tokens,
+        descriptor_key: String::from(PROJECT_ITPM_DESCRIPTOR_KEY),
+        descriptor_value: Some(String::from(VALUE)),
+    }]
+}
 
 #[rstest]
 #[case::just_inside(40, 140, "OK", 100)]
@@ -31,16 +43,7 @@ async fn the_input_estimate_decides_whether_the_itpm_bucket_fits(
 
     let reservation = fixture
         .reservations()
-        .reserve_io_tokens(
-            &[descriptor(
-                PROJECT_ITPM_DESCRIPTOR_KEY,
-                VALUE,
-                Some(limit),
-                Some(60),
-            )],
-            100,
-            50,
-        )
+        .reserve_io_tokens(&itpm_descriptors(limit), 100, 50)
         .await
         .unwrap();
 
@@ -60,37 +63,14 @@ async fn stops_before_charging_otpm_when_itpm_is_over_limit() {
 
     let reservation = fixture
         .reservations()
-        .reserve_io_tokens(
-            &[
-                descriptor(PROJECT_ITPM_DESCRIPTOR_KEY, VALUE, Some(50), Some(60)),
-                descriptor(PROJECT_OTPM_DESCRIPTOR_KEY, VALUE, Some(900), Some(60)),
-            ],
-            100,
-            50,
-        )
+        .reserve_io_tokens(&project_io_descriptors(50, 900), 100, 50)
         .await
         .unwrap();
 
     assert_eq!(reservation.response.overall_code, "OVER_LIMIT");
-    assert_eq!(
-        reservation.response.statuses,
-        vec![RateLimitStatus {
-            code: String::from("OVER_LIMIT"),
-            current_limit: 50,
-            limit_remaining: 10,
-            rate_limit_type: RateLimitType::Tokens,
-            descriptor_key: String::from(PROJECT_ITPM_DESCRIPTOR_KEY),
-            descriptor_value: Some(String::from(VALUE)),
-        }]
-    );
+    assert_eq!(reservation.response.statuses, itpm_over_limit_statuses());
     assert_eq!(reservation.itpm_reserved, 0);
     assert_eq!(reservation.otpm_reserved, 0);
-    assert_eq!(
-        fixture.effects.reads(),
-        vec![
-            read(&window_key(PROJECT_ITPM_DESCRIPTOR_KEY, VALUE)),
-            read(&tokens_key(PROJECT_ITPM_DESCRIPTOR_KEY, VALUE)),
-        ]
-    );
+    assert_eq!(fixture.effects.reads(), project_itpm_reads());
     assert!(fixture.effects.writes().is_empty());
 }
