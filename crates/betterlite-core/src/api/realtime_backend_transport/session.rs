@@ -39,7 +39,7 @@ pub struct RealtimeCall<'call, Config, Callback, Relay>
 where
     Config: BaseRealtimeConfig + 'static,
     Callback: RealtimeGuardrailCallback + ?Sized,
-    Callback::Error: StdError + Send + 'static,
+    Callback::Error: StdError + Send + Sync + 'static,
     Relay: RealtimeSessionRelay,
 {
     pub model: &'call str,
@@ -86,7 +86,7 @@ impl<Config, Callback, Relay> RealtimeCall<'_, Config, Callback, Relay>
 where
     Config: BaseRealtimeConfig + 'static,
     Callback: RealtimeGuardrailCallback + ?Sized,
-    Callback::Error: StdError + Send + 'static,
+    Callback::Error: StdError + Send + Sync + 'static,
     Relay: RealtimeSessionRelay,
 {
     // LiteLLM's async_realtime: the URL and headers resolve first, then every failure inside the connection try gets a client close

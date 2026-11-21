@@ -24,7 +24,7 @@ pub(super) async fn send_initial_frame<Config, Callback, Relay>(
 where
     Config: BaseRealtimeConfig + 'static,
     Callback: RealtimeGuardrailCallback + ?Sized,
-    Callback::Error: StdError + Send + 'static,
+    Callback::Error: StdError + Send + Sync + 'static,
     Relay: RealtimeSessionRelay,
 {
     if call.provider.requires_session_configuration() {
@@ -65,7 +65,7 @@ async fn deliver_synthetic<Config, Callback, Relay>(
 where
     Config: BaseRealtimeConfig + 'static,
     Callback: RealtimeGuardrailCallback + ?Sized,
-    Callback::Error: StdError + Send + 'static,
+    Callback::Error: StdError + Send + Sync + 'static,
     Relay: RealtimeSessionRelay,
 {
     let text = serde_json::to_string(event)

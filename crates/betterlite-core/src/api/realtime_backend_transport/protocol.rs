@@ -76,7 +76,7 @@ pub struct SessionRelay<'session> {
 // B1009's bidirectional relay behind async_realtime; it owns the composition the generic connection cannot express with one mutable state
 #[async_trait]
 pub trait RealtimeSessionRelay: Send + Sync {
-    type Error: StdError + Send + 'static;
+    type Error: StdError + Send + Sync + 'static;
 
     async fn relay(&mut self, session: SessionRelay<'_>) -> Result<(), Self::Error>;
 }
