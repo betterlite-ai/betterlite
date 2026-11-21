@@ -99,7 +99,7 @@ async fn assert_encoded_retrievals(fixture: &mut Fixture, call: &ResponsesRetrie
             .await
             .expect("the encoded retrieve succeeds"),
         "deployment-a",
-        "resp/a",
+        "resp_a",
     );
     assert_eq!(
         reply.headers.get("x-request-id").map(String::as_str),
@@ -112,7 +112,7 @@ async fn assert_encoded_retrievals(fixture: &mut Fixture, call: &ResponsesRetrie
             .await
             .expect("the awaited retrieve succeeds"),
         "deployment-a",
-        "resp/a",
+        "resp_a",
     );
     assert_eq!(
         awaited.headers.get("x-request-id").map(String::as_str),
@@ -135,6 +135,10 @@ async fn assert_raw_retrieval(fixture: &mut Fixture) {
 fn assert_retrieval_records(records: &[Recorded]) {
     assert_eq!(records.len(), 3);
     assert_eq!(records[0].response_id, "resp/a");
+    assert_eq!(
+        records[0].logged_optional,
+        map(r#"{"response_id":"resp/a"}"#)
+    );
     assert_eq!(records[0].tag, ResponsesConfigTag::OpenAi);
     assert_eq!(records[0].api_base.as_deref(), Some("http://mock.test/v1"));
     assert_eq!(records[0].api_key.as_deref(), Some("sk-provider"));
@@ -142,6 +146,10 @@ fn assert_retrieval_records(records: &[Recorded]) {
     assert!(records[0].query.is_none());
     assert!(records[0].extra_body.is_none());
     assert_eq!(records[1].response_id, "resp/a");
+    assert_eq!(
+        records[1].logged_optional,
+        map(r#"{"response_id":"resp/a"}"#)
+    );
     assert_eq!(records[1].mode, ClientKind::Asynchronous);
     assert_eq!(
         records[1].logged_litellm.get("litellm_call_id"),

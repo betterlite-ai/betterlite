@@ -136,8 +136,6 @@ Step: TypeAlias = GetResponsesKind | AgetResponsesKind | ListInputItemsKind | Al
 
 
 class Retrieved(BaseModel):
-    model_config = ConfigDict(extra="forbid", from_attributes=True)
-
     id: str
     created_at: int
     status: str | None
@@ -193,7 +191,9 @@ def timeout_value(timeout: float | StructuredTimeout | None) -> float | httpx.Ti
                 write=timeout.write,
                 pool=timeout.pool,
             )
-        case float() | None:
+        case float() | int():
+            return float(timeout)
+        case None:
             return timeout
 
 
@@ -244,7 +244,13 @@ def read_outcome(
     except openai.APIError as error:
         return StepOutcome(failure=project_failure(error).failure)
     if answer is Answer.RESPONSE:
-        return StepOutcome(retrieved=Retrieved.model_validate(settled))
+        match settled:
+            case HasModelDump():
+                return StepOutcome(
+                    retrieved=Retrieved.model_validate_json(settled.model_dump_json())
+                )
+            case dict() as body:
+                return StepOutcome(retrieved=Retrieved.model_validate(body))
     return StepOutcome(items=JSON.validate_python(settled))
 
 
