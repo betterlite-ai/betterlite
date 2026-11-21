@@ -7,7 +7,6 @@ use betterlite_auth::user_roles::UserRole;
 use betterlite_db::budget_permission_rows::JsonData;
 use rust_decimal::Decimal;
 
-use crate::key_fields::values::Amount;
 use crate::proxy_request_contracts::decode;
 use crate::team_limits::defaults::Caller;
 use crate::team_limits::field_supplied;
@@ -110,18 +109,13 @@ fn check_governing_cap(
         max_budget,
         duration: cap.budget_duration,
         entry: governing.budget_model,
-        requested: amount_text(proposed.max_budget),
+        // LiteLLM prints the requested values with Python's None for an absent one
+        requested: proposed
+            .max_budget
+            .map_or_else(|| "None".to_owned(), |value| value.0.to_string()),
         requested_duration: proposed
             .budget_duration
             .as_deref()
             .map_or_else(|| "None".to_owned(), str::to_owned),
     })
-}
-
-// LiteLLM prints the requested values with Python's None for an absent one
-fn amount_text(amount: Option<Amount>) -> String {
-    match amount {
-        None => "None".to_owned(),
-        Some(value) => value.0.to_string(),
-    }
 }

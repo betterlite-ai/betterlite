@@ -146,14 +146,7 @@ fn default_object_projection() {
         default_team_param(&settings, TeamParamField::Models),
         Some(TeamParamValue::Texts(vec![
             "openai/gpt-4o".to_owned(),
-            "gpt-4o".to_owned(),
-        ]))
-    );
-    assert_eq!(
-        default_team_param(&settings, TeamParamField::TeamMemberPermissions),
-        Some(TeamParamValue::Texts(vec![
-            "/key/update".to_owned(),
-            "/key/generate".to_owned(),
+            "gpt-4o".to_owned()
         ]))
     );
     let empty = team_params(DefaultTeamParams {
@@ -173,6 +166,26 @@ fn default_object_projection() {
     assert_eq!(
         default_team_param(&without_models, TeamParamField::Models),
         None
+    );
+}
+
+#[test]
+fn default_permissions_projection() {
+    let settings = team_params(DefaultTeamParams {
+        models: None,
+        max_budget: None,
+        budget_duration: None,
+        tpm_limit: None,
+        rpm_limit: None,
+        team_member_permissions: Some(vec!["/key/update".to_owned(), "/key/generate".to_owned()]),
+        organization_id: None,
+    });
+    assert_eq!(
+        default_team_param(&settings, TeamParamField::TeamMemberPermissions),
+        Some(TeamParamValue::Texts(vec![
+            "/key/update".to_owned(),
+            "/key/generate".to_owned()
+        ]))
     );
 }
 
@@ -695,6 +708,13 @@ async fn postgres_guarded_update() {
         written.fields.updated_at,
         Some(Timestamp::Naive(instant().naive_utc()))
     );
+    close(fixture, pool).await;
+}
+
+#[tokio::test]
+async fn postgres_unguarded_clear() {
+    let (fixture, pool) = database().await;
+    let store = store(&pool);
     let earlier = Timestamp::Naive(
         DateTime::from_timestamp(1_700_000_000, 0)
             .unwrap()

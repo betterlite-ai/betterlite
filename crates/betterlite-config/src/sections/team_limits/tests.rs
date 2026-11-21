@@ -78,6 +78,10 @@ litellm_settings:
         Some(vec!["/key/generate".to_owned()])
     );
     assert_eq!(params.organization_id.as_deref(), Some("org-1"));
+}
+
+#[test]
+fn default_params_minimal() {
     let minimal = loaded("litellm_settings:\n  default_team_params:\n    max_budget: 5.0\n");
     assert_eq!(
         minimal.default_team_params,
@@ -167,6 +171,10 @@ litellm_settings:
             available_teams: None,
         })
     );
+}
+
+#[test]
+fn available_teams_are_read_from_settings() {
     // the pinned proxy reads the key from litellm_settings only
     let general_settings = loaded(
         "general_settings:\n  default_internal_user_params:\n    available_teams:\n      - team-a\n",
@@ -235,23 +243,27 @@ litellm_settings:
     assert_eq!(params.tpm_limit, Some(120));
     let empty = loaded_with(
         "litellm_settings:\n  default_team_params:\n    organization_id: os.environ/TEAM_EMPTY\n    budget_duration: os.environ/TEAM_EMPTY\n",
-        lookup.clone(),
+        lookup,
     );
     let empty_params = empty.default_team_params.unwrap();
     assert_eq!(empty_params.organization_id, None);
     assert_eq!(empty_params.budget_duration, None);
+}
+
+#[test]
+fn env_reference_errors() {
+    let lookup = BTreeMap::from([("TEAM_ORG".to_owned(), "org-env".to_owned())]);
     let missing = failed_with(
         "litellm_settings:\n  default_team_params:\n    max_budget: os.environ/TEAM_MISSING\n",
         lookup.clone(),
     );
-    assert!(matches!(
-        missing,
-        ConfigError::MissingEnvironment { ref path, .. }
-            if path == "litellm_settings.default_team_params.max_budget"
-    ));
+    let ConfigError::MissingEnvironment { path, .. } = missing else {
+        panic!("a missing variable is reported before any value is read");
+    };
+    assert_eq!(path, "litellm_settings.default_team_params.max_budget");
     let non_numeric = failed_with(
         "litellm_settings:\n  default_team_params:\n    max_budget: os.environ/TEAM_ORG\n",
-        lookup.clone(),
+        lookup,
     );
     assert!(matches!(non_numeric, ConfigError::Environment { .. }));
     let written_text =

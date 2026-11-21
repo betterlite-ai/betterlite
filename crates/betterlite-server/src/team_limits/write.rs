@@ -11,8 +11,8 @@ use betterlite_db::team_repository::decoder::{TeamRecord, TeamRecordError, decod
 use betterlite_db::team_rows::team::LiteLLMTeamTable;
 use chrono::{DateTime, Utc};
 use secrecy::ExposeSecret as _;
+use tokio_postgres::Client;
 use tokio_postgres::types::ToSql;
-use tokio_postgres::{Client, Row};
 
 use crate::team_limits::guard::MaxBudgetGuard;
 
@@ -92,12 +92,8 @@ fn update_assignments(
 ) -> Result<Vec<String>, TeamWriteError> {
     let mut payload = data.clone();
     // Prisma's @updatedAt stamps every update that does not set it explicitly
-    if !payload.contains_key(&TeamColumn::UpdatedAt) {
-        payload.insert(
-            TeamColumn::UpdatedAt,
-            TokenValue::Timestamp(Timestamp::Naive(now.naive_utc())),
-        );
-    }
+    let stamped = TokenValue::Timestamp(Timestamp::Naive(now.naive_utc()));
+    payload.entry(TeamColumn::UpdatedAt).or_insert(stamped);
     let mut assignments = Vec::with_capacity(payload.len());
     for (column, value) in &payload {
         let (parameter, cast) = encode(*column, value)?;
@@ -130,7 +126,7 @@ async fn read_back(
     client: &Client,
     team_id: &str,
 ) -> Result<Option<LiteLLMTeamTable>, TeamWriteError> {
-    let parameter: [&(dyn ToSql + Sync); 1] = [team_id];
+    let parameter: [&(dyn ToSql + Sync); 1] = [&team_id];
     let rows = client
         .query(REREAD_SQL, &parameter)
         .await
