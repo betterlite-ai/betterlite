@@ -30,6 +30,9 @@ deviations:
   - what: A timeout in the phases form becomes one absolute deadline at dispatch, the sum of the phases it sets, where LiteLLM hands a single timeout or an httpx.Timeout to the provider client.
     why: The dispatch runs every provider call under one call context deadline, so the sum keeps the call bounded by the time the caller allowed.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5149
+  - what: A model list with more than 100 deployments is refused with a 400 error that names the count, where LiteLLM starts one thread per deployment.
+    why: "The list comes from the request, so LiteLLM's ThreadPoolExecutor(max_workers=len(deployments)) would let one client start any number of provider calls, futures and argument copies. betterlite_core::batch::execution::Batch was compared and cannot run these attempts: its executor and call future must be 'static because it spawns them into its own JoinSet, while the completion target borrows its ports for the call's lifetime. The count is capped and at most 10 attempts run at a time."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batch_completion/main.py#L165
 kept_bugs:
   - what: A later deployment in a model list inherits the fields of the deployments before it for the keys it leaves out.
     why: LiteLLM mutates the kwargs it passes to completion inside the deployment loop, so a working config can rely on the earlier deployment's api_base or temperature.
