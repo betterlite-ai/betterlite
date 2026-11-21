@@ -1,0 +1,10 @@
+kind: helper
+name: daily-records-seed-status
+call:
+  daily_records:
+    operation: status
+    payload: '{"startTime": "2025-01-02T03:04:05", "api_key": null, "metadata": "{\"status\": \"failure\"}"}'
+    prices: {}
+    endpoints: {}
+env: {}
+compare: {ignore: []}
