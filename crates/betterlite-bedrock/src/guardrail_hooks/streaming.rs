@@ -9,7 +9,7 @@ use super::chunks::{StreamChunk, is_raw_sse_stream};
 use super::errors::{BlockedChat, BlockedMessage, HookFailure, ModifyFailure, detail_message};
 use super::frames::error_frames;
 use super::keepalive::keepalive_ping_has_fired;
-use super::response::{chat_chunk, model_response_text, response_model, response_usage};
+use super::response::{chat_chunk, model_response_text, response_field, response_model};
 use super::runtime::{HookRuntime, ScanCall, ScanSource, UnifiedCall};
 use super::{RequestData, StreamingSettings, is_responses_api_route, streams_incrementally};
 
@@ -205,7 +205,7 @@ where
         let block = BlockedChat {
             message: failure.message,
             model: failure.model,
-            usage: response_usage(assembled),
+            usage: response_field(assembled, "usage").cloned(),
         };
         return runtime.block_chat_chunks(&block);
     }
