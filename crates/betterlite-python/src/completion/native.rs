@@ -33,16 +33,12 @@ impl NativeSession {
     fn acompletion<'py>(&self, py: Python<'py>, request: &str) -> PyResult<Bound<'py, PyAny>> {
         let wire: CallWire = parse(request)?;
         let core = Arc::clone(&self.core);
-        future_into_py(
-            py,
-            Box::pin(async move {
-                let parts = core
-                    .call(wire, true)
-                    .await
-                    .map_err(|error| call_error(&error))?;
-                Python::attach(|attached| answer(attached, parts))
-            }),
-        )
+        future_into_py(py, async move {
+            let parts = Box::pin(core.call(wire, true))
+                .await
+                .map_err(|error| call_error(&error))?;
+            Python::attach(|attached| answer(attached, parts))
+        })
     }
     fn count_tokens(&self, py: Python<'_>, request: &str) -> PyResult<String> {
         let call: TokenCall = parse(request)?;

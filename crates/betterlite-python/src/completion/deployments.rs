@@ -101,19 +101,21 @@ fn request_identity(
     arguments: &RequestMap,
     settings: &CompletionSettings,
 ) -> Option<(String, Option<String>)> {
-    let mut model = text_field(arguments, "model")?;
-    if let Some(alias) = settings.model_alias_map.get(&model) {
-        model = alias.clone();
-    }
-    let mut provider = if matches!(arguments.get("azure"), Some(Json::Bool(true))) {
+    let requested = text_field(arguments, "model")?;
+    let deployment = text_field(arguments, "deployment_id");
+    let azure = deployment.is_some() || matches!(arguments.get("azure"), Some(Json::Bool(true)));
+    let provider = if azure {
         Some(String::from("azure"))
     } else {
         text_field(arguments, "custom_llm_provider")
     };
-    if let Some(deployment) = text_field(arguments, "deployment_id") {
-        model = deployment;
-        provider = Some(String::from("azure"));
-    }
+    let model = deployment.unwrap_or_else(|| {
+        settings
+            .model_alias_map
+            .get(&requested)
+            .cloned()
+            .unwrap_or(requested)
+    });
     Some((model, provider))
 }
 // steps::params::router_params takes base_url first and the api_base kwarg otherwise
