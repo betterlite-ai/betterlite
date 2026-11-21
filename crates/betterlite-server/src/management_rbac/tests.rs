@@ -262,24 +262,31 @@ async fn exemption_for_org_or_team_admin(#[case] user: &str, #[case] rosters: &[
     .unwrap();
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Database {
+    Absent,
+    Connected,
+    Unreachable,
+}
+
 #[rstest]
-#[case::no_database(Some(TEAM_MEMBER_USER), &[TEAM_ADMIN_ROSTER], false, false)]
-#[case::unknown_user(None, &[TEAM_ADMIN_ROSTER], true, false)]
-#[case::member_not_admin(Some(TEAM_MEMBER_USER), &[TEAM_USER_ROSTER], true, false)]
-#[case::team_read_fails(Some(TEAM_MEMBER_USER), &[TEAM_ADMIN_ROSTER], true, true)]
+#[case::no_database(Some(TEAM_MEMBER_USER), &[TEAM_ADMIN_ROSTER], Database::Absent)]
+#[case::unknown_user(None, &[TEAM_ADMIN_ROSTER], Database::Connected)]
+#[case::member_not_admin(Some(TEAM_MEMBER_USER), &[TEAM_USER_ROSTER], Database::Connected)]
+#[case::team_read_fails(Some(TEAM_MEMBER_USER), &[TEAM_ADMIN_ROSTER], Database::Unreachable)]
 #[tokio::test]
 async fn exemption_lookup_false_denies(
     #[case] user: Option<&str>,
     #[case] rosters: &[&str],
-    #[case] connected: bool,
-    #[case] unreachable: bool,
+    #[case] database: Database,
 ) {
     let user_reads = users(user);
-    let team_reads = teams(rosters, unreachable);
-    let database: &dyn TeamReads = &team_reads;
+    let team_reads = teams(rosters, database == Database::Unreachable);
+    let team_port: &dyn TeamReads = &team_reads;
+    let connected = database != Database::Absent;
     let privileges = StorePrivileges {
         users: &user_reads,
-        teams: connected.then_some(database),
+        teams: connected.then_some(team_port),
         cache: Arc::new(EmptyCache),
     };
     let role = Some(UserRole::OrgAdmin);
