@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from io import BytesIO
 from typing import Final, Literal, TypedDict
 
@@ -124,7 +125,7 @@ def run(input_value: Input) -> JsonValue:
         if call["function"] == "call_type":
             answers.append(batch_guardrails._scannable_call_type(call["url"], call["body"]))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/batch_guardrails.py#L310
         elif call["function"] == "scan_metadata":
-            narrowed = build_scan_metadata(call["metadata"])
+            narrowed: Mapping[str, object] = build_scan_metadata(call["metadata"])
             answers.append(JSON.validate_python({key: narrowed[key] for key in narrowed}))
         elif call["function"] == "custom_id":
             record = next(batch_guardrails._iter_records(BytesIO(call["line"].encode())))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/batch_guardrails.py#L277
