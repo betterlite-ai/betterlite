@@ -119,7 +119,7 @@ impl Helper for Op {
         let mut steps = Vec::with_capacity(input.steps.len());
         for step in &input.steps {
             let raised = runtime.block_on(perform(&sink, &board, step))?;
-            steps.push(json!({"raised": raised, "effects": board.take_effects(), "logs": board.take_logs()}));
+            steps.push(board.close_step(raised));
         }
         Ok(json!({"steps": steps}))
     }

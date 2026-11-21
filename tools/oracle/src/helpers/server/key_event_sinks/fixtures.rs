@@ -37,12 +37,11 @@ impl Board {
             .push(effect);
     }
 
-    pub(super) fn take_effects(&self) -> Vec<Value> {
-        mem::take(&mut *self.effects.lock().unwrap_or_else(PoisonError::into_inner))
-    }
-
-    pub(super) fn take_logs(&self) -> Vec<String> {
-        mem::take(&mut *self.logs.lock().unwrap_or_else(PoisonError::into_inner))
+    // a step's answer holds what the board saw since the step before it
+    pub(super) fn close_step(&self, raised: bool) -> Value {
+        let effects = mem::take(&mut *self.effects.lock().unwrap_or_else(PoisonError::into_inner));
+        let logs = mem::take(&mut *self.logs.lock().unwrap_or_else(PoisonError::into_inner));
+        json!({"raised": raised, "effects": effects, "logs": logs})
     }
 }
 
