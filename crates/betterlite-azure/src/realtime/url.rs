@@ -7,13 +7,9 @@ use crate::azure_urls::url_parts::encoded_query;
 const GA_PATH: &str = "/openai/v1/realtime";
 const BETA_PATH: &str = "/openai/realtime";
 const MODEL_KEY: &str = "model";
-const INTENT_KEY: &str = "intent";
+pub(crate) const INTENT_KEY: &str = "intent";
 const API_VERSION_KEY: &str = "api-version";
 const DEPLOYMENT_KEY: &str = "deployment";
-
-pub(crate) fn intent(query_params: Option<&QueryParams>) -> Option<&str> {
-    query_params?.get(INTENT_KEY)?.as_deref()
-}
 
 pub(crate) fn construct_url(
     api_base: &str,
@@ -24,7 +20,9 @@ pub(crate) fn construct_url(
 ) -> Result<String, RealtimeError> {
     let base = api_base.replace("https://", "wss://");
     let beta = uses_beta_protocol(realtime_protocol);
-    let requested_intent = intent(query_params);
+    let requested_intent = query_params
+        .and_then(|params| params.get(INTENT_KEY))
+        .and_then(Option::as_deref);
     let mut pairs: Vec<(String, String)> = Vec::with_capacity(3);
     if beta {
         let version = api_version.ok_or(RealtimeError::MissingApiVersion)?;

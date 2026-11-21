@@ -9,7 +9,7 @@ use super::error::RealtimeError;
 use super::headers::auth_headers;
 use super::protocol::{TRANSCRIPTION_INTENT, uses_beta_protocol};
 use super::ssl::ssl_config;
-use super::url::{construct_url, intent};
+use super::url::{INTENT_KEY, construct_url};
 
 pub struct RealtimeConnectSettings<'settings> {
     pub api_base: Option<&'settings str>,
@@ -49,7 +49,11 @@ pub fn prepare_connection(
         settings.query_params,
     )?;
     let headers = auth_headers(settings.api_key, settings.azure_ad_token)?;
-    let force_transcription_model = intent(settings.query_params)
+    let requested_intent = settings
+        .query_params
+        .and_then(|params| params.get(INTENT_KEY))
+        .and_then(Option::as_deref);
+    let force_transcription_model = requested_intent
         .filter(|value| *value == TRANSCRIPTION_INTENT)
         .map(|_intent| settings.model.to_owned());
     Ok(RealtimeConnectionPlan {

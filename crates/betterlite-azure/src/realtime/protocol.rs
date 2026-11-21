@@ -1,6 +1,6 @@
 use betterlite_openai::realtime::url::QueryParams;
 
-use super::url::intent;
+use super::url::INTENT_KEY;
 
 pub const GA_PROTOCOL: &str = "GA";
 pub const BETA_PROTOCOL: &str = "beta";
@@ -15,7 +15,10 @@ pub fn client_protocol(
     if let Some(protocol) = configured.filter(|value| !value.is_empty()) {
         return protocol.to_owned();
     }
-    if intent(query_params) == Some(TRANSCRIPTION_INTENT) {
+    let requested_intent = query_params
+        .and_then(|params| params.get(INTENT_KEY))
+        .and_then(Option::as_deref);
+    if requested_intent == Some(TRANSCRIPTION_INTENT) {
         return String::from(GA_PROTOCOL);
     }
     String::from(if client_sent_beta {

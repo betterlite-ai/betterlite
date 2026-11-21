@@ -21,17 +21,15 @@ pub struct RealtimeHttpSettings {
 impl RealtimeHttpSettings {
     #[must_use]
     pub fn api_base(&self, api_base: Option<&str>) -> String {
-        if let Some(value) = api_base {
-            return value.to_owned();
-        }
-        if let Some(value) = &self.litellm_api_base {
-            return value.clone();
-        }
-        self.azure_api_base
-            .as_deref()
-            .filter(|value| !value.is_empty())
+        api_base
+            .map(str::to_owned)
+            .or_else(|| self.litellm_api_base.clone())
+            .or_else(|| {
+                self.azure_api_base
+                    .clone()
+                    .filter(|value| !value.is_empty())
+            })
             .unwrap_or_default()
-            .to_owned()
     }
 
     #[must_use]
@@ -49,38 +47,30 @@ impl RealtimeHttpSettings {
     }
 
     #[must_use]
-    pub fn complete_url(&self, api_base: Option<&str>, api_version: Option<&str>) -> String {
+    pub fn complete_url(&self, base: Option<&str>, version: Option<&str>) -> String {
         format!(
             "{}{CLIENT_SECRETS_PATH}?api-version={}",
-            self.session_base(api_base),
-            self.api_version(api_version)
+            self.api_base(base).trim_end_matches('/'),
+            self.api_version(version)
         )
     }
 
     #[must_use]
-    pub fn calls_url(&self, api_base: Option<&str>, api_version: Option<&str>) -> String {
+    pub fn calls_url(&self, base: Option<&str>, version: Option<&str>) -> String {
         format!(
             "{}{CALLS_PATH}?api-version={}",
-            self.session_base(api_base),
-            self.api_version(api_version)
+            self.api_base(base).trim_end_matches('/'),
+            self.api_version(version)
         )
     }
 
     #[must_use]
-    pub fn transcription_session_url(
-        &self,
-        api_base: Option<&str>,
-        api_version: Option<&str>,
-    ) -> String {
+    pub fn transcription_session_url(&self, base: Option<&str>, version: Option<&str>) -> String {
         format!(
             "{}{TRANSCRIPTION_SESSIONS_PATH}?api-version={}",
-            self.session_base(api_base),
-            self.api_version(api_version)
+            self.api_base(base).trim_end_matches('/'),
+            self.api_version(version)
         )
-    }
-
-    fn session_base(&self, api_base: Option<&str>) -> String {
-        self.api_base(api_base).trim_end_matches('/').to_owned()
     }
 
     fn api_version(&self, api_version: Option<&str>) -> String {
@@ -109,5 +99,7 @@ pub fn validate_environment(headers: &Headers, api_key: Option<&SecretString>) -
 
 #[must_use]
 pub fn realtime_calls_headers(ephemeral_key: &str) -> Headers {
-    Headers::from([(String::from(API_KEY_HEADER), ephemeral_key.to_owned())])
+    let mut headers = Headers::new();
+    headers.insert(String::from(API_KEY_HEADER), ephemeral_key.to_owned());
+    headers
 }
