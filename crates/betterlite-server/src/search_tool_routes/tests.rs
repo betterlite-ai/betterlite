@@ -2,6 +2,7 @@
 
 mod support;
 
+use std::mem::take;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
@@ -355,7 +356,8 @@ async fn list_unnamed_database_row_is_hidden_from_a_non_admin() {
         send(&harness, "GET", "/search_tools/list", "", Some(master())).await;
     assert_eq!(names(&admin_text), vec!["", "named"]);
     let who = key_caller(r#"{"token":"k9"}"#);
-    let (_status, user_text) = send(&harness, "GET", "/search_tools/list", "", Some(who)).await;
+    let (_user_status, user_text) =
+        send(&harness, "GET", "/search_tools/list", "", Some(who)).await;
     assert_eq!(names(&user_text), vec!["named"]);
 }
 
@@ -575,7 +577,7 @@ async fn connection_success_calls_asearch_with_the_test_query() {
             r#"{"status":"success","message":"Successfully connected to tavily search provider","test_query":"test","results_count":2}"#
         )
     );
-    let requests = harness.search.requests.lock().unwrap();
+    let requests = take(&mut *harness.search.requests.lock().unwrap());
     let [request] = requests.as_slice() else {
         panic!("one search call, got {}", requests.len());
     };
@@ -610,9 +612,12 @@ async fn connection_without_results_counts_zero() {
     )
     .await;
     assert_eq!(parse(&text)["results_count"], 0_u64);
-    let requests = harness.search.requests.lock().unwrap();
     assert!(
-        requests
+        harness
+            .search
+            .requests
+            .lock()
+            .unwrap()
             .iter()
             .all(|request| request.api_key.is_none() && request.api_base.is_none())
     );
@@ -697,29 +702,12 @@ async fn providers_follow_the_enum_order_and_skip_unusable_ones() {
             )
         })
         .collect();
-    let expected: Vec<(String, String)> = [
-        "perplexity",
-        "parallel_ai",
-        "exa_ai",
-        "google_pse",
-        "dataforseo",
-        "firecrawl",
-        "fastcrw",
-        "searxng",
-        "linkup",
-        "duckduckgo",
-        "searchapi",
-        "serper",
-        "you_com",
-        "apiserpent",
-        "tinyfish",
-        "agentcore",
-        "nimble",
-        "bing_grounding",
-    ]
-    .iter()
-    .map(|name| ((*name).to_owned(), format!("UI {name}")))
-    .collect();
+    // FakeCatalog has no UI name for tavily and fails on brave, so both drop out
+    let expected: Vec<(String, String)> = SEARCH_PROVIDERS
+        .iter()
+        .filter(|name| !matches!(**name, "tavily" | "brave"))
+        .map(|name| ((*name).to_owned(), format!("UI {name}")))
+        .collect();
     assert_eq!(listed, expected);
     let logs = log_text(&captured);
     assert!(

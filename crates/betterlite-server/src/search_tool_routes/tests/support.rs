@@ -5,7 +5,7 @@ use std::future::{Future, ready};
 use std::io::{self, Write};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
@@ -81,13 +81,16 @@ pub(super) struct FakeTable {
 
 impl FakeTable {
     fn open(&self, call: String) -> Result<MutexGuard<'_, Vec<SearchToolRecord>>, TableError> {
-        self.calls.lock().unwrap().push(call);
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(call);
         if self.broken.load(Ordering::SeqCst) {
             return Err(TableError::Publish {
                 message: "the table is down".to_owned(),
             });
         }
-        Ok(self.rows.lock().unwrap())
+        Ok(self.rows.lock().unwrap_or_else(PoisonError::into_inner))
     }
 
     fn insert(&self, data: &SearchToolCreate) -> Result<SearchToolRecord, TableError> {
@@ -117,17 +120,18 @@ impl FakeTable {
         data: &SearchToolUpdate,
     ) -> Result<SearchToolRecord, TableError> {
         let mut rows = self.open(format!("update:{search_tool_id}"))?;
-        let Some(row) = rows
+        let updated = rows
             .iter_mut()
             .find(|row| row.search_tool_id == search_tool_id)
-        else {
-            return Err(TableError::MissingRow);
-        };
-        row.search_tool_name.clone_from(&data.search_tool_name);
-        row.litellm_params = stored(&data.litellm_params);
-        row.search_tool_info = Some(stored(&data.search_tool_info));
-        row.updated_at = data.updated_at;
-        Ok(row.clone())
+            .map(|row| {
+                row.search_tool_name.clone_from(&data.search_tool_name);
+                row.litellm_params = stored(&data.litellm_params);
+                row.search_tool_info = Some(stored(&data.search_tool_info));
+                row.updated_at = data.updated_at;
+                row.clone()
+            });
+        drop(rows);
+        updated.ok_or(TableError::MissingRow)
     }
 
     fn remove(&self, search_tool_id: &str) -> Result<SearchToolRecord, TableError> {
@@ -430,7 +434,10 @@ pub(super) struct Captured(Arc<Mutex<Vec<u8>>>);
 
 impl Write for Captured {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(buf);
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(buf);
         Ok(buf.len())
     }
 

@@ -231,7 +231,9 @@ where
     Reconnect: Send + Sync,
     Refresh: RouterSearchRefresh,
 {
-    caller.ok_or(RouteError::Unauthenticated)?;
+    if caller.is_none() {
+        return Err(RouteError::Unauthenticated);
+    }
     if method == Method::DELETE {
         return commit(&state, Change::Delete(tool_id(target))).await;
     }
@@ -254,7 +256,9 @@ where
     Reconnect: Send + Sync,
     Refresh: RouterSearchRefresh,
 {
-    caller.ok_or(RouteError::Unauthenticated)?;
+    if caller.is_none() {
+        return Err(RouteError::Unauthenticated);
+    }
     let search_tool_id = tool_id(target);
     let database = state.database.as_ref().ok_or(RouteError::NoDatabase)?;
     let (registry, table) = (&database.registry, &database.table);
@@ -268,7 +272,9 @@ async fn connection_test(
     caller: Caller,
     body: Bytes,
 ) -> Result<Json<ConnectionAnswer>, RouteError> {
-    caller.ok_or(RouteError::Unauthenticated)?;
+    if caller.is_none() {
+        return Err(RouteError::Unauthenticated);
+    }
     let request: ConnectionBody = decode_body(&body).map_err(RouteError::Body)?;
     Ok(Json(test_connection(ports.search.as_ref(), request).await))
 }
@@ -277,6 +283,8 @@ async fn provider_list(
     State(ports): State<Arc<SearchToolPorts>>,
     caller: Caller,
 ) -> Result<Json<ProvidersBody>, RouteError> {
-    caller.ok_or(RouteError::Unauthenticated)?;
+    if caller.is_none() {
+        return Err(RouteError::Unauthenticated);
+    }
     Ok(Json(available_providers(ports.catalog.as_ref())))
 }
