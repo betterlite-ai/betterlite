@@ -71,7 +71,11 @@ class Answer(TypedDict):
 
 
 def user_view(row: UserRow) -> UserView:
-    user = None if row["user"] is None else LiteLLM_UserTable.model_validate(row["user"])
+    user = (
+        None
+        if row["user"] is None
+        else LiteLLM_UserTable.model_validate(row["user"])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/user.py#L19
+    )
     models = None if user is None else list(user_models(user))
     return {"models": models, "canonical_user_id": canonical_user_id(row["user_id"], user)}
 
@@ -91,7 +95,7 @@ def denial_views(denials: list[Denial]) -> list[DenialView]:
     for denial in denials:
         try:
             raise_public(grant_denial(denial))
-        except ProxyException as error:
+        except ProxyException as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325
             views.append(
                 {
                     "category": "proxy",
@@ -123,7 +127,7 @@ def team_view(row: TeamRow) -> TeamView:
     team: LiteLLM_TeamTable | None = None
     if row["team"] is not None:
         try:
-            team = LiteLLM_TeamTable.model_validate(row["team"])
+            team = LiteLLM_TeamTable.model_validate(row["team"])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/team.py#L86
         except ValidationError:
             return {"row": "invalid", "model_aliases": None, "grants": None}
     aliases = team_model_aliases(team)
