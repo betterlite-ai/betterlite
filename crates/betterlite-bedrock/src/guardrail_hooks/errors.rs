@@ -39,13 +39,13 @@ pub fn detail_message(detail: &GuardrailValue) -> String {
     let GuardrailValue::Object(fields) = detail else {
         return match detail {
             GuardrailValue::Text(text) => text.clone(),
-            other @ GuardrailValue::Null
-            | other @ GuardrailValue::Boolean(_)
-            | other @ GuardrailValue::SignedInteger(_)
-            | other @ GuardrailValue::UnsignedInteger(_)
-            | other @ GuardrailValue::Decimal(_)
-            | other @ GuardrailValue::Array(_)
-            | other @ GuardrailValue::Object(_) => encode(other),
+            other @ (GuardrailValue::Null
+            | GuardrailValue::Boolean(_)
+            | GuardrailValue::SignedInteger(_)
+            | GuardrailValue::UnsignedInteger(_)
+            | GuardrailValue::Decimal(_)
+            | GuardrailValue::Array(_)
+            | GuardrailValue::Object(_)) => encode(other),
         };
     };
     if let Some(GuardrailValue::Text(text)) = fields.get("error") {
