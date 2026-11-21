@@ -6,7 +6,8 @@ use serde::Deserialize;
 pub(crate) struct Input {
     pub(crate) triggers: Option<Vec<TriggerCall>>,
     pub(crate) repairs: Option<Vec<RepairCall>>,
-    pub(crate) bounds: Option<bool>,
+    #[serde(default)]
+    pub(crate) bounds: bool,
 }
 
 #[derive(Debug, Deserialize)]

@@ -24,7 +24,7 @@ impl Helper for Op {
             let values: Vec<Value> = calls.iter().map(reports::repair_report).collect();
             answer.insert(String::from("repairs"), Value::Array(values));
         }
-        if input.bounds == Some(true) {
+        if input.bounds {
             answer.insert(String::from("bounds"), json!({"max_retry": MAX_ATTEMPTS}));
         }
         Ok(Value::Object(answer))

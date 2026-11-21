@@ -48,7 +48,10 @@ fn the_helper_reports_every_named_section() {
                 {"error": "unknown field: parameter index is not a valid field", "request_drop_params": false, "global_drop_params": false}
             ],
             "repairs": [
-                {"error": "{\"detail\":[{\"loc\":[\"body\",\"temperature\"]}]}", "body": {"model": "deployment", "temperature": 2}}
+                {
+                    "error": "{\"error\":{\"message\":\"{\\\"detail\\\":[{\\\"loc\\\":[\\\"body\\\",\\\"temperature\\\"]}]}\"}}",
+                    "body": {"model": "deployment", "temperature": 2}
+                }
             ],
             "bounds": true
         }"#,
@@ -68,9 +71,11 @@ fn the_helper_reports_every_named_section() {
 
 #[test]
 fn a_section_the_input_does_not_name_is_left_out() {
-    let input: Input = serde_json::from_str(r#"{"bounds": false}"#).unwrap();
-    let answer = Op::run(&input).unwrap();
-    assert_eq!(answer, json!({}));
+    let unnamed: Input = serde_json::from_str("{}").unwrap();
+    assert_eq!(Op::run(&unnamed).unwrap(), json!({}));
+    // an explicit false reads the same as an absent bounds key
+    let declined: Input = serde_json::from_str(r#"{"bounds": false}"#).unwrap();
+    assert_eq!(Op::run(&declined).unwrap(), json!({}));
 }
 
 #[test]
