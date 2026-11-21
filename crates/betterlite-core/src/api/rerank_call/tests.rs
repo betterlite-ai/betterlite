@@ -503,6 +503,7 @@ fn a_declared_authenticating_provider_skips_the_lookup() {
         .expect("the declared provider needs no lookup");
     assert!(identity.requests().is_empty());
     assert_eq!(entry.calls()[0].model, "github_copilot/rerank");
+    assert_eq!(entry.calls()[0].custom_llm_provider, None);
 }
 
 #[test]
