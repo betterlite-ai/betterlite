@@ -257,7 +257,7 @@ async fn oneshot_streaming_metrics_takes_the_end_from_the_clock_when_only_the_st
 }
 
 #[tokio::test]
-async fn oneshot_streaming_metrics_takes_the_start_from_the_end_when_only_the_end_is_given() {
+async fn oneshot_streaming_metrics_takes_the_start_from_the_clock_when_only_the_end_is_given() {
     let store = Arc::new(FakeStore::default());
     let reply = get(
         app(Some(Arc::<FakeStore>::clone(&store)), DEFAULT_THRESHOLD),
@@ -270,7 +270,7 @@ async fn oneshot_streaming_metrics_takes_the_start_from_the_end_when_only_the_en
         store.calls(),
         vec![Call::Daily(StreamingWindow {
             model_group: None,
-            start: instant(2026, 3, 3, 0, 0, 0),
+            start: fixed_now() - TimeDelta::days(7),
             end: instant(2026, 3, 10, 0, 0, 0),
         })]
     );

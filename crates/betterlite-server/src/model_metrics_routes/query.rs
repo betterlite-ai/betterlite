@@ -57,15 +57,16 @@ impl MetricsQuery {
         clock: &dyn GatewayRequestClock,
         lookback_days: u64,
     ) -> Result<Window, ModelMetricsError> {
+        let now = clock.utc_now();
         let end = match &self.end_time {
             Some(text) => parse_datetime(END_TIME_PARAM, text)?,
-            None => clock.utc_now(),
+            None => now,
         };
         let start = match &self.start_time {
             Some(text) => parse_datetime(START_TIME_PARAM, text)?,
-            None => end
+            None => now
                 .checked_sub_days(Days::new(lookback_days))
-                .unwrap_or(end),
+                .unwrap_or(now),
         };
         Ok(Window { start, end })
     }
