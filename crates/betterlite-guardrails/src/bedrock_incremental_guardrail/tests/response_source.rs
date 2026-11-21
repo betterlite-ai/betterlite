@@ -26,6 +26,34 @@ async fn a_response_scan_sends_output_content() {
 }
 
 #[tokio::test]
+async fn a_response_scan_keeps_the_legacy_latest_text_selection() {
+    let mut harness = Harness::new(vec![passing()]);
+    harness.latest_user_only();
+    harness.data.insert(
+        "messages".to_owned(),
+        data_messages(
+            r#"[
+                {"role": "user", "content": "first"},
+                {"role": "user", "content": "second"}
+            ]"#,
+        ),
+    );
+
+    let _applied = harness
+        .apply(
+            inputs(&["first", "second", "extra"]),
+            GuardrailInputType::Response,
+        )
+        .await
+        .expect("the output scan passes");
+
+    assert_eq!(
+        content_texts(&harness.transport.bodies()[0]),
+        strings(&["extra"])
+    );
+}
+
+#[tokio::test]
 async fn a_response_scan_carries_the_request_messages_for_grounding() {
     let mut harness = Harness::new(vec![passing()]);
     harness.data.insert(
