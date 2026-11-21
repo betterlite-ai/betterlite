@@ -1,0 +1,8 @@
+kind: helper
+name: vertex-rag-store-missing-project
+call:
+  b3455:
+    options:
+      vector_store: {}
+env: {}
+compare: {ignore: []}

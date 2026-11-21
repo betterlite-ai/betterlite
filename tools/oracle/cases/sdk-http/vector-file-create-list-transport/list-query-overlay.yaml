@@ -1,0 +1,19 @@
+kind: sdk_http
+name: vector-file-create-list-transport-list-query-overlay
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  vector_file_create_list_transport:
+    operation: list
+    mode: async
+    vector_store_id: vs_a
+    query_params: {after: file_a, limit: 2, order: asc}
+    extra_query: {limit: 4, order: null, trace: x}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [], has_more: false}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization]
+  ignore: []

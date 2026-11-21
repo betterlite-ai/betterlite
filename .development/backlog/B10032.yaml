@@ -1,0 +1,13 @@
+id: B10032
+milestone: R2 bug fixes
+title: Vertex RAG ingestion keeps request ids from changing the Google URL
+status: done
+depends_on: [B3455]
+file: tasks/B10032-vertex-ingestion-url-ids.yaml
+covers: []
+parent: null
+split_from: null
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 2799

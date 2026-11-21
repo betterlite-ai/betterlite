@@ -1,0 +1,21 @@
+kind: sdk_http
+name: vector-file-write-transport-file-write-failure-scope
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  vector_file_write_transport:
+    operation: update
+    mode: sync
+    vector_store_id: vs_a
+    file_id: file_a
+    update_request: {attributes: {keep: "y"}}
+upstream:
+  - status: 403
+    headers: {content-type: text/plain, x-request-id: r}
+    body: denied
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization]
+  ignore:
+    - pointer: /vector_file_write_transport/value/failure/headers/date
+      why: each side answers from its own mock, so a server-stamped date would differ while answering nothing
