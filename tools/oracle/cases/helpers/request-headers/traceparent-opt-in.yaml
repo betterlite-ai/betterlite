@@ -57,31 +57,31 @@ call:
     otel_trace_id:
       - data: {model: gpt-4o, metadata: {}}
         slot: metadata
-        span: {trace_id: 1311768467294899695, span_id: 255}
+        span: [1311768467294899695, 255]
       - data: {model: gpt-4o, litellm_metadata: {}, metadata: {}}
         slot: litellm_metadata
-        span: {trace_id: 42, span_id: 7}
+        span: [42, 7]
       - data: {model: gpt-4o, litellm_trace_id: caller-trace, metadata: {}}
         slot: metadata
-        span: {trace_id: 42, span_id: 7}
+        span: [42, 7]
       - data: {model: gpt-4o, litellm_metadata: {}, metadata: {trace_id: requester-trace}}
         slot: litellm_metadata
-        span: {trace_id: 42, span_id: 7}
+        span: [42, 7]
       - data: {model: gpt-4o, metadata: {trace_id: null}}
         slot: metadata
-        span: {trace_id: 42, span_id: 7}
+        span: [42, 7]
       - data: {model: gpt-4o, metadata: {}}
         slot: metadata
-        span: {trace_id: 42, span_id: 0}
+        span: [42, 0]
       - data: {model: gpt-4o, metadata: {}}
         slot: metadata
-        span: {trace_id: 0, span_id: 7}
+        span: [0, 7]
       - data: {model: gpt-4o, metadata: {}}
         slot: metadata
         span: null
       - data: {model: gpt-4o}
         slot: metadata
-        span: {trace_id: 42, span_id: 7}
+        span: [42, 7]
     traceparent:
       - data: {model: gpt-4o}
         headers: [[traceparent, 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01]]

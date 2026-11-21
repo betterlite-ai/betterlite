@@ -62,16 +62,11 @@ pub(crate) struct MetadataCall {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct Span {
-    pub(super) trace_id: u64,
-    pub(super) span_id: u64,
-}
-
-#[derive(Debug, Deserialize)]
 pub(crate) struct OtelCall {
     pub(super) data: RequestData,
     pub(super) slot: String,
-    pub(super) span: Option<Span>,
+    // the parent span's trace id and span id
+    pub(super) span: Option<(u64, u64)>,
 }
 
 #[derive(Debug, Deserialize)]

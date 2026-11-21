@@ -51,6 +51,15 @@ impl Helper for Op {
     }
 }
 
+fn configured<F>(change: F) -> Settings
+where
+    F: FnOnce(&mut Settings),
+{
+    let mut settings = Settings::default();
+    change(&mut settings);
+    settings
+}
+
 fn plain(headers: &Pairs) -> ForwardedHeaders {
     headers
         .iter()
@@ -86,15 +95,12 @@ fn clean_value(call: &CleanCall) -> Value {
 }
 
 fn backend_value(call: &BackendCall) -> Value {
-    let settings = Settings {
-        user_header_mappings: Vec::new(),
-        user_header_name: None,
-        add_user_information_to_llm_headers: call.add_user_information,
-        forward_openai_org_id: call.general_settings.forward_openai_org_id,
-        model_group_forwarding: None,
-        forward_client_headers_to_llm_api: call.general_settings.forward_client_headers_to_llm_api,
-        forward_traceparent_to_llm_provider: false,
-    };
+    let settings = configured(|chosen| {
+        chosen.add_user_information_to_llm_headers = call.add_user_information;
+        chosen.forward_openai_org_id = call.general_settings.forward_openai_org_id;
+        chosen.forward_client_headers_to_llm_api =
+            call.general_settings.forward_client_headers_to_llm_api;
+    });
     match backend_call_arguments(
         &plain(&call.headers),
         &call.request_data,
@@ -106,52 +112,32 @@ fn backend_value(call: &BackendCall) -> Value {
     }
 }
 
+// LitellmDataForBackendLLMCall holds only the keys LiteLLM set
 fn backend_json(arguments: &BackendCallArguments) -> Value {
-    let mut fields = Map::new();
-    if let Some(headers) = &arguments.headers {
-        fields.insert("headers".to_owned(), exposed(headers));
-    }
-    let optional = [
-        (
-            "organization",
-            arguments.organization.as_ref().map(|org| json!(org)),
-        ),
-        ("timeout", arguments.timeout.map(|seconds| json!(seconds))),
-        (
-            "stream_timeout",
-            arguments.stream_timeout.map(|seconds| json!(seconds)),
-        ),
-        (
-            "client_side_timeout",
-            arguments.client_side_timeout.then(|| json!(true)),
-        ),
-        (
-            "num_retries",
-            arguments.num_retries.map(|retries| json!(retries)),
-        ),
-        (
-            "keepalive_seconds",
-            arguments.keepalive_seconds.map(|seconds| json!(seconds)),
-        ),
-    ];
-    for (name, value) in optional {
-        if let Some(present) = value {
-            fields.insert(name.to_owned(), present);
-        }
-    }
-    Value::Object(fields)
+    let fields = json!({
+        "headers": arguments.headers.as_ref().map(exposed),
+        "organization": arguments.organization,
+        "timeout": arguments.timeout,
+        "stream_timeout": arguments.stream_timeout,
+        "client_side_timeout": arguments.client_side_timeout.then_some(true),
+        "num_retries": arguments.num_retries,
+        "keepalive_seconds": arguments.keepalive_seconds,
+    });
+    let Value::Object(set) = fields else {
+        return fields;
+    };
+    Value::Object(
+        set.into_iter()
+            .filter(|(_name, value)| !value.is_null())
+            .collect(),
+    )
 }
 
 fn model_group_value(call: &ModelGroupCall) -> Value {
-    let settings = Settings {
-        user_header_mappings: Vec::new(),
-        user_header_name: None,
-        add_user_information_to_llm_headers: call.add_user_information,
-        forward_openai_org_id: false,
-        model_group_forwarding: call.models.clone(),
-        forward_client_headers_to_llm_api: false,
-        forward_traceparent_to_llm_provider: false,
-    };
+    let settings = configured(|chosen| {
+        chosen.add_user_information_to_llm_headers = call.add_user_information;
+        chosen.model_group_forwarding.clone_from(&call.models);
+    });
     let inference = CatalogProviderInference::default();
     let aliases = BTreeMap::new();
     let model_access = ModelAccessContext {
@@ -193,9 +179,9 @@ fn metadata_value(call: &MetadataCall) -> Value {
 
 fn otel_value(call: &OtelCall) -> Value {
     let mut data = call.data.clone();
-    let span = call.span.as_ref().map(|span| SpanContext {
-        trace_id: u128::from(span.trace_id),
-        is_valid: span.trace_id != 0 && span.span_id != 0,
+    let span = call.span.map(|(trace_id, span_id)| SpanContext {
+        trace_id: u128::from(trace_id),
+        is_valid: trace_id != 0 && span_id != 0,
     });
     add_otel_trace_id(&mut data, slot(&call.slot), span);
     json!(data)
@@ -209,19 +195,11 @@ fn traceparent_value(call: &TraceparentCall) -> Value {
 }
 
 fn user_value(call: &UserCall) -> Value {
-    let settings = Settings {
-        user_header_mappings: call
-            .general_settings
-            .user_header_mappings
-            .clone()
-            .unwrap_or_default(),
-        user_header_name: call.general_settings.user_header_name.clone(),
-        add_user_information_to_llm_headers: false,
-        forward_openai_org_id: false,
-        model_group_forwarding: None,
-        forward_client_headers_to_llm_api: false,
-        forward_traceparent_to_llm_provider: false,
-    };
+    let given = &call.general_settings;
+    let settings = configured(|chosen| {
+        chosen.user_header_mappings = given.user_header_mappings.clone().unwrap_or_default();
+        chosen.user_header_name.clone_from(&given.user_header_name);
+    });
     let headers = plain(&call.headers);
     let user_id = internal_user_from_mapping(&headers, &settings.user_header_mappings)
         .or_else(|| call.principal_user_id.clone());
