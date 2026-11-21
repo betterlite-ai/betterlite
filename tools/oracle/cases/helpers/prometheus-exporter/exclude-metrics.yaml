@@ -1,0 +1,12 @@
+kind: helper
+name: prometheus-exporter-exclude-metrics
+call:
+  b3875:
+    prometheus_metrics_config: []
+    prometheus_exclude_metrics: [litellm_spend_metric, litellm_guardrail_errors_total]
+    prometheus_exclude_labels: []
+    prometheus_latency_buckets: null
+    prometheus_emit_input_sequence_length_label: false
+    caller_identity: api_key_alias
+env: {}
+compare: {ignore: []}

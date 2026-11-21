@@ -1,0 +1,36 @@
+kind: helper
+name: prometheus-usage-provider-cache-tokens
+call:
+  b3877:
+    function: provider_cache_tokens
+    provider_usage: {cache_read_input_tokens: 5, cache_creation_input_tokens: 7}
+calls:
+  - b3877:
+      function: provider_cache_tokens
+      provider_usage: {prompt_tokens_details: {cached_tokens: 4, cache_write_tokens: 6}}
+  - b3877:
+      function: provider_cache_tokens
+      provider_usage: {cache_read_input_tokens: null, cache_creation_input_tokens: null, prompt_tokens_details: {cached_tokens: 4, cache_creation_tokens: 9}}
+  - b3877:
+      function: provider_cache_tokens
+      provider_usage: {}
+  - b3877:
+      function: provider_cache_tokens
+      provider_usage: {cache_read_input_tokens: 0, prompt_tokens_details: {cached_tokens: 4}}
+  - b3877:
+      function: provider_cache_tokens
+      provider_usage: {cache_creation_input_tokens: 0}
+  - b3877:
+      function: provider_cache_tokens
+      provider_usage: {prompt_tokens_details: 7}
+  - b3877:
+      function: provider_cache_tokens
+      provider_usage: {cache_read_input_tokens: -3, cache_creation_input_tokens: 2}
+  - b3877:
+      function: provider_cache_tokens
+      provider_usage: {prompt_tokens_details: {cache_write_tokens: true, cache_creation_tokens: 3}}
+  - b3877:
+      function: provider_cache_tokens
+      provider_usage: {prompt_tokens_details: {cache_write_tokens: 5.0, cache_creation_tokens: 3}}
+env: {}
+compare: {ignore: []}

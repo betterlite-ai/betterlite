@@ -1,4 +1,4 @@
-use std::net::TcpListener;
+use betterlite_test_ports::refused_port::RefusedPort;
 
 use rstest::rstest;
 use rust_decimal::Decimal;
@@ -217,9 +217,8 @@ fn generate_passes_a_401_through_without_an_http_line() {
 
 #[test]
 fn generate_passes_a_transport_error_through() {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let base_url = format!("http://{}", listener.local_addr().unwrap());
-    drop(listener);
+    let refused = RefusedPort::bind().unwrap();
+    let base_url = format!("http://{}", refused.address);
     let fixture = Fixture::at(&base_url, None);
 
     let (result, stdout, stderr) = support::run(KeysCommand::Generate(generate()), &fixture);
