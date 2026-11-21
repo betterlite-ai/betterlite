@@ -160,7 +160,7 @@ impl SessionIterationCache for FakeCache {
         }
         let mut state = self.state.lock().unwrap();
         let current = state.redis.get(key).copied().unwrap_or(0);
-        let next = current.checked_add(1).unwrap_or(i64::MAX);
+        let next = current.saturating_add(1);
         state.redis.insert(key.to_owned(), next);
         if next == 1 {
             state.redis_ttls.insert(key.to_owned(), ttl);

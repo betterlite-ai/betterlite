@@ -32,7 +32,7 @@ where
     C: SessionIterationCache,
 {
     let current = handler.cache.memory_count(key).await.unwrap_or(0);
-    let next = current.checked_add(1).unwrap_or(i64::MAX);
+    let next = current.saturating_add(1);
     handler.cache.memory_set_count(key, next, handler.ttl).await;
     next
 }
