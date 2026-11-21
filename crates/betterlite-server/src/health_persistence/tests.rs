@@ -126,8 +126,8 @@ fn aggregate_counts_a_shared_param_once_per_model() {
     assert_eq!(
         results,
         vec![
-            result_of("model-a", Some("dep-a"), (2, 0)),
-            result_of("model-b", None, (2, 0)),
+            result_of("model-a", Some("dep-a"), (2_i32, 0_i32)),
+            result_of("model-b", None, (2_i32, 0_i32)),
         ]
     );
 }
@@ -238,15 +238,21 @@ fn aggregate_writes_a_non_text_error_as_json() {
 
 #[test]
 fn decision_status_is_healthy_with_any_healthy_endpoint() {
-    assert_eq!(new_status(&result_of("model-a", None, (1, 3))), "healthy");
-    assert_eq!(new_status(&result_of("model-a", None, (0, 3))), "unhealthy");
+    assert_eq!(
+        new_status(&result_of("model-a", None, (1_i32, 3_i32))),
+        "healthy"
+    );
+    assert_eq!(
+        new_status(&result_of("model-a", None, (0_i32, 3_i32))),
+        "unhealthy"
+    );
 }
 
 #[test]
 fn decision_returns_true_without_a_previous_row() {
     let latest = latest_map(Vec::new());
     assert!(should_persist(
-        &result_of("model-a", Some("dep-a"), (1, 0)),
+        &result_of("model-a", Some("dep-a"), (1_i32, 0_i32)),
         &latest,
         at(1000)
     ));
@@ -261,7 +267,7 @@ fn decision_returns_true_when_the_status_changed() {
         at(1000),
     )]);
     assert!(should_persist(
-        &result_of("model-a", Some("dep-a"), (1, 0)),
+        &result_of("model-a", Some("dep-a"), (1_i32, 0_i32)),
         &latest,
         at(1001)
     ));
@@ -276,7 +282,7 @@ fn decision_returns_true_at_exactly_one_hour() {
         at(1000),
     )]);
     assert!(should_persist(
-        &result_of("model-a", Some("dep-a"), (1, 0)),
+        &result_of("model-a", Some("dep-a"), (1_i32, 0_i32)),
         &latest,
         at(4600)
     ));
@@ -292,7 +298,7 @@ fn decision_returns_false_just_under_one_hour() {
         ago(now, 3599),
     )]);
     assert!(!should_persist(
-        &result_of("model-a", Some("dep-a"), (1, 0)),
+        &result_of("model-a", Some("dep-a"), (1_i32, 0_i32)),
         &latest,
         now
     ));
@@ -307,7 +313,7 @@ fn decision_prefers_the_model_id_key_when_it_has_text() {
         latest_row("model-a", None, "healthy", ago(now, 1)),
     ]);
     assert!(should_persist(
-        &result_of("model-a", Some("dep-a"), (1, 0)),
+        &result_of("model-a", Some("dep-a"), (1_i32, 0_i32)),
         &latest,
         now
     ));
@@ -318,12 +324,12 @@ fn decision_falls_back_to_the_name_for_an_empty_or_missing_id() {
     let now = at(1000);
     let latest = latest_map(vec![latest_row("model-a", None, "healthy", ago(now, 1))]);
     assert!(!should_persist(
-        &result_of("model-a", Some(""), (1, 0)),
+        &result_of("model-a", Some(""), (1_i32, 0_i32)),
         &latest,
         now
     ));
     assert!(!should_persist(
-        &result_of("model-a", None, (1, 0)),
+        &result_of("model-a", None, (1_i32, 0_i32)),
         &latest,
         now
     ));
@@ -335,7 +341,7 @@ fn decision_falls_back_to_the_name_for_an_empty_or_missing_id() {
         ago(now, 1),
     )]);
     assert!(!should_persist(
-        &result_of("model-a", Some(""), (1, 0)),
+        &result_of("model-a", Some(""), (1_i32, 0_i32)),
         &empty_id,
         now
     ));
@@ -352,8 +358,8 @@ async fn changed_writes_only_the_results_that_should_persist() {
     )]);
     let store = FakeStore::new(Vec::new());
     let results = vec![
-        result_of("model-a", Some("dep-a"), (1, 0)),
-        result_of("model-b", Some("dep-b"), (1, 0)),
+        result_of("model-a", Some("dep-a"), (1_i32, 0_i32)),
+        result_of("model-b", Some("dep-b"), (1_i32, 0_i32)),
     ];
     let request = SaveRequest {
         start_time: at(999),
@@ -370,8 +376,8 @@ async fn changed_writes_only_the_results_that_should_persist() {
 async fn changed_runs_every_write_together() {
     let store = FakeStore::new(Vec::new());
     let results = vec![
-        result_of("model-a", None, (1, 0)),
-        result_of("model-b", None, (1, 0)),
+        result_of("model-a", None, (1_i32, 0_i32)),
+        result_of("model-b", None, (1_i32, 0_i32)),
     ];
     let request = SaveRequest {
         start_time: at(999),
@@ -396,9 +402,9 @@ async fn changed_reads_the_clock_before_and_after_each_pick() {
     )]);
     let store = FakeStore::new(Vec::new());
     let results = vec![
-        result_of("model-a", Some("dep-a"), (1, 0)),
-        result_of("model-b", Some("dep-b"), (1, 0)),
-        result_of("model-c", None, (0, 1)),
+        result_of("model-a", Some("dep-a"), (1_i32, 0_i32)),
+        result_of("model-b", Some("dep-b"), (1_i32, 0_i32)),
+        result_of("model-c", None, (0_i32, 1_i32)),
     ];
     let request = SaveRequest {
         start_time: at(999),
@@ -419,8 +425,8 @@ async fn changed_reads_the_clock_before_and_after_each_pick() {
 async fn changed_returns_false_when_one_write_fails() {
     let store = FakeStore::new(Vec::new()).failing_for(&["bad-model"]);
     let results = vec![
-        result_of("bad-model", None, (1, 0)),
-        result_of("good-model", None, (1, 0)),
+        result_of("bad-model", None, (1_i32, 0_i32)),
+        result_of("good-model", None, (1_i32, 0_i32)),
     ];
     let request = SaveRequest {
         start_time: at(999),
@@ -455,7 +461,7 @@ async fn changed_copies_the_request_into_every_write() {
     let store = FakeStore::new(Vec::new());
     let results = vec![AggregatedHealthResult {
         error_message: Some(String::from("boom")),
-        ..result_of("model-a", Some("dep-a"), (2, 1))
+        ..result_of("model-a", Some("dep-a"), (2_i32, 1_i32))
     }];
     let latest = latest_map(Vec::new());
     let request = SaveRequest {

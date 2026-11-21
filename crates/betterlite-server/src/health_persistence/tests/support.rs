@@ -224,7 +224,7 @@ impl FakeStore {
             .fetch_add(1, Ordering::SeqCst)
             .saturating_add(1);
         self.max_in_flight.fetch_max(current, Ordering::SeqCst);
-        let failed = self.fail_for.iter().any(|name| *name == new.model_name);
+        let failed = self.fail_for.contains(&new.model_name);
         let stored = stored_row(new);
         self.saved
             .lock()

@@ -36,7 +36,7 @@ impl Helper for Op {
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]
-enum Input {
+pub(crate) enum Input {
     ModelParamIndex {
         deployments: Vec<DeploymentInput>,
     },
@@ -59,7 +59,7 @@ enum Input {
 }
 
 #[derive(Debug, Deserialize)]
-struct DeploymentInput {
+pub(crate) struct DeploymentInput {
     #[serde(default)]
     model_name: Option<String>,
     #[serde(default)]
@@ -69,7 +69,7 @@ struct DeploymentInput {
 }
 
 #[derive(Debug, Deserialize)]
-struct ResultInput {
+pub(crate) struct ResultInput {
     model_name: String,
     #[serde(default)]
     model_id: Option<String>,
@@ -82,7 +82,7 @@ struct ResultInput {
 }
 
 #[derive(Debug, Deserialize)]
-struct RowInput {
+pub(crate) struct RowInput {
     #[serde(default)]
     health_check_id: String,
     model_name: String,
@@ -94,7 +94,7 @@ struct RowInput {
 
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
-enum TimeInput {
+pub(crate) enum TimeInput {
     Null,
     Number(f64),
     Text(String),
