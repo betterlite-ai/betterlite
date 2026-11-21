@@ -15,7 +15,7 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_logging::logging_pre_post::args::RawBody;
-use betterlite_models::decisions::{self, Json};
+use betterlite_models::decisions::Json;
 use betterlite_prompts::arguments::json::Object;
 use futures_util::StreamExt as _;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -68,16 +68,10 @@ fn first_body(source: &ScriptedSource) -> Map<String, Value> {
     request_body(&requests[0]).clone()
 }
 
-fn text_of(value: Option<&decisions::Json>) -> Option<&str> {
+fn text_of(value: Option<&Json>) -> Option<&str> {
     match value {
-        Some(decisions::Json::Text(text)) => Some(text),
-        Some(
-            decisions::Json::Null
-            | decisions::Json::Bool(_)
-            | decisions::Json::Number(_)
-            | decisions::Json::List(_)
-            | decisions::Json::Object(_),
-        )
+        Some(Json::Text(text)) => Some(text),
+        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
         | None => None,
     }
 }
@@ -121,18 +115,15 @@ pub(super) fn chat_deployment_request() {
     );
     let headers = pre.additional_args.headers.as_ref().expect("headers");
     assert_eq!(text_of(headers.get("api_key")), Some("key"));
-    assert_eq!(headers.get("azure_ad_token"), Some(&decisions::Json::Null));
+    assert_eq!(headers.get("azure_ad_token"), Some(&Json::Null));
     let Some(RawBody::Object(logged)) = &pre.additional_args.complete_input_dict else {
         panic!("the pre call logs the request body");
     };
-    assert_eq!(
-        logged.get("model"),
-        Some(&decisions::Json::Text(MODEL.to_owned()))
-    );
+    assert_eq!(logged.get("model"), Some(&Json::Text(MODEL.to_owned())));
     assert_eq!(pre.additional_args.openai_sdk, Some(true));
     assert_eq!(
         pre.additional_args.passthrough.get("api_version"),
-        Some(&decisions::Json::Text("2024-02-01".to_owned()))
+        Some(&Json::Text("2024-02-01".to_owned()))
     );
 
     let post = &recorder.post[0];
@@ -220,7 +211,7 @@ pub(super) fn cross_deployment_auth() {
         .headers
         .as_ref()
         .expect("headers");
-    assert_eq!(headers.get("api_key"), Some(&decisions::Json::Null));
+    assert_eq!(headers.get("api_key"), Some(&Json::Null));
     assert_eq!(text_of(headers.get("azure_ad_token")), Some("ad-token"));
     assert_eq!(first_body(&source).get("model"), Some(&json!(MODEL)));
 }
@@ -474,9 +465,7 @@ pub(super) fn async_timeout_diagnostic() {
     assert_eq!(recorder.post.len(), 1);
     assert_eq!(
         recorder.post[0].original_response,
-        decisions::Json::Text(
-            "Request timed out. - timeout value=30, time taken=0.00 seconds".to_owned()
-        )
+        Json::Text("Request timed out. - timeout value=30, time taken=0.00 seconds".to_owned())
     );
     assert!(source.gets()[0].is_async);
 }
@@ -490,7 +479,7 @@ pub(super) fn string_reply_500() {
             body: "a plain string".to_owned(),
         },
     );
-    let mut harness = Harness::default();
+    let harness = Harness::default();
     let mut recorder = Recorder::default();
     let error = block_on(async { error_of(harness.run(&source, &mut recorder).await) });
     assert_eq!(status_of(&error), Some(500));
@@ -526,7 +515,7 @@ pub(super) fn string_reply_500() {
 pub(super) fn client_type_validation() {
     let async_client =
         ScriptedSource::new(ClientKind::AsyncAzureOpenAi, Some("key"), Answer::reply());
-    let mut sync_call = Harness::default();
+    let sync_call = Harness::default();
     let mut recorder = Recorder::default();
     let error = block_on(async { error_of(sync_call.run(&async_client, &mut recorder).await) });
     assert_eq!(status_of(&error), Some(500));
@@ -553,7 +542,7 @@ pub(super) fn error_status_passthrough() {
         body: "{\"error\":{\"message\":\"rate limited\",\"code\":\"429\"}}".to_owned(),
     };
     let source = ScriptedSource::new(ClientKind::AzureOpenAi, Some("key"), answer.clone());
-    let mut harness = Harness::default();
+    let harness = Harness::default();
     let mut recorder = Recorder::default();
     let error = block_on(async { error_of(harness.run(&source, &mut recorder).await) });
     assert_eq!(status_of(&error), Some(429));
@@ -567,8 +556,8 @@ pub(super) fn error_status_passthrough() {
         Some(&"7".to_owned())
     );
     assert_eq!(
-        body,
-        &Some(decisions_of(
+        body.as_deref(),
+        Some(&decisions_of(
             json!({"error": {"message": "rate limited", "code": "429"}})
         ))
     );
@@ -586,7 +575,7 @@ pub(super) fn error_status_passthrough() {
     assert_eq!(recorder.post.len(), 1);
     assert_eq!(
         recorder.post[0].original_response,
-        decisions::Json::Text("rate limited".to_owned())
+        Json::Text("rate limited".to_owned())
     );
 }
 
@@ -601,7 +590,7 @@ pub(super) fn async_cancellation_passthrough() {
     assert_eq!(recorder.post.len(), 1);
     assert_eq!(
         recorder.post[0].original_response,
-        decisions::Json::Text(String::new())
+        Json::Text(String::new())
     );
     assert_eq!(source.requests().len(), 1);
 }
@@ -685,7 +674,7 @@ pub(super) fn o_series_client_delegate() {
     let reply = block_on(async { o_series::completion(&source, &call, &delegate).await });
     match reply {
         Ok(text) => assert_eq!(text, "delegated"),
-        Err(OSeriesError::Client(_error)) | Err(OSeriesError::Delegate(_error)) => {
+        Err(OSeriesError::Client(_) | OSeriesError::Delegate(_)) => {
             panic!("the delegate returns")
         }
     }
@@ -770,7 +759,7 @@ pub(super) fn raw_headers_projection() {
 
     // the sync path keeps only the derived additional headers
     let sync_source = ScriptedSource::new(ClientKind::AzureOpenAi, Some("key"), header_answer());
-    let mut sync_call = Harness::default();
+    let sync_call = Harness::default();
     let mut recorder = Recorder::default();
     let reply = block_on(async {
         buffered(

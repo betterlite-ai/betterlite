@@ -45,14 +45,17 @@ where
     );
     let cloudflare = call.api_base.contains(request::CLOUDFLARE_MARKER);
     let supplied = supplied_client(source, call, model, &max_retries, cloudflare)?;
-    let data = request::build_data(
-        model,
-        messages,
-        call.optional_params,
-        call.base_model,
-        cloudflare,
-        call.chat.openai_system_messages_first,
-    )?;
+    let data = if cloudflare {
+        request::cloudflare_data(messages, call.optional_params)?
+    } else {
+        request::build_data(
+            model,
+            messages,
+            call.optional_params,
+            call.base_model,
+            call.chat.openai_system_messages_first,
+        )?
+    };
     let sent = SentChat {
         model: model.to_owned(),
         messages: records::logged(&request::message_list(messages)?),
@@ -65,7 +68,6 @@ where
     dispatch(source, &sent, call, runtime, hooks).await
 }
 
-// async streams on a truthy stream value, the sync branch only on a literal true
 async fn dispatch<Source>(
     source: &Source,
     sent: &SentChat<Source::Client>,
@@ -76,59 +78,22 @@ async fn dispatch<Source>(
 where
     Source: ClientSource,
 {
-    let truthy_stream = call
-        .optional_params
-        .get(request::STREAM_KEY)
-        .is_some_and(Json::is_truthy);
-    if call.acompletion && truthy_stream {
-        let stream = streaming::stream(
-            source,
-            sent,
-            call,
-            runtime,
-            hooks,
-            streaming::Direction::Async,
-        )
-        .await?;
+    if stream_requested(call) {
+        let stream = streaming::stream(source, sent, call, runtime, hooks).await?;
         return Ok(ChatOutcome::Stream(stream));
     }
-    if call.acompletion {
-        let reply = buffered::call(
-            source,
-            sent,
-            call,
-            runtime,
-            hooks,
-            streaming::Direction::Async,
-        )
-        .await?;
-        return Ok(ChatOutcome::Buffered(Box::new(reply)));
-    }
-    if matches!(
-        call.optional_params.get(request::STREAM_KEY),
-        Some(Json::Bool(true))
-    ) {
-        let stream = streaming::stream(
-            source,
-            sent,
-            call,
-            runtime,
-            hooks,
-            streaming::Direction::Sync,
-        )
-        .await?;
-        return Ok(ChatOutcome::Stream(stream));
-    }
-    let reply = buffered::call(
-        source,
-        sent,
-        call,
-        runtime,
-        hooks,
-        streaming::Direction::Sync,
-    )
-    .await?;
+    let reply = buffered::call(source, sent, call, runtime, hooks).await?;
     Ok(ChatOutcome::Buffered(Box::new(reply)))
+}
+
+// async streams on a truthy stream value, the sync branch only on a literal true
+fn stream_requested<Client>(call: &ChatCall<'_, Client>) -> bool {
+    let requested = call.optional_params.get(request::STREAM_KEY);
+    if call.acompletion {
+        requested.is_some_and(Json::is_truthy)
+    } else {
+        matches!(requested, Some(Json::Bool(true)))
+    }
 }
 
 // the cloudflare branch swaps the caller's client for one whose base url carries the deployment

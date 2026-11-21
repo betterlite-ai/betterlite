@@ -9,6 +9,3 @@ pub mod request;
 pub mod response;
 
 mod tests;
-
-// the token a caller cancels its pending async call with
-pub use tokio_util::sync::CancellationToken;

@@ -21,7 +21,7 @@ pub enum AzureChatError {
         status: u16,
         message: String,
         headers: Option<SecretHeaders>,
-        body: Option<Json>,
+        body: Option<Box<Json>>,
     },
     #[error("the request was cancelled")]
     Cancelled,
@@ -46,13 +46,17 @@ impl AzureChatError {
                 status: status.status,
                 message: status.message.clone(),
                 headers: Some(SecretHeaders::from_response(&status.headers)),
-                body: Some(serde_json::from_value(status.body.clone()).unwrap_or(Json::Null)),
+                body: Some(Box::new(
+                    serde_json::from_value(status.body.clone()).unwrap_or(Json::Null),
+                )),
             },
             RawChatError::BadRequest(reply) => Self::Azure {
                 status: 400,
                 message: reply.message.clone(),
                 headers: Some(SecretHeaders::from_response(&reply.headers)),
-                body: Some(serde_json::from_value(reply.body.clone()).unwrap_or(Json::Null)),
+                body: Some(Box::new(
+                    serde_json::from_value(reply.body.clone()).unwrap_or(Json::Null),
+                )),
             },
             RawChatError::Timeout { .. }
             | RawChatError::Other { .. }
@@ -81,7 +85,7 @@ impl AzureChatError {
             status,
             message: failure.message().to_owned(),
             headers: failure.headers.clone(),
-            body: failure.body.clone(),
+            body: failure.body.clone().map(Box::new),
         }
     }
 

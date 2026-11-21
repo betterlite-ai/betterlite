@@ -79,9 +79,7 @@ fn extra_args(
 }
 
 fn messages_input(data: &Object) -> decisions::Json {
-    data.get("messages")
-        .cloned()
-        .map_or(decisions::Json::Null, |messages| logged(messages))
+    data.get("messages").map_or(decisions::Json::Null, logged)
 }
 
 // pre_call(input=messages, api_key=api_key, additional_args={"headers", "api_version", "api_base", "complete_input_dict", "openai_sdk"})

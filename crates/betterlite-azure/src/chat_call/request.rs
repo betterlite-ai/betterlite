@@ -61,30 +61,27 @@ pub fn inject_headers(optional: &mut Object, headers: &SecretHeaders) {
     optional.insert(EXTRA_HEADERS_KEY.to_owned(), Json::Object(fields));
 }
 
-// The request body: the Cloudflare branch sends the deployment in the url, so its model is null
+// The request body through B532's GPT-5 transform or B684's base transform
 pub fn build_data(
     model: &str,
     messages: &[Message],
     optional: &Object,
     base_model: Option<&str>,
-    cloudflare: bool,
     openai_system_messages_first: bool,
 ) -> Result<Object, AzureChatError> {
-    if cloudflare {
-        return cloudflare_data(messages, optional);
-    }
     let selected = base_model.unwrap_or(model);
     let transformed = if azure_model_family(selected) == ModelFamily::GptReasoning {
         gpt5_transform(model, messages, optional, openai_system_messages_first)
+            .map_err(|error| (error.status_code(), error.to_string()))
     } else {
         base_transform(model, messages, optional, openai_system_messages_first)
+            .map_err(|error| (error.status_code(), error.to_string()))
     };
-    transformed.map_err(|error| {
-        AzureChatError::azure(error.status_code().unwrap_or(500), error.to_string())
-    })
+    transformed.map_err(|(status, message)| AzureChatError::azure(status.unwrap_or(500), message))
 }
 
-fn cloudflare_data(messages: &[Message], optional: &Object) -> Result<Object, AzureChatError> {
+// The Cloudflare branch sends the deployment in the url, so its body's model is null
+pub fn cloudflare_data(messages: &[Message], optional: &Object) -> Result<Object, AzureChatError> {
     let mut data = Object::new();
     data.insert("model".to_owned(), Json::Null);
     data.insert("messages".to_owned(), message_list(messages)?);

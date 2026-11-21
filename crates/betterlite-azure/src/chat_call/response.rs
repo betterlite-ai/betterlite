@@ -3,7 +3,6 @@ use betterlite_openai::chat::response::ChatResponse;
 use betterlite_openai::compatible_wire::{ReplyOptions, decode_compatible_chat_reply};
 use betterlite_openai::text_completion_transport::logging::SecretHeaders;
 use indexmap::IndexMap;
-use uuid::Uuid;
 
 use super::error::AzureChatError;
 
@@ -55,21 +54,12 @@ pub fn raw_headers(headers: &SecretHeaders) -> IndexMap<String, String> {
 pub fn project(
     body: &Json,
     headers: &SecretHeaders,
-    json_mode: bool,
+    options: &ReplyOptions<'_>,
     with_raw_headers: bool,
-    identifier: fn() -> Uuid,
-    clock: fn() -> i64,
 ) -> Result<ChatReply, AzureChatError> {
     let bytes =
         serde_json::to_vec(body).map_err(|error| AzureChatError::azure(500, error.to_string()))?;
-    let options = ReplyOptions {
-        json_mode,
-        provider: None,
-        base_model: None,
-        identifier,
-        clock,
-    };
-    let decoded = decode_compatible_chat_reply(&bytes, &options)
+    let decoded = decode_compatible_chat_reply(&bytes, options)
         .map_err(|error| AzureChatError::azure(500, error.to_string()))?;
     let raw = raw_headers(headers);
     let mut hidden_params = Extra::new();

@@ -2,13 +2,15 @@
     test,
     expect(
         clippy::disallowed_types,
+        clippy::struct_excessive_bools,
         clippy::too_many_lines,
-        reason = "B505's raw chat transports and the scripted replies they return speak serde_json values, and one harness assembles a whole completion call"
+        reason = "B505's raw chat transports and the scripted replies they return speak serde_json values, the harness carries one flag per independent call shape, and one harness assembles a whole completion call"
     )
 )]
 
 use std::collections::BTreeMap;
 use std::future::Future;
+use std::future::pending;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -36,6 +38,7 @@ use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Map, Value, json};
 use tokio::runtime::Builder;
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::azure_default_chain::grant::{ClientSecretRecord, UsernamePasswordRecord};
@@ -43,7 +46,6 @@ use crate::azure_stream_errors::error::Raised;
 use crate::azure_stream_errors::records::{
     ChatStreamTransport, GetStreamClient, PreCallRecord, StreamAnswer, StreamClient,
 };
-use crate::chat_call::CancellationToken;
 use crate::chat_call::arguments::{ChatCall, Runtime};
 use crate::chat_call::client::{ClientHandle, ClientSource, GatewayClient, GetClient};
 use crate::chat_call::error::AzureChatError;
@@ -257,7 +259,7 @@ impl AsyncRawChatTransport for ScriptedTransport {
     async fn create(&self, data: &Map<String, Value>, timeout: f64) -> RawReply {
         if matches!(self.answer, Answer::Pending) {
             self.record(data, timeout);
-            return std::future::pending::<RawReply>().await;
+            return pending::<RawReply>().await;
         }
         SyncRawChatTransport::create(self, data, timeout)
     }
@@ -270,9 +272,9 @@ pub(super) struct ScriptedSource {
     base_url: String,
     answer: Answer,
     stream_payload: Option<String>,
-    pub requests: Arc<Mutex<Vec<RequestRecord>>>,
-    pub gets: Arc<Mutex<Vec<GetRecord>>>,
-    pub gateways: Arc<Mutex<Vec<GatewayRecord>>>,
+    requests: Arc<Mutex<Vec<RequestRecord>>>,
+    gets: Arc<Mutex<Vec<GetRecord>>>,
+    gateways: Arc<Mutex<Vec<GatewayRecord>>>,
 }
 
 impl ScriptedSource {
@@ -310,11 +312,11 @@ impl ScriptedSource {
         &self,
         slot: &Arc<Mutex<Vec<Record>>>,
         value: Record,
-    ) -> Result<ClientHandle<ScriptedTransport>, EndpointError> {
+    ) -> ClientHandle<ScriptedTransport> {
         slot.lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(value);
-        Ok(self.handle())
+        self.handle()
     }
 
     pub(super) fn requests(&self) -> Vec<RequestRecord> {
@@ -363,8 +365,8 @@ impl ChatStreamTransport for ScriptedStream {
 impl ClientSource for ScriptedSource {
     type Client = ScriptedTransport;
 
-    fn get(&self, call: GetClient<'_>) -> Handled {
-        self.record(
+    fn get(&self, call: GetClient<'_, ScriptedTransport>) -> Handled {
+        Ok(self.record(
             &self.gets,
             GetRecord {
                 api_version: call.api_version.map(str::to_owned),
@@ -375,7 +377,7 @@ impl ClientSource for ScriptedSource {
                 litellm_params: call.litellm_params.clone(),
                 supplied: call.supplied.is_some(),
             },
-        )
+        ))
     }
 
     fn gateway(&self, call: GatewayClient<'_>) -> Handled {
@@ -383,7 +385,7 @@ impl ClientSource for ScriptedSource {
         let api_version = call.api_version.map(str::to_owned);
         let max_retries = serde_json::to_value(&call.max_retries.0).unwrap_or(Value::Null);
         let api_key = call.api_key.map(|key| key.expose_secret().to_owned());
-        self.record(
+        Ok(self.record(
             &self.gateways,
             GatewayRecord {
                 api_base,
@@ -394,7 +396,7 @@ impl ClientSource for ScriptedSource {
                 api_key,
                 acompletion: call.acompletion,
             },
-        )
+        ))
     }
 
     // B685 owns the streaming path; only the one streaming case scripts a client for it
