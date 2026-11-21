@@ -8,6 +8,7 @@ use axum::http::{HeaderMap, StatusCode, Uri, header};
 use axum::response::{IntoResponse as _, Response};
 use axum::routing::post;
 use betterlite_guardrails::alice::EVALUATE_PATH;
+use betterlite_test_ports::refused_port::RefusedPort;
 use serde_json::Value;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
@@ -38,13 +39,14 @@ pub(super) enum Endpoint {
     },
     Refused {
         base: String,
+        _port: RefusedPort,
     },
 }
 
 impl Endpoint {
     pub(super) const fn base(&self) -> &str {
         match self {
-            Self::Serving { base, .. } | Self::Silent { base, .. } | Self::Refused { base } => {
+            Self::Serving { base, .. } | Self::Silent { base, .. } | Self::Refused { base, .. } => {
                 base.as_str()
             }
         }
@@ -65,17 +67,20 @@ pub(super) async fn start_endpoint(args: &AliceApplyArgs) -> Result<Endpoint, Bo
     if let Some(answer) = &args.answer {
         return serve(answer.clone()).await;
     }
-    let listener = TcpListener::bind("127.0.0.1:0").await?;
-    let address = listener.local_addr()?;
-    let base = format!("http://{address}");
     if args.failure == Some(FailureKind::Timeout) {
+        let listener = TcpListener::bind("127.0.0.1:0").await?;
+        let base = format!("http://{}", listener.local_addr()?);
         return Ok(Endpoint::Silent {
             base,
             _listener: listener,
         });
     }
-    drop(listener);
-    Ok(Endpoint::Refused { base })
+    let refused = RefusedPort::bind()?;
+    let base = format!("http://{}", refused.address);
+    Ok(Endpoint::Refused {
+        base,
+        _port: refused,
+    })
 }
 
 async fn serve(answer: ScriptedAnswer) -> Result<Endpoint, Box<HelperError>> {

@@ -1,0 +1,17 @@
+kind: helper
+name: vertex-rag-store-seed-regional-upload
+call:
+  b3455:
+    options:
+      vector_store:
+        vertex_project: seed-project
+        vertex_location: europe-west4
+        vector_store_id: corpora/seed
+    file:
+      content_base64: c2VlZA==
+      filename: seed.txt
+    responses:
+      - status: 200
+        body: '{"ragFile":{"name":"files/seed"}}'
+env: {}
+compare: {ignore: []}

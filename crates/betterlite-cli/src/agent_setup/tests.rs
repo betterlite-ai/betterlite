@@ -2,10 +2,10 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::net::TcpListener;
 use std::path::Path;
 
 use betterlite_config::sections::settings::JsonValue;
+use betterlite_test_ports::refused_port::RefusedPort;
 use rstest::rstest;
 use secrecy::ExposeSecret as _;
 use tempfile::TempDir;

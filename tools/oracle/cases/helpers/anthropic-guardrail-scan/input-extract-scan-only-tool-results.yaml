@@ -1,0 +1,6 @@
+kind: helper
+name: anthropic-guardrail-scan-input-extract-scan-only-tool-results
+call:
+  b3675: {"function": "extract", "scenarios": [{"message": {"role": "user", "content": "plain"}, "flags": {"scan_only_tool_results": true}}, {"message": {"role": "user", "content": [{"type": "text", "text": "a"}, {"type": "tool_result", "tool_use_id": "t", "content": "res"}, {"type": "tool_use", "id": "toolu_1", "name": "get", "input": {}}]}, "flags": {"scan_only_tool_results": true}}, {"message": {"role": "system", "content": "mid"}, "flags": {"scan_only_tool_results": true}}, {"message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t", "content": [{"type": "text", "text": "r1"}, {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "D"}}]}]}, "flags": {"scan_only_tool_results": true}}]}
+env: {}
+compare: {ignore: []}

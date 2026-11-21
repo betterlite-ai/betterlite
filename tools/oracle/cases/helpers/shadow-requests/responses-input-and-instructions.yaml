@@ -1,0 +1,66 @@
+kind: helper
+name: shadow-responses-input-and-instructions
+call:
+  b4082:
+    operation: chat_request
+    call_type: responses
+    kwargs:
+      model: gpt-4o
+      messages: hello
+      instructions: outer
+    model_parameters: {}
+calls:
+  - b4082:
+      operation: chat_request
+      call_type: aresponses
+      kwargs:
+        model: gpt-4o
+        messages: hello
+        litellm_params:
+          proxy_server_request:
+            body:
+              instructions: inner
+      model_parameters: {}
+  - b4082:
+      operation: chat_request
+      call_type: responses
+      kwargs:
+        model: gpt-4o
+        messages:
+          - role: user
+            content: hello
+        instructions: outer
+      model_parameters: {}
+  - b4082:
+      operation: chat_request
+      call_type: responses
+      kwargs:
+        model: gpt-4o
+      model_parameters: {}
+  - b4082:
+      operation: chat_request
+      call_type: responses
+      kwargs:
+        messages: hello
+      model_parameters: {}
+  - b4082:
+      operation: sample
+      call_type: responses
+      kwargs:
+        model: gpt-4o
+        messages: hello
+      model_parameters: {}
+      response:
+        id: resp_1
+        created_at: 1
+        output:
+          - type: message
+            id: msg_1
+            status: completed
+            role: assistant
+            content:
+              - type: output_text
+                text: final
+                annotations: []
+env: {}
+compare: {ignore: []}

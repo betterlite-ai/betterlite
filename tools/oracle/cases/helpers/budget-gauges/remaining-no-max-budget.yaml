@@ -1,0 +1,9 @@
+kind: helper
+name: budget-gauges-remaining-no-max-budget
+call:
+  b3882:
+    function: remaining_budget
+    max_budget: null
+    spend: 4
+env: {}
+compare: {ignore: []}
