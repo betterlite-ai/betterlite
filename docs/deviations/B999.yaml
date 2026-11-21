@@ -1,0 +1,9 @@
+task: B999
+deviations:
+  - what: A custom provider listed in litellm._custom_providers with no custom_provider_map entry fails as BadRequestError, where LiteLLM raises its LiteLLMUnknownProvider subclass with the same status 400 and message.
+    why: ErrorClass has no LiteLLMUnknownProvider variant, and a caller that catches BadRequestError catches both.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L790
+kept_bugs:
+  - what: image_edit accepts extra_query and never sends it to any provider.
+    why: A working setup may pass extra_query today and get no error, so betterlite keeps accepting and dropping it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L725
