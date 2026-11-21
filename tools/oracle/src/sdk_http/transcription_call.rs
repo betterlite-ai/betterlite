@@ -131,7 +131,7 @@ async fn execute(
         logging: None,
         identify: uuid::Uuid::new_v4,
     };
-    let outcome = dispatch_outcome(input, &call, &service).await?;
+    let outcome = Box::pin(dispatch_outcome(input, &call, &service)).await?;
     Ok(SdkResult::TranscriptionCall {
         value: Box::new(outcome),
     })
@@ -150,7 +150,7 @@ async fn dispatch_outcome(
         }
         Mode::Async => {
             let pending = async_outcome(input, call, audio(input), service);
-            pending.await
+            Box::pin(pending).await
         }
     }
 }
