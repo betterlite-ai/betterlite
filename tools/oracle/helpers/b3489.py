@@ -1,7 +1,10 @@
 from typing import Literal, TypedDict, cast
 
+import litellm
 from litellm.google_genai import main as g
 from pydantic import JsonValue, TypeAdapter
+
+litellm.suppress_debug_info = True
 
 
 class Input(TypedDict):
