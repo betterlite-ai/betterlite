@@ -83,7 +83,7 @@ pub(super) fn adapter_params(params: &GenAiParams) -> TypedParams {
 fn retry_count(max_retries: Option<i64>) -> Option<u32> {
     match max_retries {
         None => None,
-        Some(value) if value < 0 => Some(0_u32),
+        Some(value) if value.is_negative() => Some(0_u32),
         Some(value) => Some(u32::try_from(value).unwrap_or(u32::MAX)),
     }
 }

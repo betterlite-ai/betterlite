@@ -152,6 +152,45 @@ async fn dispatch_adapter_call_forwards_metadata_headers_and_proxy_request() {
 }
 
 #[tokio::test]
+async fn dispatch_adapter_call_forwards_params_and_narrows_a_negative_retry_count() {
+    let harness = Harness::new();
+    let contents = contents();
+    let kwargs = object(r#"{"max_retries":3,"organization":"org-1"}"#);
+    let request = request(ADAPTER_MODEL, &contents, None, &kwargs);
+
+    harness
+        .call(Entry::Generate, &request)
+        .await
+        .answer
+        .expect("the call succeeds");
+
+    let seen = harness.executor.seen();
+    let params = seen[0]
+        .1
+        .litellm_params
+        .as_ref()
+        .expect("the adapter call carries the params");
+    assert_eq!(params.max_retries, Some(3_u32));
+    assert_eq!(params.organization.as_deref(), Some("org-1"));
+
+    let negative = Harness::new();
+    let kwargs = object(r#"{"max_retries":-1}"#);
+    let request = request(ADAPTER_MODEL, &contents, None, &kwargs);
+    negative
+        .call(Entry::Generate, &request)
+        .await
+        .answer
+        .expect("the call succeeds");
+    let seen = negative.executor.seen();
+    let params = seen[0]
+        .1
+        .litellm_params
+        .as_ref()
+        .expect("the adapter call carries the params");
+    assert_eq!(params.max_retries, Some(0_u32));
+}
+
+#[tokio::test]
 async fn dispatch_adapter_call_falls_through_an_empty_system_instruction() {
     let harness = Harness::new();
     let contents = contents();
