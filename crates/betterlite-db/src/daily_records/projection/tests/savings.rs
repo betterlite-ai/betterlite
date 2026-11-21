@@ -127,6 +127,27 @@ async fn an_unusable_usage_object_only_zeroes_the_usage_driven_savings() {
     );
 }
 
+#[tokio::test]
+async fn carries_the_cache_token_counts_of_the_usage_object() {
+    let text = payload_with_metadata(
+        r#"{"usage_object":{"cache_read_input_tokens":7,"cache_creation_input_tokens":3}}"#,
+    );
+    let row = projected_row(
+        &Case::with_prices(BTreeMap::new()),
+        &text,
+        DailySpendEntity::User,
+    )
+    .await;
+    assert_eq!(
+        column(&row, "cache_read_input_tokens"),
+        SpendColumnValue::Int(7)
+    );
+    assert_eq!(
+        column(&row, "cache_creation_input_tokens"),
+        SpendColumnValue::Int(3)
+    );
+}
+
 #[rstest]
 #[case::number("5")]
 #[case::boolean("true")]
