@@ -1,7 +1,7 @@
 id: B863
 milestone: M4 keys, spend and management
 title: Management administrator and invitation scope
-status: todo
+status: done
 depends_on: [B171, B720, B724, B732, B736, B856, B859, B860, B2226]
 file: tasks/B863-management-admins.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/management/teams/access.py"
 parent: B057
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2833
