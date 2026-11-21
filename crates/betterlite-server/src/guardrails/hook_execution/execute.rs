@@ -61,30 +61,18 @@ pub struct HookCall<'call> {
     pub context: CallContext<'call>,
 }
 
-// B3680's UnifiedGuardrailHooks; the guardrail goes in as an argument, LiteLLM's data["guardrail_to_apply"]
+// the guardrail goes in as an argument, where LiteLLM writes it into data["guardrail_to_apply"]
+pub struct UnifiedCall<'call> {
+    pub guardrail: &'call dyn ProxyCallback,
+    pub hook: GuardrailHook,
+    pub data: &'call mut JsonMap,
+    pub context: CallContext<'call>,
+}
+
+// B3680's UnifiedGuardrailHooks, at the one hook type _execute_guardrail_hook dispatches on
 #[async_trait]
 pub trait UnifiedHooks: Send + Sync {
-    async fn pre_call(
-        &self,
-        guardrail: &dyn ProxyCallback,
-        data: &mut JsonMap,
-        context: CallContext<'_>,
-    ) -> Result<(), ProxyHookError>;
-
-    async fn moderation(
-        &self,
-        guardrail: &dyn ProxyCallback,
-        data: &mut JsonMap,
-        context: CallContext<'_>,
-    ) -> Result<(), ProxyHookError>;
-
-    async fn post_call_success(
-        &self,
-        guardrail: &dyn ProxyCallback,
-        data: &mut JsonMap,
-        user_api_key_dict: Option<&UserAPIKeyAuth>,
-        response: JsonValue,
-    ) -> Result<Option<JsonValue>, ProxyHookError>;
+    async fn run(&self, call: UnifiedCall<'_>) -> Result<HookAnswer, ProxyHookError>;
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -123,14 +111,22 @@ pub struct HookExecution {
 }
 
 #[must_use]
-pub fn hook_path(callback: &dyn ProxyCallback, hook: &GuardrailHook) -> HookPath {
+pub fn hook_path(
+    callback: &dyn ProxyCallback,
+    hook: &GuardrailHook,
+    context: CallContext<'_>,
+) -> HookPath {
     let native_during_call = matches!(hook, GuardrailHook::DuringCall)
         && callback
             .guardrail()
             .is_some_and(|guardrail| guardrail.use_native_during_call_hook());
+    // _run_during_call_guardrail takes the unified path only when it holds the caller's key
+    let unkeyed_during_call =
+        matches!(hook, GuardrailHook::DuringCall) && context.user_api_key_dict.is_none();
     if callback.overrides().apply_guardrail
         && !callback.use_native_lifecycle_hooks()
         && !native_during_call
+        && !unkeyed_during_call
     {
         HookPath::Unified
     } else {
@@ -144,38 +140,18 @@ impl HookExecution {
         call: HookCall<'_>,
         data: &mut JsonMap,
     ) -> Result<HookAnswer, ProxyHookError> {
-        let path = hook_path(call.callback, &call.hook);
-        self.run_hook(call, path, data).await
-    }
-
-    pub async fn run_hook(
-        &self,
-        call: HookCall<'_>,
-        path: HookPath,
-        data: &mut JsonMap,
-    ) -> Result<HookAnswer, ProxyHookError> {
-        if path == HookPath::Own {
-            return run_own_hook(self, call, data).await;
-        }
-        let HookCall {
-            callback,
-            hook,
-            context,
-        } = call;
-        match hook {
-            GuardrailHook::PreCall => {
-                self.unified.pre_call(callback, data, context).await?;
-                Ok(HookAnswer::PreCall(PreCallReturn::Unchanged))
+        match hook_path(call.callback, &call.hook, call.context) {
+            HookPath::Own => run_own_hook(self, call, data).await,
+            HookPath::Unified => {
+                self.unified
+                    .run(UnifiedCall {
+                        guardrail: call.callback,
+                        hook: call.hook,
+                        data,
+                        context: call.context,
+                    })
+                    .await
             }
-            GuardrailHook::DuringCall => {
-                self.unified.moderation(callback, data, context).await?;
-                Ok(HookAnswer::DuringCall)
-            }
-            GuardrailHook::PostCall(response) => self
-                .unified
-                .post_call_success(callback, data, context.user_api_key_dict, response)
-                .await
-                .map(HookAnswer::PostCall),
         }
     }
 

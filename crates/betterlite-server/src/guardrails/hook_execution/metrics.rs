@@ -9,7 +9,7 @@ use betterlite_openai::openai_base_config::Object as JsonMap;
 use rust_decimal::Decimal;
 
 use super::bridge::{enrich_error, record_raising_guardrail};
-use super::execute::{HookAnswer, HookCall, HookExecution, HookPath};
+use super::execute::{HookAnswer, HookCall, HookExecution};
 use crate::guardrails::callback_caps::errors::ProxyHookError;
 use crate::guardrails::callback_caps::traits::GuardrailCallback;
 
@@ -95,13 +95,12 @@ pub fn observe<T>(
 pub async fn run_guardrail_with_metrics(
     execution: &HookExecution,
     call: HookCall<'_>,
-    path: HookPath,
     data: &mut JsonMap,
 ) -> Result<HookAnswer, ProxyHookError> {
     let callback = call.callback;
     let hook_type = call.hook.hook_type();
     let started_at = execution.clock.now();
-    let mut outcome = execution.run_hook(call, path, data).await;
+    let mut outcome = execution.execute_guardrail_hook(call, data).await;
     if let Err(error) = &mut outcome {
         enrich_error(execution, error, callback);
         record_raising_guardrail(execution, data, callback, error);

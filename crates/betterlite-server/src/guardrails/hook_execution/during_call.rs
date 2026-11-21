@@ -4,7 +4,7 @@ use futures_util::StreamExt as _;
 use futures_util::stream::FuturesUnordered;
 
 use super::bridge::merge_metadata;
-use super::execute::{CallContext, GuardrailHook, HookCall, HookExecution, HookPath, hook_path};
+use super::execute::{CallContext, GuardrailHook, HookCall, HookExecution};
 use super::metrics::run_guardrail_with_metrics;
 use crate::guardrails::callback_caps::caps::CallbackCapabilities;
 use crate::guardrails::callback_caps::errors::ProxyHookError;
@@ -80,7 +80,7 @@ pub async fn during_call_hook(
     Ok(())
 }
 
-// the unified moderation hook needs the caller's key; without it the class's own hook runs
+// the unified moderation hook needs the caller's key; hook_path sends an unkeyed call to the class's own hook
 async fn run_during_call(
     execution: &HookExecution,
     callback: &dyn ProxyCallback,
@@ -88,23 +88,21 @@ async fn run_during_call(
     data: &mut JsonMap,
     context: CallContext<'_>,
 ) -> Result<(), ProxyHookError> {
-    if task == DuringCallTask::Moderation {
-        return callback
-            .moderation(data, context.user_api_key_dict, context.call_type)
-            .await;
+    match task {
+        DuringCallTask::Moderation => {
+            callback
+                .moderation(data, context.user_api_key_dict, context.call_type)
+                .await
+        }
+        DuringCallTask::Guardrail => {
+            let call = HookCall {
+                callback,
+                hook: GuardrailHook::DuringCall,
+                context,
+            };
+            run_guardrail_with_metrics(execution, call, data)
+                .await
+                .map(|_answer| ())
+        }
     }
-    let hook = GuardrailHook::DuringCall;
-    let path = if context.user_api_key_dict.is_some() {
-        hook_path(callback, &hook)
-    } else {
-        HookPath::Own
-    };
-    let call = HookCall {
-        callback,
-        hook,
-        context,
-    };
-    run_guardrail_with_metrics(execution, call, path, data)
-        .await
-        .map(|_answer| ())
 }
