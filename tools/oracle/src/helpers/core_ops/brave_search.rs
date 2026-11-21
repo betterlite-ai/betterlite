@@ -85,28 +85,14 @@ fn answer(config: &BraveSearchConfig, call: &Call) -> Result<Value, BraveSearchA
             optional_params,
         } => {
             let key = api_key.clone().map(SecretString::from);
-            let body = config.transform_search_request(&RequestInput {
+            let request = RequestInput {
                 query,
                 optional_params,
                 api_key: key.as_ref(),
                 api_base: api_base.as_deref(),
                 headers,
-            })?;
-            let outbound = OutboundSearch {
-                api_base: api_base.as_deref().unwrap_or_default(),
-                api_key: key.as_ref(),
-                optional_params,
-                body: &body,
             };
-            let incoming: Headers = headers.clone().into_iter().collect();
-            let signed = config.sign_request(incoming, &outbound)?.0;
-            let url = config.complete_url(
-                api_base.as_deref(),
-                optional_params,
-                Some(&body),
-                key.as_ref(),
-            )?;
-            Ok(json!({"headers": signed, "params": body, "url": url}))
+            request_answer(config, &request)
         }
         Call::Reply {
             query,
@@ -125,6 +111,27 @@ fn answer(config: &BraveSearchConfig, call: &Call) -> Result<Value, BraveSearchA
             },
         ),
     }
+}
+
+fn request_answer(
+    config: &BraveSearchConfig,
+    request: &RequestInput<'_>,
+) -> Result<Value, BraveSearchAnswerError> {
+    let body = config.transform_search_request(request)?;
+    let outbound = OutboundSearch {
+        api_base: request.api_base.unwrap_or_default(),
+        api_key: request.api_key,
+        optional_params: request.optional_params,
+        body: &body,
+    };
+    let signed = config.sign_request(request.headers.clone(), &outbound)?.0;
+    let url = config.complete_url(
+        request.api_base,
+        request.optional_params,
+        Some(&body),
+        request.api_key,
+    )?;
+    Ok(json!({"headers": signed, "params": body, "url": url}))
 }
 
 // the response decodes with the section filter and count the request stored

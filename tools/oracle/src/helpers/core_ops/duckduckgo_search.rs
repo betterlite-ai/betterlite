@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use betterlite_core::api::search_providers::duckduckgo::request::DuckDuckGoSearchRequest;
 use betterlite_core::api::search_providers::duckduckgo::{
     DuckDuckGoSearchConfig, DuckDuckGoSearchError,
 };
@@ -77,7 +78,6 @@ fn answer(
     config: &DuckDuckGoSearchConfig,
     call: &Call,
 ) -> Result<Value, DuckDuckGoSearchAnswerError> {
-    let empty_headers = Headers::new();
     match call {
         Call::Headers { headers } => {
             let incoming: Headers = headers.clone().into_iter().collect();
@@ -87,29 +87,18 @@ fn answer(
         Call::Request {
             query,
             optional_params,
-        } => Ok(serde_json::to_value(config.transform_search_request(
-            &RequestInput {
-                query,
-                optional_params,
-                api_key: None,
-                api_base: None,
-                headers: &empty_headers,
-            },
-        )?)?),
+        } => {
+            let body = request_body(config, query, optional_params, None)?;
+            Ok(serde_json::to_value(body)?)
+        }
         Call::Url {
             api_base,
             query,
             optional_params,
         } => {
-            let body = config.transform_search_request(&RequestInput {
-                query,
-                optional_params,
-                api_key: None,
-                api_base: api_base.as_deref(),
-                headers: &empty_headers,
-            })?;
-            let url =
-                config.complete_url(api_base.as_deref(), optional_params, Some(&body), None)?;
+            let base = api_base.as_deref();
+            let body = request_body(config, query, optional_params, base)?;
+            let url = config.complete_url(base, optional_params, Some(&body), None)?;
             Ok(url_value(&url))
         }
         Call::Reply {
@@ -118,21 +107,32 @@ fn answer(
             body,
         } => {
             // the response decodes with the limit the request transform stored
-            let _request = config.transform_search_request(&RequestInput {
-                query,
-                optional_params,
-                api_key: None,
-                api_base: None,
-                headers: &empty_headers,
-            })?;
+            let _request = request_body(config, query, optional_params, None)?;
+            let headers = Headers::new();
             let response = config.transform_search_response(&ProviderResponse {
                 status_code: 200,
-                headers: &empty_headers,
+                headers: &headers,
                 text: body,
             })?;
             Ok(serde_json::to_value(response)?)
         }
     }
+}
+
+fn request_body(
+    config: &DuckDuckGoSearchConfig,
+    query: &SearchQuery,
+    optional_params: &Object,
+    api_base: Option<&str>,
+) -> Result<DuckDuckGoSearchRequest, DuckDuckGoSearchError> {
+    let headers = Headers::new();
+    config.transform_search_request(&RequestInput {
+        query,
+        optional_params,
+        api_key: None,
+        api_base,
+        headers: &headers,
+    })
 }
 
 fn url_value(url: &str) -> Value {
