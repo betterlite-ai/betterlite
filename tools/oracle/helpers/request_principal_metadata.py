@@ -84,13 +84,13 @@ def request_for(headers: list[tuple[str, str]]) -> Request:
 def pre_auth_tags(call: PreAuthCall) -> JsonValue:
     data = call["data"]
     principal = AUTH.validate_python(call["principal"])
-    LiteLLMProxyRequestSetup.pre_seed_litellm_metadata_for_route(  # type: ignore[misc]  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1855
+    LiteLLMProxyRequestSetup.pre_seed_litellm_metadata_for_route(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1855
         data, call["route"]
     )
-    LiteLLMProxyRequestSetup.apply_client_tag_policy_pre_auth(  # type: ignore[misc]  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1899
+    LiteLLMProxyRequestSetup.apply_client_tag_policy_pre_auth(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1899
         request_for(call["headers"]), data, principal
     )
-    LiteLLMProxyRequestSetup.apply_key_tags_pre_auth(  # type: ignore[misc]  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1876
+    LiteLLMProxyRequestSetup.apply_key_tags_pre_auth(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1876
         data, principal
     )
     outcome = {"data": data}
@@ -105,14 +105,15 @@ def request_metadata(call: MetadataCall) -> JsonValue:
         principal.managed_agent_context = ManagedAgentContext.model_validate(context)
     bucket = call["bucket"]
     data: dict[str, JsonValue] = {**call["data"], call["slot"]: bucket}
-    LiteLLMProxyRequestSetup.add_user_api_key_auth_to_request_metadata(  # type: ignore[misc]  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1653
+    LiteLLMProxyRequestSetup.add_user_api_key_auth_to_request_metadata(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1653
         data, principal, call["slot"]
     )
-    LiteLLMProxyRequestSetup.add_key_level_controls(  # type: ignore[misc]  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1735
+    LiteLLMProxyRequestSetup.add_key_level_controls(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1735
         call["principal"]["metadata"], data, call["slot"]
     )
-    request_tags = LiteLLMProxyRequestSetup.add_request_tag_to_metadata(  # type: ignore[misc]  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1834
-        None, dict(call["headers"]), data
+    headers: dict[str, str] = dict(call["headers"])
+    request_tags = LiteLLMProxyRequestSetup.add_request_tag_to_metadata(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1834
+        None, headers, data
     )
     auth_view = AUTH.validate_python(bucket.pop("user_api_key_auth"))
     outcome = {
