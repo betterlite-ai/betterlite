@@ -121,7 +121,11 @@ where
     let Json::Object(_) = value else {
         return Err(DailyMetadataError::NotAnObject { field });
     };
-    decode_text(&encode(value, field)?, field).map(Some)
+    let text = serde_json::to_string(value)
+        .map_err(|source| DailyMetadataError::Field { field, source })?;
+    serde_json::from_str(&text)
+        .map_err(|source| DailyMetadataError::Field { field, source })
+        .map(Some)
 }
 
 // _usage_from_spend_log swallows every failure, so an unusable usage object only zeroes the auto-router driver.
@@ -129,15 +133,4 @@ fn raw_usage_object(value: Option<&Json>) -> Option<RawUsageObject> {
     let value = value.filter(|value| counts_as_present(value))?;
     let text = serde_json::to_string(value).ok()?;
     serde_json::from_str(&text).ok()
-}
-
-fn decode_text<T>(bytes: &[u8], field: &'static str) -> Result<T, DailyMetadataError>
-where
-    T: DeserializeOwned,
-{
-    serde_json::from_slice(bytes).map_err(|source| DailyMetadataError::Field { field, source })
-}
-
-fn encode(value: &Json, field: &'static str) -> Result<String, DailyMetadataError> {
-    serde_json::to_string(value).map_err(|source| DailyMetadataError::Field { field, source })
 }

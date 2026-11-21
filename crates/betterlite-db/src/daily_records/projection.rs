@@ -107,7 +107,10 @@ impl DailyPayload {
 
 // A present null reads as absent: the source passes payload.get(key) into a field that is None either way.
 pub(super) fn presence(value: &Option<Option<String>>) -> Option<&str> {
-    value.as_ref().and_then(|value| value.as_deref())
+    match value {
+        Some(Some(text)) => Some(text.as_str()),
+        Some(None) | None => None,
+    }
 }
 
 // _common_add_spend_log_transaction_to_daily_transaction: the entity identities gate the row before the payload's own keys are read.

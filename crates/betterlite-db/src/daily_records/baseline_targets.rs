@@ -51,7 +51,7 @@ pub struct DailyBaselineTarget {
 }
 
 // DailyBaselineAttribution of baseline_accounting.py: the base row the savings are compared against, and every entity it can be published to.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Eq, PartialEq, Serialize)]
 pub struct DailyBaselineAttribution {
     pub date: String,
     pub api_key: String,
