@@ -3,6 +3,7 @@
 pub(crate) mod support;
 
 use std::collections::BTreeMap;
+use std::future::{Future, ready};
 use std::sync::Arc;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -13,9 +14,29 @@ use betterlite_guardrails::guardrail_base::contract::GuardrailContract;
 use betterlite_guardrails::guardrail_base::failure::{
     GuardrailFailure, ModifyResponseFailure, SensitiveDataRouteFailure,
 };
+use betterlite_guardrails::guardrail_base::inputs::{GuardrailApiInputs, GuardrailLogTarget};
+use betterlite_guardrails::guardrail_message_scope::scoped_indices::{
+    GlobalSkipFlags, GuardrailSkipFlags,
+};
 
-use self::support::{FakeGuardrail, context, texts_reply};
-use super::{failure_message, failure_parts, frames_into_items, modify_response, to_json};
+use self::support::{FakeGuardrail, context, principal, texts_reply};
+use super::{
+    GuardrailToApply, failure_message, failure_parts, frames_into_items, modify_response, to_json,
+};
+
+struct DefaultGuardrail;
+
+impl GuardrailContract for DefaultGuardrail {
+    fn apply_guardrail(
+        &self,
+        inputs: GuardrailApiInputs,
+        _request_data: &mut BTreeMap<String, GuardrailValue>,
+        _input_type: GuardrailInputType,
+        _logging_obj: Option<&mut GuardrailLogTarget>,
+    ) -> impl Future<Output = Result<GuardrailApiInputs, GuardrailFailure>> + Send {
+        ready(Ok(inputs))
+    }
+}
 
 fn modify_failure(message: &str) -> ModifyResponseFailure {
     ModifyResponseFailure {
@@ -179,4 +200,19 @@ fn contract_reads_its_flags_from_the_guarded_guardrail() {
     );
     assert!(!applied.supports_tool_result_scan());
     assert!(applied.messages_cover_full_request());
+}
+
+#[test]
+fn contract_keeps_the_guarded_guardrail_contract_defaults() {
+    let applied = GuardrailToApply {
+        guardrail: Arc::new(DefaultGuardrail),
+        guardrail_name: None,
+        principal: principal(),
+        skip_flags: GuardrailSkipFlags::default(),
+        global_flags: GlobalSkipFlags::default(),
+    };
+    assert!(applied.get_config_model().is_none());
+    assert!(applied.get_supported_event_hooks().is_none());
+    assert!(applied.supports_tool_result_scan());
+    assert!(!applied.messages_cover_full_request());
 }
