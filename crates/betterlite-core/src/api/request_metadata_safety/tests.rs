@@ -45,6 +45,7 @@ use super::{
     MetadataPrincipal, MetadataSafetySettings, RequestMetadataSafetyInput,
     sanitize_request_metadata,
 };
+use crate::api::api_boundaries::ApiLimits;
 use crate::api::request_destination::RequestData;
 
 fn text(value: &str) -> Json {
@@ -162,7 +163,14 @@ fn forged_data() -> RequestData {
     );
     data.insert("litellm_params".to_owned(), forged_litellm_params());
     data.insert("metadata".to_owned(), forged_metadata());
-    data.insert("litellm_metadata".to_owned(), forged_litellm_metadata());
+    data.insert(
+        "litellm_metadata".to_owned(),
+        object(vec![
+            ("original_model_group", text("gpt-4")),
+            ("turn_off_message_logging", text("off")),
+            ("kept", text("value")),
+        ]),
+    );
     data
 }
 
@@ -195,14 +203,6 @@ fn forged_metadata() -> Json {
     ])
 }
 
-fn forged_litellm_metadata() -> Json {
-    object(vec![
-        ("original_model_group", text("gpt-4")),
-        ("turn_off_message_logging", text("off")),
-        ("kept", text("value")),
-    ])
-}
-
 #[test]
 fn forged_control_stripped() {
     let (logs, _guard) = capture();
@@ -225,6 +225,43 @@ fn forged_control_stripped() {
         Some(&text("value"))
     );
     assert_strip_diagnostics(&messages(&logs));
+}
+
+#[test]
+fn true_redaction_opt_outs_are_kept() {
+    let data = body(vec![
+        ("turn_off_message_logging", Json::Bool(true)),
+        (
+            "metadata",
+            object(vec![("turn_off_message_logging", Json::Bool(true))]),
+        ),
+    ]);
+    let result = sanitize_request_metadata(&input(data, "/v1/chat/completions"), &settings())
+        .expect("the slots are objects");
+    assert_eq!(
+        result.data.get("turn_off_message_logging"),
+        Some(&Json::Bool(true))
+    );
+    assert_eq!(
+        field(&result.data, "metadata").get("turn_off_message_logging"),
+        Some(&Json::Bool(true))
+    );
+}
+
+#[test]
+fn metadata_string_length_boundary() {
+    let bounded = MetadataSafetySettings {
+        limits: ApiLimits {
+            max_json_bytes: 10,
+            ..ApiLimits::default()
+        },
+        ..settings()
+    };
+    for (raw, accepted) in [("{\"a\":\"bc\"}", true), ("{\"a\":\"bcd\"}", false)] {
+        let data = body(vec![("metadata", text(raw))]);
+        let outcome = sanitize_request_metadata(&input(data, "/v1/chat/completions"), &bounded);
+        assert_eq!(outcome.is_ok(), accepted);
+    }
 }
 
 fn assert_pricing_stripped(data: &RequestData) {
@@ -609,6 +646,8 @@ fn chain(headers: &[(&str, &str)]) -> Option<String> {
 #[case::short_value_rejected(&[("x-session-id", "short")], None)]
 #[case::invalid_value_rejected(&[("x-session-id", "not a session id")], None)]
 #[case::empty_map(&[], None)]
+#[case::empty_vendor_rejected(&[("x--session-id", "vendor-1234")], None)]
+#[case::codex_prefix_needs_a_separator(&[("user-agent", "codex1.0"), ("session-id", "codex-1234")], None)]
 fn chain_id_priority(#[case] headers: &[(&str, &str)], #[case] expected: Option<&str>) {
     assert_eq!(chain(headers).as_deref(), expected);
 }
@@ -651,6 +690,26 @@ fn missing_session_id_omit_stage() {
     );
     assert_eq!(slot.get("session_id"), Some(&text("body-session")));
     assert!(!field(&data, "metadata").contains_key("litellm_session_id_omitted"));
+}
+
+#[test]
+fn null_slot_session_still_copies_the_body_session() {
+    let mut data = body(vec![
+        ("litellm_session_id", text("body-session")),
+        ("metadata", object(vec![])),
+        ("litellm_metadata", object(vec![("session_id", Json::Null)])),
+    ]);
+    let policy = MissingSessionIdPolicy::Omit;
+    apply_missing_session_id_policy(
+        &mut data,
+        MetadataField::LitellmMetadata,
+        Some(&policy),
+        true,
+    );
+    assert_eq!(
+        field(&data, "litellm_metadata").get("session_id"),
+        Some(&text("body-session"))
+    );
 }
 
 #[derive(Clone, Copy, Debug)]
