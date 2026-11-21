@@ -63,7 +63,7 @@ async fn update_body_before_transform(#[case] mode: ClientKind) {
 
 // dict(update_request) keeps a null attributes, an empty mapping and an omitted key, and an absent or empty extra_body changes neither
 #[rstest]
-#[case::absent_attributes(r#"{}"#, None, r#"{}"#)]
+#[case::absent_attributes("{}", None, "{}")]
 #[case::kept(r#"{"attributes":{"old":"x"}}"#, None, r#"{"attributes":{"old":"x"}}"#)]
 #[case::empty_extra_body(
     r#"{"attributes":{"old":"x"}}"#,
