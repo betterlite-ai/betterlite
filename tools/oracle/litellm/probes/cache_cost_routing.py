@@ -242,18 +242,19 @@ class CacheCostRouting(Operation):
         return ResponseOutput(
             model=applied.model,
             messages_present=applied.messages is not None,
-            routing_decision=None if decision is None else self._decision_value(decision),
+            routing_decision=None if decision is None else _decision_value(decision),
             session_affinity_ttl_seconds=applied.session_affinity_ttl_seconds,
             litellm_params=None if params is None else _MAP.validate_python(dict(params)),
         )
 
-    # the apply stamps a tuple for signals and the frozen tier params as a mappingproxy
-    def _decision_value(self, decision: StandardLoggingRoutingDecision) -> dict[str, JsonValue]:
-        value = dict(decision)
-        signals = decision.get("signals")
-        if signals is not None:
-            value["signals"] = list(signals)
-        tier_params = decision.get("tier_litellm_params")
-        if tier_params is not None:
-            value["tier_litellm_params"] = dict(tier_params)
-        return _MAP.validate_python(value)
+
+# the apply stamps a tuple for signals and the frozen tier params as a mappingproxy
+def _decision_value(decision: StandardLoggingRoutingDecision) -> dict[str, JsonValue]:
+    value = dict(decision)
+    signals = decision.get("signals")
+    if signals is not None:
+        value["signals"] = list(signals)
+    tier_params = decision.get("tier_litellm_params")
+    if tier_params is not None:
+        value["tier_litellm_params"] = dict(tier_params)
+    return _MAP.validate_python(value)
