@@ -16,6 +16,7 @@ pub(super) async fn send<Identity, Operations>(
     logging: &mut LoggingState,
 ) -> Result<BranchAnswer, ImageGenerationException>
 where
+    Identity: Sync,
     Operations: ImageGenerationOperations + Sync,
 {
     // LiteLLM keeps overwriting the handler, so the last matching map entry is the one that runs

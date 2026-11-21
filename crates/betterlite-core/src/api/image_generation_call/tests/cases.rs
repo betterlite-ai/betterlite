@@ -206,8 +206,10 @@ fn generation_provider_selection(
 ) {
     let ops = FakeOps::new(Some(tag.clone()));
     let identity = FakeIdentity::new(Some("image-model"), ProviderIdentity::Known(provider));
-    let mut settings = Settings::default();
-    settings.api_base = Some(String::from("https://global.example"));
+    let settings = Settings {
+        api_base: Some(String::from("https://global.example")),
+        ..Settings::default()
+    };
     let case = Case::new(&ops, &identity, settings);
     let mut selected = call(Some("image-model"), Some(slug));
     selected.api_base = Some(String::from("https://call.example"));
@@ -310,7 +312,7 @@ fn custom_image_handler_selection() {
     let case = custom_case(
         &ops,
         &identity,
-        vec![Some(first.clone()), Some(last.clone())],
+        vec![Some(Arc::clone(&first)), Some(Arc::clone(&last))],
     );
     case.run(custom_call(Some(CustomClientKind::Sync), false))
         .0
@@ -328,7 +330,7 @@ fn custom_image_handler_selection() {
 fn custom_client_kinds(identity: &FakeIdentity) {
     let ops = FakeOps::new(None);
     let wanted = Arc::new(FixtureHandler::default());
-    let case = custom_case(&ops, identity, vec![Some(wanted.clone())]);
+    let case = custom_case(&ops, identity, vec![Some(Arc::clone(&wanted))]);
     for (client, asynchronous) in [
         (CustomClientKind::Asynchronous, true),
         (CustomClientKind::Sync, true),
@@ -464,7 +466,7 @@ fn hidden_model_and_logging_guards() {
     );
     assert!(matches!(
         logging.litellm_params.get("timeout"),
-        Some(Json::Number(number)) if number.as_f64() == Some(600.0)
+        Some(Json::Number(number)) if number.as_f64() == Some(600.0_f64)
     ));
     assert_eq!(
         logging.litellm_params.get("azure"),

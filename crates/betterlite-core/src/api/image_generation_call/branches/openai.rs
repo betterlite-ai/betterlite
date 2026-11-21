@@ -16,6 +16,7 @@ pub(super) async fn send<Identity, Operations>(
     logging: &mut LoggingState,
 ) -> Result<BranchAnswer, ImageGenerationException>
 where
+    Identity: Sync,
     Operations: ImageGenerationOperations + Sync,
 {
     let optional_params =
@@ -44,8 +45,8 @@ where
 // the OpenAI handler keeps extra_headers in optional_params and its request builder overlays them
 fn with_extra_headers(params: &Params, extra: Option<&Headers>) -> Params {
     let mut optional_params = params.clone();
-    if let Some(extra) = extra {
-        optional_params.insert(String::from("extra_headers"), header_object(extra));
+    if let Some(headers) = extra {
+        optional_params.insert(String::from("extra_headers"), header_object(headers));
     }
     optional_params
 }

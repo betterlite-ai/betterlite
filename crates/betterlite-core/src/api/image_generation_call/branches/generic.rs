@@ -14,21 +14,14 @@ pub(super) async fn send<Identity, Operations>(
     logging: &mut LoggingState,
 ) -> Result<BranchAnswer, ImageGenerationException>
 where
+    Identity: Sync,
     Operations: ImageGenerationOperations + Sync,
 {
     let Some(config) = mapped.config.clone() else {
-        let message = format!(
-            "image generation config is not supported for {}",
-            prepared.provider_slug
-        );
-        return Err(raise(
-            plan.redactor,
-            value_failure(
-                &message,
-                prepared.model.as_deref(),
-                Some(&prepared.provider_slug),
-            ),
-        ));
+        let slug = prepared.provider_slug.as_str();
+        let message = format!("image generation config is not supported for {slug}");
+        let failure = value_failure(&message, prepared.model.as_deref(), Some(slug));
+        return Err(raise(plan.redactor, failure));
     };
     // this branch alone writes the global api_base fallback into litellm_params before the handler runs
     let api_base = prepared

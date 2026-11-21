@@ -30,7 +30,8 @@ pub struct Call {
     pub model: Option<String>,
     pub prompt: String,
     pub custom_llm_provider: Option<String>,
-    pub n: Option<i64>,
+    #[serde(rename = "n")]
+    pub image_count: Option<i64>,
     pub quality: Option<String>,
     pub response_format: Option<String>,
     pub size: Option<String>,

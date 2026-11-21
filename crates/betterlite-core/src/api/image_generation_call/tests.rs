@@ -586,12 +586,15 @@ fn record(branch: &'static str, request: &dyn Recorded) -> Sent {
     }
 }
 
+// the api key and litellm_params each foundry_auth_headers call received
+type FoundrySeen = (Option<String>, Vec<(String, Json)>);
+
 struct FakeOps {
     config: Option<ImageGenerationConfigTag>,
     supported: Vec<String>,
     configs_seen: Mutex<Vec<(Option<String>, String)>>,
     entra_seen: Mutex<Vec<(String, String, String, String)>>,
-    foundry_seen: Mutex<Vec<(Option<String>, Vec<(String, Json)>)>>,
+    foundry_seen: Mutex<Vec<FoundrySeen>>,
     sends: Mutex<Vec<Sent>>,
     answer: BranchAnswer,
     send_failure: Option<(u16, String)>,
@@ -657,7 +660,7 @@ impl FakeOps {
             .clone()
     }
 
-    fn foundry(&self) -> Vec<(Option<String>, Vec<(String, Json)>)> {
+    fn foundry(&self) -> Vec<FoundrySeen> {
         self.foundry_seen
             .lock()
             .unwrap_or_else(PoisonError::into_inner)

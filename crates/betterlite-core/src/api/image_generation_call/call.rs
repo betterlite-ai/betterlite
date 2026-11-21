@@ -22,7 +22,7 @@ pub enum CustomClientKind {
 pub struct ImageGenerationCall {
     pub model: Option<String>,
     pub prompt: String,
-    pub n: Option<i64>,
+    pub image_count: Option<i64>,
     pub quality: Option<String>,
     pub response_format: Option<String>,
     pub size: Option<String>,
@@ -72,7 +72,7 @@ impl GenericParams {
             match name.as_str() {
                 "aimg_generation" => {
                     params.aimg_generation =
-                        optional_flag(value, "aimg_generation")?.unwrap_or(false)
+                        optional_flag(value, "aimg_generation")?.unwrap_or(false);
                 }
                 "azure_ad_token_provider" => {
                     params.azure_ad_token_provider = !matches!(value, Json::Null);
@@ -94,14 +94,14 @@ impl GenericParams {
                 "client_id" => params.credentials.client_id = string(value, "client_id")?,
                 "client_secret" => {
                     params.credentials.client_secret =
-                        string(value, "client_secret")?.map(SecretString::from)
+                        string(value, "client_secret")?.map(SecretString::from);
                 }
                 "azure_username" => {
-                    params.credentials.azure_username = string(value, "azure_username")?
+                    params.credentials.azure_username = string(value, "azure_username")?;
                 }
                 "azure_password" => {
                     params.credentials.azure_password =
-                        string(value, "azure_password")?.map(SecretString::from)
+                        string(value, "azure_password")?.map(SecretString::from);
                 }
                 "azure_scope" => params.credentials.azure_scope = string(value, "azure_scope")?,
                 _ => {}

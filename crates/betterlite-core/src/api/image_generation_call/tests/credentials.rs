@@ -101,8 +101,10 @@ fn azure_caller_headers() {
 fn azure_ad_tokens() {
     let ops = FakeOps::new(Some(ImageGenerationConfigTag::Azure(String::from("dep"))));
     let identity = azure_identity("dep");
-    let mut settings = Settings::default();
-    settings.azure_ad_token = Some(SecretString::from("env-token"));
+    let settings = Settings {
+        azure_ad_token: Some(SecretString::from("env-token")),
+        ..Settings::default()
+    };
     let case = Case::new(&ops, &identity, settings);
     for (value, expected) in [
         (Json::Text(String::from("token")), "token"),

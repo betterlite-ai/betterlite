@@ -112,7 +112,7 @@ fn core_call(call: &Call, api_base: &str) -> ImageGenerationCall {
     ImageGenerationCall {
         model: call.model.clone(),
         prompt: call.prompt.clone(),
-        n: call.n,
+        image_count: call.image_count,
         quality: call.quality.clone(),
         response_format: call.response_format.clone(),
         size: call.size.clone(),

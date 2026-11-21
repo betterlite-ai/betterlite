@@ -38,8 +38,8 @@ pub(super) fn passed_params(call: &ImageGenerationCall) -> IndexMap<String, Json
     // both bind get_optional_params_image_gen's named arguments instead of reaching its **kwargs
     params.shift_remove("drop_params");
     params.shift_remove("additional_drop_params");
-    if let Some(n) = call.n {
-        params.insert(String::from("n"), Json::Number(Number::from(n)));
+    if let Some(count) = call.image_count {
+        params.insert(String::from("n"), Json::Number(Number::from(count)));
     }
     for (name, value) in [
         ("quality", &call.quality),

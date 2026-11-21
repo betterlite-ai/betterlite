@@ -17,6 +17,7 @@ pub(super) async fn send<Identity, Operations>(
     logging: &mut LoggingState,
 ) -> Result<BranchAnswer, ImageGenerationException>
 where
+    Identity: Sync,
     Operations: ImageGenerationOperations + Sync,
 {
     let provider = prepared.provider_slug.as_str();
