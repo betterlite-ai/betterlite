@@ -23,6 +23,7 @@ use betterlite_openai::thread_runs::error::ThreadRunsError;
 use betterlite_openai::thread_runs::stream::{RunChunks, RunStream, RunStreamTransport};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use http::HeaderMap;
+use rstest::rstest;
 use secrecy::SecretString;
 
 use super::{
@@ -264,8 +265,9 @@ async fn dispatch_all_assistant_operations() {
         AssistantOperation::ListAssistants,
         openai_data(),
         Route {
+            thread_id: None,
+            assistant_id: None,
             client: Some(supplied("sk-supplied")),
-            ..Route::default()
         },
         &[(200, PAGE)],
     )
@@ -286,8 +288,9 @@ async fn dispatch_all_assistant_operations() {
         AssistantOperation::DeleteAssistant,
         openai_data(),
         Route {
+            thread_id: None,
             assistant_id: Some("asst_a"),
-            ..Route::default()
+            client: None,
         },
         &[(200, DELETED)],
     )
@@ -324,7 +327,8 @@ async fn dispatch_all_assistant_operations() {
         openai_data(),
         Route {
             thread_id: Some("thread_a"),
-            ..Route::default()
+            assistant_id: None,
+            client: None,
         },
         &[(200, THREAD)],
     )
@@ -348,7 +352,8 @@ async fn dispatch_all_assistant_operations() {
         ]),
         Route {
             thread_id: Some("thread_a"),
-            ..Route::default()
+            assistant_id: None,
+            client: None,
         },
         &[(200, MESSAGE)],
     )
@@ -369,7 +374,8 @@ async fn dispatch_all_assistant_operations() {
         openai_data(),
         Route {
             thread_id: Some("thread_a"),
-            ..Route::default()
+            assistant_id: None,
+            client: None,
         },
         &[(200, MESSAGE_PAGE)],
     )
@@ -390,7 +396,8 @@ async fn dispatch_all_assistant_operations() {
         ]),
         Route {
             thread_id: Some("thread_a"),
-            ..Route::default()
+            assistant_id: None,
+            client: None,
         },
         &[(200, RUN)],
     )
@@ -417,7 +424,8 @@ async fn dispatch_all_assistant_operations() {
         ]),
         Route {
             thread_id: Some("thread_a"),
-            ..Route::default()
+            assistant_id: None,
+            client: None,
         },
         &[(200, RUN)],
     )
@@ -506,31 +514,8 @@ async fn assistant_config_overlays_request() {
     };
     assert_eq!(failure.class, "BadRequestError");
     assert_eq!(failure.status, Some(400));
-    assert!(failure.message.contains("doesn't support"), "{failure}");
+    assert!(failure.message.contains("doesn't support"), "{failure:?}");
     assert!(empty.seen.is_empty());
-
-    // a configured client or provider collides with the installed function's own named arguments
-    for name in ["client", "custom_llm_provider"] {
-        let colliding = configured("openai", &[(name, text("configured"))]);
-        let outcome = dispatch(
-            &colliding,
-            AssistantOperation::CreateAssistant,
-            data(&[("api_key", text("request-key")), ("model", text("gpt-4o"))]),
-            None,
-            None,
-            None,
-            &[],
-        )
-        .await;
-        let Err(AssistantDispatchError::TypeError { message }) = outcome.result else {
-            panic!("the configured keyword did not collide");
-        };
-        assert_eq!(
-            message,
-            format!("acreate_assistants() got multiple values for keyword argument '{name}'")
-        );
-        assert!(outcome.seen.is_empty());
-    }
 
     // the route's path keyword already sits in kwargs, so the configured parameters replace it
     let overridden = configured("openai", &[("assistant_id", text("asst_configured"))]);
@@ -539,8 +524,9 @@ async fn assistant_config_overlays_request() {
         AssistantOperation::DeleteAssistant,
         openai_data(),
         Route {
+            thread_id: None,
             assistant_id: Some("asst_a"),
-            ..Route::default()
+            client: None,
         },
         &[(200, DELETED)],
     )
@@ -552,6 +538,35 @@ async fn assistant_config_overlays_request() {
         removed_override.seen[0].url,
         "https://mock.test/v1/assistants/asst_configured"
     );
+}
+
+// a configured client or provider collides with the installed function's own named arguments
+#[rstest]
+#[case::client("client")]
+#[case::provider("custom_llm_provider")]
+#[tokio::test]
+async fn a_configured_keyword_collides_with_the_installed_function(#[case] name: &str) {
+    let colliding = configured("openai", &[(name, text("configured"))]);
+    let outcome = dispatch(
+        &colliding,
+        AssistantOperation::CreateAssistant,
+        data(&[("api_key", text("request-key")), ("model", text("gpt-4o"))]),
+        Route {
+            thread_id: None,
+            assistant_id: None,
+            client: None,
+        },
+        &[],
+    )
+    .await;
+    let Err(AssistantDispatchError::TypeError { message }) = outcome.result else {
+        panic!("the configured keyword did not collide");
+    };
+    assert_eq!(
+        message,
+        format!("acreate_assistants() got multiple values for keyword argument '{name}'")
+    );
+    assert!(outcome.seen.is_empty());
 }
 
 #[tokio::test]
@@ -645,7 +660,8 @@ async fn missing_arguments_use_the_interpreter_wording() {
         openai_data(),
         Route {
             thread_id: Some("thread_a"),
-            ..Route::default()
+            assistant_id: None,
+            client: None,
         },
         &[],
     )
@@ -665,7 +681,8 @@ async fn missing_arguments_use_the_interpreter_wording() {
         openai_data(),
         Route {
             thread_id: Some("thread_a"),
-            ..Route::default()
+            assistant_id: None,
+            client: None,
         },
         &[],
     )
@@ -716,21 +733,6 @@ fn assistant_body_is_strict() {
         decode_assistant_body(b"[1,2]", &limits).expect("an array parses"),
         Json::List(_)
     ));
-    // empty, truncated, invalid UTF-8 and NaN are decode errors with no repair
-    for malformed in [
-        b"".as_slice(),
-        b"{",
-        b"{\"model\": }",
-        &[0xff_u8, 0xfe, b'{'],
-        b"{\"model\": NaN}",
-        b"{'model': 'x'}",
-        b"{\"model\": \"x\",}",
-    ] {
-        assert!(
-            decode_assistant_body(malformed, &limits).is_err(),
-            "the bytes {malformed:?} are not JSON"
-        );
-    }
     // B1087's byte boundary is the decoder's own failure
     let over = vec![b'a'; limits.max_json_bytes.saturating_add(1)];
     let Err(AssistantBodyError::Limits(error)) = decode_assistant_body(&over, &limits) else {
@@ -739,6 +741,22 @@ fn assistant_body_is_strict() {
     let fields = error.fields();
     assert_eq!(fields.status, 413);
     assert_eq!(fields.error_type, "invalid_request_error");
+}
+
+// empty, truncated, invalid UTF-8 and NaN are decode errors with no repair
+#[rstest]
+#[case::empty(b"")]
+#[case::truncated(b"{")]
+#[case::missing_value(b"{\"model\": }")]
+#[case::invalid_utf8(&[0xff_u8, 0xfe, b'{'])]
+#[case::nan(b"{\"model\": NaN}")]
+#[case::single_quotes(b"{'model': 'x'}")]
+#[case::trailing_comma(b"{\"model\": \"x\",}")]
+fn malformed_assistant_bodies_are_rejected(#[case] malformed: &[u8]) {
+    assert!(
+        decode_assistant_body(malformed, &ApiLimits::default()).is_err(),
+        "the bytes {malformed:?} are not JSON"
+    );
 }
 
 #[test]

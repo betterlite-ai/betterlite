@@ -15,30 +15,18 @@ pub enum AssistantOperation {
 }
 
 impl AssistantOperation {
-    // the module-level function the factory hands its merged arguments to; a keyword collision names it
+    // the module-level function the factory calls, and the path argument the proxy passes next to **data
     #[must_use]
-    pub const fn function(self) -> &'static str {
+    pub const fn installed(self) -> (&'static str, Option<&'static str>) {
         match self {
-            Self::CreateAssistant => "acreate_assistants",
-            Self::ListAssistants => "aget_assistants",
-            Self::DeleteAssistant => "adelete_assistant",
-            Self::CreateThread => "acreate_thread",
-            Self::GetThread => "aget_thread",
-            Self::CreateMessage => "a_add_message",
-            Self::ListMessages => "aget_messages",
-            Self::RunThread => "arun_thread",
-        }
-    }
-
-    // the explicit path argument the proxy passes next to **data, mirroring proxy_server.py
-    #[must_use]
-    pub const fn path_argument(self) -> Option<&'static str> {
-        match self {
-            Self::DeleteAssistant => Some("assistant_id"),
-            Self::GetThread | Self::CreateMessage | Self::ListMessages | Self::RunThread => {
-                Some("thread_id")
-            }
-            Self::CreateAssistant | Self::ListAssistants | Self::CreateThread => None,
+            Self::CreateAssistant => ("acreate_assistants", None),
+            Self::ListAssistants => ("aget_assistants", None),
+            Self::DeleteAssistant => ("adelete_assistant", Some("assistant_id")),
+            Self::CreateThread => ("acreate_thread", None),
+            Self::GetThread => ("aget_thread", Some("thread_id")),
+            Self::CreateMessage => ("a_add_message", Some("thread_id")),
+            Self::ListMessages => ("aget_messages", Some("thread_id")),
+            Self::RunThread => ("arun_thread", Some("thread_id")),
         }
     }
 }

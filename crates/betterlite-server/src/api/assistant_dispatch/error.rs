@@ -59,11 +59,6 @@ pub enum AssistantDispatchError {
 }
 
 impl AssistantDispatchError {
-    #[must_use]
-    pub const fn key_error(key: &'static str) -> Self {
-        Self::KeyError { key }
-    }
-
     // the wrapper call itself: an explicit path argument collides with the same key in the body
     #[must_use]
     pub fn multiple_values(name: &str) -> Self {
@@ -108,11 +103,6 @@ impl AssistantDispatchError {
         Self::Invalid {
             message: format!("'{field}' has the wrong type"),
         }
-    }
-
-    #[must_use]
-    pub fn invalid_message(message: String) -> Self {
-        Self::Invalid { message }
     }
 
     // get_assistants and delete_assistant surface through the async wrapper's exception_type mapping

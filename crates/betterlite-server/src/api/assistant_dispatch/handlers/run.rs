@@ -4,6 +4,7 @@ use betterlite_core::api::assistant_run_sdk::call::{RunParams, RunThreadCall};
 use betterlite_core::api::assistant_run_sdk::provider::ProviderRuns;
 use betterlite_core::api::assistant_run_sdk::service::AssistantRunSdk;
 use betterlite_core::api::resource_sdk_settings::ResourceSdkSettings;
+use betterlite_models::decisions::Json;
 
 use super::super::AssistantDispatcher;
 use super::super::Merged;
@@ -11,7 +12,7 @@ use super::super::client::AssistantClient;
 use super::super::error::AssistantDispatchError;
 use super::super::outcome::AssistantOutcome;
 use super::super::request::AssistantRequest;
-use super::support::{optional, parse, parse_value, require, required_text, subset, text};
+use super::support::{optional, parse_value, require, subset, text};
 use super::{Deps, Dispatched, Sources};
 
 const RUN_PARAMS: [&str; 15] = [
@@ -39,8 +40,11 @@ pub(super) async fn thread<T: Deps, S: Sources>(
 ) -> Dispatched<T> {
     let kwargs = &merged.kwargs;
     require(kwargs, "arun_thread", &["thread_id", "assistant_id"])?;
-    let thread_id = required_text(kwargs, "thread_id", "arun_thread")?;
-    let assistant_id = required_text(kwargs, "assistant_id", "arun_thread")?;
+    let thread_id = text(kwargs, "thread_id")?
+        .ok_or_else(|| AssistantDispatchError::missing_arguments("arun_thread", &["thread_id"]))?;
+    let assistant_id = text(kwargs, "assistant_id")?.ok_or_else(|| {
+        AssistantDispatchError::missing_arguments("arun_thread", &["assistant_id"])
+    })?;
     let resources = ResourceSdkSettings::from(dispatcher.resources);
     let call = RunThreadCall {
         provider: merged.provider,
@@ -55,7 +59,7 @@ pub(super) async fn thread<T: Deps, S: Sources>(
         client: request.client.as_ref().map(AssistantClient::run),
         event_handler: request.event_handler.clone(),
         arun_thread: None,
-        params: parse(&subset(kwargs, &RUN_PARAMS))?,
+        params: parse_value(&Json::Object(subset(kwargs, &RUN_PARAMS)))?,
     };
     let sdk = AssistantRunSdk {
         operations: ProviderRuns {

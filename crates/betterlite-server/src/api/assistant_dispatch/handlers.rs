@@ -7,6 +7,7 @@ mod threads;
 use betterlite_azure::credentials::source::CredentialSources;
 use betterlite_core::api::assistant_messages::service::Operation as MessageKind;
 use betterlite_core::api::assistant_read_delete::request::AssistantOperation as ReadDeleteOperation;
+use betterlite_core::api::assistant_threads::ThreadOperation;
 use betterlite_openai::assistants::transport::AssistantsTransport;
 use betterlite_openai::thread_runs::stream::{RunStream, RunStreamTransport};
 
@@ -42,8 +43,12 @@ pub(super) async fn run<T: Deps, S: Sources>(
             assistants::read_or_delete(dispatcher, merged, ReadDeleteOperation::Delete, request)
                 .await
         }
-        AssistantOperation::CreateThread => threads::create(dispatcher, merged, request).await,
-        AssistantOperation::GetThread => threads::get(dispatcher, merged, request).await,
+        AssistantOperation::CreateThread => {
+            threads::call(dispatcher, merged, request, ThreadOperation::Create).await
+        }
+        AssistantOperation::GetThread => {
+            threads::call(dispatcher, merged, request, ThreadOperation::Get).await
+        }
         AssistantOperation::CreateMessage => {
             messages::call(dispatcher, merged, MessageKind::Append).await
         }

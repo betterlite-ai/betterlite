@@ -38,47 +38,34 @@ pub(super) fn text(
     }
 }
 
-pub(super) fn required_text(
-    kwargs: &BTreeMap<String, Json>,
-    name: &str,
-    function: &str,
-) -> Result<String, AssistantDispatchError> {
-    text(kwargs, name)?.ok_or_else(|| AssistantDispatchError::missing_arguments(function, &[name]))
-}
-
 pub(super) fn optional<T: DeserializeOwned>(
     kwargs: &BTreeMap<String, Json>,
     name: &str,
 ) -> Result<Option<T>, AssistantDispatchError> {
-    match kwargs.get(name) {
-        None | Some(Json::Null) => Ok(None),
-        Some(value) => parse_value(value).map(Some),
+    let Some(value) = kwargs.get(name) else {
+        return Ok(None);
+    };
+    if matches!(value, Json::Null) {
+        return Ok(None);
     }
+    parse_value(value).map(Some)
 }
 
 pub(super) fn subset(kwargs: &BTreeMap<String, Json>, names: &[&str]) -> BTreeMap<String, Json> {
-    names
-        .iter()
-        .filter_map(|name| {
-            kwargs
-                .get(*name)
-                .map(|value| ((*name).to_owned(), value.clone()))
-        })
-        .collect()
-}
-
-pub(super) fn parse<T: DeserializeOwned>(
-    fields: &BTreeMap<String, Json>,
-) -> Result<T, AssistantDispatchError> {
-    let bytes = serde_json::to_vec(fields)
-        .map_err(|error| AssistantDispatchError::invalid_message(error.to_string()))?;
-    serde_json::from_slice(&bytes)
-        .map_err(|error| AssistantDispatchError::invalid_message(error.to_string()))
+    let mut kept = BTreeMap::new();
+    for name in names {
+        if let Some(value) = kwargs.get(*name) {
+            kept.insert((*name).to_owned(), value.clone());
+        }
+    }
+    kept
 }
 
 pub(super) fn parse_value<T: DeserializeOwned>(value: &Json) -> Result<T, AssistantDispatchError> {
-    let bytes = serde_json::to_vec(value)
-        .map_err(|error| AssistantDispatchError::invalid_message(error.to_string()))?;
-    serde_json::from_slice(&bytes)
-        .map_err(|error| AssistantDispatchError::invalid_message(error.to_string()))
+    let bytes = serde_json::to_vec(value).map_err(|error| AssistantDispatchError::Invalid {
+        message: error.to_string(),
+    })?;
+    serde_json::from_slice(&bytes).map_err(|error| AssistantDispatchError::Invalid {
+        message: error.to_string(),
+    })
 }

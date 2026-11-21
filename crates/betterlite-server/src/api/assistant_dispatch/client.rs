@@ -19,6 +19,42 @@ pub enum SuppliedClass {
     AsyncAzureOpenAi,
 }
 
+// What the three SDK owners call the same supplied class.
+pub(super) struct ClassKinds {
+    pub(super) client: ClientClass,
+    pub(super) read_delete: SuppliedClientKind,
+    pub(super) run: RunClientClass,
+}
+
+impl SuppliedClass {
+    // the one place the class is translated, for the create, read/delete and run SDK owners alike
+    #[must_use]
+    pub(super) const fn kinds(self) -> ClassKinds {
+        match self {
+            Self::OpenAi => ClassKinds {
+                client: ClientClass::OpenAi,
+                read_delete: SuppliedClientKind::OpenAi,
+                run: RunClientClass::OpenAi,
+            },
+            Self::AzureOpenAi => ClassKinds {
+                client: ClientClass::AzureOpenAi,
+                read_delete: SuppliedClientKind::AzureOpenAi,
+                run: RunClientClass::Azure,
+            },
+            Self::AsyncOpenAi => ClassKinds {
+                client: ClientClass::AsyncOpenAi,
+                read_delete: SuppliedClientKind::AsyncOpenAi,
+                run: RunClientClass::AsyncOpenAi,
+            },
+            Self::AsyncAzureOpenAi => ClassKinds {
+                client: ClientClass::AsyncAzureOpenAi,
+                read_delete: SuppliedClientKind::AsyncAzureOpenAi,
+                run: RunClientClass::AsyncAzure,
+            },
+        }
+    }
+}
+
 // The constructor arguments of a supplied SDK client: the identity the SDK owner must use unchanged.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -33,26 +69,11 @@ pub struct AssistantClient {
 }
 
 impl AssistantClient {
-    #[must_use]
-    pub const fn create_class(&self) -> ClientClass {
-        match self.class {
-            SuppliedClass::OpenAi => ClientClass::OpenAi,
-            SuppliedClass::AzureOpenAi => ClientClass::AzureOpenAi,
-            SuppliedClass::AsyncOpenAi => ClientClass::AsyncOpenAi,
-            SuppliedClass::AsyncAzureOpenAi => ClientClass::AsyncAzureOpenAi,
-        }
-    }
-
     // get_assistants and delete_assistant read the class to drop a sync client on azure, then reuse it
     #[must_use]
     pub fn read_delete(&self) -> SuppliedClient {
         SuppliedClient {
-            kind: match self.class {
-                SuppliedClass::OpenAi => SuppliedClientKind::OpenAi,
-                SuppliedClass::AzureOpenAi => SuppliedClientKind::AzureOpenAi,
-                SuppliedClass::AsyncOpenAi => SuppliedClientKind::AsyncOpenAi,
-                SuppliedClass::AsyncAzureOpenAi => SuppliedClientKind::AsyncAzureOpenAi,
-            },
+            kind: self.class.kinds().read_delete,
             api_base: self.api_base.clone(),
             api_key: self.api_key.clone(),
             api_version: self.api_version.clone(),
@@ -60,6 +81,7 @@ impl AssistantClient {
     }
 
     // create_thread and get_thread take the client object itself, so its own base and key win over the facade
+    #[must_use]
     pub fn thread<T>(&self, transport: Arc<T>) -> ThreadClient<'_, T> {
         let kind = match self.class {
             SuppliedClass::OpenAi | SuppliedClass::AzureOpenAi => ClientKind::Sync,
@@ -84,12 +106,7 @@ impl AssistantClient {
     #[must_use]
     pub fn run(&self) -> RunClient {
         RunClient {
-            class: match self.class {
-                SuppliedClass::OpenAi => RunClientClass::OpenAi,
-                SuppliedClass::AzureOpenAi => RunClientClass::Azure,
-                SuppliedClass::AsyncOpenAi => RunClientClass::AsyncOpenAi,
-                SuppliedClass::AsyncAzureOpenAi => RunClientClass::AsyncAzure,
-            },
+            class: self.class.kinds().run,
             api_key: self.api_key.clone(),
             base_url: self.api_base.clone(),
             api_version: self.api_version.clone(),

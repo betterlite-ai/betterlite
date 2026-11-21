@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use betterlite_core::api::assistant_messages::connection::MessageParams;
@@ -14,7 +13,8 @@ use super::super::AssistantDispatcher;
 use super::super::Merged;
 use super::super::error::AssistantDispatchError;
 use super::super::outcome::AssistantOutcome;
-use super::support::{parse, require, required_text, subset};
+use super::super::request::AssistantRequest;
+use super::support::{parse_value, require, subset, text};
 use super::{Deps, Dispatched, Sources};
 
 // add_message's named arguments; get_messages reads only the thread id
@@ -31,16 +31,19 @@ pub(super) async fn call<T: Deps, S: Sources>(
         MessageOperation::List => &["thread_id"],
     };
     require(&merged.kwargs, function, names)?;
-    let thread_id = required_text(&merged.kwargs, "thread_id", function)?;
+    let thread_id = text(&merged.kwargs, "thread_id")?
+        .ok_or_else(|| AssistantDispatchError::missing_arguments(function, &["thread_id"]))?;
     let mut kwargs = merged.kwargs;
     let data = match operation {
-        MessageOperation::Append => Some(message_data(&kwargs)?),
+        MessageOperation::Append => Some(parse_value::<MessageData>(&Json::Object(subset(
+            &kwargs, &NAMED,
+        )))?),
         MessageOperation::List => None,
     };
     for name in ["thread_id", "role", "content", "attachments", "metadata"] {
         kwargs.remove(name);
     }
-    let params: MessageParams = parse(&kwargs)?;
+    let params: MessageParams = parse_value(&Json::Object(kwargs))?;
     let resources = ResourceSdkSettings::from(dispatcher.resources);
     let context = MessageContext {
         settings: &resources,
@@ -64,11 +67,6 @@ const fn function_name(operation: MessageOperation) -> &'static str {
         MessageOperation::Append => "a_add_message",
         MessageOperation::List => "aget_messages",
     }
-}
-
-// add_message's data is built from the named arguments; get_messages builds none
-fn message_data(kwargs: &BTreeMap<String, Json>) -> Result<MessageData, AssistantDispatchError> {
-    parse(&subset(kwargs, &NAMED))
 }
 
 fn build_request<'request>(

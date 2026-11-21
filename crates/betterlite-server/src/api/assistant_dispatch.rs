@@ -6,7 +6,6 @@ mod operation;
 mod outcome;
 mod request;
 
-#[cfg(test)]
 mod tests;
 
 use std::collections::BTreeMap;
@@ -55,15 +54,12 @@ struct Merged {
 
 // the wrapper's own named arguments: a configured copy of either collides with the call (router.py#L7190)
 fn check_arguments(
-    operation: AssistantOperation,
+    function: &str,
     kwargs: &BTreeMap<String, Json>,
 ) -> Result<(), AssistantDispatchError> {
     for name in ["custom_llm_provider", "client"] {
         if kwargs.contains_key(name) {
-            return Err(AssistantDispatchError::duplicate_argument(
-                operation.function(),
-                name,
-            ));
+            return Err(AssistantDispatchError::duplicate_argument(function, name));
         }
     }
     Ok(())
@@ -85,18 +81,13 @@ where
     T: AssistantsTransport + RunStreamTransport,
     S: CredentialSources + Clone + Send + Sync,
 {
+    // _pass_through_assistants_endpoint_factory: bind the caller's provider and client, overlay the configured parameters when the provider is null, then call the installed function.
     pub async fn dispatch(
         &self,
         request: &AssistantRequest<'_>,
     ) -> Result<AssistantOutcome<RunStream<T>>, AssistantDispatchError> {
-        let merged = self.merge(request)?;
-        handlers::run(self, request, merged).await
-    }
-
-    // _pass_through_assistants_endpoint_factory: bind the caller's provider and client, overlay the
-    // configured litellm_params only when the provider is null, then call the installed function.
-    fn merge(&self, request: &AssistantRequest<'_>) -> Result<Merged, AssistantDispatchError> {
-        if let Some(name) = request.operation.path_argument()
+        let (function, path) = request.operation.installed();
+        if let Some(name) = path
             && request.data.contains_key(name)
         {
             // the route passes this id as a keyword next to **data, so a body key of that name collides
@@ -106,8 +97,7 @@ where
         let mut kwargs = request.data.clone();
         kwargs.remove("custom_llm_provider");
         kwargs.remove("client");
-        if let (Some(name), Some(value)) = (request.operation.path_argument(), request.path_value())
-        {
+        if let (Some(name), Some(value)) = (path, request.path_value()) {
             // the route's keyword is in kwargs before the factory runs, so the overlay can replace it
             kwargs.insert(name.to_owned(), Json::Text(value.to_owned()));
         }
@@ -115,8 +105,8 @@ where
             Some(provider) => provider,
             None => self.overlay(&mut kwargs)?,
         };
-        check_arguments(request.operation, &kwargs)?;
-        Ok(Merged { provider, kwargs })
+        check_arguments(function, &kwargs)?;
+        handlers::run(self, request, Merged { provider, kwargs }).await
     }
 
     fn overlay(
@@ -129,14 +119,19 @@ where
             });
         };
         // AssistantsTypedDict is a runtime dict: the two keys are plain dictionary reads
-        let provider = config
-            .custom_llm_provider
-            .clone()
-            .ok_or_else(|| AssistantDispatchError::key_error("custom_llm_provider"))?;
+        let provider =
+            config
+                .custom_llm_provider
+                .clone()
+                .ok_or(AssistantDispatchError::KeyError {
+                    key: "custom_llm_provider",
+                })?;
         let params = config
             .litellm_params
             .as_ref()
-            .ok_or_else(|| AssistantDispatchError::key_error("litellm_params"))?;
+            .ok_or(AssistantDispatchError::KeyError {
+                key: "litellm_params",
+            })?;
         kwargs.extend(params.clone());
         Ok(provider)
     }

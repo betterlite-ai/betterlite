@@ -16,7 +16,7 @@ use super::super::client::AssistantClient;
 use super::super::error::{AssistantDispatchError, AssistantFailure};
 use super::super::outcome::AssistantOutcome;
 use super::super::request::AssistantRequest;
-use super::support::{optional, parse, parse_value, required_text, subset, text};
+use super::support::{optional, parse_value, subset, text};
 use super::{Deps, Dispatched, Sources};
 
 // the kwargs GenericLiteLLMParams and get_litellm_params read for get/delete
@@ -44,8 +44,11 @@ pub(super) async fn create<T: Deps, S: Sources>(
 ) -> Dispatched<T> {
     let mut fields = merged.kwargs;
     fields.insert(String::from("provider"), Json::Text(merged.provider));
-    let mut input: AssistantCreateInput = parse(&fields)?;
-    input.client = request.client.as_ref().map(AssistantClient::create_class);
+    let mut input: AssistantCreateInput = parse_value(&Json::Object(fields))?;
+    input.client = request
+        .client
+        .as_ref()
+        .map(|client| client.class.kinds().client);
     let records = AssistantRecords {
         settings: dispatcher.resources.clone(),
         azure: dispatcher.azure.clone(),
@@ -90,9 +93,9 @@ fn step<T>(step: AssistantStep) -> Dispatched<T> {
     match step {
         AssistantStep::Page(page) => Ok(AssistantOutcome::Assistants(page)),
         AssistantStep::Deleted(deleted) => Ok(AssistantOutcome::Deleted(deleted)),
-        AssistantStep::Coroutine => Err(AssistantDispatchError::invalid_message(String::from(
-            "the asynchronous wrapper returned a coroutine",
-        ))),
+        AssistantStep::Coroutine => Err(AssistantDispatchError::Invalid {
+            message: String::from("the asynchronous wrapper returned a coroutine"),
+        }),
     }
 }
 
@@ -102,11 +105,11 @@ fn read_delete_input(
     client: Option<&AssistantClient>,
 ) -> Result<AssistantReadDeleteInput, AssistantDispatchError> {
     let assistant_id = match operation {
-        ReadDeleteOperation::Delete => Some(required_text(
-            &merged.kwargs,
-            "assistant_id",
-            "delete_assistant",
-        )?),
+        ReadDeleteOperation::Delete => {
+            Some(text(&merged.kwargs, "assistant_id")?.ok_or_else(|| {
+                AssistantDispatchError::missing_arguments("delete_assistant", &["assistant_id"])
+            })?)
+        }
         ReadDeleteOperation::List => None,
     };
     Ok(AssistantReadDeleteInput {
@@ -127,6 +130,6 @@ fn read_delete_input(
         before: text(&merged.kwargs, "before")?,
         limit: optional(&merged.kwargs, "limit")?,
         order: text(&merged.kwargs, "order")?,
-        params: parse(&subset(&merged.kwargs, &READ_DELETE_PARAMS))?,
+        params: parse_value(&Json::Object(subset(&merged.kwargs, &READ_DELETE_PARAMS)))?,
     })
 }

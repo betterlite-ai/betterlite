@@ -7,8 +7,7 @@ use betterlite_openai::thread_runs::stream::RunEventHandler;
 use super::client::AssistantClient;
 use super::operation::AssistantOperation;
 
-// One call of one installed wrapper: the proxy's data dict, the path argument it passes explicitly, and
-// the client object it was handed (None on every HTTP route).
+// One call of one installed wrapper: the proxy's data dict, the path argument, and the client it was handed.
 pub struct AssistantRequest<'request> {
     pub operation: AssistantOperation,
     pub data: &'request BTreeMap<String, Json>,
