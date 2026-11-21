@@ -472,13 +472,13 @@ async fn write_get_masks_params_and_marks_the_database_origin() {
     setup.rows = vec![record(
         "tool-1",
         "kept",
-        r#"{"search_provider":"tavily","api_key":"tvly-secret-value","api_base":"https://tavily.example"}"#,
+        r#"{"search_provider":"tavily","api_key":"tvly-secret-9876","api_base":"https://tavily.example"}"#,
     )];
     let harness = build(setup);
     let (status, text) = send(&harness, "GET", "/search_tools/tool-1", "", Some(master())).await;
     assert_eq!(status, StatusCode::OK);
     let expected = parse(&format!(
-        r#"{{"search_tool_id":"tool-1","search_tool_name":"kept","litellm_params":{{"search_provider":"tavily","api_key":"tv****ue","api_base":"https://tavily.example"}},"search_tool_info":{{"description":"stored"}},"created_at":"{created}","updated_at":"{updated}","is_from_config":false}}"#,
+        r#"{{"search_tool_id":"tool-1","search_tool_name":"kept","litellm_params":{{"search_provider":"tavily","api_key":"tv****76","api_base":"https://tavily.example"}},"search_tool_info":{{"description":"stored"}},"created_at":"{created}","updated_at":"{updated}","is_from_config":false}}"#,
         created = isoformat(moment(1_770_000_000)),
         updated = isoformat(moment(1_775_000_000)),
     ));
