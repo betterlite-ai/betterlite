@@ -128,7 +128,7 @@ where
 {
     match raw {
         None => Ok(None),
-        Some(RawFlag::Literal(flag)) => Ok(Some(flag)),
+        Some(RawFlag::Literal(value)) => Ok(Some(value)),
         Some(RawFlag::Text(text)) => {
             let name = text.strip_prefix(ENV_MARKER).unwrap_or(path).to_owned();
             let resolved = resolve_string(text, path, lookup)?;

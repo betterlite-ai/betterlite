@@ -115,9 +115,9 @@ pub(super) struct FixedParams {
 }
 
 impl FixedParams {
-    pub(super) fn new(params: JsonMap) -> Self {
+    pub(super) fn new(entries: JsonMap) -> Self {
         Self {
-            params,
+            params: entries,
             calls: AtomicUsize::new(0),
         }
     }
@@ -151,9 +151,9 @@ pub(super) struct FixedChooser {
 }
 
 impl FixedChooser {
-    pub(super) fn new(choice: Option<CacheAwareChoice>, delay: Duration) -> Self {
+    pub(super) fn new(prediction: Option<CacheAwareChoice>, delay: Duration) -> Self {
         Self {
-            choice,
+            choice: prediction,
             delay,
             calls: AtomicUsize::new(0),
             seen: Mutex::new(None),
