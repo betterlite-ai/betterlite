@@ -148,6 +148,27 @@ async fn create_reports_a_history_row_of_another_agent_as_conflict() {
 }
 
 #[tokio::test]
+async fn create_reports_an_unbound_history_row_as_conflict() {
+    let database = Database::start().await;
+    let store = store_with(&database, RecordingPublisher::default());
+    database
+        .run(
+            r#"INSERT INTO "LiteLLM_RetiredAgentIdentity" (binding_id, agent_id, provider, issuer, tenant_id, client_id) VALUES ('binding-free', NULL, 'microsoft_entra', 'issuer-old', '11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222')"#,
+        )
+        .await;
+    let config = agent(&format!(r#"{{"agent_name": "a", {IDENTITY}}}"#));
+    let failure = store
+        .add_agent_to_db(&config, "author", None)
+        .await
+        .expect_err("the application belonged to a deleted agent");
+    match failure {
+        AgentPersistenceError::Conflict(text) => assert_eq!(text, APPLICATION_CONFLICT),
+        other => panic!("unexpected failure: {other}"),
+    }
+    database.close().await;
+}
+
+#[tokio::test]
 async fn create_does_not_publish_after_a_failed_write() {
     let database = Database::start().await;
     let publisher = RecordingPublisher::default();

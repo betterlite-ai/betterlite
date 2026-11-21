@@ -164,3 +164,64 @@ async fn patch_rejects_a_retired_identity_of_another_agent() {
     assert_eq!(publisher.calls(), 1);
     database.close().await;
 }
+
+#[tokio::test]
+async fn patch_unbinds_an_identity_and_refuses_to_enable_it_again() {
+    let database = Database::start().await;
+    let publisher = RecordingPublisher::default();
+    let store = store_with(&database, publisher.clone());
+    let config = agent(&format!(r#"{{"agent_name": "a", {IDENTITY}}}"#));
+    let created = store
+        .add_agent_to_db(&config, "author", None)
+        .await
+        .expect("the agent is created");
+    let revision = database
+        .text(
+            r#"SELECT revision FROM "LiteLLM_AgentIdentity" WHERE agent_id = $1"#,
+            &[&created.agent_id],
+        )
+        .await
+        .expect("the identity row exists");
+    let unbind = patch(r#"{"identity": null}"#);
+    store
+        .patch_agent_in_db(&created.agent_id, &unbind, "editor")
+        .await
+        .expect("the identity is unbound");
+    let inactive = database
+        .text(
+            r#"SELECT active::text FROM "LiteLLM_AgentIdentity" WHERE agent_id = $1"#,
+            &[&created.agent_id],
+        )
+        .await;
+    assert_eq!(inactive.as_deref(), Some("false"));
+    let stamped = database
+        .text(
+            r#"SELECT (last_authenticated_at IS NULL)::text FROM "LiteLLM_AgentIdentity" WHERE agent_id = $1"#,
+            &[&created.agent_id],
+        )
+        .await;
+    assert_eq!(stamped.as_deref(), Some("true"));
+    let changed = database
+        .text(
+            r#"SELECT revision FROM "LiteLLM_AgentIdentity" WHERE agent_id = $1"#,
+            &[&created.agent_id],
+        )
+        .await;
+    assert_ne!(changed, Some(revision));
+    let enable = patch(r#"{"enabled": true}"#);
+    let refusal = store
+        .patch_agent_in_db(&created.agent_id, &enable, "editor")
+        .await
+        .expect_err("an unbound managed agent cannot be enabled");
+    match refusal {
+        AgentPersistenceError::Identity(denied) => {
+            assert_eq!(
+                denied.message,
+                "Bind an identity before enabling this managed agent"
+            );
+        }
+        other => panic!("unexpected failure: {other}"),
+    }
+    assert_eq!(publisher.calls(), 2);
+    database.close().await;
+}

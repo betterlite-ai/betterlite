@@ -160,4 +160,4 @@ pub(crate) fn patch(json: &str) -> PatchAgentRequest {
     serde_json::from_str(json).expect("a valid agent patch")
 }
 
-pub(crate) const IDENTITY: &str = r#""identity": {"provider": "microsoft_entra", "tenant_id": "11111111-1111-1111-1111-111111111111", "client_id": "22222222-2222-2222-2222-222222222222"}"#;
+pub(crate) const IDENTITY: &str = r#""identity": {"provider": "microsoft_entra", "tenant_id": "11111111-1111-1111-1111-111111111111", "client_id": "22222222-2222-2222-2222-222222222222", "service_principal_id": "33333333-3333-3333-3333-333333333333"}"#;

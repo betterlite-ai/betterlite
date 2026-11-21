@@ -85,6 +85,14 @@ fn create_drops_a_marker_secret_and_writes_an_absent_switch_as_null() {
     assert_eq!(plan.columns.extra_headers, None);
     assert_eq!(plan.columns.created_by.as_deref(), Some("author"));
     assert_eq!(plan.columns.updated_by.as_deref(), Some("author"));
+    assert_eq!(
+        plan.columns.created_at,
+        Some(
+            DateTime::from_timestamp(1_700_000_000, 0)
+                .expect("a fixed instant")
+                .naive_utc()
+        )
+    );
 }
 
 #[test]
@@ -269,4 +277,53 @@ fn patch_writes_a_present_card_and_de_duplicates_groups() {
         plan.columns.access_group_ids,
         Some(vec![String::from("x"), String::from("y")])
     );
+}
+
+const PLANNED_IDENTITY: &str = r#""identity": {"provider": "microsoft_entra", "tenant_id": "11111111-1111-1111-1111-111111111111", "client_id": "22222222-2222-2222-2222-222222222222"}"#;
+
+#[test]
+fn create_plans_the_execution_mode_and_enabled_flag() {
+    let masker = SensitiveDataMasker::default();
+    let running = agent(&format!(
+        r#"{{"agent_name": "a", "execution_mode": "delegated", "enabled": true, {PLANNED_IDENTITY}}}"#
+    ));
+    let paused = agent(&format!(
+        r#"{{"agent_name": "b", "execution_mode": "delegated", "enabled": false, {PLANNED_IDENTITY}}}"#
+    ));
+    let running_plan = planned!(create_source(&running), None, "author", &context(&masker));
+    let paused_plan = planned!(create_source(&paused), None, "author", &context(&masker));
+    assert_eq!(
+        running_plan.columns.execution_mode.as_deref(),
+        Some("delegated")
+    );
+    assert_eq!(running_plan.columns.enabled, Some(true));
+    assert_eq!(paused_plan.columns.enabled, Some(false));
+}
+
+#[test]
+fn patch_plans_the_carried_execution_mode_and_enabled_flag() {
+    let masker = SensitiveDataMasker::default();
+    let existing = stored();
+    let paused = patch(r#"{"execution_mode": "delegated", "enabled": false}"#);
+    let running = patch(r#"{"enabled": true}"#);
+    let paused_plan = planned!(
+        PatchSource { agent: &paused },
+        Some(&existing),
+        "author",
+        &context(&masker)
+    );
+    let running_plan = planned!(
+        PatchSource { agent: &running },
+        Some(&existing),
+        "author",
+        &context(&masker)
+    );
+    assert_eq!(
+        paused_plan.columns.execution_mode.as_deref(),
+        Some("delegated")
+    );
+    assert_eq!(paused_plan.columns.enabled, Some(false));
+    assert_eq!(running_plan.columns.enabled, Some(true));
+    assert_eq!(paused_plan.columns.created_by, None);
+    assert_eq!(paused_plan.columns.created_at, None);
 }
