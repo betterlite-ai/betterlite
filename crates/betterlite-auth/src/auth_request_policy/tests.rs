@@ -12,7 +12,7 @@ use tracing::subscriber;
 use tracing_subscriber::layer::{Context, SubscriberExt as _};
 use tracing_subscriber::{Layer, Registry};
 
-use super::bytes::{SizeError, bytes_to_mb, check_request_size, check_response_size};
+use super::bytes::{SizeError, check_request_size, check_response_size};
 use super::invalid_key::{
     ErrorClass, ErrorFacts, MarkOutcome, Marker, is_invalid_virtual_key_error,
     mark_invalid_virtual_key_error,
@@ -68,19 +68,24 @@ fn ip_settings(allowed_ips: &[&str], use_x_forwarded_for: bool) -> Settings {
     Settings {
         allowed_ips: Some(allowed_ips.iter().map(|ip| String::from(*ip)).collect()),
         use_x_forwarded_for,
-        ..Settings::default()
+        max_request_size_mb: None,
+        max_response_size_mb: None,
+        allowed_routes: None,
     }
 }
 
 fn route_settings(allowed_routes: &[&str]) -> Settings {
     Settings {
+        allowed_ips: None,
+        use_x_forwarded_for: false,
+        max_request_size_mb: None,
+        max_response_size_mb: None,
         allowed_routes: Some(
             allowed_routes
                 .iter()
                 .map(|route| String::from(*route))
                 .collect(),
         ),
-        ..Settings::default()
     }
 }
 
@@ -188,8 +193,11 @@ fn route_events(allowed_routes: &[&str]) -> Vec<String> {
 #[test]
 fn size_before_body_safety() {
     let settings = Settings {
+        allowed_ips: None,
+        use_x_forwarded_for: false,
         max_request_size_mb: Some(0.0_f64),
-        ..Settings::default()
+        max_response_size_mb: None,
+        allowed_routes: None,
     };
     let grants = Grants::default();
     let metadata = Metadata;
@@ -229,8 +237,10 @@ fn body_before_ip() {
 fn ip_before_routes() {
     let settings = Settings {
         allowed_ips: Some(vec!["10.0.0.1".to_owned()]),
+        use_x_forwarded_for: false,
+        max_request_size_mb: None,
+        max_response_size_mb: None,
         allowed_routes: Some(vec!["/v1/embeddings".to_owned()]),
-        ..Settings::default()
     };
     let error = denial(&settings, provenance(None, Some("203.0.113.9")));
     assert!(matches!(error, PolicyError::IpDenied { client_ip } if client_ip == "203.0.113.9"));
@@ -360,10 +370,16 @@ fn no_size_limit() {
 
 #[test]
 fn mb_is_1048576() {
-    assert_eq!(bytes_to_mb(1_048_576), Some(1.0_f64));
-    assert_eq!(bytes_to_mb(524_288), Some(0.5_f64));
-    assert_eq!(bytes_to_mb(0), Some(0.0_f64));
-    assert!(bytes_to_mb(1_048_577).unwrap() > 1.0_f64);
+    // 1_000_001 bytes is over a decimal megabyte and under a mebibyte, so only the 1024 divisor allows it
+    check_request_size(Some("1000001"), &[], Some(1.0_f64)).unwrap();
+    check_request_size(Some(""), &vec![0_u8; 1_000_001], Some(1.0_f64)).unwrap();
+    check_response_size(&vec![0_u8; 1_000_001], Some(1.0_f64)).unwrap();
+    check_request_size(Some("1048576"), &[], Some(1.0_f64)).unwrap();
+    check_response_size(&vec![0_u8; 524_288], Some(0.5_f64)).unwrap();
+    let error = check_response_size(&vec![0_u8; 524_289], Some(0.5_f64)).unwrap_err();
+    assert!(matches!(error, SizeError::ResponseTooLarge { .. }));
+    let error = check_request_size(Some("1048577"), &[], Some(1.0_f64)).unwrap_err();
+    assert!(matches!(error, SizeError::RequestTooLarge { .. }));
 }
 
 #[test]

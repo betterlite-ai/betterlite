@@ -57,11 +57,6 @@ impl SizeError {
     }
 }
 
-#[must_use]
-pub fn bytes_to_mb(bytes: i64) -> Option<f64> {
-    bytes.to_f64().map(|value| value.div(MEBIBYTE))
-}
-
 pub fn check_request_size(
     content_length: Option<&str>,
     body: &[u8],
@@ -70,16 +65,21 @@ pub fn check_request_size(
     let Some(limit_mb) = max_request_size_mb else {
         return Ok(());
     };
-    let Some(header) = content_length.filter(|value| !value.is_empty()) else {
-        return enforce(body_mb(body)?, limit_mb, Direction::Request);
+    let bytes = match content_length.filter(|value| !value.is_empty()) {
+        Some(header) => {
+            header
+                .parse::<i64>()
+                .map_err(|source| SizeError::InvalidContentLength {
+                    value: header.to_owned(),
+                    source,
+                })?
+        }
+        None => i64::try_from(body.len()).map_err(|_| SizeError::UnrepresentableBytes)?,
     };
-    let bytes = header
-        .parse::<i64>()
-        .map_err(|source| SizeError::InvalidContentLength {
-            value: header.to_owned(),
-            source,
-        })?;
-    let size_mb = bytes_to_mb(bytes).ok_or(SizeError::UnrepresentableBytes)?;
+    let size_mb = bytes
+        .to_f64()
+        .ok_or(SizeError::UnrepresentableBytes)?
+        .div(MEBIBYTE);
     enforce(size_mb, limit_mb, Direction::Request)
 }
 
@@ -90,12 +90,12 @@ pub fn check_response_size(
     let Some(limit_mb) = max_response_size_mb else {
         return Ok(());
     };
-    enforce(body_mb(body)?, limit_mb, Direction::Response)
-}
-
-fn body_mb(body: &[u8]) -> Result<f64, SizeError> {
     let bytes = i64::try_from(body.len()).map_err(|_| SizeError::UnrepresentableBytes)?;
-    bytes_to_mb(bytes).ok_or(SizeError::UnrepresentableBytes)
+    let size_mb = bytes
+        .to_f64()
+        .ok_or(SizeError::UnrepresentableBytes)?
+        .div(MEBIBYTE);
+    enforce(size_mb, limit_mb, Direction::Response)
 }
 
 fn enforce(size_mb: f64, limit_mb: f64, direction: Direction) -> Result<(), SizeError> {
