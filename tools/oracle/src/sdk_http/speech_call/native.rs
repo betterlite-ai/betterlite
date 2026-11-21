@@ -12,8 +12,7 @@ use betterlite_core::api::speech_chat_bridge::{
 use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
 use betterlite_models::decisions::{HiddenParams, Json};
 use betterlite_openai::chat::ChatRequest;
-use betterlite_openai::chat::execution::ChatError;
-use betterlite_openai::chat::response::ChatResponse;
+use betterlite_openai::chat::execution::{ChatError, ChatOutcome};
 use betterlite_openai::files::error::StatusError;
 use betterlite_openai::files::records::BinaryContent;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
@@ -70,22 +69,27 @@ impl SpeechCompletions for BridgeCompletions {
                     .ok_or_else(|| SpeechCallError::Internal {
                         message: format!("no deployment serves {model}"),
                     })?;
-            match executor.send(deployment, &request).await {
-                Ok(answer) => Ok(completion_output(answer.response)),
-                Err(ChatError::Provider { response }) => Err(provider_error(&response)),
-                Err(other) => Err(SpeechCallError::Internal {
-                    message: SdkHttpError::Chat(Box::new(other)).to_string(),
-                }),
-            }
+            completion_outcome(executor.send(deployment, &request).await)
         }
     }
 }
 
-fn completion_output(response: ChatResponse) -> SpeechCompletionOutput {
-    SpeechCompletionOutput::Response(Box::new(SpeechCompletionAnswer {
-        response,
-        hidden_params: HiddenParams::new(),
-    }))
+// the provider's answer, or the failure the speech call projects from the SDK error
+fn completion_outcome(
+    result: Result<ChatOutcome, ChatError>,
+) -> Result<SpeechCompletionOutput, SpeechCallError> {
+    match result {
+        Ok(answer) => Ok(SpeechCompletionOutput::Response(Box::new(
+            SpeechCompletionAnswer {
+                response: answer.response,
+                hidden_params: HiddenParams::new(),
+            },
+        ))),
+        Err(ChatError::Provider { response }) => Err(provider_error(&response)),
+        Err(other) => Err(SpeechCallError::Internal {
+            message: SdkHttpError::Chat(Box::new(other)).to_string(),
+        }),
+    }
 }
 
 fn provider_error(response: &UpstreamResponse) -> SpeechCallError {
