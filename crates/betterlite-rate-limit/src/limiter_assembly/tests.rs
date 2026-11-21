@@ -65,9 +65,21 @@ fn assembly_keeps_every_owner() {
         settlement.script.as_ref().unwrap(),
         &owners.script
     ));
+    assert!(Arc::ptr_eq(
+        settlement.refund_script.as_ref().unwrap(),
+        &owners.script
+    ));
     assert_eq!(settlement.fail_closed, owners.fail_closed);
     let group = assembly.model_groups.resolve("alias");
     assert_eq!(group.as_deref(), Some("group"));
+}
+
+#[test]
+fn assembly_without_a_redis_script_settles_in_memory() {
+    let owners = build_owners(rate_limiter_settings::Settings::default());
+    let mut assembly = build_assembly(&owners);
+    assembly.check_and_increment_script = None;
+    assert!(assembly.settlement().script.is_none());
 }
 
 #[test]
