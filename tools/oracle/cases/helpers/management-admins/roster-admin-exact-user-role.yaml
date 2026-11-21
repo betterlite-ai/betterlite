@@ -1,0 +1,42 @@
+kind: helper
+name: roster-admin-exact-user-role
+call:
+  management_admins:
+    cases:
+      - function: is_team_admin
+        caller_user_id: user-1
+        team:
+          team_id: team-1
+          members_with_roles:
+            - user_id: user-1
+              role: admin
+      - function: is_team_admin
+        caller_user_id: user-1
+        team:
+          team_id: team-1
+          members_with_roles:
+            - user_id: user-1
+              role: user
+      - function: is_team_admin
+        caller_user_id: user-2
+        team:
+          team_id: team-1
+          members_with_roles:
+            - user_id: user-1
+              role: admin
+      - function: is_team_admin
+        caller_user_id: user-1
+        team:
+          team_id: team-1
+          members_with_roles:
+            - user_id: user-2
+              role: admin
+            - user_id: user-1
+              role: user
+      - function: is_team_admin
+        caller_user_id: user-1
+        team:
+          team_id: team-1
+          members_with_roles: []
+env: {}
+compare: {ignore: []}
