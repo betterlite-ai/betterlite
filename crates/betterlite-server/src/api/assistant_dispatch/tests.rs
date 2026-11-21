@@ -443,6 +443,43 @@ async fn dispatch_all_assistant_operations() {
     assert!(streamed.seen.is_empty());
 }
 
+// arun_thread reads a supplied client and its optional kwargs through the run owner
+#[tokio::test]
+async fn a_supplied_client_reaches_the_run_owner() {
+    let settings = configured("openai", &[]);
+    let metadata = Json::Object(BTreeMap::from([(String::from("suite"), text("b2489"))]));
+    let run = dispatch(
+        &settings,
+        AssistantOperation::RunThread,
+        data(&[
+            ("assistant_id", text("asst_a")),
+            ("metadata", metadata.clone()),
+            ("api_base", text(MOCK_BASE)),
+            ("api_key", text("sk-test")),
+        ]),
+        Route {
+            thread_id: Some("thread_a"),
+            assistant_id: None,
+            client: Some(supplied("sk-supplied")),
+        },
+        &[(200, RUN)],
+    )
+    .await;
+    let AssistantOutcome::Run(RunOutcome::Polled(reply)) = run.result.expect("run succeeds") else {
+        panic!("run answered with another outcome");
+    };
+    assert_eq!(reply.expect("the provider replied").id, "run_a");
+    // the supplied client's own key wins over the params key, unchanged
+    assert_eq!(
+        run.seen[0].authorization.as_deref(),
+        Some("Bearer sk-supplied")
+    );
+    match &run.seen[0].body {
+        Json::Object(fields) => assert_eq!(fields.get("metadata"), Some(&metadata)),
+        other => panic!("the provider body is not an object: {other:?}"),
+    }
+}
+
 #[tokio::test]
 async fn assistant_config_overlays_request() {
     let settings = configured(
