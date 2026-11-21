@@ -50,7 +50,6 @@ fn settings() -> RequestSetupSettings {
     RequestSetupSettings {
         allow_dynamic_callback_disabling: true,
         missing_session_id: None,
-        drop_params_configured: false,
         otel_v2_enabled: true,
         default_team_settings: Vec::new(),
         allowed_hosts: Vec::new(),
@@ -159,10 +158,13 @@ fn vars(items: &[(&str, &str)]) -> Vec<(String, String)> {
         {"callback_name": "langfuse", "callback_vars": {"langfuse_environment": "Prod"}},
         {"callback_name": "langfuse_otel", "callback_vars": {"langfuse_span_scope": "most"}},
         {"callback_name": "missing_vars"},
+        {"callback_name": "null_vars", "callback_vars": null},
+        {"callback_name": 5, "callback_vars": {}},
+        {"callback_name": "listed", "callback_vars": {"langfuse_host": ["a"]}},
         "not-an-object"
     ]}}"#,
     None,
-    vec![SetupDiagnostic::InvalidCallbackMetadata { source: CallbackSource::Key }; 6]
+    vec![SetupDiagnostic::InvalidCallbackMetadata { source: CallbackSource::Key }; 9]
 )]
 #[case::team_list_not_a_list(
     r#"{"team_metadata": {"logging": {"callback_name": "langfuse"}}}"#,
@@ -461,33 +463,34 @@ fn missing_session_policy_uses_the_selected_slot() {
 }
 
 #[rstest]
-#[case::claude_cli("claude-cli/2.1.0", "{}", false, Some(Json::Bool(true)))]
-#[case::claude_code("claude-code/1.0", "{}", false, Some(Json::Bool(true)))]
-#[case::codex_any_case("CODEX_cli_rs/0.1", "{}", false, Some(Json::Bool(true)))]
-#[case::codex_space("codex exec", "{}", false, Some(Json::Bool(true)))]
-#[case::codex_slash("codex/1", "{}", false, Some(Json::Bool(true)))]
-#[case::codex_dash("codex-tui", "{}", false, Some(Json::Bool(true)))]
-#[case::codex_without_separator("codexcli", "{}", false, None)]
-#[case::codex_alone("codex", "{}", false, None)]
-#[case::other_client("curl/8.0", "{}", false, None)]
+#[case::claude_cli("claude-cli/2.1.0", "{}", Some(Json::Bool(true)))]
+#[case::claude_code("claude-code/1.0", "{}", Some(Json::Bool(true)))]
+#[case::claude_without_slash("claude-cli", "{}", None)]
+#[case::codex_any_case("CODEX_cli_rs/0.1", "{}", Some(Json::Bool(true)))]
+#[case::codex_space("codex exec", "{}", Some(Json::Bool(true)))]
+#[case::codex_slash("codex/1", "{}", Some(Json::Bool(true)))]
+#[case::codex_dash("codex-tui", "{}", Some(Json::Bool(true)))]
+#[case::codex_without_separator("codexcli", "{}", None)]
+#[case::codex_alone("codex", "{}", None)]
+#[case::other_client("curl/8.0", "{}", None)]
 #[case::caller_set_false(
     "claude-cli/2.1.0",
     r#"{"drop_params": false}"#,
-    false,
     Some(Json::Bool(false))
 )]
-#[case::config_decides("claude-cli/2.1.0", "{}", true, None)]
+#[case::caller_null_counts_as_unset(
+    "codex_exec",
+    r#"{"drop_params": null}"#,
+    Some(Json::Bool(true))
+)]
 fn agentic_cli_drop_params(
     #[case] user_agent: &str,
     #[case] data: &str,
-    #[case] drop_params_configured: bool,
     #[case] expected: Option<Json>,
 ) {
-    let mut configured = settings();
-    configured.drop_params_configured = drop_params_configured;
     let mut request = input(data, CHAT_ROUTE, "{}");
     request.user_agent = user_agent.to_owned();
-    let result = prepared(configured, request).unwrap();
+    let result = prepared(settings(), request).unwrap();
     assert_eq!(result.data.get("drop_params"), expected.as_ref());
 }
 

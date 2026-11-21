@@ -75,8 +75,6 @@ pub enum SetupDiagnostic {
 pub struct RequestSetupSettings {
     pub allow_dynamic_callback_disabling: bool,
     pub missing_session_id: Option<MissingSessionIdPolicy>,
-    // litellm_settings.drop_params is set in the config, whatever its value
-    pub drop_params_configured: bool,
     pub otel_v2_enabled: bool,
     pub default_team_settings: Vec<DefaultTeamSettings>,
     pub allowed_hosts: Vec<AllowedDestination>,
@@ -135,10 +133,9 @@ where
             is_llm_api_route(&RouteValue::Text(route)) && !check_route_access(route, MCP_ROUTES),
             &self.session_ids,
         )?);
-        // agentic CLIs send client-only params, so drop_params is on for them unless the caller or the config decided
+        // LiteLLM's litellm_settings.drop_params check expects a dict where ProxyConfig keeps a MappingProxyType, so only the caller decides
         if is_agentic_cli(&input.user_agent)
             && matches!(data.get(DROP_PARAMS_KEY), None | Some(Json::Null))
-            && !self.settings.drop_params_configured
         {
             data.insert(DROP_PARAMS_KEY.to_owned(), Json::Bool(true));
         }
