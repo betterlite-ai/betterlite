@@ -151,15 +151,13 @@ impl ImageEditProviderSource for Source {
 }
 
 pub(super) struct CustomHandler {
-    name: &'static str,
     calls: Mutex<Vec<Sent>>,
     pending: bool,
 }
 
 impl CustomHandler {
-    pub(super) fn new(name: &'static str) -> Self {
+    pub(super) fn new() -> Self {
         Self {
-            name,
             calls: Mutex::new(Vec::new()),
             pending: false,
         }

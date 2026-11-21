@@ -10,7 +10,7 @@ use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_models::resolution::{
     ProviderIdentity, ResolutionContext, ResolutionError, ResolutionRequest, resolve,
 };
-use betterlite_openai::api::image_contracts::records::{ImageFile, ImageParams};
+use betterlite_openai::api::image_contracts::records::ImageParams;
 
 use super::call::{
     DEFAULT_MODEL, ImageEditCall, ImageEditClientKind, ImageEditStep, OPENAI_EDIT_PARAMS,
@@ -44,15 +44,6 @@ struct ResolvedEdit {
     identity: ProviderIdentity,
 }
 
-// one call as both steps read it once resolution settled
-#[derive(Clone, Copy)]
-struct EditCall<'call> {
-    call: &'call ImageEditCall,
-    resolved: &'call ResolvedEdit,
-    images: &'call [ImageFile],
-    asynchronous: bool,
-}
-
 impl ImageEditOperation for ImageEdits<'_> {
     fn begin(
         &self,
@@ -61,17 +52,10 @@ impl ImageEditOperation for ImageEdits<'_> {
         logger: &mut dyn ImageEditLogger,
     ) -> Result<ImageEditStep<'_>, ImageEditError> {
         let resolved = self.resolve_call(call)?;
-        let images = call.image.images();
-        let edit = EditCall {
-            call,
-            resolved: &resolved,
-            images: &images,
-            asynchronous,
-        };
-        if let Some(step) = self.custom_step(edit)? {
+        if let Some(step) = self.custom_step(call, &resolved, asynchronous)? {
             return Ok(step);
         }
-        self.configured_step(edit, logger)
+        self.configured_step(call, &resolved, asynchronous, logger)
     }
 
     // image_edit rebinds model and custom_llm_provider only when get_llm_provider returns
@@ -111,13 +95,12 @@ impl ImageEdits<'_> {
     }
 
     // a listed custom provider skips config lookup, option projection and logging entirely
-    fn custom_step(&self, edit: EditCall<'_>) -> Result<Option<ImageEditStep<'_>>, ImageEditError> {
-        let EditCall {
-            call,
-            resolved,
-            images,
-            asynchronous,
-        } = edit;
+    fn custom_step(
+        &self,
+        call: &ImageEditCall,
+        resolved: &ResolvedEdit,
+        asynchronous: bool,
+    ) -> Result<Option<ImageEditStep<'_>>, ImageEditError> {
         let handler = match self.custom.lookup(&resolved.provider) {
             CustomEditLookup::Missing => return Ok(None),
             CustomEditLookup::Unmatched => {
@@ -128,9 +111,10 @@ impl ImageEdits<'_> {
             }
             CustomEditLookup::Handler(handler) => handler,
         };
+        let images = call.image.images();
         let request = CustomEditRequest {
             model: &resolved.model,
-            images,
+            images: &images,
             prompt: call.prompt.as_deref(),
             api_key: text_param(&call.kwargs, "api_key"),
             api_base: text_param(&call.kwargs, "api_base"),
@@ -146,28 +130,24 @@ impl ImageEdits<'_> {
         &self,
         resolved: &ResolvedEdit,
     ) -> Result<(ImageEditConfigTag, &dyn ImageEditProvider), ImageEditError> {
+        let unsupported = || ImageEditError::UnsupportedConfig {
+            provider: resolved.provider.clone(),
+        };
         let tag = provider_id(&resolved.identity)
             .and_then(|provider| select_image_edit(&resolved.model, provider))
-            .ok_or_else(|| ImageEditError::UnsupportedConfig {
-                provider: resolved.provider.clone(),
-            })?;
-        let provider =
-            self.providers
-                .provider(&tag)
-                .ok_or_else(|| ImageEditError::UnsupportedConfig {
-                    provider: resolved.provider.clone(),
-                })?;
+            .ok_or_else(unsupported)?;
+        let provider = self.providers.provider(&tag).ok_or_else(unsupported)?;
         Ok((tag, provider))
     }
 
     // the provider maps the options, then OpenAI-shaped multipart providers add the form fields
     fn edit_params(
         &self,
-        edit: EditCall<'_>,
+        call: &ImageEditCall,
+        resolved: &ResolvedEdit,
         provider: &dyn ImageEditProvider,
         non_default: &Params,
     ) -> Result<ImageParams, ImageEditError> {
-        let EditCall { call, resolved, .. } = edit;
         let supported = provider.supported_openai_params(&resolved.model);
         let extensions = supported_extensions(&call.kwargs, non_default, &supported);
         let options = requested_options(call, &extensions)?;
@@ -186,15 +166,15 @@ impl ImageEdits<'_> {
 
     fn configured_step(
         &self,
-        edit: EditCall<'_>,
+        call: &ImageEditCall,
+        resolved: &ResolvedEdit,
+        asynchronous: bool,
         logger: &mut dyn ImageEditLogger,
     ) -> Result<ImageEditStep<'_>, ImageEditError> {
-        let call = edit.call;
-        let resolved = edit.resolved;
         let (tag, provider) = self.select_provider(resolved)?;
         let non_default =
             filter_out_litellm_params(&control_params(&call.kwargs), &OPENAI_EDIT_PARAMS);
-        let mut params = self.edit_params(edit, provider, &non_default)?;
+        let mut params = self.edit_params(call, resolved, provider, &non_default)?;
         // the record keeps the options as they stand here, before any branch-specific merge
         logger.update_from_kwargs(PreCallRecord {
             model: resolved.model.clone(),
@@ -208,10 +188,11 @@ impl ImageEdits<'_> {
             merge_non_default(&mut params, &non_default)?;
         }
         let headers = merged_headers(call)?;
+        let images = call.image.images();
         provider.send(ImageEditSendRequest {
             model: &resolved.model,
             prompt: call.prompt.as_deref(),
-            images: edit.images,
+            images: &images,
             mask: call.mask.as_ref(),
             optional_params: &params,
             litellm_params: &call.kwargs,
@@ -221,8 +202,8 @@ impl ImageEdits<'_> {
             api_key: text_param(&call.kwargs, "api_key"),
             api_base: text_param(&call.kwargs, "api_base"),
             custom_llm_provider: &resolved.provider,
-            client: client_for(call, edit.asynchronous),
-            asynchronous: edit.asynchronous,
+            client: client_for(call, asynchronous),
+            asynchronous,
         })
     }
 }

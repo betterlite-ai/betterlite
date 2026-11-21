@@ -98,7 +98,7 @@ async fn edit_openai_upload() {
         ])
     );
     assert_eq!(sent.custom_llm_provider, "openai");
-    assert_eq!(sent.timeout, Some(6000.0));
+    assert_eq!(sent.timeout, Some(6000.0_f64));
     assert!(!sent.asynchronous);
     let [record] = logger.records.as_slice() else {
         panic!("exactly one logged pre-call");
@@ -396,13 +396,13 @@ async fn edit_option_merge_rejects_a_non_text_header() {
 }
 
 #[rstest]
-#[case::stability_none("stability/edit-model", None, Some(7.0))]
-#[case::stability_zero("stability/edit-model", Some(0.0), Some(7.0))]
-#[case::stability_explicit("stability/edit-model", Some(3.0), Some(3.0))]
+#[case::stability_none("stability/edit-model", None, Some(7.0_f64))]
+#[case::stability_zero("stability/edit-model", Some(0.0_f64), Some(7.0_f64))]
+#[case::stability_explicit("stability/edit-model", Some(3.0_f64), Some(3.0_f64))]
 #[case::bedrock_none("bedrock/edit-model", None, None)]
-#[case::bedrock_zero("bedrock/edit-model", Some(0.0), Some(0.0))]
-#[case::bedrock_explicit("bedrock/edit-model", Some(3.0), Some(3.0))]
-#[case::black_forest_labs_none("black_forest_labs/edit-model", None, Some(7.0))]
+#[case::bedrock_zero("bedrock/edit-model", Some(0.0_f64), Some(0.0_f64))]
+#[case::bedrock_explicit("bedrock/edit-model", Some(3.0_f64), Some(3.0_f64))]
+#[case::black_forest_labs_none("black_forest_labs/edit-model", None, Some(7.0_f64))]
 #[tokio::test]
 async fn edit_dispatch_and_timeout(
     #[case] model: &str,
@@ -482,7 +482,7 @@ async fn edit_dispatch_and_timeout_defaults_to_6000() {
     .image_edit(&call)
     .await
     .expect("the fixture branch answers");
-    assert_eq!(stability.take()[0].timeout, Some(6000.0));
+    assert_eq!(stability.take()[0].timeout, Some(6000.0_f64));
 }
 
 #[tokio::test]
@@ -590,8 +590,8 @@ async fn edit_custom_and_async() {
     let world = World::new();
     let context = world.context();
     let settings = settings(&[]);
-    let first = Arc::new(CustomHandler::new("first"));
-    let second = Arc::new(CustomHandler::new("second"));
+    let first = Arc::new(CustomHandler::new());
+    let second = Arc::new(CustomHandler::new());
     let custom = CustomSource::new(vec![(
         "my-provider",
         vec![Arc::clone(&first), Arc::clone(&second)],
@@ -638,6 +638,7 @@ async fn edit_custom_and_async() {
     );
     assert!(!sent.optional_params.contains_key("async_call"));
     assert_eq!(sent.api_key.as_deref(), Some("sk-test"));
+    assert_eq!(sent.api_base.as_deref(), Some("https://host/v1"));
     assert_eq!(sent.client, Some(ImageEditClientKind::Sync));
     let mut wrong = call.clone();
     wrong.client = Some(ImageEditClientKind::Asynchronous);
@@ -657,7 +658,7 @@ async fn edit_custom_and_async_forces_async() {
     let world = World::new();
     let context = world.context();
     let settings = settings(&[]);
-    let handler = Arc::new(CustomHandler::new("async").pending());
+    let handler = Arc::new(CustomHandler::new().pending());
     let custom = CustomSource::new(vec![("my-provider", vec![Arc::clone(&handler)])]);
     let source = Source::new(Vec::new());
     let service = ImageEdits {
@@ -788,31 +789,34 @@ async fn image_edit_reports_a_logger_failure() {
 #[test]
 fn image_edit_dispatch_defaults() {
     assert_eq!(DEFAULT_MODEL, "dall-e-2");
-    assert_eq!(DEFAULT_REQUEST_TIMEOUT, 6000.0);
+    assert_eq!(DEFAULT_REQUEST_TIMEOUT.to_bits(), 6000.0_f64.to_bits());
     let settings = settings(&[]);
-    assert_eq!(settings.request_timeout_seconds, 6000.0);
+    assert_eq!(
+        settings.request_timeout_seconds.to_bits(),
+        6000.0_f64.to_bits()
+    );
     assert_eq!(
         branch_timeout(
             &ImageEditConfigTag::Bedrock(String::from("m")),
-            Some(0.0),
-            7.0
+            Some(0.0_f64),
+            7.0_f64
         )
         .expect("bedrock keeps zero"),
-        Some(0.0)
+        Some(0.0_f64)
     );
     assert_eq!(
         branch_timeout(
             &ImageEditConfigTag::Stability(String::from("m")),
-            Some(0.0),
-            7.0
+            Some(0.0_f64),
+            7.0_f64
         )
         .expect("stability falls back"),
-        Some(7.0)
+        Some(7.0_f64)
     );
     let refused = branch_timeout(
         &ImageEditConfigTag::Bedrock(String::from("m")),
-        Some(-1.0),
-        7.0,
+        Some(-1.0_f64),
+        7.0_f64,
     )
     .expect_err("a negative timeout is refused");
     assert_eq!(
