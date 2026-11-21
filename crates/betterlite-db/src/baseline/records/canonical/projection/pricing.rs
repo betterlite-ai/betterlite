@@ -49,12 +49,17 @@ fn scalar(value: &Scalar) -> Canonical {
 
 fn basis(value: &PricingBasis) -> Canonical {
     Canonical::List(vec![
-        option_text(value.service_tier.as_ref()),
-        option_text(value.data_residency.as_ref()),
-        option_text(value.vertex_location.as_ref()),
+        value
+            .service_tier
+            .as_ref()
+            .map_or(Canonical::Null, |text| Canonical::Text(text.clone())),
+        value
+            .data_residency
+            .as_ref()
+            .map_or(Canonical::Null, |text| Canonical::Text(text.clone())),
+        value
+            .vertex_location
+            .as_ref()
+            .map_or(Canonical::Null, |text| Canonical::Text(text.clone())),
     ])
-}
-
-fn option_text(value: Option<&String>) -> Canonical {
-    value.map_or(Canonical::Null, |text| Canonical::Text(text.clone()))
 }
