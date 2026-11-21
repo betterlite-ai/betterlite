@@ -66,27 +66,10 @@ pub trait FileWriteConfig: Send + Sync {
 
 // OpenAIVectorStoreFilesConfig's members over B527, whose validate_environment rewrites Authorization and Content-Type in the map it is given
 pub struct OpenAiFileWriteConfig<'settings> {
-    settings: &'settings OpenAiCredentialsSettings,
-    globals: LiteLlmGlobals,
-    env_api_key: Option<SecretString>,
-    litellm_api_base: Option<String>,
-}
-
-impl<'settings> OpenAiFileWriteConfig<'settings> {
-    #[must_use]
-    pub const fn new(
-        settings: &'settings OpenAiCredentialsSettings,
-        globals: LiteLlmGlobals,
-        env_api_key: Option<SecretString>,
-        litellm_api_base: Option<String>,
-    ) -> Self {
-        Self {
-            settings,
-            globals,
-            env_api_key,
-            litellm_api_base,
-        }
-    }
+    pub settings: &'settings OpenAiCredentialsSettings,
+    pub globals: LiteLlmGlobals,
+    pub env_api_key: Option<SecretString>,
+    pub litellm_api_base: Option<String>,
 }
 
 impl FileWriteConfig for OpenAiFileWriteConfig<'_> {

@@ -27,12 +27,12 @@ pub(super) async fn execute(
     .load("model_list: []")
     .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?;
     // The OpenAI provider config over the env's key, exactly as the proxy wires B527
-    let provider = OpenAiFileWriteConfig::new(
-        &config.sections.openai_credentials,
-        LiteLlmGlobals::default(),
-        config.sections.resource_sdk_settings.openai_api_key.clone(),
-        None,
-    );
+    let provider = OpenAiFileWriteConfig {
+        settings: &config.sections.openai_credentials,
+        globals: LiteLlmGlobals::default(),
+        env_api_key: config.sections.resource_sdk_settings.openai_api_key.clone(),
+        litellm_api_base: None,
+    };
     let origin = source(&config, env)?;
     let mut fixture = Fixture::new(call.logging_call_type())?;
     let params = WriteParams {

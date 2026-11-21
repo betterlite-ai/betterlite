@@ -402,12 +402,12 @@ pub(crate) fn openai_config<'settings>(
     settings: &'settings OpenAiCredentialsSettings,
     env_api_key: &str,
 ) -> OpenAiFileWriteConfig<'settings> {
-    OpenAiFileWriteConfig::new(
+    OpenAiFileWriteConfig {
         settings,
-        LiteLlmGlobals::default(),
-        Some(SecretString::from(env_api_key)),
-        None,
-    )
+        globals: LiteLlmGlobals::default(),
+        env_api_key: Some(SecretString::from(env_api_key)),
+        litellm_api_base: None,
+    }
 }
 
 pub(crate) fn params(api_base: &str) -> WriteParams {
