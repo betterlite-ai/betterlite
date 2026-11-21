@@ -191,6 +191,24 @@ async fn invalid_key_warning_stdout_and_traceback_matrix(
 }
 
 #[tokio::test]
+async fn failure_log_prints_the_exception_and_redacts_secrets() {
+    let fixture = Fixture::new();
+    let ports = Recorder::replying(Reply::Original);
+    let mut leaky = http(401, false);
+    if let AuthFailure::Http { detail, .. } = &mut leaky {
+        *detail = "bad key sk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned();
+    }
+    let _outcome = fixture.handle(&ports, settings(false), leaky).await;
+    let logs = ports.logs();
+    let expected = "litellm.proxy.proxy_server.user_api_key_auth(): Exception occured - \
+                    401: bad key REDACTED\nRequester IP Address:203.0.113.7";
+    assert_eq!(
+        logs.first().map(|entry| entry.message.as_str()),
+        Some(expected)
+    );
+}
+
+#[tokio::test]
 async fn identity_copy_api_key_route_and_model_seed() {
     let fixture = Fixture::new();
     let fresh = Recorder::replying(Reply::Original);

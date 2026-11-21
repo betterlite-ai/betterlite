@@ -30,8 +30,8 @@ use crate::user_roles::UserRole;
 
 pub const DB_UNAVAILABLE_FALLBACK_USER_ID: &str = "__db_unavailable_fallback__";
 const OUTAGE_KEY_NAME: &str = "failed-to-connect-to-db";
-const OUTAGE_WARNING: &str = "Auth: DB unavailable, issuing restricted INTERNAL_USER fallback token (allow_requests_on_db_unavailable=True)";
-const FAILURE_PREFIX: &str = "user_api_key_auth(): Exception occured - ";
+const OUTAGE_WARNING: &str = "Auth: DB unavailable \u{2014} issuing restricted INTERNAL_USER fallback token (allow_requests_on_db_unavailable=True)";
+const FAILURE_PREFIX: &str = "litellm.proxy.proxy_server.user_api_key_auth(): Exception occured - ";
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct LogSwitches {

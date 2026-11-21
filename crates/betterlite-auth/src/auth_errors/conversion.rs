@@ -27,13 +27,14 @@ pub enum AuthFailure {
         status_code: Option<u16>,
         llm_provider: String,
     },
-    #[error("{detail}")]
+    // Starlette's HTTPException prints as "status: detail"
+    #[error("{status_code}: {detail}")]
     ModelAccessDenied {
         detail: String,
         internal_message: String,
         status_code: u16,
     },
-    #[error("{detail}")]
+    #[error("{status_code}: {detail}")]
     Http {
         detail: String,
         param: Option<String>,
