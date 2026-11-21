@@ -5,15 +5,12 @@ use axum::Json;
 use axum::extract::{Extension, State};
 use betterlite_config::sections::content_filter_catalog::categories::available_content_categories;
 use betterlite_config::sections::content_filter_catalog::patterns::{
-    PatternCatalogError, PatternMetadata, get_pattern_metadata,
+    PatternMetadata, get_pattern_metadata,
 };
-use betterlite_config::sections::content_filter_catalog::roots::{
-    ContentFilterRootsError, data_roots,
-};
+use betterlite_config::sections::content_filter_catalog::roots::data_roots;
 use betterlite_config::sections::guardrail_identity::enums::{
     PII_ENTITY_CATEGORIES_MAP, PiiAction, PiiEntityType,
 };
-use betterlite_config::sections::guardrail_params::error::GuardrailParamsError;
 use betterlite_config::sections::guardrail_params::records::{
     GuardrailEventHooks, PiiEntityCategoryMap,
 };
@@ -125,26 +122,6 @@ const PII_ENTITY_TYPES: [PiiEntityType; 79] = [
     PiiEntityType::ZaIdNumber,
 ];
 
-#[derive(Debug, thiserror::Error)]
-enum SettingsError {
-    #[error("{0}")]
-    Patterns(#[from] PatternCatalogError),
-    #[error("{0}")]
-    Roots(#[from] ContentFilterRootsError),
-    #[error(transparent)]
-    Params(#[from] GuardrailParamsError),
-    #[error(transparent)]
-    Encode(#[from] serde_json::Error),
-}
-
-impl From<SettingsError> for ReadError {
-    fn from(error: SettingsError) -> Self {
-        Self::Internal {
-            detail: error.to_string(),
-        }
-    }
-}
-
 pub(super) async fn guardrail_ui_settings<R>(
     caller: Option<Extension<AuthContext>>,
     State(_state): State<Arc<ReadState<R>>>,
@@ -157,7 +134,7 @@ where
     Ok(Json(settings))
 }
 
-fn settings_body() -> Result<GuardrailUiAddSettings, SettingsError> {
+fn settings_body() -> Result<GuardrailUiAddSettings, ReadError> {
     let patterns = get_pattern_metadata()?;
     let content_filter_settings = content_filter_settings(&patterns)?;
     Ok(GuardrailUiAddSettings {
@@ -176,7 +153,7 @@ fn settings_body() -> Result<GuardrailUiAddSettings, SettingsError> {
     })
 }
 
-fn content_filter_settings(patterns: &[PatternMetadata]) -> Result<JsonObject, SettingsError> {
+fn content_filter_settings(patterns: &[PatternMetadata]) -> Result<JsonObject, ReadError> {
     let [bundled, legacy] = data_roots()?;
     let categories = available_content_categories(&[bundled.as_path(), legacy.as_path()]);
     let mut settings = JsonObject::new();
@@ -210,7 +187,7 @@ fn pattern_categories(patterns: &[PatternMetadata]) -> Vec<String> {
     categories
 }
 
-fn pii_entity_categories() -> Result<Vec<PiiEntityCategoryMap>, serde_json::Error> {
+fn pii_entity_categories() -> Result<Vec<PiiEntityCategoryMap>, ReadError> {
     let mut maps = Vec::with_capacity(PII_ENTITY_CATEGORIES_MAP.len());
     for (category, entities) in &PII_ENTITY_CATEGORIES_MAP {
         maps.push(PiiEntityCategoryMap {

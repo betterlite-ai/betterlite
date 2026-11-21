@@ -48,12 +48,8 @@ fn recursion_depth(environment: &dyn EnvironmentLookup) -> Result<usize, ReadErr
     let Some(text) = environment.lookup(MAX_RECURSE_DEPTH_VARIABLE) else {
         return Ok(DEFAULT_MAX_RECURSE_DEPTH);
     };
-    let parsed =
-        betterlite_env::number::<usize>(MAX_RECURSE_DEPTH_VARIABLE, &text).map_err(|error| {
-            ReadError::Internal {
-                detail: error.to_string(),
-            }
-        })?;
+    let parsed = betterlite_env::number::<usize>(MAX_RECURSE_DEPTH_VARIABLE, &text)
+        .map_err(|source| ReadError::Depth { source })?;
     Ok(parsed.unwrap_or(DEFAULT_MAX_RECURSE_DEPTH))
 }
 

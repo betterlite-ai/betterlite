@@ -43,9 +43,7 @@ where
     if !state.database {
         return Ok(Vec::new());
     }
-    let identity = caller_identity(principal).map_err(|error| ReadError::Internal {
-        detail: error.to_string(),
-    })?;
+    let identity = caller_identity(principal).map_err(|source| ReadError::Identity { source })?;
     let Some(user_id) = identity.user_id else {
         return Ok(Vec::new());
     };
@@ -53,8 +51,6 @@ where
         .teams
         .team_ids(&user_id)
         .await
-        .map_err(|error| ReadError::Internal {
-            detail: error.to_string(),
-        })?;
+        .map_err(|source| ReadError::Teams { source })?;
     Ok(teams.into_iter().filter(|team| !team.is_empty()).collect())
 }

@@ -67,7 +67,7 @@ where
         if is_admin || own_team {
             allowed.push(guardrail);
         } else {
-            seen.insert(guardrail.guardrail_id.clone());
+            seen.insert(guardrail.guardrail_id);
         }
     }
     let mut entries = appended_rows(allowed, &mut seen)?;
