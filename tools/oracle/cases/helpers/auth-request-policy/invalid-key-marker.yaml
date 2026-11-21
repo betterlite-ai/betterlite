@@ -9,7 +9,7 @@ call:
           - {kind: proxy, code: "401", status_code: 401, marker: absent, message: Invalid proxy server token passed.}
           - {kind: proxy, code: null, status_code: 401, marker: exact_true, message: Invalid proxy server token passed.}
           - {kind: http, code: null, status_code: 401, marker: exact_true, message: Invalid proxy server token passed.}
-          - {kind: http, code: "403", status_code: 401, marker: exact_true, message: Access forbidden: IP address 203.0.113.9 not allowed.}
+          - {kind: http, code: "403", status_code: 401, marker: exact_true, message: "Access forbidden: IP address 203.0.113.9 not allowed."}
           - {kind: http, code: "401", status_code: 400, marker: exact_true, message: Invalid proxy server token passed.}
           - {kind: http, code: null, status_code: 401, marker: not_true, message: Invalid proxy server token passed.}
           - {kind: other, code: "401", status_code: 401, marker: exact_true, message: Invalid proxy server token passed.}
@@ -27,7 +27,7 @@ call:
             headers: {}
           - is_invalid_virtual_key: true
             code: "403"
-            message: Access forbidden: IP address 203.0.113.9 not allowed.
+            message: "Access forbidden: IP address 203.0.113.9 not allowed."
             openai_code: null
             headers: {x-trace: trace-3}
 env: {}
