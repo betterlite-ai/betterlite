@@ -639,6 +639,21 @@ fn query_a_missing_or_undefined_key_and_customer_are_null() {
 }
 
 #[test]
+fn debug_spend_filters_redacts_the_key() {
+    let filters = SpendFilters {
+        model_group: "chat".to_owned(),
+        start: instant(2026, 3, 1, 0, 0, 0),
+        end: instant(2026, 3, 10, 0, 0, 0),
+        api_key: "sk-secret".to_owned(),
+        customer: "alice".to_owned(),
+    };
+    let rendered = format!("{filters:?}");
+    assert!(!rendered.contains("sk-secret"));
+    assert!(rendered.contains("api_key"));
+    assert!(rendered.contains("***"));
+}
+
+#[test]
 fn query_the_model_group_default_applies_only_when_absent() {
     assert_eq!(
         MetricsQuery::decode(None).model_group_or("gpt-4-32k"),
