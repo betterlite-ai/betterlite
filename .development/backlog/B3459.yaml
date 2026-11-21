@@ -1,14 +1,14 @@
 id: B3459
 milestone: M5 api families
 title: S3 Vectors RAG embedding and storage workflow
-status: todo
+status: done
 depends_on: [B3451, B3456, B3458, B5134, B591, B198]
 file: tasks/B3459-s3-vectors-rag-workflow.yaml
 covers:
   - "litellm/rag/ingestion/s3_vectors_ingestion.py"
 parent: B097
 split_from: B097
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2755

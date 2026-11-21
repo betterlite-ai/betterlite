@@ -1,0 +1,17 @@
+kind: helper
+name: unknown-group
+call:
+  model_group_info:
+    {
+      "model_group": "missing",
+      "model_list": [],
+      "model_group_alias": {},
+      "deployment_info": {},
+      "model_cost": {},
+      "parameters": {},
+      "lookup_error": false,
+      "provider_error": "none",
+      "missing_ids": []
+    }
+env: {}
+compare: {ignore: []}

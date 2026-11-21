@@ -1,0 +1,17 @@
+kind: helper
+name: budget-gauges-customer-end-user-label-none
+call:
+  b3882:
+    function: customer
+    end_user_id: e1
+    spend: 4
+    max_budget: 10
+    budget_reset_at: "2026-11-20T02:00:00Z"
+    now: "2026-11-20T00:00:00Z"
+    enable_end_user_tracking: false
+    labels_by_metric:
+      litellm_remaining_customer_budget_metric: [end_user]
+      litellm_customer_max_budget_metric: [end_user]
+      litellm_customer_budget_remaining_hours_metric: [end_user]
+env: {}
+compare: {ignore: []}
