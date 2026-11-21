@@ -62,15 +62,19 @@ pub struct Resolved {
     pub headers: BTreeMap<String, SecretString>,
 }
 
+// What main.py hands the agent config before it is called: the two resolved values and the headers
+pub fn resolve(call: &Call<'_>, globals: &Globals<'_>) -> Result<Resolved, DispatchError> {
+    let api_base = resolve_base(call.api_base, globals).ok_or(DispatchError::MissingBase)?;
+    Ok(Resolved {
+        api_base,
+        api_key: resolve_key(call.api_key, globals),
+        headers: secret_headers(headers_or_global(call.headers, globals)),
+    })
+}
+
 impl Dispatch<'_> {
     pub fn resolve(&self) -> Result<Resolved, DispatchError> {
-        let api_base =
-            resolve_base(self.call.api_base, &self.globals).ok_or(DispatchError::MissingBase)?;
-        Ok(Resolved {
-            api_base,
-            api_key: resolve_key(self.call.api_key, &self.globals),
-            headers: secret_headers(headers_or_global(self.call.headers, &self.globals)),
-        })
+        resolve(&self.call, &self.globals)
     }
 
     // This branch has no post_call in main.py, so an agent failure reaches the caller unlogged
