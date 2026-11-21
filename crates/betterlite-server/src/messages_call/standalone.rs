@@ -3,6 +3,7 @@ use std::sync::{Arc, PoisonError};
 
 use async_trait::async_trait;
 use betterlite_config::sections::settings::JsonValue;
+use betterlite_error::proxy_model_not_found::{ProxyModelNotFoundError, route_endpoint};
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
 use betterlite_openai::openai_base_config::Object as JsonMap;
@@ -11,7 +12,7 @@ use betterlite_router::simple_shuffle::{Candidate, pick};
 use secrecy::ExposeSecret as _;
 
 use super::outcome::{MessagesDispatch, MessagesOutcome, MessagesRouting};
-use super::{MessagesCallError, not_found};
+use super::{MessagesCallError, ROUTE_TYPE};
 use crate::keepalive_interval::DeploymentLookup;
 use crate::routing::simple_shuffle::pick_deployment;
 
@@ -97,8 +98,13 @@ impl MessagesRouting for StandaloneRouting {
             .and_then(JsonValue::as_str)
             .unwrap_or_default()
             .to_owned();
-        let deployment = pick(&self.executor, &model, specific_deployment)
-            .map_err(|_error| MessagesCallError::NotFound(not_found(Some(&model))))?;
+        let deployment = pick(&self.executor, &model, specific_deployment).map_err(|_error| {
+            MessagesCallError::NotFound(ProxyModelNotFoundError::new(
+                route_endpoint(ROUTE_TYPE).unwrap_or(ROUTE_TYPE),
+                &model,
+                true,
+            ))
+        })?;
         data.insert(
             "model".to_owned(),
             JsonValue::String(deployment.litellm_model.clone()),

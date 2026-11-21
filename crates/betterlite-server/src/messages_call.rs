@@ -108,9 +108,13 @@ impl MessagesCallSteps {
             MessagesRoute::UserConfig => Err(MessagesCallError::UserConfig),
             MessagesRoute::Blocked => Err(MessagesCallError::Blocked),
             MessagesRoute::MissingModel => Err(MessagesCallError::MissingModel),
-            MessagesRoute::NotFound => Err(MessagesCallError::NotFound(not_found(
-                input.model.as_deref(),
-            ))),
+            MessagesRoute::NotFound => {
+                Err(MessagesCallError::NotFound(ProxyModelNotFoundError::new(
+                    route_endpoint(ROUTE_TYPE).unwrap_or(ROUTE_TYPE),
+                    input.model.as_deref().unwrap_or_default(),
+                    true,
+                )))
+            }
         }
     }
 
@@ -144,8 +148,10 @@ impl MessagesCallSteps {
         };
         match routing.a2a_agent(data).await {
             Some(result) => result,
-            None => Err(MessagesCallError::NotFound(not_found(
-                input.model.as_deref(),
+            None => Err(MessagesCallError::NotFound(ProxyModelNotFoundError::new(
+                route_endpoint(ROUTE_TYPE).unwrap_or(ROUTE_TYPE),
+                input.model.as_deref().unwrap_or_default(),
+                true,
             ))),
         }
     }
@@ -185,11 +191,6 @@ fn merge_overrides(data: &mut JsonMap) {
             data.insert(key.to_owned(), value.clone());
         }
     }
-}
-
-fn not_found(model: Option<&str>) -> ProxyModelNotFoundError {
-    let route = route_endpoint(ROUTE_TYPE).unwrap_or(ROUTE_TYPE);
-    ProxyModelNotFoundError::new(route, model.unwrap_or_default(), true)
 }
 
 fn routing_missing() -> MessagesCallError {
@@ -249,10 +250,7 @@ impl MessagesCallError {
                     400
                 }
             },
-            Self::Call(failure) => match failure.status {
-                Some(status) => status,
-                None => 500,
-            },
+            Self::Call(failure) => failure.status.unwrap_or(500),
             Self::Context(context) => context.status,
             Self::Blocked => 403,
             Self::MissingModel => 500,
