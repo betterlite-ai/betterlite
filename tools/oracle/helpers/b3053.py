@@ -1,10 +1,9 @@
 import asyncio
 import logging
 from collections.abc import Sequence
-from typing import Final, Literal, Protocol, TypedDict, TypeAlias, runtime_checkable
+from typing import Final, Literal, Protocol, TypeAlias, TypedDict, runtime_checkable
 
 import litellm
-from litellm import ModelResponse
 from litellm.litellm_core_utils.custom_logger_registry import CustomLoggerRegistry
 from litellm.proxy import proxy_server
 from litellm.proxy._types import UserAPIKeyAuth
@@ -12,10 +11,10 @@ from litellm.proxy.hooks.parallel_request_limiter_v3 import (
     RateLimitResponse,
     RateLimitStatus,
     RequestRateLimiterStash,
-    claim_request_stash_for_data,
+    get_or_create_request_stash,
 )
 from litellm.types.caching import RedisPipelineIncrementOperation as PipelineIncrement
-from litellm.types.utils import Usage
+from litellm.types.utils import ModelResponse, PriorityReservationDict, Usage
 from pydantic import ConfigDict, JsonValue, TypeAdapter
 from typing_extensions import override
 
@@ -50,7 +49,7 @@ class LogSuccessJson(TypedDict):
     usage: UsageJson | None
     rate_limit_type: Literal["output", "input", "total"]
     window_size: int
-    priority_reservation: dict[str, float] | None
+    priority_reservation: dict[str, float | PriorityReservationDict] | None
 
 
 Input: TypeAlias = PostCallJson | LogSuccessJson
@@ -185,7 +184,7 @@ def reported_headers(call: PostCallJson, response: ProbeResponse) -> dict[str, J
 
 
 async def post_call_run(call: PostCallJson, handler: DynamicHandler) -> HeadersAnswer:
-    stash: RequestRateLimiterStash = claim_request_stash_for_data({"litellm_call_id": CALL_ID})
+    stash: RequestRateLimiterStash = get_or_create_request_stash()
     stash.rate_limit_response = RateLimitResponse(overall_code="OK", statuses=call["statuses"])
     response = probe_response(call)
     auth = UserAPIKeyAuth(metadata=call["key_metadata"], team_metadata=call["team_metadata"])
@@ -218,10 +217,9 @@ async def log_success_run(call: LogSuccessJson, handler: DynamicHandler) -> None
     handler.v3_limiter.window_size = call["window_size"]
     proxy_server.general_settings = {"token_rate_limit_type": call["rate_limit_type"]}
     litellm.priority_reservation = call["priority_reservation"]
-    response = ModelResponse()
     usage_input = call["usage"]
-    if usage_input is not None:
-        response.usage = TypeAdapter(Usage).validate_python(usage_input)
+    usage_value = None if usage_input is None else Usage.model_validate(usage_input)
+    response = ModelResponse(usage=usage_value)
     await handler.async_log_success_event(success_kwargs(call), response, 0.0, 0.0)
 
 
