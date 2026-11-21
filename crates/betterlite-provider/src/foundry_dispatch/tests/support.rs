@@ -1,19 +1,29 @@
 use std::collections::BTreeMap;
 use std::future::Future;
+use std::sync::Arc;
 
+use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::sections::azure_credentials::DeploymentSettings;
+use betterlite_config::types::ProxyTrust;
 use betterlite_foundry::chat::sources::NoSources;
+use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_models::controls::json_value::JsonValue;
+use betterlite_models::decisions::Json;
 use betterlite_openai::chat::ChatRequest;
 use betterlite_openai::openai_base_config::Headers;
+use betterlite_prompts::arguments::json::Object as PromptObject;
 use http::HeaderMap;
 use indexmap::IndexMap;
 use secrecy::SecretString;
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+use tokio::net::TcpListener;
 use tokio::runtime::Builder;
 
 use crate::foundry_dispatch::chat::Answer;
+use crate::foundry_dispatch::claude;
 use crate::foundry_dispatch::credentials::Globals;
+use crate::foundry_dispatch::fixtures::claude::{NOW, TIMEOUT};
 use crate::prepared::deployment::Deployment;
 
 pub const KEY: &str = "sk-foundry-fixture";
@@ -76,6 +86,61 @@ pub fn deployment(api_base: &str, api_key: Option<&str>) -> Deployment {
         params.insert(String::from("api_key"), JsonValue::Text(key.to_owned()));
     }
     Deployment::from_params(params).expect("the deployment")
+}
+
+pub fn claude_call<'data>(
+    messages: &'data [PromptObject],
+    params: &'data PromptObject,
+    key: &'data SecretString,
+    acompletion: bool,
+    stream: bool,
+) -> claude::Call<'data> {
+    claude::Call {
+        model: "claude-sonnet-4-5",
+        messages,
+        optional_params: IndexMap::from([(
+            String::from("temperature"),
+            Json::Text(String::from("warm")),
+        )]),
+        litellm_params: params,
+        caller_headers: IndexMap::new(),
+        api_base: Some("https://res.services.ai.azure.com"),
+        api_key: Some(key),
+        timeout: TIMEOUT,
+        acompletion,
+        stream,
+        now: NOW,
+        disable_add_prefix_to_prompt: false,
+    }
+}
+
+pub fn proxied_client() -> ProxiedClient {
+    let policy = Arc::new(
+        ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("the policy"),
+    );
+    ProxiedClient::outbound(&policy).expect("the client")
+}
+
+pub async fn loopback() -> (TcpListener, String) {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("the listener");
+    let address = listener.local_addr().expect("the address");
+    (listener, format!("http://{address}/models"))
+}
+
+// Reads one request body and answers it, returning the raw request text
+pub async fn serve_once(listener: TcpListener, body: &[u8], reply: &str) -> String {
+    let (mut stream, _peer) = listener.accept().await.expect("the connection");
+    let mut received = Vec::new();
+    let mut chunk = [0_u8; 4096];
+    while !received.ends_with(body) {
+        let read = stream.read(&mut chunk).await.expect("the request bytes");
+        assert_ne!(read, 0, "the client closed before sending the body");
+        received.extend_from_slice(chunk.get(..read).expect("the bytes read"));
+    }
+    stream.write_all(reply.as_bytes()).await.expect("the reply");
+    String::from_utf8(received).expect("the request text")
 }
 
 pub struct Env {

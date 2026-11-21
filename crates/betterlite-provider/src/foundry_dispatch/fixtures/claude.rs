@@ -187,6 +187,8 @@ pub struct Tally;
 impl ReasoningTokenCounter for Tally {
     type Failure = Infallible;
 
+    // No fixture in the crate feeds a reply with reasoning content, so no test reaches this answer.
+    #[cfg_attr(test, mutants::skip)]
     fn count_reasoning_tokens(&self, _text: &str) -> Result<usize, Infallible> {
         Ok(0)
     }
@@ -204,6 +206,8 @@ impl StreamLogger for Quiet {
 }
 
 impl IdSource for Quiet {
+    // The cases never read a stream chunk, so the id this generates is never observed.
+    #[cfg_attr(test, mutants::skip)]
     fn next_id(&self) -> Uuid {
         Uuid::from_u128(7)
     }
@@ -271,6 +275,8 @@ impl Harness {
         .map_err(HarnessError::State)
     }
 
+    // A leaked Quiet is the same stateless sink, so its answers match the harness's own.
+    #[cfg_attr(test, mutants::skip)]
     pub fn quiet(&self) -> &Quiet {
         &self.quiet
     }

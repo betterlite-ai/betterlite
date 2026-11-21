@@ -75,6 +75,26 @@ fn foundry_provider_credential_identity_isolation() {
         );
         assert!(text_header(prepared_headers(&alpha_plan.prepared), "authorization").is_none());
 
+        // a supplied map replaces the global one, so the environment's tenant header never reaches this call
+        let supplied = Headers::from([(String::from("x-own"), String::from("2"))]);
+        let supplied_call = chat::Call {
+            model: "alpha-model",
+            request: &alpha_request,
+            extra_headers: None,
+            headers: Some(&supplied),
+            api_base: Some(alpha.api_base.as_str()),
+            api_key: alpha.api_key.as_ref(),
+            deployment: &alpha,
+            stream: false,
+        };
+        let supplied_plan = chat::prepare::prepare(&supplied_call, &alpha_env.globals())
+            .expect("the supplied headers");
+        assert_eq!(
+            text_header(prepared_headers(&supplied_plan.prepared), "x-own"),
+            Some("2")
+        );
+        assert!(text_header(prepared_headers(&supplied_plan.prepared), "x-tenant").is_none());
+
         let beta_request = support::simple_request("beta-model");
         let beta_call = chat::Call {
             model: "beta-model",

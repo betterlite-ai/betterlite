@@ -1,40 +1,42 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use betterlite_anthropic::chat_call::transport::ChatClients;
 use betterlite_anthropic::chat_call::{ChatDeps, ChatOutcome};
-use betterlite_config::proxy::ProxyPolicy;
-use betterlite_config::types::ProxyTrust;
 use betterlite_foundry::agent_results::reply::AgentReply;
 use betterlite_foundry::agent_runs::transport::AgentRunMethod;
 use betterlite_foundry::embeddings::call::{EmbeddingMode, FoundryEmbeddingOptions};
-use betterlite_http::proxy::ProxiedClient;
+use betterlite_models::controls::control_options::ControlOptions;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use betterlite_openai::chat::ChatRequest;
 use betterlite_openai::embedding::{EmbeddingRecord, EmbeddingVector};
+use betterlite_openai::openai_base_config::CatalogCapabilities;
 use betterlite_prompts::arguments::json::{Json as PromptJson, Object as PromptObject};
 use betterlite_prompts::message_content::Content;
 use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
-use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
-use tokio::net::TcpListener;
 
-use super::support::{self, Env, KEY, field};
+use super::support::{self, Env, KEY, claude_call, field, loopback, proxied_client, serve_once};
 use crate::foundry_dispatch::chat::Answer;
 use crate::foundry_dispatch::fixtures::agents::{
     Clock, Factory as AgentFactory, Resolver, Scripted, Step, Tally as AgentTally,
 };
-use crate::foundry_dispatch::fixtures::claude::{Harness, Mapper, NOW, TIMEOUT, Tally, Wire};
+use crate::foundry_dispatch::fixtures::claude::{Harness, Mapper, Tally, Wire};
 use crate::foundry_dispatch::fixtures::embedding::{Factory as EmbeddingFactory, Text};
 use crate::foundry_dispatch::fixtures::logger::RecordingLogger;
 use crate::foundry_dispatch::route::{self, Route};
-use crate::foundry_dispatch::{agents, chat, claude, credentials, embedding};
-use crate::operation::{ChatCompletion, OperationError, OperationResult};
+use crate::foundry_dispatch::{
+    AzureAi, AzureAiRequest, agents, chat, claude, credentials, embedding,
+};
+use crate::operation::{
+    ChatCompletion, ChatOperation, OperationError, OperationRequest, OperationResult,
+};
 use crate::prepared::PreparedRequest;
 use crate::prepared::deployment::Deployment;
+use crate::provider::Adapter;
 
 const REPLY: &str = r#"{"id":"chatcmpl-foundry","object":"chat.completion","created":1700000000,"model":"provider-model","choices":[{"index":0,"message":{"role":"assistant","content":"hello"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#;
 const ANTHROPIC_REPLY: &str = r#"{"id":"msg_1","type":"message","role":"assistant","model":"claude-sonnet-4-5","content":[{"type":"text","text":"hello"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":3,"output_tokens":2}}"#;
@@ -237,36 +239,40 @@ async fn embedding_case() {
     assert_eq!(response.model.as_deref(), Some("text-embedding"));
 
     // the image half of the input runs through the image transport with the same resolved base and key
-    let images = sent.lock().expect("the image requests");
-    assert_eq!(images.len(), 1);
-    assert_eq!(
-        images[0].url,
-        "https://res.services.ai.azure.com/models/images/embeddings"
-    );
-    let bearer = format!("Bearer {KEY}");
-    assert!(
-        images[0]
-            .headers
-            .iter()
-            .any(|(name, value)| name == "authorization" && value == &bearer)
-    );
-    let image_body: JsonValue = serde_json::from_str(&images[0].body).expect("the image body");
-    let JsonValue::Array(image_input) = field(&image_body, "input") else {
-        panic!("the image input is an array");
-    };
-    assert_eq!(
-        field(image_input.first().expect("one image"), "image"),
-        &JsonValue::Text(String::from("aGVsbG8="))
-    );
+    {
+        let images = sent.lock().expect("the image requests");
+        assert_eq!(images.len(), 1);
+        assert_eq!(
+            images[0].url,
+            "https://res.services.ai.azure.com/models/images/embeddings"
+        );
+        let bearer = format!("Bearer {KEY}");
+        assert!(
+            images[0]
+                .headers
+                .iter()
+                .any(|(name, value)| name == "authorization" && value == &bearer)
+        );
+        let image_body: JsonValue = serde_json::from_str(&images[0].body).expect("the image body");
+        let JsonValue::Array(image_input) = field(&image_body, "input") else {
+            panic!("the image input is an array");
+        };
+        assert_eq!(
+            field(image_input.first().expect("one image"), "image"),
+            &JsonValue::Text(String::from("aGVsbG8="))
+        );
+    }
 
     // the text half received the Foundry route base and the same key
-    let texts = text.snapshot();
-    assert_eq!(texts.len(), 1);
-    assert_eq!(
-        texts[0].api_base.as_deref(),
-        Some("https://res.services.ai.azure.com/models")
-    );
-    assert_eq!(texts[0].api_key.as_deref(), Some(KEY));
+    {
+        let texts = text.snapshot();
+        assert_eq!(texts.len(), 1);
+        assert_eq!(
+            texts[0].api_base.as_deref(),
+            Some("https://res.services.ai.azure.com/models")
+        );
+        assert_eq!(texts[0].api_key.as_deref(), Some(KEY));
+    }
 
     // an explicit key beats the global and environment values
     let explicit = SecretString::from("explicit-key");
@@ -280,6 +286,19 @@ async fn embedding_case() {
         .expect("the embedding dispatch runs");
     assert_eq!(text.snapshot()[1].api_key.as_deref(), Some("explicit-key"));
 
+    // an explicit base beats the environment value for both halves
+    let explicit_base = embedding::Call {
+        api_base: Some("https://explicit.example.test"),
+        ..call
+    };
+    embedding::dispatch(&explicit_base, &env.globals(), None, &factory, &text)
+        .await
+        .expect("the explicit base dispatch runs");
+    assert_eq!(
+        text.snapshot()[2].api_base.as_deref(),
+        Some("https://explicit.example.test/models")
+    );
+
     // an azure_ad_token parameter fills the key slot once every key string is unset
     let empty = Env::new();
     let entra_params: PromptObject = serde_json::from_str(r#"{"azure_ad_token":"entra-token"}"#)
@@ -288,29 +307,6 @@ async fn embedding_case() {
         .expect("the entra token resolves")
         .expect("the entra token fills the key slot");
     assert_eq!(token.expose_secret().as_str(), "entra-token");
-}
-
-fn anthropic_call<'data>(
-    messages: &'data [PromptObject],
-    params: &'data PromptObject,
-    key: &'data SecretString,
-    acompletion: bool,
-    stream: bool,
-) -> claude::Call<'data> {
-    claude::Call {
-        model: "claude-sonnet-4-5",
-        messages,
-        optional_params: IndexMap::new(),
-        litellm_params: params,
-        caller_headers: IndexMap::new(),
-        api_base: Some("https://res.services.ai.azure.com"),
-        api_key: Some(key),
-        timeout: TIMEOUT,
-        acompletion,
-        stream,
-        now: NOW,
-        disable_add_prefix_to_prompt: false,
-    }
 }
 
 async fn anthropic_case() {
@@ -327,7 +323,7 @@ async fn anthropic_case() {
     let env_values = harness.env();
     let mut logger = RecordingLogger::default();
     let outcome = claude::Dispatch {
-        call: anthropic_call(&messages, &params, &key, false, false),
+        call: claude_call(&messages, &params, &key, false, false),
         globals: env.globals(),
         deps: ChatDeps {
             config: &Mapper,
@@ -356,18 +352,62 @@ async fn anthropic_case() {
         Some("hello")
     );
     assert!(logger.calls.is_empty());
-    let posts = wire.recorded();
-    assert_eq!(
-        posts[0].url.as_str(),
-        "https://res.services.ai.azure.com/anthropic/v1/messages"
-    );
-    assert_eq!(
-        posts[0]
-            .headers
-            .get("api-key")
-            .and_then(|value| value.to_str().ok()),
-        Some(KEY)
-    );
+    {
+        let posts = wire.recorded();
+        assert_eq!(
+            posts[0].url.as_str(),
+            "https://res.services.ai.azure.com/anthropic/v1/messages"
+        );
+        assert_eq!(
+            posts[0]
+                .headers
+                .get("api-key")
+                .and_then(|value| value.to_str().ok()),
+            Some(KEY)
+        );
+    }
+
+    // acompletion alone logs the buffered reply, and the async mapper carries the optional params
+    let async_wire = Wire::new(200, ANTHROPIC_REPLY);
+    let mut async_state = harness.state().expect("the logging state");
+    let async_env = harness.env();
+    let mut async_logger = RecordingLogger::default();
+    let async_outcome = claude::Dispatch {
+        call: claude_call(&messages, &params, &key, true, false),
+        globals: env.globals(),
+        deps: ChatDeps {
+            config: &Mapper,
+            clients: ChatClients {
+                supplied: None,
+                pooled: &async_wire,
+            },
+            state: &mut async_state,
+            env: &async_env,
+            stream_logger: harness.quiet(),
+            counter: Tally,
+            ids: harness.quiet(),
+            max_event_bytes: 1_048_576,
+            max_error_body_bytes: 1_048_576,
+        },
+    }
+    .run(&mut async_logger)
+    .await
+    .expect("the async buffered dispatch runs");
+    assert!(matches!(async_outcome, ChatOutcome::Reply(_)));
+    assert_eq!(async_logger.calls.len(), 1);
+    let expected_report: Json =
+        serde_json::from_str(r#"{"model":"claude-sonnet-4-5","content":"hello"}"#)
+            .expect("the reply report");
+    assert_eq!(async_logger.calls[0].original_response, expected_report);
+    {
+        let async_posts = async_wire.recorded();
+        let async_post: JsonValue =
+            serde_json::from_slice(&async_posts[0].body).expect("the async body");
+        assert_eq!(
+            field(&async_post, "temperature"),
+            &JsonValue::Text(String::from("warm"))
+        );
+    }
 
     // an async call with stream opens the stream and logs it, without additional_args headers
     let stream_wire = Wire::new(200, "");
@@ -378,7 +418,7 @@ async fn anthropic_case() {
     let env_values = harness.env();
     let mut logger = RecordingLogger::default();
     let outcome = claude::Dispatch {
-        call: anthropic_call(&messages, &params, &key, true, true),
+        call: claude_call(&messages, &params, &key, true, true),
         globals: env.globals(),
         deps: ChatDeps {
             config: &Mapper,
@@ -403,15 +443,13 @@ async fn anthropic_case() {
     assert!(logger.calls[0].headers.is_none());
 
     // a provider failure reaches the caller without a post_call on this branch
-    let failing = Wire::new(
-        500,
-        r#"{"type":"error","error":{"type":"api_error","message":"boom"}}"#,
-    );
+    // a valid reply body behind the failing status proves the transport reports the status, not the body
+    let failing = Wire::new(500, ANTHROPIC_REPLY);
     let mut state = harness.state().expect("the logging state");
     let env_values = harness.env();
     let mut logger = RecordingLogger::default();
     let result = claude::Dispatch {
-        call: anthropic_call(&messages, &params, &key, false, false),
+        call: claude_call(&messages, &params, &key, false, false),
         globals: env.globals(),
         deps: ChatDeps {
             config: &Mapper,
@@ -451,6 +489,7 @@ async fn agent_case() {
         agent_step(201, r#"{"id":"thread_1"}"#),
         agent_step(201, r#"{"id":"message_1"}"#),
         agent_step(201, r#"{"id":"run_1"}"#),
+        agent_step(200, r#"{"status":"in_progress"}"#),
         agent_step(200, r#"{"status":"completed"}"#),
         agent_step(
             200,
@@ -518,7 +557,9 @@ async fn agent_case() {
     );
 
     let requests = script.requests();
-    assert_eq!(requests.len(), 5);
+    assert_eq!(requests.len(), 6);
+    // the poll that finds the run unfinished waits once in the supplied clock
+    assert_eq!(clock.waits.lock().expect("the poll waits").len(), 1);
     assert_eq!(requests[0].method, AgentRunMethod::Post);
     assert_eq!(
         requests[0].url,
@@ -547,14 +588,16 @@ async fn agent_case() {
             .iter()
             .any(|(name, value)| name == "x-team" && value == "alpha")
     );
-    let seen = resolver.seen.lock().expect("the resolver calls");
-    assert_eq!(seen.len(), 1);
-    assert_eq!(
-        seen[0].get("azure_scope"),
-        Some(&PromptJson::Text(String::from(
-            "https://ai.azure.com/.default"
-        )))
-    );
+    {
+        let seen = resolver.seen.lock().expect("the resolver calls");
+        assert_eq!(seen.len(), 1);
+        assert_eq!(
+            seen[0].get("azure_scope"),
+            Some(&PromptJson::Text(String::from(
+                "https://ai.azure.com/.default"
+            )))
+        );
+    }
 
     // an async stream call is handed to B562 to open, without running the polling flow here
     let stream_script = Arc::new(Scripted::new(Vec::new()));
@@ -666,7 +709,7 @@ async fn claude_missing_base() {
     let params = PromptObject::new();
     let key = SecretString::from(KEY);
     let env = Env::default();
-    let mut call = anthropic_call(&messages, &params, &key, false, false);
+    let mut call = claude_call(&messages, &params, &key, false, false);
     call.api_base = None;
     let error = claude::prepare(&call, &env.globals())
         .err()
@@ -776,65 +819,38 @@ fn command_r_case() {
     assert!(prepared.http.headers.get("x-given").is_none());
 }
 
-fn proxied_client() -> ProxiedClient {
-    let policy = Arc::new(
-        ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("the policy"),
-    );
-    ProxiedClient::outbound(&policy).expect("the client")
-}
-
-async fn loopback() -> (TcpListener, String) {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("the listener");
-    let address = listener.local_addr().expect("the address");
-    (listener, format!("http://{address}/models"))
-}
-
-// Reads one request body and answers it, returning the raw request text
-async fn serve_once(listener: TcpListener, body: &[u8], reply: &str) -> String {
-    let (mut stream, _peer) = listener.accept().await.expect("the connection");
-    let mut received = Vec::new();
-    let mut chunk = [0_u8; 4096];
-    while !received.ends_with(body) {
-        let read = stream.read(&mut chunk).await.expect("the request bytes");
-        assert_ne!(read, 0, "the client closed before sending the body");
-        received.extend_from_slice(chunk.get(..read).expect("the bytes read"));
-    }
-    stream.write_all(reply.as_bytes()).await.expect("the reply");
-    String::from_utf8(received).expect("the request text")
-}
-
 async fn http_case() {
     let (listener, api_base) = loopback().await;
     let deployment = support::deployment(&api_base, Some(KEY));
-    let env = Env::default();
-    let request = support::simple_request("mistral-large");
-    let call = chat_call(&request, &deployment, "mistral-large", false);
-    let plan = chat::prepare::prepare(&call, &env.globals()).expect("the plan");
-    let PreparedRequest::Chat(prepared) = &plan.prepared else {
+    let catalog = CatalogCapabilities {
+        chat_models: BTreeSet::new(),
+        text_models: BTreeSet::new(),
+    };
+    let request = OperationRequest::Chat(Box::new(ChatOperation {
+        model: String::from("mistral-large"),
+        request: support::simple_request("mistral-large"),
+        control: ControlOptions::default(),
+    }));
+    let prepared = AzureAi
+        .prepare(&request, &deployment, &catalog)
+        .expect("the adapter prepares the chat call");
+    let PreparedRequest::Chat(prepared_chat) = &prepared else {
         panic!("the chat call prepares a chat request");
     };
-    let expected = prepared.http.body.clone();
+    let expected = prepared_chat.http.body.clone();
     let reply = format!(
         "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{REPLY}",
         REPLY.len()
     );
     let client = proxied_client();
-    let (outcome, sent) = tokio::join!(
-        async {
-            chat::Dispatch {
-                call,
-                globals: env.globals(),
-                answer: Answer::Client(&client),
-            }
-            .run(&mut RecordingLogger::default())
-            .await
-        },
+    let (upstream, sent) = tokio::join!(
+        AzureAi.execute(&client, &prepared, &deployment),
         serve_once(listener, &expected, &reply)
     );
-    let outcome = outcome.expect("the loopback dispatch runs");
-    let OperationResult::Chat(ChatCompletion::OpenAi(completion)) = outcome.result else {
+    let decoded = AzureAi
+        .decode(&prepared, upstream.expect("the loopback dispatch runs"))
+        .expect("the adapter decodes the reply");
+    let OperationResult::Chat(ChatCompletion::OpenAi(completion)) = decoded else {
         panic!("the loopback dispatch returns a chat reply");
     };
     assert_eq!(
@@ -857,6 +873,19 @@ async fn http_case() {
     assert_eq!(
         field(messages.first().expect("a message"), "content"),
         &JsonValue::Text(String::from("hi"))
+    );
+
+    // the adapter refuses the operation kinds it does not run
+    let error = AzureAi
+        .prepare(
+            &OperationRequest::AzureAi(AzureAiRequest),
+            &deployment,
+            &catalog,
+        )
+        .expect_err("the other kind is refused");
+    assert_eq!(
+        error.to_string(),
+        "betterlite does not run the provider operation through the azure_ai provider"
     );
 }
 
