@@ -104,9 +104,7 @@ pub(super) fn finish(data: &mut JsonMap, logging: &mut LoggingState) {
     );
     *data = from_request_data(request_body);
     tracing::debug!("receiving data: {data:?}");
-    if let Some(JsonValue::Array(messages)) = data.get("messages")
-        && !messages.is_empty()
-    {
+    if let Some(JsonValue::Array(messages)) = data.get("messages") {
         update_messages(logging, messages.iter().map(to_decision).collect());
     }
 }
