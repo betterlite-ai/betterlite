@@ -7,7 +7,7 @@ call:
     mode: sync
     vector_store_id: vs_a
     file_id: file_a
-    update_request: {attributes: {keep: "y"}}
+    update_request: {}
     extra_headers:
       Authorization: "Bearer sk-caller"
       Content-Type: text/plain
