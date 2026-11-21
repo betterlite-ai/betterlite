@@ -1,6 +1,7 @@
 use betterlite_context::owned_parameter_names::is_litellm_owned_kwarg;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use secrecy::ExposeSecret as _;
 use serde_json::Number;
 
 use super::super::super::call::{GenericParams, ImageGenerationCall};
@@ -62,13 +63,22 @@ pub(super) fn litellm_params(generic: &GenericParams) -> Params {
     for (name, value) in [
         ("tenant_id", &credentials.tenant_id),
         ("client_id", &credentials.client_id),
-        ("client_secret", &credentials.client_secret),
         ("azure_username", &credentials.azure_username),
-        ("azure_password", &credentials.azure_password),
         ("azure_scope", &credentials.azure_scope),
     ] {
         if let Some(text) = value {
             params.insert(name.to_owned(), Json::Text(text.clone()));
+        }
+    }
+    for (name, value) in [
+        ("client_secret", &credentials.client_secret),
+        ("azure_password", &credentials.azure_password),
+    ] {
+        if let Some(secret) = value {
+            params.insert(
+                name.to_owned(),
+                Json::Text(secret.expose_secret().to_owned()),
+            );
         }
     }
     if let Some(token) = &generic.azure_ad_token {

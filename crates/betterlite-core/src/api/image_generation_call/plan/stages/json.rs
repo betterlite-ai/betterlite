@@ -3,7 +3,10 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use std::collections::BTreeMap;
 
+use self::back::json_back;
 use super::super::super::operations::Params;
+
+mod back;
 
 pub(super) fn to_values(params: &IndexMap<String, Json>) -> BTreeMap<String, JsonValue> {
     params
@@ -30,22 +33,6 @@ fn json_value(value: &Json) -> JsonValue {
             fields
                 .iter()
                 .map(|(name, value)| (name.clone(), json_value(value)))
-                .collect(),
-        ),
-    }
-}
-
-fn json_back(value: JsonValue) -> Json {
-    match value {
-        JsonValue::Null => Json::Null,
-        JsonValue::Bool(flag) => Json::Bool(flag),
-        JsonValue::Number(number) => Json::Number(number),
-        JsonValue::Text(text) => Json::Text(text),
-        JsonValue::Array(items) => Json::List(items.into_iter().map(json_back).collect()),
-        JsonValue::Object(fields) => Json::Object(
-            fields
-                .into_iter()
-                .map(|(name, value)| (name, json_back(value)))
                 .collect(),
         ),
     }

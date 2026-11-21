@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use betterlite_core::api::image_generation_call::error::provider_failure;
-use betterlite_core::api::image_generation_call::operations::Headers;
+use betterlite_core::api::image_generation_call::operations::{BranchAnswer, Headers};
 use betterlite_error::dispatch::RawException;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::UpstreamResponse;
@@ -16,6 +16,8 @@ use secrecy::SecretString;
 use url::Url;
 
 pub(super) mod custom;
+pub(super) mod foundry;
+pub(super) mod generic;
 pub(super) mod openai;
 pub(super) mod providers;
 
@@ -114,6 +116,20 @@ pub(super) fn parsed_response(
         response.usage = Some(ImageUsage::default());
     }
     Ok(response)
+}
+
+// The provider answer every send projects: its body and the hidden model it came from
+pub(super) async fn answer(
+    client: &ProxiedClient,
+    request: Post<'_>,
+) -> Result<BranchAnswer, Box<RawException>> {
+    let model = request.model;
+    let provider = request.provider;
+    let response = post(client, request).await?;
+    Ok(BranchAnswer {
+        response: parsed_response(&response.body, model, provider)?,
+        hidden_model: None,
+    })
 }
 
 pub(super) fn inserts_bearer(headers: &mut Headers, token: &SecretString) {

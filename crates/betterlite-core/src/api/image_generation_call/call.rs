@@ -4,6 +4,10 @@ use secrecy::SecretString;
 use std::collections::BTreeMap;
 use thiserror::Error;
 
+use self::values::{header_map, string_list};
+
+mod values;
+
 // LiteLLM's timeout=600 default
 pub const DEFAULT_TIMEOUT: f64 = 600.0;
 
@@ -40,9 +44,9 @@ pub struct ImageGenerationCall {
 pub struct LiteLlmCredentials {
     pub tenant_id: Option<String>,
     pub client_id: Option<String>,
-    pub client_secret: Option<String>,
+    pub client_secret: Option<SecretString>,
     pub azure_username: Option<String>,
-    pub azure_password: Option<String>,
+    pub azure_password: Option<SecretString>,
     pub azure_scope: Option<String>,
 }
 
@@ -66,7 +70,10 @@ impl GenericParams {
         let mut params = Self::default();
         for (name, value) in kwargs {
             match name.as_str() {
-                "aimg_generation" => params.aimg_generation = flag(value, "aimg_generation")?,
+                "aimg_generation" => {
+                    params.aimg_generation =
+                        optional_flag(value, "aimg_generation")?.unwrap_or(false)
+                }
                 "azure_ad_token_provider" => {
                     params.azure_ad_token_provider = !matches!(value, Json::Null);
                 }
@@ -86,13 +93,15 @@ impl GenericParams {
                 "tenant_id" => params.credentials.tenant_id = string(value, "tenant_id")?,
                 "client_id" => params.credentials.client_id = string(value, "client_id")?,
                 "client_secret" => {
-                    params.credentials.client_secret = string(value, "client_secret")?
+                    params.credentials.client_secret =
+                        string(value, "client_secret")?.map(SecretString::from)
                 }
                 "azure_username" => {
                     params.credentials.azure_username = string(value, "azure_username")?
                 }
                 "azure_password" => {
-                    params.credentials.azure_password = string(value, "azure_password")?
+                    params.credentials.azure_password =
+                        string(value, "azure_password")?.map(SecretString::from)
                 }
                 "azure_scope" => params.credentials.azure_scope = string(value, "azure_scope")?,
                 _ => {}
@@ -127,23 +136,13 @@ pub enum CallError {
 }
 
 fn string(value: &Json, field: &'static str) -> Result<Option<String>, CallError> {
-    match value {
-        Json::Text(text) => Ok(Some(text.clone())),
-        Json::Null => Ok(None),
-        Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-            Err(CallError::FieldText { field })
-        }
+    if matches!(value, Json::Null) {
+        return Ok(None);
     }
-}
-
-const fn flag(value: &Json, field: &'static str) -> Result<bool, CallError> {
-    match value {
-        Json::Bool(flag) => Ok(*flag),
-        Json::Null => Ok(false),
-        Json::Text(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-            Err(CallError::FieldFlag { field })
-        }
-    }
+    let Json::Text(text) = value else {
+        return Err(CallError::FieldText { field });
+    };
+    Ok(Some(text.clone()))
 }
 
 const fn optional_flag(value: &Json, field: &'static str) -> Result<Option<bool>, CallError> {
@@ -154,38 +153,4 @@ const fn optional_flag(value: &Json, field: &'static str) -> Result<Option<bool>
             Err(CallError::FieldFlag { field })
         }
     }
-}
-
-fn header_map(
-    value: &Json,
-    field: &'static str,
-) -> Result<Option<BTreeMap<String, String>>, CallError> {
-    if matches!(value, Json::Null) {
-        return Ok(None);
-    }
-    let Json::Object(fields) = value else {
-        return Err(CallError::FieldHeaders { field });
-    };
-    let mut mapped = BTreeMap::new();
-    for (name, entry) in fields {
-        let Json::Text(text) = entry else {
-            return Err(CallError::FieldHeaders { field });
-        };
-        mapped.insert(name.clone(), text.clone());
-    }
-    Ok(Some(mapped))
-}
-
-fn string_list(value: &Json, field: &'static str) -> Result<Vec<String>, CallError> {
-    let Json::List(items) = value else {
-        return Err(CallError::FieldList { field });
-    };
-    let mut texts = Vec::with_capacity(items.len());
-    for item in items {
-        let Json::Text(text) = item else {
-            return Err(CallError::FieldList { field });
-        };
-        texts.push(text.clone());
-    }
-    Ok(texts)
 }

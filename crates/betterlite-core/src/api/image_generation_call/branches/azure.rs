@@ -17,6 +17,7 @@ struct Credentials {
     api_base: Option<String>,
     api_version: Option<String>,
     api_key: Option<SecretString>,
+    azure_ad_token: Option<SecretString>,
 }
 
 pub(super) async fn send<Identity, Operations>(
@@ -29,9 +30,8 @@ pub(super) async fn send<Identity, Operations>(
 where
     Operations: ImageGenerationOperations + Sync,
 {
-    let credentials = credentials(plan, prepared, call);
     let mut optional_params = mapped.params.clone();
-    let azure_ad_token = azure_ad_token(plan, prepared, &mut optional_params);
+    let credentials = credentials(plan, prepared, call, &mut optional_params);
     let token_provider = entra_provider(plan, prepared);
     let mut headers = mapped.headers.clone();
     insert_default_headers(&mut headers, credentials.api_key.as_ref());
@@ -44,7 +44,7 @@ where
                 api_key: credentials.api_key.as_ref(),
                 api_base: credentials.api_base.as_deref(),
                 api_version: credentials.api_version.as_deref(),
-                azure_ad_token: azure_ad_token.as_ref(),
+                azure_ad_token: credentials.azure_ad_token.as_ref(),
                 azure_ad_token_provider: token_provider.as_ref(),
                 optional_params: &optional_params,
                 headers: &headers,
@@ -63,10 +63,20 @@ fn credentials<Identity, Operations>(
     plan: &ImageGenerationPlan<'_, Identity, Operations>,
     prepared: &PreparedCall,
     call: &ImageGenerationCall,
+    optional_params: &mut Params,
 ) -> Credentials
 where
     Operations: ImageGenerationOperations,
 {
+    // the call's option or kwarg wins only as a nonempty string; every other value falls back to AZURE_AD_TOKEN
+    let from_options = optional_params.shift_remove("azure_ad_token");
+    let from_kwargs = prepared.generic.azure_ad_token.clone();
+    let azure_ad_token = match from_options.or(from_kwargs) {
+        Some(Json::Text(text)) if !text.is_empty() => Some(SecretString::from(text)),
+        Some(Json::Text(_) | Json::Null)
+        | Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
+        | None => plan.settings.azure_ad_token.clone(),
+    };
     Credentials {
         api_base: prepared
             .api_base
@@ -85,25 +95,7 @@ where
             .or_else(|| plan.settings.azure_key.clone())
             .or_else(|| plan.settings.azure_openai_api_key.clone())
             .or_else(|| plan.settings.azure_api_key.clone()),
-    }
-}
-
-// the call's option or kwarg wins only as a nonempty string; every other value falls back to AZURE_AD_TOKEN
-fn azure_ad_token<Identity, Operations>(
-    plan: &ImageGenerationPlan<'_, Identity, Operations>,
-    prepared: &PreparedCall,
-    optional_params: &mut Params,
-) -> Option<SecretString>
-where
-    Operations: ImageGenerationOperations,
-{
-    let from_options = optional_params.shift_remove("azure_ad_token");
-    let from_kwargs = prepared.generic.azure_ad_token.clone();
-    match from_options.or(from_kwargs) {
-        Some(Json::Text(text)) if !text.is_empty() => Some(SecretString::from(text)),
-        Some(Json::Text(_) | Json::Null)
-        | Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
-        | None => plan.settings.azure_ad_token.clone(),
+        azure_ad_token,
     }
 }
 
@@ -140,11 +132,11 @@ where
     let (Some(tenant_id), Some(client_id), Some(client_secret)) = (
         credentials.tenant_id.as_deref(),
         credentials.client_id.as_deref(),
-        credentials.client_secret.as_deref(),
+        credentials.client_secret.as_ref(),
     ) else {
         return None;
     };
-    if tenant_id.is_empty() || client_id.is_empty() || client_secret.is_empty() {
+    if tenant_id.is_empty() || client_id.is_empty() || client_secret.expose_secret().is_empty() {
         return None;
     }
     let scope = credentials
@@ -155,7 +147,7 @@ where
     plan.operations.entra_token_provider(EntraRequest {
         tenant_id,
         client_id,
-        client_secret,
+        client_secret: client_secret.expose_secret(),
         scope,
     })
 }

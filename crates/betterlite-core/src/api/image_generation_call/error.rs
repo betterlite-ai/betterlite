@@ -78,16 +78,11 @@ pub fn resolution_failure(message: &str, model: Option<&str>) -> RawException {
         "GetLLMProvider Exception - {message}\n\noriginal model: {}",
         model.unwrap_or("None")
     );
-    RawException {
-        model: model.unwrap_or_default().to_owned(),
-        custom_llm_provider: String::new(),
-        error_str: text.clone(),
-        status_code: Some(400),
-        status_code_is_synthesized: false,
-        message: Some(text),
-        body: None,
-        exception_type: String::from("BadRequestError"),
-    }
+    let mut failure = value_failure(&text, model, None);
+    failure.status_code = Some(400);
+    failure.message = Some(text);
+    failure.exception_type = String::from("BadRequestError");
+    failure
 }
 
 #[must_use]

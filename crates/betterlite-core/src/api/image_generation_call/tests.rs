@@ -32,7 +32,7 @@ use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::runtime::{Builder, Runtime};
 
-use super::call::{CustomClientKind, ImageGenerationCall};
+use super::call::{CustomClientKind, GenericParams, ImageGenerationCall, LiteLlmCredentials};
 use super::error::{ImageGenerationException, provider_failure};
 use super::operations::{
     Branch, BranchAnswer, CustomImageHandler, CustomProviderSlot, CustomRequest, EntraRequest,
@@ -136,14 +136,16 @@ struct FakeIdentity {
 
 impl FakeIdentity {
     fn new(model: Option<&str>, provider: ProviderIdentity) -> Self {
+        let resolved = ResolvedImageModel {
+            model: model.map(str::to_owned),
+            provider,
+            api_base: None,
+            api_key: None,
+        };
+        let seen = Mutex::new(Vec::new());
         Self {
-            result: Ok(ResolvedImageModel {
-                model: model.map(str::to_owned),
-                provider,
-                api_base: None,
-                api_key: None,
-            }),
-            seen: Mutex::new(Vec::new()),
+            result: Ok(resolved),
+            seen,
         }
     }
 
@@ -564,10 +566,11 @@ impl ImageGenerationOperations for FakeOps {
         model: Option<&str>,
         provider: &ProviderIdentity,
     ) -> Option<ImageGenerationConfigTag> {
+        let seen = (model.map(str::to_owned), provider.slug().to_owned());
         self.configs_seen
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push((model.map(str::to_owned), provider.slug().to_owned()));
+            .push(seen);
         self.config.clone()
     }
 

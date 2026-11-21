@@ -1,10 +1,9 @@
 use betterlite_logging::logging_state::LoggingState;
 
 use super::super::call::ImageGenerationCall;
-use super::super::error::{ImageGenerationException, raise, value_failure};
+use super::super::error::{ImageGenerationException, raise};
 use super::super::operations::{
-    BedrockRequest, BlackForestLabsRequest, Branch, BranchAnswer, Headers,
-    ImageGenerationOperations, OpenAiRequest, Params,
+    Branch, BranchAnswer, Headers, ImageGenerationOperations, OpenAiRequest, Params,
 };
 use super::super::plan::{ImageGenerationPlan, MappedOptions, PreparedCall};
 use super::header_object;
@@ -35,72 +34,6 @@ where
                 headers: &mapped.headers,
                 asynchronous: prepared.generic.aimg_generation,
                 now_seconds: call.now_seconds,
-            }),
-            logging,
-        )
-        .await
-        .map_err(|failure| raise(plan.redactor, *failure))
-}
-
-pub(super) async fn black_forest_labs<Identity, Operations>(
-    plan: &ImageGenerationPlan<'_, Identity, Operations>,
-    prepared: &PreparedCall,
-    mapped: &MappedOptions,
-    call: &ImageGenerationCall,
-    logging: &mut LoggingState,
-) -> Result<BranchAnswer, ImageGenerationException>
-where
-    Operations: ImageGenerationOperations + Sync,
-{
-    let Some(model) = prepared.model.as_deref() else {
-        let failure = value_failure(
-            "Model needs to be set for black_forest_labs",
-            None,
-            Some("black_forest_labs"),
-        );
-        return Err(raise(plan.redactor, failure));
-    };
-    plan.operations
-        .send(
-            Branch::BlackForestLabs(BlackForestLabsRequest {
-                model,
-                prompt: &call.prompt,
-                optional_params: &mapped.params,
-                litellm_params: &mapped.litellm_params,
-                timeout: prepared.timeout,
-                extra_headers: prepared.generic.extra_headers.as_ref(),
-                asynchronous: prepared.generic.aimg_generation,
-            }),
-            logging,
-        )
-        .await
-        .map_err(|failure| raise(plan.redactor, *failure))
-}
-
-pub(super) async fn bedrock<Identity, Operations>(
-    plan: &ImageGenerationPlan<'_, Identity, Operations>,
-    prepared: &PreparedCall,
-    mapped: &MappedOptions,
-    call: &ImageGenerationCall,
-    logging: &mut LoggingState,
-) -> Result<BranchAnswer, ImageGenerationException>
-where
-    Operations: ImageGenerationOperations + Sync,
-{
-    let Some(model) = prepared.model.as_deref() else {
-        let failure = value_failure("Model needs to be set for bedrock", None, Some("bedrock"));
-        return Err(raise(plan.redactor, failure));
-    };
-    plan.operations
-        .send(
-            Branch::Bedrock(BedrockRequest {
-                model: Some(model),
-                prompt: &call.prompt,
-                timeout: prepared.timeout,
-                api_key: call.api_key.as_ref(),
-                api_base: prepared.api_base.as_deref(),
-                optional_params: &mapped.params,
-                asynchronous: prepared.generic.aimg_generation,
             }),
             logging,
         )

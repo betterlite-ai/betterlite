@@ -77,8 +77,8 @@ impl ImageGenerationOperations for Operations<'_> {
         async move {
             match branch {
                 Branch::Azure(request) => sends::providers::azure(request, self.source).await,
-                Branch::Generic(request) => sends::providers::generic(request, self.source).await,
-                Branch::Foundry(request) => sends::providers::foundry(request, self.source).await,
+                Branch::Generic(request) => sends::generic::send(request, self.source).await,
+                Branch::Foundry(request) => sends::foundry::send(request, self.source).await,
                 Branch::OpenAi(request) => sends::openai::send(request, self.source).await,
                 Branch::Custom(request) => sends::custom::send(request, self.source).await,
                 Branch::BlackForestLabs(request) => Err(sends::plain(

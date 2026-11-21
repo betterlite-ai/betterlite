@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use super::*;
+use serde_json::Number;
 #[test]
 fn generation_defaults_and_options() {
     let ops = FakeOps::new(Some(ImageGenerationConfigTag::OpenAi(String::from(
@@ -79,7 +80,10 @@ fn generation_defaults_and_options() {
     let sent = ops.sends();
     assert_eq!(sent.len(), 1);
     assert_eq!(sent[0].organization.as_deref(), Some("org_test"));
-    assert_eq!(sent[0].option("n"), Some(&Json::Number(1.into())));
+    assert_eq!(
+        sent[0].option("n"),
+        Some(&Json::Number(Number::from(1_u64)))
+    );
     assert_eq!(
         sent[0].option("quality"),
         Some(&Json::Text(String::from("hd")))
@@ -106,40 +110,47 @@ fn generation_defaults_and_options() {
     ))));
     let identity = FakeIdentity::failing("not reached");
     let case = Case::new(&ops, &identity, Settings::default());
-    for mock in ["", "image"] {
-        let mut mocked = call(None, None);
-        mocked.kwargs = kwargs(vec![("mock_response", Json::Text(mock.to_owned()))]);
-        let (answer, _) = case.run(mocked);
-        let answer = answer.expect("the mock answers");
-        assert_eq!(
-            answer
-                .response
-                .data
-                .as_ref()
-                .and_then(|data| data[0].url.clone()),
-            Some(mock.to_owned())
-        );
-        assert_eq!(answer.hidden_model.as_deref(), Some("dall-e-2"));
-    }
+    assert_mock_answer(&case, "");
+    assert_mock_answer(&case, "image");
     assert!(ops.sends().is_empty());
+}
+
+// an empty mock_response still answers, and both spellings become the generated url
+fn assert_mock_answer(case: &Case<'_>, mock: &str) {
+    let mut mocked = call(None, None);
+    mocked.kwargs = kwargs(vec![("mock_response", Json::Text(mock.to_owned()))]);
+    let (answer, _) = case.run(mocked);
+    let answer = answer.expect("the mock answers");
+    assert_eq!(
+        answer
+            .response
+            .data
+            .as_ref()
+            .and_then(|data| data.first())
+            .and_then(|entry| entry.url.clone()),
+        Some(mock.to_owned())
+    );
+    assert_eq!(answer.hidden_model.as_deref(), Some("dall-e-2"));
 }
 
 #[test]
 fn azure_image_credentials() {
     let ops = FakeOps::new(Some(ImageGenerationConfigTag::Azure(String::from("dep"))));
     let identity = azure_identity("dep");
-    let mut settings = Settings {
+    let settings = Settings {
         api_base: Some(String::from("https://global.example")),
         api_version: Some(String::from("2024-06-01")),
         api_key: Some(SecretString::from("global-key")),
         azure_key: Some(SecretString::from("azure-key")),
-        ..Settings::default()
+        azure_api_type: String::from("azure"),
+        azure_api_base: Some(String::from("https://azure-env.example")),
+        azure_api_version: Some(String::from("2024-01-01")),
+        azure_openai_api_key: Some(SecretString::from("openai-key")),
+        azure_api_key: Some(SecretString::from("api-key-env")),
+        azure_ad_token: Some(SecretString::from("env-token")),
+        azure_ai_api_base: None,
+        azure_ai_api_key: None,
     };
-    settings.azure_api_base = Some(String::from("https://azure-env.example"));
-    settings.azure_api_version = Some(String::from("2024-01-01"));
-    settings.azure_openai_api_key = Some(SecretString::from("openai-key"));
-    settings.azure_api_key = Some(SecretString::from("api-key-env"));
-    settings.azure_ad_token = Some(SecretString::from("env-token"));
     let case = Case::new(&ops, &identity, settings);
 
     let mut base = call(Some("dep"), Some("azure"));
@@ -207,28 +218,39 @@ fn azure_image_credentials() {
 
     let token_ops = FakeOps::new(Some(ImageGenerationConfigTag::Azure(String::from("dep"))));
     let token_identity = azure_identity("dep");
-    let token_case = Case::new(
+    let token_settings = Settings {
+        api_base: None,
+        api_version: None,
+        api_key: None,
+        azure_key: None,
+        azure_api_type: String::from("azure"),
+        azure_api_base: None,
+        azure_api_version: None,
+        azure_openai_api_key: None,
+        azure_api_key: None,
+        azure_ad_token: Some(SecretString::from("env-token")),
+        azure_ai_api_base: None,
+        azure_ai_api_key: None,
+    };
+    let token_case = Case::new(&token_ops, &token_identity, token_settings);
+    assert_ad_token(
+        &token_case,
         &token_ops,
-        &token_identity,
-        Settings {
-            azure_ad_token: Some(SecretString::from("env-token")),
-            ..Settings::default()
-        },
+        Json::Text(String::from("token")),
+        Some("token"),
     );
-    for (value, expected) in [
-        (Json::Text(String::from("token")), Some("token")),
-        (Json::Text(String::new()), Some("env-token")),
-        (Json::Number(5.into()), Some("env-token")),
-    ] {
-        let mut tokenized = call(Some("dep"), Some("azure"));
-        tokenized.kwargs = kwargs(vec![("azure_ad_token", value)]);
-        let (answer, _) = token_case.run(tokenized);
-        assert!(answer.is_ok());
-        let sent = token_ops.sends();
-        let sent = sent.last().expect("the call was sent");
-        assert_eq!(sent.azure_ad_token.as_deref(), expected);
-        assert!(sent.option("azure_ad_token").is_none());
-    }
+    assert_ad_token(
+        &token_case,
+        &token_ops,
+        Json::Text(String::new()),
+        Some("env-token"),
+    );
+    assert_ad_token(
+        &token_case,
+        &token_ops,
+        Json::Number(Number::from(5_u64)),
+        Some("env-token"),
+    );
     assert!(token_ops.sends().iter().all(|sent| sent.api_key.is_none()));
 
     let callback_ops = FakeOps::new(Some(ImageGenerationConfigTag::Azure(String::from("dep"))));
@@ -288,6 +310,18 @@ fn azure_image_credentials() {
     assert!(answer.is_ok());
     assert!(partial_ops.entra().is_empty());
     assert!(!partial_ops.sends()[0].has_entra_provider);
+}
+
+// the option or kwarg wins only as a nonempty string; an empty string and a number fall back to env
+fn assert_ad_token(case: &Case<'_>, ops: &FakeOps, value: Json, expected: Option<&str>) {
+    let mut tokenized = call(Some("dep"), Some("azure"));
+    tokenized.kwargs = kwargs(vec![("azure_ad_token", value)]);
+    let (answer, _) = case.run(tokenized);
+    assert!(answer.is_ok());
+    let sent = ops.sends();
+    let sent = sent.last().expect("the call was sent");
+    assert_eq!(sent.azure_ad_token.as_deref(), expected);
+    assert!(sent.option("azure_ad_token").is_none());
 }
 
 #[test]
@@ -405,14 +439,21 @@ fn generation_provider_selection(
 ) {
     let ops = FakeOps::new(Some(tag.clone()));
     let identity = FakeIdentity::new(Some("image-model"), ProviderIdentity::Known(provider));
-    let case = Case::new(
-        &ops,
-        &identity,
-        Settings {
-            api_base: Some(String::from("https://global.example")),
-            ..Settings::default()
-        },
-    );
+    let global_settings = Settings {
+        api_base: Some(String::from("https://global.example")),
+        api_version: None,
+        api_key: None,
+        azure_key: None,
+        azure_api_type: String::from("azure"),
+        azure_api_base: None,
+        azure_api_version: None,
+        azure_openai_api_key: None,
+        azure_api_key: None,
+        azure_ad_token: None,
+        azure_ai_api_base: None,
+        azure_ai_api_key: None,
+    };
+    let case = Case::new(&ops, &identity, global_settings.clone());
     let mut selected = call(Some("image-model"), Some(slug));
     selected.api_base = Some(String::from("https://call.example"));
     let (answer, _) = case.run(selected);
@@ -431,14 +472,7 @@ fn generation_provider_selection(
         Some(&Json::Text(String::from("https://call.example")))
     );
 
-    let global = Case::new(
-        &ops,
-        &identity,
-        Settings {
-            api_base: Some(String::from("https://global.example")),
-            ..Settings::default()
-        },
-    );
+    let global = Case::new(&ops, &identity, global_settings);
     let (answer, _) = global.run(call(Some("image-model"), Some(slug)));
     assert!(answer.is_ok());
     let sent = ops.sends();
@@ -784,14 +818,22 @@ fn fallthrough_answers_an_empty_response() {
 
 #[test]
 fn extra_headers_merge_over_headers_before_mapping() {
-    let mut generic = crate::api::image_generation_call::call::GenericParams {
+    let generic = GenericParams {
+        aimg_generation: false,
+        azure_ad_token_provider: false,
+        azure_ad_token: None,
+        mock_response: None,
+        extra_headers: Some(BTreeMap::from([
+            (String::from("X-A"), String::from("two")),
+            (String::from("X-B"), String::from("three")),
+        ])),
         headers: BTreeMap::from([(String::from("X-A"), String::from("one"))]),
-        ..crate::api::image_generation_call::call::GenericParams::default()
+        base_model: None,
+        organization: None,
+        drop_params: None,
+        additional_drop_params: Vec::new(),
+        credentials: LiteLlmCredentials::default(),
     };
-    generic.extra_headers = Some(BTreeMap::from([
-        (String::from("X-A"), String::from("two")),
-        (String::from("X-B"), String::from("three")),
-    ]));
     assert_eq!(
         generic.merged_headers(),
         BTreeMap::from([

@@ -13,6 +13,7 @@ mod custom;
 mod foundry;
 mod generic;
 mod openai;
+mod special;
 
 // the twelve providers that go through llm_http_handler.image_generation_handler
 const GENERIC_PROVIDERS: [&str; 12] = [
@@ -47,17 +48,14 @@ where
     if GENERIC_PROVIDERS.contains(&slug) {
         return generic::send(plan, prepared, mapped, call, logging).await;
     }
-    if slug == "black_forest_labs" {
-        return openai::black_forest_labs(plan, prepared, mapped, call, logging).await;
+    if slug == "black_forest_labs" || slug == "bedrock" {
+        return special::send(plan, prepared, mapped, call, logging).await;
     }
     if slug == "azure_ai" {
         return foundry::send(plan, prepared, mapped, call, logging).await;
     }
     if slug == "openai" || slug == "litellm_proxy" || is_openai_compatible_provider(slug) {
         return openai::send(plan, prepared, mapped, call, logging).await;
-    }
-    if slug == "bedrock" {
-        return openai::bedrock(plan, prepared, mapped, call, logging).await;
     }
     if plan.custom_providers.contains(slug) {
         return custom::send(plan, prepared, mapped, call, logging).await;
