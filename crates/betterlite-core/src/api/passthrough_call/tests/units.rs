@@ -383,6 +383,28 @@ async fn auth_watsonx_mints_the_iam_token_from_the_key() {
     assert!(sent.body.contains("apikey=watsonx-key"));
 }
 
+#[tokio::test]
+async fn auth_watsonx_reports_a_refused_iam_token() {
+    let serving = serve(reply("401 fixture", &[], ""), Duration::ZERO).unwrap();
+    let environment = WatsonxEnvironment {
+        watsonx_iam_url: Some(format!("http://{}/identity/token", serving.address)),
+        ..WatsonxEnvironment::default()
+    };
+    let key = SecretString::from("watsonx-key");
+    let http = proxy_client(1024);
+    let Err(error) = auth::watsonx_headers(environment, Some(&key), &http).await else {
+        panic!("a refused IAM token is an error");
+    };
+    match error {
+        ConfigError::ValueError { message } => {
+            assert_eq!(message, "the IAM token request failed with status 401");
+        }
+        other @ (ConfigError::Passthrough(_)
+        | ConfigError::Message { .. }
+        | ConfigError::Provider(_)) => panic!("unexpected error: {other}"),
+    }
+}
+
 #[test]
 fn auth_credentials_failure_keeps_its_upstream_status() {
     let refused = SourceFailure {
