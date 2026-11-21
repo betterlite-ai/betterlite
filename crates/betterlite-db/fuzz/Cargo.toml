@@ -210,6 +210,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "baseline_json"
+path = "fuzz_targets/baseline_json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "daily_metadata"
 path = "fuzz_targets/daily_metadata.rs"
 test = false
