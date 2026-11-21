@@ -1,0 +1,9 @@
+task: B1064
+deviations:
+  - what: An empty custom_llm_provider is an APIConnectionError with status 500 and null type/param/code, where LiteLLM's exception_type answers None and the raise itself fails with TypeError.
+    why: A caller who passes an empty provider gets a mapped SDK error from betterlite, and no call can end in a TypeError that names no vector store at all.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2387
+  - what: A nonempty JSON object mock_response answers a create with that object, where LiteLLM's GenericLiteLLMParams turns a ModelResponse-shaped dict into a ModelResponse, so its isinstance(dict) branch never runs and the call reaches the provider.
+    why: GenericLiteLLMParams declares mock_response as str | ModelResponse | Exception | object | None, so a JSON object is the object member the branch checks for; docs/compatibility.md keeps Python's duck-typed validation out of betterlite, and a mock that silently reaches the network is not a behavior a setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L212-L215
+kept_bugs: []
