@@ -116,7 +116,7 @@ where
         &self,
         mut response: GuardrailValue,
         guardrail: &Self::Guardrail,
-        call: TranslationCall<'_, Self::LogTarget>,
+        _call: TranslationCall<'_, Self::LogTarget>,
     ) -> Result<GuardrailValue, Self::Failure> {
         let mut parsed: ChatResponse = serde_json::from_value(to_json(&response))?;
         let before = parsed.clone();
