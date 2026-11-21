@@ -3762,6 +3762,7 @@ dependencies = [
  "betterlite-ocr",
  "betterlite-oracle-helper-api",
  "betterlite-oracle-runner",
+ "betterlite-policy",
  "betterlite-redact",
  "betterlite-redis",
  "betterlite-roi",

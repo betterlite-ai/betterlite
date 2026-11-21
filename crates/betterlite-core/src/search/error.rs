@@ -59,8 +59,11 @@ where
     HookError: Error + 'static,
 {
     let model = format!("{provider}/search");
-    // a query of the wrong shape is the caller's mistake, where LiteLLM's ValueError maps to a 500
-    if matches!(error, SearchCallError::Query(_)) {
+    // a wrong query or an unmapped provider is the caller's mistake, where LiteLLM's ValueError maps to a 500
+    if matches!(
+        error,
+        SearchCallError::Query(_) | SearchCallError::Unsupported { .. }
+    ) {
         let context = ErrorContext {
             message: error.to_string(),
             model: Some(model),
