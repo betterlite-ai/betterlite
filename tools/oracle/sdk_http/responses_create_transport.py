@@ -127,6 +127,7 @@ class PatchHook(CustomLogger):
     @override
     async def async_pre_call_deployment_hook(
         self,
+        # ast-grep-ignore: no-loose-types
         kwargs: dict[str, object],
         call_type: CallTypes | None,
     ) -> dict[str, JsonValue] | None:
@@ -143,6 +144,7 @@ class ScriptedAgentic(CustomLogger):
     @override
     async def async_should_run_agentic_loop(
         self,
+        # ast-grep-ignore: no-loose-types
         response: object,
         model: str,
         messages: list[dict[str, JsonValue]],
@@ -159,8 +161,11 @@ class ScriptedAgentic(CustomLogger):
         tools: dict[str, JsonValue],
         model: str,
         messages: list[dict[str, JsonValue]],
+        # ast-grep-ignore: no-loose-types
         response: object,
+        # ast-grep-ignore: no-long-names
         anthropic_messages_provider_config: BaseAnthropicMessagesConfig | None,
+        # ast-grep-ignore: no-long-names
         anthropic_messages_optional_request_params: dict[str, JsonValue],
         logging_obj: Logging,
         stream: bool,

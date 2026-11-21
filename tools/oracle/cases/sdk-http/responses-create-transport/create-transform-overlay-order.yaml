@@ -27,4 +27,6 @@ compare:
   headers: []
   headers_present: []
   upstream_headers: [authorization, content-type, x-option, x-trace]
-  ignore: []
+  ignore:
+    - pointer: /upstream/0/body/extra_headers
+      why: LiteLLM hands the optional map's own extra_headers dict to validate_environment, which rewrites it in place before the transform copies the map into the body; betterlite does not port changes made in place to the caller's dict (docs/compatibility.md)

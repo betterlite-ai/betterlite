@@ -6,6 +6,7 @@ call:
     mode: async
     model: gpt-4o
     input: hello
+    timeout_seconds: 7
 upstream:
   - status: 429
     headers: {content-type: text/plain, retry-after: "3"}

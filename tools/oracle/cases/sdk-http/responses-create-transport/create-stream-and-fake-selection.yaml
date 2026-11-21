@@ -9,6 +9,7 @@ call:
     optional_params: {stream: true}
     extra_body: {stream: false}
     litellm_metadata: {session: s-1}
+    timeout_seconds: 7
 upstream:
   - status: 200
     headers: {content-type: text/event-stream}

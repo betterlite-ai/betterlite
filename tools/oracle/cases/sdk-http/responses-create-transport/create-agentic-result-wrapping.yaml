@@ -7,6 +7,7 @@ call:
     model: gpt-4o
     input: hello
     litellm_params: {_websearch_interception_converted_stream: true}
+    timeout_seconds: 7
     agentic: true
     agentic_result:
       id: resp_agentic
