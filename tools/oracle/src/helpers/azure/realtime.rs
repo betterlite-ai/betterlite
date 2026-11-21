@@ -203,18 +203,22 @@ fn failure_view(
     };
     let action = client_action(failure_action(input.kind, failure));
     match action {
-        ClientAction::RefuseHandshake { status_code } => {
+        ClientAction::RefuseHandshake(refusal) => {
             executor
-                .block_on(close_after_handshake_refusal(&mut socket, status_code))
+                .block_on(close_after_handshake_refusal(
+                    &mut socket,
+                    refusal.status_code,
+                ))
                 .map_err(|error| helper_error(&error.to_string()))?;
         }
-        ClientAction::SendErrorAndClose {
-            error_type,
-            message,
-            close,
-        } => {
+        ClientAction::SendErrorAndClose(notice) => {
             executor
-                .block_on(send_and_close(&mut socket, error_type, message, &close))
+                .block_on(send_and_close(
+                    &mut socket,
+                    notice.error_type,
+                    notice.message,
+                    &notice.close,
+                ))
                 .map_err(|error| helper_error(&error.to_string()))?;
         }
     }

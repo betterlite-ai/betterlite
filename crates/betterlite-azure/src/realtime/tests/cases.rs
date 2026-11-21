@@ -6,8 +6,8 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::realtime::error::RealtimeError;
 use crate::realtime::failure::{
-    ClientAction, RealtimeFailure, SESSION_CLOSE_CODE, SESSION_ERROR_MESSAGE, SESSION_ERROR_TYPE,
-    client_action,
+    ClientAction, FailureNotice, HandshakeRefusal, RealtimeFailure, SESSION_CLOSE_CODE,
+    SESSION_ERROR_MESSAGE, SESSION_ERROR_TYPE, client_action,
 };
 use crate::realtime::http_config::{
     DEFAULT_API_VERSION, RealtimeHttpSettings, realtime_calls_headers, validate_environment,
@@ -479,7 +479,10 @@ pub(super) fn handshake_error() {
 fn handshake_refusals() {
     for status_code in [401_u16, 403, 429, 500, 418] {
         let action = client_action(RealtimeFailure::Handshake { status_code });
-        assert_eq!(action, ClientAction::RefuseHandshake { status_code });
+        assert_eq!(
+            action,
+            ClientAction::RefuseHandshake(Box::new(HandshakeRefusal { status_code }))
+        );
     }
 }
 
@@ -489,14 +492,14 @@ fn other_failures() {
     assert_eq!(SESSION_CLOSE_CODE, 1011);
     assert_eq!(
         client_action(RealtimeFailure::Other),
-        ClientAction::SendErrorAndClose {
+        ClientAction::SendErrorAndClose(Box::new(FailureNotice {
             error_type: "server_error",
             message: "Internal server error",
             close: RealtimeClose {
                 code: 1011,
                 reason: String::from("Internal server error"),
             },
-        }
+        }))
     );
 }
 
