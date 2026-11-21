@@ -123,12 +123,14 @@ fn multipart(
     let mut parts = Vec::new();
     if let Some(fields) = data {
         for (name, value) in fields {
-            parts.push(MultipartPart {
-                name: name.clone(),
-                file_name: None,
-                content_type: None,
-                data: primitive_text(name, value)?.into_bytes(),
-            });
+            for item in field_values(value) {
+                parts.push(MultipartPart {
+                    name: name.clone(),
+                    file_name: None,
+                    content_type: None,
+                    data: primitive_text(name, item)?.into_bytes(),
+                });
+            }
         }
     }
     for upload in files {
@@ -148,18 +150,22 @@ fn multipart(
 fn urlencoded(data: &Object) -> Result<RequestBody, ConfigError> {
     let mut serializer = form_urlencoded::Serializer::new(String::new());
     for (name, value) in data {
-        if let JsonValue::Array(items) = value {
-            for item in items {
-                serializer.append_pair(name, &primitive_text(name, item)?);
-            }
-        } else {
-            serializer.append_pair(name, &primitive_text(name, value)?);
+        for item in field_values(value) {
+            serializer.append_pair(name, &primitive_text(name, item)?);
         }
     }
     Ok(RequestBody::Bytes {
         content_type: HeaderValue::from_static(FORM_URLENCODED),
         data: serializer.finish().into_bytes(),
     })
+}
+
+// httpx's _iter_fields sends one repeated field per list item, so a list is expanded before encoding
+fn field_values(value: &JsonValue) -> Vec<&JsonValue> {
+    if let JsonValue::Array(items) = value {
+        return items.iter().collect();
+    }
+    vec![value]
 }
 
 // httpx's primitive_value_to_str, which refuses a nested list or a mapping inside form data

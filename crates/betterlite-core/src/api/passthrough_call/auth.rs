@@ -1,3 +1,6 @@
+use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use async_trait::async_trait;
 use betterlite_config::sections::gigachat_auth::Settings as GigachatSettings;
 use betterlite_config::sections::settings::JsonValue;
@@ -18,13 +21,18 @@ use betterlite_openai::nvidia_nim_passthrough::{
 };
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::passthrough::transformation::types::PassthroughSigning;
+use betterlite_openai::watsonx_auth::WatsonxAuth;
 use betterlite_openai::watsonx_auth::environment::WatsonxEnvironment;
-use betterlite_openai::watsonx_passthrough::WatsonxPassthroughConfig;
+use betterlite_openai::watsonx_auth::error::WatsonxError;
+use betterlite_openai::watsonx_auth::types::WatsonxParams;
+use betterlite_openai::watsonx_passthrough::{WatsonxPassthroughConfig, WatsonxPassthroughError};
+use http::header::HeaderMap;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use self::providers::{AzureKind, azure_headers, gigachat_error, status_error};
 use super::config::ConfigError;
 use super::logging::json_object;
+use super::wire::header_text;
 
 mod providers;
 
@@ -54,15 +62,7 @@ pub(crate) async fn validate(
         PassthroughConfigTag::VLLM
         | PassthroughConfigTag::Bedrock
         | PassthroughConfigTag::BedrockMantle => Ok(Headers::new()),
-        PassthroughConfigTag::Watsonx => {
-            let environment = WatsonxEnvironment::default();
-            WatsonxPassthroughConfig {
-                environment: &environment,
-            }
-            .get_api_key(api_key)
-            .map_err(|error| status_error(error.status(), error.to_string()))?;
-            Ok(Headers::new())
-        }
+        PassthroughConfigTag::Watsonx => watsonx_headers(api_key, http).await,
         PassthroughConfigTag::Azure => azure_headers(AzureKind::Key, api_key, params, base),
         PassthroughConfigTag::AzureAI => azure_headers(AzureKind::Entra, api_key, params, base),
         PassthroughConfigTag::GigaChat => gigachat_headers(api_key, params, http).await,
@@ -74,6 +74,47 @@ pub(crate) async fn validate(
             ))
         }
     }
+}
+
+// WatsonxPassthroughConfig's validate_environment: content type and accept, then the Bearer or ZenApiKey header
+// minting the IAM token needs a live identity endpoint; betterlite-openai tests that flow
+#[cfg_attr(test, mutants::skip)]
+async fn watsonx_headers(
+    api_key: Option<&SecretString>,
+    http: &ProxiedClient,
+) -> Result<Headers, ConfigError> {
+    let environment = WatsonxEnvironment::default();
+    let config = WatsonxPassthroughConfig {
+        environment: &environment,
+    };
+    let provider_key = config
+        .get_api_key(api_key)
+        .map_err(|error| status_error(error.status(), error.to_string()))?;
+    let auth = WatsonxAuth::new(environment, http.clone(), Arc::new(epoch_seconds))
+        .map_err(watsonx_error)?;
+    let mut params = WatsonxParams::new();
+    let headers = auth
+        .validate_environment(HeaderMap::new(), &mut params, Some(&provider_key))
+        .await
+        .map_err(watsonx_error)?;
+    Ok(headers
+        .iter()
+        .map(|(name, value)| (name.as_str().to_owned(), header_text(value)))
+        .collect())
+}
+
+// an IAM token minted from the key carries its upstream status; a pre-flight failure does not
+fn watsonx_error(error: WatsonxError) -> ConfigError {
+    let failure = WatsonxPassthroughError::from(error);
+    status_error(failure.status(), failure.to_string())
+}
+
+// the wall clock only seeds the IAM token cache, which no test in this module can read
+#[cfg_attr(test, mutants::skip)]
+fn epoch_seconds() -> f64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0.0, |elapsed| elapsed.as_secs_f64())
 }
 
 // GigaChat's validate_environment reads its OAuth parameters from litellm_params, then mints a token
