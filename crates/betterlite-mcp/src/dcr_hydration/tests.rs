@@ -207,6 +207,23 @@ async fn a_configured_client_id_wins_and_the_store_is_not_read() {
 }
 
 #[tokio::test]
+async fn an_empty_configured_client_id_reads_the_store() {
+    let stored = blob(&[("client_id", JsonValue::String("stored-client".to_owned()))]);
+    let hydration = hydration(
+        FakeStore::returning(Some(stored)),
+        cipher_with(Some(SALT_KEY)),
+    );
+    let mut server = server_with_client_id("");
+    assert!(
+        hydration
+            .hydrate_config_server_dcr_client(&mut server)
+            .await
+    );
+    assert_eq!(server.fields.client_id.as_deref(), Some("stored-client"));
+    assert_eq!(hydration.store.reads.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
 async fn a_store_without_a_row_leaves_the_server_alone() {
     let hydration = hydration(FakeStore::returning(None), cipher_with(Some(SALT_KEY)));
     let mut server = server();
