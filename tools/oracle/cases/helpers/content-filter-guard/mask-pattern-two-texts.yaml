@@ -1,0 +1,28 @@
+kind: helper
+name: mask-pattern-two-texts
+call:
+  b8773:
+    builds:
+      - args:
+          patterns:
+            - pattern_type: regex
+              pattern_name: null
+              pattern: '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
+              name: email
+              action: MASK
+          blocked_words: []
+          event_hook: pre_call
+          default_on: false
+          guardrail_id: null
+          policy_template: null
+          image_model: null
+          competitor_intent_config: null
+          severity_threshold: medium
+        apply:
+          texts:
+            - 'write to a@example.com today'
+            - 'write to b@example.com today'
+          tool_calls: null
+          input_type: request
+env: {}
+compare: {ignore: []}

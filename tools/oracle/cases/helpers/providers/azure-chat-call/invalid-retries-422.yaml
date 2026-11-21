@@ -1,0 +1,18 @@
+kind: helper
+name: azure-chat-call-invalid-retries
+call:
+  azure_chat_call:
+    function: completion
+    cases:
+      - model: gpt-4o-deployment
+        messages:
+          - {role: user, content: hi}
+        api_key: key
+        optional_params: {max_retries: two}
+      - model: gpt-4o-deployment
+        messages:
+          - {role: user, content: hi}
+        api_key: key
+        optional_params: {max_retries: true}
+env: {}
+compare: {ignore: []}

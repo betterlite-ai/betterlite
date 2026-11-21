@@ -1,0 +1,24 @@
+task: B3457
+deviations:
+  - what: AWS calls are SigV4-signed HTTPS requests, not boto3 or opensearch-py clients. Oracle cases compare operation names and AWS-named parameters from a recording fake on the Python side, and native tests check the wire method, URL, service and signing region.
+    why: Rust has neither library and the rules forbid an AWS SDK service crate for these calls.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/bedrock_ingestion.py#L246-L440
+  - what: The OpenSearch index call is signed through B3456's credential resolution with all ten credential keys, where Python gives requests_aws4auth only the access key, secret key and session token.
+    why: One signing path for every AWS call; the role-based keys Python ignores here only widen what already works.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/bedrock_ingestion.py#L358-L385
+  - what: A collection endpoint that is not https or whose host does not end with `.aoss.{dns_suffix}` is a typed error before anything is signed. Python sends the request to whatever host the BatchGetCollection answer names.
+    why: The signed credentials must not go to a host an unexpected answer picked.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/bedrock_ingestion.py#L376-L391
+  - what: Data access policy principals keep the account root first and the caller second. Python builds the list with `list(set(...))`, so its order is random.
+    why: A stable order is observable and harmless; the root entry is the one every caller shares.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/bedrock_ingestion.py#L303-L306
+  - what: Endpoints for STS, IAM and OpenSearch Serverless come only from the region and the partition. The AWS_ENDPOINT_URL overrides boto3 reads are ignored.
+    why: Same rule as B3456; a hidden global destination is not part of the settings.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/bedrock_ingestion.py#L587-L616
+  - what: A BatchGetCollection answer with no collectionDetails entry is a typed MissingEntry error. Python indexes `collectionDetails[0]` and raises IndexError.
+    why: An unexpected provider answer is an error the caller can name; an index panic is not.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/bedrock_ingestion.py#L376-L378
+  - what: The role step returns a typed MissingS3Bucket error when no bucket is known. Python formats the missing value into the policy as `arn:aws:s3:::None`.
+    why: A working setup always has a bucket at this point, and a typed error names what is missing instead of creating a policy that grants a bucket named None.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/bedrock_ingestion.py#L495-L501
+kept_bugs: []

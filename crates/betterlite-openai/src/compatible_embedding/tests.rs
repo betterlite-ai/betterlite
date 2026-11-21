@@ -17,6 +17,7 @@ use betterlite_logging::logging_state::correlation::{
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use betterlite_test_ports::refused_port::RefusedPort;
 use chrono::DateTime;
 use indexmap::IndexMap;
 use rstest::rstest;
@@ -371,9 +372,8 @@ async fn a_slow_answer_is_a_408_timeout() {
 
 #[tokio::test]
 async fn a_refused_connection_is_a_500() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let url = format!("http://{}/embeddings", listener.local_addr().unwrap());
-    drop(listener);
+    let refused = RefusedPort::bind().unwrap();
+    let url = format!("http://{}/embeddings", refused.address);
     let error = send_embedding(&client(), &plan(&url, Duration::from_secs(5), Mode::Async))
         .await
         .unwrap_err();

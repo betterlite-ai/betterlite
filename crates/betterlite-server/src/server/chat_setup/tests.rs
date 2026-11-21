@@ -152,6 +152,25 @@ fn a_bedrock_mantle_deployment_still_starts_as_unsupported() {
 }
 
 #[test]
+fn a_declared_provider_goes_back_on_the_model_once() {
+    let yaml = "model_list:\n  - model_name: bare\n    litellm_params:\n      model: luminous-base-control\n      custom_llm_provider: aleph_alpha\n      api_key: k\n      api_base: https://api.aleph-alpha.com/complete\n  - model_name: prefixed\n    litellm_params:\n      model: aleph_alpha/luminous-base-control\n      custom_llm_provider: aleph_alpha\n      api_key: k\n      api_base: https://api.aleph-alpha.com/complete\n";
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(yaml)
+    .unwrap();
+    let chat = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).unwrap();
+    let [bare, prefixed] = chat.deployments.as_slice() else {
+        panic!("both deployments start");
+    };
+    let expected = Provider::Unsupported {
+        model: String::from("aleph_alpha/luminous-base-control"),
+    };
+    assert_eq!(bare.provider, expected);
+    assert_eq!(prefixed.provider, expected);
+}
+
+#[test]
 fn a_non_openai_deployment_keeps_only_its_configured_credentials() {
     let yaml = "model_list:\n  - model_name: g\n    litellm_params:\n      model: groq/llama\n";
     let config = ConfigLoader {
@@ -165,6 +184,76 @@ fn a_non_openai_deployment_keeps_only_its_configured_credentials() {
     assert!(matches!(deployment.provider, Provider::Unsupported { .. }));
     assert!(deployment.api_key.is_none());
     assert_eq!(deployment.api_base, "https://api.openai.com/v1");
+}
+
+#[rstest]
+#[case::aleph_alpha_prefix_without_api_key(
+    "      model: aleph_alpha/luminous-base-control\n      custom_llm_provider: aleph_alpha\n      api_base: https://api.aleph-alpha.com/complete\n",
+    "aleph_alpha",
+    "api_key"
+)]
+#[case::aleph_alpha_provider_without_api_base(
+    "      model: luminous-base-control\n      custom_llm_provider: aleph_alpha\n      api_key: k\n",
+    "aleph_alpha",
+    "api_base"
+)]
+#[case::litellm_proxy_prefix_without_api_base(
+    "      model: litellm_proxy/gemini/gemini-1.5-pro\n      api_key: k\n",
+    "litellm_proxy",
+    "api_base"
+)]
+#[case::litellm_proxy_provider_without_api_key(
+    "      model: proxy-model\n      custom_llm_provider: litellm_proxy\n      api_base: https://proxy.example\n",
+    "litellm_proxy",
+    "api_key"
+)]
+#[case::custom_prefix_without_api_base(
+    "      model: custom/my-model\n      api_key: k\n",
+    "custom",
+    "api_base"
+)]
+fn unbuilt_chain_stops_startup(#[case] params: &str, #[case] provider: &str, #[case] field: &str) {
+    let yaml = format!("model_list:\n  - model_name: chain-model\n    litellm_params:\n{params}");
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(&yaml)
+    .unwrap();
+    match chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)) {
+        Err(ChatSetupError::UnbuiltChain {
+            model_name,
+            provider: named,
+            field: missing,
+        }) => {
+            assert_eq!(model_name, "chain-model");
+            assert_eq!(named, provider);
+            assert_eq!(missing, field);
+        }
+        Ok(_) => panic!("the deployment started without its own chain"),
+        Err(other) => panic!("unexpected setup error: {other}"),
+    }
+}
+
+#[rstest]
+#[case::aleph_alpha(
+    "      model: aleph_alpha/luminous-base-control\n      custom_llm_provider: aleph_alpha\n      api_key: k\n      api_base: https://api.aleph-alpha.com/complete\n"
+)]
+#[case::litellm_proxy(
+    "      model: litellm_proxy/gemini/gemini-1.5-pro\n      api_key: k\n      api_base: https://proxy.example\n"
+)]
+#[case::custom(
+    "      model: custom/my-model\n      api_key: k\n      api_base: https://custom.example/generate\n"
+)]
+fn a_legacy_deployment_with_its_own_chain_starts(#[case] params: &str) {
+    let yaml = format!("model_list:\n  - model_name: chain-model\n    litellm_params:\n{params}");
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(&yaml)
+    .unwrap();
+    let chat = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1))
+        .expect("the deployment sets its own key and base");
+    assert_eq!(chat.deployments.len(), 1_usize);
 }
 
 #[tokio::test]

@@ -1,6 +1,7 @@
 use std::future::pending;
 use std::time::Duration;
 
+use betterlite_test_ports::refused_port::RefusedPort;
 use http::StatusCode;
 use reqwest::Method;
 use reqwest::redirect::Policy;
@@ -199,16 +200,12 @@ async fn oauth_request_does_not_follow_a_redirect() {
 
 #[tokio::test]
 async fn oauth_request_maps_a_connection_failure_to_transport() {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("a loopback port opens");
-    let address = listener.local_addr().expect("the bound address is known");
-    drop(listener);
-    let auth_url = format!("http://{address}/oauth");
+    let refused = RefusedPort::bind().expect("a refused port");
+    let auth_url = format!("http://{}/oauth", refused.address);
     let auth = authenticator(SystemRuntime, &auth_url);
 
     let error = auth
-        .access_token(&request(&format!("http://{address}/oauth")))
+        .access_token(&request(&auth_url))
         .await
         .expect_err("a closed port refuses the request");
 

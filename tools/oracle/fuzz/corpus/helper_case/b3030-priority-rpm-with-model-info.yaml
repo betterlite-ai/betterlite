@@ -1,0 +1,13 @@
+kind: helper
+name: provider_attribution-priority-rpm-with-model-info
+call:
+  b3030:
+    function: priority_percent
+    value:
+      type: rpm
+      value: 900
+    model_info:
+      rpm: 1000
+      tpm: null
+env: {}
+compare: {ignore: []}

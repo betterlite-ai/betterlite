@@ -46,7 +46,7 @@ checks:
   commands:
   - id: incremental-tests
     why: An incremental scan test broke, or a new test does not pin the wider scan.
-    run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^bedrock_incremental_guardrail::tests::/)'
+    run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^bedrock_incremental_guardrail::incremental_scan::/)'
   - id: kept-bug-row
     why: The kept bug is not recorded with its pinned LiteLLM link.
     run: >-

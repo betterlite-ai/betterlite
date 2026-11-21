@@ -1,0 +1,30 @@
+kind: helper
+name: azure-chat-call-error-status-passthrough
+call:
+  azure_chat_call:
+    function: completion
+    cases:
+      - model: gpt-4o-deployment
+        messages:
+          - {role: user, content: hi}
+        api_key: key
+        answer:
+          error: status
+          status: 429
+          message: rate limited
+          headers: {content-type: application/json, retry-after: "7"}
+          body: '{"error":{"message":"rate limited","code":"429"}}'
+      - model: gpt-4o-deployment
+        messages:
+          - {role: user, content: hi}
+        api_key: key
+        acompletion: true
+        client: async
+        answer:
+          error: status
+          status: 429
+          message: rate limited
+          headers: {content-type: application/json, retry-after: "7"}
+          body: '{"error":{"message":"rate limited","code":"429"}}'
+env: {}
+compare: {ignore: []}
