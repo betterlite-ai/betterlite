@@ -5,6 +5,8 @@ use secrecy::SecretString;
 use tokio::time::sleep;
 use tracing::{debug, error};
 
+use crate::api::vertex_location::validate_vertex_project;
+
 use super::API_VERSION;
 use super::VertexIngestion;
 use super::error::VertexIngestionError;
@@ -21,10 +23,11 @@ pub(super) async fn create_corpus(
     project: &str,
     display_name: &str,
 ) -> Result<String, VertexIngestionError> {
-    let token = ingestion.bearer_token(Some(project)).await?;
+    let checked_project = validate_vertex_project(project)?;
+    let token = ingestion.bearer_token(Some(checked_project)).await?;
     let base_url = ingestion.base_url()?;
     let url = format!(
-        "{base_url}/{API_VERSION}/projects/{project}/locations/{}/ragCorpora",
+        "{base_url}/{API_VERSION}/projects/{checked_project}/locations/{}/ragCorpora",
         ingestion.location
     );
     debug!("Creating RAG corpus: {url}");

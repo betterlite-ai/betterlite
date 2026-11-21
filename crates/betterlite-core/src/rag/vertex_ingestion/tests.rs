@@ -4,6 +4,7 @@ mod edges;
 mod flags_cases;
 mod harness;
 mod project_cases;
+mod url_cases;
 
 use std::time::Duration;
 
