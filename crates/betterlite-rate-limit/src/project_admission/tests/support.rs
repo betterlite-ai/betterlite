@@ -392,12 +392,11 @@ pub(crate) fn tokens_key(key: &str, value: &str) -> String {
 
 // an open window holding `used` tokens for the descriptor
 pub(crate) fn window(key: &str, value: &str, used: i64) -> [(String, CacheCounterValue); 2] {
+    let started = CacheCounterValue::Text(START.to_string());
+    let spent = CacheCounterValue::Int(used);
     [
-        (
-            format!("{{{key}:{value}}}:window"),
-            CacheCounterValue::Text(START.to_string()),
-        ),
-        (tokens_key(key, value), CacheCounterValue::Int(used)),
+        (format!("{{{key}:{value}}}:window"), started),
+        (tokens_key(key, value), spent),
     ]
 }
 
