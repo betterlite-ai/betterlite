@@ -103,7 +103,7 @@ where
 fn attribution<Identity>(
     identity: &Identity,
     args: &AsyncRerankArgs,
-) -> Result<String, RawException>
+) -> Result<String, Box<RawException>>
 where
     Identity: RerankIdentity,
 {
@@ -117,36 +117,36 @@ where
         .resolve(&ResolutionRequest {
             model: &args.model,
             custom_llm_provider: args.custom_llm_provider.as_deref(),
-            api_base: api_base.as_deref(),
+            api_base,
             api_key: None,
         })
         .map(|resolved| resolved.provider.slug().to_owned())
         .map_err(|error| {
-            value_failure(
+            Box::new(value_failure(
                 &error.to_string(),
                 &args.model,
                 args.custom_llm_provider.as_deref().unwrap_or(""),
-            )
+            ))
         })
 }
 
 // get_llm_provider reads kwargs["api_base"]; a value that is not text names the field, as the call itself would
-fn api_base_argument(args: &AsyncRerankArgs) -> Result<Option<&str>, RawException> {
+fn api_base_argument(args: &AsyncRerankArgs) -> Result<Option<&str>, Box<RawException>> {
     match args.kwargs.get("api_base") {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Text(base)) => Ok(Some(base)),
         Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(value_failure(
+            Err(Box::new(value_failure(
                 "api_base must be a string",
                 &args.model,
                 args.custom_llm_provider.as_deref().unwrap_or(""),
-            ))
+            )))
         }
     }
 }
 
 // arerank passes return_documents=None, so None stays None instead of taking rerank's True default
-fn into_call(mut args: AsyncRerankArgs, provider: &str) -> Result<RerankCall, RawException> {
+fn into_call(mut args: AsyncRerankArgs, provider: &str) -> Result<RerankCall, Box<RawException>> {
     let max_tokens_per_doc = max_tokens_argument(&mut args.kwargs, &args.model, provider)?;
     args.kwargs
         .insert(String::from("arerank"), Json::Bool(true));
@@ -157,10 +157,9 @@ fn into_call(mut args: AsyncRerankArgs, provider: &str) -> Result<RerankCall, Ra
         custom_llm_provider: args.custom_llm_provider,
         top_n: args.top_n,
         rank_fields: args.rank_fields,
-        return_documents: match args.return_documents {
-            Some(value) => ReturnDocuments::Value(value),
-            None => ReturnDocuments::Null,
-        },
+        return_documents: args
+            .return_documents
+            .map_or(ReturnDocuments::Null, ReturnDocuments::Value),
         max_chunks_per_doc: args.max_chunks_per_doc,
         max_tokens_per_doc,
         kwargs: args.kwargs,
@@ -172,25 +171,25 @@ fn max_tokens_argument(
     kwargs: &mut IndexMap<String, Json>,
     model: &str,
     provider: &str,
-) -> Result<Option<i64>, RawException> {
+) -> Result<Option<i64>, Box<RawException>> {
     let field = "max_tokens_per_doc must be an integer";
     match kwargs.shift_remove("max_tokens_per_doc") {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Number(number)) => number
             .as_i64()
             .map(Some)
-            .ok_or_else(|| value_failure(field, model, provider)),
+            .ok_or_else(|| Box::new(value_failure(field, model, provider))),
         Some(Json::Text(_) | Json::Bool(_) | Json::List(_) | Json::Object(_)) => {
-            Err(value_failure(field, model, provider))
+            Err(Box::new(value_failure(field, model, provider)))
         }
     }
 }
 
 // The facade's own failure, which exception_type maps from a raw ValueError before any provider arm
-fn raised(redactor: &Redactor, failure: RawException) -> RerankException {
+fn raised(redactor: &Redactor, failure: Box<RawException>) -> RerankException {
     let message = redactor.redact_string(&failure.error_str);
     RerankException {
-        class: dispatch(&DispatchInput::Raw(Box::new(failure)), redactor),
+        class: dispatch(&DispatchInput::Raw(failure), redactor),
         message,
     }
 }

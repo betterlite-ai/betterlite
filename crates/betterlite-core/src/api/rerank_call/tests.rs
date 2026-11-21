@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::future::{Future, ready};
+use std::future::{Future, pending, ready};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Mutex, PoisonError};
 use std::task::{Context, Poll, Waker};
@@ -177,7 +177,7 @@ impl FakeEntry {
             Mode::Pending => Ok(RerankWork::Deferred(Box::pin(async move {
                 self.polls.fetch_add(1, Ordering::SeqCst);
                 let _guard = CancelOnDrop(&self.cancelled);
-                std::future::pending::<Result<RerankResponse, RerankException>>().await
+                pending::<Result<RerankResponse, RerankException>>().await
             }))),
             Mode::DeferredFailing => Ok(RerankWork::Deferred(Box::pin(async move {
                 self.polls.fetch_add(1, Ordering::SeqCst);
