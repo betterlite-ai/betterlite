@@ -23,7 +23,7 @@ use betterlite_secret_managers::secret_contracts::options::{
 use betterlite_secret_managers::secret_contracts::{
     BaseSecretManager, RotationError, SecretFuture,
 };
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::{ExposeSecret as _, SecretString};
 use tokio::sync::Notify;
 use tracing::field::{Field, Visit};
 use tracing::{Event, Level, Subscriber};

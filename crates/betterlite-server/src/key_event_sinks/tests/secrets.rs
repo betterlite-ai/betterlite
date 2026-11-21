@@ -56,12 +56,12 @@ fn key(token: &str, key_alias: Option<&str>, team_id: Option<&str>) -> LiteLLMVe
 #[rstest]
 #[case::switch_off(false, true, 0)]
 #[case::no_client(true, false, 0)]
-#[case::both(true, true, 1)]
+#[case::both(true, true, 5)]
 #[tokio::test]
 async fn secret_gate_settings_switch_client(
     #[case] store_virtual_keys: bool,
     #[case] client: bool,
-    #[case] writes: usize,
+    #[case] calls: usize,
 ) {
     let config = settings(store_virtual_keys, "litellm/");
     let fake = manager(&[("litellm/old", "sk-old")], &[]);
@@ -78,8 +78,8 @@ async fn secret_gate_settings_switch_client(
         .delete(&[key("hash", Some("name"), Some("t1"))])
         .await
         .unwrap();
-    assert_eq!(fake.calls().len(), writes * 5);
-    assert_eq!(teams.lookups.lock().unwrap().is_empty(), writes == 0);
+    assert_eq!(fake.calls().len(), calls);
+    assert_eq!(teams.lookups.lock().unwrap().is_empty(), calls == 0);
 }
 
 #[rstest]

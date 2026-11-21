@@ -55,17 +55,24 @@ enum Runtime {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(untagged)]
 enum Step {
+    Secret(SecretStep),
+    Email(EmailStep),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
+enum SecretStep {
     Store {
         secret_name: String,
-        secret_token: String,
+        secret_token: SecretString,
         team_id: Option<String>,
     },
     Rotate {
         current_secret_name: String,
         new_secret_name: String,
-        new_secret_value: String,
+        new_secret_value: SecretString,
         team_id: Option<String>,
     },
     Rename {
@@ -76,9 +83,12 @@ enum Step {
     Delete {
         keys: Vec<LiteLLMVerificationToken>,
     },
-    KeyCreatedEmail {
-        response: JsonData,
-    },
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
+enum EmailStep {
+    KeyCreatedEmail { response: JsonData },
     KeyRotatedEmail,
 }
 
@@ -130,45 +140,37 @@ async fn perform(
     board: &Arc<Board>,
     step: &Step,
 ) -> Result<bool, Box<HelperError>> {
-    let tasks = TaskTracker::new();
-    let mailer = Arc::new(BoardMailer {
-        board: Arc::clone(board),
-    });
-    let email = LegacyEmail {
-        alerting: &sink.settings.alerting,
-        mailer,
-        tasks: &tasks,
-    };
-    let raised = match step {
-        Step::Store {
+    match step {
+        Step::Secret(secret) => Ok(secret_step(sink, secret).await),
+        Step::Email(email) => email_step(&sink.settings.alerting, board, email).await,
+    }
+}
+
+async fn secret_step(sink: &SecretSink<'_, ScriptedManager>, step: &SecretStep) -> bool {
+    match step {
+        SecretStep::Store {
             secret_name,
             secret_token,
             team_id,
         } => sink
-            .store(
-                secret_name,
-                &SecretString::from(secret_token.as_str()),
-                team_id.as_deref(),
-            )
+            .store(secret_name, secret_token, team_id.as_deref())
             .await
             .is_err(),
-        Step::Rotate {
+        SecretStep::Rotate {
             current_secret_name,
             new_secret_name,
             new_secret_value,
             team_id,
-        } => {
-            let value = SecretString::from(new_secret_value.as_str());
-            sink.rotate(
+        } => sink
+            .rotate(
                 current_secret_name,
                 new_secret_name,
-                &value,
+                new_secret_value,
                 team_id.as_deref(),
             )
             .await
-            .is_err()
-        }
-        Step::Rename {
+            .is_err(),
+        SecretStep::Rename {
             current_secret_name,
             new_secret_name,
             team_id,
@@ -176,18 +178,34 @@ async fn perform(
             .rename(current_secret_name, new_secret_name, team_id.as_deref())
             .await
             .is_err(),
-        Step::Delete { keys } => sink.delete(keys).await.is_err(),
-        Step::KeyCreatedEmail { response } => {
+        SecretStep::Delete { keys } => sink.delete(keys).await.is_err(),
+    }
+}
+
+async fn email_step(
+    alerting: &[String],
+    board: &Arc<Board>,
+    step: &EmailStep,
+) -> Result<bool, Box<HelperError>> {
+    let tasks = TaskTracker::new();
+    let email = LegacyEmail {
+        alerting,
+        mailer: Arc::new(BoardMailer {
+            board: Arc::clone(board),
+        }),
+        tasks: &tasks,
+    };
+    match step {
+        EmailStep::KeyCreatedEmail { response } => {
             let created: CreatedKey = serde_json::from_value(serde_json::to_value(response)?)?;
             let sent = email.send_key_created_email(created);
             tasks.close();
             tasks.wait().await;
-            sent.is_err()
+            Ok(sent.is_err())
         }
-        Step::KeyRotatedEmail => {
+        EmailStep::KeyRotatedEmail => {
             email.send_key_rotated_email();
-            false
+            Ok(false)
         }
-    };
-    Ok(raised)
+    }
 }

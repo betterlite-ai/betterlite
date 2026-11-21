@@ -10,10 +10,10 @@ pub type TeamSecretSettings = BTreeMap<String, JsonData>;
 
 // _get_secret_manager_optional_params: only a lookup failure logs, every other gap is a quiet None
 pub async fn secret_manager_settings(
-    teams: Option<&dyn TeamDirectory>,
-    team_id: Option<&str>,
+    directory: Option<&dyn TeamDirectory>,
+    requested_team: Option<&str>,
 ) -> Option<TeamSecretSettings> {
-    let (Some(team_id), Some(teams)) = (team_id, teams) else {
+    let (Some(team_id), Some(teams)) = (requested_team, directory) else {
         return None;
     };
     let team = match teams.team(team_id).await {
