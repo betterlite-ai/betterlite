@@ -30,7 +30,7 @@ pub enum FieldDefault {
 }
 
 // litellm's CoordinationRedisSettingsField: the admin UI's description of one setting, plus the value a read filled in.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct CoordinationRedisField {
     pub field_name: &'static str,
     pub field_type: FieldType,
