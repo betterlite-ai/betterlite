@@ -322,7 +322,7 @@ fn assistant_body_is_strict() {
         decode_assistant_body(b"[1,2]", &limits).expect("an array parses"),
         Json::List(_)
     ));
-    // a finite integer beyond the 64-bit range loads as the double orjson produces
+    // a float that fits stays a float, and a 30-digit integer becomes the double orjson loads
     let finite = decode_assistant_body(
         b"{\"temperature\": 1e308, \"seed\": 123456789012345678901234567890}",
         &limits,
@@ -335,27 +335,7 @@ fn assistant_body_is_strict() {
         finite_fields.get("temperature"),
         Some(Json::Number(_))
     ));
-    let Some(Json::Number(seed)) = finite_fields.get("seed") else {
-        panic!("the seed is not a number");
-    };
-    let expected = "1.2345678901234568e29"
-        .parse::<f64>()
-        .expect("the expected double parses");
-    assert_eq!(seed.as_f64().map(f64::to_bits), Some(expected.to_bits()));
-    // an integer inside i64..=u64 stays the exact integer
-    let kept = decode_assistant_body(b"{\"small\": -1, \"large\": 18446744073709551615}", &limits)
-        .expect("in-range integers parse");
-    let Json::Object(kept_fields) = kept else {
-        panic!("the integers did not parse as a mapping");
-    };
-    let Some(Json::Number(small)) = kept_fields.get("small") else {
-        panic!("the small integer is not a number");
-    };
-    let Some(Json::Number(large)) = kept_fields.get("large") else {
-        panic!("the large integer is not a number");
-    };
-    assert_eq!(small.as_i64(), Some(-1));
-    assert_eq!(large.as_u64(), Some(u64::MAX));
+    assert!(matches!(finite_fields.get("seed"), Some(Json::Number(_))));
     // B1087's byte boundary is the decoder's own failure
     let over = vec![b'a'; limits.max_json_bytes.saturating_add(1)];
     let Err(AssistantBodyError::Limits(error)) = decode_assistant_body(&over, &limits) else {
@@ -364,6 +344,35 @@ fn assistant_body_is_strict() {
     let limit_fields = error.fields();
     assert_eq!(limit_fields.status, 413);
     assert_eq!(limit_fields.error_type, "invalid_request_error");
+}
+
+// an integer outside i64..=u64 loads as the double orjson produces, and one inside stays exact
+#[test]
+fn out_of_range_integers_follow_orjson() {
+    let limits = ApiLimits::default();
+    let decoded = decode_assistant_body(
+        b"{\"seed\": 123456789012345678901234567890, \"small\": -1, \"large\": 18446744073709551615}",
+        &limits,
+    )
+    .expect("finite integers parse");
+    let Json::Object(fields) = decoded else {
+        panic!("the integers did not parse as a mapping");
+    };
+    let Some(Json::Number(seed)) = fields.get("seed") else {
+        panic!("the seed is not a number");
+    };
+    let expected = "1.2345678901234568e29"
+        .parse::<f64>()
+        .expect("the expected double parses");
+    assert_eq!(seed.as_f64().map(f64::to_bits), Some(expected.to_bits()));
+    let Some(Json::Number(small)) = fields.get("small") else {
+        panic!("the small integer is not a number");
+    };
+    let Some(Json::Number(large)) = fields.get("large") else {
+        panic!("the large integer is not a number");
+    };
+    assert_eq!(small.as_i64(), Some(-1));
+    assert_eq!(large.as_u64(), Some(u64::MAX));
 }
 
 // empty, truncated, invalid UTF-8 and NaN are decode errors with no repair
