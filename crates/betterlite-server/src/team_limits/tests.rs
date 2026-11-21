@@ -585,9 +585,9 @@ const SCHEMA: &str = r#"
 CREATE TABLE "LiteLLM_TeamTable" (
     team_id TEXT PRIMARY KEY,
     team_alias TEXT,
-    models TEXT[],
+    models TEXT[] NOT NULL DEFAULT '{}',
     access_group_ids TEXT[],
-    blocked BOOLEAN,
+    blocked BOOLEAN NOT NULL DEFAULT false,
     metadata JSONB,
     tpm_limit BIGINT,
     max_budget DOUBLE PRECISION,

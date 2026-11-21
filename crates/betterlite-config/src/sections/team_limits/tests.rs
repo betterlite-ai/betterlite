@@ -175,11 +175,14 @@ litellm_settings:
 
 #[test]
 fn available_teams_are_read_from_settings() {
-    // the pinned proxy reads the key from litellm_settings only
-    let general_settings = loaded(
+    // the pinned proxy reads the key from litellm_settings only; a misplaced key stays unsupported
+    let misplaced = failed(
         "general_settings:\n  default_internal_user_params:\n    available_teams:\n      - team-a\n",
     );
-    assert_eq!(general_settings.default_internal_user_params, None);
+    let ConfigError::Unsupported { paths } = misplaced else {
+        panic!("a default_internal_user_params key outside litellm_settings stays unsupported");
+    };
+    assert_eq!(paths, ["general_settings.default_internal_user_params"]);
     let error = failed(
         "litellm_settings:\n  default_internal_user_params:\n    available_teams: everywhere\n",
     );
