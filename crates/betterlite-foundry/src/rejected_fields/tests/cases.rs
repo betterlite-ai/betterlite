@@ -16,8 +16,12 @@ pub(super) fn drop_top_level_loc() {
         "error": {"message": {"detail": [{"loc": ["body", "temperature"]}]}},
     })
     .to_string();
-    let repaired = repair(&object_message, &support::body(support::CHAT)).expect("the repair runs");
-    assert_eq!(repaired, support::body(support::CHAT_WITHOUT_TEMPERATURE));
+    let from_object =
+        repair(&object_message, &support::body(support::CHAT)).expect("the repair runs");
+    assert_eq!(
+        from_object,
+        support::body(support::CHAT_WITHOUT_TEMPERATURE)
+    );
 }
 
 pub(super) fn drop_tool_level_extra_fields() {
@@ -38,12 +42,12 @@ pub(super) fn drop_tool_level_extra_fields() {
         )
     );
     // a tool-level name without the extra-inputs marker leaves the tools alone
-    let repaired = repair(
+    let untouched = repair(
         &support::wrapped("tools[0].extra is not allowed"),
         &support::body(support::TOOLS),
     )
     .expect("the repair runs");
-    assert_eq!(repaired, support::body(support::TOOLS));
+    assert_eq!(untouched, support::body(support::TOOLS));
 }
 
 pub(super) fn remove_tool_call_index() {
@@ -61,22 +65,22 @@ pub(super) fn remove_tool_call_index() {
         )
     );
     // with messages null the invalid-index branch is skipped and the pass-through elif runs
-    let repaired = repair(
+    let null_messages = repair(
         &both,
         &support::body(r#"{"model":"deployment","temperature":2,"top_p":0.5,"messages":null}"#),
     )
     .expect("the repair runs");
     assert_eq!(
-        repaired,
+        null_messages,
         support::body(r#"{"model":"deployment","messages":null}"#)
     );
     // an absent messages key skips it the same way
-    let repaired = repair(
+    let absent_messages = repair(
         &both,
         &support::body(r#"{"model":"deployment","temperature":2,"top_p":0.5}"#),
     )
     .expect("the repair runs");
-    assert_eq!(repaired, support::body(r#"{"model":"deployment"}"#));
+    assert_eq!(absent_messages, support::body(r#"{"model":"deployment"}"#));
 }
 
 pub(super) fn extra_parameters_list() {
