@@ -144,7 +144,7 @@ fn native_unavailable<Failure>(error: &NativeDbError<Failure>) -> bool {
 
 // the driver keeps the server's message in its source chain, not in its own Display
 fn driver_names_stale_plan(driver: &tokio_postgres::Error) -> bool {
-    let mut link = Some(driver as &(dyn Error + 'static));
+    let mut link: Option<&(dyn Error + 'static)> = Some(driver);
     while let Some(current) = link {
         if current
             .to_string()

@@ -3,10 +3,12 @@
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::io;
+use std::io::Error as IoError;
 use std::sync::{Arc, Mutex};
 
 use betterlite_db::budget_permission_rows::JsonData;
 use rstest::rstest;
+use tracing::subscriber::{DefaultGuard, set_default};
 
 use super::{DEFAULT_USER_PARAMS_PATH, ROLE_PERMISSIONS_PATH, RbacRole, Settings};
 use crate::loader::{ConfigError, ConfigLoader};
@@ -281,8 +283,12 @@ fn budget_reset_absent_from_scalar_defaults() {
 fn nested_defaults(depth: usize) -> String {
     let mut source = String::from("litellm_settings:\n  default_internal_user_params:\n");
     for level in 0..depth {
-        let indent = " ".repeat(4 + level * 2);
-        let leaf = if level + 1 == depth { " 1" } else { "" };
+        let indent = " ".repeat(level.saturating_mul(2).saturating_add(4));
+        let leaf = if level.saturating_add(1) == depth {
+            " 1"
+        } else {
+            ""
+        };
         writeln!(source, "{indent}k:{leaf}").unwrap();
     }
     source
@@ -331,9 +337,12 @@ fn environment_reference_in_a_plain_list_stays_text() {
 struct CapturedBuffer(Arc<Mutex<Vec<u8>>>);
 
 impl io::Write for CapturedBuffer {
-    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(bytes);
-        Ok(bytes.len())
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let Ok(mut captured) = self.0.lock() else {
+            return Err(IoError::other("the captured log buffer is poisoned"));
+        };
+        captured.extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -343,7 +352,7 @@ impl io::Write for CapturedBuffer {
 
 struct LogCapture {
     buffer: Arc<Mutex<Vec<u8>>>,
-    _guard: tracing::subscriber::DefaultGuard,
+    _guard: DefaultGuard,
 }
 
 fn capture_debug_log() -> LogCapture {
@@ -354,7 +363,7 @@ fn capture_debug_log() -> LogCapture {
         .with_ansi(false)
         .with_writer(move || CapturedBuffer(Arc::clone(&writer)))
         .finish();
-    let guard = tracing::subscriber::set_default(subscriber);
+    let guard = set_default(subscriber);
     LogCapture {
         buffer,
         _guard: guard,

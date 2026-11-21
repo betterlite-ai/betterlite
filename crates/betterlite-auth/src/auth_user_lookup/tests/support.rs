@@ -52,7 +52,11 @@ pub(crate) fn unavailable(cause: Box<dyn Error + Send + Sync>) -> bool {
     match user_read_failure("u1", cause) {
         UserLookupError::Unavailable(_) => true,
         UserLookupError::UserMissing(_) => false,
-        other => panic!("a read failure classifies as unavailable or missing: {other:?}"),
+        other @ UserLookupError::NotFound(_)
+        | other @ UserLookupError::NoDatabase
+        | other @ UserLookupError::PreLookup(_) => {
+            panic!("a read failure classifies as unavailable or missing: {other:?}")
+        }
     }
 }
 
