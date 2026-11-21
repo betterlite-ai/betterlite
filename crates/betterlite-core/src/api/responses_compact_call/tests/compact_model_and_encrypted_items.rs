@@ -11,7 +11,7 @@ const RESTORED_BODY: &str = r#"{"model":"gpt-4o","input":[{"type":"message","rol
 
 pub(super) async fn sync_and_async() {
     let mut harness = Harness::new();
-    let mut rig = Rig::default();
+    let rig = Rig::default();
     rig.wire.repeat(200, COMPACT_OK, 2);
     let prepost = base_env(&harness.redactor, &harness.sink, harness.now);
     let mut log = LogContext {
@@ -57,7 +57,7 @@ fn encrypted_call() -> CompactResponsesCall {
 
 pub(super) async fn routing_prefix() {
     let mut harness = Harness::new();
-    let mut rig = Rig::default();
+    let rig = Rig::default();
     rig.wire.queue(200, COMPACT_OK);
     let prepost = base_env(&harness.redactor, &harness.sink, harness.now);
     let mut log = LogContext {

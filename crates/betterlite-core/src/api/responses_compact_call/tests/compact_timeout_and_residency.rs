@@ -13,7 +13,7 @@ use crate::api::responses_compact_http::service::{LogContext, SharedSession};
 
 pub(super) async fn default_timeouts() {
     let mut harness = Harness::new();
-    let mut rig = Rig::default();
+    let rig = Rig::default();
     rig.wire.repeat(200, COMPACT_OK, 3);
     let prepost = base_env(&harness.redactor, &harness.sink, harness.now);
     let mut log = LogContext {
@@ -73,7 +73,7 @@ pub(super) async fn configured_timeouts() {
 
 pub(super) async fn residency() {
     let mut harness = Harness::new();
-    let mut rig = Rig::default();
+    let rig = Rig::default();
     rig.wire.repeat(200, COMPACT_OK, 3);
     let prepost = base_env(&harness.redactor, &harness.sink, harness.now);
     let mut log = LogContext {
@@ -109,7 +109,7 @@ pub(super) async fn residency() {
 
 pub(super) async fn async_handoff() {
     let mut harness = Harness::new();
-    let mut rig = Rig::default();
+    let rig = Rig::default();
     rig.wire.queue(200, COMPACT_OK);
     let prepost = base_env(&harness.redactor, &harness.sink, harness.now);
     let mut log = LogContext {
@@ -162,7 +162,7 @@ fn preliminary_lookup(resolver: &ModelNames) {
 
 pub(super) async fn explicit_provider_skips_lookup() {
     let mut harness = Harness::new();
-    let mut rig = Rig::default();
+    let rig = Rig::default();
     rig.wire.queue(200, COMPACT_OK);
     let prepost = base_env(&harness.redactor, &harness.sink, harness.now);
     let mut log = LogContext {
@@ -182,7 +182,7 @@ pub(super) async fn explicit_provider_skips_lookup() {
 
 pub(super) async fn client_parameters() {
     let mut harness = Harness::new();
-    let mut rig = Rig::default();
+    let rig = Rig::default();
     rig.wire.queue(200, COMPACT_OK);
     let prepost = base_env(&harness.redactor, &harness.sink, harness.now);
     let mut log = LogContext {
@@ -215,7 +215,7 @@ pub(super) async fn client_parameters() {
 
 pub(super) async fn sync_markers() {
     let mut harness = Harness::new();
-    let mut rig = Rig::default();
+    let rig = Rig::default();
     rig.wire.repeat(200, COMPACT_OK, 2);
     let prepost = base_env(&harness.redactor, &harness.sink, harness.now);
     let mut log = LogContext {
@@ -240,7 +240,7 @@ pub(super) async fn sync_markers() {
 
 pub(super) async fn true_marker() {
     let mut harness = Harness::new();
-    let mut rig = Rig::default();
+    let rig = Rig::default();
     rig.wire.queue(200, COMPACT_OK);
     let prepost = base_env(&harness.redactor, &harness.sink, harness.now);
     let mut log = LogContext {

@@ -8,7 +8,7 @@ use crate::api::responses_parameters::error::UNSUPPORTED_PARAMS_STATUS;
 
 pub(super) async fn forwarded() {
     let mut harness = Harness::new();
-    let mut rig = Rig::default();
+    let rig = Rig::default();
     rig.wire.queue(200, COMPACT_OK);
     let prepost = base_env(&harness.redactor, &harness.sink, harness.now);
     let mut log = LogContext {
@@ -36,12 +36,12 @@ pub(super) async fn forwarded() {
 pub(super) async fn unsupported_rejected() {
     let mut harness = Harness::new();
     let mut rig = Rig::default();
-    rig.configs.supported = Some(vec![String::from("instructions")]);
     let prepost = base_env(&harness.redactor, &harness.sink, harness.now);
     let mut log = LogContext {
         state: &mut harness.state,
         env: &prepost,
     };
+    rig.configs.supported = Some(vec![String::from("instructions")]);
     let mut rejected = call("openai/gpt-4o", text_input("hello"));
     rejected.kwargs = kwargs(r#"{"temperature":0.2}"#);
     let Err(error) = compact_responses(&rig.deps(), &rejected, &mut log).await else {
@@ -59,8 +59,8 @@ pub(super) async fn unsupported_rejected() {
 pub(super) async fn drop_params_normalized() {
     let mut harness = Harness::new();
     let mut rig = Rig::default();
-    rig.configs.supported = Some(vec![String::from("instructions")]);
     rig.wire.queue(200, COMPACT_OK);
+    rig.configs.supported = Some(vec![String::from("instructions")]);
     let prepost = base_env(&harness.redactor, &harness.sink, harness.now);
     let mut log = LogContext {
         state: &mut harness.state,
@@ -90,9 +90,9 @@ pub(super) async fn drop_params_normalized() {
 pub(super) async fn global_drop_params() {
     let mut harness = Harness::new();
     let mut rig = Rig::default();
+    rig.wire.queue(200, COMPACT_OK);
     rig.configs.supported = Some(vec![String::from("instructions")]);
     rig.drop_params = true;
-    rig.wire.queue(200, COMPACT_OK);
     let prepost = base_env(&harness.redactor, &harness.sink, harness.now);
     let mut log = LogContext {
         state: &mut harness.state,
@@ -116,8 +116,8 @@ pub(super) async fn global_drop_params() {
 pub(super) async fn bypass_and_nulls() {
     let mut harness = Harness::new();
     let mut rig = Rig::default();
-    rig.configs.supported = Some(vec![String::from("instructions")]);
     rig.wire.repeat(200, COMPACT_OK, 2);
+    rig.configs.supported = Some(vec![String::from("instructions")]);
     let prepost = base_env(&harness.redactor, &harness.sink, harness.now);
     let mut log = LogContext {
         state: &mut harness.state,

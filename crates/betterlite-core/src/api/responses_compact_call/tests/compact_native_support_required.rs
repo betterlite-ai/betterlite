@@ -6,7 +6,7 @@ const BAD_KEY: &str = r#"{"error":{"message":"bad key","type":"invalid_api_key",
 
 pub(super) async fn native_config_required() {
     let mut harness = Harness::new();
-    let mut rig = Rig::default();
+    let rig = Rig::default();
     let prepost = base_env(&harness.redactor, &harness.sink, harness.now);
     let mut log = LogContext {
         state: &mut harness.state,
@@ -36,7 +36,7 @@ pub(super) async fn native_config_required() {
 
 pub(super) async fn missing_provider() {
     let mut harness = Harness::new();
-    let mut rig = Rig::default();
+    let rig = Rig::default();
     let prepost = base_env(&harness.redactor, &harness.sink, harness.now);
     let mut log = LogContext {
         state: &mut harness.state,
@@ -63,7 +63,7 @@ pub(super) async fn missing_provider() {
 
 pub(super) async fn provider_auth_error() {
     let mut harness = Harness::new();
-    let mut rig = Rig::default();
+    let rig = Rig::default();
     rig.wire.queue(401, BAD_KEY);
     let prepost = base_env(&harness.redactor, &harness.sink, harness.now);
     let mut log = LogContext {
