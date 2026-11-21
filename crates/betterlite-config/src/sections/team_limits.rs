@@ -107,38 +107,43 @@ where
     L: EnvironmentLookup,
 {
     let raw: RawTeamParams = mapping(value, TEAM_PARAMS_PATH)?;
+    let max_budget = resolve_number(
+        raw.max_budget,
+        &format!("{TEAM_PARAMS_PATH}.max_budget"),
+        lookup,
+        parse_money,
+    )?;
+    let budget_duration = optional_text(
+        raw.budget_duration,
+        &format!("{TEAM_PARAMS_PATH}.budget_duration"),
+        lookup,
+    )?;
+    let tpm_limit = resolve_number(
+        raw.tpm_limit,
+        &format!("{TEAM_PARAMS_PATH}.tpm_limit"),
+        lookup,
+        parse_whole,
+    )?;
+    let rpm_limit = resolve_number(
+        raw.rpm_limit,
+        &format!("{TEAM_PARAMS_PATH}.rpm_limit"),
+        lookup,
+        parse_whole,
+    )?;
+    let organization_id = optional_text(
+        raw.organization_id,
+        &format!("{TEAM_PARAMS_PATH}.organization_id"),
+        lookup,
+    )?;
     Ok(DefaultTeamParams {
         models: raw.models,
-        max_budget: resolve_number(
-            raw.max_budget,
-            &format!("{TEAM_PARAMS_PATH}.max_budget"),
-            lookup,
-            parse_money,
-        )?,
-        budget_duration: optional_text(
-            raw.budget_duration,
-            &format!("{TEAM_PARAMS_PATH}.budget_duration"),
-            lookup,
-        )?,
-        tpm_limit: resolve_number(
-            raw.tpm_limit,
-            &format!("{TEAM_PARAMS_PATH}.tpm_limit"),
-            lookup,
-            parse_whole,
-        )?,
-        rpm_limit: resolve_number(
-            raw.rpm_limit,
-            &format!("{TEAM_PARAMS_PATH}.rpm_limit"),
-            lookup,
-            parse_whole,
-        )?,
+        max_budget,
+        budget_duration,
+        tpm_limit,
+        rpm_limit,
         // _check_for_os_environ_vars resolves dict values only, so a list entry stays as written
         team_member_permissions: raw.team_member_permissions,
-        organization_id: optional_text(
-            raw.organization_id,
-            &format!("{TEAM_PARAMS_PATH}.organization_id"),
-            lookup,
-        )?,
+        organization_id,
     })
 }
 

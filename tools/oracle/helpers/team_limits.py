@@ -122,9 +122,8 @@ def default_team_param_answer(input_value: DefaultTeamParamInput) -> DefaultTeam
 
 def available_team_answer(input_value: AvailableTeamInput) -> AvailableTeamAnswer:
     teams = input_value["available_teams"]
-    litellm.default_internal_user_params = (
-        None if teams is None else {"available_teams": teams}
-    )
+    configured: dict[str, list[str] | None] = {"available_teams": teams}
+    litellm.default_internal_user_params = None if teams is None else configured
     caller = caller_for(input_value["user_id"], input_value["user_role"])
     try:
         available = team_endpoints._is_available_team(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L805-L810
