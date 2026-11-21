@@ -195,10 +195,13 @@ impl CallTarget for CompletionTarget<'_> {
         retry::with_retries(self, request, logging, self.sleeper).await
     }
 }
-fn optional_kwarg<T: DeserializeOwned>(
+fn optional_kwarg<T>(
     call: &PreparedCall,
     name: &'static str,
-) -> Result<Option<T>, CompletionCallError> {
+) -> Result<Option<T>, CompletionCallError>
+where
+    T: DeserializeOwned,
+{
     let value = match call.kwargs.get(name) {
         None | Some(Json::Null) => return Ok(None),
         Some(value) => value,

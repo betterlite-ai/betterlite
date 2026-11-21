@@ -62,9 +62,10 @@ pub fn into_call_error(
     provider: &str,
     redactor: &Redactor,
 ) -> CallError {
-    let (status, message) = match error {
-        CompletionCallError::Dispatch(source) => dispatch_parts(source),
-        other => (status_of(other), other.to_string()),
+    let (status, message) = if let CompletionCallError::Dispatch(source) = error {
+        dispatch_parts(source)
+    } else {
+        (status_of(error), error.to_string())
     };
     classify(model, provider, message, status, redactor)
 }
