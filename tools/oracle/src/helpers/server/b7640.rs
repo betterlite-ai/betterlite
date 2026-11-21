@@ -18,12 +18,12 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::ModelParamIndex { deployments } => index(deployments),
+            Input::ModelParamIndex { deployments } => Ok(index(deployments)),
             Input::AggregateResults {
                 deployments,
                 healthy,
                 unhealthy,
-            } => aggregate(deployments, healthy, unhealthy),
+            } => Ok(aggregate(deployments, healthy, unhealthy)),
             Input::PersistDecision {
                 result,
                 latest,
@@ -100,7 +100,7 @@ enum TimeInput {
     Text(String),
 }
 
-fn index(deployments: &[DeploymentInput]) -> HelperResult {
+fn index(deployments: &[DeploymentInput]) -> Value {
     let deployed = deployments.iter().map(spec).collect::<Vec<_>>();
     let mut output = serde_json::Map::new();
     for (param, models) in model_param_index(&deployed) {
@@ -115,14 +115,14 @@ fn index(deployments: &[DeploymentInput]) -> HelperResult {
             .collect::<Vec<_>>();
         output.insert(param, Value::Array(listed));
     }
-    Ok(Value::Object(output))
+    Value::Object(output)
 }
 
 fn aggregate(
     deployments: &[DeploymentInput],
     healthy: &[JsonObject],
     unhealthy: &[JsonObject],
-) -> HelperResult {
+) -> Value {
     let deployed = deployments.iter().map(spec).collect::<Vec<_>>();
     let results = aggregate_results(&model_param_index(&deployed), healthy, unhealthy);
     let entries = results
@@ -137,7 +137,7 @@ fn aggregate(
             })
         })
         .collect::<Vec<_>>();
-    Ok(Value::Array(entries))
+    Value::Array(entries)
 }
 
 fn decision(result: &ResultInput, latest: &[RowInput], now: &str) -> HelperResult {

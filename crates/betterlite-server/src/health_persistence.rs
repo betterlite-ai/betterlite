@@ -187,7 +187,7 @@ pub async fn save_changed<Store>(
     results: &[AggregatedHealthResult],
     latest: &LatestChecks,
     request: &SaveRequest<'_>,
-    clock: &dyn UtcClock,
+    clock: &(dyn UtcClock + Send + Sync),
 ) -> bool
 where
     Store: HealthCheckStore,
@@ -219,7 +219,7 @@ pub async fn save_background<Store>(
     rows: Option<&Store>,
     cycle: HealthCycle<'_>,
     request: &SaveRequest<'_>,
-    clock: &dyn UtcClock,
+    clock: &(dyn UtcClock + Send + Sync),
 ) -> bool
 where
     Store: HealthCheckStore,
@@ -241,8 +241,11 @@ where
 }
 
 // _save_health_check_to_db: the /health route's one row for one model, whether or not the write succeeds
-pub async fn save_single<Store>(rows: &Store, check: &SingleHealthCheck<'_>, clock: &dyn UtcClock)
-where
+pub async fn save_single<Store>(
+    rows: &Store,
+    check: &SingleHealthCheck<'_>,
+    clock: &(dyn UtcClock + Send + Sync),
+) where
     Store: HealthCheckStore,
 {
     let new = NewHealthCheck {
