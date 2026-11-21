@@ -10,7 +10,7 @@ use crate::end_user::EndUserCostTrackingSettings;
 use crate::prometheus_helpers::bounded_series_tracker::SeriesLimits;
 
 use self::support::{
-    DecimalFromMetric, FakeCounters, Fixture, MCP_LABELS, REQUEST_LABELS, Recorded,
+    DecimalFromMetric as _, FakeCounters, Fixture, MCP_LABELS, REQUEST_LABELS, Recorded,
     ZERO_COST_LABELS, diagnostic, emit_requests, emit_zero_cost, finite, increments, mcp_payload,
     number, object, one, payload, with_usage,
 };

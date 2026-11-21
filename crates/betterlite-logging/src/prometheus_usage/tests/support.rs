@@ -51,7 +51,7 @@ pub(super) struct FakeLog {
 pub(super) struct FakeError;
 
 #[derive(Clone, Debug)]
-struct FakeMetric {
+pub(super) struct FakeMetric {
     metric: UsageMetric,
     labels: BTreeMap<String, String>,
     log: Arc<Mutex<FakeLog>>,
@@ -390,10 +390,10 @@ pub(super) trait DecimalFromMetric {
 impl DecimalFromMetric for MetricValue {
     fn decimal(self) -> Decimal {
         match self {
-            MetricValue::Finite(amount) => amount,
-            MetricValue::PositiveInfinity
-            | MetricValue::NegativeInfinity
-            | MetricValue::NotANumber => panic!("the fixture is not a finite amount"),
+            Self::Finite(amount) => amount,
+            Self::PositiveInfinity | Self::NegativeInfinity | Self::NotANumber => {
+                panic!("the fixture is not a finite amount")
+            }
         }
     }
 }
