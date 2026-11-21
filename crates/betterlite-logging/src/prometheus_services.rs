@@ -205,16 +205,13 @@ impl PrometheusServicesLogger {
                 }
             }
             (ServiceEvent::FailureWithError(error_class), CollectorKind::Counter) => {
-                if metric.description.name.contains("failed_requests") {
-                    Self::increment_counter(
-                        metric,
-                        service,
-                        1.0,
-                        &[error_class, payload.call_type.as_str()],
-                    );
+                let extra_labels = [error_class, payload.call_type.as_str()];
+                let additional: &[&str] = if metric.description.name.contains("failed_requests") {
+                    &extra_labels
                 } else {
-                    Self::increment_counter(metric, service, 1.0, &[]);
-                }
+                    &[]
+                };
+                Self::increment_counter(metric, service, 1.0, additional);
             }
             (ServiceEvent::Failure, CollectorKind::Counter) => {
                 Self::increment_counter(metric, service, 1.0, &[]);
