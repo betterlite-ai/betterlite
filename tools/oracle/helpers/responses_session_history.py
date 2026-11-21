@@ -1,9 +1,7 @@
 import asyncio
 import logging
-from collections.abc import Callable
-from contextvars import Context
-from functools import partial
-from typing import Final, TypedDict, TypeVarTuple, Unpack
+from collections.abc import Awaitable
+from typing import Final, Protocol, TypedDict, cast
 
 import litellm
 from litellm.integrations.s3_v2 import S3Logger
@@ -17,7 +15,6 @@ from litellm.types.utils import Message
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
-ArgsT = TypeVarTuple("ArgsT")
 Completed = dict[str, JsonValue | list[JsonValue | Message]]
 
 PROXY_LOGGER: Final = logging.getLogger("LiteLLM Proxy")
@@ -93,22 +90,17 @@ class FakeColdStorage(S3Logger):
         return None
 
 
-# asyncio.sleep waits through call_later, so the loop records each retry delay and fires at once
-class RecordingLoop(asyncio.SelectorEventLoop):
+class SleepSeam(Protocol):
+    async def sleep(self, delay: float) -> None: ...
+
+
+class RecordingSleep(SleepSeam):
     def __init__(self, effects: Effects) -> None:
-        super().__init__()
         self.effects = effects
 
     @override
-    def call_later(
-        self,
-        delay: float,
-        callback: Callable[[Unpack[ArgsT]], object],
-        *args: Unpack[ArgsT],
-        context: Context | None = None,
-    ) -> asyncio.TimerHandle:
+    async def sleep(self, delay: float) -> None:
         self.effects.sleeps.append(delay)
-        return super().call_later(0, callback, *args, context=context)
 
 
 class DebugCapture(logging.Handler):
@@ -123,10 +115,14 @@ class DebugCapture(logging.Handler):
 
 async def merge(input_value: Input) -> Merged:
     request: dict[str, JsonValue] = dict(input_value["request"])
-    completed: Completed = await ResponsesConfig.async_responses_api_session_handler(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L535-L538
-        previous_response_id=input_value["previous_response_id"],
-        litellm_completion_request=request,
+    outcome = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L535-L538
+        Awaitable[Completed],
+        ResponsesConfig.async_responses_api_session_handler(  # pyright: ignore[reportUnknownArgumentType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L535-L538
+            previous_response_id=input_value["previous_response_id"],
+            litellm_completion_request=request,
+        ),
     )
+    completed = await outcome
     return MERGED.validate_json(COMPLETED.dump_json(completed))
 
 
@@ -140,8 +136,9 @@ def run(input_value: Input) -> JsonValue:
     proxy_server.prisma_client = None
     if input_value["database"]:
         proxy_server.prisma_client = FakePrismaClient(FakeWrapper(input_value["replies"], effects))
-    with asyncio.Runner(loop_factory=partial(RecordingLoop, effects)) as runner:
-        merged = runner.run(merge(input_value))
+    # the session handler looks asyncio.sleep up on its module at call time, so the fake records each delay and returns at once
+    asyncio.sleep = RecordingSleep(effects).sleep  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType, reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/session_handler.py#L308-L310
+    merged = asyncio.run(merge(input_value))
     return {
         "queries": effects.queries,
         "reads": effects.reads,
