@@ -1,0 +1,35 @@
+task: B8401
+deviations:
+  - what: >-
+      The key, team and project guardrails added to the synthetic MCP request keep first-seen order
+      (key, then team, then project) instead of the iteration order of the Python set they are
+      collected in.
+    why: >-
+      The conversion runs B1108's request guardrail selection for this step, and that set's order
+      changes between Python processes, so no working setup can depend on it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L3004-L3026
+  - what: >-
+      When the manual argument pattern for a key can't be compiled (a key of several megabytes
+      passes the regex size limit), the guardrail answer gives no modified arguments and the call
+      keeps its original ones, with an error log. Python's re compiles any length.
+    why: >-
+      The Rust regex engine caps compiled size so a request can't make the gateway build an
+      unbounded automaton; LiteLLM's own except branch for this step returns None the same way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L1656-L1658
+kept_bugs:
+  - what: >-
+      The manual argument fallback reads a value up to the next comma or quote, so an unquoted last
+      value keeps the closing brace ("{email: x}" gives "x}"), and a key is found inside a longer
+      name ("name" matches "username: ...").
+    why: >-
+      It is not clear whether a guardrail that answers in this loose form relies on the exact
+      values, so the pattern is copied as LiteLLM writes it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L1644-L1652
+  - what: >-
+      The changed-content comparison never includes the Description line, so a described tool call
+      echoed back unchanged by a guardrail still counts as changed and goes through argument
+      parsing.
+    why: >-
+      The task asks for this comparison text, and an echoed answer still yields the original
+      arguments, so a working setup sees the same call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L1553
