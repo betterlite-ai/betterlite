@@ -35,7 +35,9 @@ Query: TypeAlias = str | list[str]
 Supported: TypeAlias = Callable[[str], list[str]]
 ResponsesHeaders: TypeAlias = Callable[[Headers, str, Params | None], Headers]
 BaseUrl: TypeAlias = Callable[[str | None, Object], str]
-ResponsesBody: TypeAlias = Callable[[str, str | ResponseInputParam, Object, Params, Headers], Object]
+ResponsesBody: TypeAlias = Callable[
+    [str, str | ResponseInputParam, Object, Params, Headers], Object
+]
 ResponsesReply: TypeAlias = Callable[[str, httpx.Response, Logging], ResponsesAPIResponse]
 SearchHeaders: TypeAlias = Callable[[Headers, str | None, str | None], Headers]
 SearchBody: TypeAlias = Callable[[Query, Object], Object]
@@ -262,10 +264,12 @@ def search(input_value: SearchInput) -> JsonValue:
 
 def decisions(bases: list[str]) -> JsonValue:
     urls: list[JsonValue] = [DECISIONS.get_complete_url(base, "pplx") for base in bases]
+    key_names: list[JsonValue] = list(DECISIONS.api_key_env)
+    base_names: list[JsonValue] = list(DECISIONS.api_base_env)
     return {
         "path": DECISIONS.path,
-        "api_key_env": list(DECISIONS.api_key_env),
-        "api_base_env": list(DECISIONS.api_base_env),
+        "api_key_env": key_names,
+        "api_base_env": base_names,
         "default_api_base": DECISIONS.get_default_api_base(),
         "urls": urls,
     }
