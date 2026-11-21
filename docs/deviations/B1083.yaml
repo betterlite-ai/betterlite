@@ -1,0 +1,36 @@
+task: B1083
+deviations:
+  - what: >-
+      A litellm exception that speech() itself raises inside aspeech, such as its BadRequestError for a missing
+      voice, is attributed to the provider aspeech's own resolver returned. LiteLLM's exception_type hands such an
+      exception back unchanged, so its llm_provider stays the one speech() resolved with the caller's
+      custom_llm_provider.
+    why: >-
+      betterlite's speech() reports its failures unmapped and the wrapper maps every failure inside its try once,
+      under its own provider, as exception_type does for every exception it does map. The class, status, type,
+      param and code are the same; only the provider named on the exception can differ, and only when the caller
+      passes a custom_llm_provider the model's own prefix contradicts.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2366-L2367
+kept_bugs:
+  - what: >-
+      When speech() returns a finished value instead of a coroutine, as chat-bridged Gemini TTS always does,
+      aspeech drops that value and calls speech() a second time, so the provider receives the request twice.
+    why: >-
+      The task asks for both calls in order, and a caller billed per request or counting provider calls sees the
+      second one today. Dropping it would change the request count and which answer comes back.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8219-L8224
+  - what: >-
+      The second call's result is returned without a check, so a coroutine or any other value that call returns
+      reaches the caller as it is, unawaited.
+    why: >-
+      The wrapper copies LiteLLM's branch exactly; checking the second result would be a new behavior no LiteLLM
+      setup has, and no speech() family returns a coroutine on one call and a value on the next.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8222-L8225
+  - what: >-
+      aspeech resolves the provider from the model and api_base alone, so a model that only resolves through an
+      explicit custom_llm_provider (a bare Azure deployment name, for example) fails in aspeech with
+      BadRequestError before speech() runs, even though speech() itself would accept it.
+    why: >-
+      The task asks for the resolver call without the caller's provider. It is not clear whether a working setup
+      relies on this failure, so the behavior is copied and the note to the architect asks whether to fix it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8216
