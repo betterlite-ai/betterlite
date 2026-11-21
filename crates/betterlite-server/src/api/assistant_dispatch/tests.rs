@@ -234,6 +234,18 @@ async fn dispatch(
     OutcomeView { result, seen }
 }
 
+// one dispatch whose fixtures live only for the call
+async fn call(
+    settings: &Settings,
+    operation: AssistantOperation,
+    fields: &BTreeMap<String, Json>,
+    route: Route<'_>,
+    replies: &[(u16, &str)],
+) -> OutcomeView {
+    let fixtures = fixture(settings);
+    dispatch(&fixtures, operation, fields, route, replies).await
+}
+
 fn text(value: &str) -> Json {
     Json::Text(value.to_owned())
 }
@@ -279,257 +291,257 @@ fn openai_data() -> BTreeMap<String, Json> {
     data(&[("api_base", text(MOCK_BASE)), ("api_key", text("sk-test"))])
 }
 
-async fn create_assistant_answers_with_the_record(settings: &Settings) {
-    let fixtures = fixture(settings);
-    let outcome = dispatch(
-        &fixtures,
-        AssistantOperation::CreateAssistant,
-        &data(&[
-            ("model", text("gpt-4o-mini")),
-            ("name", text("helper")),
-            ("api_base", text(MOCK_BASE)),
-            ("api_key", text("sk-test")),
-        ]),
-        Route::default(),
-        &[(200, ASSISTANT)],
-    )
-    .await;
-    let AssistantOutcome::Assistant(assistant) = outcome.result.expect("create succeeds") else {
-        panic!("create answered with another outcome");
-    };
-    assert_eq!(assistant.id, "asst_a");
-    assert_eq!(outcome.seen[0].method, "POST");
-    assert_eq!(outcome.seen[0].url, "https://mock.test/v1/assistants");
-    assert_eq!(
-        outcome.seen[0].authorization.as_deref(),
-        Some("Bearer sk-test")
-    );
+// the record each installed operation answers with
+#[derive(Debug)]
+enum Answered {
+    Assistant,
+    Assistants,
+    Deleted,
+    Thread,
+    Message,
+    Messages,
+    Polled,
+    Streaming,
 }
 
-async fn list_assistants_uses_the_supplied_client(settings: &Settings) {
-    let fixtures = fixture(settings);
-    let outcome = dispatch(
-        &fixtures,
-        AssistantOperation::ListAssistants,
-        &openai_data(),
-        Route {
-            client: Some(supplied("sk-supplied")),
-            ..Route::default()
-        },
-        &[(200, PAGE)],
-    )
-    .await;
-    let AssistantOutcome::Assistants(page) = outcome.result.expect("list succeeds") else {
-        panic!("list answered with another outcome");
-    };
-    assert_eq!(page.data.len(), 1);
-    assert_eq!(outcome.seen[0].method, "GET");
-    // a supplied client's own key reaches the SDK owner unchanged
-    assert_eq!(
-        outcome.seen[0].authorization.as_deref(),
-        Some("Bearer sk-supplied")
-    );
+// the request one operation sends, as far as its case checks it
+struct Sent {
+    method: &'static str,
+    url: Option<&'static str>,
+    authorization: Option<&'static str>,
 }
 
-async fn delete_assistant_passes_the_path_id(settings: &Settings) {
-    let fixtures = fixture(settings);
-    let outcome = dispatch(
-        &fixtures,
-        AssistantOperation::DeleteAssistant,
-        &openai_data(),
-        Route {
-            assistant_id: Some("asst_a"),
-            ..Route::default()
-        },
-        &[(200, DELETED)],
-    )
-    .await;
-    let AssistantOutcome::Deleted(removed) = outcome.result.expect("delete succeeds") else {
-        panic!("delete answered with another outcome");
-    };
-    assert!(removed.deleted);
-    assert_eq!(outcome.seen[0].method, "DELETE");
-    assert_eq!(
-        outcome.seen[0].url,
-        "https://mock.test/v1/assistants/asst_a"
-    );
+// one installed operation, its body, its route and what the mock provider answers
+struct OpCase {
+    operation: AssistantOperation,
+    fields: BTreeMap<String, Json>,
+    route: Route<'static>,
+    replies: &'static [(u16, &'static str)],
+    sent: Option<Sent>,
+    answered: Answered,
 }
 
-async fn create_thread_posts_the_body(settings: &Settings) {
-    let fixtures = fixture(settings);
-    let outcome = dispatch(
-        &fixtures,
-        AssistantOperation::CreateThread,
-        &openai_data(),
-        Route::default(),
-        &[(200, THREAD)],
-    )
-    .await;
-    let AssistantOutcome::Thread(Some(record)) = outcome.result.expect("create thread succeeds")
-    else {
-        panic!("create thread answered with another outcome");
-    };
-    assert_eq!(record.id, "thread_a");
-    assert_eq!(outcome.seen[0].method, "POST");
-    assert_eq!(outcome.seen[0].url, "https://mock.test/v1/threads");
-}
-
-async fn get_thread_uses_the_supplied_client(settings: &Settings) {
-    let fixtures = fixture(settings);
-    let outcome = dispatch(
-        &fixtures,
-        AssistantOperation::GetThread,
-        &openai_data(),
-        Route {
-            thread_id: Some("thread_a"),
-            client: Some(supplied("sk-supplied")),
-            ..Route::default()
-        },
-        &[(200, THREAD)],
-    )
-    .await;
-    let AssistantOutcome::Thread(Some(record)) = outcome.result.expect("get thread succeeds")
-    else {
-        panic!("get thread answered with another outcome");
-    };
-    assert_eq!(record.id, "thread_a");
-    assert_eq!(outcome.seen[0].url, "https://mock.test/v1/threads/thread_a");
-    // a supplied client's own key reaches the thread facade unchanged
-    assert_eq!(
-        outcome.seen[0].authorization.as_deref(),
-        Some("Bearer sk-supplied")
-    );
-}
-
-async fn create_message_posts_to_the_thread(settings: &Settings) {
-    let fixtures = fixture(settings);
-    let outcome = dispatch(
-        &fixtures,
-        AssistantOperation::CreateMessage,
-        &data(&[
-            ("role", text("user")),
-            ("content", text("hello")),
-            // a body client key is not forwarded to the wrapper, so it never binds the client argument
-            ("client", object(&[("api_key", text("sk-body"))])),
-            ("api_base", text(MOCK_BASE)),
-            ("api_key", text("sk-test")),
-        ]),
-        Route {
-            thread_id: Some("thread_a"),
-            ..Route::default()
-        },
-        &[(200, MESSAGE)],
-    )
-    .await;
-    let AssistantOutcome::Message(added) = outcome.result.expect("add message succeeds") else {
-        panic!("add message answered with another outcome");
-    };
-    assert_eq!(added.id, "msg_a");
-    assert_eq!(outcome.seen[0].method, "POST");
-    assert_eq!(
-        outcome.seen[0].url,
-        "https://mock.test/v1/threads/thread_a/messages"
-    );
-}
-
-async fn list_messages_reads_the_thread(settings: &Settings) {
-    let fixtures = fixture(settings);
-    let outcome = dispatch(
-        &fixtures,
-        AssistantOperation::ListMessages,
-        &openai_data(),
-        Route {
-            thread_id: Some("thread_a"),
-            ..Route::default()
-        },
-        &[(200, MESSAGE_PAGE)],
-    )
-    .await;
-    let AssistantOutcome::Messages(page) = outcome.result.expect("list messages succeeds") else {
-        panic!("list messages answered with another outcome");
-    };
-    assert_eq!(page.data.len(), 1);
-    assert_eq!(outcome.seen[0].method, "GET");
-}
-
-async fn a_polled_run_returns_the_reply(settings: &Settings) {
-    let fixtures = fixture(settings);
-    let outcome = dispatch(
-        &fixtures,
-        AssistantOperation::RunThread,
-        &data(&[
-            ("assistant_id", text("asst_a")),
-            ("api_base", text(MOCK_BASE)),
-            ("api_key", text("sk-test")),
-        ]),
-        Route {
-            thread_id: Some("thread_a"),
-            ..Route::default()
-        },
-        &[(200, RUN), (200, RUN)],
-    )
-    .await;
-    let AssistantOutcome::Run(RunOutcome::Polled(reply)) = outcome.result.expect("run succeeds")
-    else {
-        panic!("run answered with another outcome");
-    };
-    assert_eq!((*reply).expect("the provider replied").id, "run_a");
-    assert_eq!(outcome.seen[0].method, "POST");
-    assert_eq!(
-        outcome.seen[0].url,
-        "https://mock.test/v1/threads/thread_a/runs"
-    );
-}
-
-async fn a_streamed_run_stays_lazy(settings: &Settings) {
-    let fixtures = fixture(settings);
-    let outcome = dispatch(
-        &fixtures,
-        AssistantOperation::RunThread,
-        &data(&[
-            ("assistant_id", text("asst_a")),
-            ("stream", Json::Bool(true)),
-            ("api_base", text(MOCK_BASE)),
-            ("api_key", text("sk-test")),
-        ]),
-        Route {
-            thread_id: Some("thread_a"),
-            ..Route::default()
-        },
-        &[(200, RUN)],
-    )
-    .await;
-    let AssistantOutcome::Run(RunOutcome::Streaming(_)) =
-        outcome.result.expect("run stream succeeds")
-    else {
-        panic!("run stream answered with another outcome");
-    };
-    // stream=true stays a lazy manager until its owner enters it; no provider request has happened yet
-    assert!(outcome.seen.is_empty());
-}
-
+// every assistant wrapper the router installs, each reaching its provider method
+#[rstest]
+#[case::create_assistant(OpCase {
+    operation: AssistantOperation::CreateAssistant,
+    fields: data(&[
+        ("model", text("gpt-4o-mini")),
+        ("name", text("helper")),
+        ("api_base", text(MOCK_BASE)),
+        ("api_key", text("sk-test")),
+    ]),
+    route: Route::default(),
+    replies: &[(200, ASSISTANT)],
+    sent: Some(Sent {
+        method: "POST",
+        url: Some("https://mock.test/v1/assistants"),
+        authorization: Some("Bearer sk-test"),
+    }),
+    answered: Answered::Assistant,
+})]
+#[case::list_assistants(OpCase {
+    operation: AssistantOperation::ListAssistants,
+    fields: openai_data(),
+    route: Route {
+        thread_id: None,
+        assistant_id: None,
+        client: Some(supplied("sk-supplied")),
+    },
+    replies: &[(200, PAGE)],
+    sent: Some(Sent {
+        method: "GET",
+        url: None,
+        // a supplied client's own key reaches the SDK owner unchanged
+        authorization: Some("Bearer sk-supplied"),
+    }),
+    answered: Answered::Assistants,
+})]
+#[case::delete_assistant(OpCase {
+    operation: AssistantOperation::DeleteAssistant,
+    fields: openai_data(),
+    route: Route {
+        thread_id: None,
+        assistant_id: Some("asst_a"),
+        client: None,
+    },
+    replies: &[(200, DELETED)],
+    sent: Some(Sent {
+        method: "DELETE",
+        url: Some("https://mock.test/v1/assistants/asst_a"),
+        authorization: None,
+    }),
+    answered: Answered::Deleted,
+})]
+#[case::create_thread(OpCase {
+    operation: AssistantOperation::CreateThread,
+    fields: openai_data(),
+    route: Route::default(),
+    replies: &[(200, THREAD)],
+    sent: Some(Sent {
+        method: "POST",
+        url: Some("https://mock.test/v1/threads"),
+        authorization: None,
+    }),
+    answered: Answered::Thread,
+})]
+#[case::get_thread(OpCase {
+    operation: AssistantOperation::GetThread,
+    fields: openai_data(),
+    route: Route {
+        thread_id: Some("thread_a"),
+        assistant_id: None,
+        client: Some(supplied("sk-supplied")),
+    },
+    replies: &[(200, THREAD)],
+    sent: Some(Sent {
+        method: "GET",
+        url: Some("https://mock.test/v1/threads/thread_a"),
+        // a supplied client's own key reaches the thread facade unchanged
+        authorization: Some("Bearer sk-supplied"),
+    }),
+    answered: Answered::Thread,
+})]
+#[case::create_message(OpCase {
+    operation: AssistantOperation::CreateMessage,
+    fields: data(&[
+        ("role", text("user")),
+        ("content", text("hello")),
+        // a body client key is not forwarded to the wrapper, so it never binds the client argument
+        ("client", object(&[("api_key", text("sk-body"))])),
+        ("api_base", text(MOCK_BASE)),
+        ("api_key", text("sk-test")),
+    ]),
+    route: Route {
+        thread_id: Some("thread_a"),
+        assistant_id: None,
+        client: None,
+    },
+    replies: &[(200, MESSAGE)],
+    sent: Some(Sent {
+        method: "POST",
+        url: Some("https://mock.test/v1/threads/thread_a/messages"),
+        authorization: None,
+    }),
+    answered: Answered::Message,
+})]
+#[case::list_messages(OpCase {
+    operation: AssistantOperation::ListMessages,
+    fields: openai_data(),
+    route: Route {
+        thread_id: Some("thread_a"),
+        assistant_id: None,
+        client: None,
+    },
+    replies: &[(200, MESSAGE_PAGE)],
+    sent: Some(Sent {
+        method: "GET",
+        url: None,
+        authorization: None,
+    }),
+    answered: Answered::Messages,
+})]
+#[case::polled_run(OpCase {
+    operation: AssistantOperation::RunThread,
+    fields: data(&[
+        ("assistant_id", text("asst_a")),
+        ("api_base", text(MOCK_BASE)),
+        ("api_key", text("sk-test")),
+    ]),
+    route: Route {
+        thread_id: Some("thread_a"),
+        assistant_id: None,
+        client: None,
+    },
+    replies: &[(200, RUN), (200, RUN)],
+    sent: Some(Sent {
+        method: "POST",
+        url: Some("https://mock.test/v1/threads/thread_a/runs"),
+        authorization: None,
+    }),
+    answered: Answered::Polled,
+})]
+#[case::streamed_run(OpCase {
+    operation: AssistantOperation::RunThread,
+    fields: data(&[
+        ("assistant_id", text("asst_a")),
+        ("stream", Json::Bool(true)),
+        ("api_base", text(MOCK_BASE)),
+        ("api_key", text("sk-test")),
+    ]),
+    route: Route {
+        thread_id: Some("thread_a"),
+        assistant_id: None,
+        client: None,
+    },
+    replies: &[(200, RUN)],
+    sent: None,
+    answered: Answered::Streaming,
+})]
 #[tokio::test]
-async fn dispatch_all_assistant_operations() {
+async fn dispatch_all_assistant_operations(#[case] case: OpCase) {
     let settings = configured("openai", &[]);
-    create_assistant_answers_with_the_record(&settings).await;
-    list_assistants_uses_the_supplied_client(&settings).await;
-    delete_assistant_passes_the_path_id(&settings).await;
-    create_thread_posts_the_body(&settings).await;
-    get_thread_uses_the_supplied_client(&settings).await;
-    create_message_posts_to_the_thread(&settings).await;
-    list_messages_reads_the_thread(&settings).await;
-    a_polled_run_returns_the_reply(&settings).await;
-    a_streamed_run_stays_lazy(&settings).await;
+    let outcome = call(
+        &settings,
+        case.operation,
+        &case.fields,
+        case.route,
+        case.replies,
+    )
+    .await;
+    assert_sent(&outcome, case.sent.as_ref());
+    assert_answered(outcome, case.answered);
+}
+
+// the request the operation sent, or none when the case expects the lazy stream
+fn assert_sent(outcome: &OutcomeView, sent: Option<&Sent>) {
+    let Some(sent) = sent else {
+        // stream=true stays a lazy manager until its owner enters it; no provider request happened yet
+        assert!(outcome.seen.is_empty());
+        return;
+    };
+    let seen = outcome.seen.first().expect("the operation sent a request");
+    assert_eq!(seen.method, sent.method);
+    if let Some(url) = sent.url {
+        assert_eq!(seen.url, url);
+    }
+    if let Some(authorization) = sent.authorization {
+        assert_eq!(seen.authorization.as_deref(), Some(authorization));
+    }
+}
+
+// the record the operation answered with
+fn assert_answered(outcome: OutcomeView, answered: Answered) {
+    match (answered, outcome.result.expect("the operation answers")) {
+        (Answered::Assistant, AssistantOutcome::Assistant(record)) => {
+            assert_eq!(record.id, "asst_a");
+        }
+        (Answered::Assistants, AssistantOutcome::Assistants(page)) => {
+            assert_eq!(page.data.first().expect("a listed assistant").id, "asst_a");
+        }
+        (Answered::Deleted, AssistantOutcome::Deleted(record)) => assert!(record.deleted),
+        (Answered::Thread, AssistantOutcome::Thread(Some(record))) => {
+            assert_eq!(record.id, "thread_a");
+        }
+        (Answered::Message, AssistantOutcome::Message(record)) => assert_eq!(record.id, "msg_a"),
+        (Answered::Messages, AssistantOutcome::Messages(page)) => {
+            assert_eq!(page.data.first().expect("a listed message").id, "msg_a");
+        }
+        (Answered::Polled, AssistantOutcome::Run(RunOutcome::Polled(reply))) => {
+            assert_eq!((*reply).expect("the provider replied").id, "run_a");
+        }
+        (Answered::Streaming, AssistantOutcome::Run(RunOutcome::Streaming(_))) => {}
+        (other, _) => panic!("the operation answered with another outcome: {other:?}"),
+    }
 }
 
 // arun_thread reads a supplied client and its optional kwargs through the run owner
 #[tokio::test]
 async fn a_supplied_client_reaches_the_run_owner() {
     let settings = configured("openai", &[]);
-    let fixtures = fixture(&settings);
     let metadata = object(&[("suite", text("b2489"))]);
-    let outcome = dispatch(
-        &fixtures,
+    let outcome = call(
+        &settings,
         AssistantOperation::RunThread,
         &data(&[
             ("assistant_id", text("asst_a")),
@@ -539,8 +551,8 @@ async fn a_supplied_client_reaches_the_run_owner() {
         ]),
         Route {
             thread_id: Some("thread_a"),
+            assistant_id: None,
             client: Some(supplied("sk-supplied")),
-            ..Route::default()
         },
         &[(200, RUN), (200, RUN)],
     )
@@ -645,8 +657,9 @@ async fn configured_parameters_replace_the_path_keyword() {
         AssistantOperation::DeleteAssistant,
         &openai_data(),
         Route {
+            thread_id: None,
             assistant_id: Some("asst_a"),
-            ..Route::default()
+            client: None,
         },
         &[(200, DELETED)],
     )
@@ -711,8 +724,9 @@ async fn a_body_key_collides_with_the_route_argument() {
         AssistantOperation::DeleteAssistant,
         &data(&[("assistant_id", text("asst_body"))]),
         Route {
+            thread_id: None,
             assistant_id: Some("asst_a"),
-            ..Route::default()
+            client: None,
         },
         &[],
     )
@@ -748,16 +762,20 @@ async fn no_configured_provider_raises_the_factory_exception() {
     assert!(outcome.seen.is_empty());
 }
 
-async fn an_empty_configured_provider_raises_key_error() {
-    let empty_config = Settings {
+// assistants_config reads both keys as plain dictionary entries, so an absent one is a KeyError
+async fn a_missing_configured_key_raises_key_error(
+    provider: Option<&str>,
+    parameters: Option<BTreeMap<String, Json>>,
+    expected: &str,
+) {
+    let settings = Settings {
         config: Some(Config {
-            custom_llm_provider: None,
-            litellm_params: Some(BTreeMap::new()),
+            custom_llm_provider: provider.map(String::from),
+            litellm_params: parameters,
         }),
     };
-    let fixtures = fixture(&empty_config);
-    let outcome = dispatch(
-        &fixtures,
+    let outcome = call(
+        &settings,
         AssistantOperation::CreateAssistant,
         &data(&[("model", text("gpt-4o-mini"))]),
         Route::default(),
@@ -765,32 +783,9 @@ async fn an_empty_configured_provider_raises_key_error() {
     )
     .await;
     let Err(AssistantDispatchError::KeyError { key }) = outcome.result else {
-        panic!("an empty config did not raise");
+        panic!("the missing configured key did not raise");
     };
-    assert_eq!(key, "custom_llm_provider");
-    assert!(outcome.seen.is_empty());
-}
-
-async fn a_configured_provider_without_parameters_raises_key_error() {
-    let only_provider = Settings {
-        config: Some(Config {
-            custom_llm_provider: Some(String::from("openai")),
-            litellm_params: None,
-        }),
-    };
-    let fixtures = fixture(&only_provider);
-    let outcome = dispatch(
-        &fixtures,
-        AssistantOperation::CreateAssistant,
-        &data(&[("model", text("gpt-4o-mini"))]),
-        Route::default(),
-        &[],
-    )
-    .await;
-    let Err(AssistantDispatchError::KeyError { key }) = outcome.result else {
-        panic!("the missing parameters did not raise");
-    };
-    assert_eq!(key, "litellm_params");
+    assert_eq!(key, expected);
     assert!(outcome.seen.is_empty());
 }
 
@@ -823,105 +818,56 @@ async fn an_unsupported_provider_surfaces_as_a_bad_request() {
 #[tokio::test]
 async fn assistant_dispatch_requires_provider() {
     no_configured_provider_raises_the_factory_exception().await;
-    an_empty_configured_provider_raises_key_error().await;
-    a_configured_provider_without_parameters_raises_key_error().await;
+    a_missing_configured_key_raises_key_error(None, Some(BTreeMap::new()), "custom_llm_provider")
+        .await;
+    a_missing_configured_key_raises_key_error(Some("openai"), None, "litellm_params").await;
     an_unsupported_provider_surfaces_as_a_bad_request().await;
 }
 
-async fn missing_role_and_content_are_a_paired_error(settings: &Settings) {
-    let fixtures = fixture(settings);
-    let outcome = dispatch(
-        &fixtures,
-        AssistantOperation::CreateMessage,
-        &openai_data(),
-        Route {
-            thread_id: Some("thread_a"),
-            ..Route::default()
-        },
-        &[],
-    )
-    .await;
-    let Err(AssistantDispatchError::TypeError { message }) = outcome.result else {
-        panic!("the missing role and content did not raise");
-    };
-    assert_eq!(
-        message,
-        "a_add_message() missing 2 required positional arguments: 'role' and 'content'"
-    );
-    assert!(outcome.seen.is_empty());
-}
-
-async fn a_missing_assistant_id_is_a_single_error(settings: &Settings) {
-    let fixtures = fixture(settings);
-    let outcome = dispatch(
-        &fixtures,
-        AssistantOperation::RunThread,
-        &openai_data(),
-        Route {
-            thread_id: Some("thread_a"),
-            ..Route::default()
-        },
-        &[],
-    )
-    .await;
-    let Err(AssistantDispatchError::TypeError { message }) = outcome.result else {
-        panic!("the missing assistant id did not raise");
-    };
-    assert_eq!(
-        message,
-        "arun_thread() missing 1 required positional argument: 'assistant_id'"
-    );
-    assert!(outcome.seen.is_empty());
-}
-
+// the wrapper's own named arguments: a route without the id leaves it for the interpreter to report
+#[rstest]
+#[case::role_and_content(
+    AssistantOperation::CreateMessage,
+    Route {
+        thread_id: Some("thread_a"),
+        assistant_id: None,
+        client: None,
+    },
+    "a_add_message() missing 2 required positional arguments: 'role' and 'content'"
+)]
+#[case::assistant_id(
+    AssistantOperation::RunThread,
+    Route {
+        thread_id: Some("thread_a"),
+        assistant_id: None,
+        client: None,
+    },
+    "arun_thread() missing 1 required positional argument: 'assistant_id'"
+)]
 // the route always carries the path id, so only a caller that builds the request itself reaches this
-async fn a_delete_without_a_path_id_is_a_single_error(settings: &Settings) {
-    let fixtures = fixture(settings);
-    let outcome = dispatch(
-        &fixtures,
-        AssistantOperation::DeleteAssistant,
-        &openai_data(),
-        Route::default(),
-        &[],
-    )
-    .await;
-    let Err(AssistantDispatchError::TypeError { message }) = outcome.result else {
-        panic!("the missing assistant id did not raise");
-    };
-    assert_eq!(
-        message,
-        "delete_assistant() missing 1 required positional argument: 'assistant_id'"
-    );
-    assert!(outcome.seen.is_empty());
-}
-
-async fn a_missing_thread_id_lists_every_argument(settings: &Settings) {
-    let fixtures = fixture(settings);
-    let outcome = dispatch(
-        &fixtures,
-        AssistantOperation::CreateMessage,
-        &openai_data(),
-        Route::default(),
-        &[],
-    )
-    .await;
-    let Err(AssistantDispatchError::TypeError { message }) = outcome.result else {
-        panic!("the missing thread id did not raise");
-    };
-    assert_eq!(
-        message,
-        "a_add_message() missing 3 required positional arguments: 'thread_id', 'role', and 'content'"
-    );
-    assert!(outcome.seen.is_empty());
-}
-
+#[case::delete_id(
+    AssistantOperation::DeleteAssistant,
+    Route::default(),
+    "delete_assistant() missing 1 required positional argument: 'assistant_id'"
+)]
+#[case::thread_id(
+    AssistantOperation::CreateMessage,
+    Route::default(),
+    "a_add_message() missing 3 required positional arguments: 'thread_id', 'role', and 'content'"
+)]
 #[tokio::test]
-async fn missing_arguments_use_the_interpreter_wording() {
+async fn missing_arguments_use_the_interpreter_wording(
+    #[case] operation: AssistantOperation,
+    #[case] route: Route<'static>,
+    #[case] expected: &str,
+) {
     let settings = configured("openai", &[]);
-    missing_role_and_content_are_a_paired_error(&settings).await;
-    a_missing_assistant_id_is_a_single_error(&settings).await;
-    a_delete_without_a_path_id_is_a_single_error(&settings).await;
-    a_missing_thread_id_lists_every_argument(&settings).await;
+    let outcome = call(&settings, operation, &openai_data(), route, &[]).await;
+    let Err(AssistantDispatchError::TypeError { message }) = outcome.result else {
+        panic!("the missing argument did not raise");
+    };
+    assert_eq!(message, expected);
+    assert!(outcome.seen.is_empty());
 }
 
 #[test]
