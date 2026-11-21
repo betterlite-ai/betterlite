@@ -158,7 +158,7 @@ pub(super) async fn exchange(
 pub(super) fn failure_facts(failure: &ExchangeFailure, timing: &Timing) -> FailureFacts {
     let timed_out = matches!(
         failure,
-        ExchangeFailure::Transport(TransportError::Deadline(_))
+        ExchangeFailure::Transport(TransportError::ConnectTimeout(_) | TransportError::Deadline(_))
     );
     if timed_out && timing.method == HttpMethod::Post {
         timeout_facts(
@@ -224,8 +224,16 @@ where
 
 fn text_headers(headers: &HeaderMap) -> Headers {
     headers
-        .iter()
-        .map(|(name, value)| (name.as_str().to_owned(), header_text(value)))
+        .keys()
+        .map(|name| {
+            let values = headers
+                .get_all(name)
+                .iter()
+                .map(header_text)
+                .collect::<Vec<_>>()
+                .join(", ");
+            (name.as_str().to_owned(), values)
+        })
         .collect()
 }
 

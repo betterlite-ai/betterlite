@@ -20,6 +20,7 @@ use betterlite_http_fixture::server::{Serving, serve};
 use betterlite_openai::openai_base_config::Object;
 use betterlite_openai::search::provider::{HttpMethod, SearchQuery};
 use betterlite_openai::search::records::SearchResponse;
+use betterlite_test_ports::full_listener::FullListener;
 use betterlite_test_ports::refused_port::RefusedPort;
 use tokio::time::sleep;
 
@@ -284,6 +285,44 @@ async fn status_failure() {
     status_error_is_a_provider_error().await;
     get_status_error_is_a_provider_error().await;
     transform_error_is_not_converted().await;
+    repeated_headers_are_joined().await;
+}
+
+async fn repeated_headers_are_joined() {
+    let repeated = [("warning", "199 first"), ("warning", "299 second")];
+    let served = serve(
+        reply("429 Too Many Requests", &repeated, "slow down"),
+        Duration::ZERO,
+    )
+    .expect("the fixture serves");
+    let base = format!("http://{}/search", served.address);
+    let tls = default_tls();
+    let routing = proxy_policy();
+    let pool = ClientPool::new(4, TransportLimits::DEFAULT);
+    let provider = test_provider(&base);
+    let query = SearchQuery::Single(String::from("rust"));
+    let params = Object::new();
+    let mut fixture = Fixture::new();
+    let rejection = fixture
+        .execute(
+            search_call(&query, &params, &base, &tls, &routing),
+            &provider,
+            &pool,
+            false,
+        )
+        .await
+        .expect_err("the reply fails the call");
+    let error = provider_error(&rejection);
+    assert_eq!(error.status_code, 429);
+    assert_eq!(
+        error
+            .headers
+            .as_ref()
+            .and_then(|headers| headers.get("warning"))
+            .map(String::as_str),
+        Some("199 first, 299 second")
+    );
+    served.finish().expect("the fixture answers");
 }
 
 async fn connection_failure_is_converted() {
@@ -520,10 +559,48 @@ async fn dropped_connection_is_not_retried() {
 async fn transport_failure() {
     connection_failure_is_converted().await;
     deadline_failure_is_a_timeout().await;
+    connect_timeout_is_a_timeout().await;
     closed_pool_is_converted().await;
     body_too_large_is_converted().await;
     request_failure_is_converted().await;
     dropped_connection_is_not_retried().await;
+}
+
+async fn connect_timeout_is_a_timeout() {
+    let full = FullListener::bind().expect("the full listener binds");
+    let base = format!("http://{}/search", full.address);
+    let tls = default_tls();
+    let routing = proxy_policy();
+    let pool = ClientPool::new(4, TransportLimits::DEFAULT);
+    let provider = test_provider(&base);
+    let query = SearchQuery::Single(String::from("rust"));
+    let params = Object::new();
+    let mut fixture = Fixture::new();
+    let call = SearchHttpCall {
+        client: Some(proxied(
+            TransportLimits {
+                connect_timeout: Duration::from_millis(50),
+                ..TransportLimits::DEFAULT
+            },
+            &routing,
+        )),
+        ..search_call(&query, &params, &base, &tls, &routing)
+    };
+    let rejection = fixture
+        .execute(call, &provider, &pool, false)
+        .await
+        .expect_err("the connect timeout fails the call");
+    let error = provider_error(&rejection);
+    assert_eq!(
+        (error.status_code, error.status_code_is_synthesized),
+        (408, false)
+    );
+    assert!(
+        error
+            .message
+            .starts_with("litellm.Timeout: Connection timed out. Timeout passed=2, time taken=")
+    );
+    assert!(recorded_errors(&provider).is_empty());
 }
 
 async fn supplied_client_wins() {

@@ -22,18 +22,21 @@ struct SignedRun {
     fixture: Fixture,
     provider: TestProvider,
     served: Serving,
-    base: String,
+    configured: String,
+    complete: String,
 }
 
 async fn signed_search() -> SignedRun {
     let served = serve(reply("200 OK", &[], ANSWER), Duration::ZERO).expect("the fixture serves");
-    let base = format!("http://{}/search", served.address);
+    let complete = format!("http://{}/search?via=complete", served.address);
+    let configured = String::from("http://configured.example");
     let tls = default_tls();
     let routing = proxy_policy();
     let pool = ClientPool::new(4, TransportLimits::DEFAULT);
     let provider = TestProvider {
         signed: BTreeMap::from([("x-signature".to_owned(), "abc".to_owned())]),
-        ..test_provider(&base)
+        signed_body: Some(b"{\"q\":\"signed\"}".to_vec()),
+        ..test_provider(&complete)
     };
     let query = SearchQuery::Single(String::from("rust"));
     let params = Object::new();
@@ -41,8 +44,9 @@ async fn signed_search() -> SignedRun {
     let mut fixture = Fixture::new();
     let call = SearchHttpCall {
         api_key: Some(&credential),
+        api_base: Some(configured.clone()),
         headers: BTreeMap::from([("x-caller".to_owned(), "1".to_owned())]),
-        ..search_call(&query, &params, &base, &tls, &routing)
+        ..search_call(&query, &params, &complete, &tls, &routing)
     };
     fixture
         .execute(call, &provider, &pool, false)
@@ -52,7 +56,8 @@ async fn signed_search() -> SignedRun {
         fixture,
         provider,
         served,
-        base,
+        configured,
+        complete,
     }
 }
 
@@ -69,19 +74,25 @@ async fn hooks_run_in_order_and_see_the_call() {
     ]);
     let hooks = seen_values(&run.provider);
     assert_eq!(hooks.validate_api_key.as_deref(), Some("sk-search"));
-    assert_eq!(hooks.validate_api_base.as_deref(), Some(run.base.as_str()));
+    assert_eq!(
+        hooks.validate_api_base.as_deref(),
+        Some(run.configured.as_str())
+    );
     assert_eq!(
         hooks.validate_headers,
         BTreeMap::from([("x-caller".to_owned(), "1".to_owned())])
     );
     assert_eq!(hooks.transform_api_key.as_deref(), Some("sk-search"));
-    assert_eq!(hooks.transform_api_base.as_deref(), Some(run.base.as_str()));
+    assert_eq!(
+        hooks.transform_api_base.as_deref(),
+        Some(run.configured.as_str())
+    );
     assert_eq!(hooks.transform_headers, validated);
-    assert_eq!(hooks.url_api_base.as_deref(), Some(run.base.as_str()));
+    assert_eq!(hooks.url_api_base.as_deref(), Some(run.configured.as_str()));
     assert_eq!(hooks.url_api_key.as_deref(), Some("sk-search"));
     assert_eq!(hooks.url_params, Object::new());
     assert_eq!(hooks.url_body.as_ref(), Some(&run.provider.body));
-    assert_eq!(hooks.sign_api_base, run.base);
+    assert_eq!(hooks.sign_api_base, run.complete);
     assert_eq!(hooks.sign_api_key.as_deref(), Some("sk-search"));
     assert_eq!(hooks.sign_headers, validated);
     assert_eq!(hooks.sign_body, br#"{"q":"rust"}"#.to_vec());
@@ -94,7 +105,7 @@ async fn pre_call_logs_the_unsigned_call() {
     assert_eq!(run.fixture.input(), Some(&Json::Text(String::from("rust"))));
     assert_eq!(
         run.fixture.logged("api_base"),
-        Some(&Json::Text(String::from(run.base.as_str())))
+        Some(&Json::Text(String::from(run.complete.as_str())))
     );
     assert_eq!(
         run.fixture.logged("complete_input_dict"),
@@ -110,10 +121,9 @@ async fn pre_call_logs_the_unsigned_call() {
             ("x-validated".to_owned(), Json::Text(String::from("yes"))),
         ])))
     );
-    assert_eq!(
-        run.served.finish().expect("the fixture answers").line,
-        "POST /search HTTP/1.1"
-    );
+    let request = run.served.finish().expect("the fixture answers");
+    assert_eq!(request.line, "POST /search?via=complete HTTP/1.1");
+    assert_eq!(request.body, "{\"q\":\"signed\"}");
 }
 
 #[tokio::test]
