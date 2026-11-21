@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::collections::BTreeSet;
+
 use crate::limiter_records::{
     RateLimitDescriptor, RateLimitDescriptorRateLimit, RateLimitStatus, RateLimitType,
     ReservationBackend, ReservationWindowIdentity, create_rate_limit_keys,
@@ -153,15 +155,11 @@ async fn starts_a_new_window_and_resets_the_sibling_counters() {
     assert_eq!(response.overall_code, "OK");
     assert_eq!(
         response.reservation_windows,
-        Some(
-            [ReservationWindowIdentity {
-                counter_key: tokens_key("model_per_key", "key1:gpt-4"),
-                window_start: NOW.to_string(),
-                backend: ReservationBackend::Local,
-            }]
-            .into_iter()
-            .collect()
-        )
+        Some(BTreeSet::from([ReservationWindowIdentity {
+            counter_key: tokens_key("model_per_key", "key1:gpt-4"),
+            window_start: NOW.to_string(),
+            backend: ReservationBackend::Local,
+        }]))
     );
     assert_eq!(
         fixture.effects.reads(),
