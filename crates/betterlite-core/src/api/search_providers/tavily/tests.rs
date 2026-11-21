@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::search::credentials::CredentialError;
 use betterlite_openai::search::provider::{
-    HttpMethod, OutboundSearch, ProviderResponse, SearchProvider, SearchQuery,
+    HttpMethod, OutboundSearch, ProviderResponse, RequestInput, SearchProvider, SearchQuery,
 };
 use betterlite_openai::search::records::SearchResult;
 use rstest::rstest;
@@ -194,7 +194,7 @@ fn trait_complete_url_appends_search() {
     let search = load(&[]);
     assert_eq!(
         search
-            .complete_url(Some("https://proxy.test"), &Object::new(), None)
+            .complete_url(Some("https://proxy.test"), &Object::new(), None, None)
             .unwrap(),
         "https://proxy.test/search"
     );
@@ -260,7 +260,13 @@ fn sign_request_signs_a_server_key_for_the_trusted_host() {
 )]
 fn body_joins_the_query(#[case] query: SearchQuery, #[case] expected: &str) {
     let body = load(&[])
-        .transform_search_request(&query, &Object::new())
+        .transform_search_request(&RequestInput {
+            query: &query,
+            optional_params: &Object::new(),
+            api_key: None,
+            api_base: None,
+            headers: &Headers::new(),
+        })
         .unwrap();
     assert_eq!(body, object(expected));
 }
@@ -279,7 +285,13 @@ fn body_maps_unified_parameters_and_copies_the_rest() {
         }"#,
     );
     let body = load(&[])
-        .transform_search_request(&SearchQuery::Single("rust".to_owned()), &optional_params)
+        .transform_search_request(&RequestInput {
+            query: &SearchQuery::Single("rust".to_owned()),
+            optional_params: &optional_params,
+            api_key: None,
+            api_base: None,
+            headers: &Headers::new(),
+        })
         .unwrap();
     assert_eq!(
         body,
@@ -300,7 +312,13 @@ fn body_maps_unified_parameters_and_copies_the_rest() {
 fn body_keeps_a_caller_include_domains_without_the_filter() {
     let optional_params = object(r#"{"include_domains": ["kept.test"]}"#);
     let body = load(&[])
-        .transform_search_request(&SearchQuery::Single("rust".to_owned()), &optional_params)
+        .transform_search_request(&RequestInput {
+            query: &SearchQuery::Single("rust".to_owned()),
+            optional_params: &optional_params,
+            api_key: None,
+            api_base: None,
+            headers: &Headers::new(),
+        })
         .unwrap();
     assert_eq!(
         body,
@@ -312,7 +330,13 @@ fn body_keeps_a_caller_include_domains_without_the_filter() {
 fn body_rejects_a_non_string_country() {
     let optional_params = object(r#"{"country": 1}"#);
     let error = load(&[])
-        .transform_search_request(&SearchQuery::Single("rust".to_owned()), &optional_params)
+        .transform_search_request(&RequestInput {
+            query: &SearchQuery::Single("rust".to_owned()),
+            optional_params: &optional_params,
+            api_key: None,
+            api_base: None,
+            headers: &Headers::new(),
+        })
         .unwrap_err();
     assert!(matches!(error, TavilyError::CountryNotString));
 }

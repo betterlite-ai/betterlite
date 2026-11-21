@@ -3,7 +3,7 @@ use std::sync::{Mutex, PoisonError};
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::search::provider::{
-    HttpMethod, ProviderResponse, SearchProvider, SearchQuery,
+    HttpMethod, ProviderResponse, RequestInput, SearchProvider,
 };
 use betterlite_openai::search::records::SearchResponse;
 use secrecy::SecretString;
@@ -104,16 +104,16 @@ impl SearchProvider for DuckDuckGoSearchConfig {
         api_base: Option<&str>,
         _optional_params: &Object,
         body: Option<&DuckDuckGoSearchRequest>,
+        _api_key: Option<&SecretString>,
     ) -> Result<String, DuckDuckGoSearchError> {
         Ok(request::search_url(api_base, &self.environment_base, body))
     }
 
     fn transform_search_request(
         &self,
-        query: &SearchQuery,
-        optional_params: &Object,
+        input: &RequestInput<'_>,
     ) -> Result<DuckDuckGoSearchRequest, DuckDuckGoSearchError> {
-        let body = request::build_request(query, optional_params)?;
+        let body = request::build_request(input.query, input.optional_params)?;
         // the response hook gets only &self, so the config keeps the query its reply must decode with
         *self
             .request_params
