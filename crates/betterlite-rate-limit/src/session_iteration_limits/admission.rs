@@ -14,7 +14,6 @@ use serde_json::Number;
 use super::KeyIterations;
 use super::MAX_ITERATIONS;
 use super::SessionIterationHandler;
-use super::cache::SessionIterationCache;
 use super::error::SessionIterationLimitError;
 
 // the fields the 429 body and its model/provider pair are built from
@@ -122,14 +121,11 @@ fn requested_model(data: &Json) -> Option<&str> {
 }
 
 // the 429 async_pre_call_hook raises: RateLimitType.MAX_ITERATIONS with the resolved model and provider
-pub(crate) fn exceeded_error<C>(
-    handler: &SessionIterationHandler<C>,
+pub(crate) fn exceeded_error(
+    handler: &SessionIterationHandler,
     router: Option<&dyn DeploymentSnapshot>,
     request: &ExceededRequest<'_>,
-) -> SessionIterationLimitError
-where
-    C: SessionIterationCache,
-{
+) -> SessionIterationLimitError {
     let (model, llm_provider) = resolve_rate_limit_provider(
         requested_model(request.data),
         handler.resolver.as_ref(),

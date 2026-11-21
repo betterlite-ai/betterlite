@@ -3,6 +3,7 @@ mod input;
 mod provider_table;
 
 use std::fmt::Display;
+use std::sync::Arc;
 
 use axum::response::IntoResponse as _;
 use betterlite_auth::agent_registry::AgentRegistry;
@@ -53,8 +54,12 @@ where
 async fn execute(input: &Input) -> HelperResult {
     let ttl = max_iterations_ttl(input.ttl_env.as_deref()).map_err(failure)?;
     let cache = FakeCache::new(input.redis, &input.memory, &input.redis_values);
-    let handler =
-        SessionIterationHandler::new(cache, ttl, Box::new(ProviderTable::litellm_defaults()));
+    let handler = SessionIterationHandler::new(
+        Arc::new(cache.clone()),
+        Some(cache.script()),
+        ttl,
+        Box::new(ProviderTable::litellm_defaults()),
+    );
     let registry = AgentRegistry::default();
     for agent in &input.agents {
         registry.register_agent(agent.clone());
@@ -63,10 +68,10 @@ async fn execute(input: &Input) -> HelperResult {
     for call in &input.calls {
         outcomes.push(pre_call_outcome(&handler, &registry, call).await);
     }
-    let snapshot = handler.cache.snapshot();
+    let snapshot = cache.snapshot();
     Ok(json!({
         "ttl": handler.ttl.as_secs(),
-        "script_registered": handler.script.is_some(),
+        "script_registered": handler.increment_script.is_some(),
         "calls": outcomes,
         "memory": snapshot.memory,
         "memory_ttls": snapshot.memory_ttls,
@@ -76,7 +81,7 @@ async fn execute(input: &Input) -> HelperResult {
 }
 
 async fn pre_call_outcome(
-    handler: &SessionIterationHandler<FakeCache>,
+    handler: &SessionIterationHandler,
     registry: &AgentRegistry,
     call: &Call,
 ) -> Value {

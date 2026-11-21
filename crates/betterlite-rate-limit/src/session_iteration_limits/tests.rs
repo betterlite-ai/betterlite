@@ -23,6 +23,7 @@ use self::support::LIMIT_TWO;
 use self::support::LIMIT_ZERO;
 use self::support::NO_LIMIT;
 use self::support::NO_PARAMS;
+use self::support::ScriptMode;
 use self::support::agent_key;
 use self::support::agent_registry_with;
 use self::support::expected_detail;
@@ -33,6 +34,7 @@ use self::support::key_metadata;
 use self::support::memory_key;
 use self::support::rejection;
 use self::support::session_data;
+use crate::limiter_records::CacheCounterValue;
 use crate::session_iteration_limits::INCREMENT_ITERATIONS_SCRIPT;
 use crate::session_iteration_limits::KeyIterations;
 use crate::session_iteration_limits::error::SessionIterationLimitError;
@@ -41,7 +43,7 @@ use crate::session_iteration_limits::error::SessionIterationLimitError;
 async fn missing_session_id() {
     let cache = FakeCache::without_redis();
     cache.preload_memory(&memory_key("s1"), 4);
-    let handler = iteration_handler(cache);
+    let handler = iteration_handler(cache.clone());
     let registry = agent_registry_with(&[LIMIT_ONE]);
     let data = json(r#"{"model":"gpt-4o","metadata":{"other":true}}"#);
 
@@ -50,13 +52,13 @@ async fn missing_session_id() {
         .await
         .unwrap();
 
-    assert_eq!(handler.cache.memory(&memory_key("s1")), Some(4));
+    assert_eq!(cache.memory(&memory_key("s1")), Some(4));
 }
 
 #[tokio::test]
 async fn missing_max_iterations() {
     let cache = FakeCache::without_redis();
-    let handler = iteration_handler(cache);
+    let handler = iteration_handler(cache.clone());
     let registry = agent_registry_with(&[NO_LIMIT]);
     let data = session_data("s1");
 
@@ -65,8 +67,8 @@ async fn missing_max_iterations() {
         .await
         .unwrap();
 
-    assert_eq!(handler.cache.memory(&memory_key("s1")), None);
-    assert!(handler.cache.memory_keys().is_empty());
+    assert_eq!(cache.memory(&memory_key("s1")), None);
+    assert!(cache.memory_keys().is_empty());
 }
 
 #[tokio::test]
@@ -89,7 +91,7 @@ async fn zero_limit_rejects_the_first_call() {
 #[tokio::test]
 async fn first_call_passes() {
     let cache = FakeCache::without_redis();
-    let handler = iteration_handler(cache);
+    let handler = iteration_handler(cache.clone());
     let registry = agent_registry_with(&[LIMIT_TWO]);
     let data = session_data("s1");
 
@@ -98,18 +100,15 @@ async fn first_call_passes() {
         .await
         .unwrap();
 
-    assert_eq!(handler.cache.memory(&memory_key("s1")), Some(1));
-    assert_eq!(
-        handler.cache.memory_ttl(&memory_key("s1")),
-        Some(Duration::from_secs(3600))
-    );
+    assert_eq!(cache.memory(&memory_key("s1")), Some(1));
+    assert_eq!(cache.memory_ttl(&memory_key("s1")), Some(3600));
 }
 
 #[tokio::test]
 async fn second_call_within_limit() {
     let cache = FakeCache::without_redis();
     cache.preload_memory(&memory_key("s1"), 1);
-    let handler = iteration_handler(cache);
+    let handler = iteration_handler(cache.clone());
     let registry = agent_registry_with(&[LIMIT_TWO]);
     let data = session_data("s1");
 
@@ -118,14 +117,14 @@ async fn second_call_within_limit() {
         .await
         .unwrap();
 
-    assert_eq!(handler.cache.memory(&memory_key("s1")), Some(2));
+    assert_eq!(cache.memory(&memory_key("s1")), Some(2));
 }
 
 #[tokio::test]
 async fn third_call_exceeds_limit() {
     let cache = FakeCache::without_redis();
     cache.preload_memory(&memory_key("s1"), 2);
-    let handler = iteration_handler(cache);
+    let handler = iteration_handler(cache.clone());
     let registry = agent_registry_with(&[LIMIT_TWO]);
     let data = session_data("s1");
 
@@ -136,7 +135,7 @@ async fn third_call_exceeds_limit() {
             .unwrap_err(),
     );
 
-    assert_eq!(handler.cache.memory(&memory_key("s1")), Some(3));
+    assert_eq!(cache.memory(&memory_key("s1")), Some(3));
     assert_eq!(
         error.rate_limit_type,
         Some(RateLimitDimension::MaxIterations)
@@ -151,7 +150,7 @@ async fn third_call_exceeds_limit() {
 async fn counter_increments_on_rejection() {
     let cache = FakeCache::without_redis();
     cache.preload_memory(&memory_key("s1"), 5);
-    let handler = iteration_handler(cache);
+    let handler = iteration_handler(cache.clone());
     let registry = agent_registry_with(&[LIMIT_ONE]);
     let data = session_data("s1");
 
@@ -162,29 +161,25 @@ async fn counter_increments_on_rejection() {
             .unwrap_err(),
     );
 
-    assert_eq!(handler.cache.memory(&memory_key("s1")), Some(6));
+    assert_eq!(cache.memory(&memory_key("s1")), Some(6));
 }
 
 #[tokio::test]
 async fn redis_failure_fallback_increments() {
     let cache = FakeCache::with_redis();
-    cache.fail_script();
+    cache.set_script_mode(ScriptMode::Fails);
     cache.preload_memory(&memory_key("s1"), 1);
-    let handler = iteration_handler(cache);
+    let handler = iteration_handler(cache.clone());
     let registry = agent_registry_with(&[LIMIT_TWO]);
     let data = session_data("s1");
 
-    assert_eq!(
-        handler.cache.registered(),
-        vec![INCREMENT_ITERATIONS_SCRIPT.to_owned()]
-    );
     handler
         .async_pre_call_hook(&registry, None, agent_key(), &data)
         .await
         .unwrap();
 
-    assert_eq!(handler.cache.memory(&memory_key("s1")), Some(2));
-    assert_eq!(handler.cache.redis_count(&memory_key("s1")), None);
+    assert_eq!(cache.memory(&memory_key("s1")), Some(2));
+    assert_eq!(cache.redis_count(&memory_key("s1")), None);
 }
 
 #[tokio::test]
@@ -211,7 +206,7 @@ async fn error_detail_includes_session_and_counts() {
 async fn agent_params_wins_over_metadata() {
     let cache = FakeCache::without_redis();
     cache.preload_memory(&memory_key("s1"), 1);
-    let handler = iteration_handler(cache);
+    let handler = iteration_handler(cache.clone());
     let registry = agent_registry_with(&[LIMIT_TWO]);
     let metadata = key_metadata(r#"{"max_iterations":1}"#);
     let key = KeyIterations {
@@ -225,7 +220,7 @@ async fn agent_params_wins_over_metadata() {
         .await
         .unwrap();
 
-    assert_eq!(handler.cache.memory(&memory_key("s1")), Some(2));
+    assert_eq!(cache.memory(&memory_key("s1")), Some(2));
 }
 
 #[tokio::test]
@@ -254,7 +249,7 @@ async fn unregistered_agent_falls_back_to_key_metadata() {
 #[tokio::test]
 async fn cache_key_uses_hash_tag() {
     let cache = FakeCache::without_redis();
-    let handler = iteration_handler(cache);
+    let handler = iteration_handler(cache.clone());
     let registry = agent_registry_with(&[LIMIT_TWO]);
     let data = session_data("a:b");
 
@@ -264,7 +259,7 @@ async fn cache_key_uses_hash_tag() {
         .unwrap();
 
     assert_eq!(
-        handler.cache.memory_keys(),
+        cache.memory_keys(),
         vec![String::from("{session_iterations:a:b}:count")]
     );
 }
@@ -272,7 +267,7 @@ async fn cache_key_uses_hash_tag() {
 #[tokio::test]
 async fn ttl_expires_counter() {
     let cache = FakeCache::without_redis();
-    let handler = iteration_handler_at(cache, Duration::from_secs(60));
+    let handler = iteration_handler_at(cache.clone(), Duration::from_secs(60));
     let registry = agent_registry_with(&[LIMIT_TWO]);
     let data = session_data("s1");
 
@@ -280,24 +275,21 @@ async fn ttl_expires_counter() {
         .async_pre_call_hook(&registry, None, agent_key(), &data)
         .await
         .unwrap();
-    handler.cache.advance(Duration::from_secs(59));
+    cache.advance(Duration::from_secs(59));
     handler
         .async_pre_call_hook(&registry, None, agent_key(), &data)
         .await
         .unwrap();
-    assert_eq!(handler.cache.memory(&memory_key("s1")), Some(2));
-    assert_eq!(
-        handler.cache.memory_ttl(&memory_key("s1")),
-        Some(Duration::from_secs(60))
-    );
+    assert_eq!(cache.memory(&memory_key("s1")), Some(2));
+    assert_eq!(cache.memory_ttl(&memory_key("s1")), Some(60));
 
-    handler.cache.advance(Duration::from_secs(61));
+    cache.advance(Duration::from_secs(61));
     handler
         .async_pre_call_hook(&registry, None, agent_key(), &data)
         .await
         .unwrap();
 
-    assert_eq!(handler.cache.memory(&memory_key("s1")), Some(1));
+    assert_eq!(cache.memory(&memory_key("s1")), Some(1));
 }
 
 #[rstest]
@@ -386,7 +378,7 @@ async fn key_metadata_coerce_like_int(#[case] text: &str, #[case] limit: i64) {
 #[tokio::test]
 async fn null_key_max_iterations_reads_as_absent() {
     let cache = FakeCache::without_redis();
-    let handler = iteration_handler(cache);
+    let handler = iteration_handler(cache.clone());
     let registry = agent_registry_with(&[NO_LIMIT]);
     let metadata = key_metadata(r#"{"max_iterations":null}"#);
     let key = KeyIterations {
@@ -400,7 +392,7 @@ async fn null_key_max_iterations_reads_as_absent() {
         .await
         .unwrap();
 
-    assert!(handler.cache.memory_keys().is_empty());
+    assert!(cache.memory_keys().is_empty());
 }
 
 #[rstest]
@@ -409,7 +401,7 @@ async fn null_key_max_iterations_reads_as_absent() {
 #[tokio::test]
 async fn invalid_agent_max_iterations_is_a_typed_error(#[case] record: &str) {
     let cache = FakeCache::without_redis();
-    let handler = iteration_handler(cache);
+    let handler = iteration_handler(cache.clone());
     let registry = agent_registry_with(&[record]);
     let data = session_data("s1");
 
@@ -421,7 +413,7 @@ async fn invalid_agent_max_iterations_is_a_typed_error(#[case] record: &str) {
     let SessionIterationLimitError::InvalidAgentIterations { .. } = error else {
         panic!("expected an invalid agent max_iterations");
     };
-    assert!(handler.cache.memory_keys().is_empty());
+    assert!(cache.memory_keys().is_empty());
 }
 
 #[rstest]
@@ -431,7 +423,7 @@ async fn invalid_agent_max_iterations_is_a_typed_error(#[case] record: &str) {
 #[tokio::test]
 async fn invalid_key_max_iterations_is_a_typed_error(#[case] text: &str) {
     let cache = FakeCache::without_redis();
-    let handler = iteration_handler(cache);
+    let handler = iteration_handler(cache.clone());
     let registry = agent_registry_with(&[NO_LIMIT]);
     let metadata = key_metadata(text);
     let key = KeyIterations {
@@ -448,13 +440,13 @@ async fn invalid_key_max_iterations_is_a_typed_error(#[case] text: &str) {
     let SessionIterationLimitError::InvalidKeyIterations = error else {
         panic!("expected an invalid key max_iterations");
     };
-    assert!(handler.cache.memory_keys().is_empty());
+    assert!(cache.memory_keys().is_empty());
 }
 
 #[tokio::test]
 async fn max_iterations_beyond_i64_is_a_typed_error() {
     let cache = FakeCache::without_redis();
-    let handler = iteration_handler(cache);
+    let handler = iteration_handler(cache.clone());
     let registry = agent_registry_with(&[LIMIT_HUGE]);
     let data = session_data("s1");
 
@@ -466,7 +458,7 @@ async fn max_iterations_beyond_i64_is_a_typed_error() {
     let SessionIterationLimitError::InvalidAgentIterations { .. } = error else {
         panic!("expected an invalid agent max_iterations");
     };
-    assert!(handler.cache.memory_keys().is_empty());
+    assert!(cache.memory_keys().is_empty());
 }
 
 #[tokio::test]
@@ -494,7 +486,7 @@ async fn key_max_iterations_beyond_i64_is_a_typed_error() {
 #[tokio::test]
 async fn numeric_session_id_names_the_text_bucket() {
     let cache = FakeCache::without_redis();
-    let handler = iteration_handler(cache);
+    let handler = iteration_handler(cache.clone());
     let registry = agent_registry_with(&[LIMIT_TWO]);
     let data = json(r#"{"model":"gpt-4o","metadata":{"session_id":5}}"#);
 
@@ -503,7 +495,7 @@ async fn numeric_session_id_names_the_text_bucket() {
         .await
         .unwrap();
 
-    assert_eq!(handler.cache.memory(&memory_key("5")), Some(1));
+    assert_eq!(cache.memory(&memory_key("5")), Some(1));
 }
 
 #[rstest]
@@ -514,7 +506,7 @@ async fn numeric_session_id_names_the_text_bucket() {
 #[tokio::test]
 async fn non_text_session_id_falls_through_to_litellm_metadata(#[case] id: &str) {
     let cache = FakeCache::without_redis();
-    let handler = iteration_handler(cache);
+    let handler = iteration_handler(cache.clone());
     let registry = agent_registry_with(&[LIMIT_TWO]);
     let data = json(&format!(
         r#"{{"model":"gpt-4o","metadata":{{"session_id":{id}}},"litellm_metadata":{{"session_id":"s1"}}}}"#
@@ -525,13 +517,13 @@ async fn non_text_session_id_falls_through_to_litellm_metadata(#[case] id: &str)
         .await
         .unwrap();
 
-    assert_eq!(handler.cache.memory(&memory_key("s1")), Some(1));
+    assert_eq!(cache.memory(&memory_key("s1")), Some(1));
 }
 
 #[tokio::test]
 async fn session_id_falls_back_to_litellm_metadata() {
     let cache = FakeCache::without_redis();
-    let handler = iteration_handler(cache);
+    let handler = iteration_handler(cache.clone());
     let registry = agent_registry_with(&[LIMIT_TWO]);
     let data = json(r#"{"model":"gpt-4o","litellm_metadata":{"session_id":"s1"}}"#);
 
@@ -540,13 +532,13 @@ async fn session_id_falls_back_to_litellm_metadata() {
         .await
         .unwrap();
 
-    assert_eq!(handler.cache.memory(&memory_key("s1")), Some(1));
+    assert_eq!(cache.memory(&memory_key("s1")), Some(1));
 }
 
 #[tokio::test]
 async fn session_id_metadata_wins_over_litellm_metadata() {
     let cache = FakeCache::without_redis();
-    let handler = iteration_handler(cache);
+    let handler = iteration_handler(cache.clone());
     let registry = agent_registry_with(&[LIMIT_TWO]);
     let data = json(
         r#"{"model":"gpt-4o","metadata":{"session_id":"first"},"litellm_metadata":{"session_id":"second"}}"#,
@@ -557,14 +549,14 @@ async fn session_id_metadata_wins_over_litellm_metadata() {
         .await
         .unwrap();
 
-    assert_eq!(handler.cache.memory(&memory_key("first")), Some(1));
-    assert_eq!(handler.cache.memory(&memory_key("second")), None);
+    assert_eq!(cache.memory(&memory_key("first")), Some(1));
+    assert_eq!(cache.memory(&memory_key("second")), None);
 }
 
 #[tokio::test]
 async fn text_metadata_bucket_reads_as_absent() {
     let cache = FakeCache::without_redis();
-    let handler = iteration_handler(cache);
+    let handler = iteration_handler(cache.clone());
     let registry = agent_registry_with(&[LIMIT_TWO]);
     let data = json(r#"{"model":"gpt-4o","metadata":"s1","litellm_metadata":{"session_id":"s1"}}"#);
 
@@ -573,7 +565,7 @@ async fn text_metadata_bucket_reads_as_absent() {
         .await
         .unwrap();
 
-    assert_eq!(handler.cache.memory(&memory_key("s1")), Some(1));
+    assert_eq!(cache.memory(&memory_key("s1")), Some(1));
 }
 
 #[tokio::test]
@@ -581,7 +573,7 @@ async fn script_count_wins_over_the_local_counter() {
     let cache = FakeCache::with_redis();
     cache.preload_redis(&memory_key("s1"), 4);
     cache.preload_memory(&memory_key("s1"), 1);
-    let handler = iteration_handler(cache);
+    let handler = iteration_handler(cache.clone());
     let registry = agent_registry_with(&[LIMIT_FIVE]);
     let data = session_data("s1");
 
@@ -590,17 +582,17 @@ async fn script_count_wins_over_the_local_counter() {
         .await
         .unwrap();
 
-    assert_eq!(handler.cache.redis_count(&memory_key("s1")), Some(5));
+    assert_eq!(cache.redis_count(&memory_key("s1")), Some(5));
     // the script expires only a counter it created, so a key that already existed keeps no new ttl
-    assert_eq!(handler.cache.redis_ttl(&memory_key("s1")), None);
-    assert_eq!(handler.cache.memory(&memory_key("s1")), Some(1));
+    assert_eq!(cache.redis_ttl(&memory_key("s1")), None);
+    assert_eq!(cache.memory(&memory_key("s1")), Some(1));
 }
 
 #[tokio::test]
 async fn script_count_decides_the_rejection() {
     let cache = FakeCache::with_redis();
     cache.preload_redis(&memory_key("s1"), 2);
-    let handler = iteration_handler(cache);
+    let handler = iteration_handler(cache.clone());
     let registry = agent_registry_with(&[LIMIT_TWO]);
     let data = session_data("s1");
 
@@ -612,12 +604,13 @@ async fn script_count_decides_the_rejection() {
     );
 
     assert_eq!(error.detail, Payload::String(expected_detail("s1", 3, 2)));
-    assert_eq!(handler.cache.memory(&memory_key("s1")), None);
+    assert_eq!(cache.memory(&memory_key("s1")), None);
 }
 
 #[tokio::test]
 async fn script_receives_the_configured_ttl() {
-    let handler = iteration_handler_at(FakeCache::with_redis(), Duration::from_secs(60));
+    let cache = FakeCache::with_redis();
+    let handler = iteration_handler_at(cache.clone(), Duration::from_secs(60));
     let registry = agent_registry_with(&[LIMIT_TWO]);
     let data = session_data("s1");
 
@@ -626,11 +619,62 @@ async fn script_receives_the_configured_ttl() {
         .await
         .unwrap();
 
-    assert_eq!(handler.cache.redis_count(&memory_key("s1")), Some(1));
-    assert_eq!(
-        handler.cache.redis_ttl(&memory_key("s1")),
-        Some(Duration::from_secs(60))
+    assert_eq!(cache.redis_count(&memory_key("s1")), Some(1));
+    assert_eq!(cache.redis_ttl(&memory_key("s1")), Some(60));
+}
+
+#[tokio::test]
+async fn script_reply_that_is_not_a_count_falls_back_to_memory() {
+    let cache = FakeCache::with_redis();
+    cache.set_script_mode(ScriptMode::AnswersNil);
+    cache.preload_memory(&memory_key("s1"), 1);
+    let handler = iteration_handler(cache.clone());
+    let registry = agent_registry_with(&[LIMIT_TWO]);
+    let data = session_data("s1");
+
+    handler
+        .async_pre_call_hook(&registry, None, agent_key(), &data)
+        .await
+        .unwrap();
+
+    assert_eq!(cache.memory(&memory_key("s1")), Some(2));
+}
+
+#[tokio::test]
+async fn local_count_text_is_read_like_int() {
+    let cache = FakeCache::without_redis();
+    cache.preload_memory_value(&memory_key("s1"), CacheCounterValue::Text("2".to_owned()));
+    let handler = iteration_handler(cache.clone());
+    let registry = agent_registry_with(&[LIMIT_FIVE]);
+    let data = session_data("s1");
+
+    handler
+        .async_pre_call_hook(&registry, None, agent_key(), &data)
+        .await
+        .unwrap();
+
+    assert_eq!(cache.memory(&memory_key("s1")), Some(3));
+}
+
+#[tokio::test]
+async fn local_count_that_is_not_an_integer_is_a_typed_error() {
+    let cache = FakeCache::without_redis();
+    cache.preload_memory_value(
+        &memory_key("s1"),
+        CacheCounterValue::Text("soon".to_owned()),
     );
+    let handler = iteration_handler(cache);
+    let registry = agent_registry_with(&[LIMIT_FIVE]);
+    let data = session_data("s1");
+
+    let error = handler
+        .async_pre_call_hook(&registry, None, agent_key(), &data)
+        .await
+        .unwrap_err();
+
+    let SessionIterationLimitError::LocalCount(_) = error else {
+        panic!("expected a local count that is not an integer");
+    };
 }
 
 #[tokio::test]
@@ -695,25 +739,22 @@ async fn missing_model_leaves_the_model_empty() {
 }
 
 #[test]
-fn structure_handler_with_redis_registers_the_litellm_script_once() {
-    let cache = FakeCache::with_redis();
-    let handler = iteration_handler(cache);
+fn structure_handler_with_redis_keeps_the_litellm_script() {
+    let handler = iteration_handler(FakeCache::with_redis());
 
-    assert!(handler.script.is_some());
+    let source = handler
+        .increment_script
+        .as_ref()
+        .map(|script| script.source());
+    assert_eq!(source, Some(INCREMENT_ITERATIONS_SCRIPT));
     assert_eq!(handler.ttl, Duration::from_secs(3600));
-    assert_eq!(
-        handler.cache.registered(),
-        vec![INCREMENT_ITERATIONS_SCRIPT.to_owned()]
-    );
 }
 
 #[test]
-fn structure_handler_without_redis_registers_no_script() {
-    let cache = FakeCache::without_redis();
-    let handler = iteration_handler(cache);
+fn structure_handler_without_redis_holds_no_script() {
+    let handler = iteration_handler(FakeCache::without_redis());
 
-    assert!(handler.script.is_none());
-    assert!(handler.cache.registered().is_empty());
+    assert!(handler.increment_script.is_none());
 }
 
 #[test]

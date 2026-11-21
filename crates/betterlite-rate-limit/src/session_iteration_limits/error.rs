@@ -2,6 +2,8 @@ use betterlite_error::rate_limit::InvalidRateLimitHeader;
 use betterlite_error::rate_limit::ProxyRateLimitError;
 use betterlite_error::rate_limit::ProxyRateLimitErrorInit;
 
+use crate::atomic_counter::value::CounterValueError;
+
 #[derive(Debug, thiserror::Error)]
 pub enum SessionIterationLimitError {
     #[error("{0}")]
@@ -16,6 +18,9 @@ pub enum SessionIterationLimitError {
     InvalidAgentIterations { agent_id: String },
     #[error("key metadata has a max_iterations that is not an integer")]
     InvalidKeyIterations,
+    // int() on the local count raises in LiteLLM too, and the hook passes the error up
+    #[error(transparent)]
+    LocalCount(#[from] CounterValueError),
     // a rejected request whose error could not be built: no headers are sent today, so this stays unreachable
     #[error(transparent)]
     Rejection(#[from] InvalidRateLimitHeader),

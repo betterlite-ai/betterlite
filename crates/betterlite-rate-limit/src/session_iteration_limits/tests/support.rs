@@ -1,9 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::future::{Future, ready};
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use betterlite_auth::agent_policy::AgentResponse;
@@ -16,11 +14,14 @@ use betterlite_models::decisions::Json;
 use betterlite_models::resolution::ProviderIdentity;
 use betterlite_models::resolution::ResolutionError;
 use betterlite_models::resolution::ResolvedModel;
-use thiserror::Error;
+use betterlite_redis::cache_primitives::protocol::RedisScalar;
+use betterlite_redis::redis_counters::RedisCountersError;
 
+use crate::limiter_records::{CacheCounterValue, ScriptReply};
+use crate::rate_limit_window_store::{CounterCache, CounterScript, CounterValues, RedisCacheKind};
+use crate::session_iteration_limits::INCREMENT_ITERATIONS_SCRIPT;
 use crate::session_iteration_limits::KeyIterations;
 use crate::session_iteration_limits::SessionIterationHandler;
-use crate::session_iteration_limits::cache::SessionIterationCache;
 use crate::session_iteration_limits::error::SessionIterationLimitError;
 
 pub(crate) const AGENT_ID: &str = "agent-1";
@@ -39,30 +40,36 @@ pub(crate) const NO_LIMIT: &str = r#"{"agent_id":"agent-1","agent_name":"alpha",
 pub(crate) const NO_PARAMS: &str =
     r#"{"agent_id":"agent-1","agent_name":"alpha","agent_card_params":{"model":"gpt-4o"}}"#;
 
-#[derive(Debug, Error)]
-#[error("the fake cache failed")]
-pub(crate) struct FakeFailure;
+#[derive(Clone, Copy, Default, Eq, PartialEq)]
+pub(crate) enum ScriptMode {
+    #[default]
+    Counts,
+    Fails,
+    AnswersNil,
+}
 
-pub(crate) struct FakeScript;
-
+#[derive(Clone)]
 pub(crate) struct FakeCache {
     redis: bool,
-    fails_script: AtomicBool,
-    registered: Mutex<Vec<String>>,
-    state: Mutex<FakeState>,
+    state: Arc<Mutex<FakeState>>,
+}
+
+struct FakeScript {
+    state: Arc<Mutex<FakeState>>,
 }
 
 #[derive(Default)]
 struct FakeState {
     clock: Duration,
+    script_mode: ScriptMode,
     memory: BTreeMap<String, StoredCount>,
-    memory_ttls: BTreeMap<String, Duration>,
+    memory_ttls: BTreeMap<String, i64>,
     redis: BTreeMap<String, i64>,
-    redis_ttls: BTreeMap<String, Duration>,
+    redis_ttls: BTreeMap<String, i64>,
 }
 
 struct StoredCount {
-    count: i64,
+    value: CacheCounterValue,
     expires_at: Duration,
 }
 
@@ -78,22 +85,30 @@ impl FakeCache {
     fn new(redis: bool) -> Self {
         Self {
             redis,
-            fails_script: AtomicBool::new(false),
-            registered: Mutex::new(Vec::new()),
-            state: Mutex::new(FakeState::default()),
+            state: Arc::new(Mutex::new(FakeState::default())),
         }
     }
 
-    pub(crate) fn fail_script(&self) {
-        self.fails_script.store(true, Ordering::SeqCst);
+    fn script(&self) -> Arc<dyn CounterScript> {
+        Arc::new(FakeScript {
+            state: Arc::clone(&self.state),
+        })
+    }
+
+    pub(crate) fn set_script_mode(&self, mode: ScriptMode) {
+        self.state.lock().unwrap().script_mode = mode;
     }
 
     pub(crate) fn preload_memory(&self, key: &str, count: i64) {
+        self.preload_memory_value(key, CacheCounterValue::Int(count));
+    }
+
+    pub(crate) fn preload_memory_value(&self, key: &str, value: CacheCounterValue) {
         let mut state = self.state.lock().unwrap();
         let expires_at = state.clock.saturating_add(Duration::from_secs(3600));
         state
             .memory
-            .insert(key.to_owned(), StoredCount { count, expires_at });
+            .insert(key.to_owned(), StoredCount { value, expires_at });
     }
 
     pub(crate) fn preload_redis(&self, key: &str, count: i64) {
@@ -109,13 +124,22 @@ impl FakeCache {
         state.clock = state.clock.saturating_add(by);
     }
 
-    pub(crate) fn memory(&self, key: &str) -> Option<i64> {
+    fn memory_value(&self, key: &str) -> Option<CacheCounterValue> {
         let state = self.state.lock().unwrap();
         let stored = state.memory.get(key)?;
-        (state.clock < stored.expires_at).then_some(stored.count)
+        (state.clock < stored.expires_at).then(|| stored.value.clone())
     }
 
-    pub(crate) fn memory_ttl(&self, key: &str) -> Option<Duration> {
+    pub(crate) fn memory(&self, key: &str) -> Option<i64> {
+        match self.memory_value(key)? {
+            CacheCounterValue::Int(count) => Some(count),
+            CacheCounterValue::Float(_)
+            | CacheCounterValue::Text(_)
+            | CacheCounterValue::Bytes(_) => panic!("the handler writes whole counts"),
+        }
+    }
+
+    pub(crate) fn memory_ttl(&self, key: &str) -> Option<i64> {
         self.state.lock().unwrap().memory_ttls.get(key).copied()
     }
 
@@ -127,70 +151,73 @@ impl FakeCache {
         self.state.lock().unwrap().redis.get(key).copied()
     }
 
-    pub(crate) fn redis_ttl(&self, key: &str) -> Option<Duration> {
+    pub(crate) fn redis_ttl(&self, key: &str) -> Option<i64> {
         self.state.lock().unwrap().redis_ttls.get(key).copied()
-    }
-
-    pub(crate) fn registered(&self) -> Vec<String> {
-        self.registered.lock().unwrap().clone()
     }
 }
 
-impl SessionIterationCache for FakeCache {
-    type Error = FakeFailure;
-    type Script = FakeScript;
-
-    fn redis_configured(&self) -> bool {
-        self.redis
+#[async_trait::async_trait]
+impl CounterCache for FakeCache {
+    async fn get_cache(&self, key: &str, local_only: bool) -> Option<CacheCounterValue> {
+        assert!(local_only, "the hook reads only the local counter");
+        self.memory_value(key)
     }
 
-    fn register_increment_script(&self, script: &str) -> Option<FakeScript> {
-        self.registered.lock().unwrap().push(script.to_owned());
-        Some(FakeScript)
-    }
-
-    fn run_increment_script(
-        &self,
-        _script: &FakeScript,
-        key: &str,
-        ttl: Duration,
-    ) -> impl Future<Output = Result<i64, FakeFailure>> + Send {
-        if self.fails_script.load(Ordering::SeqCst) {
-            return ready(Err(FakeFailure));
-        }
+    async fn set_cache(&self, key: &str, value: CacheCounterValue, ttl: i64, local_only: bool) {
+        assert!(local_only, "the hook writes only the local counter");
+        let lifetime = Duration::from_secs(u64::try_from(ttl).unwrap());
         let mut state = self.state.lock().unwrap();
+        let expires_at = state.clock.saturating_add(lifetime);
+        state
+            .memory
+            .insert(key.to_owned(), StoredCount { value, expires_at });
+        state.memory_ttls.insert(key.to_owned(), ttl);
+    }
+
+    async fn batch_get_cache(&self, _keys: &[String], _local_only: bool) -> Option<CounterValues> {
+        panic!("the hook reads one counter at a time")
+    }
+
+    fn redis_cache_kind(&self) -> Option<RedisCacheKind> {
+        self.redis.then_some(RedisCacheKind::Standalone)
+    }
+}
+
+#[async_trait::async_trait]
+impl CounterScript for FakeScript {
+    fn source(&self) -> &'static str {
+        INCREMENT_ITERATIONS_SCRIPT
+    }
+
+    async fn run(
+        &self,
+        keys: &[String],
+        args: &[RedisScalar],
+    ) -> Result<ScriptReply, RedisCountersError> {
+        let mut state = self.state.lock().unwrap();
+        match state.script_mode {
+            ScriptMode::Counts => {}
+            ScriptMode::Fails => {
+                return Err(RedisCountersError::UnexpectedReply {
+                    operation: "the fake increment script",
+                });
+            }
+            ScriptMode::AnswersNil => return Ok(ScriptReply::Nil),
+        }
+        let [key] = keys else {
+            panic!("the script takes one key");
+        };
+        let [RedisScalar::Text(ttl)] = args else {
+            panic!("the script takes the ttl as its one argument");
+        };
         let current = state.redis.get(key).copied().unwrap_or(0);
         let next = current.saturating_add(1);
-        state.redis.insert(key.to_owned(), next);
+        state.redis.insert(key.clone(), next);
         if next == 1 {
-            state.redis_ttls.insert(key.to_owned(), ttl);
+            state.redis_ttls.insert(key.clone(), ttl.parse().unwrap());
         }
         drop(state);
-        ready(Ok(next))
-    }
-
-    fn memory_count(&self, key: &str) -> impl Future<Output = Option<i64>> + Send {
-        ready(self.memory(key))
-    }
-
-    fn memory_set_count(
-        &self,
-        key: &str,
-        value: i64,
-        ttl: Duration,
-    ) -> impl Future<Output = ()> + Send {
-        let mut state = self.state.lock().unwrap();
-        let expires_at = state.clock.saturating_add(ttl);
-        state.memory.insert(
-            key.to_owned(),
-            StoredCount {
-                count: value,
-                expires_at,
-            },
-        );
-        state.memory_ttls.insert(key.to_owned(), ttl);
-        drop(state);
-        ready(())
+        Ok(ScriptReply::Int(next))
     }
 }
 
@@ -212,15 +239,13 @@ impl ProviderResolution for FakeResolver {
     }
 }
 
-pub(crate) fn iteration_handler(cache: FakeCache) -> SessionIterationHandler<FakeCache> {
+pub(crate) fn iteration_handler(cache: FakeCache) -> SessionIterationHandler {
     iteration_handler_at(cache, Duration::from_secs(3600))
 }
 
-pub(crate) fn iteration_handler_at(
-    cache: FakeCache,
-    ttl: Duration,
-) -> SessionIterationHandler<FakeCache> {
-    SessionIterationHandler::new(cache, ttl, Box::new(FakeResolver))
+pub(crate) fn iteration_handler_at(cache: FakeCache, ttl: Duration) -> SessionIterationHandler {
+    let script = cache.script();
+    SessionIterationHandler::new(Arc::new(cache), Some(script), ttl, Box::new(FakeResolver))
 }
 
 pub(crate) fn agent_registry_with(records: &[&str]) -> AgentRegistry {

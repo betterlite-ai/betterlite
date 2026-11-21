@@ -1,10 +1,10 @@
 mod admission;
-pub mod cache;
 pub mod error;
 mod fields;
 mod increment;
 mod tests;
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_auth::agent_registry::AgentRegistry;
@@ -13,7 +13,8 @@ use betterlite_auth::rejection_provider::ProviderResolution;
 use betterlite_db::identity_rows::Payload as KeyMetadata;
 use betterlite_models::decisions::Json;
 
-use cache::SessionIterationCache;
+use crate::rate_limit_window_store::{CounterCache, CounterScript};
+
 use error::SessionIterationLimitError;
 
 // LiteLLM's MAX_ITERATIONS_INCREMENT_SCRIPT: EXPIRE runs only when the counter did not exist before.
@@ -29,24 +30,26 @@ pub struct KeyIterations<'auth> {
     pub metadata: Option<&'auth KeyMetadata>,
 }
 
-pub struct SessionIterationHandler<C: SessionIterationCache> {
-    pub cache: C,
-    pub script: Option<C::Script>,
+pub struct SessionIterationHandler {
+    pub cache: Arc<dyn CounterCache>,
+    pub increment_script: Option<Arc<dyn CounterScript>>,
     pub ttl: Duration,
     pub resolver: Box<dyn ProviderResolution>,
 }
 
-impl<C: SessionIterationCache> SessionIterationHandler<C> {
-    // __init__: the Lua script is registered once, and only a configured Redis cache can hold it.
+impl SessionIterationHandler {
+    // __init__: the script registered from INCREMENT_ITERATIONS_SCRIPT is kept only while the cache has Redis.
     #[must_use]
-    pub fn new(cache: C, ttl: Duration, resolver: Box<dyn ProviderResolution>) -> Self {
-        let script = cache
-            .redis_configured()
-            .then(|| cache.register_increment_script(INCREMENT_ITERATIONS_SCRIPT))
-            .flatten();
+    pub fn new(
+        cache: Arc<dyn CounterCache>,
+        registered_script: Option<Arc<dyn CounterScript>>,
+        ttl: Duration,
+        resolver: Box<dyn ProviderResolution>,
+    ) -> Self {
+        let increment_script = registered_script.filter(|_| cache.redis_cache_kind().is_some());
         Self {
             cache,
-            script,
+            increment_script,
             ttl,
             resolver,
         }
@@ -66,7 +69,7 @@ impl<C: SessionIterationCache> SessionIterationHandler<C> {
         let Some(max_iterations) = admission::max_iterations_for(registry, key)? else {
             return Ok(());
         };
-        let current_count = increment::count_after_increment(self, &session_id).await;
+        let current_count = increment::count_after_increment(self, &session_id).await?;
         if current_count <= max_iterations {
             return Ok(());
         }

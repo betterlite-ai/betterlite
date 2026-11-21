@@ -1,27 +1,33 @@
 use std::collections::BTreeMap;
-use std::future::{Future, ready};
-use std::io;
-use std::sync::Mutex;
-use std::sync::PoisonError;
-use std::time::Duration;
+use std::sync::{Arc, Mutex, PoisonError};
 
-use betterlite_rate_limit::session_iteration_limits::cache::SessionIterationCache;
+use betterlite_rate_limit::limiter_records::{CacheCounterValue, ScriptReply};
+use betterlite_rate_limit::rate_limit_window_store::{
+    CounterCache, CounterScript, CounterValues, RedisCacheKind,
+};
+use betterlite_rate_limit::session_iteration_limits::INCREMENT_ITERATIONS_SCRIPT;
+use betterlite_redis::cache_primitives::protocol::RedisScalar;
+use betterlite_redis::redis_counters::RedisCountersError;
 
 use super::input::RedisMode;
 
+#[derive(Clone)]
 pub(super) struct FakeCache {
     mode: RedisMode,
-    memory: Mutex<BTreeMap<String, i64>>,
-    memory_ttls: Mutex<BTreeMap<String, u64>>,
-    redis: Mutex<BTreeMap<String, i64>>,
-    redis_ttls: Mutex<BTreeMap<String, u64>>,
+    state: Arc<Mutex<Snapshot>>,
 }
 
+struct FakeScript {
+    mode: RedisMode,
+    state: Arc<Mutex<Snapshot>>,
+}
+
+#[derive(Clone)]
 pub(super) struct Snapshot {
     pub(super) memory: BTreeMap<String, i64>,
-    pub(super) memory_ttls: BTreeMap<String, u64>,
+    pub(super) memory_ttls: BTreeMap<String, i64>,
     pub(super) redis: BTreeMap<String, i64>,
-    pub(super) redis_ttls: BTreeMap<String, u64>,
+    pub(super) redis_ttls: BTreeMap<String, i64>,
 }
 
 impl FakeCache {
@@ -32,99 +38,89 @@ impl FakeCache {
     ) -> Self {
         Self {
             mode,
-            memory: Mutex::new(memory.clone()),
-            memory_ttls: Mutex::new(BTreeMap::new()),
-            redis: Mutex::new(redis_values.clone()),
-            redis_ttls: Mutex::new(BTreeMap::new()),
+            state: Arc::new(Mutex::new(Snapshot {
+                memory: memory.clone(),
+                memory_ttls: BTreeMap::new(),
+                redis: redis_values.clone(),
+                redis_ttls: BTreeMap::new(),
+            })),
         }
+    }
+
+    pub(super) fn script(&self) -> Arc<dyn CounterScript> {
+        Arc::new(FakeScript {
+            mode: self.mode,
+            state: Arc::clone(&self.state),
+        })
     }
 
     pub(super) fn snapshot(&self) -> Snapshot {
-        Snapshot {
-            memory: self
-                .memory
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .clone(),
-            memory_ttls: self
-                .memory_ttls
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .clone(),
-            redis: self
-                .redis
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .clone(),
-            redis_ttls: self
-                .redis_ttls
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .clone(),
-        }
-    }
-
-    fn increment(&self, key: &str, ttl: Duration) -> i64 {
-        let mut counts = self.redis.lock().unwrap_or_else(PoisonError::into_inner);
-        let current = counts.get(key).copied().unwrap_or(0);
-        let next = current.saturating_add(1);
-        counts.insert(key.to_owned(), next);
-        drop(counts);
-        if next == 1 {
-            self.redis_ttls
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .insert(key.to_owned(), ttl.as_secs());
-        }
-        next
+        self.state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 }
 
-impl SessionIterationCache for FakeCache {
-    type Error = io::Error;
-    type Script = ();
-
-    fn redis_configured(&self) -> bool {
-        self.mode != RedisMode::Absent
+#[async_trait::async_trait]
+impl CounterCache for FakeCache {
+    async fn get_cache(&self, key: &str, _local_only: bool) -> Option<CacheCounterValue> {
+        let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        state.memory.get(key).copied().map(CacheCounterValue::Int)
     }
 
-    fn register_increment_script(&self, _script: &str) -> Option<()> {
-        Some(())
+    async fn set_cache(&self, key: &str, value: CacheCounterValue, ttl: i64, _local_only: bool) {
+        let count = match value {
+            CacheCounterValue::Int(count) => count,
+            CacheCounterValue::Float(_)
+            | CacheCounterValue::Text(_)
+            | CacheCounterValue::Bytes(_) => return,
+        };
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        state.memory.insert(key.to_owned(), count);
+        state.memory_ttls.insert(key.to_owned(), ttl);
     }
 
-    fn run_increment_script(
-        &self,
-        _script: &(),
-        key: &str,
-        ttl: Duration,
-    ) -> impl Future<Output = Result<i64, io::Error>> + Send {
-        if self.mode == RedisMode::ScriptFails {
-            return ready(Err(io::Error::other("the fake Redis script failed")));
+    async fn batch_get_cache(&self, _keys: &[String], _local_only: bool) -> Option<CounterValues> {
+        None
+    }
+
+    fn redis_cache_kind(&self) -> Option<RedisCacheKind> {
+        match self.mode {
+            RedisMode::Absent => None,
+            RedisMode::Healthy | RedisMode::ScriptFails => Some(RedisCacheKind::Standalone),
         }
-        ready(Ok(self.increment(key, ttl)))
+    }
+}
+
+#[async_trait::async_trait]
+impl CounterScript for FakeScript {
+    fn source(&self) -> &'static str {
+        INCREMENT_ITERATIONS_SCRIPT
     }
 
-    fn memory_count(&self, key: &str) -> impl Future<Output = Option<i64>> + Send {
-        let guard = self.memory.lock().unwrap_or_else(PoisonError::into_inner);
-        let stored = guard.get(key).copied();
-        drop(guard);
-        ready(stored)
-    }
-
-    fn memory_set_count(
+    async fn run(
         &self,
-        key: &str,
-        value: i64,
-        ttl: Duration,
-    ) -> impl Future<Output = ()> + Send {
-        self.memory
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .insert(key.to_owned(), value);
-        self.memory_ttls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .insert(key.to_owned(), ttl.as_secs());
-        ready(())
+        keys: &[String],
+        args: &[RedisScalar],
+    ) -> Result<ScriptReply, RedisCountersError> {
+        let unexpected = RedisCountersError::UnexpectedReply {
+            operation: "the fake increment script",
+        };
+        let (RedisMode::Healthy, [key], [RedisScalar::Text(ttl_text)]) = (self.mode, keys, args)
+        else {
+            return Err(unexpected);
+        };
+        let Ok(ttl) = ttl_text.parse::<i64>() else {
+            return Err(unexpected);
+        };
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let next = state.redis.get(key).copied().unwrap_or(0).saturating_add(1);
+        state.redis.insert(key.clone(), next);
+        if next == 1 {
+            state.redis_ttls.insert(key.clone(), ttl);
+        }
+        drop(state);
+        Ok(ScriptReply::Int(next))
     }
 }
