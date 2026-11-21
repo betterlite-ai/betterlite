@@ -168,6 +168,15 @@ async fn get_submissions_literal_path_beats_the_id_route() {
     assert_eq!(other.1, PLACEHOLDER);
 }
 
+#[test]
+fn clock_answers_the_current_time() {
+    let before = Utc::now();
+    let answered = SystemClock.now();
+    let after = Utc::now();
+    assert!(answered >= before);
+    assert!(answered <= after);
+}
+
 #[tokio::test]
 async fn teams_answer_the_users_teams() {
     let teams = FakeTeams::default();

@@ -48,7 +48,7 @@ use super::rows::{
     ColumnJson, NewSubmission, SubmissionRow, SubmissionRows, SubmissionRowsError, TeamFilter,
 };
 use super::teams::{Caller, user_team_ids};
-use super::{Clock, SubmissionsState};
+use super::{Clock, SubmissionsState, SystemClock};
 
 include!("tests/harness.rs");
 include!("tests/item.rs");

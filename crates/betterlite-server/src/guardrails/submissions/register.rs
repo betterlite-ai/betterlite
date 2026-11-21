@@ -125,23 +125,11 @@ fn validate_params(params: &BTreeMap<String, GuardrailValue>) -> Result<(), Subm
     Ok(())
 }
 
-// urlparse's scheme: an ASCII letter, then letters, digits, '+', '-' or '.', before the colon
+// urlparse's scheme: the text before the first colon, which only http and https may be
 fn scheme_of(api_base: &str) -> &str {
-    let Some((scheme, _rest)) = api_base.split_once(':') else {
-        return "";
-    };
-    let mut characters = scheme.chars();
-    let starts_right = characters
-        .next()
-        .is_some_and(|first| first.is_ascii_alphabetic());
-    if starts_right
-        && characters.all(|value| {
-            value.is_ascii_alphanumeric() || value == '+' || value == '-' || value == '.'
-        })
-    {
-        return scheme;
-    }
-    ""
+    api_base
+        .split_once(':')
+        .map_or("", |(scheme, _rest)| scheme)
 }
 
 async fn submit<S: SubmissionRows>(

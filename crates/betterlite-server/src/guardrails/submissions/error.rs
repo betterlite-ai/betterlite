@@ -161,7 +161,7 @@ impl RegisterBodyError {
         append_path(&mut loc, source.path());
         if let Some(field) = missing_field(&message) {
             loc.push(Location::Field(field.to_owned()));
-            let input = value_at(bytes, parent_of(&loc));
+            let input = value_at(bytes, &body_location());
             return Self {
                 issue_type: "missing",
                 loc,
@@ -209,13 +209,6 @@ fn append_path(loc: &mut Vec<Location>, path: &Path) {
             Segment::Enum { variant } => loc.push(Location::Field(variant.clone())),
             Segment::Unknown => {}
         }
-    }
-}
-
-const fn parent_of(loc: &[Location]) -> &[Location] {
-    match loc.split_last() {
-        Some((_last, parent)) => parent,
-        None => loc,
     }
 }
 
