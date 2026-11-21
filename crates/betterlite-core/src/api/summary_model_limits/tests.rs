@@ -6,9 +6,9 @@ mod support;
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 
+use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_db::budget_permission_rows::JsonData;
 use rstest::rstest;
-use serde_json::json;
 use tracing::subscriber::set_default;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::registry;
@@ -25,19 +25,23 @@ use support::{
 
 const MODEL: &str = "sum";
 
-fn every_scope() -> serde_json::Value {
-    json!({
-        "token": "key-1",
-        "key_alias": "alias-1",
-        "model_max_budget": {"sum": {"budget_limit": 1.0, "time_period": "1d"}},
-        "user_id": "user-1",
-        "user_model_max_budget": {"sum": {"budget_limit": 1.0, "time_period": "1d"}},
-        "team_id": "team-1",
-        "team_model_max_budget": {"sum": {"budget_limit": 1.0, "time_period": "1d"}},
-        "end_user_id": "end-1",
-        "end_user_model_max_budget": {"sum": {"budget_limit": 1.0, "time_period": "1d"}},
-    })
-}
+const EVERY_SCOPE: &str = r#"{
+    "token": "key-1",
+    "key_alias": "alias-1",
+    "model_max_budget": {"sum": {"budget_limit": 1.0, "time_period": "1d"}},
+    "user_id": "user-1",
+    "user_model_max_budget": {"sum": {"budget_limit": 1.0, "time_period": "1d"}},
+    "team_id": "team-1",
+    "team_model_max_budget": {"sum": {"budget_limit": 1.0, "time_period": "1d"}},
+    "end_user_id": "end-1",
+    "end_user_model_max_budget": {"sum": {"budget_limit": 1.0, "time_period": "1d"}}
+}"#;
+
+const RATE_PRINCIPAL: &str = r#"{
+    "token": "key-1",
+    "metadata": {"rpm_limit_type": "dynamic", "tpm_limit_type": "guaranteed_throughput"},
+    "parent_otel_span": {"span": "parent"}
+}"#;
 
 fn call(scope: &'static str, id: &str) -> BudgetCall {
     BudgetCall {
@@ -61,7 +65,7 @@ fn proxy_with(limiter: Option<FakeLimiter>) -> FakeHooks {
 #[tokio::test]
 async fn budget_scope_arguments_check_key_user_team_then_end_user() {
     let budgets = FakeBudgets::default();
-    let auth = principal(every_scope());
+    let auth = principal(EVERY_SCOPE);
     let allowed = summary_model_within_budget(Some(&auth), Some(&budgets), MODEL).await;
     assert!(allowed.unwrap());
     let expected = vec![
@@ -76,16 +80,18 @@ async fn budget_scope_arguments_check_key_user_team_then_end_user() {
 #[tokio::test]
 async fn budget_scope_arguments_skip_empty_budgets_and_null_ids() {
     let budgets = FakeBudgets::default();
-    let auth = principal(json!({
-        "token": null,
-        "model_max_budget": {"sum": {"budget_limit": 1.0}},
-        "user_id": "user-1",
-        "user_model_max_budget": {},
-        "team_id": null,
-        "team_model_max_budget": {"sum": {"budget_limit": 1.0}},
-        "end_user_id": "end-1",
-        "end_user_model_max_budget": {},
-    }));
+    let auth = principal(
+        r#"{
+            "token": null,
+            "model_max_budget": {"sum": {"budget_limit": 1.0}},
+            "user_id": "user-1",
+            "user_model_max_budget": {},
+            "team_id": null,
+            "team_model_max_budget": {"sum": {"budget_limit": 1.0}},
+            "end_user_id": "end-1",
+            "end_user_model_max_budget": {}
+        }"#,
+    );
     let allowed = summary_model_within_budget(Some(&auth), Some(&budgets), MODEL).await;
     assert!(allowed.unwrap());
     assert_eq!(budgets.calls(), Vec::new());
@@ -94,12 +100,11 @@ async fn budget_scope_arguments_skip_empty_budgets_and_null_ids() {
 #[tokio::test]
 async fn budget_scope_arguments_check_empty_string_ids() {
     let budgets = FakeBudgets::default();
-    let mut fields = every_scope();
-    fields["token"] = json!("");
-    fields["user_id"] = json!("");
-    fields["team_id"] = json!("");
-    fields["end_user_id"] = json!("");
-    let auth = principal(fields);
+    let mut fields: BTreeMap<String, JsonData> = serde_json::from_str(EVERY_SCOPE).unwrap();
+    for id in ["token", "user_id", "team_id", "end_user_id"] {
+        fields.insert(id.to_owned(), JsonData::String(String::new()));
+    }
+    let auth = UserAPIKeyAuth::construct(AuthInput::Dict(fields)).unwrap();
     let allowed = summary_model_within_budget(Some(&auth), Some(&budgets), MODEL).await;
     assert!(allowed.unwrap());
     let ids: Vec<String> = budgets.calls().into_iter().map(|call| call.id).collect();
@@ -109,9 +114,12 @@ async fn budget_scope_arguments_check_empty_string_ids() {
 #[tokio::test]
 async fn budget_scope_arguments_pass_an_empty_key_budget_to_the_team() {
     let budgets = FakeBudgets::default();
-    let mut fields = every_scope();
-    fields["model_max_budget"] = json!({});
-    let auth = principal(fields);
+    let mut fields: BTreeMap<String, JsonData> = serde_json::from_str(EVERY_SCOPE).unwrap();
+    fields.insert(
+        "model_max_budget".to_owned(),
+        JsonData::Object(BTreeMap::new()),
+    );
+    let auth = UserAPIKeyAuth::construct(AuthInput::Dict(fields)).unwrap();
     let allowed = summary_model_within_budget(Some(&auth), Some(&budgets), MODEL).await;
     assert!(allowed.unwrap());
     let team = budgets
@@ -126,7 +134,7 @@ async fn budget_scope_arguments_allow_without_a_principal_or_a_limiter() {
     let budgets = FakeBudgets::default();
     let without_principal = summary_model_within_budget(None, Some(&budgets), MODEL).await;
     assert!(without_principal.unwrap());
-    let auth = principal(every_scope());
+    let auth = principal(EVERY_SCOPE);
     let without_limiter =
         summary_model_within_budget::<FakeBudgets>(Some(&auth), None, MODEL).await;
     assert!(without_limiter.unwrap());
@@ -150,7 +158,7 @@ async fn budget_errors_stop_later_scopes(
         failing: Some((scope, verdict)),
         calls: Mutex::new(Vec::new()),
     };
-    let auth = principal(every_scope());
+    let auth = principal(EVERY_SCOPE);
     let allowed = summary_model_within_budget(Some(&auth), Some(&budgets), MODEL).await;
     assert!(!allowed.unwrap());
     assert_eq!(budgets.calls().len(), reached);
@@ -163,19 +171,11 @@ async fn budget_errors_stop_later_scopes(
     assert_eq!(warnings.lines(), expected);
 }
 
-fn rate_principal() -> serde_json::Value {
-    json!({
-        "token": "key-1",
-        "metadata": {"rpm_limit_type": "dynamic", "tpm_limit_type": "guaranteed_throughput"},
-        "parent_otel_span": {"span": "parent"},
-    })
-}
-
 fn gauged(key: &str) -> SummaryDescriptor {
     descriptor(
         key,
         Some(
-            json!({"requests_per_unit": 10, "tokens_per_unit": 20, "max_parallel_requests": 1, "window_size": 60}),
+            r#"{"requests_per_unit": 10, "tokens_per_unit": 20, "max_parallel_requests": 1, "window_size": 60}"#,
         ),
     )
 }
@@ -183,8 +183,17 @@ fn gauged(key: &str) -> SummaryDescriptor {
 fn ungauged(key: &str) -> SummaryDescriptor {
     descriptor(
         key,
-        Some(json!({"requests_per_unit": 10, "tokens_per_unit": 20, "window_size": 60})),
+        Some(r#"{"requests_per_unit": 10, "tokens_per_unit": 20, "window_size": 60}"#),
     )
+}
+
+fn add(scope: DescriptorScope, seen: Vec<SummaryDescriptor>) -> LimiterCall {
+    LimiterCall::Add {
+        scope,
+        token: Some("key-1".to_owned()),
+        model: MODEL.to_owned(),
+        seen,
+    }
 }
 
 fn limiter_with(base: Vec<SummaryDescriptor>, overall_code: &str) -> FakeLimiter {
@@ -200,7 +209,7 @@ fn limiter_with(base: Vec<SummaryDescriptor>, overall_code: &str) -> FakeLimiter
     }
 }
 
-async fn rate_check(hooks: &FakeHooks, fields: serde_json::Value) -> bool {
+async fn rate_check(hooks: &FakeHooks, fields: &str) -> bool {
     let auth = principal(fields);
     summary_within_rate_limit(Some(&auth), Some(hooks), MODEL)
         .await
@@ -210,42 +219,28 @@ async fn rate_check(hooks: &FakeHooks, fields: serde_json::Value) -> bool {
 #[tokio::test]
 async fn rate_descriptor_order_builds_then_appends_team_project_and_organization() {
     let hooks = proxy_with(Some(limiter_with(vec![gauged("api_key")], "OK")));
-    assert!(rate_check(&hooks, rate_principal()).await);
+    assert!(rate_check(&hooks, RATE_PRINCIPAL).await);
     assert_eq!(
         *hooks.requested.lock().unwrap(),
         vec![PARALLEL_REQUEST_LIMITER.to_owned()]
     );
-    let token = Some("key-1".to_owned());
+    let built = vec![
+        gauged("api_key"),
+        gauged("model_per_team"),
+        gauged("model_per_project"),
+    ];
+    let span: JsonData = serde_json::from_str(r#"{"span": "parent"}"#).unwrap();
     let expected = vec![
         LimiterCall::Create {
-            token: token.clone(),
+            token: Some("key-1".to_owned()),
             model: MODEL.to_owned(),
             rpm_limit_type: Some(JsonData::String("dynamic".to_owned())),
             tpm_limit_type: Some(JsonData::String("guaranteed_throughput".to_owned())),
             model_has_failures: false,
         },
-        LimiterCall::Add {
-            scope: DescriptorScope::Team,
-            token: token.clone(),
-            model: MODEL.to_owned(),
-            seen: vec![gauged("api_key")],
-        },
-        LimiterCall::Add {
-            scope: DescriptorScope::Project,
-            token: token.clone(),
-            model: MODEL.to_owned(),
-            seen: vec![gauged("api_key"), gauged("model_per_team")],
-        },
-        LimiterCall::Add {
-            scope: DescriptorScope::Organization,
-            token,
-            model: MODEL.to_owned(),
-            seen: vec![
-                gauged("api_key"),
-                gauged("model_per_team"),
-                gauged("model_per_project"),
-            ],
-        },
+        add(DescriptorScope::Team, built[..1].to_vec()),
+        add(DescriptorScope::Project, built[..2].to_vec()),
+        add(DescriptorScope::Organization, built),
         LimiterCall::Check {
             descriptors: vec![
                 ungauged("api_key"),
@@ -253,10 +248,7 @@ async fn rate_descriptor_order_builds_then_appends_team_project_and_organization
                 ungauged("model_per_project"),
                 ungauged("organization"),
             ],
-            parent_otel_span: Some(JsonData::Object(BTreeMap::from([(
-                "span".to_owned(),
-                JsonData::String("parent".to_owned()),
-            )]))),
+            parent_otel_span: Some(span),
             read_only: true,
         },
     ];
@@ -270,7 +262,7 @@ async fn rate_descriptor_order_allows_empty_descriptors_without_a_check() {
     limiter.project.clear();
     limiter.organization.clear();
     let hooks = proxy_with(Some(limiter));
-    assert!(rate_check(&hooks, rate_principal()).await);
+    assert!(rate_check(&hooks, RATE_PRINCIPAL).await);
     let calls = hooks.limiter.unwrap().calls();
     assert_eq!(calls.len(), 4);
     assert!(
@@ -284,13 +276,16 @@ async fn rate_descriptor_order_allows_empty_descriptors_without_a_check() {
 #[case::missing_rate_limit(descriptor("plain", None), descriptor("plain", None))]
 #[case::null_gauge(ungauged("api_key"), ungauged("api_key"))]
 #[case::zero_gauge(
-    descriptor("api_key", Some(json!({"requests_per_unit": 5, "max_parallel_requests": 0}))),
-    descriptor("api_key", Some(json!({"requests_per_unit": 5})))
+    descriptor(
+        "api_key",
+        Some(r#"{"requests_per_unit": 5, "max_parallel_requests": 0}"#)
+    ),
+    descriptor("api_key", Some(r#"{"requests_per_unit": 5}"#))
 )]
 #[case::one_gauge(gauged("api_key"), ungauged("api_key"))]
 #[case::only_a_gauge(
-    descriptor("api_key", Some(json!({"max_parallel_requests": 3}))),
-    descriptor("api_key", Some(json!({})))
+    descriptor("api_key", Some(r#"{"max_parallel_requests": 3}"#)),
+    descriptor("api_key", Some("{}"))
 )]
 #[tokio::test]
 async fn parallel_gauge_filter(
@@ -299,7 +294,7 @@ async fn parallel_gauge_filter(
 ) {
     let limiter = limiter_with(vec![built.clone(), descriptor("second", None)], "OK");
     let hooks = proxy_with(Some(limiter));
-    assert!(rate_check(&hooks, rate_principal()).await);
+    assert!(rate_check(&hooks, RATE_PRINCIPAL).await);
     let calls = hooks.limiter.unwrap().calls();
     let Some(LimiterCall::Add {
         scope: DescriptorScope::Project,
@@ -334,13 +329,13 @@ async fn unavailable_rate_capabilities_allow_without_calls(#[case] missing: Limi
     let mut limiter = limiter_with(vec![gauged("api_key")], "OVER_LIMIT");
     limiter.missing = vec![missing];
     let hooks = proxy_with(Some(limiter));
-    assert!(rate_check(&hooks, rate_principal()).await);
+    assert!(rate_check(&hooks, RATE_PRINCIPAL).await);
     assert_eq!(hooks.limiter.unwrap().calls(), Vec::new());
 }
 
 #[tokio::test]
 async fn unavailable_rate_capabilities_allow_without_principal_proxy_or_hook() {
-    let auth = principal(rate_principal());
+    let auth = principal(RATE_PRINCIPAL);
     let registered = proxy_with(Some(limiter_with(vec![gauged("api_key")], "OVER_LIMIT")));
     let without_principal = summary_within_rate_limit(None, Some(&registered), MODEL).await;
     assert!(without_principal.unwrap());
@@ -348,7 +343,7 @@ async fn unavailable_rate_capabilities_allow_without_principal_proxy_or_hook() {
     let without_proxy = summary_within_rate_limit::<FakeHooks>(Some(&auth), None, MODEL).await;
     assert!(without_proxy.unwrap());
     let unregistered = proxy_with(None);
-    assert!(rate_check(&unregistered, rate_principal()).await);
+    assert!(rate_check(&unregistered, RATE_PRINCIPAL).await);
     assert_eq!(unregistered.requested.lock().unwrap().len(), 1);
     assert_eq!(registered.limiter.unwrap().calls(), Vec::new());
 }
@@ -356,7 +351,7 @@ async fn unavailable_rate_capabilities_allow_without_principal_proxy_or_hook() {
 #[tokio::test]
 async fn unavailable_rate_capabilities_read_a_missing_metadata_map_as_empty() {
     let hooks = proxy_with(Some(limiter_with(vec![gauged("api_key")], "OK")));
-    assert!(rate_check(&hooks, json!({"token": "key-1"})).await);
+    assert!(rate_check(&hooks, r#"{"token": "key-1"}"#).await);
     let calls = hooks.limiter.unwrap().calls();
     let Some(LimiterCall::Create {
         rpm_limit_type,
@@ -373,7 +368,7 @@ async fn unavailable_rate_capabilities_read_a_missing_metadata_map_as_empty() {
 async fn unavailable_rate_capabilities_propagate_a_hook_lookup_failure() {
     let mut registered = proxy_with(Some(limiter_with(vec![gauged("api_key")], "OK")));
     registered.raises = true;
-    let auth = principal(rate_principal());
+    let auth = principal(RATE_PRINCIPAL);
     let failed = summary_within_rate_limit(Some(&auth), Some(&registered), MODEL).await;
     assert_eq!(
         failed.unwrap_err().to_string(),
@@ -395,7 +390,7 @@ async fn rate_denial_and_failures_deny_only_over_limit(
     let mut limiter = limiter_with(vec![gauged("api_key")], "OK");
     limiter.overall_code = overall_code.map(str::to_owned);
     let hooks = proxy_with(Some(limiter));
-    assert_eq!(rate_check(&hooks, rate_principal()).await, allowed);
+    assert_eq!(rate_check(&hooks, RATE_PRINCIPAL).await, allowed);
 }
 
 #[rstest]
@@ -418,7 +413,7 @@ async fn rate_denial_and_failures(
     let mut limiter = limiter_with(vec![gauged("api_key")], "OVER_LIMIT");
     limiter.failure = Some((stage, failure));
     let hooks = proxy_with(Some(limiter));
-    assert_eq!(rate_check(&hooks, rate_principal()).await, allowed);
+    assert_eq!(rate_check(&hooks, RATE_PRINCIPAL).await, allowed);
     assert_eq!(hooks.limiter.unwrap().calls().len(), reached);
     let expected = match failure {
         RateFailure::Unverifiable => {

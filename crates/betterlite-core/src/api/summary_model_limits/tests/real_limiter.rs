@@ -12,7 +12,6 @@ use betterlite_auth::model_budget_values::spend_reads::CachedSpend;
 use chrono::{DateTime, Utc};
 use rstest::rstest;
 use rust_decimal::Decimal;
-use serde_json::json;
 
 use super::super::budget::summary_model_within_budget;
 use super::support::principal;
@@ -116,10 +115,9 @@ async fn budget_scope_arguments_reach_the_shared_model_budget_limiter(
         clock: Box::new(LongUptime),
         budget_exceeded_status: 429,
     };
-    let auth = principal(json!({
-        "token": "key-1",
-        "model_max_budget": {"sum": {"budget_limit": 1.0, "time_period": "1d"}},
-    }));
+    let auth = principal(
+        r#"{"token": "key-1", "model_max_budget": {"sum": {"budget_limit": 1.0, "time_period": "1d"}}}"#,
+    );
     let checked = summary_model_within_budget(Some(&auth), Some(&limiter), "sum").await;
     assert_eq!(checked.unwrap(), allowed);
     assert_eq!(*limiter.cache.reads.lock().unwrap(), vec![key]);

@@ -22,14 +22,14 @@ use crate::api::summary_model_limits::rate::{
     SummaryDescriptor, SummaryRateLimiter,
 };
 
-pub(super) fn principal(fields: serde_json::Value) -> UserAPIKeyAuth {
-    let map: BTreeMap<String, JsonData> = serde_json::from_value(fields).unwrap();
+pub(super) fn principal(text: &str) -> UserAPIKeyAuth {
+    let map: BTreeMap<String, JsonData> = serde_json::from_str(text).unwrap();
     UserAPIKeyAuth::construct(AuthInput::Dict(map)).unwrap()
 }
 
 pub(super) fn budget(model: &str) -> BudgetMap {
-    let limit = serde_json::json!({"budget_limit": 1.0, "time_period": "1d"});
-    BTreeMap::from([(model.to_owned(), serde_json::from_value(limit).unwrap())])
+    let limit = serde_json::from_str(r#"{"budget_limit": 1.0, "time_period": "1d"}"#).unwrap();
+    BTreeMap::from([(model.to_owned(), limit)])
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -119,11 +119,11 @@ fn verdict_error(verdict: Verdict) -> ErrorClass {
     }
 }
 
-pub(super) fn descriptor(key: &str, limits: Option<serde_json::Value>) -> SummaryDescriptor {
+pub(super) fn descriptor(key: &str, limits: Option<&str>) -> SummaryDescriptor {
     SummaryDescriptor {
         key: key.to_owned(),
         value: format!("{key}-value"),
-        rate_limit: limits.map(|raw| serde_json::from_value(raw).unwrap()),
+        rate_limit: limits.map(|raw| serde_json::from_str(raw).unwrap()),
     }
 }
 
@@ -186,7 +186,10 @@ impl FakeLimiter {
     }
 
     fn record(&self, stage: Stage, call: LimiterCall) -> Result<(), LimiterFailure<Offline>> {
-        self.calls.lock().unwrap().push(call);
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(call);
         match self.failure {
             Some((failing, RateFailure::Unverifiable)) if failing == stage => {
                 Err(LimiterFailure::Unverifiable {
@@ -292,7 +295,10 @@ impl ProxyHooks for FakeHooks {
     type Error = HooksOffline;
 
     fn get_proxy_hook(&self, hook: &str) -> Result<Option<&FakeLimiter>, HooksOffline> {
-        self.requested.lock().unwrap().push(hook.to_owned());
+        self.requested
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(hook.to_owned());
         if self.raises {
             return Err(HooksOffline);
         }

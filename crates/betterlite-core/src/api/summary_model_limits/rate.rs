@@ -118,10 +118,10 @@ pub async fn summary_within_rate_limit<Hooks>(
 where
     Hooks: ProxyHooks,
 {
-    let (Some(principal), Some(hooks)) = (principal, hooks) else {
+    let (Some(auth), Some(proxy)) = (principal, hooks) else {
         return Ok(true);
     };
-    let found = hooks
+    let found = proxy
         .get_proxy_hook(PARALLEL_REQUEST_LIMITER)
         .map_err(SummaryLimitsError::Hook)?;
     let Some(limiter) = found.filter(|limiter| {
@@ -131,10 +131,10 @@ where
     }) else {
         return Ok(true);
     };
-    let fields: LimitFields = serde_json::to_value(principal)
+    let fields: LimitFields = serde_json::to_value(auth)
         .and_then(serde_json::from_value)
         .map_err(SummaryLimitsError::Principal)?;
-    match read_only_check(principal, &fields, limiter, summary_model).await {
+    match read_only_check(auth, &fields, limiter, summary_model).await {
         Ok(allowed) => Ok(allowed),
         Err(LimiterFailure::Unverifiable { detail }) => {
             tracing::warn!(
