@@ -30,16 +30,16 @@ where
         .base
         .filter_new_texts_for_session(texts, invocation.api.request_data, invocation.cache)
         .await;
-    let Some(new_texts) = new_texts else {
+    let Some(fresh_texts) = new_texts else {
         return Ok(None);
     };
-    if new_texts.is_empty() {
+    if fresh_texts.is_empty() {
         tracing::debug!(
             "Bedrock Guardrail: no new messages to scan for this session, skipping API call"
         );
         return Ok(Some(inputs.clone()));
     }
-    let scanned = scan_new_texts(invocation, &new_texts, credentials, transport).await?;
+    let scanned = scan_new_texts(invocation, &fresh_texts, credentials, transport).await?;
     if response_has_masked_output(&scanned) {
         tracing::warn!(
             "Bedrock Guardrail {}: guardrail returned masked/anonymized content; only_scan_new_messages cannot apply masking to skipped context, falling back to a full-context scan",
@@ -54,12 +54,11 @@ where
         return Ok(None);
     }
     let base = invocation.api.base;
-    let scanned_ttl = invocation.cache_ttl_seconds;
     base.mark_texts_scanned(
         texts,
         invocation.api.request_data,
         invocation.cache,
-        scanned_ttl,
+        invocation.cache_ttl_seconds,
     )
     .await;
     Ok(Some(inputs.clone()))

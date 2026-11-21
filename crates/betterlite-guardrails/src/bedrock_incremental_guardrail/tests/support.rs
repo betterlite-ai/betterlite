@@ -230,10 +230,11 @@ fn build(disable_exception_on_block: bool) -> BedrockGuardrail {
 }
 
 pub(super) fn base() -> GuardrailBase {
-    let mut settings = GuardrailSettings::default();
-    settings.guardrail_name = Some(GUARDRAIL_NAME.to_owned());
     GuardrailBase {
-        settings,
+        settings: GuardrailSettings {
+            guardrail_name: Some(GUARDRAIL_NAME.to_owned()),
+            ..GuardrailSettings::default()
+        },
         mode: None,
     }
 }
@@ -398,9 +399,10 @@ pub(super) fn strings(values: &[&str]) -> Vec<String> {
 }
 
 pub(super) fn inputs(values: &[&str]) -> GuardrailApiInputs {
-    let mut inputs = GuardrailApiInputs::default();
-    inputs.texts = Some(strings(values));
-    inputs
+    GuardrailApiInputs {
+        texts: Some(strings(values)),
+        ..GuardrailApiInputs::default()
+    }
 }
 
 pub(super) fn texts_of(inputs: &GuardrailApiInputs) -> Vec<String> {

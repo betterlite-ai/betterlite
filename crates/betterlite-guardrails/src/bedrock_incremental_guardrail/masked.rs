@@ -16,9 +16,8 @@ pub fn response_has_masked_output(response: &Response) -> bool {
 #[must_use]
 pub fn masked_texts(response: &Response) -> Vec<String> {
     let preferred = response.output.as_deref().filter(|items| !items.is_empty());
-    let items = preferred
-        .or_else(|| response.outputs.as_deref())
-        .unwrap_or_default();
+    let fallback = response.outputs.as_deref().unwrap_or_default();
+    let items = preferred.unwrap_or(fallback);
     items
         .iter()
         .filter_map(|item| item.text.as_deref())
