@@ -7,9 +7,9 @@ mod models_cases;
 mod session_cases;
 
 use std::fs;
-use std::net::TcpListener;
 use std::path::PathBuf;
 
+use betterlite_test_ports::refused_port::RefusedPort;
 use rstest::rstest;
 use serde::Deserialize;
 
@@ -710,10 +710,8 @@ fn stream_prints_the_raw_body_when_it_is_not_json() {
 
 #[test]
 fn stream_reports_a_transport_failure_and_keeps_the_session() {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
-    let api = plain_client(&format!("http://{address}"), None);
+    let refused = RefusedPort::bind().unwrap();
+    let api = plain_client(&format!("http://{}", refused.address), None);
     let args = chat_args(Some("gpt-4o"));
     let mut store = FakeStore::default();
     let mut terminal = FakeTerminal::new(&["hi", "again"]);

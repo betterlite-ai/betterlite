@@ -1,0 +1,13 @@
+kind: helper
+name: partition-calendar-aware-upper-bound-comparison-error
+call:
+  partition_calendar:
+    function: drop
+    cutoff: "2026-06-02T00:00:00"
+    partitions:
+      - name: LiteLLM_SpendLogs_pnaive
+        bound: "FOR VALUES FROM ('2026-05-01 00:00:00') TO ('2026-06-01 00:00:00')"
+      - name: LiteLLM_SpendLogs_paware
+        bound: "FOR VALUES FROM ('2026-05-01 00:00:00+00') TO ('2026-06-01 00:00:00+00')"
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,60 @@
+kind: helper
+name: client-buffer-and-logging-order
+call:
+  realtime_client_relay_websocket:
+    mode: ack
+    messages:
+      - '{"type":"session.update","session":{"voice":"alloy"}}'
+      - '{"type":"input_audio_buffer.commit"}'
+    setup:
+      pending:
+        - '{"type":"input_audio_buffer.append","audio":"YQ=="}'
+      backend_setup_complete: false
+      flushing: false
+      turn_detection_sent: false
+      pending_guardrail_message: null
+      session_configuration_request: null
+    guardrails: []
+    beta_backend: false
+    close: null
+    lifetime: null
+    client_send_failures: []
+    client_close_failures: []
+calls:
+  - realtime_client_relay_websocket:
+      mode: ack
+      messages:
+        - '{"type":"session.update","session":{"voice":"alloy"}}'
+      setup:
+        pending:
+          - '{"type":"input_audio_buffer.append","audio":"YQ=="}'
+        backend_setup_complete: true
+        flushing: false
+        turn_detection_sent: false
+        pending_guardrail_message: null
+        session_configuration_request: null
+      guardrails: []
+      beta_backend: false
+      close: null
+      lifetime: null
+      client_send_failures: []
+      client_close_failures: []
+  - realtime_client_relay_websocket:
+      mode: ack
+      messages:
+        - '{"type":"input_audio_buffer.commit"}'
+      setup:
+        pending: []
+        backend_setup_complete: true
+        flushing: true
+        turn_detection_sent: false
+        pending_guardrail_message: null
+        session_configuration_request: null
+      guardrails: []
+      beta_backend: false
+      close: null
+      lifetime: null
+      client_send_failures: []
+      client_close_failures: []
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,12 @@
+task: B1105
+deviations:
+  - what: A metadata slot sent as JSON text is parsed only up to ApiLimits.max_json_bytes; a longer string is treated as an invalid metadata object (400), where LiteLLM's safe_json_loads parses any length.
+    why: The request body cap already bounds every metadata string in production, and the bound keeps a direct helper call from parsing an unbounded string.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/safe_json_loads.py#L13-L20
+  - what: The debug lines that name stripped pricing and router-reserved fields list the fields in a fixed table order; LiteLLM joins names in frozenset iteration order, which differs between processes.
+    why: Same lines with the same field names and level, in an order a reader can rely on instead of Python's per-process hash order.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L605-L609
+  - what: A session-id header value or a generic x-<vendor>-session-id header name that ends in a newline is rejected by betterlite; LiteLLM matches both with Python regexes ending in `$`, and Python's `$` also matches just before a trailing newline.
+    why: Only a raw header dict can carry such a name or value, never an HTTP transport, and a session id betterlite goes on to log and chain should not end in a newline.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L83-L92
+kept_bugs: []

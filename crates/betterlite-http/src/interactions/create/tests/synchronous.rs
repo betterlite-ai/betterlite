@@ -5,13 +5,14 @@ use betterlite_config::tls::Verification;
 use betterlite_http_fixture::server::{Serving, serve};
 use betterlite_interactions::types::interaction::{InteractionInput, Turn, TurnContent};
 use betterlite_models::controls::json_value::JsonValue;
+use betterlite_test_ports::refused_port::RefusedPort;
 use reqwest::blocking::ClientBuilder as BlockingClientBuilder;
 use rstest::rstest;
 use secrecy::ExposeSecret as _;
 
 use super::support::{
-    Call, Fixture, FixtureError, api_key_header, caller_headers, client_error, dead_address,
-    posted, provider_error, run, transport_error,
+    Call, Fixture, FixtureError, api_key_header, caller_headers, client_error, posted,
+    provider_error, run, transport_error,
 };
 use crate::interactions::base::clients::HttpClients;
 use crate::interactions::base::tests::support as base;
@@ -272,7 +273,8 @@ fn create_interaction_overlays_extra_body_onto_the_transformed_request(
 #[test]
 fn create_interaction_builds_the_client_before_validating_headers() {
     let fixture = Fixture::new();
-    let mut call = Call::new(dead_address());
+    let refused = RefusedPort::bind().unwrap();
+    let mut call = Call::new(refused.address);
     call.params
         .insert("ssl_verify".to_owned(), JsonValue::Text("yes".to_owned()));
 
@@ -333,7 +335,8 @@ fn create_interaction_does_not_follow_a_redirect() {
 #[test]
 fn create_interaction_passes_an_invalid_url_through_the_error_handler() {
     let fixture = Fixture::new();
-    let mut call = Call::new(dead_address());
+    let refused = RefusedPort::bind().unwrap();
+    let mut call = Call::new(refused.address);
     call.params.insert(
         "api_base".to_owned(),
         JsonValue::Text("not a url".to_owned()),
@@ -390,7 +393,8 @@ fn create_interaction_validates_an_absent_model_as_an_empty_string() {
 #[test]
 fn create_interaction_passes_an_absent_api_base_as_an_empty_string() {
     let fixture = Fixture::new();
-    let mut call = Call::new(dead_address());
+    let refused = RefusedPort::bind().unwrap();
+    let mut call = Call::new(refused.address);
     call.params.remove("api_base");
 
     let (outcome, _logging) = run(&fixture, &call);
@@ -413,12 +417,13 @@ fn create_interaction_refuses_a_proxy_it_cannot_use_instead_of_connecting_direct
         base::proxy_policy(&[("HTTP_PROXY", "https://127.0.0.1:1")]),
     );
 
+    let refused = RefusedPort::bind().unwrap();
     let outcome = create_interaction(
         &fixture,
         &mut clients,
         &mut Logging::default(),
         None,
-        &Call::new(dead_address()).request(),
+        &Call::new(refused.address).request(),
     );
 
     assert!(matches!(

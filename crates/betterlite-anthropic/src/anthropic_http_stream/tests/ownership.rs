@@ -18,6 +18,7 @@ use tokio::time::{sleep, timeout};
 
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::aleph_alpha::error::AlephAlphaError;
+use betterlite_test_ports::refused_port::RefusedPort;
 
 use crate::anthropic_http_stream::call::{OpenedStream, StreamCall, StreamClients, StreamOpening};
 use crate::anthropic_http_stream::error::{StreamFailure, StreamOpenError};
@@ -170,9 +171,8 @@ async fn anthropic_http_stream_proxied_open_timeout() {
 
 #[tokio::test]
 async fn anthropic_http_stream_proxied_connect_refused() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let api_base = format!("http://{}/v1/messages", listener.local_addr().unwrap());
-    drop(listener);
+    let refused = RefusedPort::bind().unwrap();
+    let api_base = format!("http://{}/v1/messages", refused.address);
     let client = proxied_client();
     let Err(error) = open_with(&api_base, &client, SHORT_TIMEOUT).await else {
         panic!("a refused connection opens no stream")

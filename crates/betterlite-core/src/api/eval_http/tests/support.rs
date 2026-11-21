@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::net::{SocketAddr, TcpListener};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -441,13 +440,6 @@ pub(crate) fn url(serving: &Serving, path: &str) -> String {
 pub(crate) fn assert_no_request(serving: Serving) {
     let outcome = serving.finish();
     assert!(matches!(outcome, Err(FixtureError::NoRequest)));
-}
-
-pub(crate) fn dead_url() -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("the listener binds");
-    let address: SocketAddr = listener.local_addr().expect("the address");
-    drop(listener);
-    format!("http://{address}/v1/evals")
 }
 
 pub(crate) fn headers(pairs: &[(&str, &str)]) -> Headers {

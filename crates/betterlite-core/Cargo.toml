@@ -35,6 +35,7 @@ betterlite-redis = { path = "../betterlite-redis" }
 betterlite-semantic = { path = "../betterlite-semantic" }
 betterlite-streaming = { path = "../betterlite-streaming" }
 betterlite-tokenizer = { path = "../betterlite-tokenizer" }
+bytes = "1.12.1"
 caseless = "0.2.2"
 chrono = { version = "0.4.45", default-features = false, features = ["now", "serde"] }
 deadpool-postgres.workspace = true
@@ -80,6 +81,7 @@ workspace = true
 betterlite-http-fixture = { path = "../../tools/http-fixture" }
 betterlite-postgres-fixture = { path = "../../tools/postgres-fixture" }
 betterlite-redis = { path = "../betterlite-redis" }
+betterlite-test-ports = { path = "../betterlite-test-ports" }
 clap = { version = "4.6.7", features = ["derive", "env"] }
 deadpool-postgres = { workspace = true }
 futures-executor = "0.3.34"

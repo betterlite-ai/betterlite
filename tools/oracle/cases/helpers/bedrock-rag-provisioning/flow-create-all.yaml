@@ -1,0 +1,18 @@
+kind: helper
+name: flow-create-all
+call:
+  b3457:
+    step: flow
+    vector:
+      custom_llm_provider: bedrock
+      aws_region_name: us-west-2
+      embedding_model: amazon.titan-embed-text-v2:0
+      aws_access_key_id: AKIDORACLE
+      aws_secret_access_key: oracle-secret
+    environment: {}
+    unique_id: "0123abcd"
+env: {}
+compare:
+  ignore:
+    - pointer: /value/s3_bucket
+      why: "Python generates its own random unique id, so the created bucket name differs from the fixed id this helper passes to betterlite"

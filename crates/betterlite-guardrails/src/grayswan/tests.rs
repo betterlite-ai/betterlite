@@ -3,7 +3,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::{self, Write};
-use std::net::TcpListener as StdTcpListener;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -13,6 +12,7 @@ use betterlite_config::sections::guardrail_identity::config_models::GuardrailCon
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
+use betterlite_test_ports::refused_port::RefusedPort;
 use reqwest::StatusCode;
 use reqwest::header::HeaderValue;
 use rstest::rstest;
@@ -246,14 +246,12 @@ fn grayswan_block_error_status_code_is_bad_request() {
 }
 
 fn connection_refused() -> reqwest::Error {
-    let listener = StdTcpListener::bind(("127.0.0.1", 0)).unwrap();
-    let addr = listener.local_addr().unwrap();
-    drop(listener);
+    let refused = RefusedPort::bind().unwrap();
     let runtime = Builder::new_current_thread().enable_all().build().unwrap();
     runtime
         .block_on(
             reqwest::Client::default()
-                .get(format!("http://{addr}"))
+                .get(format!("http://{}", refused.address))
                 .send(),
         )
         .unwrap_err()

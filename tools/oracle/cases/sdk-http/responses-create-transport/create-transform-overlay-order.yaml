@@ -1,0 +1,32 @@
+kind: sdk_http
+name: responses-create-transport-transform-overlay-order
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  responses_create_transport:
+    mode: sync
+    model: gpt-4o
+    input: hello
+    optional_params:
+      temperature: 0.2
+      extra_headers: {Authorization: "Bearer optional", X-Option: a}
+    extra_headers: {Authorization: "Bearer explicit", X-Trace: b}
+    extra_body: {temperature: 0.8}
+    timeout_seconds: 7
+    pre_hook: {model: gpt-4o-mini, api_key: sk-hook}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: resp_a
+      created_at: 100
+      object: response
+      status: completed
+      model: gpt-4o-mini
+      output: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type, x-option, x-trace]
+  ignore:
+    - pointer: /upstream/0/body/extra_headers
+      why: LiteLLM hands the optional map's own extra_headers dict to validate_environment, which rewrites it in place before the transform copies the map into the body; betterlite does not port changes made in place to the caller's dict (docs/compatibility.md)

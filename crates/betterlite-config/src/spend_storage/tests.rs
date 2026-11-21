@@ -1,18 +1,27 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::fmt::Debug;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
+use betterlite_db::spend_partitions::calendar::PartitionInterval;
 use rstest::rstest;
 use rust_decimal::Decimal;
+use tracing::Subscriber;
+use tracing::field::{Field, Visit};
+use tracing::subscriber::with_default;
+use tracing_subscriber::layer::SubscriberExt as _;
+use tracing_subscriber::layer::{Context, Layer};
 
 use crate::loader::ConfigLoader;
 
 use super::{
-    DEFAULT_DEQUEUE_COUNT, DEFAULT_MAX_PROMPT_LENGTH, ENV_DEQUEUE_COUNT, MissingSessionId,
-    Settings, SpendUpdates, decode_spend_storage_policy, load_spend_storage_policy,
-    runtime_dequeue_count, runtime_max_prompt_length,
+    DEFAULT_DEQUEUE_COUNT, DEFAULT_MAX_PROMPT_LENGTH, DEFAULT_PRECREATE_AHEAD, ENV_DEQUEUE_COUNT,
+    ENV_PARTITION_INTERVAL, ENV_PRECREATE_AHEAD, MissingSessionId, Settings, SpendUpdates,
+    decode_spend_storage_policy, load_spend_storage_policy, runtime_dequeue_count,
+    runtime_max_prompt_length,
 };
 
 fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -369,4 +378,105 @@ fn loads_end_user_spend_settings_from_a_stored_policy_row() {
     .unwrap();
     assert_eq!(decoded.disable_end_user_cost_tracking, Some(true));
     assert_eq!(decoded.enable_prometheus_only, Some(false));
+}
+
+#[derive(Clone)]
+struct EventCapture(Arc<Mutex<Vec<String>>>);
+
+impl<S: Subscriber> Layer<S> for EventCapture {
+    fn on_event(&self, event: &tracing::Event<'_>, _: Context<'_, S>) {
+        let mut fields = FieldCapture::default();
+        event.record(&mut fields);
+        if let Ok(mut events) = self.0.lock() {
+            events.push(fields.0.join(" "));
+        }
+    }
+}
+
+#[derive(Default)]
+struct FieldCapture(Vec<String>);
+
+impl Visit for FieldCapture {
+    fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
+        self.0.push(format!("{}={value:?}", field.name()));
+    }
+
+    fn record_str(&mut self, field: &Field, value: &str) {
+        self.0.push(format!("{}={value}", field.name()));
+    }
+}
+
+fn partition_settings(pairs: &[(&str, &str)]) -> (Settings, Vec<String>) {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let subscriber = tracing_subscriber::registry().with(EventCapture(Arc::clone(&events)));
+    let settings = with_default(subscriber, || load("general_settings: {}\n", pairs));
+    let captured = events.lock().unwrap().clone();
+    (settings, captured)
+}
+
+#[rstest]
+#[case::defaults(None, None, PartitionInterval::Day, DEFAULT_PRECREATE_AHEAD, 0)]
+#[case::day(Some("day"), Some("0"), PartitionInterval::Day, 0, 0)]
+#[case::week(Some("week"), Some("-2"), PartitionInterval::Week, -2, 0)]
+#[case::month(
+    Some("month"),
+    None,
+    PartitionInterval::Month,
+    DEFAULT_PRECREATE_AHEAD,
+    0
+)]
+#[case::invalid_interval(
+    Some("weekly"),
+    None,
+    PartitionInterval::Day,
+    DEFAULT_PRECREATE_AHEAD,
+    1
+)]
+#[case::upper_case(Some("WEEK"), None, PartitionInterval::Day, DEFAULT_PRECREATE_AHEAD, 1)]
+#[case::empty_values(Some(""), Some(""), PartitionInterval::Day, DEFAULT_PRECREATE_AHEAD, 0)]
+fn loads_spend_partition_settings(
+    #[case] interval: Option<&str>,
+    #[case] ahead: Option<&str>,
+    #[case] expected_interval: PartitionInterval,
+    #[case] expected_ahead: i64,
+    #[case] warnings: usize,
+) {
+    let mut pairs = Vec::new();
+    if let Some(value) = interval {
+        pairs.push((ENV_PARTITION_INTERVAL, value));
+    }
+    if let Some(value) = ahead {
+        pairs.push((ENV_PRECREATE_AHEAD, value));
+    }
+    let (settings, events) = partition_settings(&pairs);
+    assert_eq!(settings.partition_interval, expected_interval);
+    assert_eq!(settings.precreate_ahead, expected_ahead);
+    let warned = events
+        .iter()
+        .filter(|event| event.contains(ENV_PARTITION_INTERVAL))
+        .count();
+    assert_eq!(warned, warnings);
+}
+
+#[rstest]
+#[case::text("many")]
+#[case::fraction("20.5")]
+#[case::python_digit_group("1_0")]
+fn loads_spend_partition_settings_rejects_a_malformed_ahead(#[case] value: &str) {
+    let error = load_spend_storage_policy(
+        "general_settings: {}\n",
+        &environment(&[(ENV_PRECREATE_AHEAD, value)]),
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains(ENV_PRECREATE_AHEAD));
+}
+
+#[test]
+fn loads_spend_partition_settings_from_a_stored_row() {
+    let decoded = decode_spend_storage_policy(
+        br#"{"general_settings":{},"litellm_settings":{},"environment":{"SPEND_LOG_PARTITION_INTERVAL":"month","SPEND_LOG_PARTITION_PRECREATE_AHEAD":"3"}}"#,
+    )
+    .unwrap();
+    assert_eq!(decoded.partition_interval, PartitionInterval::Month);
+    assert_eq!(decoded.precreate_ahead, 3);
 }

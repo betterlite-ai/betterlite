@@ -1,0 +1,24 @@
+kind: sdk_http
+name: rerank-cohere-foundry-infinity
+env: {}
+call:
+  rerank_provider_plan:
+    model: rerank-v1
+    query: q
+    documents: [a]
+    custom_llm_provider: infinity
+    kwargs:
+      api_base: "{mock}"
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: r
+      results:
+        - index: 0
+          relevance_score: 0.5
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, accept, content-type]
+  ignore: []

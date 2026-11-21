@@ -22,6 +22,7 @@ betterlite-secrets = { path = "../../../../../crates/betterlite-secrets" }
 chrono.workspace = true
 futures-util = { version = "0.3.34", default-features = false }
 hex = "0.4.3"
+jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 rust_decimal.workspace = true
 secrecy = { version = "0.10.3", features = ["serde"] }
 serde = { version = "1.0.228", features = ["derive"] }

@@ -1,0 +1,102 @@
+kind: helper
+name: realtime-bidirectional-lifetime
+call:
+  realtime_client_relay_websocket:
+    mode: lifetime
+    messages: []
+    setup:
+      pending: []
+      backend_setup_complete: null
+      flushing: false
+      turn_detection_sent: false
+      pending_guardrail_message: null
+      session_configuration_request: null
+    guardrails: []
+    beta_backend: false
+    close:
+      code: 1008
+      reason: policy
+    lifetime:
+      client_wait: none
+      client_signals: false
+      client_outcome: client_disconnected
+      backend_wait: cancel
+      backend_signals: false
+      backend_outcome: close
+    client_send_failures: []
+    client_close_failures: []
+calls:
+  - realtime_client_relay_websocket:
+      mode: lifetime
+      messages: []
+      setup:
+        pending: []
+        backend_setup_complete: null
+        flushing: false
+        turn_detection_sent: false
+        pending_guardrail_message: null
+        session_configuration_request: null
+      guardrails: []
+      beta_backend: false
+      close:
+        code: 1008
+        reason: policy
+      lifetime:
+        client_wait: cancel
+        client_signals: false
+        client_outcome: backend_closed
+        backend_wait: none
+        backend_signals: false
+        backend_outcome: close
+      client_send_failures: []
+      client_close_failures: []
+  - realtime_client_relay_websocket:
+      mode: lifetime
+      messages: []
+      setup:
+        pending: []
+        backend_setup_complete: null
+        flushing: false
+        turn_detection_sent: false
+        pending_guardrail_message: null
+        session_configuration_request: null
+      guardrails: []
+      beta_backend: false
+      close:
+        code: 1008
+        reason: policy
+      lifetime:
+        client_wait: none
+        client_signals: true
+        client_outcome: backend_closed
+        backend_wait: signal
+        backend_signals: false
+        backend_outcome: close
+      client_send_failures: []
+      client_close_failures: []
+  - realtime_client_relay_websocket:
+      mode: lifetime
+      messages: []
+      setup:
+        pending: []
+        backend_setup_complete: null
+        flushing: false
+        turn_detection_sent: false
+        pending_guardrail_message: null
+        session_configuration_request: null
+      guardrails: []
+      beta_backend: false
+      close:
+        code: 1008
+        reason: policy
+      lifetime:
+        client_wait: cancel
+        client_signals: false
+        client_outcome: backend_closed
+        backend_wait: none
+        backend_signals: false
+        backend_outcome: error
+      client_send_failures: []
+      client_close_failures: []
+env: {}
+compare: {ignore: []}

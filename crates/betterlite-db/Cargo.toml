@@ -22,6 +22,7 @@ betterlite-env = { path = "../betterlite-env" }
 betterlite-lens = { path = "../betterlite-lens" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-policy = { path = "../betterlite-policy" }
+betterlite-prometheus = { path = "../betterlite-prometheus" }
 betterlite-redact = { path = "../betterlite-redact" }
 betterlite-redis = { path = "../betterlite-redis" }
 betterlite-roi = { path = "../betterlite-roi" }
@@ -35,6 +36,7 @@ deadpool-postgres.workspace = true
 futures-util = { version = "0.3.34", default-features = false, features = ["std"] }
 hex.workspace = true
 indexmap = { version = "2.14.2", features = ["serde"] }
+jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 num-traits = "0.2.19"
 opentelemetry = { version = "0.33.1", default-features = false, features = ["trace"] }
 percent-encoding.workspace = true
@@ -66,6 +68,7 @@ aws-smithy-types = "=1.9.1"
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-postgres-fixture = { path = "../../tools/postgres-fixture" }
 betterlite-redis-fixture = { path = "../../tools/redis-fixture" }
+betterlite-test-ports = { path = "../betterlite-test-ports" }
 clap = { version = "4.6.7", features = ["derive", "env"] }
 mutants = "0.0.4"
 rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem"] }

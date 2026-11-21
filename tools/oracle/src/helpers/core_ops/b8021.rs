@@ -3,7 +3,9 @@ use std::collections::BTreeMap;
 use betterlite_core::api::search_providers::tavily::TavilySearch;
 use betterlite_core::api::search_providers::you_com::YouComSearch;
 use betterlite_openai::openai_base_config::{Headers, Object};
-use betterlite_openai::search::provider::{ProviderResponse, SearchProvider as _, SearchQuery};
+use betterlite_openai::search::provider::{
+    ProviderResponse, RequestInput, SearchProvider as _, SearchQuery,
+};
 use betterlite_openai::search::records::SearchResponse;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
@@ -100,10 +102,10 @@ impl ProviderSearch {
     fn complete_url(&self, api_base: Option<&str>) -> Result<String, Box<HelperError>> {
         match self {
             Self::Tavily(search) => search
-                .complete_url(api_base, &Object::new(), None)
+                .complete_url(api_base, &Object::new(), None, None)
                 .map_err(failure),
             Self::YouCom(search) => search
-                .complete_url(api_base, &Object::new(), None)
+                .complete_url(api_base, &Object::new(), None, None)
                 .map_err(failure),
         }
     }
@@ -113,13 +115,17 @@ impl ProviderSearch {
         query: &SearchQuery,
         optional_params: &Object,
     ) -> Result<Object, Box<HelperError>> {
+        let empty_headers = Headers::new();
+        let input = RequestInput {
+            query,
+            optional_params,
+            api_key: None,
+            api_base: None,
+            headers: &empty_headers,
+        };
         match self {
-            Self::Tavily(search) => search
-                .transform_search_request(query, optional_params)
-                .map_err(failure),
-            Self::YouCom(search) => search
-                .transform_search_request(query, optional_params)
-                .map_err(failure),
+            Self::Tavily(search) => search.transform_search_request(&input).map_err(failure),
+            Self::YouCom(search) => search.transform_search_request(&input).map_err(failure),
         }
     }
 

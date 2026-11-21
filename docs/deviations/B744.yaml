@@ -1,0 +1,45 @@
+task: B744
+deviations:
+  - what: >-
+      Configured size limits run without a license. A request over max_request_size_mb returns 400
+      bad_request_error with param content-length, and configured allowed_routes keeps its 403 policy without
+      the license ERROR log LiteLLM writes.
+    why: >-
+      betterlite rejects every premium_user branch unless a task says otherwise, so the MIT size limit and
+      route policy are active for every deployment. size_checks_without_license and
+      no_route_license_diagnostic prove both effects.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L605-L618
+  - what: >-
+      max_response_size_mb measures the serialized UTF-8 response bytes and returns 400 bad_request_error with
+      param content-length when they exceed the limit, with or without a license.
+    why: >-
+      LiteLLM calls sys.getsizeof on the response object, which is shallow Python object memory and has no
+      Rust equivalent, and it skips the check unless premium_user is true. response_wire_byte_limit makes
+      the wire-byte unit and the license-free 400 explicit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L919-L937
+  - what: >-
+      The request policy stage runs after the master key stage authenticates the caller, where LiteLLM's
+      pre_db_read_auth_checks runs before key validation.
+    why: >-
+      betterlite's auth chain is an ordered stage list, and a denial can only be reached once the master key
+      stage produced the AuthContext the stage interface carries. A caller with a wrong key and a denied IP
+      gets the 401 from the key stage, where LiteLLM returns the 403 first.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1512-L1518
+  - what: >-
+      The client-host fallback always sees an empty host in the running server. When use_x_forwarded_for is
+      not true, the resolved client IP is the empty string, so a configured allowed_ips admits a request only
+      when it lists "".
+    why: >-
+      The connection layer accepts each socket with its peer address but passes only the request to the
+      router, and nothing outside this task's scope puts that address on the request. The fallback itself is
+      implemented and proved by client_host_fallback, no_client_empty_ip and the ip-header-values helper case;
+      a later task that forwards the peer address fixes the wiring without touching this policy.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L78-L87
+kept_bugs:
+  - what: >-
+      With use_x_forwarded_for set to true, the entire x-forwarded-for header value is used as the client IP,
+      so a caller that can reach the proxy directly chooses the address the allowlist compares against.
+    why: >-
+      LiteLLM decides on the raw header without parsing hops or trusting a proxy, and a working deployment
+      behind a trusted reverse proxy depends on exactly that value. The task keeps the behavior verbatim.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L78-L87

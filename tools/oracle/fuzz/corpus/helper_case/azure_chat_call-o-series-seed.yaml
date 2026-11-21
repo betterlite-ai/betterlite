@@ -1,0 +1,10 @@
+kind: helper
+name: azure_chat_call-o-series-seed
+call:
+  azure_chat_call:
+    function: o_series
+    cases:
+      - {model: o3-deployment, messages: [{role: user, content: hi}], api_key: key, organization: org-1, drop_params: true, timeout: 5.0}
+      - {model: o3-deployment, messages: null, api_key: null, acompletion: true, client: async, answer: {error: pending}, cancel: true}
+env: {}
+compare: {ignore: []}

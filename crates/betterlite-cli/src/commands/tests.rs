@@ -2,10 +2,10 @@
 
 pub(crate) mod support;
 
-use std::net::TcpListener;
 use std::time::{Duration, Instant};
 
 use betterlite_http::error::HttpError;
+use betterlite_test_ports::refused_port::RefusedPort;
 use http::Method;
 use rstest::rstest;
 
@@ -138,14 +138,12 @@ fn client_answers_a_redirect_as_the_response_instead_of_following_it() {
 
 #[test]
 fn client_maps_a_transport_failure_to_a_pkce_transport_failure() {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
-    let client = client(&format!("http://{address}"), None);
+    let refused = RefusedPort::bind().unwrap();
+    let client = client(&format!("http://{}", refused.address), None);
 
     let error = client
         .get(
-            &format!("http://{address}/.well-known/litellm-cli-auth"),
+            &format!("http://{}/.well-known/litellm-cli-auth", refused.address),
             15,
         )
         .unwrap_err();

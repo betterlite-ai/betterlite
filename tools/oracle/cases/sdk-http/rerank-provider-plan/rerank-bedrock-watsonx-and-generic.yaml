@@ -1,0 +1,18 @@
+kind: sdk_http
+name: rerank-bedrock-watsonx-and-generic
+env: {}
+call:
+  rerank_provider_plan:
+    model: openai/gpt-4o
+    query: q
+    documents: [a]
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore:
+    - pointer: /rerank_provider_plan/value/failure/message
+      why: >-
+        LiteLLM prefixes the ValueError with the SDK exception name and a
+        traceback, so only the message wording differs.

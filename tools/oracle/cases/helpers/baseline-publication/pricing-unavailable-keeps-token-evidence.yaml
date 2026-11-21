@@ -1,0 +1,181 @@
+kind: helper
+name: pricing_unavailable_keeps_token_evidence
+call:
+  baseline_publication:
+    function: publication
+    record: |
+      {
+        "scope": "autorouter-baseline:v3:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "api_key": "key",
+        "session_id": "session",
+        "router_name": "router",
+        "baseline_model": "claude-sonnet-4-20250514",
+        "observation": {
+          "request_id": "req-1",
+          "started_at": 1.0,
+          "available_at": 1.0,
+          "outcome": "complete",
+          "baseline_equivalent": true
+        },
+        "pricing": {
+          "model": "claude-sonnet-4-20250514",
+          "provider": "anthropic",
+          "prices": null,
+          "actual_spend": 0.25,
+          "classifier_cost": 0.0
+        },
+        "turn": null,
+        "daily": null
+      }
+    estimate: |
+      {
+        "request_id": "req-1",
+        "reason": "cache_prefix_cold",
+        "provenance": "modeled",
+        "usage": {
+          "prompt_tokens": 15,
+          "completion_tokens": 5,
+          "total_tokens": 20,
+          "prompt_tokens_details": {
+            "text_tokens": 5,
+            "cached_tokens": 7,
+            "cache_creation_tokens": 3,
+            "cache_creation_token_details": {
+              "ephemeral_5m_input_tokens": 1,
+              "ephemeral_1h_input_tokens": 2
+            }
+          }
+        }
+      }
+    first_at: 2.0
+calls:
+  - baseline_publication:
+      function: publication
+      record: |
+        {
+          "scope": "autorouter-baseline:v3:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          "api_key": "key",
+          "session_id": "session",
+          "router_name": "router",
+          "baseline_model": "claude-sonnet-4-20250514",
+          "observation": {
+            "request_id": "req-1",
+            "started_at": 1.0,
+            "available_at": 1.0,
+            "outcome": "complete",
+            "baseline_equivalent": true
+          },
+          "pricing": {
+            "model": "claude-sonnet-4-20250514",
+            "provider": "anthropic",
+            "prices": null,
+            "actual_spend": 0.25,
+            "classifier_cost": 0.0
+          },
+          "turn": null,
+          "daily": null
+        }
+      estimate: |
+        {
+          "request_id": "req-1",
+          "reason": "cache_prefix_cold",
+          "provenance": "observed_identical",
+          "usage": {
+            "prompt_tokens": 15,
+            "completion_tokens": 5,
+            "total_tokens": 20,
+            "prompt_tokens_details": {
+              "text_tokens": 5,
+              "cached_tokens": 7,
+              "cache_creation_tokens": 3,
+              "cache_creation_token_details": {
+                "ephemeral_5m_input_tokens": 1,
+                "ephemeral_1h_input_tokens": 2
+              }
+            }
+          }
+        }
+      first_at: 2.0
+  - baseline_publication:
+      function: publication
+      record: |
+        {
+          "scope": "autorouter-baseline:v3:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          "api_key": "key",
+          "session_id": "session",
+          "router_name": "router",
+          "baseline_model": "claude-sonnet-4-20250514",
+          "observation": {
+            "request_id": "req-1",
+            "started_at": 1.0,
+            "available_at": 1.0,
+            "outcome": "complete",
+            "baseline_equivalent": true
+          },
+          "pricing": {
+            "model": "claude-sonnet-4-20250514",
+            "provider": "anthropic",
+            "prices": null,
+            "actual_spend": 0.25,
+            "classifier_cost": 0.0
+          },
+          "turn": null,
+          "daily": null
+        }
+      estimate: |
+        {
+          "request_id": "req-1",
+          "reason": "cache_prefix_cold",
+          "provenance": "modeled",
+          "usage": null
+        }
+      first_at: 3.0
+  - baseline_publication:
+      function: publication
+      record: |
+        {
+          "scope": "autorouter-baseline:v3:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          "api_key": "key",
+          "session_id": "session",
+          "router_name": "router",
+          "baseline_model": "claude-sonnet-4-20250514",
+          "observation": {
+            "request_id": "req-1",
+            "started_at": 1.0,
+            "available_at": 1.0,
+            "outcome": "complete",
+            "baseline_equivalent": true
+          },
+          "pricing": {
+            "model": "claude-sonnet-4-20250514",
+            "provider": "anthropic",
+            "prices": null,
+            "actual_spend": 0.25,
+            "classifier_cost": 0.0
+          },
+          "turn": null,
+          "daily": null
+        }
+      estimate: |
+        {
+          "request_id": "req-1",
+          "reason": "cache_prefix_cold",
+          "provenance": null,
+          "usage": {
+            "prompt_tokens": 15,
+            "completion_tokens": 5,
+            "total_tokens": 20,
+            "prompt_tokens_details": {
+              "text_tokens": 5,
+              "cached_tokens": 7,
+              "cache_creation_tokens": 3,
+              "cache_creation_token_details": {
+                "ephemeral_5m_input_tokens": 1,
+                "ephemeral_1h_input_tokens": 2
+              }
+            }
+          }
+        }
+      first_at: 4.0
+env: {}
+compare: {ignore: []}

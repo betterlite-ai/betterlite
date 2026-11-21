@@ -12,10 +12,11 @@ use axum::http::{HeaderMap, Uri};
 use betterlite_config::sections::guardrail_identity::config_models::GuardrailConfigModelIdentity as _;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_http::proxy::base_builder;
+use betterlite_test_ports::full_listener::FullListener;
 use reqwest::StatusCode;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
-use tokio::net::{TcpListener, TcpSocket, TcpStream};
+use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
 use tokio::time::timeout;
 
@@ -287,15 +288,12 @@ async fn make_request_stops_connecting_at_the_connect_limit(
     #[case] configured: Option<Duration>,
     #[case] shortest_wait: Duration,
 ) {
-    let socket = TcpSocket::new_v4().unwrap();
-    socket.bind("127.0.0.1:0".parse().unwrap()).unwrap();
-    let full = socket.listen(1).unwrap();
-    let address = full.local_addr().unwrap();
+    let full = FullListener::bind().unwrap();
     // The listener never accepts, so once its backlog holds these connections further SYNs are dropped.
-    let attempt = || timeout(Duration::from_millis(200), TcpStream::connect(address));
+    let attempt = || timeout(Duration::from_millis(200), TcpStream::connect(full.address));
     let _queued = tokio::join!(attempt(), attempt(), attempt(), attempt());
     let key = SecretString::from("sk-test".to_owned());
-    let mut given = params(Some(key), Some(format!("http://{address}/v1")));
+    let mut given = params(Some(key), Some(format!("http://{}/v1", full.address)));
     given.timeout = configured;
     let instance = build(given, GlobalApiKeys::default(), &BTreeMap::new()).unwrap();
     assert_eq!(instance.timeout, configured.unwrap_or(DEFAULT_TIMEOUT));
@@ -305,7 +303,6 @@ async fn make_request_stops_connecting_at_the_connect_limit(
     assert_eq!(error.status_code(), StatusCode::REQUEST_TIMEOUT);
     assert!(started.elapsed() >= shortest_wait);
     assert!(started.elapsed() < Duration::from_secs(10));
-    drop(full);
 }
 
 #[tokio::test]

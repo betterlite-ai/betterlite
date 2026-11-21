@@ -1,0 +1,39 @@
+task: B5656
+deviations:
+  - what: An azure_ai Foundry request stays on chat while NoFoundryRules is the field passed in, where LiteLLM bridges it to the Responses API.
+    why: The two Foundry rules are B549's, and depending on B549 here would make a dependency cycle through B529, B165 and B164.
+    link: ""
+  - what: A request that the MCP gateway check sends to acompletion_with_mcp fails with a named error while NoMcpLoop is the field passed in.
+    why: B957 owns that loop and its chain reaches B908, which lists B158; failing loudly beats sending MCP tools to a provider that cannot run them.
+    link: ""
+  - what: The retry entries run without tenacity, so the "tenacity import failed" error never appears.
+    why: The retry is a plain loop over an injected sleeper and needs no optional package.
+    link: ""
+  - what: A cached dict that acompletion receives is converted to a typed response, where LiteLLM's `response = init_response` at L679 overwrites the conversion and leaves a dict.
+    why: The conversion on the line above shows the intent, and the Rust result is typed, so no dict exists to return.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L679
+  - what: A stream answer is materialized into the chunk list CallOutcome holds, so the fallback attempt header adds to an object payload and not to a chunk list.
+    why: B5654's live ChatStream cannot be stored in CallOutcome, and a list has no _hidden_params to carry the header.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_utils.py#L61-L85
+  - what: A completion without a model answers 400 BadRequestError, where LiteLLM raises a bare ValueError whose mapper turns it into a 500 APIConnectionError.
+    why: A request that cannot run without a model is a bad request, and no working setup can rely on the 500.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5246
+  - what: batch_completion_models ends with a named error when every deployment fails, where LiteLLM returns None from completion.
+    why: None is the empty answer the fallback and handler code reads as no response, and a caller of the Rust entry cannot tell it from a missing result.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batch_completion/main.py#L127-L200
+  - what: A null answer from one deployment moves on to the next, where LiteLLM returns the first completed future's result even when it is None.
+    why: None is LiteLLM's no-answer marker, so returning it would end the call with the empty result the named error exists to avoid.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batch_completion/main.py#L178-L181
+  - what: A provider stream that grows past the target's body limit fails with HttpError::TooLarge, where LiteLLM relays the chunks with no byte cap.
+    why: A proxy bounds the bytes it buffers for one answer, and the limit is the body bound betterlite-http gives every buffered response.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L757-L771
+  - what: A timeout in the phases form becomes one absolute deadline at dispatch, the sum of the phases it sets, where LiteLLM hands a single timeout or an httpx.Timeout to the provider client.
+    why: The dispatch runs every provider call under one call context deadline, so the sum keeps the call bounded by the time the caller allowed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5149
+  - what: A model list with more than 100 deployments is refused with a 400 error that names the count, where LiteLLM starts one thread per deployment.
+    why: "The list comes from the request, so LiteLLM's ThreadPoolExecutor(max_workers=len(deployments)) would let one client start any number of provider calls, futures and argument copies. betterlite_core::batch::execution::Batch was compared and cannot run these attempts: its executor and call future must be 'static because it spawns them into its own JoinSet, while the completion target borrows its ports for the call's lifetime. The count is capped and at most 10 attempts run at a time."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batch_completion/main.py#L165
+kept_bugs:
+  - what: A later deployment in a model list inherits the fields of the deployments before it for the keys it leaves out.
+    why: LiteLLM mutates the kwargs it passes to completion inside the deployment loop, so a working config can rely on the earlier deployment's api_base or temperature.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batch_completion/main.py#L163-L171

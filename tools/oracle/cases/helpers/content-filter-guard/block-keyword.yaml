@@ -1,0 +1,25 @@
+kind: helper
+name: block-keyword
+call:
+  b8773:
+    builds:
+      - args:
+          patterns: []
+          blocked_words:
+            - keyword: forbidden
+              action: BLOCK
+              description: a policy word
+          event_hook: pre_call
+          default_on: false
+          guardrail_id: null
+          policy_template: null
+          image_model: null
+          competitor_intent_config: null
+          severity_threshold: medium
+        apply:
+          texts:
+            - 'this is forbidden content'
+          tool_calls: null
+          input_type: request
+env: {}
+compare: {ignore: []}

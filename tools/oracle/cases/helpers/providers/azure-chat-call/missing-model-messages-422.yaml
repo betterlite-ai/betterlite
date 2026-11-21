@@ -1,0 +1,15 @@
+kind: helper
+name: azure-chat-call-missing-model-messages
+call:
+  azure_chat_call:
+    function: completion
+    cases:
+      - model: null
+        messages:
+          - {role: user, content: hi}
+        api_key: key
+      - model: gpt-4o-deployment
+        messages: null
+        api_key: key
+env: {}
+compare: {ignore: []}

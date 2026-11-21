@@ -1,0 +1,42 @@
+kind: helper
+name: absent-budget-and-metadata-limits
+call:
+  team_parent_limits:
+    calls:
+      - check: model_specific
+        teams: &siblings
+          - {team_id: team-a, tpm_limit: 40, rpm_limit: 4, metadata: {model_rpm_limit: {gpt: 4}, model_tpm_limit: {gpt: 40}}}
+          - {team_id: team-b, metadata: null}
+        organization: &bare {organization_id: org-1, budget_id: budget-1, created_by: admin, updated_by: admin}
+        request: &large {kind: new, body: {tpm_limit: 1000000, rpm_limit: 1000000, model_rpm_limit: {gpt: 1000000}, model_tpm_limit: {gpt: 1000000}}}
+      - check: rpm_tpm
+        teams: *siblings
+        organization: *bare
+        request: *large
+      - check: model_specific
+        teams: *siblings
+        organization: &nulls
+          {organization_id: org-1, budget_id: budget-1, created_by: admin, updated_by: admin, metadata: {}, litellm_budget_table: {rpm_limit: null, tpm_limit: null}}
+        request: *large
+      - check: rpm_tpm
+        teams: *siblings
+        organization: *nulls
+        request: *large
+      - check: model_specific
+        teams: *siblings
+        organization: {organization_id: org-1, budget_id: budget-1, created_by: admin, updated_by: admin, metadata: {model_rpm_limit: {claude: 1}}}
+        request: {kind: new, body: {model_rpm_limit: {gpt: 1000}}}
+      - check: model_specific
+        teams: *siblings
+        organization: {organization_id: org-1, budget_id: budget-1, created_by: admin, updated_by: admin, litellm_budget_table: {rpm_limit: 1, tpm_limit: 1}}
+        request: {kind: new, body: {tpm_limit: 5}}
+      - check: model_specific
+        teams: *siblings
+        organization: {organization_id: org-1, budget_id: budget-1, created_by: admin, updated_by: admin, metadata: {model_rpm_limit: {gpt: 7}}}
+        request: {kind: new, body: {model_tpm_limit: {gpt: 1000}}}
+      - check: rpm_tpm
+        teams: *siblings
+        organization: {organization_id: org-1, budget_id: budget-1, created_by: admin, updated_by: admin, litellm_budget_table: {tpm_limit: 50}}
+        request: {kind: new, body: {rpm_limit: 1000}}
+env: {}
+compare: {ignore: []}
