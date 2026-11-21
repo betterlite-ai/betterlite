@@ -8,8 +8,8 @@ use rust_decimal::Decimal;
 use super::canonical::serialize_record;
 use super::decode::decode_baseline_json;
 use super::{
-    BaselineAccountingRecord, BaselineEntity, DailyBaselineAttribution, DailyBaselineTarget,
-    RecordDecodeError, RecordError, decode_baseline_record,
+    BaselineEntity, DailyBaselineAttribution, DailyBaselineTarget, RecordDecodeError, RecordError,
+    decode_baseline_record,
 };
 use crate::daily_spend_sql::values::SpendColumnValue;
 

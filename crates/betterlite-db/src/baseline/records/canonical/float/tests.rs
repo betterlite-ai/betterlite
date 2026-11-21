@@ -53,4 +53,5 @@ fn pads_a_single_exponent_digit() {
     assert_eq!(format(1e-7_f64), "1e-07");
     assert_eq!(format(1.5e-7_f64), "1.5e-07");
     assert_eq!(format(1e-5_f64), "1e-05");
+    assert_eq!(format(1e-10_f64), "1e-10");
 }

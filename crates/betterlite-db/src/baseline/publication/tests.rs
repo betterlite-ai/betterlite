@@ -258,7 +258,7 @@ fn estimated_publication(actual: Decimal, baseline: Decimal) -> BaselinePublicat
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 struct StoredPublication {
     version: i64,
@@ -277,14 +277,14 @@ struct StoredPublication {
     cache_creation_1h_input_tokens: Option<i64>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 struct StoredTarget {
     entity: String,
     entity_id: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 struct StoredDaily {
     date: String,
@@ -297,7 +297,7 @@ struct StoredDaily {
     targets: Vec<StoredTarget>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 struct StoredChange {
     request_id: String,
