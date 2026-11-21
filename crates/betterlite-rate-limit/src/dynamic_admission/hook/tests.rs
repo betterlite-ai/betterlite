@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use betterlite_core::api::request_destination::RequestData;
 use betterlite_core::routes::CallType;
 use betterlite_models::decisions::Json;
+use tokio::runtime::Builder;
 
 use super::{ModelGroupInfoError, PreCallError};
 use crate::dynamic_admission::admission::AdmissionKey;
@@ -73,7 +74,7 @@ fn run_pre_call(
 ) -> (Result<(), PreCallError>, String) {
     let mut outcome = None;
     let logs = capture(|| {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .build()
             .expect("the test runtime starts");
         outcome = Some(runtime.block_on(harness.admission.pre_call(

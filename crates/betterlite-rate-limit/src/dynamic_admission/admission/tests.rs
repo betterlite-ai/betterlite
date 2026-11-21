@@ -3,6 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use betterlite_auth::resolved_key::auth::ParentOtelSpan;
+use tokio::runtime::Builder;
 
 use super::{AdmissionKey, CheckRateLimitError, RateLimitCheck};
 use crate::atomic_counter::payload::IncrementAmounts;
@@ -140,7 +141,7 @@ fn admission_logs_the_atomic_response() {
     let stash = RequestStashSlot::default();
     let request = check(&admission_key, &stash, Some("default"), 0.3);
     let logs = capture(|| {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .build()
             .expect("the test runtime starts");
         runtime

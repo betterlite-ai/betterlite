@@ -359,13 +359,13 @@ impl Harness {
             setup.tracking,
         ));
         let providers = Arc::new(RecordingProviders::new("gpt-4-0613", "openai"));
-        let mut handler =
-            DynamicRateLimitHandler::new(Arc::clone(&cache), None, setup.policy, WINDOW);
+        let cache_port = Arc::clone(&cache);
+        let mut handler = DynamicRateLimitHandler::new(cache_port, None, setup.policy, WINDOW);
         if let Some(answer) = setup.router {
             handler.update_variables(Arc::new(FixedRouter::new(answer)));
         }
-        let limiter_port: Arc<dyn AdmissionLimiter> = Arc::clone(&limiter);
-        let providers_port: Arc<dyn RateLimitProviderResolver> = Arc::clone(&providers);
+        let limiter_port = Arc::clone(&limiter);
+        let providers_port = Arc::clone(&providers);
         Self {
             admission: DynamicAdmission {
                 limiter: limiter_port,
