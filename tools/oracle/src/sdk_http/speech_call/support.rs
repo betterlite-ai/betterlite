@@ -56,8 +56,8 @@ pub(super) fn settings(
 }
 
 #[derive(Serialize)]
-struct SettingsSource<'a> {
-    litellm_settings: &'a Globals,
+struct SettingsSource<'globals> {
+    litellm_settings: &'globals Globals,
 }
 
 // litellm_settings as the case sets it, with the base already resolved to the mock origin
