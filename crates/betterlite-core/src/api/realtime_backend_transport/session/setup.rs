@@ -6,7 +6,7 @@ use crate::api::realtime_backend_transport::error::RealtimeConnectionError;
 use crate::api::realtime_backend_transport::protocol::RealtimeSessionRelay;
 use crate::api::realtime_contracts::config::BaseRealtimeConfig;
 use crate::api::realtime_contracts::error::{RealtimeContractError, WebSocketError};
-use crate::api::realtime_contracts::transport::{RealtimeBackend as _, RealtimeMessage};
+use crate::api::realtime_contracts::transport::RealtimeMessage;
 use crate::api::realtime_guardrail_policy::{
     RealtimeGuardrailCallback, inject_auto_response_disable,
 };

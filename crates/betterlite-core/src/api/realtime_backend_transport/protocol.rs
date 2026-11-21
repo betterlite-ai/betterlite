@@ -69,7 +69,7 @@ impl ClientWebSocket for ClientSlot {
 // What the injected relay gets for one session: B1006's connection state, the receiving half of a dialed backend, and the caller's cancellation
 pub struct SessionRelay<'session> {
     pub state: &'session mut RealtimeStreaming,
-    pub source: Option<&'session mut (dyn RealtimeBackendSource + 'session)>,
+    pub source: Option<Box<dyn RealtimeBackendSource>>,
     pub cancellation: &'session CancellationToken,
 }
 

@@ -398,8 +398,8 @@ impl RealtimeSessionRelay for RecordingRelay {
     async fn relay(&mut self, session: SessionRelay<'_>) -> Result<(), io::Error> {
         record_observation(&self.observation, &session);
         let state = session.state;
-        if let Some(source) = session.source {
-            let outcome = receive_outcome(source).await;
+        if let Some(mut source) = session.source {
+            let outcome = receive_outcome(source.as_mut()).await;
             self.observation.lock().unwrap().source_outcome = outcome;
         }
         state
@@ -497,7 +497,7 @@ impl Default for HarnessOptions {
 }
 
 impl HarnessOptions {
-    pub(super) fn with_requires_setup(mut self, requires_setup: SessionFlag) -> Self {
+    pub(super) const fn with_requires_setup(mut self, requires_setup: SessionFlag) -> Self {
         self.requires_setup = requires_setup;
         self
     }
@@ -512,7 +512,7 @@ impl HarnessOptions {
         self
     }
 
-    pub(super) fn with_own_backend(mut self, own_backend: SessionFlag) -> Self {
+    pub(super) const fn with_own_backend(mut self, own_backend: SessionFlag) -> Self {
         self.own_backend = own_backend;
         self
     }
@@ -550,12 +550,12 @@ impl HarnessOptions {
         self
     }
 
-    pub(super) fn with_cancellation(mut self, cancellation: SessionFlag) -> Self {
+    pub(super) const fn with_cancellation(mut self, cancellation: SessionFlag) -> Self {
         self.cancellation = cancellation;
         self
     }
 
-    pub(super) fn with_relay_fails(mut self, relay_fails: SessionFlag) -> Self {
+    pub(super) const fn with_relay_fails(mut self, relay_fails: SessionFlag) -> Self {
         self.relay_fails = relay_fails;
         self
     }
@@ -565,7 +565,10 @@ impl HarnessOptions {
         self
     }
 
-    pub(super) fn with_max_message_size_bytes(mut self, max_message_size_bytes: usize) -> Self {
+    pub(super) const fn with_max_message_size_bytes(
+        mut self,
+        max_message_size_bytes: usize,
+    ) -> Self {
         self.max_message_size_bytes = max_message_size_bytes;
         self
     }

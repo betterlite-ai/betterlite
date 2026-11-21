@@ -162,19 +162,17 @@ where
         state: &mut RealtimeStreaming,
         backend_source: Option<Box<dyn RealtimeBackendSource>>,
     ) -> Result<(), RealtimeConnectionError<Config::Error, Callback::Error, Relay::Error>> {
-        let mut source: Option<Box<dyn RealtimeBackendSource>> =
-            backend_source.map(|owned| -> Box<dyn RealtimeBackendSource> {
-                Box::new(SizeLimitedSource {
-                    inner: owned,
-                    max_message_size_bytes: self.max_message_size_bytes,
-                })
-            });
-        let source_ref = source.as_deref_mut();
+        let source = backend_source.map(|owned| -> Box<dyn RealtimeBackendSource> {
+            Box::new(SizeLimitedSource {
+                inner: owned,
+                max_message_size_bytes: self.max_message_size_bytes,
+            })
+        });
         setup::send_initial_frame(self, state).await?;
         self.relay
             .relay(SessionRelay {
                 state,
-                source: source_ref,
+                source,
                 cancellation: &self.cancellation,
             })
             .await
