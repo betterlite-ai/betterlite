@@ -1,0 +1,15 @@
+kind: websocket
+name: realtime-backend-transport-open-retry
+path: /v1/realtime
+headers: {}
+requested_subprotocols: []
+expected_http_status: 101
+negotiated_subprotocol: null
+frames:
+  - direction: provider_to_client
+    action: expect
+    text: '{"type": "session.created", "session": {"id": "trace-1"}}'
+close:
+  initiator: provider
+  code: 1000
+  reason: upstream closed

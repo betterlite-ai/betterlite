@@ -1,0 +1,142 @@
+kind: helper
+name: realtime-backend-open-retry
+call:
+  realtime_backend_transport_websocket:
+    provider:
+      kind: setup
+      setup: |
+        {"setup": {"model": "models/gemini-test", "generationConfig": {"responseModalities": ["AUDIO"]}, "inputAudioTranscription": {}}}
+      synthetic: null
+      error: null
+    model: gemini-test
+    url: wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=key-1
+    api_base: null
+    api_key: key-1
+    headers:
+      Authorization: Bearer test
+    ssl_verify: true
+    max_message_size_bytes: 1024
+    dials:
+    - kind: timeout
+      message: ''
+    - kind: timeout
+      message: ''
+    - kind: connect
+    send_error: null
+    close_error: null
+    metadata: null
+    intent: null
+calls:
+- realtime_backend_transport_websocket:
+    provider:
+      kind: setup
+      setup: null
+      synthetic: null
+      error: null
+    model: gemini-test
+    url: wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=key-1
+    api_base: null
+    api_key: key-1
+    headers:
+      Authorization: Bearer test
+    ssl_verify: true
+    max_message_size_bytes: 1024
+    dials:
+    - kind: os
+      message: first
+    - kind: websocket
+      message: second
+    - kind: os
+      message: third
+    send_error: null
+    close_error: null
+    metadata: null
+    intent: null
+- realtime_backend_transport_websocket:
+    provider:
+      kind: setup
+      setup: null
+      synthetic: null
+      error: null
+    model: gemini-test
+    url: wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=key-1
+    api_base: null
+    api_key: key-1
+    headers:
+      Authorization: Bearer test
+    ssl_verify: true
+    max_message_size_bytes: 1024
+    dials:
+    - kind: invalid_status
+      status_code: 401
+    send_error: null
+    close_error: null
+    metadata: null
+    intent: null
+- realtime_backend_transport_websocket:
+    provider:
+      kind: setup
+      setup: null
+      synthetic: null
+      error: null
+    model: gemini-test
+    url: wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=key-1
+    api_base: null
+    api_key: key-1
+    headers:
+      Authorization: Bearer test
+    ssl_verify: true
+    max_message_size_bytes: 1024
+    dials:
+    - kind: invalid_status_code
+      status_code: 403
+      message: 'server rejected WebSocket connection: HTTP 403'
+    send_error: null
+    close_error: null
+    metadata: null
+    intent: null
+- realtime_backend_transport_websocket:
+    provider:
+      kind: setup
+      setup: null
+      synthetic: null
+      error: null
+    model: gemini-test
+    url: ws://upstream.test/realtime
+    api_base: null
+    api_key: key-1
+    headers:
+      Authorization: Bearer test
+    ssl_verify: false
+    max_message_size_bytes: 1024
+    dials:
+    - kind: connect
+    send_error: null
+    close_error: null
+    metadata: null
+    intent: null
+- realtime_backend_transport_websocket:
+    provider:
+      kind: error
+      setup: null
+      synthetic: null
+      error:
+        error_class: ValueError
+        message: api_key is required for Meta API calls
+    model: muse-voice-transcribe-1.0
+    url: wss://api.meta.ai/v1/asr/realtime
+    api_base: null
+    api_key: null
+    headers:
+      Authorization: Bearer test
+    ssl_verify: true
+    max_message_size_bytes: 1024
+    dials:
+    - kind: connect
+    send_error: null
+    close_error: null
+    metadata: null
+    intent: null
+env: {}
+compare:
+  ignore: []
