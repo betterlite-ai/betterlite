@@ -5,7 +5,7 @@ use betterlite_config::sections::model_effective_fields::Settings;
 use betterlite_db::identity_rows::Payload;
 use betterlite_db::stored_cipher::DbCipher;
 use betterlite_models::model_registration::JsonObject;
-use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces};
@@ -27,7 +27,7 @@ use betterlite_server::model_effective_fields::strategy::{
 };
 use secrecy::SecretString;
 use serde_json::{Value, json};
-use tokio::runtime::Builder;
+use tokio::runtime::{Builder, Runtime};
 
 use super::support::{Attribution, FakeCredentials, refusal};
 use super::{Call, CredentialCall, Input, MarkerCall, PtuCall};
@@ -42,6 +42,7 @@ pub(super) fn answer(input: &Input) -> HelperResult {
         diagnostics: TracingDiagnostics,
     };
     let attribution = Attribution(input.ptu_enabled);
+    let runtime = Builder::new_current_thread().build().or_value_error()?;
     let mut answers = Vec::with_capacity(input.calls.len());
     for call in &input.calls {
         let answered = match call {
@@ -53,7 +54,9 @@ pub(super) fn answer(input: &Input) -> HelperResult {
                 "complexity_router_config": effective_complexity_config(pair.incoming.as_ref(), pair.existing.as_ref()),
             }),
             Call::MemberMarker(marker_call) => marker_answer(&cipher, marker_call),
-            Call::CredentialName(credential_call) => credential_answer(&cipher, credential_call)?,
+            Call::CredentialName(credential_call) => {
+                credential_answer(&cipher, &runtime, credential_call)
+            }
             Call::RateLimits(rate_call) => {
                 let settings = Settings {
                     enforce_rpm_tpm_on_model_add: rate_call.enforced,
@@ -88,7 +91,7 @@ fn marker_answer(cipher: &DbCipher, call: &MarkerCall) -> Value {
     json!({ "marker": marker })
 }
 
-fn credential_answer(cipher: &DbCipher, call: &CredentialCall) -> HelperResult {
+fn credential_answer(cipher: &DbCipher, runtime: &Runtime, call: &CredentialCall) -> Value {
     let registry = CredentialRegistry::default();
     registry.upsert_credentials(
         call.loaded
@@ -109,22 +112,12 @@ fn credential_answer(cipher: &DbCipher, call: &CredentialCall) -> HelperResult {
         registry: &registry,
         store: &store,
     };
-    let runtime = Builder::new_current_thread().build().map_err(|error| {
-        Box::new(HelperError {
-            class: "RuntimeError".to_owned(),
-            status: None,
-            error_type: None,
-            param: None,
-            code: None,
-            message: error.to_string(),
-        })
-    })?;
     let outcome = runtime.block_on(check_credential_name(
         call.incoming.as_ref(),
         call.existing.as_ref(),
         &sources,
     ));
-    Ok(json!({ "error": refusal(outcome), "lookups": store.lookups() }))
+    json!({ "error": refusal(outcome), "lookups": store.lookups() })
 }
 
 fn ptu_answer(call: &PtuCall, attribution: &Attribution) -> Value {
