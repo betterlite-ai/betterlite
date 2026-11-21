@@ -68,9 +68,11 @@ class Handlers(Protocol):
 HANDLER: Handlers = BaseLLMHTTPHandler()
 
 
-class TransportCall(BaseModel):
+class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+
+class TransportCall(StrictModel):
     mode: Mode
     model: str
     input: JsonValue
@@ -86,9 +88,7 @@ class TransportCall(BaseModel):
     agentic_result: JsonValue = None
 
 
-class SetupView(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class SetupView(StrictModel):
     model: str
     custom_llm_provider: str | None = None
     litellm_metadata: dict[str, JsonValue] | None = None
@@ -96,9 +96,7 @@ class SetupView(BaseModel):
     call_type: str | None = None
 
 
-class StreamView(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class StreamView(StrictModel):
     kind: StreamKind
     setup: SetupView
     response: JsonValue = None
@@ -120,8 +118,6 @@ class CreateTransportEnvelope(BaseModel):
 
 # The sync handler's _run_sync_responses_pre_call_deployment_hook, over the case's patch
 class PatchHook(CustomLogger):
-    patch: dict[str, JsonValue]
-
     def __init__(self, patch: dict[str, JsonValue]) -> None:
         self.patch = patch
 
@@ -137,7 +133,7 @@ class PatchHook(CustomLogger):
         return merged
 
 
-# messages=(input if isinstance(input, list) else [{"role": "user", "content": input}])
+# LiteLLM's messages argument: a list input as it is, text as one user turn.
 def followup_messages(value: str | ResponseInputParam) -> list[JsonValue]:
     match value:
         case str():
@@ -283,8 +279,7 @@ def run_transport(call: TransportCall, api_base: str) -> Outcome:
     if config is None:
         raise ValueError("the openai responses config is registered")
     install(call)
-    params: dict[str, JsonValue] = {**call.litellm_params, "api_base": api_base}
-    litellm_params = LITELLM_PARAMS.validate_python(params)
+    litellm_params = LITELLM_PARAMS.validate_python({**call.litellm_params, "api_base": api_base})
     try:
         work = invoke(call, config, litellm_params, logging_fixture(call.model))
     except PROVIDER_ERROR as error:
@@ -292,14 +287,11 @@ def run_transport(call: TransportCall, api_base: str) -> Outcome:
     return observed(work)
 
 
-class CreateTransportRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class CreateTransportRequest(StrictModel):
     responses_create_transport: TransportCall
 
     def serialize(self, api_base: str) -> str:
-        outcome = run_transport(self.responses_create_transport, api_base)
-        value = CreateTransportValue(value=outcome)
+        value = CreateTransportValue(value=run_transport(self.responses_create_transport, api_base))
         return CreateTransportEnvelope(responses_create_transport=value).model_dump_json(
             by_alias=True
         )
