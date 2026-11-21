@@ -33,7 +33,7 @@ use crate::generic_guardrail_contracts::{GuardrailInputType, GuardrailMessage};
 use crate::guardrail_base::GuardrailBase;
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_base::inputs::GuardrailApiInputs;
-use crate::guardrail_base::settings::GuardrailSettings;
+use crate::guardrail_base::settings::{GuardrailSettings, GuardrailSwitches};
 use crate::guardrail_scan_cache::{ScanCacheStore, scan_cache_key, scanned_text_hash};
 
 pub(super) const GUARDRAIL_NAME: &str = "bedrock-incremental";
@@ -233,7 +233,23 @@ pub(super) fn base() -> GuardrailBase {
     GuardrailBase {
         settings: GuardrailSettings {
             guardrail_name: Some(GUARDRAIL_NAME.to_owned()),
-            ..GuardrailSettings::default()
+            supported_event_hooks: None,
+            event_hook: None,
+            default_on: false,
+            mask_request_content: false,
+            mask_response_content: false,
+            violation_message_template: None,
+            end_session_after_n_fails: None,
+            on_violation: None,
+            realtime_violation_message: None,
+            on_sensitive_data: None,
+            sensitive_data_route_to_model: None,
+            sticky_session_routing: true,
+            run_in_parallel: false,
+            scan_raw_request: false,
+            only_scan_new_messages: false,
+            timeout: None,
+            switches: GuardrailSwitches::default(),
         },
         mode: None,
     }
@@ -401,7 +417,12 @@ pub(super) fn strings(values: &[&str]) -> Vec<String> {
 pub(super) fn inputs(values: &[&str]) -> GuardrailApiInputs {
     GuardrailApiInputs {
         texts: Some(strings(values)),
-        ..GuardrailApiInputs::default()
+        images: None,
+        tools: None,
+        tool_calls: None,
+        structured_messages: None,
+        model: None,
+        stream_holdback_chars: None,
     }
 }
 
