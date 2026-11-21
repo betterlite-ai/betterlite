@@ -65,68 +65,37 @@ impl ModelGroupInfo {
     #[must_use]
     pub fn to_json(&self) -> JsonObject {
         let mut fields = JsonObject::new();
-        self.insert_identity(&mut fields);
-        self.insert_limits(&mut fields);
-        self.insert_capabilities(&mut fields);
-        fields
-    }
-
-    fn insert_identity(&self, fields: &mut JsonObject) {
         fields.insert(
             "model_group".to_owned(),
             Json::Text(self.model_group.clone()),
         );
         fields.insert("providers".to_owned(), text_list(&self.providers));
-        fields.insert(
-            "max_input_tokens".to_owned(),
-            json_float(self.max_input_tokens.as_ref()),
-        );
-        fields.insert(
-            "max_output_tokens".to_owned(),
-            json_float(self.max_output_tokens.as_ref()),
-        );
-        fields.insert(
-            "input_cost_per_token".to_owned(),
-            json_float(self.input_cost_per_token.as_ref()),
-        );
-        fields.insert(
-            "output_cost_per_token".to_owned(),
-            json_float(self.output_cost_per_token.as_ref()),
-        );
-        fields.insert(
-            "input_cost_per_pixel".to_owned(),
-            json_float(self.input_cost_per_pixel.as_ref()),
-        );
+        for (field, cost) in [
+            ("max_input_tokens", &self.max_input_tokens),
+            ("max_output_tokens", &self.max_output_tokens),
+            ("input_cost_per_token", &self.input_cost_per_token),
+            ("output_cost_per_token", &self.output_cost_per_token),
+            ("input_cost_per_pixel", &self.input_cost_per_pixel),
+        ] {
+            fields.insert(field.to_owned(), json_float(cost.as_ref()));
+        }
         fields.insert(
             "mode".to_owned(),
             self.mode.clone().map_or(Json::Null, Json::Text),
         );
-    }
-
-    fn insert_limits(&self, fields: &mut JsonObject) {
-        fields.insert(
-            "tpm".to_owned(),
-            self.tpm.map(Number::from).map_or(Json::Null, Json::Number),
-        );
-        fields.insert(
-            "rpm".to_owned(),
-            self.rpm.map(Number::from).map_or(Json::Null, Json::Number),
-        );
-        fields.insert(
-            "itpm".to_owned(),
-            self.itpm.map(Number::from).map_or(Json::Null, Json::Number),
-        );
-        fields.insert(
-            "otpm".to_owned(),
-            self.otpm.map(Number::from).map_or(Json::Null, Json::Number),
-        );
+        for (field, amount) in [
+            ("tpm", self.tpm),
+            ("rpm", self.rpm),
+            ("itpm", self.itpm),
+            ("otpm", self.otpm),
+        ] {
+            let value = amount.map(Number::from).map_or(Json::Null, Json::Number);
+            fields.insert(field.to_owned(), value);
+        }
         fields.insert(
             "supports_fast_mode".to_owned(),
             Json::Bool(self.supports_fast_mode),
         );
-    }
-
-    fn insert_capabilities(&self, fields: &mut JsonObject) {
         for (field, capability) in Capability::ALL {
             let enabled = self.capabilities.contains(&capability);
             fields.insert(field.to_owned(), Json::Bool(enabled));
@@ -147,6 +116,7 @@ impl ModelGroupInfo {
             "configurable_clientside_auth_params".to_owned(),
             json_list(self.clientside_auth.as_deref(), ClientsideAuth::to_json),
         );
+        fields
     }
 }
 
@@ -161,12 +131,7 @@ impl ClientsideAuth {
 }
 
 fn text_list(values: &[String]) -> Json {
-    Json::List(
-        values
-            .iter()
-            .map(|value| Json::Text(value.clone()))
-            .collect(),
-    )
+    Json::List(values.iter().cloned().map(Json::Text).collect())
 }
 
 fn json_list<T>(values: Option<&[T]>, convert: fn(&T) -> Json) -> Json {
