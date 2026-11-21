@@ -8,6 +8,7 @@ use betterlite_error::proxy_rate_limit_error::{
 use betterlite_error::rate_limit::ProxyRateLimitError;
 use num_traits::cast::cast;
 use serde::Deserialize;
+use serde_json::Number;
 
 use crate::limiter_records::{RateLimitDescriptor, RateLimitResponse};
 
@@ -32,8 +33,7 @@ impl PriorityKind {
 }
 
 // PriorityReservationDict as LiteLLM reads it: both keys are optional, and an explicit null counts as absent (docs/compatibility.md).
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
-#[serde(from = "PriorityReservationRaw")]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PriorityReservation {
     pub kind: PriorityKind,
     pub value: f64,
@@ -43,16 +43,14 @@ pub struct PriorityReservation {
 struct PriorityReservationRaw {
     #[serde(rename = "type")]
     kind: Option<String>,
-    value: Option<f64>,
+    value: Option<Number>,
 }
 
-impl From<PriorityReservationRaw> for PriorityReservation {
-    fn from(raw: PriorityReservationRaw) -> Self {
-        Self {
-            kind: PriorityKind::from_wire(raw.kind.as_deref()),
-            value: raw.value.unwrap_or(1.0),
-        }
-    }
+// Why a priority value can't be read: a JSON number no float can hold.
+#[derive(Debug, thiserror::Error)]
+pub enum PriorityValueError {
+    #[error("the priority value is not a finite number")]
+    NotANumber,
 }
 
 // The two ModelGroupInfo capacities a priority reservation can be measured against.
@@ -64,11 +62,40 @@ pub struct ModelGroupLimits {
 }
 
 // convert_priority_to_percent's argument: a plain number is already a fraction of capacity, a mapping says what its value counts.
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
-#[serde(untagged)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[serde(try_from = "PriorityValueRaw")]
 pub enum PriorityValue {
     Percent(f64),
     Reservation(PriorityReservation),
+}
+
+// serde_json's arbitrary_precision hands a float to serde's content buffer as {"$serde_json::private::Number": "0.9"}, and Number reads that shape back.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum PriorityValueRaw {
+    Percent(Number),
+    Reservation(PriorityReservationRaw),
+}
+
+impl TryFrom<PriorityValueRaw> for PriorityValue {
+    type Error = PriorityValueError;
+
+    fn try_from(raw: PriorityValueRaw) -> Result<Self, Self::Error> {
+        match raw {
+            PriorityValueRaw::Percent(number) => Ok(Self::Percent(
+                number.as_f64().ok_or(PriorityValueError::NotANumber)?,
+            )),
+            PriorityValueRaw::Reservation(reservation) => {
+                let value = reservation.value.map_or(Ok(1.0), |number| {
+                    number.as_f64().ok_or(PriorityValueError::NotANumber)
+                })?;
+                Ok(Self::Reservation(PriorityReservation {
+                    kind: PriorityKind::from_wire(reservation.kind.as_deref()),
+                    value,
+                }))
+            }
+        }
+    }
 }
 
 // convert_priority_to_percent: a percent passes through, and an rpm or tpm value is divided by the model group's capacity when that capacity is a positive limit.

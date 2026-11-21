@@ -130,6 +130,7 @@ const TPM_BURST: PriorityValue = PriorityValue::Reservation(PriorityReservation 
 #[case::missing_value(r#"{"type": "rpm"}"#, ONE_RPM)]
 #[case::empty_mapping("{}", FULL_PERCENT)]
 #[case::tpm(r#"{"type": "tpm", "value": 900000}"#, TPM_BURST)]
+#[case::whole_number("1", PriorityValue::Percent(1.0))]
 fn provider_attribution_tests_behavior_reads_the_reservation_mapping(
     #[case] text: &str,
     #[case] expected: PriorityValue,
@@ -137,6 +138,20 @@ fn provider_attribution_tests_behavior_reads_the_reservation_mapping(
     assert_eq!(
         serde_json::from_str::<PriorityValue>(text).expect("the mapping is a priority value"),
         expected
+    );
+}
+
+#[rstest]
+#[case::plain_number("1e400")]
+#[case::reservation_value(r#"{"type": "rpm", "value": 1e400}"#)]
+fn provider_attribution_tests_behavior_refuses_a_number_no_float_can_hold(#[case] text: &str) {
+    let error = serde_json::from_str::<PriorityValue>(text)
+        .expect_err("a number no float can hold is refused");
+    assert!(
+        error
+            .to_string()
+            .contains("the priority value is not a finite number"),
+        "{error}"
     );
 }
 
