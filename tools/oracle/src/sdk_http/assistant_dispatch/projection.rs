@@ -54,30 +54,32 @@ pub(super) async fn project(
     answer: Result<AssistantOutcome<RunStream<ProxiedClient>>, AssistantDispatchError>,
 ) -> Result<Step, SdkHttpError> {
     match answer {
-        // entering the manager starts the request, so a consumed stream has issued it by the time it returns
-        Ok(AssistantOutcome::Run(RunOutcome::Streaming(stream))) => {
-            let consumed = stream
-                .consume()
-                .await
-                .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
-            Ok(Step {
-                ids: Vec::new(),
-                status: None,
-                events: Some(
-                    consumed
-                        .iter()
-                        .map(|event| event.name().to_owned())
-                        .collect(),
-                ),
-                failure: None,
-            })
-        }
+        Ok(AssistantOutcome::Run(RunOutcome::Streaming(stream))) => drained(stream).await,
         Ok(outcome) => {
             let (ids, status) = answered(outcome);
             Ok(record(ids, status))
         }
         Err(error) => dropped(error),
     }
+}
+
+// entering the manager starts the request, so a consumed stream has issued it by the time it returns
+async fn drained(stream: RunStream<ProxiedClient>) -> Result<Step, SdkHttpError> {
+    let consumed = stream
+        .consume()
+        .await
+        .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
+    Ok(Step {
+        ids: Vec::new(),
+        status: None,
+        events: Some(
+            consumed
+                .iter()
+                .map(|event| event.name().to_owned())
+                .collect(),
+        ),
+        failure: None,
+    })
 }
 
 // The ids each non-streaming answer returns, and the status a polled run carries.
