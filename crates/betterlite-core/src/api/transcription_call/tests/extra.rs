@@ -14,6 +14,7 @@ use crate::api::transcription_call::call::SuppliedClientKind;
 use crate::api::transcription_call::error::{
     AsyncTranscriptionError, TranscriptionDispatchError, TranscriptionError,
 };
+use crate::api::transcription_call::error_type_name;
 use crate::api::transcription_call::plan::{bool_value, drop_policy};
 use crate::api::transcription_call::target::TranscriptionInput;
 
@@ -317,4 +318,13 @@ fn gpt_transcription_selects_the_gpt_family() {
             Some(TranscriptionFamily::Gpt)
         );
     });
+}
+
+// a number past i64::MAX is still an int, since Python's int has no width
+#[test]
+fn error_type_name_reads_a_wide_integer_as_int() {
+    assert_eq!(
+        error_type_name(&json("18446744073709551615")),
+        "<class 'int'>"
+    );
 }
