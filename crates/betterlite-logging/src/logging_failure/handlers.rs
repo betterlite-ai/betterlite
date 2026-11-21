@@ -24,6 +24,7 @@ use crate::logging_state::correlation::restore_correlation_context;
 use crate::logging_state::events::{
     LoggingEvent, has_run_logging, is_sync_litellm_request, should_run_logging,
 };
+use crate::otel::proxy_runtime::slot::{enter_request_slot, enter_request_slot_sync};
 
 pub fn failure_handler(
     log: &mut FailureCall<'_>,
@@ -31,10 +32,13 @@ pub fn failure_handler(
     loggers: &FailureCallbacks<'_>,
     dependencies: &FailureDeps<'_>,
 ) {
-    if prepare_failure(log, failure, dependencies, LoggingEvent::SyncFailure) {
-        deliver_sync_loggers(log, loggers, dependencies);
-    }
-    restore_correlation_context(log.state, log.context);
+    let slot = log.state.request_slot.clone();
+    enter_request_slot_sync(slot, || {
+        if prepare_failure(log, failure, dependencies, LoggingEvent::SyncFailure) {
+            deliver_sync_loggers(log, loggers, dependencies);
+        }
+        restore_correlation_context(log.state, log.context);
+    });
 }
 
 fn prepare_failure(
@@ -89,27 +93,31 @@ pub async fn async_failure_handler(
     callbacks: &FailureCallbacks<'_>,
     deps: &FailureDeps<'_>,
 ) {
-    if let Some(baseline) = deps.baseline
-        && let Err(error) = baseline.invalidate_baseline(FAILED_REQUEST_REASON).await
-    {
-        tracing::warn!(%error, "the baseline cache estimate could not be invalidated");
-    }
-    special_failure_handlers(call.state, report, deps.special_listeners).await;
-    if prepare_failure(call, report, deps, LoggingEvent::AsyncFailure) {
-        if let Some(delivery) = deliverable(call, deps) {
-            let mut loggers = callbacks.async_loggers();
-            loggers.retain(|logger| logger_may_run(call.state, logger.as_ref()));
-            for logger in loggers {
-                deliver_async_logger(&delivery, logger.as_ref(), &deps.counters).await;
+    let slot = call.state.request_slot.clone();
+    enter_request_slot(slot, async move {
+        if let Some(baseline) = deps.baseline
+            && let Err(error) = baseline.invalidate_baseline(FAILED_REQUEST_REASON).await
+        {
+            tracing::warn!(%error, "the baseline cache estimate could not be invalidated");
+        }
+        special_failure_handlers(call.state, report, deps.special_listeners).await;
+        if prepare_failure(call, report, deps, LoggingEvent::AsyncFailure) {
+            if let Some(delivery) = deliverable(call, deps) {
+                let mut loggers = callbacks.async_loggers();
+                loggers.retain(|logger| logger_may_run(call.state, logger.as_ref()));
+                for logger in loggers {
+                    deliver_async_logger(&delivery, logger.as_ref(), &deps.counters).await;
+                }
+            }
+            if let Some(flush) = deps.flush
+                && let Err(error) = flush.flush_post_call().await
+            {
+                tracing::warn!(%error, "the post-call redis batches could not be flushed");
             }
         }
-        if let Some(flush) = deps.flush
-            && let Err(error) = flush.flush_post_call().await
-        {
-            tracing::warn!(%error, "the post-call redis batches could not be flushed");
-        }
-    }
-    restore_correlation_context(call.state, call.context);
+        restore_correlation_context(call.state, call.context);
+    })
+    .await;
 }
 
 pub async fn dispatch_failure_handlers(
