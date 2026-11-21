@@ -1,0 +1,15 @@
+task: B3489
+deviations:
+  - what: agenerate_content calls the async body directly, where LiteLLM runs the sync generate_content in the default thread pool with a copied contextvars context and awaits its result.
+    why: betterlite's setup, chat adapter and native handler are async-native, and B198 injects the call context that LiteLLM carries in context vars, so there is no synchronous call to offload.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L282-L289
+  - what: The chat-compatibility handler and the native HTTP handler are constructor-injected collaborators on GenerateContentDeps, not a module-level BaseLLMHTTPHandler singleton and an imported handler class.
+    why: betterlite's rules require constructor wiring, and both collaborators are typed seams in this crate rather than Python objects looked up at call time.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L40
+  - what: The native call's client arrives as a typed SuppliedClient on GenerateContentDeps instead of kwargs["client"], and litellm_metadata stays in the loose fields because B3488's GenerateContentCall has no member for it.
+    why: B3488's native seam takes the client through its own deps record and reads no litellm_metadata, and this task only dispatches into that seam; the logging state already carries the loose fields.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L368-L379
+  - what: The two stream entry points do not remove stream from the loose fields before the chat adapter call, where LiteLLM pops it.
+    why: B3486's typed adapter call carries stream as its own field and forwards no loose kwargs, so the pop has nothing to clean and no observable effect.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L440-L442
+kept_bugs: []
