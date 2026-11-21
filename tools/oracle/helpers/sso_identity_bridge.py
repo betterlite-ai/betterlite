@@ -50,7 +50,9 @@ Input: TypeAlias = ProviderInput | GapInput | StartupGapInput | SubjectInput
 
 def subject_projection(input_value: SubjectInput) -> JsonValue:
     endpoints = input_value["endpoints"]
-    response: Mapping[str, object] = MappingProxyType({"id": input_value["response_id"]})
+    response: Mapping[str, str | None] = MappingProxyType(
+        {"id": input_value["response_id"]}
+    )
     overrides: Mapping[str, str | None] = MappingProxyType(
         {
             "MICROSOFT_AUTHORIZATION_ENDPOINT": endpoints["authorization"],
