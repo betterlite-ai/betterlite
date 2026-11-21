@@ -20,8 +20,8 @@ fn a_negative_interval_never_fires() {
 }
 
 #[test]
-fn a_zero_interval_fires_only_with_no_elapsed_time() {
-    assert!(keepalive_ping_has_fired(Duration::ZERO, Some(0.0)));
+fn a_zero_interval_never_fires() {
+    assert!(!keepalive_ping_has_fired(Duration::ZERO, Some(0.0)));
     assert!(!keepalive_ping_has_fired(Duration::from_secs(2), Some(0.0)));
 }
 
