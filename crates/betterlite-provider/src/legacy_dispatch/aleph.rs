@@ -71,7 +71,7 @@ fn chat_call(chat: &ChatOperation, deployment: &Deployment) -> Result<Call, Oper
     } = body::chat_request_fields(&chat.request)?;
     let optional_params = optional_params(params)?;
     let config = AlephAlphaConfig::new(ALEPH_MAX_TOKENS, Object::new()).map_err(|error| {
-        error::operation(error::LegacyError::Settings {
+        OperationError::from(error::LegacyError::Settings {
             message: error.to_string(),
         })
     })?;

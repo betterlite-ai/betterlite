@@ -121,7 +121,7 @@ fn chat_call(chat: &ChatOperation, deployment: &Deployment) -> Result<Call, Oper
     let inner = custom_params(chat, &params)?;
     let request_body = custom_body(&deployment.model, &params, inner)?;
     let url = Url::parse(&deployment.api_base)
-        .map_err(|source| error::operation(error::LegacyError::Endpoint { source }))?;
+        .map_err(|source| OperationError::from(error::LegacyError::Endpoint { source }))?;
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
     let seconds = SystemTime::now()
@@ -196,7 +196,7 @@ fn custom_body(
         }
         Some(
             JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Text(_) | JsonValue::Array(_),
-        ) => return Err(error::operation(error::LegacyError::ExtraBodyNotObject)),
+        ) => return Err(OperationError::from(error::LegacyError::ExtraBodyNotObject)),
     }
     Ok(request_body)
 }
@@ -208,7 +208,7 @@ fn prompt_text(messages: &[ChatMessage]) -> Result<String, OperationError> {
         let text = match &message.content {
             Some(MessageContent::Text(text)) => text,
             None | Some(MessageContent::Parts(_)) => {
-                return Err(error::operation(error::LegacyError::Content { index }));
+                return Err(OperationError::from(error::LegacyError::Content { index }));
             }
         };
         parts.push(text.as_str());
@@ -243,7 +243,7 @@ pub(super) fn decode(call: &Call, upstream: Upstream) -> Result<OperationResult,
     match upstream {
         Upstream::Buffered(buffered) => {
             let checked = success(buffered)?;
-            let content = decode_custom_output(&checked.body).map_err(error::operation)?;
+            let content = decode_custom_output(&checked.body).map_err(OperationError::from)?;
             let response = AiohttpChatResponse {
                 id: None,
                 object: Some(String::from("chat.completion")),

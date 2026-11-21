@@ -32,11 +32,12 @@ pub enum LegacyError {
     },
     #[error("the settings carry a value main.py cannot apply: {message}")]
     Settings { message: String },
-    #[error("the request body could not be written as JSON")]
-    Encode {
-        #[source]
-        source: JsonError,
-    },
+}
+
+impl From<LegacyError> for OperationError {
+    fn from(error: LegacyError) -> Self {
+        undecodable(error.to_string())
+    }
 }
 
 // A failure betterlite models nowhere else reaches the caller as an unreadable provider reply
@@ -50,18 +51,6 @@ pub(super) fn undecodable(message: String) -> OperationError {
 pub(super) fn encode(message: String) -> OperationError {
     OperationError::Encode {
         source: JsonError::io(IoError::other(message)),
-    }
-}
-
-pub(super) fn operation(error: LegacyError) -> OperationError {
-    match error {
-        LegacyError::Encode { source } => OperationError::Encode { source },
-        other @ (LegacyError::Content { .. }
-        | LegacyError::CustomOutput
-        | LegacyError::ExtraBodyNotObject
-        | LegacyError::Endpoint { .. }
-        | LegacyError::Reply { .. }
-        | LegacyError::Settings { .. }) => undecodable(other.to_string()),
     }
 }
 
