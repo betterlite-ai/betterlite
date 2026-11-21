@@ -7,6 +7,7 @@ use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http::proxy::{ProxiedClient, base_builder};
+use betterlite_test_ports::refused_port::RefusedPort;
 use futures_util::{Stream, StreamExt as _};
 use secrecy::SecretString;
 use serde_json::{Map, Value};
@@ -286,12 +287,10 @@ async fn a_two_hundred_and_one_reply_logs_the_post_call_before_its_status() {
 
 #[tokio::test]
 async fn a_transport_failure_maps_to_status_500() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
+    let refused = RefusedPort::bind().unwrap();
     let call = new_call();
     let plan = plan_for(
-        &format!("http://{address}/fim"),
+        &format!("http://{}/fim", refused.address),
         Mode::Async,
         false,
         Some(Duration::from_secs(5)),

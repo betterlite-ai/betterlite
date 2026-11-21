@@ -1,0 +1,87 @@
+kind: helper
+name: client-text-and-tool-guardrails
+call:
+  realtime_client_relay_websocket:
+    mode: ack
+    messages:
+      - '{"type":"conversation.item.create","item":{"type":"message","role":"user","content":[{"type":"input_text","text":"a"},{"type":"input_text","text":"b"}]}}'
+      - '{"type":"response.create"}'
+      - '{"type":"conversation.item.create","item":{"type":"message","role":"user","content":[{"type":"input_text","text":"clean"}]}}'
+    setup:
+      pending: []
+      backend_setup_complete: null
+      flushing: false
+      turn_detection_sent: false
+      pending_guardrail_message: null
+      session_configuration_request: null
+    guardrails:
+      - hooks: [pre_call]
+        block_on: "a b"
+    beta_backend: false
+    close: null
+    lifetime: null
+    client_send_failures: []
+    client_close_failures: []
+calls:
+  - realtime_client_relay_websocket:
+      mode: ack
+      messages:
+        - '{"type":"conversation.item.create","item":{"type":"function_call_output","call_id":"call-1","output":"secret"}}'
+        - '{"type":"response.create"}'
+      setup:
+        pending: []
+        backend_setup_complete: null
+        flushing: false
+        turn_detection_sent: false
+        pending_guardrail_message: null
+        session_configuration_request: null
+      guardrails:
+        - hooks: [pre_call]
+          block_on: secret
+      beta_backend: false
+      close: null
+      lifetime: null
+      client_send_failures: []
+      client_close_failures: []
+  - realtime_client_relay_websocket:
+      mode: ack
+      messages:
+        - not json
+        - '{"type":"conversation.item.create","item":{"type":"message","role":"user","content":[{"type":"input_text","text":"clean"}]}}'
+      setup:
+        pending: []
+        backend_setup_complete: null
+        flushing: false
+        turn_detection_sent: false
+        pending_guardrail_message: null
+        session_configuration_request: null
+      guardrails:
+        - hooks: [pre_call]
+          block_on: clean
+      beta_backend: false
+      close: null
+      lifetime: null
+      client_send_failures: []
+      client_close_failures: []
+  - realtime_client_relay_websocket:
+      mode: ack
+      messages:
+        - '{"type":"conversation.item.create","item":{"type":"message","role":"user","content":5}}'
+        - '{"type":"conversation.item.create","item":{"type":"message","role":"user","content":[{"type":"input_text","text":"clean"}]}}'
+      setup:
+        pending: []
+        backend_setup_complete: null
+        flushing: false
+        turn_detection_sent: false
+        pending_guardrail_message: null
+        session_configuration_request: null
+      guardrails:
+        - hooks: [pre_call]
+          block_on: clean
+      beta_backend: false
+      close: null
+      lifetime: null
+      client_send_failures: []
+      client_close_failures: []
+env: {}
+compare: {ignore: []}

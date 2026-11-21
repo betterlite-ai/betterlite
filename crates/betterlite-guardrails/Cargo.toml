@@ -71,6 +71,7 @@ uuid = { workspace = true, features = ["v5"] }
 
 [dev-dependencies]
 axum.workspace = true
+betterlite-test-ports = { path = "../betterlite-test-ports" }
 mutants = "0.0.4"
 rcgen ={ version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem"] }
 rstest = "=0.27.0"

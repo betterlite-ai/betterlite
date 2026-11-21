@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 use std::future::IntoFuture as _;
 use std::io;
-use std::net::TcpListener as StdTcpListener;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -99,13 +98,6 @@ pub(crate) fn captured_path(mock: &MockNoma) -> String {
 
 pub(crate) fn request_count(mock: &MockNoma) -> usize {
     mock.seen.lock().unwrap().len()
-}
-
-pub(crate) fn closed_base() -> String {
-    let listener = StdTcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
-    format!("http://{address}")
 }
 
 pub(crate) fn data(text: &str) -> BTreeMap<String, GuardrailValue> {

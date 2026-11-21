@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::io;
-use std::net::{SocketAddr, TcpListener};
+use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -103,13 +103,6 @@ pub(crate) fn sentinel_record(monitors: &[SocketAddr], service: &str) -> Sentine
         connection_kwargs: empty_fields(),
         monitor_password: None,
     }
-}
-
-pub(crate) fn closed_address() -> SocketAddr {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("a free port");
-    let address = listener.local_addr().expect("the bound address");
-    drop(listener);
-    address
 }
 
 pub(crate) async fn cluster_pair() -> (FakeServer, FakeServer) {

@@ -1,4 +1,4 @@
-use std::net::{SocketAddr, TcpListener};
+use std::net::SocketAddr;
 use std::str::{Utf8Error, from_utf8};
 use std::sync::Mutex;
 use std::time::Duration;
@@ -240,13 +240,6 @@ pub(super) fn async_handler(
     fixture: &Fixture,
 ) -> InteractionsHttpHandler<'_, Fixture, reqwest::Client> {
     build_handler(fixture, None)
-}
-
-pub(super) fn dead_address() -> SocketAddr {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
-    address
 }
 
 pub(super) fn caller_headers(entries: &[(&str, &str)]) -> RequestHeaders {
