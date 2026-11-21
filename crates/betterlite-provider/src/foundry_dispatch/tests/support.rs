@@ -276,20 +276,21 @@ pub(super) fn run_chat(
 }
 
 // The message, parameters and key every Claude call in the cases shares
+#[derive(Default)]
 pub(super) struct ClaudeInputs {
     messages: Vec<PromptObject>,
     params: PromptObject,
-    key: SecretString,
+    key: Option<SecretString>,
 }
 
 impl ClaudeInputs {
     pub(super) fn new() -> Self {
+        let user: PromptObject =
+            serde_json::from_str(r#"{"role":"user","content":"hi"}"#).expect("a message");
         Self {
-            messages: vec![
-                serde_json::from_str(r#"{"role":"user","content":"hi"}"#).expect("a message"),
-            ],
-            params: PromptObject::new(),
-            key: SecretString::from(KEY),
+            messages: vec![user],
+            key: Some(SecretString::from(KEY)),
+            ..Self::default()
         }
     }
 
@@ -304,7 +305,7 @@ impl ClaudeInputs {
             litellm_params: &self.params,
             caller_headers: IndexMap::new(),
             api_base: Some(HOST),
-            api_key: Some(&self.key),
+            api_key: self.key.as_ref(),
             timeout: TIMEOUT,
             style,
             stream,

@@ -8,13 +8,6 @@ pub trait FoundryLogger: Send {
     fn post_call(&mut self, record: LoggedCall);
 }
 
-#[derive(Debug, Default, Clone, Copy)]
-pub struct NoLogger;
-
-impl FoundryLogger for NoLogger {
-    fn post_call(&mut self, _record: LoggedCall) {}
-}
-
 // A buffered reply's model and first message text, the two fields both sides read off ModelResponse
 #[must_use]
 pub fn reply_report(model: Option<&str>, content: Option<&str>) -> Json {

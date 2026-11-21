@@ -55,7 +55,6 @@ pub enum DispatchError {
     Run(#[from] AgentRunError),
 }
 
-// What main.py hands the agent config: the resolved base and key and the headers it falls back on
 pub struct Resolved {
     pub api_base: String,
     pub api_key: Option<SecretString>,

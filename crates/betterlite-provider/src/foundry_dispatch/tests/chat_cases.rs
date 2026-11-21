@@ -162,24 +162,25 @@ fn supplied_extra_headers_replace() {
 }
 
 pub(super) fn post_call_case() {
-    success_logs_nothing();
+    dispatch_logging_nothing("mistral-large").expect("the chat dispatch runs");
     stream_success_logs_report();
     failure_logs_text_and_headers();
-    preparation_failure_logs_nothing();
+    // a claude model is not a chat call
+    assert!(dispatch_logging_nothing("claude-sonnet").is_err());
 }
 
-// a normal non-stream success logs nothing
-fn success_logs_nothing() {
+// a non-stream success and a preparation failure both log nothing
+fn dispatch_logging_nothing(model: &str) -> Result<chat::Outcome, OperationError> {
     let env = Env::with_header("x-logged", "1");
     let deployment = support::deployment(BASE, Some(KEY));
-    let request = support::simple_request("mistral-large");
+    let request = support::simple_request(model);
     let call = chat::Call {
         headers: env.headers.as_ref(),
-        ..chat_call(&request, &deployment, "mistral-large", false)
+        ..chat_call(&request, &deployment, model, false)
     };
     let (result, logger) = run_chat(call, &env, support::supplied(200, REPLY));
-    result.expect("the chat dispatch runs");
     assert!(logger.calls.is_empty());
+    result
 }
 
 // Runs the streamed call against a loopback server and returns what the logger saw
@@ -249,20 +250,4 @@ fn failure_logs_text_and_headers() {
     };
     assert_eq!(text, &error.to_string());
     assert!(logger.calls[0].headers.is_some());
-}
-
-// a preparation failure logs nothing
-fn preparation_failure_logs_nothing() {
-    let env = Env::with_header("x-logged", "1");
-    let deployment = support::deployment(BASE, Some(KEY));
-    let request = support::simple_request("claude-sonnet");
-    let call = chat::Call {
-        headers: env.headers.as_ref(),
-        ..chat_call(&request, &deployment, "claude-sonnet", false)
-    };
-    let (result, logger) = run_chat(call, &env, support::supplied(200, REPLY));
-    let Err(_failure) = result else {
-        panic!("a claude model is not a chat call");
-    };
-    assert!(logger.calls.is_empty());
 }

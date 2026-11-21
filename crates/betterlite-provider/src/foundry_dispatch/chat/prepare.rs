@@ -1,3 +1,4 @@
+use std::error::Error as StdError;
 use std::io::Error as IoError;
 
 use betterlite_foundry::chat::environment::{EnvironmentRequest, TokenSource};
@@ -201,11 +202,7 @@ fn take_extra_headers(
                 | JsonValue::Bool(_)
                 | JsonValue::Number(_)
                 | JsonValue::Array(_)
-                | JsonValue::Object(_) => Err(PrepareError::Encode {
-                    source: serde_json::Error::io(IoError::other(
-                        "an extra header value is not a string",
-                    )),
-                }),
+                | JsonValue::Object(_) => Err(encode("an extra header value is not a string")),
             })
             .collect::<Result<Headers, PrepareError>>()
             .map(Some),
@@ -215,9 +212,7 @@ fn take_extra_headers(
             | JsonValue::Number(_)
             | JsonValue::Array(_)
             | JsonValue::Text(_),
-        ) => Err(PrepareError::Encode {
-            source: serde_json::Error::io(IoError::other("extra_headers is not an object")),
-        }),
+        ) => Err(encode("extra_headers is not an object")),
         None => Ok(None),
     }
 }
@@ -227,9 +222,7 @@ fn assembled(
     call: &Call<'_>,
     extra: Option<&Headers>,
 ) -> Result<PreparedChat, PrepareError> {
-    let url = Url::parse(&leaf.url).map_err(|source| PrepareError::Encode {
-        source: serde_json::Error::io(IoError::other(source)),
-    })?;
+    let url = Url::parse(&leaf.url).map_err(encode)?;
     let body = serde_json::to_vec(&leaf.body)?;
     let http = PreparedHttp {
         method: Method::POST,
@@ -241,7 +234,8 @@ fn assembled(
     };
     Ok(PreparedChat {
         http,
-        retry: retry()?,
+        // AzureAIStudioConfig.max_retry_on_unprocessable_entity_error is 2 whatever the drop policy says
+        retry: TransformRetry::bounded(2).map_err(encode)?,
         client_model: Some(call.model.to_owned()),
     })
 }
@@ -266,11 +260,10 @@ fn header_map(headers: &Headers, extra: Option<&Headers>) -> Result<HeaderMap, P
     Ok(map)
 }
 
-// AzureAIStudioConfig.max_retry_on_unprocessable_entity_error is 2 whatever the drop policy says
-fn retry() -> Result<TransformRetry, PrepareError> {
-    TransformRetry::bounded(2).map_err(|source| PrepareError::Encode {
-        source: serde_json::Error::io(IoError::other(source)),
-    })
+fn encode(reason: impl Into<Box<dyn StdError + Send + Sync>>) -> PrepareError {
+    PrepareError::Encode {
+        source: serde_json::Error::io(IoError::other(reason)),
+    }
 }
 
 fn object(value: JsonValue) -> Result<Object, PrepareError> {
@@ -282,24 +275,14 @@ fn object(value: JsonValue) -> Result<Object, PrepareError> {
         | JsonValue::Bool(_)
         | JsonValue::Number(_)
         | JsonValue::Text(_)
-        | JsonValue::Array(_) => Err(PrepareError::Encode {
-            source: serde_json::Error::io(IoError::other(
-                "the optional parameters are not an object",
-            )),
-        }),
+        | JsonValue::Array(_) => Err(encode("the optional parameters are not an object")),
     }
 }
 
 fn text_field(value: Option<JsonValue>) -> Option<String> {
-    match value {
-        Some(JsonValue::Text(text)) => Some(text),
-        Some(
-            JsonValue::Null
-            | JsonValue::Bool(_)
-            | JsonValue::Number(_)
-            | JsonValue::Array(_)
-            | JsonValue::Object(_),
-        )
-        | None => None,
+    if let Some(JsonValue::Text(text)) = value {
+        Some(text)
+    } else {
+        None
     }
 }

@@ -35,12 +35,10 @@ pub fn endpoint(base: &str) -> String {
     if trimmed.ends_with(MESSAGES_PATH) {
         return trimmed.to_owned();
     }
-    let mut rewritten = match trimmed.split_once(ANTHROPIC_PATH) {
-        Some((head, _rest)) => format!("{head}{ANTHROPIC_PATH}"),
-        None => format!("{trimmed}{ANTHROPIC_PATH}"),
-    };
-    rewritten.push_str(MESSAGES_PATH);
-    rewritten
+    let head = trimmed
+        .split_once(ANTHROPIC_PATH)
+        .map_or(trimmed, |(prefix, _rest)| prefix);
+    format!("{head}{ANTHROPIC_PATH}{MESSAGES_PATH}")
 }
 
 pub struct Call<'data> {
