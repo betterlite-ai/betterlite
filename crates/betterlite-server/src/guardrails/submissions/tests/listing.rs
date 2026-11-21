@@ -175,9 +175,8 @@ async fn list_searches_the_name() {
 #[tokio::test]
 async fn list_searches_a_description() {
     let harness = harness();
-    let JsonData::Object(info) = parse(r#"{"description":"Checks the Beta words"}"#) else {
-        panic!("the fixture is an object");
-    };
+    let info: JsonObject = serde_json::from_str(r#"{"description":"Checks the Beta words"}"#)
+        .expect("the fixture is an object");
     let mut described = row("g1", "alpha", Some("active"), Some("team-a"));
     described.guardrail_info = Some(ColumnJson::Object(info));
     harness.rows.insert(described);

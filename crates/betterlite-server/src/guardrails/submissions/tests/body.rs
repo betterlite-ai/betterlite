@@ -28,7 +28,7 @@ async fn body_without_guardrail_name_is_422() {
     assert_eq!(loc_of(&issue), vec!["body", "guardrail_name"]);
     assert_eq!(text(field(&issue, "msg")), "Field required");
     let input = field(&issue, "input");
-    assert_eq!(text(field(input, "litellm_params")), REGISTER_PARAMS);
+    assert_eq!(field(input, "litellm_params"), &parse(REGISTER_PARAMS));
     assert!(harness.rows.created().is_empty());
 }
 

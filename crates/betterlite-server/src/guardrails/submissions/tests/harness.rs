@@ -7,9 +7,9 @@ enum Failure {
 }
 
 #[derive(Clone, Copy)]
-enum Lookup<'a> {
-    Id(&'a str),
-    Name(&'a str),
+enum Lookup<'text> {
+    Id(&'text str),
+    Name(&'text str),
 }
 
 #[derive(Default)]

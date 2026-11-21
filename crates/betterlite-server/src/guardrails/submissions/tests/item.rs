@@ -1,8 +1,7 @@
 #[test]
 fn json_field_returns_an_object_as_it_is() {
-    let JsonData::Object(fields) = parse(r#"{"guardrail":"generic_guardrail_api"}"#) else {
-        panic!("the fixture is an object");
-    };
+    let fields: JsonObject = serde_json::from_str(r#"{"guardrail":"generic_guardrail_api"}"#)
+        .expect("the fixture is an object");
     let column = ColumnJson::Object(fields.clone());
     assert_eq!(parse_json_field(Some(&column)), Some(fields));
 }
@@ -11,8 +10,10 @@ fn json_field_returns_an_object_as_it_is() {
 fn json_field_parses_json_text_into_an_object() {
     let column = ColumnJson::Text(r#"{"guardrail":"generic_guardrail_api"}"#.to_owned());
     let parsed = parse_json_field(Some(&column)).expect("the text parses");
-    let value = JsonData::Object(parsed);
-    assert_eq!(text(field(&value, "guardrail")), "generic_guardrail_api");
+    assert_eq!(
+        parsed.get("guardrail").and_then(JsonValue::as_str),
+        Some("generic_guardrail_api")
+    );
 }
 
 #[test]
@@ -64,9 +65,9 @@ fn item_keeps_an_empty_params_map_empty() {
     );
     let mut absent = row("g2", "guard-two", Some("active"), Some("team-a"));
     absent.litellm_params = None;
-    let value = item_value(&item(&absent));
+    let absent_value = item_value(&item(&absent));
     assert_eq!(
-        field(&value, "litellm_params"),
+        field(&absent_value, "litellm_params"),
         &JsonData::Object(BTreeMap::new())
     );
 }
@@ -113,8 +114,8 @@ fn item_reads_the_submitter_from_guardrail_info() {
     keyed.guardrail_info = Some(ColumnJson::Text(
         r#"{"submitted_by_user_id":null}"#.to_owned(),
     ));
-    let value = item_value(&item(&keyed));
-    assert_eq!(field(&value, "submitted_by_email"), &JsonData::Null);
+    let keyed_value = item_value(&item(&keyed));
+    assert_eq!(field(&keyed_value, "submitted_by_email"), &JsonData::Null);
 }
 
 #[test]

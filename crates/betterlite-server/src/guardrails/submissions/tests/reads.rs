@@ -160,7 +160,7 @@ async fn get_submissions_literal_path_beats_the_id_route() {
     let router = harness
         .router
         .clone()
-        .route("/guardrails/{guardrail_id}", get(placeholder));
+        .route("/guardrails/{guardrail_id}", route_get(placeholder));
     let listed = send(&router, get("/guardrails/submissions", Some(admin()))).await;
     assert_eq!(listed.0, StatusCode::OK, "{}", listed.1);
     assert_eq!(ids_of(&listed.1), vec!["g1"]);

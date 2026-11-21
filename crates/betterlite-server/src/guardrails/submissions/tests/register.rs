@@ -289,10 +289,10 @@ async fn register_uses_the_user_rows_email_first() {
         ("team_id", "team-a"),
         ("user_email", "key@example.com"),
     ]);
-    let auth = with_user(auth, "alice", Some("row@example.com"));
+    let row_auth = with_user(auth, "alice", Some("row@example.com"));
     let answer = register(
         &harness,
-        auth,
+        row_auth,
         &register_request("guard", REGISTER_PARAMS, None),
     )
     .await;
@@ -321,14 +321,14 @@ async fn register_keeps_a_missing_email_null() {
         ("user_role", "internal_user"),
         ("user_email", "key@example.com"),
     ]);
-    let auth = with_user(auth, "alice", None);
-    let answer = register(
+    let row_auth = with_user(auth, "alice", None);
+    let second_answer = register(
         &harness,
-        auth,
+        row_auth,
         &register_request("second", REGISTER_PARAMS, Some("team-a")),
     )
     .await;
-    assert_eq!(answer.0, StatusCode::OK, "{}", answer.1);
+    assert_eq!(second_answer.0, StatusCode::OK, "{}", second_answer.1);
     assert_eq!(
         field(&created_info(&harness), "submitted_by_email"),
         &JsonData::Null
