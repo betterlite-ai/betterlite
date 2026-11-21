@@ -117,6 +117,10 @@ const ONE_RPM: PriorityValue = PriorityValue::Reservation(PriorityReservation {
     kind: PriorityKind::Rpm,
     value: 1.0,
 });
+const TPM_BURST: PriorityValue = PriorityValue::Reservation(PriorityReservation {
+    kind: PriorityKind::Tpm,
+    value: 900_000.0,
+});
 
 #[rstest]
 #[case::plain_number("0.9", PriorityValue::Percent(0.9))]
@@ -125,6 +129,7 @@ const ONE_RPM: PriorityValue = PriorityValue::Reservation(PriorityReservation {
 #[case::null_type(r#"{"type": null, "value": 0.25}"#, QUARTER_PERCENT)]
 #[case::missing_value(r#"{"type": "rpm"}"#, ONE_RPM)]
 #[case::empty_mapping("{}", FULL_PERCENT)]
+#[case::tpm(r#"{"type": "tpm", "value": 900000}"#, TPM_BURST)]
 fn provider_attribution_tests_behavior_reads_the_reservation_mapping(
     #[case] text: &str,
     #[case] expected: PriorityValue,
@@ -235,20 +240,30 @@ fn provider_attribution_tests_behavior_takes_the_first_over_limit_status() {
         descriptor_key: String::from("key_alias"),
         ..status(RateLimitType::Tokens)
     };
+    let later = RateLimitStatus {
+        descriptor_key: String::from("key_alias"),
+        descriptor_value: Some(String::from("later")),
+        rate_limit_type: RateLimitType::MaxParallelRequests,
+        ..status(RateLimitType::Tokens)
+    };
     let error = projected(
-        &response(vec![earlier, status(RateLimitType::Tokens)]),
+        &response(vec![earlier, status(RateLimitType::Tokens), later]),
         &[
             descriptor("key_alias", "first"),
             descriptor("model_per_project_itpm", "proj:gpt-4o"),
+            descriptor("key_alias", "later"),
         ],
         &native,
         None,
     );
-    assert!(
-        error
-            .message
-            .starts_with("Rate limit exceeded for model_per_project_itpm: proj:gpt-4o. ")
-    );
+    assert!(error.message.starts_with(
+        "Rate limit exceeded for model_per_project_itpm: proj:gpt-4o. Limit type: tokens. "
+    ));
+    let headers = error
+        .headers
+        .as_ref()
+        .expect("the projection sets its headers");
+    assert_eq!(headers["rate_limit_type"], "tokens");
 }
 
 #[test]

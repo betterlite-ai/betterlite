@@ -39,6 +39,10 @@ pub enum ProxyRateLimitProjectionError {
     Header(#[from] InvalidRateLimitHeader),
 }
 
+// The first and last seconds Python's datetime can hold, so fromtimestamp raises just outside them.
+const FIRST_PYTHON_SECOND: i64 = -62_135_596_800;
+const LAST_PYTHON_SECOND: i64 = 253_402_300_799;
+
 impl RateLimitResetWindow {
     // datetime.fromtimestamp(now + window_size, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"), with the fraction of a second dropped.
     fn reset_at(&self) -> Result<String, ProxyRateLimitProjectionError> {
@@ -50,6 +54,9 @@ impl RateLimitResetWindow {
             .ok()
             .and_then(|now_seconds| now_seconds.checked_add(self.window_size))
             .ok_or(ProxyRateLimitProjectionError::ResetOutOfRange)?;
+        if !(FIRST_PYTHON_SECOND..=LAST_PYTHON_SECOND).contains(&seconds) {
+            return Err(ProxyRateLimitProjectionError::ResetOutOfRange);
+        }
         DateTime::<Utc>::from_timestamp(seconds, 0)
             .map(|moment| moment.format("%Y-%m-%d %H:%M:%S UTC").to_string())
             .ok_or(ProxyRateLimitProjectionError::ResetOutOfRange)

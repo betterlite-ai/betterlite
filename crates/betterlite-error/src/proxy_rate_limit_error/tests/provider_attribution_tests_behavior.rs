@@ -115,6 +115,8 @@ fn provider_attribution_tests_behavior_json_encodes_a_mapping_without_a_message(
 #[case::epoch_start(0, 0, "1970-01-01 00:00:00 UTC")]
 #[case::leap_day(1_709_164_800, 0, "2024-02-29 00:00:00 UTC")]
 #[case::negative_window(1_718_452_860, -60, "2024-06-15 12:00:00 UTC")]
+#[case::first_python_second(0, -62_135_596_800, "0001-01-01 00:00:00 UTC")]
+#[case::last_python_second(253_402_300_799, 0, "9999-12-31 23:59:59 UTC")]
 fn provider_attribution_tests_behavior_formats_the_reset_timestamp(
     #[case] now_seconds: u64,
     #[case] window_size: i64,
@@ -227,31 +229,21 @@ fn provider_attribution_tests_behavior_refuses_a_clock_before_the_epoch() {
     ));
 }
 
-#[test]
-fn provider_attribution_tests_behavior_refuses_a_reset_time_past_the_calendar() {
+#[rstest]
+#[case::past_year_9999(253_402_300_800, 0, "Python's datetime ends at 9999-12-31T23:59:59Z")]
+#[case::before_year_1(0, -62_135_596_801, "Python's datetime starts at 0001-01-01T00:00:00Z")]
+#[case::epoch_overflow(i64::MAX.cast_unsigned(), 1, "the sum overflows the epoch second")]
+fn provider_attribution_tests_behavior_refuses_a_reset_outside_the_python_range(
+    #[case] now_seconds: u64,
+    #[case] window_size: i64,
+    #[case] reason: &str,
+) {
     let window = RateLimitResetWindow {
-        now: moment(9_000_000_000_000),
-        window_size: 0,
+        now: moment(now_seconds),
+        window_size,
     };
-    let error = v3_rate_limit_error(&exceeded(), window, String::new(), String::new())
-        .expect_err("chrono's calendar ends long before this second");
-    assert!(matches!(
-        error,
-        ProxyRateLimitProjectionError::ResetOutOfRange
-    ));
-}
-
-#[test]
-fn provider_attribution_tests_behavior_refuses_a_window_past_the_epoch_second() {
-    let latest = UNIX_EPOCH
-        .checked_add(Duration::from_secs(i64::MAX.cast_unsigned()))
-        .expect("the largest second fits a SystemTime");
-    let window = RateLimitResetWindow {
-        now: latest,
-        window_size: 1,
-    };
-    let error = v3_rate_limit_error(&exceeded(), window, String::new(), String::new())
-        .expect_err("the sum overflows the epoch second");
+    let error =
+        v3_rate_limit_error(&exceeded(), window, String::new(), String::new()).expect_err(reason);
     assert!(matches!(
         error,
         ProxyRateLimitProjectionError::ResetOutOfRange
