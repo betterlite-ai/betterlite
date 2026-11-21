@@ -15,7 +15,8 @@ pub fn coerce_keepalive_interval(seconds: Option<f64>) -> Option<Duration> {
     if !interval.is_finite() || interval <= 0.0_f64 {
         return None;
     }
-    Duration::try_from_secs_f64(interval).ok()
+    // LiteLLM keeps any finite positive float; a deadline past what a timer holds never fires
+    Some(Duration::try_from_secs_f64(interval).unwrap_or(Duration::MAX))
 }
 
 // StreamExt::next is cancel safe, so a ping leaves the inner stream where it was

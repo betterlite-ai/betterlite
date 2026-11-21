@@ -17,7 +17,12 @@ use crate::agent_endpoints::a2a_stream::keepalive::{PING, coerce_keepalive_inter
 #[case::not_a_number(Some(f64::NAN), None)]
 #[case::infinite(Some(f64::INFINITY), None)]
 #[case::negative_infinite(Some(f64::NEG_INFINITY), None)]
-#[case::too_large(Some(f64::MAX), None)]
+#[case::just_inside(
+    Some(18_446_744_073_709_549_568.0_f64),
+    Some(Duration::from_secs(18_446_744_073_709_549_568))
+)]
+#[case::too_large(Some(1e20_f64), Some(Duration::MAX))]
+#[case::f64_max(Some(f64::MAX), Some(Duration::MAX))]
 #[case::half_second(Some(0.5_f64), Some(Duration::from_millis(500)))]
 #[case::one_nanosecond(Some(1e-9_f64), Some(Duration::from_nanos(1)))]
 fn coerce_keepalive_interval_takes_finite_positive_seconds(
