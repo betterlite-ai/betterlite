@@ -42,6 +42,11 @@ call:
                 function:
                   name: weather
                   arguments: '{"city": "Oslo"}'
+              - id: call-3
+                type: function
+                function:
+                  name: noop
+                  arguments: null
               provider_specific_fields: {}
     cold_storage: false
     cold_objects: {}

@@ -34,7 +34,7 @@ pub enum MessageRole {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct StoredFunction {
     #[serde(default)]
-    pub arguments: String,
+    pub arguments: Option<String>,
     #[serde(default)]
     pub name: Option<String>,
     #[serde(flatten)]
@@ -166,9 +166,11 @@ fn rebuilt(mut message: StoredMessage) -> StoredMessage {
         functions.extend(call.function.as_mut());
     }
     functions.extend(message.function_call.as_mut());
+    // Function's constructor reads missing or null arguments as an empty string
     for function in functions {
-        if function.arguments == REDACTED_BY_LITELLM {
-            REDACTED_ARGUMENTS.clone_into(&mut function.arguments);
+        let arguments = function.arguments.get_or_insert_default();
+        if arguments.as_str() == REDACTED_BY_LITELLM {
+            REDACTED_ARGUMENTS.clone_into(arguments);
         }
     }
     message
