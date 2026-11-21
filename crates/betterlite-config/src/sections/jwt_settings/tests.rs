@@ -228,7 +228,6 @@ fn unbounded_ttl_rows(#[case] name: &str, #[case] default: f64) {
     let invalid = format!("invalid value at {name}");
     assert_eq!(rejection(&format!("{{{name}: 'ten'}}"), &[]), invalid);
     assert_eq!(rejection(&format!("{{{name}: true}}"), &[]), invalid);
-    assert_eq!(rejection(&format!("{{{name}: .nan}}"), &[]), invalid);
 }
 
 #[rstest]
@@ -238,7 +237,6 @@ fn unbounded_ttl_rows(#[case] name: &str, #[case] default: f64) {
 #[case::field_public_key_stale_ttl_positive("{public_key_stale_ttl: 0.5}", Some(0.5_f64))]
 #[case::field_public_key_stale_ttl_negative("{public_key_stale_ttl: -1}", None)]
 #[case::field_public_key_stale_ttl_small_negative("{public_key_stale_ttl: -0.001}", None)]
-#[case::field_public_key_stale_ttl_nan("{public_key_stale_ttl: .nan}", None)]
 #[case::field_public_key_stale_ttl_text("{public_key_stale_ttl: 'hour'}", None)]
 fn stale_ttl_rows(#[case] yaml: &str, #[case] expected: Option<f64>) {
     match expected {

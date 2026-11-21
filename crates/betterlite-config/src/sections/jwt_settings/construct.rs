@@ -39,6 +39,14 @@ const NUMBERS: [&str; 4] = [
 // ScopeMapping, JWTRoutingOverride and JWTIssuerConfig forbid extra keys; the role maps drop them
 const FORBIDDING: [&str; 3] = ["scope_mappings", "routing_overrides", "issuers"];
 
+const RECORDS: [&str; 5] = [
+    "role_mappings",
+    "scope_mappings",
+    "jwt_litellm_role_map",
+    "routing_overrides",
+    "issuers",
+];
+
 #[derive(Clone, Copy)]
 pub struct Context<'context> {
     pub loader: &'context dyn ValidatorLoader,
@@ -50,6 +58,7 @@ pub struct Context<'context> {
 pub fn construct(mut raw: RawJwtAuth, context: &Context<'_>) -> Result<Settings, JwtSettingsError> {
     for (field, value) in &mut raw {
         resolve(field, value, context.lookup)?;
+        unlisted(field, value);
     }
     if let Some(alias) = raw.shift_remove("jwt_client_id_field") {
         raw.entry("virtual_key_claim_field".to_owned())
@@ -72,6 +81,19 @@ pub fn construct(mut raw: RawJwtAuth, context: &Context<'_>) -> Result<Settings,
         .filter(|(_key, value)| *value != GuardrailValue::Null)
         .collect();
     settings(&serde_json::to_vec(&ordered)?, custom_validate)
+}
+
+// serde reads a list as a record's fields in order and pydantic rejects it, so it becomes a null
+fn unlisted(key: &str, value: &mut GuardrailValue) {
+    if let GuardrailValue::Array(items) = value
+        && RECORDS.contains(&key)
+    {
+        for item in items {
+            if matches!(item, GuardrailValue::Array(_)) {
+                *item = GuardrailValue::Null;
+            }
+        }
+    }
 }
 
 // LiteLLM_JWTAuth.__init__'s checks on raw values, where an explicit null counts as unset

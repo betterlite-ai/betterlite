@@ -236,6 +236,13 @@ fn env_top_level_resolution() {
     );
 }
 
+#[test]
+fn non_finite_ttls_fail_the_load() {
+    load(&nested("{public_key_ttl: .nan}"), &[]).unwrap_err();
+    load(&nested("{public_key_stale_ttl: .inf}"), &[]).unwrap_err();
+    load(&nested("{oidc_userinfo_cache_ttl: -.inf}"), &[]).unwrap_err();
+}
+
 #[rstest]
 #[case::text_for_flag("{user_id_upsert: 'yes'}", "user_id_upsert")]
 #[case::number_for_text("{team_id_jwt_field: 5}", "team_id_jwt_field")]

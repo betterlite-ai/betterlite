@@ -253,6 +253,10 @@ fn issuers_keep_every_field() {
     "{issuer: a, audience: api, jwks: x}",
     "invalid value at issuers.0.jwks"
 )]
+#[case::field_issuers_unquoted_y_is_a_bool(
+    "{issuer: a, audience: y}",
+    "invalid value at issuers.0.audience"
+)]
 #[case::field_issuers_reference_kept("{issuer: os.environ/ISSUER, audience: api}", "")]
 fn issuer_rows(#[case] issuer: &str, #[case] expected: &str) {
     let yaml = format!("{{issuers: [{issuer}]}}");
@@ -276,7 +280,7 @@ fn nested_references_stay_text() {
     assert_eq!(built.rbac.role_mappings.unwrap()[0].role, "os.environ/ROLE");
 }
 
-const ISSUERS: &str = "{virtual_key_claim_field: global, unregistered_jwt_client_behavior: auto_register, issuers: [{issuer: a, audience: x, virtual_key_claim_field: first, unregistered_jwt_client_behavior: reject}, {issuer: a, audience: y, virtual_key_claim_field: second}, {issuer: b, audience: z}, {issuer: 'a/', disable_audience_validation: true, virtual_key_claim_field: slash}]}";
+const ISSUERS: &str = "{virtual_key_claim_field: global, unregistered_jwt_client_behavior: auto_register, issuers: [{issuer: a, audience: x, virtual_key_claim_field: first, unregistered_jwt_client_behavior: reject}, {issuer: a, audience: api-y, virtual_key_claim_field: second}, {issuer: b, audience: z}, {issuer: 'a/', disable_audience_validation: true, virtual_key_claim_field: slash}]}";
 
 #[rstest]
 #[case::issuer_first_exact_match(
@@ -331,7 +335,7 @@ fn issuer_accessors(
 #[case::mapping_unset("{}", false)]
 #[case::mapping_global_empty("{virtual_key_claim_field: ''}", true)]
 #[case::mapping_issuer_empty(
-    "{issuers: [{issuer: a, audience: x}, {issuer: b, audience: y, virtual_key_claim_field: ''}]}",
+    "{issuers: [{issuer: a, audience: x}, {issuer: b, audience: api-y, virtual_key_claim_field: ''}]}",
     true
 )]
 #[case::mapping_issuer_unset("{issuers: [{issuer: a, audience: x}]}", false)]
