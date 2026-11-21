@@ -25,7 +25,7 @@ use self::types::{
     CallbackPolicy, CostState, DeferredLogging, DynamicCallbacks, Messages, RequestLoggingFlags,
 };
 use crate::callback_logger::event::GuardrailRequestSnapshot;
-use crate::otel::proxy_runtime::slot::{RequestSlot, current_request_slot};
+use crate::otel::proxy_runtime::slot::{ACTIVE_REQUEST_SLOT, RequestSlot};
 
 mod tests;
 
@@ -191,7 +191,7 @@ impl LoggingState {
             shadow_eval_request_snapshot: None,
             deferred: DeferredLogging::default(),
             callback_policy: init.callback_policy,
-            request_slot: current_request_slot(),
+            request_slot: ACTIVE_REQUEST_SLOT.try_with(Arc::clone).ok(),
         })
     }
 }

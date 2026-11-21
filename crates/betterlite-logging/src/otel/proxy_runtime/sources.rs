@@ -11,7 +11,7 @@ use crate::otel::logger::v2::RequestTraceSource;
 use crate::otel::plumbing::context::context_slots::RequestTraceContext;
 use crate::otel::plumbing::context::destination_routing::destinations_are_additive;
 
-use super::slot::current_request_slot;
+use super::slot::ACTIVE_REQUEST_SLOT;
 
 // litellm.integrations.otel.plumbing.context: the three ports read the request task's slot, and the additive switch is fixed once from the environment
 #[derive(Debug)]
@@ -30,7 +30,9 @@ impl ProxyTraceSources {
 
 impl RequestTraceSource for ProxyTraceSources {
     fn trace_context(&self) -> RequestTraceContext {
-        current_request_slot()
+        ACTIVE_REQUEST_SLOT
+            .try_with(Arc::clone)
+            .ok()
             .map_or_else(RequestTraceContext::default, |slot| slot.trace().clone())
     }
 }
@@ -38,7 +40,9 @@ impl RequestTraceSource for ProxyTraceSources {
 impl RequestScopeSource for ProxyTraceSources {
     fn scope(&self) -> RequestOtelScope {
         RequestOtelScope {
-            destinations: current_request_slot()
+            destinations: ACTIVE_REQUEST_SLOT
+                .try_with(Arc::clone)
+                .ok()
                 .map_or_else(Vec::new, |slot| slot.trace().destinations.clone()),
             additive: self.additive,
         }
@@ -47,7 +51,7 @@ impl RequestScopeSource for ProxyTraceSources {
 
 impl RootSpanSource for ProxyTraceSources {
     fn request_root_span(&self) -> Option<Arc<dyn RootSpanSink>> {
-        let slot = current_request_slot()?;
+        let slot = ACTIVE_REQUEST_SLOT.try_with(Arc::clone).ok()?;
         let live = slot.live_root().clone();
         if !live.span().span_context().is_valid() {
             return None;

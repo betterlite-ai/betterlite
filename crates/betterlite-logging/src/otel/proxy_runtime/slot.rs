@@ -13,7 +13,7 @@ use crate::otel::config::destination::OtelDestination;
 use crate::otel::plumbing::context::context_slots::{AnchoredSpan, RequestTraceContext};
 
 task_local! {
-    static ACTIVE_REQUEST_SLOT: Arc<RequestSlot>;
+    pub(crate) static ACTIVE_REQUEST_SLOT: Arc<RequestSlot>;
 }
 
 // litellm.integrations.otel.plumbing.context: the root span and tenant destinations a request task carries into the tasks it hands work to
@@ -44,7 +44,7 @@ pub fn anchor_request_root(span: AnchoredSpan, live: Context) {
     if !span.context.is_valid() {
         return;
     }
-    if let Some(slot) = current_request_slot() {
+    if let Some(slot) = ACTIVE_REQUEST_SLOT.try_with(Arc::clone).ok() {
         slot.trace().anchor_request_root(span);
         *slot.live_root() = live;
     }
@@ -52,17 +52,9 @@ pub fn anchor_request_root(span: AnchoredSpan, live: Context) {
 
 // litellm.integrations.otel.plumbing.context.set_request_destinations
 pub fn set_destinations(destinations: Vec<OtelDestination>) {
-    if let Some(slot) = current_request_slot() {
+    if let Some(slot) = ACTIVE_REQUEST_SLOT.try_with(Arc::clone).ok() {
         slot.trace().destinations = destinations;
     }
-}
-
-#[must_use]
-pub fn current_request_slot() -> Option<Arc<RequestSlot>> {
-    let Ok(slot) = ACTIVE_REQUEST_SLOT.try_with(Arc::clone) else {
-        return None;
-    };
-    Some(slot)
 }
 
 // litellm.integrations.otel.plumbing.context's ContextVars ride the request task; a nested scope joins the outer slot the way betterlite-redis's batch scope does
