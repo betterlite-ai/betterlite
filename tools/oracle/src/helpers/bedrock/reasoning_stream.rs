@@ -178,5 +178,5 @@ fn refusals(models: &[String], params: &ParamMap) -> Value {
             })
         })
         .collect();
-    json!({"models": views})
+    Value::Array(views)
 }
