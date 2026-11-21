@@ -61,7 +61,7 @@ fn type_name(value: &Json) -> Option<&str> {
 // LiteLLM checks a function_call_output before role=user, so a tool result cannot skip the policy as user text
 pub(crate) async fn client_guardrails<Config, CallbackError>(
     relay: &mut RealtimeClientRelay<'_, Config, CallbackError>,
-    event: &mut ClientEvent,
+    event: &ClientEvent,
 ) -> Result<bool, RealtimeClientRelayError<Config::Error, CallbackError>>
 where
     Config: BaseRealtimeConfig,
@@ -144,9 +144,8 @@ pub(crate) fn sanitized_tool_message(
 // LiteLLM joins the input_text blocks with spaces; a content that is not iterable of blocks either raises or yields none
 fn combined_text(content: Option<&Json>) -> Result<Option<String>, ()> {
     let items = match content {
-        None => return Ok(None),
+        None | Some(Json::Text(_) | Json::Object(_)) => return Ok(None),
         Some(Json::List(items)) => items,
-        Some(Json::Text(_) | Json::Object(_)) => return Ok(None),
         Some(Json::Null | Json::Bool(_) | Json::Number(_)) => return Err(()),
     };
     let mut texts = Vec::new();

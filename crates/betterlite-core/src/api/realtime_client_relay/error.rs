@@ -41,8 +41,8 @@ where
         match self {
             Self::Send(error) => matches!(error, RealtimeSenderError::Backend(_)),
             Self::Guardrails(error) => match error {
-                RealtimeGuardrailsError::Send(error) => {
-                    matches!(error, RealtimeSenderError::Backend(_))
+                RealtimeGuardrailsError::Send(send_error) => {
+                    matches!(send_error, RealtimeSenderError::Backend(_))
                 }
                 RealtimeGuardrailsError::Close(_) => true,
                 RealtimeGuardrailsError::Predicate(_)

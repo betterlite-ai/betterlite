@@ -30,7 +30,7 @@ where
 
 // LiteLLM rewrites the session in place: inject once, force the flag false, remap for GA, then let the provider patch it
 pub(crate) fn session_update<Config, CallbackError>(
-    relay: &mut RealtimeClientRelay<'_, Config, CallbackError>,
+    relay: &RealtimeClientRelay<'_, Config, CallbackError>,
     event: &mut ClientEvent,
 ) -> Result<bool, RealtimeClientRelayError<Config::Error, CallbackError>>
 where
@@ -105,7 +105,7 @@ fn force_false_vad(root: &mut IndexMap<String, Json>) -> bool {
             session.insert("turn_detection".to_owned(), Json::Object(turn_detection));
             true
         }
-        (Some(flat_overridden), nested) => flat_overridden || nested.unwrap_or(false),
+        (Some(flat_overridden), nested_flag) => flat_overridden || nested_flag.unwrap_or(false),
         (None, Some(nested_overridden)) => nested_overridden,
     }
 }

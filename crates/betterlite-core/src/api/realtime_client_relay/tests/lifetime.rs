@@ -133,7 +133,7 @@ async fn a_client_backend_closed_waits_for_the_backend() {
     let cancellation = CancellationToken::new();
     let backend_release = Arc::new(Notify::new());
     let client_release = Arc::clone(&backend_release);
-    let backend_release = Arc::clone(&backend_release);
+    let backend_gate = Arc::clone(&backend_release);
     let lifetime = lifespan(
         Fixture::default(),
         async move {
@@ -141,7 +141,7 @@ async fn a_client_backend_closed_waits_for_the_backend() {
             ClientLoopExit::BackendClosed
         },
         async move {
-            backend_release.notified().await;
+            backend_gate.notified().await;
             Ok(policy_close())
         },
         &cancellation,

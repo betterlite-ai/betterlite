@@ -113,10 +113,7 @@ where
         if client_exit == Some(ClientLoopExit::ClientDisconnected) {
             let _joined_backend = backend_future.as_mut().await;
         }
-        match failure {
-            Some(error) => Err(error),
-            None => Ok(()),
-        }
+        failure.map_or(Ok(()), Err)
     }
 
     // The first direction to finish decides the close, unless the client has already disconnected
@@ -157,9 +154,9 @@ where
 
     // LiteLLM's redact_internal_details_from_client_message with secret redaction disabled by config
     pub(crate) fn redact(&self, text: &str) -> String {
-        match self.redactor {
-            Some(redactor) => redactor.redact_internal_details(text),
-            None => text.to_owned(),
-        }
+        self.redactor.map_or_else(
+            || text.to_owned(),
+            |redactor| redactor.redact_internal_details(text),
+        )
     }
 }

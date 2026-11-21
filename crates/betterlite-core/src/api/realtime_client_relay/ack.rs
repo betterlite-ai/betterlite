@@ -26,7 +26,7 @@ where
         relay.state.store_input(SessionInput::Text(message));
         return deliver(relay, None, message, false).await;
     };
-    if rewrite::client_guardrails(relay, &mut event).await? {
+    if rewrite::client_guardrails(relay, &event).await? {
         return Ok(());
     }
     if event.msg_type.as_deref() == Some(RESPONSE_CREATE)

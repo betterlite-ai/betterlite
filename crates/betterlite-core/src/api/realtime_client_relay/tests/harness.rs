@@ -76,10 +76,14 @@ pub(super) struct SendData {
 impl SendLog {
     fn begin(&self) -> Result<(), WebSocketError> {
         let mut data = lock(&self.0);
-        let SendData {
-            failures, attempts, ..
-        } = &mut *data;
-        begin_attempt(failures, attempts, "the scripted send")
+        let result = {
+            let SendData {
+                failures, attempts, ..
+            } = &mut *data;
+            begin_attempt(failures, attempts, "the scripted send")
+        };
+        drop(data);
+        result
     }
 
     fn push(&self, frame: String) {
@@ -125,14 +129,15 @@ impl ScopedWebSocket for ScriptedClient {
 impl ClientWebSocket for ScriptedClient {
     async fn send_text(&mut self, data: &str) -> Result<(), WebSocketError> {
         let mut state = lock(&self.data);
-        let ClientData {
-            sent,
-            attempts,
-            failures,
-            ..
-        } = &mut *state;
-        begin_attempt(failures, attempts, "the scripted client send")?;
-        sent.push(data.to_owned());
+        let attempted = {
+            let ClientData {
+                attempts, failures, ..
+            } = &mut *state;
+            begin_attempt(failures, attempts, "the scripted client send")
+        };
+        attempted?;
+        state.sent.push(data.to_owned());
+        drop(state);
         Ok(())
     }
 
@@ -270,7 +275,11 @@ impl RealtimeEventNormalizer for ScriptedNormalizer {
                 fields.insert("xai_patch".to_owned(), Json::Bool(true));
                 Json::Object(fields)
             }
-            other => other,
+            other @ Json::Null
+            | other @ Json::Bool(_)
+            | other @ Json::Number(_)
+            | other @ Json::Text(_)
+            | other @ Json::List(_) => other,
         };
         lock(&self.sessions).push(patched.clone());
         patched
@@ -554,10 +563,9 @@ impl Outcome {
     }
 
     pub(super) fn patched_sessions(&self) -> Vec<Json> {
-        match &self.normalizer {
-            Some(normalizer) => lock(&normalizer.sessions).clone(),
-            None => Vec::new(),
-        }
+        self.normalizer
+            .as_ref()
+            .map_or_else(Vec::new, |normalizer| lock(&normalizer.sessions).clone())
     }
 }
 

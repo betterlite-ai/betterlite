@@ -81,7 +81,7 @@ async fn an_empty_reason_falls_back_to_the_close_message() {
 }
 
 async fn a_long_reason_is_cut_on_a_character_boundary() {
-    let reason = "é".repeat(100);
+    let reason = "\u{e9}".repeat(100);
     let outcome = close(Fixture::default(), backend_close(1008, &reason)).await;
     let closes = outcome.closes();
     assert_eq!(closes.len(), 1);
@@ -89,7 +89,7 @@ async fn a_long_reason_is_cut_on_a_character_boundary() {
         panic!("the client close carries a reason");
     };
     assert!(wire_reason.len() <= 123);
-    assert_eq!(wire_reason, &"é".repeat(61));
+    assert_eq!(wire_reason, &"\u{e9}".repeat(61));
 }
 
 async fn a_secret_reason_is_redacted_in_both_places() {
