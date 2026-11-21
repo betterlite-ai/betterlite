@@ -226,11 +226,13 @@ fn client_api_version_survives_and_does_not_gate() {
     assert_eq!(text_field(&result.data, "api_version"), Some("2024-01-01"));
 }
 
-#[test]
-fn credential_override_skips_a_request_without_a_model() {
+#[rstest]
+#[case::absent(request(&[("user", "someone")]))]
+#[case::empty_name(request(&[("model", "")]))]
+fn credential_override_skips_a_request_without_a_model(#[case] data: RequestData) {
     let principal = principal_with(&[("defaultconfig", "azure", Some("team-azure"))]);
     let input = RequestModelOverridesInput {
-        data: request(&[("user", "someone")]),
+        data,
         principal,
         premium_user: true,
     };
