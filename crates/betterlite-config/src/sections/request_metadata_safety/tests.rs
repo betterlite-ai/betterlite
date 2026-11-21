@@ -65,6 +65,6 @@ fn loads_settings(#[case] source: &str, #[case] expected: Expected) {
         (Err(ConfigError::InvalidScalar { path, .. }), Expected::Invalid) => {
             assert_eq!(path, "general_settings.missing_session_id");
         }
-        (other, expected) => panic!("{expected:?} expected, got {other:?}"),
+        (other, want) => panic!("{want:?} expected, got {other:?}"),
     }
 }
