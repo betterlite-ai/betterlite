@@ -6,7 +6,7 @@ use super::harness::{
     DialOutcome, HarnessOptions, SourceOutcome, harness, invalid_status, invalid_status_code, os,
     websocket,
 };
-use crate::api::realtime_backend_transport::dial::RealtimeSsl;
+use crate::api::realtime_backend_transport::dial::{RealtimeSsl, realtime_ssl};
 use crate::api::realtime_backend_transport::error::RealtimeConnectionError;
 
 #[tokio::test(start_paused = true)]
@@ -17,6 +17,8 @@ async fn realtime_backend_open_retry() {
     reports_the_invalid_status_code().await;
     uses_a_provider_owned_backend().await;
     fails_config_before_dialing().await;
+    dials_without_verification_for_wss().await;
+    keeps_the_ssl_argument_on_a_ws_url();
     closes_after_a_failed_setup_send().await;
     reports_a_failed_backend_close().await;
     replaces_a_send_error_with_the_close_error().await;
@@ -104,6 +106,21 @@ async fn fails_config_before_dialing() {
     assert!(invalid_headers.dials().is_empty());
     assert!(invalid_headers.texts().is_empty());
     assert!(invalid_headers.close().is_none());
+}
+
+async fn dials_without_verification_for_wss() {
+    let mut options = HarnessOptions::default();
+    options.verification = Verification::Disabled;
+    let mut insecure = harness(options, Vec::new());
+    insecure.run().await.unwrap();
+    assert_eq!(insecure.dials()[0].ssl, RealtimeSsl::Insecure);
+}
+
+fn keeps_the_ssl_argument_on_a_ws_url() {
+    assert_eq!(
+        realtime_ssl("ws://upstream.test/realtime", &Verification::Enabled),
+        RealtimeSsl::Shared(Verification::Enabled)
+    );
 }
 
 async fn closes_after_a_failed_setup_send() {
