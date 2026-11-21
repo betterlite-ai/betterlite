@@ -90,12 +90,15 @@ impl<'call> Destination<'call> {
 }
 
 // the sync transcription body: resolve, log, then one provider branch
-pub(super) async fn execute<Dispatch: TranscriptionDispatch>(
+pub(super) async fn execute<Dispatch>(
     service: &Transcriptions<'_, Dispatch>,
     call: &TranscriptionCall,
     processed: &ProcessedAudioFile,
     input: &str,
-) -> Result<TranscriptionAnswer, TranscriptionError<Dispatch::Error>> {
+) -> Result<TranscriptionAnswer, TranscriptionError<Dispatch::Error>>
+where
+    Dispatch: TranscriptionDispatch,
+{
     let plan = prepare(
         call,
         service.dispatch,
@@ -119,10 +122,13 @@ pub(super) async fn execute<Dispatch: TranscriptionDispatch>(
 }
 
 // main's branch order: the two transports, then each injected operation, then the generic native one
-async fn dispatch_branch<Dispatch: TranscriptionDispatch>(
+async fn dispatch_branch<Dispatch>(
     service: &Transcriptions<'_, Dispatch>,
     branch: &BranchCall<'_>,
-) -> Result<TranscriptionAnswer, TranscriptionError<Dispatch::Error>> {
+) -> Result<TranscriptionAnswer, TranscriptionError<Dispatch::Error>>
+where
+    Dispatch: TranscriptionDispatch,
+{
     let plan = branch.plan;
     if matches!(plan.slug.as_str(), "azure" | "azure_ai") && plan.config.is_none() {
         return provider(service, CredentialScheme::Azure, branch).await;
@@ -150,11 +156,14 @@ async fn dispatch_branch<Dispatch: TranscriptionDispatch>(
 }
 
 // the two transports main selects before its injected branches, each with its own credential chain
-async fn provider<Dispatch: TranscriptionDispatch>(
+async fn provider<Dispatch>(
     service: &Transcriptions<'_, Dispatch>,
     scheme: CredentialScheme,
     branch: &BranchCall<'_>,
-) -> Result<TranscriptionAnswer, TranscriptionError<Dispatch::Error>> {
+) -> Result<TranscriptionAnswer, TranscriptionError<Dispatch::Error>>
+where
+    Dispatch: TranscriptionDispatch,
+{
     match credentials(scheme, branch.plan, branch.call, service.settings) {
         BranchCredentials::Azure(secrets) => {
             route(service, branch, Destination::Azure(&secrets)).await
@@ -166,11 +175,14 @@ async fn provider<Dispatch: TranscriptionDispatch>(
 }
 
 // one provider branch: the plan's input with the destination's overrides, then its target
-async fn route<Dispatch: TranscriptionDispatch>(
+async fn route<Dispatch>(
     service: &Transcriptions<'_, Dispatch>,
     branch: &BranchCall<'_>,
     destination: Destination<'_>,
-) -> Result<TranscriptionAnswer, TranscriptionError<Dispatch::Error>> {
+) -> Result<TranscriptionAnswer, TranscriptionError<Dispatch::Error>>
+where
+    Dispatch: TranscriptionDispatch,
+{
     let empty = Headers::new();
     let input = input_for(service.identify, branch, destination);
     let target = match destination {
@@ -242,10 +254,13 @@ const fn injected_client(
 }
 
 // IBMWatsonX runs through the dispatch's own watsonx operation, on the generic native input
-async fn watsonx<Dispatch: TranscriptionDispatch>(
+async fn watsonx<Dispatch>(
     service: &Transcriptions<'_, Dispatch>,
     branch: &BranchCall<'_>,
-) -> Result<TranscriptionAnswer, TranscriptionError<Dispatch::Error>> {
+) -> Result<TranscriptionAnswer, TranscriptionError<Dispatch::Error>>
+where
+    Dispatch: TranscriptionDispatch,
+{
     let native = Destination::injected(InjectedTarget::Native, branch);
     let input = input_for(service.identify, branch, native);
     let empty = Headers::new();

@@ -188,7 +188,7 @@ fn invalid_timeout_is_refused_before_dispatch() {
     runtime().block_on(async {
         let harness = Harness::new();
         let mut request = request_for("openai/whisper-1");
-        request.timeout = Some(-1.0);
+        request.timeout = Some(-1.0_f64);
         let refused = harness
             .service()
             .transcription(&request, AudioFile::Bytes(&wav(1)))

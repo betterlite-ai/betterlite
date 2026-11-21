@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::future::Future;
 use std::sync::Mutex;
 
 use self::run::execute;
@@ -57,30 +58,57 @@ struct AsyncCall<'call> {
     input: &'call str,
 }
 
+// atranscription's synchronous prologue: the checked model, the cloned call and the processed file
+struct AsyncPreparation {
+    asynchronous: TranscriptionCall,
+    model_name: String,
+    input: String,
+    processed: ProcessedAudioFile,
+}
+
 impl<Dispatch> Transcriptions<'_, Dispatch>
 where
     Dispatch: TranscriptionDispatch,
 {
-    // transcription(model, file, ...): the sync entry, which also measures the request duration
-    pub async fn transcription(
+    // transcription(model, file, ...): the sync call, which also measures the request duration; the file is
+    // consumed before the first await, so the returned future stays Send
+    pub fn transcription(
         &self,
         call: &TranscriptionCall,
         file: AudioFile<'_>,
-    ) -> Result<TranscriptionAnswer, TranscriptionError<Dispatch::Error>> {
+    ) -> impl Future<Output = Result<TranscriptionAnswer, TranscriptionError<Dispatch::Error>>> + Send
+    {
         let input = get_audio_file_name(&file);
-        let processed = process_audio_file(file, self.files)?;
-        let answer = execute(self, call, &processed, &input).await?;
-        Ok(self.with_measured_duration(answer, &processed))
+        let processed = process_audio_file(file, self.files);
+        async move {
+            let processed = processed?;
+            let answer = execute(self, call, &processed, &input).await?;
+            Ok(self.with_measured_duration(answer, &processed))
+        }
     }
 
     // atranscription(*args, **kwargs): KeyError("model") before the try, then the sync call and its checks
-    pub async fn atranscription(
+    pub fn atranscription(
         &self,
         model: Option<&str>,
         call: &TranscriptionCall,
         file: AudioFile<'_>,
         file_from_kwargs: bool,
-    ) -> Result<TranscriptionResponse, AsyncTranscriptionError> {
+    ) -> impl Future<Output = Result<TranscriptionResponse, AsyncTranscriptionError>> + Send {
+        let preparation = self.prepare_async(model, call, file);
+        async move {
+            let prepared = preparation?;
+            self.finish_async(prepared, file_from_kwargs).await
+        }
+    }
+
+    // atranscription's synchronous part: args[0] is checked first, then the file is read and a failure mapped
+    fn prepare_async(
+        &self,
+        model: Option<&str>,
+        call: &TranscriptionCall,
+        file: AudioFile<'_>,
+    ) -> Result<AsyncPreparation, AsyncTranscriptionError> {
         let Some(model_name) = model else {
             return Err(AsyncTranscriptionError::MissingModel);
         };
@@ -95,16 +123,32 @@ where
                 return Err(self.mapped_error(&failure, &asynchronous, model_name));
             }
         };
+        Ok(AsyncPreparation {
+            asynchronous,
+            model_name: model_name.to_owned(),
+            input,
+            processed,
+        })
+    }
+
+    // atranscription's awaited part: the sync call, the wrapper's final checks and the hidden duration
+    async fn finish_async(
+        &self,
+        prepared: AsyncPreparation,
+        file_from_kwargs: bool,
+    ) -> Result<TranscriptionResponse, AsyncTranscriptionError> {
         let async_call = AsyncCall {
-            call: &asynchronous,
-            processed: &processed,
-            input: &input,
+            call: &prepared.asynchronous,
+            processed: &prepared.processed,
+            input: &prepared.input,
         };
-        let answer = self.transcribed(&async_call, model_name).await?;
-        let mut response = self.final_response(answer, &async_call, model_name).await?;
+        let answer = self.transcribed(&async_call, &prepared.model_name).await?;
+        let mut response = self
+            .final_response(answer, &async_call, &prepared.model_name)
+            .await?;
         if file_from_kwargs
             && public_duration_is_absent(&response)
-            && let Some(duration) = measured_duration(&processed, self.files, self.decoder)
+            && let Some(duration) = measured_duration(&prepared.processed, self.files, self.decoder)
         {
             store_hidden_duration(&mut response, duration);
         }

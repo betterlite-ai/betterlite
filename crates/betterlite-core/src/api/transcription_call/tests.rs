@@ -46,6 +46,7 @@ use std::io;
 use std::path::Path;
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
+use tokio::runtime::{Builder, Runtime};
 use uuid::Uuid;
 const INIT: &str = r#"{"model":"whisper-1","call_type":"transcription","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
 #[test]
@@ -105,7 +106,7 @@ fn transcription_openai_form() {
         assert_eq!(reply.response.text.as_deref(), Some("Hello"));
         assert!(reply.response.extra.get("words").is_some());
         assert!(reply.response.extra.get("duration").is_none());
-        assert_eq!(hidden_duration(&reply.response), Some(1.0));
+        assert_eq!(hidden_duration(&reply.response), Some(1.0_f64));
         // text and srt replies pass through, and no JSON response format is forced on the provider
         harness.dispatch.reply(response(
             r#"{"text":"1\n00:00:00,000 --> 00:00:01,000\nHello"}"#,
@@ -468,7 +469,7 @@ fn transcription_async_results() {
         assert_eq!(converted.text.as_deref(), Some("Hello"));
         assert_eq!(harness.dispatch.targets().len(), 1);
         assert!(harness.dispatch.targets()[0].atranscription);
-        assert_eq!(hidden_duration(&converted), Some(1.0));
+        assert_eq!(hidden_duration(&converted), Some(1.0_f64));
         assert!(converted.extra.get("duration").is_none());
         // the outer duration step needs the file in kwargs, which a cached dict does not get from the sync stage
         harness.dispatch.mapping(json(r#"{"text":"Hello"}"#));
@@ -496,7 +497,7 @@ fn transcription_async_results() {
             .await
             .expect("the typed response passes through");
         assert_eq!(typed.text.as_deref(), Some("Hello"));
-        assert_eq!(hidden_duration(&typed), Some(1.0));
+        assert_eq!(hidden_duration(&typed), Some(1.0_f64));
         harness.dispatch.unexpected(json("1"));
         harness.dispatch.reply(response(r#"{"text":"Hello"}"#));
         let second = harness
@@ -546,7 +547,7 @@ fn transcription_async_results() {
             )
             .await
             .expect("the transcription succeeds");
-        assert_eq!(hidden_duration(&null_duration), Some(1.0));
+        assert_eq!(hidden_duration(&null_duration), Some(1.0_f64));
         // a zero-duration valid file stores zero, and invalid audio stores nothing
         harness.dispatch.reply(response(r#"{"text":"Hello"}"#));
         let silent = wav(0);
@@ -560,7 +561,7 @@ fn transcription_async_results() {
             )
             .await
             .expect("a zero-duration file is valid");
-        assert_eq!(hidden_duration(&zero), Some(0.0));
+        assert_eq!(hidden_duration(&zero), Some(0.0_f64));
         harness.dispatch.reply(response(r#"{"text":"Hello"}"#));
         let invalid = harness
             .service()
@@ -624,7 +625,7 @@ fn cached_dict_conversion() {
     .expect("the cached dict converts");
     assert_eq!(converted.text.as_deref(), Some("Hello"));
     assert!(converted.extra.get("duration").is_some());
-    assert_eq!(hidden_duration(&converted), Some(2.0));
+    assert_eq!(hidden_duration(&converted), Some(2.0_f64));
     let null_text =
         super::cached_audio_response(json(r#"{"text":null}"#)).expect("a null text converts");
     assert_eq!(null_text.text, None);
@@ -683,7 +684,7 @@ enum TargetKind {
 }
 
 impl Snapshot {
-    fn of(kind: TargetKind, input: TranscriptionInput<'_>) -> Self {
+    fn of(kind: TargetKind, input: &TranscriptionInput<'_>) -> Self {
         Self {
             kind,
             model: input.model.to_owned(),
@@ -712,13 +713,13 @@ impl Snapshot {
 fn snapshot(target: TranscriptionTarget<'_>) -> Snapshot {
     match target {
         TranscriptionTarget::OpenAi(call) => {
-            let mut recorded = Snapshot::of(TargetKind::OpenAi, call.input);
+            let mut recorded = Snapshot::of(TargetKind::OpenAi, &call.input);
             recorded.organization = call.organization.map(str::to_owned);
             recorded.family = call.family;
             recorded
         }
         TranscriptionTarget::Azure(call) => {
-            let mut recorded = Snapshot::of(TargetKind::Azure, call.input);
+            let mut recorded = Snapshot::of(TargetKind::Azure, &call.input);
             recorded.api_version = call.api_version.map(str::to_owned);
             recorded.azure_ad_token = call
                 .azure_ad_token
@@ -735,7 +736,7 @@ fn snapshot(target: TranscriptionTarget<'_>) -> Snapshot {
 }
 
 fn injected(kind: TargetKind, call: InjectedTranscription<'_>) -> Snapshot {
-    let mut recorded = Snapshot::of(kind, call.input);
+    let mut recorded = Snapshot::of(kind, &call.input);
     recorded.headers = call.headers.cloned();
     recorded.config = call.config;
     recorded
@@ -909,8 +910,8 @@ const fn fixed_boundary() -> Uuid {
     Uuid::from_u128(7)
 }
 
-fn runtime() -> tokio::runtime::Runtime {
-    tokio::runtime::Builder::new_current_thread()
+fn runtime() -> Runtime {
+    Builder::new_current_thread()
         .enable_all()
         .build()
         .expect("the test runtime")
