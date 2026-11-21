@@ -261,7 +261,12 @@ fn assert_enforced_outcome(
     match (result, expected) {
         (Ok(result), Expected::Passed) => assert_eq!(
             result.enforced_params,
-            Some(enforced.iter().map(|item| (*item).to_owned()).collect::<Vec<String>>())
+            Some(
+                enforced
+                    .iter()
+                    .map(|item| (*item).to_owned())
+                    .collect::<Vec<String>>()
+            )
         ),
         (Err(error), Expected::Missing(param)) => {
             assert_eq!(
