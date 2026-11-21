@@ -90,14 +90,14 @@ impl Section for Raw {
         else {
             return Ok(Settings::default());
         };
-        let Some(litellm_params) = litellm_params else {
+        let Some(params) = litellm_params else {
             return Ok(Settings::default());
         };
         Ok(Settings {
             config: Some(Config {
                 custom_llm_provider,
                 litellm_params: Some(
-                    litellm_params
+                    params
                         .into_iter()
                         .map(|(name, value)| (name, expand_value(value, lookup)))
                         .collect(),
@@ -120,6 +120,10 @@ where
             let variable = rest.replace(ENVIRONMENT_PREFIX, "");
             lookup.lookup(&variable).map_or(Json::Null, Json::Text)
         }
-        other => other,
+        other @ Json::Null
+        | other @ Json::Bool(_)
+        | other @ Json::Number(_)
+        | other @ Json::List(_)
+        | other @ Json::Object(_) => other,
     }
 }

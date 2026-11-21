@@ -6,7 +6,7 @@ use betterlite_models::decisions::Json;
 use rstest::rstest;
 
 use crate::loader::{ConfigError, ConfigLoader};
-use crate::sections::assistant_settings::{Config, Settings};
+use crate::sections::assistant_settings::Settings;
 
 fn settings(source: &str, variables: &[(&str, &str)]) -> Result<Settings, ConfigError> {
     let lookup: BTreeMap<String, String> = variables
@@ -42,7 +42,7 @@ fn loads_assistant_settings(#[case] source: &str, #[case] expected: Option<(&str
         assert_eq!(loaded, Settings::default(), "{source}");
         return;
     };
-    let config: Config = loaded.config.expect("the assistant is configured");
+    let config = loaded.config.expect("the assistant is configured");
     assert_eq!(config.custom_llm_provider.as_deref(), Some(provider));
     let params = config.litellm_params.expect("the parameters are loaded");
     assert_eq!(params.get("api_key"), Some(&Json::Text(api_key.to_owned())));
@@ -78,7 +78,7 @@ fn a_nonempty_mapping_without_params_fails_to_load() {
     let error = settings("assistant_settings:\n  custom_llm_provider: openai\n", &[])
         .expect_err("the mapping is missing litellm_params");
     assert!(
-        format!("{error}").contains("litellm_params"),
+        error.to_string().contains("litellm_params"),
         "the missing key is named: {error}"
     );
 }
