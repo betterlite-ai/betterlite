@@ -96,8 +96,8 @@ async fn alias_rows_reads_the_team_relation_and_the_stored_object() {
     insert_aliases(&client, 1, Some(r#"{"a":"pub"}"#)).await;
     insert_aliases(&client, 2, None).await;
     insert_aliases(&client, 3, Some(r#"{"b":"other"}"#)).await;
-    insert_team(&client, "t1", Some(&names(&["pub"])), Some(1)).await;
-    insert_team(&client, "t2", Some(&names(&["other"])), Some(2)).await;
+    insert_team(&client, "t1", Some(&names(&["pub"])), Some(1_i32)).await;
+    insert_team(&client, "t2", Some(&names(&["other"])), Some(2_i32)).await;
     drop(client);
     let (stored, availability) = store(&pool);
     let found = cleanup(&stored, &availability).alias_rows().await.unwrap();
@@ -251,9 +251,9 @@ async fn a_saved_alias_without_the_client_is_an_error() {
         .expect_err("no pool is an error");
     assert!(matches!(error, CleanupError::Database(_)));
     let disconnected = PostgresTeamModels { client: None };
-    let error = disconnected
+    let disconnected_error = disconnected
         .team_models("t1")
         .await
         .expect_err("no client is an error");
-    assert!(matches!(error, CleanupError::Database(_)));
+    assert!(matches!(disconnected_error, CleanupError::Database(_)));
 }
