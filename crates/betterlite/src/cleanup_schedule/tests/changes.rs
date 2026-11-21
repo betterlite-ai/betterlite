@@ -65,6 +65,7 @@ fn the_first_settings_change_adds_the_staggered_interval_job() {
     let settings = retained("30d");
     let mut scheduler = recording(SchedulerState::Paused);
     let mut state = CleanupScheduleState::default();
+    let (buffer, _guard) = capture_logs();
     apply(
         Some(&mut scheduler),
         &CleanupSchedule::default(),
@@ -79,6 +80,36 @@ fn the_first_settings_change_adds_the_staggered_interval_job() {
         Some(TimeDelta::seconds(2_592_000))
     );
     assert_eq!(state.last_attempt, Some(cleanup_schedule_of(&settings)));
+    assert!(
+        buffer
+            .contents()
+            .contains("Spend log cleanup rescheduled with trigger: interval of 1d")
+    );
+}
+
+#[test]
+fn a_cron_settings_change_adds_the_cron_job_and_logs_it() {
+    let fixture = fixture();
+    let settings = store(&[
+        (RETENTION_PERIOD_KEY, JsonValue::from("30d")),
+        (CLEANUP_CRON_KEY, JsonValue::from("* * * * *")),
+    ]);
+    let mut scheduler = recording(SchedulerState::Paused);
+    let mut state = CleanupScheduleState::default();
+    let (buffer, _guard) = capture_logs();
+    apply(
+        Some(&mut scheduler),
+        &CleanupSchedule::default(),
+        &settings,
+        &fixture.context(),
+        &mut state,
+    );
+    assert_eq!(scheduler.inserted, 1);
+    assert!(
+        buffer
+            .contents()
+            .contains("Spend log cleanup rescheduled with trigger: cron * * * * *")
+    );
 }
 
 #[test]

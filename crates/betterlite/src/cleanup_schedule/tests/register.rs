@@ -1,4 +1,5 @@
 use betterlite_config::sections::settings::{JsonValue, SettingsStore};
+use rstest::rstest;
 
 use crate::cleanup_schedule::changes::CleanupScheduleState;
 use crate::cleanup_schedule::error::CleanupScheduleError;
@@ -43,25 +44,28 @@ fn registration_does_nothing_without_a_retention_key() {
     assert_eq!(state.last_attempt, None);
 }
 
-#[test]
-fn startup_interval_carries_the_random_offset_and_records_the_attempt() {
+#[rstest]
+#[case::lowest_sample(0_u64, 0_u32)]
+#[case::highest_sample(u64::MAX, 60_u32)]
+fn startup_interval_carries_the_random_offset_and_records_the_attempt(
+    #[case] sample: u64,
+    #[case] offset: u32,
+) {
     let fixture = fixture();
     let settings = retained("90d");
-    for (sample, offset) in [(0_u64, 0_u32), (u64::MAX, 60_u32)] {
-        let mut scheduler = proxy_scheduler();
-        let mut state = CleanupScheduleState::default();
-        register(
-            &mut scheduler,
-            &settings,
-            &fixture.context(),
-            sample,
-            &mut state,
-        )
-        .unwrap();
-        let job = scheduler.get_job(SPEND_LOG_CLEANUP_JOB_ID).unwrap();
-        assert_eq!(job.period_seconds, Some(7_776_000 + offset));
-        assert_eq!(state.last_attempt, Some(cleanup_schedule_of(&settings)));
-    }
+    let mut scheduler = proxy_scheduler();
+    let mut state = CleanupScheduleState::default();
+    register(
+        &mut scheduler,
+        &settings,
+        &fixture.context(),
+        sample,
+        &mut state,
+    )
+    .unwrap();
+    let job = scheduler.get_job(SPEND_LOG_CLEANUP_JOB_ID).unwrap();
+    assert_eq!(job.period_seconds, Some(7_776_000 + offset));
+    assert_eq!(state.last_attempt, Some(cleanup_schedule_of(&settings)));
 }
 
 #[test]

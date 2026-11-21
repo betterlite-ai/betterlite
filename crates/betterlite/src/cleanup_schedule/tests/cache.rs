@@ -6,6 +6,7 @@ use betterlite_cache::backend::memory::local::LocalMemoryOps;
 use betterlite_cache::dual_cache::{DualCacheSettings, MAX_REDIS_BATCH_CACHE_SIZE};
 use betterlite_config::sections::settings::{DbRow, JsonValue, Section, SettingsStore};
 use betterlite_models::decisions::Json;
+use rstest::rstest;
 
 use crate::cleanup_schedule::cache_size::{CACHE_MAX_SIZE_KEY, on_cache_size_changed};
 use crate::cleanup_schedule::ports::CacheMaxSize;
@@ -119,29 +120,29 @@ fn an_integral_string_size_is_accepted_and_stored_as_a_number() {
     );
 }
 
-#[test]
-fn an_invalid_database_size_is_removed_and_the_cache_is_untouched() {
+#[rstest]
+#[case::zero(JsonValue::from(0_i64), "=0 ")]
+#[case::negative(JsonValue::from(-3_i64), "=-3 ")]
+#[case::fractional(JsonValue::from(2.5_f64), "=2.5 ")]
+#[case::text(JsonValue::from("soon"), "=\"soon\" ")]
+#[case::boolean(JsonValue::from(true), "=true ")]
+fn an_invalid_database_size_is_removed_and_the_cache_is_untouched(
+    #[case] value: JsonValue,
+    #[case] shown: &str,
+) {
     let (buffer, _guard) = capture_logs();
-    for (value, shown) in [
-        (JsonValue::from(0_i64), "=0 "),
-        (JsonValue::from(-3_i64), "=-3 "),
-        (JsonValue::from(2.5_f64), "=2.5 "),
-        (JsonValue::from("soon"), "=\"soon\" "),
-        (JsonValue::from(true), "=true "),
-    ] {
-        let mut store = applied_store(value.clone());
-        let cache = RecordingCache::default();
-        let values = db_row(value);
-        on_cache_size_changed(&values, false, &mut store, &cache).unwrap();
-        assert!(cache.sizes().is_empty(), "{shown}");
-        assert_eq!(store.get(CACHE_MAX_SIZE_KEY), None, "{shown}");
-        assert!(
-            buffer.contents().contains(&format!(
-                "Ignoring invalid general_settings.user_api_key_cache_max_size{shown}from the DB"
-            )),
-            "{shown}"
-        );
-    }
+    let mut store = applied_store(value.clone());
+    let cache = RecordingCache::default();
+    let values = db_row(value);
+    on_cache_size_changed(&values, false, &mut store, &cache).unwrap();
+    assert!(cache.sizes().is_empty(), "{shown}");
+    assert_eq!(store.get(CACHE_MAX_SIZE_KEY), None, "{shown}");
+    assert!(
+        buffer.contents().contains(&format!(
+            "Ignoring invalid general_settings.user_api_key_cache_max_size{shown}from the DB"
+        )),
+        "{shown}"
+    );
 }
 
 #[test]

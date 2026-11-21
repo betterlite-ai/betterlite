@@ -64,7 +64,7 @@ class SchedulerStub:
 
     def add_job(
         self,
-        func: Callable[..., Awaitable[None]],
+        func: Callable[[], Awaitable[None]],
         trigger: Trigger,
         **options: JsonValue,
     ) -> None:
@@ -149,10 +149,11 @@ async def apply_retention(
             job_present=state["job_present"],
             add_fails=state["add_fails"],
         )
-        proxy_server.scheduler = stub  # pyright: ignore[reportAssignmentType, reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2678
-    previous = proxy_server._cleanup_schedule_of(state["previous"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5323
+        proxy_server.scheduler = stub  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType, reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2678
+    schedule_of = proxy_server._cleanup_schedule_of  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5323
+    previous = schedule_of(state["previous"])
     last = state["last_attempt"]
-    config._last_cleanup_schedule_attempt = None if last is None else proxy_server._cleanup_schedule_of(last)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5404
+    config._last_cleanup_schedule_attempt = None if last is None else schedule_of(last)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5404
     config._cleanup_reschedule_failed = state["reschedule_failed"]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5405
     await config._apply_retention_settings({}, previous)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7963
     return stub

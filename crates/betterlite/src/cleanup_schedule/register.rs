@@ -11,11 +11,9 @@ use crate::job_scheduler::triggers::{CronTrigger, CronZone, IntervalTrigger};
 use super::changes::CleanupScheduleState;
 use super::error::CleanupScheduleError;
 use super::ports::{CleanupScheduler, GeneralSettingsView, cleanup_job_spec};
-use super::schedule::{
-    CleanupSchedule, cleanup_schedule_of, is_truthy, value_text, wants_cleanup_job,
-};
+use super::schedule::{CleanupSchedule, cleanup_schedule_of, value_text, wants_cleanup_job};
 use super::trigger::{
-    ParsedInterval, ScheduleContext, interval_overflows_python_datetime, parsed_interval,
+    ParsedInterval, ScheduleContext, interval_past_datetime_max, parsed_interval,
 };
 
 pub struct CleanupRegistration<'a> {
@@ -37,11 +35,7 @@ where
     if !wants_cleanup_job(&schedule) {
         return Ok(());
     }
-    match schedule
-        .cleanup_cron
-        .as_ref()
-        .filter(|value| is_truthy(value))
-    {
+    match schedule.cleanup_cron.as_ref() {
         Some(JsonValue::String(text)) => {
             startup_cron(registration.scheduler, text, Arc::clone(&registration.job))?;
         }
@@ -96,7 +90,7 @@ where
     };
     let offset = rng.random_range(0_u64..=60_u64);
     let shifted = seconds.saturating_add(offset);
-    if interval_overflows_python_datetime(context.now, shifted) {
+    if interval_past_datetime_max(context.now, shifted) {
         tracing::error!("Invalid maximum_spend_logs_retention_interval value: {text:?}");
         return Ok(());
     }

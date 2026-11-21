@@ -10,7 +10,7 @@ use crate::scheduled_job_stagger::apply::stagger_trigger;
 
 use super::SPEND_LOG_CLEANUP_JOB_ID;
 use super::ports::GeneralSettingsView;
-use super::schedule::{CleanupSchedule, cleanup_schedule_of, is_truthy, value_text};
+use super::schedule::{CleanupSchedule, cleanup_schedule_of, value_text};
 
 // APScheduler builds its start date as datetime.now() + interval, so a first fire past year 9999 raises OverflowError
 const PYTHON_DATETIME_MAX_SECONDS: i64 = 253_402_300_799;
@@ -24,35 +24,21 @@ pub struct ScheduleContext<'a> {
     pub database: &'a TimeZoneDatabase,
 }
 
-pub(super) struct BuiltTrigger {
-    pub(super) trigger: Box<dyn Trigger>,
-    pub(super) description: String,
-}
-
 pub(super) struct ParsedInterval<'a> {
     pub(super) text: &'a str,
     pub(super) seconds: u64,
     pub(super) period_seconds: Option<u32>,
 }
 
+// An absent or null cron leaves the interval branch; any other value is used as given, since docs/compatibility.md rules out Python truthiness
 #[must_use]
 pub fn cleanup_trigger(
     settings: &dyn GeneralSettingsView,
     context: &ScheduleContext<'_>,
 ) -> Option<Box<dyn Trigger>> {
-    build_trigger(&cleanup_schedule_of(settings), context).map(|built| built.trigger)
-}
-
-pub(super) fn build_trigger(
-    schedule: &CleanupSchedule,
-    context: &ScheduleContext<'_>,
-) -> Option<BuiltTrigger> {
-    let Some(cron) = schedule
-        .cleanup_cron
-        .as_ref()
-        .filter(|value| is_truthy(value))
-    else {
-        return interval_built(schedule, context);
+    let schedule = cleanup_schedule_of(settings);
+    let Some(cron) = schedule.cleanup_cron.as_ref() else {
+        return interval_trigger(&schedule, context);
     };
     let Some(text) = cron.as_str() else {
         tracing::error!(
@@ -61,15 +47,8 @@ pub(super) fn build_trigger(
         );
         return None;
     };
-    cron_built(text)
-}
-
-fn cron_built(text: &str) -> Option<BuiltTrigger> {
     match CronTrigger::from_crontab(text, CronZone::Local) {
-        Ok(trigger) => Some(BuiltTrigger {
-            trigger: Box::new(trigger),
-            description: format!("cron {text}"),
-        }),
+        Ok(trigger) => Some(Box::new(trigger)),
         Err(_error) => {
             tracing::error!("Invalid maximum_spend_logs_cleanup_cron value: {text}");
             None
@@ -77,30 +56,39 @@ fn cron_built(text: &str) -> Option<BuiltTrigger> {
     }
 }
 
-fn interval_built(
+fn interval_trigger(
     schedule: &CleanupSchedule,
     context: &ScheduleContext<'_>,
-) -> Option<BuiltTrigger> {
+) -> Option<Box<dyn Trigger>> {
     let ParsedInterval {
         seconds,
         period_seconds,
         ..
     } = parsed_interval(schedule, context)?;
-    Some(BuiltTrigger {
-        trigger: stagger_trigger(
-            SPEND_LOG_CLEANUP_JOB_ID,
-            Box::new(IntervalTrigger { seconds }),
-            period_seconds,
-            context.stagger,
-            context.identity,
-        ),
-        description: format!("interval of {seconds}s"),
-    })
+    Some(stagger_trigger(
+        SPEND_LOG_CLEANUP_JOB_ID,
+        Box::new(IntervalTrigger { seconds }),
+        period_seconds,
+        context.stagger,
+        context.identity,
+    ))
+}
+
+pub(super) fn trigger_text(schedule: &CleanupSchedule) -> String {
+    match schedule.cleanup_cron.as_ref() {
+        Some(JsonValue::String(cron)) => format!("cron {cron}"),
+        Some(value) => value_text(value),
+        None => match schedule.cleanup_interval.as_ref() {
+            Some(JsonValue::String(text)) => format!("interval of {text}"),
+            Some(value) => value_text(value),
+            None => "interval of 1d".to_owned(),
+        },
+    }
 }
 
 // APScheduler's IntervalTrigger raises OverflowError at construction for a first fire past datetime.max
 #[must_use]
-pub(super) fn interval_overflows_python_datetime(now: DateTime<Utc>, seconds: u64) -> bool {
+pub(super) fn interval_past_datetime_max(now: DateTime<Utc>, seconds: u64) -> bool {
     let Ok(seconds) = i64::try_from(seconds) else {
         return true;
     };
@@ -135,7 +123,7 @@ pub(super) fn parsed_interval<'a>(
         tracing::error!("Invalid maximum_spend_logs_retention_interval value: {text:?}");
         return None;
     };
-    if interval_overflows_python_datetime(context.now, seconds) {
+    if interval_past_datetime_max(context.now, seconds) {
         tracing::error!("Invalid maximum_spend_logs_retention_interval value: {text:?}");
         return None;
     }

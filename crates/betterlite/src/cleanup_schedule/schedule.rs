@@ -44,31 +44,6 @@ pub const fn wants_cleanup_job(schedule: &CleanupSchedule) -> bool {
         || schedule.tag_spend_retention.is_some()
 }
 
-// Python truthiness decides whether a cron value is present, so "0", false and [] fall through to the interval
-#[must_use]
-pub fn is_truthy(value: &JsonValue) -> bool {
-    match value {
-        JsonValue::Null => false,
-        JsonValue::Bool(flag) => *flag,
-        JsonValue::Number(number) => number.as_u64().map_or_else(
-            || {
-                number.as_i64().map_or_else(
-                    || {
-                        number
-                            .as_f64()
-                            .is_some_and(|value| value.abs().to_bits() != 0_u64)
-                    },
-                    |value| value != 0,
-                )
-            },
-            |value| value != 0,
-        ),
-        JsonValue::String(text) => !text.is_empty(),
-        JsonValue::Array(items) => !items.is_empty(),
-        JsonValue::Object(fields) => !fields.is_empty(),
-    }
-}
-
 #[must_use]
 pub fn value_text(value: &JsonValue) -> String {
     if let JsonValue::String(text) = value {

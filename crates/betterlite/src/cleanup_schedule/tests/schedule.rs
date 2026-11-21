@@ -1,7 +1,8 @@
 use betterlite_config::sections::settings::JsonValue;
+use rstest::rstest;
 
 use crate::cleanup_schedule::schedule::{
-    CleanupSchedule, cleanup_schedule_of, is_truthy, value_text, wants_cleanup_job,
+    CleanupSchedule, cleanup_schedule_of, value_text, wants_cleanup_job,
 };
 use crate::cleanup_schedule::{
     AUTOROUTER_RETENTION_KEY, CLEANUP_CRON_KEY, CLEANUP_SCHEDULE_KEYS, HEALTH_RETENTION_KEY,
@@ -49,45 +50,26 @@ fn cleanup_schedule_reads_each_key_and_treats_null_as_absent() {
 }
 
 #[test]
-fn wants_cleanup_job_only_counts_the_first_four_keys() {
-    let mut schedule = CleanupSchedule::default();
-    assert!(!wants_cleanup_job(&schedule));
-    for key in [
-        RETENTION_PERIOD_KEY,
-        AUTOROUTER_RETENTION_KEY,
-        HEALTH_RETENTION_KEY,
-        TAG_SPEND_RETENTION_KEY,
-    ] {
-        schedule = cleanup_schedule_of(&store(&[(key, JsonValue::from("30d"))]));
-        assert!(wants_cleanup_job(&schedule), "{key} must want the job");
-    }
-    for key in [CLEANUP_CRON_KEY, RETENTION_INTERVAL_KEY] {
-        schedule = cleanup_schedule_of(&store(&[(key, JsonValue::from("30d"))]));
-        assert!(!wants_cleanup_job(&schedule), "{key} alone must not");
-    }
+fn an_empty_schedule_does_not_want_the_job() {
+    assert!(!wants_cleanup_job(&CleanupSchedule::default()));
 }
 
-#[test]
-fn is_truthy_matches_python_truthiness() {
-    let cases = [
-        (JsonValue::Null, false),
-        (JsonValue::from(true), true),
-        (JsonValue::from(false), false),
-        (JsonValue::from(0_i64), false),
-        (JsonValue::from(7_i64), true),
-        (JsonValue::from(-1_i64), true),
-        (JsonValue::from(0.0_f64), false),
-        (JsonValue::from(1.5_f64), true),
-        (JsonValue::from(""), false),
-        (JsonValue::from("0"), true),
-        (serde_json::json!([]), false),
-        (serde_json::json!([0]), true),
-        (serde_json::json!({}), false),
-        (serde_json::json!({"a": 0}), true),
-    ];
-    for (value, expected) in cases {
-        assert_eq!(is_truthy(&value), expected, "{value}");
-    }
+#[rstest]
+#[case::retention_period(RETENTION_PERIOD_KEY)]
+#[case::autorouter_sessions(AUTOROUTER_RETENTION_KEY)]
+#[case::health_checks(HEALTH_RETENTION_KEY)]
+#[case::tag_spend(TAG_SPEND_RETENTION_KEY)]
+fn a_retention_key_wants_the_job(#[case] key: &str) {
+    let schedule = cleanup_schedule_of(&store(&[(key, JsonValue::from("30d"))]));
+    assert!(wants_cleanup_job(&schedule), "{key} must want the job");
+}
+
+#[rstest]
+#[case::cleanup_cron(CLEANUP_CRON_KEY)]
+#[case::retention_interval(RETENTION_INTERVAL_KEY)]
+fn a_schedule_key_alone_does_not_want_the_job(#[case] key: &str) {
+    let schedule = cleanup_schedule_of(&store(&[(key, JsonValue::from("30d"))]));
+    assert!(!wants_cleanup_job(&schedule), "{key} alone must not");
 }
 
 #[test]

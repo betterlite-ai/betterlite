@@ -4,7 +4,7 @@ use super::SPEND_LOG_CLEANUP_JOB_ID;
 use super::error::CleanupScheduleError;
 use super::ports::{CleanupScheduler, GeneralSettingsView, cleanup_job_spec};
 use super::schedule::{CleanupSchedule, cleanup_schedule_of, wants_cleanup_job};
-use super::trigger::{ScheduleContext, build_trigger};
+use super::trigger::{ScheduleContext, cleanup_trigger, trigger_text};
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct CleanupScheduleState {
@@ -46,7 +46,7 @@ pub fn on_settings_changed(
     if !(baseline != &current || retry_due || (has_job && !wanted)) {
         return;
     }
-    match reschedule(scheduler, &current, change.context, job) {
+    match reschedule(scheduler, &current, current_settings, change.context, job) {
         Ok(()) => {
             state.reschedule_failed = false;
             state.last_attempt = Some(current);
@@ -63,6 +63,7 @@ pub fn on_settings_changed(
 fn reschedule(
     scheduler: Option<&mut dyn CleanupScheduler>,
     current: &CleanupSchedule,
+    current_settings: &dyn GeneralSettingsView,
     context: &ScheduleContext<'_>,
     job: JobFn,
 ) -> Result<(), CleanupScheduleError> {
@@ -76,13 +77,13 @@ fn reschedule(
         }
         return Ok(());
     }
-    let Some(built) = build_trigger(current, context) else {
+    let Some(trigger) = cleanup_trigger(current_settings, context) else {
         return Ok(());
     };
-    scheduler.insert_job(cleanup_job_spec(built.trigger, job))?;
+    scheduler.insert_job(cleanup_job_spec(trigger, job))?;
     tracing::info!(
         "Spend log cleanup rescheduled with trigger: {}",
-        built.description
+        trigger_text(current)
     );
     Ok(())
 }

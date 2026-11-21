@@ -39,7 +39,7 @@ fn bad_cron_string_returns_none_and_logs_the_value() {
 }
 
 #[test]
-fn non_string_truthy_cron_returns_none_and_logs_the_value() {
+fn non_string_cron_returns_none_and_logs_the_value() {
     let (buffer, _guard) = capture_logs();
     let fixture = fixture();
     let settings = store(&[
@@ -56,17 +56,34 @@ fn non_string_truthy_cron_returns_none_and_logs_the_value() {
 }
 
 #[test]
-fn falsy_cron_falls_back_to_the_interval() {
+fn a_null_cron_falls_back_to_the_interval() {
     let fixture = fixture();
     let settings = store(&[
         (RETENTION_PERIOD_KEY, JsonValue::from("30d")),
-        (CLEANUP_CRON_KEY, JsonValue::from("")),
+        (CLEANUP_CRON_KEY, JsonValue::Null),
         (RETENTION_INTERVAL_KEY, JsonValue::from("90s")),
     ]);
     let trigger = cleanup_trigger(&settings, &fixture.context()).unwrap();
     assert_eq!(
         period_of(trigger.as_ref(), origin()),
         Some(TimeDelta::seconds(90))
+    );
+}
+
+#[test]
+fn an_empty_cron_string_is_logged_as_an_invalid_cron() {
+    let (buffer, _guard) = capture_logs();
+    let fixture = fixture();
+    let settings = store(&[
+        (RETENTION_PERIOD_KEY, JsonValue::from("30d")),
+        (CLEANUP_CRON_KEY, JsonValue::from("")),
+        (RETENTION_INTERVAL_KEY, JsonValue::from("90s")),
+    ]);
+    assert!(cleanup_trigger(&settings, &fixture.context()).is_none());
+    assert!(
+        buffer
+            .contents()
+            .contains("Invalid maximum_spend_logs_cleanup_cron value:")
     );
 }
 
@@ -112,7 +129,7 @@ fn non_string_interval_returns_none_and_logs_the_value() {
 }
 
 #[test]
-fn unparseable_interval_returns_none_and_logs_the_value() {
+fn unparsable_interval_returns_none_and_logs_the_value() {
     let (buffer, _guard) = capture_logs();
     let fixture = fixture();
     let settings = store(&[
