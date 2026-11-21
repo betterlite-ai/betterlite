@@ -1,9 +1,13 @@
+use std::future::Future;
 use std::path::Path;
 use std::sync::PoisonError;
 use std::time::Duration;
 
+use betterlite_context::media_config_selection::audio_transcription::AudioTranscriptionConfigTag;
 use betterlite_context::non_default_params::Params;
+use betterlite_context::non_default_params::error::MapperError;
 use betterlite_context::non_default_params::mapper::DropPolicy;
+use betterlite_context::non_default_params::mapper::OptionalParamsMapper;
 use betterlite_error::error::ErrorClass;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::audio_file_input::{AudioFile, ProcessedAudioFile};
@@ -12,15 +16,18 @@ use indexmap::IndexMap;
 
 use super::support::request_for;
 use super::{
-    Harness, TargetKind, fixed_boundary, json, params, response, runtime, secret, value, wav,
+    FakeError, Harness, Recorder, TargetKind, fixed_boundary, json, params, response, runtime,
+    secret, value, wav,
 };
 use crate::api::transcription_call::call::SuppliedClientKind;
+use crate::api::transcription_call::dispatch::{TranscriptionAnswer, TranscriptionDispatch};
 use crate::api::transcription_call::error::{
     AsyncTranscriptionError, TranscriptionDispatchError, TranscriptionError,
 };
 use crate::api::transcription_call::error_type_name;
 use crate::api::transcription_call::plan::{bool_value, drop_policy};
-use crate::api::transcription_call::target::TranscriptionInput;
+use crate::api::transcription_call::service::Transcriptions;
+use crate::api::transcription_call::target::{TranscriptionInput, TranscriptionTarget};
 
 #[derive(Debug, thiserror::Error)]
 #[error("bare dispatch failure")]
@@ -124,20 +131,26 @@ fn optional_params_map_keeps_the_decisions_shape() {
     assert_eq!(mapped.get("temperature"), Some(&json("0")));
 }
 
-// get_optional_params_transcription's extra_body members reach the transport beside the named options
+// get_optional_params_transcription's extra_body members reach the transport beside the named
+// options, and a clashing member wins, as the OpenAI SDK's own extra_body merge does
 #[test]
 fn extra_body_members_are_laid_over_the_openai_options() {
     runtime().block_on(async {
         let harness = Harness::new();
         harness.dispatch.reply(response(r#"{"text":"Hello"}"#));
         let mut request = request_for("openai/whisper-1");
-        request.params = params(r#"{"custom_field":7}"#);
+        request.language = Some(String::from("en"));
+        request.params = params(r#"{"extra_body":{"language":"fr"},"custom_field":7}"#);
         harness
             .service()
             .transcription(&request, AudioFile::Bytes(&wav(1)))
             .await
             .expect("the transcription succeeds");
         let recorded = harness.dispatch.last();
+        assert_eq!(
+            recorded.optional_params.get("language"),
+            Some(&value(r#""fr""#))
+        );
         assert_eq!(
             recorded.optional_params.get("custom_field"),
             Some(&value("7"))
@@ -602,5 +615,96 @@ fn riva_and_bedrock_ignore_the_caller_client() {
             .await
             .expect("the bedrock transcription succeeds");
         assert_eq!(harness.dispatch.last().client, None);
+    });
+}
+
+// LiteLLM's xai audio config supports language only and copies it into optional_params, leaving
+// extra_body to the transform, so a fixture dispatch supplies that config to the native branch
+struct XaiParams;
+
+const XAI_SUPPORTED: [&str; 1] = ["language"];
+
+impl OptionalParamsMapper for XaiParams {
+    fn supported_openai_params(&self, _model: &str) -> Vec<String> {
+        XAI_SUPPORTED.iter().copied().map(String::from).collect()
+    }
+
+    fn map_openai_params(
+        &self,
+        non_default_params: &Params,
+        mut optional_params: Params,
+        _model: &str,
+        _drop_params: bool,
+    ) -> Result<Params, MapperError> {
+        for name in XAI_SUPPORTED {
+            if let Some(value) = non_default_params.get(name) {
+                optional_params.insert(String::from(name), value.clone());
+            }
+        }
+        Ok(optional_params)
+    }
+}
+
+static XAI_PARAMS: XaiParams = XaiParams;
+
+// the recorder behind a dispatch that serves the xai config above
+struct XaiDispatch<'recorder>(&'recorder Recorder);
+
+impl TranscriptionDispatch for XaiDispatch<'_> {
+    type Error = FakeError;
+
+    fn transcribe(
+        &self,
+        target: TranscriptionTarget<'_>,
+    ) -> impl Future<Output = Result<TranscriptionAnswer, FakeError>> + Send {
+        self.0.transcribe(target)
+    }
+
+    fn mapper(
+        &self,
+        _provider: &str,
+        _config: Option<AudioTranscriptionConfigTag>,
+    ) -> Option<&dyn OptionalParamsMapper> {
+        Some(&XAI_PARAMS)
+    }
+}
+
+// a native destination keeps the mapper's named options beside the nested extra_body, the shape
+// LiteLLM's xai transform flattens with the direct option winning
+#[test]
+fn native_keeps_the_named_options_beside_the_nested_extra_body() {
+    runtime().block_on(async {
+        let harness = Harness::new();
+        harness.dispatch.reply(response(r#"{"text":"Hello"}"#));
+        let mut request = request_for("xai/whisper-1");
+        request.language = Some(String::from("en"));
+        request.params = params(r#"{"extra_body":{"language":"fr"},"custom_field":7}"#);
+        let mapped = XaiDispatch(&harness.dispatch);
+        let template = harness.service();
+        let service = Transcriptions {
+            dispatch: &mapped,
+            settings: template.settings,
+            resolution: template.resolution,
+            bundled: template.bundled,
+            files: template.files,
+            decoder: template.decoder,
+            redactor: template.redactor,
+            logging: template.logging,
+            identify: template.identify,
+        };
+        service
+            .transcription(&request, AudioFile::Bytes(&wav(1)))
+            .await
+            .expect("the native transcription succeeds");
+        let recorded = harness.dispatch.last();
+        assert_eq!(recorded.kind, TargetKind::Native);
+        assert_eq!(
+            recorded.optional_params.get("language"),
+            Some(&value(r#""en""#))
+        );
+        assert_eq!(
+            recorded.optional_params.get("extra_body"),
+            Some(&value(r#"{"language":"fr","custom_field":7}"#))
+        );
     });
 }
