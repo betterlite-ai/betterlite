@@ -119,6 +119,29 @@ async fn a_warm_cheaper_model_replaces_the_route() {
 }
 
 #[tokio::test]
+async fn a_decision_without_signals_or_cause_starts_a_fresh_list() {
+    let fixture = Fixture::new();
+    let chooser = FixedChooser::new(Some(choice("0.001", "0.004")), Duration::ZERO);
+    let mut original = response();
+    original.routing_decision = Some(
+        [("routed_model", Json::Text("small".to_owned()))]
+            .into_iter()
+            .map(|(key, value)| (key.to_owned(), value))
+            .collect(),
+    );
+    let applied = fixture.apply(&chooser, Some(original), None).await.unwrap();
+    let decision = applied.routing_decision.unwrap();
+    assert_eq!(
+        decision["signals"],
+        Json::List(vec![
+            Json::Text("cache-aware:classified-model=small".to_owned()),
+            Json::Text("cache-aware:classification-cause=None".to_owned()),
+            Json::Text("cache-aware:estimated-cost=0.00100000;original-cost=0.00400000".to_owned()),
+        ])
+    );
+}
+
+#[tokio::test]
 async fn an_unlisted_tier_labels_itself() {
     let fixture = Fixture::new();
     let chooser = FixedChooser::new(Some(choice("0.001", "0.004")), Duration::ZERO);

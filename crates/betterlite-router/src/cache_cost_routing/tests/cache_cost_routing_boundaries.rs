@@ -130,6 +130,21 @@ fn config_defaults_match_the_declared_keys() {
 }
 
 #[test]
+fn an_absent_complexity_router_config_leaves_the_deployment_unset() {
+    let source =
+        "model_list:\n  - model_name: router\n    litellm_params:\n      model: openai/gpt-4o\n";
+    let deployments = ConfigLoader {
+        lookup: BTreeMap::<String, String>::new(),
+    }
+    .load(source)
+    .unwrap()
+    .sections
+    .cache_cost_routing
+    .deployments;
+    assert_eq!(deployments, vec![None]);
+}
+
+#[test]
 fn a_zero_output_budget_is_allowed() {
     let deployments = load("cache_aware_routing_output_tokens: 0", &[]).unwrap();
     assert_eq!(deployments[0].unwrap().output_tokens, 0);
