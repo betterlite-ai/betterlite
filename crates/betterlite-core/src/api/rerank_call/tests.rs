@@ -442,12 +442,18 @@ fn async_rerank_passes_explicit_values() {
     args.return_documents = Some(false);
     args.max_chunks_per_doc = Some(0);
     run(&identity, &entry, &redactor, args, &mut logging).expect("the explicit call answers");
+    let mut explicit = call_args();
+    explicit.return_documents = Some(true);
+    let mut second_logging = logging_state("rerank-explicit-true");
+    run(&identity, &entry, &redactor, explicit, &mut second_logging)
+        .expect("an explicit true reaches the callee");
     let calls = entry.calls();
     assert_eq!(calls[0].top_n, Some(0));
     assert_eq!(calls[0].rank_fields, Some(Vec::new()));
     assert_eq!(calls[0].return_documents, ReturnDocuments::Value(false));
     assert_eq!(calls[0].max_chunks_per_doc, Some(0));
     assert_eq!(calls[0].max_tokens_per_doc, None);
+    assert_eq!(calls[1].return_documents, ReturnDocuments::Value(true));
 }
 
 #[test]
