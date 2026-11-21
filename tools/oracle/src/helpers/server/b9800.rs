@@ -33,20 +33,25 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
+        let JsonValue::Object(data) = &input.data else {
+            return Err(invalid_data());
+        };
         match input.gate {
-            Gate::RequiredParams => required_params(input),
-            Gate::MockParams => mock_params(input),
+            Gate::RequiredParams => match required_param_missing(&input.route_type, data) {
+                Ok(()) => Ok(JsonValue::Null),
+                Err(error) => Ok(missing_param_answer(&error)),
+            },
+            Gate::MockParams => match mock_params_disallowed(data, input.allowed) {
+                Ok(()) => Ok(JsonValue::Null),
+                Err(error) => {
+                    let failure = MessagesCallError::from(error);
+                    Ok(json!({
+                        "status": failure.status(),
+                        "detail": failure.http_detail(),
+                    }))
+                }
+            },
         }
-    }
-}
-
-fn required_params(input: &Input) -> HelperResult {
-    let JsonValue::Object(data) = &input.data else {
-        return Err(invalid_data());
-    };
-    match required_param_missing(&input.route_type, data) {
-        Ok(()) => Ok(JsonValue::Null),
-        Err(error) => Ok(missing_param_answer(&error)),
     }
 }
 
@@ -58,22 +63,6 @@ fn missing_param_answer(error: &CallStepError) -> JsonValue {
         "param": error.param(),
         "code": error.code(),
     })
-}
-
-fn mock_params(input: &Input) -> HelperResult {
-    let JsonValue::Object(data) = &input.data else {
-        return Err(invalid_data());
-    };
-    match mock_params_disallowed(data, input.allowed) {
-        Ok(()) => Ok(JsonValue::Null),
-        Err(error) => {
-            let failure = MessagesCallError::from(error);
-            Ok(json!({
-                "status": failure.status(),
-                "detail": failure.http_detail(),
-            }))
-        }
-    }
 }
 
 fn invalid_data() -> Box<HelperError> {
