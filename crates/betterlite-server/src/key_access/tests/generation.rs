@@ -59,8 +59,7 @@ fn team_role_disallowed() {
     assert!(
         matches!(&error, KeyAccessError::RoleNotAllowed { role, allowed } if role == "user" && allowed == &["admin".to_owned()])
     );
-    assert_eq!(error.status(), Some(400_u16));
-    assert_eq!(error.detail(), Some(DetailShape::Text));
+    assert_eq!(error.response(), (Some(400_u16), Some(DetailShape::Text)));
 }
 
 #[test]
@@ -82,8 +81,7 @@ fn required_fields_presence(#[case] body: &str, #[case] present: bool) {
     }
     let error = outcome.unwrap_err();
     assert!(matches!(&error, KeyAccessError::MissingParam { param } if param == "key_alias"));
-    assert_eq!(error.status(), Some(400_u16));
-    assert_eq!(error.detail(), Some(DetailShape::Text));
+    assert_eq!(error.response(), (Some(400_u16), Some(DetailShape::Text)));
 }
 
 #[test]
@@ -114,8 +112,7 @@ fn team_access_groups_opt_in(#[case] roster: &str, #[case] allowed: bool) {
     assert!(
         matches!(&error, KeyAccessError::Team(inner) if matches!(**inner, TeamAccessError::GroupOptIn { .. }))
     );
-    assert_eq!(error.status(), Some(403_u16));
-    assert_eq!(error.detail(), Some(DetailShape::Text));
+    assert_eq!(error.response(), (Some(403_u16), Some(DetailShape::Text)));
 }
 
 #[test]
@@ -130,7 +127,7 @@ fn personal_access_groups_first() {
     assert!(
         matches!(&error, KeyAccessError::Team(inner) if matches!(**inner, TeamAccessError::PersonalKeyGroups { .. }))
     );
-    assert_eq!(error.status(), Some(403_u16));
+    assert_eq!(error.response(), (Some(403_u16), Some(DetailShape::Text)));
 }
 
 #[rstest]
@@ -195,6 +192,5 @@ fn missing_team_settings(#[case] who: TeamCaller, #[case] source: &str, #[case] 
     }
     let error = outcome.unwrap_err();
     assert!(matches!(&error, KeyAccessError::TeamNotFound { team_id } if team_id == "team-404"));
-    assert_eq!(error.status(), Some(400_u16));
-    assert_eq!(error.detail(), Some(DetailShape::Text));
+    assert_eq!(error.response(), (Some(400_u16), Some(DetailShape::Text)));
 }

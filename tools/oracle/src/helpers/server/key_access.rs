@@ -217,9 +217,10 @@ impl Step {
 // the status, detail shape and ProxyException fields LiteLLM raises; the message is betterlite's own
 fn error_out(failure: &KeyAccessError) -> ErrorOut {
     let exception = failure.proxy_exception();
+    let (status, detail) = failure.response();
     ErrorOut {
-        status: failure.status(),
-        detail: failure.detail(),
+        status,
+        detail,
         error_type: exception.as_ref().map(|found| found.error_type.clone()),
         param: exception.as_ref().and_then(|found| found.param.clone()),
         code: exception.map(|found| found.code),

@@ -55,12 +55,13 @@ pub enum KeyAccessError {
 }
 
 impl KeyAccessError {
-    // the HTTP status LiteLLM raises; None is an exception the route's handler maps
+    // the HTTP status and detail shape LiteLLM raises; no status is an exception the route's handler maps
     #[must_use]
-    pub fn status(&self) -> Option<u16> {
+    pub fn response(&self) -> (Option<u16>, Option<DetailShape>) {
         match self {
-            Self::CustomKeyDisabled | Self::NotOwner { .. } | Self::ServiceAccountTeam { .. } => {
-                Some(403_u16)
+            Self::CustomKeyDisabled => (Some(403_u16), Some(DetailShape::Error)),
+            Self::NotOwner { .. } | Self::ServiceAccountTeam { .. } => {
+                (Some(403_u16), Some(DetailShape::Text))
             }
             Self::AssignedNotMember { .. }
             | Self::CallerNotMember { .. }
@@ -70,40 +71,23 @@ impl KeyAccessError {
             | Self::TeamNotFound { .. }
             | Self::ServiceTeamRequired
             | Self::ServiceDatabaseRequired
-            | Self::ServiceTeamUnknown { .. }
-            | Self::LoggingMetadata(_) => Some(400_u16),
-            Self::Team(team) => team.status(),
-            Self::Metadata(_) | Self::Request(_) | Self::TeamRead(_) => None,
-        }
-    }
-
-    #[must_use]
-    pub fn detail(&self) -> Option<DetailShape> {
-        match self {
-            Self::CustomKeyDisabled | Self::LoggingMetadata(_) => Some(DetailShape::Error),
-            Self::NotOwner { .. }
-            | Self::AssignedNotMember { .. }
-            | Self::CallerNotMember { .. }
-            | Self::RoleNotAllowed { .. }
-            | Self::MissingParam { .. }
-            | Self::PersonalRole { .. }
-            | Self::ServiceAccountTeam { .. }
-            | Self::TeamNotFound { .. }
-            | Self::ServiceTeamRequired
-            | Self::ServiceDatabaseRequired
-            | Self::ServiceTeamUnknown { .. } => Some(DetailShape::Text),
-            Self::Team(team) => match **team {
-                TeamAccessError::Denied
-                | TeamAccessError::PersonalKeyGroups { .. }
-                | TeamAccessError::GroupOptIn { .. } => Some(DetailShape::Text),
-                TeamAccessError::NotTeamMember { .. }
-                | TeamAccessError::MemberRoute { .. }
-                | TeamAccessError::UnknownPermission { .. }
-                | TeamAccessError::OrgRoles(_)
-                | TeamAccessError::TeamLookup(_)
-                | TeamAccessError::Caller(_) => None,
-            },
-            Self::Metadata(_) | Self::Request(_) | Self::TeamRead(_) => None,
+            | Self::ServiceTeamUnknown { .. } => (Some(400_u16), Some(DetailShape::Text)),
+            Self::LoggingMetadata(_) => (Some(400_u16), Some(DetailShape::Error)),
+            Self::Team(team) => {
+                let detail = match **team {
+                    TeamAccessError::Denied
+                    | TeamAccessError::PersonalKeyGroups { .. }
+                    | TeamAccessError::GroupOptIn { .. } => Some(DetailShape::Text),
+                    TeamAccessError::NotTeamMember { .. }
+                    | TeamAccessError::MemberRoute { .. }
+                    | TeamAccessError::UnknownPermission { .. }
+                    | TeamAccessError::OrgRoles(_)
+                    | TeamAccessError::TeamLookup(_)
+                    | TeamAccessError::Caller(_) => None,
+                };
+                (team.status(), detail)
+            }
+            Self::Metadata(_) | Self::Request(_) | Self::TeamRead(_) => (None, None),
         }
     }
 

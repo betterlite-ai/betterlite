@@ -36,8 +36,7 @@ fn custom_key_disabled(#[case] key: &str) {
     let (outcome, warnings) = warned(|| check_custom_key_allowed(Some(&secret), &disabled));
     let error = outcome.unwrap_err();
     assert!(matches!(error, KeyAccessError::CustomKeyDisabled));
-    assert_eq!(error.status(), Some(403_u16));
-    assert_eq!(error.detail(), Some(DetailShape::Error));
+    assert_eq!(error.response(), (Some(403_u16), Some(DetailShape::Error)));
     assert_eq!(warnings, vec![WARNING.to_owned()]);
 }
 
@@ -98,8 +97,7 @@ fn personal_key_owner(
     }
     let error = outcome.unwrap_err();
     assert!(matches!(error, KeyAccessError::NotOwner { .. }));
-    assert_eq!(error.status(), Some(403_u16));
-    assert_eq!(error.detail(), Some(DetailShape::Text));
+    assert_eq!(error.response(), (Some(403_u16), Some(DetailShape::Text)));
 }
 
 #[test]
@@ -148,8 +146,7 @@ fn team_member_permission(#[case] roster: &str, #[case] user_id: &str, #[case] a
     assert!(
         matches!(&error, KeyAccessError::Team(inner) if matches!(**inner, TeamAccessError::MemberRoute { .. }))
     );
-    assert_eq!(error.status(), Some(401_u16));
-    assert_eq!(error.detail(), None);
+    assert_eq!(error.response(), (Some(401_u16), None));
     let exception = error.proxy_exception().unwrap();
     assert_eq!(exception.error_type, "team_member_permission_error");
     assert_eq!(exception.param.as_deref(), Some("/key/generate"));
@@ -180,7 +177,7 @@ async fn service_account_team_required() {
     validate_service_account_team(Some("team-1"), teams)
         .await
         .unwrap();
-    let shapes = [required, database, unknown].map(|error| (error.status(), error.detail()));
+    let shapes = [&required, &database, &unknown].map(KeyAccessError::response);
     assert_eq!(shapes, [(Some(400_u16), Some(DetailShape::Text)); 3]);
     assert_eq!(*directory.asked.lock().unwrap(), vec!["team-2", "team-1"]);
 }
@@ -208,7 +205,7 @@ fn service_account_cross_team(#[case] body: &str) {
     assert!(
         matches!(&error, KeyAccessError::ServiceAccountTeam { team_id } if team_id.as_deref() == Some("team-1"))
     );
-    assert_eq!(error.status(), Some(403_u16));
+    assert_eq!(error.response(), (Some(403_u16), Some(DetailShape::Text)));
     key_generation_check(
         &account,
         Some(&found),
@@ -266,8 +263,7 @@ fn logging_metadata_rejected() {
     assert!(
         matches!(&error, KeyAccessError::LoggingMetadata(inner) if matches!(**inner, PayloadError::Rejected(ValidationError::SpanScopeCallback { .. })))
     );
-    assert_eq!(error.status(), Some(400_u16));
-    assert_eq!(error.detail(), Some(DetailShape::Error));
+    assert_eq!(error.response(), (Some(400_u16), Some(DetailShape::Error)));
     let newrelic: Payload = serde_json::from_str(r#"{"logging":[{"callback_name":"newrelic","callback_vars":{"newrelic_api_key":"nr-key"}}]}"#).unwrap();
     let flagged = check_key_logging_config(Some(&newrelic), flags).unwrap_err();
     assert!(
@@ -295,8 +291,7 @@ fn logging_metadata_list_variable_rejected() {
     assert!(
         matches!(&error, KeyAccessError::LoggingMetadata(inner) if matches!(**inner, PayloadError::Parse(_)))
     );
-    assert_eq!(error.status(), Some(400_u16));
-    assert_eq!(error.detail(), Some(DetailShape::Error));
+    assert_eq!(error.response(), (Some(400_u16), Some(DetailShape::Error)));
 }
 
 #[rstest]

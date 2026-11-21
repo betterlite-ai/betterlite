@@ -1,10 +1,9 @@
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from typing import Literal, TypedDict
+from typing import Final, Literal, TypedDict
 
 import litellm
-from fastapi import HTTPException
 from litellm.models.team import LiteLLM_TeamTableCachedObj
 from litellm.proxy import proxy_server
 from litellm.proxy._types import (
@@ -25,6 +24,7 @@ from litellm.proxy.management_endpoints.key_management_endpoints import (
 from litellm.proxy.utils import PrismaClient
 from litellm.types.utils import StandardKeyGenerationConfig
 from pydantic import BaseModel, JsonValue, TypeAdapter
+from starlette.exceptions import HTTPException
 from typing_extensions import override
 
 UserRole = Literal[
@@ -37,6 +37,9 @@ UserRole = Literal[
     "customer",
 ]
 DetailShape = Literal["text", "error"]
+CALLER: Final[TypeAdapter[UserAPIKeyAuth]] = TypeAdapter(UserAPIKeyAuth)
+REQUEST: Final[TypeAdapter[GenerateKeyRequest]] = TypeAdapter(GenerateKeyRequest)
+TEAM: Final[TypeAdapter[LiteLLM_TeamTableCachedObj]] = TypeAdapter(LiteLLM_TeamTableCachedObj)
 
 
 class CallerInput(TypedDict):
@@ -94,8 +97,18 @@ class ConfigInput(TypedDict):
     litellm_settings: LitellmInput
 
 
+FunctionName = Literal[
+    "custom_key",
+    "generation",
+    "common",
+    "logging_metadata",
+    "service_team",
+    "object_permission",
+]
+
+
 class Step(TypedDict):
-    function: Literal["custom_key", "generation", "common", "logging_metadata", "service_team", "object_permission"]
+    function: FunctionName
     config: ConfigInput
     caller: CallerInput
     team: TeamInput | None
@@ -129,14 +142,10 @@ class StepResult(TypedDict):
     lookups: list[str]
 
 
-class ErrorDetail(TypedDict):
-    error: str
-
-
 # the HTTPException fields the case compares, read by attribute
 class RaisedHttp(BaseModel):
     status_code: int
-    detail: str | ErrorDetail
+    detail: str | dict[str, str]
 
 
 # ProxyException's class type carries Any for mypy, so its fields are read the same way
@@ -225,28 +234,32 @@ async def run_step(step: Step) -> StepResult:
 
 
 async def call(step: Step, table: CaseTeamTable) -> Answer:
-    caller = UserAPIKeyAuth.model_validate(step["caller"])
-    data = GenerateKeyRequest.model_validate(step["data"])
+    caller = CALLER.validate_python(step["caller"])
+    data = REQUEST.validate_python(step["data"])
     match step["function"]:
         case "custom_key":
             await get_new_token(RegenerateKeyRequest(new_key=step["custom_key"]))
         case "generation":
-            team = None if step["team"] is None else LiteLLM_TeamTableCachedObj.model_validate(step["team"])
+            team = None if step["team"] is None else TEAM.validate_python(step["team"])
             route = KeyManagementRoutes(step["route"])
             key_generation_check(team_table=team, user_api_key_dict=caller, data=data, route=route)
         case "common":
-            common_key_access_checks(caller, data, llm_router=None, premium_user=False, user_id=step["user_id"])
+            common_key_access_checks(
+                caller, data, llm_router=None, premium_user=False, user_id=step["user_id"]
+            )
         case "logging_metadata":
             raise_on_invalid_key_logging_config(step["metadata"])
         case "service_team":
             client = CasePrisma(table) if step["database"] else None
-            await validate_team_id_used_in_service_account_request(team_id=step["team_id"], prisma_client=client)
+            await validate_team_id_used_in_service_account_request(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L1074-L1077
+                team_id=step["team_id"], prisma_client=client
+            )
         case "object_permission":
             return Answer(permission=permission_dump(step["object_permission"]))
     return Answer(permission=None)
 
 
-# _object_permission_to_dict has no public caller, so the case dumps the public model the same way it does
+# _object_permission_to_dict has no public caller, so this dumps the public model the same way
 def permission_dump(permission: PermissionFields | None) -> PermissionFields | None:
     if permission is None:
         return None
@@ -255,15 +268,22 @@ def permission_dump(permission: PermissionFields | None) -> PermissionFields | N
 
 
 def error_of(outcome: BaseException) -> ErrorOut:
-    error: ErrorOut = {"status": None, "detail": None, "error_type": None, "param": None, "code": None}
+    error: ErrorOut = {
+        "status": None,
+        "detail": None,
+        "error_type": None,
+        "param": None,
+        "code": None,
+    }
     match outcome:
         case HTTPException():
             raised = RaisedHttp.model_validate(outcome, from_attributes=True)
             error["status"] = raised.status_code
-            error["detail"] = "error"
             match raised.detail:
                 case str():
                     error["detail"] = "text"
+                case dict():
+                    error["detail"] = "error"
         case ValueError():
             pass
         case BaseException():
