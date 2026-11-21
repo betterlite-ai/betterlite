@@ -8,7 +8,7 @@ use crate::api::request_principal_metadata::error::RequestPrincipalMetadataError
 const ENVIRON_PREFIX: &str = "os.environ/";
 // a callback_vars map may repeat the entry's own fields, and they never become callback variables
 const ENTRY_FIELDS: [&str; 3] = ["team_id", "success_callback", "failure_callback"];
-// StandardCallbackDynamicParams names; a copy of request_metadata_safety::fields::is_callback_dynamic_param, which is pub(super) in a file outside B1106's scope
+// StandardCallbackDynamicParams names, copied from is_callback_dynamic_param in the metadata safety fields module, pub(super) and outside B1106's scope
 const CALLBACK_VAR_NAMES: [&str; 34] = [
     "langfuse_public_key",
     "langfuse_secret",
