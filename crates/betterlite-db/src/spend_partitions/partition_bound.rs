@@ -45,17 +45,17 @@ pub fn parse_partition_upper_bound(expression: &str) -> PartitionBound {
     };
     match decode_window_stamp(pinned.as_bytes()) {
         Ok(WindowStamp::Naive(value)) => {
-            truncate_microseconds(value).map_or(PartitionBound::Unknown, PartitionBound::Naive)
+            truncate_microseconds(&value).map_or(PartitionBound::Unknown, PartitionBound::Naive)
         }
         Ok(WindowStamp::Aware(value)) => {
-            truncate_microseconds(value).map_or(PartitionBound::Unknown, PartitionBound::Aware)
+            truncate_microseconds(&value).map_or(PartitionBound::Unknown, PartitionBound::Aware)
         }
         Err(_unparsable) => PartitionBound::Unknown,
     }
 }
 
 // Python's datetime keeps microseconds, so a finer fraction names the same bound it compares
-fn truncate_microseconds<Stamp>(stamp: Stamp) -> Option<Stamp>
+fn truncate_microseconds<Stamp>(stamp: &Stamp) -> Option<Stamp>
 where
     Stamp: Timelike,
 {

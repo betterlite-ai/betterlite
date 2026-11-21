@@ -198,12 +198,11 @@ impl<'registry> CleanupMetrics<'registry> {
 
     pub fn set_rows_remaining(&self, table_name: &str, remaining: i64) {
         let registration = self.locked_registration();
-        let Some(metric) = &registration.instruments.rows_remaining else {
-            return;
-        };
-        metric
-            .labels(&[(TABLE_LABEL, table_name)])
-            .set(MetricValue::Finite(Decimal::from(remaining)));
+        if let Some(metric) = &registration.instruments.rows_remaining {
+            metric
+                .labels(&[(TABLE_LABEL, table_name)])
+                .set(MetricValue::Finite(Decimal::from(remaining)));
+        }
     }
 
     pub fn record_run(&self, outcome: RunOutcome) {

@@ -58,11 +58,11 @@ where
 }
 
 // partition DDL takes ACCESS EXCLUSIVE, so its lock wait is bounded alongside the statement
-async fn bounded_transaction<'client>(
-    client: &'client mut Client,
+async fn bounded_transaction(
+    client: &mut Client,
     timeout_ms: u64,
     with_lock_timeout: bool,
-) -> Result<Transaction<'client>, PostgresError> {
+) -> Result<Transaction<'_>, PostgresError> {
     let transaction = client.transaction().await?;
     let settings = if with_lock_timeout {
         format!("SET LOCAL statement_timeout = {timeout_ms}; SET LOCAL lock_timeout = {timeout_ms}")
