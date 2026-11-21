@@ -84,32 +84,21 @@ fn provider_attribution_tests_behavior_divides_a_tpm_value_by_the_group_tpm() {
 }
 
 #[rstest]
-#[case::absent_model_info(None)]
-#[case::zero_rpm(Some(limits(Some(0), None)))]
-#[case::negative_rpm(Some(limits(Some(-5), None)))]
-#[case::missing_rpm(Some(limits(None, Some(1_000))))]
-fn provider_attribution_tests_behavior_keeps_the_rpm_value_when_the_capacity_is_unusable(
+#[case::rpm_absent(PriorityKind::Rpm, 900.0, None)]
+#[case::rpm_zero(PriorityKind::Rpm, 900.0, Some(limits(Some(0), None)))]
+#[case::rpm_negative(PriorityKind::Rpm, 900.0, Some(limits(Some(-5), None)))]
+#[case::rpm_missing(PriorityKind::Rpm, 900.0, Some(limits(None, Some(1_000))))]
+#[case::tpm_absent(PriorityKind::Tpm, 900_000.0, None)]
+#[case::tpm_zero(PriorityKind::Tpm, 900_000.0, Some(limits(None, Some(0))))]
+#[case::tpm_missing(PriorityKind::Tpm, 900_000.0, Some(limits(Some(1_000), None)))]
+fn provider_attribution_tests_behavior_keeps_the_value_when_the_capacity_is_unusable(
+    #[case] kind: PriorityKind,
+    #[case] value: f64,
     #[case] model_info: Option<ModelGroupLimits>,
 ) {
     assert_eq!(
-        convert_priority_to_percent(reservation(PriorityKind::Rpm, 900.0), model_info.as_ref()),
-        900.0
-    );
-}
-
-#[rstest]
-#[case::absent_model_info(None)]
-#[case::zero_tpm(Some(limits(None, Some(0))))]
-#[case::missing_tpm(Some(limits(Some(1_000), None)))]
-fn provider_attribution_tests_behavior_keeps_the_tpm_value_when_the_capacity_is_unusable(
-    #[case] model_info: Option<ModelGroupLimits>,
-) {
-    assert_eq!(
-        convert_priority_to_percent(
-            reservation(PriorityKind::Tpm, 900_000.0),
-            model_info.as_ref()
-        ),
-        900_000.0
+        convert_priority_to_percent(reservation(kind, value), model_info.as_ref()),
+        value
     );
 }
 
