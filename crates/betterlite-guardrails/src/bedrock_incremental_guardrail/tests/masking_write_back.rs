@@ -40,7 +40,7 @@ async fn a_masked_subset_writes_back_to_the_latest_user_message() {
 }
 
 #[tokio::test]
-async fn the_output_field_wins_over_outputs_for_the_write_back() {
+async fn the_merged_response_writes_back_the_outputs_list() {
     let mut harness = Harness::new(vec![Reply::ok(
         r#"{"action": "NONE", "output": [{"text": "A"}, {"text": "B"}], "outputs": [{"text": "X"}, {"text": "Y"}]}"#,
     )]);
@@ -50,7 +50,7 @@ async fn the_output_field_wins_over_outputs_for_the_write_back() {
         .await
         .expect("the input scan passes");
 
-    assert_eq!(texts_of(&result), strings(&["A", "B"]));
+    assert_eq!(texts_of(&result), strings(&["X", "Y"]));
 }
 
 #[tokio::test]

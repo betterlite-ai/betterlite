@@ -8,6 +8,7 @@ use super::support::{
     texts_of,
 };
 use crate::generic_guardrail_contracts::GuardrailInputType;
+use crate::guardrail_base::inputs::GuardrailApiInputs;
 
 #[tokio::test]
 async fn the_latest_user_message_is_the_only_text_scanned() {
@@ -137,9 +138,20 @@ async fn an_input_without_texts_scans_nothing() {
     let mut harness = Harness::new(vec![]);
 
     let result = harness
-        .apply(inputs(&[]), GuardrailInputType::Request)
+        .apply(
+            GuardrailApiInputs {
+                texts: None,
+                images: None,
+                tools: None,
+                tool_calls: None,
+                structured_messages: None,
+                model: None,
+                stream_holdback_chars: None,
+            },
+            GuardrailInputType::Request,
+        )
         .await
-        .expect("an empty batch is not a failure");
+        .expect("an input without texts is not a failure");
 
     assert_eq!(harness.transport.count(), 0);
     assert_eq!(result.texts, Some(Vec::new()));

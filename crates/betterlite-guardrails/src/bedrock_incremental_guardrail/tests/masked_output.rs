@@ -33,6 +33,12 @@ fn a_passing_action_without_content_is_not_masking() {
 }
 
 #[test]
+fn text_in_outputs_marks_the_response_as_masked_even_when_output_has_an_empty_text() {
+    let parsed = response(r#"{"output": [{"text": ""}], "outputs": [{"text": "MASKED"}]}"#);
+    assert!(response_has_masked_output(&parsed));
+}
+
+#[test]
 fn an_item_without_text_is_not_masking() {
     let parsed = response(r#"{"output": [{}], "outputs": [{"text": null}]}"#);
     assert!(!response_has_masked_output(&parsed));

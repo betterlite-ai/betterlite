@@ -1,6 +1,9 @@
 #![cfg(test)]
 
-use super::support::{Harness, SESSION, content_texts, inputs, masked, passing, strings, texts_of};
+use super::support::{
+    Harness, SESSION, content_texts, field_of, inputs, masked, passing, records_of, strings, text,
+    texts_of,
+};
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::guardrail_scan_cache::scanned_text_hash;
 
@@ -20,6 +23,13 @@ async fn only_the_new_segments_reach_bedrock() {
         content_texts(&harness.transport.bodies()[0]),
         strings(&["world"])
     );
+    assert_eq!(
+        field_of(&harness.transport.bodies()[0], "source"),
+        text("INPUT")
+    );
+    let records = records_of(&harness.data);
+    assert_eq!(records.len(), 1);
+    assert_eq!(field_of(&records[0], "guardrail_mode"), text("pre_call"));
     assert_eq!(texts_of(&result), strings(&["hello", "world"]));
     assert_eq!(
         harness.cache.hashes(SESSION),
