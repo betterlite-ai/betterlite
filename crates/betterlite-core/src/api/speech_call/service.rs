@@ -19,10 +19,13 @@ use serde_json::Value;
 
 use crate::api::speech_chat_bridge::SpeechCompletions;
 
+use super::branches::SpeechBranches as _;
 use super::branches::families::rules;
+use super::bridge::SpeechBridge as _;
 use super::call::SpeechCall;
 use super::error::{SpeechCallError, SpeechException, exception, unmapped_message};
 use super::logging::{SpeechCallLogging, record_call};
+use super::openai::SpeechOpenAi as _;
 use super::operations::{
     SpeechConfigOperation, SpeechConfigSource, SpeechMappingOptions, SpeechOperations,
 };

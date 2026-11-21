@@ -3,6 +3,7 @@ use std::future::Future;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::speech_provider_contract::SpeechVoice;
 use betterlite_openai::files::records::BinaryContent;
+use betterlite_openai::speech::result::SpeechTransport;
 use indexmap::IndexMap;
 
 use crate::api::speech_chat_bridge::arguments::SpeechBridgeArguments;
@@ -13,6 +14,7 @@ use crate::api::speech_chat_bridge::{
 
 use super::error::SpeechCallError;
 use super::logging::SpeechCallLogging;
+use super::operations::{SpeechConfigSource, SpeechOperations};
 use super::service::{BranchCall, SpeechDispatch};
 use super::values;
 
@@ -35,15 +37,27 @@ where
     }
 }
 
-impl<Transport, Completions, Configs, Operations>
-    SpeechDispatch<'_, Transport, Completions, Configs, Operations>
+// the workspace denies multiple_inherent_impl, so the gemini bridge lives on this trait
+pub(crate) trait SpeechBridge<'service> {
+    fn bridge<'call>(
+        &'call self,
+        branch: &'call BranchCall<'service, '_>,
+        logging: &'call mut dyn SpeechCallLogging,
+    ) -> impl Future<Output = Result<BinaryContent, SpeechCallError>> + Send + 'call;
+}
+
+impl<'service, Transport, Completions, Configs, Operations> SpeechBridge<'service>
+    for SpeechDispatch<'service, Transport, Completions, Configs, Operations>
 where
+    Transport: SpeechTransport + Sync,
     Completions: SpeechCompletions<Error = SpeechCallError> + Sync,
+    Configs: SpeechConfigSource + Sync,
+    Operations: SpeechOperations + Sync,
 {
     // B1003's bridge over the injected completion pipeline, with the headers speech passes it
-    pub(crate) async fn bridge(
+    async fn bridge(
         &self,
-        branch: &BranchCall<'_, '_>,
+        branch: &BranchCall<'service, '_>,
         logging: &mut dyn SpeechCallLogging,
     ) -> Result<BinaryContent, SpeechCallError> {
         let model = Json::Text(branch.resolved.model.clone());

@@ -1,3 +1,5 @@
+use std::future::Future;
+
 use betterlite_config::sections::speech_call::Settings;
 use betterlite_models::resolution::ResolvedModel;
 use betterlite_openai::api::speech_provider_contract::SpeechVoice;
@@ -22,7 +24,7 @@ use super::service::{BranchCall, SpeechDispatch};
 pub(crate) const DEFAULT_OPENAI_API_BASE: &str = "https://api.openai.com/v1";
 
 // Python's `value or next`: an empty string falls through to the next tier
-pub(crate) fn first_text<'value>(values: [Option<&'value str>; 4]) -> Option<&'value str> {
+pub(crate) fn first_text(values: [Option<&str>; 4]) -> Option<&str> {
     values
         .iter()
         .copied()
@@ -30,9 +32,7 @@ pub(crate) fn first_text<'value>(values: [Option<&'value str>; 4]) -> Option<&'v
         .find(|value| !value.is_empty())
 }
 
-pub(crate) fn first_secret<'value>(
-    values: [Option<&'value SecretString>; 5],
-) -> Option<&'value SecretString> {
+pub(crate) fn first_secret(values: [Option<&SecretString>; 5]) -> Option<&SecretString> {
     values
         .into_iter()
         .flatten()
@@ -108,8 +108,17 @@ fn speech_options(optional_params: &Object) -> Result<SpeechOptions, SpeechCallE
     })
 }
 
-impl<Transport, Completions, Configs, Operations>
-    SpeechDispatch<'_, Transport, Completions, Configs, Operations>
+// the workspace denies multiple_inherent_impl, so the OpenAI branch lives on this trait
+pub(crate) trait SpeechOpenAi<'service> {
+    fn openai_branch<'call>(
+        &'call self,
+        branch: &'call BranchCall<'service, '_>,
+        logging: &'call mut dyn SpeechCallLogging,
+    ) -> impl Future<Output = Result<BinaryContent, SpeechCallError>> + Send + 'call;
+}
+
+impl<'service, Transport, Completions, Configs, Operations> SpeechOpenAi<'service>
+    for SpeechDispatch<'service, Transport, Completions, Configs, Operations>
 where
     Transport: SpeechTransport + Sync,
     Completions: SpeechCompletions<Error = SpeechCallError> + Sync,
@@ -117,9 +126,9 @@ where
     Operations: SpeechOperations + Sync,
 {
     // B514 over the credential chains speech applies before the OpenAI SDK call
-    pub(crate) async fn openai_branch(
+    async fn openai_branch(
         &self,
-        branch: &BranchCall<'_, '_>,
+        branch: &BranchCall<'service, '_>,
         logging: &mut dyn SpeechCallLogging,
     ) -> Result<BinaryContent, SpeechCallError> {
         let Some(SpeechVoice::Name(name)) = &branch.voice else {

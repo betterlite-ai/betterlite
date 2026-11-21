@@ -1,3 +1,5 @@
+use std::future::Future;
+
 use betterlite_config::sections::speech_call::Settings;
 use betterlite_context::media_config_selection::text_to_speech::TextToSpeechConfigTag;
 use betterlite_openai::api::speech_provider_contract::SpeechVoice;
@@ -9,6 +11,7 @@ use serde_json::Value;
 
 use crate::api::speech_chat_bridge::SpeechCompletions;
 
+use super::bridge::SpeechBridge as _;
 use super::error::SpeechCallError;
 use super::logging::SpeechCallLogging;
 use super::openai::{first_secret, first_text};
@@ -24,8 +27,45 @@ use self::families::{
     overwrites_credentials, required_config, string_voice, voice_rule,
 };
 
-impl<'service, Transport, Completions, Configs, Operations>
-    SpeechDispatch<'service, Transport, Completions, Configs, Operations>
+// the workspace denies multiple_inherent_impl, so the provider branches live on this trait
+pub(crate) trait SpeechBranches<'service> {
+    fn operation(
+        &self,
+        branch: &BranchCall<'service, '_>,
+        kind: SpeechOperationKind,
+    ) -> SpeechOperation<'service>;
+
+    fn azure_credentials(
+        &self,
+        branch: &BranchCall<'service, '_>,
+        operation: &mut SpeechOperation<'service>,
+    );
+
+    fn generic<'call>(
+        &'call self,
+        branch: &'call BranchCall<'service, '_>,
+        family: Rules,
+    ) -> impl Future<Output = Result<BinaryContent, SpeechCallError>> + Send + 'call;
+
+    fn elevenlabs<'call>(
+        &'call self,
+        branch: &'call BranchCall<'service, '_>,
+    ) -> impl Future<Output = Result<BinaryContent, SpeechCallError>> + Send + 'call;
+
+    fn azure<'call>(
+        &'call self,
+        branch: &'call BranchCall<'service, '_>,
+    ) -> impl Future<Output = Result<BinaryContent, SpeechCallError>> + Send + 'call;
+
+    fn vertex<'call>(
+        &'call self,
+        branch: &'call BranchCall<'service, '_>,
+        logging: &'call mut dyn SpeechCallLogging,
+    ) -> impl Future<Output = Result<BinaryContent, SpeechCallError>> + Send + 'call;
+}
+
+impl<'service, Transport, Completions, Configs, Operations> SpeechBranches<'service>
+    for SpeechDispatch<'service, Transport, Completions, Configs, Operations>
 where
     Transport: SpeechTransport + Sync,
     Completions: SpeechCompletions<Error = SpeechCallError> + Sync,
@@ -68,7 +108,7 @@ where
     }
 
     // the rules table: the one branch shape the simple provider families share
-    pub(crate) async fn generic(
+    async fn generic(
         &self,
         branch: &BranchCall<'service, '_>,
         family: Rules,
@@ -102,7 +142,7 @@ where
         self.operations.execute(operation).await
     }
 
-    pub(crate) async fn elevenlabs(
+    async fn elevenlabs(
         &self,
         branch: &BranchCall<'service, '_>,
     ) -> Result<BinaryContent, SpeechCallError> {
@@ -124,10 +164,10 @@ where
         let mut kwargs = branch.kwargs.clone();
         let query = kwargs.remove("__elevenlabs_query_params__");
         let mut litellm_params = branch.litellm_params.clone();
-        if let Some(Value::Object(query)) = query {
+        if let Some(Value::Object(params)) = query {
             litellm_params.insert(
                 String::from("__elevenlabs_query_params__"),
-                Value::Object(query),
+                Value::Object(params),
             );
         }
         litellm_params.insert(
@@ -142,21 +182,13 @@ where
         self.operations.execute(operation).await
     }
 
-    pub(crate) async fn azure(
+    async fn azure(
         &self,
         branch: &BranchCall<'service, '_>,
     ) -> Result<BinaryContent, SpeechCallError> {
         if branch.resolved.model.starts_with("speech/") {
             return self.generic(branch, Rules::AzureSpeech).await;
         }
-        self.azure_openai(branch).await
-    }
-
-    // Azure OpenAI: the voice check, then the Azure credential chains on the shared operation
-    async fn azure_openai(
-        &self,
-        branch: &BranchCall<'service, '_>,
-    ) -> Result<BinaryContent, SpeechCallError> {
         let Some(SpeechVoice::Name(_voice)) = &branch.voice else {
             return Err(SpeechCallError::BadRequest {
                 message: String::from("'voice' is required to be passed as a string for Azure TTS"),
@@ -210,7 +242,7 @@ where
         }
     }
 
-    pub(crate) async fn vertex(
+    async fn vertex(
         &self,
         branch: &BranchCall<'service, '_>,
         logging: &mut dyn SpeechCallLogging,
