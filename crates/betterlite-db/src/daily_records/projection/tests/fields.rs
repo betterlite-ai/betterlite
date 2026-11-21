@@ -95,6 +95,39 @@ async fn a_null_user_still_rolls_up_under_a_missing_identity() {
     assert_eq!(projection.identities, vec![None]);
 }
 
+#[tokio::test]
+async fn the_end_user_base_reads_the_projected_end_user_id() {
+    let payload_text = payload_with(r#""end_user_id":"e2""#);
+    let payload = daily_payload(&payload_text);
+    let case = case();
+    let projection = common_daily_transaction(
+        &payload,
+        DailySpendEntity::EndUser,
+        &case.pricing(),
+        &case.endpoints,
+    )
+    .await
+    .unwrap()
+    .expect("the projected end user id names a base");
+    assert_eq!(projection.identities, vec![Some("e2".to_owned())]);
+}
+
+#[tokio::test]
+async fn an_end_user_without_the_projected_id_names_no_base() {
+    let payload_text = payload_with(r#""end_user":"e1""#);
+    let payload = daily_payload(&payload_text);
+    let case = case();
+    let projection = common_daily_transaction(
+        &payload,
+        DailySpendEntity::EndUser,
+        &case.pricing(),
+        &case.endpoints,
+    )
+    .await
+    .unwrap();
+    assert!(projection.is_none());
+}
+
 #[rstest]
 #[case::timestamp("2025-01-02T03:04:05Z", "2025-01-02")]
 #[case::date_only("2025-01-02", "2025-01-02")]
