@@ -1,0 +1,1 @@
+{"responses_lifecycle_write":{"value":{"runs":[{"result":{"id":"resp_a","object":"response","deleted":true},"error":null},{"result":{"id":"resp_b","created_at":1735689600,"object":"response","status":"cancelled","model":"gpt-5"},"error":null},{"result":null,"error":{"class":"APIConnectionError","status":500,"type":null,"param":null,"code":null,"message":"gone"}}]}}}

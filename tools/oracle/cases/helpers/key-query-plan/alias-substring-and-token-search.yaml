@@ -1,0 +1,26 @@
+kind: helper
+name: key-query-plan-alias-substring-and-token-search
+call:
+  key_query_plan:
+    function: filters
+    now: "2026-05-01T10:00:00+00:00"
+    filters: {user_id: null, team_id: null, organization_id: null, key_alias: alpha, key_hash: null, exclude_team_id: null, admin_team_ids: null, member_team_ids: null, search: hash-1}
+calls:
+  - key_query_plan:
+      function: filters
+      now: "2026-05-01T10:00:00+00:00"
+      filters: {user_id: null, team_id: null, organization_id: null, key_alias: AL, key_hash: null, exclude_team_id: null, admin_team_ids: null, member_team_ids: null, use_key_alias_substring_matching: true}
+  - key_query_plan:
+      function: filters
+      now: "2026-05-01T10:00:00+00:00"
+      filters: {user_id: null, team_id: null, organization_id: null, key_alias: null, key_hash: null, exclude_team_id: null, admin_team_ids: null, member_team_ids: null, search: abc}
+  - key_query_plan:
+      function: filters
+      now: "2026-05-01T10:00:00+00:00"
+      filters: {user_id: null, team_id: team-a, organization_id: null, key_alias: null, key_hash: tok, exclude_team_id: null, admin_team_ids: null, member_team_ids: null}
+  - key_query_plan:
+      function: filters
+      now: "2026-05-01T10:00:00+00:00"
+      filters: {user_id: "", team_id: "", organization_id: "", key_alias: "", key_hash: "", exclude_team_id: "", admin_team_ids: null, member_team_ids: null, search: ""}
+env: {}
+compare: {ignore: []}

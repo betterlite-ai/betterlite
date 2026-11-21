@@ -1,0 +1,62 @@
+kind: helper
+name: auth-user-lookup-role-selection
+call:
+  auth_user_lookup:
+    kind: role_selection
+    role: proxy_admin
+calls:
+  - auth_user_lookup:
+      kind: role_selection
+      role: proxy_admin
+      role_permissions: null
+  - auth_user_lookup:
+      kind: role_selection
+      role: team
+      role_permissions:
+        - {role: team, models: [m1], routes: null}
+        - {role: team, models: [m2], routes: [r2]}
+  - auth_user_lookup:
+      kind: role_selection
+      role: internal_user
+      role_permissions:
+        - {role: internal_user, models: [], routes: []}
+        - {role: internal_user, models: [m]}
+  - auth_user_lookup:
+      kind: role_selection
+      role: proxy_admin
+      role_permissions:
+        - {role: proxy_admin, models: null, routes: null}
+        - {role: proxy_admin, models: [m], routes: [r]}
+  - auth_user_lookup:
+      kind: role_selection
+      role: proxy_admin
+      role_permissions:
+        - {role: proxy_admin, models: [a], routes: null}
+        - {role: proxy_admin, routes: [r]}
+  - auth_user_lookup:
+      kind: role_selection
+      role: team
+      role_permissions:
+        - {role: team, models: [a, a, ""], routes: ["", r]}
+  - auth_user_lookup:
+      kind: role_selection
+      role: proxy_admin
+      role_permissions:
+        - {role: proxy_admin, models: [ok]}
+        - {role: team, extra: true}
+  - auth_user_lookup:
+      kind: role_selection
+      role: proxy_admin
+      role_permissions:
+        - {role: proxy_admin_viewer, models: [m]}
+  - auth_user_lookup:
+      kind: role_selection
+      role: proxy_admin
+      role_permissions: proxy_admin
+  - auth_user_lookup:
+      kind: role_selection
+      role: proxy_admin
+      role_permissions:
+        - {role: team, models: [m]}
+env: {}
+compare: {ignore: []}

@@ -3,7 +3,6 @@
 use std::collections::BTreeMap;
 use std::future::{Future, IntoFuture as _, ready};
 use std::io;
-use std::net::TcpListener as StdTcpListener;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
@@ -16,6 +15,7 @@ use betterlite_config::sections::grayswan::{Configured, OnFlaggedAction, Reasoni
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_core::routes::CallType;
 use betterlite_core::routes::catalog::{RouteCatalog, RouteEntry};
+use betterlite_test_ports::refused_port::RefusedPort;
 use futures_util::stream::iter;
 use indexmap::IndexMap;
 use reqwest::StatusCode;

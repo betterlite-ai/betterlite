@@ -1,0 +1,20 @@
+kind: helper
+name: supported-hooks
+call:
+  b8773:
+    builds:
+      - args:
+          patterns: []
+          blocked_words: []
+          event_hook:
+            - pre_call
+            - post_call
+          default_on: true
+          guardrail_id: content-filter-hooks
+          policy_template: A policy for the hooks case.
+          image_model: null
+          competitor_intent_config: null
+          severity_threshold: high
+        apply: null
+env: {}
+compare: {ignore: []}

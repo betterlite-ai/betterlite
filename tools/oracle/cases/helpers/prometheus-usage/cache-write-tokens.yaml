@@ -1,0 +1,30 @@
+kind: helper
+name: prometheus-usage-cache-write-tokens
+call:
+  b3877:
+    function: cache_write_tokens
+    prompt_details: {cache_write_tokens: 7}
+calls:
+  - b3877:
+      function: cache_write_tokens
+      prompt_details: {}
+  - b3877:
+      function: cache_write_tokens
+      prompt_details: {cache_creation_tokens: 9}
+  - b3877:
+      function: cache_write_tokens
+      prompt_details: {cache_write_tokens: 0, cache_creation_tokens: 9}
+  - b3877:
+      function: cache_write_tokens
+      prompt_details: {cache_write_tokens: true, cache_creation_tokens: 3}
+  - b3877:
+      function: cache_write_tokens
+      prompt_details: {cache_write_tokens: "7", cache_creation_tokens: 4}
+  - b3877:
+      function: cache_write_tokens
+      prompt_details: {cache_write_tokens: 5.0, cache_creation_tokens: 3}
+  - b3877:
+      function: cache_write_tokens
+      prompt_details: {cache_write_tokens: null}
+env: {}
+compare: {ignore: []}

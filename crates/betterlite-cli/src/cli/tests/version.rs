@@ -1,6 +1,8 @@
 use std::thread;
 
-use crate::cli::tests::support::{Answer, FakeEnvironment, Harness, serve, unused_base_url};
+use betterlite_test_ports::refused_port::RefusedPort;
+
+use crate::cli::tests::support::{Answer, FakeEnvironment, Harness, serve};
 use crate::cli::version::print_version;
 use crate::cli_context::CliContext;
 use crate::commands::Client;
@@ -29,7 +31,8 @@ fn version_prints_cli_url_and_server_versions() {
 
 #[test]
 fn version_flag_prints_the_cli_version_and_exits_zero() {
-    let base_url = unused_base_url();
+    let refused = RefusedPort::bind().unwrap();
+    let base_url = format!("http://{}", refused.address);
     let mut harness = Harness::new(FakeEnvironment::default());
     let code = harness.run(&["--version", "--base-url", &base_url]);
     assert_eq!(code, 0);
@@ -40,7 +43,8 @@ fn version_flag_prints_the_cli_version_and_exits_zero() {
 
 #[test]
 fn short_version_flag_matches_the_long_one() {
-    let base_url = unused_base_url();
+    let refused = RefusedPort::bind().unwrap();
+    let base_url = format!("http://{}", refused.address);
     let mut harness = Harness::new(FakeEnvironment::default());
     let code = harness.run(&["-v", "--base-url", &base_url]);
     assert_eq!(code, 0);
@@ -53,7 +57,8 @@ fn short_version_flag_matches_the_long_one() {
 
 #[test]
 fn unreachable_server_version_is_reported_without_failing() {
-    let base_url = unused_base_url();
+    let refused = RefusedPort::bind().unwrap();
+    let base_url = format!("http://{}", refused.address);
     let mut harness = Harness::new(FakeEnvironment::default());
     let code = harness.run(&["--base-url", &base_url, "version"]);
     assert_eq!(code, 0);

@@ -1,0 +1,10 @@
+kind: helper
+name: provider-attribution-coerce-nested-message
+call:
+  b3030:
+    function: coerce_message
+    detail:
+      error:
+        message: inner
+env: {}
+compare: {ignore: []}

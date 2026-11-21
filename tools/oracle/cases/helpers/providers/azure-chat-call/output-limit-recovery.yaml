@@ -1,0 +1,45 @@
+kind: helper
+name: azure-chat-call-output-limit-recovery
+call:
+  azure_chat_call:
+    function: completion
+    cases:
+      - model: gpt-4o
+        messages:
+          - {role: user, content: hi}
+        api_key: key
+        answer:
+          error: bad_request
+          message: 'Error code: 400 - could not finish the message because max_tokens or model output limit was reached'
+          headers: {content-type: application/json}
+          body: '{"error":{"message":"could not finish the message because max_tokens or model output limit was reached"}}'
+      - model: gpt-4o
+        messages:
+          - {role: user, content: hi}
+        api_key: key
+        acompletion: true
+        client: async
+        answer:
+          error: bad_request
+          message: 'Error code: 400 - could not finish the message because max_tokens or model output limit was reached'
+          headers: {content-type: application/json}
+          body: '{"error":{"message":"could not finish the message because max_tokens or model output limit was reached"}}'
+env: {}
+compare:
+  ignore:
+    - pointer: /value/calls/0/reply/id
+      why: the synthetic reply draws a fresh uuid4 that the Rust clock and id source fix
+    - pointer: /value/calls/0/reply/created
+      why: the synthetic reply stamps int(time.time()) while the Rust clock is fixed
+    - pointer: /value/calls/0/reply/usage
+      why: the prompt tokens come from LiteLLM's tokenizer while the oracle counts with a fixed counter
+    - pointer: /value/calls/0/post/0/original_id
+      why: the logged original response carries the fresh uuid4 id
+    - pointer: /value/calls/1/reply/id
+      why: the synthetic reply draws a fresh uuid4 that the Rust clock and id source fix
+    - pointer: /value/calls/1/reply/created
+      why: the synthetic reply stamps int(time.time()) while the Rust clock is fixed
+    - pointer: /value/calls/1/reply/usage
+      why: the prompt tokens come from LiteLLM's tokenizer while the oracle counts with a fixed counter
+    - pointer: /value/calls/1/post/0/original_id
+      why: the logged original response carries the fresh uuid4 id

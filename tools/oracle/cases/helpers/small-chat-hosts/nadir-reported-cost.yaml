@@ -1,0 +1,30 @@
+kind: helper
+name: small-chat-hosts-nadir-reported-cost
+call:
+  b6410:
+    supported: []
+    params: []
+    moonshot_urls: []
+    moonshot_requests: []
+    nadir_cost:
+      - {body: '{"nadir_metadata":{"cost":{"total_cost_usd":1.5}}}'}
+      - {body: '{"nadir_metadata":{"cost":{"total_cost_usd":7}}}'}
+      - {body: '{"nadir_metadata":{"cost":{"total_cost_usd":0}}}'}
+      - {body: '{"nadir_metadata":{"cost":{"total_cost_usd":1e3}}}'}
+      - {body: '{"nadir_metadata":{"cost":{"total_cost_usd":-0.0}}}'}
+      - {body: '{"nadir_metadata":{"cost":{"total_cost_usd":true}}}'}
+      - {body: '{"nadir_metadata":{"cost":{"total_cost_usd":false}}}'}
+      - {body: '{"nadir_metadata":{"cost":{"total_cost_usd":-1}}}'}
+      - {body: '{"nadir_metadata":{"cost":{"total_cost_usd":"5"}}}'}
+      - {body: '{"nadir_metadata":{"cost":{"total_cost_usd":null}}}'}
+      - {body: '{"nadir_metadata":{"cost":{"total_cost_usd":NaN}}}'}
+      - {body: '{}'}
+      - {body: '{"nadir_metadata":{"cost":5}}'}
+      - {body: '{"nadir_metadata":[]}'}
+      - {body: 'not json'}
+      - {body: ''}
+    novita_headers: []
+    zai_cache: []
+    maritalk_errors: []
+env: {}
+compare: {ignore: []}

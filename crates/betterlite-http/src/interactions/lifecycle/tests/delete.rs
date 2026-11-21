@@ -4,13 +4,14 @@ use betterlite_config::tls::Verification;
 use betterlite_http_fixture::server::serve;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::identity::provider_id::ProviderId;
+use betterlite_test_ports::refused_port::RefusedPort;
 use reqwest::blocking::ClientBuilder as BlockingClientBuilder;
 use rstest::rstest;
 use secrecy::ExposeSecret as _;
 
 use super::support::{
     Call, Fixture, FixtureError, api_key_header, async_handler, build_handler, caller_headers,
-    dead_address, sync_handler,
+    sync_handler,
 };
 use crate::interactions::base::clients::HttpClients;
 use crate::interactions::base::tests::support as base;
@@ -199,9 +200,10 @@ fn delete_interaction_keeps_a_transform_error_out_of_the_error_handler() {
 fn delete_interaction_passes_a_transport_failure_through_the_error_handler() {
     let fixture = Fixture::new();
     let mut handler = sync_handler(&fixture);
+    let refused = RefusedPort::bind().unwrap();
 
     let error = handler
-        .delete_interaction(&Call::new(dead_address()).request())
+        .delete_interaction(&Call::new(refused.address).request())
         .unwrap_err();
 
     assert!(matches!(
@@ -220,7 +222,8 @@ fn delete_interaction_passes_a_transport_failure_through_the_error_handler() {
 fn delete_interaction_passes_an_invalid_url_through_the_error_handler() {
     let fixture = Fixture::new();
     let mut handler = sync_handler(&fixture);
-    let mut call = Call::new(dead_address());
+    let refused = RefusedPort::bind().unwrap();
+    let mut call = Call::new(refused.address);
     call.params.insert(
         "api_base".to_owned(),
         JsonValue::Text("not a url".to_owned()),
@@ -338,7 +341,8 @@ fn delete_interaction_uses_a_supplied_client() {
 fn delete_interaction_builds_the_client_before_validating_headers() {
     let fixture = Fixture::new();
     let mut handler = sync_handler(&fixture);
-    let mut call = Call::new(dead_address());
+    let refused = RefusedPort::bind().unwrap();
+    let mut call = Call::new(refused.address);
     call.params
         .insert("ssl_verify".to_owned(), JsonValue::Text("yes".to_owned()));
 
@@ -371,9 +375,10 @@ fn delete_interaction_refuses_a_proxy_it_cannot_use_instead_of_connecting_direct
         logging: Logging::default(),
         supplied: None,
     };
+    let refused = RefusedPort::bind().unwrap();
 
     let error = handler
-        .delete_interaction(&Call::new(dead_address()).request())
+        .delete_interaction(&Call::new(refused.address).request())
         .unwrap_err();
 
     assert!(
@@ -423,9 +428,10 @@ async fn async_delete_interaction_refuses_a_proxy_it_cannot_use_instead_of_conne
         logging: Logging::default(),
         supplied: None,
     };
+    let refused = RefusedPort::bind().unwrap();
 
     let error = handler
-        .async_delete_interaction(&Call::new(dead_address()).request())
+        .async_delete_interaction(&Call::new(refused.address).request())
         .await
         .unwrap_err();
 
@@ -616,7 +622,8 @@ async fn async_delete_interaction_uses_a_supplied_client() {
 async fn async_delete_interaction_builds_the_client_before_validating_headers() {
     let fixture = Fixture::new();
     let mut handler = async_handler(&fixture);
-    let mut call = Call::new(dead_address());
+    let refused = RefusedPort::bind().unwrap();
+    let mut call = Call::new(refused.address);
     call.params
         .insert("ssl_verify".to_owned(), JsonValue::Text("yes".to_owned()));
 

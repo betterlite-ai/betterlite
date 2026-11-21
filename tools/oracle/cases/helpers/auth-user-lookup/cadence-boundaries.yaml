@@ -1,0 +1,97 @@
+kind: helper
+name: auth-user-lookup-cadence-boundaries
+call:
+  auth_user_lookup:
+    kind: cadence
+    max_size: 100
+    times_ms: [1000]
+    operations:
+      - {op: should_check, key: "user_id:absent", expiry: 5}
+calls:
+  - auth_user_lookup:
+      kind: cadence
+      max_size: 100
+      times_ms: [1000, 1000]
+      operations:
+        - {op: update, key: "user_id:positive", value: {user_id: u1}}
+        - {op: should_check, key: "user_id:positive", expiry: 5}
+  - auth_user_lookup:
+      kind: cadence
+      max_size: 100
+      times_ms: [1000, 5000]
+      operations:
+        - {op: update, key: "user_id:negative", value: null}
+        - {op: should_check, key: "user_id:negative", expiry: 5}
+  - auth_user_lookup:
+      kind: cadence
+      max_size: 100
+      times_ms: [1000, 5999]
+      operations:
+        - {op: update, key: "user_id:negative", value: null}
+        - {op: should_check, key: "user_id:negative", expiry: 5}
+  - auth_user_lookup:
+      kind: cadence
+      max_size: 100
+      times_ms: [1000, 6000]
+      operations:
+        - {op: update, key: "user_id:negative", value: null}
+        - {op: should_check, key: "user_id:negative", expiry: 5}
+  - auth_user_lookup:
+      kind: cadence
+      max_size: 100
+      times_ms: [1000, 6001]
+      operations:
+        - {op: update, key: "user_id:negative", value: null}
+        - {op: should_check, key: "user_id:negative", expiry: 5}
+  - auth_user_lookup:
+      kind: cadence
+      max_size: 100
+      times_ms: [10000, 9000]
+      operations:
+        - {op: update, key: "user_id:negative", value: null}
+        - {op: should_check, key: "user_id:negative", expiry: 5}
+  - auth_user_lookup:
+      kind: cadence
+      max_size: 100
+      times_ms: [10000, 9999]
+      operations:
+        - {op: update, key: "user_id:negative", value: null}
+        - {op: should_check, key: "user_id:negative", expiry: 0}
+  - auth_user_lookup:
+      kind: cadence
+      max_size: 100
+      times_ms: [10000, 9500]
+      operations:
+        - {op: update, key: "user_id:negative", value: null}
+        - {op: should_check, key: "user_id:negative", expiry: -1}
+  - auth_user_lookup:
+      kind: cadence
+      max_size: 100
+      times_ms: [1000, 3000, 7000]
+      operations:
+        - {op: update, key: "user_id:negative", value: null}
+        - {op: should_check, key: "user_id:negative", expiry: 5}
+        - {op: should_check, key: "user_id:negative", expiry: 5}
+  - auth_user_lookup:
+      kind: cadence
+      max_size: 100
+      times_ms: [1000, 1000]
+      operations:
+        - {op: update, key: "user_id:negative", value: null}
+        - {op: should_check, key: "user_id:negative", expiry: 0}
+  - auth_user_lookup:
+      kind: cadence
+      max_size: 100
+      times_ms: [1000, 1000]
+      operations:
+        - {op: update, key: "user_id:negative", value: null}
+        - {op: should_check, key: "user_id:negative", expiry: -30}
+  - auth_user_lookup:
+      kind: cadence
+      max_size: 100
+      times_ms: [1000, 500]
+      operations:
+        - {op: update, key: "user_id:positive", value: {user_id: u1}}
+        - {op: should_check, key: "user_id:positive", expiry: 5}
+env: {}
+compare: {ignore: []}

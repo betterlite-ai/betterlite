@@ -6,12 +6,13 @@ use std::time::Duration;
 use betterlite_http_fixture::server::serve;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::identity::provider_id::ProviderId;
+use betterlite_test_ports::refused_port::RefusedPort;
 use reqwest::blocking::ClientBuilder as BlockingClientBuilder;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 
 use super::AgentsDeleteVersionsError;
 use super::asynchronous::{async_delete_agent, async_list_agent_versions};
-use super::support::{Call, Fixture, FixtureError, clients, dead_address};
+use super::support::{Call, Fixture, FixtureError, clients};
 use super::synchronous::{delete_agent, list_agent_versions};
 use crate::interactions::base::ClientError;
 use crate::interactions::base::Logging;
@@ -52,7 +53,8 @@ fn client_resolves_the_sync_client_through_the_base_module() {
     let fixture = Fixture::default();
     let mut clients = clients();
     let mut logging = Logging::default();
-    let call = call_with_unusable_ssl_verify(dead_address());
+    let refused = RefusedPort::bind().unwrap();
+    let call = call_with_unusable_ssl_verify(refused.address);
 
     let deleted = delete_agent(
         &fixture,
@@ -81,7 +83,8 @@ async fn client_resolves_the_async_client_through_the_base_module() {
     let fixture = Fixture::default();
     let mut clients = clients();
     let mut logging = Logging::default();
-    let call = call_with_unusable_ssl_verify(dead_address());
+    let refused = RefusedPort::bind().unwrap();
+    let call = call_with_unusable_ssl_verify(refused.address);
 
     let deleted = async_delete_agent(
         &fixture,
