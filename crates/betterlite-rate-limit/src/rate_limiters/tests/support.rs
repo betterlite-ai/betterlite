@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use async_trait::async_trait;
 use betterlite_auth::rejection_provider::{DeploymentSnapshot, ProviderResolution, SnapshotError};
 use betterlite_auth::resolved_key::auth::ParentOtelSpan;
+use betterlite_cache::dual_cache::DualCacheError;
 use betterlite_models::decisions::Json;
 use betterlite_models::resolution::{ProviderIdentity, ResolutionError, ResolvedModel};
 use chrono::{DateTime, FixedOffset};
@@ -12,7 +13,7 @@ use tracing::Level;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt;
 
-use crate::rate_limiters::legacy_rate_limit_counters::LegacyRateLimitDeps;
+use crate::rate_limiters::legacy_rate_limit_counters::LegacyRateLimitHandler;
 use crate::rate_limiters::legacy_rate_limit_counters::clock::LegacyClock;
 use crate::rate_limiters::legacy_rate_limit_counters::usage_cache::{
     LegacyCacheValue, LegacyUsageCache, UsageCacheError,
@@ -78,10 +79,6 @@ impl RecordingCache {
     }
 }
 
-fn cache_failure() -> UsageCacheError {
-    UsageCacheError::Failed(Box::new(io::Error::other("the cache is down")))
-}
-
 #[async_trait]
 impl LegacyUsageCache for RecordingCache {
     async fn batch_get(
@@ -101,7 +98,9 @@ impl LegacyUsageCache for RecordingCache {
         match answer {
             BatchAnswer::None => Ok(None),
             BatchAnswer::Values(values) => Ok(Some(values)),
-            BatchAnswer::Failed => Err(cache_failure()),
+            BatchAnswer::Failed => Err(UsageCacheError::Transport(
+                DualCacheError::UnrepresentableValue,
+            )),
         }
     }
 
@@ -119,7 +118,9 @@ impl LegacyUsageCache for RecordingCache {
             span: parent_otel_span.is_some(),
         });
         if self.write_fails.load(Ordering::Relaxed) {
-            return Err(cache_failure());
+            return Err(UsageCacheError::Transport(
+                DualCacheError::UnrepresentableValue,
+            ));
         }
         Ok(())
     }
@@ -230,15 +231,15 @@ impl DeploymentSnapshot for FixedSnapshot {
     }
 }
 
-pub(crate) fn handler_deps(
+pub(crate) fn handler_with(
     cache: &Arc<RecordingCache>,
     clock: &Arc<FixedClock>,
     console: &Arc<RecordingConsole>,
-) -> LegacyRateLimitDeps {
+) -> LegacyRateLimitHandler {
     let usage_cache_arc: Arc<dyn LegacyUsageCache> = Arc::<RecordingCache>::clone(cache);
     let wall_clock_arc: Arc<dyn LegacyClock> = Arc::<FixedClock>::clone(clock);
     let verbose_console_arc: Arc<dyn VerboseConsole> = Arc::<RecordingConsole>::clone(console);
-    LegacyRateLimitDeps {
+    LegacyRateLimitHandler {
         internal_usage_cache: usage_cache_arc,
         clock: wall_clock_arc,
         verbose: verbose_console_arc,

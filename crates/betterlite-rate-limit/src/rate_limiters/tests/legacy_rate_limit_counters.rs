@@ -13,7 +13,7 @@ use rstest::rstest;
 
 use super::support::{
     BatchAnswer, BrokenConsole, CacheCall, FixedClock, FixedSnapshot, LogCapture, RecordingCache,
-    RecordingConsole, handler_deps,
+    RecordingConsole, handler_with,
 };
 use crate::rate_limiters::legacy_rate_limit_counters::LegacyRateLimitHandler;
 use crate::rate_limiters::legacy_rate_limit_counters::clock::{LegacyClock, SystemLegacyClock};
@@ -22,7 +22,6 @@ use crate::rate_limiters::legacy_rate_limit_counters::limits::{
     DimensionLimits, KeyLimitCheck, RateLimitScope,
 };
 use crate::rate_limiters::legacy_rate_limit_counters::objects::{CacheObject, CacheObjectKeys};
-use crate::rate_limiters::legacy_rate_limit_counters::retry_after::float_text;
 use crate::rate_limiters::legacy_rate_limit_counters::usage_cache::{
     LegacyCacheValue, LegacyUsageCache, MinuteCounter,
 };
@@ -32,22 +31,6 @@ use crate::rate_limiters::legacy_rate_limit_counters::verbose::{
 
 const START_OF_MINUTE: &str = "2026-11-21T12:00:00+00:00";
 const CACHE_KEY: &str = "sk-test::2026-11-21-12-00::request_count";
-
-const fn counter(requests: i64, tokens: i64, rpm: i64) -> MinuteCounter {
-    MinuteCounter {
-        current_requests: requests,
-        current_tpm: tokens,
-        current_rpm: rpm,
-    }
-}
-
-const fn limits(max_parallel_requests: i64, tpm_limit: i64, rpm_limit: i64) -> DimensionLimits {
-    DimensionLimits {
-        max_parallel_requests,
-        tpm_limit,
-        rpm_limit,
-    }
-}
 
 fn check(
     current: Option<MinuteCounter>,
@@ -82,13 +65,9 @@ struct Fixture {
     handler: LegacyRateLimitHandler,
 }
 
-fn fixture() -> Fixture {
-    fixture_with(RecordingCache::new(), FixedClock::at(START_OF_MINUTE))
-}
-
 fn fixture_with(cache: Arc<RecordingCache>, clock: Arc<FixedClock>) -> Fixture {
     let console = RecordingConsole::new(false);
-    let handler = LegacyRateLimitHandler::new(handler_deps(&cache, &clock, &console));
+    let handler = handler_with(&cache, &clock, &console);
     Fixture {
         cache,
         clock,
@@ -111,7 +90,7 @@ fn raise_error(
 ) -> ProxyRateLimitError {
     let cache = RecordingCache::new();
     let console = RecordingConsole::new(false);
-    let handler = LegacyRateLimitHandler::new(handler_deps(&cache, clock, &console));
+    let handler = handler_with(&cache, clock, &console);
     rejected(handler.raise_rate_limit_error(details, dimension, model))
 }
 
@@ -136,7 +115,7 @@ fn constructor_stores_the_usage_cache_and_the_clock() {
     let cache = RecordingCache::new();
     let clock = FixedClock::at(START_OF_MINUTE);
     let console = RecordingConsole::new(false);
-    let handler = LegacyRateLimitHandler::new(handler_deps(&cache, &clock, &console));
+    let handler = handler_with(&cache, &clock, &console);
     let stored_cache: Arc<dyn LegacyUsageCache> = cache;
     let stored_clock: Arc<dyn LegacyClock> = clock;
     assert!(Arc::ptr_eq(&handler.internal_usage_cache, &stored_cache));
@@ -153,12 +132,16 @@ fn verbose_logs_at_debug_and_prints_only_when_set_verbose_is_true(
     let cache = RecordingCache::new();
     let clock = FixedClock::at(START_OF_MINUTE);
     let console = RecordingConsole::new(false);
-    let mut deps = handler_deps(&cache, &clock, &console);
-    deps.set_verbose = set_verbose;
-    let handler = LegacyRateLimitHandler::new(deps);
+    let mut handler = handler_with(&cache, &clock, &console);
+    handler.set_verbose = set_verbose;
     let capture = LogCapture::start();
     handler.print_verbose("statement");
-    assert!(capture.text().contains("DEBUG"));
+    let logged = capture.text();
+    assert!(
+        logged
+            .lines()
+            .any(|line| line.contains("DEBUG") && line.contains("statement"))
+    );
     assert_eq!(console.printed(), printed);
 }
 
@@ -169,9 +152,8 @@ fn verbose_ignores_a_failed_console_write(#[case] set_verbose: bool) {
     let cache = RecordingCache::new();
     let clock = FixedClock::at(START_OF_MINUTE);
     let console = RecordingConsole::new(true);
-    let mut deps = handler_deps(&cache, &clock, &console);
-    deps.set_verbose = set_verbose;
-    let handler = LegacyRateLimitHandler::new(deps);
+    let mut handler = handler_with(&cache, &clock, &console);
+    handler.set_verbose = set_verbose;
     let capture = LogCapture::start();
     handler.print_verbose("statement");
     assert_eq!(capture.text().contains("could not print"), set_verbose);
@@ -255,6 +237,20 @@ fn error_raising_appends_the_additional_details_and_keeps_the_type() {
 }
 
 #[rstest]
+#[case::whole_minute(START_OF_MINUTE, "60.0")]
+#[case::micro_second("2026-11-21T12:00:59.999950+00:00", "5e-05")]
+#[test]
+fn error_raising_writes_the_retry_after_like_python(#[case] at: &str, #[case] expected: &str) {
+    let clock = FixedClock::at(at);
+    let error = raise_error(&clock, None, None, None);
+    let headers = error
+        .headers
+        .as_ref()
+        .expect("the error carries a retry-after header");
+    assert_eq!(headers["retry-after"], expected);
+}
+
+#[rstest]
 #[case::native(Some("openai/gpt-4o-mini"), "gpt-4o-mini", "openai")]
 #[case::unknown(Some("unknown-model"), "unknown-model", "litellm_proxy")]
 #[case::absent(None, "", "litellm_proxy")]
@@ -275,7 +271,7 @@ fn error_provider_resolves_through_a_router_alias() {
     let cache = RecordingCache::new();
     let clock = FixedClock::at(START_OF_MINUTE);
     let console = RecordingConsole::new(false);
-    let mut deps = handler_deps(&cache, &clock, &console);
+    let mut handler = handler_with(&cache, &clock, &console);
     let row = Json::Object(JsonObject::from([
         (
             "model_name".to_owned(),
@@ -289,8 +285,7 @@ fn error_provider_resolves_through_a_router_alias() {
             )])),
         ),
     ]));
-    deps.router = Some(FixedSnapshot::new(vec![row]));
-    let handler = LegacyRateLimitHandler::new(deps);
+    handler.router = Some(FixedSnapshot::new(vec![row]));
     let error = rejected(handler.raise_rate_limit_error(None, None, Some("my-alias")));
     assert_eq!(error.model, "gpt-4o-mini");
     assert_eq!(error.llm_provider, "openai");
@@ -298,8 +293,21 @@ fn error_provider_resolves_through_a_router_alias() {
 
 #[tokio::test]
 async fn dimension_precedence_raises_on_concurrent_requests_first() {
-    let fixture = fixture();
-    let (result, updates) = checked(&fixture, Some(counter(5, 20, 10)), limits(5, 20, 10)).await;
+    let fixture = fixture_with(RecordingCache::new(), FixedClock::at(START_OF_MINUTE));
+    let (result, updates) = checked(
+        &fixture,
+        Some(MinuteCounter {
+            current_requests: 5,
+            current_tpm: 20,
+            current_rpm: 10,
+        }),
+        DimensionLimits {
+            max_parallel_requests: 5,
+            tpm_limit: 20,
+            rpm_limit: 10,
+        },
+    )
+    .await;
     let error = rejected(result.expect_err("over the parallel request limit"));
     assert_eq!(
         error.rate_limit_type,
@@ -309,25 +317,55 @@ async fn dimension_precedence_raises_on_concurrent_requests_first() {
         error.message,
         "LiteLLM Rate Limit Handler for rate limit type = key. Crossed TPM / RPM / Max Parallel Request Limit. current rpm: 10, rpm limit: 10, current tpm: 20, tpm limit: 20, current max_parallel_requests: 5, max_parallel_requests: 5"
     );
+    assert_eq!(error.model, "gpt-4o-mini");
+    assert_eq!(error.llm_provider, "openai");
     assert!(updates.is_empty());
     assert!(fixture.cache.calls().is_empty());
 }
 
 #[rstest]
-#[case::inside(counter(4, 19, 9), None)]
-#[case::parallel_at_the_limit(counter(5, 0, 0), Some(RateLimitDimension::ConcurrentRequests))]
-#[case::tokens_at_the_limit(counter(1, 20, 10), Some(RateLimitDimension::Tokens))]
-#[case::tokens_at_the_limit_alone(counter(1, 20, 5), Some(RateLimitDimension::Tokens))]
-#[case::requests_at_the_rpm_limit(counter(1, 5, 10), Some(RateLimitDimension::Requests))]
+#[case::inside(MinuteCounter { current_requests: 4, current_tpm: 19, current_rpm: 9 }, None)]
+#[case::parallel_at_the_limit(
+    MinuteCounter { current_requests: 5, current_tpm: 0, current_rpm: 0 },
+    Some(RateLimitDimension::ConcurrentRequests)
+)]
+#[case::tokens_at_the_limit(
+    MinuteCounter { current_requests: 1, current_tpm: 20, current_rpm: 10 },
+    Some(RateLimitDimension::Tokens)
+)]
+#[case::tokens_at_the_limit_alone(
+    MinuteCounter { current_requests: 1, current_tpm: 20, current_rpm: 5 },
+    Some(RateLimitDimension::Tokens)
+)]
+#[case::requests_at_the_rpm_limit(
+    MinuteCounter { current_requests: 1, current_tpm: 5, current_rpm: 10 },
+    Some(RateLimitDimension::Requests)
+)]
 #[tokio::test]
 async fn dimension_precedence_treats_each_limit_as_exclusive(
     #[case] current: MinuteCounter,
     #[case] dimension: Option<RateLimitDimension>,
 ) {
-    let fixture = fixture();
-    let (result, _updates) = checked(&fixture, Some(current), limits(5, 20, 10)).await;
+    let fixture = fixture_with(RecordingCache::new(), FixedClock::at(START_OF_MINUTE));
+    let (result, _updates) = checked(
+        &fixture,
+        Some(current),
+        DimensionLimits {
+            max_parallel_requests: 5,
+            tpm_limit: 20,
+            rpm_limit: 10,
+        },
+    )
+    .await;
     match dimension {
-        None => assert_eq!(result.expect("inside every limit"), counter(5, 19, 10)),
+        None => assert_eq!(
+            result.expect("inside every limit"),
+            MinuteCounter {
+                current_requests: 5,
+                current_tpm: 19,
+                current_rpm: 10,
+            }
+        ),
         Some(expected) => {
             let error = rejected(result.expect_err("at a limit"));
             assert_eq!(error.rate_limit_type, Some(expected));
@@ -337,41 +375,87 @@ async fn dimension_precedence_treats_each_limit_as_exclusive(
 
 #[tokio::test]
 async fn dimension_precedence_initializes_a_missing_counter() {
-    let fixture = fixture();
-    let (result, updates) = checked(&fixture, None, limits(5, 20, 10)).await;
-    assert_eq!(result.expect("no limit is zero"), counter(1, 0, 1));
+    let fixture = fixture_with(RecordingCache::new(), FixedClock::at(START_OF_MINUTE));
+    let (result, updates) = checked(
+        &fixture,
+        None,
+        DimensionLimits {
+            max_parallel_requests: 5,
+            tpm_limit: 20,
+            rpm_limit: 10,
+        },
+    )
+    .await;
+    assert_eq!(
+        result.expect("no limit is zero"),
+        MinuteCounter {
+            current_requests: 1,
+            current_tpm: 0,
+            current_rpm: 1,
+        }
+    );
     assert_eq!(
         updates,
         vec![(
             String::from(CACHE_KEY),
-            LegacyCacheValue::Counter(counter(1, 0, 1)),
+            LegacyCacheValue::Counter(MinuteCounter {
+                current_requests: 1,
+                current_tpm: 0,
+                current_rpm: 1,
+            }),
         )]
     );
 }
 
 #[rstest]
-#[case::every_limit(limits(0, 0, 0), RateLimitDimension::ConcurrentRequests)]
-#[case::parallel_only(limits(0, 5, 5), RateLimitDimension::ConcurrentRequests)]
-#[case::tokens_and_rpm(limits(5, 0, 0), RateLimitDimension::Tokens)]
-#[case::tokens_with_rpm_set(limits(5, 0, 10), RateLimitDimension::Tokens)]
-#[case::rpm_only(limits(5, 10, 0), RateLimitDimension::Requests)]
+#[case::every_limit(
+    DimensionLimits { max_parallel_requests: 0, tpm_limit: 0, rpm_limit: 0 },
+    RateLimitDimension::ConcurrentRequests
+)]
+#[case::parallel_only(
+    DimensionLimits { max_parallel_requests: 0, tpm_limit: 5, rpm_limit: 5 },
+    RateLimitDimension::ConcurrentRequests
+)]
+#[case::tokens_and_rpm(
+    DimensionLimits { max_parallel_requests: 5, tpm_limit: 0, rpm_limit: 0 },
+    RateLimitDimension::Tokens
+)]
+#[case::tokens_with_rpm_set(
+    DimensionLimits { max_parallel_requests: 5, tpm_limit: 0, rpm_limit: 10 },
+    RateLimitDimension::Tokens
+)]
+#[case::rpm_only(
+    DimensionLimits { max_parallel_requests: 5, tpm_limit: 10, rpm_limit: 0 },
+    RateLimitDimension::Requests
+)]
 #[tokio::test]
 async fn all_zero_limits_raise_with_the_first_zero_dimension(
     #[case] dimension_limits: DimensionLimits,
     #[case] expected: RateLimitDimension,
 ) {
-    let fixture = fixture();
+    let fixture = fixture_with(RecordingCache::new(), FixedClock::at(START_OF_MINUTE));
     let (result, updates) = checked(&fixture, None, dimension_limits).await;
     let error = rejected(result.expect_err("a zero limit blocks every request"));
     assert_eq!(error.rate_limit_type, Some(expected));
+    assert_eq!(error.model, "gpt-4o-mini");
+    assert_eq!(error.llm_provider, "openai");
     assert!(updates.is_empty());
     assert!(fixture.cache.calls().is_empty());
 }
 
 #[tokio::test]
 async fn all_zero_limits_name_every_limit_in_the_detail() {
-    let fixture = fixture();
-    let (result, _updates) = checked(&fixture, None, limits(0, 0, 0)).await;
+    let fixture = fixture_with(RecordingCache::new(), FixedClock::at(START_OF_MINUTE));
+    let (result, _updates) = checked(
+        &fixture,
+        None,
+        DimensionLimits {
+            max_parallel_requests: 0,
+            tpm_limit: 0,
+            rpm_limit: 0,
+        },
+    )
+    .await;
     let error = rejected(result.expect_err("every limit is zero"));
     assert_eq!(
         error.message,
@@ -381,7 +465,7 @@ async fn all_zero_limits_name_every_limit_in_the_detail() {
 
 #[tokio::test]
 async fn cache_updates_writes_the_whole_list_with_ttl_and_local_only() {
-    let fixture = fixture();
+    let fixture = fixture_with(RecordingCache::new(), FixedClock::at(START_OF_MINUTE));
     let earlier = (
         String::from("earlier::2026-11-21-12-00::request_count"),
         LegacyCacheValue::Count(3),
@@ -390,17 +474,39 @@ async fn cache_updates_writes_the_whole_list_with_ttl_and_local_only() {
     let new_val = fixture
         .handler
         .check_key_in_limits(
-            check(Some(counter(3, 10, 5)), limits(5, 20, 10)),
+            check(
+                Some(MinuteCounter {
+                    current_requests: 3,
+                    current_tpm: 10,
+                    current_rpm: 5,
+                }),
+                DimensionLimits {
+                    max_parallel_requests: 5,
+                    tpm_limit: 20,
+                    rpm_limit: 10,
+                },
+            ),
             &mut updates,
         )
         .await
         .expect("under every limit");
-    assert_eq!(new_val, counter(4, 10, 6));
+    assert_eq!(
+        new_val,
+        MinuteCounter {
+            current_requests: 4,
+            current_tpm: 10,
+            current_rpm: 6,
+        }
+    );
     let expected = vec![
         earlier,
         (
             String::from(CACHE_KEY),
-            LegacyCacheValue::Counter(counter(4, 10, 6)),
+            LegacyCacheValue::Counter(MinuteCounter {
+                current_requests: 4,
+                current_tpm: 10,
+                current_rpm: 6,
+            }),
         ),
     ];
     assert_eq!(updates, expected);
@@ -417,7 +523,7 @@ async fn cache_updates_writes_the_whole_list_with_ttl_and_local_only() {
 
 #[tokio::test]
 async fn cache_updates_does_not_write_when_the_limit_raises() {
-    let fixture = fixture();
+    let fixture = fixture_with(RecordingCache::new(), FixedClock::at(START_OF_MINUTE));
     let earlier = (
         String::from("earlier::2026-11-21-12-00::request_count"),
         LegacyCacheValue::Count(3),
@@ -426,7 +532,18 @@ async fn cache_updates_does_not_write_when_the_limit_raises() {
     let result = fixture
         .handler
         .check_key_in_limits(
-            check(Some(counter(5, 20, 10)), limits(5, 20, 10)),
+            check(
+                Some(MinuteCounter {
+                    current_requests: 5,
+                    current_tpm: 20,
+                    current_rpm: 10,
+                }),
+                DimensionLimits {
+                    max_parallel_requests: 5,
+                    tpm_limit: 20,
+                    rpm_limit: 10,
+                },
+            ),
             &mut updates,
         )
         .await;
@@ -446,10 +563,27 @@ async fn cache_updates_keeps_going_when_the_write_fails() {
         FixedClock::at(START_OF_MINUTE),
     );
     let capture = LogCapture::start();
-    let (result, updates) = checked(&fixture, Some(counter(3, 10, 5)), limits(5, 20, 10)).await;
+    let (result, updates) = checked(
+        &fixture,
+        Some(MinuteCounter {
+            current_requests: 3,
+            current_tpm: 10,
+            current_rpm: 5,
+        }),
+        DimensionLimits {
+            max_parallel_requests: 5,
+            tpm_limit: 20,
+            rpm_limit: 10,
+        },
+    )
+    .await;
     assert_eq!(
         result.expect("the write failure does not refuse the request"),
-        counter(4, 10, 6)
+        MinuteCounter {
+            current_requests: 4,
+            current_tpm: 10,
+            current_rpm: 6,
+        }
     );
     assert_eq!(updates.len(), 1);
     assert!(capture.text().contains("async add_cache"));
@@ -457,11 +591,19 @@ async fn cache_updates_keeps_going_when_the_write_fails() {
 
 #[tokio::test]
 async fn cache_updates_forwards_the_parent_span() {
-    let fixture = fixture();
+    let fixture = fixture_with(RecordingCache::new(), FixedClock::at(START_OF_MINUTE));
     let span = ParentOtelSpan::Opaque;
     let request = KeyLimitCheck {
-        limits: limits(5, 20, 10),
-        current: Some(counter(3, 10, 5)),
+        limits: DimensionLimits {
+            max_parallel_requests: 5,
+            tpm_limit: 20,
+            rpm_limit: 10,
+        },
+        current: Some(MinuteCounter {
+            current_requests: 3,
+            current_tpm: 10,
+            current_rpm: 5,
+        }),
         request_count_api_key: String::from(CACHE_KEY),
         rate_limit_type: RateLimitScope::Key,
         requested_model: None,
@@ -473,7 +615,14 @@ async fn cache_updates_forwards_the_parent_span() {
         .check_key_in_limits(request, &mut updates)
         .await
         .expect("under every limit");
-    assert_eq!(new_val, counter(4, 10, 6));
+    assert_eq!(
+        new_val,
+        MinuteCounter {
+            current_requests: 4,
+            current_tpm: 10,
+            current_rpm: 6,
+        }
+    );
     assert_eq!(
         fixture.cache.calls(),
         vec![CacheCall::BatchSet {
@@ -489,11 +638,27 @@ async fn cache_updates_forwards_the_parent_span() {
 async fn batch_object_maps_each_result_to_its_field() {
     let values = vec![
         Some(LegacyCacheValue::Count(7)),
-        Some(LegacyCacheValue::Counter(counter(1, 2, 3))),
-        Some(LegacyCacheValue::Counter(counter(4, 5, 6))),
+        Some(LegacyCacheValue::Counter(MinuteCounter {
+            current_requests: 1,
+            current_tpm: 2,
+            current_rpm: 3,
+        })),
+        Some(LegacyCacheValue::Counter(MinuteCounter {
+            current_requests: 4,
+            current_tpm: 5,
+            current_rpm: 6,
+        })),
         None,
-        Some(LegacyCacheValue::Counter(counter(7, 8, 9))),
-        Some(LegacyCacheValue::Counter(counter(10, 11, 12))),
+        Some(LegacyCacheValue::Counter(MinuteCounter {
+            current_requests: 7,
+            current_tpm: 8,
+            current_rpm: 9,
+        })),
+        Some(LegacyCacheValue::Counter(MinuteCounter {
+            current_requests: 10,
+            current_tpm: 11,
+            current_rpm: 12,
+        })),
     ];
     let fixture = fixture_with(
         RecordingCache::answering(BatchAnswer::Values(values)),
@@ -502,11 +667,27 @@ async fn batch_object_maps_each_result_to_its_field() {
     let object = fixture.handler.get_all_cache_objects(keys(), None).await;
     let expected = CacheObject {
         current_global_requests: Some(LegacyCacheValue::Count(7)),
-        request_count_api_key: Some(LegacyCacheValue::Counter(counter(1, 2, 3))),
-        request_count_api_key_model: Some(LegacyCacheValue::Counter(counter(4, 5, 6))),
+        request_count_api_key: Some(LegacyCacheValue::Counter(MinuteCounter {
+            current_requests: 1,
+            current_tpm: 2,
+            current_rpm: 3,
+        })),
+        request_count_api_key_model: Some(LegacyCacheValue::Counter(MinuteCounter {
+            current_requests: 4,
+            current_tpm: 5,
+            current_rpm: 6,
+        })),
         request_count_user_id: None,
-        request_count_team_id: Some(LegacyCacheValue::Counter(counter(7, 8, 9))),
-        request_count_end_user_id: Some(LegacyCacheValue::Counter(counter(10, 11, 12))),
+        request_count_team_id: Some(LegacyCacheValue::Counter(MinuteCounter {
+            current_requests: 7,
+            current_tpm: 8,
+            current_rpm: 9,
+        })),
+        request_count_end_user_id: Some(LegacyCacheValue::Counter(MinuteCounter {
+            current_requests: 10,
+            current_tpm: 11,
+            current_rpm: 12,
+        })),
     };
     assert_eq!(object, expected);
 }
@@ -528,7 +709,7 @@ fn batch_object_lists_the_keys_in_field_order() {
 
 #[tokio::test]
 async fn batch_object_forwards_the_keys_and_the_parent_span() {
-    let fixture = fixture();
+    let fixture = fixture_with(RecordingCache::new(), FixedClock::at(START_OF_MINUTE));
     let span = ParentOtelSpan::Opaque;
     let object = fixture
         .handler
@@ -573,15 +754,4 @@ fn precise_minute_formats_the_local_wall_clock(#[case] at: &str, #[case] expecte
     let fixture = fixture_with(RecordingCache::new(), FixedClock::at(at));
     assert_eq!(fixture.handler.precise_minute(), expected);
     assert_eq!(fixture.clock.reads(), 1);
-}
-
-#[rstest]
-#[case::minute(60.0_f64, "60.0")]
-#[case::zero(0.0_f64, "0.0")]
-#[case::fraction(0.5_f64, "0.5")]
-#[case::fixed_edge(0.0001_f64, "0.0001")]
-#[case::micro(0.00005_f64, "5e-05")]
-#[case::one_micro(1e-06_f64, "1e-06")]
-fn float_text_matches_python_str(#[case] value: f64, #[case] expected: &str) {
-    assert_eq!(float_text(value), expected);
 }

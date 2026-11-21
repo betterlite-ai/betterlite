@@ -9,6 +9,7 @@ use betterlite_error::proxy_error_types::common::CommonProxyErrors;
 use betterlite_error::rate_limit::{
     ProxyRateLimitError, ProxyRateLimitErrorInit, RateLimitDimension,
 };
+use betterlite_logging::analytics::python::float_text;
 use betterlite_redact::structured::Payload;
 use chrono::{Datelike as _, Timelike as _};
 use num_traits::ToPrimitive as _;
@@ -17,7 +18,6 @@ use self::clock::LegacyClock;
 use self::error::LegacyRateLimitError;
 use self::limits::KeyLimitCheck;
 use self::objects::{CacheObject, CacheObjectKeys};
-use self::retry_after::float_text;
 use self::usage_cache::{LegacyCacheValue, LegacyUsageCache, MinuteCounter};
 use self::verbose::VerboseConsole;
 
@@ -25,54 +25,23 @@ pub mod clock;
 pub mod error;
 pub mod limits;
 pub mod objects;
-pub mod retry_after;
 pub mod usage_cache;
 pub mod verbose;
 
 // litellm's ttl=60 on every write the legacy limiter makes
 pub const COUNTER_TTL_SECONDS: u64 = 60;
 
-// the proxy globals LiteLLM's handler reads, passed in instead
-pub struct LegacyRateLimitDeps {
-    pub internal_usage_cache: Arc<dyn LegacyUsageCache>,
-    pub clock: Arc<dyn LegacyClock>,
-    pub verbose: Arc<dyn VerboseConsole>,
-    pub set_verbose: bool,
-    pub native: Arc<dyn ProviderResolution>,
-    pub router: Option<Arc<dyn DeploymentSnapshot>>,
-}
-
 // _PROXY_MaxParallelRequestsHandler: the per-minute counter checks and the 429 they raise
 pub struct LegacyRateLimitHandler {
     pub(crate) internal_usage_cache: Arc<dyn LegacyUsageCache>,
     pub(crate) clock: Arc<dyn LegacyClock>,
-    verbose: Arc<dyn VerboseConsole>,
-    set_verbose: bool,
-    native: Arc<dyn ProviderResolution>,
-    router: Option<Arc<dyn DeploymentSnapshot>>,
+    pub(crate) verbose: Arc<dyn VerboseConsole>,
+    pub(crate) set_verbose: bool,
+    pub(crate) native: Arc<dyn ProviderResolution>,
+    pub(crate) router: Option<Arc<dyn DeploymentSnapshot>>,
 }
 
 impl LegacyRateLimitHandler {
-    #[must_use]
-    pub fn new(deps: LegacyRateLimitDeps) -> Self {
-        let LegacyRateLimitDeps {
-            internal_usage_cache,
-            clock,
-            verbose,
-            set_verbose,
-            native,
-            router,
-        } = deps;
-        Self {
-            internal_usage_cache,
-            clock,
-            verbose,
-            set_verbose,
-            native,
-            router,
-        }
-    }
-
     pub fn print_verbose(&self, statement: &str) {
         tracing::debug!("{statement}");
         if self.set_verbose && !self.verbose.print_line(statement) {

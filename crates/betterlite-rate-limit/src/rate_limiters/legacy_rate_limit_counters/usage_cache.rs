@@ -1,7 +1,6 @@
-use std::error::Error;
-
 use async_trait::async_trait;
 use betterlite_auth::resolved_key::auth::ParentOtelSpan;
+use betterlite_cache::dual_cache::DualCacheError;
 use serde::{Deserialize, Serialize};
 
 // the counter object a minute key holds: `{id}::{minute}::request_count`
@@ -20,11 +19,11 @@ pub enum LegacyCacheValue {
     Counter(MinuteCounter),
 }
 
-// InternalUsageCache's failure, carried up so the caller can log the transport's own message
+// InternalUsageCache's failure, carried up so the caller logs the DualCache transport's own message
 #[derive(Debug, thiserror::Error)]
 pub enum UsageCacheError {
     #[error("the usage cache call failed: {0}")]
-    Failed(#[source] Box<dyn Error + Send + Sync>),
+    Transport(#[source] DualCacheError),
 }
 
 // InternalUsageCache as the legacy limiter calls it; an implementation owns its failure handling, as DualCache does
