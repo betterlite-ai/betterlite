@@ -101,12 +101,11 @@ class Scripted:
 
 def rejected(error: HTTPException) -> JsonValue:
     detail = JSON.validate_python(error.detail)
-    payload: dict[str, JsonValue] = {
+    return {
         "kind": "rejected",
         "status_code": error.status_code,
         "detail": detail,
     }
-    return JSON.validate_python(payload)
 
 
 async def attempt(call: Awaitable[object]) -> JsonValue:
@@ -136,19 +135,17 @@ def chat_json(chunk: Payload) -> JsonValue:
     rendered: JsonValue = None
     if usage is not None:
         tokens = DICT.validate_python(usage)
-        token_counts: dict[str, JsonValue] = {
+        rendered = {
             "prompt_tokens": tokens.get("prompt_tokens"),
             "completion_tokens": tokens.get("completion_tokens"),
             "total_tokens": tokens.get("total_tokens"),
         }
-        rendered = JSON.validate_python(token_counts)
-    summary: dict[str, JsonValue] = {
+    return {
         "model": chunk.get("model"),
         "text": text,
         "usage": rendered,
         "finish_reason": finish,
     }
-    return JSON.validate_python(summary)
 
 
 def frames_json(text: str) -> JsonValue:
@@ -246,5 +243,4 @@ def run(input_value: HookCase) -> JsonValue:
     finally:
         proxy_server.premium_user = premium
         litellm.anthropic_sse_ping_interval_seconds = interval
-    result: dict[str, JsonValue] = {"outcome": outcome, "chunks": chunks, "scans": len(seen)}
-    return JSON.validate_python(result)
+    return {"outcome": outcome, "chunks": chunks, "scans": len(seen)}
