@@ -35,10 +35,8 @@ fn default_cap_refuses_an_oversized_message() {
 }
 
 async fn passes_the_cap_to_the_dialer() {
-    let options = HarnessOptions {
-        max_message_size_bytes: DEFAULT_MAX_MESSAGE_SIZE_BYTES,
-        ..HarnessOptions::default()
-    };
+    let options =
+        HarnessOptions::default().with_max_message_size_bytes(DEFAULT_MAX_MESSAGE_SIZE_BYTES);
     let mut configured = harness(options, Vec::new());
     configured.run().await.unwrap();
     assert_eq!(
@@ -48,11 +46,9 @@ async fn passes_the_cap_to_the_dialer() {
 }
 
 async fn outcome_with_cap(max: usize, frames: Vec<RealtimeMessage>) -> SourceOutcome {
-    let options = HarnessOptions {
-        max_message_size_bytes: max,
-        source_frames: frames,
-        ..HarnessOptions::default()
-    };
+    let options = HarnessOptions::default()
+        .with_max_message_size_bytes(max)
+        .with_source_frames(frames);
     let mut configured = harness(options, Vec::new());
     configured.run().await.unwrap();
     configured.source_outcome()

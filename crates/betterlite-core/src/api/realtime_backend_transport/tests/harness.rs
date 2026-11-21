@@ -484,6 +484,96 @@ impl Default for HarnessOptions {
     }
 }
 
+impl HarnessOptions {
+    pub(super) fn with_requires_setup(mut self, requires_setup: SessionFlag) -> Self {
+        self.requires_setup = requires_setup;
+        self
+    }
+
+    pub(super) fn with_setup(mut self, setup: Option<String>) -> Self {
+        self.setup = setup;
+        self
+    }
+
+    pub(super) fn with_synthetic(mut self, synthetic: Option<Json>) -> Self {
+        self.synthetic = synthetic;
+        self
+    }
+
+    pub(super) fn with_own_backend(mut self, own_backend: SessionFlag) -> Self {
+        self.own_backend = own_backend;
+        self
+    }
+
+    pub(super) fn with_validate_error(mut self, validate_error: Option<String>) -> Self {
+        self.validate_error = validate_error;
+        self
+    }
+
+    pub(super) fn with_metadata(mut self, metadata: Option<IndexMap<String, Json>>) -> Self {
+        self.metadata = metadata;
+        self
+    }
+
+    pub(super) fn with_query_params(
+        mut self,
+        query_params: Option<IndexMap<String, String>>,
+    ) -> Self {
+        self.query_params = query_params;
+        self
+    }
+
+    pub(super) fn with_dials(mut self, dials: Vec<DialOutcome>) -> Self {
+        self.dials = dials;
+        self
+    }
+
+    pub(super) fn with_send_error(mut self, send_error: Option<String>) -> Self {
+        self.send_error = send_error;
+        self
+    }
+
+    pub(super) fn with_close_error(mut self, close_error: Option<ClientCloseError>) -> Self {
+        self.close_error = close_error;
+        self
+    }
+
+    pub(super) fn with_cancellation(mut self, cancellation: SessionFlag) -> Self {
+        self.cancellation = cancellation;
+        self
+    }
+
+    pub(super) fn with_relay_fails(mut self, relay_fails: SessionFlag) -> Self {
+        self.relay_fails = relay_fails;
+        self
+    }
+
+    pub(super) fn with_verification(mut self, verification: Verification) -> Self {
+        self.verification = verification;
+        self
+    }
+
+    pub(super) fn with_max_message_size_bytes(mut self, max_message_size_bytes: usize) -> Self {
+        self.max_message_size_bytes = max_message_size_bytes;
+        self
+    }
+
+    pub(super) fn with_source_frames(mut self, source_frames: Vec<RealtimeMessage>) -> Self {
+        self.source_frames = source_frames;
+        self
+    }
+
+    pub(super) fn with_backend_send_error(mut self, backend_send_error: Option<String>) -> Self {
+        self.backend_send_error = backend_send_error;
+        self
+    }
+
+    pub(super) fn with_backend_close_error(mut self, backend_close_error: Option<String>) -> Self {
+        self.backend_close_error = backend_close_error;
+        self
+    }
+}
+
 pub(super) struct Harness<'callback> {
     provider: Arc<TestProvider>,
     dialer: ScriptedDialer,

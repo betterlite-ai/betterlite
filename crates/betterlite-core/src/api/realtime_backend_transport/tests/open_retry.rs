@@ -26,12 +26,14 @@ async fn realtime_backend_open_retry() {
 }
 
 async fn retries_after_two_hung_handshakes() {
-    let options = HarnessOptions {
-        dials: vec![DialOutcome::Hang, DialOutcome::Hang, DialOutcome::Connect],
-        requires_setup: SessionFlag(true),
-        setup: Some("{\"setup\":{}}".to_owned()),
-        ..HarnessOptions::default()
-    };
+    let options = HarnessOptions::default()
+        .with_dials(vec![
+            DialOutcome::Hang,
+            DialOutcome::Hang,
+            DialOutcome::Connect,
+        ])
+        .with_requires_setup(SessionFlag(true))
+        .with_setup(Some("{\"setup\":{}}".to_owned()));
     let mut retry = harness(options, Vec::new());
     retry.run().await.unwrap();
     let dials = retry.dials();
@@ -64,10 +66,8 @@ async fn retries_after_two_hung_handshakes() {
 }
 
 async fn reports_the_last_dial_error() {
-    let options = HarnessOptions {
-        dials: vec![os("first"), websocket("second"), os("third")],
-        ..HarnessOptions::default()
-    };
+    let options =
+        HarnessOptions::default().with_dials(vec![os("first"), websocket("second"), os("third")]);
     let mut failing = harness(options, Vec::new());
     let error = failing.run().await.unwrap_err();
     assert_eq!(error.to_string(), "third");
@@ -75,10 +75,7 @@ async fn reports_the_last_dial_error() {
 }
 
 async fn refuses_with_the_status_close() {
-    let options = HarnessOptions {
-        dials: vec![invalid_status(401)],
-        ..HarnessOptions::default()
-    };
+    let options = HarnessOptions::default().with_dials(vec![invalid_status(401)]);
     let mut rejected = harness(options, Vec::new());
     rejected.run().await.unwrap();
     assert_eq!(rejected.dials().len(), 1);
@@ -86,13 +83,10 @@ async fn refuses_with_the_status_close() {
 }
 
 async fn reports_the_invalid_status_code() {
-    let options = HarnessOptions {
-        dials: vec![invalid_status_code(
-            403,
-            "server rejected WebSocket connection: HTTP 403",
-        )],
-        ..HarnessOptions::default()
-    };
+    let options = HarnessOptions::default().with_dials(vec![invalid_status_code(
+        403,
+        "server rejected WebSocket connection: HTTP 403",
+    )]);
     let mut older = harness(options, Vec::new());
     older.run().await.unwrap();
     assert_eq!(older.dials().len(), 1);
@@ -105,10 +99,7 @@ async fn reports_the_invalid_status_code() {
 }
 
 async fn uses_a_provider_owned_backend() {
-    let options = HarnessOptions {
-        own_backend: SessionFlag(true),
-        ..HarnessOptions::default()
-    };
+    let options = HarnessOptions::default().with_own_backend(SessionFlag(true));
     let mut provider_owned = harness(options, Vec::new());
     provider_owned.run().await.unwrap();
     assert!(provider_owned.dials().is_empty());
@@ -116,10 +107,8 @@ async fn uses_a_provider_owned_backend() {
 }
 
 async fn fails_config_before_dialing() {
-    let options = HarnessOptions {
-        validate_error: Some("the api key is missing".to_owned()),
-        ..HarnessOptions::default()
-    };
+    let options =
+        HarnessOptions::default().with_validate_error(Some("the api key is missing".to_owned()));
     let mut invalid_headers = harness(options, Vec::new());
     let error = invalid_headers.run().await.unwrap_err();
     assert!(matches!(error, RealtimeConnectionError::Config(_)));
@@ -129,10 +118,7 @@ async fn fails_config_before_dialing() {
 }
 
 async fn dials_without_verification_for_wss() {
-    let options = HarnessOptions {
-        verification: Verification::Disabled,
-        ..HarnessOptions::default()
-    };
+    let options = HarnessOptions::default().with_verification(Verification::Disabled);
     let mut insecure = harness(options, Vec::new());
     insecure.run().await.unwrap();
     assert_eq!(insecure.dials()[0].ssl, RealtimeSsl::Insecure);
@@ -154,12 +140,10 @@ fn keeps_the_ssl_argument_on_a_ws_url() {
 }
 
 async fn closes_after_a_failed_setup_send() {
-    let options = HarnessOptions {
-        requires_setup: SessionFlag(true),
-        setup: Some("{\"setup\":{}}".to_owned()),
-        backend_send_error: Some("the backend is gone".to_owned()),
-        ..HarnessOptions::default()
-    };
+    let options = HarnessOptions::default()
+        .with_requires_setup(SessionFlag(true))
+        .with_setup(Some("{\"setup\":{}}".to_owned()))
+        .with_backend_send_error(Some("the backend is gone".to_owned()));
     let mut setup_failed = harness(options, Vec::new());
     setup_failed.run().await.unwrap();
     assert!(setup_failed.sent().is_empty());
@@ -168,12 +152,10 @@ async fn closes_after_a_failed_setup_send() {
 }
 
 async fn reports_a_failed_backend_close() {
-    let options = HarnessOptions {
-        requires_setup: SessionFlag(true),
-        setup: Some("{\"setup\":{}}".to_owned()),
-        backend_close_error: Some("the backend close failed".to_owned()),
-        ..HarnessOptions::default()
-    };
+    let options = HarnessOptions::default()
+        .with_requires_setup(SessionFlag(true))
+        .with_setup(Some("{\"setup\":{}}".to_owned()))
+        .with_backend_close_error(Some("the backend close failed".to_owned()));
     let mut close_failed = harness(options, Vec::new());
     close_failed.run().await.unwrap();
     assert_eq!(close_failed.close().map(|close| close.0), Some(1011));
@@ -186,13 +168,11 @@ async fn reports_a_failed_backend_close() {
 }
 
 async fn replaces_a_send_error_with_the_close_error() {
-    let options = HarnessOptions {
-        requires_setup: SessionFlag(true),
-        setup: Some("{\"setup\":{}}".to_owned()),
-        backend_send_error: Some("the backend is gone".to_owned()),
-        backend_close_error: Some("the backend close failed".to_owned()),
-        ..HarnessOptions::default()
-    };
+    let options = HarnessOptions::default()
+        .with_requires_setup(SessionFlag(true))
+        .with_setup(Some("{\"setup\":{}}".to_owned()))
+        .with_backend_send_error(Some("the backend is gone".to_owned()))
+        .with_backend_close_error(Some("the backend close failed".to_owned()));
     let mut both_failed = harness(options, Vec::new());
     both_failed.run().await.unwrap();
     let texts = both_failed.texts();
