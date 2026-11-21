@@ -76,6 +76,26 @@ fn an_explicit_priority_scales_both_limits() {
 }
 
 #[test]
+fn one_configured_limit_still_builds_the_descriptor() {
+    let configured = policy(Some(&[("prod", percent(0.5))]));
+    let descriptors = priority_based_descriptors(
+        &configured,
+        "gpt-4",
+        Some("prod"),
+        Some(&limits(Some(100), None)),
+        WINDOW,
+    );
+    assert_eq!(
+        descriptors,
+        vec![RateLimitDescriptor {
+            key: PRIORITY_DESCRIPTOR_KEY.to_owned(),
+            value: "gpt-4:prod".to_owned(),
+            rate_limit: Some(rate_limit(Some(50), None)),
+        }]
+    );
+}
+
+#[test]
 fn the_default_pool_scales_by_the_default_priority() {
     let configured = policy(Some(&[("prod", percent(0.5))]));
     let descriptors = priority_based_descriptors(
