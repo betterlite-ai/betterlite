@@ -54,11 +54,11 @@ pub(super) struct CasePrices {
 }
 
 // One exact key, with a nonempty provider prefix exactly as the catalog spells it.
-fn injected<'a>(
-    prices: &'a BTreeMap<String, PriceRecord>,
+fn injected<'catalog>(
+    prices: &'catalog BTreeMap<String, PriceRecord>,
     model: &str,
     custom_llm_provider: Option<&str>,
-) -> Option<&'a PriceRecord> {
+) -> Option<&'catalog PriceRecord> {
     let key = custom_llm_provider
         .filter(|provider| !provider.is_empty())
         .map_or_else(
@@ -166,6 +166,7 @@ impl DailySpendQueue for RecordingQueue {
                 return Err(SpendQueueError::ZeroCapacity);
             }
             updates.push(update);
+            drop(updates);
             Ok(())
         })
     }
