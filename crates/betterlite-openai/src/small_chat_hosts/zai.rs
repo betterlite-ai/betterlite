@@ -27,16 +27,16 @@ impl ZaiChatConfig {
         Lookup: ReasoningLookup,
     {
         let mut params = SUPPORTED_PARAMS.to_vec();
-        if super::supports_reasoning(lookup, model) {
+        if lookup.supports_reasoning(model).unwrap_or(false) {
             params.push(THINKING);
         }
         params
     }
 
-    // the override GLM needs: messages and tools come back exactly as they were given,
-    // so cache_control survives where the parent would strip it
+    // the override GLM needs: messages and tools come back exactly as given, so cache_control survives
     #[must_use]
-    pub fn remove_cache_control_flag_from_messages_and_tools(
+    // ast-grep-ignore: no-one-line-functions - the zai config keeps this passthrough for its cache_control override
+    pub fn keep_cache_control(
         _model: &str,
         messages: &[ChatMessage],
         tools: Option<&[Tool]>,

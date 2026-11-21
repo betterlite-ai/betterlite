@@ -8,19 +8,23 @@ pub struct NebiusConfig;
 
 impl NebiusConfig {
     #[must_use]
+    // ast-grep-ignore: no-one-line-functions - the config API fixes this name and the parent list is the whole body
     pub fn supported_params(model: &str, catalog: &CatalogCapabilities) -> Vec<&'static str> {
-        super::parent_supported_params(model, catalog)
+        super::openai_parent().supported_params(model, catalog)
     }
 
-    // the parent mapping is not called: max_completion_tokens becomes max_tokens and
-    // every other param is copied only when the list carries it
+    // the parent mapping is not called: max_completion_tokens becomes max_tokens and the rest is copied if listed
     pub fn map_openai_params(
         model: &str,
         non_default_params: &Object,
         optional_params: &mut Object,
         catalog: &CatalogCapabilities,
     ) {
-        let supported = Self::supported_params(model, catalog);
-        super::map_with_completion_tokens(non_default_params, optional_params, &supported);
+        super::map_supported(
+            non_default_params,
+            optional_params,
+            &Self::supported_params(model, catalog),
+            super::CompletionTokenRename::Rename,
+        );
     }
 }

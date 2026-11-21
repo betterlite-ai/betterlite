@@ -48,14 +48,13 @@ pub struct NadirReply {
 
 impl NadirConfig {
     #[must_use]
+    // ast-grep-ignore: no-one-line-functions - the config API fixes this name and the list is the whole body
     pub fn supported_params() -> Vec<&'static str> {
         SUPPORTED_PARAMS.to_vec()
     }
 }
 
-// LiteLLM's _reported_cost_usd: the cost at nadir_metadata.cost.total_cost_usd, and every
-// other shape is no cost. A boolean is an int in Python, so it is rejected before the number
-// check, and an integer counts and becomes a float.
+// LiteLLM's _reported_cost_usd reads nadir_metadata.cost.total_cost_usd; a boolean is an int in Python
 #[must_use]
 pub fn nadir_reported_cost(bytes: &[u8]) -> Option<f64> {
     let payload: Value = serde_json::from_slice(bytes).ok()?;

@@ -31,6 +31,7 @@ pub struct MaritalkConfig;
 impl MaritalkConfig {
     // the twelve params are the whole list, in this order
     #[must_use]
+    // ast-grep-ignore: no-one-line-functions - the config API fixes this name and the list is the whole body
     pub fn supported_params() -> Vec<&'static str> {
         SUPPORTED_PARAMS.to_vec()
     }

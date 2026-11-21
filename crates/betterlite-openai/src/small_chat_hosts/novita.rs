@@ -5,8 +5,7 @@ use crate::openai_base_config::Headers;
 
 pub const MISSING_KEY_MESSAGE: &str = "Missing Novita AI API Key - A call is being made to novita but no key is set either in the environment variables or via params";
 
-// LiteLLM raises a ValueError with this text; Rust has no ValueError, so the text lives on a
-// typed error and B184 decides how the proxy reports it
+// LiteLLM raises a ValueError with this text; Rust has no ValueError, so B184 decides the proxy's answer
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 #[error(
     "Missing Novita AI API Key - A call is being made to novita but no key is set either in the environment variables or via params"

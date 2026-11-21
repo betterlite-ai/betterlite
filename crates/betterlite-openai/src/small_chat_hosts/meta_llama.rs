@@ -11,8 +11,9 @@ pub struct LlamaAPIConfig;
 impl LlamaAPIConfig {
     // the OpenAI list, unchanged
     #[must_use]
+    // ast-grep-ignore: no-one-line-functions - the config API fixes this name and the parent list is the whole body
     pub fn supported_params(model: &str, catalog: &CatalogCapabilities) -> Vec<&'static str> {
-        super::parent_supported_params(model, catalog)
+        super::openai_parent().supported_params(model, catalog)
     }
 
     // the parent's mapping, then response_format goes unless its type is json_schema

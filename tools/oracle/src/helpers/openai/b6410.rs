@@ -2,9 +2,13 @@ use std::collections::BTreeMap;
 
 use betterlite_openai::chat_content::{Mode, RefuseDownloads};
 use betterlite_openai::openai_base_config::{CatalogCapabilities, Headers, Object as WireObject};
+use betterlite_openai::small_chat_hosts::CompletionTokenRename::Keep;
+use betterlite_openai::small_chat_hosts::meta_llama::LlamaAPIConfig;
+use betterlite_openai::small_chat_hosts::nebius::NebiusConfig;
+use betterlite_openai::small_chat_hosts::wandb::WandbConfig;
+use betterlite_openai::small_chat_hosts::zai::ZaiChatConfig;
 use betterlite_openai::small_chat_hosts::{
-    map_supported, maritalk, meta_llama, moonshot, morph, nadir, nebius, novita, nscale,
-    parent_supported_params, v0, wandb, zai,
+    map_supported, maritalk, moonshot, morph, nadir, novita, nscale, openai_parent, v0,
 };
 use betterlite_prompts::arguments::json::Object;
 use secrecy::SecretString;
@@ -54,16 +58,16 @@ fn supported_list(
     let lookup = Lookup(reasoning);
     match provider {
         Provider::Maritalk => maritalk::MaritalkConfig::supported_params(),
-        Provider::Llama => meta_llama::LlamaAPIConfig::supported_params(model, catalog),
+        Provider::Llama => LlamaAPIConfig::supported_params(model, catalog),
         Provider::Moonshot => moonshot::supported_params(&lookup, model, catalog),
         Provider::Morph => morph::MorphChatConfig::supported_params(model),
         Provider::Nadir => nadir::NadirConfig::supported_params(),
-        Provider::Nebius => nebius::NebiusConfig::supported_params(model, catalog),
-        Provider::Novita => parent_supported_params(model, catalog),
+        Provider::Nebius => NebiusConfig::supported_params(model, catalog),
+        Provider::Novita => openai_parent().supported_params(model, catalog),
         Provider::Nscale => nscale::NscaleConfig::supported_params(model),
         Provider::V0 => v0::V0ChatConfig::supported_params(model),
-        Provider::Wandb => wandb::WandbConfig::supported_params(&lookup, model, catalog),
-        Provider::Zai => zai::ZaiChatConfig::supported_params(&lookup, model),
+        Provider::Wandb => WandbConfig::supported_params(&lookup, model, catalog),
+        Provider::Zai => ZaiChatConfig::supported_params(&lookup, model),
     }
 }
 
@@ -111,48 +115,36 @@ fn mapped_params(call: &ParamsCall, catalog: &CatalogCapabilities, supported: &[
 
 fn llama_mapped(call: &ParamsCall, catalog: &CatalogCapabilities) -> Value {
     let mut wire = wire_object(&call.existing);
-    meta_llama::LlamaAPIConfig::map_openai_params(
-        &wire_object(&call.requested),
-        &mut wire,
-        &call.model,
-        catalog,
-    );
+    let requested = wire_object(&call.requested);
+    LlamaAPIConfig::map_openai_params(&requested, &mut wire, &call.model, catalog);
     serde_json::to_value(wire).unwrap_or(Value::Null)
 }
 
 fn moonshot_mapped(call: &ParamsCall, catalog: &CatalogCapabilities) -> Value {
+    let lookup = Lookup(call.reasoning);
     let mut optional = call.existing.clone();
-    moonshot::map_openai_params(
-        &Lookup(call.reasoning),
-        &call.model,
-        &call.requested,
-        &mut optional,
-        catalog,
-    );
+    let model = call.model.as_str();
+    moonshot::map_openai_params(&lookup, model, &call.requested, &mut optional, catalog);
     serde_json::to_value(optional).unwrap_or(Value::Null)
 }
 
 fn nebius_mapped(call: &ParamsCall, catalog: &CatalogCapabilities) -> Value {
     let mut optional = call.existing.clone();
-    nebius::NebiusConfig::map_openai_params(&call.model, &call.requested, &mut optional, catalog);
+    NebiusConfig::map_openai_params(&call.model, &call.requested, &mut optional, catalog);
     serde_json::to_value(optional).unwrap_or(Value::Null)
 }
 
 fn wandb_mapped(call: &ParamsCall, catalog: &CatalogCapabilities) -> Value {
+    let lookup = Lookup(call.reasoning);
     let mut optional = call.existing.clone();
-    wandb::WandbConfig::map_openai_params(
-        &Lookup(call.reasoning),
-        &call.model,
-        &call.requested,
-        &mut optional,
-        catalog,
-    );
+    let model = call.model.as_str();
+    WandbConfig::map_openai_params(&lookup, model, &call.requested, &mut optional, catalog);
     serde_json::to_value(optional).unwrap_or(Value::Null)
 }
 
 fn inherited_mapped(call: &ParamsCall, supported: &[&str]) -> Value {
     let mut optional = call.existing.clone();
-    map_supported(&call.requested, &mut optional, supported);
+    map_supported(&call.requested, &mut optional, supported, Keep);
     serde_json::to_value(optional).unwrap_or(Value::Null)
 }
 
@@ -180,8 +172,9 @@ fn request_record(call: &RequestCall) -> Value {
 }
 
 fn cost_record(call: &CostCall) -> Value {
-    let cost = nadir::nadir_reported_cost(call.body.as_bytes());
-    record(Ok(cost.map_or(Value::Null, |value| json!(value))))
+    record(Ok(
+        nadir::nadir_reported_cost(call.body.as_bytes()).map_or(Value::Null, |value| json!(value))
+    ))
 }
 
 fn novita_record(call: &NovitaCall) -> Value {
@@ -200,11 +193,8 @@ fn novita_record(call: &NovitaCall) -> Value {
 }
 
 fn cache_record(call: &CacheCall) -> Value {
-    let (messages, tools) = zai::ZaiChatConfig::remove_cache_control_flag_from_messages_and_tools(
-        &call.model,
-        &call.messages,
-        call.tools.as_deref(),
-    );
+    let (messages, tools) =
+        ZaiChatConfig::keep_cache_control(&call.model, &call.messages, call.tools.as_deref());
     record(Ok(json!({
         "messages": serde_json::to_value(messages).unwrap_or(Value::Null),
         "tools": serde_json::to_value(tools).unwrap_or(Value::Null),

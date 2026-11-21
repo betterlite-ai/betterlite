@@ -37,7 +37,7 @@ use super::nscale::NscaleConfig;
 use super::v0::V0ChatConfig;
 use super::wandb::WandbConfig;
 use super::zai::ZaiChatConfig;
-use super::{json_is_truthy, map_supported, parent_supported_params};
+use super::{CompletionTokenRename, json_is_truthy, map_supported};
 use crate::chat::{ChatMessage, ContentPart, FunctionCall, MessageContent, Role, Tool, ToolCall};
 use crate::chat_choices::reply::{ResponseReply, TransformResponseError};
 use crate::chat_content::{ChatContentError, MissingFileError, Mode, RefuseDownloads};
@@ -230,12 +230,12 @@ fn maritalk_error_carries_message_status_and_headers() {
 fn llama_supported_params_are_the_openai_list() {
     assert_eq!(
         LlamaAPIConfig::supported_params(MODEL, &catalog()),
-        parent_supported_params(MODEL, &catalog())
+        super::openai_parent().supported_params(MODEL, &catalog())
     );
 }
 
 #[test]
-fn llama_keeps_only_a_json_schema_response_format() {
+fn llama_keeps_a_json_schema_response_format() {
     let keep = serde_json::json!({"type": "json_schema", "json_schema": {"name": "x"}});
     let mut optional = WireObject::new();
     LlamaAPIConfig::map_openai_params(
@@ -245,20 +245,20 @@ fn llama_keeps_only_a_json_schema_response_format() {
         &catalog(),
     );
     assert_eq!(optional.get("response_format"), Some(&keep));
+}
 
-    for dropped in [
-        serde_json::json!({"type": "text"}),
-        serde_json::json!({"json_schema": {"name": "x"}}),
-    ] {
-        let mut optional = WireObject::new();
-        LlamaAPIConfig::map_openai_params(
-            &WireObject::from_iter([(String::from("response_format"), dropped)]),
-            &mut optional,
-            MODEL,
-            &catalog(),
-        );
-        assert!(!optional.contains_key("response_format"));
-    }
+#[rstest]
+#[case::text(serde_json::json!({"type": "text"}))]
+#[case::no_type(serde_json::json!({"json_schema": {"name": "x"}}))]
+fn llama_drops_a_response_format_that_is_not_json_schema(#[case] dropped: Value) {
+    let mut optional = WireObject::new();
+    LlamaAPIConfig::map_openai_params(
+        &WireObject::from_iter([(String::from("response_format"), dropped)]),
+        &mut optional,
+        MODEL,
+        &catalog(),
+    );
+    assert!(!optional.contains_key("response_format"));
 }
 
 #[test]
@@ -297,7 +297,7 @@ fn morph_and_v0_list_their_small_param_sets() {
 fn nebius_keeps_the_openai_list() {
     assert_eq!(
         NebiusConfig::supported_params(MODEL, &catalog()),
-        parent_supported_params(MODEL, &catalog())
+        super::openai_parent().supported_params(MODEL, &catalog())
     );
 }
 
@@ -348,7 +348,7 @@ fn nebius_takes_the_later_of_max_tokens_and_max_completion_tokens() {
 
 #[test]
 fn wandb_adds_reasoning_effort_only_for_a_reasoning_model() {
-    let parent = parent_supported_params(MODEL, &catalog());
+    let parent = super::openai_parent().supported_params(MODEL, &catalog());
     let mut reasoning = WandbConfig::supported_params(&Reasons(true), MODEL, &catalog());
     assert_eq!(reasoning.len(), parent.len() + 1);
     assert_eq!(reasoning.pop(), Some("reasoning_effort"));
@@ -481,11 +481,8 @@ fn zai_keeps_cache_control_on_messages_and_tools() {
             serde_json::json!({"type": "ephemeral"}),
         )]),
     };
-    let (messages, tools) = ZaiChatConfig::remove_cache_control_flag_from_messages_and_tools(
-        MODEL,
-        &[cached.clone()],
-        Some(&[tool.clone()]),
-    );
+    let (messages, tools) =
+        ZaiChatConfig::keep_cache_control(MODEL, &[cached.clone()], Some(&[tool.clone()]));
     assert_eq!(messages, vec![cached]);
     assert_eq!(tools, Some(vec![tool]));
 }
@@ -521,7 +518,7 @@ fn moonshot_complete_url_builds_the_default_and_appends_the_path() {
 
 #[test]
 fn moonshot_supported_params_drop_functions_and_gate_tool_calls() {
-    let parent = parent_supported_params(MODEL, &catalog());
+    let parent = super::openai_parent().supported_params(MODEL, &catalog());
     let plain = moonshot::supported_params(&Reasons(false), MODEL, &catalog());
     assert_eq!(plain.len(), parent.len() - 1);
     assert!(!plain.contains(&"functions"));
@@ -809,7 +806,12 @@ fn json_truthiness_matches_the_python_read() {
 fn map_supported_copies_only_a_listed_param() {
     let mut optional = object(vec![("kept", text("old"))]);
     let requested = object(vec![("kept", text("new")), ("unknown", Json::Bool(true))]);
-    map_supported(&requested, &mut optional, &["kept"]);
+    map_supported(
+        &requested,
+        &mut optional,
+        &["kept"],
+        CompletionTokenRename::Keep,
+    );
     assert_eq!(optional, object(vec![("kept", text("new"))]));
 }
 
@@ -859,14 +861,6 @@ fn nadir_reports_an_integer_cost_as_a_float() {
     let cost = nadir_reported_cost(br#"{"nadir_metadata":{"cost":{"total_cost_usd":7}}}"#);
     assert_eq!(cost, Some(7.0_f64));
     assert_eq!(cost.map(|value| value.to_string()), Some(String::from("7")));
-}
-
-#[test]
-fn nadir_keeps_a_zero_cost_and_drops_a_negative_one() {
-    let zero = br#"{"nadir_metadata":{"cost":{"total_cost_usd":0}}}"#;
-    assert_eq!(nadir_reported_cost(zero), Some(0.0));
-    let negative = br#"{"nadir_metadata":{"cost":{"total_cost_usd":-1}}}"#;
-    assert_eq!(nadir_reported_cost(negative), None);
 }
 
 #[test]

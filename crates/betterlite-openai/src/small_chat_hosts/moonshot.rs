@@ -66,8 +66,7 @@ pub fn complete_url(api_base: Option<&str>) -> String {
     }
 }
 
-// functions is never supported, the thinking model loses tool calls too, and a reasoning
-// model takes reasoning_effort back into the list
+// functions is never supported, the thinking model loses tool calls too, and a reasoning model adds reasoning_effort
 #[must_use]
 pub fn supported_params<Lookup>(
     lookup: &Lookup,
@@ -82,18 +81,18 @@ where
     } else {
         &FUNCTIONS_EXCLUDED
     };
-    let mut params: Vec<&'static str> = super::parent_supported_params(model, catalog)
+    let mut params: Vec<&'static str> = super::openai_parent()
+        .supported_params(model, catalog)
         .into_iter()
         .filter(|param| !excluded.contains(param))
         .collect();
-    if super::supports_reasoning(lookup, model) {
+    if lookup.supports_reasoning(model).unwrap_or(false) {
         params.push(REASONING_EFFORT);
     }
     params
 }
 
-// the walk keeps the caller's order: max_completion_tokens becomes max_tokens, a param
-// outside the list is skipped without an error, and reasoning_effort is unwrapped
+// the walk keeps the caller's order: max_completion_tokens becomes max_tokens, and an unsupported param is skipped
 pub fn map_openai_params<Lookup>(
     lookup: &Lookup,
     model: &str,
@@ -117,7 +116,7 @@ pub fn map_openai_params<Lookup>(
             optional_params.insert(name.clone(), value.clone());
         }
     }
-    if super::supports_reasoning(lookup, model) {
+    if lookup.supports_reasoning(model).unwrap_or(false) {
         optional_params.shift_remove(TEMPERATURE);
         return;
     }
@@ -159,9 +158,7 @@ fn n_above_one(optional_params: &Object) -> bool {
         .is_some_and(|count| super::as_f64(count).is_some_and(|value| value > 1.0_f64))
 }
 
-// tool_choice "required" is not supported: the key goes and a user message asks for a tool,
-// then a reasoning model gets reasoning_content on each assistant tool-call message, and the
-// parent B503 transform runs for the sync and the async call alike
+// tool_choice "required" becomes a user message, a reasoning model gets reasoning_content filled, and the parent runs
 pub fn transform_request<Lookup>(
     lookup: &Lookup,
     input: TransformInput<'_>,
@@ -189,7 +186,7 @@ where
             passthrough: IndexMap::new(),
         });
     }
-    if super::supports_reasoning(lookup, model) {
+    if lookup.supports_reasoning(model).unwrap_or(false) {
         messages = fill_reasoning_content(&messages);
     }
     let flattened = flatten_text_lists(&messages)?;
@@ -231,8 +228,7 @@ fn has_non_text_part(message: &ChatMessage) -> bool {
     }
 }
 
-// an assistant message with tool calls needs reasoning_content: the stored value moves up from
-// provider_specific_fields, otherwise a space keeps the API validation happy
+// an assistant message with tool calls needs reasoning_content: the stored value moves up, else a space does
 fn fill_reasoning_content(messages: &[ChatMessage]) -> Vec<ChatMessage> {
     let mut filled = Vec::with_capacity(messages.len());
     for message in messages {

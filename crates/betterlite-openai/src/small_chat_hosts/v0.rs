@@ -8,6 +8,7 @@ pub struct V0ChatConfig;
 
 impl V0ChatConfig {
     #[must_use]
+    // ast-grep-ignore: no-one-line-functions - the config API fixes this name and the list is the whole body
     pub fn supported_params(_model: &str) -> Vec<&'static str> {
         SUPPORTED_PARAMS.to_vec()
     }

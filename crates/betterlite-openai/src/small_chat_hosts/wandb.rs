@@ -19,14 +19,14 @@ impl WandbConfig {
     where
         Lookup: ReasoningLookup,
     {
-        let mut params = super::parent_supported_params(model, catalog);
-        if super::supports_reasoning(lookup, model) {
+        let mut params = super::openai_parent().supported_params(model, catalog);
+        if lookup.supports_reasoning(model).unwrap_or(false) {
             params.push(REASONING_EFFORT);
         }
         params
     }
 
-    // the parent mapping is not called, and the walk keeps the input order
+    // the parent mapping is not called, max_completion_tokens becomes max_tokens, and the walk keeps the input order
     pub fn map_openai_params<Lookup>(
         lookup: &Lookup,
         model: &str,
@@ -36,7 +36,11 @@ impl WandbConfig {
     ) where
         Lookup: ReasoningLookup,
     {
-        let supported = Self::supported_params(lookup, model, catalog);
-        super::map_with_completion_tokens(non_default_params, optional_params, &supported);
+        super::map_supported(
+            non_default_params,
+            optional_params,
+            &Self::supported_params(lookup, model, catalog),
+            super::CompletionTokenRename::Rename,
+        );
     }
 }
