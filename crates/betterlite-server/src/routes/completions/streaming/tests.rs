@@ -2,9 +2,12 @@
 
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::time::{Duration, Instant};
 
-use axum::body::to_bytes;
+use axum::body::{Body, to_bytes};
+use axum::http::{Request, StatusCode};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::{LiteLlmParams, ModelDeployment, ModelInfo};
 use betterlite_core::message_utilities::response_streams::StreamError;
@@ -15,20 +18,25 @@ use betterlite_openai::chat::ChatRequest;
 use betterlite_openai::chat::deployment::{ChatDeployment, OpenAiDefaults};
 use betterlite_openai::chat::execution::ChatExecutor;
 use betterlite_openai::text_completion_stream::{DONE_FRAME, without_nulls};
+use betterlite_provider::operation::OperationResult;
 use futures_util::{StreamExt as _, stream};
 use http::HeaderMap;
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use rstest::rstest;
 use secrecy::SecretString;
+use serde::Deserialize;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot;
 use tokio::task::JoinSet;
 use tokio::time::timeout;
+use tokio_util::task::TaskTracker;
+use tower::ServiceExt as _;
 
 use super::{StreamUsage, provider_stream, render};
 use crate::routes::completions::bridge::chat_stream_answer;
+use crate::server::application;
 use crate::server::chat_setup::chat_executor;
 
 fn deployment() -> ChatDeployment {
@@ -286,9 +294,8 @@ async fn chat_events(listener: TcpListener) {
         .expect("response");
 }
 
-// the chat provider's events reach the text route as the chunks the client reads, restamped with the caller's model
-#[tokio::test]
-async fn chat_stream_answer_decodes_the_chat_events() {
+// the chat executor, its one deployment and the chat stream request these tests send
+async fn chat_stream_setup() -> (ChatExecutor, ChatDeployment, ChatRequest, JoinSet<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let address = listener.local_addr().expect("address");
     let executor = chat_setup(address);
@@ -299,7 +306,14 @@ async fn chat_stream_answer_decodes_the_chat_events() {
         br#"{"model":"chat-model","messages":[{"role":"user","content":"hi"}],"stream":true}"#,
     )
     .expect("chat request");
-    let upstream = provider_stream(
+    (executor, deployment, parsed, tasks)
+}
+
+// the chat provider's events reach the text route as the chunks the client reads, restamped with the caller's model
+#[tokio::test]
+async fn chat_stream_answer_decodes_the_chat_events() {
+    let (executor, deployment, parsed, mut tasks) = chat_stream_setup().await;
+    let (result, headers) = provider_stream(
         &executor,
         &deployment,
         &parsed,
@@ -308,7 +322,16 @@ async fn chat_stream_answer_decodes_the_chat_events() {
     )
     .await
     .expect("provider stream");
-    let answer = chat_stream_answer(upstream, Some("client"), false, Duration::ZERO);
+    assert_eq!(
+        headers
+            .get("content-type")
+            .and_then(|value| value.to_str().ok()),
+        Some("text/event-stream")
+    );
+    let OperationResult::Stream(stream) = result else {
+        panic!("the provider answers a stream");
+    };
+    let answer = chat_stream_answer(*stream, Some("client"), false, Duration::ZERO);
     let items = timeout(Duration::from_secs(5), answer.body.collect::<Vec<_>>())
         .await
         .expect("the stream ends within five seconds");
@@ -365,6 +388,241 @@ fn include_usage(body: &Json) -> Option<bool> {
         return None;
     };
     Some(*chosen)
+}
+
+// LiteLLM's _OUTPUT_TOKEN_LIMIT_ERROR_MARKER inside the provider's own sentence
+const LIMIT_ERROR: &str = r#"{"error":{"message":"You could not finish the message because max_tokens or model output limit was reached. Please try again with higher max_tokens.","type":"invalid_request_error","param":"max_tokens","code":"invalid_request_error"}}"#;
+
+// one booted application whose chat deployment points at a loopback provider answering the given reply
+async fn application_answer(body: &str, reply: &str) -> (StatusCode, HeaderMap, Vec<u8>, Vec<u8>) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let environment = BTreeMap::new();
+    let source = format!(
+        "model_list:\n  - {{model_name: chat-model, litellm_params: {{model: openai/gpt-4o, api_base: 'http://{address}/v1', api_key: k}}}}\n"
+    );
+    let config = ConfigLoader {
+        lookup: environment.clone(),
+    }
+    .load(&source)
+    .expect("config");
+    let executor =
+        chat_executor(&config, &environment, StdRng::seed_from_u64(3)).expect("executor");
+    let application = application(
+        &config,
+        executor,
+        Arc::new(AtomicBool::new(false)),
+        &TaskTracker::new(),
+    )
+    .expect("application");
+    let request = Request::post("/v1/completions")
+        .header("content-type", "application/json")
+        .body(Body::from(body.to_owned()))
+        .expect("request");
+    let (answered, sent) = tokio::join!(application.oneshot(request), answering(listener, reply));
+    let response = answered.expect("response");
+    let status = response.status();
+    let headers = response.headers().clone();
+    let bytes = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body")
+        .to_vec();
+    (status, headers, bytes, sent)
+}
+
+// the provider's one answer, written as sent, and the body it was sent
+async fn answering(listener: TcpListener, reply: &str) -> Vec<u8> {
+    let (mut socket, _) = listener.accept().await.expect("accepted");
+    let sent = read_request(&mut socket).await;
+    socket.write_all(reply.as_bytes()).await.expect("response");
+    sent
+}
+
+// the HTTP reply a fake provider writes for the one request it reads
+fn provider_reply(status: &str, content_type: &str, body: &str) -> String {
+    format!(
+        "HTTP/1.1 {status}\r\ncontent-type: {content_type}\r\nx-request-id: upstream-answer\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+        body.len()
+    )
+}
+
+// the output-limit 400 LiteLLM repairs, and the body the route was asked with
+async fn output_limit_answer(body: &str) -> (StatusCode, HeaderMap, Vec<u8>, Vec<u8>) {
+    let reply = provider_reply("400 Bad Request", "application/json", LIMIT_ERROR);
+    application_answer(body, &reply).await
+}
+
+// the route's frames for one chat-deployment stream, with the body the provider was sent
+async fn streamed_answer(body: &str, events: &str) -> (StatusCode, HeaderMap, Vec<u8>, Vec<u8>) {
+    let reply = provider_reply("200 OK", "text/event-stream", events);
+    application_answer(body, &reply).await
+}
+
+#[derive(Deserialize)]
+struct RecoveredText {
+    object: String,
+    model: String,
+    choices: Vec<RecoveredChoice>,
+    usage: RecoveredUsage,
+}
+
+#[derive(Deserialize)]
+struct RecoveredChoice {
+    text: Option<String>,
+    finish_reason: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct RecoveredUsage {
+    prompt_tokens: u64,
+    #[serde(rename = "completion_tokens")]
+    completion: u64,
+    #[serde(rename = "total_tokens")]
+    total: u64,
+}
+
+#[derive(Deserialize)]
+struct UsageFrame {
+    usage: Option<RecoveredUsage>,
+}
+
+// the route's frames, each still carrying its data: prefix
+fn frames(text: &str) -> Vec<&str> {
+    text.split("\n\n")
+        .filter(|frame| !frame.is_empty())
+        .collect()
+}
+
+// convert_chat_to_text_completion's body as the route writes it: every field, both null details, no system_fingerprint
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RecoveredCompletion {
+    id: String,
+    object: String,
+    created: i64,
+    model: String,
+    choices: Vec<RecoveredLimitChoice>,
+    usage: RecoveredLimitUsage,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RecoveredLimitChoice {
+    text: String,
+    index: i64,
+    logprobs: Json,
+    finish_reason: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RecoveredLimitUsage {
+    prompt_tokens: u64,
+    completion_tokens: u64,
+    total_tokens: u64,
+    completion_tokens_details: Json,
+    prompt_tokens_details: Json,
+}
+
+// a chat deployment on the completions route answers LiteLLM's length-truncated text completion, not a 500
+#[tokio::test]
+async fn a_chat_deployment_recovers_the_output_limit_on_the_completions_route() {
+    let (status, headers, body, sent) =
+        output_limit_answer(r#"{"model":"chat-model","prompt":"hello world"}"#).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        headers
+            .get("llm_provider-x-request-id")
+            .and_then(|value| value.to_str().ok()),
+        Some("upstream-answer")
+    );
+    let reply: RecoveredCompletion = serde_json::from_slice(&body).expect("reply");
+    assert!(reply.id.starts_with("chatcmpl-"), "{}", reply.id);
+    assert_eq!(reply.object, "text_completion");
+    assert!(reply.created > 0, "{}", reply.created);
+    assert_eq!(reply.model, "chat-model");
+    assert_eq!(reply.choices.len(), 1);
+    assert_eq!(reply.choices[0].text, "");
+    assert_eq!(reply.choices[0].index, 0);
+    assert_eq!(reply.choices[0].logprobs, Json::Null);
+    assert_eq!(reply.choices[0].finish_reason, "length");
+    assert!(
+        reply.usage.prompt_tokens > 0,
+        "{}",
+        reply.usage.prompt_tokens
+    );
+    assert_eq!(reply.usage.completion_tokens, 0);
+    assert_eq!(reply.usage.total_tokens, reply.usage.prompt_tokens);
+    assert_eq!(reply.usage.completion_tokens_details, Json::Null);
+    assert_eq!(reply.usage.prompt_tokens_details, Json::Null);
+    let sent_text = String::from_utf8(sent).expect("sent body");
+    assert!(sent_text.contains("\"messages\""), "{sent_text}");
+}
+
+// the streamed answer is the two recovered chat frames read as the route's text_completion chunks
+#[tokio::test]
+async fn a_chat_deployment_recovers_the_output_limit_on_the_completions_stream() {
+    let (status, _headers, body, sent) =
+        output_limit_answer(r#"{"model":"chat-model","prompt":"hello world","stream":true}"#).await;
+    assert_eq!(status, StatusCode::OK);
+    let text = String::from_utf8(body).expect("utf8");
+    let answer = frames(&text);
+    assert_eq!(answer.len(), 3, "{text}");
+    let first: RecoveredText =
+        serde_json::from_str(answer[0].strip_prefix("data: ").expect("data prefix"))
+            .expect("frame");
+    assert_eq!(first.object, "text_completion");
+    assert_eq!(first.model, "chat-model");
+    assert_eq!(first.choices.len(), 1);
+    assert_eq!(first.choices[0].text.as_deref(), Some(""));
+    assert_eq!(first.choices[0].finish_reason, None);
+    assert_eq!(first.usage.prompt_tokens, 0);
+    assert_eq!(first.usage.completion, 0);
+    assert_eq!(first.usage.total, 0);
+    let second: RecoveredText =
+        serde_json::from_str(answer[1].strip_prefix("data: ").expect("data prefix"))
+            .expect("frame");
+    assert_eq!(second.choices[0].text, None);
+    assert_eq!(second.choices[0].finish_reason.as_deref(), Some("length"));
+    assert_eq!(second.usage.total, 0);
+    assert_eq!(answer[2], "data: [DONE]");
+    let sent_text = String::from_utf8(sent).expect("sent body");
+    assert!(sent_text.contains("\"stream\":true"), "{sent_text}");
+    assert!(sent_text.contains("\"messages\""), "{sent_text}");
+}
+
+// the provider's usage chunk reaches the client only when the caller asked for usage
+#[tokio::test]
+async fn a_bridged_chat_stream_keeps_the_usage_frame_only_when_asked() {
+    let events = concat!(
+        "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1700000000,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\" hello\"},\"finish_reason\":\"stop\"}]}\n\n",
+        "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1700000000,\"model\":\"gpt-4o\",\"choices\":[],\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":2,\"total_tokens\":5}}\n\n",
+        "data: [DONE]\n\n"
+    );
+    let (status, _headers, body, sent) = streamed_answer(
+        r#"{"model":"chat-model","prompt":"hi","stream":true}"#,
+        events,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let unasked = String::from_utf8(body).expect("utf8");
+    assert_eq!(frames(&unasked).len(), 2, "{unasked}");
+    let sent_text = String::from_utf8(sent).expect("sent body");
+    assert!(sent_text.contains("\"stream\":true"), "{sent_text}");
+    let (asked_status, _asked_headers, asked_body, _sent) = streamed_answer(
+        r#"{"model":"chat-model","prompt":"hi","stream":true,"stream_options":{"include_usage":true}}"#,
+        events,
+    )
+    .await;
+    assert_eq!(asked_status, StatusCode::OK);
+    let asked = String::from_utf8(asked_body).expect("utf8");
+    let kept = frames(&asked);
+    assert_eq!(kept.len(), 3, "{asked}");
+    let usage: UsageFrame =
+        serde_json::from_str(kept[1].strip_prefix("data: ").expect("data prefix"))
+            .expect("usage frame");
+    assert_eq!(usage.usage.map(|counts| counts.prompt_tokens), Some(3));
+    assert_eq!(kept[2], "data: [DONE]");
 }
 
 // atext_completion sends the caller's own stream options only; the chat route's injected usage option is not its own

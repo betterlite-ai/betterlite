@@ -1,0 +1,18 @@
+kind: helper
+name: prometheus-latency-guardrail-overhead-single-record
+call:
+  b3878:
+    function: overhead
+    overhead_calls:
+      - {guardrail_information: null}
+      - {guardrail_information: {guardrail_mode: pre_call, duration: 1.5}}
+      - {guardrail_information: {guardrail_mode: pre_call}}
+      - {guardrail_information: []}
+      - guardrail_information:
+          - {guardrail_mode: pre_call, duration: 0.5}
+          - {guardrail_mode: during_call, duration: 10}
+          - {guardrail_mode: [post_call], duration: 0.25}
+          - {guardrail_mode: post_call}
+      - {guardrail_information: {guardrail_mode: post_call, duration: 0}}
+env: {}
+compare: {ignore: []}

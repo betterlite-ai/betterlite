@@ -1,0 +1,80 @@
+kind: probe
+name: tier-params-over-caller
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_placement:
+        return_raw_model_name: false
+        max_tokens_from_tier_model: true
+        tiers:
+          SIMPLE: {model_name: fast, litellm_params: {temperature: 1, max_tokens: 128}}
+          MEDIUM: {model_name: mid, litellm_params: {reasoning_effort: high, temperature: 1}}
+          COMPLEX: {model_name: big, litellm_params: {max_completion_tokens: 64}}
+        default_model: null
+        deployment_pin: false
+        deployments:
+          - {group: fast, model: openai/gpt-4o-mini, custom_llm_provider: null, max_output_tokens: 900, allowed_openai_params: []}
+          - {group: mid, model: openai/gpt-4o-mini, custom_llm_provider: null, max_output_tokens: 384, allowed_openai_params: []}
+          - {group: big, model: openai/gpt-4o, custom_llm_provider: null, max_output_tokens: 256, allowed_openai_params: []}
+        supported_params:
+          gpt-4o-mini: [temperature, reasoning_effort, max_tokens, max_completion_tokens]
+          gpt-4o: [temperature, reasoning_effort, max_tokens, max_completion_tokens]
+        steps:
+          - tier: SIMPLE
+            allowed_models: null
+            responses_call: false
+            request_kwargs:
+              temperature: 9
+              max_tokens: 999
+              max_completion_tokens: 500
+              metadata: {session_id: s1, trace: keep}
+              thinking: {type: enabled}
+              output_config: {effort: low, format: json}
+              reasoning: {effort: low, summary: auto}
+          - tier: MEDIUM
+            allowed_models: null
+            responses_call: false
+            request_kwargs:
+              temperature: 9
+              metadata: {session_id: s1}
+              thinking: {type: enabled}
+              output_config: {effort: low, format: json}
+              reasoning: {effort: low, summary: auto}
+          - tier: COMPLEX
+            allowed_models: null
+            responses_call: false
+            request_kwargs:
+              max_tokens: 7
+              max_completion_tokens: 8
+              max_output_tokens: 9
+              metadata: {_client_output_ceiling: {max_tokens: 10, max_completion_tokens: 11}, trace: keep}
+          - tier: SIMPLE
+            allowed_models: null
+            responses_call: true
+            request_kwargs:
+              max_output_tokens: 50
+              max_tokens: 51
+              metadata: {trace: keep}
+          - tier: MEDIUM
+            allowed_models: null
+            responses_call: false
+            request_kwargs:
+              temperature: 2
+              max_tokens: 5
+              metadata: {_client_output_ceiling: {max_tokens: 42}, trace: keep}
+          - tier: MEDIUM
+            allowed_models: null
+            responses_call: false
+            request_kwargs:
+              max_tokens: 5
+              metadata: {_client_output_ceiling: stale}
+          - tier: MEDIUM
+            allowed_models: null
+            responses_call: false
+            request_kwargs:
+              max_tokens: 5
+              metadata: {trace: keep}
+              litellm_metadata: {_client_output_ceiling: {max_tokens: 33}}
+compare:
+  ignore: []
