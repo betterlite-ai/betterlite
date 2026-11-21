@@ -39,6 +39,24 @@ pub struct PassthroughClient<'code> {
     pub token_endpoint_auth_method: Option<MCPTokenEndpointAuthMethod>,
 }
 
+impl PassthroughAuthorizationCode {
+    fn from_client(
+        upstream_code: &str,
+        client: &PassthroughClient<'_>,
+        mcp_server_id: &str,
+    ) -> Self {
+        Self {
+            client_id: client.client_id.to_owned(),
+            client_secret: client
+                .client_secret
+                .map(|secret| StoredSecret(SecretString::from(secret.to_owned()))),
+            mcp_server_id: mcp_server_id.to_owned(),
+            token_endpoint_auth_method: client.token_endpoint_auth_method,
+            upstream_code: upstream_code.to_owned(),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Error)]
 pub enum RedeemError {
     #[error("Authorization code was issued for a different MCP server")]
@@ -135,16 +153,11 @@ pub fn seal_passthrough_code(
     mcp_server_id: &str,
     cipher: &dyn SealCipher,
 ) -> String {
-    let sealed = PassthroughAuthorizationCode {
-        client_id: client.client_id.to_owned(),
-        client_secret: client
-            .client_secret
-            .map(|secret| StoredSecret(SecretString::from(secret.to_owned()))),
-        mcp_server_id: mcp_server_id.to_owned(),
-        token_endpoint_auth_method: client.token_endpoint_auth_method,
-        upstream_code: upstream_code.to_owned(),
-    };
-    seal_payload(PASSTHROUGH_CODE_PREFIX, &sealed, cipher)
+    seal_payload(
+        PASSTHROUGH_CODE_PREFIX,
+        &PassthroughAuthorizationCode::from_client(upstream_code, client, mcp_server_id),
+        cipher,
+    )
 }
 
 #[must_use]
