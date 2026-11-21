@@ -11,10 +11,12 @@ pub struct ContextProviderResolver<'resolution> {
 }
 
 impl ProviderResolver for ContextProviderResolver<'_> {
+    type Error = ResolutionError;
+
     fn resolve_provider(
         &self,
         request: &ProviderRequest<'_>,
-    ) -> Result<ProviderAnswer, ProviderFailure> {
+    ) -> Result<ProviderAnswer, ProviderFailure<ResolutionError>> {
         let lookup = ResolutionRequest {
             model: request.model,
             custom_llm_provider: request.custom_llm_provider,
@@ -29,7 +31,7 @@ impl ProviderResolver for ContextProviderResolver<'_> {
             Err(ResolutionError::MissingProvider { model }) => {
                 Err(ProviderFailure::BadRequest(model))
             }
-            Err(error) => Err(ProviderFailure::Other(error.to_string())),
+            Err(source) => Err(ProviderFailure::Other(source)),
         }
     }
 }

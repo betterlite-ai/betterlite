@@ -30,9 +30,9 @@ pub struct ProviderAnswer {
 
 // A provider lookup failure, split the way _set_model_group_info treats it: BadRequest is logged, the rest escape.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ProviderFailure {
+pub enum ProviderFailure<ProviderError> {
     BadRequest(String),
-    Other(String),
+    Other(ProviderError),
 }
 
 pub struct ProviderRequest<'model> {
@@ -41,10 +41,12 @@ pub struct ProviderRequest<'model> {
 }
 
 pub trait ProviderResolver {
+    type Error: Error + Send + 'static;
+
     fn resolve_provider(
         &self,
         request: &ProviderRequest<'_>,
-    ) -> Result<ProviderAnswer, ProviderFailure>;
+    ) -> Result<ProviderAnswer, ProviderFailure<Self::Error>>;
 }
 
 // The collaborators one aggregation reads. The catalog stays out: its rows are read before the future is built.

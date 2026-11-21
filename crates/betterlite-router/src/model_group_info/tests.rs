@@ -92,17 +92,23 @@ impl DeploymentInfo for FakeInfo {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("the test asked for a provider error")]
+struct ProviderUnavailable;
+
 #[derive(Default)]
 struct FakeProvider {
     answers: BTreeMap<String, (String, String)>,
-    failure: Option<ProviderFailure>,
+    failure: Option<ProviderFailure<ProviderUnavailable>>,
 }
 
 impl ProviderResolver for FakeProvider {
+    type Error = ProviderUnavailable;
+
     fn resolve_provider(
         &self,
         request: &ProviderRequest<'_>,
-    ) -> Result<ProviderAnswer, ProviderFailure> {
+    ) -> Result<ProviderAnswer, ProviderFailure<ProviderUnavailable>> {
         if let Some(failure) = &self.failure {
             return Err(failure.clone());
         }
@@ -172,7 +178,10 @@ impl Scenario {
         }
     }
 
-    fn group(&self, model_group: &str) -> Result<Option<ModelGroupInfo>, GroupInfoError> {
+    fn group(
+        &self,
+        model_group: &str,
+    ) -> Result<Option<ModelGroupInfo>, GroupInfoError<ProviderUnavailable>> {
         let lookup = CatalogLookup {
             catalog: &self.world.catalog,
             model_group_alias: &self.world.aliases,
@@ -742,10 +751,10 @@ fn provider_error_logged() {
 #[test]
 fn provider_other_error() {
     let mut scenario = Scenario::new(&[ALPHA]);
-    scenario.providers.failure = Some(ProviderFailure::Other("b846 other".to_owned()));
+    scenario.providers.failure = Some(ProviderFailure::Other(ProviderUnavailable));
     let outcome = scenario.group("g");
     assert!(
-        matches!(outcome, Err(GroupInfoError::Provider { message }) if message == "b846 other")
+        matches!(outcome, Err(GroupInfoError::Provider { source }) if source == ProviderUnavailable)
     );
 }
 
@@ -819,7 +828,12 @@ fn hidden_alias_none() {
     );
     assert_eq!(scenario.group("hidden").expect("info"), None);
 
-    alias_item(&mut scenario, "null-model", None, Some(Json::Bool(false)));
+    alias_item(
+        &mut scenario,
+        "null-model",
+        Some(Json::Null),
+        Some(Json::Bool(false)),
+    );
     assert_eq!(scenario.group("null-model").expect("info"), None);
 }
 

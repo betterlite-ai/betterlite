@@ -63,22 +63,26 @@ pub(crate) struct CaseProvider {
 
 const KNOWN_PROVIDERS: [&str; 4] = ["openai", "anthropic", "azure", "gemini"];
 
+#[derive(Debug, thiserror::Error)]
+#[error("the case asked for a provider error")]
+pub(crate) struct ProviderUnavailable;
+
 impl ProviderResolver for CaseProvider {
+    type Error = ProviderUnavailable;
+
     fn resolve_provider(
         &self,
         request: &ProviderRequest<'_>,
-    ) -> Result<ProviderAnswer, ProviderFailure> {
+    ) -> Result<ProviderAnswer, ProviderFailure<ProviderUnavailable>> {
         match self.error {
             ProviderError::None => resolve_prefixed(request.model),
             ProviderError::BadRequest => Err(missing_provider(request.model)),
-            ProviderError::Other => Err(ProviderFailure::Other(
-                "the case asked for a provider error".to_owned(),
-            )),
+            ProviderError::Other => Err(ProviderFailure::Other(ProviderUnavailable)),
         }
     }
 }
 
-fn resolve_prefixed(model: &str) -> Result<ProviderAnswer, ProviderFailure> {
+fn resolve_prefixed(model: &str) -> Result<ProviderAnswer, ProviderFailure<ProviderUnavailable>> {
     match model.split_once('/') {
         Some((provider, name)) if KNOWN_PROVIDERS.contains(&provider) => Ok(ProviderAnswer {
             litellm_model: name.to_owned(),
@@ -88,7 +92,7 @@ fn resolve_prefixed(model: &str) -> Result<ProviderAnswer, ProviderFailure> {
     }
 }
 
-fn missing_provider(model: &str) -> ProviderFailure {
+fn missing_provider(model: &str) -> ProviderFailure<ProviderUnavailable> {
     ProviderFailure::BadRequest(format!(
         "LLM Provider NOT provided. Pass in the LLM provider you are trying to call. You passed model={model}"
     ))

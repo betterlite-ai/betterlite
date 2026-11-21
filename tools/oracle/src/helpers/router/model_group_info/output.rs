@@ -6,6 +6,7 @@ use betterlite_router::model_group_info::aggregate::get_model_group_info;
 use betterlite_router::model_group_info::sources::GroupSources;
 use betterlite_router::routing_groups::index::RoutingGroupIndex;
 use serde_json::Value;
+use tokio::runtime::Builder;
 
 use super::error::Failure;
 use super::input::Input;
@@ -38,7 +39,7 @@ pub(crate) fn answer(input: &Input) -> Result<Value, Failure> {
         fast_mode_catalog: &fast_mode,
     };
     let mut keys = ModelCostKeys::default();
-    let runtime = tokio::runtime::Builder::new_current_thread().build()?;
+    let runtime = Builder::new_current_thread().build()?;
     let group = runtime.block_on(get_model_group_info(
         &lookup,
         &sources,
@@ -46,7 +47,7 @@ pub(crate) fn answer(input: &Input) -> Result<Value, Failure> {
         &mut keys,
     ))?;
     match group {
-        Some(group) => Ok(serde_json::to_value(group.to_json())?),
+        Some(found) => Ok(serde_json::to_value(found.to_json())?),
         None => Ok(Value::Null),
     }
 }

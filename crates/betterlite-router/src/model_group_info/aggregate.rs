@@ -1,3 +1,4 @@
+use std::convert::Infallible;
 use std::future::Future;
 
 use betterlite_context::anthropic_catalog_lookup::supports_fast_mode;
@@ -13,7 +14,7 @@ use crate::deployment_identity::spec::DeploymentSpec;
 use crate::model_catalog_lookup::alias::AliasTarget;
 use crate::model_catalog_lookup::error::LookupError;
 use crate::model_catalog_lookup::lookup::CatalogLookup;
-use crate::model_group_info::error::GroupInfoError;
+use crate::model_group_info::error::{GroupInfoError, lift};
 use crate::model_group_info::group::ModelGroupInfo;
 use crate::model_group_info::row::{
     RowParams, configured_limits, fallback_metadata, first_group, merge_later,
@@ -37,13 +38,13 @@ pub fn get_model_group_info<'call, D, R, P>(
     sources: &'call GroupSources<'call, D, R, P>,
     model_group: &'call str,
     keys: &'call mut ModelCostKeys,
-) -> impl Future<Output = Result<Option<ModelGroupInfo>, GroupInfoError>> + Send + 'call
+) -> impl Future<Output = Result<Option<ModelGroupInfo>, GroupInfoError<R::Error>>> + Send + 'call
 where
     D: DeploymentInfo + Sync,
     R: ProviderResolver + Sync,
-    P: SupportedParameterSource,
+    P: SupportedParameterSource<Error = Infallible>,
 {
-    let prepared = group_rows(lookup, model_group);
+    let prepared = group_rows(lookup, model_group).map_err(lift::<R::Error>);
     async move {
         let Some(rows) = prepared? else {
             return Ok(None);
@@ -116,11 +117,11 @@ async fn set_model_group_info<D, R, P>(
     rows: &GroupRows,
     user_facing: &str,
     keys: &mut ModelCostKeys,
-) -> Result<Option<ModelGroupInfo>, GroupInfoError>
+) -> Result<Option<ModelGroupInfo>, GroupInfoError<R::Error>>
 where
     D: DeploymentInfo + Sync,
     R: ProviderResolver + Sync,
-    P: SupportedParameterSource,
+    P: SupportedParameterSource<Error = Infallible>,
 {
     let mut state = AggregateState::new(&rows.model_group, user_facing);
     for row in &rows.rows {
@@ -139,14 +140,14 @@ async fn advance<D, R, P>(
     row: &DeploymentSpec,
     state: &mut AggregateState<'_>,
     keys: &mut ModelCostKeys,
-) -> Result<(), GroupInfoError>
+) -> Result<(), GroupInfoError<R::Error>>
 where
     D: DeploymentInfo + Sync,
     R: ProviderResolver + Sync,
-    P: SupportedParameterSource,
+    P: SupportedParameterSource<Error = Infallible>,
 {
-    let params = RowParams::parse(&row.litellm_params)?;
-    let mut limits = configured_limits(row)?;
+    let params = RowParams::parse(&row.litellm_params).map_err(lift::<R::Error>)?;
+    let mut limits = configured_limits(row).map_err(lift::<R::Error>)?;
     let found = lookup_metadata(sources.deployment_info, row, &params, keys).await;
     let mapped = deployment_is_catalog_mapped(found.as_ref(), &row.model_info);
     let answer = provider_answer(sources.providers, &params)?;
@@ -154,15 +155,16 @@ where
     let metadata = if let Some(metadata) = found {
         metadata
     } else {
-        let supported = supported_params(sources.parameters, &answer)?;
-        fallback_metadata(state.model_group, &answer.provider, row, &supported)?
+        let supported = supported_params(sources.parameters, &answer);
+        fallback_metadata(state.model_group, &answer.provider, row, &supported)
+            .map_err(lift::<R::Error>)?
     };
     let mut current = match state.group.take() {
         Some(mut group) => {
-            merge_later(&mut group, &answer, &metadata, &mut limits)?;
+            merge_later(&mut group, &answer, &metadata, &mut limits).map_err(lift::<R::Error>)?;
             group
         }
-        None => first_group(state.user_facing, &answer, &metadata)?,
+        None => first_group(state.user_facing, &answer, &metadata).map_err(lift::<R::Error>)?,
     };
     current.supports_fast_mode = current.supports_fast_mode
         && supports_fast_mode(
@@ -170,13 +172,13 @@ where
             &answer.litellm_model,
             &answer.provider,
         )
-        .map_err(GroupInfoError::from)?;
+        .map_err(GroupInfoError::FastMode)?;
     state.reasoning.observe(resolve_supported_efforts(
         &metadata,
         mapped,
         sources.cost_map,
     ));
-    state.totals.add(&limits)?;
+    state.totals.add(&limits).map_err(lift::<R::Error>)?;
     state.group = Some(current);
     Ok(())
 }
@@ -202,7 +204,7 @@ where
 fn provider_answer<R>(
     providers: &R,
     params: &RowParams<'_>,
-) -> Result<ProviderAnswer, GroupInfoError>
+) -> Result<ProviderAnswer, GroupInfoError<R::Error>>
 where
     R: ProviderResolver,
 {
@@ -216,22 +218,17 @@ where
             tracing::error!("litellm.router.py::get_model_group_info() - {message}");
             Ok(ProviderAnswer::default())
         }
-        Err(ProviderFailure::Other(message)) => Err(GroupInfoError::Provider { message }),
+        Err(ProviderFailure::Other(source)) => Err(GroupInfoError::Provider { source }),
     }
 }
 
-fn supported_params<P>(
-    parameters: &P,
-    answer: &ProviderAnswer,
-) -> Result<Vec<String>, GroupInfoError>
+fn supported_params<P>(parameters: &P, answer: &ProviderAnswer) -> Vec<String>
 where
-    P: SupportedParameterSource,
+    P: SupportedParameterSource<Error = Infallible>,
 {
     let provider = Some(answer.provider.as_str());
-    parameters
+    let supported = parameters
         .supported_openai_params(&answer.litellm_model, provider)
-        .map(Option::unwrap_or_default)
-        .map_err(|error| GroupInfoError::Parameters {
-            message: error.to_string(),
-        })
+        .unwrap_or_default();
+    supported.unwrap_or_default()
 }
