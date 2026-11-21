@@ -111,7 +111,7 @@ async fn create_transform_overlay_order() {
     let outcome = logged.outcome.expect("the sync call");
 
     // the pre-hook replaced the input, and pre_call logs what it replaced it with
-    let recorded = config.pre_call_details();
+    let recorded = config.pre_call_record();
     assert_eq!(recorded.get("input"), Some(&models("\"changed\"")));
     assert_overlay_request(&wire, &dispatcher);
     assert_overlay_records(&config);
@@ -625,7 +625,7 @@ async fn signed_body(call_params: &CreateParams, dispatcher: &Dispatcher) {
     assert!(recorded.data.get("stream").is_none());
     assert_eq!(recorded.api_base, "http://mock/v1/responses");
     assert!(wire.requests()[0].body.is_empty());
-    assert_pre_call_record(&config.pre_call_details());
+    assert_pre_call_record(&config.pre_call_record());
 }
 
 // _pre_call logs the original input, api_key="", the final body, the base URL and the signed headers

@@ -320,7 +320,7 @@ impl Config {
     }
 
     // The details as pre_call recorded them, before the response transform's post_call overwrites them
-    pub(super) fn pre_call_details(&self) -> IndexMap<String, Json> {
+    pub(super) fn pre_call_record(&self) -> IndexMap<String, Json> {
         self.pre_call_details
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
