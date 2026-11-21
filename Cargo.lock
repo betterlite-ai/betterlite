@@ -1941,6 +1941,7 @@ dependencies = [
  "jiff",
  "mutants",
  "percent-encoding",
+ "regex",
  "rstest",
  "rust_decimal",
  "secrecy",
