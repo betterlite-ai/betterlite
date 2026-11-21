@@ -1,0 +1,33 @@
+kind: probe
+name: expired-and-ineligible-pin
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      deployment_affinity:
+        model: gpt-4o
+        ttl_seconds: 10
+        session: true
+        deployments:
+          - {id: dep-a, model: openai/gpt-4o}
+          - {id: dep-b, model: openai/gpt-4o}
+        steps:
+          - kind: hook
+            now_millis: 0
+            metadata: {deployment_model_name: gpt-4o, session_id: s1}
+            model_info: {id: dep-a}
+          - kind: filter
+            now_millis: 20000
+            metadata: {session_id: s1}
+          - kind: filter
+            now_millis: 20000
+            metadata: {session_id: s1}
+            pool: [dep-b]
+          - kind: hook
+            now_millis: 21000
+            metadata: {deployment_model_name: gpt-4o, session_id: s1}
+            model_info: {id: dep-b}
+          - kind: filter
+            now_millis: 21000
+            metadata: {session_id: s1}
+compare: {ignore: []}
