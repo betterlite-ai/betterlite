@@ -367,6 +367,7 @@ async fn file_search_follow_up() {
     assert_eq!(calls.len(), 2);
     assert!(calls[0].internal);
     assert_eq!(calls[0].model, MODEL);
+    assert_eq!(calls[1].model, MODEL);
     assert_eq!(
         at(&calls[0].tools.as_ref().unwrap()[0], &["name"]),
         &text("litellm_file_search")
@@ -440,6 +441,8 @@ async fn multiple_vector_stores() {
     let Json::List(items) = &calls[1].input else {
         panic!("the follow-up input is a list")
     };
+    assert_eq!(items.len(), 3);
+    assert_eq!(items[0], json(r#"{"role":"user","content":"question"}"#));
     let output = match at(&items[2], &["output"]) {
         Json::Text(output) => output,
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
