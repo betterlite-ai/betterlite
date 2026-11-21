@@ -63,7 +63,7 @@ impl KeyOperation {
 }
 
 // registers the release notification before the state check, so a release in between still wakes the waiter
-async fn wait_for_turn(operation: &KeyOperation) -> bool {
+pub(crate) async fn wait_for_turn(operation: &KeyOperation) -> bool {
     let released = operation.released.notified();
     tokio::pin!(released);
     released.as_mut().enable();

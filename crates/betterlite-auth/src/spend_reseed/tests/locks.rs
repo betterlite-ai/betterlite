@@ -4,10 +4,27 @@ use std::time::Duration;
 use rstest::rstest;
 use tokio::time::timeout;
 
-use crate::spend_reseed::locks::LockRegistry;
+use crate::spend_reseed::locks::{LockRegistry, wait_for_turn};
 
 const WAIT: Duration = Duration::from_secs(1);
 const PAUSE: Duration = Duration::from_millis(10);
+
+// drives the wait primitive itself, so a stuck claim fails at once instead of parking a hold forever
+#[tokio::test(start_paused = true)]
+async fn a_busy_operation_parks_the_next_waiter_and_an_idle_one_is_claimed_without_waiting() {
+    let registry = LockRegistry::from(10);
+    let idle = registry.operation("idle");
+    let claimed = timeout(WAIT, wait_for_turn(idle.as_ref()))
+        .await
+        .expect("an idle operation is claimed without waiting");
+    assert!(claimed);
+
+    let parked = timeout(PAUSE, wait_for_turn(idle.as_ref())).await;
+    assert!(
+        parked.is_err(),
+        "a running operation parks its next waiter until release"
+    );
+}
 
 #[test]
 fn a_hit_moves_to_the_end_and_overflow_evicts_the_oldest() {
