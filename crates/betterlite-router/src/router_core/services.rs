@@ -6,6 +6,7 @@ use crate::generalization_integration::model_generalizations::ModelGeneralizatio
 use crate::least_busy::LeastBusy;
 use crate::model_rate_limits::service::ModelRateLimits;
 use crate::prompt_affinity::service::PromptAffinity;
+use crate::request_scheduler::service::RequestScheduler;
 use crate::routing_groups::group::RoutingGroup;
 
 // The one failure a route service reports: the caller cancelled while the deployments were filtered.
@@ -71,6 +72,12 @@ pub trait RouteServices: Send + Sync {
     // Router.cache's in-flight counters, which the least-busy strategy reads and every attempt updates
     #[must_use]
     fn least_busy(&self) -> Option<Arc<LeastBusy>> {
+        None
+    }
+
+    // Router.scheduler, absent on a router that never queues a priority request
+    #[must_use]
+    fn request_scheduler(&self) -> Option<&RequestScheduler> {
         None
     }
 }

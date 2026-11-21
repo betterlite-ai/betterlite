@@ -6,14 +6,18 @@ use crate::router_core::tests::support::{
 };
 use crate::static_eligibility::request::RequestFacts;
 
-use super::apply;
+use super::{CONFIGURED, apply};
 
+// the stage is configured and hands the pool through: the scheduler holds requests, it does not drop deployments
 #[tokio::test]
-async fn router_core_boundaries() {
+async fn the_stage_hands_its_candidates_through() {
+    assert!(CONFIGURED);
     let facts = RequestFacts::default();
     let request = route_request("gpt-4o", &facts);
     let (services, limits, params) = (NoServices, NoLimits, Providers::Unknown);
     let route = route_context(&request, &services, &limits, &params);
-    let error = apply(CandidateSet::default(), &route).await.unwrap_err();
-    assert_eq!(error.unbuilt_entry(), Some("request_scheduler"));
+    let returned = apply(CandidateSet::default(), &route)
+        .await
+        .expect("the scheduler stage passes the pool through");
+    assert!(returned.deployments.is_empty());
 }

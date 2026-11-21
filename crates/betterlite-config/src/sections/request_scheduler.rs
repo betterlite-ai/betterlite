@@ -1,36 +1,29 @@
 use serde::Deserialize;
-
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::raw::RawNumber;
 use crate::resolve::{parse_float, resolve_number};
 use crate::sections::Section;
-
 mod tests;
-
 // DEFAULT_POLLING_INTERVAL: the scheduler's poll cadence when nothing sets one
 const DEFAULT_POLLING_INTERVAL: f64 = 0.03;
 // DEFAULT_IN_MEMORY_TTL: how long the in-memory queue copy lives beside a Redis cache
 const DEFAULT_IN_MEMORY_TTL: f64 = 5.0;
-
 #[derive(Debug, Default, Deserialize)]
 pub struct Raw {
     #[serde(default)]
     router_settings: RawRouter,
 }
-
 #[derive(Debug, Default, Deserialize)]
 struct RawRouter {
     polling_interval: Option<RawNumber>,
     default_priority: Option<RawNumber>,
 }
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct Settings {
     pub polling_interval: f64,
     pub default_priority: Option<u8>,
     pub local_ttl_seconds: f64,
 }
-
 impl Default for Settings {
     fn default() -> Self {
         Self {
@@ -40,10 +33,8 @@ impl Default for Settings {
         }
     }
 }
-
 impl Section for Raw {
     type Settings = Settings;
-
     fn convert<L>(self, lookup: &L) -> Result<Self::Settings, ConfigError>
     where
         L: EnvironmentLookup,
@@ -76,7 +67,6 @@ impl Section for Raw {
         })
     }
 }
-
 fn environment_number<L>(name: &str, fallback: f64, lookup: &L) -> Result<f64, ConfigError>
 where
     L: EnvironmentLookup,
@@ -86,7 +76,6 @@ where
     };
     Ok(betterlite_env::number::<f64>(name, &text)?.unwrap_or(fallback))
 }
-
 // FlowItem documents priorities between 0 and 255, and the queue stores them as a byte
 fn parse_priority(text: &str, path: &str) -> Result<u8, ConfigError> {
     text.parse::<u8>()

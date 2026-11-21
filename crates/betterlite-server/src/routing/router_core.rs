@@ -9,6 +9,7 @@ use betterlite_logging::callback_logger::event::LoggerEvent;
 use betterlite_models::decisions::Json;
 use betterlite_router::model_rate_limits::service::ModelRateLimits;
 use betterlite_router::prompt_affinity::service::{PromptAffinity, SuccessEvent};
+use betterlite_router::request_scheduler::service::RequestScheduler;
 use betterlite_router::router_core::attempt::AttemptResult;
 use betterlite_router::router_core::error::RoutingError;
 use betterlite_router::router_core::pipeline::{self, Resolved};
@@ -32,6 +33,7 @@ const CALLBACK_NAME: &str = "PromptCachingDeploymentCheck";
 pub struct RouterServices {
     prompt_affinity: Option<PromptAffinity>,
     model_rate_limits: Option<ModelRateLimits>,
+    request_scheduler: Option<Arc<RequestScheduler>>,
 }
 
 impl RouterServices {
@@ -46,6 +48,7 @@ impl RouterServices {
         Ok(Self {
             prompt_affinity: build(&config.sections.prompt_affinity, inputs)?,
             model_rate_limits: None,
+            request_scheduler: crate::routing::request_scheduler::build(config),
         })
     }
 
@@ -64,6 +67,10 @@ impl RouteServices for RouterServices {
 
     fn model_rate_limits(&self) -> Option<&ModelRateLimits> {
         self.model_rate_limits.as_ref()
+    }
+
+    fn request_scheduler(&self) -> Option<&RequestScheduler> {
+        self.request_scheduler.as_deref()
     }
 }
 
