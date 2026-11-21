@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_prompts::arguments::json::Object;
-use betterlite_provider::gateway_provider_dispatch::error::DispatchError;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Map, Value, json};
 
@@ -55,15 +54,4 @@ pub(super) fn params_view(
         }
     }
     Ok(value)
-}
-
-// the status litellm's provider exception carries for this failure
-pub(super) fn error_or_null<T>(outcome: &Result<T, DispatchError>) -> Value {
-    match outcome {
-        Ok(_) => Value::Null,
-        Err(DispatchError::Handler(handler)) => json!({"status": handler.status_code()}),
-        Err(DispatchError::ExtraBody { .. } | DispatchError::Encode { .. }) => {
-            json!({"status": null})
-        }
-    }
 }

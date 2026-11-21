@@ -100,23 +100,12 @@ pub(super) fn section_settings(case: &Case, env: &BTreeMap<String, String>) -> S
     }
 }
 
+#[derive(Default)]
 pub(super) struct Recorder {
     calls: Mutex<Vec<CompletionCall>>,
-    failure: Option<u16>,
 }
 
 impl Recorder {
-    pub(super) fn for_case(case: &Case) -> Self {
-        Self {
-            calls: Mutex::new(Vec::new()),
-            failure: case
-                .answer
-                .as_ref()
-                .map(|answer| answer.status)
-                .filter(|status| !(200..300).contains(status)),
-        }
-    }
-
     pub(super) fn first(&self) -> Result<CompletionCall, Box<HelperError>> {
         self.calls
             .lock()
@@ -135,9 +124,6 @@ impl ChatCompletionHandler for Recorder {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(call.clone());
-        self.failure.map_or_else(
-            || Ok(String::from("reply")),
-            |status_code| Err(HandlerError::Upstream { status_code }),
-        )
+        Ok(String::from("reply"))
     }
 }

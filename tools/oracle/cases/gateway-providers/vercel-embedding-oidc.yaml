@@ -8,8 +8,5 @@ call:
     input: hello
     api_base: "{{upstream}}/passed"
     env: {VERCEL_OIDC_TOKEN: "oidc-token"}
-    answer:
-      status: 200
-      body: '{"object":"list","data":[{"object":"embedding","embedding":[0.1,0.2],"index":0}],"model":"oracle","usage":{"prompt_tokens":2,"total_tokens":2}}'
 env: {}
 compare: {ignore: []}

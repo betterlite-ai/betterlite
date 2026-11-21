@@ -58,12 +58,6 @@ pub(super) struct Globals {
     pub(super) openrouter_key: Option<String>,
 }
 
-// the upstream answer: litellm's handler succeeds on a 2xx status and raises on any other
-#[derive(Deserialize)]
-pub(super) struct Answer {
-    pub(super) status: u16,
-}
-
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Case {
@@ -91,8 +85,6 @@ pub(crate) struct Case {
     pub(super) env: BTreeMap<String, String>,
     #[serde(default)]
     pub(super) globals: Globals,
-    #[serde(default)]
-    pub(super) answer: Option<Answer>,
 }
 
 pub(super) fn as_object(value: Option<&Json>) -> Result<Object, Box<HelperError>> {
@@ -104,55 +96,31 @@ pub(super) fn as_object(value: Option<&Json>) -> Result<Object, Box<HelperError>
     }
 }
 
-// what get_llm_provider settles before main.py hands the call to an arm
+// what get_llm_provider settles before main.py hands the call to an arm: Vercel also fills the base from
+// the environment and the key from VERCEL_OIDC_TOKEN, while OpenRouter reaches its arm with the caller's values
 pub(super) struct PreResolved {
     pub(super) api_base: Option<String>,
     pub(super) api_key: Option<SecretString>,
 }
 
-// Vercel goes through _get_openai_compatible_provider_info, which fills the base from the environment and
-// the key from VERCEL_OIDC_TOKEN too; OpenRouter has no such branch and reaches its arm with the caller's own values
-pub(super) fn pre_resolved(
-    provider: Provider,
-    api_base: Option<&String>,
-    api_key: Option<&String>,
-    env: &BTreeMap<String, String>,
-) -> PreResolved {
-    match provider {
-        Provider::Openrouter => PreResolved {
-            api_base: api_base.filter(|text| !text.is_empty()).cloned(),
-            api_key: api_key
-                .filter(|text| !text.is_empty())
-                .cloned()
-                .map(SecretString::from),
-        },
-        Provider::VercelAiGateway => PreResolved {
-            api_base: Some(
-                api_base
-                    .filter(|text| !text.is_empty())
-                    .map(String::as_str)
-                    .or_else(|| {
-                        env.get("VERCEL_AI_GATEWAY_API_BASE")
-                            .map(String::as_str)
-                            .filter(|text| !text.is_empty())
-                    })
-                    .unwrap_or(VERCEL_DEFAULT_API_BASE)
-                    .to_owned(),
-            ),
-            api_key: api_key
-                .filter(|text| !text.is_empty())
-                .map(|key| key.as_str())
-                .or_else(|| {
-                    env.get("VERCEL_AI_GATEWAY_API_KEY")
-                        .map(String::as_str)
-                        .filter(|text| !text.is_empty())
-                })
-                .or_else(|| {
-                    env.get("VERCEL_OIDC_TOKEN")
-                        .map(String::as_str)
-                        .filter(|text| !text.is_empty())
-                })
-                .map(SecretString::from),
-        },
-    }
+#[rustfmt::skip]
+fn nonempty(value: Option<&String>) -> Option<&str> {
+    value.filter(|text| !text.is_empty()).map(String::as_str)
+}
+
+#[rustfmt::skip]
+fn variable<'env>(env: &'env BTreeMap<String, String>, name: &str) -> Option<&'env str> {
+    env.get(name).map(String::as_str).filter(|text| !text.is_empty())
+}
+
+#[rustfmt::skip]
+pub(super) fn pre_resolved(provider: Provider, api_base: Option<&String>, api_key: Option<&String>, env: &BTreeMap<String, String>) -> PreResolved {
+    let (base, key) = match provider {
+        Provider::Openrouter => (nonempty(api_base), nonempty(api_key)),
+        Provider::VercelAiGateway => (
+            Some(nonempty(api_base).or_else(|| variable(env, "VERCEL_AI_GATEWAY_API_BASE")).unwrap_or(VERCEL_DEFAULT_API_BASE)),
+            nonempty(api_key).or_else(|| variable(env, "VERCEL_AI_GATEWAY_API_KEY")).or_else(|| variable(env, "VERCEL_OIDC_TOKEN")),
+        ),
+    };
+    PreResolved { api_base: base.map(str::to_owned), api_key: key.map(SecretString::from) }
 }

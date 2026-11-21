@@ -12,9 +12,6 @@ call:
       temperature: 1
       extra_body: {transforms: ["middle-out"], route: "fallback"}
     class_config: {temperature: 2, top_p: 1, stop: ["END"]}
-    answer:
-      status: 200
-      body: '{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"oracle","service_tier":"default","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}'
 calls:
   - b8311:
       op: chat
@@ -26,9 +23,6 @@ calls:
       optional_params:
         temperature: 1
       class_config: {temperature: 2}
-      answer:
-        status: 200
-        body: '{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"oracle","service_tier":"default","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}'
   - b8311:
       op: chat
       provider: vercel_ai_gateway
@@ -39,8 +33,5 @@ calls:
       optional_params:
         extra_body: {providerOptions: {gateway: {only: ["anthropic"]}}}
       class_config: {top_p: 1}
-      answer:
-        status: 200
-        body: '{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"oracle","service_tier":"default","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}'
 env: {}
 compare: {ignore: []}

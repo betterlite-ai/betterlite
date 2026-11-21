@@ -10,9 +10,6 @@ call:
     api_key: "sk-passed"
     globals: {api_base: "{{upstream}}/global", api_key: "sk-global", openrouter_key: "sk-litellm"}
     env: {OPENROUTER_API_BASE: "{{upstream}}/env", OPENROUTER_API_KEY: "sk-env", OR_API_KEY: "sk-or"}
-    answer:
-      status: 200
-      body: '{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"oracle","service_tier":"default","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}'
 calls:
   - b8311:
       op: chat
@@ -22,9 +19,6 @@ calls:
       api_base: "{{upstream}}/passed"
       globals: {api_key: "sk-global", openrouter_key: "sk-litellm"}
       env: {OPENROUTER_API_BASE: "{{upstream}}/env", OPENROUTER_API_KEY: "sk-env", OR_API_KEY: "sk-or"}
-      answer:
-        status: 200
-        body: '{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"oracle","service_tier":"default","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}'
   - b8311:
       op: chat
       provider: openrouter
@@ -33,27 +27,18 @@ calls:
       api_base: "{{upstream}}/passed"
       globals: {openrouter_key: "sk-litellm"}
       env: {OPENROUTER_API_BASE: "{{upstream}}/env", OPENROUTER_API_KEY: "sk-env", OR_API_KEY: "sk-or"}
-      answer:
-        status: 200
-        body: '{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"oracle","service_tier":"default","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}'
   - b8311:
       op: chat
       provider: openrouter
       model: anthropic/claude-3.5-sonnet
       messages: [{role: user, content: hi}]
       env: {OPENROUTER_API_BASE: "{{upstream}}/env", OPENROUTER_API_KEY: "sk-env", OR_API_KEY: "sk-or"}
-      answer:
-        status: 200
-        body: '{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"oracle","service_tier":"default","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}'
   - b8311:
       op: chat
       provider: openrouter
       model: anthropic/claude-3.5-sonnet
       messages: [{role: user, content: hi}]
       env: {OPENROUTER_API_BASE: "{{upstream}}/env", OR_API_KEY: "sk-or"}
-      answer:
-        status: 200
-        body: '{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"oracle","service_tier":"default","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}'
   - b8311:
       op: chat
       provider: openrouter
@@ -61,8 +46,5 @@ calls:
       messages: [{role: user, content: hi}]
       globals: {api_base: "{{upstream}}/global"}
       env: {OPENROUTER_API_BASE: "{{upstream}}/env", OR_API_KEY: "sk-or"}
-      answer:
-        status: 200
-        body: '{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"oracle","service_tier":"default","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}'
 env: {}
 compare: {ignore: []}

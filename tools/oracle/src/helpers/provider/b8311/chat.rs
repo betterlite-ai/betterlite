@@ -12,7 +12,7 @@ use serde_json::json;
 use super::fixtures::{Recorder, environment, logging, section_settings};
 use super::input::{Case, PreResolved, as_object, pre_resolved};
 use super::input_failure;
-use super::wire::{error_or_null, params_view, request_view};
+use super::wire::{params_view, request_view};
 
 const CHAT_ENDPOINT: &str = "/chat/completions";
 
@@ -45,14 +45,15 @@ pub(super) fn run(case: &Case) -> HelperResult {
         state: &mut state,
         env: &prepost,
     };
-    let handler = Recorder::for_case(case);
-    let outcome = dispatch(
+    let handler = Recorder::default();
+    dispatch(
         case.provider.chat_tag(),
         &context(case, &prepared),
         &handler,
         &mut log,
     )
-    .ok_or_else(|| input_failure(format!("{} has no chat arm", case.provider.slug())))?;
+    .ok_or_else(|| input_failure(format!("{} has no chat arm", case.provider.slug())))?
+    .map_err(|error| input_failure(format!("the chat arm failed: {error}")))?;
     let call = handler.first()?;
     let base = call
         .api_base
@@ -62,7 +63,6 @@ pub(super) fn run(case: &Case) -> HelperResult {
     Ok(json!({
         "request": request_view(&url, call.api_key.as_ref(), call.headers.as_ref()),
         "params": params_view(&call.optional_params, call.stream, case.provider)?,
-        "error": error_or_null(&outcome),
     }))
 }
 
