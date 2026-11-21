@@ -156,7 +156,7 @@ fn find_child_text(
         let event = reader
             .read_event()
             .map_err(|source| CallError::Xml { operation, source })?;
-        match event {
+        match &event {
             Event::Start(tag) => {
                 stack.push(tag.name().as_ref().to_vec());
                 if is_child_of(&stack, parent, child) {
@@ -166,26 +166,10 @@ fn find_child_text(
             Event::End(_) => {
                 stack.pop();
             }
-            Event::Text(value) => {
-                if is_child_of(&stack, parent, child) {
-                    let piece = text_value(&value, operation)?;
-                    found.get_or_insert_with(String::new).push_str(&piece);
-                }
-            }
-            Event::CData(value) => {
-                if is_child_of(&stack, parent, child) {
-                    let piece = cdata_value(&value, operation)?;
-                    found.get_or_insert_with(String::new).push_str(&piece);
-                }
-            }
-            Event::GeneralRef(reference) => {
-                if is_child_of(&stack, parent, child) {
-                    let decoded = reference
-                        .decode()
-                        .map_err(|source| CallError::Decode { operation, source })?;
-                    let raw = format!("&{decoded};");
-                    let piece =
-                        unescape(&raw).map_err(|source| CallError::Escape { operation, source })?;
+            Event::Text(_) | Event::CData(_) | Event::GeneralRef(_) => {
+                if is_child_of(&stack, parent, child)
+                    && let Some(piece) = text_piece(&event, operation)?
+                {
                     found.get_or_insert_with(String::new).push_str(&piece);
                 }
             }
@@ -198,6 +182,29 @@ fn find_child_text(
         }
     }
     Ok(found)
+}
+
+fn text_piece(event: &Event<'_>, operation: &'static str) -> Result<Option<String>, CallError> {
+    match event {
+        Event::Text(value) => Ok(Some(text_value(value, operation)?)),
+        Event::CData(value) => Ok(Some(cdata_value(value, operation)?)),
+        Event::GeneralRef(reference) => {
+            let decoded = reference
+                .decode()
+                .map_err(|source| CallError::Decode { operation, source })?;
+            let raw = format!("&{decoded};");
+            let piece = unescape(&raw).map_err(|source| CallError::Escape { operation, source })?;
+            Ok(Some(piece.into_owned()))
+        }
+        Event::Start(_)
+        | Event::End(_)
+        | Event::Empty(_)
+        | Event::Decl(_)
+        | Event::PI(_)
+        | Event::DocType(_)
+        | Event::Comment(_)
+        | Event::Eof => Ok(None),
+    }
 }
 
 fn text_value(value: &BytesText<'_>, operation: &'static str) -> Result<String, CallError> {
