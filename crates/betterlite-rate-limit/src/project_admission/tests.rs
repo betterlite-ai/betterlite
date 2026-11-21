@@ -61,7 +61,7 @@ fn stored_windows(
 }
 
 fn stored_response(fixture: &Fixture) -> Option<RateLimitResponse> {
-    let stash = fixture.slot.get().expect("the admission claimed the stash");
+    let stash = fixture.slot.get()?;
     let state = stash.state.lock().unwrap_or_else(PoisonError::into_inner);
     state.rate_limit_response.clone()
 }
@@ -230,8 +230,8 @@ async fn an_explicit_zero_output_cap_reserves_no_output_and_keeps_earlier_otpm_f
         let stash = fixture.slot.get_or_create();
         let mut state = stash.state.lock().unwrap();
         state.otpm_reserved_tokens = 9;
-        state.otpm_reserved_scopes = earlier.clone();
-    }
+        state.otpm_reserved_scopes = earlier.clone()
+    };
     let descriptors = [limit(ITPM, PROJECT, 1000), limit(OTPM, PROJECT, 400)];
     let mut body = data(r#"{"messages":[{"role":"user","content":"hello"}],"max_tokens":0}"#);
 
@@ -252,8 +252,8 @@ async fn an_otpm_only_reservation_keeps_earlier_itpm_fields() {
         let stash = fixture.slot.get_or_create();
         let mut state = stash.state.lock().unwrap();
         state.itpm_reserved_tokens = 5;
-        state.itpm_reserved_scopes = earlier.clone();
-    }
+        state.itpm_reserved_scopes = earlier.clone()
+    };
     let descriptors = [limit(OTPM, PROJECT, 400)];
     let mut body = data(CHAT);
 

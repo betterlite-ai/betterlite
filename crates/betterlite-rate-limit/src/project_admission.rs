@@ -239,6 +239,7 @@ fn record_reservation(
         state.otpm_reserved_windows = bucket_windows(windows, PROJECT_OTPM_DESCRIPTOR_KEY);
     }
     merge_statuses(&mut state, &reservation.response);
+    drop(state);
 }
 
 // the stored windowed response gains the IO statuses so the quota headers carry both limits

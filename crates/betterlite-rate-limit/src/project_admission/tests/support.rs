@@ -421,12 +421,12 @@ pub(crate) struct LogCapture {
 struct Sink(Arc<Mutex<Vec<u8>>>);
 
 impl io::Write for Sink {
-    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .extend_from_slice(bytes);
-        Ok(bytes.len())
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
