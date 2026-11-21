@@ -65,8 +65,8 @@ pub(super) fn masked_view(tool: SearchTool, from_config: bool) -> Result<ToolVie
         .and_then(serde_json::from_value::<JsonObject>)
         .map_err(ListError::Encode)?;
     let info = match &tool.search_tool_info {
-        Some(info) => Some(
-            serde_json::to_value(info)
+        Some(stored_info) => Some(
+            serde_json::to_value(stored_info)
                 .and_then(serde_json::from_value::<JsonObject>)
                 .map_err(ListError::Encode)?,
         ),

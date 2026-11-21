@@ -1,6 +1,7 @@
 use betterlite_db::mcp_stored_contracts::JsonValue;
 use betterlite_db::search_tools::convert::SearchToolRow;
 use betterlite_db::search_tools::convert::tool::SearchTool;
+use betterlite_db::search_tools::delete::DeletedSearchTool;
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
@@ -34,6 +35,15 @@ impl From<SearchToolRow> for UpdatedBody {
 
 #[derive(Serialize)]
 pub(super) struct DeletedBody {
-    pub(super) message: String,
-    pub(super) search_tool_name: String,
+    message: String,
+    search_tool_name: String,
+}
+
+impl From<DeletedSearchTool> for DeletedBody {
+    fn from(deleted: DeletedSearchTool) -> Self {
+        Self {
+            message: deleted.message,
+            search_tool_name: deleted.search_tool_name,
+        }
+    }
 }

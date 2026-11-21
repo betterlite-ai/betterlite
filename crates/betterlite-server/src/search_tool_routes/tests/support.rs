@@ -1,9 +1,11 @@
+#![cfg(test)]
+
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
 use std::io::{self, Write};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
@@ -78,17 +80,63 @@ pub(super) struct FakeTable {
 }
 
 impl FakeTable {
-    fn run<Answer, Step>(&self, call: String, step: Step) -> Result<Answer, TableError>
-    where
-        Step: FnOnce(&mut Vec<SearchToolRecord>) -> Result<Answer, TableError>,
-    {
+    fn open(&self, call: String) -> Result<MutexGuard<'_, Vec<SearchToolRecord>>, TableError> {
         self.calls.lock().unwrap().push(call);
         if self.broken.load(Ordering::SeqCst) {
             return Err(TableError::Publish {
                 message: "the table is down".to_owned(),
             });
         }
-        step(&mut self.rows.lock().unwrap())
+        Ok(self.rows.lock().unwrap())
+    }
+
+    fn insert(&self, data: &SearchToolCreate) -> Result<SearchToolRecord, TableError> {
+        let created = SearchToolRecord {
+            search_tool_id: "tool-new".to_owned(),
+            search_tool_name: data.search_tool_name.clone(),
+            litellm_params: stored(&data.litellm_params),
+            search_tool_info: Some(stored(&data.search_tool_info)),
+            created_at: data.created_at,
+            updated_at: data.updated_at,
+        };
+        self.open("create".to_owned())?.push(created.clone());
+        Ok(created)
+    }
+
+    fn lookup(&self, search_tool_id: &str) -> Result<Option<SearchToolRecord>, TableError> {
+        let rows = self.open(format!("find_unique:{search_tool_id}"))?;
+        Ok(rows
+            .iter()
+            .find(|row| row.search_tool_id == search_tool_id)
+            .cloned())
+    }
+
+    fn replace(
+        &self,
+        search_tool_id: &str,
+        data: &SearchToolUpdate,
+    ) -> Result<SearchToolRecord, TableError> {
+        let mut rows = self.open(format!("update:{search_tool_id}"))?;
+        let Some(row) = rows
+            .iter_mut()
+            .find(|row| row.search_tool_id == search_tool_id)
+        else {
+            return Err(TableError::MissingRow);
+        };
+        row.search_tool_name.clone_from(&data.search_tool_name);
+        row.litellm_params = stored(&data.litellm_params);
+        row.search_tool_info = Some(stored(&data.search_tool_info));
+        row.updated_at = data.updated_at;
+        Ok(row.clone())
+    }
+
+    fn remove(&self, search_tool_id: &str) -> Result<SearchToolRecord, TableError> {
+        let mut rows = self.open(format!("delete:{search_tool_id}"))?;
+        let index = rows
+            .iter()
+            .position(|row| row.search_tool_id == search_tool_id)
+            .ok_or(TableError::MissingRow)?;
+        Ok(rows.remove(index))
     }
 }
 
@@ -101,37 +149,24 @@ impl SearchToolTableClient for FakeTable {
         &self,
         data: SearchToolCreate,
     ) -> impl Future<Output = Result<SearchToolRecord, TableError>> + Send {
-        ready(self.run("create".to_owned(), |rows| {
-            let created = SearchToolRecord {
-                search_tool_id: "tool-new".to_owned(),
-                search_tool_name: data.search_tool_name.clone(),
-                litellm_params: stored(&data.litellm_params),
-                search_tool_info: Some(stored(&data.search_tool_info)),
-                created_at: data.created_at,
-                updated_at: data.updated_at,
-            };
-            rows.push(created.clone());
-            Ok(created)
-        }))
+        ready(self.insert(&data))
     }
 
     fn find_unique(
         &self,
         search_tool_id: &str,
     ) -> impl Future<Output = Result<Option<SearchToolRecord>, TableError>> + Send {
-        ready(self.run(format!("find_unique:{search_tool_id}"), |rows| {
-            Ok(rows
-                .iter()
-                .find(|row| row.search_tool_id == search_tool_id)
-                .cloned())
-        }))
+        ready(self.lookup(search_tool_id))
     }
 
     fn find_many(
         &self,
         order: Option<CreatedAtOrder>,
     ) -> impl Future<Output = Result<Vec<SearchToolRecord>, TableError>> + Send {
-        ready(self.run(format!("find_many:{order:?}"), |rows| Ok(rows.clone())))
+        ready(
+            self.open(format!("find_many:{order:?}"))
+                .map(|rows| rows.clone()),
+        )
     }
 
     fn update(
@@ -139,30 +174,14 @@ impl SearchToolTableClient for FakeTable {
         search_tool_id: &str,
         data: SearchToolUpdate,
     ) -> impl Future<Output = Result<SearchToolRecord, TableError>> + Send {
-        ready(self.run(format!("update:{search_tool_id}"), |rows| {
-            let row = rows
-                .iter_mut()
-                .find(|row| row.search_tool_id == search_tool_id)
-                .ok_or(TableError::MissingRow)?;
-            row.search_tool_name.clone_from(&data.search_tool_name);
-            row.litellm_params = stored(&data.litellm_params);
-            row.search_tool_info = Some(stored(&data.search_tool_info));
-            row.updated_at = data.updated_at;
-            Ok(row.clone())
-        }))
+        ready(self.replace(search_tool_id, &data))
     }
 
     fn delete(
         &self,
         search_tool_id: &str,
     ) -> impl Future<Output = Result<SearchToolRecord, TableError>> + Send {
-        ready(self.run(format!("delete:{search_tool_id}"), |rows| {
-            let index = rows
-                .iter()
-                .position(|row| row.search_tool_id == search_tool_id)
-                .ok_or(TableError::MissingRow)?;
-            Ok(rows.remove(index))
-        }))
+        ready(self.remove(search_tool_id))
     }
 }
 

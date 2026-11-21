@@ -118,7 +118,8 @@ async fn routes_invalid_body_is_422_before_the_database_gate(
     let harness = build(setup);
     let (status, text) = send(&harness, method, uri, body, Some(master())).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-    let detail = &parse(&text)["detail"][0];
+    let answer = parse(&text);
+    let detail = &answer["detail"][0];
     assert_eq!(detail["type"], issue_type);
     assert_eq!(detail["loc"], parse(loc));
 }
@@ -251,9 +252,14 @@ async fn list_unreadable_config_lists_the_database_rows() {
 #[case::platform_viewer_role(caller(r#"{"principal_type":"human","subject":"sso-viewer","auth_method":"oidc","roles":["platform_viewer"]}"#))]
 #[tokio::test]
 async fn list_admins_see_every_tool(#[case] who: AuthContext) {
-    let harness = build(listed_fixture());
+    let mut setup = listed_fixture();
+    // only an admin sees an unnamed row, so the row tells an admin from an unrestricted key
+    setup
+        .rows
+        .push(record("tool-3", "", r#"{"search_provider":"brave"}"#));
+    let harness = build(setup);
     let (_status, text) = send(&harness, "GET", "/search_tools/list", "", Some(who)).await;
-    assert_eq!(names(&text), vec!["cfg-a", "shared", "db-b"]);
+    assert_eq!(names(&text), vec!["cfg-a", "shared", "db-b", ""]);
     assert!(harness.teams.lookups.lock().unwrap().is_empty());
 }
 
@@ -603,7 +609,7 @@ async fn connection_without_results_counts_zero() {
         Some(master()),
     )
     .await;
-    assert_eq!(parse(&text)["results_count"], 0);
+    assert_eq!(parse(&text)["results_count"], 0_u64);
     let requests = harness.search.requests.lock().unwrap();
     assert!(
         requests

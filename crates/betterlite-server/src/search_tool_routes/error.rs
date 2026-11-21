@@ -24,7 +24,13 @@ pub(super) enum RouteError {
     #[error("{0}")]
     Registry(#[source] Box<SearchToolsError>),
     #[error("{0}")]
-    List(#[source] ListError),
+    List(#[from] ListError),
+}
+
+impl From<SearchToolsError> for RouteError {
+    fn from(error: SearchToolsError) -> Self {
+        Self::Registry(Box::new(error))
+    }
 }
 
 #[derive(Serialize)]
@@ -40,7 +46,11 @@ enum DetailValue {
 }
 
 // LiteLLM's verbose_proxy_logger.exception(<context>: %s, e) before the 500 that carries str(e)
-pub(super) fn logged(context: &str, error: RouteError) -> RouteError {
+pub(super) fn logged<Failure>(context: &str, failure: Failure) -> RouteError
+where
+    RouteError: From<Failure>,
+{
+    let error = RouteError::from(failure);
     tracing::error!("{context}: {error}");
     error
 }
@@ -52,14 +62,14 @@ pub(super) fn list_failure(error: ListError) -> RouteError {
     {
         return RouteError::List(error);
     }
-    logged("Error getting search tools", RouteError::List(error))
+    logged("Error getting search tools", error)
 }
 
 fn team_failure(team: &TeamLookupError) -> Response {
     let message = team.to_string();
     let (code, detail) = match team.http() {
-        Some((code, Detail::Error)) => (code, DetailValue::Error { error: message }),
-        Some((code, Detail::Text)) => (code, DetailValue::Text(message)),
+        Some((status_code, Detail::Error)) => (status_code, DetailValue::Error { error: message }),
+        Some((status_code, Detail::Text)) => (status_code, DetailValue::Text(message)),
         None => (500_u16, DetailValue::Text(message)),
     };
     let status = StatusCode::from_u16(code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
