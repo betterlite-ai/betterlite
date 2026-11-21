@@ -181,7 +181,11 @@ fn record(call: &Call<'_>, report: Json) -> LoggedCall {
     }
 }
 
-fn report(outcome: &ChatOutcome<impl StdError, impl ReasoningTokenCounter>) -> Json {
+fn report<Failure, Counter>(outcome: &ChatOutcome<Failure, Counter>) -> Json
+where
+    Failure: StdError,
+    Counter: ReasoningTokenCounter,
+{
     match outcome {
         ChatOutcome::Reply(envelope) => post_call::reply_report(
             envelope.model.as_deref(),

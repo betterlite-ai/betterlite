@@ -29,15 +29,19 @@ pub struct ImageClient {
     pub sent: std::sync::Arc<Mutex<Vec<ImageSent>>>,
 }
 
+fn record<S>(sent: &Mutex<Vec<S>>, entry: S) {
+    let mut recorded = sent.lock().unwrap_or_else(PoisonError::into_inner);
+    recorded.push(entry);
+}
+
 impl ImageTransport for ImageClient {
     fn send(
         &self,
         request: ImageRequest,
     ) -> impl Future<Output = Result<ImageReply, TransportError>> + Send {
-        self.sent
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(ImageSent {
+        record(
+            &self.sent,
+            ImageSent {
                 method: request.method.as_str().to_owned(),
                 url: request.url,
                 headers: request
@@ -51,7 +55,8 @@ impl ImageTransport for ImageClient {
                     })
                     .collect(),
                 body: String::from_utf8(request.body).unwrap_or_default(),
-            });
+            },
+        );
         ready(Ok(ImageReply {
             status: self.status,
             headers: http::HeaderMap::new(),
@@ -110,23 +115,22 @@ impl TextEmbedding for Text {
         &self,
         call: TextEmbeddingCall<'_>,
     ) -> impl Future<Output = Result<EmbeddingReply, FoundryEmbeddingError>> + Send {
-        self.sent
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(TextSent {
-                mode: call.mode,
-                model: call.model.to_owned(),
-                input: call.input.to_vec(),
-                api_base: call.api_base.map(str::to_owned),
-                api_key: call.api_key.map(|key| key.expose_secret().to_owned()),
-                options: call.options.clone(),
-            });
-        ready(Ok(EmbeddingReply {
+        let reply = EmbeddingReply {
             object: Some(String::from("list")),
             model: Some(self.model.clone()),
             data: Some(Some(self.data.clone())),
             usage: None,
             additional_headers: AdditionalHeaders::new(),
-        }))
+        };
+        let sent = TextSent {
+            mode: call.mode,
+            model: call.model.to_owned(),
+            input: call.input.to_vec(),
+            api_base: call.api_base.map(str::to_owned),
+            api_key: call.api_key.map(|key| key.expose_secret().to_owned()),
+            options: call.options.clone(),
+        };
+        record(&self.sent, sent);
+        ready(Ok(reply))
     }
 }

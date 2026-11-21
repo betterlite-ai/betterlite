@@ -70,8 +70,7 @@ impl Wire {
         self.posts.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    fn begin(&self, post: StreamPost) -> Option<PostFailure<WireFailure>> {
-        self.recorded().push(post);
+    fn failure(&self) -> Option<PostFailure<WireFailure>> {
         if (200..300).contains(&self.status) {
             return None;
         }
@@ -92,7 +91,8 @@ impl StreamTransport for Wire {
         post: StreamPost,
     ) -> impl Future<Output = Result<StreamReply<WireFailure>, PostFailure<WireFailure>>> + Send
     {
-        if let Some(failure) = self.begin(post) {
+        self.recorded().push(post);
+        if let Some(failure) = self.failure() {
             return ready(Err(failure));
         }
         let decoded: LineChunks<WireFailure> = stream::iter(
@@ -115,16 +115,13 @@ impl ChatTransport for Wire {
         &self,
         post: StreamPost,
     ) -> impl Future<Output = Result<BufferedReply, PostFailure<WireFailure>>> + Send {
-        ready(self.begin(post).map_or_else(
-            || {
-                Ok(BufferedReply {
-                    status_code: self.status,
-                    headers: self.headers.clone(),
-                    body: self.body.clone(),
-                })
-            },
-            Err,
-        ))
+        let reply = BufferedReply {
+            status_code: self.status,
+            headers: self.headers.clone(),
+            body: self.body.clone(),
+        };
+        self.recorded().push(post);
+        ready(self.failure().map_or(Ok(reply), Err))
     }
 }
 
@@ -231,11 +228,13 @@ pub struct Harness {
 
 impl Harness {
     pub fn new() -> Result<Self, HarnessError> {
+        let now = DateTime::<FixedOffset>::parse_from_rfc3339(ENV_NOW)
+            .map_err(|source| serde_json::Error::io(std::io::Error::other(source)))?;
+        let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)?;
         Ok(Self {
-            redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)?,
+            redactor,
             quiet: Quiet,
-            now: DateTime::<FixedOffset>::parse_from_rfc3339(ENV_NOW)
-                .map_err(|source| serde_json::Error::io(std::io::Error::other(source)))?,
+            now,
         })
     }
 
@@ -258,16 +257,18 @@ impl Harness {
 
     pub fn state(&self) -> Result<LoggingState, HarnessError> {
         let init: LoggingInit = serde_json::from_str(INIT)?;
-        Ok(LoggingState::new(
+        let correlation = CorrelationSetup {
+            context: &mut CorrelationContext::default(),
+            settings: CorrelationSettings::default(),
+        };
+        LoggingState::new(
             init,
-            CorrelationSetup {
-                context: &mut CorrelationContext::default(),
-                settings: CorrelationSettings::default(),
-            },
+            correlation,
             &self.redactor,
             || "run".to_owned(),
             Duration::default(),
-        )?)
+        )
+        .map_err(HarnessError::State)
     }
 
     pub fn quiet(&self) -> &Quiet {
