@@ -3,9 +3,7 @@ use betterlite_db::team_rows::team::LiteLLMTeamTable;
 use rstest::rstest;
 
 use super::support::{allocation_text, new_team, organization, rejected, team, update_team};
-use crate::team_parent_limits::allocation::{
-    check_org_team_model_specific_limits, check_org_team_rpm_tpm_limits,
-};
+use crate::team_parent_limits::allocation::{check_model_allocations, check_rate_allocations};
 use crate::team_parent_limits::error::TeamLimitError;
 use crate::team_parent_limits::request::TeamLimitRequest;
 
@@ -28,23 +26,26 @@ fn siblings() -> Vec<LiteLLMTeamTable> {
     ]
 }
 
-fn model_check(
-    teams: &[LiteLLMTeamTable],
-    organization: &OrganizationTable,
-    request: &str,
-) -> Result<(), TeamLimitError> {
-    let parsed = new_team(request);
-    check_org_team_model_specific_limits(teams, organization, &TeamLimitRequest::from(&parsed))
+#[derive(Clone, Copy)]
+enum Check {
+    Model,
+    Rate,
 }
 
-fn rate_check(
+fn check(
+    kind: Check,
     teams: &[LiteLLMTeamTable],
     organization: &OrganizationTable,
     request: &str,
 ) -> Result<(), TeamLimitError> {
     let parsed = new_team(request);
-    check_org_team_rpm_tpm_limits(teams, organization, &TeamLimitRequest::from(&parsed))
-        .map_err(TeamLimitError::from)
+    let limits = TeamLimitRequest::New(&parsed);
+    match kind {
+        Check::Model => check_model_allocations(teams, organization, &limits),
+        Check::Rate => {
+            check_rate_allocations(teams, organization, &limits).map_err(TeamLimitError::from)
+        }
+    }
 }
 
 fn outcome(result: Result<(), TeamLimitError>) -> Option<String> {
@@ -66,7 +67,7 @@ fn outcome(result: Result<(), TeamLimitError>) -> Option<String> {
 )]
 fn model_rpm_aggregate(#[case] request: &str, #[case] expected: Option<&str>) {
     let organization = org(r#"{"rpm_limit": 10}"#, "{}");
-    let result = model_check(&siblings(), &organization, request);
+    let result = check(Check::Model, &siblings(), &organization, request);
     assert_eq!(outcome(result).as_deref(), expected);
 }
 
@@ -89,7 +90,7 @@ fn model_rpm_specific(
 ) {
     let organization = org(budget, r#"{"model_rpm_limit": {"gpt": 9}}"#);
     let request = format!(r#"{{"model_rpm_limit": {{"gpt": {requested}}}}}"#);
-    let result = model_check(&siblings(), &organization, &request);
+    let result = check(Check::Model, &siblings(), &organization, &request);
     assert_eq!(outcome(result).as_deref(), expected);
 }
 
@@ -105,7 +106,7 @@ fn model_rpm_specific(
 )]
 fn model_tpm_aggregate(#[case] request: &str, #[case] expected: Option<&str>) {
     let organization = org(r#"{"rpm_limit": 10, "tpm_limit": 50}"#, "{}");
-    let result = model_check(&siblings(), &organization, request);
+    let result = check(Check::Model, &siblings(), &organization, request);
     assert_eq!(outcome(result).as_deref(), expected);
 }
 
@@ -116,12 +117,10 @@ fn model_tpm_aggregate(#[case] request: &str, #[case] expected: Option<&str>) {
     Some("Allocated TPM limit=40 + Team TPM limit=6 is greater than organization TPM limit=45")
 )]
 fn model_tpm_specific(#[case] requested: i64, #[case] expected: Option<&str>) {
-    let organization = org(
-        r#"{"tpm_limit": 1000}"#,
-        r#"{"model_tpm_limit": {"gpt": 45}}"#,
-    );
+    let metadata = r#"{"model_tpm_limit": {"gpt": 45}}"#;
+    let organization = org(r#"{"tpm_limit": 1000}"#, metadata);
     let request = format!(r#"{{"model_tpm_limit": {{"gpt": {requested}}}}}"#);
-    let result = model_check(&siblings(), &organization, &request);
+    let result = check(Check::Model, &siblings(), &organization, &request);
     assert_eq!(outcome(result).as_deref(), expected);
 }
 
@@ -132,23 +131,34 @@ fn model_tpm_specific(#[case] requested: i64, #[case] expected: Option<&str>) {
 fn zero_specific_ceiling_skipped(#[case] metadata: &str) {
     let organization = org("null", metadata);
     let request = r#"{"model_rpm_limit": {"gpt": 1000}, "model_tpm_limit": {"gpt": 1000}}"#;
-    model_check(&siblings(), &organization, request).unwrap();
+    check(Check::Model, &siblings(), &organization, request).unwrap();
 }
 
 #[test]
 fn zero_aggregate_ceiling_enforced() {
     let organization = org(r#"{"rpm_limit": 0, "tpm_limit": 0}"#, "{}");
-    let model = model_check(&[], &organization, r#"{"model_rpm_limit": {"gpt": 1}}"#);
+    let model = check(
+        Check::Model,
+        &[],
+        &organization,
+        r#"{"model_rpm_limit": {"gpt": 1}}"#,
+    );
     assert_eq!(
         outcome(model).as_deref(),
         Some("Allocated RPM limit=0 + Team RPM limit=1 is greater than organization RPM limit=0")
     );
-    let total = rate_check(&[], &organization, r#"{"tpm_limit": 1}"#);
+    let total = check(Check::Rate, &[], &organization, r#"{"tpm_limit": 1}"#);
     assert_eq!(
         outcome(total).as_deref(),
         Some("Allocated TPM limit=0 + Team TPM limit=1 is greater than organization TPM limit=0")
     );
-    rate_check(&[], &organization, r#"{"tpm_limit": 0, "rpm_limit": 0}"#).unwrap();
+    check(
+        Check::Rate,
+        &[],
+        &organization,
+        r#"{"tpm_limit": 0, "rpm_limit": 0}"#,
+    )
+    .unwrap();
 }
 
 #[rstest]
@@ -158,8 +168,8 @@ fn zero_aggregate_ceiling_enforced() {
 fn missing_org_budget(#[case] budget: &str, #[case] metadata: &str) {
     let organization = org(budget, metadata);
     let request = r#"{"tpm_limit": 1000000, "rpm_limit": 1000000, "model_rpm_limit": {"gpt": 1000000}, "model_tpm_limit": {"gpt": 1000000}}"#;
-    model_check(&siblings(), &organization, request).unwrap();
-    rate_check(&siblings(), &organization, request).unwrap();
+    check(Check::Model, &siblings(), &organization, request).unwrap();
+    check(Check::Rate, &siblings(), &organization, request).unwrap();
 }
 
 #[rstest]
@@ -175,7 +185,7 @@ fn missing_org_budget(#[case] budget: &str, #[case] metadata: &str) {
 #[case::no_request_limits("{}", None)]
 fn aggregate_tpm_before_rpm(#[case] request: &str, #[case] expected: Option<&str>) {
     let organization = org(r#"{"rpm_limit": 5, "tpm_limit": 50}"#, "{}");
-    let result = rate_check(&siblings(), &organization, request);
+    let result = check(Check::Rate, &siblings(), &organization, request);
     assert_eq!(outcome(result).as_deref(), expected);
 }
 
@@ -184,16 +194,15 @@ fn request_model_limits_precede_metadata() {
     let organization = org(r#"{"rpm_limit": 10}"#, "{}");
     let field_wins =
         r#"{"model_rpm_limit": {"gpt": 1}, "metadata": {"model_rpm_limit": {"gpt": 100}}}"#;
-    model_check(&siblings(), &organization, field_wins).unwrap();
+    check(Check::Model, &siblings(), &organization, field_wins).unwrap();
     let update = update_team(
         r#"{"team_id": "team-a", "model_rpm_limit": {"gpt": 1}, "metadata": {"model_rpm_limit": {"gpt": 100}}}"#,
     );
     let teams = siblings();
-    check_org_team_model_specific_limits(&teams, &organization, &TeamLimitRequest::from(&update))
-        .unwrap();
+    check_model_allocations(&teams, &organization, &TeamLimitRequest::Update(&update)).unwrap();
     let metadata_only = r#"{"metadata": {"model_rpm_limit": {"gpt": 100}}}"#;
     assert_eq!(
-        outcome(model_check(&teams, &organization, metadata_only)).as_deref(),
+        outcome(check(Check::Model, &teams, &organization, metadata_only)).as_deref(),
         Some(
             "Allocated RPM limit=6 + Team RPM limit=100 is greater than organization RPM limit=10"
         )
@@ -209,7 +218,7 @@ fn request_model_limits_precede_metadata() {
 #[case::null_metadata_limit(r#"{"metadata": {"model_rpm_limit": null}}"#, None)]
 fn empty_model_limits_fall_back(#[case] request: &str, #[case] expected: Option<&str>) {
     let organization = org(r#"{"rpm_limit": 10}"#, "{}");
-    let result = model_check(&siblings(), &organization, request);
+    let result = check(Check::Model, &siblings(), &organization, request);
     assert_eq!(outcome(result).as_deref(), expected);
 }
 
@@ -221,7 +230,8 @@ fn empty_model_limits_fall_back(#[case] request: &str, #[case] expected: Option<
 #[case::organization_metadata(r#"{"team_id": "fine"}"#, r#"{"model_rpm_limit": "gpt"}"#)]
 fn malformed_model_limits_named(#[case] sibling: &str, #[case] metadata: &str) {
     let organization = org("null", metadata);
-    let result = model_check(
+    let result = check(
+        Check::Model,
         &[team(sibling)],
         &organization,
         r#"{"model_rpm_limit": {"gpt": 1}}"#,
@@ -233,6 +243,6 @@ fn malformed_model_limits_named(#[case] sibling: &str, #[case] metadata: &str) {
             ..
         })
     ));
-    let skipped = model_check(&[team(sibling)], &organization, "{}");
+    let skipped = check(Check::Model, &[team(sibling)], &organization, "{}");
     skipped.unwrap();
 }

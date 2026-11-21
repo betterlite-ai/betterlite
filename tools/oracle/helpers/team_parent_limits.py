@@ -1,17 +1,21 @@
-from typing import Literal, NotRequired, TypedDict
+from typing import Final, Literal, NotRequired, TypedDict
 
-from fastapi import HTTPException
-from litellm.proxy._types import (
-    LiteLLM_OrganizationTable,
-    LiteLLM_TeamTable,
-    NewTeamRequest,
-    UpdateTeamRequest,
-)
+from litellm.models.organization import LiteLLM_OrganizationTable
+from litellm.models.team import LiteLLM_TeamTable
+from litellm.proxy._types import NewTeamRequest, UpdateTeamRequest
 from litellm.proxy.management_endpoints.team_endpoints import (
     check_org_team_model_specific_limits,
     check_org_team_rpm_tpm_limits,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, TypeAdapter
+from starlette.exceptions import HTTPException
+
+TEAMS: Final[TypeAdapter[LiteLLM_TeamTable]] = TypeAdapter(LiteLLM_TeamTable)
+ORGANIZATIONS: Final[TypeAdapter[LiteLLM_OrganizationTable]] = TypeAdapter(
+    LiteLLM_OrganizationTable
+)
+NEW_TEAMS: Final[TypeAdapter[NewTeamRequest]] = TypeAdapter(NewTeamRequest)
+UPDATED_TEAMS: Final[TypeAdapter[UpdateTeamRequest]] = TypeAdapter(UpdateTeamRequest)
 
 
 class Metadata(TypedDict, total=False):
@@ -84,13 +88,13 @@ class Rejected(BaseModel):
 def run(input_value: Input) -> list[Outcome]:
     outcomes: list[Outcome] = []
     for call in input_value["calls"]:
-        teams = [LiteLLM_TeamTable.model_validate(team) for team in call["teams"]]
-        organization = LiteLLM_OrganizationTable.model_validate(call["organization"])
+        teams = [TEAMS.validate_python(team) for team in call["teams"]]
+        organization = ORGANIZATIONS.validate_python(call["organization"])
         body = call["request"]["body"]
         data = (
-            NewTeamRequest.model_validate(body)
+            NEW_TEAMS.validate_python(body)
             if call["request"]["kind"] == "new"
-            else UpdateTeamRequest.model_validate(body)
+            else UPDATED_TEAMS.validate_python(body)
         )
         try:
             if call["check"] == "model_specific":

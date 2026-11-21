@@ -22,7 +22,7 @@ fn org(models: &str, budget: &str) -> OrganizationTable {
 
 async fn check_new(organization: &OrganizationTable, request: &str) -> Result<(), TeamLimitError> {
     let parsed = new_team(request);
-    check_org_team_limits(organization, &TeamLimitRequest::from(&parsed), None).await
+    check_org_team_limits(organization, &TeamLimitRequest::New(&parsed), None).await
 }
 
 async fn check_update(
@@ -30,7 +30,7 @@ async fn check_update(
     request: &str,
 ) -> Result<(), TeamLimitError> {
     let parsed = update_team(request);
-    check_org_team_limits(organization, &TeamLimitRequest::from(&parsed), None).await
+    check_org_team_limits(organization, &TeamLimitRequest::Update(&parsed), None).await
 }
 
 fn name(model: &str) -> JsonData {
@@ -291,7 +291,12 @@ async fn siblings_include_updated_team() {
         r#"{{"team_id": "team-a", "tpm_limit": 21, {guaranteed}}}"#
     ));
     let rejection = rejected(
-        check_org_team_limits(&organization, &TeamLimitRequest::from(&over), Some(client)).await,
+        check_org_team_limits(
+            &organization,
+            &TeamLimitRequest::Update(&over),
+            Some(client),
+        )
+        .await,
     );
     assert_eq!(
         allocation_text(&rejection),
@@ -300,14 +305,23 @@ async fn siblings_include_updated_team() {
     let fits = update_team(&format!(
         r#"{{"team_id": "team-a", "tpm_limit": 20, {guaranteed}}}"#
     ));
-    check_org_team_limits(&organization, &TeamLimitRequest::from(&fits), Some(client))
-        .await
-        .unwrap();
+    check_org_team_limits(
+        &organization,
+        &TeamLimitRequest::Update(&fits),
+        Some(client),
+    )
+    .await
+    .unwrap();
     let model = update_team(&format!(
         r#"{{"team_id": "team-a", "model_rpm_limit": {{"gpt": 3}}, {guaranteed}}}"#
     ));
     let per_model = rejected(
-        check_org_team_limits(&organization, &TeamLimitRequest::from(&model), Some(client)).await,
+        check_org_team_limits(
+            &organization,
+            &TeamLimitRequest::Update(&model),
+            Some(client),
+        )
+        .await,
     );
     assert_eq!(
         allocation_text(&per_model),

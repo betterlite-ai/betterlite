@@ -6,7 +6,7 @@ use betterlite_db::team_rows::team::LiteLLMTeamTable;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::team_parent_limits::allocation::{
-    check_org_team_model_specific_limits, check_org_team_rpm_tpm_limits,
+    check_model_allocations, check_rate_allocations,
 };
 use betterlite_server::team_parent_limits::error::{
     REJECTION_STATUS, RejectionDetail, TeamLimitError,
@@ -60,11 +60,11 @@ impl Helper for Op {
             let outcome = match &call.request {
                 TeamRequest::New(body) => {
                     let parsed = NewTeamRequest::from_value(body).map_err(failure)?;
-                    judge(call, &TeamLimitRequest::from(&parsed))?
+                    judge(call, &TeamLimitRequest::New(&parsed))?
                 }
                 TeamRequest::Update(body) => {
                     let parsed = UpdateTeamRequest::from_value(body).map_err(failure)?;
-                    judge(call, &TeamLimitRequest::from(&parsed))?
+                    judge(call, &TeamLimitRequest::Update(&parsed))?
                 }
             };
             outcomes.push(outcome);
@@ -76,9 +76,10 @@ impl Helper for Op {
 fn judge(call: &Call, request: &TeamLimitRequest<'_>) -> Result<Outcome, Box<HelperError>> {
     let (teams, organization) = (&call.teams, &call.organization);
     let result = match call.check {
-        Check::ModelSpecific => check_org_team_model_specific_limits(teams, organization, request),
-        Check::RpmTpm => check_org_team_rpm_tpm_limits(teams, organization, request)
-            .map_err(TeamLimitError::from),
+        Check::ModelSpecific => check_model_allocations(teams, organization, request),
+        Check::RpmTpm => {
+            check_rate_allocations(teams, organization, request).map_err(TeamLimitError::from)
+        }
     };
     match result {
         Ok(()) => Ok(Outcome {

@@ -1,5 +1,3 @@
-use std::fmt;
-
 use axum::http::StatusCode;
 use betterlite_auth::auth_user_lookup::error::UserLookupError;
 use betterlite_db::budget_permission_rows::JsonData;
@@ -11,19 +9,12 @@ use serde::Serialize;
 // LiteLLM raises every ceiling rejection as HTTPException(status_code=400)
 pub const REJECTION_STATUS: StatusCode = StatusCode::BAD_REQUEST;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::Display)]
 pub enum RateLimit {
+    #[strum(to_string = "RPM")]
     Rpm,
+    #[strum(to_string = "TPM")]
     Tpm,
-}
-
-impl fmt::Display for RateLimit {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(match self {
-            Self::Rpm => "RPM",
-            Self::Tpm => "TPM",
-        })
-    }
 }
 
 // the allocation text is LiteLLM's own f-string, since it carries only integers

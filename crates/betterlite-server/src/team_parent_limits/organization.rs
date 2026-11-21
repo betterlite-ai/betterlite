@@ -3,7 +3,7 @@ use betterlite_db::auxiliary_repository::repository::PrismaClient;
 use betterlite_db::budget_permission_rows::{JsonData, LiteLLMBudgetTable};
 use betterlite_db::resource_rows::organization::OrganizationTable;
 
-use super::allocation::{check_org_team_model_specific_limits, check_org_team_rpm_tpm_limits};
+use super::allocation::{check_model_allocations, check_rate_allocations};
 use super::error::{Rejection, TeamLimitError};
 use super::request::TeamLimitRequest;
 use crate::team_fields::tables::team_table;
@@ -18,8 +18,8 @@ pub async fn check_org_team_limits(
     client: Option<PrismaClient<'_>>,
 ) -> Result<(), TeamLimitError> {
     check_direct_limits(organization, request)?;
-    let rpm_guaranteed = is_guaranteed(request.rpm_limit_type, request, "rpm_limit_type");
-    let tpm_guaranteed = is_guaranteed(request.tpm_limit_type, request, "tpm_limit_type");
+    let rpm_guaranteed = is_guaranteed(request.rpm_limit_type(), request, "rpm_limit_type");
+    let tpm_guaranteed = is_guaranteed(request.tpm_limit_type(), request, "tpm_limit_type");
     if !rpm_guaranteed && !tpm_guaranteed {
         return Ok(());
     }
@@ -30,8 +30,8 @@ pub async fn check_org_team_limits(
     let teams = team_table(client)?
         .find_by_organization_id(organization_id)
         .await?;
-    check_org_team_model_specific_limits(&teams, organization, request)?;
-    check_org_team_rpm_tpm_limits(&teams, organization, request)?;
+    check_model_allocations(&teams, organization, request)?;
+    check_rate_allocations(&teams, organization, request)?;
     Ok(())
 }
 
@@ -43,7 +43,7 @@ fn check_direct_limits(
     let budget = organization.litellm_budget_table.as_ref();
     let name = organization.organization_id.clone().unwrap_or_default();
     let budget_ceiling = budget.and_then(|table| table.max_budget);
-    if let (Some(requested), Some(ceiling)) = (request.max_budget, budget_ceiling)
+    if let (Some(requested), Some(ceiling)) = (request.max_budget(), budget_ceiling)
         && requested > ceiling
     {
         return Err(Rejection::OrganizationBudget {
@@ -52,7 +52,8 @@ fn check_direct_limits(
             organization: name,
         });
     }
-    if let Some(model) = unlisted_model(request.models.as_deref(), &organization.models) {
+    let models = request.models();
+    if let Some(model) = unlisted_model(models.as_deref(), &organization.models) {
         return Err(Rejection::OrganizationModel {
             model: model.clone(),
             allowed: organization.models.clone(),
@@ -68,7 +69,7 @@ fn check_direct_rates(
     organization: String,
 ) -> Result<(), Rejection> {
     let tpm_ceiling = budget.and_then(|table| table.tpm_limit);
-    if let (Some(requested), Some(ceiling)) = (request.tpm_limit, tpm_ceiling)
+    if let (Some(requested), Some(ceiling)) = (request.tpm_limit(), tpm_ceiling)
         && requested > ceiling
     {
         return Err(Rejection::OrganizationTpm {
@@ -78,7 +79,7 @@ fn check_direct_rates(
         });
     }
     let rpm_ceiling = budget.and_then(|table| table.rpm_limit);
-    if let (Some(requested), Some(ceiling)) = (request.rpm_limit, rpm_ceiling)
+    if let (Some(requested), Some(ceiling)) = (request.rpm_limit(), rpm_ceiling)
         && requested > ceiling
     {
         return Err(Rejection::OrganizationRpm {
@@ -112,7 +113,7 @@ fn is_guaranteed(
     match field {
         Some(kind) => kind == ThroughputLimitType::Guaranteed,
         None => matches!(
-            request.metadata.and_then(|entries| entries.get(key)),
+            request.metadata().and_then(|entries| entries.get(key)),
             Some(JsonData::String(text)) if text == GUARANTEED_THROUGHPUT
         ),
     }

@@ -20,13 +20,13 @@ struct ModelCeilings {
     per_model: BTreeMap<String, Option<i64>>,
 }
 
-pub fn check_org_team_model_specific_limits(
+pub fn check_model_allocations(
     teams: &[LiteLLMTeamTable],
     organization: &OrganizationTable,
     request: &TeamLimitRequest<'_>,
 ) -> Result<(), TeamLimitError> {
-    let rpm_requested = requested_limits(request.model_rpm_limit, request, MODEL_RPM_FIELD)?;
-    let tpm_requested = requested_limits(request.model_tpm_limit, request, MODEL_TPM_FIELD)?;
+    let rpm_requested = requested_limits(request.model_rpm_limit(), request, MODEL_RPM_FIELD)?;
+    let tpm_requested = requested_limits(request.model_tpm_limit(), request, MODEL_TPM_FIELD)?;
     if rpm_requested.is_none() && tpm_requested.is_none() {
         return Ok(());
     }
@@ -52,7 +52,7 @@ pub fn check_org_team_model_specific_limits(
     Ok(())
 }
 
-pub fn check_org_team_rpm_tpm_limits(
+pub fn check_rate_allocations(
     teams: &[LiteLLMTeamTable],
     organization: &OrganizationTable,
     request: &TeamLimitRequest<'_>,
@@ -71,14 +71,14 @@ pub fn check_org_team_rpm_tpm_limits(
     let tpm_ceiling = budget.and_then(|table| table.tpm_limit);
     check_total(
         RateLimit::Tpm,
-        request.tpm_limit,
+        request.tpm_limit(),
         allocated_tpm,
         tpm_ceiling,
     )?;
     let rpm_ceiling = budget.and_then(|table| table.rpm_limit);
     check_total(
         RateLimit::Rpm,
-        request.rpm_limit,
+        request.rpm_limit(),
         allocated_rpm,
         rpm_ceiling,
     )
@@ -129,7 +129,7 @@ fn requested_limits(
     if let Some(limits) = field_value.filter(|limits| !limits.is_empty()) {
         return Ok(Some(limits.clone()));
     }
-    let stored = request.metadata.and_then(|metadata| metadata.get(field));
+    let stored = request.metadata().and_then(|metadata| metadata.get(field));
     decode(stored, field)
 }
 

@@ -34,7 +34,7 @@ pub async fn check_user_team_limits(
     let role = limits
         .user_role
         .map_or_else(|| "None".to_owned(), |found| found.to_string());
-    if let (Some(requested), Some(user_id)) = (request.max_budget, limits.user_id.as_deref()) {
+    if let (Some(requested), Some(user_id)) = (request.max_budget(), limits.user_id.as_deref()) {
         let lookup = UserLookupRequest {
             user_id: Some(user_id),
             sso_user_id: None,
@@ -53,7 +53,7 @@ pub async fn check_user_team_limits(
         }
     }
     // all-proxy-models is only the organization's wildcard; here it is one more literal model name
-    if let Some(models) = request.models.as_deref()
+    if let Some(models) = request.models()
         && !limits.models.is_empty()
         && models.iter().any(|model| !limits.models.contains(model))
     {
@@ -69,12 +69,12 @@ fn check_user_rates(
     limits: &CallerLimits,
     role: String,
 ) -> Result<(), Rejection> {
-    if let (Some(requested), Some(ceiling)) = (request.tpm_limit, limits.tpm_limit)
+    if let (Some(requested), Some(ceiling)) = (request.tpm_limit(), limits.tpm_limit)
         && requested > ceiling
     {
         return Err(Rejection::UserTpm { ceiling, role });
     }
-    if let (Some(requested), Some(ceiling)) = (request.rpm_limit, limits.rpm_limit)
+    if let (Some(requested), Some(ceiling)) = (request.rpm_limit(), limits.rpm_limit)
         && requested > ceiling
     {
         return Err(Rejection::UserRpm { ceiling, role });

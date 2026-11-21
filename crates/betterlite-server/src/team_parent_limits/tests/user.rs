@@ -36,7 +36,7 @@ async fn check(
 ) -> Result<(), TeamLimitError> {
     let parsed = new_team(request);
     let users = lookup(cache, None);
-    check_user_team_limits(&TeamLimitRequest::from(&parsed), &caller(auth), &users).await
+    check_user_team_limits(&TeamLimitRequest::New(&parsed), &caller(auth), &users).await
 }
 
 fn role() -> String {
@@ -55,7 +55,7 @@ async fn user_budget_lookup_no_upsert() {
     let users = lookup(&cache, Some(Arc::clone(&database_users)));
     let over = new_team(r#"{"max_budget": 10.5}"#);
     let result =
-        check_user_team_limits(&TeamLimitRequest::from(&over), &caller(CREATOR), &users).await;
+        check_user_team_limits(&TeamLimitRequest::New(&over), &caller(CREATOR), &users).await;
     let rejection = rejected(result);
     assert_eq!(
         rejection,
@@ -66,11 +66,11 @@ async fn user_budget_lookup_no_upsert() {
     );
     assert!(error_text(&rejection).contains("max budget"));
     let equal = new_team(r#"{"max_budget": 10}"#);
-    check_user_team_limits(&TeamLimitRequest::from(&equal), &caller(CREATOR), &users)
+    check_user_team_limits(&TeamLimitRequest::New(&equal), &caller(CREATOR), &users)
         .await
         .unwrap();
     let ghost = caller(r#"{"user_id": "ghost"}"#);
-    let missing = check_user_team_limits(&TeamLimitRequest::from(&equal), &ghost, &users).await;
+    let missing = check_user_team_limits(&TeamLimitRequest::New(&equal), &ghost, &users).await;
     assert!(matches!(
         missing,
         Err(TeamLimitError::UserLookup(UserLookupError::NotFound(_)))
