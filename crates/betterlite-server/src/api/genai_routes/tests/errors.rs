@@ -135,7 +135,7 @@ async fn a_stream_pipeline_error_is_rendered_as_the_pipeline_reports_it() {
 
 #[rstest]
 #[case::not_a_number("not-a-status")]
-#[case::not_an_http_status("700")]
+#[case::not_an_http_status("1000")]
 #[tokio::test]
 async fn a_code_that_is_not_a_status_answers_the_generic_500(#[case] code: &str) {
     let generation = FakeGeneration::failing(failure(code, "provider_error", None));

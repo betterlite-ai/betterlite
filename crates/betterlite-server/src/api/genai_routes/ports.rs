@@ -72,7 +72,7 @@ pub trait TokenCounter: Send + Sync {
 }
 
 // LiteLLM's TokenCountRequest cut down to the fields this route builds
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TokenCountRequest {
     pub model: String,
     pub contents: Json,

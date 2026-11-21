@@ -42,8 +42,8 @@ fn counted(total_tokens: i64, original_response: Option<TokenCountOriginal>) -> 
 #[case::unversioned("/models/gemini-2.0-flash:countTokens")]
 #[tokio::test]
 async fn both_prefixes_build_the_token_request_from_the_translation(#[case] path: &str) {
-    let translated = vec![message(ChatRole::User, "hello")];
-    let translator = FakeTranslator::answering(translated.clone());
+    let chat_messages = vec![message(ChatRole::User, "hello")];
+    let translator = FakeTranslator::answering(chat_messages.clone());
     let counter = FakeCounter::returning(Some(counted(
         31,
         Some(TokenCountOriginal {
@@ -72,7 +72,7 @@ async fn both_prefixes_build_the_token_request_from_the_translation(#[case] path
             TokenCountRequest {
                 model: GEMINI.to_owned(),
                 contents: contents(),
-                messages: translated,
+                messages: chat_messages,
             },
             true,
         )]

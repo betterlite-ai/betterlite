@@ -10,7 +10,7 @@ use axum::body::Bytes;
 use axum::extract::{DefaultBodyLimit, Extension, Path, State};
 use axum::http::HeaderMap;
 use axum::response::Response;
-use axum::routing::post;
+use axum::routing::{any, post};
 use betterlite_prompts::arguments::json::Object;
 
 use crate::auth::auth_identity::AuthContext;
@@ -31,7 +31,8 @@ enum Pipeline {
 
 // the six POST routes: both prefixes reach one handler, and a wrong method on a known suffix is Starlette's 405
 pub fn routes(state: GenaiRoutesState) -> Router {
-    let models = post(handle).method_not_allowed_fallback(method_not_allowed);
+    // any() adds the fallback for every other method and skips axum's own Allow header, so the 404 stays bare
+    let models = post(handle).merge(any(method_not_allowed));
     Router::new()
         .route(V1BETA_MODELS, models.clone())
         .route(MODELS, models)

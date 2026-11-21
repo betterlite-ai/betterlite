@@ -115,7 +115,7 @@ pub(super) fn events(
     stream::iter(chunks.into_iter().map(Ok)).boxed()
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct RecordedCall {
     pub(super) model: String,
     pub(super) data: Object,
@@ -197,11 +197,11 @@ fn take(
         .unwrap_or_else(|| Err(Box::new(unscripted())))
 }
 
-fn record(calls: &Mutex<Vec<RecordedCall>>, call: &GenerateContentCall<'_>) {
-    calls
+fn record(recorded_calls: &Mutex<Vec<RecordedCall>>, invocation: &GenerateContentCall<'_>) {
+    recorded_calls
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
-        .push(recorded(call));
+        .push(recorded(invocation));
 }
 
 #[async_trait]
