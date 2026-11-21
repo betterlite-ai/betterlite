@@ -3,97 +3,108 @@ name: responses-id-security-retained-addressed-id
 call:
   responses_id_security:
     operation: authorize
-    settings: {disable: false, allow: false, signing_key: test-master}
-    principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+    settings:
+      disable: false
+      allow: false
+      signing_key: test-master
+    principal:
+      user_id: user_a
+      team_id: team_a
+      role: null
+      role_form: value
+    call_type: aget_responses
+    data:
+      response_id: resp_hJR9XOI2hfLGOLoTOx1lDcXveEXwh-A-W8WMEQto7Q6CZKYeu2YVLjDoN-wPhFygrcC6o_3dJRaqVUv1pi_V3_w7rTsqvGchPs7cbPZFZpPnEX9sjZMk0FqZ39OW_CIaLMtXTx80_hQHUXf0cJeZ4K5srKDrs6A=
+      _litellm_addressed_response_id: resp_hJR9XOI2hfLGOLoTOx1lDcXveEXwh-A-W8WMEQto7Q6CZKYeu2YVLjDoN-wPhFygrcC6o_3dJRaqVUv1pi_V3_w7rTsqvGchPs7cbPZFZpPnEX9sjZMk0FqZ39OW_CIaLMtXTx80_hQHUXf0cJeZ4K5srKDrs6A=
+calls:
+- responses_id_security:
+    operation: authorize
+    settings:
+      disable: false
+      allow: false
+      signing_key: test-master
+    principal:
+      user_id: user_a
+      team_id: team_a
+      role: null
+      role_form: value
+    call_type: aget_responses
+    data:
+      response_id: resp_2ZcfEDs7LsxvK0_rkv0vVVkO3XdCtN9zNU7aj6Fm2rfIFHPVRAO_SflkC4p1k9zSH0o_B4-PrHryxUvRdg6KJ56HiIDGKunIG58abGpUpZ5Vgx6zgxMpW_LbR-xH1iEtsKIsVHRgnVWlR3_asyGP_Z2dYNp9FzI=
+      _litellm_addressed_response_id: resp_hJR9XOI2hfLGOLoTOx1lDcXveEXwh-A-W8WMEQto7Q6CZKYeu2YVLjDoN-wPhFygrcC6o_3dJRaqVUv1pi_V3_w7rTsqvGchPs7cbPZFZpPnEX9sjZMk0FqZ39OW_CIaLMtXTx80_hQHUXf0cJeZ4K5srKDrs6A=
+- responses_id_security:
+    operation: authorize
+    settings:
+      disable: false
+      allow: false
+      signing_key: test-master
+    principal:
+      user_id: user_a
+      team_id: team_a
+      role: null
+      role_form: value
     call_type: aresponses
     data:
-      - {field: previous_response_id, value: {kind: text, text: resp_wrong}}
-      - {field: _litellm_addressed_response_id, value: {kind: owned, original: resp_test, user: user_a, team: team_a, prefix: "", suffix: ""}}
-calls:
-  - responses_id_security:
-      operation: authorize
-      settings: {disable: false, allow: false, signing_key: test-master}
-      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
-      call_type: aresponses
-      data:
-        - {field: previous_response_id, value: {kind: text, text: resp_wrong}}
-  - responses_id_security:
-      operation: authorize
-      settings: {disable: false, allow: false, signing_key: test-master}
-      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
-      call_type: aget_responses
-      data:
-        - {field: response_id, value: {kind: owned, original: resp_test, user: user_a, team: team_a, prefix: "", suffix: ""}}
-  - responses_id_security:
-      operation: authorize
-      settings: {disable: false, allow: false, signing_key: test-master}
-      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
-      call_type: adelete_responses
-      data:
-        - {field: response_id, value: {kind: owned, original: resp_test, user: user_a, team: team_a, prefix: "", suffix: ""}}
-  - responses_id_security:
-      operation: authorize
-      settings: {disable: false, allow: false, signing_key: test-master}
-      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
-      call_type: acancel_responses
-      data:
-        - {field: response_id, value: {kind: owned, original: resp_test, user: user_a, team: team_a, prefix: "", suffix: ""}}
-  - responses_id_security:
-      operation: authorize
-      settings: {disable: false, allow: false, signing_key: test-master}
-      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
-      call_type: alist_input_items
-      data:
-        - {field: response_id, value: {kind: owned, original: resp_test, user: user_a, team: team_a, prefix: "", suffix: ""}}
-  - responses_id_security:
-      operation: authorize
-      settings: {disable: false, allow: false, signing_key: test-master}
-      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
-      call_type: aget_responses
-      data:
-        - {field: _litellm_addressed_response_id, value: {kind: owned, original: resp_test, user: user_a, team: team_a, prefix: "", suffix: ""}}
-  - responses_id_security:
-      operation: authorize
-      settings: {disable: false, allow: false, signing_key: test-master}
-      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
-      call_type: aget_responses
-      data:
-        - {field: _litellm_addressed_response_id, value: {kind: text, text: ""}}
-        - {field: response_id, value: {kind: owned, original: resp_test, user: user_a, team: team_a, prefix: "", suffix: ""}}
-  - responses_id_security:
-      operation: authorize
-      settings: {disable: false, allow: false, signing_key: test-master}
-      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
-      call_type: aget_responses
-      data:
-        - {field: _litellm_addressed_response_id, value: {kind: number, number: 7}}
-        - {field: response_id, value: {kind: owned, original: resp_test, user: user_a, team: team_a, prefix: "", suffix: ""}}
-  - responses_id_security:
-      operation: authorize
-      settings: {disable: false, allow: false, signing_key: test-master}
-      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
-      call_type: aget_responses
-      data: []
-  - responses_id_security:
-      operation: authorize
-      settings: {disable: false, allow: false, signing_key: test-master}
-      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
-      call_type: aget_responses
-      data:
-        - {field: response_id, value: {kind: text, text: ""}}
-  - responses_id_security:
-      operation: authorize
-      settings: {disable: false, allow: false, signing_key: test-master}
-      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
-      call_type: aget_responses
-      data:
-        - {field: response_id, value: {kind: number, number: 7}}
-  - responses_id_security:
-      operation: authorize
-      settings: {disable: false, allow: false, signing_key: test-master}
-      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
-      call_type: acompletion
-      data:
-        - {field: previous_response_id, value: {kind: owned, original: resp_test, user: user_a, team: team_a, prefix: "", suffix: ""}}
+      previous_response_id: resp_hJR9XOI2hfLGOLoTOx1lDcXveEXwh-A-W8WMEQto7Q6CZKYeu2YVLjDoN-wPhFygrcC6o_3dJRaqVUv1pi_V3_w7rTsqvGchPs7cbPZFZpPnEX9sjZMk0FqZ39OW_CIaLMtXTx80_hQHUXf0cJeZ4K5srKDrs6A=
+      _litellm_addressed_response_id: resp_2ZcfEDs7LsxvK0_rkv0vVVkO3XdCtN9zNU7aj6Fm2rfIFHPVRAO_SflkC4p1k9zSH0o_B4-PrHryxUvRdg6KJ56HiIDGKunIG58abGpUpZ5Vgx6zgxMpW_LbR-xH1iEtsKIsVHRgnVWlR3_asyGP_Z2dYNp9FzI=
+- responses_id_security:
+    operation: authorize
+    settings:
+      disable: false
+      allow: false
+      signing_key: test-master
+    principal:
+      user_id: user_a
+      team_id: team_a
+      role: null
+      role_form: value
+    call_type: aget_responses
+    data:
+      response_id: resp_BHrmZ2bB6eh7R7gMGhG0T8AD1ADGFVMlvdYGYXMOTWSj-f-8MCrfZFpF9RBdG2Yf1oo-QXyTIZwr3KGnLq58g06wCMssuvJpLh6SpJNcB6A2bR9RLNwpoVL3HDi5aZTfwABfWbx5Lqn8hPuQxmSGZ2Jtfilx-58=
+      _litellm_addressed_response_id: resp_2ZcfEDs7LsxvK0_rkv0vVVkO3XdCtN9zNU7aj6Fm2rfIFHPVRAO_SflkC4p1k9zSH0o_B4-PrHryxUvRdg6KJ56HiIDGKunIG58abGpUpZ5Vgx6zgxMpW_LbR-xH1iEtsKIsVHRgnVWlR3_asyGP_Z2dYNp9FzI=
+- responses_id_security:
+    operation: authorize
+    settings:
+      disable: false
+      allow: false
+      signing_key: test-master
+    principal:
+      user_id: user_a
+      team_id: team_a
+      role: null
+      role_form: value
+    call_type: aget_responses
+    data:
+      response_id: resp_2ZcfEDs7LsxvK0_rkv0vVVkO3XdCtN9zNU7aj6Fm2rfIFHPVRAO_SflkC4p1k9zSH0o_B4-PrHryxUvRdg6KJ56HiIDGKunIG58abGpUpZ5Vgx6zgxMpW_LbR-xH1iEtsKIsVHRgnVWlR3_asyGP_Z2dYNp9FzI=
+      _litellm_addressed_response_id: ''
+- responses_id_security:
+    operation: authorize
+    settings:
+      disable: false
+      allow: false
+      signing_key: test-master
+    principal:
+      user_id: user_a
+      team_id: team_a
+      role: null
+      role_form: value
+    call_type: aget_responses
+    data:
+      _litellm_addressed_response_id: resp_hJR9XOI2hfLGOLoTOx1lDcXveEXwh-A-W8WMEQto7Q6CZKYeu2YVLjDoN-wPhFygrcC6o_3dJRaqVUv1pi_V3_w7rTsqvGchPs7cbPZFZpPnEX9sjZMk0FqZ39OW_CIaLMtXTx80_hQHUXf0cJeZ4K5srKDrs6A=
+- responses_id_security:
+    operation: authorize
+    settings:
+      disable: false
+      allow: false
+      signing_key: test-master
+    principal:
+      user_id: user_a
+      team_id: team_a
+      role: null
+      role_form: value
+    call_type: aget_responses
+    data:
+      _litellm_addressed_response_id: plain_id
 env: {}
-compare: {ignore: []}
+compare:
+  ignore: []

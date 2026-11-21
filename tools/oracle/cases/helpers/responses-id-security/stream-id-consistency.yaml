@@ -3,28 +3,153 @@ name: responses-id-security-stream-id-consistency
 call:
   responses_id_security:
     operation: stream
-    settings: {disable: false, allow: false, signing_key: test-master}
-    principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
+    settings:
+      disable: false
+      allow: false
+      signing_key: test-master
+    principal:
+      user_id: user_a
+      team_id: team_a
+      role: null
+      role_form: value
     route: /v1/responses
     events:
-      - {kind: lifecycle, response_id: {kind: text, text: resp_test}, top_id: null}
-      - {kind: lifecycle, response_id: {kind: text, text: resp_test}, top_id: null}
+    - type: response.created
+      response:
+        id: resp_test
+        created_at: 0
+        output: []
+    - type: response.completed
+      response:
+        id: resp_test
+        created_at: 0
+        output: []
 calls:
-  - responses_id_security:
-      operation: stream
-      settings: {disable: false, allow: false, signing_key: test-master}
-      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
-      route: /v1/responses
-      events:
-        - {kind: lifecycle, response_id: {kind: text, text: resp_other}, top_id: null}
-        - {kind: generic, top_id: {kind: text, text: resp_other}, nested: {shape: absent}}
-  - responses_id_security:
-      operation: stream
-      settings: {disable: false, allow: false, signing_key: test-master}
-      principal: {user_id: user_a, team_id: team_a, role: null, role_form: value}
-      route: /v1/responses
-      events:
-        - {kind: lifecycle, response_id: {kind: text, text: resp_test}, top_id: null}
-        - {kind: lifecycle, response_id: {kind: text, text: resp_other}, top_id: null}
+- responses_id_security:
+    operation: stream
+    settings:
+      disable: false
+      allow: false
+      signing_key: test-master
+    principal:
+      user_id: user_a
+      team_id: team_a
+      role: null
+      role_form: value
+    route: /v1/responses
+    events:
+    - type: response.custom.event
+      id: resp_test
+    - type: response.custom.event
+      id: resp_test
+- responses_id_security:
+    operation: stream
+    settings:
+      disable: false
+      allow: false
+      signing_key: test-master
+    principal:
+      user_id: user_a
+      team_id: team_a
+      role: null
+      role_form: value
+    route: /v1/responses
+    events:
+    - type: response.created
+      response:
+        id: resp_test
+        created_at: 0
+        output: []
+    - type: response.completed
+      response:
+        id: resp_other
+        created_at: 0
+        output: []
+- responses_id_security:
+    operation: stream
+    settings:
+      disable: false
+      allow: false
+      signing_key: test-master
+    principal:
+      user_id: user_a
+      team_id: team_a
+      role: null
+      role_form: value
+    route: /v1/responses
+    events:
+    - type: response.custom.event
+      id: resp_test
+      response:
+        id: resp_other
+- responses_id_security:
+    operation: stream
+    settings:
+      disable: false
+      allow: false
+      signing_key: test-master
+    principal:
+      user_id: user_a
+      team_id: team_a
+      role: null
+      role_form: value
+    route: /v1/responses
+    events:
+    - type: response.created
+      response:
+        id: resp_test
+        created_at: 0
+        output: []
+- responses_id_security:
+    operation: stream
+    settings:
+      disable: false
+      allow: false
+      signing_key: test-master
+    principal:
+      user_id: user_a
+      team_id: team_a
+      role: null
+      role_form: value
+    route: /v1/responses
+    events:
+    - type: response.custom.event
+      response:
+        id: resp_test
+- responses_id_security:
+    operation: stream
+    settings:
+      disable: false
+      allow: false
+      signing_key: test-master
+    principal:
+      user_id: user_a
+      team_id: team_a
+      role: null
+      role_form: value
+    route: /chat/completions
+    events:
+    - type: response.custom.event
+      id: resp_test
+    - type: response.custom.event
+      id: resp_test
+- responses_id_security:
+    operation: stream
+    settings:
+      disable: false
+      allow: false
+      signing_key: test-master
+    principal:
+      user_id: user_a
+      team_id: team_a
+      role: null
+      role_form: value
+    route: /v1/responses
+    events:
+    - type: response.custom.event
+      id: 7
+    - type: response.custom.event
+      id: null
 env: {}
-compare: {ignore: []}
+compare:
+  ignore: []

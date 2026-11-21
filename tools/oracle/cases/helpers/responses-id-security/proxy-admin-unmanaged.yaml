@@ -3,53 +3,89 @@ name: responses-id-security-proxy-admin-unmanaged
 call:
   responses_id_security:
     operation: authorize
-    settings: {disable: false, allow: false, signing_key: test-master}
-    principal: {user_id: user_a, team_id: team_a, role: PROXY_ADMIN, role_form: enum}
+    settings:
+      disable: false
+      allow: false
+      signing_key: test-master
+    principal:
+      user_id: user_a
+      team_id: team_a
+      role: PROXY_ADMIN
+      role_form: enum
     call_type: aget_responses
     data:
-      - {field: response_id, value: {kind: text, text: resp_external}}
+      response_id: resp_foreign
 calls:
-  - responses_id_security:
-      operation: authorize
-      settings: {disable: false, allow: false, signing_key: test-master}
-      principal: {user_id: user_a, team_id: team_a, role: PROXY_ADMIN, role_form: value}
-      call_type: aget_responses
-      data:
-        - {field: response_id, value: {kind: text, text: resp_external}}
-  - responses_id_security:
-      operation: authorize
-      settings: {disable: false, allow: false, signing_key: test-master}
-      principal: {user_id: user_a, team_id: team_a, role: PROXY_ADMIN, role_form: enum}
-      call_type: aget_responses
-      data:
-        - {field: response_id, value: {kind: owned, original: resp_test, user: user_z, team: team_z, prefix: "", suffix: ""}}
-  - responses_id_security:
-      operation: authorize
-      settings: {disable: false, allow: false, signing_key: test-master}
-      principal: {user_id: user_a, team_id: team_a, role: PROXY_ADMIN, role_form: value}
-      call_type: aget_responses
-      data:
-        - {field: response_id, value: {kind: owned, original: resp_test, user: user_z, team: team_z, prefix: "", suffix: ""}}
-  - responses_id_security:
-      operation: authorize
-      settings: {disable: false, allow: false, signing_key: test-master}
-      principal: {user_id: user_a, team_id: team_a, role: PROXY_ADMIN_VIEW_ONLY, role_form: enum}
-      call_type: aget_responses
-      data:
-        - {field: response_id, value: {kind: text, text: resp_external}}
-  - responses_id_security:
-      operation: authorize
-      settings: {disable: false, allow: false, signing_key: test-master}
-      principal: {user_id: user_a, team_id: team_a, role: PROXY_ADMIN_VIEW_ONLY, role_form: enum}
-      call_type: aget_responses
-      data:
-        - {field: response_id, value: {kind: owned, original: resp_test, user: user_z, team: team_z, prefix: "", suffix: ""}}
-  - responses_id_security:
-      operation: success
-      settings: {disable: false, allow: false, signing_key: test-master}
-      principal: {user_id: user_a, team_id: team_a, role: PROXY_ADMIN, role_form: enum}
-      id: {kind: text, text: resp_test}
-      nested: {shape: absent}
-      route: /v1/responses
+- responses_id_security:
+    operation: authorize
+    settings:
+      disable: false
+      allow: false
+      signing_key: test-master
+    principal:
+      user_id: user_a
+      team_id: team_a
+      role: PROXY_ADMIN
+      role_form: value
+    call_type: aget_responses
+    data:
+      response_id: resp_foreign
+- responses_id_security:
+    operation: authorize
+    settings:
+      disable: false
+      allow: false
+      signing_key: test-master
+    principal:
+      user_id: user_a
+      team_id: team_a
+      role: PROXY_ADMIN_VIEW_ONLY
+      role_form: enum
+    call_type: aget_responses
+    data:
+      response_id: resp_foreign
+- responses_id_security:
+    operation: authorize
+    settings:
+      disable: false
+      allow: false
+      signing_key: test-master
+    principal:
+      user_id: user_a
+      team_id: team_a
+      role: PROXY_ADMIN_VIEW_ONLY
+      role_form: value
+    call_type: aget_responses
+    data:
+      response_id: resp_foreign
+- responses_id_security:
+    operation: authorize
+    settings:
+      disable: false
+      allow: false
+      signing_key: test-master
+    principal:
+      user_id: user_a
+      team_id: team_a
+      role: PROXY_ADMIN
+      role_form: enum
+    call_type: aget_responses
+    data:
+      response_id: resp_2ZcfEDs7LsxvK0_rkv0vVVkO3XdCtN9zNU7aj6Fm2rfIFHPVRAO_SflkC4p1k9zSH0o_B4-PrHryxUvRdg6KJ56HiIDGKunIG58abGpUpZ5Vgx6zgxMpW_LbR-xH1iEtsKIsVHRgnVWlR3_asyGP_Z2dYNp9FzI=
+- responses_id_security:
+    operation: authorize
+    settings:
+      disable: false
+      allow: false
+      signing_key: test-master
+    principal:
+      user_id: user_a
+      team_id: team_a
+      role: PROXY_ADMIN
+      role_form: value
+    call_type: aget_responses
+    data:
+      response_id: resp_2ZcfEDs7LsxvK0_rkv0vVVkO3XdCtN9zNU7aj6Fm2rfIFHPVRAO_SflkC4p1k9zSH0o_B4-PrHryxUvRdg6KJ56HiIDGKunIG58abGpUpZ5Vgx6zgxMpW_LbR-xH1iEtsKIsVHRgnVWlR3_asyGP_Z2dYNp9FzI=
 env: {}
-compare: {ignore: []}
+compare:
+  ignore: []

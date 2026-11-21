@@ -3,25 +3,47 @@ name: responses-id-security-empty-owners
 call:
   responses_id_security:
     operation: authorize
-    settings: {disable: false, allow: false, signing_key: test-master}
-    principal: {user_id: user_b, team_id: team_b, role: null, role_form: value}
+    settings:
+      disable: false
+      allow: false
+      signing_key: test-master
+    principal:
+      user_id: user_a
+      team_id: team_a
+      role: null
+      role_form: value
     call_type: aget_responses
     data:
-      - {field: response_id, value: {kind: owned, original: resp_test, user: "", team: "", prefix: "", suffix: ""}}
+      response_id: resp_H8pXgVmOvYwTRoauzdQVbFhZ4rxzUWdYIXfs-urqw6hEm2Av66_DODDv5-pxiklz4vPXIjO1_kSAFBUMzduMYKRxPJNOeQq1JNrozJyLyBPPM1tuQrMiJDPF8YM6Xy6ivP_cMrsIaHFCvXI=
 calls:
-  - responses_id_security:
-      operation: authorize
-      settings: {disable: false, allow: false, signing_key: test-master}
-      principal: {user_id: null, team_id: null, role: null, role_form: value}
-      call_type: aget_responses
-      data:
-        - {field: response_id, value: {kind: owned, original: resp_test, user: "", team: "", prefix: "", suffix: ""}}
-  - responses_id_security:
-      operation: success
-      settings: {disable: false, allow: false, signing_key: test-master}
-      principal: {user_id: null, team_id: null, role: null, role_form: value}
-      id: {kind: text, text: resp_test}
-      nested: {shape: absent}
-      route: /v1/responses
+- responses_id_security:
+    operation: authorize
+    settings:
+      disable: false
+      allow: false
+      signing_key: test-master
+    principal:
+      user_id: user_a
+      team_id: team_a
+      role: null
+      role_form: value
+    call_type: aresponses
+    data:
+      previous_response_id: resp_H8pXgVmOvYwTRoauzdQVbFhZ4rxzUWdYIXfs-urqw6hEm2Av66_DODDv5-pxiklz4vPXIjO1_kSAFBUMzduMYKRxPJNOeQq1JNrozJyLyBPPM1tuQrMiJDPF8YM6Xy6ivP_cMrsIaHFCvXI=
+- responses_id_security:
+    operation: authorize
+    settings:
+      disable: false
+      allow: false
+      signing_key: test-master
+    principal:
+      user_id: null
+      team_id: null
+      role: null
+      role_form: value
+    call_type: aget_responses
+    data:
+      response_id: resp_H8pXgVmOvYwTRoauzdQVbFhZ4rxzUWdYIXfs-urqw6hEm2Av66_DODDv5-pxiklz4vPXIjO1_kSAFBUMzduMYKRxPJNOeQq1JNrozJyLyBPPM1tuQrMiJDPF8YM6Xy6ivP_cMrsIaHFCvXI=
 env: {}
-compare: {ignore: []}
+compare:
+  ignore: []
