@@ -44,26 +44,19 @@ impl ModelConfig {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct ModelEntry {
-    providers: IndexMap<String, ProviderCredential>,
+    providers: IndexMap<String, Option<String>>,
 }
 
 impl ModelEntry {
     // _extract_credential_from_entry: the hinted provider wins, then the first provider carrying a name
     pub(crate) fn credential(&self, provider: Option<&str>) -> Option<String> {
-        if let Some(entry) = provider.and_then(|name| self.providers.get(name))
-            && let Some(credential) = &entry.credential_name
-        {
+        if let Some(Some(credential)) = provider.and_then(|name| self.providers.get(name)) {
             return Some(credential.clone());
         }
         self.providers
             .values()
-            .find_map(|entry| entry.credential_name.clone())
+            .find_map(|credential| credential.clone())
     }
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct ProviderCredential {
-    credential_name: Option<String>,
 }
 
 // the typed view the credential walk reads; null or an empty map is absent, a wrong type names its path
@@ -118,8 +111,8 @@ fn parse_model_entry(
                 expected: "an object",
             });
         };
-        let credential_name = credential_name_from(fields, &provider_path)?;
-        provider_map.insert(provider.clone(), ProviderCredential { credential_name });
+        let credential = credential_name_from(fields, &provider_path)?;
+        provider_map.insert(provider.clone(), credential);
     }
     Ok(ModelEntry {
         providers: provider_map,
