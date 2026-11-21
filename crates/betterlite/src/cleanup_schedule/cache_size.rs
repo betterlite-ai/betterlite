@@ -22,10 +22,10 @@ pub fn on_cache_size_changed(
     let value = store.get(CACHE_MAX_SIZE_KEY);
     match cache_max_size(value) {
         CacheSizeValue::Invalid => {
+            let shown = value.map_or_else(|| "None".to_owned(), ToString::to_string);
             if writable {
                 store.remove_key(CACHE_MAX_SIZE_KEY)?;
             }
-            let shown = value.map_or_else(|| "None".to_owned(), ToString::to_string);
             tracing::warn!(
                 "Ignoring invalid general_settings.user_api_key_cache_max_size={shown} from the DB"
             );

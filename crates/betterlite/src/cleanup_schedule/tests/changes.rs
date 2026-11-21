@@ -10,8 +10,8 @@ use crate::job_scheduler::SchedulerState;
 use crate::job_scheduler::triggers::IntervalTrigger;
 
 use super::support::{
-    capture_logs, fixture, noop_job, origin, period_of, proxy_scheduler, recording, retained,
-    store, with_job,
+    LogBuffer, capture_logs, fixture, noop_job, origin, period_of, proxy_scheduler, recording,
+    retained, store, with_job,
 };
 
 fn apply(
@@ -23,6 +23,13 @@ fn apply(
 ) {
     let change = ScheduleChange { previous, context };
     on_settings_changed(scheduler, &change, settings, noop_job(), state);
+}
+
+fn invalid_cron_log_count(buffer: &LogBuffer) -> usize {
+    buffer
+        .contents()
+        .matches("Invalid maximum_spend_logs_cleanup_cron")
+        .count()
 }
 
 #[test]
@@ -382,11 +389,7 @@ fn an_invalid_new_schedule_keeps_the_live_job_and_is_not_retried() {
     assert_eq!(scheduler.jobs.len(), 1);
     assert_eq!(state.last_attempt, Some(cleanup_schedule_of(&broken)));
     assert!(!state.reschedule_failed);
-    let first_logs = buffer
-        .contents()
-        .matches("Invalid maximum_spend_logs_cleanup_cron")
-        .count();
-    assert_eq!(first_logs, 1);
+    assert_eq!(invalid_cron_log_count(&buffer), 1);
     apply(
         Some(&mut scheduler),
         &previous,
@@ -394,9 +397,5 @@ fn an_invalid_new_schedule_keeps_the_live_job_and_is_not_retried() {
         &fixture.context(),
         &mut state,
     );
-    let second_logs = buffer
-        .contents()
-        .matches("Invalid maximum_spend_logs_cleanup_cron")
-        .count();
-    assert_eq!(second_logs, 1);
+    assert_eq!(invalid_cron_log_count(&buffer), 1);
 }

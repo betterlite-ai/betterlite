@@ -97,5 +97,6 @@ where
     scheduler.insert_job(cleanup_job_spec(
         Box::new(IntervalTrigger { seconds: shifted }),
         job,
-    ))
+    ))?;
+    Ok(())
 }
