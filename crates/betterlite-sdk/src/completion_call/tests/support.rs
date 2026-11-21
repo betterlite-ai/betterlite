@@ -187,24 +187,26 @@ pub(super) struct FakeMetadata {
 }
 
 impl FakeMetadata {
-    pub(super) fn resolving(model: &str) -> Self {
+    fn resolving_with(
+        resolved_model: Option<String>,
+        resolved_base: Option<String>,
+        dynamic_key: Option<String>,
+    ) -> Self {
         Self {
-            resolved_model: Some(String::from(model)),
+            resolved_model,
             resolved_provider: None,
-            resolved_base: None,
-            dynamic_key: None,
+            resolved_base,
+            dynamic_key,
             lookups: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
+    pub(super) fn resolving(model: &str) -> Self {
+        Self::resolving_with(Some(String::from(model)), None, None)
+    }
+
     pub(super) fn resolving_credentials(base: &str, key: &str) -> Self {
-        Self {
-            resolved_model: None,
-            resolved_provider: None,
-            resolved_base: Some(String::from(base)),
-            dynamic_key: Some(String::from(key)),
-            lookups: Arc::new(Mutex::new(Vec::new())),
-        }
+        Self::resolving_with(None, Some(String::from(base)), Some(String::from(key)))
     }
 }
 
