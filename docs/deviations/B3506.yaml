@@ -34,12 +34,13 @@ deviations:
       rule still gives the caller every field of the error.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1901
   - what: >-
-      An original_response whose totalTokens is null, or whose promptTokensDetails is absent,
-      answers totalTokens 0 and an empty promptTokensDetails list.
+      A totalTokens or promptTokensDetails that is present but null takes the field's default:
+      totalTokens 0, or an empty promptTokensDetails.
     why: >-
       LiteLLM's .get hands None to TokenCountDetailsResponse, whose TypedDict declares int and
-      list, so FastAPI's response model raises and the caller gets a 500. The task's pitfall
-      says missing or None fields take the defaults and do not raise.
+      list, so FastAPI's response model raises and the caller gets a 500. docs/compatibility.md
+      takes null for the default, and the task's pitfall says None fields take the defaults and
+      do not raise.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/endpoints.py#L191-L198
   - what: >-
       A contents value that is not a list and not null is a 400 invalid_request_error with

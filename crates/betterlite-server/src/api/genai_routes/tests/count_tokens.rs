@@ -134,6 +134,18 @@ async fn an_original_response_without_details_has_an_empty_list() {
 }
 
 #[tokio::test]
+async fn an_empty_original_response_falls_back_to_the_response_total() {
+    let counter = FakeCounter::returning(Some(counted(17, Some(TokenCountOriginal::default()))));
+    let translator = FakeTranslator::answering(Vec::new());
+    let (status, _headers, body) = call(count_router(translator, counter), post(COUNT, BODY)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        serde_json::from_slice::<TokenCountDetails>(&body).unwrap(),
+        details(17, Vec::new())
+    );
+}
+
+#[tokio::test]
 async fn the_response_total_is_used_when_original_response_is_absent() {
     let counter = FakeCounter::returning(Some(counted(17, None)));
     let translator = FakeTranslator::answering(Vec::new());
