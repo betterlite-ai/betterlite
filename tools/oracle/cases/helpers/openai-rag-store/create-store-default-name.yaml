@@ -1,0 +1,11 @@
+kind: helper
+name: openai-rag-store-create-store-default-name
+call:
+  b3453:
+    options:
+      vector_store: {}
+    create_response:
+      id: vs_created
+env: {}
+compare:
+  ignore: []

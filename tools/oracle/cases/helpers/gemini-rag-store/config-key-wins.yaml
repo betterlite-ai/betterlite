@@ -1,0 +1,18 @@
+kind: helper
+name: gemini-rag-store-config-key-wins
+call:
+  b3454:
+    script:
+      - status: 200
+        body: '{"name":"fileSearchStores/config-store"}'
+    options:
+      name: notes
+      vector_store:
+        custom_llm_provider: gemini
+        api_key: config-key
+        api_base: https://config.test
+    environment:
+      GOOGLE_API_KEY: google-key
+      GEMINI_API_KEY: gemini-key
+env: {}
+compare: {ignore: []}
