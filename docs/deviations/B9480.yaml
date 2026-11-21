@@ -9,10 +9,15 @@ deviations:
       A finite PROMETHEUS_BUDGET_METRICS_PER_REQUEST_TIMEOUT above std::time::Duration's range (about 5.8e11 years) becomes Duration::MAX, so the configured seconds are not kept. LiteLLM passes the float to asyncio.wait_for unchanged.
     why: >-
       Duration cannot hold the value and from_secs_f64 panics on it; Duration::MAX waits as long as the configured value would, so the timeout still never fires in a real request.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L1955-L1963
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L1970-L1970
   - what: >-
       A metadata spend or max budget that is not a JSON number, or a number Decimal cannot hold, reaches the lookup as None. LiteLLM passes the value through as it is, and an int or a string then reaches the setter, where a string raises and is logged as a failed lookup.
     why: >-
       The lookup arguments are Decimal, the type B3883's setters use; a wrong-typed metadata value counts as absent rather than failing the whole lookup, as docs/compatibility.md treats a value of the wrong type.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L1912-L1922
+  - what: >-
+      PROMETHEUS_BUDGET_METRICS_PER_REQUEST_TIMEOUT is read once at startup and the process keeps that value. LiteLLM reads it on every fan-out, so changing the variable while the proxy runs changes LiteLLM's timeout and leaves betterlite's as it was.
+    why: >-
+      Every environment value in betterlite is read by its config section at load, and the fan-out takes the configured Duration, so a change to the variable after startup needs a restart in either setup that sets it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L1931-L1931
 kept_bugs: []
