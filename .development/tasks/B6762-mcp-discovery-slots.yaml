@@ -4,7 +4,7 @@ description: >-
   Build the state that schedules OAuth discovery per server: one slot per server id, retry with backoff, background tasks, the on-startup switch and the publish of the result into the registry. In LiteLLM this is the discovery section of mcp_server_manager.py (dataclasses at L325-350, helpers at L286-312 and the state machine at L1996-2300). The fetch is B6761 and the trust rules are B6760.
 
 
-  Code goes in the new betterlite-mcp module discovery_slots: crates/betterlite-mcp/src/discovery_slots.rs, discovery_slots/** and tests beside each file. The registry is B4731's ServerRegistry. Because discovery tasks run in the background and write into the registry, the registry has to sit behind a shared handle. Use B4731's SharedRegistry alias (Arc<tokio::sync::RwLock<ServerRegistry>>, defined next to ServerRegistry, whose two server maps are pub(crate)) and take it in the DiscoverySlots constructor. betterlite-mcp needs the tokio features sync, rt and macros in its Cargo.toml (architect).
+  Code goes in the new betterlite-mcp module discovery_slots: crates/betterlite-mcp/src/discovery_slots.rs, discovery_slots/** and tests beside each file. The registry is B10020's ServerRegistry (crates/betterlite-mcp/src/registry/servers.rs, on main). Because discovery tasks run in the background and write into the registry, the registry has to sit behind a shared handle. Use B10020's SharedRegistry alias (Arc<tokio::sync::RwLock<ServerRegistry>>, defined next to ServerRegistry, whose two server maps are pub(crate)) and take it in the DiscoverySlots constructor. betterlite-mcp needs the tokio features sync, rt and macros in its Cargo.toml (architect).
 
 
   Items to build.
@@ -83,7 +83,7 @@ out_of_scope:
   - "Fetching and parsing metadata: B6761."
   - "Trust rules and merge functions: B6760."
   - "The HTTP 503 mapping itself: the server route that calls ensure_discovered."
-  - "ServerRegistry fields and reads: B4731."
+  - "ServerRegistry, its two maps, the SharedRegistry alias and the registry-order reads: B10020. registered_server reads the two maps directly (mcp_server_manager.py L2028-L2029); B4731's IP-checked server_by_id is not used here."
 
 pitfalls:
   - "Never hold the registry write lock while a fetch runs, or every request blocks on a slow IdP."

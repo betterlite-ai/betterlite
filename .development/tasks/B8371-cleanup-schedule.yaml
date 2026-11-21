@@ -19,18 +19,18 @@ description: >-
   a truthy cron value goes through `CronTrigger::from_crontab` (local zone); a parse error, or a cron value that is not a
   string, logs at error "Invalid maximum_spend_logs_cleanup_cron value: {value}" and returns None. Otherwise the retention
   interval (default "1d" when absent) must be a string, or it logs "Invalid maximum_spend_logs_retention_interval value:
-  {value!r}" and returns None; it is converted with the duration parser B1740 uses for retention periods
-  (duration_in_seconds), and an error or overflow logs the same line. A valid interval becomes an IntervalTrigger wrapped by
+  {value!r}" and returns None; it is converted with B199's duration_in_seconds (betterlite-core
+  duration::seconds, the parser retention periods use), and an error or overflow logs the same line. A valid interval becomes an IntervalTrigger wrapped by
   B4172's stagger_trigger with job id spend_log_cleanup_job, period equal to the interval and the stagger settings parsed
   from the same general settings.
 
-  Startup registration. `register_cleanup_job(scheduler, settings, job: CleanupJob, state: &mut CleanupScheduleState)` ports
+  Startup registration. `register_cleanup_job(scheduler, settings, job: JobFn, state: &mut CleanupScheduleState)` ports
   L10862-L10911: when wants_cleanup_job is false it does nothing (and does not record an attempt). With a cron string it adds
   job spend_log_cleanup_job with the cron trigger, replace_existing and the default misfire grace, and logs "Spend log
   cleanup scheduled with cron: {cron}". Otherwise it adds an interval job of the parsed seconds plus a random 0 to 60 seconds
   (inclusive, from an injected Rng) without the stagger wrapper. Both error branches log and register nothing. In every
-  case where the job is wanted it then records the attempt (`state.last_attempt = Some(schedule)`). `CleanupJob` is the job
-  handle B1741 exposes for cleanup_old_spend_logs.
+  case where the job is wanted it then records the attempt (`state.last_attempt = Some(schedule)`). The job is B8370's
+  `JobFn` (crates/betterlite/src/job_scheduler.rs); the caller passes B1741's cleanup_old_spend_logs run in as that JobFn, so this module names no B1741 or B1740 type.
 
   Settings change. `CleanupScheduleState { last_attempt: Option<CleanupSchedule>, reschedule_failed: bool }` lives with the
   proxy config. `on_settings_changed(scheduler, previous: &CleanupSchedule, current_settings, job, state)` ports

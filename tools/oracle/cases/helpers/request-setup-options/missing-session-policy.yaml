@@ -1,0 +1,111 @@
+kind: helper
+name: request-setup-options-missing-session-policy
+call:
+  request_setup_options:
+    prepare:
+      - data: {metadata: {}}
+        slot: metadata
+        route: /v1/chat/completions
+        query: []
+        user_agent: ""
+        missing_session_id: generate
+        principal: {metadata: {}, team_metadata: null, team_id: null}
+        default_team_settings: []
+      - data: {litellm_trace_id: trace-1, metadata: {trace_id: meta-trace}}
+        slot: metadata
+        route: /v1/chat/completions
+        query: [[api-version, "2024-01-01"], [api-version, "2024-06-01"]]
+        user_agent: claude-cli/2.1.0 (external, cli)
+        missing_session_id: generate
+        principal: {metadata: {}, team_metadata: null, team_id: null}
+        default_team_settings: []
+      - data: {metadata: {session_id: requester}, litellm_metadata: {trace_id: meta-trace}}
+        slot: litellm_metadata
+        route: /v1/chat/completions
+        query: []
+        user_agent: codex_exec/0.1
+        missing_session_id: generate
+        principal: {metadata: {}, team_metadata: null, team_id: null}
+        default_team_settings: []
+      - data: {metadata: {}}
+        slot: metadata
+        route: /v1/chat/completions
+        query: []
+        user_agent: ""
+        missing_session_id: reject
+        principal: {metadata: {}, team_metadata: null, team_id: null}
+        default_team_settings: []
+      - data: {litellm_session_id: s1, metadata: {}}
+        slot: metadata
+        route: /v1/chat/completions
+        query: []
+        user_agent: codexcli
+        missing_session_id: reject
+        principal: {metadata: {}, team_metadata: null, team_id: null}
+        default_team_settings: []
+      - data: {metadata: {session_id: s1}, drop_params: false}
+        slot: metadata
+        route: /v1/chat/completions
+        query: []
+        user_agent: claude-code/1.0
+        missing_session_id: reject
+        principal: {metadata: {}, team_metadata: null, team_id: null}
+        default_team_settings: []
+      - data: {metadata: {}}
+        slot: metadata
+        route: /key/generate
+        query: []
+        user_agent: ""
+        missing_session_id: reject
+        principal: {metadata: {}, team_metadata: null, team_id: null}
+        default_team_settings: []
+      - data: {metadata: {}}
+        slot: metadata
+        route: /mcp
+        query: []
+        user_agent: ""
+        missing_session_id: reject
+        principal: {metadata: {}, team_metadata: null, team_id: null}
+        default_team_settings: []
+      - data: {metadata: text}
+        slot: metadata
+        route: /v1/chat/completions
+        query: []
+        user_agent: ""
+        missing_session_id: reject
+        principal: {metadata: {}, team_metadata: null, team_id: null}
+        default_team_settings: []
+      - data: {metadata: {}}
+        slot: metadata
+        route: /v1/chat/completions
+        query: []
+        user_agent: ""
+        missing_session_id: pause
+        principal: {metadata: {}, team_metadata: null, team_id: null}
+        default_team_settings: []
+      - data: {litellm_session_id: body-session, metadata: {litellm_session_id_omitted: false}}
+        slot: metadata
+        route: /v1/chat/completions
+        query: []
+        user_agent: ""
+        missing_session_id: omit
+        principal: {metadata: {}, team_metadata: null, team_id: null}
+        default_team_settings: []
+      - data: {metadata: {}}
+        slot: metadata
+        route: /v1/chat/completions
+        query: []
+        user_agent: ""
+        missing_session_id: null
+        principal: {metadata: {}, team_metadata: null, team_id: null}
+        default_team_settings: []
+    destinations: []
+env: {}
+compare:
+  ignore:
+    - pointer: /value/prepare/0/outcome/data/litellm_session_id
+      why: LiteLLM draws a fresh uuid4 when the request carries no trace id
+    - pointer: /value/prepare/0/outcome/data/litellm_trace_id
+      why: LiteLLM draws a fresh uuid4 when the request carries no trace id
+    - pointer: /value/prepare/0/outcome/data/metadata/session_id
+      why: LiteLLM draws a fresh uuid4 when the request carries no trace id

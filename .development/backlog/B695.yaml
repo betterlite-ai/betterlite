@@ -2,7 +2,7 @@ id: B695
 milestone: M3 providers
 title: Azure image and audio operation composition
 status: todo
-depends_on: [B535, B536, B537, B538, B539, B171]
+depends_on: [B535, B536, B539, B171]
 file: tasks/B695-azure-media-dispatch.yaml
 covers:
   - "litellm/llms/azure/azure.py"

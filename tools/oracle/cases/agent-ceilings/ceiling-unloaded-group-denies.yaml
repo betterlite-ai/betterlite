@@ -1,0 +1,20 @@
+kind: helper
+name: ceiling-unloaded-group-denies
+call:
+  b4778:
+    operation: ceiling
+    agent_id: agent-1
+    agent_access_group_ids: [gone, g1]
+    groups:
+      g1: {access_model_names: [gpt-4o], access_mcp_server_ids: [srv-a], access_agent_ids: [agent-x]}
+      gone: null
+calls:
+  - b4778:
+      operation: ceiling
+      agent_id: agent-1
+      agent_access_group_ids: [gone]
+      groups:
+        gone: null
+env: {}
+compare:
+  ignore: []

@@ -2,7 +2,7 @@ id: B947
 title: Responses file search loop
 description: >-
   Execute the emulated file-search round using B1064's asearch (betterlite-core api::vector_store_search), called
-  once per query and vector store id by _run_vector_searches, and responses-create-call.
+  once per query and vector store id by _run_vector_searches, and the follow-up Responses call through the injected ResponsesFollowUp port (see Direct inputs).
   Capture upstream searches, bounded follow-up calls and final output with the split file-search formatter; keep
   user/team authorization attached to every search.
 
@@ -50,8 +50,8 @@ description: >-
 
 
   Direct inputs come from B090 (Vector stores), B1064 (the vector store asearch call), B171 (Direct helper oracle and URL path encoding), B928 (Response
-  synthetic events), B932 (Responses create call), B946 (Responses file search tools), B1087 (Api boundaries), B732
-  (Typed authentication principals and grant resolution). These are callable/type/config owners, not provider-family
+  synthetic events), B946 (Responses file search tools), B1087 (Api boundaries), B1138 (ResponsesApiResponse), B732
+  (Typed authentication principals and grant resolution). _call_aresponses (L392-L395) is the ResponsesFollowUp port this module declares: one async method taking input, model, tools and the remaining kwargs and returning B1138's ResponsesApiResponse. B955, which waits on both this task and B932, implements it over B932's aresponses; tests and the oracle helper use a scripted port, the way LiteLLM patches _call_aresponses in its tests. These are callable/type/config owners, not provider-family
   umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
 scope:
   paths:

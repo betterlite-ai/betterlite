@@ -1,0 +1,21 @@
+task: B164
+deviations:
+  - what: "BaseLLM has no create_client_session or create_aclient_session."
+    why: "Both build httpx clients or read litellm.client_session, and the wheel ships no httpx; the gateway does its own HTTP."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base.py#L55-L69
+  - what: "BaseLLM has no completion or embedding method, so BaseLLM().completion() raises AttributeError where LiteLLM returns None. CustomLLM still defines both with LiteLLM's parameters."
+    why: "LiteLLM declares them as (*args, **kwargs) -> Any. Without Any, mypy reports [override] and basedpyright reportIncompatibleMethodOverride on CustomLLM.completion and CustomLLM.embedding, since their named parameters can't take every call the variadic base takes. Nothing in betterlite subclasses BaseLLM except CustomLLM, and CustomLLM overrides both."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base.py#L82-L86
+  - what: "BaseLLM declares _aclient_session = None, so __aexit__ returns None when the session is unset or None. LiteLLM raises AttributeError when a caller sets it to None."
+    why: "LiteLLM checks hasattr and then awaits None.aclose(); no setup relies on that crash."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base.py#L75-L77
+  - what: "GenericStreamingChunk comes from betterlite.llms.custom_llm and betterlite._custom_llm, not from betterlite.types.utils."
+    why: "betterlite.types.utils has no GenericStreamingChunk yet and is outside this task's scope; the TypedDict has LiteLLM's keys, so a later one in types.utils is assignable to it."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L434-L443
+  - what: "The httpx response, timeout and the HTTPHandler and AsyncHTTPHandler clients are Protocols, completion, acompletion and process_response return ModelResponse with no CustomStreamWrapper, and image on image_edit is FileTypes or a list of them instead of Any."
+    why: "The wheel has no httpx and no CustomStreamWrapper, and Any is banned; the names, order and defaults of every parameter match LiteLLM's."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_llm.py#L46-L216
+kept_bugs:
+  - what: "BaseLLM.__exit__ takes no exception arguments, so a with statement can't use it, and BaseLLM has no __enter__."
+    why: "A caller that calls llm.__exit__() directly, as LiteLLM's own code can, keeps working."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base.py#L71-L73

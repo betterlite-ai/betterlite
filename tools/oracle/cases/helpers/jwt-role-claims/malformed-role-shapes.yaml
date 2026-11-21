@@ -1,0 +1,25 @@
+kind: helper
+name: jwt-role-claims-malformed-role-shapes
+env: {}
+compare: {ignore: []}
+call:
+  jwt_role_claims: {"identity": {}, "settings": {"user_roles_jwt_field": "realm.roles", "user_allowed_roles": ["o"]}, "claims": {"realm": {"roles": "ops"}}, "projection": {"kind": "rbac_role"}}
+calls:
+  - jwt_role_claims: {"identity": {}, "settings": {"user_roles_jwt_field": "realm.roles", "user_allowed_roles": ["ops"]}, "claims": {"realm": {"roles": "ops"}}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"user_roles_jwt_field": "realm.roles", "user_allowed_roles": ["ops"]}, "claims": {"realm": {"roles": {"ops": false}}}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"user_roles_jwt_field": "realm.roles", "user_allowed_roles": ["false"]}, "claims": {"realm": {"roles": {"ops": false}}}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"user_roles_jwt_field": "realm.roles", "user_allowed_roles": ["ops"]}, "claims": {"realm": {"roles": [1, null, "ops"]}}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"user_roles_jwt_field": "realm.roles", "user_allowed_roles": ["ops"]}, "claims": {"realm": {"roles": 5}}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"user_roles_jwt_field": "realm.roles", "user_allowed_roles": []}, "claims": {"realm": {"roles": true}}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "role_mappings": [{"role": "ab", "internal_role": "proxy_admin"}, {"role": "b", "internal_role": "team"}]}, "claims": {"roles": "ab"}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "role_mappings": [{"role": "admin", "internal_role": "proxy_admin"}]}, "claims": {"roles": ["admin", ["dev"]]}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "role_mappings": [{"role": "admin", "internal_role": "proxy_admin"}]}, "claims": {"roles": ["admin", {"dev": 1}]}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "role_mappings": []}, "claims": {"roles": ["admin", ["dev"]]}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "role_mappings": [{"role": "admin", "internal_role": "proxy_admin"}]}, "claims": {"roles": 7}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "role_mappings": [{"role": "admin", "internal_role": "proxy_admin"}]}, "claims": {"roles": true}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "role_mappings": [{"role": "admin", "internal_role": "proxy_admin"}]}, "claims": {"roles": [1, null, true, "admin"]}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "viewer*", "litellm_role": "proxy_admin_viewer"}]}, "claims": {"roles": [5, "viewer"]}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "viewer*", "litellm_role": "proxy_admin_viewer"}]}, "claims": {"roles": ["viewer", 5]}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "viewer*", "litellm_role": "proxy_admin_viewer"}, {"jwt_role": "*", "litellm_role": "internal_user"}]}, "claims": {"roles": ["dev", null]}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "viewer*", "litellm_role": "proxy_admin_viewer"}]}, "claims": {"roles": "viewer"}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "viewer*", "litellm_role": "proxy_admin_viewer"}]}, "claims": {"roles": {"viewer": 1}}, "projection": {"kind": "litellm_role"}}
