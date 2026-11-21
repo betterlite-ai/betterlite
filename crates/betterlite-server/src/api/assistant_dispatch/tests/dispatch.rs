@@ -119,7 +119,7 @@ async fn assistant_config_overlays_request() {
     a_configured_parameter_overlays_the_request(&settings).await;
     an_explicit_provider_bypasses_the_config(&settings).await;
     a_rejected_provider(&settings, "", "doesn't support").await;
-    a_rejected_provider(&settings, "anthropic", "'anthropic'").await;
+    a_rejected_provider(&settings, "anthropic", "doesn't support anthropic").await;
     configured_parameters_replace_the_path_keyword().await;
 }
 
