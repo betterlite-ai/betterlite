@@ -1,0 +1,9 @@
+litellm_settings:
+  api_base: os.environ/SPEECH_API_BASE
+  api_key: os.environ/SPEECH_API_KEY
+  openai_key: os.environ/SPEECH_OPENAI_KEY
+  organization: os.environ/SPEECH_ORGANIZATION
+  azure_key: os.environ/SPEECH_AZURE_KEY
+  api_version: os.environ/SPEECH_API_VERSION
+  num_retries: os.environ/SPEECH_NUM_RETRIES
+  request_timeout: os.environ/SPEECH_REQUEST_TIMEOUT

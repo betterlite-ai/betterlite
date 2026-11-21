@@ -1,0 +1,15 @@
+kind: helper
+name: missing-max-iterations
+call:
+  b3054:
+    agents:
+      - agent_id: agent-1
+        agent_name: alpha
+        agent_card_params: {model: gpt-4o}
+        litellm_params: {other: true}
+    calls:
+      - agent_id: agent-1
+        data: {model: gpt-4o, metadata: {session_id: s1}}
+      - data: {model: gpt-4o, metadata: {session_id: s1}}
+env: {}
+compare: {ignore: []}

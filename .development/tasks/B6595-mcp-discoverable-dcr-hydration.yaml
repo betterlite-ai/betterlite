@@ -21,13 +21,13 @@ description: >-
 
   Part 2, dcr_hydration. A config.yaml server has no LiteLLM_MCPServerTable row, so the DCR client minted for it lives in the server-scoped OAuth client store (table LiteLLM_MCPServerOAuthClient, keyed by server_id). After a restart the in-memory server has no client_id, and token refresh needs one. `hydrate_config_server_dcr_client` copies the stored client onto the in-memory server. The config loader (B6764) and the reload code call it for every config-declared server.
 
-  Collaborators come in through a DcrHydration constructor, following the way B6761 injects MetadataFetcher: a DcrClientStore trait with `async fn client_credentials(&self, server_id: &str) -> Result<Option<serde_json::Value>, StoreReadError>` (the raw credentials blob of the row, or None when there is no row; B4712 owns the real read, get_mcp_server_oauth_client_credentials, in betterlite-server, which this crate cannot import, so B8620 writes the adapter), and the Decryptor trait of B6763 (server_build). Types:
+  Collaborators come in through a DcrHydration constructor, following the way B6761 injects MetadataFetcher: a DcrClientStore trait with `async fn client_credentials(&self, server_id: &str) -> Result<Option<serde_json::Value>, StoreReadError>` (the raw credentials blob of the row, or None when there is no row; B4712 owns the real read, get_mcp_server_oauth_client_credentials, in betterlite-server, which this crate cannot import, so B8620 writes the adapter), and B2303's StoredCipher (betterlite-secrets secret_codec), whose decrypt_value with DecryptPolicy { log: FailureLog::Debug, value: FailureValue::Original } is decrypt_value_helper with exception_type debug and return_original_value True; tests build a cipher with a fixed salt key, as the sso_assertions tests do. Types:
 
   - PersistedDcrCredentials { client_id: Option<String>, client_secret: Option<String>, token_endpoint_auth_method: Option<String>, redirect_uris: Option<Vec<String>> } (`_PersistedDcrCredentials`), serde with every field optional and unknown fields ignored.
 
   - `parse_persisted_credentials(blob: &serde_json::Value) -> Option<PersistedDcrCredentials>` (`_get_persisted_dcr_credentials`): None when the blob is null, an empty string, an empty object or an empty array, or when it does not fit the struct (wrong field type). A JSON string is parsed as JSON text first, any other value is read as is.
 
-  - `decrypt_credential(decryptor, value: Option<&str>, field) -> Option<String>` (`_decrypt_persisted_dcr_credential`): None stays None, otherwise decrypt with the field name as the key. Like return_original_value=True with debug logging, an undecryptable value comes back as it was stored, so a client written before encryption still works.
+  - `decrypt_credential(cipher, value: Option<&str>, field) -> Option<String>` (`_decrypt_persisted_dcr_credential`): None stays None, otherwise decrypt with the field name as the key. Like return_original_value=True with debug logging, an undecryptable value comes back as it was stored, so a client written before encryption still works.
 
   - `apply_persisted_credentials(&self, server: &mut MCPServer, credentials) -> bool` (`_apply_persisted_dcr_credentials`): decrypt client_id; when the result is None or empty return false and leave the server alone. Otherwise set server.client_id, set server.client_secret to the decrypted secret (None when absent) and set server.token_endpoint_auth_method from the stored text, then return true.
 
@@ -37,7 +37,7 @@ description: >-
 
   - `hydrate_config_server_dcr_client(&self, server: &mut MCPServer) -> bool`: return false at once when server.client_id is set and non-empty (a client_id from config.yaml always wins and the store is not read). Otherwise load_store_credentials, return false for None, else return apply_persisted_credentials.
 
-  Tests: oauth_metadata_cache::tests with paused tokio time (a fresh hit, an expired hit, the negative entry, prune by expiry, prune by size with ties, store dropped after invalidate while a fetch is in flight, invalidate with no fetch in flight, a held lock surviving invalidate, two waiters on one key running one at a time, a cancelled waiter returning its count, other servers untouched). dcr_hydration::tests with a fake DcrClientStore and a Decryptor that strips an "enc:" prefix (client_id from config wins, no row, read error, blob as JSON string and as object, empty blob, wrong field type, undecryptable value kept, empty client_id, secret absent, the redirect check).
+  Tests: oauth_metadata_cache::tests with paused tokio time (a fresh hit, an expired hit, the negative entry, prune by expiry, prune by size with ties, store dropped after invalidate while a fetch is in flight, invalidate with no fetch in flight, a held lock surviving invalidate, two waiters on one key running one at a time, a cancelled waiter returning its count, other servers untouched). dcr_hydration::tests with a fake DcrClientStore and a fixed-key StoredCipher whose values the test seals with encrypt_value (client_id from config wins, no row, read error, blob as JSON string and as object, empty blob, wrong field type, undecryptable value kept, empty client_id, secret absent, the redirect check).
 
 scope:
   paths:
@@ -100,7 +100,7 @@ oracle_cases: []
 deviations:
   - what: The cache and its locks are one OAuthMetadataCache value passed in, not module-level dicts, and time is an argument.
     why: the repo allows no module state, and tests run on paused time.
-  - what: DcrClientStore is a trait and an undecryptable value is handled by the injected Decryptor.
+  - what: DcrClientStore is a trait and an undecryptable value comes back as stored through the cipher's Original policy.
     why: betterlite-mcp cannot import the database code in betterlite-server, so B8620 wires the adapter.
   - what: token_endpoint_auth_method from the store is kept as text on PersistedDcrCredentials and converted with the MCPTokenEndpointAuthMethod parser when it is applied; text that does not parse leaves the field None and logs at debug.
     why: Python assigns the raw string without validation, while the Rust record holds the typed enum.
@@ -109,7 +109,7 @@ out_of_scope:
   - "fetch_upstream_oauth_protected_resource and is_network_error (the upstream fetch that reads and fills this cache), and every route handler of discoverable_endpoints: no owner found, see the architect notes."
   - "_resolve_persisted_dcr_client, _reuse_persisted_dcr_client_if_available, _persisted_dcr_redirect_uri_is_stale and _persist_dcr_client_registration (the register flow, which reads the same types): no owner found, see the architect notes."
   - "get_mcp_server_oauth_client_credentials, the real store read: B4712."
-  - "decrypt_value_helper and the Decryptor trait: B2303 and B6763."
+  - "decrypt_value_helper and StoredCipher: B2303."
   - "_hydrate_config_servers_dcr_clients, the loop that calls hydrate for each server: B6764. _invalidate_server_definition_caches, the caller of invalidate: B6765 and the other registry writers."
   - "The MCPServer record: B6590."
 

@@ -218,7 +218,7 @@ out_of_scope:
   - 'model_management_endpoints.py: update_team (L161-L166) is a legacy test-patching shim with no production
     call sites in this file at the pin; native team assignment services replace it, so no dead wrapper
     is added.'
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+  - B2303 owns the cryptographic storage format (`StoredCipher::decrypt_value`, the port of decrypt_value_helper, in betterlite-secrets::secret_codec on main); injected StoredCipher test doubles are not a plaintext
     production fallback.
   - 'litellm/proxy/management_endpoints/model_management_endpoints.py: B832 owns _canonical_session_tags
     (L1985-L1986), ModelManagementAuthChecks.can_user_make_team_model_call (L1995-L2015), ModelManagementAuthChecks.can_user_attach_credential
