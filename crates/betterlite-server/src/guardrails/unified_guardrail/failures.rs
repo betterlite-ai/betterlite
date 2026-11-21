@@ -64,99 +64,71 @@ guardrail_only!(
     VideoTranslationError
 );
 
-impl AdapterFailure for EmbeddingsTranslationError {
-    fn into_failure(self) -> GuardrailFailure {
-        match self {
-            Self::Guardrail(failure) => failure,
-            other @ Self::NonTextItem { .. } => GuardrailFailure::Other(other.to_string()),
-        }
-    }
+// the guardrail arms give the failure back; every other error becomes Other with its text
+macro_rules! guardrail_or_other {
+    ($error:ty, $($found:pat => $value:expr),+ ; other $rest:pat, back $failure:ident => $back:expr) => {
+        impl AdapterFailure for $error {
+            fn into_failure(self) -> GuardrailFailure {
+                match self {
+                    $($found => $value,)+
+                    other @ ($rest) => GuardrailFailure::Other(other.to_string()),
+                }
+            }
 
-    fn from_failure(failure: GuardrailFailure) -> Self {
-        Self::Guardrail(failure)
-    }
-}
-
-impl AdapterFailure for A2aTranslationError {
-    fn into_failure(self) -> GuardrailFailure {
-        match self {
-            Self::Guardrail(failure) => failure,
-            other @ (Self::Text(_) | Self::Json { .. }) => {
-                GuardrailFailure::Other(other.to_string())
+            fn from_failure($failure: GuardrailFailure) -> Self {
+                $back
             }
         }
-    }
-
-    fn from_failure(failure: GuardrailFailure) -> Self {
-        Self::Guardrail(failure)
-    }
+    };
 }
 
-impl AdapterFailure for ChatTranslationError {
-    fn into_failure(self) -> GuardrailFailure {
-        match self {
-            Self::Guardrail(failure)
-            | Self::Input(InputError::Guardrail(failure))
-            | Self::Stream(EndedStreamError::Guardrail(failure)) => failure,
-            other @ (Self::Input(_) | Self::Stream(_) | Self::Parse { .. }) => {
-                GuardrailFailure::Other(other.to_string())
-            }
-        }
-    }
+guardrail_or_other!(
+    EmbeddingsTranslationError,
+    Self::Guardrail(failure) => failure;
+    other Self::NonTextItem { .. },
+    back failure => Self::Guardrail(failure)
+);
 
-    fn from_failure(failure: GuardrailFailure) -> Self {
-        Self::Guardrail(failure)
-    }
-}
+guardrail_or_other!(
+    A2aTranslationError,
+    Self::Guardrail(failure) => failure;
+    other Self::Text(_) | Self::Json { .. },
+    back failure => Self::Guardrail(failure)
+);
 
-impl AdapterFailure for ResponsesTranslationError {
-    fn into_failure(self) -> GuardrailFailure {
-        match self {
-            Self::Request(RequestRewriteError::Guardrail { source })
-            | Self::Output(OutputRewriteError::Guardrail { source }) => *source,
-            Self::Stream(StreamOutputError::Guardrail(failure)) => failure,
-            other @ (Self::Request(_)
-            | Self::Output(_)
-            | Self::Stream(_)
-            | Self::Undeliverable(_)
-            | Self::Json(_)) => GuardrailFailure::Other(other.to_string()),
-        }
-    }
+guardrail_or_other!(
+    ChatTranslationError,
+    Self::Guardrail(failure)
+        | Self::Input(InputError::Guardrail(failure))
+        | Self::Stream(EndedStreamError::Guardrail(failure)) => failure;
+    other Self::Input(_) | Self::Stream(_) | Self::Parse { .. },
+    back failure => Self::Guardrail(failure)
+);
 
-    fn from_failure(failure: GuardrailFailure) -> Self {
-        Self::Stream(StreamOutputError::Guardrail(failure))
-    }
-}
+guardrail_or_other!(
+    ResponsesTranslationError,
+    Self::Request(RequestRewriteError::Guardrail { source })
+        | Self::Output(OutputRewriteError::Guardrail { source }) => *source,
+    Self::Stream(StreamOutputError::Guardrail(failure)) => failure;
+    other Self::Request(_) | Self::Output(_) | Self::Stream(_) | Self::Undeliverable(_) | Self::Json(_),
+    back failure => Self::Stream(StreamOutputError::Guardrail(failure))
+);
 
-impl AdapterFailure for AnthropicTranslationError {
-    fn into_failure(self) -> GuardrailFailure {
-        match self {
-            Self::Input(ProcessInputError::Guardrail { source })
-            | Self::Output(ProcessOutputError::Guardrail { source }) => *source,
-            Self::Stream(ProcessStreamError::Guardrail(failure)) => failure,
-            other @ (Self::Input(_) | Self::Output(_) | Self::Stream(_)) => {
-                GuardrailFailure::Other(other.to_string())
-            }
-        }
-    }
+guardrail_or_other!(
+    AnthropicTranslationError,
+    Self::Input(ProcessInputError::Guardrail { source })
+        | Self::Output(ProcessOutputError::Guardrail { source }) => *source,
+    Self::Stream(ProcessStreamError::Guardrail(failure)) => failure;
+    other Self::Input(_) | Self::Output(_) | Self::Stream(_),
+    back failure => Self::Stream(ProcessStreamError::Guardrail(failure))
+);
 
-    fn from_failure(failure: GuardrailFailure) -> Self {
-        Self::Stream(ProcessStreamError::Guardrail(failure))
-    }
-}
-
-impl AdapterFailure for PassthroughGuardrailError<GuardrailFailure> {
-    fn into_failure(self) -> GuardrailFailure {
-        match self {
-            Self::Guardrail(failure) => failure,
-            other @ Self::Payload(_) => GuardrailFailure::Other(other.to_string()),
-        }
-    }
-
-    fn from_failure(failure: GuardrailFailure) -> Self {
-        Self::Guardrail(failure)
-    }
-}
+guardrail_or_other!(
+    PassthroughGuardrailError<GuardrailFailure>,
+    Self::Guardrail(failure) => failure;
+    other Self::Payload(_),
+    back failure => Self::Guardrail(failure)
+);
 
 impl AdapterFailure for BedrockPassthroughError {
     fn into_failure(self) -> GuardrailFailure {

@@ -13,9 +13,11 @@ pub struct Raw {
 #[derive(Debug, Default, serde::Deserialize)]
 pub struct RawSettings {
     #[serde(default)]
-    pub skip_system_message_in_guardrail: Option<bool>,
+    #[serde(rename = "skip_system_message_in_guardrail")]
+    pub skip_system: Option<bool>,
     #[serde(default)]
-    pub skip_tool_message_in_guardrail: Option<bool>,
+    #[serde(rename = "skip_tool_message_in_guardrail")]
+    pub skip_tool: Option<bool>,
 }
 
 // LiteLLM's module defaults, used only where a guardrail leaves its own skip flag unset
@@ -33,14 +35,8 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         Ok(Settings {
-            skip_system_message: self
-                .settings
-                .skip_system_message_in_guardrail
-                .unwrap_or(false),
-            skip_tool_message: self
-                .settings
-                .skip_tool_message_in_guardrail
-                .unwrap_or(false),
+            skip_system_message: self.settings.skip_system.unwrap_or(false),
+            skip_tool_message: self.settings.skip_tool.unwrap_or(false),
         })
     }
 }
