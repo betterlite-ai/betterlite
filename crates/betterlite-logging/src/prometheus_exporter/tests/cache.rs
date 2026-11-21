@@ -52,8 +52,10 @@ fn toggles_after_register_do_not_change_the_registered_labelnames() {
 
 #[test]
 fn the_emit_flag_controls_the_input_sequence_length_label() {
-    let mut settings = PrometheusExporterSettings::default();
-    settings.prometheus_emit_input_sequence_length_label = true;
+    let settings = PrometheusExporterSettings {
+        prometheus_emit_input_sequence_length_label: true,
+        ..PrometheusExporterSettings::default()
+    };
     let mut labels = default_label_settings();
     labels.budget_and_length.emit_input_sequence_length = true;
     let (_registry, collectors) = registered(&settings, &labels);
@@ -83,13 +85,15 @@ fn the_emit_flag_stays_off_by_default() {
 
 #[test]
 fn the_cache_drops_excluded_labels_and_keeps_the_include_filter() {
-    let mut settings = PrometheusExporterSettings::default();
-    settings.prometheus_metrics_config = vec![PrometheusMetricsConfig {
-        group: "experiments".to_owned(),
-        metrics: vec!["litellm_cache_hits_metric".to_owned()],
-        include_labels: vec!["model".to_owned(), "api_key_alias".to_owned()],
-    }];
-    settings.prometheus_exclude_labels = vec!["model".to_owned()];
+    let settings = PrometheusExporterSettings {
+        prometheus_metrics_config: vec![PrometheusMetricsConfig {
+            group: "experiments".to_owned(),
+            metrics: vec!["litellm_cache_hits_metric".to_owned()],
+            include_labels: vec!["model".to_owned(), "api_key_alias".to_owned()],
+        }],
+        prometheus_exclude_labels: vec!["model".to_owned()],
+        ..PrometheusExporterSettings::default()
+    };
     let (_registry, collectors) = registered(&settings, &default_label_settings());
     assert_eq!(
         collectors.cached_labels["litellm_cache_hits_metric"],

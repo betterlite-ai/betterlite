@@ -47,15 +47,15 @@ fn the_default_listing_holds_the_81_collectors_in_litellm_order() {
 #[test]
 fn a_custom_latency_bucket_list_reaches_only_the_latency_histograms() {
     let mut input = defaults();
-    input["prometheus_latency_buckets"] = json!([0.5, 2.5]);
+    input["prometheus_latency_buckets"] = json!([0.5_f64, 2.5_f64]);
     let collectors = collectors(&listing(input));
     assert_eq!(
         named(&collectors, "litellm_request_total_latency_metric")["buckets"],
-        json!([0.5, 2.5, "+Inf"])
+        json!([0.5_f64, 2.5_f64, "+Inf"])
     );
     assert_eq!(
         named(&collectors, "litellm_deployment_latency_per_output_token")["buckets"][0],
-        json!(0.005)
+        json!(0.005_f64)
     );
 }
 

@@ -7,8 +7,10 @@ use super::{default_label_settings, registered};
 
 #[test]
 fn an_excluded_metric_is_a_no_op_and_absent_from_the_registry() {
-    let mut settings = PrometheusExporterSettings::default();
-    settings.prometheus_exclude_metrics = vec!["litellm_spend_metric".to_owned()];
+    let settings = PrometheusExporterSettings {
+        prometheus_exclude_metrics: vec!["litellm_spend_metric".to_owned()],
+        ..PrometheusExporterSettings::default()
+    };
     let (registry, collectors) = registered(&settings, &default_label_settings());
     assert!(matches!(
         collectors.litellm_spend_metric,
@@ -21,8 +23,10 @@ fn an_excluded_metric_is_a_no_op_and_absent_from_the_registry() {
 
 #[test]
 fn an_excluded_label_is_dropped_from_schema_labels() {
-    let mut settings = PrometheusExporterSettings::default();
-    settings.prometheus_exclude_labels = vec!["model".to_owned()];
+    let settings = PrometheusExporterSettings {
+        prometheus_exclude_labels: vec!["model".to_owned()],
+        ..PrometheusExporterSettings::default()
+    };
     let (registry, collectors) = registered(&settings, &default_label_settings());
     let metric = registry
         .get("litellm_spend_metric")
@@ -39,8 +43,10 @@ fn an_excluded_label_is_dropped_from_schema_labels() {
 
 #[test]
 fn an_excluded_label_is_dropped_from_fixed_labels() {
-    let mut settings = PrometheusExporterSettings::default();
-    settings.prometheus_exclude_labels = vec!["status".to_owned()];
+    let settings = PrometheusExporterSettings {
+        prometheus_exclude_labels: vec!["status".to_owned()],
+        ..PrometheusExporterSettings::default()
+    };
     let (registry, _collectors) = registered(&settings, &default_label_settings());
     let metric = registry
         .get("litellm_guardrail_latency_seconds")
@@ -53,8 +59,10 @@ fn an_excluded_label_is_dropped_from_fixed_labels() {
 
 #[test]
 fn an_excluded_label_on_a_no_label_metric_leaves_it_a_real_collector() {
-    let mut settings = PrometheusExporterSettings::default();
-    settings.prometheus_exclude_labels = vec!["model".to_owned()];
+    let settings = PrometheusExporterSettings {
+        prometheus_exclude_labels: vec!["model".to_owned()],
+        ..PrometheusExporterSettings::default()
+    };
     let (_registry, collectors) = registered(&settings, &default_label_settings());
     assert!(matches!(
         collectors.litellm_total_users_metric,
@@ -64,12 +72,14 @@ fn an_excluded_label_on_a_no_label_metric_leaves_it_a_real_collector() {
 
 #[test]
 fn include_labels_narrow_the_named_metric_only() {
-    let mut settings = PrometheusExporterSettings::default();
-    settings.prometheus_metrics_config = vec![PrometheusMetricsConfig {
-        group: "experiments".to_owned(),
-        metrics: vec!["litellm_spend_metric".to_owned()],
-        include_labels: vec!["hashed_api_key".to_owned()],
-    }];
+    let settings = PrometheusExporterSettings {
+        prometheus_metrics_config: vec![PrometheusMetricsConfig {
+            group: "experiments".to_owned(),
+            metrics: vec!["litellm_spend_metric".to_owned()],
+            include_labels: vec!["hashed_api_key".to_owned()],
+        }],
+        ..PrometheusExporterSettings::default()
+    };
     let (registry, collectors) = registered(&settings, &default_label_settings());
     assert_eq!(registry.descriptions().len(), 1);
     let metric = registry
@@ -88,12 +98,14 @@ fn include_labels_narrow_the_named_metric_only() {
 
 #[test]
 fn include_labels_keep_the_schema_order_of_the_kept_labels() {
-    let mut settings = PrometheusExporterSettings::default();
-    settings.prometheus_metrics_config = vec![PrometheusMetricsConfig {
-        group: "experiments".to_owned(),
-        metrics: vec!["litellm_cache_hits_metric".to_owned()],
-        include_labels: vec!["api_key_alias".to_owned(), "model".to_owned()],
-    }];
+    let settings = PrometheusExporterSettings {
+        prometheus_metrics_config: vec![PrometheusMetricsConfig {
+            group: "experiments".to_owned(),
+            metrics: vec!["litellm_cache_hits_metric".to_owned()],
+            include_labels: vec!["api_key_alias".to_owned(), "model".to_owned()],
+        }],
+        ..PrometheusExporterSettings::default()
+    };
     let (registry, _collectors) = registered(&settings, &default_label_settings());
     let metric = registry
         .get("litellm_cache_hits_metric")

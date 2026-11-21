@@ -71,8 +71,10 @@ fn a_wrong_label_count_is_unsupported() {
 
 #[test]
 fn a_no_op_metric_is_unsupported() {
-    let mut settings = PrometheusExporterSettings::default();
-    settings.prometheus_exclude_metrics = vec![PROVIDER_BUDGET.to_owned()];
+    let settings = PrometheusExporterSettings {
+        prometheus_exclude_metrics: vec![PROVIDER_BUDGET.to_owned()],
+        ..PrometheusExporterSettings::default()
+    };
     let (_registry, collectors) = registered(&settings, &default_label_settings());
     assert_eq!(
         collectors
@@ -85,8 +87,10 @@ fn a_no_op_metric_is_unsupported() {
 
 #[test]
 fn a_label_filtered_metric_is_unsupported() {
-    let mut settings = PrometheusExporterSettings::default();
-    settings.prometheus_exclude_labels = vec!["api_provider".to_owned()];
+    let settings = PrometheusExporterSettings {
+        prometheus_exclude_labels: vec!["api_provider".to_owned()],
+        ..PrometheusExporterSettings::default()
+    };
     let (_registry, collectors) = registered(&settings, &default_label_settings());
     assert_eq!(
         collectors

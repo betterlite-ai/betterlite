@@ -16,21 +16,32 @@ fn bounded(seconds: &[f64]) -> Vec<Bucket> {
 
 fn latency_default() -> Vec<Bucket> {
     bounded(&[
-        0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0,
-        420.0, 600.0,
+        0.005_f64, 0.01_f64, 0.025_f64, 0.05_f64, 0.1_f64, 0.25_f64, 0.5_f64, 1.0_f64, 2.0_f64,
+        5.0_f64, 10.0_f64, 30.0_f64, 60.0_f64, 120.0_f64, 300.0_f64, 420.0_f64, 600.0_f64,
     ])
 }
 
 fn client_default() -> Vec<Bucket> {
     bounded(&[
-        0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 7.5, 10.0,
+        0.005_f64, 0.01_f64, 0.025_f64, 0.05_f64, 0.075_f64, 0.1_f64, 0.25_f64, 0.5_f64, 0.75_f64,
+        1.0_f64, 2.5_f64, 5.0_f64, 7.5_f64, 10.0_f64,
     ])
 }
 
 fn batch_duration() -> Vec<Bucket> {
     bounded(&[
-        60.0, 120.0, 300.0, 600.0, 900.0, 1800.0, 3600.0, 7200.0, 14400.0, 28800.0, 43200.0,
-        86400.0,
+        60.0_f64,
+        120.0_f64,
+        300.0_f64,
+        600.0_f64,
+        900.0_f64,
+        1800.0_f64,
+        3600.0_f64,
+        7200.0_f64,
+        14400.0_f64,
+        28800.0_f64,
+        43200.0_f64,
+        86400.0_f64,
     ])
 }
 
@@ -98,15 +109,22 @@ fn the_managed_batch_duration_uses_the_batch_duration_buckets() {
 #[case::request_queue_time("litellm_request_queue_time_seconds")]
 #[case::guardrail_latency("litellm_guardrail_latency_seconds")]
 fn custom_latency_buckets_replace_the_default_for_latency_histograms(#[case] metric: &str) {
-    let mut settings = PrometheusExporterSettings::default();
-    settings.prometheus_latency_buckets = Some(vec![0.5_f64, 2.5_f64]);
-    assert_eq!(registered_buckets(&settings, metric), bounded(&[0.5, 2.5]));
+    let settings = PrometheusExporterSettings {
+        prometheus_latency_buckets: Some(vec![0.5_f64, 2.5_f64]),
+        ..PrometheusExporterSettings::default()
+    };
+    assert_eq!(
+        registered_buckets(&settings, metric),
+        bounded(&[0.5_f64, 2.5_f64])
+    );
 }
 
 #[test]
 fn custom_latency_buckets_leave_the_other_histograms_alone() {
-    let mut settings = PrometheusExporterSettings::default();
-    settings.prometheus_latency_buckets = Some(vec![0.5_f64, 2.5_f64]);
+    let settings = PrometheusExporterSettings {
+        prometheus_latency_buckets: Some(vec![0.5_f64, 2.5_f64]),
+        ..PrometheusExporterSettings::default()
+    };
     assert_eq!(
         registered_buckets(&settings, "litellm_deployment_latency_per_output_token"),
         client_default()
@@ -119,8 +137,10 @@ fn custom_latency_buckets_leave_the_other_histograms_alone() {
 
 #[test]
 fn the_latency_buckets_field_keeps_the_configured_list() {
-    let mut settings = PrometheusExporterSettings::default();
-    settings.prometheus_latency_buckets = Some(vec![0.5_f64, 2.5_f64]);
+    let settings = PrometheusExporterSettings {
+        prometheus_latency_buckets: Some(vec![0.5_f64, 2.5_f64]),
+        ..PrometheusExporterSettings::default()
+    };
     let (_registry, collectors) = registered(&settings, &default_label_settings());
     assert_eq!(
         collectors.latency_buckets,

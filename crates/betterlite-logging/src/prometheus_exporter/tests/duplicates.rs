@@ -64,18 +64,22 @@ fn a_second_register_names_the_sample_names_that_clash() {
                 "litellm_proxy_failed_requests_metric_created".to_owned(),
             ]
         ),
-        other => panic!("unexpected error: {other}"),
+        other @ (PrometheusExporterError::CallerIdentity(_)
+        | PrometheusExporterError::Factory(_)
+        | PrometheusExporterError::Buckets(_)) => panic!("unexpected error: {other}"),
     }
 }
 
 #[test]
 fn an_unsupported_include_label_reports_the_caller_identity_mode() {
-    let mut settings = PrometheusExporterSettings::default();
-    settings.prometheus_metrics_config = vec![PrometheusMetricsConfig {
-        group: "experiments".to_owned(),
-        metrics: vec!["litellm_spend_metric".to_owned()],
-        include_labels: vec!["not_a_label".to_owned()],
-    }];
+    let settings = PrometheusExporterSettings {
+        prometheus_metrics_config: vec![PrometheusMetricsConfig {
+            group: "experiments".to_owned(),
+            metrics: vec!["litellm_spend_metric".to_owned()],
+            include_labels: vec!["not_a_label".to_owned()],
+        }],
+        ..PrometheusExporterSettings::default()
+    };
     let registry = CollectorRegistry::default();
     let error = registration_error(&settings, &default_label_settings(), &registry);
     match error {
@@ -85,14 +89,19 @@ fn an_unsupported_include_label_reports_the_caller_identity_mode() {
                 "api_key_alias"
             );
         }
-        other => panic!("unexpected error: {other}"),
+        other @ (PrometheusExporterError::CallerIdentity(_)
+        | PrometheusExporterError::Factory(_)
+        | PrometheusExporterError::Registry(_)
+        | PrometheusExporterError::Buckets(_)) => panic!("unexpected error: {other}"),
     }
 }
 
 #[test]
 fn an_empty_latency_bucket_list_fails_at_the_first_latency_histogram() {
-    let mut settings = PrometheusExporterSettings::default();
-    settings.prometheus_latency_buckets = Some(Vec::new());
+    let settings = PrometheusExporterSettings {
+        prometheus_latency_buckets: Some(Vec::new()),
+        ..PrometheusExporterSettings::default()
+    };
     let registry = CollectorRegistry::default();
     let error = registration_error(&settings, &default_label_settings(), &registry);
     assert_eq!(registry.descriptions().len(), 2);
@@ -105,8 +114,10 @@ fn an_empty_latency_bucket_list_fails_at_the_first_latency_histogram() {
 
 #[test]
 fn unsorted_latency_buckets_fail_before_any_histogram_is_registered() {
-    let mut settings = PrometheusExporterSettings::default();
-    settings.prometheus_latency_buckets = Some(vec![2.5_f64, 0.5_f64]);
+    let settings = PrometheusExporterSettings {
+        prometheus_latency_buckets: Some(vec![2.5_f64, 0.5_f64]),
+        ..PrometheusExporterSettings::default()
+    };
     let registry = CollectorRegistry::default();
     let error = registration_error(&settings, &default_label_settings(), &registry);
     assert_eq!(registry.descriptions().len(), 2);
@@ -119,8 +130,10 @@ fn unsorted_latency_buckets_fail_before_any_histogram_is_registered() {
 
 #[test]
 fn a_nan_latency_bucket_is_not_sorted() {
-    let mut settings = PrometheusExporterSettings::default();
-    settings.prometheus_latency_buckets = Some(vec![f64::NAN, 1.0_f64]);
+    let settings = PrometheusExporterSettings {
+        prometheus_latency_buckets: Some(vec![f64::NAN, 1.0_f64]),
+        ..PrometheusExporterSettings::default()
+    };
     let registry = CollectorRegistry::default();
     let error = registration_error(&settings, &default_label_settings(), &registry);
     assert!(matches!(
@@ -131,12 +144,14 @@ fn a_nan_latency_bucket_is_not_sorted() {
 
 #[test]
 fn excluding_every_latency_histogram_skips_bucket_validation() {
-    let mut settings = PrometheusExporterSettings::default();
-    settings.prometheus_latency_buckets = Some(Vec::new());
-    settings.prometheus_exclude_metrics = LATENCY_METRICS
-        .iter()
-        .map(|metric| (*metric).to_owned())
-        .collect();
+    let settings = PrometheusExporterSettings {
+        prometheus_latency_buckets: Some(Vec::new()),
+        prometheus_exclude_metrics: LATENCY_METRICS
+            .iter()
+            .map(|metric| (*metric).to_owned())
+            .collect(),
+        ..PrometheusExporterSettings::default()
+    };
     let registry = CollectorRegistry::default();
     let collectors =
         PrometheusCollectors::register(&settings, &default_label_settings(), &registry)
