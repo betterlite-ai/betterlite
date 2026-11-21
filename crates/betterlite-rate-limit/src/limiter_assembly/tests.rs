@@ -61,7 +61,10 @@ fn assembly_keeps_every_owner() {
     let script = assembly.check_and_increment_script.as_ref().unwrap();
     assert!(Arc::ptr_eq(script, &owners.script));
     let settlement = assembly.settlement();
-    assert!(Arc::ptr_eq(settlement.script.as_ref().unwrap(), &owners.script));
+    assert!(Arc::ptr_eq(
+        settlement.script.as_ref().unwrap(),
+        &owners.script
+    ));
     assert_eq!(settlement.fail_closed, owners.fail_closed);
     let group = assembly.model_groups.resolve("alias");
     assert_eq!(group.as_deref(), Some("group"));
