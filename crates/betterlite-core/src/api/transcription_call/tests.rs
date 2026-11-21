@@ -96,9 +96,8 @@ fn transcription_openai_form() {
         assert_eq!(
             target.optional_params,
             params(
-                r#"{"extra_body":{"prompt":"hint","temperature":0},"language":"en","prompt":"hint",
-                    "response_format":"verbose_json","temperature":0,
-                    "timestamp_granularities":["word","segment"]}"#
+                r#"{"language":"en","prompt":"hint","response_format":"verbose_json",
+                    "temperature":0,"timestamp_granularities":["word","segment"]}"#
             )
         );
         let TranscriptionAnswer::Reply(reply) = answer else {
@@ -123,7 +122,7 @@ fn transcription_openai_form() {
         assert_eq!(srt_targets.len(), 2);
         assert_eq!(
             srt_targets[1].optional_params,
-            params(r#"{"extra_body":{},"response_format":"srt"}"#)
+            params(r#"{"response_format":"srt"}"#)
         );
         assert_eq!(srt_targets[1].input, "audio.wav");
         let TranscriptionAnswer::Reply(srt_reply) = srt_answer else {

@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use betterlite_context::media_config_selection::audio_transcription::AudioTranscriptionConfigTag;
 use betterlite_context::non_default_params::Params;
+use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::audio_file_input::ProcessedAudioFile;
 use betterlite_openai::openai_base_config::Headers;
@@ -75,9 +76,14 @@ impl<'call> Destination<'call> {
         }
     }
 
-    // the plan's optional params, plus the extra_headers only the Azure branch adds
+    // the plan's optional params after the SDKs' extra_body merge, plus the extra_headers only Azure adds
     fn optional_params(self, plan: &'call Plan, call: &'call TranscriptionCall) -> Params {
         let mut params = plan.optional_params.clone();
+        if !matches!(self, Self::Injected { .. })
+            && let Some(JsonValue::Object(extra)) = params.shift_remove("extra_body")
+        {
+            params.extend(extra);
+        }
         if matches!(self, Self::Azure(_)) {
             params.insert(
                 String::from("extra_headers"),

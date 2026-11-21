@@ -124,6 +124,28 @@ fn optional_params_map_keeps_the_decisions_shape() {
     assert_eq!(mapped.get("temperature"), Some(&json("0")));
 }
 
+// get_optional_params_transcription's extra_body members reach the transport beside the named options
+#[test]
+fn extra_body_members_are_laid_over_the_openai_options() {
+    runtime().block_on(async {
+        let harness = Harness::new();
+        harness.dispatch.reply(response(r#"{"text":"Hello"}"#));
+        let mut request = request_for("openai/whisper-1");
+        request.params = params(r#"{"custom_field":7}"#);
+        harness
+            .service()
+            .transcription(&request, AudioFile::Bytes(&wav(1)))
+            .await
+            .expect("the transcription succeeds");
+        let recorded = harness.dispatch.last();
+        assert_eq!(
+            recorded.optional_params.get("custom_field"),
+            Some(&value("7"))
+        );
+        assert!(!recorded.optional_params.contains_key("extra_body"));
+    });
+}
+
 // model_call_details["client"] = str(client), with "None" when the caller passed no client
 #[test]
 fn logging_records_the_client_string() {

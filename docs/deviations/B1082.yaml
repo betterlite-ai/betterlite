@@ -12,4 +12,7 @@ deviations:
   - what: A cached dict skips the sync stage's duration step and is measured after conversion when the file came from kwargs, where LiteLLM's sync stage writes _hidden_params onto the dict and raises AttributeError for a readable audio file, failing the call.
     why: A dict has no _hidden_params attribute, so LiteLLM's duration step crashes on exactly the cached replies it is meant to serve; betterlite converts the dict first and then stores the duration.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8186-L8191
+  - what: The options the OpenAI and Azure transports send have get_optional_params_transcription's extra_body map laid over them, where LiteLLM hands extra_body to the OpenAI SDK and the SDK merges it into the request body. A member that is not one of the transport's named fields is refused by betterlite before the send, where LiteLLM's SDK puts it in the body for the provider to judge.
+    why: betterlite's transports take the OpenAI SDK's named transcription fields and refuse every other key, so the merge the SDK performs happens in the dispatch layer; every supported value reaches the provider in the same body, and an unknown key fails client-side.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5063-L5080
 kept_bugs: []
