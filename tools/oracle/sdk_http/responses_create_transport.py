@@ -279,7 +279,8 @@ def run_transport(call: TransportCall, api_base: str) -> Outcome:
     if config is None:
         raise ValueError("the openai responses config is registered")
     install(call)
-    params: dict[str, JsonValue] = {**call.litellm_params, "api_base": api_base}
+    params = JSON_MAP.validate_python(call.litellm_params)
+    params["api_base"] = api_base
     litellm_params = LITELLM_PARAMS.validate_python(params)
     try:
         work = invoke(call, config, litellm_params, logging_fixture(call.model))

@@ -111,7 +111,8 @@ async fn create_transform_overlay_order() {
     let outcome = logged.outcome.expect("the sync call");
 
     // the pre-hook replaced the input, and pre_call logs what it replaced it with
-    assert_eq!(logged.details.get("input"), Some(&models("\"changed\"")));
+    let recorded = config.pre_call_details();
+    assert_eq!(recorded.get("input"), Some(&models("\"changed\"")));
     assert_overlay_request(&wire, &dispatcher);
     assert_overlay_records(&config);
     assert_eq!(
@@ -624,7 +625,7 @@ async fn signed_body(call_params: &CreateParams, dispatcher: &Dispatcher) {
     assert!(recorded.data.get("stream").is_none());
     assert_eq!(recorded.api_base, "http://mock/v1/responses");
     assert!(wire.requests()[0].body.is_empty());
-    assert_pre_call_record(&logged.details);
+    assert_pre_call_record(&config.pre_call_details());
 }
 
 // _pre_call logs the original input, api_key="", the final body, the base URL and the signed headers
@@ -943,6 +944,12 @@ async fn create_agentic_followup_messages(#[case] items: bool) {
         ]
     );
     assert_eq!(recorder.optional(), vec![json(r#"{"temperature":0.2}"#)]);
+}
+
+// Every create-transport failure: status, streamed status, step, request context and request build
+#[tokio::test]
+async fn create_transport_failure() {
+    failures::transport_failures().await;
 }
 
 // The timeout text parser's seeds, replayed through the same float() the handler calls

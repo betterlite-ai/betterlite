@@ -281,6 +281,7 @@ pub(super) struct Config {
     pub(super) validated: Mutex<Vec<Headers>>,
     pub(super) signed: Mutex<Vec<SignRecord>>,
     pub(super) transform_headers: Mutex<Vec<IndexMap<String, String>>>,
+    pub(super) pre_call_details: Mutex<Option<IndexMap<String, Json>>>,
     pub(super) off_loop_sign: AtomicBool,
     pub(super) off_loop_transform: AtomicBool,
 }
@@ -316,6 +317,25 @@ impl Config {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
+    }
+
+    // The details as pre_call recorded them, before the response transform's post_call overwrites them
+    pub(super) fn pre_call_details(&self) -> IndexMap<String, Json> {
+        self.pre_call_details
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+            .expect("the response transform follows the pre-call")
+    }
+
+    fn record_pre_call(&self, state: &LoggingState) {
+        let mut recorded = self
+            .pre_call_details
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if recorded.is_none() {
+            *recorded = Some(state.model_call_details.clone());
+        }
     }
 }
 
@@ -439,6 +459,7 @@ impl CreateConfig for Config {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(reply.headers.clone());
+        self.record_pre_call(state);
         if self.fail == Some(Stage::Response) {
             return Err(failure("the response transform failed"));
         }
@@ -742,6 +763,7 @@ pub(super) fn config_with(fail: Option<Stage>, signed_body: Option<Vec<u8>>) -> 
         validated: Mutex::new(Vec::new()),
         signed: Mutex::new(Vec::new()),
         transform_headers: Mutex::new(Vec::new()),
+        pre_call_details: Mutex::new(None),
         off_loop_sign: AtomicBool::new(false),
         off_loop_transform: AtomicBool::new(false),
     }

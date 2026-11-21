@@ -1,7 +1,6 @@
 use betterlite_models::decisions::Json as ModelJson;
 use betterlite_openai::response_input::ResponsesInput;
 use betterlite_prompts::arguments::json::Object;
-use rstest::rstest;
 
 use super::create_call;
 use super::support::{
@@ -31,37 +30,49 @@ enum BuildFailure {
     HeaderValue,
 }
 
-#[rstest]
-#[case::status(FailureCase::Status)]
-#[case::streaming_status(FailureCase::StreamingStatus)]
-#[case::transform(FailureCase::Step(FailStage::Transform))]
-#[case::normalize(FailureCase::Step(FailStage::Normalize))]
-#[case::sign(FailureCase::Step(FailStage::Sign))]
-#[case::response_transform(FailureCase::Step(FailStage::Response))]
-#[case::context_update(FailureCase::ContextUpdate)]
-#[case::bad_url(FailureCase::Build(BuildFailure::Url))]
-#[case::bad_header_name(FailureCase::Build(BuildFailure::HeaderName))]
-#[case::bad_header_value(FailureCase::Build(BuildFailure::HeaderValue))]
-#[tokio::test]
-async fn create_transport_failure(#[case] scenario: FailureCase) {
+// Every failure the create transport converts or passes through, one after another
+pub(super) async fn transport_failures() {
     let input = text_input("hello");
     let empty = Object::new();
     let call_params = params(r#"{"api_base":"http://mock/v1"}"#);
     let dispatcher = Dispatcher::quiet();
+    for scenario in [
+        FailureCase::Status,
+        FailureCase::StreamingStatus,
+        FailureCase::Step(FailStage::Transform),
+        FailureCase::Step(FailStage::Normalize),
+        FailureCase::Step(FailStage::Sign),
+        FailureCase::Step(FailStage::Response),
+        FailureCase::ContextUpdate,
+        FailureCase::Build(BuildFailure::Url),
+        FailureCase::Build(BuildFailure::HeaderName),
+        FailureCase::Build(BuildFailure::HeaderValue),
+    ] {
+        transport_failure(scenario, &input, &empty, &call_params, &dispatcher).await;
+    }
+}
+
+async fn transport_failure(
+    scenario: FailureCase,
+    input: &ResponsesInput,
+    empty: &Object,
+    call_params: &CreateParams,
+    dispatcher: &Dispatcher,
+) {
     match scenario {
         FailureCase::Status => {
-            status_failure(&input, &empty, &call_params, &dispatcher, false).await;
+            status_failure(input, empty, call_params, dispatcher, false).await;
         }
         FailureCase::StreamingStatus => {
             let streaming = object(r#"{"stream":true}"#);
-            status_failure(&input, &streaming, &call_params, &dispatcher, true).await;
+            status_failure(input, &streaming, call_params, dispatcher, true).await;
         }
         FailureCase::Step(stage) => {
-            step_failure(stage, &input, &empty, &call_params, &dispatcher).await;
+            step_failure(stage, input, empty, call_params, dispatcher).await;
         }
-        FailureCase::ContextUpdate => context_update(&input, &call_params, &dispatcher).await,
+        FailureCase::ContextUpdate => context_update(input, call_params, dispatcher).await,
         FailureCase::Build(failure) => {
-            build_failure(failure, &call_params, &dispatcher).await;
+            build_failure(failure, call_params, dispatcher).await;
         }
     }
 }
