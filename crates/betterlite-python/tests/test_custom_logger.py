@@ -89,9 +89,21 @@ def subclass_probe(base):
             if value == "inner":
                 return "SUB"
             return super()._redact_base64(value=value, depth=depth, max_depth=max_depth)
+        async def async_should_run_agentic_loop(self, response, model, messages, tools, stream,
+                                                custom_llm_provider, kwargs):
+            return True, {"tool": model}
+        def get_chat_completion_prompt(self, model, messages, non_default_params, prompt_id,
+                                       prompt_variables, dynamic_callback_params, **rest):
+            return "sync-override", [], {}
     recorder = Recorder(); recorder.log_pre_api_call("model-one", [], {})
     filtered = asyncio.run(recorder.async_filter_listed_models(None, ["keep-me", "drop-me"]))
-    return {"seen": recorder.seen, "filtered": list(filtered),
+    gate = ("r", "m", [], None, False, "openai", {})
+    gates = [list(asyncio.run(recorder.async_should_run_agentic_loop(*gate))),
+             list(asyncio.run(recorder.async_should_run_chat_completion_agentic_loop(*gate)))]
+    prompt = asyncio.run(recorder.async_get_chat_completion_prompt(
+        "m", [{"role": "user", "content": "hi"}], {"t": 1}, None, None, {}, None))
+    return {"seen": recorder.seen, "filtered": list(filtered), "gates": gates,
+            "async_prompt": list(prompt),
             "message_logging": recorder.message_logging,
             "turn_off_message_logging": recorder.turn_off_message_logging,
             "redacted_nested": recorder._redact_base64({"a": ["inner", {"b": "inner"}],
@@ -650,6 +662,8 @@ def test_logger_surface_subclass(surface_report: JsonValue) -> None:
     assert ours["seen"] == ["model-one"]
     assert ours["filtered"] == ["keep-me"]
     assert ours["redacted_nested"] == {"a": ["SUB", {"b": "SUB"}], "c": "outer"}
+    assert ours["gates"] == [[True, {"tool": "m"}], [False, {}]]
+    assert ours["async_prompt"] == ["m", [{"role": "user", "content": "hi"}], {"t": 1}]
 
 
 def test_logger_surface_types(surface_report: JsonValue) -> None:

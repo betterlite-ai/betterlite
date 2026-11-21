@@ -136,11 +136,9 @@ class CustomLoggerEvents:
         stream: bool,  # noqa: FBT001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L742
         kwargs: dict[str, JsonValue],
     ) -> AgenticLoopPlan:
-        _ = (
-            tools, model, messages, response, logging_obj, stream, kwargs,
-            anthropic_messages_provider_config,  # ast-grep-ignore: no-long-names
-            anthropic_messages_optional_request_params,  # ast-grep-ignore: no-long-names
-        )
+        _ = (tools, model, messages, response, logging_obj, stream, kwargs)
+        # ast-grep-ignore: no-long-names
+        _ = (anthropic_messages_provider_config, anthropic_messages_optional_request_params)
         return AgenticLoopPlan(run_agentic_loop=False)
 
     # ast-grep-ignore: no-long-names
@@ -154,18 +152,7 @@ class CustomLoggerEvents:
         self, plan: AgenticLoopPlan, kwargs: JsonMap
     ) -> None: ...
     # ast-grep-ignore: no-long-names
-    async def async_should_run_chat_completion_agentic_loop(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L792
-        self,
-        response: JsonValue,
-        model: str,
-        messages: list[dict[str, JsonValue]],
-        tools: list[dict[str, JsonValue]] | None,
-        stream: bool,  # noqa: FBT001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L798
-        custom_llm_provider: str,
-        kwargs: dict[str, JsonValue],
-    ) -> tuple[bool, dict[str, JsonValue]]:
-        _ = (response, model, messages, tools, stream, custom_llm_provider, kwargs)
-        return False, {}
+    async_should_run_chat_completion_agentic_loop = async_should_run_agentic_loop
 
     # ast-grep-ignore: no-long-names
     async def async_run_chat_completion_agentic_loop(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L807

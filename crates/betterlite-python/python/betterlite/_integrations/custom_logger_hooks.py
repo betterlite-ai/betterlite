@@ -57,15 +57,23 @@ class CustomLoggerHooks:
         prompt_label: str | None = None,
         prompt_version: int | None = None,
         ignore_prompt_manager_model: bool | None = False,  # noqa: FBT001, FBT002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L213
-        # ast-grep-ignore: no-long-names
-        ignore_prompt_manager_optional_params: bool | None = False,  # noqa: FBT001, FBT002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L214
+        ignore_prompt_manager_optional_params: bool | None = False  # ast-grep-ignore: no-long-names  # noqa: FBT001, FBT002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L214
     ) -> tuple[str, list[AllMessageValues], dict[str, JsonValue]]:
-        _ = (
-            prompt_id, prompt_variables, dynamic_callback_params, litellm_logging_obj, prompt_spec,
-            tools, prompt_label, prompt_version, ignore_prompt_manager_model,
+        _ = (litellm_logging_obj, tools)
+        return CustomLoggerHooks.get_chat_completion_prompt(
+            self,
+            model,
+            messages,
+            non_default_params,
+            prompt_id,
+            prompt_variables,
+            dynamic_callback_params,
+            prompt_spec,
+            prompt_label,
+            prompt_version,
+            ignore_prompt_manager_model,
             ignore_prompt_manager_optional_params,  # ast-grep-ignore: no-long-names
         )
-        return model, messages, non_default_params
 
     def get_chat_completion_prompt(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L224
         self,
@@ -79,8 +87,7 @@ class CustomLoggerHooks:
         prompt_label: str | None = None,
         prompt_version: int | None = None,
         ignore_prompt_manager_model: bool | None = False,  # noqa: FBT001, FBT002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L235
-        # ast-grep-ignore: no-long-names
-        ignore_prompt_manager_optional_params: bool | None = False,  # noqa: FBT001, FBT002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L236
+        ignore_prompt_manager_optional_params: bool | None = False  # ast-grep-ignore: no-long-names  # noqa: FBT001, FBT002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L236
     ) -> tuple[str, list[AllMessageValues], dict[str, JsonValue]]:
         _ = (
             prompt_id, prompt_variables, dynamic_callback_params, prompt_spec, prompt_label,

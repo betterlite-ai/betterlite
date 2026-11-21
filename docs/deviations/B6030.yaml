@@ -93,7 +93,11 @@ deviations:
       custom_logger_proxy_hooks.py, custom_logger_events.py, custom_logger_redaction.py and
       custom_logger_base64.py instead of one class. CustomLogger.__bases__, its MRO and its
       __dict__ differ from LiteLLM's, and a method's __qualname__ names its mixin, such as
-      CustomLoggerHooks.log_pre_api_call. Every method LiteLLM defines is reachable on CustomLogger
+      CustomLoggerHooks.log_pre_api_call. async_should_run_chat_completion_agentic_loop is the same
+      function object as async_should_run_agentic_loop, since LiteLLM gives both the same parameters
+      and the same (False, {}) default, so its __name__ is async_should_run_agentic_loop; overriding
+      either one in a subclass leaves the other at the default, as in LiteLLM.
+      Every method LiteLLM defines is reachable on CustomLogger
       with the same name, signature and default, and a subclass that overrides a method or calls
       super() resolves it as in LiteLLM, an overridden _redact_base64 included.
     why: >-
