@@ -25,6 +25,8 @@ description: >-
   the cases below live under api::rerank_call::tests.
 scope:
   paths:
+  - "tools/oracle/src/sdk_http/capture.rs"
+  - "crates/betterlite-core/src/api/rerank_provider_plan/tests.rs"
   - crates/betterlite-core/src/api/rerank_call.rs
   - crates/betterlite-core/src/api/rerank_call/**
   - tools/oracle/src/sdk_http/rerank_call.rs
