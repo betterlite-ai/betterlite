@@ -122,10 +122,10 @@ fn rejects_empty_identity_fields() {
 
 #[test]
 fn bounds_session_id_by_characters_not_bytes() {
-    let longest = format!("\"session_id\":\"{}\"", "é".repeat(256));
+    let longest = format!("\"session_id\":\"{}\"", "\u{e9}".repeat(256));
     let accepted = record_with("\"session_id\":\"session\"", &longest);
     decode_baseline_record(accepted.as_bytes()).unwrap();
-    let too_long = format!("\"session_id\":\"{}\"", "é".repeat(257));
+    let too_long = format!("\"session_id\":\"{}\"", "\u{e9}".repeat(257));
     let rejected = record_with("\"session_id\":\"session\"", &too_long);
     assert!(matches!(invalid(&rejected), RecordError::InvalidSessionId));
 }

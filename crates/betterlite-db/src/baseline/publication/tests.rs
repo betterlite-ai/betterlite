@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::future::{Future, ready};
+use std::slice::from_ref;
 
 use betterlite_models::baseline_history::estimate::{BaselineEstimate, Provenance};
 use betterlite_models::baseline_history::model::{BaselineHistory, BaselineObservation, Outcome};
@@ -461,12 +462,12 @@ fn change_serializes_the_daily_attribution_the_correction_key_reads() {
     assert_eq!(target[0].entity_id.as_deref(), Some("user-1"));
     assert_eq!(target[1].entity, "tag");
     let retracted_record = accounting_record(incomplete_observation("req-2", 2.0), None, None);
-    let retracted = change(
+    let retraction = change(
         &retracted_record,
         None,
         &unknown_publication("concurrent_uncertainty"),
     );
-    let retracted = decoded_change(&retracted);
+    let retracted = decoded_change(&retraction);
     assert!(retracted.daily.is_none());
     assert_eq!(retracted.user_id, "");
 }
@@ -499,7 +500,7 @@ fn decodes_publications_and_rejects_other_versions_keys_or_amounts() {
 fn project_group_emits_a_change_only_when_the_publication_moved() {
     let record = record();
     let (history, estimates) =
-        advance_baseline_history(&BaselineHistory::default(), &[record.observation.clone()])
+        advance_baseline_history(&BaselineHistory::default(), from_ref(&record.observation))
             .unwrap();
     let expected = publication(&record, &estimates[0], 2.0);
     let stored = StoredRecord {
@@ -568,8 +569,8 @@ fn project_group_keeps_prior_changes_and_the_first_group_timestamp() {
     let prior_record = accounting_record(observation("prior", 2.0), None, None);
     let prior = change(&prior_record, None, &unknown_publication("prior"));
     let previous_history = BaselineHistory {
-        first_at: Some(1.5),
-        last_at: Some(1.0),
+        first_at: Some(1.5_f64),
+        last_at: Some(1.0_f64),
         equivalent: true,
         uncertain_before: 0.0,
         entries: Vec::new(),
@@ -763,13 +764,13 @@ async fn session_row(client: &Client, table: &str) -> tokio_postgres::Row {
 async fn assert_sessions(client: &Client) {
     let key = session_row(client, "LiteLLM_AutoRouterSession").await;
     assert_eq!(key.get::<_, String>(0), "0.75");
-    assert_eq!(key.get::<_, i32>(1), 2);
+    assert_eq!(key.get::<_, i32>(1), 2_i32);
     assert_eq!(key.get::<_, String>(2), "0.65");
     assert_eq!(key.get::<_, String>(3), "0");
     assert_eq!(key.get::<_, String>(4), "{\"claude-sonnet-4-20250514\": 3}");
     let user = session_row(client, "LiteLLM_AutoRouterUserSession").await;
     assert_eq!(user.get::<_, String>(0), "1.95");
-    assert_eq!(user.get::<_, i32>(1), 6);
+    assert_eq!(user.get::<_, i32>(1), 6_i32);
     assert_eq!(user.get::<_, String>(2), "1.25");
     assert_eq!(user.get::<_, String>(3), "0.45");
     assert_eq!(
@@ -924,7 +925,7 @@ async fn assert_surfaces_untouched(client: &Client) {
         .await
         .unwrap();
     assert_eq!(session.get::<_, String>(0), "1");
-    assert_eq!(session.get::<_, i32>(1), 2);
+    assert_eq!(session.get::<_, i32>(1), 2_i32);
     let publication = text_value(
         client,
         "SELECT publication FROM \"LiteLLM_AutoRouterBaselineObservation\" WHERE request_id = $1",

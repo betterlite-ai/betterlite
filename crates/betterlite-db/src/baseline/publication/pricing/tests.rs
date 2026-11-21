@@ -42,23 +42,50 @@ fn usage() -> Usage {
 #[test]
 fn request_usage_maps_the_estimate_usage_and_its_token_details() {
     let request = request_usage(&usage());
-    assert_eq!(request.usage.prompt_tokens, 10);
-    assert_eq!(request.usage.completion_tokens, 5);
-    assert_eq!(request.usage.total_tokens, 15);
-    assert_eq!(request.usage.cache_read_input_tokens, 2);
-    assert_eq!(request.usage.cache_creation_input_tokens, 3);
+    assert_eq!(
+        (
+            request.usage.prompt_tokens,
+            request.usage.completion_tokens,
+            request.usage.total_tokens,
+        ),
+        (10, 5, 15)
+    );
+    assert_eq!(
+        (
+            request.usage.cache_read_input_tokens,
+            request.usage.cache_creation_input_tokens,
+        ),
+        (2, 3)
+    );
     let prompt = request.usage.prompt_tokens_details.unwrap();
-    assert_eq!(prompt.cached_tokens, 2);
-    assert_eq!(prompt.cache_creation_tokens, 3);
-    assert_eq!(prompt.cache_write_tokens, 3);
-    assert_eq!(prompt.text_tokens, 5);
-    assert_eq!(prompt.audio_tokens, 7);
-    assert_eq!(prompt.image_tokens, 2);
-    assert_eq!(prompt.video_tokens, 3);
+    assert_eq!(
+        (
+            prompt.cached_tokens,
+            prompt.cache_creation_tokens,
+            prompt.cache_write_tokens,
+            prompt.text_tokens,
+        ),
+        (2, 3, 3, 5)
+    );
+    assert_eq!(
+        (
+            prompt.audio_tokens,
+            prompt.image_tokens,
+            prompt.video_tokens
+        ),
+        (7, 2, 3)
+    );
     let writes = request.cache_creation_token_details.unwrap();
-    assert_eq!(writes.ephemeral_5m_input_tokens, Some(1));
-    assert_eq!(writes.ephemeral_1h_input_tokens, Some(2));
+    assert_eq!(
+        (
+            writes.ephemeral_5m_input_tokens,
+            writes.ephemeral_1h_input_tokens,
+        ),
+        (Some(1), Some(2))
+    );
     let completion = request.usage.completion_tokens_details.unwrap();
-    assert_eq!(completion.reasoning_tokens, Some(4));
-    assert_eq!(completion.text_tokens, Some(8));
+    assert_eq!(
+        (completion.reasoning_tokens, completion.text_tokens),
+        (Some(4), Some(8))
+    );
 }
