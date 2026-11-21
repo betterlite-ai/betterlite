@@ -390,11 +390,12 @@ fn the_class_config_sets_extra_body_when_the_request_has_none() {
 }
 
 #[rstest]
+#[rustfmt::skip]
 #[case::request(json!({"extra_body": "text"}), json!({"extra_body": {"route": "fallback"}}))]
 #[case::config(json!({"extra_body": {"route": "caller"}}), json!({"extra_body": ["route"]}))]
 fn an_extra_body_that_is_not_an_object_is_refused(
-    #[case] optional_params: serde_json::Value,
-    #[case] class_config: serde_json::Value,
+    #[case] optional_params: impl serde::Serialize,
+    #[case] class_config: impl serde::Serialize,
 ) {
     let mut fixture = Fixture::new();
     fixture.optional_params = object(optional_params);
