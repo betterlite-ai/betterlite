@@ -9,6 +9,9 @@ deviations:
   - what: A 200 reply whose fields do not validate is returned as sent with its original response id, where LiteLLM builds the model with model_construct and still encodes the id with the deployment's model_id.
     why: betterlite never fabricates a typed response out of fields that fail the shape; the reply keeps exactly what the provider sent.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/transformation.py#L973-L978
+  - what: The async wrapper awaits the compact path on the caller's task, where LiteLLM runs the sync function in a default executor with a copied contextvars context and then awaits the coroutine it returns.
+    why: betterlite's compact path is async end to end, so there is no sync body to hand to a thread; the async mode still selects the asynchronous handler and the SDK result, pre-call ordering and exception mapping are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L2130-L2137
 kept_bugs:
   - what: The async wrapper's preliminary provider lookup passes api_base=None because it reads a base_url name that compact_responses never defines as a local.
     why: LiteLLM uses this lookup only to name the provider when mapping exceptions, and copying the None base keeps the detected provider identical; the caller's api_base still reaches the real request.
