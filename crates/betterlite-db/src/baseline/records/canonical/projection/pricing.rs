@@ -48,18 +48,16 @@ fn scalar(value: &Scalar) -> Canonical {
 }
 
 fn basis(value: &PricingBasis) -> Canonical {
-    Canonical::List(vec![
-        value
-            .service_tier
-            .as_ref()
-            .map_or(Canonical::Null, |text| Canonical::Text(text.clone())),
-        value
-            .data_residency
-            .as_ref()
-            .map_or(Canonical::Null, |text| Canonical::Text(text.clone())),
-        value
-            .vertex_location
-            .as_ref()
-            .map_or(Canonical::Null, |text| Canonical::Text(text.clone())),
-    ])
+    let mut entries = Vec::with_capacity(3);
+    for text in [
+        &value.service_tier,
+        &value.data_residency,
+        &value.vertex_location,
+    ] {
+        entries.push(
+            text.as_ref()
+                .map_or(Canonical::Null, |entry| Canonical::Text(entry.clone())),
+        );
+    }
+    Canonical::List(entries)
 }
