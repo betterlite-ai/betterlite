@@ -8,7 +8,7 @@ use tokio::task::JoinSet;
 use tokio::task::yield_now;
 use tokio::time::Instant;
 
-use super::{CacheKey, MAX_SIZE, NEGATIVE_TTL_SECONDS, OAuthMetadataCache, TTL_SECONDS};
+use super::{CacheFill, CacheKey, MAX_SIZE, NEGATIVE_TTL_SECONDS, OAuthMetadataCache, TTL_SECONDS};
 
 fn key(server_id: &str, resource_url: &str) -> CacheKey {
     CacheKey {
@@ -23,6 +23,13 @@ fn url(index: usize) -> String {
 
 fn payload(text: &str) -> JsonValue {
     JsonValue::String(text.to_owned())
+}
+
+fn fill(payload: Option<JsonValue>, ttl_seconds: u64) -> CacheFill {
+    CacheFill {
+        payload,
+        ttl_seconds,
+    }
 }
 
 fn entry_count(cache: &OAuthMetadataCache) -> usize {
@@ -49,7 +56,7 @@ async fn lookup_hits_only_while_the_entry_is_unexpired() {
     let cache = OAuthMetadataCache::default();
     let key = key("srv", "https://idp.test/mcp");
     let now = Instant::now();
-    assert!(cache.store(&key, 0, Some(payload("metadata")), TTL_SECONDS, now));
+    assert!(cache.store(&key, 0, fill(Some(payload("metadata")), TTL_SECONDS), now));
     assert_eq!(cache.lookup(&key, now), Some(Some(payload("metadata"))));
     assert_eq!(
         cache.lookup(&key, now + Duration::from_secs(299)),
@@ -67,7 +74,7 @@ async fn lookup_returns_a_negative_entry_as_a_hit() {
     let cache = OAuthMetadataCache::default();
     let key = key("srv", "https://idp.test/mcp");
     let now = Instant::now();
-    assert!(cache.store(&key, 0, None, NEGATIVE_TTL_SECONDS, now));
+    assert!(cache.store(&key, 0, fill(None, NEGATIVE_TTL_SECONDS), now));
     assert_eq!(cache.lookup(&key, now), Some(None));
     assert_eq!(
         cache.lookup(&key, now + Duration::from_secs(NEGATIVE_TTL_SECONDS)),
@@ -82,8 +89,8 @@ async fn prune_removes_expired_entries_only() {
     let now = Instant::now();
     let short = key("srv", "https://idp.test/short");
     let long = key("srv", "https://idp.test/long");
-    assert!(cache.store(&short, 0, Some(payload("short")), 10, now));
-    assert!(cache.store(&long, 0, Some(payload("long")), TTL_SECONDS, now));
+    assert!(cache.store(&short, 0, fill(Some(payload("short")), 10), now));
+    assert!(cache.store(&long, 0, fill(Some(payload("long")), TTL_SECONDS), now));
     cache.prune(now + Duration::from_secs(9));
     assert_eq!(entry_count(&cache), 2);
     cache.prune(now + Duration::from_secs(10));
@@ -98,20 +105,45 @@ async fn prune_evicts_the_earliest_expiring_entries_and_ties_by_insert_order() {
     let now = Instant::now();
     let early = key("srv", &url(0));
     let tied = key("srv", &url(1));
-    assert!(cache.store(&early, 0, Some(payload("early")), NEGATIVE_TTL_SECONDS, now));
-    assert!(cache.store(&tied, 0, Some(payload("tied")), NEGATIVE_TTL_SECONDS, now));
-    assert!(cache.store(&early, 0, Some(payload("early")), NEGATIVE_TTL_SECONDS, now));
+    assert!(cache.store(
+        &early,
+        0,
+        fill(Some(payload("early")), NEGATIVE_TTL_SECONDS),
+        now
+    ));
+    assert!(cache.store(
+        &tied,
+        0,
+        fill(Some(payload("tied")), NEGATIVE_TTL_SECONDS),
+        now
+    ));
+    assert!(cache.store(
+        &early,
+        0,
+        fill(Some(payload("early")), NEGATIVE_TTL_SECONDS),
+        now
+    ));
     let rest: Vec<CacheKey> = (2..MAX_SIZE).map(|index| key("srv", &url(index))).collect();
-    rest.iter().for_each(|item| {
-        assert!(cache.store(item, 0, Some(payload("rest")), TTL_SECONDS, now));
-    });
+    for item in &rest {
+        assert!(cache.store(item, 0, fill(Some(payload("rest")), TTL_SECONDS), now));
+    }
     assert_eq!(entry_count(&cache), MAX_SIZE);
     let first_extra = key("srv", &url(MAX_SIZE));
-    assert!(cache.store(&first_extra, 0, Some(payload("extra")), TTL_SECONDS, now));
+    assert!(cache.store(
+        &first_extra,
+        0,
+        fill(Some(payload("extra")), TTL_SECONDS),
+        now
+    ));
     assert_eq!(cache.lookup(&early, now), None);
     assert_eq!(cache.lookup(&tied, now), Some(Some(payload("tied"))));
     let second_extra = key("srv", &url(200));
-    assert!(cache.store(&second_extra, 0, Some(payload("extra")), TTL_SECONDS, now));
+    assert!(cache.store(
+        &second_extra,
+        0,
+        fill(Some(payload("extra")), TTL_SECONDS),
+        now
+    ));
     assert_eq!(cache.lookup(&tied, now), None);
     assert_eq!(cache.lookup(&rest[0], now), Some(Some(payload("rest"))));
     assert_eq!(
@@ -132,8 +164,7 @@ async fn store_is_refused_when_the_generation_moved_during_a_fetch() {
     assert!(!cache.store(
         &key,
         read,
-        Some(payload("stale")),
-        TTL_SECONDS,
+        fill(Some(payload("stale")), TTL_SECONDS),
         Instant::now()
     ));
     assert_eq!(cache.lookup(&key, Instant::now()), None);
@@ -141,8 +172,7 @@ async fn store_is_refused_when_the_generation_moved_during_a_fetch() {
     assert!(cache.store(
         &key,
         fresh,
-        Some(payload("fresh")),
-        TTL_SECONDS,
+        fill(Some(payload("fresh")), TTL_SECONDS),
         Instant::now()
     ));
     assert_eq!(
@@ -161,8 +191,7 @@ async fn store_is_accepted_while_the_generation_is_unchanged() {
     assert!(cache.store(
         &key,
         read,
-        Some(payload("fresh")),
-        TTL_SECONDS,
+        fill(Some(payload("fresh")), TTL_SECONDS),
         Instant::now()
     ));
     assert_eq!(
@@ -178,8 +207,8 @@ async fn invalidate_removes_the_named_servers_entries_and_idle_locks_only() {
     let now = Instant::now();
     let removed = key("srv-a", "https://idp.test/mcp");
     let kept = key("srv-b", "https://idp.test/mcp");
-    assert!(cache.store(&removed, 0, Some(payload("a")), TTL_SECONDS, now));
-    assert!(cache.store(&kept, 0, Some(payload("b")), TTL_SECONDS, now));
+    assert!(cache.store(&removed, 0, fill(Some(payload("a")), TTL_SECONDS), now));
+    assert!(cache.store(&kept, 0, fill(Some(payload("b")), TTL_SECONDS), now));
     let removed_slot = cache.enter_fetch(&removed).await;
     drop(removed_slot);
     let kept_slot = cache.enter_fetch(&kept).await;
@@ -215,7 +244,7 @@ async fn prune_drops_idle_locks_of_keys_without_entries_and_stale_generations() 
     let idle = key("srv", "https://idp.test/idle");
     let held = key("other", "https://idp.test/held");
     let cached_slot = cache.enter_fetch(&cached).await;
-    assert!(cache.store(&cached, 0, Some(payload("cached")), TTL_SECONDS, now));
+    assert!(cache.store(&cached, 0, fill(Some(payload("cached")), TTL_SECONDS), now));
     drop(cached_slot);
     let idle_slot = cache.enter_fetch(&idle).await;
     drop(idle_slot);

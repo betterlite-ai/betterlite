@@ -68,10 +68,12 @@ impl DcrClientStore for FakeStore {
     ) -> impl Future<Output = Result<Option<JsonValue>, StoreReadError<Self::Error>>> + Send {
         self.reads.fetch_add(1, Ordering::SeqCst);
         *self.last_server.lock().unwrap() = Some(server_id.to_owned());
-        let result = match &self.blob {
-            Ok(blob) => Ok(blob.clone()),
-            Err(_) => Err(StoreReadError::Read { source: StoreDown }),
-        };
+        let result = self
+            .blob
+            .as_ref()
+            .map_or(Err(StoreReadError::Read { source: StoreDown }), |blob| {
+                Ok(blob.clone())
+            });
         ready(result)
     }
 }
@@ -354,7 +356,7 @@ async fn an_empty_blob_leaves_the_server_alone(#[case] stored: JsonValue) {
 #[case::empty_string(JsonValue::String(String::new()), false, None)]
 #[case::json_string(JsonValue::String("{\"client_id\": \"stored\"}".to_owned()), true, Some("stored"))]
 #[case::plain_string(JsonValue::String("garbage".to_owned()), false, None)]
-#[case::number(JsonValue::Number(serde_json::Number::from(5)), false, None)]
+#[case::number(JsonValue::Number(serde_json::Number::from(5_i32)), false, None)]
 #[case::boolean(JsonValue::Bool(true), false, None)]
 fn parse_persisted_credentials_follows_the_blob_shape(
     #[case] blob_value: JsonValue,

@@ -44,19 +44,20 @@ pub struct PersistedDcrCredentials {
     pub redirect_uris: Option<Vec<String>>,
 }
 
+#[must_use]
 pub fn parse_persisted_credentials(blob: &JsonValue) -> Option<PersistedDcrCredentials> {
     match blob {
         JsonValue::Null => None,
         JsonValue::Object(fields) if fields.is_empty() => None,
         JsonValue::String(text) => serde_json::from_str(text).ok(),
         JsonValue::Object(_) | JsonValue::Array(_) | JsonValue::Bool(_) | JsonValue::Number(_) => {
-            serde_json::to_string(blob)
-                .ok()
-                .and_then(|text| serde_json::from_str(&text).ok())
+            let text = serde_json::to_string(blob).ok()?;
+            serde_json::from_str(&text).ok()
         }
     }
 }
 
+#[must_use]
 pub fn decrypt_credential(cipher: &DbCipher, value: Option<&str>, field: &str) -> Option<String> {
     let text = value?;
     let sealed = StoredValue::<Infallible>::Text(SecretString::from(text.to_owned()));
@@ -146,9 +147,7 @@ where
 }
 
 fn parse_token_auth_method(raw: Option<&str>) -> Option<MCPTokenEndpointAuthMethod> {
-    let Some(text) = raw else {
-        return None;
-    };
+    let text = raw?;
     match text.parse::<MCPTokenEndpointAuthMethod>() {
         Ok(method) => Some(method),
         Err(error) => {

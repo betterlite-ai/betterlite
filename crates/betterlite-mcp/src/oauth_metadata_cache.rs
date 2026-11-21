@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use betterlite_db::mcp_server_encoding::request::Maybe;
 use betterlite_db::mcp_stored_contracts::JsonValue;
-use tokio::sync::{Mutex as AsyncMutex, OwnedMutexGuard};
+use tokio::sync::OwnedMutexGuard;
 use tokio::time::Instant;
 
 use self::state::{CacheEntry, CacheState};
@@ -21,6 +21,11 @@ pub struct CacheKey {
     pub resource_url: String,
 }
 
+pub struct CacheFill {
+    pub payload: Option<JsonValue>,
+    pub ttl_seconds: u64,
+}
+
 #[derive(Clone, Default)]
 pub struct OAuthMetadataCache {
     inner: Arc<Mutex<CacheState>>,
@@ -30,8 +35,11 @@ impl OAuthMetadataCache {
     pub fn lookup(&self, key: &CacheKey, now: Instant) -> Maybe<JsonValue> {
         let state = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
         let entry = state.entries.get(key)?;
-        if entry.expires_at > now {
-            return Some(entry.payload.clone());
+        let live = entry.expires_at > now;
+        let payload = entry.payload.clone();
+        drop(state);
+        if live {
+            return Some(payload);
         }
         None
     }
@@ -44,37 +52,24 @@ impl OAuthMetadataCache {
     }
 
     #[must_use]
-    pub fn store(
-        &self,
-        key: &CacheKey,
-        generation: u64,
-        payload: Option<JsonValue>,
-        ttl_seconds: u64,
-        now: Instant,
-    ) -> bool {
+    pub fn store(&self, key: &CacheKey, generation: u64, fill: CacheFill, now: Instant) -> bool {
         let mut state = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
         if state.generations.get(&key.server_id).copied().unwrap_or(0) != generation {
             return false;
         }
-        let Some(expires_at) = now.checked_add(Duration::from_secs(ttl_seconds)) else {
+        let Some(expires_at) = now.checked_add(Duration::from_secs(fill.ttl_seconds)) else {
             return false;
         };
         // Re-storing a key keeps its first sequence, the way a Python dict assignment keeps the key's position
         let existing = state.entries.get(key).map(|entry| entry.sequence);
-        let sequence = match existing {
-            Some(sequence) => sequence,
-            None => {
-                let next = state.next_sequence;
-                state.next_sequence = next.wrapping_add(1);
-                next
-            }
-        };
+        let fresh = state.next_sequence;
+        state.next_sequence = fresh.wrapping_add(1);
         state.entries.insert(
             key.clone(),
             CacheEntry {
                 expires_at,
-                payload,
-                sequence,
+                payload: fill.payload,
+                sequence: existing.unwrap_or(fresh),
             },
         );
         state.prune(now);
@@ -127,14 +122,11 @@ impl Drop for FetchSlot {
     fn drop(&mut self) {
         drop(self.guard.take());
         let mut state = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
-        let remaining = match state.fetchers.get_mut(&self.key) {
-            Some(count) => {
-                let lowered = count.saturating_sub(1);
-                *count = lowered;
-                lowered
-            }
-            None => 0,
-        };
+        let remaining = state.fetchers.get_mut(&self.key).map_or(0, |count| {
+            let lowered = count.saturating_sub(1);
+            *count = lowered;
+            lowered
+        });
         if remaining == 0 {
             state.fetchers.remove(&self.key);
         }
