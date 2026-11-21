@@ -540,6 +540,7 @@ async fn request_masking_without_callbacks(
 #[case::nested_only(r#"{"type": "response.create", "response": {"input": "n"}}"#, "{}", "{}", &["n"], Some(r#"{"type":"response.create","response":{"input":"n"}}"#))]
 #[case::items_only(r#"{"type": "response.create", "input": [{"content": "c"}]}"#, "{}", "{}", &["c"], Some(r#"{"type":"response.create","input":[{"content":"c"}]}"#))]
 #[case::blocks_only(r#"{"type": "response.create", "input": [{"output": [{"type": "text", "text": "t"}]}]}"#, "{}", "{}", &["t"], Some(r#"{"type":"response.create","input":[{"output":[{"type":"text","text":"t"}]}]}"#))]
+#[case::instructions_only(r#"{"type": "response.create", "instructions": "i"}"#, "{}", "{}", &["i"], Some(r#"{"type":"response.create","instructions":"i"}"#))]
 #[tokio::test]
 async fn request_guardrail_masking(
     #[case] message: &str,

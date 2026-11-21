@@ -33,18 +33,8 @@ where
     if let Some(input) = container.get_mut("input") {
         masked = mask_create_field(call, input).await?;
     }
-    if let Some(Json::Text(instructions)) = container.get_mut("instructions") {
-        let replaced = call
-            .guard
-            .check_pii(
-                instructions,
-                call.output_parse_pii,
-                call.settings,
-                call.request_data,
-            )
-            .await?;
-        *instructions = replaced;
-        masked = true;
+    if let Some(instructions @ Json::Text(_)) = container.get_mut("instructions") {
+        masked = mask_create_field(call, instructions).await? || masked;
     }
     Ok(masked)
 }
