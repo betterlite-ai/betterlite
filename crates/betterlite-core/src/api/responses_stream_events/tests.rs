@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
+use betterlite_error::error::ErrorClass;
 use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
 };
@@ -655,10 +656,11 @@ impl ProjectQuotaCallback for QuotaCounter {
         _requested_model: Option<&str>,
         _estimated_input_tokens: i64,
         _estimated_output_tokens: i64,
-    ) {
+    ) -> Result<(), ErrorClass> {
         let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
         let next = calls.saturating_add(1);
         *calls = next;
+        Ok(())
     }
 }
 
