@@ -1,0 +1,47 @@
+kind: helper
+name: bedrock-other-stability-image-and-mask-fields
+call:
+  bedrock_other_stability_edits:
+    calls:
+      - function: request
+        model: stability.stable-image-inpaint-v1:0
+        prompt: cat
+        image: {value: hello}
+        options:
+          mask: m2
+          aspect_ratio: 16:9
+          negative_prompt: blur
+        drop_params: true
+      - function: request
+        model: stability.stable-style-transfer-v1:0
+        prompt: stylize
+        image: {value: aW1n}
+        options: {}
+        drop_params: false
+      - function: request
+        model: stability.stable-image-inpaint-v1:0
+        options: {}
+        drop_params: false
+      - function: request
+        model: stability.stable-image-inpaint-v1:0
+        prompt: ''
+        image: {value: abc}
+        options: {}
+        drop_params: false
+      - function: request
+        model: stability.stable-image-inpaint-v1:0
+        prompt: cat
+        image: {value: hello}
+        options:
+          init_image: override
+          style_image: s
+        drop_params: true
+      - function: request
+        model: stability.stable-image-inpaint-v1:0
+        image: {value: hello}
+        options:
+          size: 1024x1024
+          mask: m
+        drop_params: false
+env: {}
+compare: {ignore: []}
