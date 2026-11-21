@@ -9,6 +9,8 @@ call:
       - {operation: delete, mode: sync, response_id: resp_a, custom_llm_provider: anthropic}
       - {operation: cancel, mode: async, response_id: resp_a, custom_llm_provider: anthropic}
       - {operation: delete, mode: sync, response_id: resp_a, custom_llm_provider: openai}
+      - {operation: delete, mode: sync, response_id: resp_a, custom_llm_provider: openai}
+      - {operation: cancel, mode: sync, response_id: resp_a, custom_llm_provider: openai}
 upstream:
   - status: 404
     headers: {content-type: application/json}
@@ -18,6 +20,12 @@ upstream:
         type: invalid_request_error
         param: response_id
         code: not_found
+  - status: 200
+    headers: {content-type: text/event-stream}
+    events: ["not json"]
+  - status: 200
+    headers: {content-type: text/event-stream}
+    events: ["not json"]
 compare:
   headers: []
   headers_present: []
@@ -33,3 +41,7 @@ compare:
       why: LiteLLM embeds the traceback and a bug-report notice for the ValueError it wraps, and B1116 records bounded shared error wording instead
     - pointer: /responses_lifecycle_write/value/runs/4/error/message
       why: the pinned SDK prefixes the provider message with its exception class, and B1116 records the bounded shared error wording instead
+    - pointer: /responses_lifecycle_write/value/runs/5/error/message
+      why: the pinned SDK wraps the transform's message with its exception class, and B1116 records the bounded shared error wording instead
+    - pointer: /responses_lifecycle_write/value/runs/6/error/message
+      why: the pinned SDK wraps the transform's message with its exception class, and B1116 records the bounded shared error wording instead

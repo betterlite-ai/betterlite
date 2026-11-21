@@ -13,6 +13,7 @@ use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_shapes::DeleteResponseResult;
+use betterlite_openai::response_resources::error::ResponseResourceError;
 use betterlite_openai::response_resources::request::{ResourceOperation, resource_request};
 use betterlite_openai::response_resources::response::TypedReply;
 use http::Method;
@@ -402,8 +403,8 @@ async fn lifecycle_write_rejections(#[case] operation: LifecycleOperation) {
     };
     assert_eq!(provider_error.status_code, 404);
     let class = harness.class(&not_found_error);
-    let ErrorClass::NotFound(_) = &class else {
-        panic!("the 404 maps to the SDK's NotFoundError");
+    let ErrorClass::BadRequest(_) = &class else {
+        panic!("the invalid_request_error body maps to the SDK's BadRequestError");
     };
     let metadata = class.metadata();
     assert_eq!(metadata.status_code, 404);
@@ -411,6 +412,59 @@ async fn lifecycle_write_rejections(#[case] operation: LifecycleOperation) {
     assert_eq!(metadata.param, WireField::Null);
     assert_eq!(metadata.openai_code, None);
     assert_eq!(not_found_wire.requests().len(), 1);
+
+    let unparsed_wire = Wire::returning(200, "not json");
+    let unparsed_source = Source::new(unparsed_wire.clone());
+    let unparsed_service = writing(&config, &unparsed_source, configured(&[]));
+    let mut unparsed_state = logging_state("gpt-5", "call-1");
+    let mut unparsed_call = configured_call(operation, "resp_a");
+    unparsed_call.custom_llm_provider = Some(String::from("openai"));
+    let unparsed_error = answered(
+        &unparsed_service,
+        &unparsed_call,
+        &mut unparsed_state,
+        &env,
+        false,
+    )
+    .await
+    .map(drop)
+    .expect_err("a success reply that is not JSON fails the transform");
+    let LifecycleWriteError::Transport(WriteError::Resource(error)) = &unparsed_error.error else {
+        panic!("the transform's own exception reaches the boundary");
+    };
+    assert_eq!(error.http_status(), Some(200));
+    let unparsed_class = harness.class(&unparsed_error);
+    let ErrorClass::Api(_) = &unparsed_class else {
+        panic!("the transform's OpenAIError becomes the SDK's APIError");
+    };
+    let unparsed_metadata = unparsed_class.metadata();
+    assert_eq!(unparsed_metadata.status_code, 200);
+    assert_eq!(unparsed_metadata.error_type, WireField::Null);
+    assert_eq!(unparsed_metadata.param, WireField::Null);
+    assert_eq!(unparsed_metadata.openai_code, None);
+    assert_eq!(unparsed_wire.requests().len(), 1);
+
+    let record_wire = Wire::returning(200, "[]");
+    let record_source = Source::new(record_wire.clone());
+    let record_service = writing(&config, &record_source, configured(&[]));
+    let mut record_state = logging_state("gpt-5", "call-1");
+    let record_error = answered(
+        &record_service,
+        &unparsed_call,
+        &mut record_state,
+        &env,
+        false,
+    )
+    .await
+    .map(drop)
+    .expect_err("a decoded reply that does not match the record fails the transform");
+    let LifecycleWriteError::Transport(WriteError::Resource(error)) = &record_error.error else {
+        panic!("the transform's own exception reaches the boundary");
+    };
+    assert!(matches!(error, ResponseResourceError::Record { .. }));
+    assert_eq!(error.http_status(), None);
+    assert_api_connection(&harness.class(&record_error));
+    assert_eq!(record_wire.requests().len(), 1);
 }
 
 #[rstest]
@@ -459,7 +513,11 @@ async fn lifecycle_write_context(
         state.litellm_params.get("litellm_call_id"),
         Some(&Json::Text(String::from("call-a")))
     );
-    assert_eq!(state.litellm_params.len(), 1);
+    assert_eq!(
+        state.litellm_params.get("api_base"),
+        Some(&Json::Text(format!("{BASE}/responses")))
+    );
+    assert_eq!(state.litellm_params.len(), 2);
     assert_eq!(
         state.optional_params.get("response_id"),
         Some(&Json::Text(String::from("resp_a")))

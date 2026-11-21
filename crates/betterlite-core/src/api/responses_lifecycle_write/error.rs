@@ -52,6 +52,20 @@ impl ResponsesLifecycleWriteError {
                 body: None,
                 exception_type: String::new(),
             },
+            // a success reply the transform could not decode raises OpenAIError(message=reply text, status_code=reply status), which the status branch maps to APIError
+            LifecycleWriteError::Transport(WriteError::Resource(error)) => {
+                let message = error.to_string();
+                RawException {
+                    model: String::new(),
+                    custom_llm_provider: self.provider.clone(),
+                    error_str: message.clone(),
+                    status_code: error.http_status(),
+                    status_code_is_synthesized: false,
+                    message: Some(message),
+                    body: None,
+                    exception_type: String::from("OpenAIError"),
+                }
+            }
             // a ValueError or a failure that carries no provider status
             LifecycleWriteError::WrongAnswer { .. }
             | LifecycleWriteError::Transport(_)

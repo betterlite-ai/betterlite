@@ -1,6 +1,6 @@
 task: B1116
 deviations:
-  - what: "Local SDK failure messages use bounded shared error wording instead of Python tracebacks; status=500 and exception classification remain APIConnectionError."
+  - what: "Local SDK failure messages use bounded shared error wording instead of the Python exception text LiteLLM embeds; the classification and status do not change, so a refused call keeps status=500 and APIConnectionError while a success reply that fails the transform keeps the reply's status and APIError."
     why: "B184/B187 require redacted client diagnostics, so the public message cannot quote the traceback LiteLLM embeds; the exact source message stays on the typed cause the entry point returns."
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2692-L2709"
 kept_bugs:
