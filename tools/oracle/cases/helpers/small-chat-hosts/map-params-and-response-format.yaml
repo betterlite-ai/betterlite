@@ -1,0 +1,175 @@
+kind: helper
+name: small-chat-hosts-map-params-and-response-format
+call:
+  b6410:
+    supported: []
+    params:
+      - provider: llama
+        model: llama/llama-3-8b
+        reasoning: false
+        requested: {temperature: 0.5, response_format: {type: text}}
+        existing: {}
+        chat_models: []
+        text_models: []
+      - provider: llama
+        model: llama/llama-3-8b
+        reasoning: false
+        requested: {response_format: {type: json_schema, json_schema: {name: person}}}
+        existing: {}
+        chat_models: []
+        text_models: []
+      - provider: llama
+        model: llama/llama-3-8b
+        reasoning: false
+        requested: {response_format: {type: json_object}}
+        existing: {}
+        chat_models: []
+        text_models: []
+      - provider: llama
+        model: llama/llama-3-8b
+        reasoning: false
+        requested: {top_p: 0.5}
+        existing: {temperature: 0.9, response_format: {type: text}}
+        chat_models: []
+        text_models: []
+      - provider: llama
+        model: llama/llama-3-8b
+        reasoning: false
+        requested: {max_completion_tokens: 5}
+        existing: {}
+        chat_models: []
+        text_models: []
+      - provider: nebius
+        model: nebius/meta-llama/Llama-3.1-8B-Instruct
+        reasoning: false
+        requested: {max_tokens: 10, max_completion_tokens: 20}
+        existing: {}
+        chat_models: []
+        text_models: []
+      - provider: nebius
+        model: nebius/meta-llama/Llama-3.1-8B-Instruct
+        reasoning: false
+        requested: {max_completion_tokens: 20, max_tokens: 10}
+        existing: {}
+        chat_models: []
+        text_models: []
+      - provider: nebius
+        model: nebius/meta-llama/Llama-3.1-8B-Instruct
+        reasoning: false
+        requested: {max_completion_tokens: 20, top_p: 0.4, user: someone}
+        existing: {}
+        chat_models: []
+        text_models: []
+      - provider: wandb
+        model: wandb/openai/gpt-oss-120b
+        reasoning: true
+        requested: {max_completion_tokens: 64, reasoning_effort: high, temperature: 0.2}
+        existing: {}
+        chat_models: []
+        text_models: []
+      - provider: wandb
+        model: wandb/meta-llama/Llama-3.1-8B-Instruct
+        reasoning: false
+        requested: {reasoning_effort: high, temperature: 0.2, max_tokens: 5}
+        existing: {}
+        chat_models: []
+        text_models: []
+      - provider: wandb
+        model: wandb/meta-llama/Llama-3.1-8B-Instruct
+        reasoning: false
+        requested: {max_completion_tokens: 9}
+        existing: {}
+        chat_models: []
+        text_models: []
+      - provider: novita
+        model: novita/meta-llama/llama-3.1-8b-instruct
+        reasoning: false
+        requested: {max_tokens: 7, max_completion_tokens: 5, user: someone, temperature: 0.4, response_format: {type: json_object}}
+        existing: {}
+        chat_models: []
+        text_models: []
+      - provider: novita
+        model: novita/meta-llama/llama-3.1-8b-instruct
+        reasoning: false
+        requested: {logprobs: true, top_k: 5}
+        existing: {}
+        chat_models: []
+        text_models: []
+      - provider: maritalk
+        model: maritalk/maritalk-large
+        reasoning: false
+        requested: {top_k: 40, temperature: 0.2, logit_bias: {"5": 1}}
+        existing: {}
+        chat_models: []
+        text_models: []
+      - provider: maritalk
+        model: maritalk/maritalk-large
+        reasoning: false
+        requested: {tool_choice: auto, functions: [{name: f}]}
+        existing: {}
+        chat_models: []
+        text_models: []
+      - provider: morph
+        model: morph/morph-v3-fast
+        reasoning: false
+        requested: {stream: true, temperature: 0.2}
+        existing: {}
+        chat_models: []
+        text_models: []
+      - provider: v0
+        model: v0/v0-1.0-md
+        reasoning: false
+        requested: {tools: [{type: function, function: {name: lookup}}], tool_choice: auto, temperature: 0.3}
+        existing: {}
+        chat_models: []
+        text_models: []
+      - provider: nadir
+        model: nadir/nadir-chat
+        reasoning: false
+        requested: {extra_headers: {X-Trace: "1"}, top_p: 0.9, seed: 5}
+        existing: {}
+        chat_models: []
+        text_models: []
+      - provider: nadir
+        model: nadir/nadir-chat
+        reasoning: false
+        requested: {max_retries: 3, stream: true, response_format: {type: text}, temperature: 0.7}
+        existing: {}
+        chat_models: []
+        text_models: []
+      - provider: nscale
+        model: nscale/Qwen/Qwen3-8B
+        reasoning: false
+        requested: {logit_bias: {"1": -5}, user: someone, max_tokens: 10, stop: [END]}
+        existing: {}
+        chat_models: []
+        text_models: []
+      - provider: nscale
+        model: nscale/Qwen/Qwen3-8B
+        reasoning: false
+        requested: {logprobs: true, top_logprobs: 2, seed: 5}
+        existing: {}
+        chat_models: []
+        text_models: []
+      - provider: zai
+        model: zai/glm-4.6
+        reasoning: true
+        requested: {thinking: {type: enabled}, frequency_penalty: 0.5, temperature: 0.2}
+        existing: {}
+        chat_models: []
+        text_models: []
+      - provider: zai
+        model: zai/glm-4.5
+        reasoning: false
+        requested: {thinking: {type: enabled}, temperature: 0.1, stop: [DONE]}
+        existing: {}
+        chat_models: []
+        text_models: []
+    moonshot_urls: []
+    moonshot_requests: []
+    nadir_cost: []
+    novita_headers: []
+    zai_cache: []
+    maritalk_errors: []
+env: {}
+compare: {ignore: []}

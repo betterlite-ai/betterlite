@@ -1,10 +1,10 @@
 #![cfg(test)]
 
-use std::net::TcpListener;
 use std::time::{Duration, Instant};
 
 use betterlite_http_fixture::reply::reply;
 use betterlite_http_fixture::server::serve;
+use betterlite_test_ports::refused_port::RefusedPort;
 
 use super::{HEALTH_TIMEOUT, HealthTransport as _, MAX_HEALTH_BODY, ReqwestHealth, TransportError};
 
@@ -67,13 +67,11 @@ fn reqwest_health_waits_for_a_slow_response_within_its_timeout() {
 
 #[test]
 fn reqwest_health_reports_a_refused_connection() {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
+    let refused = RefusedPort::bind().unwrap();
     let transport = ReqwestHealth::new(HEALTH_TIMEOUT).expect("the client builds");
 
     let error = transport
-        .get(&format!("http://{address}/health"))
+        .get(&format!("http://{}/health", refused.address))
         .expect_err("nothing listens on the port");
 
     assert!(matches!(error, TransportError::Request(_)));

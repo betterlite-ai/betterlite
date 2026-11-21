@@ -1,0 +1,31 @@
+kind: helper
+name: response-tool-calls
+call:
+  b8773:
+    builds:
+      - args:
+          patterns:
+            - pattern_type: regex
+              pattern_name: null
+              pattern: secret
+              name: secret
+              action: MASK
+          blocked_words: []
+          event_hook: post_call
+          default_on: false
+          guardrail_id: null
+          policy_template: null
+          image_model: null
+          competitor_intent_config: null
+          severity_threshold: medium
+        apply:
+          texts: []
+          tool_calls:
+            - id: call-1
+              type: function
+              function:
+                name: lookup
+                arguments: '{"query": "a secret value", "n": 3}'
+          input_type: response
+env: {}
+compare: {ignore: []}

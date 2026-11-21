@@ -1,0 +1,85 @@
+kind: helper
+name: client-guardrail-vad-cannot-be-reenabled
+call:
+  realtime_client_relay_websocket:
+    mode: ack
+    messages:
+      - '{"type":"session.update","session":{"turn_detection":{"type":"server_vad","silence_duration_ms":300},"voice":"alloy"}}'
+      - '{"type":"session.update","session":{"tools":[]}}'
+    setup:
+      pending: []
+      backend_setup_complete: null
+      flushing: false
+      turn_detection_sent: false
+      pending_guardrail_message: null
+      session_configuration_request: null
+    guardrails:
+      - hooks: [realtime_input_transcription]
+        block_on: null
+    beta_backend: false
+    close: null
+    lifetime: null
+    client_send_failures: []
+    client_close_failures: []
+calls:
+  - realtime_client_relay_websocket:
+      mode: ack
+      messages:
+        - '{"type":"session.update","session":{"turn_detection":{"type":"server_vad","silence_duration_ms":300},"voice":"alloy"}}'
+        - '{"type":"session.update","session":{"tools":[]}}'
+      setup:
+        pending: []
+        backend_setup_complete: null
+        flushing: false
+        turn_detection_sent: false
+        pending_guardrail_message: null
+        session_configuration_request: null
+      guardrails:
+        - hooks: [realtime_input_transcription]
+          block_on: null
+      beta_backend: true
+      close: null
+      lifetime: null
+      client_send_failures: []
+      client_close_failures: []
+  - realtime_client_relay_websocket:
+      mode: ack
+      messages:
+        - '{"type":"session.update","session":{"turn_detection":{"type":"server_vad","silence_duration_ms":300},"voice":"alloy"}}'
+        - '{"type":"session.update","session":{"tools":[]}}'
+      setup:
+        pending: []
+        backend_setup_complete: null
+        flushing: false
+        turn_detection_sent: false
+        pending_guardrail_message: null
+        session_configuration_request: setup-sent
+      guardrails:
+        - hooks: [realtime_input_transcription]
+          block_on: null
+      beta_backend: false
+      close: null
+      lifetime: null
+      client_send_failures: []
+      client_close_failures: []
+  - realtime_client_relay_websocket:
+      mode: ack
+      messages:
+        - '{"type":"session.update","session":{"turn_detection":{"type":"server_vad","create_response":true},"voice":"alloy"}}'
+      setup:
+        pending: []
+        backend_setup_complete: null
+        flushing: false
+        turn_detection_sent: false
+        pending_guardrail_message: null
+        session_configuration_request: null
+      guardrails:
+        - hooks: [pre_call]
+          block_on: null
+      beta_backend: false
+      close: null
+      lifetime: null
+      client_send_failures: []
+      client_close_failures: []
+env: {}
+compare: {ignore: []}
