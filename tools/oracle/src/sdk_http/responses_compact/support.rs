@@ -177,10 +177,14 @@ impl ModelResolver for ScriptedResolver {
     }
 }
 
-// get_llm_provider reads a provider prefix unless the caller named one; the responses prefix is stripped later by B931
+// get_llm_provider reads a prefix, even one the caller named; B931 strips responses/ later
 pub(super) fn scripted(model: &str, custom_llm_provider: Option<&str>) -> (String, String) {
     if let Some(given) = custom_llm_provider {
-        return (given.to_owned(), model.to_owned());
+        let resolved = match model.split_once('/') {
+            Some((prefix, rest)) if prefix == given => rest.to_owned(),
+            Some(_) | None => model.to_owned(),
+        };
+        return (given.to_owned(), resolved);
     }
     let Some((prefix, rest)) = model.split_once('/') else {
         return (String::new(), model.to_owned());

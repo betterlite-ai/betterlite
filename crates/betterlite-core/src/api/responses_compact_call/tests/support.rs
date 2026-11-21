@@ -470,7 +470,12 @@ impl ModelResolver for ModelNames {
                 api_base: request.api_base.map(str::to_owned),
             });
         let (model, provider) = if let Some(given) = request.custom_llm_provider {
-            (request.model.to_owned(), given.to_owned())
+            // get_llm_provider still splits a prefix the caller already named as the provider
+            let model = match request.model.split_once('/') {
+                Some((prefix, rest)) if prefix == given => rest.to_owned(),
+                Some(_) | None => request.model.to_owned(),
+            };
+            (model, given.to_owned())
         } else {
             let Some((prefix, rest)) = request.model.split_once('/') else {
                 return Err(ResolutionError::MissingProvider {
