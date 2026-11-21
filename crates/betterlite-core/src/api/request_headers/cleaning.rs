@@ -54,13 +54,7 @@ pub fn clean_headers(headers: &IndexMap<String, String>, auth: &HeaderAuth) -> F
 pub fn logged_headers(headers: &ForwardedHeaders) -> IndexMap<String, String> {
     headers
         .iter()
-        .map(|(name, value)| {
-            let logged = match value {
-                HeaderValue::Plain(text) => text.clone(),
-                HeaderValue::Credential(_) => REDACTED_HEADER_VALUE.to_owned(),
-            };
-            (name.clone(), logged)
-        })
+        .map(|(name, value)| (name.clone(), value.logged().to_owned()))
         .collect()
 }
 
@@ -79,10 +73,10 @@ fn keeps_header(lower: &str, value: &str, auth: &HeaderAuth) -> bool {
         return !authenticated_with(AUTHORIZATION);
     }
     if lower == PROVIDER_KEY_HEADER {
-        return auth.forward_llm_provider_auth_headers && !authenticated_with(PROVIDER_KEY_HEADER);
+        return auth.forward_provider_auth && !authenticated_with(PROVIDER_KEY_HEADER);
     }
     let special = SPECIAL_HEADERS.contains(&lower);
-    if auth.forward_llm_provider_auth_headers && special {
+    if auth.forward_provider_auth && special {
         return !is_custom_key && lower != AUTHORIZATION && lower != PROXY_KEY_HEADER;
     }
     !special && !is_custom_key

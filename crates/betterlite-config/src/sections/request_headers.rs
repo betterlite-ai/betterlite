@@ -25,19 +25,23 @@ struct RawGeneral {
     user_header_mappings: Option<Vec<UserHeaderMapping>>,
     user_header_name: Option<String>,
     forward_openai_org_id: Option<RawFlag>,
-    forward_client_headers_to_llm_api: Option<RawFlag>,
+    #[serde(rename = "forward_client_headers_to_llm_api")]
+    forward_client_headers: Option<RawFlag>,
 }
 
 #[derive(Debug, Default, Deserialize)]
 struct RawLitellm {
-    add_user_information_to_llm_headers: Option<RawFlag>,
+    #[serde(rename = "add_user_information_to_llm_headers")]
+    add_user_information: Option<RawFlag>,
     model_group_settings: Option<RawModelGroupSettings>,
-    forward_traceparent_to_llm_provider: Option<RawFlag>,
+    #[serde(rename = "forward_traceparent_to_llm_provider")]
+    forward_traceparent: Option<RawFlag>,
 }
 
 #[derive(Debug, Default, Deserialize)]
 struct RawModelGroupSettings {
-    forward_client_headers_to_llm_api: Option<Vec<String>>,
+    #[serde(rename = "forward_client_headers_to_llm_api")]
+    forward_client_headers: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -65,12 +69,12 @@ pub enum UserHeaderRole {
 pub struct Settings {
     pub user_header_mappings: Vec<UserHeaderMapping>,
     pub user_header_name: Option<String>,
-    pub add_user_information_to_llm_headers: bool,
+    pub add_user_information: bool,
     pub forward_openai_org_id: bool,
     // model_group_settings.forward_client_headers_to_llm_api: an empty list still grants every model
     pub model_group_forwarding: Option<Vec<String>>,
-    pub forward_client_headers_to_llm_api: bool,
-    pub forward_traceparent_to_llm_provider: bool,
+    pub forward_client_headers: bool,
+    pub forward_traceparent: bool,
 }
 
 impl Section for Raw {
@@ -85,8 +89,8 @@ impl Section for Raw {
         Ok(Settings {
             user_header_mappings: general.user_header_mappings.unwrap_or_default(),
             user_header_name: general.user_header_name,
-            add_user_information_to_llm_headers: flag(
-                litellm.add_user_information_to_llm_headers,
+            add_user_information: flag(
+                litellm.add_user_information,
                 ADD_USER_INFORMATION_PATH,
                 lookup,
             )?,
@@ -97,14 +101,14 @@ impl Section for Raw {
             )?,
             model_group_forwarding: litellm
                 .model_group_settings
-                .and_then(|group| group.forward_client_headers_to_llm_api),
-            forward_client_headers_to_llm_api: flag(
-                general.forward_client_headers_to_llm_api,
+                .and_then(|group| group.forward_client_headers),
+            forward_client_headers: flag(
+                general.forward_client_headers,
                 FORWARD_HEADERS_PATH,
                 lookup,
             )?,
-            forward_traceparent_to_llm_provider: flag(
-                litellm.forward_traceparent_to_llm_provider,
+            forward_traceparent: flag(
+                litellm.forward_traceparent,
                 FORWARD_TRACEPARENT_PATH,
                 lookup,
             )?,

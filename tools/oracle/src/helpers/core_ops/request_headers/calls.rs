@@ -31,7 +31,8 @@ pub(crate) struct CleanCall {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct GeneralFlags {
-    pub(super) forward_client_headers_to_llm_api: bool,
+    #[serde(rename = "forward_client_headers_to_llm_api")]
+    pub(super) forward_client_headers: bool,
     pub(super) forward_openai_org_id: bool,
 }
 

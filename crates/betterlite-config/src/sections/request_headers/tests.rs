@@ -57,11 +57,11 @@ fn all_keys() -> Settings {
             mapping("X-End-User", UserHeaderRole::Customer),
         ],
         user_header_name: Some("X-User".to_owned()),
-        add_user_information_to_llm_headers: true,
+        add_user_information: true,
         forward_openai_org_id: true,
         model_group_forwarding: Some(vec!["gpt-4o".to_owned(), "team/*".to_owned()]),
-        forward_client_headers_to_llm_api: true,
-        forward_traceparent_to_llm_provider: true,
+        forward_client_headers: true,
+        forward_traceparent: true,
     }
 }
 
@@ -101,7 +101,7 @@ fn only(change: fn(&mut Settings)) -> Settings {
 #[case::user_header_name_mapping("general_settings: {user_header_name: {a: b}}\n", Expected::Yaml)]
 #[case::add_user_information_from_environment(
     "litellm_settings: {add_user_information_to_llm_headers: os.environ/FORWARD_ON}\n",
-    Expected::Loaded(only(|settings| settings.add_user_information_to_llm_headers = true))
+    Expected::Loaded(only(|settings| settings.add_user_information = true))
 )]
 #[case::add_user_information_text(
     "litellm_settings: {add_user_information_to_llm_headers: \"true\"}\n",
@@ -141,7 +141,7 @@ fn only(change: fn(&mut Settings)) -> Settings {
 )]
 #[case::forward_traceparent_from_environment(
     "litellm_settings: {forward_traceparent_to_llm_provider: os.environ/FORWARD_ON}\n",
-    Expected::Loaded(only(|settings| settings.forward_traceparent_to_llm_provider = true))
+    Expected::Loaded(only(|settings| settings.forward_traceparent = true))
 )]
 #[case::forward_traceparent_number(
     "litellm_settings: {forward_traceparent_to_llm_provider: 1}\n",

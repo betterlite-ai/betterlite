@@ -46,14 +46,8 @@ pub fn backend_call_arguments(
         source,
     };
     let forwarded = settings
-        .forward_client_headers_to_llm_api
-        .then(|| {
-            llm_call_headers(
-                headers,
-                principal,
-                settings.add_user_information_to_llm_headers,
-            )
-        })
+        .forward_client_headers
+        .then(|| llm_call_headers(headers, principal, settings.add_user_information))
         .transpose()?
         .filter(|llm_headers| !llm_headers.is_empty());
     let timeout = parsed_header::<f64>(headers, TIMEOUT_HEADER, number)?;
@@ -137,11 +131,7 @@ impl RequestHeaders<'_> {
         if !check_model_access(model, &grant, self.model_access) {
             return Ok(None);
         }
-        let forwarded = llm_call_headers(
-            headers,
-            principal,
-            self.settings.add_user_information_to_llm_headers,
-        )?;
+        let forwarded = llm_call_headers(headers, principal, self.settings.add_user_information)?;
         Ok((!forwarded.is_empty()).then_some(forwarded))
     }
 }

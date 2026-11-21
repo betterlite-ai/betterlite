@@ -117,7 +117,7 @@ const CALLER_HEADERS: Pairs = &[
 fn auth(custom: Option<&str>, forward: bool, used: Option<&str>) -> HeaderAuth {
     HeaderAuth {
         litellm_key_header_name: custom.map(str::to_owned),
-        forward_llm_provider_auth_headers: forward,
+        forward_provider_auth: forward,
         authenticated_with_header: used.map(str::to_owned),
     }
 }
@@ -202,7 +202,7 @@ fn traceparent_opt_in(
     #[case] data: &str,
     #[case] extra_headers: Option<&str>,
 ) {
-    let settings = configured(|settings| settings.forward_traceparent_to_llm_provider = forward);
+    let settings = configured(|settings| settings.forward_traceparent = forward);
     let result = prepare_with(
         &settings,
         otel_enabled,
@@ -291,7 +291,7 @@ where
 
 fn general(forward_headers: bool, forward_org: bool) -> Settings {
     configured(|settings| {
-        settings.forward_client_headers_to_llm_api = forward_headers;
+        settings.forward_client_headers = forward_headers;
         settings.forward_openai_org_id = forward_org;
     })
 }
@@ -343,7 +343,7 @@ fn backend_call_arguments(
 #[test]
 fn backend_call_arguments_add_user_information() {
     let mut settings = model_group(&["gpt-4o"]);
-    settings.add_user_information_to_llm_headers = true;
+    settings.add_user_information = true;
     let mut request = input(&[("x-a", "1")], r#"{"model": "team-gpt"}"#);
     request.principal.api_key_hash = Some("hash-1".to_owned());
     request.principal.spend = Decimal::new(15, 1);

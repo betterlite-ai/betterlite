@@ -7,9 +7,9 @@ use crate::api::request_headers::trace_context::{
     LITELLM_TRACE_ID, TRACE_ID_KEY, TRACEPARENT, session_id_from_baggage, trace_id_from_traceparent,
 };
 use crate::api::request_headers::{ForwardedHeaders, HeaderValue};
-use crate::api::request_metadata_safety::identity::{
-    anthropic_session_id_from_metadata, get_chain_id_from_headers,
-};
+// ast-grep-ignore: no-long-names - B1105 defines this name
+use crate::api::request_metadata_safety::identity::anthropic_session_id_from_metadata;
+use crate::api::request_metadata_safety::identity::get_chain_id_from_headers;
 use crate::api::request_metadata_safety::metadata::MetadataField;
 
 const SPEND_LOGS_HEADER: &str = "x-litellm-spend-logs-metadata";
@@ -86,6 +86,7 @@ fn add_anthropic_session(data: &mut RequestData, from_headers: &mut Metadata) {
     let Some(body_metadata) = data.get_mut(METADATA_KEY) else {
         return;
     };
+    // ast-grep-ignore: no-long-names - B1105 defines this name
     let Some(session_id) = anthropic_session_id_from_metadata(body_metadata) else {
         return;
     };

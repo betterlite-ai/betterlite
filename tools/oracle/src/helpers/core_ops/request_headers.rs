@@ -86,7 +86,7 @@ fn slot(name: &str) -> MetadataField {
 fn clean_value(call: &CleanCall) -> Value {
     let auth = HeaderAuth {
         litellm_key_header_name: call.litellm_key_header_name.clone(),
-        forward_llm_provider_auth_headers: call.forward_auth_headers,
+        forward_provider_auth: call.forward_auth_headers,
         authenticated_with_header: call.authenticated_with_header.clone(),
     };
     let headers: IndexMap<String, String> = call.headers.iter().cloned().collect();
@@ -96,10 +96,9 @@ fn clean_value(call: &CleanCall) -> Value {
 
 fn backend_value(call: &BackendCall) -> Value {
     let settings = configured(|chosen| {
-        chosen.add_user_information_to_llm_headers = call.add_user_information;
+        chosen.add_user_information = call.add_user_information;
         chosen.forward_openai_org_id = call.general_settings.forward_openai_org_id;
-        chosen.forward_client_headers_to_llm_api =
-            call.general_settings.forward_client_headers_to_llm_api;
+        chosen.forward_client_headers = call.general_settings.forward_client_headers;
     });
     match backend_call_arguments(
         &plain(&call.headers),
@@ -135,7 +134,7 @@ fn backend_json(arguments: &BackendCallArguments) -> Value {
 
 fn model_group_value(call: &ModelGroupCall) -> Value {
     let settings = configured(|chosen| {
-        chosen.add_user_information_to_llm_headers = call.add_user_information;
+        chosen.add_user_information = call.add_user_information;
         chosen.model_group_forwarding.clone_from(&call.models);
     });
     let inference = CatalogProviderInference::default();

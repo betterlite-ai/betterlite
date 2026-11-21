@@ -19,7 +19,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use crate::api::api_boundaries::ApiLimits;
 use crate::api::request_destination::RequestData;
 use crate::api::request_headers::backend_call::{BackendCallArguments, backend_call_arguments};
-use crate::api::request_headers::cleaning::{clean_headers, logged_headers};
+use crate::api::request_headers::cleaning::{REDACTED_HEADER_VALUE, clean_headers, logged_headers};
 use crate::api::request_headers::error::RequestHeadersError;
 use crate::api::request_headers::header_metadata::add_header_metadata;
 use crate::api::request_headers::provider_headers::{ProviderHeaders, provider_specific_headers};
@@ -43,6 +43,14 @@ impl HeaderValue {
             Self::Credential(secret) => secret.expose_secret(),
         }
     }
+
+    #[must_use]
+    pub const fn logged(&self) -> &str {
+        match self {
+            Self::Plain(text) => text.as_str(),
+            Self::Credential(_) => REDACTED_HEADER_VALUE,
+        }
+    }
 }
 
 pub type ForwardedHeaders = IndexMap<String, HeaderValue>;
@@ -51,7 +59,7 @@ pub type ForwardedHeaders = IndexMap<String, HeaderValue>;
 #[derive(Debug, Clone, Default)]
 pub struct HeaderAuth {
     pub litellm_key_header_name: Option<String>,
-    pub forward_llm_provider_auth_headers: bool,
+    pub forward_provider_auth: bool,
     pub authenticated_with_header: Option<String>,
 }
 
@@ -114,7 +122,7 @@ impl RequestHeaders<'_> {
         forward_traceparent(
             &mut data,
             &input.headers,
-            self.otel_enabled && self.settings.forward_traceparent_to_llm_provider,
+            self.otel_enabled && self.settings.forward_traceparent,
         );
         Ok(RequestHeadersResult {
             logged: logged_headers(&forwarded),
