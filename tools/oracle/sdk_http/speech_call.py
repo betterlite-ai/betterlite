@@ -1,11 +1,11 @@
 import os
 from collections.abc import Coroutine
 from concurrent.futures import ThreadPoolExecutor
-from typing import Final, TypeAlias
+from typing import Final, Protocol, TypeAlias, cast
 
 import litellm
+import litellm.main as speech_main
 import openai
-from litellm.main import speech as litellm_speech
 from litellm.types.llms.openai import HttpxBinaryResponseContent
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic import JsonValue as Json
@@ -19,6 +19,35 @@ NO_RETRIES: Final = 0
 SpeechAnswer: TypeAlias = (
     HttpxBinaryResponseContent | Coroutine[object, object, HttpxBinaryResponseContent]
 )
+
+
+# basedpyright sees litellm.main.speech as partially unknown, so the adapter calls it through the options this facade names
+class SpeechEntry(Protocol):
+    def speech(
+        self,
+        model: str,
+        input: str,
+        voice: str | dict[str, Json] | None = None,
+        api_key: str | None = None,
+        api_base: str | None = None,
+        api_version: str | None = None,
+        organization: str | None = None,
+        project: str | None = None,
+        max_retries: int | None = None,
+        metadata: dict[str, Json] | None = None,
+        timeout: float | None = None,
+        response_format: str | None = None,
+        speed: int | None = None,
+        instructions: str | None = None,
+        client: None = None,
+        headers: dict[str, Json] | None = None,
+        custom_llm_provider: str | None = None,
+        base_url: str | None = None,
+        **kwargs: Json,
+    ) -> SpeechAnswer: ...
+
+
+SPEECH = cast(SpeechEntry, speech_main)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8237-L8259
 
 
 class StreamedSpeechError(TypeError):
@@ -111,7 +140,7 @@ def apply_globals(shared: Globals, api_base: str) -> None:
 
 
 def speak(step: Step, api_base: str) -> HttpxBinaryResponseContent:
-    answer: SpeechAnswer = litellm_speech(
+    answer: SpeechAnswer = SPEECH.speech(
         model=step.model,
         input=step.input,
         voice=step.voice,
