@@ -97,30 +97,30 @@ fn checked<Response>(
     convert(outcome, call).unwrap()
 }
 
-fn proceeds_with(modified: &str) -> Option<McpPreCallResponse> {
-    Some(McpPreCallResponse {
+fn proceeds_with(modified: &str) -> McpPreCallResponse {
+    McpPreCallResponse {
         should_proceed: true,
         modified_arguments: Some(arguments(modified)),
         error_message: None,
         hidden_params: IndexMap::new(),
-    })
+    }
 }
 
-fn stopped_with(message: &str) -> Option<McpPreCallResponse> {
-    Some(McpPreCallResponse {
+fn stopped_with(message: &str) -> McpPreCallResponse {
+    McpPreCallResponse {
         should_proceed: false,
         modified_arguments: None,
         error_message: Some(message.to_owned()),
         hidden_params: IndexMap::new(),
-    })
+    }
 }
 
-fn stopped_during(message: &str) -> Option<McpDuringCallResponse> {
-    Some(McpDuringCallResponse {
+fn stopped_during(message: &str) -> McpDuringCallResponse {
+    McpDuringCallResponse {
         should_continue: false,
         error_message: Some(message.to_owned()),
         hidden_params: IndexMap::new(),
-    })
+    }
 }
 
 #[test]
@@ -388,11 +388,11 @@ fn parent_guardrails_that_are_not_a_list_are_refused() {
 fn an_error_or_a_string_stops_the_call(#[case] outcome: GuardrailOutcome) {
     assert_eq!(
         checked(llm_result_to_pre_call, &outcome, "{}"),
-        stopped_with("guardrail said no")
+        Some(stopped_with("guardrail said no"))
     );
     assert_eq!(
         checked(llm_result_to_during_call, &outcome, "{}"),
-        stopped_during("guardrail said no")
+        Some(stopped_during("guardrail said no"))
     );
 }
 
@@ -427,7 +427,7 @@ fn an_answer_without_messages_leaves_the_call_alone() {
 fn pre_call_blocks_on_its_words_or_empty_content(#[case] content: &str) {
     assert_eq!(
         checked(llm_result_to_pre_call, &answer(Some(content)), "{}"),
-        stopped_with("Content blocked by guardrail")
+        Some(stopped_with("Content blocked by guardrail"))
     );
 }
 
@@ -435,7 +435,7 @@ fn pre_call_blocks_on_its_words_or_empty_content(#[case] content: &str) {
 fn pre_call_blocks_a_message_without_content() {
     assert_eq!(
         checked(llm_result_to_pre_call, &answer(None), "{}"),
-        stopped_with("Content blocked by guardrail")
+        Some(stopped_with("Content blocked by guardrail"))
     );
 }
 
@@ -450,7 +450,7 @@ fn masked_json_arguments_replace_the_originals() {
             &outcome,
             r#"{"q": "secret", "limit": 2}"#
         ),
-        proceeds_with(r#"{"q": "[MASKED]", "limit": 3}"#)
+        Some(proceeds_with(r#"{"q": "[MASKED]", "limit": 3}"#))
     );
 }
 
@@ -459,7 +459,7 @@ fn the_arguments_line_is_found_after_the_content_is_trimmed() {
     let outcome = answer(Some("  Arguments: {\"q\": \"[MASKED]\"}  \r\n"));
     assert_eq!(
         checked(llm_result_to_pre_call, &outcome, r#"{"q": "secret"}"#),
-        proceeds_with(r#"{"q": "[MASKED]"}"#)
+        Some(proceeds_with(r#"{"q": "[MASKED]"}"#))
     );
 }
 
@@ -470,7 +470,7 @@ fn an_echoed_described_message_counts_as_changed() {
     ));
     assert_eq!(
         checked(llm_result_to_pre_call, &outcome, r#"{"q": "docs"}"#),
-        proceeds_with(r#"{"q": "docs"}"#)
+        Some(proceeds_with(r#"{"q": "docs"}"#))
     );
 }
 
@@ -485,7 +485,9 @@ fn the_manual_fallback_replaces_only_named_string_arguments() {
             &outcome,
             r#"{"email": "a@b.co", "limit": 5, "note": "keep", "name": "Jo"}"#
         ),
-        proceeds_with(r#"{"email": "[EMAIL]", "limit": 5, "note": "keep", "name": "Jo"}"#)
+        Some(proceeds_with(
+            r#"{"email": "[EMAIL]", "limit": 5, "note": "keep", "name": "Jo"}"#
+        ))
     );
 }
 
@@ -498,7 +500,7 @@ fn the_manual_fallback_trims_but_keeps_what_the_pattern_reads() {
             &outcome,
             r#"{"email": "a@b.co", "name": "Jo"}"#
         ),
-        proceeds_with(r#"{"email": "[EMAIL]", "name": "J*}"}"#)
+        Some(proceeds_with(r#"{"email": "[EMAIL]", "name": "J*}"}"#))
     );
 }
 
@@ -536,7 +538,7 @@ fn a_changed_answer_stops_the_running_call(#[case] content: &str, #[case] messag
             &answer(Some(content)),
             r#"{"q": "docs"}"#
         ),
-        stopped_during(message)
+        Some(stopped_during(message))
     );
 }
 
@@ -544,7 +546,9 @@ fn a_changed_answer_stops_the_running_call(#[case] content: &str, #[case] messag
 fn a_running_call_stops_on_a_message_without_content() {
     assert_eq!(
         checked(llm_result_to_during_call, &answer(None), "{}"),
-        stopped_during("Content blocked by guardrail during execution")
+        Some(stopped_during(
+            "Content blocked by guardrail during execution"
+        ))
     );
 }
 

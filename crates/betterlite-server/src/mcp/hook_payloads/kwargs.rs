@@ -49,7 +49,7 @@ pub fn mcp_response_to_kwargs(
         return kwargs;
     };
     if let Some(arguments) = &data.modified_arguments {
-        kwargs.arguments = arguments.clone();
+        kwargs.arguments.clone_from(arguments);
     }
     if let Some(headers) = &data.extra_headers {
         let mut merged = kwargs.extra_headers.take().unwrap_or_default();
