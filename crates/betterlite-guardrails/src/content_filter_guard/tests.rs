@@ -30,7 +30,7 @@ use crate::content_filter_inputs::images::{
     ImageDescriptionResponse,
 };
 use crate::generic_guardrail_contracts::GuardrailInputType;
-use crate::guardrail_base::contract::GuardrailContract;
+use crate::guardrail_base::contract::GuardrailContract as _;
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_base::inputs::GuardrailApiInputs;
 use crate::guardrail_base::settings::{GuardrailSettings, GuardrailSwitches};
@@ -660,13 +660,7 @@ async fn a_mask_pattern_masks_every_text_and_counts_the_masked_entities() {
     )
     .await;
     let inputs = run.result.unwrap();
-    assert_eq!(
-        inputs.texts,
-        Some(vec![
-            "[email_REDACTED]".to_owned(),
-            "[email_REDACTED]".to_owned()
-        ])
-    );
+    assert_eq!(inputs.texts, Some(vec!["[email_REDACTED]".to_owned(); 2]));
     let entry = record(&run.request_data);
     assert_eq!(text_field(entry, &["guardrail_status"]), Some("success"));
     assert_eq!(
@@ -803,8 +797,10 @@ async fn tool_call_arguments_are_scanned_on_a_request_and_on_a_response(
     let mut arguments = args("content-filter");
     arguments.blocked_words = Some(vec![blocked_word("secret", ContentFilterAction::Mask)]);
     let guardrail = built(arguments);
-    let mut inputs = GuardrailApiInputs::default();
-    inputs.tool_calls = Some(vec![tool_call(r#"{"query":"secret"}"#)]);
+    let inputs = GuardrailApiInputs {
+        tool_calls: Some(vec![tool_call(r#"{"query":"secret"}"#)]),
+        ..GuardrailApiInputs::default()
+    };
     let run = applied(&guardrail, inputs, input_type).await;
     assert_eq!(
         tool_arguments(&run.result.unwrap()),
@@ -940,8 +936,10 @@ async fn a_failing_image_description_logs_guardrail_failed_to_respond() {
     let mut arguments = args("content-filter");
     arguments.image_model = Some("image-model".to_owned());
     let guardrail = built_with_router(arguments, TestRouter { description: None });
-    let mut inputs = GuardrailApiInputs::default();
-    inputs.images = Some(vec!["https://example.test/cat.png".to_owned()]);
+    let inputs = GuardrailApiInputs {
+        images: Some(vec!["https://example.test/cat.png".to_owned()]),
+        ..GuardrailApiInputs::default()
+    };
     let run = applied(&guardrail, inputs, GuardrailInputType::Request).await;
     let failure = run.result.unwrap_err();
     assert_eq!(failure.to_string(), "the router is unavailable");
@@ -967,8 +965,10 @@ async fn a_blocked_image_description_carries_the_description_in_the_400() {
             description: Some("a forbidden scene".to_owned()),
         },
     );
-    let mut inputs = GuardrailApiInputs::default();
-    inputs.images = Some(vec!["https://example.test/cat.png".to_owned()]);
+    let inputs = GuardrailApiInputs {
+        images: Some(vec!["https://example.test/cat.png".to_owned()]),
+        ..GuardrailApiInputs::default()
+    };
     let run = applied(&guardrail, inputs, GuardrailInputType::Request).await;
     let GuardrailFailure::HttpObject { status, detail } = run.result.unwrap_err() else {
         panic!("a blocked image description must raise the 400 object");

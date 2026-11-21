@@ -27,7 +27,6 @@ pub const SUPPORTED_EVENT_HOOKS: [GuardrailEventHooks; 6] = [
     GuardrailEventHooks::PostMcpCall,
 ];
 
-#[derive(Debug)]
 pub enum CompetitorIntentChecker {
     Generic(BaseCompetitorIntentChecker),
     Airline(AirlineCompetitorIntentChecker),

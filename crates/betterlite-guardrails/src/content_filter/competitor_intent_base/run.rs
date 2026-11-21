@@ -11,6 +11,6 @@ impl BaseCompetitorIntentChecker {
 }
 
 // ast-grep-ignore: no-one-line-functions - evaluate takes this classifier as the function item it calls
-fn base_classify(_text: &str, _token: &str) -> (Meaning, f64) {
+const fn base_classify(_text: &str, _token: &str) -> (Meaning, f64) {
     (Meaning::OtherMeaning, 0.5_f64)
 }
