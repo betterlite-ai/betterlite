@@ -101,6 +101,7 @@ class Answer(TypedDict):
 
 
 JSON: Final = TypeAdapter(JsonValue)
+BODY: Final = TypeAdapter(dict[str, JsonValue])
 AUTH: Final[TypeAdapter[UserAPIKeyAuth]] = TypeAdapter(UserAPIKeyAuth)
 CALLBACK_SETTINGS: Final = TypeAdapter(CallbackSettings)
 DESTINATION: Final = TypeAdapter(Destination)
@@ -137,7 +138,7 @@ def proxy_config_for(teams: list[dict[str, JsonValue]]) -> proxy_server.ProxyCon
 
 
 def prepare_outcome(call: PrepareCall) -> PrepareOutcome:
-    data: dict[str, JsonValue] = {**call["data"]}
+    data = dict[str, object](call["data"])
     request = request_for(call["route"], call["query"])
     safe_add_api_version_from_query_params(data, request)
     apply_missing_session_id_policy(
@@ -153,7 +154,7 @@ def prepare_outcome(call: PrepareCall) -> PrepareOutcome:
         if settings is None
         else CALLBACK_SETTINGS.validate_json(settings.model_dump_json())
     )
-    return PrepareOutcome(data=data, callback_settings=callback_settings)
+    return PrepareOutcome(data=BODY.validate_python(data), callback_settings=callback_settings)
 
 
 def prepare(call: PrepareCall, warnings: Warnings) -> JsonValue:
