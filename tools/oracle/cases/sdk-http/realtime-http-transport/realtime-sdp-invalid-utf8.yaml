@@ -1,0 +1,18 @@
+kind: sdk_http
+name: realtime-http-transport-sdp-invalid-utf8
+call:
+  realtime_http_transport:
+    handler: calls
+    ephemeral_key: ep-test
+    sdp: [255]
+    session: {}
+    model: m
+    timeout_seconds: 30
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore:
+    - pointer: /realtime_http_transport/value/failure/message
+      why: the codec's byte position and reason wording belong to the decoder, and only the exception class is shared
