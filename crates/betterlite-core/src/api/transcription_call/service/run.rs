@@ -230,15 +230,14 @@ fn input_for<'call>(
     }
 }
 
-// Riva takes no client; Soniox and Bedrock keep it; the generic native handler keeps only HTTP clients
+// Riva and Bedrock take no client; Soniox and the generic native handler keep only HTTP clients
 const fn injected_client(
     operation: InjectedTarget,
     client: Option<SuppliedClientKind>,
 ) -> Option<SuppliedClientKind> {
     match operation {
-        InjectedTarget::Riva => None,
-        InjectedTarget::Soniox | InjectedTarget::Bedrock => client,
-        InjectedTarget::Native => http_client(client),
+        InjectedTarget::Riva | InjectedTarget::Bedrock => None,
+        InjectedTarget::Soniox | InjectedTarget::Native => http_client(client),
     }
 }
 

@@ -361,3 +361,30 @@ fn sdk_clients_reach_the_openai_and_azure_transports() {
         );
     });
 }
+
+// riva's and bedrock's operations take no client, so a supplied HTTP client never reaches them
+#[test]
+fn riva_and_bedrock_ignore_the_caller_client() {
+    runtime().block_on(async {
+        let harness = Harness::new();
+        let audio = wav(1);
+        harness.dispatch.reply(response(r#"{"text":"Hello"}"#));
+        let mut riva = request_for("nvidia_riva/stt");
+        riva.client = Some(SuppliedClientKind::AsyncHttpHandler);
+        harness
+            .service()
+            .transcription(&riva, AudioFile::Bytes(&audio))
+            .await
+            .expect("the riva transcription succeeds");
+        assert_eq!(harness.dispatch.last().client, None);
+        harness.dispatch.reply(response(r#"{"text":"Hello"}"#));
+        let mut bedrock = request_for("bedrock/stt");
+        bedrock.client = Some(SuppliedClientKind::AsyncHttpHandler);
+        harness
+            .service()
+            .transcription(&bedrock, AudioFile::Bytes(&audio))
+            .await
+            .expect("the bedrock transcription succeeds");
+        assert_eq!(harness.dispatch.last().client, None);
+    });
+}
