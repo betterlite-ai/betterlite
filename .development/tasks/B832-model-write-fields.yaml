@@ -175,7 +175,7 @@ out_of_scope:
     (L471-L487), _decrypted_model (L490-L496), _tuning_candidate (L499-L505), _raise_on_tuning_quota_violation
     (L508-L517), _raise_if_rate_limits_required_but_missing (L681-L706), _explicitly_cleared_ptu_fields
     (L712-L724), _merged_ptu_model_info (L727-L738), _raise_if_ptu_cost_attribution_disabled (L741-L764),
-    _validate_ptu_model_info (L767-L780).'
+    _validate_ptu_model_info (L767-L780). This task does not call _repo_team_table or _stored_credential_name: it reads the team through the B724 TeamRepository::find_unique over a WriterPinnedClient, and compares the stored credential name through the B2303 StoredCipher::decrypt_value with a debug log and the original value kept on failure.'
   - 'litellm/proxy/management_endpoints/model_management_endpoints.py: B1214 owns _set_model_blocked_status
     (L1323-L1428), block_model (L1436-L1457), unblock_model (L1465-L1486).'
   - 'litellm/proxy/management_endpoints/model_management_endpoints.py: B1215 owns add_new_model (L2357-L2557).'
