@@ -1,7 +1,10 @@
-use chrono::NaiveDate;
+use chrono::{NaiveDate, Utc};
 use rstest::rstest;
 
-use crate::spend_partitions::calendar::{PartitionInterval, PlannedPartition, upcoming_partitions};
+use crate::spend_partitions::calendar::{
+    PartitionClock as _, PartitionInterval, PlannedPartition, UtcPartitionClock,
+    upcoming_partitions,
+};
 
 fn day_of(year: i32, month: u32, day: u32) -> NaiveDate {
     NaiveDate::from_ymd_opt(year, month, day).expect("a calendar date")
@@ -85,6 +88,17 @@ fn days_cover_today_and_each_ahead_day(
     assert_eq!(
         upcoming_partitions(day_of(year, month, day), PartitionInterval::Day, ahead),
         partitions(expected),
+    );
+}
+
+#[test]
+fn the_utc_clock_reports_the_current_utc_date() {
+    let before = Utc::now().date_naive();
+    let today = UtcPartitionClock.today();
+    let after = Utc::now().date_naive();
+    assert!(
+        today == before || today == after,
+        "{today} outside {before}..={after}"
     );
 }
 

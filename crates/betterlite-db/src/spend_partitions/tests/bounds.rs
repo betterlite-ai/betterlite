@@ -112,13 +112,14 @@ fn unparseable_bounds_are_unknown(#[case] expression: &str) {
 #[test]
 fn the_byte_ceiling_is_exact_and_rejects_non_utf8() {
     let expression = "TO ('2026-06-02 00:00:00')";
+    let expected = PartitionBound::Naive(stamp("2026-06-02 00:00:00"));
+    assert_eq!(decode_partition_bound(expression.as_bytes()), expected);
+    let long = format!("{expression}{}", " ".repeat(4_096));
+    assert_eq!(decode_partition_bound(long.as_bytes()), expected);
     let padding = PARTITION_BOUND_MAX_BYTES.saturating_sub(expression.len());
     let at_limit = format!("{expression}{}", " ".repeat(padding));
     assert_eq!(at_limit.len(), PARTITION_BOUND_MAX_BYTES);
-    assert_eq!(
-        decode_partition_bound(at_limit.as_bytes()),
-        PartitionBound::Naive(stamp("2026-06-02 00:00:00"))
-    );
+    assert_eq!(decode_partition_bound(at_limit.as_bytes()), expected);
     let over_limit = format!("{at_limit} ");
     assert_eq!(
         decode_partition_bound(over_limit.as_bytes()),
