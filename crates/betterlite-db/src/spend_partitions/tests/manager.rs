@@ -45,13 +45,13 @@ fn stamp(text: &str) -> NaiveDateTime {
     NaiveDateTime::parse_from_str(text, "%Y-%m-%d %H:%M:%S%.f").expect("a wall-clock stamp")
 }
 
-fn daily_manager(ahead: i64, today: NaiveDate) -> SpendPartitionManager<FixedClock> {
+const fn daily_manager(ahead: i64, today: NaiveDate) -> SpendPartitionManager<FixedClock> {
     SpendPartitionManager::new(PartitionInterval::Day, ahead, FixedClock(today))
 }
 
 fn budgets(values: Vec<Option<u64>>) -> impl FnMut() -> Option<u64> + Send {
-    let mut values = values.into_iter();
-    move || values.next().flatten()
+    let mut remaining_values = values.into_iter();
+    move || remaining_values.next().flatten()
 }
 
 fn strings(entries: &[&str]) -> Vec<String> {
@@ -255,8 +255,8 @@ CREATE TABLE partition_other."LiteLLM_SpendLogs_pother" PARTITION OF partition_o
         .batch_execute(r#"DROP TABLE "LiteLLM_SpendLogs""#)
         .await
         .expect("the current-schema parent drop");
-    let mut budget = budgets(vec![Some(1_000)]);
-    assert!(!is_partitioned(&mut case.client, &mut budget).await);
+    let mut after_drop_budget = budgets(vec![Some(1_000)]);
+    assert!(!is_partitioned(&mut case.client, &mut after_drop_budget).await);
     assert!(partition_names(&mut case).await.is_empty());
     case.close().await;
 }

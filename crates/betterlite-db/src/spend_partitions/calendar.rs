@@ -55,7 +55,7 @@ fn period_start(day: NaiveDate, interval: PartitionInterval) -> Option<NaiveDate
     }
 }
 
-fn next_period_start(start: NaiveDate, interval: PartitionInterval) -> Option<NaiveDate> {
+const fn next_period_start(start: NaiveDate, interval: PartitionInterval) -> Option<NaiveDate> {
     match interval {
         PartitionInterval::Day => start.checked_add_days(Days::new(1)),
         PartitionInterval::Week => start.checked_add_days(Days::new(7)),
