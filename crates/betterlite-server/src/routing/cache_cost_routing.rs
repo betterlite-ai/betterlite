@@ -7,6 +7,8 @@ use betterlite_router::complexity_placement::params::params_for_model as tier_pa
 use betterlite_router::complexity_scoring::tier::{ComplexityTier, Tier};
 use betterlite_router::router_predicates::JsonMap;
 
+mod tests;
+
 // _litellm_params_for_model over the placement's tier set: a tier entry's params for one model
 pub struct PlacedTierParams<'deps> {
     pub placement: &'deps TierPlacement<'deps>,
