@@ -111,7 +111,7 @@ def params_answer(call: ParamsCall) -> JsonValue:
         effective = model_management_endpoints._effective_complexity_router_params(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L459-L468
             call["incoming"], call["existing"]
         )
-        params: dict[str, object] = dict(effective)
+        params = dict(effective)
         return JSON.validate_json(to_json(params))
     try:
         model_management_endpoints._raise_on_strategy_router_write_violation(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L329-L341
@@ -224,7 +224,7 @@ def ptu_answer(call: PtuCall) -> JsonValue:
         model_management_endpoints._validate_ptu_model_info(merged)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L767-L780
     except HTTPException as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L778-L780
         valid = {"status": error.status_code, "type": None, "param": None, "code": None}
-    merged_info: dict[str, object] = dict(merged)
+    merged_info = dict(merged)
     return {
         "cleared": cleared,
         "merged": JSON.validate_json(to_json(merged_info)),
