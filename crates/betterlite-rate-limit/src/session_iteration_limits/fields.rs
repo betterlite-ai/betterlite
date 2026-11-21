@@ -4,9 +4,7 @@ use betterlite_models::decisions::Json;
 const SESSION_ID_BUCKETS: [&str; 2] = ["metadata", "litellm_metadata"];
 const SESSION_ID: &str = "session_id";
 
-// _get_session_id: metadata first, then litellm_metadata, and none when neither bucket holds an id.
-// It str()s the id it finds, so a numeric id names the same bucket its text form would; a null,
-// boolean, list or object id names no session, as identity_descriptors::session_resolution has it.
+// _get_session_id: metadata first, then litellm_metadata; a numeric id is str()d and a non-text id names no session
 pub(crate) fn session_id_from(data: &Json) -> Option<String> {
     let Json::Object(fields) = data else {
         return None;
