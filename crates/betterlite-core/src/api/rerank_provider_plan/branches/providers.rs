@@ -64,36 +64,17 @@ impl Branches<'_> {
         Ok((self.dynamic_key(), Some(api_base)))
     }
     fn together_ai(&self) -> Result<Chain, Box<RawException>> {
-        let Some(api_key) = self.together_key() else {
-            return Err(Box::new(value_failure(
-                TOGETHER_KEY_ERROR,
-                self.model,
-                self.provider,
-            )));
-        };
-        let base = self.base_with_global(None, Some(TOGETHER_BASE));
-        Ok((Some(api_key), base))
+        let key = self.required_key(self.together_key(), TOGETHER_KEY_ERROR)?;
+        Ok((Some(key), self.base_with_global(None, Some(TOGETHER_BASE))))
     }
     fn jina_ai(&self) -> Result<Chain, Box<RawException>> {
-        let Some(api_key) = self.resolved.api_key.clone() else {
-            return Err(Box::new(value_failure(
-                JINA_KEY_ERROR,
-                self.model,
-                self.provider,
-            )));
-        };
+        let key = self.required_key(self.resolved.api_key.clone(), JINA_KEY_ERROR)?;
         let base = self.base_with_global(self.environment.bedrock_api_base.as_ref(), None);
-        Ok((Some(api_key), base))
+        Ok((Some(key), base))
     }
     fn nvidia_nim(&self) -> Result<Chain, Box<RawException>> {
-        let Some(api_key) = self.resolved.api_key.clone() else {
-            return Err(Box::new(value_failure(
-                NVIDIA_KEY_ERROR,
-                self.model,
-                self.provider,
-            )));
-        };
-        Ok((Some(api_key), self.nvidia_base()))
+        let key = self.required_key(self.resolved.api_key.clone(), NVIDIA_KEY_ERROR)?;
+        Ok((Some(key), self.nvidia_base()))
     }
     fn bedrock(&self) -> Chain {
         (
@@ -161,6 +142,13 @@ impl Branches<'_> {
         self.dynamic_key()
             .or_else(|| self.environment.voyage_api_key.clone())
             .or_else(|| self.environment.voyage_ai_api_key.clone())
+    }
+    fn required_key(
+        &self,
+        key: Option<SecretString>,
+        error: &str,
+    ) -> Result<SecretString, Box<RawException>> {
+        key.ok_or_else(|| Box::new(value_failure(error, self.model, self.provider)))
     }
     fn required_base(
         &self,

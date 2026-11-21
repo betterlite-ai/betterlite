@@ -191,8 +191,7 @@ fn provider_environment_values_are_read() {
     let settings =
         loads_rerank_settings("model_list: []\n", &environment(&PROVIDER_VALUES)).unwrap();
     assert_base_values(&settings.environment);
-    assert_key_values(&settings.environment);
-    assert_fireworks_and_voyage_values(&settings.environment);
+    assert_secret_values(&settings.environment);
 }
 
 fn assert_base_values(environment: &Environment) {
@@ -234,50 +233,35 @@ fn assert_base_values(environment: &Environment) {
     );
 }
 
-fn assert_key_values(environment: &Environment) {
-    assert_eq!(
+fn assert_secret_values(environment: &Environment) {
+    let values = [
         text(environment.togetherai_api_key.as_ref()),
-        Some("together-key")
-    );
-    assert_eq!(text(environment.jina_ai_api_key.as_ref()), Some("jina-key"));
-    assert_eq!(
+        text(environment.jina_ai_api_key.as_ref()),
         text(environment.nvidia_nim_api_key.as_ref()),
-        Some("nvidia-key")
-    );
-    assert_eq!(
         text(environment.hosted_vllm_api_key.as_ref()),
-        Some("vllm-key")
-    );
-    assert_eq!(
         text(environment.deepinfra_api_key.as_ref()),
-        Some("deepinfra-key")
-    );
-    assert_eq!(
         text(environment.fireworks_api_key.as_ref()),
-        Some("fireworks-key")
-    );
-}
-
-fn assert_fireworks_and_voyage_values(environment: &Environment) {
-    assert_eq!(
         text(environment.fireworks_ai_api_key.as_ref()),
-        Some("fireworks-ai-key")
-    );
-    assert_eq!(
         text(environment.fireworksai_api_key.as_ref()),
-        Some("fireworksai-key")
-    );
-    assert_eq!(
         text(environment.fireworks_ai_token.as_ref()),
-        Some("fireworks-token")
-    );
-    assert_eq!(
         text(environment.voyage_api_key.as_ref()),
-        Some("voyage-key")
-    );
-    assert_eq!(
         text(environment.voyage_ai_api_key.as_ref()),
-        Some("voyage-ai-key")
+    ];
+    assert_eq!(
+        values,
+        [
+            Some("together-key"),
+            Some("jina-key"),
+            Some("nvidia-key"),
+            Some("vllm-key"),
+            Some("deepinfra-key"),
+            Some("fireworks-key"),
+            Some("fireworks-ai-key"),
+            Some("fireworksai-key"),
+            Some("fireworks-token"),
+            Some("voyage-key"),
+            Some("voyage-ai-key"),
+        ]
     );
 }
 

@@ -35,6 +35,103 @@ fn head(pairs: &[(&str, &str)]) -> Json {
     )
 }
 
+// Scenario is the identity, settings, environment and kwargs one provider case dispatches with.
+struct Scenario<'call> {
+    provider: &'call str,
+    model: &'call str,
+    identity: ProviderIdentity,
+    dynamic_key: Option<&'call str>,
+    dynamic_base: Option<&'call str>,
+    settings: RerankSettings,
+    env: Vec<(&'call str, &'call str)>,
+    kwargs: Vec<(&'call str, Json)>,
+}
+
+impl<'call> Scenario<'call> {
+    fn new(provider: &'call str) -> Self {
+        let identity = if provider == "cohere" {
+            ProviderIdentity::Known(ProviderId::Cohere)
+        } else {
+            ProviderIdentity::Custom(provider.to_owned())
+        };
+        Self {
+            provider,
+            model: "rerank-v1",
+            identity,
+            dynamic_key: None,
+            dynamic_base: None,
+            settings: defaults(),
+            env: Vec::new(),
+            kwargs: Vec::new(),
+        }
+    }
+
+    fn with_dynamic(mut self, key: Option<&'call str>, base: Option<&'call str>) -> Self {
+        self.dynamic_key = key;
+        self.dynamic_base = base;
+        self
+    }
+
+    fn with_settings(mut self, settings: RerankSettings) -> Self {
+        self.settings = settings;
+        self
+    }
+
+    fn with_env(mut self, pairs: &[(&'call str, &'call str)]) -> Self {
+        self.env.extend_from_slice(pairs);
+        self
+    }
+
+    fn with_kwargs(mut self, pairs: &[(&'call str, Json)]) -> Self {
+        self.kwargs.extend_from_slice(pairs);
+        self
+    }
+
+    fn run(&self, ops: &FakeOps) -> Result<RerankResponse, RerankException> {
+        let identity = FakeIdentity::new(
+            self.model,
+            self.identity.clone(),
+            self.dynamic_key,
+            self.dynamic_base,
+        );
+        let mut call = rerank_call(self.provider);
+        call.kwargs = with(&self.kwargs);
+        run_one(&identity, ops, &self.settings, &self.env, call)
+    }
+
+    fn send(&self, ops: &FakeOps) -> SendSeen {
+        self.run(ops).expect("the scenario dispatches");
+        last(ops)
+    }
+
+    fn failure(&self, ops: &FakeOps) -> RerankException {
+        self.run(ops).expect_err("the scenario raises")
+    }
+}
+
+fn global_base_settings() -> RerankSettings {
+    let mut settings = defaults();
+    settings.api_base = Some(String::from("https://global.test"));
+    settings
+}
+
+fn together_environment_settings() -> RerankSettings {
+    let mut settings = together_settings();
+    settings.togetherai_api_key = None;
+    settings
+}
+
+fn raises_without_sending(ops: &FakeOps, scenario: &Scenario<'_>, message: &str) {
+    let sent_before = ops.sends().len();
+    let error = scenario.failure(ops);
+    assert_eq!(error.message, message);
+    assert_eq!(ops.sends().len(), sent_before);
+}
+
+fn assert_base(scenario: &Scenario<'_>, ops: &FakeOps, base: &str) {
+    assert_eq!(scenario.send(ops).api_base.as_deref(), Some(base));
+}
+
 #[test]
 fn rerank_cohere_foundry_infinity() {
     let ops = FakeOps::default();
@@ -118,23 +215,15 @@ fn cohere_global_headers_are_merged(ops: &FakeOps) {
 }
 
 fn cohere_environment_base_wins_over_default(ops: &FakeOps) {
-    let identity = FakeIdentity::new(
-        "rerank-v1",
-        ProviderIdentity::Known(ProviderId::Cohere),
-        None,
-        None,
-    );
     let mut settings = defaults();
     settings.api_key = Some(SecretString::from("global-key"));
-    run_one(
-        &identity,
-        ops,
-        &settings,
-        &[("COHERE_API_BASE", "https://env.test")],
-        rerank_call("cohere"),
-    )
-    .expect("the environment base dispatches");
-    assert_eq!(last(ops).api_base.as_deref(), Some("https://env.test"));
+    let scenario = Scenario::new("cohere")
+        .with_settings(settings)
+        .with_env(&[("COHERE_API_BASE", "https://env.test")]);
+    assert_eq!(
+        scenario.send(ops).api_base.as_deref(),
+        Some("https://env.test")
+    );
 }
 
 fn cohere_default_base_is_used(ops: &FakeOps) {
@@ -209,18 +298,10 @@ fn azure_ai_takes_the_call_values(ops: &FakeOps) {
 }
 
 fn azure_ai_takes_the_global_base(ops: &FakeOps) {
-    let azure = FakeIdentity::new(
-        "rerank-v1",
-        ProviderIdentity::Custom("azure_ai".to_owned()),
-        None,
-        None,
-    );
-    let mut settings = defaults();
-    settings.api_base = Some(String::from("https://global.test"));
-    run_one(&azure, ops, &settings, &[], rerank_call("azure_ai"))
-        .expect("azure takes the global base");
-    assert_eq!(last(ops).api_key, None);
-    assert_eq!(last(ops).api_base.as_deref(), Some("https://global.test"));
+    let scenario = Scenario::new("azure_ai").with_settings(global_base_settings());
+    let send = scenario.send(ops);
+    assert_eq!(send.api_key, None);
+    assert_eq!(send.api_base.as_deref(), Some("https://global.test"));
 }
 
 fn azure_ai_takes_the_environment_base_then_none(ops: &FakeOps) {
@@ -265,38 +346,16 @@ fn infinity_omits_the_computed_global_key(ops: &FakeOps) {
 }
 
 fn infinity_takes_the_environment_base(ops: &FakeOps) {
-    let infinity = FakeIdentity::new(
-        "rerank-v1",
-        ProviderIdentity::Custom("infinity".to_owned()),
-        None,
-        None,
-    );
-    run_one(
-        &infinity,
-        ops,
-        &defaults(),
-        &[("INFINITY_API_BASE", "https://env.test")],
-        rerank_call("infinity"),
-    )
-    .expect("infinity takes the environment base");
-    assert_eq!(last(ops).api_base.as_deref(), Some("https://env.test"));
+    let scenario = Scenario::new("infinity").with_env(&[("INFINITY_API_BASE", "https://env.test")]);
+    assert_base(&scenario, ops, "https://env.test");
 }
 
 fn infinity_without_a_base_raises(ops: &FakeOps) {
-    let infinity = FakeIdentity::new(
-        "rerank-v1",
-        ProviderIdentity::Custom("infinity".to_owned()),
-        None,
-        None,
+    raises_without_sending(
+        ops,
+        &Scenario::new("infinity"),
+        "Invalid api base. api_base=None. Set in call or via `INFINITY_API_BASE` env var.",
     );
-    let sent_before = ops.sends().len();
-    let error = run_one(&infinity, ops, &defaults(), &[], rerank_call("infinity"))
-        .expect_err("a missing infinity base raises");
-    assert_eq!(
-        error.message,
-        "Invalid api base. api_base=None. Set in call or via `INFINITY_API_BASE` env var."
-    );
-    assert_eq!(ops.sends().len(), sent_before);
 }
 
 #[test]
@@ -346,102 +405,40 @@ fn together_dynamic_credentials_win(ops: &FakeOps) {
 }
 
 fn together_takes_the_call_key(ops: &FakeOps) {
-    let identity = FakeIdentity::new(
-        "rerank-v1",
-        ProviderIdentity::Custom("together_ai".to_owned()),
-        None,
-        None,
-    );
-    let mut call = rerank_call("together_ai");
-    call.kwargs = with(&[("api_key", text("call-key"))]);
-    run_one(
-        &identity,
-        ops,
-        &together_settings(),
-        &[("TOGETHERAI_API_KEY", "env-key")],
-        call,
-    )
-    .expect("together takes the call key");
-    assert_eq!(last(ops).api_key.as_deref(), Some("call-key"));
+    let scenario = Scenario::new("together_ai")
+        .with_settings(together_settings())
+        .with_env(&[("TOGETHERAI_API_KEY", "env-key")])
+        .with_kwargs(&[("api_key", text("call-key"))]);
+    assert_eq!(scenario.send(ops).api_key.as_deref(), Some("call-key"));
 }
 
 fn together_takes_the_settings_key(ops: &FakeOps) {
-    let identity = FakeIdentity::new(
-        "rerank-v1",
-        ProviderIdentity::Custom("together_ai".to_owned()),
-        None,
-        None,
-    );
-    run_one(
-        &identity,
-        ops,
-        &together_settings(),
-        &[("TOGETHERAI_API_KEY", "env-key")],
-        rerank_call("together_ai"),
-    )
-    .expect("together takes the settings key");
-    assert_eq!(last(ops).api_key.as_deref(), Some("settings-key"));
+    let scenario = Scenario::new("together_ai")
+        .with_settings(together_settings())
+        .with_env(&[("TOGETHERAI_API_KEY", "env-key")]);
+    assert_eq!(scenario.send(ops).api_key.as_deref(), Some("settings-key"));
 }
 
 fn together_takes_the_environment_key(ops: &FakeOps) {
-    let identity = FakeIdentity::new(
-        "rerank-v1",
-        ProviderIdentity::Custom("together_ai".to_owned()),
-        None,
-        None,
-    );
-    let mut environment_settings = together_settings();
-    environment_settings.togetherai_api_key = None;
-    run_one(
-        &identity,
-        ops,
-        &environment_settings,
-        &[("TOGETHERAI_API_KEY", "env-key")],
-        rerank_call("together_ai"),
-    )
-    .expect("together takes the environment key");
-    assert_eq!(last(ops).api_key.as_deref(), Some("env-key"));
+    let scenario = Scenario::new("together_ai")
+        .with_settings(together_environment_settings())
+        .with_env(&[("TOGETHERAI_API_KEY", "env-key")]);
+    assert_eq!(scenario.send(ops).api_key.as_deref(), Some("env-key"));
 }
 
 fn together_takes_the_global_key_and_default_base(ops: &FakeOps) {
-    let identity = FakeIdentity::new(
-        "rerank-v1",
-        ProviderIdentity::Custom("together_ai".to_owned()),
-        None,
-        None,
-    );
-    let mut environment_settings = together_settings();
-    environment_settings.togetherai_api_key = None;
-    run_one(
-        &identity,
-        ops,
-        &environment_settings,
-        &[],
-        rerank_call("together_ai"),
-    )
-    .expect("together takes the global key");
-    assert_eq!(last(ops).api_key.as_deref(), Some("global-key"));
-    assert_eq!(
-        last(ops).api_base.as_deref(),
-        Some("https://api.together.ai/v1")
-    );
+    let scenario = Scenario::new("together_ai").with_settings(together_environment_settings());
+    let send = scenario.send(ops);
+    assert_eq!(send.api_key.as_deref(), Some("global-key"));
+    assert_eq!(send.api_base.as_deref(), Some("https://api.together.ai/v1"));
 }
 
 fn together_without_a_key_raises(ops: &FakeOps) {
-    let identity = FakeIdentity::new(
-        "rerank-v1",
-        ProviderIdentity::Custom("together_ai".to_owned()),
-        None,
-        None,
+    raises_without_sending(
+        ops,
+        &Scenario::new("together_ai"),
+        "TogetherAI API key is required, please set 'TOGETHERAI_API_KEY' in your environment",
     );
-    let sent_before = ops.sends().len();
-    let error = run_one(&identity, ops, &defaults(), &[], rerank_call("together_ai"))
-        .expect_err("a missing together key raises");
-    assert_eq!(
-        error.message,
-        "TogetherAI API key is required, please set 'TOGETHERAI_API_KEY' in your environment"
-    );
-    assert_eq!(ops.sends().len(), sent_before);
 }
 
 fn together_forwards_the_options(ops: &FakeOps) {
@@ -470,58 +467,28 @@ fn together_forwards_the_options(ops: &FakeOps) {
 }
 
 fn jina_without_a_key_raises(ops: &FakeOps) {
-    let jina = FakeIdentity::new(
-        "rerank-v1",
-        ProviderIdentity::Custom("jina_ai".to_owned()),
-        None,
-        None,
+    raises_without_sending(
+        ops,
+        &Scenario::new("jina_ai").with_kwargs(&[("api_key", text("call-key"))]),
+        "Jina AI API key is required, please set 'JINA_AI_API_KEY' in your environment",
     );
-    let mut call = rerank_call("jina_ai");
-    call.kwargs = with(&[("api_key", text("call-key"))]);
-    let sent_before = ops.sends().len();
-    let error = run_one(&jina, ops, &defaults(), &[], call).expect_err("a missing jina key raises");
-    assert_eq!(
-        error.message,
-        "Jina AI API key is required, please set 'JINA_AI_API_KEY' in your environment"
-    );
-    assert_eq!(ops.sends().len(), sent_before);
 }
 
 fn jina_takes_the_bedrock_base(ops: &FakeOps) {
-    let jina = FakeIdentity::new(
-        "rerank-v1",
-        ProviderIdentity::Custom("jina_ai".to_owned()),
-        Some("dynamic-key"),
-        None,
-    );
-    run_one(
-        &jina,
-        ops,
-        &defaults(),
-        &[("BEDROCK_API_BASE", "https://bedrock-env.test")],
-        rerank_call("jina_ai"),
-    )
-    .expect("jina takes the bedrock base");
-    let send = last(ops);
+    let scenario = Scenario::new("jina_ai")
+        .with_dynamic(Some("dynamic-key"), None)
+        .with_env(&[("BEDROCK_API_BASE", "https://bedrock-env.test")]);
+    let send = scenario.send(ops);
     assert_eq!(send.config, SelectedConfig::JinaAi);
     assert_eq!(send.api_base.as_deref(), Some("https://bedrock-env.test"));
 }
 
 fn nvidia_without_a_key_raises(ops: &FakeOps) {
-    let nvidia = FakeIdentity::new(
-        "rerank-v1",
-        ProviderIdentity::Custom("nvidia_nim".to_owned()),
-        None,
-        Some("https://dynamic.test"),
+    raises_without_sending(
+        ops,
+        &Scenario::new("nvidia_nim").with_dynamic(None, Some("https://dynamic.test")),
+        "Nvidia NIM API key is required, please set 'NVIDIA_NIM_API_KEY' in your environment",
     );
-    let sent_before = ops.sends().len();
-    let error = run_one(&nvidia, ops, &defaults(), &[], rerank_call("nvidia_nim"))
-        .expect_err("a missing nvidia key raises");
-    assert_eq!(
-        error.message,
-        "Nvidia NIM API key is required, please set 'NVIDIA_NIM_API_KEY' in your environment"
-    );
-    assert_eq!(ops.sends().len(), sent_before);
 }
 
 fn nvidia_takes_the_call_base(ops: &FakeOps) {
@@ -543,40 +510,18 @@ fn nvidia_takes_the_call_base(ops: &FakeOps) {
 }
 
 fn nvidia_takes_the_environment_base(ops: &FakeOps) {
-    let nvidia = FakeIdentity::new(
-        "rerank-v1",
-        ProviderIdentity::Custom("nvidia_nim".to_owned()),
-        Some("dynamic-key"),
-        Some("https://dynamic.test"),
-    );
-    let mut settings = defaults();
-    settings.api_base = Some(String::from("https://global.test"));
-    run_one(
-        &nvidia,
-        ops,
-        &settings,
-        &[("NVIDIA_NIM_API_BASE", "https://nim-env.test")],
-        rerank_call("nvidia_nim"),
-    )
-    .expect("nvidia takes the environment base");
-    assert_eq!(last(ops).api_base.as_deref(), Some("https://nim-env.test"));
+    let scenario = Scenario::new("nvidia_nim")
+        .with_dynamic(Some("dynamic-key"), Some("https://dynamic.test"))
+        .with_settings(global_base_settings())
+        .with_env(&[("NVIDIA_NIM_API_BASE", "https://nim-env.test")]);
+    assert_base(&scenario, ops, "https://nim-env.test");
 }
 
 fn nvidia_takes_the_default_base(ops: &FakeOps) {
-    let nvidia = FakeIdentity::new(
-        "rerank-v1",
-        ProviderIdentity::Custom("nvidia_nim".to_owned()),
-        Some("dynamic-key"),
-        Some("https://dynamic.test"),
-    );
-    let mut settings = defaults();
-    settings.api_base = Some(String::from("https://global.test"));
-    run_one(&nvidia, ops, &settings, &[], rerank_call("nvidia_nim"))
-        .expect("nvidia takes its default base");
-    assert_eq!(
-        last(ops).api_base.as_deref(),
-        Some("https://ai.api.nvidia.com")
-    );
+    let scenario = Scenario::new("nvidia_nim")
+        .with_dynamic(Some("dynamic-key"), Some("https://dynamic.test"))
+        .with_settings(global_base_settings());
+    assert_base(&scenario, ops, "https://ai.api.nvidia.com");
 }
 
 fn nvidia_ranking_model_selects_the_ranking_client(ops: &FakeOps) {
@@ -635,38 +580,14 @@ fn bedrock_merges_extra_headers_and_timeout(ops: &FakeOps) {
 }
 
 fn bedrock_takes_the_global_base(ops: &FakeOps) {
-    let bedrock = FakeIdentity::new(
-        "rerank-v1",
-        ProviderIdentity::Custom("bedrock".to_owned()),
-        None,
-        None,
-    );
-    let mut settings = defaults();
-    settings.api_base = Some(String::from("https://global.test"));
-    run_one(&bedrock, ops, &settings, &[], rerank_call("bedrock"))
-        .expect("bedrock takes the global base");
-    assert_eq!(last(ops).api_base.as_deref(), Some("https://global.test"));
+    let scenario = Scenario::new("bedrock").with_settings(global_base_settings());
+    assert_base(&scenario, ops, "https://global.test");
 }
 
 fn bedrock_takes_the_environment_base(ops: &FakeOps) {
-    let bedrock = FakeIdentity::new(
-        "rerank-v1",
-        ProviderIdentity::Custom("bedrock".to_owned()),
-        None,
-        None,
-    );
-    run_one(
-        &bedrock,
-        ops,
-        &defaults(),
-        &[("BEDROCK_API_BASE", "https://bedrock-env.test")],
-        rerank_call("bedrock"),
-    )
-    .expect("bedrock takes the environment base");
-    assert_eq!(
-        last(ops).api_base.as_deref(),
-        Some("https://bedrock-env.test")
-    );
+    let scenario =
+        Scenario::new("bedrock").with_env(&[("BEDROCK_API_BASE", "https://bedrock-env.test")]);
+    assert_base(&scenario, ops, "https://bedrock-env.test");
 }
 
 fn watsonx_reads_the_credentials_object(ops: &FakeOps) {
@@ -709,15 +630,8 @@ fn watsonx_without_a_token_sends_none(ops: &FakeOps) {
 }
 
 fn an_unknown_provider_raises(ops: &FakeOps) {
-    let generic = FakeIdentity::new(
-        "rerank-v1",
-        ProviderIdentity::Custom("openai".to_owned()),
-        None,
-        None,
-    );
     let sent_before = ops.sends().len();
-    let error = run_one(&generic, ops, &defaults(), &[], rerank_call("openai"))
-        .expect_err("an unknown provider with a cohere config raises");
+    let error = Scenario::new("openai").failure(ops);
     assert_eq!(error.message, "Unsupported provider: openai");
     assert_eq!(ops.sends().len(), sent_before);
 }

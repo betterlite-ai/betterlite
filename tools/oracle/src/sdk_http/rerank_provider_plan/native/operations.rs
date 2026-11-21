@@ -10,7 +10,7 @@ use betterlite_error::dispatch::RawException;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_openai::api::rerank_contracts::records::RerankResponse;
 use betterlite_provider::api::rerank_contracts::{
-    BaseRerankConfig, OptionalRerankParams, ReturnDocuments as ProviderReturnDocuments,
+    OptionalRerankParams, ReturnDocuments as ProviderReturnDocuments,
 };
 use betterlite_provider::nvidia_nim_rerank::{NvidiaNimRerankSelection, select_rerank_config};
 use betterlite_redact::secret::Redactor;
@@ -59,37 +59,26 @@ impl Operations<'_> {
         request: SendRequest<'_>,
         logging: &mut LoggingState,
     ) -> Result<RerankResponse, Box<RawException>> {
-        match family_choice(request.config) {
-            FamilyChoice::Family(kind) => {
-                let config = family(kind, self.config, self.environment);
-                self.send_family(&config, request, logging).await
-            }
-            FamilyChoice::Nvidia => match select_rerank_config(request.model) {
-                NvidiaNimRerankSelection::Retrieval(selected) => {
-                    self.send_family(&selected, request, logging).await
-                }
-                NvidiaNimRerankSelection::Ranking(selected) => {
-                    self.send_family(&selected, request, logging).await
-                }
-            },
-            FamilyChoice::Unsupported => Err(Box::new(not_wired(request.model, request.provider))),
-        }
-    }
-    async fn send_family<C>(
-        &self,
-        config: &C,
-        request: SendRequest<'_>,
-        logging: &mut LoggingState,
-    ) -> Result<RerankResponse, Box<RawException>>
-    where
-        C: BaseRerankConfig,
-    {
         let http = HttpState {
             source: &self.source,
             redactor: &self.redactor,
             now: self.now,
         };
-        send_with(config, request, logging, &http).await
+        match family_choice(request.config) {
+            FamilyChoice::Family(kind) => {
+                let config = family(kind, self.config, self.environment);
+                send_with(&config, request, logging, &http).await
+            }
+            FamilyChoice::Nvidia => match select_rerank_config(request.model) {
+                NvidiaNimRerankSelection::Retrieval(selected) => {
+                    send_with(&selected, request, logging, &http).await
+                }
+                NvidiaNimRerankSelection::Ranking(selected) => {
+                    send_with(&selected, request, logging, &http).await
+                }
+            },
+            FamilyChoice::Unsupported => Err(Box::new(not_wired(request.model, request.provider))),
+        }
     }
 }
 // The three shapes a selected config takes: a provider family config, one of Nvidia's two clients, or no handler

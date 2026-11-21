@@ -112,54 +112,6 @@ impl FakeOps {
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
     }
-
-    fn record_options(&self, request: &OptionsRequest<'_>) {
-        self.options
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(OptionsSeen {
-                config: request.config,
-                model: request.model.to_owned(),
-                drop_params: request.drop_params,
-                query: request.query.to_owned(),
-                documents: request.documents.to_vec(),
-                custom_llm_provider: request.custom_llm_provider.map(str::to_owned),
-                top_n: request.top_n,
-                rank_fields: request.rank_fields.map(<[String]>::to_vec),
-                return_documents: request.return_documents,
-                max_chunks_per_doc: request.max_chunks_per_doc,
-                max_tokens_per_doc: request.max_tokens_per_doc,
-                instruction: request.instruction.map(str::to_owned),
-                non_default_keys: request.non_default_params.keys().cloned().collect(),
-            });
-    }
-
-    fn record_send(&self, request: &SendRequest<'_>) {
-        self.sends
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(SendSeen {
-                config: request.config,
-                provider: request.provider.to_owned(),
-                model: request.model.to_owned(),
-                query: request.query.to_owned(),
-                documents: request.documents.to_vec(),
-                optional_params: request.optional_params.clone(),
-                litellm_params: request.litellm_params.clone(),
-                generic_params: request.generic_params.clone(),
-                api_key: request.api_key.map(|key| key.expose_secret().to_owned()),
-                api_base: request.api_base.map(str::to_owned),
-                headers: request.headers.clone(),
-                timeout_seconds: request.timeout_seconds,
-                is_async: request.is_async,
-                top_n: request.top_n,
-                rank_fields: request.rank_fields.map(<[String]>::to_vec),
-                return_documents: request.return_documents,
-                max_chunks_per_doc: request.max_chunks_per_doc,
-                max_tokens_per_doc: request.max_tokens_per_doc,
-                instruction: request.instruction.map(str::to_owned),
-            });
-    }
 }
 
 fn mapped_params(request: &OptionsRequest<'_>) -> Params {
@@ -239,7 +191,24 @@ impl RerankOperations for FakeOps {
                 request.custom_llm_provider.unwrap_or_default(),
             )));
         }
-        self.record_options(&request);
+        self.options
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(OptionsSeen {
+                config: request.config,
+                model: request.model.to_owned(),
+                drop_params: request.drop_params,
+                query: request.query.to_owned(),
+                documents: request.documents.to_vec(),
+                custom_llm_provider: request.custom_llm_provider.map(str::to_owned),
+                top_n: request.top_n,
+                rank_fields: request.rank_fields.map(<[String]>::to_vec),
+                return_documents: request.return_documents,
+                max_chunks_per_doc: request.max_chunks_per_doc,
+                max_tokens_per_doc: request.max_tokens_per_doc,
+                instruction: request.instruction.map(str::to_owned),
+                non_default_keys: request.non_default_params.keys().cloned().collect(),
+            });
         Ok(mapped_params(&request))
     }
 
@@ -248,7 +217,30 @@ impl RerankOperations for FakeOps {
         request: SendRequest<'_>,
         _logging: &mut LoggingState,
     ) -> Result<RerankResponse, Box<RawException>> {
-        self.record_send(&request);
+        self.sends
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(SendSeen {
+                config: request.config,
+                provider: request.provider.to_owned(),
+                model: request.model.to_owned(),
+                query: request.query.to_owned(),
+                documents: request.documents.to_vec(),
+                optional_params: request.optional_params.clone(),
+                litellm_params: request.litellm_params.clone(),
+                generic_params: request.generic_params.clone(),
+                api_key: request.api_key.map(|key| key.expose_secret().to_owned()),
+                api_base: request.api_base.map(str::to_owned),
+                headers: request.headers.clone(),
+                timeout_seconds: request.timeout_seconds,
+                is_async: request.is_async,
+                top_n: request.top_n,
+                rank_fields: request.rank_fields.map(<[String]>::to_vec),
+                return_documents: request.return_documents,
+                max_chunks_per_doc: request.max_chunks_per_doc,
+                max_tokens_per_doc: request.max_tokens_per_doc,
+                instruction: request.instruction.map(str::to_owned),
+            });
         if let Some((status, message)) = &self.send_failure {
             return Err(Box::new(provider_failure(
                 *status,
@@ -554,39 +546,24 @@ fn mock_response_does_not_bypass_the_provider_call() {
 fn drop_params_uses_the_call_value_then_the_global_value() {
     let ops = FakeOps::default();
     let identity = cohere_identity();
-    drop_params_with_a_global_flag(&ops, &identity);
-    drop_params_with_a_call_flag(&ops, &identity);
-    drop_params_without_any_flag(&ops, &identity);
-}
-
-fn drop_params_with_a_global_flag(ops: &FakeOps, identity: &FakeIdentity) {
-    let mut global = defaults();
-    global.drop_params = true;
-    let case = Case::new(ops, global, BTreeMap::new());
-    let mut logging = logging_state();
-    let mut call = rerank_call("cohere");
-    call.kwargs = with(&[("drop_params", Json::Bool(false))]);
-    case.dispatch(identity, call, &mut logging)
-        .expect("the call dispatches");
-    assert!(ops.options()[0].drop_params);
-}
-
-fn drop_params_with_a_call_flag(ops: &FakeOps, identity: &FakeIdentity) {
-    let case = Case::new(ops, defaults(), BTreeMap::new());
-    let mut logging = logging_state();
-    let mut call = rerank_call("cohere");
-    call.kwargs = with(&[("drop_params", Json::Bool(true))]);
-    case.dispatch(identity, call, &mut logging)
-        .expect("the call dispatches");
-    assert!(ops.options()[1].drop_params);
-}
-
-fn drop_params_without_any_flag(ops: &FakeOps, identity: &FakeIdentity) {
-    let case = Case::new(ops, defaults(), BTreeMap::new());
-    let mut logging = logging_state();
-    case.dispatch(identity, rerank_call("cohere"), &mut logging)
-        .expect("the call dispatches");
-    assert!(!ops.options()[2].drop_params);
+    let cases = [
+        (true, Some(false), true),
+        (false, Some(true), true),
+        (false, None, false),
+    ];
+    for (index, (global, call_flag, expected)) in cases.into_iter().enumerate() {
+        let mut settings = defaults();
+        settings.drop_params = global;
+        let mut call = rerank_call("cohere");
+        if let Some(flag) = call_flag {
+            call.kwargs = with(&[("drop_params", Json::Bool(flag))]);
+        }
+        let case = Case::new(&ops, settings, BTreeMap::new());
+        let mut logging = logging_state();
+        case.dispatch(&identity, call, &mut logging)
+            .expect("the call dispatches");
+        assert_eq!(ops.options()[index].drop_params, expected);
+    }
 }
 
 #[test]

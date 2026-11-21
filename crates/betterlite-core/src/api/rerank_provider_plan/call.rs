@@ -98,34 +98,32 @@ impl GenericParams {
     }
 }
 fn timeout_arg(value: &Json) -> Result<Option<TimeoutArg>, CallError> {
+    let field = "timeout";
     match value {
         Json::Null => Ok(None),
-        Json::Number(number) => Ok(Some(TimeoutArg::Number(
-            number
-                .as_f64()
-                .ok_or(CallError::FieldTimeout { field: "timeout" })?,
-        ))),
         Json::Text(text) => Ok(Some(TimeoutArg::Text(text.clone()))),
-        Json::Bool(_) | Json::List(_) | Json::Object(_) => {
-            Err(CallError::FieldTimeout { field: "timeout" })
-        }
+        Json::Number(number) => number
+            .as_f64()
+            .map(|seconds| Some(TimeoutArg::Number(seconds)))
+            .ok_or(CallError::FieldTimeout { field }),
+        Json::Bool(_) | Json::List(_) | Json::Object(_) => Err(CallError::FieldTimeout { field }),
     }
 }
 fn drop_flag(value: &Json) -> Result<Option<bool>, CallError> {
-    match value {
-        Json::Null => Ok(None),
-        Json::Bool(flag) => Ok(Some(*flag)),
-        Json::Text(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-            Err(CallError::FieldFlag {
-                field: "drop_params",
-            })
-        }
+    if let Json::Bool(flag) = value {
+        return Ok(Some(*flag));
     }
+    if matches!(value, Json::Null) {
+        return Ok(None);
+    }
+    Err(CallError::FieldFlag {
+        field: "drop_params",
+    })
 }
 fn string(value: &Json, field: &'static str) -> Result<Option<String>, CallError> {
     match value {
-        Json::Null => Ok(None),
         Json::Text(text) => Ok(Some(text.clone())),
+        Json::Null => Ok(None),
         Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
             Err(CallError::FieldText { field })
         }
