@@ -865,7 +865,8 @@ async fn postgres_publish_updates_logs_sessions_daily_rows_and_publications() {
     .await
     .unwrap();
     transaction.commit().await.unwrap();
-    assert_spend_log(&client, "req-1", Some("-0.05")).await;
+    // The statement subtracts two float8 columns, so the stored savings carry binary rounding.
+    assert_spend_log(&client, "req-1", Some("-0.04999999999999999")).await;
     assert_spend_log(&client, "req-2", None).await;
     assert_sessions(&client).await;
     assert_daily_savings(&client).await;
