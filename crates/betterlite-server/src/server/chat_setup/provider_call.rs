@@ -33,13 +33,13 @@ pub(crate) async fn answer_chat(
     request: &ChatRequest,
     deployment: &ChatDeployment,
     control: ControlOptions,
-) -> Result<(ChatCompletion, HeaderMap, Duration), CallError<ChatError>> {
+) -> Result<(OperationResult, HeaderMap, Duration), CallError<ChatError>> {
     if !chat_mocks_resolve(executor, deployment, request)? {
         return provider_chat(executor, request, deployment, control).await;
     }
     let outcome = executor.send(deployment, request).await?;
     Ok((
-        ChatCompletion::OpenAi(Box::new(outcome.response)),
+        OperationResult::Chat(ChatCompletion::OpenAi(Box::new(outcome.response))),
         outcome.upstream.headers,
         outcome.upstream_time,
     ))
@@ -67,7 +67,7 @@ async fn provider_chat(
     request: &ChatRequest,
     deployment: &ChatDeployment,
     control: ControlOptions,
-) -> Result<(ChatCompletion, HeaderMap, Duration), CallError<ChatError>> {
+) -> Result<(OperationResult, HeaderMap, Duration), CallError<ChatError>> {
     let provider = Provider::from_deployment(deployment).map_err(chat_error)?;
     let inputs = Deployment::from_chat(deployment);
     let operation = OperationRequest::Chat(Box::new(ChatOperation {
@@ -91,10 +91,7 @@ async fn provider_chat(
     let upstream_time = started.elapsed();
     let upstream_headers = upstream.headers().clone();
     let result = provider.decode(&prepared, upstream).map_err(chat_error)?;
-    let OperationResult::Chat(completion) = result else {
-        return Err(CallError::Mismatched);
-    };
-    Ok((completion, upstream_headers, upstream_time))
+    Ok((result, upstream_headers, upstream_time))
 }
 
 // The route's own error where it names the failure; otherwise the provider's error, or the wrong operation, kept as it is
@@ -141,6 +138,7 @@ pub(crate) fn chat_error(error: OperationError) -> CallError<ChatError> {
         },
         kept @ (OperationError::TransformRetry(_)
         | OperationError::Parameters { .. }
+        | OperationError::RejectedFields { .. }
         | OperationError::Anthropic { .. }) => {
             return CallError::Operation { source: kept };
         }

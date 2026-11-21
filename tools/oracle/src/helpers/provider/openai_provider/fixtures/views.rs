@@ -139,7 +139,8 @@ pub(super) fn reply_view(outcome: OperationResult) -> Result<Value, Box<HelperEr
         | OperationResult::OpenAiResource(_) | OperationResult::OpenAiAssistant(_) | OperationResult::AzureMedia(_) | OperationResult::AzureResource(_)
         | OperationResult::FoundryResource(_) | OperationResult::BedrockChat(_) | OperationResult::BedrockOther(_) | OperationResult::BedrockServices(_)
         | OperationResult::BedrockImage(_) | OperationResult::BedrockAgent(_) | OperationResult::BedrockInteractive(_) | OperationResult::VertexPartner(_)
-        | OperationResult::VertexMedia(_) | OperationResult::VertexService(_) | OperationResult::VertexEmbedding(_) => Err(failure("Fixture", "the dispatch returned another outcome")),
+        | OperationResult::VertexMedia(_) | OperationResult::VertexService(_) | OperationResult::VertexEmbedding(_)
+        | OperationResult::OutputLimit { .. } => Err(failure("Fixture", "the dispatch returned another outcome")),
     }
 }
 

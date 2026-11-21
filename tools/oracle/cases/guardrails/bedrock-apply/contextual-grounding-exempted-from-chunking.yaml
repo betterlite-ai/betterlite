@@ -1,0 +1,29 @@
+kind: helper
+name: contextual-grounding-exempted-from-chunking
+call:
+  b3724:
+    source: OUTPUT
+    messages:
+      - {role: system, content: rules}
+      - {role: user, content: question}
+    response:
+      choices:
+        - message: {role: assistant, content: answer}
+    logging_event_type: null
+    guardrail_identifier: gr-abc123
+    guardrail_version: "1"
+    checks: null
+    chunk_budget_chars: 25000
+    contextual_grounding: true
+    disable_exception_on_block: false
+    data: {model: gpt-4o}
+    replies:
+      - status: 400
+        body:
+          message: "Input is too long for requested model."
+        raw: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/requests/0/authorization
+      why: "Each side signs its own request at its own clock time, so the SigV4 signature differs"
