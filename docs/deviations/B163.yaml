@@ -19,13 +19,15 @@ deviations:
       parameters need a field type that matches the base class for static checking. Only `__annotations__` differs.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L132-L156
   - what: >-
-      The `body` parameter and attribute are typed `JsonValue | bytes | None`, and the `code`, `param` and `type`
-      attributes are `JsonValue`, where LiteLLM declares `body: dict | None` on `BadRequestError`, `body: object |
-      None` on `InternalServerError` and `APIError`, and `Optional[str]` on the openai base fields.
+      The `body` parameter and attribute are typed `JsonValue | bytes | None`, the `code`, `param` and `type`
+      attributes are `JsonValue`, and `detail` is `JsonValue`, where LiteLLM declares `body: dict | None` on
+      `BadRequestError`, `body: object | None` on `RateLimitError`, `InternalServerError` and `APIError`,
+      `Optional[str]` on the openai base fields and `detail: Any`. Only the annotations differ.
     why: >-
       Python accepts any body at runtime, and openai's `APIError` stores `code`, `param` and `type` as `None` when the
-      body is not a dict. `JsonValue` covers the JSON a response body holds, `bytes` covers a raw body, and both stay
-      inside the no-loose-types rule. The stored values follow LiteLLM.
+      body is not a dict. The match names a dict body and then `object`, so every other body stores the values
+      LiteLLM stores. `JsonValue` covers the JSON a response body holds, `bytes` covers a raw body, and both stay
+      inside the no-loose-types rule.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L219-L251
   - what: >-
       The constructors of AuthenticationError, NotFoundError, UnprocessableEntityError, PermissionDeniedError,

@@ -147,7 +147,7 @@ class _ServerView(BaseModel):
     litellm_debug_info: str | None = None
     code: JsonValue
     param: JsonValue
-    type: JsonValue = None
+    type: JsonValue
     body: JsonValue | bytes = None
     headers: dict[str, str] | None = None
     args: tuple[JsonValue, ...] = ()
@@ -349,6 +349,23 @@ _CASES = [
             status_code=502, message=_MESSAGE, llm_provider=_PROVIDER, model=_MODEL, body=_BODY
         ),
         id="api-error-default-request",
+    ),
+    pytest.param(
+        their_errors.APIError(
+            status_code=502,
+            message=_MESSAGE,
+            llm_provider=_PROVIDER,
+            model=_MODEL,
+            body=_BYTES,
+        ),
+        our_errors.APIError(
+            status_code=502,
+            message=_MESSAGE,
+            llm_provider=_PROVIDER,
+            model=_MODEL,
+            body=_BYTES,
+        ),
+        id="api-error-bytes-body",
     ),
     pytest.param(
         their_errors.APIError(

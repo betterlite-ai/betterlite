@@ -27,7 +27,7 @@ class APIError(OpenAIError):
                 self.code = fields.get("code")
                 self.param = fields.get("param")
                 self.type = fields.get("type")
-            case list() | str() | bool() | float() | int() | bytes() | None:
+            case object():  # no-match-wildcard bans case _ beside a class pattern
                 self.code = None
                 self.param = None
                 self.type = None
