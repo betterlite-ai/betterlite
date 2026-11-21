@@ -7,6 +7,7 @@ use betterlite_core::api::assistant_run_sdk::call::{RunClient, RunClientClass};
 use betterlite_core::api::assistant_threads::SuppliedClient as ThreadClient;
 use betterlite_openai::assistants::client::{ClientKind, SdkClient};
 use secrecy::SecretString;
+use serde::{Deserialize, Serialize};
 
 // The SDK class the caller built, as the proxy would have bound the client argument (main.py's isinstance checks).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
