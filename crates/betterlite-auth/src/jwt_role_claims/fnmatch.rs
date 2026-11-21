@@ -132,9 +132,14 @@ fn set_token(content: &[char]) -> Token {
         let kept = first.get(1..).unwrap_or_default().to_vec();
         *first = kept;
     }
+    let mut members = ranges(&merged);
+    // an emptied first chunk leaves its join hyphen right after '^', where the regex reads it literally
+    if merged.len() > 1 && merged.first().is_some_and(Vec::is_empty) {
+        members.push('-'..='-');
+    }
     Token::Set {
         negated,
-        ranges: ranges(&merged),
+        ranges: members,
     }
 }
 

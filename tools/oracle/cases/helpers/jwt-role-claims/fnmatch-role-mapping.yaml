@@ -35,3 +35,5 @@ calls:
   - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "", "litellm_role": "org_admin"}]}, "claims": {"roles": [""]}, "projection": {"kind": "litellm_role"}}
   - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "**", "litellm_role": "org_admin"}]}, "claims": {"roles": [""]}, "projection": {"kind": "litellm_role"}}
   - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "Admin", "litellm_role": "org_admin"}]}, "claims": {"roles": ["admin"]}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "[b-a!-z]", "litellm_role": "org_admin"}]}, "claims": {"roles": ["-"]}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "[b-a!-z]", "litellm_role": "org_admin"}]}, "claims": {"roles": ["q"]}, "projection": {"kind": "litellm_role"}}
