@@ -175,9 +175,13 @@ fn openai_organization_and_project_are_not_forwarded() {
 
 #[test]
 fn openai_scopes_follow_the_call_the_globals_and_the_environment() {
+    let variables = [
+        ("OPENAI_ORGANIZATION", "org-env"),
+        ("OPENAI_PROJECT", "proj-env"),
+    ];
     let global = loaded_settings(
         "litellm_settings:\n  organization: org-global\n  project: proj-global\n",
-        &[],
+        &variables,
     );
     let native = SpeechCall {
         organization: Some(String::from("org-call")),
@@ -203,10 +207,6 @@ fn openai_scopes_follow_the_call_the_globals_and_the_environment() {
             Some(String::from("proj-global"))
         )
     );
-    let variables = [
-        ("OPENAI_ORGANIZATION", "org-env"),
-        ("OPENAI_PROJECT", "proj-env"),
-    ];
     assert_eq!(
         openai_scopes(
             &base_call("openai/tts-1"),
