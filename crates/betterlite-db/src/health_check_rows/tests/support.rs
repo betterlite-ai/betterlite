@@ -135,7 +135,7 @@ pub(crate) async fn insert_seed(client: &Client, seed: &Seed) {
             r#"INSERT INTO "LiteLLM_HealthCheckTable"
                 ("health_check_id", "model_name", "model_id", "status", "healthy_count",
                  "unhealthy_count", "details", "checked_at", "created_at", "updated_at")
-                VALUES ($1, $2, $3, $4, 2, 0, $5::jsonb, $6::timestamp, $6::timestamp, $6::timestamp)"#,
+                VALUES ($1, $2, $3, $4, 2, 0, $5::text::jsonb, $6::timestamp, $6::timestamp, $6::timestamp)"#,
             &[
                 &seed.id,
                 &seed.model_name,

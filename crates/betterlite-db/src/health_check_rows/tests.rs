@@ -128,6 +128,24 @@ async fn latest_decodes_details_json_text() {
 }
 
 #[tokio::test]
+async fn latest_passes_a_json_details_object_through() {
+    let database = support::start().await;
+    insert_seed(
+        &database.client,
+        &Seed {
+            details: Some(r#"{"inner": 1}"#),
+            ..Seed::new("a", "gpt-4o", "2026-01-01 10:00:00")
+        },
+    )
+    .await;
+    let rows = database.rows().fetch_latest().await;
+    assert_eq!(rows.len(), 1);
+    let expected: Json = serde_json::from_str(r#"{"inner": 1}"#).unwrap();
+    assert_eq!(rows[0].details, Some(expected));
+    database.finish().await;
+}
+
+#[tokio::test]
 async fn latest_fails_the_whole_read_when_details_text_is_not_json() {
     let database = support::start().await;
     insert_seed(
