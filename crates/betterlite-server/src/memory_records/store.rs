@@ -7,8 +7,7 @@ use super::error::{MemoryHttpError, not_found_error};
 use super::filter::{KeyMatch, MemoryWhere, visibility_filter};
 use super::models::MemoryRow;
 
-// the scoped lookup's answer: a missing row is the 404 every route answers, anything else is the
-// store's own failure, which the route wraps without echoing it to the caller
+// the scoped lookup's answer: a missing row is the 404 every route answers, anything else is the store's own failure
 #[derive(Debug, thiserror::Error)]
 pub enum MemoryLookupError {
     #[error(transparent)]

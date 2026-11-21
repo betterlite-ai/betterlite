@@ -9,8 +9,7 @@ use betterlite_server::team_access::error::TeamAccessError;
 
 use super::inputs::RowInput;
 
-// LiteLLM passes the real team repository; a case has no database, so every lookup fails the way
-// a connection error does and _is_team_admin_for must deny instead of granting
+// LiteLLM passes the real team repository; a case has no database, so every lookup fails the way a connection error does and the check must deny
 pub(super) struct RefusingTeams;
 
 #[async_trait]

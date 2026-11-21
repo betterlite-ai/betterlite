@@ -36,8 +36,7 @@ pub struct CreateRequest {
     pub team_id: Option<String>,
 }
 
-// types/memory_management.py MemoryUpdateRequest: the outer Option is field presence, so an absent
-// field and an explicit null stay apart; only presence puts the metadata column in the update
+// types/memory_management.py MemoryUpdateRequest: the outer Option is field presence, so an absent field and an explicit null stay apart
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UpdateRequest {
     #[serde(default, with = "serde_with::rust::double_option")]
@@ -96,8 +95,7 @@ pub struct DeleteResponse {
 }
 
 impl CreateRequest {
-    // memory_endpoints.py _serialize_metadata_for_prisma at the create call sites: a value is
-    // stored as JSON text, and a null leaves the field out so the column stays SQL NULL
+    // memory_endpoints.py _serialize_metadata_for_prisma at the create call sites: a value is stored as JSON text, and a null leaves the column SQL NULL
     pub fn metadata_column(&self) -> Result<Option<String>, serde_json::Error> {
         let Some(metadata) = self.metadata.as_ref() else {
             return Ok(None);
@@ -107,8 +105,7 @@ impl CreateRequest {
 }
 
 impl UpdateRequest {
-    // memory_endpoints.py upsert_memory: an absent metadata key leaves the column alone, and a
-    // present one writes JSON text where an explicit null becomes the literal null
+    // memory_endpoints.py upsert_memory: an absent key leaves the column alone, and a present one writes JSON text where an explicit null becomes the literal null
     pub fn metadata_column(&self) -> Result<Option<String>, serde_json::Error> {
         let Some(metadata) = self.metadata.as_ref() else {
             return Ok(None);

@@ -1,8 +1,7 @@
 use betterlite_auth::user_roles::UserRole;
 use serde::{Deserialize, Serialize};
 
-// the UserAPIKeyAuth fields every memory helper reads, built into a real key so the production
-// principal conversion runs rather than a stand-in
+// the UserAPIKeyAuth fields every memory helper reads, built into a real key so the production principal conversion runs
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct CallerInput {

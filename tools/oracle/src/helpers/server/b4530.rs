@@ -32,8 +32,7 @@ pub(crate) struct Input {
     steps: Vec<Step>,
 }
 
-// one memory helper call per step, every field from LiteLLM's own signature, so a case says
-// exactly which inputs the behavior reads; a field the step does not read stays null
+// one memory helper call per step, every field from LiteLLM's own signature, so a case says exactly what the behavior reads
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Step {
