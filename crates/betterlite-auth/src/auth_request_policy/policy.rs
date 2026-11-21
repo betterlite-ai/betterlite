@@ -59,11 +59,11 @@ pub enum RouteDecision {
 }
 
 #[must_use]
-pub fn check_allowed_route(reference: Option<&[String]>, route: &str) -> RouteDecision {
-    let Some(allowed_routes) = reference else {
+pub fn check_allowed_route(allowed_routes: Option<&[String]>, route: &str) -> RouteDecision {
+    let Some(configured_routes) = allowed_routes else {
         return RouteDecision::Allowed;
     };
-    if allowed_routes
+    if configured_routes
         .iter()
         .any(|candidate| candidate.as_str() == route)
     {
