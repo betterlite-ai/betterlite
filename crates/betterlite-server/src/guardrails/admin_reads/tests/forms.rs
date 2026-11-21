@@ -37,20 +37,16 @@ async fn forms_returns_the_merged_provider_map() {
     let parsed = parse(&body);
     let providers = parsed.as_object().expect("the provider map");
     assert_eq!(providers.len(), 52);
-    for key in [
-        "bedrock",
-        "presidio",
-        "lakera_v2",
-        "tool_permission",
-        "hide-secrets",
-        "custom_code",
-        "azure/prompt_shield",
-        "azure/text_moderations",
-        "zscaler_ai_guard",
-        "litellm_content_filter",
-    ] {
-        assert!(providers.contains_key(key), "{key} is present");
-    }
+    assert!(providers.contains_key("bedrock"));
+    assert!(providers.contains_key("presidio"));
+    assert!(providers.contains_key("lakera_v2"));
+    assert!(providers.contains_key("tool_permission"));
+    assert!(providers.contains_key("hide-secrets"));
+    assert!(providers.contains_key("custom_code"));
+    assert!(providers.contains_key("azure/prompt_shield"));
+    assert!(providers.contains_key("azure/text_moderations"));
+    assert!(providers.contains_key("zscaler_ai_guard"));
+    assert!(providers.contains_key("litellm_content_filter"));
     assert!(
         field(&parsed, "bedrock")
             .as_object()

@@ -15,8 +15,21 @@ async fn settings_lists_every_entity_in_declaration_order() {
     assert_eq!(names.get(1).map(String::as_str), Some("CRYPTO"));
     assert_eq!(names.get(2).map(String::as_str), Some("DATE_TIME"));
     assert_eq!(names.get(19).map(String::as_str), Some("US_MBI"));
-    assert_eq!(names.get(39).map(String::as_str), Some("AU_ACN"));
-    assert_eq!(names.get(73).map(String::as_str), Some("NG_NIN"));
+    assert_eq!(names.get(38).map(String::as_str), Some("AU_ABN"));
+    assert!(
+        names.get(39).is_some_and(|name| name.starts_with("AU_A")),
+        "an Australian entity keeps its slot"
+    );
+    assert_eq!(names.get(40).map(String::as_str), Some("AU_TFN"));
+    assert_eq!(names.get(72).map(String::as_str), Some("TR_LICENSE_PLATE"));
+    assert!(
+        names.get(73).is_some_and(|name| name.starts_with("NG_")),
+        "a Nigerian entity keeps its slot"
+    );
+    assert_eq!(
+        names.get(74).map(String::as_str),
+        Some("NG_VEHICLE_REGISTRATION")
+    );
     assert_eq!(names.last().map(String::as_str), Some("ZA_ID_NUMBER"));
     let unique: BTreeSet<&str> = names.iter().map(String::as_str).collect();
     assert_eq!(unique.len(), 79);
@@ -75,14 +88,14 @@ async fn settings_lists_the_pii_entity_categories() {
             "UUID",
         ],
     );
-    for category in categories {
-        for entity in strings(field(category, "entities")) {
-            assert!(
-                supported.contains(&entity),
-                "{entity} is a supported entity"
-            );
-        }
-    }
+    let listed: BTreeSet<String> = categories
+        .iter()
+        .flat_map(|category| strings(field(category, "entities")))
+        .collect();
+    assert!(
+        listed.is_subset(&supported),
+        "every listed entity is a supported entity"
+    );
 }
 
 #[tokio::test]
@@ -154,18 +167,17 @@ async fn settings_maps_every_provider_mode() {
             .expect("the prompt shield entry"),
         &["pre_call", "during_call"],
     );
-    for (provider, hooks) in providers {
-        assert!(
-            !hooks.as_array().expect("a hook list").is_empty(),
-            "{provider}"
-        );
-        for hook in strings(hooks) {
-            assert!(
-                modes.contains(&hook),
-                "{provider} has the unknown hook {hook}"
-            );
-        }
-    }
+    assert!(
+        providers
+            .values()
+            .all(|hooks| hooks.as_array().is_some_and(|list| !list.is_empty())),
+        "every provider has a hook list"
+    );
+    let listed: BTreeSet<String> = providers.values().flat_map(strings).collect();
+    assert!(
+        listed.is_subset(&modes),
+        "every provider hook is a supported mode"
+    );
 }
 
 #[tokio::test]

@@ -1,13 +1,16 @@
 #[tokio::test]
 async fn list_reads_the_config_guardrails_with_masked_params() {
     let setup = Setup {
+        database: false,
+        rows: Vec::new(),
         config: vec![config_entry(
             Some("cfg-1"),
             "my-guard",
             Some(BEDROCK_SECRET),
             Some(r#"{"description":"guard"}"#),
         )],
-        ..Setup::default()
+        teams: Ok(Vec::new()),
+        env: BTreeMap::new(),
     };
     let harness = harness(setup);
     let (status, body) = get(&harness, LIST_PATH, Some(admin())).await;
@@ -53,8 +56,11 @@ async fn list_answers_empty_when_the_config_has_no_guardrails() {
 #[tokio::test]
 async fn list_gives_default_params_when_an_item_has_none() {
     let setup = Setup {
+        database: false,
+        rows: Vec::new(),
         config: vec![config_entry(Some("cfg-1"), "my-guard", None, None)],
-        ..Setup::default()
+        teams: Ok(Vec::new()),
+        env: BTreeMap::new(),
     };
     let harness = harness(setup);
     let (status, body) = get(&harness, LIST_PATH, Some(admin())).await;
@@ -72,8 +78,11 @@ async fn list_gives_default_params_when_an_item_has_none() {
 #[tokio::test]
 async fn list_shows_a_missing_id_and_info_as_null() {
     let setup = Setup {
+        database: false,
+        rows: Vec::new(),
         config: vec![config_entry(None, "my-guard", Some(BEDROCK_PRE), None)],
-        ..Setup::default()
+        teams: Ok(Vec::new()),
+        env: BTreeMap::new(),
     };
     let harness = harness(setup);
     let (status, body) = get(&harness, LIST_PATH, Some(admin())).await;
@@ -90,7 +99,8 @@ async fn list_never_reads_the_database() {
         database: true,
         rows: vec![row("db-1", "db-guard", BEDROCK_PRE, None, None)],
         config: vec![config_entry(Some("cfg-1"), "my-guard", None, None)],
-        ..Setup::default()
+        teams: Ok(Vec::new()),
+        env: BTreeMap::new(),
     };
     let harness = harness(setup);
     harness.guardrails.fail_active();

@@ -20,8 +20,7 @@ use betterlite_config::sections::guardrail_params::records::{
 use betterlite_config::sections::guardrail_params::routes::GuardrailUiAddSettings;
 use betterlite_guardrails::guardrail_registry::rows::GuardrailRows;
 use betterlite_openai::decisions::providers::supported_decisions_providers;
-use betterlite_pyhost::json_values::{JsonObject, JsonValue};
-use serde::Serialize;
+use betterlite_pyhost::json_values::JsonObject;
 
 use super::caller::authenticated;
 use super::error::ReadError;
@@ -162,9 +161,9 @@ fn settings_body() -> Result<GuardrailUiAddSettings, SettingsError> {
     let patterns = get_pattern_metadata()?;
     let content_filter_settings = content_filter_settings(&patterns)?;
     Ok(GuardrailUiAddSettings {
-        supported_entities: names(&PII_ENTITY_TYPES)?,
-        supported_actions: names(&PII_ACTIONS)?,
-        supported_modes: names(&SUPPORTED_MODES)?,
+        supported_entities: serde_json::from_slice(&serde_json::to_vec(&PII_ENTITY_TYPES)?)?,
+        supported_actions: serde_json::from_slice(&serde_json::to_vec(&PII_ACTIONS)?)?,
+        supported_modes: serde_json::from_slice(&serde_json::to_vec(&SUPPORTED_MODES)?)?,
         supported_modes_by_provider: provider_modes(),
         pii_entity_categories: pii_entity_categories()?,
         content_filter_settings: Some(opaque_params(&content_filter_settings)?),
@@ -179,16 +178,22 @@ fn content_filter_settings(patterns: &[PatternMetadata]) -> Result<JsonObject, S
     let [bundled, legacy] = data_roots()?;
     let categories = available_content_categories(&[bundled.as_path(), legacy.as_path()]);
     let mut settings = JsonObject::new();
-    settings.insert("prebuilt_patterns".to_owned(), json(patterns)?);
+    settings.insert(
+        "prebuilt_patterns".to_owned(),
+        serde_json::from_slice(&serde_json::to_vec(patterns)?)?,
+    );
     settings.insert(
         "pattern_categories".to_owned(),
-        json(&pattern_categories(patterns))?,
+        serde_json::from_slice(&serde_json::to_vec(&pattern_categories(patterns))?)?,
     );
     settings.insert(
         "supported_actions".to_owned(),
-        json(&CONTENT_FILTER_ACTIONS)?,
+        serde_json::from_slice(&serde_json::to_vec(&CONTENT_FILTER_ACTIONS)?)?,
     );
-    settings.insert("content_categories".to_owned(), json(&categories)?);
+    settings.insert(
+        "content_categories".to_owned(),
+        serde_json::from_slice(&serde_json::to_vec(&categories)?)?,
+    );
     Ok(settings)
 }
 
@@ -207,8 +212,8 @@ fn pii_entity_categories() -> Result<Vec<PiiEntityCategoryMap>, serde_json::Erro
     let mut maps = Vec::with_capacity(PII_ENTITY_CATEGORIES_MAP.len());
     for (category, entities) in &PII_ENTITY_CATEGORIES_MAP {
         maps.push(PiiEntityCategoryMap {
-            category: name(category)?,
-            entities: names(*entities)?,
+            category: serde_json::from_slice(&serde_json::to_vec(category)?)?,
+            entities: serde_json::from_slice(&serde_json::to_vec(entities)?)?,
         });
     }
     Ok(maps)
@@ -224,19 +229,4 @@ fn provider_modes() -> BTreeMap<String, Vec<String>> {
             )
         })
         .collect()
-}
-
-fn names<T: Serialize>(values: &[T]) -> Result<Vec<String>, serde_json::Error> {
-    let bytes = serde_json::to_vec(values)?;
-    serde_json::from_slice(&bytes)
-}
-
-fn name<T: Serialize>(value: &T) -> Result<String, serde_json::Error> {
-    let bytes = serde_json::to_vec(value)?;
-    serde_json::from_slice(&bytes)
-}
-
-fn json<T: Serialize + ?Sized>(value: &T) -> Result<JsonValue, serde_json::Error> {
-    let bytes = serde_json::to_vec(value)?;
-    serde_json::from_slice(&bytes)
 }

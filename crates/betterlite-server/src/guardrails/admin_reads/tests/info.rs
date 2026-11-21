@@ -9,7 +9,9 @@ async fn info_serves_the_database_row_before_a_config_entry() {
             Some(r#"{"description":"from the row"}"#),
             None,
         )],
-        ..Setup::default()
+        config: Vec::new(),
+        teams: Ok(Vec::new()),
+        env: BTreeMap::new(),
     };
     let harness = harness(setup);
     harness
@@ -86,7 +88,10 @@ async fn info_serves_the_alias_path() {
 async fn info_answers_404_with_the_exact_text() {
     let setup = Setup {
         database: true,
-        ..Setup::default()
+        rows: Vec::new(),
+        config: Vec::new(),
+        teams: Ok(Vec::new()),
+        env: BTreeMap::new(),
     };
     let harness = harness(setup);
     let (status, body) = get(&harness, "/guardrails/missing", Some(admin())).await;
@@ -98,7 +103,10 @@ async fn info_answers_404_with_the_exact_text() {
 async fn info_ignores_a_db_sourced_memory_entry() {
     let setup = Setup {
         database: true,
-        ..Setup::default()
+        rows: Vec::new(),
+        config: Vec::new(),
+        teams: Ok(Vec::new()),
+        env: BTreeMap::new(),
     };
     let harness = harness(setup);
     harness
@@ -117,7 +125,9 @@ async fn info_without_a_database_uses_only_the_config() {
     let setup = Setup {
         database: false,
         rows: vec![row("dup", "db-guard", BEDROCK_PRE, None, None)],
-        ..Setup::default()
+        config: Vec::new(),
+        teams: Ok(Vec::new()),
+        env: BTreeMap::new(),
     };
     let harness = harness(setup);
     harness
@@ -136,7 +146,10 @@ async fn info_without_a_database_uses_only_the_config() {
 async fn info_a_database_failure_answers_500() {
     let setup = Setup {
         database: true,
-        ..Setup::default()
+        rows: Vec::new(),
+        config: Vec::new(),
+        teams: Ok(Vec::new()),
+        env: BTreeMap::new(),
     };
     let harness = harness(setup);
     harness.guardrails.fail_find();

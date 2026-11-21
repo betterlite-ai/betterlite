@@ -134,6 +134,8 @@ fn row(
     info: Option<&str>,
     team_id: Option<&str>,
 ) -> GuardrailRow {
+    let created_at = stamp("2026-01-02T03:04:05");
+    let updated_at = stamp("2026-01-02T03:04:05");
     GuardrailRow {
         guardrail_id: id.to_owned(),
         guardrail_name: name.to_owned(),
@@ -141,17 +143,21 @@ fn row(
         guardrail_info: info.map(str::to_owned),
         team_id: team_id.map(str::to_owned),
         status: "active".to_owned(),
-        created_at: stamp("2026-01-02T03:04:05"),
-        updated_at: stamp("2026-01-02T03:04:05"),
+        created_at,
+        updated_at,
     }
 }
 
 fn guardrail(id: Option<&str>, name: &str, params: &str, info: Option<&str>) -> Guardrail {
+    let guardrail_id = id.map(str::to_owned);
+    let guardrail_name = name.to_owned();
+    let litellm_params = decode_litellm_params(params.as_bytes()).expect("the params decode");
+    let guardrail_info = info.map(|body| serde_json::from_str(body).expect("the info decodes"));
     Guardrail {
-        guardrail_id: id.map(str::to_owned),
-        guardrail_name: name.to_owned(),
-        litellm_params: decode_litellm_params(params.as_bytes()).expect("the params decode"),
-        guardrail_info: info.map(|body| serde_json::from_str(body).expect("the info decodes")),
+        guardrail_id,
+        guardrail_name,
+        litellm_params,
+        guardrail_info,
         policy_template: None,
         created_at: None,
         updated_at: None,
@@ -165,11 +171,12 @@ fn config_entry(
     params: Option<&str>,
     info: Option<&str>,
 ) -> ConfigGuardrail {
+    let guardrail_info = info.map(|body| serde_json::from_str(body).expect("info"));
     ConfigGuardrail {
         guardrail_id: id.map(str::to_owned),
         guardrail_name: name.to_owned(),
         litellm_params: params.map(object),
-        guardrail_info: info.map(|body| serde_json::from_str::<OpaqueParams>(body).expect("info")),
+        guardrail_info,
     }
 }
 
@@ -180,6 +187,12 @@ struct RowStore {
     fail_find: bool,
     active_reads: usize,
     find_reads: usize,
+}
+
+#[derive(Clone, Copy)]
+enum Read {
+    Active,
+    ById,
 }
 
 #[derive(Clone, Default)]
@@ -217,6 +230,25 @@ impl FakeGuardrails {
             .unwrap_or_else(PoisonError::into_inner)
             .find_reads
     }
+
+    fn read(&self, which: Read) -> Result<Vec<GuardrailRow>, RowsError> {
+        let mut store = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        match which {
+            Read::Active => {
+                store.active_reads = store.active_reads.saturating_add(1);
+                if store.fail_active {
+                    return Err(RowsError::MissingRow);
+                }
+            }
+            Read::ById => {
+                store.find_reads = store.find_reads.saturating_add(1);
+                if store.fail_find {
+                    return Err(RowsError::MissingRow);
+                }
+            }
+        }
+        Ok(store.rows.clone())
+    }
 }
 
 impl GuardrailRows for FakeGuardrails {
@@ -240,29 +272,18 @@ impl GuardrailRows for FakeGuardrails {
     }
 
     fn find_active(&self) -> impl Future<Output = Result<Vec<GuardrailRow>, RowsError>> + Send {
-        let mut store = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        store.active_reads = store.active_reads.saturating_add(1);
-        if store.fail_active {
-            return ready(Err(RowsError::MissingRow));
-        }
-        ready(Ok(store.rows.clone()))
+        ready(self.read(Read::Active))
     }
 
     fn find_by_id(
         &self,
         guardrail_id: &str,
     ) -> impl Future<Output = Result<Option<GuardrailRow>, RowsError>> + Send {
-        let mut store = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        store.find_reads = store.find_reads.saturating_add(1);
-        if store.fail_find {
-            return ready(Err(RowsError::MissingRow));
-        }
-        let found = store
-            .rows
-            .iter()
-            .find(|candidate| candidate.guardrail_id == guardrail_id)
-            .cloned();
-        ready(Ok(found))
+        let found = self.read(Read::ById);
+        ready(found.map(|rows| {
+            rows.into_iter()
+                .find(|row| row.guardrail_id == guardrail_id)
+        }))
     }
 
     fn find_by_name(
@@ -497,7 +518,7 @@ fn mask_of(text: &str) -> JsonValue {
 }
 
 fn nested_secret(depth: usize) -> JsonObject {
-    let mut value = JsonValue::String("s3cret-value".to_owned());
+    let mut value = JsonValue::String("s3cret-number".to_owned());
     for _ in 0..depth {
         let mut entry = JsonObject::new();
         entry.insert("key".to_owned(), value);

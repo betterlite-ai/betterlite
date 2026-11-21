@@ -3,18 +3,14 @@ fn masking_masks_every_sensitive_keyword() {
     let masked = mask_of(
         r#"{"authorization":"abcdefgh","token":"abcdefgh","key":"abcdefgh","secret":"abcdefgh","vertex_credentials":"abcdefgh","credentials":"abcdefgh","password":"abcdefgh","passwd":"abcdefgh"}"#,
     );
-    for name in [
-        "authorization",
-        "token",
-        "key",
-        "secret",
-        "vertex_credentials",
-        "credentials",
-        "password",
-        "passwd",
-    ] {
-        assert_eq!(text(field(&masked, name)), "ab****gh", "{name}");
-    }
+    assert_eq!(text(field(&masked, "authorization")), "ab****gh");
+    assert_eq!(text(field(&masked, "token")), "ab****gh");
+    assert_eq!(text(field(&masked, "key")), "ab****gh");
+    assert_eq!(text(field(&masked, "secret")), "ab****gh");
+    assert_eq!(text(field(&masked, "vertex_credentials")), "ab****gh");
+    assert_eq!(text(field(&masked, "credentials")), "ab****gh");
+    assert_eq!(text(field(&masked, "password")), "ab****gh");
+    assert_eq!(text(field(&masked, "passwd")), "ab****gh");
 }
 
 #[test]
@@ -83,12 +79,12 @@ fn masking_counts_characters_not_bytes() {
 fn masking_masks_objects_below_depth_twenty() {
     let chain = nested_secret(21);
     let masked = JsonValue::Object(mask_sensitive_values(&chain));
-    assert_eq!(innermost(&masked), "s3****ue");
+    assert_eq!(innermost(&masked), "s3****er");
 }
 
 #[test]
 fn masking_returns_the_object_at_depth_twenty() {
     let chain = nested_secret(22);
     let masked = JsonValue::Object(mask_sensitive_values(&chain));
-    assert_eq!(innermost(&masked), "s3cret-value");
+    assert_eq!(innermost(&masked), "s3cret-number");
 }

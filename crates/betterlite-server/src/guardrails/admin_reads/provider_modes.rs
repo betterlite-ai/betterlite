@@ -1,5 +1,5 @@
-// the hook lists LiteLLM's guardrail classes return from get_supported_event_hooks, plus hide-secrets from the enterprise package
 pub(super) const PROVIDER_MODES: [(&str, &[&str]); 54] = [
+    // the hook lists LiteLLM's guardrail classes return from get_supported_event_hooks, plus hide-secrets
     ("agent_365", &["pre_mcp_call"]),
     ("aim", &["pre_call", "during_call", "post_call"]),
     ("akto", &["pre_call", "post_call"]),

@@ -12,7 +12,7 @@ use betterlite_pyhost::json_values::JsonObject;
 use super::caller::authenticated;
 use super::error::ReadError;
 use super::masking::mask_sensitive_values;
-use super::projection::{config_dump, stored_dump, validated};
+use super::projection::{stored_dump, validated, without_none};
 use super::state::ReadState;
 use crate::auth::auth_identity::AuthContext;
 
@@ -44,7 +44,7 @@ where
     let Some(guardrail) = found else {
         return Err(ReadError::NotFound { guardrail_id });
     };
-    let dump = config_dump(&guardrail.litellm_params)?;
+    let dump = without_none(&stored_dump(&guardrail.litellm_params)?);
     let response = info_response(&guardrail, &dump, GuardrailDefinitionLocation::Config)?;
     Ok(Json(response))
 }

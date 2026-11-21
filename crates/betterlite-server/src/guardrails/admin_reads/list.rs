@@ -4,6 +4,7 @@ use std::sync::Arc;
 use axum::Json;
 use axum::extract::{Extension, State};
 use betterlite_auth::auth_identity::records::Principal;
+use betterlite_config::sections::guardrail_params::base::BaseLitellmParams;
 use betterlite_config::sections::guardrail_params::records::{
     Guardrail, GuardrailDefinitionLocation,
 };
@@ -15,7 +16,7 @@ use betterlite_guardrails::guardrail_registry::rows::GuardrailRows;
 use super::caller::{authenticated, has_admin_view, team_ids};
 use super::error::ReadError;
 use super::masking::mask_sensitive_values;
-use super::projection::{base_params, config_dump, stored_dump, validated};
+use super::projection::{opaque_params, stored_dump, validated, without_none};
 use super::state::{ConfigGuardrail, ReadState};
 use crate::auth::auth_identity::AuthContext;
 
@@ -28,15 +29,14 @@ where
     R: GuardrailRows,
 {
     authenticated(caller)?;
-    let entries = state
-        .config
-        .guardrails()
-        .iter()
-        .map(list_entry)
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(Json(ListGuardrailsResponse {
-        guardrails: entries,
-    }))
+    let guardrails = state.config.guardrails();
+    let mut response = ListGuardrailsResponse {
+        guardrails: Vec::with_capacity(guardrails.len()),
+    };
+    for guardrail in &guardrails {
+        response.guardrails.push(list_entry(guardrail)?);
+    }
+    Ok(Json(response))
 }
 
 fn list_entry(guardrail: &ConfigGuardrail) -> Result<GuardrailInfoResponse, ReadError> {
@@ -46,7 +46,7 @@ fn list_entry(guardrail: &ConfigGuardrail) -> Result<GuardrailInfoResponse, Read
         guardrail_id: guardrail.guardrail_id.clone(),
         guardrail_name: guardrail.guardrail_name.clone(),
         // LiteLLM validates even the empty dict, which yields the all-null default model
-        litellm_params: Some(base_params(&masked)?),
+        litellm_params: Some(BaseLitellmParams::from_map(opaque_params(&masked)?.0)),
         guardrail_info: guardrail.guardrail_info.clone(),
         created_at: None,
         updated_at: None,
@@ -54,29 +54,22 @@ fn list_entry(guardrail: &ConfigGuardrail) -> Result<GuardrailInfoResponse, Read
     })
 }
 
-pub(super) async fn list_guardrails_v2<R>(
+pub(super) async fn list_guardrails_v2<R: GuardrailRows>(
     caller: Option<Extension<AuthContext>>,
     State(state): State<Arc<ReadState<R>>>,
-) -> Result<Json<ListGuardrailsResponse>, ReadError>
-where
-    R: GuardrailRows,
-{
+) -> Result<Json<ListGuardrailsResponse>, ReadError> {
     let context = authenticated(caller)?;
     let is_admin = has_admin_view(&context.principal);
-    match v2_entries(&state, &context.principal, is_admin).await {
-        Ok(guardrails) => Ok(Json(ListGuardrailsResponse { guardrails })),
-        Err(error) => {
-            tracing::error!("Error getting guardrails from db: {error}");
-            Err(error)
-        }
-    }
+    v2_response(&state, &context.principal, is_admin)
+        .await
+        .inspect_err(|error| tracing::error!("Error getting guardrails from db: {error}"))
 }
 
-async fn v2_entries<R>(
+async fn v2_response<R>(
     state: &ReadState<R>,
     principal: &Principal,
     is_admin: bool,
-) -> Result<Vec<GuardrailInfoResponse>, ReadError>
+) -> Result<Json<ListGuardrailsResponse>, ReadError>
 where
     R: GuardrailRows,
 {
@@ -99,7 +92,11 @@ where
     let mut allowed = Vec::with_capacity(rows.len());
     for guardrail in rows {
         // a row hidden from the caller stays in the seen set, so a config entry with its id is hidden too
-        if is_admin || visible(guardrail.team_id.as_deref(), &teams) {
+        let own_team = guardrail
+            .team_id
+            .as_deref()
+            .is_none_or(|team| teams.iter().any(|candidate| candidate == team));
+        if is_admin || own_team {
             allowed.push(guardrail);
         } else {
             seen.insert(guardrail.guardrail_id.clone());
@@ -107,11 +104,9 @@ where
     }
     let mut entries = appended_rows(allowed, &mut seen)?;
     entries.extend(appended_memory(state, &teams, is_admin, &mut seen).await?);
-    Ok(entries)
-}
-
-fn visible(team_id: Option<&str>, teams: &[String]) -> bool {
-    team_id.is_none_or(|team| teams.iter().any(|candidate| candidate == team))
+    Ok(Json(ListGuardrailsResponse {
+        guardrails: entries,
+    }))
 }
 
 fn appended_rows(
@@ -121,24 +116,9 @@ fn appended_rows(
     let mut entries = Vec::with_capacity(rows.len());
     for guardrail in rows {
         seen.insert(guardrail.guardrail_id.clone());
-        entries.push(db_entry(&guardrail)?);
+        entries.push(memory_entry(&guardrail, GuardrailDefinitionLocation::Db)?);
     }
     Ok(entries)
-}
-
-// a db row is a dict as stored, so its null params stay; its info does too
-fn db_entry(guardrail: &Guardrail) -> Result<GuardrailInfoResponse, ReadError> {
-    let dump = stored_dump(&guardrail.litellm_params)?;
-    let masked = mask_sensitive_values(&dump);
-    Ok(GuardrailInfoResponse {
-        guardrail_id: guardrail.guardrail_id.clone(),
-        guardrail_name: guardrail.guardrail_name.clone(),
-        litellm_params: validated(&masked)?,
-        guardrail_info: guardrail.guardrail_info.clone(),
-        created_at: guardrail.created_at,
-        updated_at: guardrail.updated_at,
-        guardrail_definition_location: GuardrailDefinitionLocation::Db,
-    })
 }
 
 async fn appended_memory<R>(
@@ -174,26 +154,50 @@ where
         if guardrail_id.is_some() && source == Some(GuardrailDefinitionLocation::Db) {
             continue;
         }
-        if !is_admin && !visible(guardrail.team_id.as_deref(), teams) {
+        let own_team = guardrail
+            .team_id
+            .as_deref()
+            .is_none_or(|team| teams.iter().any(|candidate| candidate == team));
+        if !is_admin && !own_team {
             continue;
         }
-        entries.push(config_entry(&guardrail)?);
+        entries.push(memory_entry(
+            &guardrail,
+            GuardrailDefinitionLocation::Config,
+        )?);
         seen.insert(guardrail_id);
     }
     Ok(entries)
 }
 
-// an in-memory config entry is a typed LitellmParams instance in LiteLLM, so its nulls drop and its info becomes an object
-fn config_entry(guardrail: &Guardrail) -> Result<GuardrailInfoResponse, ReadError> {
-    let dump = config_dump(&guardrail.litellm_params)?;
+// a db row is a dict as stored, so its null params stay; a config entry is a typed LitellmParams, so its nulls drop
+fn memory_entry(
+    guardrail: &Guardrail,
+    location: GuardrailDefinitionLocation,
+) -> Result<GuardrailInfoResponse, ReadError> {
+    let stored = stored_dump(&guardrail.litellm_params)?;
+    let dump = match location {
+        GuardrailDefinitionLocation::Db => stored,
+        GuardrailDefinitionLocation::Config => without_none(&stored),
+    };
     let masked = mask_sensitive_values(&dump);
+    let guardrail_info = match location {
+        GuardrailDefinitionLocation::Db => guardrail.guardrail_info.clone(),
+        GuardrailDefinitionLocation::Config => {
+            Some(guardrail.guardrail_info.clone().unwrap_or_default())
+        }
+    };
+    let (created_at, updated_at) = match location {
+        GuardrailDefinitionLocation::Db => (guardrail.created_at, guardrail.updated_at),
+        GuardrailDefinitionLocation::Config => (None, None),
+    };
     Ok(GuardrailInfoResponse {
         guardrail_id: guardrail.guardrail_id.clone(),
         guardrail_name: guardrail.guardrail_name.clone(),
         litellm_params: validated(&masked)?,
-        guardrail_info: Some(guardrail.guardrail_info.clone().unwrap_or_default()),
-        created_at: None,
-        updated_at: None,
-        guardrail_definition_location: GuardrailDefinitionLocation::Config,
+        guardrail_info,
+        created_at,
+        updated_at,
+        guardrail_definition_location: location,
     })
 }
