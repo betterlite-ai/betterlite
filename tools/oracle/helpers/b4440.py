@@ -2,7 +2,7 @@ import asyncio
 import json
 import re
 import sys
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from importlib import import_module
 from types import ModuleType
@@ -158,10 +158,10 @@ class RequestUtils(ModuleType):
         return cheapest_models
 
 
-GET_HANDLERS: Callable[[str, str, Mapping[str, JsonValue | LoggingRecorder], str | None, list[str] | None], dict[Mode, Callable[[], Awaitable[JsonValue]]]] = HealthCheckHelpers.get_mode_handlers  # noqa: E501  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_helpers.py#L164-L287
-WILDCARD: Callable[[str, str, Mapping[str, JsonValue], Logging], Awaitable[dict[str, JsonValue]]] = HealthCheckHelpers.ahealth_check_wildcard_models  # noqa: E501  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_helpers.py#L57-L85
-TRACK: Callable[[Mapping[str, JsonValue]], dict[str, JsonValue]] = HealthCheckHelpers._update_model_params_with_health_check_tracking_information  # noqa: E501, SLF001  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_helpers.py#L87-L110
-CREATE_RESPONSE: Callable[[Mapping[str, str]], dict[str, JsonValue]] = health_check_utils._create_health_check_response  # noqa: E501, SLF001  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_utils.py#L19-L30
+GET_HANDLERS: Callable[[str, str, dict[str, JsonValue | LoggingRecorder], str | None, list[str] | None], dict[Mode, Callable[[], Awaitable[JsonValue]]]] = HealthCheckHelpers.get_mode_handlers  # noqa: E501  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_helpers.py#L164-L287
+WILDCARD: Callable[[str, str, dict[str, JsonValue], Logging], Awaitable[dict[str, JsonValue]]] = HealthCheckHelpers.ahealth_check_wildcard_models  # noqa: E501  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_helpers.py#L57-L85
+TRACK: Callable[[dict[str, JsonValue]], dict[str, JsonValue]] = HealthCheckHelpers._update_model_params_with_health_check_tracking_information  # noqa: E501, SLF001  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_helpers.py#L87-L110
+CREATE_RESPONSE: Callable[[dict[str, str]], dict[str, JsonValue]] = health_check_utils._create_health_check_response  # noqa: E501, SLF001  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_utils.py#L19-L30
 
 
 def scripted_failure(failure: Failure) -> Exception:
@@ -225,9 +225,9 @@ async def mode_step(step: ModeStep) -> JsonValue:
     calls: list[JsonValue] = []
     failure = None if step["failure"] is None else scripted_failure(step["failure"])
     logging = LoggingRecorder()
-    params: dict[str, JsonValue | LoggingRecorder] = {}
-    for key, value in step["params"].items():
-        params[key] = value
+    params: dict[str, JsonValue | LoggingRecorder] = {
+        key: step["params"][key] for key in step["params"]
+    }
     if step["logging"]:
         params["litellm_logging_obj"] = logging
     saved_litellm = swap("litellm", CallsModule(calls, failure))
