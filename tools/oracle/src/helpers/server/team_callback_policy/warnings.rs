@@ -15,11 +15,11 @@ struct FixedText(String);
 impl Visit for FixedText {
     fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
         if field.name() == "message" {
-            let rendered = format!("{value:?}");
-            let fixed = rendered
-                .split_once(": ")
-                .map_or(rendered.as_str(), |(head, _)| head);
-            self.0 = fixed.to_owned();
+            let mut rendered = format!("{value:?}");
+            if let Some(at) = rendered.find(": ") {
+                rendered.truncate(at);
+            }
+            self.0 = rendered;
         }
     }
 }
