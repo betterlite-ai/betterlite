@@ -1785,6 +1785,7 @@ dependencies = [
  "futures-util",
  "hex",
  "indexmap 2.14.2",
+ "jiff",
  "mutants",
  "num-traits",
  "opentelemetry",
@@ -1942,6 +1943,7 @@ dependencies = [
  "jiff",
  "mutants",
  "percent-encoding",
+ "regex",
  "rstest",
  "rust_decimal",
  "secrecy",
@@ -3032,6 +3034,7 @@ dependencies = [
  "chrono",
  "futures-util",
  "hex",
+ "jiff",
  "rust_decimal",
  "secrecy",
  "serde",
@@ -4446,6 +4449,7 @@ dependencies = [
  "betterlite-redact",
  "betterlite-streaming",
  "chrono",
+ "futures-util",
  "hex",
  "http 1.5.0",
  "indexmap 2.14.2",
@@ -4460,6 +4464,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "uuid",
 ]
 
 [[package]]

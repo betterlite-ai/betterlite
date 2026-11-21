@@ -22,6 +22,7 @@ use crate::prepared::deployment::Deployment;
 use crate::prepared::{PreparedChat, PreparedHttp, PreparedRequest, Upstream};
 
 mod bounds;
+mod foundry;
 
 enum Transform {
     Rewrite,
@@ -61,9 +62,9 @@ impl TransformOnUnprocessable for Transform {
     }
 }
 
-async fn serve(listener: TcpListener, statuses: Vec<u16>) -> Vec<String> {
+async fn serve(listener: TcpListener, replies: Vec<(u16, &str)>) -> Vec<String> {
     let mut bodies = Vec::new();
-    for status in statuses {
+    for (status, reply) in replies {
         let Ok(accepted) = timeout(Duration::from_secs(2), listener.accept()).await else {
             break;
         };
@@ -82,10 +83,11 @@ async fn serve(listener: TcpListener, statuses: Vec<u16>) -> Vec<String> {
         let mut body = vec![0_u8; length];
         socket.read_exact(&mut body).await.unwrap();
         bodies.push(String::from_utf8(body).unwrap());
-        let reply =
-            format!("HTTP/1.1 {status} X\r\ncontent-length: 2\r\nconnection: close\r\n\r\n");
-        socket.write_all(reply.as_bytes()).await.unwrap();
-        socket.write_all(b"[]").await.unwrap();
+        let response = format!(
+            "HTTP/1.1 {status} X\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{reply}",
+            reply.len()
+        );
+        socket.write_all(response.as_bytes()).await.unwrap();
     }
     bodies
 }
@@ -140,7 +142,10 @@ async fn provider_framework_tests_behavior(
     let request = prepared(url, retry);
     let inputs = deployment();
     let (bodies, answer) = tokio::join!(
-        serve(listener, statuses),
+        serve(
+            listener,
+            statuses.into_iter().map(|status| (status, "[]")).collect()
+        ),
         send_with_retry(&client, &request, &inputs, hook)
     );
     let Upstream::Buffered(response) = answer.unwrap() else {
@@ -162,7 +167,7 @@ async fn a_failing_transform_fails_the_call() {
     let request = prepared(url, TransformRetry::bounded(2).unwrap());
     let inputs = deployment();
     let (bodies, answer) = tokio::join!(
-        serve(listener, vec![422, 200]),
+        serve(listener, vec![(422, "[]"), (200, "[]")]),
         send_with_retry(&client, &request, &inputs, &Transform::Refuse)
     );
     assert!(matches!(answer, Err(OperationError::MissingApiKey)));

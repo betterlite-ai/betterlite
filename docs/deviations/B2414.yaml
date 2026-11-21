@@ -1,0 +1,28 @@
+task: B2414
+deviations:
+  - what: >-
+      A buffered answer with a status outside 2xx fails with the provider's status, message and headers, even when its body would parse as a Responses object. LiteLLM's handler never reads the status of a buffered answer: its OpenAI config parses the body and, when validation fails, falls back to model_construct, so an error status with a response-shaped body can come back as a response.
+    why: >-
+      The HTTP status is what a caller branches on, so betterlite turns every error status into the provider error at the send boundary. A provider that answers with a success body under an error status is broken, and no working setup depends on reading that body as a response.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L2683-L2687
+  - what: >-
+      A streamed answer with a status outside 2xx fails the call with the provider's status, message and headers. LiteLLM returns its streaming iterator whatever the status; the iterator skips a body that is not server-sent events and raises only once the stream ends without a terminal event.
+    why: >-
+      The pooled client hands a non-2xx answer back buffered, so the shared sender fails it at the send boundary instead of passing the iterator a body it would fail to decode later. The provider's status and headers reach the caller, which the iterator path drops.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L2660-L2669
+  - what: >-
+      A base URL that does not parse as a URL fails with the typed RequestUrl error after the pre-call runs. LiteLLM passes the string to httpx inside its send catch, where the URL error is not an HTTP status error and _handle_error reports a synthesized 500 provider error.
+    why: >-
+      Nothing reaches the network on either side; betterlite names the unusable base instead of reporting a 500 as if the provider had answered, and no working setup has an api_base that is not a URL.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L2639-L2681
+  - what: >-
+      An extra header whose name or value HTTP cannot carry fails with the typed HeaderName or HeaderValue error after the pre-call and before anything is sent. LiteLLM hands the strings to httpx, whose encoding raises inside the handler's try and becomes a 500 through the responses config's get_error_class.
+    why: >-
+      HTTP cannot carry those bytes on either side, so both send nothing; betterlite names the header and skips a made-up 500 that would claim the provider answered.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/responses/transformation.py#L246-L253
+  - what: >-
+      A 200 reply whose JSON does not fit the typed Responses response fails the prepared fake stream and the post-agentic wrap with the typed NotTyped error. LiteLLM validates the body, falls back to model_construct when validation fails, and the mock iterator builds its events from that constructed object.
+    why: >-
+      The synthetic iterator's events and the wrapped response are typed structures in betterlite, so a body that cannot fill them cannot become a stream. LiteLLM's fallback yields a response whose declared fields are absent, which no working setup can rely on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L1203-L1218
+kept_bugs: []

@@ -1,0 +1,8 @@
+kind: helper
+name: health-persistence-response-time
+call:
+  b7640:
+    function: response_time
+    values: [12.5, 0.0, -2.25, null, "nan", "inf", "-inf"]
+env: {}
+compare: {ignore: []}

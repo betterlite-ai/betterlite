@@ -210,6 +210,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "baseline_json"
+path = "fuzz_targets/baseline_json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "partition_bound"
 path = "fuzz_targets/partition_bound.rs"
 test = false
