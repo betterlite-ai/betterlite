@@ -14,8 +14,10 @@ use super::{
 };
 use support::{
     BROKEN_LATEST, FakeStore, FixedClock, ScriptedClock, ago, at, capture_logs, deployment,
-    deployment_json, endpoint, latest_map, latest_row, result_of,
+    deployment_json, endpoint, latest_map, latest_row, result_of, unconnected,
 };
+
+const NO_DATABASE: &str = "No DB Connected. See - https://docs.litellm.ai/docs/proxy/virtual_keys";
 
 #[test]
 fn index_groups_every_model_under_its_model_param() {
@@ -128,6 +130,24 @@ fn aggregate_counts_a_shared_param_once_per_model() {
         vec![
             result_of("model-a", Some("dep-a"), (2_i32, 0_i32)),
             result_of("model-b", None, (2_i32, 0_i32)),
+        ]
+    );
+}
+
+#[test]
+fn aggregate_keeps_two_deployments_of_one_name_apart_by_their_ids() {
+    let deployments = vec![
+        deployment("alpha", "shared", Some("dep-a")),
+        deployment("alpha", "shared", Some("dep-b")),
+    ];
+    let index = model_param_index(&deployments);
+    let healthy = vec![endpoint("shared", None)];
+    let results = aggregate_results(&index, &healthy, &[]);
+    assert_eq!(
+        results,
+        vec![
+            result_of("alpha", Some("dep-a"), (1_i32, 0_i32)),
+            result_of("alpha", Some("dep-b"), (1_i32, 0_i32)),
         ]
     );
 }
@@ -312,6 +332,22 @@ fn decision_prefers_the_model_id_key_when_it_has_text() {
         latest_row("model-a", Some("dep-a"), "healthy", at(0)),
         latest_row("model-a", None, "healthy", ago(now, 1)),
     ]);
+    assert!(should_persist(
+        &result_of("model-a", Some("dep-a"), (1_i32, 0_i32)),
+        &latest,
+        now
+    ));
+}
+
+#[test]
+fn decision_keeps_two_deployments_of_one_name_apart_by_their_ids() {
+    let now = at(1000);
+    let latest = latest_map(vec![latest_row(
+        "model-a",
+        Some("dep-b"),
+        "healthy",
+        ago(now, 1),
+    )]);
     assert!(should_persist(
         &result_of("model-a", Some("dep-a"), (1_i32, 0_i32)),
         &latest,
@@ -524,6 +560,49 @@ async fn background_logs_and_gives_up_when_the_latest_query_fails() {
 }
 
 #[tokio::test]
+async fn background_uses_the_erroring_latest_query_with_a_real_store() {
+    let (logs, _guard) = capture_logs();
+    let store = unconnected();
+    let deployments = vec![deployment("gpt-4o", "shared", Some("dep-1"))];
+    let healthy = vec![endpoint("shared", None)];
+    let cycle = HealthCycle {
+        deployments: &deployments,
+        healthy: &healthy,
+        unhealthy: &[],
+    };
+    let request = SaveRequest {
+        start_time: at(1000),
+        checked_by: None,
+    };
+    let saved = save_background(Some(&store), cycle, &request, &FixedClock(at(1001))).await;
+    assert!(!saved);
+    let text = logs.text();
+    assert!(text.contains(&format!(
+        "Failed to save background health checks to database: {NO_DATABASE}"
+    )));
+    assert!(!text.contains("Error saving health check result"));
+}
+
+#[tokio::test]
+async fn background_returns_false_when_a_write_fails() {
+    let store = FakeStore::new(Vec::new()).failing_for(&["gpt-4o"]);
+    let deployments = vec![deployment("gpt-4o", "shared", Some("dep-1"))];
+    let healthy = vec![endpoint("shared", None)];
+    let cycle = HealthCycle {
+        deployments: &deployments,
+        healthy: &healthy,
+        unhealthy: &[],
+    };
+    let request = SaveRequest {
+        start_time: at(1000),
+        checked_by: None,
+    };
+    let saved = save_background(Some(&store), cycle, &request, &FixedClock(at(1001))).await;
+    assert!(!saved);
+    assert_eq!(store.saved().len(), 1);
+}
+
+#[tokio::test]
 async fn background_writes_a_first_seen_model() {
     let store = FakeStore::new(Vec::new());
     let deployments = vec![deployment("gpt-4o", "shared", Some("dep-1"))];
@@ -642,6 +721,24 @@ async fn single_writes_unhealthy_counts_and_the_first_error() {
     assert_eq!(written[0].unhealthy_count, 2_i32);
     assert_eq!(written[0].error_message.as_deref(), Some("first"));
     assert!(written[0].checked_by.is_none());
+}
+
+#[tokio::test]
+async fn single_ignores_a_later_error_when_the_first_endpoint_has_none() {
+    let store = FakeStore::new(Vec::new());
+    let unhealthy = vec![endpoint("m", Some("")), endpoint("m", Some("later"))];
+    let check = SingleHealthCheck {
+        model_name: "gpt-4o",
+        model_id: None,
+        healthy: &[],
+        unhealthy: &unhealthy,
+        start_time: at(1000),
+        user_id: None,
+    };
+    save_single(&store, &check, &FixedClock(at(1001))).await;
+    let written = store.saved();
+    assert_eq!(written.len(), 1);
+    assert!(written[0].error_message.is_none());
 }
 
 #[tokio::test]

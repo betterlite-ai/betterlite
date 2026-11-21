@@ -13,6 +13,9 @@ call:
       - model_name: gamma
         litellm_params: {model: solo}
         model_info: {id: dep-g}
+      - model_name: alpha
+        litellm_params: {model: shared}
+        model_info: {id: dep-b}
     healthy:
       - {model: shared, status: ok}
       - {model: solo, status: ok}

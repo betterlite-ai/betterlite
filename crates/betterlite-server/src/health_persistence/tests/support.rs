@@ -4,7 +4,10 @@ use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use betterlite_db::health_check_rows::{HealthCheckRow, HealthCheckRowsError, NewHealthCheck};
+use betterlite_db::health_check_rows::{
+    HealthCheckRow, HealthCheckRows, HealthCheckRowsError, NewHealthCheck,
+};
+use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
@@ -96,6 +99,14 @@ pub(super) fn latest_row(
 
 pub(super) fn latest_map(rows: Vec<HealthCheckRow>) -> LatestChecks {
     latest_by_key(rows)
+}
+
+// the real store with no pool: every call reaches the driver's "No DB Connected" error without a database
+pub(super) fn unconnected() -> HealthCheckRows {
+    HealthCheckRows {
+        store: PostgresStore { pool: None },
+        new_id: Arc::new(|| String::from("unused-id")),
+    }
 }
 
 fn stored_row(new: &NewHealthCheck) -> HealthCheckRow {
