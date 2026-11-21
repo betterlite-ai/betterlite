@@ -133,13 +133,6 @@ def general_settings(settings: SettingsInput) -> dict[str, JsonValue]:
     return general
 
 
-def enforced_params(settings: SettingsInput, auth: UserAPIKeyAuth) -> list[str] | None:
-    return _get_enforced_params(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L2908
-        general_settings=general_settings(settings),
-        user_api_key_dict=auth,
-    )
-
-
 def diagnostic_json(record: logging.LogRecord) -> dict[str, JsonValue] | None:
     message = record.getMessage()
     parts = message.split("'")
@@ -181,15 +174,6 @@ def diagnostic_json(record: logging.LogRecord) -> dict[str, JsonValue] | None:
     return None
 
 
-def call_diagnostics(capture: DiagnosticCapture) -> list[JsonValue]:
-    diagnostics: list[JsonValue] = []
-    for record in capture.records:
-        diagnostic = diagnostic_json(record)
-        if diagnostic is not None:
-            diagnostics.append(diagnostic)
-    return diagnostics
-
-
 def call_value(
     call: CallInput,
     router: Router | None,
@@ -208,8 +192,15 @@ def call_value(
         pre_alias_model_name=pre_alias_model,
         llm_router=router,
     )
-    diagnostics = call_diagnostics(capture)
-    resolved = enforced_params(settings, auth)
+    diagnostics: list[JsonValue] = []
+    for record in capture.records:
+        diagnostic = diagnostic_json(record)
+        if diagnostic is not None:
+            diagnostics.append(diagnostic)
+    resolved: list[str] | None = _get_enforced_params(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L2908
+        general_settings=general_settings(settings),
+        user_api_key_dict=auth,
+    )
     try:
         _enforced_params_check(
             request_body=data,
@@ -220,12 +211,9 @@ def call_value(
     except (ValueError, TypeError):
         failure = {"status": None, "type": None, "param": None, "code": None}
         return JSON.validate_python({"error": failure})
-    outcome = {
-        "data": data,
-        "enforced_params": resolved,
-        "diagnostics": diagnostics,
-    }
-    return JSON.validate_python(outcome)
+    return JSON.validate_python(
+        {"data": data, "enforced_params": resolved, "diagnostics": diagnostics}
+    )
 
 
 def run(input_value: OverridesInput) -> list[JsonValue]:
