@@ -256,6 +256,12 @@ fn dynamic_callback_disabling(
     );
 }
 
+#[derive(Debug)]
+enum Destination {
+    Absent,
+    Present(Option<&'static str>),
+}
+
 fn langfuse_entry(callback_type: &str) -> String {
     format!(
         r#"{{"callback_name": "langfuse_otel", "callback_type": "{callback_type}", {LANGFUSE_KEYS}}}"#
@@ -263,22 +269,22 @@ fn langfuse_entry(callback_type: &str) -> String {
 }
 
 #[rstest]
-#[case::key_destination(true, true, format!(r#"{{"metadata": {{"logging": [{}], "otel_service_name": "  "}}, "team_metadata": {{"otel_service_name_override": " team-svc "}}}}"#, langfuse_entry("success")), None, Some(Some("team-svc")))]
-#[case::team_destination(true, true, format!(r#"{{"metadata": {{"otel_service_name": "key-svc"}}, "team_metadata": {{"logging": [{}]}}}}"#, langfuse_entry("success_and_failure")), None, Some(Some("key-svc")))]
-#[case::key_empty_list_blocks_team(true, true, format!(r#"{{"metadata": {{"logging": []}}, "team_metadata": {{"logging": [{}]}}}}"#, langfuse_entry("success")), None, None)]
-#[case::otel_v2_off(false, true, format!(r#"{{"metadata": {{"logging": [{}]}}}}"#, langfuse_entry("success")), None, None)]
-#[case::header_disables(true, true, format!(r#"{{"metadata": {{"logging": [{}]}}}}"#, langfuse_entry("success")), Some("LANGFUSE_OTEL"), None)]
-#[case::key_list_disables(true, true, format!(r#"{{"metadata": {{"logging": [{}], "litellm_disabled_callbacks": ["langfuse_otel"]}}}}"#, langfuse_entry("success")), None, None)]
-#[case::disabling_switched_off(true, false, format!(r#"{{"metadata": {{"logging": [{}]}}}}"#, langfuse_entry("success")), Some("langfuse_otel"), Some(None))]
-#[case::failure_only(true, true, format!(r#"{{"metadata": {{"logging": [{}]}}}}"#, langfuse_entry("failure")), None, None)]
-#[case::failure_entry_keys_merge(true, true, r#"{"metadata": {"logging": [{"callback_name": "langfuse_otel", "callback_type": "success", "callback_vars": {"langfuse_public_key": "pk"}}, {"callback_name": "langfuse_otel", "callback_type": "failure", "callback_vars": {"langfuse_secret_key": "sk"}}]}}"#.to_owned(), None, Some(None))]
-#[case::invalid_bool_empties_params(true, true, r#"{"metadata": {"logging": [{"callback_name": "langfuse_otel", "callback_vars": {"langfuse_public_key": "pk", "langfuse_secret_key": "sk", "turn_off_message_logging": "maybe"}}]}}"#.to_owned(), None, None)]
+#[case::key_destination(true, true, format!(r#"{{"metadata": {{"logging": [{}], "otel_service_name": "  "}}, "team_metadata": {{"otel_service_name_override": " team-svc "}}}}"#, langfuse_entry("success")), None, Destination::Present(Some("team-svc")))]
+#[case::team_destination(true, true, format!(r#"{{"metadata": {{"otel_service_name": "key-svc"}}, "team_metadata": {{"logging": [{}]}}}}"#, langfuse_entry("success_and_failure")), None, Destination::Present(Some("key-svc")))]
+#[case::key_empty_list_blocks_team(true, true, format!(r#"{{"metadata": {{"logging": []}}, "team_metadata": {{"logging": [{}]}}}}"#, langfuse_entry("success")), None, Destination::Absent)]
+#[case::otel_v2_off(false, true, format!(r#"{{"metadata": {{"logging": [{}]}}}}"#, langfuse_entry("success")), None, Destination::Absent)]
+#[case::header_disables(true, true, format!(r#"{{"metadata": {{"logging": [{}]}}}}"#, langfuse_entry("success")), Some("LANGFUSE_OTEL"), Destination::Absent)]
+#[case::key_list_disables(true, true, format!(r#"{{"metadata": {{"logging": [{}], "litellm_disabled_callbacks": ["langfuse_otel"]}}}}"#, langfuse_entry("success")), None, Destination::Absent)]
+#[case::disabling_switched_off(true, false, format!(r#"{{"metadata": {{"logging": [{}]}}}}"#, langfuse_entry("success")), Some("langfuse_otel"), Destination::Present(None))]
+#[case::failure_only(true, true, format!(r#"{{"metadata": {{"logging": [{}]}}}}"#, langfuse_entry("failure")), None, Destination::Absent)]
+#[case::failure_entry_keys_merge(true, true, r#"{"metadata": {"logging": [{"callback_name": "langfuse_otel", "callback_type": "success", "callback_vars": {"langfuse_public_key": "pk"}}, {"callback_name": "langfuse_otel", "callback_type": "failure", "callback_vars": {"langfuse_secret_key": "sk"}}]}}"#.to_owned(), None, Destination::Present(None))]
+#[case::invalid_bool_empties_params(true, true, r#"{"metadata": {"logging": [{"callback_name": "langfuse_otel", "callback_vars": {"langfuse_public_key": "pk", "langfuse_secret_key": "sk", "turn_off_message_logging": "maybe"}}]}}"#.to_owned(), None, Destination::Absent)]
 fn tenant_destinations(
     #[case] otel_v2_enabled: bool,
     #[case] callback_disabling: bool,
     #[case] principal_text: String,
     #[case] header: Option<&str>,
-    #[case] expected_service: Option<Option<&str>>,
+    #[case] expected: Destination,
 ) {
     let mut configured = settings();
     configured.otel_v2_enabled = otel_v2_enabled;
@@ -289,9 +295,9 @@ fn tenant_destinations(
         .collect();
     let resolved = service(configured).tenant_destinations(&principal(&principal_text), &headers);
     let found: Vec<_> = resolved.destinations.iter().map(AsRef::as_ref).collect();
-    match (found.as_slice(), expected_service) {
-        ([], None) => {}
-        ([destination], Some(service_name)) => {
+    match (found.as_slice(), expected) {
+        ([], Destination::Absent) => {}
+        ([destination], Destination::Present(service_name)) => {
             assert_eq!(
                 destination.endpoint,
                 "https://us.cloud.langfuse.com/api/public/otel"

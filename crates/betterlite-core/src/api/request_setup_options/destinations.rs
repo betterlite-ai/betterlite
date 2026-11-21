@@ -79,12 +79,8 @@ where
         if !self.settings.otel_v2_enabled {
             return TenantDestinations::default();
         }
-        let entries = logging_entries(&principal.metadata, &self.decryption).or_else(|| {
-            principal
-                .team_metadata
-                .as_ref()
-                .and_then(|metadata| logging_entries(metadata, &self.decryption))
-        });
+        let entries = logging_entries(&principal.metadata, &self.decryption)
+            .or_else(|| logging_entries(principal.team_metadata.as_ref()?, &self.decryption));
         let Some(found) =
             entries.filter(|found| !matches!(found, Json::List(items) if items.is_empty()))
         else {

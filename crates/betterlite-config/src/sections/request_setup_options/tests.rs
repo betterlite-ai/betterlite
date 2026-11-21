@@ -100,11 +100,8 @@ fn loads_settings(
             assert_eq!(variable, "CALLBACK_DISABLING");
             assert_eq!(path, "litellm_settings.allow_dynamic_callback_disabling");
         }
-        (Err(ConfigError::Environment { source }), Expected::BadEnvironment) => {
-            assert!(
-                source.to_string().contains("CALLBACK_DISABLING"),
-                "{source}"
-            );
+        (Err(ConfigError::Environment { source: cause }), Expected::BadEnvironment) => {
+            assert!(cause.to_string().contains("CALLBACK_DISABLING"), "{cause}");
         }
         (other, want) => panic!("{want:?} expected, got {other:?}"),
     }
