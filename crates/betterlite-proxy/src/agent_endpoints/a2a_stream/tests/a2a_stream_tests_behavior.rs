@@ -123,6 +123,7 @@ fn late_frame() -> FrameStream {
 #[case::negative(Some(-1.0_f64), &NO_HEADERS, &["data: 1\n\n"])]
 #[case::not_a_number(Some(f64::NAN), &NO_HEADERS, &["data: 1\n\n"])]
 #[case::infinite(Some(f64::INFINITY), &NO_HEADERS, &["data: 1\n\n"])]
+#[case::too_large_for_a_timer(Some(1e20_f64), &KEEPALIVE, &["data: 1\n\n"])]
 #[tokio::test(start_paused = true)]
 async fn sse_response_pings_only_for_a_finite_positive_interval(
     #[case] interval: Option<f64>,
@@ -137,7 +138,9 @@ async fn sse_response_pings_only_for_a_finite_positive_interval(
 
 #[rstest]
 #[case::not_an_object(r#""text""#)]
-#[case::missing_parts(r#"{"message": {"messageId": "m1", "role": "user"}}"#)]
+#[case::part_without_content(
+    r#"{"message": {"messageId": "m1", "role": "user", "parts": [{"kind": "text"}]}}"#
+)]
 #[tokio::test]
 async fn invalid_params_answer_one_frame_without_pings(#[case] params: &str) {
     let message = format!(
