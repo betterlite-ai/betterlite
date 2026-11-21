@@ -118,7 +118,13 @@ def sanitize_outcome(call: SanitizeCall) -> JsonValue:
         {"missing_session_id": call["settings"]["missing_session_id"]},
         request_for(call["route"]),
     )
-    strip_bucket_headers(data, allow_opt_out=allow_opt_out)
+    for slot in ("metadata", "litellm_metadata"):
+        if data.get(slot) is not None:
+            bucket = _normalized_metadata_slot(data, slot)
+            _strip_untrusted_request_header_controls(
+                bucket.get("headers"),
+                allow_client_message_redaction_opt_out=allow_opt_out,
+            )
     if not _key_or_team_allows_client_pricing_override(principal):
         _strip_client_pricing_overrides(data)
     _strip_router_reserved_metadata(data)
@@ -132,16 +138,6 @@ def sanitize_outcome(call: SanitizeCall) -> JsonValue:
             "metadata_variable_name": variable,
         }
     )
-
-
-def strip_bucket_headers(data: dict[str, object], *, allow_opt_out: bool) -> None:
-    for slot in ("metadata", "litellm_metadata"):
-        if data.get(slot) is not None:
-            bucket = _normalized_metadata_slot(data, slot)
-            _strip_untrusted_request_header_controls(
-                bucket.get("headers"),
-                allow_client_message_redaction_opt_out=allow_opt_out,
-            )
 
 
 def sanitize_call(input_value: JsonValue) -> JsonValue:

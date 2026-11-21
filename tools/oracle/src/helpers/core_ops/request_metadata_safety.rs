@@ -60,12 +60,13 @@ impl Helper for Op {
 fn sanitize_value(call: &SanitizeCall) -> HelperResult {
     let input = RequestMetadataSafetyInput {
         data: call.data.clone(),
-        headers: headers_map(&call.headers),
+        headers: call.headers.iter().cloned().collect(),
         route: call.route.clone(),
         principal: MetadataPrincipal {
+            api_key: None,
+            via_virtual_key: false,
             metadata: call.principal.metadata.clone(),
             team_metadata: call.principal.team_metadata.clone(),
-            ..MetadataPrincipal::default()
         },
     };
     let settings = MetadataSafetySettings {
@@ -106,8 +107,4 @@ fn header_pairs(headers: &IndexMap<String, String>) -> Vec<(&str, &str)> {
         .iter()
         .map(|(name, value)| (name.as_str(), value.as_str()))
         .collect()
-}
-
-fn headers_map(headers: &[(String, String)]) -> IndexMap<String, String> {
-    headers.iter().cloned().collect()
 }
