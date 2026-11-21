@@ -1,4 +1,3 @@
-// the deployment fields _resolve_provider_from_deployment reads, resolved for one model group
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DeploymentParams {
     pub custom_llm_provider: Option<String>,

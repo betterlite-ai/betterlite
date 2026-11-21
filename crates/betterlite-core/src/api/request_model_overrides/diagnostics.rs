@@ -1,4 +1,3 @@
-// the log level each LiteLLM call in this slice writes its diagnostic at
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiagnosticLevel {
     Debug,
@@ -13,6 +12,12 @@ impl DiagnosticLevel {
             Self::Warning => "warning",
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DiagnosticTag {
+    pub level: DiagnosticLevel,
+    pub kind: &'static str,
 }
 
 // one record per diagnostic LiteLLM logs, in the order it logs them; the caller decides where they go
@@ -46,25 +51,28 @@ pub enum OverrideDiagnostic {
 
 impl OverrideDiagnostic {
     #[must_use]
-    pub const fn level(&self) -> DiagnosticLevel {
+    pub const fn tag(&self) -> DiagnosticTag {
         match self {
-            Self::StaleAliasMissingDeployment { .. }
-            | Self::StaleAliasSiblingDeployment { .. }
-            | Self::CredentialNotFound { .. } => DiagnosticLevel::Warning,
-            Self::ModelEntryWithoutCredentials { .. } | Self::CredentialApplied { .. } => {
-                DiagnosticLevel::Debug
-            }
-        }
-    }
-
-    #[must_use]
-    pub const fn kind(&self) -> &'static str {
-        match self {
-            Self::StaleAliasMissingDeployment { .. } => "stale_alias_missing_deployment",
-            Self::StaleAliasSiblingDeployment { .. } => "stale_alias_sibling_deployment",
-            Self::ModelEntryWithoutCredentials { .. } => "model_entry_without_credentials",
-            Self::CredentialNotFound { .. } => "credential_not_found",
-            Self::CredentialApplied { .. } => "credential_applied",
+            Self::StaleAliasMissingDeployment { .. } => DiagnosticTag {
+                level: DiagnosticLevel::Warning,
+                kind: "stale_alias_missing_deployment",
+            },
+            Self::StaleAliasSiblingDeployment { .. } => DiagnosticTag {
+                level: DiagnosticLevel::Warning,
+                kind: "stale_alias_sibling_deployment",
+            },
+            Self::ModelEntryWithoutCredentials { .. } => DiagnosticTag {
+                level: DiagnosticLevel::Debug,
+                kind: "model_entry_without_credentials",
+            },
+            Self::CredentialNotFound { .. } => DiagnosticTag {
+                level: DiagnosticLevel::Warning,
+                kind: "credential_not_found",
+            },
+            Self::CredentialApplied { .. } => DiagnosticTag {
+                level: DiagnosticLevel::Debug,
+                kind: "credential_applied",
+            },
         }
     }
 }

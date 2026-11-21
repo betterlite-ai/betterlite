@@ -72,9 +72,8 @@ pub(super) fn credential_settings() -> ModelOverridesSettings {
 pub(super) fn bypass_settings() -> ModelOverridesSettings {
     ModelOverridesSettings {
         credential_overrides: false,
-        enforced_params: None,
-        service_account_params: None,
         team_stale_alias_bypass: true,
+        ..credential_settings()
     }
 }
 

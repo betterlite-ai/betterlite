@@ -191,38 +191,38 @@ fn diagnostics_json(diagnostics: &[OverrideDiagnostic]) -> Vec<Value> {
 }
 
 fn diagnostic_json(diagnostic: &OverrideDiagnostic) -> Value {
-    let level = diagnostic.level().as_str();
+    let tag = diagnostic.tag();
     match diagnostic {
         OverrideDiagnostic::StaleAliasMissingDeployment {
             model,
             team_id,
             aliased_target,
         } => json!({
-            "kind": diagnostic.kind(),
-            "level": level,
+            "kind": tag.kind,
+            "level": tag.level.as_str(),
             "model": model,
             "team_id": team_id,
             "aliased_target": aliased_target,
         }),
         OverrideDiagnostic::StaleAliasSiblingDeployment { model, team_id } => json!({
-            "kind": diagnostic.kind(),
-            "level": level,
+            "kind": tag.kind,
+            "level": tag.level.as_str(),
             "model": model,
             "team_id": team_id,
         }),
         OverrideDiagnostic::ModelEntryWithoutCredentials { model } => json!({
-            "kind": diagnostic.kind(),
-            "level": level,
+            "kind": tag.kind,
+            "level": tag.level.as_str(),
             "model": model,
         }),
         OverrideDiagnostic::CredentialNotFound { credential } => json!({
-            "kind": diagnostic.kind(),
-            "level": level,
+            "kind": tag.kind,
+            "level": tag.level.as_str(),
             "credential": credential,
         }),
         OverrideDiagnostic::CredentialApplied { credential, model } => json!({
-            "kind": diagnostic.kind(),
-            "level": level,
+            "kind": tag.kind,
+            "level": tag.level.as_str(),
             "credential": credential,
             "model": model,
         }),

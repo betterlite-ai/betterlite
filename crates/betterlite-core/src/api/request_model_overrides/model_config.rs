@@ -36,10 +36,6 @@ impl ModelConfig {
             .get(name)
             .filter(|entry| !entry.providers.is_empty())
     }
-
-    pub(crate) fn default_entry(&self) -> Option<&ModelEntry> {
-        self.entry(DEFAULT_ENTRY_NAME)
-    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

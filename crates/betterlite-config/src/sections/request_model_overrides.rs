@@ -40,6 +40,18 @@ enum RawServiceAccountSlot {
     Other(IgnoredAny),
 }
 
+impl RawServiceAccountSlot {
+    fn enforced_params(self) -> Result<Option<RawList>, ConfigError> {
+        match self {
+            Self::Object(account) => Ok(account.enforced_params),
+            Self::Other(_) => Err(ConfigError::InvalidScalar {
+                path: SERVICE_ACCOUNT_PATH.to_owned(),
+                value: false,
+            }),
+        }
+    }
+}
+
 #[derive(Debug, Default, Deserialize)]
 struct RawServiceAccount {
     enforced_params: Option<RawList>,
@@ -84,6 +96,10 @@ impl Section for Raw {
     {
         let enforced_params =
             text_list(self.general_settings.enforced_params, ENFORCED_PARAMS_PATH)?;
+        let service_account_params = match self.general_settings.service_account_settings {
+            None => None,
+            Some(slot) => text_list(slot.enforced_params()?, SERVICE_ACCOUNT_PARAMS_PATH)?,
+        };
         // LiteLLM caches this flag on first use and keeps False when the variable is unset or empty
         let bypass_text = lookup
             .lookup(STALE_ALIAS_BYPASS_VARIABLE)
@@ -91,9 +107,7 @@ impl Section for Raw {
         Ok(Settings {
             credential_overrides: credential_flag(self.litellm_settings.credential_overrides)?,
             enforced_params,
-            service_account_params: service_account_list(
-                self.general_settings.service_account_settings,
-            )?,
+            service_account_params,
             team_stale_alias_bypass: betterlite_env::flag(
                 STALE_ALIAS_BYPASS_VARIABLE,
                 &bypass_text,
@@ -109,21 +123,6 @@ fn credential_flag(value: Option<RawFlag>) -> Result<bool, ConfigError> {
         Some(RawFlag::Bool(enabled)) => Ok(enabled),
         Some(RawFlag::Other(_)) => Err(ConfigError::InvalidScalar {
             path: CREDENTIAL_OVERRIDES_PATH.to_owned(),
-            value: false,
-        }),
-    }
-}
-
-fn service_account_list(
-    value: Option<RawServiceAccountSlot>,
-) -> Result<Option<Vec<String>>, ConfigError> {
-    match value {
-        None => Ok(None),
-        Some(RawServiceAccountSlot::Object(account)) => {
-            text_list(account.enforced_params, SERVICE_ACCOUNT_PARAMS_PATH)
-        }
-        Some(RawServiceAccountSlot::Other(_)) => Err(ConfigError::InvalidScalar {
-            path: SERVICE_ACCOUNT_PATH.to_owned(),
             value: false,
         }),
     }

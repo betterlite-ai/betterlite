@@ -2,7 +2,7 @@ use betterlite_models::model_registration::JsonObject;
 
 use crate::api::request_destination::RequestData;
 use crate::api::request_model_overrides::diagnostics::OverrideDiagnostic;
-use crate::api::request_model_overrides::model_config::ModelConfig;
+use crate::api::request_model_overrides::model_config::{DEFAULT_ENTRY_NAME, ModelConfig};
 
 // the three request fields a credential may replace, in the order LiteLLM copies them
 pub(crate) const CREDENTIAL_FIELDS: [&str; 3] = ["api_base", "api_key", "api_version"];
@@ -40,7 +40,7 @@ pub(crate) fn resolve_credential(
             });
         }
         if let Some(credential) = config
-            .default_entry()
+            .entry(DEFAULT_ENTRY_NAME)
             .and_then(|entry| entry.credential(lookup.provider))
         {
             return Some(credential);

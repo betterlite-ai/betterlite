@@ -47,8 +47,9 @@ fn diagnostics_keep_their_litellm_level_and_tag(
     #[case] level: DiagnosticLevel,
     #[case] kind: &str,
 ) {
-    assert_eq!(diagnostic.level(), level);
-    assert_eq!(diagnostic.kind(), kind);
+    let tag = diagnostic.tag();
+    assert_eq!(tag.level, level);
+    assert_eq!(tag.kind, kind);
 }
 
 #[test]

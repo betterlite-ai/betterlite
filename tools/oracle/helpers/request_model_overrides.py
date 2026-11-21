@@ -4,22 +4,22 @@ from contextlib import redirect_stdout
 from typing import Final, TypedDict
 
 import litellm
-from litellm import Router
 from litellm.proxy import proxy_server
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.litellm_pre_call_utils import (
-    _apply_credential_overrides_from_model_config,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L2696
-    _enforced_params_check,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L2942
-    _get_enforced_params,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L2908
-    _update_model_if_key_alias_exists,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L2670
-    _update_model_if_team_alias_exists,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L2592
+    _apply_credential_overrides_from_model_config,  # pyright: ignore[reportPrivateUsage, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L2696
+    _enforced_params_check,  # pyright: ignore[reportPrivateUsage, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L2942
+    _get_enforced_params,  # pyright: ignore[reportPrivateUsage, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L2908
+    _update_model_if_key_alias_exists,  # pyright: ignore[reportPrivateUsage, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L2670
+    _update_model_if_team_alias_exists,  # pyright: ignore[reportPrivateUsage, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L2592
 )
+from litellm.router import Router
 from litellm.types.utils import CredentialItem
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
-MODEL: Final = TypeAdapter(str | None)
-JSON: Final = TypeAdapter(JsonValue)
+MODEL: Final[TypeAdapter[str | None]] = TypeAdapter(str | None)
+JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 
 
 class SettingsInput(TypedDict):
@@ -197,7 +197,7 @@ def call_value(
         diagnostic = diagnostic_json(record)
         if diagnostic is not None:
             diagnostics.append(diagnostic)
-    resolved: list[str] | None = _get_enforced_params(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L2908
+    resolved: list[str] | None = _get_enforced_params(
         general_settings=general_settings(settings),
         user_api_key_dict=auth,
     )
@@ -210,10 +210,12 @@ def call_value(
         )
     except (ValueError, TypeError):
         failure = {"status": None, "type": None, "param": None, "code": None}
-        return JSON.validate_python({"error": failure})
-    return JSON.validate_python(
-        {"data": data, "enforced_params": resolved, "diagnostics": diagnostics}
-    )
+        error_payload: dict[str, object] = {"error": failure}
+        return JSON.validate_python(error_payload)
+    result: dict[str, object] = {
+        "data": data, "enforced_params": resolved, "diagnostics": diagnostics
+    }
+    return JSON.validate_python(result)
 
 
 def run(input_value: OverridesInput) -> list[JsonValue]:
@@ -230,8 +232,9 @@ def run(input_value: OverridesInput) -> list[JsonValue]:
     results: list[JsonValue] = []
     try:
         with redirect_stdout(io.StringIO()):
-            for call in input_value["calls"]:
-                results.append(call_value(call, router, settings, capture))
+            results.extend(
+                call_value(call, router, settings, capture) for call in input_value["calls"]
+            )
     finally:
         logger.removeHandler(capture)
         logger.setLevel(previous_level)
