@@ -26,7 +26,7 @@ pub struct BatchInvocation<'call, Store> {
 // LiteLLM's apply_guardrail: apply the guardrail to a batch of texts, masking what it rewrote.
 pub async fn apply_guardrail<C, T, Store>(
     invocation: &mut BatchInvocation<'_, Store>,
-    inputs: GuardrailApiInputs,
+    mut inputs: GuardrailApiInputs,
     input_type: GuardrailInputType,
     credentials: &C,
     transport: &T,
@@ -38,31 +38,18 @@ where
 {
     let count = inputs.texts.as_ref().map_or(0, Vec::len);
     tracing::debug!("Bedrock Guardrail: Applying guardrail to {count} text(s)");
-    apply(invocation, inputs, input_type, credentials, transport)
-        .await
-        .map_err(wrap_unexpected)
-}
-
-async fn apply<C, T, Store>(
-    invocation: &mut BatchInvocation<'_, Store>,
-    mut inputs: GuardrailApiInputs,
-    input_type: GuardrailInputType,
-    credentials: &C,
-    transport: &T,
-) -> Result<GuardrailApiInputs, GuardrailFailure>
-where
-    C: CredentialSource,
-    T: GuardrailTransport,
-    Store: ScanCacheStore,
-{
     if matches!(input_type, GuardrailInputType::Request) {
         let incremental =
-            apply_incremental_request_scan(invocation, &inputs, credentials, transport).await?;
+            apply_incremental_request_scan(invocation, &inputs, credentials, transport)
+                .await
+                .map_err(wrap_unexpected)?;
         if let Some(scanned) = incremental {
             return Ok(scanned);
         }
     }
-    full_scan(invocation, &mut inputs, input_type, credentials, transport).await?;
+    full_scan(invocation, &mut inputs, input_type, credentials, transport)
+        .await
+        .map_err(wrap_unexpected)?;
     Ok(inputs)
 }
 
@@ -95,8 +82,14 @@ where
         .as_deref()
         .filter(|items| !items.is_empty())
     {
-        let response =
-            scan_request(invocation, messages, input_type, credentials, transport).await?;
+        let response = scan_request(
+            &mut invocation.api,
+            messages,
+            input_type,
+            credentials,
+            transport,
+        )
+        .await?;
         masked = masked_texts(&response);
     }
     let merged = reconcile::texts(
@@ -110,8 +103,8 @@ where
     Ok(())
 }
 
-async fn scan_request<C, T, Store>(
-    invocation: &mut BatchInvocation<'_, Store>,
+async fn scan_request<C, T>(
+    invocation: &mut ApiInvocation<'_>,
     messages: &[Message],
     input_type: GuardrailInputType,
     credentials: &C,
@@ -120,7 +113,6 @@ async fn scan_request<C, T, Store>(
 where
     C: CredentialSource,
     T: GuardrailTransport,
-    Store: ScanCacheStore,
 {
     let event = event_for(input_type);
     match input_type {
@@ -131,18 +123,18 @@ where
                 response: None,
                 logging_event_type: Some(event),
             };
-            make_bedrock_api_request(&mut invocation.api, scan, credentials, transport).await
+            make_bedrock_api_request(invocation, scan, credentials, transport).await
         }
         GuardrailInputType::Response => {
             let synthetic = synthetic_response(messages)?;
-            let context = request_messages(invocation.api.request_data);
+            let context = request_messages(invocation.request_data);
             let scan = ChecksScan {
                 source: Source::Output,
                 messages: context.as_deref(),
                 response: Some(&synthetic),
                 logging_event_type: Some(event),
             };
-            make_bedrock_api_request(&mut invocation.api, scan, credentials, transport).await
+            make_bedrock_api_request(invocation, scan, credentials, transport).await
         }
     }
 }

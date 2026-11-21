@@ -1,15 +1,16 @@
 #![cfg(test)]
 
-use super::support::{Closed, Harness, Reply, inputs};
+use super::support::{Harness, Reply, inputs};
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::guardrail_base::failure::GuardrailFailure;
 
 #[tokio::test]
 async fn a_closed_transport_becomes_an_http_failure() {
     let mut harness = Harness::new(vec![]);
+    harness.transport.close();
 
     let failure = harness
-        .apply_transport(inputs(&["hello"]), GuardrailInputType::Request, &Closed)
+        .apply(inputs(&["hello"]), GuardrailInputType::Request)
         .await
         .expect_err("the transport is closed");
 

@@ -103,6 +103,7 @@ pub(super) fn blocking() -> Reply {
 pub(super) struct Scripted {
     replies: Mutex<VecDeque<Reply>>,
     sent: Mutex<Vec<OutboundRequest>>,
+    closed: Mutex<bool>,
 }
 
 impl Scripted {
@@ -110,7 +111,12 @@ impl Scripted {
         Self {
             replies: Mutex::new(VecDeque::from(replies)),
             sent: Mutex::new(Vec::new()),
+            closed: Mutex::new(false),
         }
+    }
+
+    pub(super) fn close(&self) {
+        *self.closed.lock().unwrap_or_else(PoisonError::into_inner) = true;
     }
 
     pub(super) fn count(&self) -> usize {
@@ -136,6 +142,9 @@ impl GuardrailTransport for Scripted {
         &self,
         request: OutboundRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
+        if *self.closed.lock().unwrap_or_else(PoisonError::into_inner) {
+            return ready(Err(TransportError::Closed));
+        }
         let reply = {
             let mut replies = self.replies.lock().unwrap_or_else(PoisonError::into_inner);
             replies.pop_front()
@@ -150,17 +159,6 @@ impl GuardrailTransport for Scripted {
             body: given.body,
         });
         ready(outcome.ok_or(TransportError::Closed))
-    }
-}
-
-pub(super) struct Closed;
-
-impl GuardrailTransport for Closed {
-    fn send(
-        &self,
-        _request: OutboundRequest,
-    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
-        ready(Err(TransportError::Closed))
     }
 }
 
@@ -383,40 +381,6 @@ impl Harness {
             input_type,
             &StaticCredentials,
             &self.transport,
-        )
-        .await
-    }
-
-    pub(super) async fn apply_transport<T>(
-        &mut self,
-        inputs: GuardrailApiInputs,
-        input_type: GuardrailInputType,
-        transport: &T,
-    ) -> Result<GuardrailApiInputs, GuardrailFailure>
-    where
-        T: GuardrailTransport,
-    {
-        let catalog = BundledCatalog::default().get();
-        let mut batch = BatchInvocation {
-            api: ApiInvocation {
-                guardrail: &self.guardrail,
-                base: &self.base,
-                request_data: &mut self.data,
-                log_target: None,
-                environment: ENVIRONMENT,
-                catalog: catalog.as_ref(),
-                now: fixed_now,
-            },
-            cache: &self.cache,
-            cache_ttl_seconds: self.ttl_seconds,
-            tool_results_only: self.tool_results_only,
-        };
-        apply_guardrail(
-            &mut batch,
-            inputs,
-            input_type,
-            &StaticCredentials,
-            transport,
         )
         .await
     }
