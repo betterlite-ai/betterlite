@@ -74,10 +74,13 @@ fn key_scope(principal: &Principal) -> Result<Option<KeyScope>, serde_json::Erro
 }
 
 // _get_user_team_ids: no user id or no database answers no teams, and empty strings are dropped
-pub(super) async fn user_team_ids<S: SubmissionRows>(
+pub(super) async fn user_team_ids<S>(
     caller: &Caller,
     state: &SubmissionsState<S>,
-) -> Result<Vec<String>, SubmissionError> {
+) -> Result<Vec<String>, SubmissionError>
+where
+    S: SubmissionRows,
+{
     if state.database.is_none() {
         return Ok(Vec::new());
     }

@@ -29,11 +29,14 @@ pub(super) struct SubmissionQuery {
     search: Option<String>,
 }
 
-pub(super) async fn list_submissions<S: SubmissionRows + 'static>(
+pub(super) async fn list_submissions<S>(
     State(state): State<Arc<SubmissionsState<S>>>,
     auth: Option<Extension<AuthContext>>,
     Query(query): Query<SubmissionQuery>,
-) -> Result<Json<SubmissionListResponse>, SubmissionError> {
+) -> Result<Json<SubmissionListResponse>, SubmissionError>
+where
+    S: SubmissionRows + 'static,
+{
     let context = authenticated(auth)?;
     let database = state.database.as_ref().ok_or(SubmissionError::NoDatabase)?;
     let visible = if has_admin_view(&context.principal) {
@@ -72,11 +75,14 @@ pub(super) async fn list_submissions<S: SubmissionRows + 'static>(
     }))
 }
 
-pub(super) async fn get_submission<S: SubmissionRows + 'static>(
+pub(super) async fn get_submission<S>(
     State(state): State<Arc<SubmissionsState<S>>>,
     Path(guardrail_id): Path<String>,
     auth: Option<Extension<AuthContext>>,
-) -> Result<Json<GuardrailSubmissionItem>, SubmissionError> {
+) -> Result<Json<GuardrailSubmissionItem>, SubmissionError>
+where
+    S: SubmissionRows + 'static,
+{
     let context = authenticated(auth)?;
     let database = state.database.as_ref().ok_or(SubmissionError::NoDatabase)?;
     let is_admin = has_admin_view(&context.principal);
@@ -101,7 +107,7 @@ pub(super) async fn get_submission<S: SubmissionRows + 'static>(
     Ok(Json(item(&row)))
 }
 
-fn empty_answer() -> SubmissionListResponse {
+const fn empty_answer() -> SubmissionListResponse {
     SubmissionListResponse {
         submissions: Vec::new(),
         summary: GuardrailSubmissionSummary {
@@ -129,7 +135,7 @@ fn summarize(rows: &[SubmissionRow]) -> GuardrailSubmissionSummary {
     }
 }
 
-fn row_status(row: &SubmissionRow) -> &str {
+const fn row_status(row: &SubmissionRow) -> &str {
     match &row.status {
         Some(status) => status.as_str(),
         None => ACTIVE,
@@ -186,10 +192,7 @@ fn description_text(info: &JsonObject) -> &str {
 pub(super) fn item(row: &SubmissionRow) -> GuardrailSubmissionItem {
     let info = parse_json_field(row.guardrail_info.as_ref()).unwrap_or_default();
     let params = parse_json_field(row.litellm_params.as_ref()).unwrap_or_default();
-    let status = match &row.status {
-        Some(status) => status.clone(),
-        None => ACTIVE.to_owned(),
-    };
+    let status = row.status.as_deref().unwrap_or(ACTIVE).to_owned();
     let submitted_by_user_id = info
         .get(SUBMITTED_BY_USER_ID)
         .and_then(JsonValue::as_str)

@@ -26,14 +26,20 @@ const REGISTER_FAILED: &str = "Error registering guardrail";
 const HTTP_SCHEME: &str = "http";
 const HTTPS_SCHEME: &str = "https";
 
-pub(super) async fn register_guardrail<S: SubmissionRows + 'static>(
+pub(super) async fn register_guardrail<S>(
     State(state): State<Arc<SubmissionsState<S>>>,
     auth: Option<Extension<AuthContext>>,
     body: Bytes,
-) -> Result<Json<RegisterGuardrailResponse>, SubmissionError> {
+) -> Result<Json<RegisterGuardrailResponse>, SubmissionError>
+where
+    S: SubmissionRows + 'static,
+{
     let context = authenticated(auth)?;
     let request = decode_register_body(&body)?;
-    let database = state.database.as_ref().ok_or(SubmissionError::NoDatabase)?;
+    let database = state
+        .database
+        .as_deref()
+        .ok_or(SubmissionError::NoDatabase)?;
     let identity = caller(&context.principal)?;
     let team_id = choose_team(&request, &identity)?;
     ensure_membership(&identity, &team_id, &state).await?;
@@ -66,11 +72,14 @@ fn choose_team(
 }
 
 // only a body team the caller's key is not bound to needs the lookup, and proxy_admin skips it
-async fn ensure_membership<S: SubmissionRows>(
+async fn ensure_membership<S>(
     identity: &Caller,
     team_id: &str,
     state: &SubmissionsState<S>,
-) -> Result<(), SubmissionError> {
+) -> Result<(), SubmissionError>
+where
+    S: SubmissionRows,
+{
     if identity.role.as_deref() == Some(PROXY_ADMIN_ROLE) {
         return Ok(());
     }
@@ -132,13 +141,16 @@ fn scheme_of(api_base: &str) -> &str {
         .map_or("", |(scheme, _rest)| scheme)
 }
 
-async fn submit<S: SubmissionRows>(
+async fn submit<S>(
     database: &S,
     request: RegisterGuardrailRequest,
     identity: &Caller,
     team_id: &str,
     now: DateTime<Utc>,
-) -> Result<SubmissionRow, SubmissionError> {
+) -> Result<SubmissionRow, SubmissionError>
+where
+    S: SubmissionRows,
+{
     let existing = database
         .find_by_name(&request.guardrail_name)
         .await
