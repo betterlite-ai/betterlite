@@ -67,8 +67,25 @@ async fn global_cap_missing_counter_counts_as_one(#[case] answer: BatchAnswer) {
     let sets = split_calls(&fixture.cache.calls()).sets;
     assert_eq!(
         sets[0].0,
-        vec![(String::from(GLOBAL_KEY), LegacyCacheValue::Count(2))]
+        vec![(String::from(GLOBAL_KEY), LegacyCacheValue::Count(1))]
     );
+}
+
+#[tokio::test]
+async fn global_cap_missing_counter_reaches_a_cap_of_one() {
+    let fixture = answered(BatchAnswer::None, objects(&[None; 6]));
+    let auth = principal("{}");
+    let mut request = request_body(None, r#"{"global_max_parallel_requests": 1}"#);
+    let error = rejection(fixture.admission.pre_call(&auth, &mut request).await);
+    assert_eq!(
+        error.rate_limit_type,
+        Some(RateLimitDimension::ConcurrentRequests)
+    );
+    assert_eq!(
+        detail_text(&error),
+        String::from("Max parallel request limit reached Hit Global Limit: Limit=1, current: 1")
+    );
+    assert!(split_calls(&fixture.cache.calls()).sets.is_empty());
 }
 
 #[rstest]
@@ -160,7 +177,7 @@ async fn global_cap_counter_value_counts_as_one() {
     let sets = split_calls(&fixture.cache.calls()).sets;
     assert_eq!(
         sets[0].0,
-        vec![(String::from(GLOBAL_KEY), LegacyCacheValue::Count(2))]
+        vec![(String::from(GLOBAL_KEY), LegacyCacheValue::Count(1))]
     );
 }
 

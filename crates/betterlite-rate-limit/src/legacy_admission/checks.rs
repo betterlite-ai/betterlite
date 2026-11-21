@@ -31,16 +31,17 @@ pub(super) async fn global(
         .internal_usage_cache
         .batch_get(&[Some(String::from(GLOBAL_KEY))], None)
         .await?;
-    let current = global_counter(read.as_deref());
+    let stored = stored_global_count(read.as_deref());
+    let current = stored.unwrap_or(MISSING_GLOBAL_COUNT);
     if current >= cap {
         let details = format!("Hit Global Limit: Limit={cap}, current: {current}");
         let error = handler.raise_rate_limit_error(Some(&details), None, model);
         return Err(LegacyAdmissionError::from(error));
     }
-    // async_increment_cache on a local-only key: the whole number goes up by one under the default ttl
+    // async_increment_cache starts a missing key at 0, so the first request stores one, not two
     let entries = [(
         String::from(GLOBAL_KEY),
-        LegacyCacheValue::Count(current.saturating_add(1)),
+        LegacyCacheValue::Count(stored.map_or(1, |count| count.saturating_add(1))),
     )];
     handler
         .internal_usage_cache
@@ -51,18 +52,18 @@ pub(super) async fn global(
 
 // a bare count is what the global step stores; any other shape, or a wrong-length answer, counts as missing
 #[must_use]
-fn global_counter(answer: Option<&[Option<LegacyCacheValue>]>) -> i64 {
+fn stored_global_count(answer: Option<&[Option<LegacyCacheValue>]>) -> Option<i64> {
     let Some(values) = answer else {
-        return MISSING_GLOBAL_COUNT;
+        return None;
     };
     match values {
-        [None] => MISSING_GLOBAL_COUNT,
-        [Some(LegacyCacheValue::Count(current))] => *current,
+        [Some(LegacyCacheValue::Count(current))] => Some(*current),
+        [] | [None] => None,
         other => {
             tracing::error!(
                 "LiteLLM Cache: the global counter read answered {other:?} instead of one whole number"
             );
-            MISSING_GLOBAL_COUNT
+            None
         }
     }
 }
