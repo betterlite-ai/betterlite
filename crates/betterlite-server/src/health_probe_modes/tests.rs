@@ -673,6 +673,16 @@ fn response_filtered_parameters_remove_messages() {
 }
 
 #[test]
+fn response_filtered_parameters_drop_a_raw_messages_key() {
+    let mut params = probe_params_from_json(r#"{"model":"gpt-5"}"#);
+    params
+        .parameters
+        .insert("messages".to_owned(), serde_json::json!([]));
+    assert!(!params.call_parameters(false).contains_key("messages"));
+    assert!(params.call_parameters(true).contains_key("messages"));
+}
+
+#[test]
 fn response_health_image_is_a_512_by_512_png() {
     let image = health_check_image().unwrap();
     assert_eq!(image.len(), IMAGE_BYTES);
