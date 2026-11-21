@@ -590,7 +590,10 @@ fn a_non_integer_max_tokens_per_doc_is_refused() {
     let ErrorClass::ApiConnection(context) = error.class else {
         panic!("the wrong-typed parameter is an api connection error");
     };
-    assert_eq!(context.provider.as_deref(), Some("cohere"));
+    // cohere's mapper hands an unclassified exception to the outer handler, which names no provider and no model
+    assert_eq!(context.provider.as_deref(), Some(""));
+    assert_eq!(context.model.as_deref(), Some(""));
+    assert_eq!(context.message, "max_tokens_per_doc must be an integer");
     assert_eq!(entry.begins(), 0);
 }
 
