@@ -1,0 +1,5 @@
+task: B3030
+deviations:
+  - what: A reset time before 1970-01-01T00:00:00Z or past 9999-12-31T23:59:59Z fails with a typed error instead of yielding a timestamp string.
+    why: Python's datetime.fromtimestamp still prints a pre-1970 second and only raises past year 9999, so a limiter clock before the epoch is the one case where betterlite refuses what LiteLLM would format; a working setup's clock never reaches it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3509-L3513

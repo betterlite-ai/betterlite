@@ -1884,6 +1884,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "betterlite-redact",
+ "chrono",
  "regex",
  "rstest",
  "rust_decimal",
@@ -2598,6 +2599,7 @@ dependencies = [
  "betterlite-postgres-fixture",
  "betterlite-prompts",
  "betterlite-provider",
+ "betterlite-rate-limit",
  "betterlite-redact",
  "betterlite-redis",
  "betterlite-router",
@@ -4204,6 +4206,7 @@ dependencies = [
  "betterlite-context",
  "betterlite-core",
  "betterlite-db",
+ "betterlite-error",
  "betterlite-http",
  "betterlite-models",
  "betterlite-openai",

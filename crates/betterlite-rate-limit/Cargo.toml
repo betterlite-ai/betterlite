@@ -12,6 +12,7 @@ betterlite-config = { path = "../betterlite-config" }
 betterlite-context = { path = "../betterlite-context" }
 betterlite-core = { path = "../betterlite-core" }
 betterlite-db = { path = "../betterlite-db" }
+betterlite-error = { path = "../betterlite-error" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-prompts = { path = "../betterlite-prompts" }
