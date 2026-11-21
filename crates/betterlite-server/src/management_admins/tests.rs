@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+mod adapters;
 mod postgres;
 mod support;
 
