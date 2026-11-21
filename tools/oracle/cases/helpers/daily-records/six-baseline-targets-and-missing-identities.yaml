@@ -1,0 +1,12 @@
+kind: helper
+name: six-baseline-targets-and-missing-identities
+call:
+  daily_records:
+    operation: baseline
+    payload: |-
+      {"request_id": "req-1", "call_type": "acompletion", "api_key": "k1", "spend": 0.25, "total_tokens": 7, "prompt_tokens": 3, "completion_tokens": 4, "startTime": "2025-01-02T03:04:05Z", "endTime": "2025-01-02T03:05:00Z", "completionStartTime": null, "model": "gpt-4o", "model_id": "dep-1", "model_group": "gpt-4o", "mcp_namespaced_tool_name": null, "agent_id": null, "api_base": "https://example.test", "user": "u1", "metadata": "{\"status\": \"success\"}", "cache_hit": "false", "cache_key": "", "request_tags": "[\"b\", \"a\", \"b\"]", "team_id": "t1", "organization_id": null, "end_user": "e1", "requester_ip_address": null, "custom_llm_provider": "openai", "messages": null, "response": null, "proxy_server_request": null, "session_id": null, "request_duration_ms": null, "status": "success", "litellm_call_id": null}
+    prices: {}
+    endpoints:
+      acompletion: "/chat/completions"
+env: {}
+compare: {ignore: []}
