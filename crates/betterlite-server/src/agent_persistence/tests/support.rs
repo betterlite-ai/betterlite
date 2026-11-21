@@ -130,66 +130,6 @@ pub(crate) async fn count_where(
     database.count(&sql, &[&value]).await
 }
 
-pub(crate) async fn agent_column_text(
-    database: &Database,
-    column: &str,
-    agent_id: &str,
-) -> Option<String> {
-    let sql = format!(r#"SELECT {column} FROM "LiteLLM_AgentsTable" WHERE agent_id = $1"#);
-    database.text(&sql, &[&agent_id]).await
-}
-
-pub(crate) async fn agent_column_json(
-    database: &Database,
-    column: &str,
-    agent_id: &str,
-) -> Option<JsonData> {
-    let sql = format!(
-        r#"SELECT to_jsonb({column})::text FROM "LiteLLM_AgentsTable" WHERE agent_id = $1"#
-    );
-    database.json(&sql, &[&agent_id]).await
-}
-
-pub(crate) async fn identity_column_text(
-    database: &Database,
-    column: &str,
-    agent_id: &str,
-) -> Option<String> {
-    let sql = format!(r#"SELECT {column} FROM "LiteLLM_AgentIdentity" WHERE agent_id = $1"#);
-    database.text(&sql, &[&agent_id]).await
-}
-
-pub(crate) async fn identity_column_json(
-    database: &Database,
-    column: &str,
-    agent_id: &str,
-) -> Option<JsonData> {
-    let sql = format!(
-        r#"SELECT to_jsonb({column})::text FROM "LiteLLM_AgentIdentity" WHERE agent_id = $1"#
-    );
-    database.json(&sql, &[&agent_id]).await
-}
-
-pub(crate) async fn history_column_text(
-    database: &Database,
-    column: &str,
-    agent_id: &str,
-) -> Option<String> {
-    let sql = format!(r#"SELECT {column} FROM "LiteLLM_RetiredAgentIdentity" WHERE agent_id = $1"#);
-    database.text(&sql, &[&agent_id]).await
-}
-
-pub(crate) async fn permission_column_json(
-    database: &Database,
-    column: &str,
-    permission_id: &str,
-) -> Option<JsonData> {
-    let sql = format!(
-        r#"SELECT to_jsonb({column})::text FROM "LiteLLM_ObjectPermissionTable" WHERE object_permission_id = $1"#
-    );
-    database.json(&sql, &[&permission_id]).await
-}
-
 #[derive(Clone, Default)]
 pub(crate) struct RecordingPublisher {
     calls: Arc<Mutex<usize>>,

@@ -17,12 +17,21 @@ use crate::agent_persistence::error::APPLICATION_CONFLICT;
 use crate::agent_persistence::error::AgentPersistenceError;
 use crate::agent_persistence::support::Database;
 use crate::agent_persistence::support::count_where;
-use crate::agent_persistence::support::history_column_text;
-use crate::agent_persistence::support::identity_column_json;
-use crate::agent_persistence::support::identity_column_text;
 
 const IDENTITIES: &str = "LiteLLM_AgentIdentity";
 const RETIRED: &str = "LiteLLM_RetiredAgentIdentity";
+const PROVIDER_SQL: &str = r#"SELECT provider FROM "LiteLLM_AgentIdentity" WHERE agent_id = $1"#;
+const PRINCIPAL_SQL: &str =
+    r#"SELECT service_principal_id FROM "LiteLLM_AgentIdentity" WHERE agent_id = $1"#;
+const ROLES_SQL: &str =
+    r#"SELECT to_jsonb(required_roles)::text FROM "LiteLLM_AgentIdentity" WHERE agent_id = $1"#;
+const ACTIVE_SQL: &str = r#"SELECT active::text FROM "LiteLLM_AgentIdentity" WHERE agent_id = $1"#;
+const STAMPED_SQL: &str = r#"SELECT (last_authenticated_at IS NOT NULL)::text FROM "LiteLLM_AgentIdentity" WHERE agent_id = $1"#;
+const CLEARED_SQL: &str = r#"SELECT (last_authenticated_at IS NULL)::text FROM "LiteLLM_AgentIdentity" WHERE agent_id = $1"#;
+const REVISION_SQL: &str = r#"SELECT revision FROM "LiteLLM_AgentIdentity" WHERE agent_id = $1"#;
+const ISSUER_SQL: &str = r#"SELECT issuer FROM "LiteLLM_AgentIdentity" WHERE agent_id = $1"#;
+const BINDING_SQL: &str =
+    r#"SELECT binding_id FROM "LiteLLM_RetiredAgentIdentity" WHERE agent_id = $1"#;
 
 async fn seed_agent(database: &Database, agent_id: &str) {
     database
@@ -90,25 +99,20 @@ async fn identity_create_inserts_every_carried_field() {
     seed_agent(&database, "agent-1").await;
     let store = database.store();
     write_relation(&store, "agent-1", &IdentityRelationWrite::Create(fields())).await;
-    let provider = identity_column_text(&database, "provider", "agent-1").await;
+    let provider = database.text(PROVIDER_SQL, &[&"agent-1"]).await;
     assert_eq!(provider.as_deref(), Some("microsoft_entra"));
-    let principal = identity_column_text(&database, "service_principal_id", "agent-1").await;
+    let principal = database.text(PRINCIPAL_SQL, &[&"agent-1"]).await;
     assert_eq!(principal.as_deref(), Some("sp-1"));
-    let roles = identity_column_json(&database, "required_roles", "agent-1").await;
+    let roles = database.json(ROLES_SQL, &[&"agent-1"]).await;
     assert_eq!(
         roles,
         Some(JsonData::Array(vec![JsonData::String(String::from(
             "admin"
         ))]))
     );
-    let active = identity_column_text(&database, "active::text", "agent-1").await;
+    let active = database.text(ACTIVE_SQL, &[&"agent-1"]).await;
     assert_eq!(active.as_deref(), Some("true"));
-    let stamped = identity_column_text(
-        &database,
-        "(last_authenticated_at IS NOT NULL)::text",
-        "agent-1",
-    )
-    .await;
+    let stamped = database.text(STAMPED_SQL, &[&"agent-1"]).await;
     assert_eq!(stamped.as_deref(), Some("true"));
     database.close().await;
 }
@@ -120,26 +124,27 @@ async fn identity_update_changes_only_the_carried_columns() {
     let store = database.store();
     write_relation(&store, "agent-1", &IdentityRelationWrite::Create(fields())).await;
     let bound = IdentityFields {
+        provider: None,
+        tenant_id: None,
+        client_id: None,
+        issuer: None,
+        service_principal_id: None,
+        required_roles: None,
+        required_scopes: None,
         active: Some(false),
         revision: Some(String::from("r2")),
         last_authenticated_at: Some(None),
-        ..IdentityFields::default()
     };
     write_relation(&store, "agent-1", &IdentityRelationWrite::Update(bound)).await;
-    let active = identity_column_text(&database, "active::text", "agent-1").await;
+    let active = database.text(ACTIVE_SQL, &[&"agent-1"]).await;
     assert_eq!(active.as_deref(), Some("false"));
-    let revision = identity_column_text(&database, "revision", "agent-1").await;
+    let revision = database.text(REVISION_SQL, &[&"agent-1"]).await;
     assert_eq!(revision.as_deref(), Some("r2"));
-    let issuer = identity_column_text(&database, "issuer", "agent-1").await;
+    let issuer = database.text(ISSUER_SQL, &[&"agent-1"]).await;
     assert_eq!(issuer.as_deref(), Some("issuer-1"));
-    let principal = identity_column_text(&database, "service_principal_id", "agent-1").await;
+    let principal = database.text(PRINCIPAL_SQL, &[&"agent-1"]).await;
     assert_eq!(principal.as_deref(), Some("sp-1"));
-    let stamped = identity_column_text(
-        &database,
-        "(last_authenticated_at IS NULL)::text",
-        "agent-1",
-    )
-    .await;
+    let stamped = database.text(CLEARED_SQL, &[&"agent-1"]).await;
     assert_eq!(stamped.as_deref(), Some("true"));
     database.close().await;
 }
@@ -156,7 +161,7 @@ async fn identity_update_with_no_fields_leaves_the_row_intact() {
         &IdentityRelationWrite::Update(IdentityFields::default()),
     )
     .await;
-    let revision = identity_column_text(&database, "revision", "agent-1").await;
+    let revision = database.text(REVISION_SQL, &[&"agent-1"]).await;
     assert_eq!(revision.as_deref(), Some("r1"));
     database.close().await;
 }
@@ -169,19 +174,26 @@ async fn identity_upsert_creates_then_updates_the_row() {
     let upsert = IdentityUpsert {
         create: fields(),
         update: IdentityFields {
+            provider: None,
+            tenant_id: None,
+            client_id: None,
+            issuer: None,
+            service_principal_id: None,
+            required_roles: None,
+            required_scopes: None,
             active: Some(false),
             revision: Some(String::from("r2")),
-            ..IdentityFields::default()
+            last_authenticated_at: None,
         },
     };
     let relation = IdentityRelationWrite::Upsert(Box::new(upsert));
     write_relation(&store, "agent-1", &relation).await;
-    let active = identity_column_text(&database, "active::text", "agent-1").await;
+    let active = database.text(ACTIVE_SQL, &[&"agent-1"]).await;
     assert_eq!(active.as_deref(), Some("true"));
     write_relation(&store, "agent-1", &relation).await;
-    let flipped = identity_column_text(&database, "active::text", "agent-1").await;
+    let flipped = database.text(ACTIVE_SQL, &[&"agent-1"]).await;
     assert_eq!(flipped.as_deref(), Some("false"));
-    let revision = identity_column_text(&database, "revision", "agent-1").await;
+    let revision = database.text(REVISION_SQL, &[&"agent-1"]).await;
     assert_eq!(revision.as_deref(), Some("r2"));
     database.close().await;
 }
@@ -219,7 +231,8 @@ async fn history_is_inserted_once_for_the_bound_agent_only() {
             .expect("no history")
     );
     write_history_row(&store, &entry, "agent-1", true).await;
-    let binding = history_column_text(&database, "binding_id", "agent-1")
+    let binding = database
+        .text(BINDING_SQL, &[&"agent-1"])
         .await
         .expect("the history row exists");
     assert_eq!(binding.len(), 36);

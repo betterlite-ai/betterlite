@@ -10,14 +10,19 @@ use crate::agent_persistence::support::Database;
 use crate::agent_persistence::support::IDENTITY;
 use crate::agent_persistence::support::RecordingPublisher;
 use crate::agent_persistence::support::agent;
-use crate::agent_persistence::support::agent_column_json;
-use crate::agent_persistence::support::identity_column_text;
 use crate::agent_persistence::support::patch;
-use crate::agent_persistence::support::permission_column_json;
 use crate::agent_persistence::support::store_with;
 
 const FULL_AGENT: &str = r#"{"agent_name": "a", "litellm_params": {"api_key": "sk-real"}, "static_headers": {"x": "1"}, "extra_headers": ["old"], "tpm_limit": 3}"#;
-const STAMPED_CLEARED: &str = "(last_authenticated_at IS NULL)::text";
+const HEADERS_SQL: &str =
+    r#"SELECT to_jsonb(static_headers)::text FROM "LiteLLM_AgentsTable" WHERE agent_id = $1"#;
+const PARAMS_SQL: &str =
+    r#"SELECT to_jsonb(litellm_params)::text FROM "LiteLLM_AgentsTable" WHERE agent_id = $1"#;
+const SERVERS_SQL: &str = r#"SELECT to_jsonb(mcp_servers)::text FROM "LiteLLM_ObjectPermissionTable" WHERE object_permission_id = $1"#;
+const MODELS_SQL: &str = r#"SELECT to_jsonb(models)::text FROM "LiteLLM_ObjectPermissionTable" WHERE object_permission_id = $1"#;
+const REVISION_SQL: &str = r#"SELECT revision FROM "LiteLLM_AgentIdentity" WHERE agent_id = $1"#;
+const ACTIVE_SQL: &str = r#"SELECT active::text FROM "LiteLLM_AgentIdentity" WHERE agent_id = $1"#;
+const CLEARED_SQL: &str = r#"SELECT (last_authenticated_at IS NULL)::text FROM "LiteLLM_AgentIdentity" WHERE agent_id = $1"#;
 
 #[tokio::test]
 async fn patch_updates_the_carried_fields_and_publishes_once() {
@@ -36,11 +41,11 @@ async fn patch_updates_the_carried_fields_and_publishes_once() {
     assert_eq!(patched.agent_name, "b");
     assert_eq!(patched.created_by.as_deref(), Some("author"));
     assert_eq!(patched.updated_by.as_deref(), Some("editor"));
-    let headers = agent_column_json(&database, "static_headers", &created.agent_id).await;
+    let headers = database.json(HEADERS_SQL, &[&created.agent_id]).await;
     assert_eq!(headers, Some(JsonData::Object(BTreeMap::new())));
     let decoded = database.decode_agent(&created.agent_id).await;
     assert_eq!(decoded.agent.tpm_limit, Some(3));
-    let params = agent_column_json(&database, "litellm_params", &created.agent_id).await;
+    let params = database.json(PARAMS_SQL, &[&created.agent_id]).await;
     assert_eq!(
         params,
         Some(JsonData::Object(BTreeMap::from([(
@@ -98,12 +103,12 @@ async fn patch_links_a_permission_row_and_reuses_it_on_the_next_patch() {
         updated.object_permission_id.as_deref(),
         Some(permission_id.as_str())
     );
-    let servers = permission_column_json(&database, "mcp_servers", &permission_id).await;
+    let servers = database.json(SERVERS_SQL, &[&permission_id]).await;
     assert_eq!(
         servers,
         Some(JsonData::Array(vec![JsonData::String(String::from("srv"))]))
     );
-    let models = permission_column_json(&database, "models", &permission_id).await;
+    let models = database.json(MODELS_SQL, &[&permission_id]).await;
     assert_eq!(
         models,
         Some(JsonData::Array(vec![JsonData::String(String::from(
@@ -157,7 +162,8 @@ async fn patch_unbinds_an_identity_and_refuses_to_enable_it_again() {
         .await
         .expect("the agent is created");
     let agent_id = created.agent_id.as_str();
-    let revision = identity_column_text(&database, "revision", agent_id)
+    let revision = database
+        .text(REVISION_SQL, agent_id)
         .await
         .expect("the identity row exists");
     let unbind = patch(r#"{"identity": null}"#);
@@ -165,11 +171,11 @@ async fn patch_unbinds_an_identity_and_refuses_to_enable_it_again() {
         .patch_agent_in_db(agent_id, &unbind, "editor")
         .await
         .expect("the identity is unbound");
-    let inactive = identity_column_text(&database, "active::text", agent_id).await;
+    let inactive = database.text(ACTIVE_SQL, agent_id).await;
     assert_eq!(inactive.as_deref(), Some("false"));
-    let stamped = identity_column_text(&database, STAMPED_CLEARED, agent_id).await;
+    let stamped = database.text(CLEARED_SQL, agent_id).await;
     assert_eq!(stamped.as_deref(), Some("true"));
-    let changed = identity_column_text(&database, "revision", agent_id).await;
+    let changed = database.text(REVISION_SQL, agent_id).await;
     assert_ne!(changed, Some(revision));
     let enable = patch(r#"{"enabled": true}"#);
     let refusal = store

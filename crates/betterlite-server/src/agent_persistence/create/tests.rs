@@ -10,11 +10,11 @@ use crate::agent_persistence::support::IDENTITY;
 use crate::agent_persistence::support::RecordingPublisher;
 use crate::agent_persistence::support::agent;
 use crate::agent_persistence::support::count_where;
-use crate::agent_persistence::support::permission_column_json;
 use crate::agent_persistence::support::store_with;
 
 const IDENTITIES: &str = "LiteLLM_AgentIdentity";
 const RETIRED: &str = "LiteLLM_RetiredAgentIdentity";
+const MCP_SERVERS_SQL: &str = r#"SELECT to_jsonb(mcp_servers)::text FROM "LiteLLM_ObjectPermissionTable" WHERE object_permission_id = $1"#;
 
 #[tokio::test]
 async fn create_stores_the_agent_permission_identity_and_history() {
@@ -38,7 +38,7 @@ async fn create_stores_the_agent_permission_identity_and_history() {
     assert_eq!(identities, 1);
     let history = count_where(&database, RETIRED, "agent_id", &created.agent_id).await;
     assert_eq!(history, 1);
-    let permission = permission_column_json(&database, "mcp_servers", &permission_id).await;
+    let permission = database.json(MCP_SERVERS_SQL, &[&permission_id]).await;
     assert_eq!(
         permission,
         Some(JsonData::Array(vec![JsonData::String(String::from("srv"))]))

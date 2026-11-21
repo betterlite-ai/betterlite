@@ -10,7 +10,9 @@ use super::converted_record;
 use super::prepare;
 use super::write_permission;
 use crate::agent_persistence::support::Database;
-use crate::agent_persistence::support::permission_column_json;
+
+const SERVERS_SQL: &str = r#"SELECT to_jsonb(mcp_servers)::text FROM "LiteLLM_ObjectPermissionTable" WHERE object_permission_id = $1"#;
+const GROUPS_SQL: &str = r#"SELECT to_jsonb(mcp_access_groups)::text FROM "LiteLLM_ObjectPermissionTable" WHERE object_permission_id = $1"#;
 
 fn permission(json: &str) -> AgentObjectPermission {
     serde_json::from_str(json).expect("a valid object permission")
@@ -127,12 +129,12 @@ async fn permission_keeps_a_stored_column_the_update_leaves_out() {
         .expect("the permission row is updated");
     updating_tx.commit().await.expect("the transaction commits");
     let permission_id = prepared.object_permission_id.as_str();
-    let servers = permission_column_json(&database, "mcp_servers", permission_id).await;
+    let servers = database.json(SERVERS_SQL, &[&permission_id]).await;
     assert_eq!(
         servers,
         Some(JsonData::Array(vec![JsonData::String(String::from("new"))]))
     );
-    let groups = permission_column_json(&database, "mcp_access_groups", permission_id).await;
+    let groups = database.json(GROUPS_SQL, &[&permission_id]).await;
     assert_eq!(
         groups,
         Some(JsonData::Array(vec![JsonData::String(String::from(
