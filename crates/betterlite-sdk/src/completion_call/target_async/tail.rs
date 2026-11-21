@@ -138,7 +138,7 @@ fn optional_params(args: &CompletionArgs) -> Result<JsonMap, CompletionCallError
         .map(|(name, value)| Ok((name, to_raw_value(&value)?)))
         .collect()
 }
-async fn chunk_outcome(
+pub(crate) async fn chunk_outcome(
     stream: BoxStream<'static, Chunk>,
 ) -> Result<CallOutcome, CompletionCallError> {
     let chunks: Vec<Chunk> = stream.collect().await;

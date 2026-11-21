@@ -16,7 +16,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::completion_chat_bridge::answer::chat_completion_body;
 use betterlite_openai::text_completion_response::CompletionResponse;
 use std::{sync::Arc, time::Duration};
-mod tail;
+pub(crate) mod tail;
 const TEXT_COMPLETION_PROVIDERS: [&str; 3] = [
     "text-completion-openai",
     "text-completion-codestral",

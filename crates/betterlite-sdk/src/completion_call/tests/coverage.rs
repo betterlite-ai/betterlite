@@ -8,7 +8,7 @@ use betterlite_core::responses_bridge::ResponsesBridgeCapabilities as _;
 use betterlite_models::decisions::Json;
 use betterlite_openai::chat::execution::ChatError;
 use betterlite_openai::stream::chunk::Chunk;
-use futures_util::StreamExt as _;
+use futures_util::{StreamExt as _, stream};
 use serde_json::value::RawValue;
 
 use super::USER;
@@ -25,6 +25,7 @@ use crate::completion_call::fallbacks::run_fallbacks;
 use crate::completion_call::ports::NoFoundryRules;
 use crate::completion_call::request;
 use crate::completion_call::target_async::provider_of;
+use crate::completion_call::target_async::tail::chunk_outcome;
 use crate::completion_request::args::JsonObject;
 use crate::completion_request::call::{
     FallbackCall, ModelListCall, PreparedCall, PreparedCompletion,
@@ -331,6 +332,27 @@ async fn async_agentic_loop_receives_the_call_details() {
     assert_eq!(
         dig(&answer, &["id"]),
         Some(&Json::Text(String::from("chatcmpl-agentic")))
+    );
+}
+
+#[tokio::test]
+async fn async_agentic_stream_result_becomes_the_chat_stream() {
+    let chunk: Chunk = serde_json::from_str(
+        r#"{"id":"chunk-1","object":"chat.completion.chunk","created":1700000000,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":"he"},"finish_reason":null}]}"#,
+    )
+    .unwrap();
+    let chunks_stream = stream::iter(vec![chunk]).boxed();
+    let outcome = chunk_outcome(chunks_stream).await.unwrap();
+    let CallOutcome::ChatStream(found) = outcome else {
+        panic!("the loop's stream result answers a chat stream");
+    };
+    let Json::List(chunks) = found.model_response else {
+        panic!("the chat stream holds its chunks");
+    };
+    assert_eq!(chunks.len(), 1);
+    assert_eq!(
+        dig(&chunks[0], &["id"]),
+        Some(&Json::Text(String::from("chunk-1")))
     );
 }
 
