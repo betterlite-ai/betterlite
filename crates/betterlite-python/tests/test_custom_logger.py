@@ -432,6 +432,24 @@ def helpers_report(package):
     responses_result = redacting.redact_standard_logging_payload_from_model_call_details(
         json.loads(json.dumps(responses_details)))
     s["redact_responses_api"] = responses_result["standard_logging_object"]["response"]
+    string_result = redacting.redact_standard_logging_payload_from_model_call_details(
+        json.loads(json.dumps({"standard_logging_object": {"id": "s", "response": "plain"}})))
+    string_response = string_result["standard_logging_object"]["response"]
+    s["redact_string_response"] = response_view(string_response)
+    s["redact_params_not_dict"] = redacting.redact_standard_logging_payload_from_model_call_details(
+        json.loads(json.dumps({"litellm_params": "no", "standard_logging_object": {"id": "p"}}))
+    )["litellm_params"]
+    s["redact_proxy_not_dict"] = redacting.redact_standard_logging_payload_from_model_call_details(
+        json.loads(json.dumps({"litellm_params": {"proxy_server_request": "x"},
+                               "standard_logging_object": {"id": "q"}}))
+    )["litellm_params"]
+    nested = DATA
+    for _ in range(11):
+        nested = [nested]
+    s["redact_default_depth"] = logger._redact_base64(nested)
+    s["processed_missing_content"] = logger._process_messages([{"role": "user"}])
+    s["stripped_not_list"] = asyncio.run(
+        logger._strip_base64_from_messages({"messages": "text", "model": "m"}))
     try:
         redacting.redact_standard_logging_payload_from_model_call_details(
             {"standard_logging_object": ["not-a-dict"]})
@@ -487,6 +505,14 @@ def batch_report(package):
         under = batch_cls(flush_lock=asyncio.Lock()); under.log_queue.extend([1, 2])
         under.async_send_batch = failing; await under.flush_queue()
         results["send_under_cap"] = {"queue": list(under.log_queue)}
+        exact = batch_cls(flush_lock=asyncio.Lock(), max_queue_size=3)
+        exact.log_queue.extend([1, 2, 3])
+        exact.async_send_batch = failing; await exact.flush_queue()
+        results["send_at_cap"] = {"queue": list(exact.log_queue)}
+        over = batch_cls(flush_lock=asyncio.Lock(), max_queue_size=2)
+        over.log_queue.extend([1, 2, 3])
+        over.async_send_batch = failing; await over.flush_queue()
+        results["send_over_cap_one"] = {"queue": list(over.log_queue)}
         preserving = batch_cls(flush_lock=asyncio.Lock())
         preserving.preserve_events_added_during_flush = True
         preserving.log_queue.extend(["a", "b"])
@@ -893,6 +919,12 @@ def test_logger_helper_base64(helpers_report: JsonValue) -> None:
         SMALL_NUMBER,
         {"content": "not-a-list"},
     ]
+    string_response = mapping(ours["redact_string_response"])
+    assert string_response["object"] == "chat.completion"
+    assert ours["redact_params_not_dict"] == "no"
+    assert ours["redact_proxy_not_dict"] == {"proxy_server_request": "x"}
+    assert ours["processed_missing_content"] == [{"role": "user", "content": None}]
+    assert ours["stripped_not_list"] == {"messages": "text", "model": "m"}
 
 
 def test_batch_logger_defaults(batch_report: JsonValue) -> None:
@@ -946,6 +978,8 @@ def test_batch_logger_raises(batch_report: JsonValue) -> None:
     assert mapping(shared["send_raises"])["queue"] == [4, 5]
     assert mapping(shared["send_raises"])["last_flush_time"] == ZERO
     assert mapping(shared["send_under_cap"])["queue"] == [1, 2]
+    assert mapping(shared["send_at_cap"])["queue"] == [1, 2, 3]
+    assert mapping(shared["send_over_cap_one"])["queue"] == [2, 3]
     assert shared["default_send"] is None
 
 
