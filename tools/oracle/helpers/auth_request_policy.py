@@ -158,7 +158,7 @@ def http_error(row: ClassifyRow) -> HTTPException:
     error = HTTPException(status_code=row["status_code"], detail=row["message"])
     code = row["code"]
     if code is not None:
-        error.code = code  # noqa: SLF001  # pyright: ignore[reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L53-L55
+        error.code = code  # pyright: ignore[reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L53-L55
     stamp_marker(error, row["marker"])
     return error
 
