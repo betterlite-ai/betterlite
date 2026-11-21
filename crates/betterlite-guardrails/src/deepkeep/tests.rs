@@ -16,6 +16,7 @@ use axum::routing::post;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::deepkeep_firewall::{Configured, UnreachableFallback};
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_test_ports::refused_port::RefusedPort;
 use rstest::rstest;
 use secrecy::SecretString;
 use tokio::net::TcpListener;
@@ -307,11 +308,15 @@ async fn deepkeep_guardrail_apply_honors_fail_open_when_unreachable(
     #[case] expect_pass_through: bool,
 ) {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
-    let base = format!("http://{}", listener.local_addr().expect("addr"));
-    if !timeout {
-        // connection refused once nothing is listening on the port
-        drop(listener);
-    }
+    let refused = if timeout {
+        None
+    } else {
+        Some(RefusedPort::bind().expect("a refused port"))
+    };
+    let base = match &refused {
+        Some(refused) => format!("http://{}", refused.address),
+        None => format!("http://{}", listener.local_addr().expect("addr")),
+    };
     let mut deepkeep = guardrail();
     deepkeep.settings.api_base = format!("{base}/v3/openai/beta/litellm_basic_guardrail_api");
     deepkeep.settings.unreachable_fallback = unreachable_fallback;
@@ -425,9 +430,8 @@ async fn deepkeep_guardrail_fail_open_logs_an_error_with_call_identity() {
         .with_max_level(tracing::Level::ERROR)
         .with_writer(Arc::new(fs::File::create(&log_path).expect("log file")))
         .finish();
-    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
-    let base = format!("http://{}", listener.local_addr().expect("addr"));
-    drop(listener);
+    let refused = RefusedPort::bind().expect("a refused port");
+    let base = format!("http://{}", refused.address);
     let mut deepkeep = guardrail();
     deepkeep.settings.api_base = format!("{base}/v3/openai/beta/litellm_basic_guardrail_api");
     deepkeep.settings.unreachable_fallback = UnreachableFallback::FailOpen;

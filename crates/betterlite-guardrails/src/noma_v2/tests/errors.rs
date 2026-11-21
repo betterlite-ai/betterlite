@@ -5,10 +5,11 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::noma_scan_policy::BLOCKED_MESSAGE;
+use betterlite_test_ports::refused_port::RefusedPort;
 
 use crate::support::{
-    BLOCKED_REPLY, NONE_REPLY, closed_base, data, field, guardrail, inputs, mock_noma,
-    mock_noma_after, records, request_count, request_data, scan, settings, text_field, value,
+    BLOCKED_REPLY, NONE_REPLY, data, field, guardrail, inputs, mock_noma, mock_noma_after,
+    records, request_count, request_data, scan, settings, text_field, value,
 };
 
 // Hardcoded independently of the guardrail's cap, so a mutation of that constant cannot move the boundary too.
@@ -165,8 +166,10 @@ async fn a_response_above_the_cap_fails_the_scan() {
 
 #[tokio::test]
 async fn a_transport_error_fails_the_scan() {
+    let refused = RefusedPort::bind().unwrap();
+    let base = format!("http://{}", refused.address);
     let outcome = scan(
-        &guardrail(settings(&closed_base())),
+        &guardrail(settings(&base)),
         inputs(),
         request_data(),
         GuardrailInputType::Request,
