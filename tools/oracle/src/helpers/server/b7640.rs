@@ -2,10 +2,9 @@ use betterlite_db::health_check_rows::HealthCheckRow;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
-use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use betterlite_server::health_persistence::writes::latest_by_key;
 use betterlite_server::health_persistence::{
-    AggregatedHealthResult, aggregate_results, model_param_index, should_persist,
+    AggregatedHealthResult, Deployment, aggregate_results, model_param_index, should_persist,
 };
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
@@ -207,8 +206,8 @@ fn special(text: &str) -> Result<f64, Box<HelperError>> {
     }
 }
 
-fn spec(input: &DeploymentInput) -> DeploymentSpec {
-    DeploymentSpec {
+fn spec(input: &DeploymentInput) -> Deployment {
+    Deployment {
         model_name: input.model_name.clone().unwrap_or_default(),
         litellm_params: input.litellm_params.clone(),
         model_info: input.model_info.clone(),

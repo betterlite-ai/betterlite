@@ -15,6 +15,9 @@ use writes::{elapsed_ms, endpoint_status, latest_by_key};
 
 use crate::model_deprecation::clock::UtcClock;
 
+// B401's deployment type, named here so callers outside the router's wrapper crates can build one
+pub type Deployment = DeploymentSpec;
+
 const MAX_ERROR_CHARS: usize = 500;
 // _should_persist_health_check_result's one-hour refresh: the comparison is >=, not >
 const REFRESH_INTERVAL: TimeDelta = TimeDelta::seconds(3600);
@@ -41,7 +44,7 @@ pub struct AggregatedHealthResult {
 
 // the deployments and the endpoint results of one health cycle, as _save_background_health_checks_to_db receives them
 pub struct HealthCycle<'cycle> {
-    pub deployments: &'cycle [DeploymentSpec],
+    pub deployments: &'cycle [Deployment],
     pub healthy: &'cycle [JsonObject],
     pub unhealthy: &'cycle [JsonObject],
 }
@@ -94,7 +97,7 @@ impl HealthCheckStore for HealthCheckRows {
 
 // _build_model_param_to_info_mapping: a deployment without a model string or without a model_name maps to nothing
 #[must_use]
-pub fn model_param_index(deployments: &[DeploymentSpec]) -> ModelParamIndex {
+pub fn model_param_index(deployments: &[Deployment]) -> ModelParamIndex {
     let mut index = ModelParamIndex::new();
     for deployment in deployments {
         let Some(Json::Text(param)) = deployment.litellm_params.get("model") else {
