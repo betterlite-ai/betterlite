@@ -262,9 +262,10 @@ async fn async_outcome(
     file: AudioFile<'_>,
     service: &Transcriptions<'_, Dispatch<'_>>,
 ) -> Result<Outcome, SdkHttpError> {
-    let model = match input.missing_model {
-        true => None,
-        false => Some(call.model.as_str()),
+    let model = if input.missing_model {
+        None
+    } else {
+        Some(call.model.as_str())
     };
     match service.atranscription(model, call, file, true).await {
         Ok(response) => Ok(outcome_of(&response)),
