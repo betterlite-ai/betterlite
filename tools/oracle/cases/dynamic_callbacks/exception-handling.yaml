@@ -1,0 +1,16 @@
+kind: helper
+name: dynamic-callbacks-exception-handling
+call:
+  b3053:
+    function: post_call
+    team_metadata: null
+    key_metadata:
+      priority: high
+    statuses:
+      - {code: OK, current_limit: 100, limit_remaining: 40, rate_limit_type: tokens, descriptor_key: model, descriptor_value: null}
+    hidden_params: false
+    headers:
+      x-kept: unchanged
+    probe_raises: true
+env: {}
+compare: {ignore: []}
