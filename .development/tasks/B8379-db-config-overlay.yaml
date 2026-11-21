@@ -37,7 +37,7 @@ description: >-
   pass-through endpoints (when the row's pass_through_endpoints is a list it goes through serve_pass_through_endpoints below; otherwise,
   and only when the store has no pass_through_endpoints key, publish an empty database list), the three booleans store_prompts_in_spend_logs, disable_auto_add_proxy_admin_to_teams and
   apply_user_budget_to_team_keys (coerced unless the file owns them), B8371's on_cache_size_changed, store_model_in_db
-  (coerced), B8371's on_settings_changed, and B5082's SSRF settings. The supported_db_objects gate is B8380's
+  (coerced), B8371's on_settings_changed (its job argument is B1741's cleanup_old_spend_logs run as B8370's JobFn), and B5082's SSRF settings. The supported_db_objects gate is B8380's
   should_load_db_object.
 
   Pass-through routes. This module never registers a route: it declares the port the caller fills, so it builds

@@ -22,7 +22,8 @@ description: >-
   exercising the new body variant. Tests must verify signatures with the independent OneLogin
   validator, reject expansion/DTD payloads and prove separate proxy request IDs are not mixed.
   This test-only part owns no production SAML functions: its source basis is the pin's
-  70-line signed-response fixture plus B1625's dynamic AuthnRequest contract. Budget 230
+  70-line signed-response fixture plus the redirect-binding AuthnRequest that python3-saml emits on the
+  LiteLLM side (B1625 builds the same for betterlite later; unit tests use captured fixtures). Budget 230
   driver/signing adapter, 180 tests, 100 parser/fuzz and 70 schema/typing lines within 650.
 scope:
   paths:

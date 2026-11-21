@@ -2780,6 +2780,7 @@ dependencies = [
  "betterlite-azure",
  "betterlite-config",
  "betterlite-context",
+ "betterlite-core",
  "betterlite-http",
  "betterlite-logging",
  "betterlite-models",
@@ -3025,6 +3026,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
  "betterlite-config",
+ "betterlite-core",
  "betterlite-db",
  "betterlite-env",
  "betterlite-lens",
@@ -3592,6 +3594,7 @@ name = "betterlite-oracle-rate-limit"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "axum",
  "betterlite-auth",
  "betterlite-config",
  "betterlite-core",
@@ -3761,6 +3764,7 @@ dependencies = [
  "betterlite-ocr",
  "betterlite-oracle-helper-api",
  "betterlite-oracle-runner",
+ "betterlite-policy",
  "betterlite-redact",
  "betterlite-redis",
  "betterlite-roi",

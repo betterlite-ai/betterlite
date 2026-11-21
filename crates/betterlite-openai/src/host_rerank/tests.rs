@@ -210,9 +210,7 @@ fn infinity_keeps_the_cohere_v1_projection() {
     let body = transform_request(HostProvider::Infinity, "m", &mapped).unwrap();
     assert_eq!(
         serde_json::to_value(body).unwrap(),
-        value(
-            r#"{"model":"m","query":"q","documents":["a"],"max_chunks_per_doc":2,"return_documents":true}"#
-        )
+        value(r#"{"model":"m","query":"q","documents":["a"],"max_chunks_per_doc":2}"#)
     );
     let missing = transform_request(HostProvider::Infinity, "m", &RerankParams::new());
     assert!(matches!(missing, Err(HostRerankError::Request(_))));

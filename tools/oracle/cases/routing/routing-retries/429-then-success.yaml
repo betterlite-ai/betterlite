@@ -1,0 +1,37 @@
+kind: probe
+name: routing-retries-429-then-success
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    operation:
+      routing_retries:
+        deployments: [{id: a}]
+        num_retries: 2
+        timeout: "30"
+        steps:
+          - error: {class: rate_limit, status: 429}
+          - {}
+  # a Retry-After of 5 seconds replaces the half-second backoff
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    operation:
+      routing_retries:
+        deployments: [{id: a}]
+        num_retries: 1
+        timeout: "30"
+        steps:
+          - {error: {class: rate_limit, status: 429}, retry_after: 5}
+          - {}
+  # the mock switch's 429 fails the first attempt with no provider call, and its num_retries sets the count
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    operation:
+      routing_retries:
+        deployments: [{id: a, num_retries: 1}]
+        num_retries: 0
+        mock_testing_rate_limit_error: true
+        timeout: "30"
+        steps:
+          - {}
+compare:
+  ignore: []

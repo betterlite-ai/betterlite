@@ -1,0 +1,73 @@
+kind: sdk_http
+name: assistant-dispatch-config-overlays-request
+env: {}
+call:
+  assistant_dispatch:
+    runs:
+      - operation: create_assistant
+        payload:
+          model: gpt-4o
+          name: helper
+          params: {api_base: $API_BASE, api_key: request-key}
+        config:
+          custom_llm_provider: openai
+          litellm_params: {api_key: config-key, model: gpt-4o-mini}
+      - operation: create_assistant
+        provider: azure
+        payload:
+          model: gpt-4o
+          name: helper
+          params: {api_base: $API_BASE, api_key: request-key, api_version: '2024-02-15-preview'}
+        config:
+          custom_llm_provider: openai
+          litellm_params: {api_key: config-key, model: gpt-4o-mini}
+      - operation: create_assistant
+        provider: ''
+        payload:
+          model: gpt-4o
+          params: {api_base: $API_BASE, api_key: request-key}
+        config:
+          custom_llm_provider: openai
+          litellm_params: {api_key: config-key}
+      - operation: create_assistant
+        payload:
+          model: gpt-4o
+          params: {api_base: $API_BASE, api_key: request-key}
+        config:
+          custom_llm_provider: openai
+          litellm_params: {api_key: config-key, custom_llm_provider: azure}
+      - operation: create_assistant
+        payload:
+          model: gpt-4o
+          params: {api_base: $API_BASE, api_key: request-key}
+        config:
+          custom_llm_provider: openai
+          litellm_params: {api_key: config-key, client: supplied}
+      - operation: delete_assistant
+        assistant_id: asst_a
+        payload:
+          params: {api_base: $API_BASE, api_key: request-key}
+        config:
+          custom_llm_provider: openai
+          litellm_params: {api_key: config-key, assistant_id: asst_configured}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: asst_a, object: assistant, created_at: 1, model: gpt-4o-mini, name: helper, tools: []}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: asst_a, object: assistant, created_at: 1, model: gpt-4o, name: helper, tools: []}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: asst_a, object: assistant.deleted, deleted: true}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, api-key, openai-beta]
+  ignore:
+    - pointer: /assistant_dispatch/value/results/2/failure/message
+      why: LiteLLM prefixes the mapped exception text and betterlite writes its own
+    - pointer: /assistant_dispatch/value/results/3/failure/message
+      why: the rule compares an error's class, status, type, param and code, not the interpreter's TypeError wording
+    - pointer: /assistant_dispatch/value/results/4/failure/message
+      why: the rule compares an error's class, status, type, param and code, not the interpreter's TypeError wording

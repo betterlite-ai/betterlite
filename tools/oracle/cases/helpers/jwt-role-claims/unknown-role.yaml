@@ -1,0 +1,26 @@
+kind: helper
+name: jwt-role-claims-unknown-role
+env: {}
+compare: {ignore: []}
+call:
+  jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "role_mappings": []}, "claims": {"roles": ["admin"]}, "projection": {"kind": "rbac_role"}}
+calls:
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles"}, "claims": {"roles": ["admin"]}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {"team_id_jwt_field": "team", "user_id_jwt_field": "sub"}, "settings": {"roles_jwt_field": "roles", "role_mappings": [{"role": "admin", "internal_role": "proxy_admin"}]}, "claims": {"roles": ["guest", "viewer"]}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "role_mappings": [{"role": "", "internal_role": "proxy_admin"}]}, "claims": {"roles": []}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "role_mappings": [{"role": "", "internal_role": "proxy_admin"}]}, "claims": {"roles": ""}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "role_mappings": [{"role": "", "internal_role": "proxy_admin"}]}, "claims": {"roles": 0}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "role_mappings": [{"role": "", "internal_role": "proxy_admin"}]}, "claims": {"roles": 0.0}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "role_mappings": [{"role": "", "internal_role": "proxy_admin"}]}, "claims": {"roles": false}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "role_mappings": [{"role": "", "internal_role": "proxy_admin"}]}, "claims": {"roles": {}}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "role_mappings": [{"role": "", "internal_role": "proxy_admin"}]}, "claims": {"roles": null}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "role_mappings": [{"role": "", "internal_role": "proxy_admin"}]}, "claims": {}, "projection": {"kind": "rbac_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles"}, "claims": {"roles": ["admin"]}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": []}, "claims": {"roles": ["admin"]}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "*", "litellm_role": "internal_user"}]}, "claims": {"other": ["admin"]}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "*", "litellm_role": "internal_user"}]}, "claims": {"roles": []}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"jwt_litellm_role_map": [{"jwt_role": "*", "litellm_role": "internal_user"}]}, "claims": {"roles": ["admin"]}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"roles_jwt_field": "roles", "jwt_litellm_role_map": [{"jwt_role": "admin*", "litellm_role": "proxy_admin"}, {"jwt_role": "ops", "litellm_role": "org_admin"}]}, "claims": {"roles": ["guest", "viewer"]}, "projection": {"kind": "litellm_role"}}
+  - jwt_role_claims: {"identity": {}, "settings": {"user_roles_jwt_field": "realm.roles", "user_allowed_roles": ["admin"]}, "claims": {}, "projection": {"kind": "is_allowed_user_role", "user_roles": ["guest"]}}
+  - jwt_role_claims: {"identity": {}, "settings": {"user_roles_jwt_field": "realm.roles", "user_allowed_roles": ["admin"]}, "claims": {}, "projection": {"kind": "is_allowed_user_role", "user_roles": null}}
+  - jwt_role_claims: {"identity": {}, "settings": {}, "claims": {}, "projection": {"kind": "is_allowed_user_role", "user_roles": ["admin"]}}

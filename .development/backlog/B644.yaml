@@ -2,7 +2,7 @@ id: B644
 milestone: M3 providers
 title: Bedrock S3 signed requests and object upload
 status: todo
-depends_on: [B643, B590, B591, B594, B595, B596, B235, B159, B198, B682, B2208, B002, B171, B1015]
+depends_on: [B643, B590, B591, B594, B595, B596, B235, B198, B682, B2208, B002, B171, B1015]
 file: tasks/B644-bedrock-services-s3-signing.yaml
 covers:
   - "litellm/llms/bedrock/files/transformation.py"

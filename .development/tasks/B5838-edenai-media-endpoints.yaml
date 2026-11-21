@@ -27,7 +27,7 @@ description: >-
 
   edenai_videos (videos/transformation.py), over B525 (which uses B672's id helpers). Headers: authorized_headers with the
   explicit key, else litellm_params.api_key. URL: endpoint_url(api_base, "videos"); the model plays no part. Multipart is off:
-  use_multipart_form_data is false. The create request has two paths. When input_reference is a JSON object (file_id or
+  use_multipart_form_data is false. Add the EDENAI arm to B3332's `get_provider_video_config` (crates/betterlite-core/src/api/video_selection.rs, utils.py L9690-L9725): replace its `VideoSelectionError::Unavailable { provider: "edenai" }` answer with `Ok(Some(...))` of this config, and turn B3332's edenai test from the Unavailable error into the config. The create request has two paths. When input_reference is a JSON object (file_id or
   image_url), call B525's create transform with input_reference removed from the optional params and return its data plus
   "input_reference" set to a copy of the object, with its files and URL. For any other input_reference (a string or bytes) call
   B525's create transform unchanged, so it becomes a multipart file part. The create reply is B525's reply with the
@@ -84,6 +84,8 @@ scope:
     - tools/oracle/src/helpers/openai/b5838.rs
     - tools/oracle/src/helpers/openai/b5838/**
     - tools/oracle/cases/gateway-providers/edenai-chat.yaml
+    - crates/betterlite-core/src/api/video_selection.rs
+    - crates/betterlite-core/src/api/video_selection/**
     - tools/oracle/cases/gateway-providers/edenai-embedding.yaml
     - tools/oracle/cases/helpers/gateway-provider-dispatch/edenai-speech-args.yaml
     - tools/oracle/helpers/b8311.py
