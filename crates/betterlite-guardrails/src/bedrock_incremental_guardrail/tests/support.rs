@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, VecDeque};
 use std::future::{Future, ready};
 use std::io;
 use std::io::Write;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -103,7 +104,7 @@ pub(super) fn blocking() -> Reply {
 pub(super) struct Scripted {
     replies: Mutex<VecDeque<Reply>>,
     sent: Mutex<Vec<OutboundRequest>>,
-    closed: Mutex<bool>,
+    closed: AtomicBool,
 }
 
 impl Scripted {
@@ -111,12 +112,12 @@ impl Scripted {
         Self {
             replies: Mutex::new(VecDeque::from(replies)),
             sent: Mutex::new(Vec::new()),
-            closed: Mutex::new(false),
+            closed: AtomicBool::new(false),
         }
     }
 
     pub(super) fn close(&self) {
-        *self.closed.lock().unwrap_or_else(PoisonError::into_inner) = true;
+        self.closed.store(true, Ordering::Relaxed);
     }
 
     pub(super) fn count(&self) -> usize {
@@ -142,7 +143,7 @@ impl GuardrailTransport for Scripted {
         &self,
         request: OutboundRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
-        if *self.closed.lock().unwrap_or_else(PoisonError::into_inner) {
+        if self.closed.load(Ordering::Relaxed) {
             return ready(Err(TransportError::Closed));
         }
         let reply = {
