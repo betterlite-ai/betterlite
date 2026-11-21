@@ -75,7 +75,7 @@ pub(super) struct Scripted {
 
 #[async_trait]
 impl AgenticCallback for Scripted {
-    fn callback_name(&self) -> &str {
+    fn callback_name(&self) -> &'static str {
         "scripted"
     }
 

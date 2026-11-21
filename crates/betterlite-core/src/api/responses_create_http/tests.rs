@@ -350,25 +350,8 @@ async fn create_stream_and_fake_selection(#[case] scenario: StreamScenario) {
 async fn check_stream(scenario: StreamScenario, outcome: CreateOutcome, wire: &Wire) {
     let sent = wire.requests();
     match scenario.expect {
-        StreamExpect::Live => {
-            assert!(sent[0].stream);
-            assert_eq!(
-                body_map(&sent[0].body_json()).get("stream"),
-                Some(&json("true"))
-            );
-            let CreateOutcome::Live(mut live) = outcome else {
-                panic!("a streaming send returns the live iterator handoff")
-            };
-            assert_eq!(
-                collect_payloads(&mut live.source).await,
-                vec![String::from("hello"), String::from("[DONE]")]
-            );
-            assert_live_setup(&live);
-        }
-        StreamExpect::LiveGuard => {
-            assert!(matches!(outcome, CreateOutcome::Live(_)));
-            assert!(sent[0].stream);
-        }
+        StreamExpect::Live => check_live(outcome, &sent).await,
+        StreamExpect::LiveGuard => check_live_guard(&outcome, &sent),
         StreamExpect::Synthetic => check_synthetic(outcome, &sent),
         StreamExpect::Plain => {
             assert_eq!(
@@ -390,6 +373,27 @@ async fn check_stream(scenario: StreamScenario, outcome: CreateOutcome, wire: &W
             );
         }
     }
+}
+
+async fn check_live(outcome: CreateOutcome, sent: &[Sent]) {
+    assert!(sent[0].stream);
+    assert_eq!(
+        body_map(&sent[0].body_json()).get("stream"),
+        Some(&json("true"))
+    );
+    let CreateOutcome::Live(mut live) = outcome else {
+        panic!("a streaming send returns the live iterator handoff")
+    };
+    assert_eq!(
+        collect_payloads(&mut live.source).await,
+        vec![String::from("hello"), String::from("[DONE]")]
+    );
+    assert_live_setup(&live);
+}
+
+fn check_live_guard(outcome: &CreateOutcome, sent: &[Sent]) {
+    assert!(matches!(outcome, CreateOutcome::Live(_)));
+    assert!(sent[0].stream);
 }
 
 // A prepared fake stream drops the body's stream key and returns synthetic events with the request
@@ -684,67 +688,47 @@ async fn client_selection(call_params: &CreateParams, dispatcher: &Dispatcher) {
 
 // async forwards ssl_verify and shared_session to the pool and signs off the loop; sync forwards neither
 async fn shared_session(call_params: &CreateParams, dispatcher: &Dispatcher) {
-    let with_session = capture_debug();
-    let (async_source, async_config) = shared_session_run(
-        call_params,
-        dispatcher,
-        ClientKind::Asynchronous,
-        Some(SharedSession(9)),
-    )
-    .await;
-    assert_eq!(
-        async_source.creations(),
-        vec![(Some(false), Some(SharedSession(9)))]
-    );
-    assert!(async_config.off_loop_sign.load(Ordering::SeqCst));
-    assert!(async_config.off_loop_transform.load(Ordering::SeqCst));
-    assert!(
-        with_session
-            .logs
-            .take()
-            .iter()
-            .any(|line| line == "Creating HTTP client for responses API with shared_session: 9")
-    );
-    drop(with_session);
-
-    let without_session = capture_debug();
-    let (none_source, _) =
-        shared_session_run(call_params, dispatcher, ClientKind::Asynchronous, None).await;
-    assert_eq!(
-        none_source.creations(),
-        vec![(Some(false), None::<SharedSession>)]
-    );
-    assert!(
-        without_session
-            .logs
-            .take()
-            .iter()
-            .any(|line| line == "Creating HTTP client for responses API with shared_session: None")
-    );
-    drop(without_session);
-
+    assert_async_forwards_session(call_params, dispatcher, Some(SharedSession(9)), "9").await;
+    assert_async_forwards_session(call_params, dispatcher, None, "None").await;
     assert_reused_client_skips_debug(call_params, dispatcher).await;
+    assert_sync_forwards_nothing(call_params, dispatcher).await;
+}
 
-    let sync_capture = capture_debug();
-    let (sync_source, sync_config) = shared_session_run(
+async fn assert_async_forwards_session(
+    call_params: &CreateParams,
+    dispatcher: &Dispatcher,
+    session: Option<SharedSession>,
+    logged: &str,
+) {
+    let capture = capture_debug();
+    let (source, config) =
+        shared_session_run(call_params, dispatcher, ClientKind::Asynchronous, session).await;
+    assert_eq!(source.creations(), vec![(Some(false), session)]);
+    assert!(config.off_loop_sign.load(Ordering::SeqCst));
+    assert!(config.off_loop_transform.load(Ordering::SeqCst));
+    let line = format!("Creating HTTP client for responses API with shared_session: {logged}");
+    assert!(capture.logs.take().iter().any(|seen| *seen == line));
+}
+
+async fn assert_sync_forwards_nothing(call_params: &CreateParams, dispatcher: &Dispatcher) {
+    let capture = capture_debug();
+    let pooled = vec![(Some(false), None::<SharedSession>)];
+    let (source, config) = shared_session_run(
         call_params,
         dispatcher,
         ClientKind::Sync,
         Some(SharedSession(9)),
     )
     .await;
-    assert_eq!(
-        sync_source.creations(),
-        vec![(Some(false), None::<SharedSession>)]
-    );
-    assert!(!sync_config.off_loop_sign.load(Ordering::SeqCst));
-    assert!(!sync_config.off_loop_transform.load(Ordering::SeqCst));
+    assert_eq!(source.creations(), pooled);
+    assert!(!config.off_loop_sign.load(Ordering::SeqCst));
+    assert!(!config.off_loop_transform.load(Ordering::SeqCst));
     assert!(
-        !sync_capture
+        !capture
             .logs
             .take()
             .iter()
-            .any(|line| line.starts_with("Creating HTTP client for responses API"))
+            .any(|line| line.starts_with("Creating HTTP client"))
     );
 }
 

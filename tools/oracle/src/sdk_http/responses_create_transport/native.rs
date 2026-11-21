@@ -181,7 +181,7 @@ fn outcome(result: Result<CreateOutcome, CreateError>) -> Result<Outcome, SdkHtt
     }
 }
 
-fn streamed(kind: StreamKind, setup: StreamSetup, response: Option<Json>) -> Outcome {
+const fn streamed(kind: StreamKind, setup: StreamSetup, response: Option<Json>) -> Outcome {
     Outcome {
         result: None,
         failure: None,

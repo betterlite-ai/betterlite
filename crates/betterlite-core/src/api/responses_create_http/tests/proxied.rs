@@ -42,11 +42,10 @@ fn request(address: SocketAddr) -> CreateRequest {
     }
 }
 
-// A 2xx streaming send hands the body over as SSE payloads; everything else is buffered whole
+// A 2xx streaming send hands the body over as SSE payloads
 #[tokio::test]
-async fn create_proxied_send_streams_sse_and_buffers_the_rest() {
+async fn create_proxied_send_streams_sse() {
     let client = proxied_client();
-
     let streaming = serve(
         reply(
             "200 OK",
@@ -66,7 +65,12 @@ async fn create_proxied_send_streams_sse_and_buffers_the_rest() {
     assert_eq!(collect_payloads(&mut source).await, vec!["hello", "[DONE]"]);
     let seen = streaming.finish().expect("the fixture request");
     assert_eq!(seen.line, "POST /v1/responses HTTP/1.1");
+}
 
+// A non-streaming send buffers the whole reply
+#[tokio::test]
+async fn create_proxied_send_buffers_json() {
+    let client = proxied_client();
     let accepted = serve(
         reply(
             "200 OK",
@@ -86,7 +90,12 @@ async fn create_proxied_send_streams_sse_and_buffers_the_rest() {
     assert_eq!(accepted_answer.status, 200);
     assert_eq!(accepted_answer.body, br#"{"id":"resp_a"}"#.to_vec());
     accepted.finish().expect("the fixture request");
+}
 
+// A non-2xx answer is buffered even when the caller asked for a stream
+#[tokio::test]
+async fn create_proxied_send_buffers_errors() {
+    let client = proxied_client();
     let failed = serve(
         reply(
             "500 Internal Server Error",

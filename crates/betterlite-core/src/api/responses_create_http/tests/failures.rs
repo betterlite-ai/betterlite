@@ -88,9 +88,9 @@ async fn build_failure(failure: BuildFailure, call_params: &CreateParams, dispat
         panic!("the broken request fails");
     };
     match (failure, &error) {
-        (BuildFailure::Url, CreateError::RequestUrl { .. }) => {}
-        (BuildFailure::HeaderName, CreateError::HeaderName { .. }) => {}
-        (BuildFailure::HeaderValue, CreateError::HeaderValue { .. }) => {}
+        (BuildFailure::Url, CreateError::RequestUrl { .. })
+        | (BuildFailure::HeaderName, CreateError::HeaderName { .. })
+        | (BuildFailure::HeaderValue, CreateError::HeaderValue { .. }) => {}
         (BuildFailure::Url | BuildFailure::HeaderName | BuildFailure::HeaderValue, other) => {
             panic!("the failure is a request-build error: {other:?}");
         }
