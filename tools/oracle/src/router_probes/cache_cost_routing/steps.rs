@@ -46,14 +46,14 @@ pub(super) async fn run(input: &Input) -> Result<Output, OperationError> {
         })
         .await;
     let calls = chooser.calls.load(Ordering::SeqCst);
-    let call = chooser
+    let recorded = chooser
         .seen
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .clone();
     Ok(Output {
         calls,
-        call,
+        call: recorded,
         response: applied.map(output),
     })
 }
