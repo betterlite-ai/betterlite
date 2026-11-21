@@ -60,21 +60,6 @@ class Call(TypedDict):
     scenarios: list[Scenario]
 
 
-class PreCallView(TypedDict):
-    should_proceed: bool
-    modified_arguments: dict[str, JsonValue] | None
-    error_message: str | None
-
-
-class DuringCallView(TypedDict):
-    should_continue: bool
-    error_message: str | None
-
-
-PRE_VIEW: Final = TypeAdapter(PreCallView)
-DURING_VIEW: Final = TypeAdapter(DuringCallView)
-
-
 def run(input_value: Call) -> JsonValue:
     proxy = ProxyLogging(user_api_key_cache=UserApiKeyCache())
     return [scenario_answer(proxy, scenario) for scenario in input_value["scenarios"]]
@@ -84,10 +69,8 @@ def scenario_answer(proxy: ProxyLogging, scenario: Scenario) -> JsonValue:
     match scenario["function"]:
         case "to_llm":
             return to_llm_answer(proxy, scenario)
-        case "pre_call":
-            return pre_call_answer(proxy, scenario)
-        case "during_call":
-            return during_call_answer(proxy, scenario)
+        case "pre_call" | "during_call":
+            return hook_answer(proxy, scenario)
 
 
 def to_llm_answer(proxy: ProxyLogging, scenario: ToLlmScenario) -> JsonValue:
@@ -104,32 +87,23 @@ def to_llm_answer(proxy: ProxyLogging, scenario: ToLlmScenario) -> JsonValue:
     return OBJECT.validate_python(TO_LLM(proxy, request, kwargs))
 
 
-def pre_call_answer(proxy: ProxyLogging, scenario: PreCallScenario) -> JsonValue:
-    request = MCPPreCallRequestObject(
-        tool_name=scenario["request"]["tool_name"],
-        arguments=scenario["request"]["arguments"],
-    )
-    response = PRE_CALL(proxy, llm_result(scenario["result"]), request)
+def hook_answer(proxy: ProxyLogging, scenario: PreCallScenario | DuringCallScenario) -> JsonValue:
+    result = llm_result(scenario["result"])
+    tool_name = scenario["request"]["tool_name"]
+    arguments = scenario["request"]["arguments"]
+    response: MCPPreCallResponseObject | MCPDuringCallResponseObject | None
+    match scenario["function"]:
+        case "pre_call":
+            pre_request = MCPPreCallRequestObject(tool_name=tool_name, arguments=arguments)
+            response = PRE_CALL(proxy, result, pre_request)
+            shown = {"should_proceed", "modified_arguments", "error_message"}
+        case "during_call":
+            during_request = MCPDuringCallRequestObject(tool_name=tool_name, arguments=arguments)
+            response = DURING_CALL(proxy, result, during_request)
+            shown = {"should_continue", "error_message"}
     if response is None:
         return None
-    view = PRE_VIEW.validate_json(response.model_dump_json())
-    return {
-        "should_proceed": view["should_proceed"],
-        "modified_arguments": view["modified_arguments"],
-        "error_message": view["error_message"],
-    }
-
-
-def during_call_answer(proxy: ProxyLogging, scenario: DuringCallScenario) -> JsonValue:
-    request = MCPDuringCallRequestObject(
-        tool_name=scenario["request"]["tool_name"],
-        arguments=scenario["request"]["arguments"],
-    )
-    response = DURING_CALL(proxy, llm_result(scenario["result"]), request)
-    if response is None:
-        return None
-    view = DURING_VIEW.validate_json(response.model_dump_json())
-    return {"should_continue": view["should_continue"], "error_message": view["error_message"]}
+    return OBJECT.validate_json(response.model_dump_json(include=shown))
 
 
 def llm_result(outcome: Outcome) -> LlmResult:
