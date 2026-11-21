@@ -1,14 +1,14 @@
 id: B3275
 milestone: M5 api families
 title: Search tool management and connection routes
-status: todo
+status: done
 depends_on: [B003, B2202, B3270, B3271, B3272, B3684, B732, B737, B749, B10013]
 file: tasks/B3275-search-tool-routes.yaml
 covers:
   - "litellm/proxy/search_endpoints/search_tool_management.py"
 parent: B091
 split_from: B091
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2873
