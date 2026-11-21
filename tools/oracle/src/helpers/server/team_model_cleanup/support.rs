@@ -55,7 +55,7 @@ impl AliasRows for FakeStore {
             .clone())
     }
 
-    async fn save_aliases(&self, id: i64, aliases: &AliasMap) -> Result<(), CleanupError> {
+    async fn save_aliases(&self, id: i32, aliases: &AliasMap) -> Result<(), CleanupError> {
         for row in self
             .aliases
             .lock()
