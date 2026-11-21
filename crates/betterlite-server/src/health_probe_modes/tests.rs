@@ -462,7 +462,8 @@ async fn batch_other_providers_send_the_full_chat_call(#[case] provider: &str) {
 async fn batch_updates_the_logging_object_before_the_call() {
     let backend = FakeBackend::new();
     let logging = Arc::new(FakeLogging::new(backend.events(), false));
-    let entries = r#"{"model":"m","api_base":"https://api.test","messages":[]}"#;
+    let entries =
+        r#"{"model":"m","api_base":"https://api.test","messages":[],"api_key":"sk-test"}"#;
     let params = probe_params_from_json(entries);
     run_mode(
         "batch",
@@ -484,6 +485,7 @@ async fn batch_updates_the_logging_object_before_the_call() {
     let api_base = Json::Text("https://api.test".to_owned());
     assert_eq!(update.kwargs.get("api_base"), Some(&api_base));
     assert!(!update.kwargs.contains_key("messages"));
+    assert!(!update.kwargs.contains_key("api_key"));
     let litellm_params = update.litellm_params.as_ref().unwrap();
     assert_eq!(litellm_params.get("api_base"), Some(&api_base));
     assert!(backend.take_batch().logging.is_some());
