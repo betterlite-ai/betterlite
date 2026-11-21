@@ -45,14 +45,13 @@ use super::{
     MetadataPrincipal, MetadataSafetySettings, RequestMetadataSafetyInput,
     sanitize_request_metadata,
 };
-use crate::api::api_boundaries::ApiLimits;
 use crate::api::request_destination::RequestData;
 
-fn text(value: &str) -> Json {
+pub(super) fn text(value: &str) -> Json {
     Json::Text(value.to_owned())
 }
 
-fn object(entries: Vec<(&str, Json)>) -> Json {
+pub(super) fn object(entries: Vec<(&str, Json)>) -> Json {
     Json::Object(
         entries
             .into_iter()
@@ -61,14 +60,14 @@ fn object(entries: Vec<(&str, Json)>) -> Json {
     )
 }
 
-fn body(entries: Vec<(&str, Json)>) -> RequestData {
+pub(super) fn body(entries: Vec<(&str, Json)>) -> RequestData {
     entries
         .into_iter()
         .map(|(key, value)| (key.to_owned(), value))
         .collect()
 }
 
-fn field<'data>(data: &'data RequestData, name: &str) -> &'data IndexMap<String, Json> {
+pub(super) fn field<'data>(data: &'data RequestData, name: &str) -> &'data IndexMap<String, Json> {
     match data.get(name) {
         Some(Json::Object(values)) => values,
         None
@@ -78,14 +77,14 @@ fn field<'data>(data: &'data RequestData, name: &str) -> &'data IndexMap<String,
     }
 }
 
-fn settings() -> MetadataSafetySettings {
+pub(super) fn settings() -> MetadataSafetySettings {
     MetadataSafetySettings {
         turn_off_message_logging: true,
         ..MetadataSafetySettings::default()
     }
 }
 
-fn input(data: RequestData, route: &str) -> RequestMetadataSafetyInput {
+pub(super) fn input(data: RequestData, route: &str) -> RequestMetadataSafetyInput {
     RequestMetadataSafetyInput {
         data,
         headers: IndexMap::new(),
@@ -225,43 +224,6 @@ fn forged_control_stripped() {
         Some(&text("value"))
     );
     assert_strip_diagnostics(&messages(&logs));
-}
-
-#[test]
-fn true_redaction_opt_outs_are_kept() {
-    let data = body(vec![
-        ("turn_off_message_logging", Json::Bool(true)),
-        (
-            "metadata",
-            object(vec![("turn_off_message_logging", Json::Bool(true))]),
-        ),
-    ]);
-    let result = sanitize_request_metadata(&input(data, "/v1/chat/completions"), &settings())
-        .expect("the slots are objects");
-    assert_eq!(
-        result.data.get("turn_off_message_logging"),
-        Some(&Json::Bool(true))
-    );
-    assert_eq!(
-        field(&result.data, "metadata").get("turn_off_message_logging"),
-        Some(&Json::Bool(true))
-    );
-}
-
-#[test]
-fn metadata_string_length_boundary() {
-    let bounded = MetadataSafetySettings {
-        limits: ApiLimits {
-            max_json_bytes: 10,
-            ..ApiLimits::default()
-        },
-        ..settings()
-    };
-    for (raw, accepted) in [("{\"a\":\"bc\"}", true), ("{\"a\":\"bcd\"}", false)] {
-        let data = body(vec![("metadata", text(raw))]);
-        let outcome = sanitize_request_metadata(&input(data, "/v1/chat/completions"), &bounded);
-        assert_eq!(outcome.is_ok(), accepted);
-    }
 }
 
 fn assert_pricing_stripped(data: &RequestData) {
@@ -690,26 +652,6 @@ fn missing_session_id_omit_stage() {
     );
     assert_eq!(slot.get("session_id"), Some(&text("body-session")));
     assert!(!field(&data, "metadata").contains_key("litellm_session_id_omitted"));
-}
-
-#[test]
-fn null_slot_session_still_copies_the_body_session() {
-    let mut data = body(vec![
-        ("litellm_session_id", text("body-session")),
-        ("metadata", object(vec![])),
-        ("litellm_metadata", object(vec![("session_id", Json::Null)])),
-    ]);
-    let policy = MissingSessionIdPolicy::Omit;
-    apply_missing_session_id_policy(
-        &mut data,
-        MetadataField::LitellmMetadata,
-        Some(&policy),
-        true,
-    );
-    assert_eq!(
-        field(&data, "litellm_metadata").get("session_id"),
-        Some(&text("body-session"))
-    );
 }
 
 #[derive(Clone, Copy, Debug)]

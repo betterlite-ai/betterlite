@@ -8,6 +8,7 @@ pub mod snapshot;
 pub mod strip;
 
 mod tests;
+mod tests_boundaries;
 
 use betterlite_config::sections::request_metadata_safety::MissingSessionIdPolicy;
 use betterlite_models::decisions::Json;
