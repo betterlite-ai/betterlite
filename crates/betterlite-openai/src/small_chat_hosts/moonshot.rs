@@ -8,7 +8,9 @@ use thiserror::Error;
 use crate::chat::{ChatMessage, MessageContent, Role};
 use crate::chat_content::{ChatContent, ChatContentError, Mode, UrlDownloader};
 use crate::edenai_chat::ReasoningLookup;
-use crate::openai_base_config::CatalogCapabilities;
+use crate::openai_base_config::{
+    CatalogCapabilities, ConfigFamily, Headers, OpenAiConfig, OpenAiSettings,
+};
 
 pub const PROVIDER: &str = "moonshot";
 
@@ -81,11 +83,16 @@ where
     } else {
         &FUNCTIONS_EXCLUDED
     };
-    let mut params: Vec<&'static str> = super::openai_parent()
-        .supported_params(model, catalog)
-        .into_iter()
-        .filter(|param| !excluded.contains(param))
-        .collect();
+    let mut params: Vec<&'static str> = OpenAiConfig {
+        family: ConfigFamily::Other,
+        api_key: None,
+        headers: Headers::new(),
+        settings: OpenAiSettings::default(),
+    }
+    .supported_params(model, catalog)
+    .into_iter()
+    .filter(|param| !excluded.contains(param))
+    .collect();
     if lookup.supports_reasoning(model).unwrap_or(false) {
         params.push(REASONING_EFFORT);
     }

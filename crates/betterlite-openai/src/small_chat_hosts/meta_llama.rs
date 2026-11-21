@@ -1,21 +1,16 @@
 use serde_json::Value;
 
-use crate::openai_base_config::{CatalogCapabilities, Object};
+use crate::openai_base_config::{
+    CatalogCapabilities, ConfigFamily, Headers, Object, OpenAiConfig, OpenAiSettings,
+};
 
 const RESPONSE_FORMAT: &str = "response_format";
 
-// LlamaAPIConfig redefines only these two methods; the rest is OpenAIGPTConfig
+// LlamaAPIConfig redefines only the mapping; the supported list is OpenAIGPTConfig's
 #[derive(Debug, Clone, Copy, Default)]
 pub struct LlamaAPIConfig;
 
 impl LlamaAPIConfig {
-    // the OpenAI list, unchanged
-    #[must_use]
-    // ast-grep-ignore: no-one-line-functions - the config API fixes this name and the parent list is the whole body
-    pub fn supported_params(model: &str, catalog: &CatalogCapabilities) -> Vec<&'static str> {
-        super::openai_parent().supported_params(model, catalog)
-    }
-
     // the parent's mapping, then response_format goes unless its type is json_schema
     pub fn map_openai_params(
         non_default_params: &Object,
@@ -23,7 +18,13 @@ impl LlamaAPIConfig {
         model: &str,
         catalog: &CatalogCapabilities,
     ) {
-        super::openai_parent().map_params(model, non_default_params, optional_params, catalog);
+        OpenAiConfig {
+            family: ConfigFamily::Other,
+            api_key: None,
+            headers: Headers::new(),
+            settings: OpenAiSettings::default(),
+        }
+        .map_params(model, non_default_params, optional_params, catalog);
         if response_format_is_json_schema(optional_params) {
             return;
         }

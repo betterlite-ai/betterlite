@@ -1,14 +1,16 @@
 use std::collections::BTreeMap;
 
 use betterlite_openai::chat_content::{Mode, RefuseDownloads};
-use betterlite_openai::openai_base_config::{CatalogCapabilities, Headers, Object as WireObject};
+use betterlite_openai::openai_base_config::{
+    CatalogCapabilities, ConfigFamily, Headers, Object as WireObject, OpenAiConfig, OpenAiSettings,
+};
 use betterlite_openai::small_chat_hosts::CompletionTokenRename::Keep;
 use betterlite_openai::small_chat_hosts::meta_llama::LlamaAPIConfig;
 use betterlite_openai::small_chat_hosts::nebius::NebiusConfig;
 use betterlite_openai::small_chat_hosts::wandb::WandbConfig;
 use betterlite_openai::small_chat_hosts::zai::ZaiChatConfig;
 use betterlite_openai::small_chat_hosts::{
-    map_supported, maritalk, moonshot, morph, nadir, novita, nscale, openai_parent, v0,
+    map_supported, maritalk, moonshot, morph, nadir, novita, nscale, v0,
 };
 use betterlite_prompts::arguments::json::Object;
 use secrecy::SecretString;
@@ -58,12 +60,16 @@ fn supported_list(
     let lookup = Lookup(reasoning);
     match provider {
         Provider::Maritalk => maritalk::MaritalkConfig::supported_params(),
-        Provider::Llama => LlamaAPIConfig::supported_params(model, catalog),
+        Provider::Llama | Provider::Nebius | Provider::Novita => OpenAiConfig {
+            family: ConfigFamily::Other,
+            api_key: None,
+            headers: Headers::new(),
+            settings: OpenAiSettings::default(),
+        }
+        .supported_params(model, catalog),
         Provider::Moonshot => moonshot::supported_params(&lookup, model, catalog),
         Provider::Morph => morph::MorphChatConfig::supported_params(model),
         Provider::Nadir => nadir::NadirConfig::supported_params(),
-        Provider::Nebius => NebiusConfig::supported_params(model, catalog),
-        Provider::Novita => openai_parent().supported_params(model, catalog),
         Provider::Nscale => nscale::NscaleConfig::supported_params(model),
         Provider::V0 => v0::V0ChatConfig::supported_params(model),
         Provider::Wandb => WandbConfig::supported_params(&lookup, model, catalog),

@@ -1,7 +1,9 @@
 use betterlite_prompts::arguments::json::Object;
 
 use crate::edenai_chat::ReasoningLookup;
-use crate::openai_base_config::CatalogCapabilities;
+use crate::openai_base_config::{
+    CatalogCapabilities, ConfigFamily, Headers, OpenAiConfig, OpenAiSettings,
+};
 
 const REASONING_EFFORT: &str = "reasoning_effort";
 
@@ -19,7 +21,13 @@ impl WandbConfig {
     where
         Lookup: ReasoningLookup,
     {
-        let mut params = super::openai_parent().supported_params(model, catalog);
+        let mut params = OpenAiConfig {
+            family: ConfigFamily::Other,
+            api_key: None,
+            headers: Headers::new(),
+            settings: OpenAiSettings::default(),
+        }
+        .supported_params(model, catalog);
         if lookup.supports_reasoning(model).unwrap_or(false) {
             params.push(REASONING_EFFORT);
         }

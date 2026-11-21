@@ -15,19 +15,6 @@ mod tests;
 use betterlite_prompts::arguments::json::{Json, Object};
 use serde_json::Value;
 
-use crate::openai_base_config::{ConfigFamily, Headers, OpenAiConfig, OpenAiSettings};
-
-// every host here extends OpenAIGPTConfig, so ConfigFamily::Other keeps its list and no reasoning_effort
-#[must_use]
-pub fn openai_parent() -> OpenAiConfig {
-    OpenAiConfig {
-        family: ConfigFamily::Other,
-        api_key: None,
-        headers: Headers::new(),
-        settings: OpenAiSettings::default(),
-    }
-}
-
 // LiteLLM's inherited mapping copies a supported param; Nebius and Wandb also rename the token count
 #[derive(Debug, Clone, Copy)]
 pub enum CompletionTokenRename {
