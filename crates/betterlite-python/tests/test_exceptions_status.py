@@ -20,6 +20,7 @@ _MODEL: Final[str] = "gpt-4o"
 _PROVIDER: Final[str] = "openai"
 _DEBUG: Final[str] = "model=gpt-4o, provider=openai"
 _HEADERS: Final[dict[str, str]] = {"x-request-id": "req_1", "retry-after": "3"}
+_MIXED_HEADERS: Final[dict[str, str]] = {"X-Request-ID": "req_5", "Retry-After": "5"}
 _BODY: Final[dict[str, JsonValue]] = {
     "code": "bad_code",
     "param": "messages",
@@ -40,6 +41,16 @@ _OUR_RESPONSE: Final[OurResponse] = OurResponse(
     status_code=429,
     request=OurRequest(method="POST", url="https://api.openai.com/v1"),
     headers=_HEADERS,
+)
+_THEIR_MIXED: Final[httpx.Response] = httpx.Response(
+    status_code=429,
+    headers=_MIXED_HEADERS,
+    request=httpx.Request(method="POST", url="https://api.openai.com/v1"),
+)
+_OUR_MIXED: Final[OurResponse] = OurResponse(
+    status_code=429,
+    request=OurRequest(method="POST", url="https://api.openai.com/v1"),
+    headers=_MIXED_HEADERS,
 )
 _THEIR_BARE: Final[httpx.Response] = httpx.Response(status_code=429)
 _OUR_BARE: Final[OurResponse] = OurResponse(status_code=429)
@@ -130,6 +141,21 @@ _CASES = [
             num_retries=2,
         ),
         id="authentication-response",
+    ),
+    pytest.param(
+        their_errors.AuthenticationError(
+            message=_MESSAGE,
+            llm_provider=_PROVIDER,
+            model=_MODEL,
+            response=_THEIR_MIXED,
+        ),
+        our_errors.AuthenticationError(
+            message=_MESSAGE,
+            llm_provider=_PROVIDER,
+            model=_MODEL,
+            response=_OUR_MIXED,
+        ),
+        id="authentication-mixed-headers",
     ),
     pytest.param(
         their_errors.NotFoundError(message=_MESSAGE, model=_MODEL, llm_provider=_PROVIDER),
