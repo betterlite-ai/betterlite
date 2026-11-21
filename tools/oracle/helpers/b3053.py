@@ -218,7 +218,13 @@ async def log_success_run(call: LogSuccessJson, handler: DynamicHandler) -> None
     proxy_server.general_settings = {"token_rate_limit_type": call["rate_limit_type"]}
     litellm.priority_reservation = call["priority_reservation"]
     usage_input = call["usage"]
-    usage_value = None if usage_input is None else Usage.model_validate(usage_input)
+    usage_value: Usage | None = None
+    if usage_input is not None:
+        usage_value = Usage(
+            prompt_tokens=usage_input["prompt_tokens"],
+            completion_tokens=usage_input["completion_tokens"],
+            total_tokens=usage_input["total_tokens"],
+        )
     response = ModelResponse(usage=usage_value)
     await handler.async_log_success_event(success_kwargs(call), response, 0.0, 0.0)
 
