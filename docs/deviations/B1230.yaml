@@ -22,6 +22,17 @@ deviations:
       reads it as empty rather than failing the delete.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L1900
   - what: >-
+      The alias scan, the sibling deployment read and the team models read all take the writer
+      connection, while LiteLLM reads the same rows through prisma_client.db, whose find_many and
+      find_unique route to the read replica when DATABASE_URL_READ_REPLICA is configured
+      (model_management_endpoints.py L1751, L1894 and L2325).
+    why: >-
+      The cleanup decides which names to keep from the rows it just read, so a lagging replica
+      could make it keep a name the writer has dropped or drop one the writer still backs; the
+      reads test hands the store a reader that cannot connect and proves all three reads still
+      answer from the writer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L1751
+  - what: >-
       The team row the models update returns carries the team columns only, so the cache entry refreshed from
       it holds no object_permission relation, while LiteLLM's update includes object_permission and caches the
       relation with the team.
