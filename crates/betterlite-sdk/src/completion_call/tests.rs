@@ -291,7 +291,7 @@ async fn target_responses_bridge_reaches_the_responses_entry() {
 
 #[tokio::test]
 async fn fallback_tries_the_original_each_entry_and_keeps_overrides() {
-    let target = RecordingTarget::failing_then_ok(1);
+    let target = RecordingTarget::failing_then_ok(2);
     let args = args_from(&format!(r#"{{"model":"gpt-4o","messages":[{USER}]}}"#));
     let call = FallbackCall {
         fallbacks: vec![
@@ -302,20 +302,21 @@ async fn fallback_tries_the_original_each_entry_and_keeps_overrides() {
     };
     let outcome = run_fallbacks(&target, call, None).await.unwrap();
     let calls = target.call_map();
-    assert_eq!(calls.len(), 2);
+    assert_eq!(calls.len(), 3);
     assert_eq!(text_of(calls[0].get("model")), Some("gpt-4o"));
-    assert_eq!(text_of(calls[1].get("model")), Some("claude"));
+    assert_eq!(text_of(calls[1].get("model")), Some("gpt-3.5-turbo"));
+    assert_eq!(text_of(calls[2].get("model")), Some("claude"));
     assert_eq!(
-        text_of(calls[1].get("api_base")),
+        text_of(calls[2].get("api_base")),
         Some("https://claude.test")
     );
     assert_eq!(
         text_of(calls[0].get("litellm_call_id")),
-        text_of(calls[1].get("litellm_call_id"))
+        text_of(calls[2].get("litellm_call_id"))
     );
     assert!(text_of(calls[0].get("litellm_call_id")).is_some());
     let Some(answer) = body_text(&outcome) else {
-        panic!("the second attempt answers");
+        panic!("the third attempt answers");
     };
     let attempt = dig(
         answer,
@@ -325,7 +326,7 @@ async fn fallback_tries_the_original_each_entry_and_keeps_overrides() {
             "x-litellm-attempted-fallbacks",
         ],
     );
-    assert!(matches!(attempt, Some(Json::Number(number)) if number.as_u64() == Some(1)));
+    assert!(matches!(attempt, Some(Json::Number(number)) if number.as_u64() == Some(2)));
 }
 
 #[tokio::test]
@@ -524,7 +525,11 @@ async fn retry_defaults_to_three_attempts_and_zeroes_inner_retries() {
     assert!(zero_retries(attempts[2].get("num_retries")));
     assert!(zero_retries(attempts[2].get("max_retries")));
     assert_eq!(error.to_string(), "first down");
-    assert!(sleeper.slept().is_empty(), "constant retry waits nothing");
+    assert_eq!(
+        sleeper.slept(),
+        vec![Duration::ZERO, Duration::ZERO],
+        "constant retry waits nothing"
+    );
 }
 
 #[tokio::test]
@@ -701,7 +706,9 @@ async fn probe_complete_calls_the_completion_target() {
     assert_eq!(seen[0].model.as_deref(), Some("gpt-4o"));
     assert_eq!(seen[0].max_tokens, Some(10));
     assert!(seen[0].body.contains(r#""content":"Hello World""#));
-    assert!(seen[0].body.contains("probe-key"));
+    let lookups = support::lock(&harness.metadata.lookups).clone();
+    assert_eq!(lookups.len(), 1);
+    assert_eq!(lookups[0].api_key.as_deref(), Some("probe-key"));
 }
 
 // ---- bridge_facts_ ----
@@ -728,13 +735,19 @@ fn bridge_facts_answers_model_info_and_unknown_models() {
     let foundry = FakeFoundry::default();
     let facts_bridge = bridge(&facts, &foundry);
     assert_eq!(facts_bridge.model_info("gpt-5", "openai").unwrap(), info);
+    let unknown = FakeFacts::default();
+    let unknown_bridge = bridge(&unknown, &foundry);
     assert!(matches!(
-        facts_bridge.model_info("other", "openai"),
+        unknown_bridge.model_info("other", "openai"),
         Err(ModelInfoError::Unknown { model }) if model == "other"
     ));
     assert_eq!(
         support::lock(&facts.seen).clone(),
         vec![String::from("gpt-5")]
+    );
+    assert_eq!(
+        support::lock(&unknown.seen).clone(),
+        vec![String::from("other")]
     );
 }
 

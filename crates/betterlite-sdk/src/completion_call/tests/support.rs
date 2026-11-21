@@ -175,6 +175,7 @@ pub(super) fn deployment_named(model_id: &str) -> ChatDeployment {
 pub(super) struct Lookup {
     pub model: String,
     pub api_base: Option<String>,
+    pub api_key: Option<String>,
 }
 
 #[derive(Default)]
@@ -227,6 +228,7 @@ impl ModelMetadata for FakeMetadata {
         lock(&self.lookups).push(Lookup {
             model: request.model.to_owned(),
             api_base: request.api_base.map(str::to_owned),
+            api_key: request.api_key.map(|key| key.expose_secret().to_owned()),
         });
         Ok(ResolvedModel {
             model: self
@@ -877,7 +879,11 @@ impl Harness {
             timeout: FakeTimeout,
             chat,
             dispatch: Arc::new(Dispatch::new(
-                vec![deployment(), deployment_named("empty-model")],
+                vec![
+                    deployment(),
+                    deployment_named("empty-model"),
+                    deployment_named("gpt-4o-mini"),
+                ],
                 Arc::new(NoRules),
                 Arc::new(TracingCallLog),
             )),
