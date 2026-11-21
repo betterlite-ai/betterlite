@@ -45,7 +45,7 @@ pub(super) fn assistant_config(
 pub(super) fn data(call: &OperationCall, api_base: &str) -> BTreeMap<String, Json> {
     let payload = &call.payload;
     let mut data = payload.params.clone();
-    for (name, value) in [
+    for (name, field) in [
         ("assistant_id", &payload.assistant_id),
         ("model", &payload.model),
         ("name", &payload.name),
@@ -53,11 +53,11 @@ pub(super) fn data(call: &OperationCall, api_base: &str) -> BTreeMap<String, Jso
         ("instructions", &payload.instructions),
         ("additional_instructions", &payload.additional_instructions),
     ] {
-        if let Some(value) = value {
+        if let Some(value) = field {
             data.insert(name.to_owned(), Json::Text(value.clone()));
         }
     }
-    for (name, value) in [
+    for (name, field) in [
         ("content", &payload.content),
         ("attachments", &payload.attachments),
         ("messages", &payload.messages),
@@ -66,7 +66,7 @@ pub(super) fn data(call: &OperationCall, api_base: &str) -> BTreeMap<String, Jso
         ("stream", &payload.stream),
         ("tools", &payload.tools),
     ] {
-        if let Some(value) = value {
+        if let Some(value) = field {
             data.insert(name.to_owned(), value.clone());
         }
     }
