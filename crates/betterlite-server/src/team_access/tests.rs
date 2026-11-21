@@ -295,7 +295,7 @@ fn unknown_permission_error() {
     let error = member_permissions(&base).unwrap_err();
     assert!(matches!(&error, TeamAccessError::UnknownPermission { value } if value == "/key/*"));
     assert_eq!(error.status(), None);
-    assert!(member_route_allowed(Some(&MemberRole::User), &base, "/key/generate").is_err());
+    member_route_allowed(Some(&MemberRole::User), &base, "/key/generate").unwrap_err();
 }
 
 // a string where LiteLLM's model declares list[str] | None fails decoding, so the isinstance fallback can't be reached
@@ -382,7 +382,7 @@ fn proxy_group_bypass() {
     let groups = ["group-1".to_owned()];
     enforce_group_assignment(&proxy, None, Some(&groups)).unwrap();
     let viewer = caller(Some("outsider"), Some(UserRole::ProxyAdminViewer));
-    assert!(enforce_group_assignment(&viewer, None, Some(&groups)).is_err());
+    enforce_group_assignment(&viewer, None, Some(&groups)).unwrap_err();
 }
 
 #[test]
