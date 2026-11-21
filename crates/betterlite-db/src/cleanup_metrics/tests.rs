@@ -244,8 +244,8 @@ fn run_outcome_labels_are_the_litellm_literals() {
         RunOutcome::SkippedDisabled,
         RunOutcome::Aborted,
     ]
-    .iter()
-    .map(|outcome| outcome.as_str())
+    .into_iter()
+    .map(RunOutcome::as_str)
     .collect();
     assert_eq!(
         labels,

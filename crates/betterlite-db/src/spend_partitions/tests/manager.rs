@@ -35,8 +35,8 @@ fn day(year: i32, month: u32, day: u32) -> NaiveDate {
     NaiveDate::from_ymd_opt(year, month, day).expect("a calendar date")
 }
 
-fn midnight_utc(year: i32, month: u32, day: u32) -> DateTime<Utc> {
-    day(year, month, day)
+fn midnight_utc(year: i32, month: u32, day_of_month: u32) -> DateTime<Utc> {
+    day(year, month, day_of_month)
         .and_hms_opt(0, 0, 0)
         .expect("midnight")
         .and_utc()
