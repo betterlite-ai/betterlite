@@ -112,7 +112,7 @@ impl Service<Request<Body>> for Handler {
             if let Some(waiting) = barrier {
                 waiting.wait().await;
             }
-            let label = stamped.map_or_else(|| "none".to_owned(), u32::to_string);
+            let label = stamped.map_or_else(|| "none".to_owned(), |id| id.to_string());
             events
                 .lock()
                 .unwrap()
