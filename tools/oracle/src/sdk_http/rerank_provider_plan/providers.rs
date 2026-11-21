@@ -134,7 +134,14 @@ where
             provider,
             "BaseLLMException",
         )),
-        other => Box::new(value_failure(&other.to_string(), model, provider)),
+        other @ (RerankHttpError::Config(_)
+        | RerankHttpError::Client(_)
+        | RerankHttpError::Logging(_)
+        | RerankHttpError::RequestUrl { .. }
+        | RerankHttpError::HeaderName { .. }
+        | RerankHttpError::HeaderValue { .. }) => {
+            Box::new(value_failure(&other.to_string(), model, provider))
+        }
     }
 }
 fn timeout_seconds(value: Option<f64>) -> Option<Duration> {
