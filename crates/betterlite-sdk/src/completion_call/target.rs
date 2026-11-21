@@ -25,7 +25,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::chat::MockSettings;
 use betterlite_redact::secret::Redactor;
 use futures_util::StreamExt as _;
-use futures_util::stream;
+use futures_util::stream::FuturesUnordered;
 use serde::de::DeserializeOwned;
 use std::sync::Arc;
 pub(crate) const MAX_MODEL_LIST_DEPLOYMENTS: usize = 100;
@@ -147,25 +147,26 @@ impl CompletionTarget<'_> {
         }
         let mut base = request::args_to_map(&call.args)?;
         base.shift_remove("model_list");
-        let mut requests = Vec::with_capacity(deployment_count);
-        for entry in &call.deployments {
+        let mut entries = call.deployments.into_iter();
+        let mut attempts = FuturesUnordered::new();
+        for entry in entries.by_ref().take(MODEL_LIST_CONCURRENCY) {
             for (name, value) in entry {
-                base.insert(name.clone(), value.clone());
+                base.insert(name, value);
             }
-            requests.push(base.clone());
+            attempts.push(self.call(base.clone(), logging));
         }
-        let mut attempts = stream::iter(
-            requests
-                .into_iter()
-                .map(|attempt| self.call(attempt, logging)),
-        )
-        .buffer_unordered(MODEL_LIST_CONCURRENCY);
         let mut last_failure: Option<CompletionCallError> = None;
         while let Some(result) = attempts.next().await {
             match result {
                 Ok(outcome) if matches!(&outcome, CallOutcome::Response(Json::Null)) => {}
                 Ok(outcome) => return Ok(outcome),
                 Err(error) => last_failure = Some(CompletionCallError::Call(error)),
+            }
+            if let Some(entry) = entries.next() {
+                for (name, value) in entry {
+                    base.insert(name, value);
+                }
+                attempts.push(self.call(base.clone(), logging));
             }
         }
         Err(last_failure.unwrap_or(CompletionCallError::NoModelListAnswer))
