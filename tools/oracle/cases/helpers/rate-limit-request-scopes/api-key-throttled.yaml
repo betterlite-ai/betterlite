@@ -1,0 +1,44 @@
+kind: helper
+name: rate-limit-request-scopes-api-key-throttled
+call:
+  b3040:
+    function: create
+    auth:
+      api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      rpm_limit: 10
+      tpm_limit: 20
+      max_parallel_requests: 3
+      budget_throttle_pct: 0.5
+    server: {}
+    data:
+      model: gpt4
+    rpm_limit_type: null
+    tpm_limit_type: null
+    model_has_failures: false
+    call_type: null
+    groups:
+      gpt4: gpt-4
+    registry: []
+    tag_limits: []
+    window_size: 60
+calls:
+  - b3040:
+      function: create
+      auth:
+        api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        rpm_limit: 2
+        budget_throttle_pct: 0.25
+      server: {}
+      data:
+        model: gpt4
+      rpm_limit_type: null
+      tpm_limit_type: null
+      model_has_failures: false
+      call_type: null
+      groups:
+        gpt4: gpt-4
+      registry: []
+      tag_limits: []
+      window_size: 60
+env: {}
+compare: {ignore: []}
