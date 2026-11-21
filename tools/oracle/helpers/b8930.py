@@ -1,12 +1,12 @@
 import json
 from datetime import UTC, datetime
-from typing import Final, Literal, TypedDict
+from typing import Final, Literal, Protocol, TypedDict, cast
 
 import litellm
 from litellm.cost_calculator import get_usage_object
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.proxy.common_request_processing import ProxyBaseLLMRequestProcessing
-from litellm.types.utils import ModelResponse
+from litellm.types.utils import ModelResponse, Usage
 from pydantic import BaseModel, JsonValue, TypeAdapter
 
 # get_llm_provider without a model prints a banner to stdout and breaks the JSON answer
@@ -57,6 +57,15 @@ class CostEvent(TypedDict):
     usage: CostUsage
 
 
+class ProcessChunk(Protocol):
+    def __call__(
+        self,
+        chunk: str | bytes | dict[str, JsonValue],
+        model_name: str,
+        log: Logging | None,
+    ) -> str | bytes | dict[str, JsonValue]: ...
+
+
 class ScriptedPrice:
     def __init__(self) -> None:
         self.cost: float = 0.0
@@ -67,12 +76,21 @@ _RECORDER: Final[TypeAdapter[RecorderFields]] = TypeAdapter(RecorderFields)
 _COMPLETION: Final[TypeAdapter[CompletionFields]] = TypeAdapter(CompletionFields)
 _COST_EVENT: Final[TypeAdapter[CostEvent]] = TypeAdapter(CostEvent)
 _JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
+_PROCESS_CHUNK: Final[ProcessChunk] = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L4056-L4134
+    ProcessChunk,
+    ProxyBaseLLMRequestProcessing._process_chunk_with_cost_injection,  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L4056-L4134
+)
 _RECORDER_PRICE: Final[ScriptedPrice] = ScriptedPrice()
 _CALCULATOR_PRICE: Final[ScriptedPrice] = ScriptedPrice()
 _OBSERVED: Final[list[JsonValue]] = []
 
 
-def _respond(service: str, model: str, service_tier: str | None, response: object) -> JsonValue:
+def _respond(
+    service: str,
+    model: str,
+    service_tier: str | None,
+    response: ModelResponse,
+) -> JsonValue:
     usage = get_usage_object(response)
     if usage is None:
         return None
@@ -80,13 +98,17 @@ def _respond(service: str, model: str, service_tier: str | None, response: objec
         "service": service,
         "model": model,
         "service_tier": service_tier,
-        "usage": {
-            "prompt_tokens": usage.prompt_tokens,
-            "completion_tokens": usage.completion_tokens,
-            "total_tokens": usage.total_tokens,
-            "prompt_tokens_details": _details(usage.prompt_tokens_details),
-            "completion_tokens_details": _details(usage.completion_tokens_details),
-        },
+        "usage": _usage_json(usage),
+    }
+
+
+def _usage_json(usage: Usage) -> JsonValue:
+    return {
+        "prompt_tokens": usage.prompt_tokens,
+        "completion_tokens": usage.completion_tokens,
+        "total_tokens": usage.total_tokens,
+        "prompt_tokens_details": _details(usage.prompt_tokens_details),
+        "completion_tokens_details": _details(usage.completion_tokens_details),
     }
 
 
@@ -162,7 +184,7 @@ def _logging(fields: LogFields) -> Logging:
     return log
 
 
-def _chunk(fields: ChunkFields) -> object:
+def _chunk(fields: ChunkFields) -> str | bytes | dict[str, JsonValue]:
     if fields["kind"] == "object":
         value = fields["value"]
         if value is None:
@@ -171,13 +193,7 @@ def _chunk(fields: ChunkFields) -> object:
     text = fields["text"]
     if text is None:
         raise ValueError("the text chunk needs a text")
-    if fields["kind"] == "bytes":
-        return text.encode("utf-8")
-    return text
-
-
-def _compact_json(payload: str) -> str:
-    return json.dumps(_JSON.validate_json(payload), separators=(",", ":"))
+    return text.encode("utf-8") if fields["kind"] == "bytes" else text
 
 
 def _compact(frame: str) -> str:
@@ -191,16 +207,19 @@ def _compact(frame: str) -> str:
             compacted.append(line)
             continue
         suffix = "\r" if line.endswith("\r") else ""
-        compacted.append("data: " + _compact_json(payload) + suffix)
+        rendered = json.dumps(_JSON.validate_json(payload), separators=(",", ":"))
+        compacted.append("data: " + rendered + suffix)
     return "\n".join(compacted)
 
 
-def _result_json(result: object) -> JsonValue:
-    if isinstance(result, str):
-        return _compact(result)
-    if isinstance(result, bytes):
-        return _compact(result.decode("utf-8"))
-    return _JSON.validate_python(result)
+def _result_json(result: str | bytes | dict[str, JsonValue]) -> JsonValue:
+    match result:
+        case bytes(frame):
+            return _compact(frame.decode("utf-8"))
+        case str(frame):
+            return _compact(frame)
+        case dict():
+            return result
 
 
 def _debug(log: Logging | None) -> JsonValue:
@@ -222,11 +241,7 @@ def run(input_value: Input) -> dict[str, JsonValue]:
     _load(input_value["prices"])
     log_fields = input_value["log"]
     log = None if log_fields is None else _logging(log_fields)
-    result = ProxyBaseLLMRequestProcessing._process_chunk_with_cost_injection(  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L4056-L4134
-        _chunk(input_value["chunk"]),
-        input_value["model_name"],
-        log,
-    )
+    result = _PROCESS_CHUNK(_chunk(input_value["chunk"]), input_value["model_name"], log)
     return {
         "result": _result_json(result),
         "debug": _debug(log),
