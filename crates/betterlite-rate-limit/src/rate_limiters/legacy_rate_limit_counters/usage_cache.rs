@@ -30,32 +30,6 @@ pub enum UsageCacheError {
 // InternalUsageCache as the legacy limiter calls it; an implementation owns its failure handling, as DualCache does
 #[async_trait]
 pub trait LegacyUsageCache: Send + Sync {
-    // internal_usage_cache.async_get_cache
-    async fn get(
-        &self,
-        key: &str,
-        parent_otel_span: Option<&ParentOtelSpan>,
-        local_only: bool,
-    ) -> Result<Option<LegacyCacheValue>, UsageCacheError>;
-
-    // internal_usage_cache.async_set_cache
-    async fn set(
-        &self,
-        key: &str,
-        value: LegacyCacheValue,
-        ttl: u64,
-        parent_otel_span: Option<&ParentOtelSpan>,
-    ) -> Result<(), UsageCacheError>;
-
-    // internal_usage_cache.async_increment_cache: the value after the increment
-    async fn increment(
-        &self,
-        key: &str,
-        by: i64,
-        parent_otel_span: Option<&ParentOtelSpan>,
-        local_only: bool,
-    ) -> Result<Option<i64>, UsageCacheError>;
-
     // internal_usage_cache.async_batch_get_cache: None is a failed read, as DualCache answers it
     async fn batch_get(
         &self,

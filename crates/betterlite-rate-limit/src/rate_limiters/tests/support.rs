@@ -84,35 +84,6 @@ fn cache_failure() -> UsageCacheError {
 
 #[async_trait]
 impl LegacyUsageCache for RecordingCache {
-    async fn get(
-        &self,
-        _key: &str,
-        _parent_otel_span: Option<&ParentOtelSpan>,
-        _local_only: bool,
-    ) -> Result<Option<LegacyCacheValue>, UsageCacheError> {
-        Ok(None)
-    }
-
-    async fn set(
-        &self,
-        _key: &str,
-        _value: LegacyCacheValue,
-        _ttl: u64,
-        _parent_otel_span: Option<&ParentOtelSpan>,
-    ) -> Result<(), UsageCacheError> {
-        Ok(())
-    }
-
-    async fn increment(
-        &self,
-        _key: &str,
-        _by: i64,
-        _parent_otel_span: Option<&ParentOtelSpan>,
-        _local_only: bool,
-    ) -> Result<Option<i64>, UsageCacheError> {
-        Ok(None)
-    }
-
     async fn batch_get(
         &self,
         keys: &[Option<String>],
