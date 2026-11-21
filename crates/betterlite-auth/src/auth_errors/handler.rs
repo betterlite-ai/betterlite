@@ -126,16 +126,7 @@ impl<Ports: AuthErrorPorts + ?Sized> AuthErrorHandler<'_, Ports> {
         self.ports
             .seed_identity(&identity, request.request_data.get("model"));
         let attributed = self.attribute_budget(original, request.request_data);
-        let user_agent = request
-            .scope_headers
-            .and_then(|headers| headers.get(USER_AGENT))
-            .map(|value| {
-                value
-                    .as_bytes()
-                    .iter()
-                    .map(|byte| char::from(*byte))
-                    .collect::<String>()
-            });
+        let user_agent = request_user_agent(request.scope_headers);
         let context = with_client_context(
             request.request_data,
             Some(requester_ip),
@@ -270,6 +261,12 @@ impl<Ports: AuthErrorPorts + ?Sized> AuthErrorHandler<'_, Ports> {
             llm_provider: provider,
         }
     }
+}
+
+fn request_user_agent(scope_headers: Option<&HeaderMap>) -> Option<String> {
+    let headers = scope_headers?;
+    let value = headers.get(USER_AGENT)?;
+    Some(value.as_bytes().iter().copied().map(char::from).collect())
 }
 
 // a restricted internal user, so an outage never hands an anonymous caller administrator grants

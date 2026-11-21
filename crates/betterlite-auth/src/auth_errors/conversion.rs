@@ -166,56 +166,66 @@ const fn http_facts(status_code: u16, marker: Marker) -> ErrorFacts<'static> {
 
 #[must_use]
 pub fn as_proxy_exception(failure: &AuthFailure) -> ClientFailure {
-    let (message, error_type, param, status_code) = match failure {
+    match failure {
         AuthFailure::BudgetExceeded {
             message,
             status_code,
             ..
-        } => (
-            message.clone(),
-            ProxyErrorTypes::BudgetExceeded,
-            None,
-            status_code.unwrap_or(BUDGET_FALLBACK_STATUS),
-        ),
+        } => ClientFailure::Proxy(budget_exception(message, *status_code)),
         AuthFailure::ModelAccessDenied {
             detail,
             internal_message,
             status_code,
-        } => {
-            // ast-grep-ignore: no-long-names
-            return ClientFailure::ModelAccessDenied(ModelAccessDeniedProxyException::new(
-                detail.clone(),
-                internal_message.clone(),
-                ProxyErrorTypes::AuthError.to_string(),
-                Some(ABSENT_PARAM.to_owned()),
-                ExceptionCode::Status(i64::from(*status_code)),
-            ));
-        }
+        } => model_access_denied(detail, internal_message, *status_code),
         AuthFailure::Http {
             detail,
             param,
             status_code,
             ..
-        } => (
-            detail.clone(),
-            ProxyErrorTypes::AuthError,
-            Some(param.as_deref().unwrap_or(ABSENT_PARAM)),
-            *status_code,
-        ),
-        AuthFailure::Proxy { exception, .. } => return ClientFailure::Proxy(exception.clone()),
-        AuthFailure::Database(error) => return database_exception(error),
-        AuthFailure::Other { message, param } => (
-            format!("Authentication Error, {message}"),
-            ProxyErrorTypes::AuthError,
-            Some(param.as_deref().unwrap_or(ABSENT_PARAM)),
-            UNAUTHORIZED,
-        ),
-    };
-    ClientFailure::Proxy(proxy_exception(
-        message,
-        error_type.to_string(),
-        param.map(str::to_owned),
+        } => ClientFailure::Proxy(http_exception(detail, param.as_deref(), *status_code)),
+        AuthFailure::Proxy { exception, .. } => ClientFailure::Proxy(exception.clone()),
+        AuthFailure::Database(error) => database_exception(error),
+        AuthFailure::Other { message, param } => {
+            ClientFailure::Proxy(other_exception(message, param.as_deref()))
+        }
+    }
+}
+
+fn budget_exception(message: &str, status_code: Option<u16>) -> ProxyException {
+    proxy_exception(
+        message.to_owned(),
+        ProxyErrorTypes::BudgetExceeded.to_string(),
+        None,
+        status_code.unwrap_or(BUDGET_FALLBACK_STATUS),
+    )
+}
+
+fn http_exception(detail: &str, param: Option<&str>, status_code: u16) -> ProxyException {
+    proxy_exception(
+        detail.to_owned(),
+        ProxyErrorTypes::AuthError.to_string(),
+        Some(param.unwrap_or(ABSENT_PARAM).to_owned()),
         status_code,
+    )
+}
+
+fn other_exception(message: &str, param: Option<&str>) -> ProxyException {
+    proxy_exception(
+        format!("Authentication Error, {message}"),
+        ProxyErrorTypes::AuthError.to_string(),
+        Some(param.unwrap_or(ABSENT_PARAM).to_owned()),
+        UNAUTHORIZED,
+    )
+}
+
+fn model_access_denied(detail: &str, internal_message: &str, status_code: u16) -> ClientFailure {
+    // ast-grep-ignore: no-long-names
+    ClientFailure::ModelAccessDenied(ModelAccessDeniedProxyException::new(
+        detail.to_owned(),
+        internal_message.to_owned(),
+        ProxyErrorTypes::AuthError.to_string(),
+        Some(ABSENT_PARAM.to_owned()),
+        ExceptionCode::Status(i64::from(status_code)),
     ))
 }
 

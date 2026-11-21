@@ -192,7 +192,10 @@ fn client_context_key_presence_falsey_fields_and_copy() {
     assert_eq!(filled.get("metadata"), Some(&Json::Object(merged)));
     let bare = object(&[("model", Json::Text("gpt-4o".to_owned()))]);
     let untouched = with_client_context(&bare, Some(""), None);
-    assert!(matches!(untouched, Cow::Borrowed(original) if ptr::eq(original, &bare)));
+    let Cow::Borrowed(borrowed) = untouched else {
+        panic!("an unstamped request data stays borrowed");
+    };
+    assert!(ptr::eq(ptr::from_ref(borrowed), ptr::from_ref(&bare)));
     let owned = with_client_context(&bare, Some(CLIENT_IP), None);
     assert!(matches!(owned, Cow::Owned(_)));
     assert_eq!(bare.len(), 1);

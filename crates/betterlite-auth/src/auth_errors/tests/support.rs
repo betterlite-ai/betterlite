@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -70,7 +70,10 @@ pub(super) struct Resolver {
 
 impl ProviderResolution for Resolver {
     fn resolve(&self, model: &str) -> Result<ResolvedModel, ResolutionError> {
-        self.calls.lock().unwrap().push(model.to_owned());
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(model.to_owned());
         Ok(ResolvedModel {
             model: model.to_owned(),
             provider: ProviderIdentity::Known(ProviderId::Openai),
@@ -323,8 +326,10 @@ pub(super) fn identity_with(fields: &[(&str, &str)]) -> UserAPIKeyAuth {
     identity
 }
 
-pub(super) fn seeded(ports: &Recorder) -> (Option<String>, Option<String>, Option<Json>, bool) {
-    let seeds: Vec<(Option<String>, Option<String>, Option<Json>, bool)> = ports
+pub(super) type Seed = (Option<String>, Option<String>, Option<Json>, bool);
+
+pub(super) fn seeded(ports: &Recorder) -> Seed {
+    let seeds: Vec<Seed> = ports
         .events()
         .into_iter()
         .filter_map(|event| match event {
