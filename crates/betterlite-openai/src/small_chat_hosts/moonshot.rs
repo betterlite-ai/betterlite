@@ -22,7 +22,7 @@ const MAX_TOKENS: &str = "max_tokens";
 const REASONING_EFFORT: &str = "reasoning_effort";
 const EFFORT: &str = "effort";
 const TEMPERATURE: &str = "temperature";
-const N: &str = "n";
+const COUNT: &str = "n";
 const TOOL_CHOICE: &str = "tool_choice";
 const REQUIRED: &str = "required";
 const TEXT: &str = "text";
@@ -104,16 +104,22 @@ pub fn map_openai_params<Lookup>(
 {
     let supported = supported_params(lookup, model, catalog);
     for (name, value) in non_default_params {
-        if name == MAX_COMPLETION_TOKENS {
-            optional_params.insert(MAX_TOKENS.to_owned(), value.clone());
-        } else if !supported.contains(&name.as_str()) {
-            continue;
-        } else if name == REASONING_EFFORT {
-            if let Some(effort) = reasoning_effort_string(value) {
-                optional_params.insert(REASONING_EFFORT.to_owned(), Json::Text(effort.to_owned()));
+        let renamed = name == MAX_COMPLETION_TOKENS;
+        let supported_here = supported.contains(&name.as_str());
+        let target = if renamed { MAX_TOKENS } else { name.as_str() };
+        let mapped = if renamed {
+            Some(value.clone())
+        } else if supported_here {
+            if name == REASONING_EFFORT {
+                reasoning_effort_value(value)
+            } else {
+                Some(value.clone())
             }
         } else {
-            optional_params.insert(name.clone(), value.clone());
+            None
+        };
+        if let Some(mapped_value) = mapped {
+            optional_params.insert(target.to_owned(), mapped_value);
         }
     }
     if lookup.supports_reasoning(model).unwrap_or(false) {
@@ -124,12 +130,13 @@ pub fn map_openai_params<Lookup>(
 }
 
 // only the effort string survives, from a bare string or an object's effort field
-fn reasoning_effort_string(value: &Json) -> Option<&str> {
-    match value {
+fn reasoning_effort_value(value: &Json) -> Option<Json> {
+    let effort = match value {
         Json::Text(text) => Some(text.as_str()),
         Json::Object(fields) => fields.get(EFFORT).and_then(Json::as_str),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => None,
-    }
+    };
+    effort.map(|effort_text| Json::Text(effort_text.to_owned()))
 }
 
 // KIMI takes [0, 1]; below 0.3 with n above 1 the API raises, so 0.3 is sent instead
@@ -154,7 +161,7 @@ fn cap_temperature(optional_params: &mut Object) {
 
 fn n_above_one(optional_params: &Object) -> bool {
     optional_params
-        .get(N)
+        .get(COUNT)
         .is_some_and(|count| super::as_f64(count).is_some_and(|value| value > 1.0_f64))
 }
 
@@ -174,10 +181,10 @@ where
         environment,
         downloads,
     } = input;
-    let mut messages = messages.to_vec();
+    let mut prepared = messages.to_vec();
     if optional_params.get(TOOL_CHOICE).and_then(Json::as_str) == Some(REQUIRED) {
         optional_params.shift_remove(TOOL_CHOICE);
-        messages.push(ChatMessage {
+        prepared.push(ChatMessage {
             role: Role::User,
             content: Some(MessageContent::Text(String::from(TOOL_SELECTION_TEXT))),
             name: None,
@@ -187,9 +194,9 @@ where
         });
     }
     if lookup.supports_reasoning(model).unwrap_or(false) {
-        messages = fill_reasoning_content(&messages);
+        prepared = fill_reasoning_content(&prepared);
     }
-    let flattened = flatten_text_lists(&messages)?;
+    let flattened = flatten_text_lists(&prepared)?;
     let content = ChatContent {
         model,
         messages: &flattened,
@@ -214,9 +221,9 @@ fn flatten_text_lists(messages: &[ChatMessage]) -> Result<Vec<ChatMessage>, Moon
     let mut prompt: Vec<Message> = serde_json::from_value(value)
         .map_err(|source| ChatContentError::MessageShape { source })?;
     let converted = convert_message_content_lists(&mut prompt);
-    let value = serde_json::to_value(converted)
+    let converted_value = serde_json::to_value(converted)
         .map_err(|source| ChatContentError::MessageShape { source })?;
-    let flattened = serde_json::from_value(value)
+    let flattened = serde_json::from_value(converted_value)
         .map_err(|source| ChatContentError::MessageShape { source })?;
     Ok(flattened)
 }
@@ -245,26 +252,23 @@ fn fill_reasoning_content(messages: &[ChatMessage]) -> Vec<ChatMessage> {
             continue;
         }
         let mut patched = message.clone();
-        match stored_reasoning_content(&message.passthrough) {
-            Some(stored) => {
-                patched
-                    .passthrough
-                    .insert(REASONING_CONTENT.to_owned(), stored);
-                if let Some(Value::Object(fields)) =
-                    patched.passthrough.get_mut(PROVIDER_SPECIFIC_FIELDS)
-                {
-                    fields.remove(REASONING_CONTENT);
-                }
+        if let Some(stored) = stored_reasoning_content(&message.passthrough) {
+            patched
+                .passthrough
+                .insert(REASONING_CONTENT.to_owned(), stored);
+            if let Some(Value::Object(fields)) =
+                patched.passthrough.get_mut(PROVIDER_SPECIFIC_FIELDS)
+            {
+                fields.remove(REASONING_CONTENT);
             }
-            None => {
-                tracing::warn!(
-                    "Moonshot reasoning model: assistant tool-call message is missing `reasoning_content`. Injecting a placeholder to satisfy API validation. For best results, preserve `reasoning_content` from the original assistant response when building multi-turn conversation history."
-                );
-                patched.passthrough.insert(
-                    REASONING_CONTENT.to_owned(),
-                    Value::String(String::from(" ")),
-                );
-            }
+        } else {
+            tracing::warn!(
+                "Moonshot reasoning model: assistant tool-call message is missing `reasoning_content`. Injecting a placeholder to satisfy API validation. For best results, preserve `reasoning_content` from the original assistant response when building multi-turn conversation history."
+            );
+            patched.passthrough.insert(
+                REASONING_CONTENT.to_owned(),
+                Value::String(String::from(" ")),
+            );
         }
         filled.push(patched);
     }

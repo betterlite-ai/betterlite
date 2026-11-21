@@ -15,9 +15,7 @@ mod tests;
 use betterlite_prompts::arguments::json::{Json, Object};
 use serde_json::Value;
 
-use crate::openai_base_config::{
-    CatalogCapabilities, ConfigFamily, Headers, OpenAiConfig, OpenAiSettings,
-};
+use crate::openai_base_config::{ConfigFamily, Headers, OpenAiConfig, OpenAiSettings};
 
 // every host here extends OpenAIGPTConfig, so ConfigFamily::Other keeps its list and no reasoning_effort
 #[must_use]
@@ -45,12 +43,12 @@ pub fn map_supported(
     completion_tokens: CompletionTokenRename,
 ) {
     for (name, value) in non_default_params {
-        if matches!(completion_tokens, CompletionTokenRename::Rename)
-            && name == "max_completion_tokens"
-        {
-            optional_params.insert(String::from("max_tokens"), value.clone());
-        } else if supported.contains(&name.as_str()) {
-            optional_params.insert(name.clone(), value.clone());
+        let renamed = matches!(completion_tokens, CompletionTokenRename::Rename)
+            && name == "max_completion_tokens";
+        let supported_here = supported.contains(&name.as_str());
+        if renamed || supported_here {
+            let target = if renamed { "max_tokens" } else { name.as_str() };
+            optional_params.insert(target.to_owned(), value.clone());
         }
     }
 }

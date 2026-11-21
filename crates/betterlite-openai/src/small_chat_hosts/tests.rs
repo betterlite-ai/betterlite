@@ -557,7 +557,10 @@ fn moonshot_maps_in_input_order_and_unwraps_reasoning_effort() {
         &Reasons(true),
         MODEL,
         &object(vec![
-            ("reasoning_effort", object(vec![("effort", text("low"))])),
+            (
+                "reasoning_effort",
+                Json::Object(object(vec![("effort", text("low"))])),
+            ),
             ("reasoning_effort_object", Json::Null),
         ]),
         &mut unwrapped,
@@ -847,11 +850,11 @@ fn nadir_lists_exactly_the_nine_params_in_order() {
 #[case(br#"{"nadir_metadata":{"cost":{"total_cost_usd":null}}}"#, None)]
 #[case(br#"{"nadir_metadata":{"cost":{}}}"#, None)]
 #[case(br#"{"nadir_metadata":{}}"#, None)]
-#[case(br#"{}"#, None)]
+#[case(b"{}", None)]
 #[case(br#"{"nadir_metadata":[]}"#, None)]
 #[case(br#"{"nadir_metadata":{"cost":"x"}}"#, None)]
-#[case(br#"not json"#, None)]
-#[case(br#""#, None)]
+#[case(b"not json", None)]
+#[case(b"", None)]
 fn nadir_reported_cost_reads_only_a_finite_non_negative_number(
     #[case] body: &[u8],
     #[case] expected: Option<f64>,
@@ -983,8 +986,8 @@ fn nadir_records_no_cost_when_the_bytes_carry_none() {
 
 #[test]
 fn nadir_returns_the_parent_error_before_reading_any_cost() {
-    let error = nadir_reply(b"not json").expect_err("the parent fails on a body that is not JSON");
-    assert!(matches!(error, TransformResponseError::Json(_)));
+    let result = nadir_reply(b"not json");
+    assert!(matches!(result, Err(TransformResponseError::Json(_))));
 }
 
 #[rstest]

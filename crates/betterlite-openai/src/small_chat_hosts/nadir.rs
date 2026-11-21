@@ -82,7 +82,7 @@ where
         state,
         env,
         input,
-        options,
+        options: _,
     } = request;
     let bytes = reply.body;
     let response = parent_transform_response(&reply, state, env, input, projection)?;
