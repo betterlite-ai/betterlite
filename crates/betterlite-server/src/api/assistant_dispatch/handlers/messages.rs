@@ -14,18 +14,21 @@ use super::super::AssistantDispatcher;
 use super::super::Merged;
 use super::super::error::AssistantDispatchError;
 use super::super::outcome::AssistantOutcome;
-use super::super::request::AssistantRequest;
 use super::support::{parse_value, require, subset, text};
 use super::{Deps, Dispatched, Sources};
 
 // add_message's named arguments; get_messages reads only the thread id
 const NAMED: [&str; 4] = ["role", "content", "attachments", "metadata"];
 
-pub(super) async fn call<T: Deps, S: Sources>(
+pub(super) async fn call<T, S>(
     dispatcher: &AssistantDispatcher<'_, '_, T, S>,
     merged: Merged,
     operation: MessageOperation,
-) -> Dispatched<T> {
+) -> Dispatched<T>
+where
+    T: Deps,
+    S: Sources,
+{
     let function = function_name(operation);
     let names: &[&str] = match operation {
         MessageOperation::Append => &["thread_id", "role", "content"],

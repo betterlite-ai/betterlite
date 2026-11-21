@@ -26,12 +26,16 @@ struct ThreadData {
     tool_resources: Option<Json>,
 }
 
-pub(super) async fn call<T: Deps, S: Sources>(
+pub(super) async fn call<T, S>(
     dispatcher: &AssistantDispatcher<'_, '_, T, S>,
     merged: Merged,
     request: &AssistantRequest<'_>,
     operation: ThreadOperation,
-) -> Dispatched<T> {
+) -> Dispatched<T>
+where
+    T: Deps,
+    S: Sources,
+{
     let mut kwargs = merged.kwargs;
     let resources = ResourceSdkSettings::from(dispatcher.resources);
     let threads = AssistantThreads {
@@ -63,12 +67,16 @@ pub(super) async fn call<T: Deps, S: Sources>(
     outcome(result)
 }
 
-fn create_call<'call, T: Deps, S: Sources>(
+fn create_call<'call, T, S>(
     dispatcher: &'call AssistantDispatcher<'_, '_, T, S>,
     request: &'call AssistantRequest<'_>,
     provider: String,
     kwargs: &'call mut BTreeMap<String, Json>,
-) -> Result<CreateThreadCall<'call, T>, AssistantDispatchError> {
+) -> Result<CreateThreadCall<'call, T>, AssistantDispatchError>
+where
+    T: Deps,
+    S: Sources,
+{
     let data = thread_data(kwargs)?;
     Ok(CreateThreadCall {
         custom_llm_provider: provider,
@@ -89,10 +97,14 @@ fn thread_id(kwargs: &mut BTreeMap<String, Json>) -> Result<String, AssistantDis
 }
 
 // the client object the caller handed reaches either installed wrapper unchanged
-fn supplied<'dispatcher, T: Deps, S: Sources>(
+fn supplied<'dispatcher, T, S>(
     dispatcher: &'dispatcher AssistantDispatcher<'_, '_, T, S>,
     request: &'dispatcher AssistantRequest<'_>,
-) -> Option<ThreadClient<'dispatcher, T>> {
+) -> Option<ThreadClient<'dispatcher, T>>
+where
+    T: Deps,
+    S: Sources,
+{
     request
         .client
         .as_ref()

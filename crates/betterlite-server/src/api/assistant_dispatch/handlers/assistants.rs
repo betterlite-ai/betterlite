@@ -36,11 +36,15 @@ const READ_DELETE_PARAMS: [&str; 14] = [
     "azure_scope",
 ];
 
-pub(super) async fn create<T: Deps, S: Sources>(
+pub(super) async fn create<T, S>(
     dispatcher: &AssistantDispatcher<'_, '_, T, S>,
     merged: Merged,
     request: &AssistantRequest<'_>,
-) -> Dispatched<T> {
+) -> Dispatched<T>
+where
+    T: Deps,
+    S: Sources,
+{
     let mut fields = merged.kwargs;
     fields.insert(String::from("provider"), Json::Text(merged.provider));
     let mut input: AssistantCreateInput = parse_value(&Json::Object(fields.into_iter().collect()))?;
@@ -65,12 +69,16 @@ pub(super) async fn create<T: Deps, S: Sources>(
     }
 }
 
-pub(super) async fn read_or_delete<T: Deps, S: Sources>(
+pub(super) async fn read_or_delete<T, S>(
     dispatcher: &AssistantDispatcher<'_, '_, T, S>,
     merged: &Merged,
     operation: ReadDeleteOperation,
     request: &AssistantRequest<'_>,
-) -> Dispatched<T> {
+) -> Dispatched<T>
+where
+    T: Deps,
+    S: Sources,
+{
     let input = read_delete_input(merged, operation, request.client.as_ref())?;
     let facade = AssistantReadDelete {
         dispatch: SdkDispatch {

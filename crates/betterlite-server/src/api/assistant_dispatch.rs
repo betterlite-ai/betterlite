@@ -1,11 +1,11 @@
-mod body;
-mod client;
-mod error;
-mod handlers;
-mod operation;
-mod outcome;
-mod request;
+pub mod body;
+pub mod client;
+pub mod error;
+pub mod operation;
+pub mod outcome;
+pub mod request;
 
+mod handlers;
 mod tests;
 
 use std::collections::BTreeMap;
@@ -22,12 +22,9 @@ use betterlite_openai::assistants::transport::AssistantsTransport;
 use betterlite_openai::thread_runs::stream::{RunStream, RunStreamTransport};
 use betterlite_redact::secret::Redactor;
 
-pub use body::{AssistantBodyError, decode_assistant_body};
-pub use client::{AssistantClient, SuppliedClass};
-pub use error::{AssistantDispatchError, AssistantFailure};
-pub use operation::AssistantOperation;
-pub use outcome::AssistantOutcome;
-pub use request::AssistantRequest;
+use self::error::AssistantDispatchError;
+use self::outcome::AssistantOutcome;
+use self::request::AssistantRequest;
 
 // router.py#L7188-L7190: the exact text the factory raises when no provider is configured or passed
 const REQUIRED_PROVIDER: &str = "'custom_llm_provider' must be set. Either via:\n `Router(assistants_config={'custom_llm_provider': ..})` \nor\n `router.arun_thread(custom_llm_provider=..)`";
@@ -76,7 +73,7 @@ fn caller_provider(value: Option<&Json>) -> Result<Option<String>, AssistantDisp
     }
 }
 
-impl<'deps, 'resolution, T, S> AssistantDispatcher<'deps, 'resolution, T, S>
+impl<T, S> AssistantDispatcher<'_, '_, T, S>
 where
     T: AssistantsTransport + RunStreamTransport,
     S: CredentialSources + Clone + Send + Sync,

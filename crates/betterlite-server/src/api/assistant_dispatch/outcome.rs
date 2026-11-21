@@ -3,7 +3,6 @@ use betterlite_openai::assistants::records::{AssistantDeleted, AssistantObject, 
 use betterlite_openai::threads::records::{ThreadMessage, ThreadMessagePage, ThreadRecord};
 
 // The record the proxy returns for each installed operation, before its route serializes it.
-#[derive(Debug)]
 pub enum AssistantOutcome<S> {
     Assistant(Box<AssistantObject>),
     Assistants(AssistantPage),

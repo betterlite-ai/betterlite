@@ -27,11 +27,15 @@ impl<S: CredentialSources + Clone + Send + Sync> Sources for S {}
 
 pub(super) type Dispatched<T> = Result<AssistantOutcome<RunStream<T>>, AssistantDispatchError>;
 
-pub(super) async fn run<T: Deps, S: Sources>(
+pub(super) async fn run<T, S>(
     dispatcher: &AssistantDispatcher<'_, '_, T, S>,
     request: &AssistantRequest<'_>,
     merged: Merged,
-) -> Dispatched<T> {
+) -> Dispatched<T>
+where
+    T: Deps,
+    S: Sources,
+{
     match request.operation {
         AssistantOperation::CreateAssistant => {
             assistants::create(dispatcher, merged, request).await

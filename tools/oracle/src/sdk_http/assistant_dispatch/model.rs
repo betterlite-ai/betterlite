@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_models::decisions::Json;
-use betterlite_server::api::assistant_dispatch::AssistantOperation;
+use betterlite_server::api::assistant_dispatch::operation::AssistantOperation;
 use serde::{Deserialize, Serialize};
 
 use super::super::result::Failure;
@@ -52,14 +52,7 @@ pub struct OperationCall {
     pub startup: bool,
 }
 
-// A case runs the installed wrappers under one assistants_config each, in order.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct Call {
-    pub runs: Vec<OperationCall>,
-}
-
-// The ids the wrapper returned, the status a polled run carries, the events a consumed stream yielded.
+// What one wrapper call answered: the ids, the status a polled run carries, the events a consumed stream yielded.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Step {
@@ -67,10 +60,4 @@ pub struct Step {
     pub status: Option<String>,
     pub events: Option<Vec<String>>,
     pub failure: Option<Failure>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Outcome {
-    pub results: Vec<Step>,
 }

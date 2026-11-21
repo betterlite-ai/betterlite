@@ -29,10 +29,13 @@ use http::HeaderMap;
 use rstest::rstest;
 use secrecy::SecretString;
 
-use super::{
-    AssistantBodyError, AssistantClient, AssistantDispatchError, AssistantDispatcher,
-    AssistantOperation, AssistantOutcome, AssistantRequest, SuppliedClass, decode_assistant_body,
-};
+use super::AssistantDispatcher;
+use super::body::{AssistantBodyError, decode_assistant_body};
+use super::client::{AssistantClient, SuppliedClass};
+use super::error::AssistantDispatchError;
+use super::operation::AssistantOperation;
+use super::outcome::AssistantOutcome;
+use super::request::AssistantRequest;
 
 const ASSISTANT: &str = r#"{"id":"asst_a","object":"assistant","model":"gpt-4o-mini","created_at":1,"name":null,"tools":[]}"#;
 const PAGE: &str = r#"{"object":"list","data":[{"id":"asst_a","object":"assistant","created_at":1,"model":"gpt-4o","tools":[]}],"has_more":false,"first_id":"asst_a","last_id":"asst_a"}"#;
@@ -531,7 +534,7 @@ fn assert_answered(outcome: OutcomeView, answered: Answered) {
             assert_eq!((*reply).expect("the provider replied").id, "run_a");
         }
         (Answered::Streaming, AssistantOutcome::Run(RunOutcome::Streaming(_))) => {}
-        (other, _) => panic!("the operation answered with another outcome: {other:?}"),
+        (other, _) => panic!("the operation answered a {other:?} case with another outcome"),
     }
 }
 

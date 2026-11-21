@@ -38,10 +38,13 @@ pub(super) fn text(
     }
 }
 
-pub(super) fn optional<T: DeserializeOwned>(
+pub(super) fn optional<T>(
     kwargs: &BTreeMap<String, Json>,
     name: &str,
-) -> Result<Option<T>, AssistantDispatchError> {
+) -> Result<Option<T>, AssistantDispatchError>
+where
+    T: DeserializeOwned,
+{
     let Some(value) = kwargs.get(name) else {
         return Ok(None);
     };
@@ -61,7 +64,10 @@ pub(super) fn subset(kwargs: &BTreeMap<String, Json>, names: &[&str]) -> BTreeMa
     kept
 }
 
-pub(super) fn parse_value<T: DeserializeOwned>(value: &Json) -> Result<T, AssistantDispatchError> {
+pub(super) fn parse_value<T>(value: &Json) -> Result<T, AssistantDispatchError>
+where
+    T: DeserializeOwned,
+{
     let bytes = serde_json::to_vec(value).map_err(|error| AssistantDispatchError::Invalid {
         message: error.to_string(),
     })?;

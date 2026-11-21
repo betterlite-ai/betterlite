@@ -34,11 +34,15 @@ const RUN_PARAMS: [&str; 15] = [
     "extra_body",
 ];
 
-pub(super) async fn thread<T: Deps, S: Sources>(
+pub(super) async fn thread<T, S>(
     dispatcher: &AssistantDispatcher<'_, '_, T, S>,
     merged: Merged,
     request: &AssistantRequest<'_>,
-) -> Dispatched<T> {
+) -> Dispatched<T>
+where
+    T: Deps,
+    S: Sources,
+{
     require(
         &merged.kwargs,
         "arun_thread",
