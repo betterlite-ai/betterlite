@@ -113,14 +113,14 @@ impl ProjectAdmission<'_> {
         &self,
         request: &ProjectIoRequest<'_>,
         data: &RequestData,
-        min_otpm_limit: Option<i64>,
+        smallest_otpm_limit: Option<i64>,
     ) -> InputOutputTokens {
         let services = &self.estimation;
         let output_request = TokenEstimateRequest {
             data,
             call_type: request.call_type,
             model: None,
-            min_configured_tpm_limit: min_otpm_limit,
+            min_configured_tpm_limit: smallest_otpm_limit,
             configured_output_tokens: None,
         };
         let raw_output =
