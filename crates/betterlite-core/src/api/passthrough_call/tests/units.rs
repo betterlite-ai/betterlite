@@ -14,7 +14,7 @@ use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::passthrough::transformation::BasePassthroughConfig as _;
 use betterlite_openai::passthrough::transformation::types::{
-    PassthroughTarget, PassthroughUrlRequest,
+    PassthroughSigning, PassthroughTarget, PassthroughUrlRequest,
 };
 use indexmap::IndexMap;
 use rstest::rstest;
@@ -237,9 +237,9 @@ fn auth_optional_text_reads_only_strings() {
             message,
             String::from("litellm_params.azure_ad_token must be a string")
         ),
-        other @ ConfigError::Passthrough(_)
-        | other @ ConfigError::Message { .. }
-        | other @ ConfigError::Provider(_) => panic!("unexpected error: {other}"),
+        other @ (ConfigError::Passthrough(_)
+        | ConfigError::Message { .. }
+        | ConfigError::Provider(_)) => panic!("unexpected error: {other}"),
     }
 }
 
@@ -261,9 +261,9 @@ async fn auth_refuses_non_string_provider_credentials(
         ConfigError::ValueError { message } => {
             assert_eq!(message, format!("litellm_params.{name} must be a string"));
         }
-        other @ ConfigError::Passthrough(_)
-        | other @ ConfigError::Message { .. }
-        | other @ ConfigError::Provider(_) => panic!("unexpected error: {other}"),
+        other @ (ConfigError::Passthrough(_)
+        | ConfigError::Message { .. }
+        | ConfigError::Provider(_)) => panic!("unexpected error: {other}"),
     }
 }
 
@@ -297,6 +297,55 @@ async fn auth_nvidia_nim_sets_the_bearer_header_only_for_a_key() {
 }
 
 #[test]
+fn auth_mantle_signs_the_data_and_sets_the_json_content_type() {
+    let params = object(&[("api_key", JsonValue::String(String::from("mantle-key")))]);
+    let data = object(&[(
+        "model",
+        JsonValue::String(String::from("bedrock_mantle/original")),
+    )]);
+    let context = PassthroughSigning {
+        litellm_params: &params,
+        request_data: Some(&data),
+        api_base: "http://127.0.0.1:1/chat/completions",
+        model: Some("original"),
+    };
+    let config = PassthroughCallConfig {
+        tag: PassthroughConfigTag::BedrockMantle,
+    };
+    let (headers, body) = config.sign_request(Headers::new(), &context).unwrap();
+    assert_eq!(
+        headers.get("Authorization"),
+        Some(&String::from("Bearer mantle-key"))
+    );
+    assert_eq!(
+        headers.get("Content-Type"),
+        Some(&String::from("application/json"))
+    );
+    assert_eq!(
+        body.as_deref(),
+        Some(br#"{"model": "bedrock_mantle/original"}"#.as_slice())
+    );
+}
+
+#[test]
+fn auth_mantle_without_a_key_is_refused() {
+    let config = PassthroughCallConfig {
+        tag: PassthroughConfigTag::BedrockMantle,
+    };
+    let empty = Object::new();
+    let unsigned = PassthroughSigning {
+        litellm_params: &empty,
+        request_data: None,
+        api_base: "http://127.0.0.1:1/chat/completions",
+        model: None,
+    };
+    let Err(error) = config.sign_request(Headers::new(), &unsigned) else {
+        panic!("a mantle call without a key is refused");
+    };
+    assert!(error.to_string().contains("Bedrock Mantle auth failed"));
+}
+
+#[test]
 fn auth_credentials_failure_keeps_its_upstream_status() {
     let refused = SourceFailure {
         class: String::from("AuthenticationError"),
@@ -308,9 +357,9 @@ fn auth_credentials_failure_keeps_its_upstream_status() {
             assert_eq!(status, 401);
             assert_eq!(message, "token refused");
         }
-        other @ ConfigError::Passthrough(_)
-        | other @ ConfigError::ValueError { .. }
-        | other @ ConfigError::Provider(_) => panic!("unexpected error: {other}"),
+        other @ (ConfigError::Passthrough(_)
+        | ConfigError::ValueError { .. }
+        | ConfigError::Provider(_)) => panic!("unexpected error: {other}"),
     }
     let preflight = SourceFailure {
         class: String::from("ValueError"),
@@ -319,9 +368,9 @@ fn auth_credentials_failure_keeps_its_upstream_status() {
     };
     match ConfigError::from(CredentialsError::Source(preflight)) {
         ConfigError::ValueError { message } => assert_eq!(message, "no token source"),
-        other @ ConfigError::Passthrough(_)
-        | other @ ConfigError::Message { .. }
-        | other @ ConfigError::Provider(_) => panic!("unexpected error: {other}"),
+        other @ (ConfigError::Passthrough(_)
+        | ConfigError::Message { .. }
+        | ConfigError::Provider(_)) => panic!("unexpected error: {other}"),
     }
 }
 
@@ -349,9 +398,9 @@ fn urls_vllm_without_a_base_is_a_value_error() {
         ConfigError::ValueError { message } => {
             assert!(message.contains("VLLM_API_BASE is not set"));
         }
-        other @ ConfigError::Passthrough(_)
-        | other @ ConfigError::Message { .. }
-        | other @ ConfigError::Provider(_) => panic!("unexpected error: {other}"),
+        other @ (ConfigError::Passthrough(_)
+        | ConfigError::Message { .. }
+        | ConfigError::Provider(_)) => panic!("unexpected error: {other}"),
     }
 }
 
@@ -393,9 +442,9 @@ fn urls_bedrock_refuses_an_invalid_region() {
         ConfigError::ValueError { message } => {
             assert!(message.contains("Invalid AWS region format: 'Bad_Region'"));
         }
-        other @ ConfigError::Passthrough(_)
-        | other @ ConfigError::Message { .. }
-        | other @ ConfigError::Provider(_) => panic!("unexpected error: {other}"),
+        other @ (ConfigError::Passthrough(_)
+        | ConfigError::Message { .. }
+        | ConfigError::Provider(_)) => panic!("unexpected error: {other}"),
     }
 }
 

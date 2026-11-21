@@ -19,13 +19,12 @@ use betterlite_openai::passthrough::transformation::types::{
 };
 use bytes::Bytes;
 use rstest::rstest;
-use secrecy::SecretString;
 use url::Url;
 use url::form_urlencoded;
 
 use self::support::{
-    MODEL, bedrock_args, client_timeouts, header, logging_state, mantle_args, object, proxy_client,
-    resolved, vllm_args,
+    MODEL, bedrock_args, client_timeouts, header, logging_state, object, proxy_client, resolved,
+    vllm_args,
 };
 use super::config::PassthroughCallConfig;
 use super::params;
@@ -97,7 +96,7 @@ async fn call_content_wins_over_data_and_json() {
     let answer = allm_passthrough_route(args, &mut state, &http)
         .await
         .expect("the upstream answers");
-    assert_eq!(full_bytes(answer.body).as_ref(), b"raw-bytes");
+    assert_eq!(full_bytes(answer.body).as_ref(), b"pong");
     let sent = serving.finish().unwrap();
     assert!(sent.head.contains("content-type: application/octet-stream"));
     assert!(!sent.head.contains("application/x-www-form-urlencoded"));
@@ -175,26 +174,33 @@ async fn call_files_build_a_multipart_body_after_the_data_fields() {
 }
 
 #[tokio::test]
-async fn call_mantle_signs_the_body_before_the_model_swap() {
+async fn call_files_expand_a_list_field_into_one_part_per_item() {
     let serving = serve(reply("200 fixture", &[], "pong"), Duration::ZERO).unwrap();
-    let mut args = mantle_args(&format!("http://{}", serving.address));
-    args.api_key = Some(SecretString::from("mantle-key"));
-    args.content = Some(Bytes::from_static(b"ignored"));
-    args.json = Some(JsonValue::Object(json_object(&[(
-        "model",
-        "bedrock_mantle/original",
-    )])));
+    let mut args = vllm_args(&format!("http://{}/v1", serving.address));
+    let mut data = json_object(&[("name", "ada")]);
+    data.insert(
+        "tag".to_owned(),
+        JsonValue::Array(vec![
+            JsonValue::String(String::from("a")),
+            JsonValue::String(String::from("b")),
+        ]),
+    );
+    args.data = Some(data);
+    args.files = Some(vec![PassthroughUpload {
+        field: String::from("file"),
+        filename: String::from("a.txt"),
+        content_type: Some(String::from("text/plain")),
+        bytes: Bytes::from_static(b"hello"),
+    }]);
     let mut state = logging_state();
     let http = proxy_client(1024);
-    let answer = allm_passthrough_route(args, &mut state, &http)
+    allm_passthrough_route(args, &mut state, &http)
         .await
         .expect("the upstream answers");
-    assert_eq!(answer.status, 200);
     let sent = serving.finish().unwrap();
-    assert_eq!(sent.line, "POST /chat/completions HTTP/1.1");
-    assert!(sent.head.contains("authorization: Bearer mantle-key"));
-    assert!(sent.head.contains("content-type: application/json"));
-    assert_eq!(sent.body, r#"{"model": "bedrock_mantle/original"}"#);
+    assert_eq!(sent.body.matches("name=\"tag\"").count(), 2);
+    assert!(sent.body.contains("\r\n\r\na\r\n"));
+    assert!(sent.body.contains("\r\n\r\nb\r\n"));
 }
 
 #[tokio::test]

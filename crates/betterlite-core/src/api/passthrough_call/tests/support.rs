@@ -78,14 +78,6 @@ pub(crate) fn vllm_args(api_base: &str) -> PassthroughCallArgs {
     args
 }
 
-pub(crate) fn mantle_args(api_base: &str) -> PassthroughCallArgs {
-    let mut args = base_args();
-    args.model = String::from("mantle-model");
-    args.custom_llm_provider = Some(String::from("bedrock_mantle"));
-    args.api_base = Some(api_base.to_owned());
-    args
-}
-
 pub(crate) fn bedrock_args(api_base: &str) -> PassthroughCallArgs {
     let mut args = base_args();
     args.model = String::from("anthropic.claude");
