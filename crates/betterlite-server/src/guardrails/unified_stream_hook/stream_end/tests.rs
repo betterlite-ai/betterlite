@@ -61,6 +61,7 @@ const ANTHROPIC_DONE: &str = r#"{"type":"message_delta","delta":{"stop_reason":"
 const ANTHROPIC_FRAME: &str = r#""event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}\n\n""#;
 const ANTHROPIC_DATA_ONLY: &str =
     r#""data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}\n\n""#;
+const ENDED_EVERYWHERE: &[&str] = &[CHAT_DONE, ANTHROPIC_DONE, ANTHROPIC_FRAME, RESPONSES_DONE];
 
 fn parsed(items: &[&str]) -> Vec<GuardrailValue> {
     items
@@ -89,55 +90,75 @@ fn responses() -> Probe {
     })
 }
 
-#[rstest]
-#[case::any_choice_finished(&[CHAT_OPEN, CHAT_DONE], true)]
-#[case::still_open(&[CHAT_OPEN, CHAT_OPEN], false)]
-#[case::nothing_yet(&[], false)]
-fn chat_ends_once_a_choice_has_a_finish_reason(#[case] items: &[&str], #[case] ended: bool) {
-    let probe: Probe = UnifiedTranslation::Chat(ChatTranslation {
+fn chat() -> Probe {
+    UnifiedTranslation::Chat(ChatTranslation {
         stamps: (),
         assembler: (),
         _guardrail: PhantomData,
-    });
-    assert_eq!(probe.streaming_has_ended(&parsed(items)), ended);
+    })
 }
 
 #[rstest]
-#[case::terminal_last(&[RESPONSES_OPEN, RESPONSES_DONE], true)]
-#[case::terminal_not_last(&[RESPONSES_DONE, RESPONSES_OPEN], false)]
-#[case::nothing_yet(&[], false)]
-fn responses_ends_on_a_terminal_last_event(#[case] items: &[&str], #[case] ended: bool) {
-    assert_eq!(responses().streaming_has_ended(&parsed(items)), ended);
-}
-
-#[rstest]
-#[case::stop_reason_event(&[ANTHROPIC_OPEN, ANTHROPIC_DONE], true)]
-#[case::sse_frame(&[ANTHROPIC_OPEN, ANTHROPIC_FRAME], true)]
-#[case::data_line_without_event(&[ANTHROPIC_DATA_ONLY], false)]
-#[case::null_stop_reason(&[ANTHROPIC_OPEN, CHAT_DONE], false)]
-fn anthropic_ends_on_a_message_delta_with_a_stop_reason(
+#[case::chat_any_choice_finished(chat(), &[CHAT_OPEN, CHAT_DONE], true)]
+#[case::chat_still_open(chat(), &[CHAT_OPEN, CHAT_OPEN], false)]
+#[case::chat_nothing_yet(chat(), &[], false)]
+#[case::responses_terminal_last(responses(), &[RESPONSES_OPEN, RESPONSES_DONE], true)]
+#[case::responses_terminal_not_last(responses(), &[RESPONSES_DONE, RESPONSES_OPEN], false)]
+#[case::responses_nothing_yet(responses(), &[], false)]
+#[case::anthropic_stop_reason_event(UnifiedTranslation::Anthropic(AnthropicTranslation { stamps: (), _guardrail: PhantomData }), &[ANTHROPIC_OPEN, ANTHROPIC_DONE], true)]
+#[case::anthropic_sse_frame(UnifiedTranslation::Anthropic(AnthropicTranslation { stamps: (), _guardrail: PhantomData }), &[ANTHROPIC_OPEN, ANTHROPIC_FRAME], true)]
+#[case::anthropic_data_line_without_event(UnifiedTranslation::Anthropic(AnthropicTranslation { stamps: (), _guardrail: PhantomData }), &[ANTHROPIC_DATA_ONLY], false)]
+#[case::anthropic_null_stop_reason(UnifiedTranslation::Anthropic(AnthropicTranslation { stamps: (), _guardrail: PhantomData }), &[ANTHROPIC_OPEN, CHAT_DONE], false)]
+#[case::completion(
+    UnifiedTranslation::Completion(CompletionTranslation::default()),
+    ENDED_EVERYWHERE,
+    false
+)]
+#[case::embeddings(
+    UnifiedTranslation::Embeddings(EmbeddingsTranslation::default()),
+    ENDED_EVERYWHERE,
+    false
+)]
+#[case::image(
+    UnifiedTranslation::Image(ImageTranslation::default()),
+    ENDED_EVERYWHERE,
+    false
+)]
+#[case::speech(
+    UnifiedTranslation::Speech(SpeechTranslation::default()),
+    ENDED_EVERYWHERE,
+    false
+)]
+#[case::transcription(
+    UnifiedTranslation::Transcription(TranscriptionTranslation::default()),
+    ENDED_EVERYWHERE,
+    false
+)]
+#[case::video(
+    UnifiedTranslation::Video(VideoTranslation::default()),
+    ENDED_EVERYWHERE,
+    false
+)]
+#[case::a2a(UnifiedTranslation::A2a(A2ATranslation { guardrail: PhantomData }), ENDED_EVERYWHERE, false)]
+#[case::rerank(
+    UnifiedTranslation::Rerank(RerankTranslation(PhantomData)),
+    ENDED_EVERYWHERE,
+    false
+)]
+#[case::google_genai(
+    UnifiedTranslation::GoogleGenAi(GoogleGenAiTranslation(PhantomData)),
+    ENDED_EVERYWHERE,
+    false
+)]
+#[case::mcp(
+    UnifiedTranslation::Mcp(McpTranslation(PhantomData)),
+    ENDED_EVERYWHERE,
+    false
+)]
+fn each_variant_reports_its_own_stream_end(
+    #[case] probe: Probe,
     #[case] items: &[&str],
     #[case] ended: bool,
 ) {
-    let probe: Probe = UnifiedTranslation::Anthropic(AnthropicTranslation {
-        stamps: (),
-        _guardrail: PhantomData,
-    });
     assert_eq!(probe.streaming_has_ended(&parsed(items)), ended);
-}
-
-#[rstest]
-#[case::completion(UnifiedTranslation::Completion(CompletionTranslation::default()))]
-#[case::embeddings(UnifiedTranslation::Embeddings(EmbeddingsTranslation::default()))]
-#[case::image(UnifiedTranslation::Image(ImageTranslation::default()))]
-#[case::speech(UnifiedTranslation::Speech(SpeechTranslation::default()))]
-#[case::transcription(UnifiedTranslation::Transcription(TranscriptionTranslation::default()))]
-#[case::video(UnifiedTranslation::Video(VideoTranslation::default()))]
-#[case::a2a(UnifiedTranslation::A2a(A2ATranslation { guardrail: PhantomData }))]
-#[case::rerank(UnifiedTranslation::Rerank(RerankTranslation(PhantomData)))]
-#[case::google_genai(UnifiedTranslation::GoogleGenAi(GoogleGenAiTranslation(PhantomData)))]
-#[case::mcp(UnifiedTranslation::Mcp(McpTranslation(PhantomData)))]
-fn other_variants_never_end_the_stream(#[case] probe: Probe) {
-    let ended_everywhere = parsed(&[CHAT_DONE, ANTHROPIC_DONE, ANTHROPIC_FRAME, RESPONSES_DONE]);
-    assert!(!probe.streaming_has_ended(&ended_everywhere));
 }

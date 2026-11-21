@@ -74,15 +74,18 @@ where
     S: Stream<Item = Result<GuardrailValue, E>> + Send + 'run,
     E: Error + Send + Sync + 'static,
 {
-    let start = match plan(params) {
+    let state = match plan(params) {
         Ok(Plan::Incremental(loop_params)) => {
             let transformed = incremental_transform_stream(loop_params, source);
             return Either::Left(transformed.map(|result| result.map_err(StreamHookError::Loop)));
         }
-        Ok(Plan::Hook(stage)) => Ok(stage),
-        Err(error) => Err(error),
+        Ok(Plan::Hook(stage)) => HookState::new(Ok(stage), source),
+        Err(error) => HookState::new(Err(error), source),
     };
-    Either::Right(hook_stream(start, source))
+    Either::Right(unfold(state, |mut current| async move {
+        let output = current.next_output().await?;
+        Some((output, current))
+    }))
 }
 
 fn plan<'run, T, G, E>(
@@ -165,46 +168,33 @@ fn gate_open<E>(
     Ok(admitted)
 }
 
-fn hook_stream<'run, T, G, S, E>(
-    start: Result<Stage<'run, T, G>, StreamHookError<E>>,
-    source: S,
-) -> impl Stream<Item = HookOutput<E>> + Send + 'run
-where
-    T: BaseTranslation<Guardrail = G, LogTarget = GuardrailLogTarget, Failure = GuardrailFailure>
-        + StreamEndCheck
-        + Sync
-        + 'run,
-    G: GuardrailContract + 'run,
-    S: Stream<Item = Result<GuardrailValue, E>> + Send + 'run,
-    E: Error + Send + Sync + 'static,
-{
-    let mut window = Window {
-        chunk_counter: 0,
-        responses_so_far: Vec::new(),
-        responses_yielded: Vec::new(),
-        withheld_items: Vec::new(),
-        pending_items: Vec::new(),
-        last_scan_key: None,
-        tool_calls_in_flight: false,
-        outputs: VecDeque::new(),
-    };
-    let (stage, finished) = match start {
-        Ok(stage) => (stage, false),
-        Err(error) => {
-            window.outputs.push_back(Err(error));
-            (Stage::PassThrough, true)
+impl<'run, T, G, S, E> HookState<'run, T, G, S, E> {
+    // a plan error is the only output, so the source is never polled
+    fn new(start: Result<Stage<'run, T, G>, StreamHookError<E>>, source: S) -> Self {
+        let mut window = Window {
+            chunk_counter: 0,
+            responses_so_far: Vec::new(),
+            responses_yielded: Vec::new(),
+            withheld_items: Vec::new(),
+            pending_items: Vec::new(),
+            last_scan_key: None,
+            tool_calls_in_flight: false,
+            outputs: VecDeque::new(),
+        };
+        let (stage, finished) = match start {
+            Ok(stage) => (stage, false),
+            Err(error) => {
+                window.outputs.push_back(Err(error));
+                (Stage::PassThrough, true)
+            }
+        };
+        Self {
+            stage,
+            source: Box::pin(source),
+            window,
+            finished,
         }
-    };
-    let state = HookState {
-        stage,
-        source: Box::pin(source),
-        window,
-        finished,
-    };
-    unfold(state, |mut current| async move {
-        let output = current.next_output().await?;
-        Some((output, current))
-    })
+    }
 }
 
 impl<T, G, S, E> HookState<'_, T, G, S, E>

@@ -68,29 +68,30 @@ where
         T: BaseTranslation<Failure = GuardrailFailure>,
     {
         let stream_started = !self.responses_yielded.is_empty();
-        let http_error = match failure {
+        match failure {
             GuardrailFailure::ModifyResponse(details) => {
                 self.push_block(params.translation, details, stream_started);
-                return;
             }
-            GuardrailFailure::Http { status, detail } => StreamHttpError {
-                status_code: status,
-                detail: HttpErrorDetail::Text(detail),
-            },
-            GuardrailFailure::HttpObject { status, detail } => StreamHttpError {
-                status_code: status,
-                detail: HttpErrorDetail::Object(detail.into_iter().collect()),
-            },
+            GuardrailFailure::Http { status, detail } => {
+                self.emit_http(
+                    params,
+                    status,
+                    HttpErrorDetail::Text(detail),
+                    stream_started,
+                );
+            }
+            GuardrailFailure::HttpObject { status, detail } => {
+                let fields = HttpErrorDetail::Object(detail.into_iter().collect());
+                self.emit_http(params, status, fields, stream_started);
+            }
             other @ (GuardrailFailure::GuardrailRaised { .. }
             | GuardrailFailure::BlockedPii { .. }
             | GuardrailFailure::SensitiveDataRoute(_)
             | GuardrailFailure::Other(_)) => {
                 let failed = StreamLoopError::Guardrail { source: other };
                 self.outputs.push_back(Err(StreamHookError::Loop(failed)));
-                return;
             }
-        };
-        self.emit_http(params, http_error, stream_started);
+        }
     }
 
     fn push_block<T>(
@@ -119,7 +120,8 @@ where
     fn emit_http<T, G>(
         &mut self,
         params: &StreamLoopParams<'_, T, G>,
-        error: StreamHttpError,
+        status_code: u16,
+        detail: HttpErrorDetail,
         stream_started: bool,
     ) where
         T: BaseTranslation<Failure = GuardrailFailure>,
@@ -132,16 +134,18 @@ where
             stream_started,
             responses_yielded: Some(&self.responses_yielded),
         };
-        match emit_streaming_http_error(error, &emission) {
+        let error = StreamHttpError {
+            status_code,
+            detail,
+        };
+        let emitted = emit_streaming_http_error(error, &emission)
+            .map_err(|source| StreamHookError::Loop(StreamLoopError::Http { source }));
+        match emitted {
             Ok(items) => {
-                for item in items {
-                    self.outputs.push_back(Ok(StreamOutput::Item(item)));
-                }
+                let sent = items.into_iter().map(|item| Ok(StreamOutput::Item(item)));
+                self.outputs.extend(sent);
             }
-            Err(source) => {
-                let failed = StreamLoopError::Http { source };
-                self.outputs.push_back(Err(StreamHookError::Loop(failed)));
-            }
+            Err(failed) => self.outputs.push_back(Err(failed)),
         }
     }
 }
