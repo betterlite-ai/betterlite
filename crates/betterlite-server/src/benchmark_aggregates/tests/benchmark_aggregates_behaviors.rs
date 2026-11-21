@@ -77,19 +77,19 @@ fn the_pct_rounds_like_pythons_float_round(
 }
 
 #[rstest]
-#[case(4, 0, "2.0", "0", None, None)]
-#[case(4, 2, "1.5", "2.5", Some("2.5"), Some("4.0"))]
-#[case(0, 0, "0", "0", Some("0"), Some("0"))]
-#[case(4, 0, "2.0", "1.0", Some("1.0"), Some("3.0"))]
-#[case(4, 3, "0", "0", Some("0"), Some("0"))]
+#[case(4, 0, ("2.0", "0"), None, None)]
+#[case(4, 2, ("1.5", "2.5"), Some("2.5"), Some("4.0"))]
+#[case(0, 0, ("0", "0"), Some("0"), Some("0"))]
+#[case(4, 0, ("2.0", "1.0"), Some("1.0"), Some("3.0"))]
+#[case(4, 3, ("0", "0"), Some("0"), Some("0"))]
 fn the_savings_cohort_needs_a_recorded_baseline(
     #[case] turns: i64,
     #[case] estimated_turns: i64,
-    #[case] spend: &str,
-    #[case] saved_spend: &str,
+    #[case] amounts: (&str, &str),
     #[case] expected_saved: Option<&str>,
     #[case] expected_baseline: Option<&str>,
 ) {
+    let (spend, saved_spend) = amounts;
     let (saved, baseline) = savings_cohort(turns, estimated_turns, dec(spend), dec(saved_spend));
     assert_eq!(saved, expected_saved.map(dec));
     assert_eq!(baseline, expected_baseline.map(dec));
@@ -311,9 +311,8 @@ fn a_summed_total_compares_when_any_row_recorded_a_baseline() {
     assert_eq!(totals.savings_estimated_classifier_cost, Some(dec("0.5")));
 }
 
-#[test]
-fn idle_strategy_routers_get_zeroed_groups_after_the_recorded_ones() {
-    let deployments = [
+fn mixed_deployments() -> [StrategyDeployment<'static>; 7] {
+    [
         StrategyDeployment {
             model_name: Some("complexity-auto"),
             model: Some("auto_router/complexity_router"),
@@ -342,7 +341,12 @@ fn idle_strategy_routers_get_zeroed_groups_after_the_recorded_ones() {
             model_name: Some("unnamed-model"),
             model: None,
         },
-    ];
+    ]
+}
+
+#[test]
+fn idle_strategy_routers_get_zeroed_groups_after_the_recorded_ones() {
+    let deployments = mixed_deployments();
     let response = benchmarks(&window(), &[complexity_row()], Some(&deployments));
     assert_eq!(response.start_date, "2024-01-01");
     assert_eq!(response.end_date, "2024-01-02");

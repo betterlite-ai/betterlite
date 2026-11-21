@@ -19,8 +19,8 @@ fn the_default_window_ends_today_and_spans_thirty_days() {
     let window = BenchmarkWindow::resolve(None, None, date(2024, 3, 15)).unwrap();
     assert_eq!(window.start_date, "2024-02-14");
     assert_eq!(window.end_date, "2024-03-15");
-    assert_eq!(window.query_start, "2024-02-14");
-    assert_eq!(window.query_end, "2024-03-16");
+    assert_eq!(window.query_start, "2024-02-14T00:00:00");
+    assert_eq!(window.query_end, "2024-03-16T00:00:00");
 }
 
 #[test]
@@ -37,8 +37,8 @@ fn a_single_day_window_queries_the_day_after() {
             .unwrap();
     assert_eq!(window.start_date, "2024-02-29");
     assert_eq!(window.end_date, "2024-02-29");
-    assert_eq!(window.query_start, "2024-02-29");
-    assert_eq!(window.query_end, "2024-03-01");
+    assert_eq!(window.query_start, "2024-02-29T00:00:00");
+    assert_eq!(window.query_end, "2024-03-01T00:00:00");
 }
 
 #[test]
@@ -46,7 +46,7 @@ fn an_end_on_new_years_eve_queries_the_next_year() {
     let window =
         BenchmarkWindow::resolve(Some("2024-12-31"), Some("2024-12-31"), date(2024, 3, 15))
             .unwrap();
-    assert_eq!(window.query_end, "2025-01-01");
+    assert_eq!(window.query_end, "2025-01-01T00:00:00");
 }
 
 #[test]
@@ -58,20 +58,37 @@ fn one_digit_month_and_day_are_accepted() {
 }
 
 #[test]
+fn a_space_padded_day_is_read_like_pythons_strptime() {
+    let window =
+        BenchmarkWindow::resolve(Some("2024-1- 5"), Some("2024-1-6"), date(2024, 3, 15)).unwrap();
+    assert_eq!(window.start_date, "2024-01-05");
+    assert_eq!(window.end_date, "2024-01-06");
+}
+
+#[test]
 fn an_early_year_prints_an_unpadded_response_date_and_a_padded_query_bound() {
     let window =
         BenchmarkWindow::resolve(Some("0001-01-02"), Some("0001-01-02"), date(2024, 1, 1)).unwrap();
     assert_eq!(window.start_date, "1-01-02");
     assert_eq!(window.end_date, "1-01-02");
-    assert_eq!(window.query_start, "0001-01-02");
-    assert_eq!(window.query_end, "0001-01-03");
+    assert_eq!(window.query_start, "0001-01-02T00:00:00");
+    assert_eq!(window.query_end, "0001-01-03T00:00:00");
+}
+
+#[test]
+fn a_default_start_on_the_first_calendar_day_is_accepted() {
+    let window = BenchmarkWindow::resolve(None, Some("0001-01-31"), date(2024, 1, 1)).unwrap();
+    assert_eq!(window.start_date, "1-01-01");
+    assert_eq!(window.end_date, "1-01-31");
+    assert_eq!(window.query_start, "0001-01-01T00:00:00");
+    assert_eq!(window.query_end, "0001-02-01T00:00:00");
 }
 
 #[test]
 fn an_explicit_start_survives_the_last_calendar_day() {
     let window =
         BenchmarkWindow::resolve(Some("9999-12-30"), Some("9999-12-30"), date(2024, 1, 1)).unwrap();
-    assert_eq!(window.query_end, "9999-12-31");
+    assert_eq!(window.query_end, "9999-12-31T00:00:00");
 }
 
 #[rstest]
@@ -86,6 +103,10 @@ fn an_explicit_start_survives_the_last_calendar_day() {
 #[case("2024-01-01x")]
 #[case("2024-01-01-01")]
 #[case("abcd-01-01")]
+#[case("+202-01-01")]
+#[case("2024-+1-01")]
+#[case("2024-01-+1")]
+#[case("2024-01- 12")]
 #[case("0000-01-01")]
 #[case("")]
 fn an_unparseable_day_is_refused(#[case] value: &str) {
@@ -189,14 +210,13 @@ fn a_document_at_the_limit_decodes() {
 #[test]
 fn a_document_one_byte_past_the_limit_is_refused() {
     let mut document = serde_json::to_vec(&[SessionAggRow::default()]).unwrap();
-    document.resize(MAX_ROUTER_READ_BYTES + 1, b' ');
+    let past_limit = MAX_ROUTER_READ_BYTES.saturating_add(1);
+    document.resize(past_limit, b' ');
     let error = decode_session_agg_rows(&document).unwrap_err();
     assert!(matches!(
         &error,
-        DecodeError::TooLarge {
-            bytes: 1_048_577,
-            limit: 1_048_576,
-        }
+        DecodeError::TooLarge { bytes, limit }
+            if *bytes == past_limit && *limit == MAX_ROUTER_READ_BYTES
     ));
     assert_eq!(
         error.to_string(),

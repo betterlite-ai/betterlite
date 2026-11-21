@@ -13,58 +13,66 @@ use crate::router_probes::ProbeOutput;
 use crate::router_probes::error::OperationError;
 use crate::router_probes::random::InjectedRandom;
 
+// the enum in mod.rs would otherwise carry every field of this payload inline in its largest variant
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Input(Box<Payload>);
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Input {
-    pub now_unix_millis: i64,
+struct Payload {
+    now_unix_millis: i64,
     #[serde(default)]
-    pub start_date: Option<String>,
+    start_date: Option<String>,
     #[serde(default)]
-    pub end_date: Option<String>,
+    end_date: Option<String>,
     #[serde(default)]
-    pub deployments: Vec<Deployment>,
+    deployments: Vec<Deployment>,
     #[serde(default)]
-    pub rows: Vec<Json>,
+    rows: Vec<Json>,
     #[serde(default)]
-    pub parse: Option<ParsePayload>,
+    parse: Option<ParsePayload>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Deployment {
+struct Deployment {
     #[serde(default)]
-    pub model_name: Option<String>,
+    model_name: Option<String>,
     #[serde(default)]
-    pub model: Option<String>,
+    model: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct ParsePayload {
-    pub bytes: u64,
+struct ParsePayload {
+    bytes: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct QueryBounds {
-    pub start: String,
-    pub end: String,
+struct QueryBounds {
+    start: String,
+    end: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub enum ParseOutput {
+enum ParseOutput {
     Valid { rows: usize },
     Invalid { bytes: usize, limit: usize },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Output {
-    pub response: Benchmarks,
-    pub query: QueryBounds,
+#[serde(transparent)]
+pub struct Output(Box<Fields>);
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct Fields {
+    response: Benchmarks,
+    query: QueryBounds,
     #[serde(default)]
-    pub parse: Option<ParseOutput>,
+    parse: Option<ParseOutput>,
 }
 
 fn invalid(error: &dyn StdError) -> OperationError {
@@ -79,24 +87,24 @@ fn invalid_message(message: &str) -> OperationError {
     }
 }
 
-fn window_of(input: &Input) -> Result<BenchmarkWindow, OperationError> {
-    let today = DateTime::<Utc>::from_timestamp_millis(input.now_unix_millis)
+fn window_of(payload: &Payload) -> Result<BenchmarkWindow, OperationError> {
+    let today = DateTime::<Utc>::from_timestamp_millis(payload.now_unix_millis)
         .map(|instant| instant.date_naive())
         .ok_or_else(|| invalid_message("the probe clock is outside the supported calendar"))?;
     BenchmarkWindow::resolve(
-        input.start_date.as_deref(),
-        input.end_date.as_deref(),
+        payload.start_date.as_deref(),
+        payload.end_date.as_deref(),
         today,
     )
     .map_err(|error| invalid(&error))
 }
 
-fn rows_of(input: &Input) -> Result<Vec<SessionAggRow>, OperationError> {
-    let bytes = serde_json::to_vec(&input.rows).map_err(|error| invalid(&error))?;
+fn rows_of(payload: &Payload) -> Result<Vec<SessionAggRow>, OperationError> {
+    let bytes = serde_json::to_vec(&payload.rows).map_err(|error| invalid(&error))?;
     decode_session_agg_rows(&bytes).map_err(|error| invalid(&error))
 }
 
-fn parse_step(rows: &[Json], payload: &ParsePayload) -> Result<ParseOutput, OperationError> {
+fn parse_step(rows: &[Json], payload: ParsePayload) -> Result<ParseOutput, OperationError> {
     let size = usize::try_from(payload.bytes).map_err(|error| invalid(&error))?;
     let mut document = serde_json::to_vec(rows).map_err(|error| invalid(&error))?;
     if document.len() > size {
@@ -118,9 +126,10 @@ pub(crate) fn run(
     input: &Input,
     _random: &mut InjectedRandom<'_>,
 ) -> Result<ProbeOutput, OperationError> {
-    let window = window_of(input)?;
-    let rows = rows_of(input)?;
-    let deployments: Vec<StrategyDeployment<'_>> = input
+    let payload = &input.0;
+    let window = window_of(payload)?;
+    let rows = rows_of(payload)?;
+    let deployments: Vec<StrategyDeployment<'_>> = payload
         .deployments
         .iter()
         .map(|deployment| StrategyDeployment {
@@ -129,17 +138,17 @@ pub(crate) fn run(
         })
         .collect();
     let response = benchmarks(&window, &rows, Some(&deployments));
-    let parse = input
+    let parse = payload
         .parse
         .as_ref()
-        .map(|payload| parse_step(&input.rows, payload))
+        .map(|step| parse_step(&payload.rows, *step))
         .transpose()?;
-    Ok(ProbeOutput::BenchmarkAggregates(Output {
+    Ok(ProbeOutput::BenchmarkAggregates(Output(Box::new(Fields {
         response,
         query: QueryBounds {
             start: window.query_start.clone(),
             end: window.query_end.clone(),
         },
         parse,
-    }))
+    }))))
 }

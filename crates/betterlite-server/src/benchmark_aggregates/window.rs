@@ -1,8 +1,10 @@
-use chrono::{Datelike, Days, NaiveDate};
+use chrono::Datelike as _;
+use chrono::{Days, NaiveDate};
 use thiserror::Error;
 
 pub const DEFAULT_WINDOW_DAYS: u64 = 30;
 
+const FIRST_CALENDAR_YEAR: i32 = 1;
 const LAST_CALENDAR_YEAR: i32 = 9999;
 const YEAR_DIGITS: usize = 4;
 
@@ -26,6 +28,7 @@ pub enum WindowError {
 }
 
 impl BenchmarkWindow {
+    #[must_use]
     pub fn resolve(
         start_date: Option<&str>,
         end_date: Option<&str>,
@@ -39,6 +42,7 @@ impl BenchmarkWindow {
             Some(value) => parse_day(value)?,
             None => end
                 .checked_sub_days(Days::new(DEFAULT_WINDOW_DAYS))
+                .filter(|date| date.year() >= FIRST_CALENDAR_YEAR)
                 .ok_or(WindowError::CalendarRange)?,
         };
         if end < start {
@@ -49,10 +53,10 @@ impl BenchmarkWindow {
             .filter(|date| date.year() <= LAST_CALENDAR_YEAR)
             .ok_or(WindowError::CalendarRange)?;
         Ok(Self {
-            start_date: day_text(start, false),
-            end_date: day_text(end, false),
-            query_start: day_text(start, true),
-            query_end: day_text(after_end, true),
+            start_date: day_text(start),
+            end_date: day_text(end),
+            query_start: instant_text(start),
+            query_end: instant_text(after_end),
         })
     }
 }
@@ -67,15 +71,25 @@ fn parse_day(value: &str) -> Result<NaiveDate, WindowError> {
     else {
         return Err(invalid());
     };
-    let parsed_year = parse_part(year, YEAR_DIGITS, YEAR_DIGITS).ok_or_else(invalid)?;
+    let parsed_year = parse_part(year, YEAR_DIGITS, YEAR_DIGITS)
+        .filter(|candidate| (FIRST_CALENDAR_YEAR..=LAST_CALENDAR_YEAR).contains(candidate))
+        .ok_or_else(invalid)?;
     let parsed_month = parse_part(month, 1, 2).ok_or_else(invalid)?;
-    let parsed_day = parse_part(day, 1, 2).ok_or_else(invalid)?;
+    let parsed_day = parse_day_part(day).ok_or_else(invalid)?;
     NaiveDate::from_ymd_opt(
         parsed_year,
         u32::try_from(parsed_month).unwrap_or_default(),
         u32::try_from(parsed_day).unwrap_or_default(),
     )
     .ok_or_else(invalid)
+}
+
+// Python's strptime reads %d as a plain digit, two digits, or one digit behind a space
+fn parse_day_part(text: &str) -> Option<i32> {
+    match text.strip_prefix(' ') {
+        Some(digits) => parse_part(digits, 1, 1),
+        None => parse_part(text, 1, 2),
+    }
 }
 
 fn parse_part(text: &str, min_digits: usize, max_digits: usize) -> Option<i32> {
@@ -88,9 +102,17 @@ fn parse_part(text: &str, min_digits: usize, max_digits: usize) -> Option<i32> {
     text.parse::<i32>().ok()
 }
 
-fn day_text(date: NaiveDate, padded: bool) -> String {
-    if padded {
-        return format!("{:04}-{:02}-{:02}", date.year(), date.month(), date.day());
-    }
+// strftime("%Y-%m-%d") on glibc leaves a year below 1000 unpadded
+fn day_text(date: NaiveDate) -> String {
     format!("{}-{:02}-{:02}", date.year(), date.month(), date.day())
+}
+
+// datetime.isoformat() of midnight UTC, the bound the rollup query binds
+fn instant_text(date: NaiveDate) -> String {
+    format!(
+        "{:04}-{:02}-{:02}T00:00:00",
+        date.year(),
+        date.month(),
+        date.day()
+    )
 }
