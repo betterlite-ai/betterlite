@@ -59,15 +59,15 @@ fn prepare(
     let thread_id = text(&kwargs, "thread_id")?
         .ok_or_else(|| AssistantDispatchError::missing_arguments(function, &["thread_id"]))?;
     let data = match operation {
-        MessageOperation::Append => Some(parse_value::<MessageData>(&Json::Object(subset(
-            &kwargs, &NAMED,
-        )))?),
+        MessageOperation::Append => Some(parse_value::<MessageData>(&Json::Object(
+            subset(&kwargs, &NAMED).into_iter().collect(),
+        ))?),
         MessageOperation::List => None,
     };
     for name in ["thread_id", "role", "content", "attachments", "metadata"] {
         kwargs.remove(name);
     }
-    let params: MessageParams = parse_value(&Json::Object(kwargs))?;
+    let params: MessageParams = parse_value(&Json::Object(kwargs.into_iter().collect()))?;
     Ok((thread_id, data, params))
 }
 

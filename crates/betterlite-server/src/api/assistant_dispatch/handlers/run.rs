@@ -86,6 +86,8 @@ fn thread_call(
         client: request.client.as_ref().map(AssistantClient::run),
         event_handler: request.event_handler.clone(),
         arun_thread: None,
-        params: parse_value(&Json::Object(subset(&kwargs, &RUN_PARAMS)))?,
+        params: parse_value(&Json::Object(
+            subset(&kwargs, &RUN_PARAMS).into_iter().collect(),
+        ))?,
     })
 }

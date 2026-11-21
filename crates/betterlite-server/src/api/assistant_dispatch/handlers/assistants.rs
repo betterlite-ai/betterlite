@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
 use betterlite_core::api::assistant_read_delete::request::{
-    AssistantOperation as ReadDeleteOperation, AssistantParams, AssistantReadDeleteInput,
-    AssistantWrapper,
+    AssistantOperation as ReadDeleteOperation, AssistantReadDeleteInput, AssistantWrapper,
 };
 use betterlite_core::api::assistant_read_delete::sdk_dispatch::SdkDispatch;
 use betterlite_core::api::assistant_read_delete::{AssistantReadDelete, AssistantStep};
@@ -44,7 +43,7 @@ pub(super) async fn create<T: Deps, S: Sources>(
 ) -> Dispatched<T> {
     let mut fields = merged.kwargs;
     fields.insert(String::from("provider"), Json::Text(merged.provider));
-    let mut input: AssistantCreateInput = parse_value(&Json::Object(fields))?;
+    let mut input: AssistantCreateInput = parse_value(&Json::Object(fields.into_iter().collect()))?;
     input.client = request
         .client
         .as_ref()
@@ -130,6 +129,10 @@ fn read_delete_input(
         before: text(&merged.kwargs, "before")?,
         limit: optional(&merged.kwargs, "limit")?,
         order: text(&merged.kwargs, "order")?,
-        params: parse_value(&Json::Object(subset(&merged.kwargs, &READ_DELETE_PARAMS)))?,
+        params: parse_value(&Json::Object(
+            subset(&merged.kwargs, &READ_DELETE_PARAMS)
+                .into_iter()
+                .collect(),
+        ))?,
     })
 }
