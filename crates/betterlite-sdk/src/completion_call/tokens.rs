@@ -64,8 +64,8 @@ pub async fn count_tokens(
     let provider = resolved.provider.slug().to_owned();
     let api_key = request.api_key.or(resolved.api_key.as_ref());
     let api_base = request.api_base.or(resolved.api_base.as_deref());
-    if let Some(counter) = counter.filter(|counter| counter.should_use(&provider))
-        && let Some(result) = counter
+    if let Some(counter) = counter.filter(|counter| counter.should_use(&provider)) {
+        let counted = counter
             .count(&ProviderTokenCountRequest {
                 model_to_use: &resolved.model,
                 request_model: request.model,
@@ -75,10 +75,13 @@ pub async fn count_tokens(
                 api_key,
                 api_base,
             })
-            .await
-        && !result.error
-    {
-        return Ok(result);
+            .await;
+        match counted {
+            Some(result) if !result.error => return Ok(result),
+            Some(_) | None => {
+                tracing::debug!(provider = %provider, "provider counting failed; counting locally");
+            }
+        }
     }
     let mut messages: Vec<Json> = request.messages.map(<[Json]>::to_vec).unwrap_or_default();
     if let Some(system) = request.system.filter(|_given| !messages.is_empty()) {
