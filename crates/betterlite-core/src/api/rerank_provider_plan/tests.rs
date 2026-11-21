@@ -2,7 +2,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::ready;
-use std::sync::{Mutex, PoisonError};
+use std::io;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_config::api::rerank_provider_plan::{Environment, RerankSettings};
@@ -32,6 +33,7 @@ use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Number;
 use tokio::runtime::{Builder, Runtime};
+use tracing::subscriber::{DefaultGuard, set_default};
 
 use super::call::{RerankCall, ReturnDocuments};
 use super::dispatch::{
@@ -331,6 +333,45 @@ fn logging_state() -> LoggingState {
     .expect("the logging fixture builds")
 }
 
+#[derive(Clone, Default)]
+struct CapturedLogs(Arc<Mutex<Vec<u8>>>);
+
+impl CapturedLogs {
+    fn text(&self) -> String {
+        let bytes = self
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        String::from_utf8(bytes).expect("the captured log is UTF-8")
+    }
+}
+
+impl io::Write for CapturedLogs {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .map_err(|error| io::Error::other(error.to_string()))?
+            .extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+fn capture_logs() -> (CapturedLogs, DefaultGuard) {
+    let captured = CapturedLogs::default();
+    let writer = captured.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(move || writer.clone())
+        .with_max_level(tracing::Level::DEBUG)
+        .with_ansi(false)
+        .finish();
+    (captured, set_default(subscriber))
+}
+
 fn defaults() -> RerankSettings {
     RerankSettings {
         api_key: None,
@@ -475,6 +516,19 @@ fn a_string_timeout_becomes_a_float_after_mapping() {
 }
 
 #[test]
+fn a_padded_string_timeout_is_trimmed_before_parsing() {
+    let ops = FakeOps::default();
+    let identity = cohere_identity();
+    let case = Case::new(&ops, defaults(), BTreeMap::new());
+    let mut logging = logging_state();
+    let mut call = rerank_call("cohere");
+    call.kwargs = with(&[("timeout", Json::Text(String::from(" 2.5 ")))]);
+    case.dispatch(&identity, call, &mut logging)
+        .expect("the padded string timeout dispatches");
+    assert_eq!(ops.sends()[0].timeout_seconds, Some(2.5_f64));
+}
+
+#[test]
 fn a_bad_timeout_fails_before_the_provider_call() {
     let ops = FakeOps::default();
     let identity = cohere_identity();
@@ -489,6 +543,25 @@ fn a_bad_timeout_fails_before_the_provider_call() {
     assert!(matches!(error.class, ErrorClass::ApiConnection(_)));
     assert_eq!(ops.options().len(), 1);
     assert!(ops.sends().is_empty());
+}
+
+#[test]
+fn a_provider_failure_message_and_its_diagnostic_are_redacted() {
+    let ops = FakeOps::failing_send(429, "slow down sk-abcdefghijklmnopqrstuvwxyz012345");
+    let identity = cohere_identity();
+    let case = Case::new(&ops, defaults(), BTreeMap::new());
+    let mut logging = logging_state();
+    let (captured, subscriber) = capture_logs();
+    let error = case
+        .dispatch(&identity, rerank_call("cohere"), &mut logging)
+        .expect_err("the provider failure raises");
+    drop(subscriber);
+    assert_eq!(error.message, "slow down REDACTED");
+    assert!(
+        captured
+            .text()
+            .contains("Error in rerank: slow down REDACTED")
+    );
 }
 
 #[test]

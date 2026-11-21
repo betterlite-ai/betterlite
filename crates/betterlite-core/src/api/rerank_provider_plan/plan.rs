@@ -87,11 +87,11 @@ where
 }
 // The error diagnostic runs before B011 maps the failure, as the except block does
 fn raise(redactor: &Redactor, failure: RawException) -> RerankException {
-    tracing::error!("{}{}", DIAGNOSTIC_PREFIX, failure.error_str);
-    let message = failure.error_str.clone();
+    let text = redactor.redact_string(&failure.error_str);
+    tracing::error!("{}{}", DIAGNOSTIC_PREFIX, text);
     RerankException {
         class: dispatch(&DispatchInput::Raw(Box::new(failure)), redactor),
-        message,
+        message: text,
     }
 }
 fn present_version_params(max_chunks: Option<i64>, max_tokens: Option<i64>) -> Vec<String> {

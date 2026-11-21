@@ -60,10 +60,13 @@ impl TimeoutArg {
     pub fn seconds(&self) -> Result<f64, CallError> {
         match self {
             Self::Number(value) => Ok(*value),
-            Self::Text(text) => text.parse::<f64>().map_err(|source| CallError::Timeout {
-                value: text.clone(),
-                source,
-            }),
+            Self::Text(text) => text
+                .trim()
+                .parse::<f64>()
+                .map_err(|source| CallError::Timeout {
+                    value: text.clone(),
+                    source,
+                }),
         }
     }
 }
