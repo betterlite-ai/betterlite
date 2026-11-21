@@ -121,6 +121,26 @@ async fn dispatch_agenerate_content_resolves_the_provider_before_the_inner_entry
 }
 
 #[tokio::test]
+async fn dispatch_agenerate_stream_resolves_the_provider_before_setup() {
+    let harness = Harness::new();
+    let contents = contents();
+    let kwargs = object("{}");
+    let request = request("missing-model", &contents, None, &kwargs);
+
+    let dispatch = harness.call(Entry::AgenerateStream, &request).await;
+
+    let Err(failure) = dispatch.answer else {
+        panic!("the provider resolution fails first");
+    };
+    assert!(matches!(
+        failure.error,
+        GenerateContentError::Resolve(ResolutionError::MissingProvider { .. })
+    ));
+    assert_eq!(failure.class.metadata().status_code, 400_u16);
+    assert_eq!(harness.source.requests().len(), 0);
+}
+
+#[tokio::test]
 async fn dispatch_adapter_call_forwards_metadata_headers_and_proxy_request() {
     let harness = Harness::new();
     let contents = contents();
@@ -458,6 +478,26 @@ async fn mock_generate_content_returns_the_mock_before_any_setup() {
     };
     assert_eq!(value, json(&MOCK_TEMPLATE.replace("TEXT", MOCK_TEXT)));
     assert_eq!(harness.source.requests().len(), 0);
+    assert_eq!(harness.executor.seen().len(), 0);
+}
+
+#[tokio::test]
+async fn mock_generate_content_takes_an_empty_string_as_given() {
+    let harness = Harness::new();
+    let contents = contents();
+    let kwargs = object(r#"{"mock_response":""}"#);
+    // an unresolvable model proves setup never ran
+    let request = request("missing-model", &contents, None, &kwargs);
+
+    let dispatch = harness.call(Entry::Generate, &request).await;
+
+    let answer = dispatch
+        .answer
+        .expect("the empty string mock answers before setup");
+    let GenerateContentAnswer::Mock(value) = answer else {
+        panic!("an empty string is a string mock");
+    };
+    assert_eq!(value, json(&MOCK_TEMPLATE.replace("TEXT", "")));
     assert_eq!(harness.executor.seen().len(), 0);
 }
 

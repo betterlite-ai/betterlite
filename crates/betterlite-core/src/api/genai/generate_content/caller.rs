@@ -64,13 +64,12 @@ pub(super) fn moved_config(
     }
 }
 
-// GenerateContentHelper.mock_generate_content_response answers only a non-empty string mock_response
+// compatibility.md: an explicit "" is a string used as given, so it answers the mock too
 pub(super) fn string_mock(params: &GenerateContentLiteLLMParams) -> Option<String> {
     params
         .mock_response
         .as_ref()
         .and_then(Json::as_str)
-        .filter(|text| !text.is_empty())
         .map(str::to_owned)
 }
 
