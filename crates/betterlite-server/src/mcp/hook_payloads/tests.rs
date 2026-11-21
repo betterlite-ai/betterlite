@@ -349,6 +349,34 @@ fn auth_policies_resolve_through_the_policy_registry() {
 }
 
 #[rstest]
+#[case::the_context_model(
+    r#"{"guardrail_context": {"model": "gpt-4o"}, "model": "kw", "user_api_key_auth": {"metadata": {"policies": ["p1"]}}}"#,
+    r#"["pii"]"#
+)]
+#[case::the_kwargs_model(
+    r#"{"guardrail_context": {"metadata": {}}, "model": "gpt-4o", "user_api_key_auth": {"metadata": {"policies": ["p1"]}}}"#,
+    r#"["pii"]"#
+)]
+#[case::another_kwargs_model(
+    r#"{"model": "other", "user_api_key_auth": {"metadata": {"policies": ["p1"]}}}"#,
+    "[]"
+)]
+#[case::the_fallback_model(r#"{"user_api_key_auth": {"metadata": {"policies": ["p1"]}}}"#, "[]")]
+fn a_policy_condition_matches_the_resolved_request_model(
+    #[case] hook_kwargs: &str,
+    #[case] expected: &str,
+) {
+    let mut policies = PolicyRegistry::default();
+    let raw: BTreeMap<String, RawPolicy> = serde_json::from_str(
+        r#"{"p1": {"guardrails": {"add": ["pii"]}, "condition": {"model": "gpt-4o"}}}"#,
+    )
+    .unwrap();
+    policies.load_policies(raw).unwrap();
+    let request = convert_with(&policies, &arguments("{}"), &kwargs(hook_kwargs), true).unwrap();
+    assert_eq!(metadata_entry(&request, "guardrails"), Some(json(expected)));
+}
+
+#[rstest]
 #[case::metadata_not_an_object(r#"{"metadata": "kg"}"#, "metadata", "guardrails")]
 #[case::guardrails_not_a_list(
     r#"{"team_metadata": {"guardrails": "kg"}}"#,
