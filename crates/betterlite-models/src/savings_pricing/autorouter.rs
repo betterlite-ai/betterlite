@@ -9,7 +9,6 @@ use crate::savings_evidence::pricing_basis::PricingBasis;
 use crate::savings_evidence::snapshot::{
     CostBreakdown, pricing_basis_from_breakdown, recorded_token_cost,
 };
-use crate::savings_evidence::usage::LoggedUsage;
 use crate::savings_evidence::usage::baseline::cache_token_split;
 use crate::tiered_pricing::Scalar;
 
@@ -70,7 +69,8 @@ where
 {
     let baseline = resolve_model(context, input.baseline_model, None)?;
     let selected = resolve_model(context, input.selected_model, input.selected_provider)?;
-    if input.baseline_usage.is_none() && has_cache_buckets(&input.usage.usage) {
+    let (cache_read, cache_creation) = cache_token_split(&input.usage.usage);
+    if input.baseline_usage.is_none() && (cache_read != 0 || cache_creation != 0) {
         return None;
     }
     let prices = input
@@ -130,11 +130,6 @@ where
             database: input.database,
         },
     )
-}
-
-const fn has_cache_buckets(usage: &LoggedUsage) -> bool {
-    let (cache_read, cache_creation) = cache_token_split(usage);
-    cache_read != 0 || cache_creation != 0
 }
 
 fn observed_equivalent<C>(

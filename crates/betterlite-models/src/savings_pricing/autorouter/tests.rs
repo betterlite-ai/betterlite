@@ -165,16 +165,22 @@ fn compute_uses_the_recorded_selected_cost() {
 fn compute_normalizes_unpriced_baseline_cache() {
     let usage = cache_usage(2, 3);
     let database = zone_db();
-    let info = priced(&record(
-        r#"{"input_cost_per_token": 1.0, "cache_read_input_token_cost": 0.5}"#,
+    // An explicit zero cache-write rate is no rate, so the baseline pays input for those tokens.
+    let baseline_info = priced(&record(
+        r#"{"input_cost_per_token": 2.0, "cache_read_input_token_cost": 0.5,
+            "cache_creation_input_token_cost": 0}"#,
+    ));
+    let selected_info = priced(&record(
+        r#"{"input_cost_per_token": 1.0, "cache_read_input_token_cost": 0.5,
+            "cache_creation_input_token_cost": 3.0}"#,
     ));
     let mut input = base_input(&usage, &database);
-    input.baseline_info = Some(&info);
-    input.selected_info = Some(&info);
+    input.baseline_info = Some(&baseline_info);
+    input.selected_info = Some(&selected_info);
     input.baseline_usage = Some(&usage);
     let savings =
         compute_autorouter_savings(&identity_context(), &input).expect("both sides price");
-    assert_eq!(savings, decimal("3"));
+    assert_eq!(savings, decimal("2"));
 }
 
 #[test]
