@@ -208,3 +208,10 @@ path = "fuzz_targets/spend_buffer.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "daily_metadata"
+path = "fuzz_targets/daily_metadata.rs"
+test = false
+doc = false
+bench = false
