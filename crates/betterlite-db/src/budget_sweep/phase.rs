@@ -109,45 +109,6 @@ macro_rules! sweep_service {
     };
 }
 
-impl<Schedule, Cache, Failures, Successes, Reconnect, Clock, Durations>
-    SweepPhases<Schedule, Cache, Failures, Successes, Reconnect, Clock, Durations>
-where
-    Schedule: ResetSchedule + Send + Sync,
-    Cache: ResetCache + WindowCounterCache,
-    Failures: PhaseFailureSink + Send + Sync,
-    Successes: PhaseSuccessSink + Send + Sync,
-    Reconnect: DbReconnect + Send,
-    Clock: RefreshClock,
-    Durations: WindowDurationSeconds + Send + Sync,
-{
-    async fn reset_keys(&mut self) {
-        sweep_service!(hooks IdentityBudgetReset)
-            .reset(IdentityPhase::Keys)
-            .await;
-    }
-
-    async fn reset_users(&mut self) {
-        sweep_service!(hooks IdentityBudgetReset)
-            .reset(IdentityPhase::Users)
-            .await;
-    }
-
-    async fn reset_teams(&mut self) {
-        sweep_service!(hooks TeamBudgetReset).reset_teams().await;
-    }
-
-    async fn reset_tiers(&mut self) {
-        let default = self.ports.default_enduser_budget_id.as_deref();
-        sweep_service!(hooks BudgetTierSweep, default_enduser_budget_id: default)
-            .reset()
-            .await;
-    }
-
-    async fn reset_windows(&mut self) {
-        sweep_service!(window).reset_windows().await;
-    }
-}
-
 impl<Schedule, Cache, Failures, Successes, Reconnect, Clock, Durations> PhaseRunner
     for SweepPhases<Schedule, Cache, Failures, Successes, Reconnect, Clock, Durations>
 where
@@ -163,11 +124,26 @@ where
 
     async fn run(&mut self, phase: ResetPhase) -> Result<(), Infallible> {
         match phase {
-            ResetPhase::Keys => self.reset_keys().await,
-            ResetPhase::Users => self.reset_users().await,
-            ResetPhase::Teams => self.reset_teams().await,
-            ResetPhase::Tiers => self.reset_tiers().await,
-            ResetPhase::Windows => self.reset_windows().await,
+            ResetPhase::Keys => {
+                sweep_service!(hooks IdentityBudgetReset)
+                    .reset(IdentityPhase::Keys)
+                    .await;
+            }
+            ResetPhase::Users => {
+                sweep_service!(hooks IdentityBudgetReset)
+                    .reset(IdentityPhase::Users)
+                    .await;
+            }
+            ResetPhase::Teams => sweep_service!(hooks TeamBudgetReset).reset_teams().await,
+            ResetPhase::Tiers => {
+                sweep_service!(
+                    hooks BudgetTierSweep,
+                    default_enduser_budget_id: self.ports.default_enduser_budget_id.as_deref()
+                )
+                .reset()
+                .await;
+            }
+            ResetPhase::Windows => sweep_service!(window).reset_windows().await,
         }
         Ok(())
     }
