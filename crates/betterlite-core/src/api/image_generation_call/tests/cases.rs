@@ -75,7 +75,7 @@ fn generation_defaults_and_options() {
         ),
     ]);
     let (answer, _) = case.run(explicit);
-    assert!(answer.is_ok());
+    answer.unwrap();
     assert_eq!(identity.seen().len(), 1);
     let sent = ops.sends();
     assert_eq!(sent.len(), 1);
@@ -158,7 +158,7 @@ fn azure_image_credentials() {
     base.api_version = Some(String::from("2025-01-01"));
     base.api_key = Some(SecretString::from("call-key"));
     let (answer, _) = case.run(base);
-    assert!(answer.is_ok());
+    answer.unwrap();
     let sent = ops.sends();
     assert_eq!(sent.len(), 1);
     assert_eq!(sent[0].api_base.as_deref(), Some("https://call.example"));
@@ -172,7 +172,7 @@ fn azure_image_credentials() {
     fallback.api_version = None;
     fallback.api_key = None;
     let (answer, _) = case.run(fallback);
-    assert!(answer.is_ok());
+    answer.unwrap();
     let sent = ops.sends();
     assert_eq!(sent[1].api_base.as_deref(), Some("https://global.example"));
     assert_eq!(sent[1].api_version.as_deref(), Some("2024-06-01"));
@@ -192,7 +192,7 @@ fn azure_image_credentials() {
         },
     );
     let (answer, _) = env_case.run(call(Some("dep"), Some("azure")));
-    assert!(answer.is_ok());
+    answer.unwrap();
     let sent = env_ops.sends();
     assert_eq!(
         sent[0].api_base.as_deref(),
@@ -211,7 +211,7 @@ fn azure_image_credentials() {
         object(&[("api-key", "caller"), ("Content-Type", "custom")]),
     )]);
     let (answer, _) = header_case.run(headers);
-    assert!(answer.is_ok());
+    answer.unwrap();
     let sent = header_ops.sends();
     assert_eq!(sent[0].header("api-key"), Some("caller"));
     assert_eq!(sent[0].header("Content-Type"), Some("custom"));
@@ -258,7 +258,7 @@ fn azure_image_credentials() {
     let mut callback_case = Case::new(&callback_ops, &callback_identity, Settings::default());
     callback_case.azure_ad_token_provider = Some(Arc::new(StaticProvider));
     let (answer, _) = callback_case.run(call(Some("dep"), Some("azure")));
-    assert!(answer.is_ok());
+    answer.unwrap();
     assert!(callback_ops.entra().is_empty());
     assert!(callback_ops.sends()[0].has_entra_provider);
 
@@ -272,7 +272,7 @@ fn azure_image_credentials() {
         ("client_secret", Json::Text(String::from("secret"))),
     ]);
     let (answer, logging) = entra_case.run(complete);
-    assert!(answer.is_ok());
+    answer.unwrap();
     assert_eq!(
         entra_ops.entra(),
         vec![(
@@ -295,7 +295,7 @@ fn azure_image_credentials() {
         ("azure_scope", Json::Text(String::from("scope.custom"))),
     ]);
     let (answer, _) = entra_case.run(scoped);
-    assert!(answer.is_ok());
+    answer.unwrap();
     assert_eq!(entra_ops.entra()[1].3, "scope.custom");
 
     let partial_ops = FakeOps::new(Some(ImageGenerationConfigTag::Azure(String::from("dep"))));
@@ -307,7 +307,7 @@ fn azure_image_credentials() {
         ("client_id", Json::Text(String::from("client"))),
     ]);
     let (answer, _) = partial_case.run(partial);
-    assert!(answer.is_ok());
+    answer.unwrap();
     assert!(partial_ops.entra().is_empty());
     assert!(!partial_ops.sends()[0].has_entra_provider);
 }
@@ -317,7 +317,7 @@ fn assert_ad_token(case: &Case<'_>, ops: &FakeOps, value: Json, expected: Option
     let mut tokenized = call(Some("dep"), Some("azure"));
     tokenized.kwargs = kwargs(vec![("azure_ad_token", value)]);
     let (answer, _) = case.run(tokenized);
-    assert!(answer.is_ok());
+    answer.unwrap();
     let sent = ops.sends();
     let sent = sent.last().expect("the call was sent");
     assert_eq!(sent.azure_ad_token.as_deref(), expected);
@@ -338,7 +338,7 @@ fn foundry_caller_authorization() {
         object(&[("Authorization", "Bearer caller"), ("X-Trace", "t")]),
     )]);
     let (answer, _) = case.run(caller);
-    assert!(answer.is_ok());
+    answer.unwrap();
     let sent = ops.sends();
     assert_eq!(sent[0].header("Authorization"), Some("Bearer caller"));
     assert_eq!(sent[0].header("Content-Type"), Some("application/json"));
@@ -349,7 +349,7 @@ fn foundry_caller_authorization() {
     let mut lowered = call(Some("flux"), Some("azure_ai"));
     lowered.kwargs = kwargs(vec![("headers", object(&[("API-KEY", "caller")]))]);
     let (answer, _) = case.run(lowered);
-    assert!(answer.is_ok());
+    answer.unwrap();
     let sent = ops.sends();
     assert_eq!(sent[1].header("API-KEY"), Some("caller"));
     assert!(sent[1].header("api-key").is_none());
@@ -359,7 +359,7 @@ fn foundry_caller_authorization() {
     injected.api_key = Some(SecretString::from("resolved-key"));
     injected.kwargs = kwargs(vec![("extra_headers", object(&[("X-Extra", "one")]))]);
     let (answer, _) = case.run(injected);
-    assert!(answer.is_ok());
+    answer.unwrap();
     let sent = ops.sends();
     let last = sent.last().expect("the foundry call was sent");
     assert_eq!(last.api_key.as_deref(), Some("resolved-key"));
@@ -457,7 +457,7 @@ fn generation_provider_selection(
     let mut selected = call(Some("image-model"), Some(slug));
     selected.api_base = Some(String::from("https://call.example"));
     let (answer, _) = case.run(selected);
-    assert!(answer.is_ok());
+    answer.unwrap();
     assert_eq!(
         ops.configs(),
         vec![(Some(String::from("image-model")), slug.to_owned())]
@@ -474,7 +474,7 @@ fn generation_provider_selection(
 
     let global = Case::new(&ops, &identity, global_settings);
     let (answer, _) = global.run(call(Some("image-model"), Some(slug)));
-    assert!(answer.is_ok());
+    answer.unwrap();
     let sent = ops.sends();
     assert_eq!(sent[1].api_base.as_deref(), Some("https://global.example"));
 
@@ -521,7 +521,7 @@ fn generation_provider_selection(
     let mut asynchronous = call(Some("flux-pro"), Some("black_forest_labs"));
     asynchronous.kwargs = kwargs(vec![("aimg_generation", Json::Bool(true))]);
     let (answer, _) = bfl_case.run(asynchronous);
-    assert!(answer.is_ok());
+    answer.unwrap();
     let sent = configured_ops.sends();
     assert_eq!(sent[0].branch, "black_forest_labs");
     assert_eq!(sent[0].model.as_deref(), Some("resolved-flux"));
@@ -534,7 +534,7 @@ fn generation_provider_selection(
     );
     let bedrock_case = Case::new(&configured_bedrock, &bedrock_identity, Settings::default());
     let (answer, _) = bedrock_case.run(call(Some("model"), Some("bedrock")));
-    assert!(answer.is_ok());
+    answer.unwrap();
     let sent = configured_bedrock.sends();
     assert_eq!(sent[0].branch, "bedrock");
     assert_eq!(sent[0].model.as_deref(), Some("resolved-bedrock"));
@@ -569,12 +569,12 @@ fn custom_image_handler_selection() {
     let mut sync_call = call(Some("custom-model"), Some("myprov"));
     sync_call.client_kind = Some(CustomClientKind::Sync);
     let (answer, _) = case.run(sync_call);
-    assert!(answer.is_ok());
+    answer.unwrap();
     assert_eq!(first.calls(), Vec::new());
     assert_eq!(last.calls(), vec![Some(CustomClientKind::Sync)]);
     assert_eq!(last.seen()[0].provider, "myprov");
     assert_eq!(last.seen()[0].model.as_deref(), Some("custom-model"));
-    assert_eq!(last.seen()[0].asynchronous, false);
+    assert!(!last.seen()[0].asynchronous);
 
     let async_handler = Arc::new(FixtureHandler::default());
     let mut async_case = Case::new(&ops, &identity, Settings::default());
@@ -584,7 +584,7 @@ fn custom_image_handler_selection() {
     async_call.client_kind = Some(CustomClientKind::Asynchronous);
     async_call.kwargs = kwargs(vec![("aimg_generation", Json::Bool(true))]);
     let (answer, _) = async_case.run(async_call);
-    assert!(answer.is_ok());
+    answer.unwrap();
     assert_eq!(
         async_handler.calls(),
         vec![Some(CustomClientKind::Asynchronous)]
@@ -597,7 +597,7 @@ fn custom_image_handler_selection() {
     async_call.client_kind = Some(CustomClientKind::Sync);
     async_call.kwargs = kwargs(vec![("aimg_generation", Json::Bool(true))]);
     let (answer, _) = async_case.run(async_call);
-    assert!(answer.is_ok());
+    answer.unwrap();
     assert_eq!(sync_for_async.calls(), vec![None]);
 
     let registered = Arc::new(FixtureHandler::default());
