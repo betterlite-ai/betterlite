@@ -140,6 +140,7 @@ fn reads_the_savings_view_of_the_metadata() {
 #[case::text(r#"{"routing_decision":"x"}"#)]
 #[case::number(r#"{"routing_decision":5}"#)]
 #[case::list(r#"{"routing_decision":[1]}"#)]
+#[case::same_arity_list(r#"{"routing_decision":[1,"gpt-4o",null]}"#)]
 #[case::null(r#"{"routing_decision":null}"#)]
 #[case::absent("{}")]
 fn ignores_a_non_mapping_routing_decision(#[case] text: &str) {
