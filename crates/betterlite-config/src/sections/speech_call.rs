@@ -16,22 +16,22 @@ const DEFAULT_REQUEST_TIMEOUT: f64 = 6000.0;
 pub struct Raw {
     #[serde(default)]
     #[serde(rename = "litellm_settings")]
-    pub settings: RawSettings,
+    settings: RawSettings,
 }
 
 // every litellm_settings key speech reads as a module global, plus the two numbers it resolves
 #[derive(Debug, Default, serde::Deserialize)]
-pub struct RawSettings {
-    pub api_base: Option<String>,
-    pub api_key: Option<SecretString>,
-    pub openai_key: Option<SecretString>,
-    pub organization: Option<String>,
-    pub project: Option<String>,
-    pub azure_key: Option<SecretString>,
-    pub api_version: Option<String>,
-    pub headers: Option<BTreeMap<String, String>>,
-    pub num_retries: Option<RawNumber>,
-    pub request_timeout: Option<RawNumber>,
+struct RawSettings {
+    api_base: Option<String>,
+    api_key: Option<SecretString>,
+    openai_key: Option<SecretString>,
+    organization: Option<String>,
+    project: Option<String>,
+    azure_key: Option<SecretString>,
+    api_version: Option<String>,
+    headers: Option<BTreeMap<String, String>>,
+    num_retries: Option<RawNumber>,
+    request_timeout: Option<RawNumber>,
 }
 
 // the litellm globals speech reads, with the environment tiers get_secret would resolve
@@ -86,6 +86,27 @@ impl Default for Settings {
     }
 }
 
+impl Settings {
+    fn from_environment<L>(lookup: &L) -> Self
+    where
+        L: EnvironmentLookup,
+    {
+        Self {
+            openai_base_url: environment_text(lookup, "OPENAI_BASE_URL"),
+            openai_api_base: environment_text(lookup, "OPENAI_API_BASE"),
+            openai_api_key: environment_secret(lookup, "OPENAI_API_KEY"),
+            openai_organization: environment_text(lookup, "OPENAI_ORGANIZATION"),
+            openai_project: environment_text(lookup, "OPENAI_PROJECT"),
+            azure_api_base: environment_text(lookup, "AZURE_API_BASE"),
+            azure_api_version: environment_text(lookup, "AZURE_API_VERSION"),
+            azure_openai_api_key: environment_secret(lookup, "AZURE_OPENAI_API_KEY"),
+            azure_api_key: environment_secret(lookup, "AZURE_API_KEY"),
+            azure_ad_token: environment_secret(lookup, "AZURE_AD_TOKEN"),
+            ..Self::default()
+        }
+    }
+}
+
 impl Section for Raw {
     type Settings = Settings;
 
@@ -94,65 +115,55 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         let settings = self.settings;
-        let configured_timeout = resolve_number(
-            settings.request_timeout,
-            "litellm_settings.request_timeout",
+        let mut resolved = Settings::from_environment(lookup);
+        resolved.request_timeout_seconds = resolve_timeout(settings.request_timeout, lookup)?;
+        resolved.num_retries = resolve_number(
+            settings.num_retries,
+            "litellm_settings.num_retries",
             lookup,
-            parse_float,
+            parse_integer,
         )?;
-        let environment_text = lookup.lookup("REQUEST_TIMEOUT").unwrap_or_default();
-        let environment_timeout =
-            betterlite_env::number::<f64>("REQUEST_TIMEOUT", &environment_text)?;
-        Ok(Settings {
-            request_timeout_seconds: configured_timeout
-                .or(environment_timeout)
-                .unwrap_or(DEFAULT_REQUEST_TIMEOUT),
-            num_retries: resolve_number(
-                settings.num_retries,
-                "litellm_settings.num_retries",
-                lookup,
-                parse_integer,
-            )?,
-            api_base: resolved_text(settings.api_base, "litellm_settings.api_base", lookup)?,
-            api_key: resolve_secret(settings.api_key, "litellm_settings.api_key", lookup)?,
-            openai_key: resolve_secret(settings.openai_key, "litellm_settings.openai_key", lookup)?,
-            organization: resolved_text(
-                settings.organization,
-                "litellm_settings.organization",
-                lookup,
-            )?,
-            project: resolved_text(settings.project, "litellm_settings.project", lookup)?,
-            azure_key: resolve_secret(settings.azure_key, "litellm_settings.azure_key", lookup)?,
-            api_version: resolved_text(
-                settings.api_version,
-                "litellm_settings.api_version",
-                lookup,
-            )?,
-            headers: settings.headers,
-            openai_base_url: lookup
-                .lookup("OPENAI_BASE_URL")
-                .filter(|value| !value.is_empty()),
-            openai_api_base: lookup
-                .lookup("OPENAI_API_BASE")
-                .filter(|value| !value.is_empty()),
-            openai_api_key: environment_secret(lookup, "OPENAI_API_KEY"),
-            openai_organization: lookup
-                .lookup("OPENAI_ORGANIZATION")
-                .filter(|value| !value.is_empty()),
-            openai_project: lookup
-                .lookup("OPENAI_PROJECT")
-                .filter(|value| !value.is_empty()),
-            azure_api_base: lookup
-                .lookup("AZURE_API_BASE")
-                .filter(|value| !value.is_empty()),
-            azure_api_version: lookup
-                .lookup("AZURE_API_VERSION")
-                .filter(|value| !value.is_empty()),
-            azure_openai_api_key: environment_secret(lookup, "AZURE_OPENAI_API_KEY"),
-            azure_api_key: environment_secret(lookup, "AZURE_API_KEY"),
-            azure_ad_token: environment_secret(lookup, "AZURE_AD_TOKEN"),
-        })
+        resolved.api_base = resolved_text(settings.api_base, "litellm_settings.api_base", lookup)?;
+        resolved.api_key = resolve_secret(settings.api_key, "litellm_settings.api_key", lookup)?;
+        resolved.openai_key =
+            resolve_secret(settings.openai_key, "litellm_settings.openai_key", lookup)?;
+        resolved.organization = resolved_text(
+            settings.organization,
+            "litellm_settings.organization",
+            lookup,
+        )?;
+        resolved.project = resolved_text(settings.project, "litellm_settings.project", lookup)?;
+        resolved.azure_key =
+            resolve_secret(settings.azure_key, "litellm_settings.azure_key", lookup)?;
+        resolved.api_version =
+            resolved_text(settings.api_version, "litellm_settings.api_version", lookup)?;
+        resolved.headers = settings.headers;
+        Ok(resolved)
     }
+}
+
+fn resolve_timeout<L>(configured: Option<RawNumber>, lookup: &L) -> Result<f64, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    let configured = resolve_number(
+        configured,
+        "litellm_settings.request_timeout",
+        lookup,
+        parse_float,
+    )?;
+    let environment_text = lookup.lookup("REQUEST_TIMEOUT").unwrap_or_default();
+    let environment = betterlite_env::number::<f64>("REQUEST_TIMEOUT", &environment_text)?;
+    Ok(configured
+        .or(environment)
+        .unwrap_or(DEFAULT_REQUEST_TIMEOUT))
+}
+
+fn environment_text<L>(lookup: &L, name: &str) -> Option<String>
+where
+    L: EnvironmentLookup,
+{
+    lookup.lookup(name).filter(|value| !value.is_empty())
 }
 
 fn resolved_text<L>(

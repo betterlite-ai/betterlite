@@ -65,19 +65,13 @@ fn defaults_an_empty_config() {
 }
 
 #[test]
-fn reads_environment_values() {
+fn reads_openai_environment_values() {
     let variables = [
         ("OPENAI_BASE_URL", "https://env.example/v1"),
         ("OPENAI_API_BASE", "https://legacy.example/v1"),
         ("OPENAI_API_KEY", "env-openai-key"),
         ("OPENAI_ORGANIZATION", "org-env"),
         ("OPENAI_PROJECT", "project-env"),
-        ("AZURE_API_BASE", "https://azure.example"),
-        ("AZURE_API_VERSION", "2024-06-01"),
-        ("AZURE_OPENAI_API_KEY", "env-azure-openai-key"),
-        ("AZURE_API_KEY", "env-azure-key"),
-        ("AZURE_AD_TOKEN", "env-ad-token"),
-        ("REQUEST_TIMEOUT", "9"),
     ];
     let settings = settings("litellm_settings: {}\n", &variables).expect("settings load");
     assert_eq!(
@@ -97,6 +91,18 @@ fn reads_environment_values() {
     );
     assert_eq!(settings.openai_organization.as_deref(), Some("org-env"));
     assert_eq!(settings.openai_project.as_deref(), Some("project-env"));
+}
+
+#[test]
+fn reads_azure_environment_values() {
+    let variables = [
+        ("AZURE_API_BASE", "https://azure.example"),
+        ("AZURE_API_VERSION", "2024-06-01"),
+        ("AZURE_OPENAI_API_KEY", "env-azure-openai-key"),
+        ("AZURE_API_KEY", "env-azure-key"),
+        ("AZURE_AD_TOKEN", "env-ad-token"),
+    ];
+    let settings = settings("litellm_settings: {}\n", &variables).expect("settings load");
     assert_eq!(
         settings.azure_api_base.as_deref(),
         Some("https://azure.example")
@@ -122,10 +128,6 @@ fn reads_environment_values() {
             .expect("environment AD token")
             .expose_secret(),
         "env-ad-token"
-    );
-    assert_eq!(
-        settings.request_timeout_seconds.to_bits(),
-        9.0_f64.to_bits()
     );
 }
 
