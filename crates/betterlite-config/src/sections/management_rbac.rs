@@ -51,30 +51,24 @@ pub struct Settings {
 }
 
 // rbac_utils.py tests general_settings.get(flag, False) for truthiness, so a quoted "false" still switches on
-fn switch_state<L>(switch: Option<RawSwitch>, lookup: &L) -> Result<bool, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let Some(raw) = switch else {
-        return Ok(false);
-    };
-    let state = match raw {
-        RawSwitch::Boolean(value) => value,
-        RawSwitch::Integer(number) => number != 0,
-        RawSwitch::Float(number) => number != 0.0_f64,
-        RawSwitch::Text(text) => {
-            if let Some(variable) = text.strip_prefix("os.environ/") {
+impl RawSwitch {
+    fn truthy(self, lookup: &dyn EnvironmentLookup) -> Result<bool, ConfigError> {
+        Ok(match self {
+            Self::Boolean(value) => value,
+            Self::Integer(number) => number != 0,
+            Self::Float(number) => number != 0.0_f64,
+            Self::Text(text) => match text.strip_prefix("os.environ/") {
                 // a referenced variable is read by the shared env parser, and unset or empty stays off
-                let resolved = lookup.lookup(variable).unwrap_or_default();
-                betterlite_env::flag(variable, &resolved)?.unwrap_or(false)
-            } else {
-                !text.is_empty()
-            }
-        }
-        RawSwitch::List(items) => !items.is_empty(),
-        RawSwitch::Mapping(entries) => !entries.is_empty(),
-    };
-    Ok(state)
+                Some(variable) => {
+                    let resolved = lookup.lookup(variable).unwrap_or_default();
+                    betterlite_env::flag(variable, &resolved)?.unwrap_or(false)
+                }
+                None => !text.is_empty(),
+            },
+            Self::List(items) => !items.is_empty(),
+            Self::Mapping(entries) => !entries.is_empty(),
+        })
+    }
 }
 
 impl Section for Raw {
@@ -85,14 +79,15 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         let general = self.general_settings;
+        let state = |switch: Option<RawSwitch>| switch.map_or(Ok(false), |raw| raw.truthy(lookup));
         Ok(Settings {
             agents: FeatureSwitches {
-                disabled: switch_state(general.agents_disabled, lookup)?,
-                team_admins_allowed: switch_state(general.agents_for_team_admins, lookup)?,
+                disabled: state(general.agents_disabled)?,
+                team_admins_allowed: state(general.agents_for_team_admins)?,
             },
             vector_stores: FeatureSwitches {
-                disabled: switch_state(general.vector_stores_disabled, lookup)?,
-                team_admins_allowed: switch_state(general.vector_stores_for_team_admins, lookup)?,
+                disabled: state(general.vector_stores_disabled)?,
+                team_admins_allowed: state(general.vector_stores_for_team_admins)?,
             },
         })
     }

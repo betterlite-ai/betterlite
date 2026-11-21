@@ -22,53 +22,54 @@ const OFF: FeatureSwitches = FeatureSwitches {
     disabled: false,
     team_admins_allowed: false,
 };
+const ON: FeatureSwitches = FeatureSwitches {
+    disabled: true,
+    team_admins_allowed: true,
+};
+const DISABLED_ONLY: FeatureSwitches = FeatureSwitches {
+    disabled: true,
+    team_admins_allowed: false,
+};
+const ALLOWED_ONLY: FeatureSwitches = FeatureSwitches {
+    disabled: false,
+    team_admins_allowed: true,
+};
 
-#[rstest]
-#[case::both_on("true", "true", true, true)]
-#[case::disabled_only("true", "false", true, false)]
-#[case::allowed_only("false", "true", false, true)]
-#[case::both_off("false", "false", false, false)]
-fn loads_agents_switches(
-    #[case] disabled: &str,
-    #[case] allowed: &str,
-    #[case] disabled_state: bool,
-    #[case] allowed_state: bool,
-) {
+const AGENT_KEYS: (&str, &str) = (
+    "disable_agents_for_internal_users",
+    "allow_agents_for_team_admins",
+);
+const VECTOR_STORE_KEYS: (&str, &str) = (
+    "disable_vector_stores_for_internal_users",
+    "allow_vector_stores_for_team_admins",
+);
+
+fn two_keys(keys: (&str, &str), values: (&str, &str)) -> Settings {
     let source = format!(
-        "general_settings:\n  disable_agents_for_internal_users: {disabled}\n  allow_agents_for_team_admins: {allowed}\n"
+        "general_settings:\n  {}: {}\n  {}: {}\n",
+        keys.0, values.0, keys.1, values.1
     );
-    let expected = Settings {
-        agents: FeatureSwitches {
-            disabled: disabled_state,
-            team_admins_allowed: allowed_state,
-        },
-        vector_stores: OFF,
-    };
-    assert_eq!(loaded(&source, &[]).unwrap(), expected);
+    loaded(&source, &[]).unwrap()
 }
 
 #[rstest]
-#[case::both_on("true", "true", true, true)]
-#[case::disabled_only("true", "false", true, false)]
-#[case::allowed_only("false", "true", false, true)]
-#[case::both_off("false", "false", false, false)]
-fn loads_vector_store_switches(
-    #[case] disabled: &str,
-    #[case] allowed: &str,
-    #[case] disabled_state: bool,
-    #[case] allowed_state: bool,
-) {
-    let source = format!(
-        "general_settings:\n  disable_vector_stores_for_internal_users: {disabled}\n  allow_vector_stores_for_team_admins: {allowed}\n"
-    );
-    let expected = Settings {
-        agents: OFF,
-        vector_stores: FeatureSwitches {
-            disabled: disabled_state,
-            team_admins_allowed: allowed_state,
-        },
-    };
-    assert_eq!(loaded(&source, &[]).unwrap(), expected);
+#[case::both_on(("true", "true"), ON)]
+#[case::disabled_only(("true", "false"), DISABLED_ONLY)]
+#[case::allowed_only(("false", "true"), ALLOWED_ONLY)]
+#[case::both_off(("false", "false"), OFF)]
+fn loads_agents_switches(#[case] values: (&str, &str), #[case] agents: FeatureSwitches) {
+    let settings = two_keys(AGENT_KEYS, values);
+    assert_eq!((settings.agents, settings.vector_stores), (agents, OFF));
+}
+
+#[rstest]
+#[case::both_on(("true", "true"), ON)]
+#[case::disabled_only(("true", "false"), DISABLED_ONLY)]
+#[case::allowed_only(("false", "true"), ALLOWED_ONLY)]
+#[case::both_off(("false", "false"), OFF)]
+fn loads_vector_store_switches(#[case] values: (&str, &str), #[case] stores: FeatureSwitches) {
+    let settings = two_keys(VECTOR_STORE_KEYS, values);
+    assert_eq!((settings.agents, settings.vector_stores), (OFF, stores));
 }
 
 #[rstest]
