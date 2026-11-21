@@ -2,11 +2,12 @@ import ast
 import importlib
 import inspect
 import json
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from types import ModuleType
-from typing import Final, get_type_hints
+from typing import Final, get_args, get_origin, get_type_hints
 
 import litellm
 import pytest
@@ -15,7 +16,7 @@ from pydantic import JsonValue, TypeAdapter
 import betterlite
 import betterlite._settings.callbacks as settings_callbacks
 from betterlite import _native
-from betterlite._settings.callbacks import Callback, _CallRule
+from betterlite._settings.callbacks import Callback
 from betterlite.types.utils.base import ModelValue
 
 ASSIGNMENT_LIMIT = 2314
@@ -520,8 +521,11 @@ def test_module_helper_call_rules_accept_typed_functions() -> None:
         assert _call_rule in rules
         rules.pop()
     hints: dict[str, type] = get_type_hints(settings_callbacks)
-    assert hints["pre_call_rules"] == list[_CallRule]
-    assert hints["post_call_rules"] == list[_CallRule]
+    for name in ("pre_call_rules", "post_call_rules"):
+        element: type = get_args(hints[name])[0]
+        parameters: list[type[str]] = get_args(element)[0]
+        assert get_origin(element) is Callable
+        assert parameters == [str]
 
 
 # ast-grep-ignore: no-long-names
