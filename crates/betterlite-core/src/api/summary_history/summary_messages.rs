@@ -39,7 +39,7 @@ where
         Ok(openai_shape) => openai_shape,
         Err(error) => {
             tracing::warn!(
-                "compact_20260112: anthropic→openai translation failed when building summary call; falling back to raw shape: {error}"
+                "compact_20260112: anthropic\u{2192}openai translation failed when building summary call; falling back to raw shape: {error}"
             );
             stripped
         }

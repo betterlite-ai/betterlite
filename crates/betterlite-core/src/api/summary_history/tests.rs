@@ -435,6 +435,10 @@ fn effective_token_components() {
         failed,
         Err(SummaryHistoryError::TokenCount(CountError::Overflow))
     ));
+    token_count_fallbacks(messages);
+}
+
+fn token_count_fallbacks(messages: &str) {
     let broken = FakeTranslator {
         broken_messages: true,
         broken_tools: true,
@@ -446,8 +450,8 @@ fn effective_token_components() {
         Some(format!(r#"{messages} tools=Some("[{{\"name\":\"t\"}}]")"#).as_str())
     );
     let fallbacks = [
-        "DEBUG compact_20260112: anthropic→openai translation failed during token count, falling back to raw messages: broken",
-        "DEBUG compact_20260112: anthropic→openai tools translation failed during token count, falling back to raw tools: broken",
+        "DEBUG compact_20260112: anthropic\u{2192}openai translation failed during token count, falling back to raw messages: broken",
+        "DEBUG compact_20260112: anthropic\u{2192}openai tools translation failed during token count, falling back to raw tools: broken",
     ];
     assert_eq!(raw_logs, fallbacks);
     let tools = r#"[{"name":"t","input_schema":{"type":"object"}}]"#;
@@ -505,7 +509,7 @@ fn summary_messages_merge_user(#[case] content: Option<&str>, #[case] expected: 
         text(&Json::List(raw)),
         r#"[{"role":"system","content":"SYS"},{"role":"assistant","content":"A"},{"role":"user","content":"P"}]"#
     );
-    let warning = "WARN compact_20260112: anthropic→openai translation failed when building summary call; falling back to raw shape: broken";
+    let warning = "WARN compact_20260112: anthropic\u{2192}openai translation failed when building summary call; falling back to raw shape: broken";
     assert_eq!(logs, [warning]);
     let fresh = block_on(build_summary_messages(&[], "P", None, &broken));
     assert_eq!(
@@ -613,8 +617,8 @@ fn tokenizer_counter_counts_text_and_turns() {
         messages: &turns,
         tools: None,
     };
-    let counted = runtime
+    let turn_tokens = runtime
         .block_on(counter.count("gpt-3.5-turbo", conversation))
         .expect("turns count");
-    assert!(counted > words);
+    assert!(turn_tokens > words);
 }

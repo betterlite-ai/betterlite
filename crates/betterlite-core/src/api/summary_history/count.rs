@@ -1,4 +1,5 @@
 use std::future::Future;
+use std::iter::once;
 use std::sync::Arc;
 
 use betterlite_models::decisions::Json as DecisionJson;
@@ -91,7 +92,7 @@ where
         Ok(openai_shape) => openai_shape,
         Err(error) => {
             tracing::debug!(
-                "compact_20260112: anthropic→openai translation failed during token count, falling back to raw messages: {error}"
+                "compact_20260112: anthropic\u{2192}openai translation failed during token count, falling back to raw messages: {error}"
             );
             stripped
         }
@@ -100,7 +101,7 @@ where
     let tools = declared.map(|raw| {
         translator.tools(raw).unwrap_or_else(|error| {
             tracing::debug!(
-                "compact_20260112: anthropic→openai tools translation failed during token count, falling back to raw tools: {error}"
+                "compact_20260112: anthropic\u{2192}openai tools translation failed during token count, falling back to raw tools: {error}"
             );
             raw.to_vec()
         })
@@ -112,20 +113,14 @@ where
     let mut total = counter.count(components.model, conversation).await?;
     let summary = components
         .compaction_block
-        .and_then(|block| block.content.as_deref())
-        .filter(|content| !content.is_empty());
-    if let Some(content) = summary {
-        let counted = counter
-            .count(components.model, CountedInput::Text(content))
-            .await?;
-        total = total.saturating_add(counted);
-    }
+        .and_then(|block| block.content.as_deref());
     let system_text = system_to_text(components.system);
-    if !system_text.is_empty() {
-        let counted = counter
-            .count(components.model, CountedInput::Text(&system_text))
+    let extra_texts = summary.into_iter().chain(once(system_text.as_str()));
+    for extra in extra_texts.filter(|candidate| !candidate.is_empty()) {
+        let extra_tokens = counter
+            .count(components.model, CountedInput::Text(extra))
             .await?;
-        total = total.saturating_add(counted);
+        total = total.saturating_add(extra_tokens);
     }
     Ok(total)
 }
