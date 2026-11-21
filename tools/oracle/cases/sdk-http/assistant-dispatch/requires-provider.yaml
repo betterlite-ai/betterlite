@@ -1,0 +1,33 @@
+kind: sdk_http
+name: assistant-dispatch-requires-provider
+env: {}
+call:
+  assistant_dispatch:
+    runs:
+      - operation: create_assistant
+        payload:
+          model: gpt-4o
+          params: {api_base: $API_BASE, api_key: sk-test}
+      - operation: create_assistant
+        payload:
+          model: gpt-4o
+          params: {api_base: $API_BASE, api_key: sk-test}
+        config: {}
+      - operation: create_assistant
+        payload:
+          model: gpt-4o
+          params: {api_base: $API_BASE, api_key: sk-test}
+        config: {custom_llm_provider: openai}
+      - operation: create_assistant
+        provider: anthropic
+        payload:
+          model: claude-3-haiku
+          params: {api_base: $API_BASE, api_key: sk-test}
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, openai-beta]
+  ignore:
+    - pointer: /assistant_dispatch/value/results/3/failure/message
+      why: LiteLLM prefixes the mapped exception text and betterlite writes its own

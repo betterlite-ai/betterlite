@@ -15,6 +15,9 @@ use super::{
     run_conversion,
 };
 
+mod bounds;
+mod calendar;
+mod manager;
 mod postgres;
 
 const PARTITION_RENAMES: [(&str, &str); 6] = [

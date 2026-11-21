@@ -1,0 +1,66 @@
+kind: helper
+name: streaming-block-frames-without-raise
+call:
+  b3726:
+    hook: streaming
+    call_type: acompletion
+    guardrail:
+      name: bedrock-hooks
+      identifier: gr-abc123
+      version: "1"
+      disable_exception_on_block: true
+      latest_role_message_only: false
+      event_hook: post_call
+      buffer_until_moderated: null
+      streaming_end_of_stream_only: null
+      buffer_release_on_scan: null
+    data:
+      model: gpt-4o
+      messages:
+        - role: user
+          content: hello
+    response: null
+    chunks: []
+    sse_chunks:
+      - |+
+        event: message_start
+        data: {"type": "message_start", "message": {"id": "msg_1", "type": "message", "role": "assistant", "model": "claude-x", "content": [], "stop_reason": null, "stop_sequence": null, "usage": {"input_tokens": 11, "output_tokens": 1}}}
+
+      - |+
+        event: content_block_start
+        data: {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}
+
+      - |+
+        event: content_block_delta
+        data: {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "Hello"}}
+
+      - |+
+        event: content_block_stop
+        data: {"type": "content_block_stop", "index": 0}
+
+      - |+
+        event: message_delta
+        data: {"type": "message_delta", "delta": {"stop_reason": "end_turn", "stop_sequence": null}, "usage": {"output_tokens": 7}}
+
+      - |+
+        event: message_stop
+        data: {"type": "message_stop"}
+
+    request_route: null
+    keepalive_interval_seconds: null
+    replies:
+      - status: 200
+        body:
+          action: GUARDRAIL_INTERVENED
+          outputs:
+            - text: "Request blocked: "
+          assessments:
+            - wordPolicy:
+                customWords:
+                  - match: secret
+                    action: BLOCKED
+env: {}
+compare:
+  ignore:
+    - pointer: /value/chunks/0/frames/0/message/id
+      why: "LiteLLM names the block message with a fresh uuid while betterlite uses a fixed one"

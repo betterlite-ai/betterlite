@@ -1,0 +1,32 @@
+task: B803
+deviations:
+  - what: >-
+      The defaults are read with the types their projections consume. A default_team_params value that is
+      not a mapping, a models or team_member_permissions value that is not a list of strings, and an
+      available_teams value that is not a list of strings fail with an error naming the path; the last is
+      raised when this component reads auth_user_lookup's default_internal_user_params record. LiteLLM
+      stores whatever the YAML holds: _get_default_team_param returns a non-list value for every field and
+      a list for every field, and _is_available_team tests team_id against the raw value, which for a
+      string is a substring test.
+    why: >-
+      docs/compatibility.md says a config value of the wrong type is an error that names the field, and the
+      typed projection replaces LiteLLM's truthiness and duck typing with the declared shapes; every value a
+      working setup writes for these keys loads as written.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L783-L802
+  - what: >-
+      get_all_team_memberships returns rows ordered by team_id and then user_id. LiteLLM's find_many carries
+      no orderBy, so its list order is whatever the database returns.
+    why: >-
+      A Postgres read with no ORDER BY has no stable order, so an explicit sort makes repeated reads of the
+      same table agree; the membership set, the user_id filter and the litellm_budget_table relation are
+      unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L820-L832
+  - what: >-
+      An unguarded write whose team_id matches no row returns None after the reread. LiteLLM's ordinary
+      Prisma update raises P2025 for the same input.
+    why: >-
+      The writer returns the row it rereads, and a row that was deleted before the reread cannot be
+      reconstructed; the caller (B856 Management::teams) decides whether None is a 404, while the guarded
+      path keeps its own 409 for a changed cap.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L1243-L1259
+kept_bugs: []

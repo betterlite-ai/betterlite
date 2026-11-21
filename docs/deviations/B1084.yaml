@@ -1,0 +1,48 @@
+task: B1084
+deviations:
+  - what: >-
+      The unmapped-provider Exception names betterlite's provider slugs as a JSON-style list with double quotes;
+      LiteLLM prints litellm.provider_list, whose members are LlmProviders enum reprs.
+    why: >-
+      docs/compatibility.md keeps Python's repr text out of parity, and betterlite's provider registry is its own
+      type. The class and the message around the list are identical, which is what a caller matches on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8717
+  - what: >-
+      A raised litellm.BadRequestError carries the source message text; LiteLLM prefixes the exception's message
+      with "litellm.BadRequestError: ".
+    why: >-
+      The message a caller reads is Python runtime text the class constructor builds, and docs/compatibility.md
+      does not port str text. The class, the status and every other field are the same, and the oracle cases
+      ignore only the message pointer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L232
+  - what: >-
+      A provider HTTP status error from the OpenAI branch surfaces with betterlite's B011 envelope metadata: a
+      429 keeps the class RateLimitError, the status, the body's param and the envelope's type throttling_error
+      and openai code "429". LiteLLM lets the openai client raise its own exception, whose type, param and code
+      come from the provider body and whose message renders the body with Python's dict repr.
+    why: >-
+      speech's OpenAI branch never catches the client error, and betterlite's SDK failure projection is the B011
+      envelope every other SDK call reports through. The class and status a caller switches on are the same, and
+      the oracle case ignores the three fields that carry the envelope's own values.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L1610-L1616
+  - what: >-
+      An ElevenLabs speech call whose voice is missing, a dict or whitespace fails as a 400 BadRequestError with
+      "'voice' must resolve to an ElevenLabs voice id for ElevenLabs TTS"; LiteLLM's ElevenLabs transformation
+      raises a bare ValueError, which carries no status and no litellm class.
+    why: >-
+      A refused request is a client error in betterlite, so it takes the same 400 shape as the OpenAI and Azure
+      voice refusals in the same function. The oracle cases cannot compare the two projections because the
+      classes and statuses differ, so a core test proves this branch instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/elevenlabs/text_to_speech/transformation.py#L107-L108
+  - what: >-
+      A model whose prefix is anyscale/ resolves in LiteLLM through litellm.provider_list, so speech() reaches its
+      litellm.LlmProviders(custom_llm_provider) lookup and raises ValueError "'anyscale' is not a valid LlmProviders";
+      betterlite's provider resolution does not list the anyscale prefix, so the same call fails earlier as a 400
+      BadRequestError "LLM Provider NOT provided".
+    why: >-
+      The prefix table belongs to betterlite's provider resolution, not to speech(), and it reaches Anyscale only
+      through the registered api_base. speech() keeps LiteLLM's LlmProviders check for every model that does reach
+      Anyscale, and the core test proves it through that api_base, so the table can add the prefix later without
+      changing speech().
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L1202
+kept_bugs: []

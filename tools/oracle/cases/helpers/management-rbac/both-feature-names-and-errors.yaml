@@ -1,0 +1,20 @@
+kind: helper
+name: both-feature-names-and-errors
+call:
+  management_rbac:
+    calls:
+      - role: internal_user
+        feature: agents
+        general_settings: {disable_agents_for_internal_users: true}
+      - role: internal_user
+        feature: vector_stores
+        general_settings: {disable_vector_stores_for_internal_users: true}
+      # each feature reads only its own pair of switches
+      - role: internal_user
+        feature: vector_stores
+        general_settings: {disable_agents_for_internal_users: true, allow_agents_for_team_admins: true}
+      - role: internal_user
+        feature: agents
+        general_settings: {disable_vector_stores_for_internal_users: true, allow_vector_stores_for_team_admins: true}
+env: {}
+compare: {ignore: []}

@@ -2,7 +2,7 @@ id: B970
 title: Check compaction budgets and rate limits without reserving counters
 description: >-
   Build summary_model_limits for compact.py L395-L627, owning all four complete budget/rate helper functions.
-  B732 provides parent principals and B969 the typed limiter interfaces. B3006 owns model_max_budget_limiter, and this task implements the model budget seams for B3006's `ModelBudgetLimiter` itself (betterlite-core already depends on betterlite-auth), so B8481's one shared instance fits them unchanged;
+  B732 provides parent principals. This task declares the five limiter interfaces its rate check calls (compact.py L128-L167: _CreateRateLimitDescriptors, _AddModelRateLimitDescriptor, _CreateOrgRateLimitDescriptors, _GetProxyHook and _ShouldRateLimit) as its own typed injected traits, since nothing else uses them. B3006 owns model_max_budget_limiter, and this task implements the model budget seams for B3006's `ModelBudgetLimiter` itself (betterlite-core already depends on betterlite-auth), so B8481's one shared instance fits them unchanged;
   the B3030 to B3055 limiter parts own parallel_request_limiter_v3 and B3055's main_limiter() is the production limiter behind these seams (no task passes it into compaction yet), so expose explicit injected read-only
   methods matching these calls rather than inventing their storage or charging implementations. A worker can
   complete this task with those seams; the architect must fill the owners before end-to-end policy execution.
@@ -99,7 +99,7 @@ oracle_cases:
 - tools/oracle/cases/helpers/summary-model-limits/rate-denial-and-failures.yaml
 deviations: []
 out_of_scope:
-- B969 owns compact.py L97-L392 settings/access/interfaces; B971 owns history helpers L630-L1016 and L1114-L1157.
+- B969 owns compact.py L97-L392 settings and access helpers except the five rate-limit interfaces L128-L167 this task declares; B971 owns history helpers L630-L1016 and L1114-L1157.
 - B2432 owns compact.py L1019-L1111 and L1160-L1380 execution; B972 owns dispatcher.py.
 - B3005 and B3006 own actual model-budget lookups and B8481 injects them, the B3030 to B3055 limiter parts own counters and post-call charging. This task only invokes their explicit seams.
 pitfalls:

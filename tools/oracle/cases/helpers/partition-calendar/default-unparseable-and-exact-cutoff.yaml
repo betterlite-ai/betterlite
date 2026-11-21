@@ -1,0 +1,42 @@
+kind: helper
+name: partition-calendar-default-unparseable-and-exact-cutoff
+call:
+  partition_calendar:
+    function: drop
+    cutoff: "2026-06-02T00:00:00"
+    partitions:
+      - name: LiteLLM_SpendLogs_pdefault
+        bound: DEFAULT
+      - name: LiteLLM_SpendLogs_pold
+        bound: "FOR VALUES FROM ('2026-05-01 00:00:00') TO ('2026-06-01 00:00:00')"
+      - name: LiteLLM_SpendLogs_pbelow
+        bound: "FOR VALUES FROM ('2026-06-01 00:00:00') TO ('2026-06-01 23:59:59.999')"
+      - name: LiteLLM_SpendLogs_pexact
+        bound: "FOR VALUES FROM ('2026-06-01 00:00:00') TO ('2026-06-02 00:00:00')"
+      - name: LiteLLM_SpendLogs_pabove
+        bound: "FOR VALUES FROM ('2026-06-01 00:00:00') TO ('2026-06-02 00:00:00.001')"
+      - name: LiteLLM_SpendLogs_pdaterow
+        bound: "FOR VALUES FROM ('2026-06-01') TO ('2026-06-02')"
+      - name: LiteLLM_SpendLogs_psquashed
+        bound: "FOR VALUES FROM ('2026-06-01T00:00:00') TO ('2026-06-02T00:00:00')"
+      - name: LiteLLM_SpendLogs_punreadable
+        bound: "FOR VALUES FROM (MINVALUE) TO (MAXVALUE)"
+      - name: LiteLLM_SpendLogs_pdefaulttext
+        bound: "FOR VALUES FROM ('2026-01-01 00:00:00') TO ('2026-02-01 00:00:00') DEFAULT"
+calls:
+  - partition_calendar:
+      function: drop
+      cutoff: "2026-06-02T00:00:00.123456"
+      partitions:
+        - name: LiteLLM_SpendLogs_pprecision
+          bound: "FOR VALUES FROM ('2026-06-01 00:00:00') TO ('2026-06-02 00:00:00.123456789')"
+        - name: LiteLLM_SpendLogs_pfiner
+          bound: "FOR VALUES FROM ('2026-06-01 00:00:00') TO ('2026-06-02 00:00:00.123457')"
+  - partition_calendar:
+      function: drop
+      cutoff: "2026-06-02T00:00:00"
+      partitions:
+        - name: LiteLLM_SpendLogs_platerblock
+          bound: "TO ('broken' TO ('2026-06-01 00:00:00')"
+env: {}
+compare: {ignore: []}

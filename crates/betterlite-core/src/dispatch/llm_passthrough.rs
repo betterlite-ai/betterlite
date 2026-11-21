@@ -1,17 +1,26 @@
-use std::future::{Ready, ready};
+pub mod entry;
+pub mod error;
+pub mod ports;
+pub mod rejection;
+pub mod route;
 
 use betterlite_context::call_context::CallContext;
 
-use super::error::DispatchError;
+use crate::dispatch::error::DispatchError;
 use crate::operation::llm_passthrough::{LlmPassthroughRequest, LlmPassthroughResult};
 
-pub fn execute<Metadata, Client>(
-    _request: LlmPassthroughRequest,
-    _context: &CallContext<'_, Metadata, Client>,
-) -> Ready<Result<LlmPassthroughResult, DispatchError>> {
-    ready(Err(DispatchError::NotBuilt {
-        entry: "llm_passthrough",
-    }))
-}
-
 mod tests;
+
+pub async fn execute<Metadata, Client>(
+    request: LlmPassthroughRequest,
+    _context: &CallContext<'_, Metadata, Client>,
+) -> Result<LlmPassthroughResult, DispatchError>
+where
+    Metadata: Sync,
+    Client: Sync,
+{
+    match entry::execute(request).await {
+        Ok(reply) => Ok(reply),
+        Err(error) => Err(error.rejected()),
+    }
+}

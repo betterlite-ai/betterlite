@@ -1,0 +1,46 @@
+kind: helper
+name: default_team_params
+call:
+  team_limits:
+    function: default_team_param
+    field: max_budget
+    params: {"models": ["gpt-4o"], "max_budget": 100.5, "budget_duration": "30d", "tpm_limit": 10, "rpm_limit": 20, "team_member_permissions": ["/team/info"], "organization_id": "org-1"}
+calls:
+  - team_limits:
+      function: default_team_param
+      field: models
+      params: {"models": ["gpt-4o", "claude-3"], "max_budget": 100.5}
+  - team_limits:
+      function: default_team_param
+      field: budget_duration
+      params: {"budget_duration": "30d"}
+  - team_limits:
+      function: default_team_param
+      field: tpm_limit
+      params: {"tpm_limit": 10, "rpm_limit": 20}
+  - team_limits:
+      function: default_team_param
+      field: rpm_limit
+      params: {"rpm_limit": 20}
+  - team_limits:
+      function: default_team_param
+      field: team_member_permissions
+      params: {"team_member_permissions": ["/team/info", "/key/info"]}
+  - team_limits:
+      function: default_team_param
+      field: organization_id
+      params: {"organization_id": "org-1"}
+  - team_limits:
+      function: default_team_param
+      field: organization_id
+      params: {"models": ["gpt-4o"]}
+  - team_limits:
+      function: default_team_param
+      field: max_budget
+      params: null
+  - team_limits:
+      function: default_team_param
+      field: models
+      params: {}
+env: {}
+compare: {ignore: []}
