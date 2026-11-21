@@ -49,13 +49,13 @@ struct FakeBackend {
 #[async_trait]
 impl RealtimeBackend for FakeBackend {
     async fn send(&mut self, message: RealtimeMessage) -> Result<(), WebSocketError> {
-        if let Some(error) = &self.send_error {
-            return Err(WebSocketError {
-                message: error.clone(),
-            });
-        }
-        self.log.lock().unwrap().sent.push(message);
-        Ok(())
+        let Some(error) = &self.send_error else {
+            self.log.lock().unwrap().sent.push(message);
+            return Ok(());
+        };
+        Err(WebSocketError {
+            message: error.clone(),
+        })
     }
 
     async fn recv(&mut self, _decode: Option<bool>) -> Result<RealtimeMessage, WebSocketError> {
@@ -75,38 +75,23 @@ impl RealtimeBackend for FakeBackend {
     }
 }
 
-struct ClosedSource;
-
-#[async_trait]
-impl RealtimeBackendSource for ClosedSource {
-    async fn recv(&mut self, _decode: Option<bool>) -> Result<RealtimeMessage, RelayReceiveError> {
-        Err(RelayReceiveError::Closed(ConnectionClosed {
-            received: Some(CloseFrame {
-                code: 1000,
-                reason: String::new(),
-            }),
-            message: "upstream closed".to_owned(),
-        }))
-    }
-}
-
-struct FrameSource {
+struct ScriptedSource {
     frames: VecDeque<RealtimeMessage>,
 }
 
 #[async_trait]
-impl RealtimeBackendSource for FrameSource {
+impl RealtimeBackendSource for ScriptedSource {
     async fn recv(&mut self, _decode: Option<bool>) -> Result<RealtimeMessage, RelayReceiveError> {
-        match self.frames.pop_front() {
-            Some(frame) => Ok(frame),
-            None => Err(RelayReceiveError::Closed(ConnectionClosed {
+        let Some(frame) = self.frames.pop_front() else {
+            return Err(RelayReceiveError::Closed(ConnectionClosed {
                 received: Some(CloseFrame {
                     code: 1000,
                     reason: String::new(),
                 }),
                 message: "upstream closed".to_owned(),
-            })),
-        }
+            }));
+        };
+        Ok(frame)
     }
 }
 
@@ -189,13 +174,9 @@ impl RealtimeWebSocketDialer for ScriptedDialer {
                     send_error: self.send_error.clone(),
                     close_error: self.close_error.clone(),
                 }),
-                source: Some(if self.source_frames.is_empty() {
-                    Box::new(ClosedSource)
-                } else {
-                    Box::new(FrameSource {
-                        frames: self.source_frames.clone().into(),
-                    })
-                }),
+                source: Some(Box::new(ScriptedSource {
+                    frames: VecDeque::from(self.source_frames.clone()),
+                })),
             }),
         }
     }
@@ -216,13 +197,15 @@ struct FakeClient {
 #[async_trait]
 impl RealtimeClientSocket for FakeClient {
     async fn send_text(&mut self, data: &str) -> Result<(), WebSocketError> {
-        if let Some(message) = &self.send_error {
-            return Err(WebSocketError {
+        match &self.send_error {
+            Some(message) => Err(WebSocketError {
                 message: message.clone(),
-            });
+            }),
+            None => {
+                self.log.lock().unwrap().texts.push(data.to_owned());
+                Ok(())
+            }
         }
-        self.log.lock().unwrap().texts.push(data.to_owned());
-        Ok(())
     }
 
     async fn receive_text(&mut self) -> Result<String, WebSocketError> {
@@ -495,74 +478,118 @@ pub(super) struct Harness<'callback> {
     pub(super) observation: Arc<Mutex<RelayObservation>>,
 }
 
+struct SharedLogs {
+    backend: Arc<Mutex<BackendLog>>,
+    client: Arc<Mutex<ClientLog>>,
+    records: Arc<Mutex<Vec<DialRecord>>>,
+    observation: Arc<Mutex<RelayObservation>>,
+}
+
+impl SharedLogs {
+    fn new() -> Self {
+        Self {
+            backend: Arc::new(Mutex::new(BackendLog::default())),
+            client: Arc::new(Mutex::new(ClientLog::default())),
+            records: Arc::new(Mutex::new(Vec::new())),
+            observation: Arc::new(Mutex::new(RelayObservation::default())),
+        }
+    }
+}
+
+fn provider_of(options: &HarnessOptions, logs: &SharedLogs) -> Arc<TestProvider> {
+    Arc::new(TestProvider {
+        requires_setup: options.requires_setup,
+        setup: options.setup.clone(),
+        synthetic: options.synthetic.clone(),
+        own_backend: options.own_backend,
+        validate_error: options.validate_error.clone(),
+        backend_log: Arc::clone(&logs.backend),
+        send_error: options.backend_send_error.clone(),
+        close_error: options.backend_close_error.clone(),
+    })
+}
+
+fn client_of(options: &HarnessOptions, logs: &SharedLogs) -> ClientHandle {
+    ClientHandle {
+        socket: Arc::new(tokio::sync::Mutex::new(Box::new(FakeClient {
+            log: Arc::clone(&logs.client),
+            send_error: options.send_error.clone(),
+            close_error: options.close_error.clone(),
+        })
+            as Box<dyn RealtimeClientSocket>)),
+        scope: WebSocketScope::default(),
+    }
+}
+
+fn dialer_of(
+    dials: Vec<DialOutcome>,
+    source_frames: Vec<RealtimeMessage>,
+    send_error: Option<String>,
+    close_error: Option<String>,
+    logs: &SharedLogs,
+) -> ScriptedDialer {
+    ScriptedDialer {
+        outcomes: Mutex::new(VecDeque::from(dials)),
+        records: Arc::clone(&logs.records),
+        backend_log: Arc::clone(&logs.backend),
+        source_frames,
+        send_error,
+        close_error,
+    }
+}
+
+fn relay_of(fails: bool, logs: &SharedLogs) -> RecordingRelay {
+    RecordingRelay {
+        observation: Arc::clone(&logs.observation),
+        outcome: if fails {
+            RelayOutcome::Fail
+        } else {
+            RelayOutcome::Ok
+        },
+    }
+}
+
+fn auth_headers() -> HeaderMap {
+    HeaderMap::from([(
+        "Authorization".to_owned(),
+        Json::Text("Bearer test".to_owned()),
+    )])
+}
+
 pub(super) fn harness<'callback>(
     options: HarnessOptions,
     callback_refs: Vec<&'callback TestCallback>,
 ) -> Harness<'callback> {
-    let backend_log = Arc::new(Mutex::new(BackendLog::default()));
-    let records = Arc::new(Mutex::new(Vec::new()));
-    let client_log = Arc::new(Mutex::new(ClientLog::default()));
-    let observation = Arc::new(Mutex::new(RelayObservation::default()));
+    let logs = SharedLogs::new();
     let cancellation = CancellationToken::new();
     if options.cancellation {
         cancellation.cancel();
     }
-    let mut outcomes = VecDeque::new();
-    for dial in options.dials {
-        outcomes.push_back(dial);
-    }
-    let backend_send_error = options.backend_send_error;
-    let backend_close_error = options.backend_close_error;
+    let provider = provider_of(&options, &logs);
+    let client = client_of(&options, &logs);
+    let dialer = dialer_of(
+        options.dials,
+        options.source_frames,
+        options.backend_send_error,
+        options.backend_close_error,
+        &logs,
+    );
     Harness {
-        provider: Arc::new(TestProvider {
-            requires_setup: options.requires_setup,
-            setup: options.setup,
-            synthetic: options.synthetic,
-            own_backend: options.own_backend,
-            validate_error: options.validate_error,
-            backend_log: Arc::clone(&backend_log),
-            send_error: backend_send_error.clone(),
-            close_error: backend_close_error.clone(),
-        }),
-        dialer: ScriptedDialer {
-            outcomes: Mutex::new(outcomes),
-            records: Arc::clone(&records),
-            backend_log: Arc::clone(&backend_log),
-            source_frames: options.source_frames,
-            send_error: backend_send_error,
-            close_error: backend_close_error,
-        },
+        provider,
+        dialer,
         callback_refs,
-        client: ClientHandle {
-            socket: Arc::new(tokio::sync::Mutex::new(Box::new(FakeClient {
-                log: Arc::clone(&client_log),
-                send_error: options.send_error,
-                close_error: options.close_error,
-            })
-                as Box<dyn RealtimeClientSocket>)),
-            scope: WebSocketScope::default(),
-        },
-        relay: RecordingRelay {
-            observation: Arc::clone(&observation),
-            outcome: if options.relay_fails {
-                RelayOutcome::Fail
-            } else {
-                RelayOutcome::Ok
-            },
-        },
+        client,
+        relay: relay_of(options.relay_fails, &logs),
         redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap(),
         cancellation,
-        headers: HeaderMap::from([(
-            "Authorization".to_owned(),
-            Json::Text("Bearer test".to_owned()),
-        )]),
+        headers: auth_headers(),
         metadata: options.metadata,
         query_params: options.query_params,
         max_message_size_bytes: options.max_message_size_bytes,
-        records,
-        client_log,
-        backend_log,
-        observation,
+        records: Arc::clone(&logs.records),
+        client_log: Arc::clone(&logs.client),
+        backend_log: Arc::clone(&logs.backend),
+        observation: Arc::clone(&logs.observation),
     }
 }
 

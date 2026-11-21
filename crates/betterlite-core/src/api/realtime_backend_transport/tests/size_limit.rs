@@ -8,6 +8,15 @@ use crate::api::realtime_contracts::transport::RealtimeMessage;
 
 #[tokio::test]
 async fn realtime_backend_size_limit() {
+    default_cap_refuses_an_oversized_message();
+    passes_the_cap_to_the_dialer().await;
+    accepts_an_empty_frame_under_a_zero_cap().await;
+    closes_a_nonempty_frame_under_a_zero_cap().await;
+    accepts_a_frame_at_the_cap().await;
+    closes_a_binary_frame_over_the_cap().await;
+}
+
+fn default_cap_refuses_an_oversized_message() {
     assert_eq!(DEFAULT_MAX_MESSAGE_SIZE_BYTES, 16_777_216);
     assert!(
         oversized_message_close(
@@ -23,7 +32,9 @@ async fn realtime_backend_size_limit() {
     .unwrap();
     assert_eq!(over.code, MESSAGE_TOO_BIG_CODE);
     assert_eq!(over.reason, MESSAGE_TOO_BIG_REASON);
+}
 
+async fn passes_the_cap_to_the_dialer() {
     let mut options = HarnessOptions::default();
     options.max_message_size_bytes = DEFAULT_MAX_MESSAGE_SIZE_BYTES;
     let mut configured = harness(options, Vec::new());
@@ -32,7 +43,9 @@ async fn realtime_backend_size_limit() {
         configured.dials()[0].max_size,
         DEFAULT_MAX_MESSAGE_SIZE_BYTES
     );
+}
 
+async fn accepts_an_empty_frame_under_a_zero_cap() {
     let mut options = HarnessOptions::default();
     options.max_message_size_bytes = 0;
     options.source_frames = vec![RealtimeMessage::Text(String::new())];
@@ -44,7 +57,9 @@ async fn realtime_backend_size_limit() {
             panic!("an empty frame fits under a zero-byte cap");
         }
     }
+}
 
+async fn closes_a_nonempty_frame_under_a_zero_cap() {
     let mut options = HarnessOptions::default();
     options.max_message_size_bytes = 0;
     options.source_frames = vec![RealtimeMessage::Text("a".to_owned())];
@@ -67,7 +82,9 @@ async fn realtime_backend_size_limit() {
             panic!("a nonempty frame exceeds a zero-byte cap");
         }
     }
+}
 
+async fn accepts_a_frame_at_the_cap() {
     let mut options = HarnessOptions::default();
     options.max_message_size_bytes = 4;
     options.source_frames = vec![RealtimeMessage::Text("abcd".to_owned())];
@@ -79,7 +96,9 @@ async fn realtime_backend_size_limit() {
             panic!("a frame at the cap is accepted");
         }
     }
+}
 
+async fn closes_a_binary_frame_over_the_cap() {
     let mut options = HarnessOptions::default();
     options.max_message_size_bytes = 4;
     options.source_frames = vec![RealtimeMessage::Binary(vec![1, 2, 3, 4, 5])];

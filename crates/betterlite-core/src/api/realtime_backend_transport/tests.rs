@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 mod connection_errors;
 mod harness;
 mod initial_setup;
