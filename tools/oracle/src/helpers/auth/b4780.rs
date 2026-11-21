@@ -179,7 +179,7 @@ async fn accessible(
             sources: &[],
         },
     };
-    let listed = accessible_agents(&resolver, &lister, Some(listed_agents))
+    let listed = Box::pin(accessible_agents(&resolver, &lister, Some(listed_agents)))
         .await
         .or_value_error()?;
     let agent_ids: Vec<&str> = listed.iter().map(|agent| agent.agent_id.as_str()).collect();

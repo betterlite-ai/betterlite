@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::future::{Future, ready};
 use std::sync::Arc;
 
 use betterlite_auth::agent_access::error::AgentAccessError;
@@ -22,13 +23,18 @@ pub(super) struct Holder {
     pub(super) team_id: Option<String>,
 }
 
+// a case port that cannot answer raises the same 500 a broken real port would
+fn case_failure(detail: String) -> AgentAccessError {
+    AgentAccessError::Rejected {
+        status: 500,
+        detail,
+    }
+}
+
 fn holder(auth: &UserAPIKeyAuth) -> Result<Holder, AgentAccessError> {
     serde_json::to_string(auth)
         .and_then(|text| serde_json::from_str(&text))
-        .map_err(|error| AgentAccessError::Rejected {
-            status: 500,
-            detail: error.to_string(),
-        })
+        .map_err(|error| case_failure(error.to_string()))
 }
 
 pub(super) fn key(
@@ -50,53 +56,52 @@ pub(super) struct CaseGrants {
 }
 
 impl GrantSources for CaseGrants {
-    async fn key_team_access(
+    fn key_team_access(
         &self,
         auth: Option<&UserAPIKeyAuth>,
         _strict: bool,
-    ) -> Result<AgentAccess, AgentAccessError> {
+    ) -> impl Future<Output = Result<AgentAccess, AgentAccessError>> + Send {
         let Some(given) = auth else {
-            return Ok(AgentAccess::Unrestricted);
+            return ready(Ok(AgentAccess::Unrestricted));
         };
-        let found = holder(given)?;
-        self.access
-            .get(&found)
-            .cloned()
-            .ok_or_else(|| AgentAccessError::Rejected {
-                status: 500,
-                detail: format!("the case grants nothing to {found:?}"),
-            })
+        let granted = holder(given).and_then(|found| {
+            self.access
+                .get(&found)
+                .cloned()
+                .ok_or_else(|| case_failure(format!("the case grants nothing to {found:?}")))
+        });
+        ready(granted)
     }
 
-    async fn caller_access(
+    fn caller_access(
         &self,
         _auth: Option<&UserAPIKeyAuth>,
         _strict: bool,
-    ) -> Result<AgentAccess, AgentAccessError> {
-        Ok(AgentAccess::Unrestricted)
+    ) -> impl Future<Output = Result<AgentAccess, AgentAccessError>> + Send {
+        ready(Ok(AgentAccess::Unrestricted))
     }
 
-    async fn key_access_strict(
+    fn key_access_strict(
         &self,
         _auth: &UserAPIKeyAuth,
-    ) -> Result<AgentAccess, AgentAccessError> {
-        Ok(AgentAccess::Unrestricted)
+    ) -> impl Future<Output = Result<AgentAccess, AgentAccessError>> + Send {
+        ready(Ok(AgentAccess::Unrestricted))
     }
 
-    async fn access_group_ceiling(
+    fn access_group_ceiling(
         &self,
         _auth: Option<&UserAPIKeyAuth>,
         _strict: bool,
-    ) -> Result<Option<BTreeSet<String>>, AgentAccessError> {
-        Ok(None)
+    ) -> impl Future<Output = Result<Option<BTreeSet<String>>, AgentAccessError>> + Send {
+        ready(Ok(None))
     }
 
-    async fn managed_ceilings(
+    fn managed_ceilings(
         &self,
         _agent_id: &str,
         _access_group_ids: &[String],
-    ) -> Result<Vec<BTreeSet<String>>, AgentAccessError> {
-        Ok(Vec::new())
+    ) -> impl Future<Output = Result<Vec<BTreeSet<String>>, AgentAccessError>> + Send {
+        ready(Ok(Vec::new()))
     }
 }
 
@@ -107,8 +112,11 @@ impl TargetAgents for NoTargets {
         false
     }
 
-    async fn agent(&self, _agent_id: &str) -> Result<Option<AgentResponse>, AgentIdentityFailure> {
-        Ok(None)
+    fn agent(
+        &self,
+        _agent_id: &str,
+    ) -> impl Future<Output = Result<Option<AgentResponse>, AgentIdentityFailure>> + Send {
+        ready(Ok(None))
     }
 }
 
@@ -119,59 +127,52 @@ pub(super) struct CaseHumans<'case> {
 }
 
 impl HumanSources for CaseHumans<'_> {
-    async fn reload_admitted_key(
+    fn reload_admitted_key(
         &self,
         _key_hash: &SecretString,
         _check_db_only: bool,
-    ) -> Result<UserAPIKeyAuth, AgentAccessError> {
-        Err(AgentAccessError::Rejected {
-            status: 500,
-            detail: String::from("the cases reload no key"),
-        })
+    ) -> impl Future<Output = Result<UserAPIKeyAuth, AgentAccessError>> + Send {
+        ready(Err(case_failure(String::from("the cases reload no key"))))
     }
 
-    async fn reload_admitted_user(
+    fn reload_admitted_user(
         &self,
         user_id: &str,
         requires_fresh_policy: bool,
-    ) -> Result<UserAPIKeyAuth, AgentAccessError> {
+    ) -> impl Future<Output = Result<UserAPIKeyAuth, AgentAccessError>> + Send {
         if !requires_fresh_policy {
-            return Err(AgentAccessError::Rejected {
-                status: 500,
-                detail: String::from("the human is reloaded without a fresh policy"),
-            });
+            return ready(Err(case_failure(String::from(
+                "the human is reloaded without a fresh policy",
+            ))));
         }
-        key(Some(user_id), None).map_err(|error| AgentAccessError::Rejected {
-            status: 500,
-            detail: error.to_string(),
-        })
+        ready(key(Some(user_id), None).map_err(|error| case_failure(error.to_string())))
     }
 
-    async fn admitted_subject_sources(
+    fn admitted_subject_sources(
         &self,
         human: &UserAPIKeyAuth,
         allowed_team_ids: Option<&BTreeSet<String>>,
-    ) -> Result<Vec<UserAPIKeyAuth>, AgentAccessError> {
-        let user_id = holder(human)?.user_id;
-        let admitted = self.sources.iter().filter(|source| {
-            source.team_id.as_ref().is_none_or(|team_id| {
-                allowed_team_ids.is_none_or(|allowed| allowed.contains(team_id))
-            })
-        });
-        admitted
-            .map(|source| key(user_id.as_deref(), source.team_id.as_deref()))
-            .collect::<Result<Vec<UserAPIKeyAuth>, AuthError>>()
-            .map_err(|error| AgentAccessError::Rejected {
-                status: 500,
-                detail: error.to_string(),
-            })
+    ) -> impl Future<Output = Result<Vec<UserAPIKeyAuth>, AgentAccessError>> + Send {
+        ready(holder(human).and_then(|found| {
+            let user_id = found.user_id;
+            self.sources
+                .iter()
+                .filter(|source| {
+                    source.team_id.as_ref().is_none_or(|team_id| {
+                        allowed_team_ids.is_none_or(|allowed| allowed.contains(team_id))
+                    })
+                })
+                .map(|source| key(user_id.as_deref(), source.team_id.as_deref()))
+                .collect::<Result<Vec<UserAPIKeyAuth>, AuthError>>()
+                .map_err(|error| case_failure(error.to_string()))
+        }))
     }
 
-    async fn effective_contexts(
+    fn effective_contexts(
         &self,
         _auth: &UserAPIKeyAuth,
-    ) -> Result<Vec<UserAPIKeyAuth>, AgentAccessError> {
-        Ok(self.contexts.clone())
+    ) -> impl Future<Output = Result<Vec<UserAPIKeyAuth>, AgentAccessError>> + Send {
+        ready(Ok(self.contexts.clone()))
     }
 }
 
