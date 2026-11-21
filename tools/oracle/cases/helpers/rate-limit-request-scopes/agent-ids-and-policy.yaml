@@ -1,0 +1,81 @@
+kind: helper
+name: rate-limit-request-scopes-agent-ids-and-policy
+call:
+  b3040:
+    function: create
+    auth:
+      api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      agent_id: agent-1
+    server:
+      managed_agent_policy:
+        agent_id: agent-1
+        agent_name: agent-1
+        agent_card_params: {}
+        rpm_limit: 11
+      invoked_agent_id: agent-2
+      invoked_agent_policy:
+        agent_id: agent-2
+        agent_name: agent-2
+        agent_card_params: {}
+        rpm_limit: 13
+    data: {}
+    rpm_limit_type: null
+    tpm_limit_type: null
+    model_has_failures: false
+    call_type: null
+    groups: {}
+    registry: []
+    tag_limits: []
+    window_size: 60
+calls:
+  - b3040:
+      function: create
+      auth:
+        api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        agent_id: agent-4
+      server:
+        invoked_agent_id: agent-3
+        invoked_agent_policy:
+          agent_id: agent-3
+          agent_name: agent-3
+          agent_card_params: {}
+          rpm_limit: 21
+      data:
+        metadata:
+          agent_id: agent-3
+      rpm_limit_type: null
+      tpm_limit_type: null
+      model_has_failures: false
+      call_type: null
+      groups: {}
+      registry: []
+      tag_limits: []
+      window_size: 60
+  - b3040:
+      function: create
+      auth:
+        api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        agent_id: agent-1
+      server:
+        managed_agent_policy:
+          agent_id: agent-1
+          agent_name: agent-1
+          agent_card_params: {}
+          rpm_limit: 11
+        invoked_agent_id: agent-1
+        invoked_agent_policy:
+          agent_id: agent-1
+          agent_name: agent-1
+          agent_card_params: {}
+          rpm_limit: 13
+      data: {}
+      rpm_limit_type: null
+      tpm_limit_type: null
+      model_has_failures: false
+      call_type: null
+      groups: {}
+      registry: []
+      tag_limits: []
+      window_size: 60
+env: {}
+compare: {ignore: []}

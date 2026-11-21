@@ -1,0 +1,36 @@
+kind: helper
+name: recorded-selected-token-cost-wins
+call:
+  savings_pricing:
+    operation: compute_autorouter_savings
+    baseline_model: anthropic/baseline-model
+    selected_model: anthropic/selected-model
+    usage:
+      prompt_tokens: 10
+      completion_tokens: 4
+      total_tokens: 14
+    baseline_info:
+      key: baseline-model
+      max_tokens: null
+      max_input_tokens: null
+      max_output_tokens: null
+      input_cost_per_token: 0.5
+      output_cost_per_token: 2.0
+      litellm_provider: anthropic
+      mode: chat
+      supported_openai_params: null
+    selected_info:
+      key: selected-model
+      max_tokens: null
+      max_input_tokens: null
+      max_output_tokens: null
+      input_cost_per_token: 0.1
+      output_cost_per_token: 0.2
+      litellm_provider: anthropic
+      mode: chat
+      supported_openai_params: null
+    cost_breakdown:
+      input_cost: 3.0
+      output_cost: 2.0
+compare: {ignore: []}
+env: {}
