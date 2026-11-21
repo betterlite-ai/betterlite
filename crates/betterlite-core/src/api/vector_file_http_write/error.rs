@@ -6,7 +6,6 @@ use thiserror::Error;
 
 use crate::api::vector_store_http_write::error::{BaseLlmException, ClientError, UrlFailure};
 
-// The file write handlers fail before a provider error in five ways, and each names the field that did not fit
 #[derive(Debug, Error)]
 pub enum FileWriteError {
     #[error(transparent)]
