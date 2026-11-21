@@ -139,8 +139,8 @@ impl<R: ImageDescriptionCompletion> ContentFilterGuardrail<R> {
         detections: &mut Vec<ContentFilterDetection>,
     ) -> Result<(), GuardrailFailure> {
         let templates = CompetitorMessageTemplates {
-            refuse: self.competitor_refuse_message_template.as_deref(),
-            reframe: self.competitor_reframe_message_template.as_deref(),
+            refuse: self.refuse_message_template.as_deref(),
+            reframe: self.reframe_message_template.as_deref(),
         };
         let texts = inputs.texts.as_deref().unwrap_or_default();
         let mut processed = Vec::with_capacity(texts.len());

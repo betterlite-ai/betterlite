@@ -55,8 +55,8 @@ pub struct ContentFilterGuardrail<R> {
     pub image_model: Option<String>,
     pub loaded_categories: CategoryLoadResult,
     pub competitor_intent_checker: Option<CompetitorIntentChecker>,
-    pub competitor_refuse_message_template: Option<String>,
-    pub competitor_reframe_message_template: Option<String>,
+    pub refuse_message_template: Option<String>,
+    pub reframe_message_template: Option<String>,
     pub compiled_patterns: Vec<CompiledPattern>,
     pub blocked_words: IndexMap<String, (ContentFilterAction, Option<String>)>,
 }

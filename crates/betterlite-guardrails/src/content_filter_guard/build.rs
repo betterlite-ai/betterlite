@@ -129,8 +129,8 @@ impl<R: ImageDescriptionCompletion> ContentFilterGuardrail<R> {
             image_model: args.image_model.clone(),
             loaded_categories,
             competitor_intent_checker,
-            competitor_refuse_message_template: templates.refuse,
-            competitor_reframe_message_template: templates.reframe,
+            refuse_message_template: templates.refuse,
+            reframe_message_template: templates.reframe,
             compiled_patterns,
             blocked_words,
         })

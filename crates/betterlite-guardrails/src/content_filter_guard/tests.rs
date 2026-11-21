@@ -6,6 +6,7 @@ use std::io::Write;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
+use rstest::rstest;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt;
 
@@ -208,7 +209,12 @@ fn category(name: &str) -> ContentFilterCategoryConfig {
 fn texts_inputs(texts: &[&str]) -> GuardrailApiInputs {
     GuardrailApiInputs {
         texts: Some(texts.iter().map(|text| (*text).to_owned()).collect()),
-        ..GuardrailApiInputs::default()
+        images: None,
+        tools: None,
+        tool_calls: None,
+        structured_messages: None,
+        model: None,
+        stream_holdback_chars: None,
     }
 }
 
@@ -796,20 +802,23 @@ async fn images_texts_and_tool_calls_are_scanned_in_litellm_order() {
     assert_eq!(masked_count(entry, "blocked_word"), Some(3));
 }
 
+#[rstest]
+#[case::request(GuardrailInputType::Request)]
+#[case::response(GuardrailInputType::Response)]
 #[tokio::test]
-async fn tool_call_arguments_are_scanned_on_a_request_and_on_a_response() {
+async fn tool_call_arguments_are_scanned_on_a_request_and_on_a_response(
+    #[case] input_type: GuardrailInputType,
+) {
     let mut arguments = args("content-filter");
     arguments.blocked_words = Some(vec![blocked_word("secret", ContentFilterAction::Mask)]);
     let guardrail = built(arguments);
-    for input_type in [GuardrailInputType::Request, GuardrailInputType::Response] {
-        let mut inputs = GuardrailApiInputs::default();
-        inputs.tool_calls = Some(vec![tool_call(r#"{"query":"secret"}"#)]);
-        let run = applied(&guardrail, inputs, input_type).await;
-        assert_eq!(
-            tool_arguments(&run.result.unwrap()),
-            r#"{"query":"[KEYWORD_REDACTED]"}"#
-        );
-    }
+    let mut inputs = GuardrailApiInputs::default();
+    inputs.tool_calls = Some(vec![tool_call(r#"{"query":"secret"}"#)]);
+    let run = applied(&guardrail, inputs, input_type).await;
+    assert_eq!(
+        tool_arguments(&run.result.unwrap()),
+        r#"{"query":"[KEYWORD_REDACTED]"}"#
+    );
 }
 
 #[tokio::test]
