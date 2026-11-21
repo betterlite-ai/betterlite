@@ -35,4 +35,12 @@ deviations:
       relies on the drop; betterlite reads an absent or null value as the field's default, and
       losing a request's spend and tokens because its metadata string is missing is lost data.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L2723
+  - what: >-
+      A request_duration_ms integer beyond the signed 64-bit range counts as no timed request,
+      where the source accepts any nonnegative Python int and writes it to the row.
+    why: >-
+      The daily column is a 64-bit integer, so the source's own upsert already fails and drops
+      the row for such a value; betterlite keeps the row and leaves the request untimed instead
+      of losing its spend and tokens.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L262-L272
 kept_bugs: []
