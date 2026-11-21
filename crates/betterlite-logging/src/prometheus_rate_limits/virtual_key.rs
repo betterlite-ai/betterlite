@@ -1,5 +1,5 @@
 use betterlite_models::decisions::Json;
-use betterlite_prometheus::collector_factory::collector::MetricValue;
+use betterlite_prometheus::collector_factory::collector::{Collector as _, MetricValue};
 use betterlite_prometheus::label_value_record::{LabelDumpValue, UserApiKeyLabelValues};
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
@@ -7,6 +7,7 @@ use rust_decimal::Decimal;
 use crate::end_user::EndUserCostTrackingSettings;
 use crate::fields::payload::StandardLoggingPayload;
 use crate::prometheus::budget_gauges::gauge::label_pairs;
+use crate::prometheus_helpers::bounded_series_tracker::RemovableMetric;
 use crate::prometheus_label_projection::combined_custom_metadata::{
     CombinedMetadataError, combined_custom_metadata,
 };
@@ -41,7 +42,7 @@ pub struct VirtualKeyRateLimitInputs<'input> {
 pub fn set_virtual_key_rate_limit_metrics<G>(
     gauges: &G,
     inputs: VirtualKeyRateLimitInputs<'_>,
-) -> Result<(), PrometheusRateLimitError<G::Gauge::Error>>
+) -> Result<(), PrometheusRateLimitError<<G::Gauge as RemovableMetric>::Error>>
 where
     G: RateLimitGauges,
 {

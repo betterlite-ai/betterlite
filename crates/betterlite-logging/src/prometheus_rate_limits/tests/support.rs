@@ -106,7 +106,7 @@ pub(crate) struct FakeGauges {
 
 impl FakeGauges {
     pub(crate) fn with_labels(supported: &[(&'static str, &[&str])]) -> Self {
-        let supported = supported
+        let by_name = supported
             .iter()
             .map(|(name, labels)| {
                 (
@@ -117,7 +117,7 @@ impl FakeGauges {
             .collect();
         Self {
             events: Arc::new(Mutex::new(Vec::new())),
-            supported,
+            supported: by_name,
             tracker: BoundedPrometheusSeriesTracker::default(),
             fails_removal: false,
         }

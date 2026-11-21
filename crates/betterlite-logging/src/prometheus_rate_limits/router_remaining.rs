@@ -1,13 +1,14 @@
 use std::collections::BTreeMap;
 
 use betterlite_models::decisions::Json;
-use betterlite_prometheus::collector_factory::collector::MetricValue;
+use betterlite_prometheus::collector_factory::collector::{Collector as _, MetricValue};
 use betterlite_prometheus::label_value_record::UserApiKeyLabelValues;
 use rust_decimal::Decimal;
 
 use crate::end_user::EndUserCostTrackingSettings;
 use crate::fields::payload::StandardLoggingPayload;
 use crate::prometheus::budget_gauges::gauge::label_pairs;
+use crate::prometheus_helpers::bounded_series_tracker::RemovableMetric;
 use crate::prometheus_label_projection::label_factory_context::PrometheusLabelFactoryContext;
 use crate::prometheus_label_projection::prometheus_label_factory::{
     LabelSource, prometheus_label_factory,
@@ -88,8 +89,8 @@ async fn fetch_remaining_usage(
         .model_group
         .as_deref()
         .filter(|group| !group.is_empty())?;
-    let usage = usage?;
-    match usage.get_remaining_model_group_usage(model_group).await {
+    let reader = usage?;
+    match reader.get_remaining_model_group_usage(model_group).await {
         Ok(remaining_usage) => (!remaining_usage.is_empty()).then_some(remaining_usage),
         Err(error) => {
             tracing::error!("Prometheus: the remaining usage for {model_group} failed: {error}");
@@ -104,7 +105,7 @@ fn set_remaining<G>(
     value: i64,
     values: &UserApiKeyLabelValues,
     source: LabelSource<'_>,
-) -> Result<(), PrometheusRateLimitError<G::Gauge::Error>>
+) -> Result<(), PrometheusRateLimitError<<G::Gauge as RemovableMetric>::Error>>
 where
     G: RateLimitGauges,
 {

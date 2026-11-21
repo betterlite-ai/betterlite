@@ -2,16 +2,14 @@
 
 use std::time::Instant;
 
-use betterlite_prometheus::collector_factory::collector::{
-    Collector as _, MetricLike, MetricValue,
-};
+use betterlite_prometheus::collector_factory::collector::{MetricLike, MetricValue};
 use betterlite_prometheus::collector_registry::CollectorRegistry;
 use rstest::rstest;
 use rust_decimal::Decimal;
 
 use super::support::{
-    FakeGauges, Fixture, RATE_LIMIT_LABELS, ScriptedUsage, json_object, number, payload,
-    removal_event, with_headers, with_model_group,
+    FakeGauges, Fixture, RATE_LIMIT_LABELS, RecordingGauge, ScriptedUsage, json_object, number,
+    payload, removal_event, with_headers, with_model_group,
 };
 use crate::end_user::EndUserCostTrackingSettings;
 use crate::prometheus_exporter::{Handle, PrometheusCollectors, PrometheusExporterSettings};
@@ -67,6 +65,26 @@ fn registered_name(handle: &Handle) -> &str {
         MetricLike::Excluded(excluded) => &excluded.metric.description.name,
         MetricLike::NoOp(_) => panic!("the collector is a no-op"),
     }
+}
+
+fn track_one_series(
+    collectors: &PrometheusCollectors,
+    gauge: &RecordingGauge,
+    series: &[Option<String>],
+    limits: SeriesLimits,
+) {
+    collectors
+        .tracker()
+        .track_series(
+            gauge,
+            SeriesKey {
+                metric_name: ROUTER_REQUESTS,
+                label_values: series,
+            },
+            limits,
+            Instant::now(),
+        )
+        .unwrap();
 }
 
 #[rstest]
@@ -167,31 +185,9 @@ fn collectors_keep_the_series_tracked_between_calls() {
         cleanup_interval: None,
     };
     let first_series = [Some("first-series".to_owned())];
-    collectors
-        .tracker()
-        .track_series(
-            &gauge,
-            SeriesKey {
-                metric_name: ROUTER_REQUESTS,
-                label_values: &first_series,
-            },
-            limits,
-            Instant::now(),
-        )
-        .unwrap();
+    track_one_series(&collectors, &gauge, &first_series, limits);
     let second_series = [Some("second-series".to_owned())];
-    collectors
-        .tracker()
-        .track_series(
-            &gauge,
-            SeriesKey {
-                metric_name: ROUTER_REQUESTS,
-                label_values: &second_series,
-            },
-            limits,
-            Instant::now(),
-        )
-        .unwrap();
+    track_one_series(&collectors, &gauge, &second_series, limits);
     assert_eq!(
         fake.events(),
         vec![removal_event(

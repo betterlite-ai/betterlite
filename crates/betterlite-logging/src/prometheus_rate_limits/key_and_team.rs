@@ -1,8 +1,9 @@
-use betterlite_prometheus::collector_factory::collector::MetricValue;
+use betterlite_prometheus::collector_factory::collector::{Collector as _, MetricValue};
 use rust_decimal::Decimal;
 
 use crate::fields::payload::StandardLoggingPayload;
 use crate::prometheus::budget_gauges::gauge::label_pairs;
+use crate::prometheus_helpers::bounded_series_tracker::RemovableMetric;
 use crate::prometheus_label_projection::label_factory_context::PrometheusLabelFactoryContext;
 use crate::prometheus_label_projection::prometheus_label_factory::{
     LabelFactoryError, LabelSource, ProjectedLabels, prometheus_label_factory,
@@ -44,7 +45,7 @@ pub fn set_key_and_team_rate_limit_metrics<G>(
     gauges: &G,
     payload: &StandardLoggingPayload,
     labels: LabelInputs<'_>,
-) -> Result<(), PrometheusRateLimitError<G::Gauge::Error>>
+) -> Result<(), PrometheusRateLimitError<<G::Gauge as RemovableMetric>::Error>>
 where
     G: RateLimitGauges,
 {
@@ -74,7 +75,7 @@ pub fn set_rate_limit_allowed_and_used_gauges<G>(
     labels: LabelInputs<'_>,
     descriptor: RateLimitDescriptor,
     series: RateLimitSeries,
-) -> Result<(), PrometheusRateLimitError<G::Gauge::Error>>
+) -> Result<(), PrometheusRateLimitError<<G::Gauge as RemovableMetric>::Error>>
 where
     G: RateLimitGauges,
 {
@@ -136,7 +137,7 @@ fn remove_rate_limit_series<G>(
     series: RateLimitSeries,
     labelnames: &[String],
     projected: &ProjectedLabels,
-) -> Result<(), PrometheusRateLimitError<G::Gauge::Error>>
+) -> Result<(), PrometheusRateLimitError<<G::Gauge as RemovableMetric>::Error>>
 where
     G: RateLimitGauges,
 {

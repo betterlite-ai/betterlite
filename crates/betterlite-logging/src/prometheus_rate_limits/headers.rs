@@ -14,10 +14,10 @@ pub fn get_remaining_from_v3_rate_limit_headers(
     payload: Option<&StandardLoggingPayload>,
     rate_limit_type: RateLimitType,
 ) -> Option<i64> {
-    let payload = payload?;
+    let logged_payload = payload?;
     let header_name = format!("{V3_MODEL_PER_KEY}{}", rate_limit_type.as_str());
     // ast-grep-ignore: no-long-names
-    get_int_from_v3_rate_limit_headers(payload, &header_name)
+    get_int_from_v3_rate_limit_headers(logged_payload, &header_name)
 }
 
 // ast-grep-ignore: no-long-names
@@ -41,7 +41,9 @@ pub(crate) fn declared_integer(
         Some(Json::Number(number)) => number.as_i64(),
         Some(Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => None,
     };
-    amount.map(Some).ok_or(RateLimitValueError::NotAnInteger {
-        field: field.to_owned(),
-    })
+    amount
+        .map(Some)
+        .ok_or_else(|| RateLimitValueError::NotAnInteger {
+            field: field.to_owned(),
+        })
 }

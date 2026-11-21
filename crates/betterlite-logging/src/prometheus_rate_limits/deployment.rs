@@ -1,10 +1,11 @@
 use betterlite_models::model_registration::JsonObject;
-use betterlite_prometheus::collector_factory::collector::MetricValue;
+use betterlite_prometheus::collector_factory::collector::{Collector as _, MetricValue};
 use betterlite_prometheus::label_value_record::{LabelDumpValue, UserApiKeyLabelValues};
 use rust_decimal::Decimal;
 
 use crate::end_user::EndUserCostTrackingSettings;
 use crate::prometheus::budget_gauges::gauge::label_pairs;
+use crate::prometheus_helpers::bounded_series_tracker::RemovableMetric;
 use crate::prometheus_label_projection::prometheus_label_factory::{
     LabelSource, prometheus_label_factory,
 };
@@ -31,7 +32,7 @@ pub struct DeploymentLimitInputs<'input> {
 pub fn set_deployment_tpm_rpm_limit_metrics<G>(
     gauges: &G,
     inputs: DeploymentLimitInputs<'_>,
-) -> Result<(), PrometheusRateLimitError<G::Gauge::Error>>
+) -> Result<(), PrometheusRateLimitError<<G::Gauge as RemovableMetric>::Error>>
 where
     G: RateLimitGauges,
 {

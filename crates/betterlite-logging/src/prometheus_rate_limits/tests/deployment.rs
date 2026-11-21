@@ -184,14 +184,12 @@ fn deployment_sets_nothing_without_limits() {
 #[test]
 fn deployment_marks_a_missing_api_base_as_none() {
     let settings = PrometheusLabelSettings::with_defaults();
+    let model_info = json_object(&[("tpm", number("10"))]);
+    let litellm_params = json_object(&[]);
     let gauges = FakeGauges::with_labels(&RATE_LIMIT_LABELS);
     let inputs = DeploymentLimitInputs {
         api_base: None,
-        ..inputs(
-            &json_object(&[("tpm", number("10"))]),
-            &json_object(&[]),
-            &settings,
-        )
+        ..inputs(&model_info, &litellm_params, &settings)
     };
     set_deployment_tpm_rpm_limit_metrics(&gauges, inputs).unwrap();
     let labels = [

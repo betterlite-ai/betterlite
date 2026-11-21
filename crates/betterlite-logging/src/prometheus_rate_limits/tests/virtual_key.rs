@@ -52,6 +52,44 @@ fn legacy_metadata(requests: Option<Json>, tokens: Option<Json>) -> JsonObject {
     json_object(&entries)
 }
 
+const CUSTOM_LABEL_NAMES: &[&str] = &[
+    "hashed_api_key",
+    "api_key_alias",
+    "model",
+    "model_id",
+    "user_api_key_team_alias",
+];
+
+fn custom_label_settings() -> PrometheusLabelSettings {
+    PrometheusLabelSettings {
+        custom_metadata_labels: vec!["user_api_key_team_alias".to_owned()],
+        ..PrometheusLabelSettings::with_defaults()
+    }
+}
+
+fn custom_gauges() -> FakeGauges {
+    FakeGauges::with_labels(&[
+        (
+            "litellm_remaining_api_key_requests_for_model",
+            CUSTOM_LABEL_NAMES,
+        ),
+        (
+            "litellm_remaining_api_key_tokens_for_model",
+            CUSTOM_LABEL_NAMES,
+        ),
+    ])
+}
+
+fn custom_labels(team_alias: &str) -> [(&str, &str); 5] {
+    [
+        ("hashed_api_key", "key-1"),
+        ("api_key_alias", "alias-1"),
+        ("model", "gpt-4o"),
+        ("model_id", "model-1"),
+        ("user_api_key_team_alias", team_alias),
+    ]
+}
+
 #[test]
 fn virtual_key_prefers_the_legacy_metadata_values() {
     let settings = PrometheusLabelSettings::with_defaults();
@@ -185,43 +223,13 @@ fn virtual_key_rejects_a_non_integer_metadata_value() {
 
 #[test]
 fn virtual_key_reads_the_configured_custom_metadata_labels() {
-    let settings = PrometheusLabelSettings {
-        custom_metadata_labels: vec!["user_api_key_team_alias".to_owned()],
-        ..PrometheusLabelSettings::with_defaults()
-    };
+    let settings = custom_label_settings();
     let metadata = legacy_metadata(None, None);
     let payload = with_team_alias(payload(), "team-a");
-    let gauges = FakeGauges::with_labels(&[
-        (
-            "litellm_remaining_api_key_requests_for_model",
-            &[
-                "hashed_api_key",
-                "api_key_alias",
-                "model",
-                "model_id",
-                "user_api_key_team_alias",
-            ],
-        ),
-        (
-            "litellm_remaining_api_key_tokens_for_model",
-            &[
-                "hashed_api_key",
-                "api_key_alias",
-                "model",
-                "model_id",
-                "user_api_key_team_alias",
-            ],
-        ),
-    ]);
+    let gauges = custom_gauges();
     set_virtual_key_rate_limit_metrics(&gauges, inputs(&metadata, Some(&payload), &settings))
         .unwrap();
-    let labels = [
-        ("hashed_api_key", "key-1"),
-        ("api_key_alias", "alias-1"),
-        ("model", "gpt-4o"),
-        ("model_id", "model-1"),
-        ("user_api_key_team_alias", "team-a"),
-    ];
+    let labels = custom_labels("team-a");
     assert_eq!(
         gauges.events(),
         vec![
@@ -233,41 +241,12 @@ fn virtual_key_reads_the_configured_custom_metadata_labels() {
 
 #[test]
 fn virtual_key_marks_an_unavailable_custom_label_as_none() {
-    let settings = PrometheusLabelSettings {
-        custom_metadata_labels: vec!["user_api_key_team_alias".to_owned()],
-        ..PrometheusLabelSettings::with_defaults()
-    };
+    let settings = custom_label_settings();
     let metadata = legacy_metadata(None, None);
-    let gauges = FakeGauges::with_labels(&[
-        (
-            "litellm_remaining_api_key_requests_for_model",
-            &[
-                "hashed_api_key",
-                "api_key_alias",
-                "model",
-                "model_id",
-                "user_api_key_team_alias",
-            ],
-        ),
-        (
-            "litellm_remaining_api_key_tokens_for_model",
-            &[
-                "hashed_api_key",
-                "api_key_alias",
-                "model",
-                "model_id",
-                "user_api_key_team_alias",
-            ],
-        ),
-    ]);
+    let gauges = custom_gauges();
     set_virtual_key_rate_limit_metrics(&gauges, inputs(&metadata, None, &settings)).unwrap();
-    let labels = [
-        ("hashed_api_key", "key-1"),
-        ("api_key_alias", "alias-1"),
-        ("model", "gpt-4o"),
-        ("model_id", "model-1"),
-        ("user_api_key_team_alias", "None"),
-    ];
+    // a custom label the payload does not carry renders as the text None
+    let labels = custom_labels("None");
     assert_eq!(
         gauges.events(),
         vec![

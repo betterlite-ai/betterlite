@@ -52,6 +52,24 @@ fn api_key_series(rate_limit_type: RateLimitType) -> (RateLimitDescriptor, RateL
     )
 }
 
+fn gauges_with_an_extra_allowed_label() -> FakeGauges {
+    FakeGauges::with_labels(&[
+        (
+            "litellm_api_key_rate_limit_allowed_metric",
+            &[
+                "hashed_api_key",
+                "api_key_alias",
+                "rate_limit_type",
+                "model",
+            ],
+        ),
+        (
+            "litellm_api_key_rate_limit_used_metric",
+            &["hashed_api_key", "api_key_alias", "rate_limit_type"],
+        ),
+    ])
+}
+
 #[test]
 fn key_and_team_sets_all_eight_series() {
     let gauges = FakeGauges::with_labels(&RATE_LIMIT_LABELS);
@@ -261,21 +279,7 @@ fn removal_passes_a_missing_label_as_none_in_label_order() {
 
 #[test]
 fn key_and_team_labels_follow_the_allowed_metric() {
-    let gauges = FakeGauges::with_labels(&[
-        (
-            "litellm_api_key_rate_limit_allowed_metric",
-            &[
-                "hashed_api_key",
-                "api_key_alias",
-                "rate_limit_type",
-                "model",
-            ],
-        ),
-        (
-            "litellm_api_key_rate_limit_used_metric",
-            &["hashed_api_key", "api_key_alias", "rate_limit_type"],
-        ),
-    ]);
+    let gauges = gauges_with_an_extra_allowed_label();
     let payload = with_headers(
         payload(),
         &[
