@@ -1,0 +1,34 @@
+name: unified-lifecycle-passthrough-pre-call-block
+config: |
+  guardrails:
+    - guardrail_name: word-filter
+      litellm_params:
+        guardrail: litellm_content_filter
+        mode: pre_call
+        default_on: true
+        blocked_words:
+          - keyword: forbidden
+            action: BLOCK
+  general_settings:
+    pass_through_endpoints:
+      - path: /guarded-scan
+        target: "{{upstream}}/scan"
+        guardrails: [word-filter]
+env: {}
+request:
+  method: POST
+  path: /guarded-scan
+  headers:
+    content-type: application/json
+    authorization: Bearer oracle-master
+    x-litellm-call-id: oracle-call-unified-passthrough-pre-block
+  body:
+    query: the forbidden word
+upstream: []
+compare:
+  headers: [content-type]
+  headers_present: []
+  upstream_headers: []
+  ignore:
+    - pointer: /error/message
+      why: LiteLLM puts the Python repr of the content filter's detail dict in the message, and docs/compatibility.md keeps repr text out of betterlite
