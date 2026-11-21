@@ -5,7 +5,9 @@ use std::sync::Arc;
 
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use betterlite_models::decisions::Json;
-use betterlite_openai::api::responses_shapes::websocket::WsRequestDefaults;
+use betterlite_openai::api::responses_shapes::websocket::{
+    PresidioGuardrailCallback, WsRequestDefaults,
+};
 use indexmap::IndexMap;
 use serde_json::value::RawValue;
 use thiserror::Error;
@@ -72,7 +74,7 @@ where
     Guardrail(GuardError),
     #[error("the frame can't be written back as JSON: {source}")]
     Encode {
-        #[source]
+        #[from]
         source: serde_json::Error,
     },
 }
@@ -99,8 +101,24 @@ pub(crate) struct PiiCall<'call, Guard, Settings> {
     pub(crate) output_parse_pii: bool,
 }
 
-// json.loads, then .get on whatever came back: text that isn't JSON passes through untouched, unless it
-// opens an object, since forwarding that unread would skip model enforcement and masking
+impl<Guard, Settings> PiiCall<'_, Guard, Settings>
+where
+    Guard: PresidioGuardrailCallback + Sync,
+    Settings: Sync,
+{
+    pub(crate) async fn check_text(&self, text: &str) -> Result<String, Guard::Error> {
+        self.guard
+            .check_pii(
+                text,
+                self.output_parse_pii,
+                self.settings,
+                self.request_data,
+            )
+            .await
+    }
+}
+
+// non-JSON text passes through; unreadable objects fail closed instead of skipping enforcement
 pub(crate) fn decode_object<GuardError>(
     message: &str,
 ) -> Result<Option<IndexMap<String, Json>>, FramePolicyError<GuardError>>
@@ -119,13 +137,8 @@ where
     }
 }
 
-pub(crate) fn encode<GuardError>(
+pub(crate) fn encode(
     fields: IndexMap<String, Json>,
-) -> Result<Cow<'static, str>, FramePolicyError<GuardError>>
-where
-    GuardError: Error + 'static,
-{
-    serde_json::to_string(&Json::Object(fields))
-        .map(Cow::Owned)
-        .map_err(|source| FramePolicyError::Encode { source })
+) -> Result<Cow<'static, str>, serde_json::Error> {
+    serde_json::to_string(&Json::Object(fields)).map(Cow::Owned)
 }

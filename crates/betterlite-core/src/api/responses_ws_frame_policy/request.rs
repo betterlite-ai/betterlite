@@ -143,7 +143,7 @@ where
     let mut frame = restored.unwrap_or(authorized);
     let masked = mask_with_guardrails(policy, request_data, &mut frame).await?;
     if frame_modified || masked {
-        encode(frame)
+        Ok(encode(frame)?)
     } else {
         Ok(Cow::Borrowed(message))
     }
@@ -164,9 +164,7 @@ where
         return Ok(false);
     }
     if let Entry::Vacant(slot) = request_data.entry("metadata".to_owned()) {
-        let metadata = RawValue::from_string("{}".to_owned())
-            .map_err(|source| FramePolicyError::Encode { source })?;
-        slot.insert(metadata);
+        slot.insert(RawValue::from_string("{}".to_owned())?);
     }
     let mut masked = false;
     for guardrail in policy.guardrail_callbacks {

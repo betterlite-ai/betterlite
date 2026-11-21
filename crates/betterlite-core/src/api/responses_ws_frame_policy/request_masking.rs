@@ -13,132 +13,101 @@ where
     Guard: PresidioGuardrailCallback + Sync,
     Guard::Settings: Sync,
 {
-    let top = mask_create_container(call, frame).await?;
-    let Some(Json::Object(nested)) = frame.get_mut("response") else {
-        return Ok(top);
-    };
-    let inner = mask_create_container(call, nested).await?;
-    Ok(top || inner)
-}
-
-async fn mask_create_container<Guard>(
-    call: &PiiCall<'_, Guard, Guard::Settings>,
-    container: &mut IndexMap<String, Json>,
-) -> Result<bool, Guard::Error>
-where
-    Guard: PresidioGuardrailCallback + Sync,
-    Guard::Settings: Sync,
-{
-    let mut masked = false;
-    if let Some(input) = container.get_mut("input") {
-        masked = mask_create_field(call, input).await?;
-    }
-    if let Some(instructions @ Json::Text(_)) = container.get_mut("instructions") {
-        masked = mask_create_field(call, instructions).await? || masked;
+    let masking = Masking { call };
+    let mut masked = masking.container(frame).await?;
+    if let Some(Json::Object(nested)) = frame.get_mut("response") {
+        masked |= masking.container(nested).await?;
     }
     Ok(masked)
 }
 
-async fn mask_create_field<Guard>(
-    call: &PiiCall<'_, Guard, Guard::Settings>,
-    value: &mut Json,
-) -> Result<bool, Guard::Error>
+struct Masking<'call, 'policy, Guard>
 where
-    Guard: PresidioGuardrailCallback + Sync,
-    Guard::Settings: Sync,
+    Guard: PresidioGuardrailCallback,
 {
-    let items = match value {
-        Json::Text(text) => {
-            let replaced = call
-                .guard
-                .check_pii(
-                    text,
-                    call.output_parse_pii,
-                    call.settings,
-                    call.request_data,
-                )
-                .await?;
-            *text = replaced;
-            return Ok(true);
-        }
-        Json::List(items) => items,
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Object(_) => return Ok(false),
-    };
-    let mut masked = false;
-    for item in items {
-        if let Json::Object(fields) = item {
-            let changed = mask_create_item(call, fields).await?;
-            masked = changed || masked;
-        }
-    }
-    Ok(masked)
+    call: &'call PiiCall<'policy, Guard, Guard::Settings>,
 }
 
-async fn mask_create_item<Guard>(
-    call: &PiiCall<'_, Guard, Guard::Settings>,
-    item: &mut IndexMap<String, Json>,
-) -> Result<bool, Guard::Error>
+impl<'call, 'policy, Guard> Masking<'call, 'policy, Guard>
 where
     Guard: PresidioGuardrailCallback + Sync,
     Guard::Settings: Sync,
 {
-    let mut masked = false;
-    for field in ["content", "output"] {
-        match item.get_mut(field) {
-            Some(Json::Text(text)) => {
-                let replaced = call
-                    .guard
-                    .check_pii(
-                        text,
-                        call.output_parse_pii,
-                        call.settings,
-                        call.request_data,
-                    )
-                    .await?;
-                *text = replaced;
-                masked = true;
+    async fn container(
+        &self,
+        container: &mut IndexMap<String, Json>,
+    ) -> Result<bool, Guard::Error> {
+        let mut masked = false;
+        if let Some(input) = container.get_mut("input") {
+            masked = self.input(input).await?;
+        }
+        if let Some(Json::Text(text)) = container.get_mut("instructions") {
+            masked |= self.text(text).await?;
+        }
+        Ok(masked)
+    }
+
+    // input is a string or a list of items whose content and output fields carry the text
+    async fn input(&self, value: &mut Json) -> Result<bool, Guard::Error> {
+        let items = match value {
+            Json::Text(text) => return self.text(text).await,
+            Json::List(items) => items,
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Object(_) => return Ok(false),
+        };
+        let mut masked = false;
+        for item in items {
+            let Json::Object(fields) = item else {
+                continue;
+            };
+            if let Some(content) = fields.get_mut("content") {
+                masked |= self.field(content).await?;
             }
-            Some(Json::List(blocks)) => {
-                let changed = mask_create_blocks(call, blocks).await?;
-                masked = changed || masked;
+            if let Some(output) = fields.get_mut("output") {
+                masked |= self.field(output).await?;
             }
-            None | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Object(_)) => {}
         }
+        Ok(masked)
     }
-    Ok(masked)
+
+    async fn field(&self, value: &mut Json) -> Result<bool, Guard::Error> {
+        if let Json::List(blocks) = value {
+            return self.blocks(blocks).await;
+        }
+        let Json::Text(text) = value else {
+            return Ok(false);
+        };
+        self.text(text).await
+    }
+
+    async fn text(&self, text: &mut String) -> Result<bool, Guard::Error> {
+        let replaced = self.call.check_text(text).await?;
+        *text = replaced;
+        Ok(true)
+    }
+
+    async fn blocks(&self, blocks: &mut [Json]) -> Result<bool, Guard::Error> {
+        let mut masked = false;
+        for text in blocks.iter_mut().filter_map(maskable_text) {
+            masked |= self.text(text).await?;
+        }
+        Ok(masked)
+    }
 }
 
 // an image or unknown block type keeps its text, since only these three carry text a model reads
-async fn mask_create_blocks<Guard>(
-    call: &PiiCall<'_, Guard, Guard::Settings>,
-    blocks: &mut [Json],
-) -> Result<bool, Guard::Error>
-where
-    Guard: PresidioGuardrailCallback + Sync,
-    Guard::Settings: Sync,
-{
-    let mut masked = false;
-    for block in blocks {
-        let Json::Object(fields) = block else {
-            continue;
-        };
-        let maskable = matches!(
-            fields.get("type"),
-            Some(Json::Text(kind)) if MASKABLE_TEXT_BLOCK_TYPES.contains(&kind.as_str())
-        );
-        if maskable && let Some(Json::Text(text)) = fields.get_mut("text") {
-            let replaced = call
-                .guard
-                .check_pii(
-                    text,
-                    call.output_parse_pii,
-                    call.settings,
-                    call.request_data,
-                )
-                .await?;
-            *text = replaced;
-            masked = true;
-        }
+fn maskable_text(value: &mut Json) -> Option<&mut String> {
+    let Json::Object(fields) = value else {
+        return None;
+    };
+    let carries_text = matches!(
+        fields.get("type"),
+        Some(Json::Text(kind)) if MASKABLE_TEXT_BLOCK_TYPES.contains(&kind.as_str())
+    );
+    if !carries_text {
+        return None;
     }
-    Ok(masked)
+    let Json::Text(text) = fields.get_mut("text")? else {
+        return None;
+    };
+    Some(text)
 }

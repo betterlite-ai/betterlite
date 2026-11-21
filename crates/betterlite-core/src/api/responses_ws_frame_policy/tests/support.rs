@@ -112,7 +112,16 @@ impl ProjectQuotaCallback for Quota {
         match self.verdict {
             Verdict::Accept => Ok(()),
             Verdict::RateLimited => Err(rate_limited("quota exceeded")),
-            Verdict::Broken => Err(ErrorClass::InternalServer(Box::new(context("boom")))),
+            Verdict::Broken => Err(ErrorClass::InternalServer(Box::new(ErrorContext {
+                message: "boom".to_owned(),
+                model: None,
+                provider: None,
+                max_retries: None,
+                num_retries: None,
+                body_type: None,
+                body_param: None,
+                body_code: None,
+            }))),
         }
     }
 }
@@ -189,22 +198,18 @@ pub(super) fn lock<Value>(shared: &Mutex<Value>) -> MutexGuard<'_, Value> {
     shared.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-pub(super) fn context(message: &str) -> ErrorContext {
-    ErrorContext {
-        message: message.to_owned(),
-        model: None,
-        provider: None,
-        max_retries: None,
-        num_retries: None,
-        body_type: None,
-        body_param: None,
-        body_code: None,
-    }
-}
-
 pub(super) fn rate_limited(message: &str) -> ErrorClass {
     ErrorClass::RateLimit(Box::new(RateLimitDetails {
-        context: context(message),
+        context: ErrorContext {
+            message: message.to_owned(),
+            model: None,
+            provider: None,
+            max_retries: None,
+            num_retries: None,
+            body_type: None,
+            body_param: None,
+            body_code: None,
+        },
         category: RateLimitCategory::LitellmRateLimit,
         dimension: None,
         headers: BTreeMap::new(),

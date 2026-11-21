@@ -94,38 +94,9 @@ async fn answer(step: &Step) -> HelperResult {
             verdicts,
             refuse_send,
         } => quota_view(message, authorized_model.as_deref(), verdicts, *refuse_send).await,
-        Step::Create {
-            message,
-            authorized_model,
-            defaults,
-            guardrails,
-            request_data,
-        } => {
-            let calls: Calls = Arc::new(Mutex::new(Vec::new()));
-            let echo = |text: &str, _pii_tokens: &IndexMap<String, String>| text.to_owned();
-            let inputs = guards(guardrails, &calls, &echo);
-            let policy = FramePolicy {
-                quota_callbacks: &[],
-                user_api_key_dict: None,
-                guardrail_callbacks: &inputs,
-                output_guardrail_callbacks: &[],
-                authorized_model: authorized_model.as_deref(),
-                request_defaults: defaults.as_ref(),
-            };
-            let mut data = stored(request_data)?;
-            let outcome = mask_response_create(&policy, &mut data, message).await;
-            Ok(frame_view(outcome, &calls, &data))
-        }
-        Step::Unmask {
-            message,
-            guardrails,
-            request_data,
-        } => unmask_view(message, *guardrails, request_data),
-        Step::Completed {
-            message,
-            guardrails,
-            request_data,
-        } => completed_view(message, guardrails, request_data).await,
+        Step::Create { .. } => create_view(step).await,
+        Step::Unmask { .. } => unmask_view(step),
+        Step::Completed { .. } => completed_view(step).await,
         Step::Failure { events } => Ok(Value::Array(events.iter().map(failure_status).collect())),
         Step::Wrap {
             litellm_metadata,
@@ -135,15 +106,87 @@ async fn answer(step: &Step) -> HelperResult {
     }
 }
 
-fn unmask_view(
-    message: &str,
-    guardrails: usize,
-    request_data: &IndexMap<String, Json>,
-) -> HelperResult {
-    let calls: Calls = Arc::new(Mutex::new(Vec::new()));
-    let unmaskers: Vec<Box<UnmaskPiiText>> = (0..guardrails)
-        .map(|index| -> Box<UnmaskPiiText> { Box::new(recording_unmask(index, &calls)) })
-        .collect();
+// everything a case can see about one call: the recorded guardrail calls and the request data it left
+struct Probe {
+    calls: Calls,
+    data: RequestData,
+}
+
+impl Probe {
+    fn start(request_data: &IndexMap<String, Json>) -> Result<Self, Box<HelperError>> {
+        Ok(Self {
+            calls: Arc::new(Mutex::new(Vec::new())),
+            data: stored(request_data)?,
+        })
+    }
+
+    // the Python side reports whether LiteLLM handed back the very string it was given
+    fn report<GuardError>(
+        &self,
+        outcome: Result<Cow<'_, str>, FramePolicyError<GuardError>>,
+    ) -> HelperResult
+    where
+        GuardError: Error + 'static,
+    {
+        let (error, same, frame) = match outcome {
+            Ok(Cow::Borrowed(_)) => (false, true, Value::Null),
+            Ok(Cow::Owned(text)) => (
+                false,
+                false,
+                serde_json::from_str(&text).unwrap_or(Value::Null),
+            ),
+            Err(_) => (true, false, Value::Null),
+        };
+        let metadata = self
+            .data
+            .get("metadata")
+            .and_then(|raw| serde_json::from_str::<Value>(raw.get()).ok());
+        let recorded = self
+            .calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        json!({"error": error, "same": same, "frame": frame, "calls": recorded, "metadata": metadata})
+    }
+}
+
+async fn create_view(step: &Step) -> HelperResult {
+    let Step::Create {
+        message,
+        authorized_model,
+        defaults,
+        guardrails,
+        request_data,
+    } = step
+    else {
+        return Err(wrong_step("create"));
+    };
+    let mut probe = Probe::start(request_data)?;
+    let echo = |text: &str, _pii_tokens: &IndexMap<String, String>| text.to_owned();
+    let inputs = guards(guardrails, &probe.calls, &echo);
+    let outcome = mask_response_create(
+        &frame_policy(&inputs, &[], authorized_model.as_deref(), defaults.as_ref()),
+        &mut probe.data,
+        message,
+    )
+    .await;
+    probe.report(outcome)
+}
+
+fn unmask_view(step: &Step) -> HelperResult {
+    let Step::Unmask {
+        message,
+        guardrails,
+        request_data,
+    } = step
+    else {
+        return Err(wrong_step("unmask"));
+    };
+    let probe = Probe::start(request_data)?;
+    let mut unmaskers: Vec<Box<UnmaskPiiText>> = Vec::with_capacity(*guardrails);
+    for index in 0..*guardrails {
+        unmaskers.push(Box::new(recording_unmask(index, &probe.calls)));
+    }
     let inputs: Vec<InputGuardrail<'_, Guard>> = unmaskers
         .iter()
         .enumerate()
@@ -151,46 +194,64 @@ fn unmask_view(
             callback: Guard {
                 index,
                 replacements: IndexMap::new(),
-                calls: Arc::clone(&calls),
+                calls: Arc::clone(&probe.calls),
             },
             unmask_pii_text: unmask.as_ref(),
         })
         .collect();
-    let policy = FramePolicy {
-        quota_callbacks: &[],
-        user_api_key_dict: None,
-        guardrail_callbacks: &inputs,
-        output_guardrail_callbacks: &[],
-        authorized_model: None,
-        request_defaults: None,
-    };
-    let data = stored(request_data)?;
-    let outcome = unmask_response_event(&policy, &data, message);
-    Ok(frame_view(outcome, &calls, &data))
+    let policy = frame_policy(&inputs, &[], None, None);
+    let outcome = unmask_response_event(&policy, &probe.data, message);
+    probe.report(outcome)
 }
 
-async fn completed_view(
-    message: &str,
-    guardrails: &Replacements,
-    request_data: &IndexMap<String, Json>,
-) -> HelperResult {
-    let calls: Calls = Arc::new(Mutex::new(Vec::new()));
-    let echo = |text: &str, _pii_tokens: &IndexMap<String, String>| text.to_owned();
-    let outputs: Vec<Guard> = guards(guardrails, &calls, &echo)
-        .into_iter()
-        .map(|guardrail| guardrail.callback)
-        .collect();
-    let policy = FramePolicy {
+async fn completed_view(step: &Step) -> HelperResult {
+    let Step::Completed {
+        message,
+        guardrails,
+        request_data,
+    } = step
+    else {
+        return Err(wrong_step("completed"));
+    };
+    let probe = Probe::start(request_data)?;
+    let mut outputs = Vec::with_capacity(guardrails.len());
+    for (index, replacements) in guardrails.iter().enumerate() {
+        outputs.push(Guard {
+            index,
+            replacements: replacements.clone(),
+            calls: Arc::clone(&probe.calls),
+        });
+    }
+    let policy = frame_policy(&[], &outputs, None, None);
+    let outcome = mask_response_completed(&policy, &probe.data, message).await;
+    probe.report(outcome)
+}
+
+fn wrong_step(expected: &str) -> Box<HelperError> {
+    Box::new(HelperError {
+        class: "InvalidInput".to_owned(),
+        status: None,
+        error_type: None,
+        param: None,
+        code: None,
+        message: format!("the {expected} view ran on a different step"),
+    })
+}
+
+fn frame_policy<'policy>(
+    guardrails: &'policy [InputGuardrail<'policy, Guard>],
+    outputs: &'policy [Guard],
+    authorized_model: Option<&'policy str>,
+    request_defaults: Option<&'policy WsRequestDefaults<Json>>,
+) -> FramePolicy<'policy, Guard> {
+    FramePolicy {
         quota_callbacks: &[],
         user_api_key_dict: None,
-        guardrail_callbacks: &[],
-        output_guardrail_callbacks: &outputs,
-        authorized_model: None,
-        request_defaults: None,
-    };
-    let data = stored(request_data)?;
-    let outcome = mask_response_completed(&policy, &data, message).await;
-    Ok(frame_view(outcome, &calls, &data))
+        guardrail_callbacks: guardrails,
+        output_guardrail_callbacks: outputs,
+        authorized_model,
+        request_defaults,
+    }
 }
 
 fn guards<'policy>(
@@ -219,29 +280,4 @@ fn stored(request_data: &IndexMap<String, Json>) -> Result<RequestData, Box<Help
         data.insert(key.clone(), raw);
     }
     Ok(data)
-}
-
-// the Python side reports whether LiteLLM handed back the very string it was given
-fn frame_view<GuardError>(
-    outcome: Result<Cow<'_, str>, FramePolicyError<GuardError>>,
-    calls: &Calls,
-    data: &RequestData,
-) -> Value
-where
-    GuardError: Error + 'static,
-{
-    let (error, same, frame) = match outcome {
-        Ok(Cow::Borrowed(_)) => (false, true, Value::Null),
-        Ok(Cow::Owned(text)) => (
-            false,
-            false,
-            serde_json::from_str(&text).unwrap_or(Value::Null),
-        ),
-        Err(_) => (true, false, Value::Null),
-    };
-    let metadata = data
-        .get("metadata")
-        .and_then(|raw| serde_json::from_str::<Value>(raw.get()).ok());
-    let recorded = calls.lock().unwrap_or_else(PoisonError::into_inner).clone();
-    json!({"error": error, "same": same, "frame": frame, "calls": recorded, "metadata": metadata})
 }

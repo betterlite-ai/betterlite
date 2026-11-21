@@ -35,9 +35,12 @@ where
     let completed = kind == Some("response.completed");
     let streamed_delta = kind.is_some_and(|delta_kind| DELTA_EVENT_TYPES.contains(&delta_kind));
     if completed {
-        let modified = unmask_completed(&mut event, unmask, &pii_tokens);
-        return if modified {
-            encode(event)
+        let unmasking = Unmasking {
+            unmask,
+            pii_tokens: &pii_tokens,
+        };
+        return if unmasking.completed(&mut event) {
+            Ok(encode(event)?)
         } else {
             Ok(Cow::Borrowed(message))
         };
@@ -46,7 +49,7 @@ where
         let unmasked = unmask(delta, &pii_tokens);
         if unmasked != *delta {
             *delta = unmasked;
-            return encode(event);
+            return Ok(encode(event)?);
         }
     }
     Ok(Cow::Borrowed(message))
@@ -74,47 +77,67 @@ fn stored_pii_tokens(request_data: &RequestData) -> IndexMap<String, String> {
         .unwrap_or_default()
 }
 
-fn unmask_completed(
-    event: &mut IndexMap<String, Json>,
-    unmask: &UnmaskPiiText,
-    pii_tokens: &IndexMap<String, String>,
-) -> bool {
-    let Some(Json::Object(response)) = event.get_mut("response") else {
-        return false;
-    };
-    let Some(Json::List(items)) = response.get_mut("output") else {
-        return false;
-    };
-    let mut modified = false;
-    for item in items {
-        if let Json::Object(fields) = item
-            && let Some(Json::List(blocks)) = fields.get_mut("content")
-        {
-            let changed = unmask_blocks(blocks, unmask, pii_tokens);
-            modified = changed || modified;
-        }
-    }
-    modified
+struct Unmasking<'policy> {
+    unmask: &'policy UnmaskPiiText,
+    pii_tokens: &'policy IndexMap<String, String>,
 }
 
-fn unmask_blocks(
-    blocks: &mut [Json],
-    unmask: &UnmaskPiiText,
-    pii_tokens: &IndexMap<String, String>,
-) -> bool {
-    let mut modified = false;
-    for block in blocks {
-        if let Json::Object(fields) = block
-            && let Some(Json::Text(text)) = fields.get_mut("text")
-        {
-            let unmasked = unmask(text, pii_tokens);
+impl Unmasking<'_> {
+    fn completed(&self, event: &mut IndexMap<String, Json>) -> bool {
+        let Some(Json::Object(response)) = event.get_mut("response") else {
+            return false;
+        };
+        let Some(Json::List(items)) = response.get_mut("output") else {
+            return false;
+        };
+        let mut modified = false;
+        for item in items {
+            let Json::Object(fields) = item else {
+                continue;
+            };
+            let Some(Json::List(blocks)) = fields.get_mut("content") else {
+                continue;
+            };
+            modified |= self.blocks(blocks);
+        }
+        modified
+    }
+
+    fn blocks(&self, blocks: &mut [Json]) -> bool {
+        let mut modified = false;
+        for text in blocks.iter_mut().filter_map(text_field) {
+            let unmasked = (self.unmask)(text, self.pii_tokens);
             if unmasked != *text {
                 *text = unmasked;
                 modified = true;
             }
         }
+        modified
     }
-    modified
+}
+
+fn text_field(block: &mut Json) -> Option<&mut String> {
+    let Json::Object(fields) = block else {
+        return None;
+    };
+    text_at(fields, "text")
+}
+
+fn text_at<'map>(fields: &'map mut IndexMap<String, Json>, key: &str) -> Option<&'map mut String> {
+    let Json::Text(text) = fields.get_mut(key)? else {
+        return None;
+    };
+    Some(text)
+}
+
+fn block_list<'map>(
+    fields: &'map mut IndexMap<String, Json>,
+    key: &str,
+) -> Option<&'map mut [Json]> {
+    let Json::List(blocks) = fields.get_mut(key)? else {
+        return None;
+    };
+    Some(blocks)
 }
 
 // the relay already dropped the delta and done events, so response.completed is the one copy masked here
@@ -146,90 +169,69 @@ where
             request_data,
             output_parse_pii: false,
         };
+        let masking = OutputMasking { call: &call };
         if let Some(Json::Object(response)) = event.get_mut("response")
             && let Some(Json::List(items)) = response.get_mut("output")
         {
-            let changed = mask_output_items(&call, items)
+            let changed = masking
+                .items(items)
                 .await
                 .map_err(FramePolicyError::Guardrail)?;
             modified = changed || modified;
         }
     }
     if modified {
-        encode(event)
+        Ok(encode(event)?)
     } else {
         Ok(Cow::Borrowed(message))
     }
 }
 
-async fn mask_output_items<Guard>(
-    call: &PiiCall<'_, Guard, Guard::Settings>,
-    items: &mut [Json],
-) -> Result<bool, Guard::Error>
+struct OutputMasking<'call, 'policy, Guard>
+where
+    Guard: PresidioGuardrailCallback,
+{
+    call: &'call PiiCall<'policy, Guard, Guard::Settings>,
+}
+
+impl<'call, 'policy, Guard> OutputMasking<'call, 'policy, Guard>
 where
     Guard: PresidioGuardrailCallback + Sync,
     Guard::Settings: Sync,
 {
-    let mut modified = false;
-    for item in items {
-        let Json::Object(fields) = item else {
-            continue;
-        };
-        if let Some(Json::Text(arguments)) = fields.get_mut("arguments") {
-            let changed = mask_changed_text(call, arguments).await?;
-            modified = changed || modified;
-        }
-        for blocks_field in ["summary", "content"] {
-            if let Some(Json::List(blocks)) = fields.get_mut(blocks_field) {
-                let changed = mask_output_blocks(call, blocks).await?;
-                modified = changed || modified;
+    async fn items(&self, items: &mut [Json]) -> Result<bool, Guard::Error> {
+        let mut modified = false;
+        for item in items {
+            let Json::Object(fields) = item else {
+                continue;
+            };
+            if let Some(arguments) = text_at(fields, "arguments") {
+                modified |= self.changed(arguments).await?;
+            }
+            for blocks_field in ["summary", "content"] {
+                if let Some(blocks) = block_list(fields, blocks_field) {
+                    modified |= self.blocks(blocks).await?;
+                }
             }
         }
+        Ok(modified)
     }
-    Ok(modified)
-}
 
-async fn mask_output_blocks<Guard>(
-    call: &PiiCall<'_, Guard, Guard::Settings>,
-    blocks: &mut [Json],
-) -> Result<bool, Guard::Error>
-where
-    Guard: PresidioGuardrailCallback + Sync,
-    Guard::Settings: Sync,
-{
-    let mut modified = false;
-    for block in blocks {
-        if let Json::Object(fields) = block
-            && let Some(Json::Text(text)) = fields.get_mut("text")
-        {
-            let changed = mask_changed_text(call, text).await?;
-            modified = changed || modified;
+    async fn blocks(&self, blocks: &mut [Json]) -> Result<bool, Guard::Error> {
+        let mut modified = false;
+        for text in blocks.iter_mut().filter_map(text_field) {
+            modified |= self.changed(text).await?;
         }
+        Ok(modified)
     }
-    Ok(modified)
-}
 
-// unlike request masking, only a value the callback really changed counts
-async fn mask_changed_text<Guard>(
-    call: &PiiCall<'_, Guard, Guard::Settings>,
-    text: &mut String,
-) -> Result<bool, Guard::Error>
-where
-    Guard: PresidioGuardrailCallback + Sync,
-    Guard::Settings: Sync,
-{
-    let masked = call
-        .guard
-        .check_pii(
-            text,
-            call.output_parse_pii,
-            call.settings,
-            call.request_data,
-        )
-        .await?;
-    if masked == *text {
-        return Ok(false);
+    // unlike request masking, only a value the callback really changed counts
+    async fn changed(&self, text: &mut String) -> Result<bool, Guard::Error> {
+        let masked = self.call.check_text(text).await?;
+        if masked == *text {
+            return Ok(false);
+        }
+        *text = masked;
+        Ok(true)
     }
-    *text = masked;
-    Ok(true)
 }
