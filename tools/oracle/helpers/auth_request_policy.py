@@ -1,6 +1,5 @@
 import asyncio
 from typing import Final, Literal, TypeAlias, TypedDict
-from unittest.mock import patch
 
 from fastapi import HTTPException
 from litellm.proxy import proxy_server
@@ -32,6 +31,12 @@ class IpCall(TypedDict):
     requests: list[IpRequest]
 
 
+class IpAnswer(TypedDict):
+    ip: str | None
+    allowed: bool
+    passed_in_ip: str | None
+
+
 class ClassifyRow(TypedDict):
     kind: Literal["http", "proxy", "other"]
     code: str | None
@@ -58,6 +63,16 @@ class MarkCall(TypedDict):
     rows: list[MarkRow]
 
 
+class MarkAnswer(TypedDict):
+    same_object: bool
+    classified: bool
+    type: str
+    param: str | None
+    code: str
+    openai_code: str | int | None
+    headers: dict[str, str]
+
+
 class PreDbRequest(TypedDict):
     allowed_ips: list[str] | None
     allowed_routes: list[str] | None
@@ -73,6 +88,15 @@ class PreDbRequest(TypedDict):
 class PreDbCall(TypedDict):
     function: Literal["pre_db"]
     requests: list[PreDbRequest]
+
+
+class PreDbAnswer(TypedDict):
+    ok: bool
+    status: int | None
+    type: str | None
+    param: str | None
+    code: str | None
+    message: str | None
 
 
 Call: TypeAlias = BytesToMbCall | IpCall | ClassifyCall | MarkCall | PreDbCall
@@ -106,7 +130,7 @@ def answer(call: Call) -> JsonValue:
 
 
 def bytes_answer(call: BytesToMbCall) -> JsonValue:
-    sizes: list[float] = [auth_utils.bytes_to_mb(value) for value in call["values"]]  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L942-L946
+    sizes: list[float] = [auth_utils.bytes_to_mb(value) for value in call["values"]]  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L942-L946
     return _JSON.validate_python(sizes)
 
 
@@ -132,44 +156,32 @@ def ip_row(request: IpRequest) -> JsonValue:
         request=http_request,
         use_x_forwarded_for=use_forwarded,
     )
-    return _JSON.validate_python(
-        {"ip": ip, "allowed": allowed, "passed_in_ip": passed_in_ip}
-    )
+    return _JSON.validate_python(IpAnswer(ip=ip, allowed=allowed, passed_in_ip=passed_in_ip))
 
 
 def classify_answer(call: ClassifyCall) -> JsonValue:
-    answers: list[JsonValue] = [classify_row(row) for row in call["rows"]]
+    answers: list[JsonValue] = [
+        auth_utils.is_invalid_virtual_key_error(classified_error(row))
+        for row in call["rows"]
+    ]
     return _JSON.validate_python(answers)
-
-
-def classify_row(row: ClassifyRow) -> bool:
-    return auth_utils.is_invalid_virtual_key_error(classified_error(row))
 
 
 def classified_error(row: ClassifyRow) -> BaseException:
     if row["kind"] == "http":
-        return http_error(row)
-    if row["kind"] == "proxy":
-        return proxy_classified(row)
-    return ValueError(row["message"])
-
-
-def http_error(row: ClassifyRow) -> HTTPException:
-    error = HTTPException(status_code=row["status_code"], detail=row["message"])
-    code = row["code"]
-    if code is not None:
-        error.code = code  # pyright: ignore[reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L53-L55
-    stamp_marker(error, row["marker"])
-    return error
-
-
-def proxy_classified(row: ClassifyRow) -> ProxyException:
-    error = ProxyException(
-        message=row["message"],
-        type="auth_error",
-        param="None",
-        code=row["code"],
-    )
+        error: BaseException = HTTPException(status_code=row["status_code"], detail=row["message"])
+        code = row["code"]
+        if code is not None:
+            error.code = code  # type: ignore[attr-defined]  # pyright: ignore[reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L53-L55
+    elif row["kind"] == "proxy":
+        error = ProxyException(
+            message=row["message"],
+            type="auth_error",
+            param="None",
+            code=row["code"],
+        )
+    else:
+        return ValueError(row["message"])
     stamp_marker(error, row["marker"])
     return error
 
@@ -177,7 +189,7 @@ def proxy_classified(row: ClassifyRow) -> ProxyException:
 def stamp_marker(error: BaseException, marker: MarkerName) -> None:
     if marker == "absent":
         return
-    error._litellm_invalid_virtual_key_error = marker == "exact_true"  # noqa: SLF001  # pyright: ignore[reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L74
+    error._litellm_invalid_virtual_key_error = marker == "exact_true"  # type: ignore[attr-defined]  # noqa: SLF001  # pyright: ignore[reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L74
 
 
 def mark_answer(call: MarkCall) -> JsonValue:
@@ -196,15 +208,15 @@ def mark_row(row: MarkRow) -> JsonValue:
     )
     marked = auth_utils.mark_invalid_virtual_key_error(exception, row["is_invalid_virtual_key"])
     return _JSON.validate_python(
-        {
-            "same_object": marked is exception,
-            "classified": auth_utils.is_invalid_virtual_key_error(marked),
-            "type": marked.type,
-            "param": marked.param,
-            "code": marked.code,
-            "openai_code": marked.openai_code,
-            "headers": marked.headers,
-        }
+        MarkAnswer(
+            same_object=marked is exception,
+            classified=auth_utils.is_invalid_virtual_key_error(marked),
+            type=marked.type,
+            param=marked.param,
+            code=marked.code,
+            openai_code=marked.openai_code,
+            headers=marked.headers,
+        )
     )
 
 
@@ -220,62 +232,51 @@ def pre_db_row(request: PreDbRequest) -> JsonValue:
         client_host=request["client_host"],
         content_length=request["content_length"],
     )
-    settings = general_settings(request)
-    with (
-        patch.object(proxy_server, "general_settings", settings),
-        patch.object(proxy_server, "premium_user", True),
-        patch.object(proxy_server, "llm_router", None),
-    ):
-        try:
-            asyncio.run(
-                auth_utils.pre_db_read_auth_checks(
-                    request=http_request,
-                    request_data=request["body"],
-                    route=request["route"],
-                )
+    # the size and route checks ask for an enterprise license, and no model group carries a grant
+    proxy_server.general_settings = general_settings(request)
+    proxy_server.premium_user = True
+    proxy_server.llm_router = None
+    try:
+        asyncio.run(
+            auth_utils.pre_db_read_auth_checks(  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L562-L618
+                request=http_request,
+                request_data=request["body"],
+                route=request["route"],
             )
-        except Exception as error:  # noqa: BLE001 - the pre-DB helper reports every rejection it raises  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L562-L618
-            return denied(auth_exception_handler._as_proxy_exception(error))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L80
-    return accepted()
+        )
+    except Exception as error:  # noqa: BLE001 - the pre-DB helper reports every rejection it raises  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L562-L618
+        return verdict(auth_exception_handler._as_proxy_exception(error))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L80
+    return verdict(None)
 
 
-def general_settings(request: PreDbRequest) -> dict[str, object]:
-    settings: dict[str, object] = {"use_x_forwarded_for": request["use_x_forwarded_for"]}
+def general_settings(request: PreDbRequest) -> dict[str, JsonValue]:
+    settings: dict[str, JsonValue] = {"use_x_forwarded_for": request["use_x_forwarded_for"]}
     allowed_ips = request["allowed_ips"]
     if allowed_ips is not None:
-        settings["allowed_ips"] = allowed_ips
+        settings["allowed_ips"] = _JSON.validate_python(allowed_ips)
     allowed_routes = request["allowed_routes"]
     if allowed_routes is not None:
-        settings["allowed_routes"] = allowed_routes
+        settings["allowed_routes"] = _JSON.validate_python(allowed_routes)
     max_size = request["max_request_size_mb"]
     if max_size is not None:
         settings["max_request_size_mb"] = max_size
     return settings
 
 
-def denied(exception: ProxyException) -> JsonValue:
+def verdict(exception: ProxyException | None) -> JsonValue:
+    if exception is None:
+        return _JSON.validate_python(
+            PreDbAnswer(ok=True, status=None, type=None, param=None, code=None, message=None)
+        )
     return _JSON.validate_python(
-        {
-            "ok": False,
-            "status": int(exception.code),
-            "type": exception.type,
-            "param": exception.param,
-            "code": exception.code,
-            "message": exception.message,
-        }
-    )
-
-
-def accepted() -> JsonValue:
-    return _JSON.validate_python(
-        {
-            "ok": True,
-            "status": None,
-            "type": None,
-            "param": None,
-            "code": None,
-            "message": None,
-        }
+        PreDbAnswer(
+            ok=False,
+            status=int(exception.code),
+            type=exception.type,
+            param=exception.param,
+            code=exception.code,
+            message=exception.message,
+        )
     )
 
 
@@ -291,10 +292,5 @@ def build_request(
     if content_length is not None:
         headers.append((b"content-length", content_length.encode()))
     client: tuple[str, int] | None = None if client_host is None else (client_host, CLIENT_PORT)
-    scope: Scope = {
-        "type": "http",
-        "path": route,
-        "headers": headers,
-        "client": client,
-    }
+    scope: Scope = {"type": "http", "path": route, "headers": headers, "client": client}
     return Request(scope=scope, receive=EmptyBody())
