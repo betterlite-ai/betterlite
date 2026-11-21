@@ -1,14 +1,14 @@
 id: B1205
 milestone: M4 keys, spend and management
 title: Team update budget reset and object permission preparation
-status: todo
+status: done
 depends_on: [B171, B801, B816, B856, B860, B1231, B2317]
 file: tasks/B1205-team-patch.yaml
 covers:
   - "litellm/proxy/management_endpoints/team_endpoints.py"
 parent: B057
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2790

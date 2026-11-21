@@ -77,6 +77,17 @@ impl Db {
     }
 }
 
+// The bounded read starts on an idle connection, so its deadline covers only the locked statement.
+pub(crate) async fn warm_pool(store: &PostgresStore) {
+    drop(store.session().await.expect("a warm session"));
+    let pool = store.pool.as_ref().expect("the pool");
+    assert_eq!(
+        pool.status().available,
+        1,
+        "the pool holds an idle connection for the bounded read"
+    );
+}
+
 #[derive(Clone, Default)]
 pub(crate) struct CapturedLogs(Arc<Mutex<Vec<u8>>>);
 
