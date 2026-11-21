@@ -53,6 +53,12 @@ pub(super) fn scheduler(settings: Settings) -> RequestScheduler {
 
 // the shared tier the pin attaches when Redis is configured, with the same defaults the server builds
 pub(super) async fn shared_scheduler() -> (RequestScheduler, FakeRedis) {
+    shared_scheduler_with(local_store()).await
+}
+
+pub(super) async fn shared_scheduler_with(
+    local: RoutingValueStore,
+) -> (RequestScheduler, FakeRedis) {
     let server = FakeRedis::try_start().await.expect("the fake redis starts");
     let settings = SharedSettings {
         redis: RedisSettings {
@@ -76,12 +82,7 @@ pub(super) async fn shared_scheduler() -> (RequestScheduler, FakeRedis) {
     };
     let shared = RoutingStateStore::new(&settings, Arc::new(|| Duration::ZERO))
         .expect("the shared store builds");
-    let scheduler = RequestScheduler::new(
-        local_store(),
-        Some(shared),
-        Settings::default(),
-        request_ids(),
-    );
+    let scheduler = RequestScheduler::new(local, Some(shared), Settings::default(), request_ids());
     (scheduler, server)
 }
 

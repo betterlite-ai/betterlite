@@ -1,11 +1,16 @@
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
+
 use betterlite_config::sections::request_scheduler::Settings;
 use rstest::rstest;
 
 use crate::request_scheduler::error::SchedulerError;
 use crate::request_scheduler::flow::Priority;
 use crate::request_scheduler::queue::MAX_PENDING_REQUESTS;
+use crate::routing_value_store::{RoutingValueStore, StoreSettings};
 
-use super::{MODEL, ScriptedCall, entries, item, plan, scheduler};
+use super::{MODEL, ScriptedCall, entries, item, plan, scheduler, shared_scheduler_with};
 
 // add_request refuses the request past the bound and keeps the queue where it was
 #[rstest]
@@ -278,4 +283,43 @@ async fn the_named_priorities_are_the_pinned_bytes() {
     assert_eq!(Priority::High.value(), 0);
     assert_eq!(Priority::Medium.value(), 128);
     assert_eq!(Priority::Low.value(), 255);
+}
+
+// DEFAULT_IN_MEMORY_TTL: the local copy beside the shared tier lives past 2 seconds and is gone at 6
+#[tokio::test]
+async fn the_local_queue_copy_expires_at_the_shared_ttl() {
+    let clock = Arc::new(AtomicU64::new(0));
+    let reading = Arc::clone(&clock);
+    let local = RoutingValueStore::new(
+        StoreSettings {
+            max_size_in_memory: None,
+            default_ttl_seconds: None,
+            max_size_per_item: Some(1024),
+            loaded_max_size_per_item_kib: 1024,
+        },
+        Arc::new(move || Duration::from_millis(reading.load(Ordering::SeqCst)).as_secs_f64()),
+    )
+    .expect("the local store builds");
+    let (service, server) = shared_scheduler_with(local).await;
+    service
+        .add_request(&item(0, "first", MODEL))
+        .await
+        .expect("the request queues");
+    server.set_down(true);
+    clock.store(2_000, Ordering::SeqCst);
+    assert_eq!(
+        service.queue(MODEL).await.expect("the queue reads").value,
+        entries(&[(0, "first")]),
+        "the copy is alive inside the ttl"
+    );
+    clock.store(6_000, Ordering::SeqCst);
+    assert!(
+        service
+            .queue(MODEL)
+            .await
+            .expect("the queue reads")
+            .value
+            .is_empty(),
+        "the copy is gone past the ttl"
+    );
 }
