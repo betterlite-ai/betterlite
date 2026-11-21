@@ -62,7 +62,7 @@ impl<Clock: MonotonicClock, Progress: BatchProgress> BatchDeleter<'_, Clock, Pro
 
     // the deadline is checked before the batch cap, so a spent run reports budget_exhausted
     async fn next_batch(&mut self, run: &mut TableRun) -> Option<StopReason> {
-        let name = run.table.name();
+        let name = run.table.name;
         if self.clock.now() >= run.deadline {
             tracing::info!(
                 "Run budget exhausted during {name} cleanup after {} rows; the next run resumes from here",
@@ -91,7 +91,7 @@ impl<Clock: MonotonicClock, Progress: BatchProgress> BatchDeleter<'_, Clock, Pro
         deleted: u64,
         started: Instant,
     ) -> Option<StopReason> {
-        let name = run.table.name();
+        let name = run.table.name;
         run.failures = 0;
         let elapsed = self.clock.now().saturating_duration_since(started);
         self.metrics
@@ -117,7 +117,7 @@ impl<Clock: MonotonicClock, Progress: BatchProgress> BatchDeleter<'_, Clock, Pro
         run: &mut TableRun,
         error: &BoundedTransactionError,
     ) -> Option<StopReason> {
-        let name = run.table.name();
+        let name = run.table.name;
         if self.clock.now() >= run.deadline {
             tracing::info!(
                 "Run budget exhausted mid-batch during {name} cleanup after {} rows; the next run resumes from here",
@@ -170,13 +170,10 @@ impl<Clock: MonotonicClock, Progress: BatchProgress> BatchDeleter<'_, Clock, Pro
             timeout_ms,
         );
         match within_deadline(timeout_ms, probe).await {
-            Ok(Some(remaining)) => self.metrics.set_rows_remaining(run.table.name(), remaining),
+            Ok(Some(remaining)) => self.metrics.set_rows_remaining(run.table.name, remaining),
             Ok(None) => {}
             Err(error) => {
-                tracing::warn!(
-                    "Could not count remaining {} rows: {error}",
-                    run.table.name()
-                );
+                tracing::warn!("Could not count remaining {} rows: {error}", run.table.name);
             }
         }
         result

@@ -292,41 +292,41 @@ fn tokio_clock_moves_forward() {
 }
 
 #[rstest]
-#[case::spend_logs(CleanupTable::SpendLogs, "LiteLLM_SpendLogs", &["request_id", "startTime"], "startTime")]
-#[case::tool_index(CleanupTable::ToolIndex, "LiteLLM_SpendLogToolIndex", &["request_id", "tool_name"], "start_time")]
-#[case::sessions(CleanupTable::AutoRouterSessions, "LiteLLM_AutoRouterSession", &["api_key", "session_id", "router_name"], "last_turn_at")]
-#[case::user_sessions(CleanupTable::AutoRouterUserSessions, "LiteLLM_AutoRouterUserSession", &["user_id", "api_key", "session_id", "router_name"], "last_turn_at")]
-#[case::health_checks(CleanupTable::HealthChecks, "LiteLLM_HealthCheckTable", &["health_check_id"], "checked_at")]
-#[case::daily_tags(CleanupTable::DailyTagSpend, "LiteLLM_DailyTagSpend", &["id"], "date")]
+#[case::spend_logs(CleanupTable::SPEND_LOGS, "LiteLLM_SpendLogs", &["request_id", "startTime"], "startTime")]
+#[case::tool_index(CleanupTable::TOOL_INDEX, "LiteLLM_SpendLogToolIndex", &["request_id", "tool_name"], "start_time")]
+#[case::sessions(CleanupTable::AUTO_ROUTER_SESSIONS, "LiteLLM_AutoRouterSession", &["api_key", "session_id", "router_name"], "last_turn_at")]
+#[case::user_sessions(CleanupTable::AUTO_ROUTER_USER_SESSIONS, "LiteLLM_AutoRouterUserSession", &["user_id", "api_key", "session_id", "router_name"], "last_turn_at")]
+#[case::health_checks(CleanupTable::HEALTH_CHECKS, "LiteLLM_HealthCheckTable", &["health_check_id"], "checked_at")]
+#[case::daily_tags(CleanupTable::DAILY_TAG_SPEND, "LiteLLM_DailyTagSpend", &["id"], "date")]
 fn tables_name_their_keys_and_time_column(
     #[case] table: CleanupTable,
     #[case] name: &str,
     #[case] keys: &[&str],
     #[case] time_column: &str,
 ) {
-    assert_eq!(table.name(), name);
-    assert_eq!(table.key_columns(), keys);
-    assert_eq!(table.time_column(), time_column);
+    assert_eq!(table.name, name);
+    assert_eq!(table.key_columns, keys);
+    assert_eq!(table.time_column, time_column);
 }
 
 #[test]
 fn statements_bind_the_cutoff_and_the_limit() {
     let moment = Cutoff::Timestamp(DateTime::<Utc>::UNIX_EPOCH);
     assert_eq!(
-        delete_statement(CleanupTable::SpendLogs, moment),
+        delete_statement(CleanupTable::SPEND_LOGS, moment),
         r#"DELETE FROM "LiteLLM_SpendLogs" WHERE ("request_id", "startTime") IN (SELECT "request_id", "startTime" FROM "LiteLLM_SpendLogs" WHERE "startTime" < $1::timestamptz LIMIT $2)"#
     );
     let day = Cutoff::Day(NaiveDate::from_ymd_opt(2026, 1, 2).unwrap());
     assert_eq!(
-        delete_statement(CleanupTable::DailyTagSpend, day),
+        delete_statement(CleanupTable::DAILY_TAG_SPEND, day),
         r#"DELETE FROM "LiteLLM_DailyTagSpend" WHERE ("id") IN (SELECT "id" FROM "LiteLLM_DailyTagSpend" WHERE "date" < $1::text LIMIT $2)"#
     );
     assert_eq!(
-        remaining_statement(CleanupTable::HealthChecks, moment),
+        remaining_statement(CleanupTable::HEALTH_CHECKS, moment),
         r#"SELECT count(*)::int AS remaining FROM (SELECT 1 FROM "LiteLLM_HealthCheckTable" WHERE "checked_at" < $1::timestamptz LIMIT $2) capped"#
     );
     assert_eq!(
-        remaining_statement(CleanupTable::DailyTagSpend, day),
+        remaining_statement(CleanupTable::DAILY_TAG_SPEND, day),
         r#"SELECT count(*)::int AS remaining FROM (SELECT 1 FROM "LiteLLM_DailyTagSpend" WHERE "date" < $1::text LIMIT $2) capped"#
     );
 }

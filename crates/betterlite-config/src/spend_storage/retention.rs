@@ -1,3 +1,4 @@
+use std::str::FromStr;
 use std::time::Duration;
 
 use betterlite_db::spend_retention::batches::settings::CleanupBounds;
@@ -18,42 +19,39 @@ pub fn cleanup_defaults<Lookup: EnvironmentLookup>(
     lookup: &Lookup,
 ) -> Result<CleanupBounds, ConfigError> {
     Ok(CleanupBounds {
-        batch_size: integer(lookup, ENV_BATCH_SIZE, 1_000)?,
-        max_batches: integer(lookup, ENV_RUN_LOOPS, 500)?,
-        run_budget: seconds(lookup, ENV_RUN_BUDGET, Duration::from_secs(300))?,
-        batch_timeout: seconds(lookup, ENV_BATCH_TIMEOUT, Duration::from_secs(30))?,
-        max_consecutive_failures: integer(lookup, ENV_MAX_FAILURES, 3)?,
-        failure_backoff: seconds(lookup, ENV_FAILURE_BACKOFF, Duration::from_millis(500))?,
-        remaining_count_cap: integer(lookup, ENV_COUNT_CAP, 100_000)?,
+        batch_size: number(lookup, ENV_BATCH_SIZE)?.unwrap_or(1_000),
+        max_batches: number(lookup, ENV_RUN_LOOPS)?.unwrap_or(500),
+        run_budget: seconds(lookup, ENV_RUN_BUDGET)?.unwrap_or(Duration::from_secs(300)),
+        batch_timeout: seconds(lookup, ENV_BATCH_TIMEOUT)?.unwrap_or(Duration::from_secs(30)),
+        max_consecutive_failures: number(lookup, ENV_MAX_FAILURES)?.unwrap_or(3),
+        failure_backoff: seconds(lookup, ENV_FAILURE_BACKOFF)?
+            .unwrap_or(Duration::from_millis(500)),
+        remaining_count_cap: number(lookup, ENV_COUNT_CAP)?.unwrap_or(100_000),
     })
 }
 
-fn integer<Lookup: EnvironmentLookup>(
+fn number<Lookup: EnvironmentLookup, Value: FromStr>(
     lookup: &Lookup,
     name: &str,
-    default: i64,
-) -> Result<i64, ConfigError> {
+) -> Result<Option<Value>, ConfigError> {
     let Some(text) = lookup.lookup(name) else {
-        return Ok(default);
+        return Ok(None);
     };
-    Ok(betterlite_env::number::<i64>(name, &text)?.unwrap_or(default))
+    Ok(betterlite_env::number::<Value>(name, &text)?)
 }
 
 // asyncio waits not at all for a negative number of seconds, which a zero Duration matches
 fn seconds<Lookup: EnvironmentLookup>(
     lookup: &Lookup,
     name: &str,
-    default: Duration,
-) -> Result<Duration, ConfigError> {
-    let Some(text) = lookup.lookup(name) else {
-        return Ok(default);
-    };
-    let Some(parsed) = betterlite_env::number::<f64>(name, &text)? else {
-        return Ok(default);
-    };
-    Duration::try_from_secs_f64(parsed.max(0.0_f64)).map_err(|_overflow| {
-        ConfigError::from(EnvError::Number {
-            name: name.to_owned(),
+) -> Result<Option<Duration>, ConfigError> {
+    number::<Lookup, f64>(lookup, name)?
+        .map(|parsed| {
+            Duration::try_from_secs_f64(parsed.max(0.0_f64)).map_err(|_overflow| {
+                ConfigError::from(EnvError::Number {
+                    name: name.to_owned(),
+                })
+            })
         })
-    })
+        .transpose()
 }
