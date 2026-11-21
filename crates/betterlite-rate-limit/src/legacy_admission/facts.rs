@@ -5,6 +5,8 @@ use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use betterlite_auth::session_token_codec::record::SessionRecord;
 use betterlite_core::api::request_principal_metadata::PrincipalFacts;
 use betterlite_core::api::request_principal_metadata::principal::logged_api_key;
+use indexmap::IndexMap;
+use rust_decimal::Decimal;
 
 use crate::rate_limiters::legacy_rate_limit_counters::objects::CacheObjectKeys;
 
@@ -39,13 +41,39 @@ impl AdmissionFacts {
     pub(super) fn read(principal: &UserAPIKeyAuth) -> Self {
         let view = principal.request_quota_view();
         let account = account_limits(principal);
-        // B1106's logged_api_key reads these three facts, which the auth record keeps private
+        // B1106's logged_api_key reads these three facts; the auth record keeps them private
         let record = SessionRecord::from_auth(principal);
         let facts = PrincipalFacts {
             api_key_hash: account.hashed_api_key.map(str::to_owned),
             is_session_token: record.is_session_token,
             key_alias: record.key_alias,
-            ..PrincipalFacts::default()
+            spend: Decimal::ZERO,
+            max_budget: None,
+            user_spend: None,
+            user_max_budget: None,
+            team_spend: None,
+            team_max_budget: None,
+            end_user_max_budget: None,
+            budget_reset_at: None,
+            team_id: None,
+            team_alias: None,
+            project_id: None,
+            project_alias: None,
+            org_id: None,
+            organization_alias: None,
+            user_id: None,
+            user_email: None,
+            end_user_id: None,
+            request_route: None,
+            agent_id: None,
+            invoked_agent_id: None,
+            managed_agent_context: None,
+            budget_reservation: None,
+            matched_model_access_groups: Vec::new(),
+            metadata: IndexMap::new(),
+            team_metadata: None,
+            project_metadata: None,
+            organization_metadata: None,
         };
         Self {
             api_key: logged_api_key(&facts).map(str::to_owned),

@@ -21,11 +21,6 @@ const GLOBAL_TTL_SECONDS: u64 = 600;
 // async_get_cache answering None stands for the first request in the window
 const MISSING_GLOBAL_COUNT: i64 = 1;
 
-#[must_use]
-pub(super) fn global_cap(metadata: &JsonMap) -> Option<i64> {
-    metadata.get(GLOBAL_KEY).and_then(JsonValue::as_i64)
-}
-
 // step 3: compare the global counter with the cap, raise at the cap, and otherwise count this request
 pub(super) async fn global(
     handler: &LegacyRateLimitHandler,
@@ -70,32 +65,6 @@ fn global_counter(answer: Option<&[Option<LegacyCacheValue>]>) -> i64 {
             MISSING_GLOBAL_COUNT
         }
     }
-}
-
-// step 5: the key's own max_parallel_requests, tpm and rpm
-pub(super) async fn key(
-    handler: &LegacyRateLimitHandler,
-    call: &mut Call<'_>,
-) -> Result<(), LegacyAdmissionError> {
-    let Some(counter_id) = call.ids.key.clone() else {
-        return Ok(());
-    };
-    let check = KeyLimitCheck {
-        limits: DimensionLimits {
-            max_parallel_requests: call.facts.max_parallel_requests,
-            tpm_limit: call.facts.tpm_limit,
-            rpm_limit: call.facts.rpm_limit,
-        },
-        current: minute_counter(call.objects.request_count_api_key),
-        request_count_api_key: counter_id,
-        rate_limit_type: RateLimitScope::Key,
-        requested_model: call.model,
-        parent_otel_span: None,
-    };
-    handler
-        .check_key_in_limits(check, &mut call.counters)
-        .await?;
-    Ok(())
 }
 
 // step 6: the per-model limits, then the remaining budget the hook writes back into the request metadata
@@ -153,8 +122,11 @@ fn limit_for(limits: Option<&ModelLimits>, model: Option<&str>) -> Option<i64> {
 
 // Python's `limit or sys.maxsize`: an absent or zero per-model limit is unlimited
 #[must_use]
-fn enforced(limit: Option<i64>) -> i64 {
-    limit.filter(|limit| *limit != 0).unwrap_or(UNLIMITED)
+const fn enforced(limit: Option<i64>) -> i64 {
+    match limit {
+        None | Some(0) => UNLIMITED,
+        Some(configured) => configured,
+    }
 }
 
 // the remaining-limit math uses is-not-None, so a zero limit still yields `0 - current`
@@ -165,23 +137,25 @@ fn remaining(limit: Option<i64>, current: i64) -> JsonValue {
     })
 }
 
-// step 7: the user, gated on is-not-None so an empty user id is checked
-pub(super) async fn user(
+// one rate-limit dimension's state: the counter it reads and writes, its limits, and its stored value
+struct Dimension {
+    counter_id: String,
+    limits: DimensionLimits,
+    current: Option<LegacyCacheValue>,
+    scope: RateLimitScope,
+}
+
+// steps 5 and 7-9 share this check; they differ only in the counter, limits and scope
+async fn enforce(
     handler: &LegacyRateLimitHandler,
     call: &mut Call<'_>,
+    dimension: Dimension,
 ) -> Result<(), LegacyAdmissionError> {
-    let Some(counter_id) = call.ids.user.clone() else {
-        return Ok(());
-    };
     let check = KeyLimitCheck {
-        limits: DimensionLimits {
-            max_parallel_requests: UNLIMITED,
-            tpm_limit: call.facts.user_tpm_limit,
-            rpm_limit: call.facts.user_rpm_limit,
-        },
-        current: minute_counter(call.objects.request_count_user_id),
-        request_count_api_key: counter_id,
-        rate_limit_type: RateLimitScope::User,
+        limits: dimension.limits,
+        current: minute_counter(dimension.current),
+        request_count_api_key: dimension.counter_id,
+        rate_limit_type: dimension.scope,
         requested_model: call.model,
         parent_otel_span: None,
     };
@@ -191,62 +165,86 @@ pub(super) async fn user(
     Ok(())
 }
 
-// step 8: the team, gated on is-not-None
-pub(super) async fn team(
-    handler: &LegacyRateLimitHandler,
-    call: &mut Call<'_>,
-) -> Result<(), LegacyAdmissionError> {
-    let Some(counter_id) = call.ids.team.clone() else {
-        return Ok(());
-    };
-    let check = KeyLimitCheck {
-        limits: DimensionLimits {
-            max_parallel_requests: UNLIMITED,
-            tpm_limit: call.facts.team_tpm_limit,
-            rpm_limit: call.facts.team_rpm_limit,
-        },
-        current: minute_counter(call.objects.request_count_team_id),
-        request_count_api_key: counter_id,
-        rate_limit_type: RateLimitScope::Team,
-        requested_model: call.model,
-        parent_otel_span: None,
-    };
-    handler
-        .check_key_in_limits(check, &mut call.counters)
-        .await?;
-    Ok(())
+// one gated step: its dimension exists exactly when its counter id does
+fn step(
+    counter_id: Option<&str>,
+    limits: DimensionLimits,
+    current: Option<LegacyCacheValue>,
+    scope: RateLimitScope,
+) -> Option<Dimension> {
+    Some(Dimension {
+        counter_id: counter_id.map(str::to_owned)?,
+        limits,
+        current,
+        scope,
+    })
 }
 
-// step 9: the end user, gated on truthiness, so an empty id is read from the cache and never checked
-pub(super) async fn end_user(
-    handler: &LegacyRateLimitHandler,
-    call: &mut Call<'_>,
-) -> Result<(), LegacyAdmissionError> {
-    let Some(end_user_id) = call.facts.end_user_id.as_deref() else {
-        return Ok(());
+// step 5: the key's own max_parallel_requests, tpm and rpm
+fn key_dimension(call: &Call<'_>) -> Option<Dimension> {
+    let limits = DimensionLimits {
+        max_parallel_requests: call.facts.max_parallel_requests,
+        tpm_limit: call.facts.tpm_limit,
+        rpm_limit: call.facts.rpm_limit,
     };
-    if end_user_id.is_empty() {
-        return Ok(());
-    }
-    let Some(counter_id) = call.ids.end_user.clone() else {
-        return Ok(());
+    step(
+        call.ids.key.as_deref(),
+        limits,
+        call.objects.request_count_api_key,
+        RateLimitScope::Key,
+    )
+}
+
+// steps 7-9 carry no parallel cap; each keeps its own tpm and rpm and is gated by its counter id
+fn push(
+    dimensions: &mut Vec<Dimension>,
+    counter_id: Option<&str>,
+    tpm_limit: i64,
+    rpm_limit: i64,
+    current: Option<LegacyCacheValue>,
+    scope: RateLimitScope,
+) {
+    let limits = DimensionLimits {
+        max_parallel_requests: UNLIMITED,
+        tpm_limit,
+        rpm_limit,
     };
-    let check = KeyLimitCheck {
-        limits: DimensionLimits {
-            max_parallel_requests: UNLIMITED,
-            tpm_limit: call.facts.end_user_tpm_limit,
-            rpm_limit: call.facts.end_user_rpm_limit,
-        },
-        current: minute_counter(call.objects.request_count_end_user_id),
-        request_count_api_key: counter_id,
-        rate_limit_type: RateLimitScope::Customer,
-        requested_model: call.model,
-        parent_otel_span: None,
-    };
-    handler
-        .check_key_in_limits(check, &mut call.counters)
-        .await?;
-    Ok(())
+    dimensions.extend(step(counter_id, limits, current, scope));
+}
+
+// steps 7-9 in LiteLLM's order; the user and team gates are is-not-None, the end user's is truthiness
+fn other_dimensions(call: &Call<'_>) -> Vec<Dimension> {
+    let end_user_id = call
+        .facts
+        .end_user_id
+        .as_deref()
+        .filter(|end_user_id| !end_user_id.is_empty());
+    let mut dimensions = Vec::new();
+    push(
+        &mut dimensions,
+        call.ids.user.as_deref(),
+        call.facts.user_tpm_limit,
+        call.facts.user_rpm_limit,
+        call.objects.request_count_user_id,
+        RateLimitScope::User,
+    );
+    push(
+        &mut dimensions,
+        call.ids.team.as_deref(),
+        call.facts.team_tpm_limit,
+        call.facts.team_rpm_limit,
+        call.objects.request_count_team_id,
+        RateLimitScope::Team,
+    );
+    push(
+        &mut dimensions,
+        end_user_id.and(call.ids.end_user.as_deref()),
+        call.facts.end_user_tpm_limit,
+        call.facts.end_user_rpm_limit,
+        call.objects.request_count_end_user_id,
+        RateLimitScope::Customer,
+    );
+    dimensions
 }
 
 // a minute entry holds a counter object; a bare number there is a broken writer, which B3047's reads treat as missing

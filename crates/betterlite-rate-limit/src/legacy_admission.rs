@@ -4,11 +4,11 @@ mod facts;
 mod tests;
 
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
+use betterlite_config::sections::settings::JsonValue;
 use betterlite_openai::openai_base_config::Object as JsonMap;
 
-use self::checks::global_cap;
 use self::error::LegacyAdmissionError;
-use self::facts::{AdmissionFacts, CounterIds, counter_ids};
+use self::facts::{AdmissionFacts, CounterIds, GLOBAL_KEY, counter_ids};
 use crate::rate_limiters::legacy_rate_limit_counters::COUNTER_TTL_SECONDS;
 use crate::rate_limiters::legacy_rate_limit_counters::LegacyRateLimitHandler;
 use crate::rate_limiters::legacy_rate_limit_counters::objects::CacheObject;
@@ -46,7 +46,7 @@ impl LegacyAdmission {
         self.handler
             .print_verbose("Inside Max Parallel Request Pre-Call Hook");
         let facts = AdmissionFacts::read(principal);
-        let cap = global_cap(&request.metadata);
+        let cap = request.metadata.get(GLOBAL_KEY).and_then(JsonValue::as_i64);
         if let Some(cap) = cap {
             checks::global(&self.handler, cap, request.model.as_deref()).await?;
         }
@@ -64,17 +64,18 @@ impl LegacyAdmission {
             .handler
             .get_all_cache_objects(call.ids.read_keys(cap.is_some()), None)
             .await;
-        checks::key(&self.handler, &mut call).await?;
+        if let Some(dimension) = checks::key_dimension(&call) {
+            checks::enforce(&self.handler, &mut call, dimension).await?;
+        }
         checks::model(&self.handler, &mut call, &mut request.metadata).await?;
-        checks::user(&self.handler, &mut call).await?;
-        checks::team(&self.handler, &mut call).await?;
-        checks::end_user(&self.handler, &mut call).await?;
+        for dimension in checks::other_dimensions(&call) {
+            checks::enforce(&self.handler, &mut call, dimension).await?;
+        }
         self.write_counters(&call.counters).await;
         Ok(())
     }
 
-    // LiteLLM detaches this write with asyncio.create_task, which the lint table here refuses; awaiting it
-    // carries the same entries, ttl and local-only flag, and a failure is logged instead of failing the request
+    // awaited instead of LiteLLM's detached asyncio.create_task: same entries, ttl and local-only flag; a failure logs
     async fn write_counters(&self, entries: &[(String, LegacyCacheValue)]) {
         let written = self
             .handler

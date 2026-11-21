@@ -329,34 +329,33 @@ pub(crate) fn detail_text(error: &ProxyRateLimitError) -> String {
     }
 }
 
-// every batch read's key list, in call order
-pub(crate) fn batch_gets(calls: &[CacheCall]) -> Vec<Vec<Option<String>>> {
-    calls
-        .iter()
-        .filter_map(|call| match call {
-            CacheCall::BatchGet(keys) => Some(keys.clone()),
-            CacheCall::BatchSet { .. } => None,
-        })
-        .collect()
+// one batch write: its entries, ttl and local-only flag
+pub(crate) type BatchSetCall = (Vec<(String, LegacyCacheValue)>, u64, bool);
+
+// the hook's calls split by kind, each list in call order
+#[derive(Default)]
+pub(crate) struct SplitCalls {
+    pub(crate) gets: Vec<Vec<Option<String>>>,
+    pub(crate) sets: Vec<BatchSetCall>,
 }
 
-// every batch write's entries, ttl and local-only flag, in call order
-pub(crate) fn batch_sets(calls: &[CacheCall]) -> Vec<(Vec<(String, LegacyCacheValue)>, u64, bool)> {
-    calls
-        .iter()
-        .filter_map(|call| match call {
+pub(crate) fn split_calls(calls: &[CacheCall]) -> SplitCalls {
+    let mut split = SplitCalls::default();
+    for call in calls {
+        match call {
+            CacheCall::BatchGet(keys) => split.gets.push(keys.clone()),
             CacheCall::BatchSet {
                 entries,
                 ttl,
                 local_only,
-            } => Some((entries.clone(), *ttl, *local_only)),
-            CacheCall::BatchGet(_) => None,
-        })
-        .collect()
+            } => split.sets.push((entries.clone(), *ttl, *local_only)),
+        }
+    }
+    split
 }
 
-pub(crate) fn final_write(calls: &[CacheCall]) -> (Vec<(String, LegacyCacheValue)>, u64, bool) {
-    let mut sets = batch_sets(calls);
+pub(crate) fn final_write(calls: &[CacheCall]) -> BatchSetCall {
+    let mut sets = split_calls(calls).sets;
     sets.pop().expect("the hook writes the final batch")
 }
 
@@ -378,7 +377,7 @@ pub(crate) fn id(part: &str) -> String {
 // every counter id the hook wrote, in call order
 pub(crate) fn written_ids(calls: &[CacheCall]) -> Vec<String> {
     let mut ids = Vec::new();
-    for (entries, _, _) in batch_sets(calls) {
+    for (entries, _, _) in split_calls(calls).sets {
         for (counter_id, _) in entries {
             ids.push(counter_id);
         }

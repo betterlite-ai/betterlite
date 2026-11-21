@@ -8,9 +8,9 @@ use rstest::rstest;
 
 use self::support::{
     BatchAnswer, FULL_KEY, FixedClock, LogCapture, MINUTE, NEAR_MAX, RecordingCache,
-    START_OF_MINUTE, WriteFailure, answered, auth_with_hash, batch_gets, batch_sets, detail_text,
-    every_dimension, final_write, fixture_with, global_count, id, minute, new_fixture, objects,
-    principal, rejection, request_body, written_ids,
+    START_OF_MINUTE, WriteFailure, answered, auth_with_hash, detail_text, every_dimension,
+    final_write, fixture_with, global_count, id, minute, new_fixture, objects, principal,
+    rejection, request_body, split_calls, written_ids,
 };
 use super::facts::GLOBAL_KEY;
 use crate::legacy_admission::error::LegacyAdmissionError;
@@ -27,7 +27,7 @@ async fn global_cap_absent_leaves_counter_untouched() {
         .await
         .unwrap();
     let calls = fixture.cache.calls();
-    assert_eq!(batch_gets(&calls), vec![vec![None; 6]]);
+    assert_eq!(split_calls(&calls).gets, vec![vec![None; 6]]);
     let (entries, ttl, local_only) = final_write(&calls);
     assert!(entries.is_empty());
     assert_eq!((ttl, local_only), (60, false));
@@ -43,7 +43,7 @@ async fn global_cap_below_increments_local_only() {
         .pre_call(&auth, &mut request)
         .await
         .unwrap();
-    let sets = batch_sets(&fixture.cache.calls());
+    let sets = split_calls(&fixture.cache.calls()).sets;
     assert_eq!(
         sets[0].0,
         vec![(String::from(GLOBAL_KEY), LegacyCacheValue::Count(3))]
@@ -64,7 +64,7 @@ async fn global_cap_missing_counter_counts_as_one(#[case] answer: BatchAnswer) {
         .pre_call(&auth, &mut request)
         .await
         .unwrap();
-    let sets = batch_sets(&fixture.cache.calls());
+    let sets = split_calls(&fixture.cache.calls()).sets;
     assert_eq!(
         sets[0].0,
         vec![(String::from(GLOBAL_KEY), LegacyCacheValue::Count(2))]
@@ -94,8 +94,8 @@ async fn global_cap_at_or_above_raises(#[case] cap: i64, #[case] current: i64) {
         )
     );
     let calls = fixture.cache.calls();
-    assert_eq!(batch_gets(&calls).len(), 1);
-    assert!(batch_sets(&calls).is_empty());
+    assert_eq!(split_calls(&calls).gets.len(), 1);
+    assert!(split_calls(&calls).sets.is_empty());
 }
 
 #[tokio::test]
@@ -125,7 +125,7 @@ async fn global_cap_write_error_is_cache_error() {
         .await
         .unwrap_err();
     assert!(matches!(error, LegacyAdmissionError::Cache(_)));
-    assert_eq!(batch_gets(&fixture.cache.calls()).len(), 1);
+    assert_eq!(split_calls(&fixture.cache.calls()).gets.len(), 1);
 }
 
 #[tokio::test]
@@ -138,7 +138,10 @@ async fn global_cap_non_integer_is_no_cap() {
         .pre_call(&auth, &mut request)
         .await
         .unwrap();
-    assert_eq!(batch_gets(&fixture.cache.calls()), vec![vec![None; 6]]);
+    assert_eq!(
+        split_calls(&fixture.cache.calls()).gets,
+        vec![vec![None; 6]]
+    );
 }
 
 #[tokio::test]
@@ -154,7 +157,7 @@ async fn global_cap_counter_value_counts_as_one() {
         .pre_call(&auth, &mut request)
         .await
         .unwrap();
-    let sets = batch_sets(&fixture.cache.calls());
+    let sets = split_calls(&fixture.cache.calls()).sets;
     assert_eq!(
         sets[0].0,
         vec![(String::from(GLOBAL_KEY), LegacyCacheValue::Count(2))]
@@ -171,7 +174,7 @@ async fn cache_key_ids_use_minute_and_every_part() {
         .pre_call(&caller.auth, &mut request)
         .await
         .unwrap();
-    let reads = batch_gets(&fixture.cache.calls());
+    let reads = split_calls(&fixture.cache.calls()).gets;
     assert_eq!(
         reads[1],
         vec![
@@ -198,7 +201,7 @@ async fn cache_key_minute_is_local_and_read_once() {
         .pre_call(&auth, &mut request)
         .await
         .unwrap();
-    let reads = batch_gets(&fixture.cache.calls());
+    let reads = split_calls(&fixture.cache.calls()).gets;
     assert_eq!(
         reads[0][3],
         Some(String::from("user-1::2026-12-31-23-59::request_count"))
@@ -247,7 +250,8 @@ async fn cache_key_absent_parts_skip_ids(
         .pre_call(&caller.auth, &mut request)
         .await
         .unwrap();
-    let keys = batch_gets(&fixture.cache.calls())
+    let keys = split_calls(&fixture.cache.calls())
+        .gets
         .pop()
         .expect("the six-key read runs");
     assert_eq!(
@@ -277,7 +281,8 @@ async fn cache_key_session_token_logs_under_its_alias(
         .await
         .unwrap();
     let logged = alias.unwrap_or(caller.hash.as_str());
-    let keys = batch_gets(&fixture.cache.calls())
+    let keys = split_calls(&fixture.cache.calls())
+        .gets
         .pop()
         .expect("the six-key read runs");
     assert_eq!(keys[1], Some(id(logged)));
@@ -297,7 +302,7 @@ async fn key_limit_defaults_are_unlimited() {
         .pre_call(&caller.auth, &mut request)
         .await
         .unwrap();
-    let sets = batch_sets(&fixture.cache.calls());
+    let sets = split_calls(&fixture.cache.calls()).sets;
     assert_eq!(
         sets[0].0,
         vec![(id(&caller.hash), minute(i64::MAX, 0, i64::MAX))]
@@ -351,7 +356,7 @@ async fn key_limit_without_percentage_keeps_the_limit() {
         .pre_call(&caller.auth, &mut request)
         .await
         .unwrap();
-    let sets = batch_sets(&fixture.cache.calls());
+    let sets = split_calls(&fixture.cache.calls()).sets;
     assert_eq!(sets[0].0, vec![(id(&caller.hash), minute(1, 50, 1))]);
 }
 
@@ -365,7 +370,7 @@ async fn key_limit_skips_without_api_key() {
         .pre_call(&auth, &mut request)
         .await
         .unwrap();
-    let sets = batch_sets(&fixture.cache.calls());
+    let sets = split_calls(&fixture.cache.calls()).sets;
     assert_eq!(sets.len(), 2);
     assert_eq!(sets[0].0, vec![(id("user-1"), minute(1, 0, 1))]);
 }
@@ -390,7 +395,7 @@ async fn key_limit_bare_count_is_a_missing_counter() {
         .pre_call(&caller.auth, &mut request)
         .await
         .unwrap();
-    let sets = batch_sets(&fixture.cache.calls());
+    let sets = split_calls(&fixture.cache.calls()).sets;
     assert_eq!(sets[0].0, vec![(id(&caller.hash), minute(1, 0, 1))]);
 }
 
@@ -408,7 +413,7 @@ async fn model_limit_absent_maps_skip_the_check() {
         .pre_call(&caller.auth, &mut request)
         .await
         .unwrap();
-    assert_eq!(batch_sets(&fixture.cache.calls()).len(), 2);
+    assert_eq!(split_calls(&fixture.cache.calls()).sets.len(), 2);
     assert!(request.metadata.is_empty());
 }
 
@@ -456,7 +461,7 @@ async fn model_limit_zero_is_unlimited() {
         .pre_call(&caller.auth, &mut request)
         .await
         .unwrap();
-    let sets = batch_sets(&fixture.cache.calls());
+    let sets = split_calls(&fixture.cache.calls()).sets;
     assert_eq!(
         sets[1].0,
         vec![
@@ -492,7 +497,7 @@ async fn model_limit_missing_model_is_unlimited() {
         request.metadata.get("litellm-key-remaining-requests-gpt-4"),
         Some(&JsonValue::Null)
     );
-    let sets = batch_sets(&fixture.cache.calls());
+    let sets = split_calls(&fixture.cache.calls()).sets;
     assert_eq!(sets.len(), 3);
     assert_eq!(sets[1].0[1].1, minute(1, 500, 1));
 }
@@ -509,7 +514,7 @@ async fn model_limit_empty_team_map_counts_as_present() {
         .pre_call(&caller.auth, &mut request)
         .await
         .unwrap();
-    let sets = batch_sets(&fixture.cache.calls());
+    let sets = split_calls(&fixture.cache.calls()).sets;
     assert_eq!(sets.len(), 3);
     assert_eq!(
         sets[1].0[1].0,
@@ -557,7 +562,10 @@ async fn model_limit_id_uses_none_text(
     );
     let calls = fixture.cache.calls();
     assert!(written_ids(&calls).contains(&expected));
-    let keys = batch_gets(&calls).pop().expect("the six-key read runs");
+    let keys = split_calls(&calls)
+        .gets
+        .pop()
+        .expect("the six-key read runs");
     assert_eq!(keys[2], None);
 }
 
@@ -691,7 +699,7 @@ async fn user_limit_defaults_are_unlimited() {
         .pre_call(&auth, &mut request)
         .await
         .unwrap();
-    let sets = batch_sets(&fixture.cache.calls());
+    let sets = split_calls(&fixture.cache.calls()).sets;
     assert_eq!(
         sets[0].0,
         vec![(id("user-1"), minute(i64::MAX, 0, i64::MAX))]
@@ -712,7 +720,7 @@ async fn user_limit_is_not_throttled() {
         .pre_call(&auth, &mut request)
         .await
         .unwrap();
-    let sets = batch_sets(&fixture.cache.calls());
+    let sets = split_calls(&fixture.cache.calls()).sets;
     assert_eq!(sets[0].0, vec![(id("user-1"), minute(1, 60, 1))]);
 }
 
@@ -740,7 +748,7 @@ async fn team_limit_defaults_are_unlimited() {
         .pre_call(&auth, &mut request)
         .await
         .unwrap();
-    let sets = batch_sets(&fixture.cache.calls());
+    let sets = split_calls(&fixture.cache.calls()).sets;
     assert_eq!(
         sets[0].0,
         vec![(id("team-1"), minute(i64::MAX, 0, i64::MAX))]
@@ -779,7 +787,8 @@ async fn end_user_limit_empty_id_skips_the_check() {
         .pre_call(&auth, &mut request)
         .await
         .unwrap();
-    let keys = batch_gets(&fixture.cache.calls())
+    let keys = split_calls(&fixture.cache.calls())
+        .gets
         .pop()
         .expect("the six-key read runs");
     assert_eq!(keys[5], Some(id("")));
@@ -802,7 +811,7 @@ async fn end_user_limit_defaults_are_unlimited() {
         .pre_call(&auth, &mut request)
         .await
         .unwrap();
-    let sets = batch_sets(&fixture.cache.calls());
+    let sets = split_calls(&fixture.cache.calls()).sets;
     assert_eq!(
         sets[0].0,
         vec![(id("end-user-1"), minute(i64::MAX, 0, i64::MAX))]
@@ -827,8 +836,8 @@ async fn order_runs_each_dimension_then_writes_the_batch() {
         vec![String::from("Inside Max Parallel Request Pre-Call Hook")]
     );
     let calls = fixture.cache.calls();
-    assert_eq!(batch_gets(&calls).len(), 2);
-    let sets = batch_sets(&calls);
+    assert_eq!(split_calls(&calls).gets.len(), 2);
+    let sets = split_calls(&calls).sets;
     assert_eq!(sets.len(), 7);
     assert_eq!(
         sets[0].0,
@@ -852,7 +861,7 @@ async fn order_accumulates_every_pair_into_the_final_write() {
         .pre_call(&caller.auth, &mut request)
         .await
         .unwrap();
-    let sets = batch_sets(&fixture.cache.calls());
+    let sets = split_calls(&fixture.cache.calls()).sets;
     assert_eq!(sets[5].0, sets[6].0, "the final write repeats every pair");
     let (entries, ttl, local_only) = final_write(&fixture.cache.calls());
     assert_eq!(
@@ -890,7 +899,7 @@ async fn order_later_raise_keeps_earlier_counters() {
     let mut request = request_body(Some("gpt-4"), r#"{"global_max_parallel_requests": 1}"#);
     let error = rejection(fixture.admission.pre_call(&caller.auth, &mut request).await);
     assert_eq!(error.rate_limit_type, Some(RateLimitDimension::Requests));
-    let sets = batch_sets(&fixture.cache.calls());
+    let sets = split_calls(&fixture.cache.calls()).sets;
     assert_eq!(sets.len(), 2);
     assert_eq!(
         sets[0].0,
@@ -928,7 +937,7 @@ async fn final_write_carries_every_pair_with_ttl_60() {
             id("end-user-1"),
         ]
     );
-    let sets = batch_sets(&calls);
+    let sets = split_calls(&calls).sets;
     assert_eq!(sets.len(), 5);
 }
 
