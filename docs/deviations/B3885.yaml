@@ -57,4 +57,12 @@ deviations:
       callback interface. betterlite's dispatcher calls these methods directly, and a caller that
       needs them on a task can wrap the call.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_services.py#L220-L248
+  - what: >-
+      A finite duration or gauge value outside Decimal's range renders as PositiveInfinity or
+      NegativeInfinity, where prometheus_client keeps the float and writes its exponent form.
+    why: >-
+      B3874's samples hold a Decimal with explicit infinities and turn an overflowed addition into the
+      matching infinity, so a value too large for a Decimal takes that same route here instead of
+      being capped. The branch is pinned by values_beyond_the_decimal_range_become_infinities.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_services.py#L153-L184
 kept_bugs: []

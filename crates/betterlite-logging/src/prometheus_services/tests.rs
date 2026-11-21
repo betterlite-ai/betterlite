@@ -381,6 +381,24 @@ fn a_non_finite_observation_is_recorded_as_is() {
 }
 
 #[test]
+fn values_beyond_the_decimal_range_become_infinities() {
+    let (registry, _logger) = build(None);
+    let histogram = registered(&registry, "litellm_redis_latency");
+    PrometheusServicesLogger::observe_histogram(&histogram, "redis", f64::MAX);
+    assert_eq!(
+        sample(&histogram, &[Some("redis".to_owned())]).total,
+        MetricValue::PositiveInfinity
+    );
+
+    let gauge = registered(&registry, "litellm_pod_lock_manager_size");
+    PrometheusServicesLogger::update_gauge(&gauge, "queue", f64::MIN);
+    assert_eq!(
+        sample(&gauge, &[Some("queue".to_owned())]).total,
+        MetricValue::NegativeInfinity
+    );
+}
+
+#[test]
 fn update_gauge_sets_the_value() {
     let (registry, _logger) = build(None);
     let gauge = registered(&registry, "litellm_pod_lock_manager_size");
