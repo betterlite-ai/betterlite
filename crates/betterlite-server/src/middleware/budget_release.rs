@@ -74,10 +74,10 @@ where
         self.inner.poll_ready(cx)
     }
 
-    fn call(&mut self, mut request: Request<B>) -> Self::Future {
+    fn call(&mut self, mut req: Request<B>) -> Self::Future {
         let slot = ReservationSlot::<R::Reservation>::default();
-        request.extensions_mut().insert(slot.clone());
-        let serving = self.inner.call(request);
+        req.extensions_mut().insert(slot.clone());
+        let serving = self.inner.call(req);
         let releaser = Arc::clone(&self.releaser);
         Box::pin(async move {
             let result = serving.await;

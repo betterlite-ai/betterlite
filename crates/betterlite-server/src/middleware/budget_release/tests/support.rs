@@ -89,13 +89,13 @@ impl Service<Request<Body>> for Handler {
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, request: Request<Body>) -> Self::Future {
-        let slot = request
+    fn call(&mut self, req: Request<Body>) -> Self::Future {
+        let slot = req
             .extensions()
             .get::<ReservationSlot<Stamp>>()
             .cloned()
             .expect("the layer put a slot in the request");
-        let stamped = request
+        let stamped = req
             .headers()
             .get(STAMP_HEADER)
             .map(|value| value.to_str().unwrap().parse::<u32>().unwrap());
@@ -112,7 +112,10 @@ impl Service<Request<Body>> for Handler {
             if let Some(waiting) = barrier {
                 waiting.wait().await;
             }
-            let label = stamped.map_or_else(|| "none".to_owned(), ToString::to_string);
+            let label = match stamped {
+                Some(id) => id.to_string(),
+                None => "none".to_owned(),
+            };
             events
                 .lock()
                 .unwrap()
@@ -154,8 +157,8 @@ impl Service<Request<Body>> for NotReadyOnce {
         Poll::Pending
     }
 
-    fn call(&mut self, request: Request<Body>) -> Self::Future {
-        self.inner.call(request)
+    fn call(&mut self, req: Request<Body>) -> Self::Future {
+        self.inner.call(req)
     }
 }
 

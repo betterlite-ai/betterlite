@@ -172,13 +172,13 @@ async fn concurrent_requests_each_release_only_their_own_reservation() {
         tokio::join!(first.call(request(Some(1))), second.call(request(Some(2))));
     first_reply.unwrap();
     second_reply.unwrap();
-    let mut released: Vec<u32> = releaser
+    let mut ids: Vec<u32> = releaser
         .released()
         .into_iter()
         .map(|stamp| stamp.id)
         .collect();
-    released.sort_unstable();
-    assert_eq!(released, [1, 2]);
+    ids.sort_unstable();
+    assert_eq!(ids, [1, 2]);
 }
 
 #[tokio::test]
