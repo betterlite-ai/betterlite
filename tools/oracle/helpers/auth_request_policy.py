@@ -168,20 +168,23 @@ def classify_answer(call: ClassifyCall) -> JsonValue:
 
 
 def classified_error(row: ClassifyRow) -> BaseException:
-    if row["kind"] == "http":
-        error: BaseException = HTTPException(status_code=row["status_code"], detail=row["message"])
-        code = row["code"]
-        if code is not None:
-            error.code = code  # type: ignore[attr-defined]  # pyright: ignore[reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L53-L55
-    elif row["kind"] == "proxy":
-        error = ProxyException(
-            message=row["message"],
-            type="auth_error",
-            param="None",
-            code=row["code"],
-        )
-    else:
-        return ValueError(row["message"])
+    match row["kind"]:
+        case "http":
+            error: BaseException = HTTPException(
+                status_code=row["status_code"], detail=row["message"]
+            )
+            code = row["code"]
+            if code is not None:
+                error.code = code  # type: ignore[attr-defined]  # pyright: ignore[reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L53-L55
+        case "proxy":
+            error = ProxyException(
+                message=row["message"],
+                type="auth_error",
+                param="None",
+                code=row["code"],
+            )
+        case "other":
+            return ValueError(row["message"])
     stamp_marker(error, row["marker"])
     return error
 
