@@ -29,7 +29,7 @@ use tracing_subscriber::registry;
 use super::decoder::tool_call_arguments;
 use super::error::FileSearchLoopError;
 use super::ports::{FollowUpRequest, ResponsesFollowUp, SearchRequest, VectorStoreSearches};
-use super::records::{FollowUpCall, SearchAuthorization, UpstreamSearch};
+use super::records::{DiagnosticMessage, FollowUpCall, SearchAuthorization, UpstreamSearch};
 use super::{
     DecodeError, ResponsesFileSearchLoop, ResponsesFileSearchLoopInput,
     decode_responses_file_search_args,
@@ -360,6 +360,7 @@ async fn file_search_follow_up() {
         .await
         .unwrap();
 
+    assert!(result.diagnostics.is_empty());
     let calls = follow_up.calls();
     assert_eq!(calls.len(), 2);
     assert!(calls[0].internal);
@@ -684,6 +685,25 @@ async fn listed_store_narrows_the_search() {
     assert!(result.diagnostics.is_empty());
 }
 
+#[test]
+fn store_warning_quotes_like_python() {
+    let known = [String::from("vs_1")];
+    let both_value = text(r#"a'"b"#);
+    let both = DiagnosticMessage::StoreOutside {
+        value: &both_value,
+        known: &known,
+    }
+    .to_string();
+    assert!(both.contains(r#"vector_store_id='a\'"b' outside"#));
+    let single_value = text("a'b");
+    let single = DiagnosticMessage::StoreOutside {
+        value: &single_value,
+        known: &known,
+    }
+    .to_string();
+    assert!(single.contains(r#"vector_store_id="a'b" outside"#));
+}
+
 #[tokio::test]
 async fn two_tool_calls_format_their_own_results() {
     let follow_up = FakeFollowUp::answering(vec![
@@ -729,6 +749,32 @@ async fn two_tool_calls_format_their_own_results() {
     assert!(!first.contains("second result text"));
     assert!(second.contains("second result text"));
     assert_eq!(result.searches.len(), 2);
+}
+
+#[tokio::test]
+async fn other_function_calls_are_not_searched() {
+    let arguments = queries_arguments(&["q"]);
+    let unrelated = format!(
+        r#"{{"type":"function_call","name":"other_tool","arguments":{arguments:?},"call_id":"call_1","id":"fc_1"}}"#
+    );
+    let follow_up = FakeFollowUp::answering(vec![response("resp_first", &[unrelated])]);
+    let searches = FakeSearches::scripted(Vec::new());
+    let input = loop_input(
+        json(r#""question""#),
+        vec![file_search_tool(&["vs_1"])],
+        Fields::new(),
+    );
+    let result = file_search_loop(&follow_up, &searches)
+        .run(&input)
+        .await
+        .unwrap();
+
+    assert!(searches.requests().is_empty());
+    assert_eq!(follow_up.calls().len(), 1);
+    let body = synthesized(&result.response);
+    let search_item = nth(at(&body, &["output"]), 0);
+    assert_eq!(at(search_item, &["queries"]), &json(r#"["question"]"#));
+    assert_eq!(at(search_item, &["search_results"]), &Json::Null);
 }
 
 fn tool_output(items: &[Json], index: usize) -> Option<&str> {
