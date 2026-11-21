@@ -19,6 +19,8 @@ pub trait TeamRows: Send + Sync {
 
 #[async_trait]
 impl TeamRows for TeamRepository<'_> {
+    // the lookup needs a live connection; every test of this module fakes TeamRows
+    #[cfg_attr(test, mutants::skip)]
     async fn find_team(&self, team_id: &str) -> Result<Option<TeamBase<String>>, TeamQueryError> {
         let found = self.find_by_id(team_id).await?;
         Ok(found.map(|row| row.fields.base))
