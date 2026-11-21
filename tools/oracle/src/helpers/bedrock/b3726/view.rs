@@ -1,3 +1,5 @@
+use std::str::from_utf8;
+
 use betterlite_bedrock::guardrail_hooks::chunks::StreamChunk;
 use betterlite_bedrock::guardrail_hooks::errors::HookFailure;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -33,7 +35,7 @@ pub(super) fn chunks(items: &[StreamChunk]) -> Value {
 fn chunk(item: &StreamChunk) -> Value {
     match item {
         StreamChunk::Json(value) => chat(value),
-        StreamChunk::Bytes(bytes) => frames(std::str::from_utf8(bytes).unwrap_or_default()),
+        StreamChunk::Bytes(bytes) => frames(from_utf8(bytes).unwrap_or_default()),
     }
 }
 

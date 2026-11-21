@@ -49,7 +49,7 @@ pub(super) struct OracleRuntime {
 }
 
 impl OracleRuntime {
-    pub(super) fn new(
+    pub(super) const fn new(
         guardrail: BedrockGuardrail,
         base: GuardrailBase,
         settings: StreamingSettings,
@@ -157,8 +157,8 @@ impl HookRuntime for OracleRuntime {
         &self,
         call: ScanCall<'_>,
     ) -> impl Future<Output = Result<GuardrailValue, HookFailure>> + Send {
-        let messages = call.messages.map(to_wire);
-        let response = call.response.map(|value| {
+        let pending_messages = call.messages.map(to_wire);
+        let pending_response = call.response.map(|value| {
             via_json::<GuardrailValue, ModelResponse>(value)
                 .ok_or_else(|| failed("the guardrail response could not be decoded"))
         });
@@ -169,8 +169,8 @@ impl HookRuntime for OracleRuntime {
         let event = call.event;
         let request_data = call.request_data;
         async move {
-            let messages = messages.transpose()?;
-            let response = response.transpose()?;
+            let messages = pending_messages.transpose()?;
+            let response = pending_response.transpose()?;
             let catalog = BundledCatalog::default().get();
             let mut invocation = ApiInvocation {
                 guardrail: &self.guardrail,

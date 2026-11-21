@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::str::from_utf8;
 
 use betterlite_bedrock::guardrail_hooks::chunks::StreamChunk;
 use betterlite_bedrock::guardrail_hooks::errors::{BlockedChat, HookFailure};
@@ -104,7 +105,7 @@ fn assemble_chat(chunks: &[StreamChunk]) -> Option<GuardrailValue> {
         "object": "chat.completion",
         "model": model,
         "choices": [{
-            "index": 0,
+            "index": 0_i32,
             "message": {"role": "assistant", "content": text},
             "finish_reason": finish,
         }],
@@ -116,7 +117,7 @@ fn frame_event(chunk: &StreamChunk) -> Option<BTreeMap<String, GuardrailValue>> 
     let StreamChunk::Bytes(bytes) = chunk else {
         return None;
     };
-    let frame = std::str::from_utf8(bytes).ok()?;
+    let frame = from_utf8(bytes).ok()?;
     let payload = frame
         .lines()
         .find_map(|line| line.strip_prefix("data:"))?
@@ -190,7 +191,7 @@ impl SseBuilder {
             "object": "chat.completion",
             "model": self.model,
             "choices": [{
-                "index": 0,
+                "index": 0_i32,
                 "message": {"role": "assistant", "content": self.text},
                 "finish_reason": "stop",
             }],
@@ -223,7 +224,7 @@ pub(super) fn block_chat_chunks(block: &BlockedChat) -> Result<Vec<StreamChunk>,
         "model": block.model,
         "usage": block.usage,
         "choices": [{
-            "index": 0,
+            "index": 0_i32,
             "message": {"role": "assistant", "content": block.message},
             "finish_reason": "content_filter",
         }],
