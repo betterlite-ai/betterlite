@@ -1,0 +1,15 @@
+task: B869
+deviations:
+  - what: A rejected general_settings.litellm_jwtauth reaches the config loader as ConfigError (Unsupported for unknown keys, InvalidScalar naming the field for every other rejection), and LiteLLM's ValueError or ValidationError text is logged at error level instead of returned.
+    why: The shared config boundary from B002 reports a path, not free text; construct() still returns JwtSettingsError with LiteLLM's exact message for callers that need it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5535-L5550
+  - what: A configured custom_validate with no ValidatorLoader installed is a startup error naming the module, instead of importing the module.
+    why: betterlite cannot import Python callables; B165 and B054 install the real loader behind the ValidatorLoader contract, and a validator that silently does nothing would accept tokens LiteLLM rejects.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5530-L5533
+  - what: An os.environ/ reference in litellm_jwtauth to a variable that is not set fails the load with an error naming the variable and the field.
+    why: The shared env resolution of the config boundary treats a missing variable as a configuration error rather than passing whatever get_secret returns into the model.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10365-L10368
+kept_bugs:
+  - what: The scope_mappings precheck reads enforce_scope_based_access before pydantic converts it, so an os.environ/ reference resolving to text such as "no" or "0" passes the precheck as truthy and then loads as false.
+    why: A working setup with scope_mappings and such a value loads today; rejecting it would break that startup. The error text also names the reverse of the condition that raises it, and it is kept word for word.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5549-L5550

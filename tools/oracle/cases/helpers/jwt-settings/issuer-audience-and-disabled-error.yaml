@@ -1,0 +1,10 @@
+kind: helper
+name: jwt-settings-issuer-audience-and-disabled-error
+call:
+  jwt_settings:
+    scenarios:
+      - {"settings": {"issuers": [{"issuer": "https://idp-a.example.com", "audience": "litellm", "disable_audience_validation": true}]}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"issuers": [{"issuer": "https://idp-a.example.com", "audience": "", "disable_audience_validation": true}]}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"issuers": [{"issuer": "https://idp-a.example.com", "audience": [], "disable_audience_validation": true}]}, "references": {}, "environment": {}, "issuers": []}
+env: {}
+compare: {ignore: []}
