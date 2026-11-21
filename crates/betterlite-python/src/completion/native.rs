@@ -46,13 +46,15 @@ impl NativeSession {
     // utils.check_valid_key returns False for every failure, an authentication one included
     fn check_valid_key(&self, py: Python<'_>, request: &str) -> PyResult<bool> {
         let call: ProbeCall = parse(request).map_err(request_error)?;
-        let proved = run_probe(&self.core, py, &call, ProbeCheck::Key)?;
+        let run = py.detach(|| get_runtime().block_on(self.core.probe(&call, ProbeCheck::Key)));
+        let proved = run.map_err(|error| call_error(&error))?;
         Ok(matches!(proved, ProbeAnswer::Valid))
     }
     // utils.valid_model raises BadRequestError(message="", model=model, llm_provider="") on any failure
     fn valid_model(&self, py: Python<'_>, request: &str) -> PyResult<()> {
         let call: ProbeCall = parse(request).map_err(request_error)?;
-        let proved = run_probe(&self.core, py, &call, ProbeCheck::Model)?;
+        let run = py.detach(|| get_runtime().block_on(self.core.probe(&call, ProbeCheck::Model)));
+        let proved = run.map_err(|error| call_error(&error))?;
         if let ProbeAnswer::Invalid = proved {
             return Err(validation_error(&call.model));
         }
@@ -66,16 +68,6 @@ async fn run_async(core: Arc<SessionCore>, wire: CallWire) -> PyResult<Py<PyAny>
         .await
         .map_err(|error| call_error(&error))?;
     Python::attach(|py| answer(py, parts))
-}
-// one probe run on the runtime, with the GIL released
-fn run_probe(
-    core: &SessionCore,
-    py: Python<'_>,
-    call: &ProbeCall,
-    check: ProbeCheck,
-) -> PyResult<ProbeAnswer> {
-    let proved = py.detach(|| get_runtime().block_on(core.probe(call, check)));
-    proved.map_err(|error| call_error(&error))
 }
 // A finished call is either the response text or the stream of chunk texts Python iterates.
 fn answer(py: Python<'_>, parts: OutcomeParts) -> PyResult<Py<PyAny>> {
