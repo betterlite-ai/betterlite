@@ -640,7 +640,7 @@ fn version_params_choose_the_cohere_client() {
     let mut logging = logging_state();
     let mut call = rerank_call("cohere");
     call.max_chunks_per_doc = Some(0);
-    call.kwargs = with(&[("api_base", Json::Text(String::from("https://d/v1/rerank")))]);
+    call.kwargs = with(&[("api_base", Json::Text(String::from("https://d")))]);
     case.dispatch(&identity, call, &mut logging)
         .expect("the v1 call dispatches");
     assert_eq!(ops.options()[0].config, SelectedConfig::Cohere);
@@ -652,6 +652,14 @@ fn version_params_choose_the_cohere_client() {
     case.dispatch(&identity, second_call, &mut second_logging)
         .expect("the v2 call dispatches");
     assert_eq!(ops.options()[1].config, SelectedConfig::CohereV2);
+
+    let mut third_call = rerank_call("cohere");
+    third_call.max_chunks_per_doc = Some(0);
+    third_call.kwargs = with(&[("api_base", Json::Text(String::from("https://d/v1/rerank")))]);
+    let mut third_logging = logging_state();
+    case.dispatch(&identity, third_call, &mut third_logging)
+        .expect("the v1 base call dispatches");
+    assert_eq!(ops.options()[2].config, SelectedConfig::Cohere);
 }
 
 #[test]

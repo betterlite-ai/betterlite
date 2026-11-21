@@ -660,7 +660,7 @@ fn another_config_uses_only_the_dynamic_chain(ops: &FakeOps) {
 fn the_cohere_chat_provider_keeps_the_cohere_config(ops: &FakeOps) {
     let chat = FakeIdentity::new(
         "rerank-v1",
-        ProviderIdentity::Custom("cohere_chat".to_owned()),
+        ProviderIdentity::Known(ProviderId::CohereChat),
         None,
         None,
     );
