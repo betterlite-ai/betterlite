@@ -314,7 +314,7 @@ async fn deepkeep_guardrail_apply_honors_fail_open_when_unreachable(
         Some(RefusedPort::bind().expect("a refused port"))
     };
     let base = match &refused {
-        Some(refused) => format!("http://{}", refused.address),
+        Some(held) => format!("http://{}", held.address),
         None => format!("http://{}", listener.local_addr().expect("addr")),
     };
     let mut deepkeep = guardrail();
