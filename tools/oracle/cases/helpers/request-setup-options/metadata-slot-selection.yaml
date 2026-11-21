@@ -1,0 +1,144 @@
+kind: helper
+name: request-setup-options-metadata-slot-selection
+call:
+  request_setup_options:
+    prepare:
+      - data: {metadata: {}}
+        slot: metadata
+        route: /v1/chat/completions
+        query: []
+        user_agent: ""
+        missing_session_id: null
+        principal:
+          metadata:
+            logging: [{callback_name: langfuse, callback_vars: {langfuse_host: "https://key.example"}}]
+          team_metadata:
+            logging: [{callback_name: team, callback_vars: {}}]
+          team_id: t1
+        default_team_settings: [{team_id: t1, success_callback: [langsmith], langsmith_api_key: ls}]
+      - data: {metadata: {}}
+        slot: metadata
+        route: /v1/chat/completions
+        query: []
+        user_agent: ""
+        missing_session_id: null
+        principal:
+          metadata: {logging: []}
+          team_metadata:
+            logging: [{callback_name: team, callback_vars: {}}]
+          team_id: t1
+        default_team_settings: [{team_id: t1, success_callback: [langsmith], langsmith_api_key: ls}]
+      - data: {metadata: {}}
+        slot: metadata
+        route: /v1/chat/completions
+        query: []
+        user_agent: ""
+        missing_session_id: null
+        principal:
+          metadata: {logging: null}
+          team_metadata:
+            logging: [{callback_name: team, callback_type: failure, callback_vars: {}}]
+          team_id: null
+        default_team_settings: []
+      - data: {metadata: {}}
+        slot: metadata
+        route: /v1/chat/completions
+        query: []
+        user_agent: ""
+        missing_session_id: null
+        principal:
+          metadata: {}
+          team_metadata:
+            logging: [{callback_name: team, callback_type: success, callback_vars: {}}]
+            callback_settings: {success_callback: [old]}
+          team_id: null
+        default_team_settings: []
+      - data: {metadata: {}}
+        slot: metadata
+        route: /v1/chat/completions
+        query: []
+        user_agent: ""
+        missing_session_id: null
+        principal:
+          metadata: {}
+          team_metadata:
+            callback_settings: {success_callback: [langfuse], failure_callback: null, callback_vars: {langfuse_public_key: pk}}
+          team_id: t1
+        default_team_settings: [{team_id: t1, success_callback: [langsmith], langsmith_api_key: ls}]
+      - data: {metadata: {}}
+        slot: metadata
+        route: /v1/chat/completions
+        query: []
+        user_agent: ""
+        missing_session_id: null
+        principal:
+          metadata: {}
+          team_metadata:
+            callback_settings: {success_callback: null, failure_callback: [langfuse], callbacks: [langfuse], callback_vars: {}}
+          team_id: null
+        default_team_settings: []
+      - data: {metadata: {}}
+        slot: metadata
+        route: /v1/chat/completions
+        query: []
+        user_agent: ""
+        missing_session_id: null
+        principal:
+          metadata: {}
+          team_metadata: {callback_settings: null}
+          team_id: null
+        default_team_settings: []
+      - data: {metadata: {}}
+        slot: metadata
+        route: /v1/chat/completions
+        query: []
+        user_agent: ""
+        missing_session_id: null
+        principal: {metadata: {}, team_metadata: {tags: [a]}, team_id: t1}
+        default_team_settings: [{team_id: t1, success_callback: [langsmith], failure_callback: [langsmith], langsmith_api_key: ls}]
+      - data: {metadata: {}}
+        slot: metadata
+        route: /v1/chat/completions
+        query: []
+        user_agent: ""
+        missing_session_id: null
+        principal: {metadata: {}, team_metadata: null, team_id: t2}
+        default_team_settings: [{team_id: t1, success_callback: [langsmith], langsmith_api_key: ls}]
+      - data: {metadata: {}}
+        slot: metadata
+        route: /v1/chat/completions
+        query: []
+        user_agent: ""
+        missing_session_id: null
+        principal:
+          metadata:
+            logging:
+              - {callback_name: bad, callback_vars: {unknown_var: x}}
+              - {callback_name: env, callback_vars: {langfuse_host: os.environ/LANGFUSE_HOST}}
+              - {callback_name: langfuse, callback_vars: {langfuse_environment: Prod}}
+              - {callback_name: langfuse_otel, callback_vars: {langfuse_span_scope: most}}
+              - {callback_name: missing_vars}
+              - {callback_name: 5, callback_vars: {}}
+          team_metadata: null
+          team_id: null
+        default_team_settings: []
+      - data: {metadata: {}}
+        slot: metadata
+        route: /v1/chat/completions
+        query: []
+        user_agent: ""
+        missing_session_id: null
+        principal:
+          metadata:
+            logging:
+              - {callback_name: langfuse, callback_type: success, callback_vars: {langfuse_public_key: a, newrelic_api_key: nr}}
+              - {callback_name: langfuse, callback_type: null, callback_vars: {langfuse_public_key: b, signoz_ingestion_key: sz}}
+              - {callback_name: newrelic, callback_type: failure, callback_vars: {newrelic_api_key: own, turn_off_message_logging: true}}
+              - {callback_name: signoz, callback_type: success_and_failure, callback_vars: {signoz_ingestion_key: own, dd_agent_port: 8126, langfuse_host: null}}
+              - {callback_name: x, callback_type: "", callback_vars: {}}
+          team_metadata: null
+          team_id: null
+        default_team_settings: []
+    destinations: []
+env: {}
+compare: {ignore: []}

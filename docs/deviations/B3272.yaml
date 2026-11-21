@@ -1,0 +1,18 @@
+task: B3272
+deviations:
+  - what: search and asearch are one async operation, asearch, that runs on the caller's task; there is no thread executor, no copied contextvars context and no check of whether the handler returned a coroutine.
+    why: The Rust handler is async and never blocks, the workspace bans spawn_blocking and detached tasks, and the logging state is passed by reference, so the caller's own state is what the call writes. The Python sync surface is B7887's.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/search/main.py#L138-L145"
+  - what: There is no "Got an unexpected None response from the Search API" ValueError.
+    why: The handler returns a typed SearchResponse or an error, so a None response cannot occur.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/search/main.py#L147-L148"
+  - what: A query that is not a string or a list of strings fails as a BadRequestError (400) with the model and provider set, where LiteLLM's ValueError goes through exception_type and comes out as an APIConnectionError (500).
+    why: The query is the caller's input and the call can never succeed, so a 500 tells the client the server broke when its own request was wrong.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/search/main.py#L236-L240"
+  - what: A provider name SearchProviders does not know and a known name without a search config both fail as "Search is not supported for provider" with a BadRequestError (400) and the model and provider set, where LiteLLM raises the enum's own ValueError for the first and both come out as an APIConnectionError (500).
+    why: The injected lookup answers None for both, the provider name is the caller's input, and the call can never succeed, so a 500 tells the client the server broke when its own request was wrong.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/search/main.py#L243-L248"
+  - what: timeout is a Duration; an httpx.Timeout object has no counterpart.
+    why: The handler takes one deadline for the whole request, and the Python surface that accepts httpx objects is B7887's.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/search/main.py#L172"
+kept_bugs: []

@@ -1,0 +1,16 @@
+kind: helper
+name: jwt-role-claims-seed
+call:
+  jwt_role_claims:
+    identity: {team_id_jwt_field: team, user_id_jwt_field: sub}
+    settings: {roles_jwt_field: roles, role_mappings: [{role: dev, internal_role: team}]}
+    claims: {scope: "read write", roles: [dev, 1]}
+    projection: {kind: rbac_role}
+calls:
+  - jwt_role_claims:
+      identity: {}
+      settings: {roles_jwt_field: groups, jwt_litellm_role_map: [{jwt_role: "viewer-[0-9]*", litellm_role: proxy_admin_viewer}]}
+      claims: {groups: [viewer-1]}
+      projection: {kind: litellm_role}
+env: {}
+compare: {ignore: []}
