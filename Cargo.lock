@@ -1773,6 +1773,7 @@ dependencies = [
  "futures-util",
  "hex",
  "indexmap 2.14.2",
+ "jiff",
  "mutants",
  "num-traits",
  "opentelemetry",
