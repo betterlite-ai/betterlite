@@ -62,20 +62,15 @@ pub fn into_call_error(
     provider: &str,
     redactor: &Redactor,
 ) -> CallError {
-    if let CompletionCallError::Dispatch(source) = error {
-        return dispatch_error(source, model, provider, redactor);
-    }
-    let status = status_of(error);
-    classify(model, provider, error.to_string(), status, redactor)
+    let (status, message) = match error {
+        CompletionCallError::Dispatch(source) => dispatch_parts(source),
+        other => (status_of(other), other.to_string()),
+    };
+    classify(model, provider, message, status, redactor)
 }
-fn dispatch_error(
-    error: &DispatchError,
-    model: &str,
-    provider: &str,
-    redactor: &Redactor,
-) -> CallError {
+fn dispatch_parts(error: &DispatchError) -> (Option<u16>, String) {
     let status = match error {
-        DispatchError::Chat { source } => return chat_failure(source, model, provider, redactor),
+        DispatchError::Chat { source } => return chat_parts(source),
         DispatchError::DeadlineExpired { .. } => 408,
         DispatchError::Rejected { status, .. } => *status,
         DispatchError::Embedding { .. } | DispatchError::Rules { .. } => 500,
@@ -84,22 +79,14 @@ fn dispatch_error(
         | DispatchError::UnknownOperation { .. }
         | DispatchError::MismatchedOperation { .. } => 400,
     };
-    classify(model, provider, error.to_string(), Some(status), redactor)
+    (Some(status), error.to_string())
 }
-fn chat_failure(
-    failure: &ChatFailure,
-    model: &str,
-    provider: &str,
-    redactor: &Redactor,
-) -> CallError {
+fn chat_parts(failure: &ChatFailure) -> (Option<u16>, String) {
     match failure {
-        ChatFailure::Route(error) => classify(
-            model,
-            provider,
-            error.to_string(),
-            match error {
-                ChatError::Timeout => Some(408),
+        ChatFailure::Route(error) => {
+            let status = match error {
                 ChatError::Provider { response } => Some(response.status),
+                ChatError::Timeout => Some(408),
                 ChatError::MissingApiKey => Some(401),
                 ChatError::UnknownModel { .. }
                 | ChatError::Request { .. }
@@ -109,18 +96,12 @@ fn chat_failure(
                     Some(500)
                 }
                 ChatError::Http { .. } => None,
-            },
-            redactor,
-        ),
-        ChatFailure::Internal { message } => {
-            classify(model, provider, message.clone(), Some(500), redactor)
+            };
+            (status, error.to_string())
         }
-        ChatFailure::InvalidControl { source } => {
-            classify(model, provider, source.to_string(), Some(400), redactor)
-        }
-        ChatFailure::Mismatched => {
-            classify(model, provider, failure.to_string(), Some(500), redactor)
-        }
+        ChatFailure::Internal { message } => (Some(500), message.clone()),
+        ChatFailure::InvalidControl { source } => (Some(400), source.to_string()),
+        ChatFailure::Mismatched => (Some(500), failure.to_string()),
     }
 }
 fn status_of(error: &CompletionCallError) -> Option<u16> {
