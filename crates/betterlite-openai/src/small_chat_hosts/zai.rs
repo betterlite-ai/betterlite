@@ -35,8 +35,8 @@ impl ZaiChatConfig {
 
     // the override GLM needs: messages and tools come back exactly as given, so cache_control survives
     #[must_use]
-    // ast-grep-ignore: no-one-line-functions - the zai config keeps this passthrough for its cache_control override
-    pub fn keep_cache_control(
+    // ast-grep-ignore: no-long-names, no-one-line-functions - LiteLLM's method name; the passthrough is the whole body
+    pub fn remove_cache_control_flag_from_messages_and_tools(
         _model: &str,
         messages: &[ChatMessage],
         tools: Option<&[Tool]>,

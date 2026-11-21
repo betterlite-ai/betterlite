@@ -193,8 +193,12 @@ fn novita_record(call: &NovitaCall) -> Value {
 }
 
 fn cache_record(call: &CacheCall) -> Value {
-    let (messages, tools) =
-        ZaiChatConfig::keep_cache_control(&call.model, &call.messages, call.tools.as_deref());
+    // ast-grep-ignore: no-long-names - LiteLLM's method name
+    let (messages, tools) = ZaiChatConfig::remove_cache_control_flag_from_messages_and_tools(
+        &call.model,
+        &call.messages,
+        call.tools.as_deref(),
+    );
     record(Ok(json!({
         "messages": serde_json::to_value(messages).unwrap_or(Value::Null),
         "tools": serde_json::to_value(tools).unwrap_or(Value::Null),

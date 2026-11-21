@@ -481,8 +481,11 @@ fn zai_keeps_cache_control_on_messages_and_tools() {
             serde_json::json!({"type": "ephemeral"}),
         )]),
     };
-    let (messages, tools) =
-        ZaiChatConfig::keep_cache_control(MODEL, &[cached.clone()], Some(&[tool.clone()]));
+    let (messages, tools) = ZaiChatConfig::remove_cache_control_flag_from_messages_and_tools(
+        MODEL,
+        &[cached.clone()],
+        Some(&[tool.clone()]),
+    );
     assert_eq!(messages, vec![cached]);
     assert_eq!(tools, Some(vec![tool]));
 }
