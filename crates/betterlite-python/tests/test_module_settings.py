@@ -515,15 +515,13 @@ def test_module_helper_callback_lists_accept_typed_functions() -> None:
 
 # ast-grep-ignore: no-long-names
 def test_module_helper_call_rules_accept_typed_functions() -> None:
+    for rules in (betterlite.pre_call_rules, betterlite.post_call_rules):
+        rules.append(_call_rule)
+        assert _call_rule in rules
+        rules.pop()
     hints: dict[str, type] = get_type_hints(settings_callbacks)
     assert hints["pre_call_rules"] == list[_CallRule]
     assert hints["post_call_rules"] == list[_CallRule]
-    betterlite.pre_call_rules.append(_call_rule)
-    betterlite.post_call_rules.append(_call_rule)
-    assert _call_rule in betterlite.pre_call_rules
-    assert _call_rule in betterlite.post_call_rules
-    betterlite.pre_call_rules.pop()
-    betterlite.post_call_rules.pop()
 
 
 # ast-grep-ignore: no-long-names
