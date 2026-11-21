@@ -167,7 +167,7 @@ async fn evaluation_optional_fields_reach_the_call() {
         call.params.custom_llm_provider.as_deref(),
         Some("hosted_vllm")
     );
-    assert_eq!(call.params.timeout, Some(16.0));
+    assert_eq!(call.params.timeout, Some(16.0_f64));
     let headers = serde_json::to_string(&call.params.extra_headers).unwrap();
     assert_eq!(headers, r#"{"x-team":"health"}"#);
     let extra = serde_json::to_string(&call.params.extra).unwrap();
@@ -468,7 +468,7 @@ async fn batch_updates_the_logging_object_before_the_call() {
     run_mode(
         "batch",
         "openai",
-        with_logging(params, logging.clone()),
+        with_logging(params, Arc::clone(&logging)),
         HealthProbeArguments::default(),
         &backend,
     )
@@ -503,7 +503,7 @@ async fn batch_logging_update_skips_a_falsy_api_base(#[case] entries: &str) {
     run_mode(
         "batch",
         "openai",
-        with_logging(params, logging.clone()),
+        with_logging(params, Arc::clone(&logging)),
         HealthProbeArguments::default(),
         &backend,
     )
@@ -690,6 +690,7 @@ fn response_health_image_is_a_512_by_512_png() {
     assert_eq!(image.len(), IMAGE_BYTES);
     assert_eq!(&image[..8], b"\x89PNG\r\n\x1a\n".as_slice());
     let header = &image[12..24];
+    assert_eq!(header.len(), 12);
     assert_eq!(&header[..4], b"IHDR".as_slice());
     let width: [u8; 4] = header[4..8].try_into().unwrap();
     let height: [u8; 4] = header[8..12].try_into().unwrap();

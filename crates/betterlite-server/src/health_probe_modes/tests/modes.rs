@@ -1,4 +1,5 @@
 use betterlite_openai::api::audio_file_input::HEALTH_CHECK_AUDIO;
+use indexmap::IndexMap;
 use secrecy::ExposeSecret as _;
 
 use self::support::{DOCUMENT_URL, FakeDocuments, with_input};
@@ -373,11 +374,9 @@ async fn mode_typed_parameters_with_a_wrong_type_are_rejected(
 #[case::ocr("ocr", "document")]
 #[tokio::test]
 async fn mode_repeated_key_fails_without_a_call(#[case] mode: &str, #[case] key: &str) {
-    let mut entries = serde_json::json!({"model": "m"});
-    entries
-        .as_object_mut()
-        .unwrap()
-        .insert(key.to_owned(), serde_json::json!("given"));
+    let mut entries = IndexMap::new();
+    entries.insert("model".to_owned(), "m");
+    entries.insert(key.to_owned(), "given");
     let backend = FakeBackend::new();
     let error = run_mode(
         mode,

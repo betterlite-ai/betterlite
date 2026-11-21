@@ -1,4 +1,6 @@
 use std::collections::BTreeMap;
+use std::io::Error as IoError;
+use std::mem;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -16,6 +18,7 @@ use betterlite_ocr::ocr_document::OcrDocument;
 use betterlite_redact::secret::Redactor;
 use chrono::DateTime;
 use indexmap::IndexMap;
+use serde::Serialize;
 
 use crate::health_probe_modes::backend::{
     CheapestChatModels, HealthProbeBackend, OcrHealthDocuments,
@@ -47,7 +50,7 @@ enum RecordedCall {
     Batch(ProbeCall),
     Responses(ProbeCall),
     Ocr(OcrCall),
-    Evaluation(EvaluationCall),
+    Evaluation(Box<EvaluationCall>),
 }
 
 fn recorded_mode(call: &RecordedCall) -> &'static str {
@@ -218,7 +221,7 @@ impl FakeBackend {
         let RecordedCall::Evaluation(call) = self.take_last() else {
             panic!("the mode sends an evaluation call");
         };
-        call
+        *call
     }
 }
 
@@ -259,11 +262,11 @@ impl HealthProbeBackend for FakeBackend {
         let failure = self.image_edit_failure.lock().unwrap().take();
         match failure {
             None => Ok(reply),
-            Some(failure) => {
-                let source = std::io::Error::other(failure.message.clone());
+            Some(error) => {
+                let source = IoError::other(error.message.clone());
                 Err(HealthProbeError::Backend {
-                    class: failure.class,
-                    message: failure.message,
+                    class: error.class,
+                    message: error.message,
                     source: Box::new(source),
                 })
             }
@@ -298,7 +301,7 @@ impl HealthProbeBackend for FakeBackend {
     }
 
     async fn evaluation(&self, call: EvaluationCall) -> Result<HealthProbeReply, HealthProbeError> {
-        Ok(self.record(RecordedCall::Evaluation(call)))
+        Ok(self.record(RecordedCall::Evaluation(Box::new(call))))
     }
 }
 
@@ -308,8 +311,8 @@ pub(super) struct FakeCheapestModels {
 }
 
 impl FakeCheapestModels {
-    pub(super) fn new(models: &[&str]) -> Self {
-        let models = models.iter().map(|model| String::from(*model)).collect();
+    pub(super) fn new(names: &[&str]) -> Self {
+        let models = names.iter().map(|model| String::from(*model)).collect();
         Self {
             models,
             request: Mutex::new(None),
@@ -318,8 +321,8 @@ impl FakeCheapestModels {
 }
 
 impl CheapestChatModels for FakeCheapestModels {
-    fn cheapest_chat_models(&self, custom_llm_provider: &str, n: usize) -> Vec<String> {
-        *self.request.lock().unwrap() = Some((custom_llm_provider.to_owned(), n));
+    fn cheapest_chat_models(&self, custom_llm_provider: &str, limit: usize) -> Vec<String> {
+        *self.request.lock().unwrap() = Some((custom_llm_provider.to_owned(), limit));
         self.models.clone()
     }
 }
@@ -363,17 +366,25 @@ impl FakeLogging {
     }
 
     pub(super) fn take_updates(&self) -> Vec<ProbeLoggingUpdate> {
-        std::mem::take(&mut *self.updates.lock().unwrap())
+        mem::take(&mut *self.updates.lock().unwrap())
+    }
+
+    fn record_event(&self) {
+        self.events.lock().unwrap().push("logging");
+    }
+
+    fn record_update(&self, update: ProbeLoggingUpdate) {
+        self.updates.lock().unwrap().push(update);
     }
 }
 
 impl HealthProbeLogging for FakeLogging {
     fn update_from_kwargs(&self, update: ProbeLoggingUpdate) -> Result<(), LoggingStateError> {
-        self.events.lock().unwrap().push("logging");
+        self.record_event();
         if self.failing {
             return Err(LoggingStateError::FieldType { field: "model" });
         }
-        self.updates.lock().unwrap().push(update);
+        self.record_update(update);
         Ok(())
     }
 
@@ -508,13 +519,31 @@ pub(super) fn unclassified_class(message: &str) -> ErrorClass {
     ErrorClass::Unclassified(Box::new(context(message)))
 }
 
+#[derive(Serialize)]
+struct EvaluationQuestion {
+    #[serde(rename = "type")]
+    question_type: &'static str,
+    instructions: &'static str,
+}
+
+#[derive(Serialize)]
+struct EvaluationQuestionsPayload {
+    model: &'static str,
+    questions: BTreeMap<String, EvaluationQuestion>,
+}
+
 pub(super) fn evaluation_params_with_questions(count: usize) -> HealthProbeParams {
-    let mut entries = serde_json::json!({"model": "m", "questions": {}});
-    let questions = entries["questions"].as_object_mut().unwrap();
+    let mut questions = BTreeMap::new();
     for index in 0..count {
         let name = format!("q{index}");
-        let question = serde_json::json!({"type": "noul", "instructions": "reachable?"});
+        let question = EvaluationQuestion {
+            question_type: "noul",
+            instructions: "reachable?",
+        };
         questions.insert(name, question);
     }
-    probe_params(entries)
+    probe_params(EvaluationQuestionsPayload {
+        model: "m",
+        questions,
+    })
 }
