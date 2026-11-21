@@ -16,19 +16,25 @@ use serde_json::{Value, json};
 
 pub(crate) struct Op;
 
+#[derive(Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum Function {
+    Overhead,
+    InputSequenceLength,
+    SafeDuration,
+}
+
+// a tagged enum decodes through serde's content type, which hands a null option to the decimal visitor as unit
 #[derive(Deserialize)]
-#[serde(tag = "function", rename_all = "snake_case")]
-pub(crate) enum Input {
-    Overhead {
-        overhead_calls: Vec<OverheadCall>,
-    },
-    #[serde(rename = "input_sequence_length")]
-    SequenceLength {
-        bucket_calls: Vec<BucketCall>,
-    },
-    SafeDuration {
-        duration_calls: Vec<DurationCall>,
-    },
+#[serde(deny_unknown_fields)]
+pub(crate) struct Input {
+    function: Function,
+    #[serde(default)]
+    overhead_calls: Vec<OverheadCall>,
+    #[serde(default)]
+    bucket_calls: Vec<BucketCall>,
+    #[serde(default)]
+    duration_calls: Vec<DurationCall>,
 }
 
 #[derive(Deserialize)]
@@ -70,14 +76,15 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        match input {
-            Input::Overhead { overhead_calls } => overhead_values(overhead_calls),
-            Input::SequenceLength { bucket_calls } => {
-                let buckets: Vec<Value> = bucket_calls.iter().map(bucket_value).collect();
+        match input.function {
+            Function::Overhead => overhead_values(&input.overhead_calls),
+            Function::InputSequenceLength => {
+                let buckets: Vec<Value> = input.bucket_calls.iter().map(bucket_value).collect();
                 Ok(json!({ "buckets": buckets }))
             }
-            Input::SafeDuration { duration_calls } => {
-                let seconds: Vec<Value> = duration_calls
+            Function::SafeDuration => {
+                let seconds: Vec<Value> = input
+                    .duration_calls
                     .iter()
                     .map(|call| {
                         seconds_value(safe_duration_seconds(call.start_time, call.end_time))
