@@ -1,0 +1,22 @@
+kind: sdk_http
+name: file-http-upload-media-blocks
+env: {}
+call:
+  file_http_upload:
+    mode: async
+    headers: {x-client-version: oracle}
+    file: {filename: data.jsonl, content: "ab"}
+    timeout_seconds: 5
+    plan:
+      media:
+        content_type: application/octet-stream
+        chunks: [[97, 98], [99], [100, 101]]
+upstream:
+  - status: 201
+    headers: {content-type: application/json}
+    body: {id: file-oracle, object: file, bytes: 5, filename: data.jsonl, purpose: batch}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [content-type]
+  ignore: []

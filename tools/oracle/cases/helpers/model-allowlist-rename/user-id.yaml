@@ -1,0 +1,8 @@
+kind: helper
+name: model-allowlist-rename-user-id
+call:
+  model_allowlist_rename:
+    kind: user
+    object_id: user-1
+env: {}
+compare: {ignore: []}

@@ -4,10 +4,12 @@ use betterlite_http::proxy::StreamResponse;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::controls::control_options::ControlOptions;
+use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::params::ParameterError;
 use betterlite_openai::chat::ChatRequest;
 use betterlite_openai::chat::response::ChatResponse;
 use betterlite_openai::embedding::{EmbeddingRequest, EmbeddingResponse};
+use betterlite_openai::output_limits::RejectedFieldsError;
 use betterlite_tokenizer::engine::error::EngineError;
 use http::header::InvalidHeaderValue;
 use serde::Serialize;
@@ -153,6 +155,8 @@ pub enum OperationResult {
     Chat(ChatCompletion),
     Embedding(Box<EmbeddingResponse>),
     Stream(Box<StreamResponse>),
+    // the request body as sent, so the caller rebuilds the length-truncated reply the 400 asks for
+    OutputLimit { sent: Box<JsonValue> },
     AiohttpOpenAi(AiohttpOpenAiResult),
     OpenAi(OpenAiResult),
     Azure(AzureResult),
@@ -237,6 +241,11 @@ pub enum OperationError {
     Parameters {
         #[source]
         source: ParameterError,
+    },
+    #[error("the provider's rejected fields cannot be read: {source}")]
+    RejectedFields {
+        #[source]
+        source: RejectedFieldsError,
     },
     #[error(transparent)]
     Anthropic { source: Box<AnthropicCallError> },

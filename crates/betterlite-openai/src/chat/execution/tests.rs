@@ -93,6 +93,7 @@ fn resolved_deployments(entries: &str) -> Vec<ChatDeployment> {
         api_bases: Vec::new(),
         api_keys: Vec::new(),
         organization: Some("org-7".to_owned()),
+        global_drop_params: false,
     };
     config
         .model_list
