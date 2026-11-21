@@ -170,7 +170,7 @@ fn apply_competitor_check<R>(
     let Some(intent) = competitor_intent(checker, text) else {
         return Ok(());
     };
-    if intent.intent.as_deref() != Some("other") {
+    if intent.intent.as_deref().unwrap_or("other") != "other" {
         apply_competitor_intent_policy(
             &guardrail.base,
             &intent,
