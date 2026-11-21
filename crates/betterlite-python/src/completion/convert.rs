@@ -139,7 +139,11 @@ pub(crate) fn outcome_parts(outcome: CallOutcome) -> Result<OutcomeParts, Conver
     // the SDK buffers the provider's payloads into a list; a driver that kept one payload hands it back whole
     let chunks = match payload {
         Json::List(items) => items,
-        single => vec![single],
+        single @ (Json::Null
+        | Json::Bool(_)
+        | Json::Number(_)
+        | Json::Text(_)
+        | Json::Object(_)) => vec![single],
     };
     let mut texts = Vec::with_capacity(chunks.len());
     for chunk in chunks {

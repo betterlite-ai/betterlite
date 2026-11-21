@@ -28,19 +28,8 @@ fn context(message: &str, model: Option<&str>, provider: Option<&str>) -> ErrorC
 }
 
 #[test]
-fn request_text_carries_arguments_and_the_settings_snapshot() {
-    let text = r#"{
-        "arguments": {"model": "gpt-4o", "messages": [{"role": "user", "content": "hi"}], "temperature": 0.5},
-        "settings": {
-            "drop_params": true,
-            "request_timeout": 12.5,
-            "model_alias_map": {"fast": "gpt-4o-mini"},
-            "proxy_headers": {"X-Title": "tests"},
-            "optional": {"vertex_project": "project"},
-            "add_function_to_prompt": true,
-            "disable_stop_sequence_limit": true
-        }
-    }"#;
+fn request_text_carries_the_call_arguments() {
+    let text = r#"{"arguments": {"model": "gpt-4o", "messages": [{"role": "user", "content": "hi"}], "temperature": 0.5}}"#;
     let wire = parse::<CallWire>(text).unwrap();
     assert_eq!(
         wire.arguments.get("model"),
@@ -57,6 +46,25 @@ fn request_text_carries_arguments_and_the_settings_snapshot() {
             .collect(),
         ),]))
     );
+    assert_eq!(wire.arguments.len(), 3);
+}
+
+#[test]
+fn request_text_carries_arguments_and_the_settings_snapshot() {
+    let text = r#"{
+        "arguments": {"model": "gpt-4o"},
+        "settings": {
+            "drop_params": true,
+            "request_timeout": 12.5,
+            "model_alias_map": {"fast": "gpt-4o-mini"},
+            "proxy_headers": {"X-Title": "tests"},
+            "optional": {"vertex_project": "project"},
+            "add_function_to_prompt": true,
+            "disable_stop_sequence_limit": true
+        }
+    }"#;
+    let wire = parse::<CallWire>(text).unwrap();
+    assert_eq!(wire.arguments.len(), 1);
     let settings = wire.settings.into_settings(2048_u32);
     assert_eq!(settings.drop_params, Some(true));
     assert_eq!(
@@ -111,12 +119,12 @@ fn request_malformed_text_is_a_json_error() {
 
 #[test]
 fn request_wrong_shape_is_a_json_error() {
-    let error = parse::<CallWire>(r#"{"arguments": 3}"#).unwrap_err();
-    assert!(matches!(error, ConvertError::Json { .. }));
-    let error = parse::<TokenCall>(r#"{"model": 3}"#).unwrap_err();
-    assert!(matches!(error, ConvertError::Json { .. }));
-    let error = parse::<SessionWire>("[]").unwrap_err();
-    assert!(matches!(error, ConvertError::Json { .. }));
+    let call_error = parse::<CallWire>(r#"{"arguments": 3}"#).unwrap_err();
+    assert!(matches!(call_error, ConvertError::Json { .. }));
+    let token_error = parse::<TokenCall>(r#"{"model": 3}"#).unwrap_err();
+    assert!(matches!(token_error, ConvertError::Json { .. }));
+    let session_error = parse::<SessionWire>("[]").unwrap_err();
+    assert!(matches!(session_error, ConvertError::Json { .. }));
 }
 
 #[test]
@@ -154,9 +162,9 @@ fn request_probe_call_keeps_model_and_key() {
     let call = parse::<ProbeCall>(r#"{"model": "gpt-4o", "api_key": "sk-test"}"#).unwrap();
     assert_eq!(call.model, "gpt-4o");
     assert!(call.api_key.is_some());
-    let call = parse::<ProbeCall>(r#"{"model": "gpt-4o"}"#).unwrap();
-    assert_eq!(call.model, "gpt-4o");
-    assert!(call.api_key.is_none());
+    let keyless = parse::<ProbeCall>(r#"{"model": "gpt-4o"}"#).unwrap();
+    assert_eq!(keyless.model, "gpt-4o");
+    assert!(keyless.api_key.is_none());
 }
 
 #[test]

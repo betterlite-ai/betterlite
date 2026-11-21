@@ -33,13 +33,16 @@ impl NativeSession {
     fn acompletion<'py>(&self, py: Python<'py>, request: &str) -> PyResult<Bound<'py, PyAny>> {
         let wire: CallWire = parse(request)?;
         let core = Arc::clone(&self.core);
-        future_into_py(py, async move {
-            let parts = core
-                .call(wire, true)
-                .await
-                .map_err(|error| call_error(&error))?;
-            Python::attach(|attached| answer(attached, parts))
-        })
+        future_into_py(
+            py,
+            Box::pin(async move {
+                let parts = core
+                    .call(wire, true)
+                    .await
+                    .map_err(|error| call_error(&error))?;
+                Python::attach(|attached| answer(attached, parts))
+            }),
+        )
     }
     fn count_tokens(&self, py: Python<'_>, request: &str) -> PyResult<String> {
         let call: TokenCall = parse(request)?;
@@ -69,6 +72,6 @@ impl NativeSession {
 fn answer(py: Python<'_>, parts: OutcomeParts) -> PyResult<Py<PyAny>> {
     match parts {
         OutcomeParts::Response(text) => Ok(PyString::new(py, &text).into_any().unbind()),
-        OutcomeParts::Stream(chunks) => Ok(Py::new(py, NativeChatStream::new(chunks))?.into_any()),
+        OutcomeParts::Stream(chunks) => Ok(Py::new(py, NativeChatStream::from(chunks))?.into_any()),
     }
 }

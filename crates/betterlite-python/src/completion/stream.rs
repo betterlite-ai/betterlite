@@ -26,8 +26,8 @@ impl StreamFeed {
 pub(crate) struct NativeChatStream {
     feed: Arc<Mutex<StreamFeed>>,
 }
-impl NativeChatStream {
-    pub(crate) fn new(chunks: Vec<String>) -> Self {
+impl From<Vec<String>> for NativeChatStream {
+    fn from(chunks: Vec<String>) -> Self {
         Self {
             feed: Arc::new(Mutex::new(StreamFeed {
                 chunks: VecDeque::from(chunks),

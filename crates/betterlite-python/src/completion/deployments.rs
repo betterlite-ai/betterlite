@@ -80,7 +80,7 @@ fn deployment_of(
         },
         // the dispatch looks a deployment up by its model id, which LiteLLM's model_info.id pins
         model_info: ModelInfo {
-            id: Some(resolved.model.clone()),
+            id: Some(resolved.model),
         },
     };
     ChatDeployment::resolve_with(&declared, &core.defaults, None, &core.context(globals)).ok()
@@ -105,10 +105,11 @@ fn request_identity(
     if let Some(alias) = settings.model_alias_map.get(&model) {
         model = alias.clone();
     }
-    let mut provider = text_field(arguments, "custom_llm_provider");
-    if matches!(arguments.get("azure"), Some(Json::Bool(true))) {
-        provider = Some(String::from("azure"));
-    }
+    let mut provider = if matches!(arguments.get("azure"), Some(Json::Bool(true))) {
+        Some(String::from("azure"))
+    } else {
+        text_field(arguments, "custom_llm_provider")
+    };
     if let Some(deployment) = text_field(arguments, "deployment_id") {
         model = deployment;
         provider = Some(String::from("azure"));

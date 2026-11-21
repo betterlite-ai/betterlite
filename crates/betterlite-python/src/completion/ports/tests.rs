@@ -99,7 +99,14 @@ fn a_timeout_that_is_not_a_number_of_seconds_is_a_field_error() {
         }
     ));
     let text = value("\"soon\"");
-    assert!(number_of(&text, "timeout").is_err());
+    let rejected = number_of(&text, "timeout").unwrap_err();
+    assert!(matches!(
+        rejected,
+        CompletionRequestError::FieldType {
+            field: "timeout",
+            ..
+        }
+    ));
     let numeric_text = value("\"30\"");
     assert_eq!(
         number_of(&numeric_text, "timeout").unwrap().to_bits(),
