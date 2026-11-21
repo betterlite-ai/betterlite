@@ -186,6 +186,28 @@ pub(super) struct FakeMetadata {
     pub lookups: Arc<Mutex<Vec<Lookup>>>,
 }
 
+impl FakeMetadata {
+    pub(super) fn resolving(model: &str) -> Self {
+        Self {
+            resolved_model: Some(String::from(model)),
+            resolved_provider: None,
+            resolved_base: None,
+            dynamic_key: None,
+            lookups: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    pub(super) fn resolving_credentials(base: &str, key: &str) -> Self {
+        Self {
+            resolved_model: None,
+            resolved_provider: None,
+            resolved_base: Some(String::from(base)),
+            dynamic_key: Some(String::from(key)),
+            lookups: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+}
+
 fn provider_identity(name: Option<&str>) -> ProviderIdentity {
     match name {
         Some("anthropic") => ProviderIdentity::Known(ProviderId::Anthropic),

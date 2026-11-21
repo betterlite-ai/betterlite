@@ -811,10 +811,7 @@ fn token_messages() -> Vec<Json> {
 
 #[tokio::test]
 async fn tokens_uses_the_provider_counter_when_it_answers() {
-    let metadata = support::FakeMetadata {
-        resolved_model: Some(String::from("gpt-4o-2024")),
-        ..support::FakeMetadata::default()
-    };
+    let metadata = support::FakeMetadata::resolving("gpt-4o-2024");
     let mut answer = TokenCountResponse::local(11, "gpt-4o", "gpt-4o-provider");
     answer.tokenizer_type = String::from("provider_tokenizer");
     let counter = FakeProviderCounter::answering(answer);
@@ -839,10 +836,7 @@ async fn tokens_uses_the_provider_counter_when_it_answers() {
 
 #[tokio::test]
 async fn tokens_provider_error_falls_back_to_the_local_count() {
-    let metadata = support::FakeMetadata {
-        resolved_model: Some(String::from("gpt-4o-2024")),
-        ..support::FakeMetadata::default()
-    };
+    let metadata = support::FakeMetadata::resolving("gpt-4o-2024");
     let mut answer = TokenCountResponse::local(11, "gpt-4o", "gpt-4o-provider");
     answer.error = true;
     let counter = FakeProviderCounter::answering(answer);
@@ -927,11 +921,8 @@ async fn tokens_system_message_is_prepended_only_with_messages() {
 
 #[tokio::test]
 async fn tokens_explicit_key_and_base_win_over_the_resolution() {
-    let metadata = support::FakeMetadata {
-        resolved_base: Some(String::from("https://resolved.test/v1")),
-        dynamic_key: Some(String::from("resolved-key")),
-        ..support::FakeMetadata::default()
-    };
+    let metadata =
+        support::FakeMetadata::resolving_credentials("https://resolved.test/v1", "resolved-key");
     let counter = FakeProviderCounter::answering(TokenCountResponse::local(4, "gpt-4o", "m"));
     let local = FakeLocalCounter::new(0);
     let key = secret("explicit-key");
