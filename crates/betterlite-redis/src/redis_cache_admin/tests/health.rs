@@ -1,6 +1,7 @@
+use betterlite_test_ports::refused_port::RefusedPort;
 use rstest::rstest;
 
-use super::support::{Hooks, Logs, Probe, ScriptedPing, closed_port, direct_settings, probe};
+use super::support::{Hooks, Logs, Probe, ScriptedPing, direct_settings, probe};
 use crate::redis_cache_admin::health::ping_commands;
 use crate::redis_client_reuse::transport::RedisCacheFamily;
 use crate::redis_live_client::tests::fake_server::{FakeServer, Reply};
@@ -50,8 +51,9 @@ async fn ping_records_a_failure_and_logs_the_ping_text(#[case] source: FailureSo
         running.script("PING", Reply::Error("ERR redis is down".to_owned()));
     }
     let (logs, _guard) = Logs::capture();
+    let refused = RefusedPort::bind().unwrap();
     let settings = server.as_ref().map_or_else(
-        || direct_settings("127.0.0.1", closed_port()),
+        || direct_settings("127.0.0.1", refused.address.port()),
         |running| direct_settings(&running.host(), running.port()),
     );
     let fixture = probe(&settings, RedisCacheFamily::Standalone, None);
