@@ -3,7 +3,7 @@ import ssl as ssl_module
 import sys
 from datetime import UTC, datetime
 from types import ModuleType, TracebackType
-from typing import Final, Literal, Protocol, Self, TypedDict, TypeAlias
+from typing import Final, Literal, Protocol, Self, TypeAlias, TypedDict, cast
 
 import litellm
 from litellm.litellm_core_utils.litellm_logging import Logging
@@ -172,7 +172,7 @@ class FakeWebsockets(ModuleType):
         ssl: bool | ssl_module.SSLContext,
         open_timeout: float,
     ) -> ProbeBackend:
-        record = dial_record(url, additional_headers, ssl, max_size, open_timeout)
+        record = dial_record(url, additional_headers, max_size, open_timeout, ssl=ssl)
         self.dials.append(JSON.validate_python(record))
         index = len(self.dials) - 1
         attempt: DialDocument = MessageDial(kind="os", message="the dial script ran out")
@@ -196,18 +196,16 @@ class FakeWebsockets(ModuleType):
 def dial_record(
     url: str,
     additional_headers: dict[str, str],
-    ssl: bool | ssl_module.SSLContext,
     max_size: int | None,
     open_timeout: float,
+    *,
+    ssl: bool | ssl_module.SSLContext,
 ) -> dict[str, JsonValue]:
+    ssl_value = "shared"
     if ssl is False:
         ssl_value = "disabled"
-    elif ssl is True:
-        ssl_value = "shared"
-    elif ssl.verify_mode == ssl_module.CERT_NONE and not ssl.check_hostname:
+    elif ssl is not True and ssl.verify_mode == ssl_module.CERT_NONE and not ssl.check_hostname:
         ssl_value = "insecure"
-    else:
-        ssl_value = "shared"
     return {
         "url": url,
         "headers": [[name, value] for name, value in sorted(additional_headers.items())],
@@ -221,8 +219,8 @@ def frame(payload: str) -> JsonValue:
     try:
         value = JSON.validate_json(payload)
     except ValidationError:
-        return JSON.validate_python({"kind": "text", "text": payload})
-    return JSON.validate_python({"kind": "json", "value": value})
+        return {"kind": "text", "text": payload}
+    return {"kind": "json", "value": value}
 
 
 def logging_object(input_value: Input) -> Logging:
@@ -248,17 +246,17 @@ def provider_config(input_value: Input) -> BaseRealtimeConfig:
 
 
 def snapshot(client: ProbeClient, backend: ProbeBackend, dials: list[JsonValue]) -> JsonValue:
-    return JSON.validate_python({
-        "dials": JSON.validate_python(dials),
-        "backend": JSON.validate_python([frame(text) for text in backend.sent]),
+    return {
+        "dials": dials,
+        "backend": [frame(text) for text in backend.sent],
         "backend_closed": backend.closed,
-        "client": JSON.validate_python([frame(text) for text in client.sent]),
-        "client_close": None if client.closed is None else JSON.validate_python(client.closed),
-    })
+        "client": [frame(text) for text in client.sent],
+        "client_close": client.closed,
+    }
 
 
 class RealtimeRunner(Protocol):
-    async def async_realtime(
+    async def __call__(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6180-L6194
         self, *, model: str, websocket: ClientPeer, logging_obj: Logging,
         provider_config: BaseRealtimeConfig, headers: dict[str, str],
         api_base: str | None = None, api_key: str | None = None,
@@ -266,7 +264,7 @@ class RealtimeRunner(Protocol):
     ) -> None: ...
 
 
-RUNNER: Final[RealtimeRunner] = BaseLLMHTTPHandler()
+RUNNER: Final[RealtimeRunner] = cast(RealtimeRunner, BaseLLMHTTPHandler().async_realtime)  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6180-L6194
 
 
 def run(input_value: Input) -> JsonValue:
@@ -282,7 +280,7 @@ def run(input_value: Input) -> JsonValue:
     sys.modules["websockets"] = fake
     try:
         asyncio.run(
-            RUNNER.async_realtime(
+            RUNNER(
                 model=input_value["model"],
                 websocket=client,
                 logging_obj=logging_object(input_value),
