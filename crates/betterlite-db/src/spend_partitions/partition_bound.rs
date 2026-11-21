@@ -55,7 +55,10 @@ pub fn parse_partition_upper_bound(expression: &str) -> PartitionBound {
 }
 
 // Python's datetime keeps microseconds, so a finer fraction names the same bound it compares
-fn truncate_microseconds<Stamp: Timelike>(stamp: Stamp) -> Option<Stamp> {
+fn truncate_microseconds<Stamp>(stamp: Stamp) -> Option<Stamp>
+where
+    Stamp: Timelike,
+{
     let micros = stamp.nanosecond().checked_div(1_000)?;
     let nanos = micros.checked_mul(1_000)?;
     stamp.with_nanosecond(nanos)

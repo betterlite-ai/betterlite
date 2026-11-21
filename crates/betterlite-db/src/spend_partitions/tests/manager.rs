@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use secrecy::ExposeSecret as _;
 use tokio::task::JoinSet;
+use tokio::time::timeout;
 use tokio_postgres::error::SqlState;
 use tokio_postgres::{Client, NoTls};
 use tracing::subscriber::{DefaultGuard, set_default};
@@ -389,7 +390,7 @@ async fn a_locked_parent_cancels_the_create_within_the_statement_budget() {
     let started = Instant::now();
     let statement = create_partition_statement(&planned);
     let ddl = execute_ddl(&mut case.client, &statement, 200);
-    let outcome = tokio::time::timeout(Duration::from_secs(5), within_deadline(200, ddl))
+    let outcome = timeout(Duration::from_secs(5), within_deadline(200, ddl))
         .await
         .expect("the create answers within the client deadline");
     let elapsed = started.elapsed();

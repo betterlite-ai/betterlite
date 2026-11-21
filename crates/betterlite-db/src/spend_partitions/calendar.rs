@@ -12,7 +12,7 @@ pub enum PartitionInterval {
 
 impl PartitionInterval {
     #[must_use]
-    pub const fn from_name(name: &str) -> Option<Self> {
+    pub fn from_name(name: &str) -> Option<Self> {
         match name {
             "day" => Some(Self::Day),
             "week" => Some(Self::Week),
