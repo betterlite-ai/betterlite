@@ -90,25 +90,23 @@ impl ImageEditException {
             ImageEditError::Resolution(source) => {
                 let message = source.to_string();
                 project(
-                    raw_exception(&message, Some(400), model, provider),
+                    raw_exception(&message, Some(400), false, model, provider),
                     &message,
                     redactor,
                 )
             }
-            ImageEditError::Provider(source) => {
-                let error_str = format!("Error code: {} - {}", source.status_code, source.message);
-                project(
-                    raw_exception(
-                        &error_str,
-                        Some(source.status_code),
-                        source.status_code_is_synthesized,
-                        model,
-                        provider,
-                    ),
+            // str() of the provider config's BaseLLMException is the reply text itself
+            ImageEditError::Provider(source) => project(
+                raw_exception(
                     &source.message,
-                    redactor,
-                )
-            }
+                    Some(source.status_code),
+                    source.status_code_is_synthesized,
+                    model,
+                    provider,
+                ),
+                &source.message,
+                redactor,
+            ),
             ImageEditError::UnknownProvider { .. } => {
                 let message = error.to_string();
                 project(

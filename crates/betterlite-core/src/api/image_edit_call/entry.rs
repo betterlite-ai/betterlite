@@ -6,7 +6,12 @@ use super::call::{ImageEditCall, ImageEditStep, split_async_call};
 use super::error::{ImageEditError, ImageEditException};
 use super::logging::ImageEditLogger;
 
-const DEFAULT_PROVIDER: &str = "openai";
+// the model and provider image_edit's except clause hands exception_type
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Attribution {
+    pub model: Option<String>,
+    pub provider: Option<String>,
+}
 
 // the seam a caller's operation fills: one preparation for both entries, ready to send or to await
 pub trait ImageEditOperation {
@@ -18,16 +23,17 @@ pub trait ImageEditOperation {
         logger: &mut dyn ImageEditLogger,
     ) -> Result<ImageEditStep<'_>, ImageEditError>;
 
-    // get_llm_provider(model, api_base) in aimage_edit: read only to attribute an exception
-    fn inferred_provider(&self, call: &ImageEditCall) -> Option<String>;
+    // the resolved model and provider once get_llm_provider succeeds, the caller's arguments before
+    fn attribution(&self, call: &ImageEditCall) -> Attribution;
 }
 
-// the sync entry: preparation once, then a ready answer or the one coroutine a provider returned
+// the sync entry: preparation once, then a ready answer or the one coroutine a provider returned, every failure mapped by exception_type
 pub async fn image_edit<O>(
     operation: &O,
     call: &ImageEditCall,
     logger: &mut dyn ImageEditLogger,
-) -> Result<ImageResponse, ImageEditError>
+    redactor: &Redactor,
+) -> Result<ImageResponse, ImageEditException>
 where
     O: ImageEditOperation + Sync,
 {
@@ -36,13 +42,23 @@ where
         kwargs,
         ..call.clone()
     };
-    match operation.begin(&prepared, asynchronous, logger)? {
-        ImageEditStep::Answer(answer) => Ok(answer),
-        ImageEditStep::Pending(pending) => Ok(pending.await?),
-    }
+    let answer = match operation.begin(&prepared, asynchronous, logger) {
+        Ok(ImageEditStep::Answer(answer)) => Ok(answer),
+        Ok(ImageEditStep::Pending(pending)) => pending.await,
+        Err(error) => Err(error),
+    };
+    answer.map_err(|error| {
+        let attribution = operation.attribution(&prepared);
+        ImageEditException::mapped(
+            &error,
+            attribution.model.as_deref(),
+            attribution.provider.as_deref().unwrap_or_default(),
+            redactor,
+        )
+    })
 }
 
-// forces async_call=true, preserves the call, and maps a failure with the source model and provider
+// forces async_call=true and preserves the call; image_edit already mapped any failure, and exception_type passes a mapped one through
 pub async fn aimage_edit<O>(
     operation: &O,
     call: &ImageEditCall,
@@ -56,26 +72,5 @@ where
     asynchronous
         .kwargs
         .insert(String::from("async_call"), Json::Bool(true));
-    let provider = attributed_provider(operation, call);
-    image_edit(operation, &asynchronous, logger)
-        .await
-        .map_err(|error| {
-            ImageEditException::mapped(&error, call.model.as_deref(), &provider, redactor)
-        })
-}
-
-// custom_llm_provider or what get_llm_provider infers from the model, defaulting to openai
-fn attributed_provider<O>(operation: &O, call: &ImageEditCall) -> String
-where
-    O: ImageEditOperation,
-{
-    let inferred = match &call.custom_llm_provider {
-        None => operation.inferred_provider(call),
-        Some(_) => None,
-    };
-    call.custom_llm_provider
-        .clone()
-        .filter(|provider| !provider.is_empty())
-        .or(inferred)
-        .unwrap_or_else(|| DEFAULT_PROVIDER.to_owned())
+    image_edit(operation, &asynchronous, logger, redactor).await
 }

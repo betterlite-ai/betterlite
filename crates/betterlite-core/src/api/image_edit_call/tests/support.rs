@@ -24,7 +24,7 @@ use crate::api::image_edit_call::call::{
 };
 use crate::api::image_edit_call::error::ImageEditError;
 use crate::api::image_edit_call::logging::{ImageEditLogger, PreCallRecord};
-use crate::api::image_edit_call::options::json_from_value;
+use crate::api::image_edit_call::options::image_edit_params;
 use crate::api::image_edit_call::send::{
     CustomEditHandler, CustomEditLookup, CustomEditProviders, CustomEditRequest, ImageEditProvider,
     ImageEditProviderSource, ImageEditSendRequest,
@@ -116,51 +116,13 @@ impl ImageEditProvider for Provider {
         _model: &str,
         _policy: &OptionalParamsPolicy,
     ) -> Result<ImageParams, ImageEditError> {
-        Ok(mapped(options))
+        image_edit_params(options)
     }
 
     fn send(&self, request: ImageEditSendRequest<'_>) -> Result<ImageEditStep<'_>, ImageEditError> {
         record(&self.sends, Sent::of(&request));
         Ok(step(self.pending))
     }
-}
-
-// the four signature options image_edit maps onto optional_params, in the TypedDict's order
-pub(super) fn mapped(options: &ImageEditOptionalRequestParams) -> ImageParams {
-    let mut params = ImageParams::new();
-    if let Some(mask) = &options.mask {
-        params.insert(String::from("mask"), Json::Text(mask.clone()));
-    }
-    if let Some(count) = options.count {
-        params.insert(String::from("n"), Json::Number(Number::from(count)));
-    }
-    if let Some(quality) = options.quality {
-        let text = match quality {
-            Quality::High => "high",
-            Quality::Medium => "medium",
-            Quality::Low => "low",
-            Quality::Standard => "standard",
-            Quality::Auto => "auto",
-        };
-        params.insert(String::from("quality"), Json::Text(text.to_owned()));
-    }
-    if let Some(format) = options.response_format {
-        let text = match format {
-            ResponseFormat::Url => "url",
-            ResponseFormat::B64Json => "b64_json",
-        };
-        params.insert(String::from("response_format"), Json::Text(text.to_owned()));
-    }
-    if let Some(size) = &options.size {
-        params.insert(String::from("size"), Json::Text(size.clone()));
-    }
-    if let Some(user) = &options.user {
-        params.insert(String::from("user"), Json::Text(user.clone()));
-    }
-    for (name, value) in &options.extensions {
-        params.insert(name.clone(), json_from_value(value));
-    }
-    params
 }
 
 pub(super) struct Source {
@@ -400,6 +362,7 @@ pub(super) fn upload() -> ImageEditCall {
 pub(super) fn gpt_image_tag() -> ImageEditConfigTag {
     ImageEditConfigTag::OpenAi(String::from("gpt-image-1"))
 }
+
 pub(super) fn custom_call() -> ImageEditCall {
     let mut call = upload();
     call.prompt = Some(String::from("custom"));

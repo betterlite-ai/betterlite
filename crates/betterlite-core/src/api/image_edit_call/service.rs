@@ -15,7 +15,7 @@ use super::call::{
     DEFAULT_MODEL, ImageEditCall, ImageEditClientKind, ImageEditStep, OPENAI_EDIT_PARAMS,
     request_timeout, seconds_checked,
 };
-use super::entry::ImageEditOperation;
+use super::entry::{Attribution, ImageEditOperation};
 use super::error::ImageEditError;
 use super::forms::{
     control_params, form_fields, merge_form_fields, merge_non_default, merged_headers,
@@ -76,23 +76,31 @@ impl ImageEditOperation for ImageEdits<'_> {
         self.configured_step(call, &resolved, &images, asynchronous, logger)
     }
 
-    // get_llm_provider(model, api_base) in aimage_edit, read only to attribute an exception
-    fn inferred_provider(&self, call: &ImageEditCall) -> Option<String> {
+    // image_edit rebinds model and custom_llm_provider only when get_llm_provider returns
+    fn attribution(&self, call: &ImageEditCall) -> Attribution {
         let requested_model = call
             .model
             .clone()
             .unwrap_or_else(|| DEFAULT_MODEL.to_owned());
-        resolve(
+        let resolved = resolve(
             &ResolutionRequest {
                 model: &requested_model,
-                custom_llm_provider: None,
+                custom_llm_provider: call.custom_llm_provider.as_deref(),
                 api_base: None,
                 api_key: None,
             },
             self.resolution,
-        )
-        .ok()
-        .map(|resolved| resolved.provider.slug().to_owned())
+        );
+        match resolved {
+            Ok(resolved) => Attribution {
+                model: Some(resolved.model),
+                provider: Some(resolved.provider.slug().to_owned()),
+            },
+            Err(_unresolved) => Attribution {
+                model: call.model.clone(),
+                provider: call.custom_llm_provider.clone(),
+            },
+        }
     }
 }
 

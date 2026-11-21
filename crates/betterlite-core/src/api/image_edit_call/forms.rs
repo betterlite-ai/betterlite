@@ -6,7 +6,6 @@ use betterlite_openai::api::image_contracts::records::{ImageHeaders, ImageParams
 
 use super::call::{ImageEditCall, MAX_FORM_DEPTH};
 use super::error::ImageEditError;
-use super::options::json_from_value;
 
 // kwargs.headers first, then extra_headers: a caller's explicit map wins, exactly as merged_extra_headers
 pub(crate) fn merged_headers(call: &ImageEditCall) -> Result<Option<ImageHeaders>, ImageEditError> {
@@ -105,7 +104,10 @@ pub(crate) fn merge_non_default(
     non_default: &Params,
 ) -> Result<(), ImageEditError> {
     for (name, value) in non_default {
-        options.insert(name.clone(), json_from_value(&serde_json::to_value(value)?));
+        options.insert(
+            name.clone(),
+            serde_json::from_slice(&serde_json::to_vec(value)?)?,
+        );
     }
     Ok(())
 }
