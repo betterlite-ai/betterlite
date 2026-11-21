@@ -3025,6 +3025,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
  "betterlite-config",
+ "betterlite-core",
  "betterlite-db",
  "betterlite-env",
  "betterlite-lens",
