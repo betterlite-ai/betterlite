@@ -352,6 +352,7 @@ async fn assert_broken_stream_hook() {
 
 #[test]
 fn passthrough_error_body_truncate() {
+    assert_eq!(PASSTHROUGH_UPSTREAM_ERROR_BODY_MAX_LOG_CHARS, 4096);
     let short = "short error";
     assert_eq!(truncate_upstream_error_body(short), short);
 
@@ -361,10 +362,7 @@ fn passthrough_error_body_truncate() {
     let long = "x".repeat(PASSTHROUGH_UPSTREAM_ERROR_BODY_MAX_LOG_CHARS + 1);
     assert_eq!(
         truncate_upstream_error_body(&long),
-        format!(
-            "{}... (truncated at {PASSTHROUGH_UPSTREAM_ERROR_BODY_MAX_LOG_CHARS} chars)",
-            "x".repeat(PASSTHROUGH_UPSTREAM_ERROR_BODY_MAX_LOG_CHARS)
-        )
+        format!("{}... (truncated at 4096 chars)", "x".repeat(4096))
     );
 
     // Python counts characters, not bytes

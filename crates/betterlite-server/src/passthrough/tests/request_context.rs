@@ -74,6 +74,7 @@ fn headers() -> HeaderMap {
     headers.insert("x-litellm-tags", HeaderValue::from_static("three"));
     headers.insert("x-custom", HeaderValue::from_static("first"));
     headers.append("x-custom", HeaderValue::from_static("second"));
+    headers.insert("x-binary", HeaderValue::from_bytes(b"\xff").unwrap());
     headers
 }
 
@@ -190,6 +191,8 @@ fn assert_proxy_request(kwargs: &PassThroughKwargs) {
     let sent_headers = object(&proxy_request["headers"]);
     assert_eq!(text(&sent_headers["x-custom"]), "first, second");
     assert_eq!(text(&sent_headers["tags"]), "one, two");
+    // a header value that is not UTF-8 has no place in the logged request
+    assert!(sent_headers.get("x-binary").is_none());
 }
 
 fn assert_no_budgets(kwargs: &PassThroughKwargs) {
