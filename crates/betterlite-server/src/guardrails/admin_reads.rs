@@ -7,7 +7,7 @@ pub(crate) mod masking;
 mod projection;
 mod provider_modes;
 mod settings;
-mod state;
+pub mod state;
 
 mod tests;
 

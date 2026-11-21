@@ -12,6 +12,7 @@ const SENSITIVE_KEYWORDS: [&str; 8] = [
     "passwd",
 ];
 const UNMASKED_LENGTH: usize = 4;
+const VISIBLE_LENGTH: usize = UNMASKED_LENGTH / 2;
 const ASTERISKS: &str = "****";
 const SHORT_MASK: &str = "*****";
 const MAX_DEPTH: usize = 20;
@@ -65,12 +66,14 @@ fn masked_text(text: &str) -> String {
     if length <= UNMASKED_LENGTH {
         return SHORT_MASK.to_owned();
     }
-    let visible = UNMASKED_LENGTH / 2;
-    let head: String = text.chars().take(visible).collect();
-    let mut tail: Vec<char> = text.chars().rev().take(visible).collect();
+    let head: String = text.chars().take(VISIBLE_LENGTH).collect();
+    let mut tail: Vec<char> = text.chars().rev().take(VISIBLE_LENGTH).collect();
     tail.reverse();
-    let mut masked =
-        String::with_capacity(visible.saturating_mul(2).saturating_add(ASTERISKS.len()));
+    let mut masked = String::with_capacity(
+        VISIBLE_LENGTH
+            .saturating_mul(2)
+            .saturating_add(ASTERISKS.len()),
+    );
     masked.push_str(&head);
     masked.push_str(ASTERISKS);
     masked.extend(tail);
