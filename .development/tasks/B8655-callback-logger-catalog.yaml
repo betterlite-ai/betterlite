@@ -30,7 +30,9 @@ description: >-
   section B8561 reads, and the ports B8561's constructor takes. Read that constructor first. A router port it takes at
   construction gets `LiveRouterPorts`, a struct here that holds `Arc<RouterViews>` and calls `current()` once per method
   call. With no router installed it answers what LiteLLM answers with `llm_router` None: not recognized, not public, no
-  pattern match, no remaining limits. B8611's view implements B3880's `RequestedModelCatalog`, so a hook that takes the
+  pattern match, no remaining limits. Pass B8561's hooks a `RemainingModelGroupUsage` (B3879's port in betterlite-logging
+  prometheus_rate_limits) backed by the router's `get_remaining_model_group_usage` (B847), or None when no router is
+  configured. B8611's view implements B3880's `RequestedModelCatalog`, so a hook that takes the
   catalog per call gets `router_views.current()` from its caller. Budget lookups (B3883) get `shared.auth_cache` and
   `shared.db`. Make `RemainingBudgetFanOut::new(<the B3883 lookups>, config.sections.prometheus_request_budget.per_request_timeout, &collectors)` (B9480) and hand it to B8561's constructor.
 

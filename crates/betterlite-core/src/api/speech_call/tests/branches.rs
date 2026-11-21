@@ -1,0 +1,385 @@
+use betterlite_context::media_config_selection::text_to_speech::TextToSpeechConfigTag;
+use betterlite_error::error::ErrorClass;
+use betterlite_openai::api::speech_provider_contract::SpeechVoice;
+use rstest::rstest;
+use secrecy::SecretString;
+use serde_json::Value;
+
+use super::super::branches::families::{Rules, carries_base, overwrites_credentials};
+use super::super::call::SpeechCall;
+use super::super::error::SpeechFailure;
+use super::super::operations::SpeechOperationKind;
+use super::support::*;
+
+// one provider branch over the scripted configs and operations, with no completion in reach
+fn branch_harness(configs: Configs, operations: ScriptedOperations) -> Harness<RecordingTransport> {
+    Harness::new(
+        loaded_settings(SOURCE, &[]),
+        RecordingTransport::ok("audio/wav", &[]),
+        &[],
+    )
+    .configs(configs)
+    .operations(operations)
+}
+
+#[test]
+fn elevenlabs_maps_the_voice_and_keeps_the_query_params() {
+    let harness = branch_harness(
+        Configs::scripted(ScriptedConfig::keeping("{}")),
+        ScriptedOperations::ok(b"audio"),
+    );
+    let native = SpeechCall {
+        voice: Some(named_voice("  id  ")),
+        api_base: Some(String::from("https://eleven.test")),
+        api_key: Some(SecretString::from("sk-eleven")),
+        kwargs: object(
+            r#"{"tags": ["a"], "user": "u-1", "__elevenlabs_query_params__": {"enable_logging": false}}"#,
+        ),
+        ..base_call("elevenlabs/eleven_multilingual_v2")
+    };
+    let content = harness.run_ok(&native);
+    assert_eq!(content.body, b"audio".to_vec());
+    let executed = harness.operations.take();
+    assert_eq!(executed.len(), 1);
+    let operation = &executed[0];
+    assert_eq!(operation.kind, SpeechOperationKind::Generic);
+    assert_eq!(operation.provider, "elevenlabs");
+    assert_eq!(
+        operation.config_tag,
+        Some(TextToSpeechConfigTag::ElevenLabs)
+    );
+    assert_eq!(operation.voice, Some(SpeechVoice::Name(String::from("id"))));
+    assert_eq!(
+        operation.litellm_params.get("__elevenlabs_voice_id__"),
+        Some(&Value::String(String::from("id")))
+    );
+    assert_eq!(
+        operation.litellm_params.get("__elevenlabs_query_params__"),
+        Some(&Value::Object(object(r#"{"enable_logging": false}"#)))
+    );
+    assert_eq!(operation.kwargs.get("__elevenlabs_query_params__"), None);
+    assert_eq!(operation.kwargs.get("tags"), None);
+    assert_eq!(
+        operation.kwargs.get("user"),
+        Some(&Value::String(String::from("u-1")))
+    );
+    assert_eq!(
+        operation.litellm_params.get("api_base"),
+        Some(&Value::String(String::from("https://eleven.test")))
+    );
+    assert_eq!(
+        operation.litellm_params.get("api_key"),
+        Some(&Value::String(String::from("sk-eleven")))
+    );
+    let mapping = harness.configs.mapping().expect("the scripted mapping");
+    assert_eq!(
+        mapping.calls()[0]
+            .options
+            .kwargs
+            .get("__elevenlabs_query_params__"),
+        Some(&Value::Object(object(r#"{"enable_logging": false}"#)))
+    );
+}
+
+#[test]
+fn elevenlabs_drops_a_non_dict_query_and_rejects_blank_voices() {
+    let harness = branch_harness(
+        Configs::scripted(ScriptedConfig::keeping("{}")),
+        ScriptedOperations::ok(b"audio"),
+    );
+    let native = SpeechCall {
+        voice: Some(named_voice("id")),
+        kwargs: object(r#"{"__elevenlabs_query_params__": "junk"}"#),
+        ..base_call("elevenlabs/eleven_multilingual_v2")
+    };
+    harness.run_ok(&native);
+    let executed = harness.operations.take();
+    assert_eq!(executed[0].kwargs.get("__elevenlabs_query_params__"), None);
+    assert_eq!(
+        executed[0]
+            .litellm_params
+            .get("__elevenlabs_query_params__"),
+        None
+    );
+    let blank = SpeechCall {
+        voice: Some(named_voice("   ")),
+        ..base_call("elevenlabs/eleven_multilingual_v2")
+    };
+    let blank_failure = harness.run_err(&blank);
+    assert_eq!(
+        blank_failure.message,
+        "'voice' must resolve to an ElevenLabs voice id for ElevenLabs TTS"
+    );
+    assert!(matches!(
+        blank_failure.failure,
+        SpeechFailure::Mapped(ErrorClass::BadRequest(_))
+    ));
+    let dict = SpeechCall {
+        voice: Some(dict_voice(r#"{"voice_id": "id"}"#)),
+        ..base_call("elevenlabs/eleven_multilingual_v2")
+    };
+    let dict_failure = harness.run_err(&dict);
+    assert_eq!(
+        dict_failure.message,
+        "'voice' must resolve to an ElevenLabs voice id for ElevenLabs TTS"
+    );
+}
+
+#[rstest]
+#[case(r#"{"voice_id": "v1", "id": "v2"}"#, Some("v1"))]
+#[case(r#"{"id": "v2", "name": "v3"}"#, Some("v2"))]
+#[case(r#"{"name": "v3"}"#, Some("v3"))]
+#[case(r#"{"voice_id": "", "id": "v2"}"#, Some("v2"))]
+#[case("{}", None)]
+fn minimax_selects_the_first_truthy_voice(#[case] source: &str, #[case] expected: Option<&str>) {
+    let harness = branch_harness(Configs::absent(), ScriptedOperations::ok(b"audio"));
+    let native = SpeechCall {
+        voice: Some(dict_voice(source)),
+        ..base_call("minimax/speech-02-hd")
+    };
+    harness.run_ok(&native);
+    let executed = harness.operations.take();
+    assert_eq!(
+        executed[0].voice,
+        expected.map(|name| SpeechVoice::Name(name.to_owned())),
+        "voice {source}"
+    );
+}
+
+#[rstest]
+#[case("minimax/speech-02-hd", "string-voice")]
+#[case("mistral/mistral-small", "alice")]
+fn the_generic_families_keep_a_string_voice(#[case] model: &str, #[case] voice: &str) {
+    let harness = branch_harness(Configs::absent(), ScriptedOperations::ok(b"audio"));
+    let native = SpeechCall {
+        voice: Some(named_voice(voice)),
+        ..base_call(model)
+    };
+    harness.run_ok(&native);
+    assert_eq!(harness.operations.take()[0].voice, Some(named_voice(voice)));
+}
+
+#[rstest]
+#[case("mistral/mistral-small")]
+#[case("edenai/text-to-speech")]
+fn mistral_and_edenai_take_only_string_voices(#[case] model: &str) {
+    let harness = branch_harness(Configs::absent(), ScriptedOperations::ok(b"audio"));
+    let native = SpeechCall {
+        voice: Some(dict_voice(r#"{"voice": "alice"}"#)),
+        ..base_call(model)
+    };
+    harness.run_ok(&native);
+    assert_eq!(
+        harness.operations.take()[0].voice,
+        None,
+        "voice for {model}"
+    );
+}
+
+#[test]
+fn edenai_records_the_resolved_api_base() {
+    let harness = branch_harness(Configs::absent(), ScriptedOperations::ok(b"audio"));
+    let native = SpeechCall {
+        voice: Some(named_voice("alice")),
+        api_base: Some(String::from("https://eden.test/v1")),
+        ..base_call("edenai/text-to-speech")
+    };
+    harness.run_ok(&native);
+    assert_eq!(
+        harness.operations.take()[0].litellm_params.get("api_base"),
+        Some(&Value::String(String::from("https://eden.test/v1")))
+    );
+    let default_base = SpeechCall {
+        voice: Some(named_voice("alice")),
+        ..base_call("edenai/text-to-speech")
+    };
+    harness.run_ok(&default_base);
+    assert_eq!(
+        harness.operations.take()[0].litellm_params.get("api_base"),
+        Some(&Value::String(String::from("https://api.edenai.run/v3")))
+    );
+}
+
+#[test]
+fn the_family_rules_match_the_source_credential_flags() {
+    assert!(!overwrites_credentials(Rules::Edenai));
+    assert!(carries_base(Rules::Edenai));
+    assert!(overwrites_credentials(Rules::Minimax));
+    assert!(!carries_base(Rules::Minimax));
+    assert!(overwrites_credentials(Rules::Mistral));
+    assert!(!carries_base(Rules::Mistral));
+    assert!(!overwrites_credentials(Rules::RunwayMl));
+    assert!(!carries_base(Rules::RunwayMl));
+    assert!(!overwrites_credentials(Rules::Polly));
+    assert!(!carries_base(Rules::Polly));
+    assert!(!overwrites_credentials(Rules::AzureSpeech));
+    assert!(!carries_base(Rules::AzureSpeech));
+}
+
+#[test]
+fn polly_keeps_the_mapped_dict_voice() {
+    let harness = branch_harness(
+        Configs::scripted(ScriptedConfig::mapped(
+            Some(dict_voice(r#"{"voice": "Joanna"}"#)),
+            "{}",
+        )),
+        ScriptedOperations::ok(b"audio"),
+    );
+    let native = SpeechCall {
+        voice: Some(named_voice("alice")),
+        ..base_call("aws_polly/generative")
+    };
+    harness.run_ok(&native);
+    let executed = harness.operations.take();
+    assert_eq!(executed[0].kind, SpeechOperationKind::Dispatch);
+    assert_eq!(
+        executed[0].voice,
+        Some(dict_voice(r#"{"voice": "Joanna"}"#))
+    );
+}
+
+#[test]
+fn azure_speech_models_need_the_ava_config() {
+    let native = SpeechCall {
+        voice: Some(dict_voice(r#"{"name": "en-US-JennyNeural"}"#)),
+        ..base_call("azure/speech/azure-text-to-speech")
+    };
+    let missing = branch_harness(Configs::absent(), ScriptedOperations::ok(b"audio"));
+    let failure = missing.run_err(&native);
+    assert_eq!(
+        failure.message,
+        "Azure Speech Service configuration not found"
+    );
+    assert!(matches!(
+        failure.failure,
+        SpeechFailure::Mapped(ErrorClass::BadRequest(_))
+    ));
+    assert!(missing.operations.take().is_empty());
+    let harness = branch_harness(
+        Configs::scripted(ScriptedConfig::keeping("{}")),
+        ScriptedOperations::ok(b"audio"),
+    );
+    harness.run_ok(&native);
+    let executed = harness.operations.take();
+    assert_eq!(executed[0].kind, SpeechOperationKind::Dispatch);
+    assert_eq!(
+        executed[0].config_tag,
+        Some(TextToSpeechConfigTag::AzureAVA)
+    );
+    assert_eq!(
+        executed[0].voice,
+        Some(dict_voice(r#"{"name": "en-US-JennyNeural"}"#))
+    );
+}
+
+#[test]
+fn azure_ai_speech_models_never_reach_a_config() {
+    let harness = branch_harness(
+        Configs::scripted(ScriptedConfig::keeping("{}")),
+        ScriptedOperations::ok(b"audio"),
+    );
+    let native = SpeechCall {
+        voice: Some(named_voice("alloy")),
+        ..base_call("azure_ai/speech/azure-text-to-speech")
+    };
+    let failure = harness.run_err(&native);
+    assert_eq!(
+        failure.message,
+        "Azure Speech Service configuration not found"
+    );
+    assert!(harness.operations.take().is_empty());
+    assert!(
+        harness
+            .configs
+            .mapping()
+            .expect("the scripted mapping")
+            .calls()
+            .is_empty()
+    );
+}
+
+#[test]
+fn runwayml_needs_its_config_and_dispatches_with_it() {
+    let native = SpeechCall {
+        voice: Some(named_voice("Maya")),
+        ..base_call("runwayml/text-to-speech")
+    };
+    let missing = branch_harness(Configs::absent(), ScriptedOperations::ok(b"audio"));
+    let failure = missing.run_err(&native);
+    assert_eq!(
+        failure.message,
+        "RunwayML Text-to-Speech configuration not found"
+    );
+    let harness = branch_harness(
+        Configs::scripted(ScriptedConfig::keeping(r#"{"voice": "Maya"}"#)),
+        ScriptedOperations::ok(b"audio"),
+    );
+    harness.run_ok(&native);
+    let executed = harness.operations.take();
+    assert_eq!(executed[0].kind, SpeechOperationKind::Dispatch);
+    assert_eq!(executed[0].provider, "runwayml");
+    assert_eq!(
+        executed[0].optional_params.get("voice"),
+        Some(&Value::String(String::from("Maya")))
+    );
+}
+
+#[test]
+fn openai_compatible_providers_use_the_openai_branch() {
+    let variables = [("OPENAI_API_KEY", "sk-compatible")];
+    let harness = Harness::new(
+        loaded_settings(SOURCE, &variables),
+        RecordingTransport::ok("audio/mpeg", &[1]),
+        &variables,
+    );
+    let native = SpeechCall {
+        voice: Some(named_voice("alloy")),
+        ..base_call("groq/playai-tts")
+    };
+    harness.run_ok(&native);
+    let sent = harness.transport.sent();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].url.path(), "/openai/v1/audio/speech");
+    assert_eq!(
+        header(&sent[0], "authorization").as_deref(),
+        Some("Bearer sk-compatible")
+    );
+}
+
+#[test]
+fn the_mapping_receives_drop_params_false_and_the_options() {
+    let harness = branch_harness(
+        Configs::scripted(ScriptedConfig::keeping(r#"{"mapped": true}"#)),
+        ScriptedOperations::ok(b"audio"),
+    );
+    let native = SpeechCall {
+        voice: Some(named_voice("alloy")),
+        response_format: Some(String::from("wav")),
+        kwargs: object(r#"{"tags": ["a"], "user": "u-1"}"#),
+        ..base_call("elevenlabs/eleven_multilingual_v2")
+    };
+    harness.run_ok(&native);
+    let calls = harness
+        .configs
+        .mapping()
+        .expect("the scripted mapping")
+        .calls();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].model, "eleven_multilingual_v2");
+    assert!(!calls[0].options.drop_params);
+    assert_eq!(calls[0].options.voice, Some(named_voice("alloy")));
+    assert_eq!(calls[0].options.kwargs.get("tags"), None);
+    assert_eq!(
+        calls[0].options.kwargs.get("user"),
+        Some(&Value::String(String::from("u-1")))
+    );
+    let executed = harness.operations.take();
+    assert_eq!(
+        executed[0].optional_params.get("response_format"),
+        Some(&Value::String(String::from("wav")))
+    );
+    assert_eq!(
+        executed[0].optional_params.get("mapped"),
+        Some(&Value::Bool(true))
+    );
+}

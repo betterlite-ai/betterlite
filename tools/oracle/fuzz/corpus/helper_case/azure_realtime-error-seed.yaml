@@ -1,0 +1,19 @@
+kind: helper
+name: azure-realtime-error-seed
+call:
+  azure_realtime:
+    kind: error
+    model: realtime-a
+    scope_headers: []
+    ssl_verification: enabled
+    max_message_size_bytes: 1048576
+    azure_api_base: null
+    azure_api_key: null
+    azure_api_version: null
+    queries: []
+    protocols: []
+    failures:
+      - {status_code: 0, message: "boom", send_error: null, close_error: null, api_key: "k1", azure_ad_token: null}
+    http_setups: []
+env: {}
+compare: {ignore: []}
