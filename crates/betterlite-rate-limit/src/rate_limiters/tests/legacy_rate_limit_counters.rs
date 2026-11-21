@@ -137,8 +137,8 @@ fn constructor_stores_the_usage_cache_and_the_clock() {
     let clock = FixedClock::at(START_OF_MINUTE);
     let console = RecordingConsole::new(false);
     let handler = LegacyRateLimitHandler::new(handler_deps(&cache, &clock, &console));
-    let stored_cache: Arc<dyn LegacyUsageCache> = Arc::<RecordingCache>::clone(&cache);
-    let stored_clock: Arc<dyn LegacyClock> = Arc::<FixedClock>::clone(&clock);
+    let stored_cache: Arc<dyn LegacyUsageCache> = cache;
+    let stored_clock: Arc<dyn LegacyClock> = clock;
     assert!(Arc::ptr_eq(&handler.internal_usage_cache, &stored_cache));
     assert!(Arc::ptr_eq(&handler.clock, &stored_clock));
 }
