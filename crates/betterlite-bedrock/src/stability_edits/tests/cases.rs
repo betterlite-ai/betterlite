@@ -146,6 +146,7 @@ pub(super) fn native_edit_options() {
 
 fn conversions() {
     int_conversions();
+    python_int_edges();
     float_conversions();
     text_conversions();
     non_finite();
@@ -175,6 +176,37 @@ fn int_conversions() {
     assert_eq!(
         ints.body,
         json(r#"{"output_format":"png","left":12,"right":12,"up":1,"down":"bad","seed":10}"#)
+    );
+    let odd = transform_image_edit_request(
+        INPAINT,
+        None,
+        None,
+        &options(&[
+            ("left", text("-0")),
+            ("right", text("-")),
+            ("up", text("_5")),
+            ("down", text("5_")),
+            ("seed", json("-0.5")),
+        ]),
+    )
+    .expect("the odd int lexemes keep Python's int() outcome");
+    assert_eq!(
+        odd.body,
+        json(r#"{"output_format":"png","left":0,"right":"-","up":"_5","down":"5_","seed":0}"#)
+    );
+}
+
+fn python_int_edges() {
+    let big = transform_image_edit_request(
+        INPAINT,
+        None,
+        None,
+        &options(&[("left", json("123456789012345678"))]),
+    )
+    .expect("an integer lexeme keeps its exact digits");
+    assert_eq!(
+        big.body,
+        json(r#"{"output_format":"png","left":123456789012345678}"#)
     );
 }
 
@@ -354,11 +386,24 @@ fn finish_reasons() {
     .expect_err("the first finish reason raises");
     assert_eq!(first.status(), Some(400));
     assert_eq!(provider_message(&first), "Bedrock Stability error: ERROR");
+    let container = edit_reply(INPAINT, 200, r#"{"images":["x"],"finish_reasons":"E"}"#)
+        .expect_err("a string container answers its first character");
+    assert_eq!(container.status(), Some(400));
+    assert_eq!(provider_message(&container), "Bedrock Stability error: E");
+    let nested = edit_reply(INPAINT, 200, r#"{"images":["x"],"finish_reasons":[[1]]}"#)
+        .expect_err("a nonempty list reason is truthy");
+    assert_eq!(nested.status(), Some(400));
     for body in [
         r#"{"images":["x"],"finish_reasons":[null,"ERROR"]}"#,
         r#"{"images":["x"],"finish_reasons":["","ERROR"]}"#,
         r#"{"images":["x"],"finish_reasons":[]}"#,
         r#"{"images":["x"],"finish_reasons":null}"#,
+        r#"{"images":["x"],"finish_reasons":""}"#,
+        r#"{"images":["x"],"finish_reasons":[[]]}"#,
+        r#"{"images":["x"],"finish_reasons":[false]}"#,
+        r#"{"images":["x"],"finish_reasons":0}"#,
+        r#"{"images":["x"],"finish_reasons":false}"#,
+        r#"{"images":["x"],"finish_reasons":{}}"#,
     ] {
         let reply = edit_reply(INPAINT, 200, body).expect("a falsey first reason is ignored");
         assert_eq!(
@@ -399,6 +444,7 @@ fn record_failures() {
         "[]",
         r#""hello""#,
         r#"{"images":[5]}"#,
+        r#"{"images":[{"a":1}]}"#,
         r#"{"images":"x"}"#,
         r#"{"finish_reasons":{"a":1}}"#,
     ] {
