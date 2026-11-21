@@ -191,7 +191,11 @@ async fn org_failure_order(#[case] request: &str, #[case] first: &str) {
     let budget = r#"{"max_budget": 1, "tpm_limit": 1, "rpm_limit": 1}"#;
     let organization = org(r#"["gpt"]"#, budget);
     let rejection = rejected(check_new(&organization, request).await);
-    let kind = match rejection {
+    assert_eq!(direct_kind(&rejection), first);
+}
+
+const fn direct_kind(rejection: &Rejection) -> &'static str {
+    match rejection {
         Rejection::OrganizationBudget { .. } => "budget",
         Rejection::OrganizationModel { .. } => "models",
         Rejection::OrganizationTpm { .. } => "tpm",
@@ -201,8 +205,20 @@ async fn org_failure_order(#[case] request: &str, #[case] first: &str) {
         | Rejection::UserModel { .. }
         | Rejection::UserTpm { .. }
         | Rejection::UserRpm { .. } => "other",
-    };
-    assert_eq!(kind, first);
+    }
+}
+
+#[rstest]
+#[case::budget(r#"{"team_id": "team-a", "max_budget": 2}"#, "budget")]
+#[case::models(r#"{"team_id": "team-a", "models": ["llama"]}"#, "models")]
+#[case::tpm(r#"{"team_id": "team-a", "tpm_limit": 2}"#, "tpm")]
+#[case::rpm(r#"{"team_id": "team-a", "rpm_limit": 2}"#, "rpm")]
+#[tokio::test]
+async fn update_direct_limits(#[case] request: &str, #[case] kind: &str) {
+    let budget = r#"{"max_budget": 1, "tpm_limit": 1, "rpm_limit": 1}"#;
+    let organization = org(r#"["gpt"]"#, budget);
+    let rejection = rejected(check_update(&organization, request).await);
+    assert_eq!(direct_kind(&rejection), kind);
 }
 
 #[rstest]
