@@ -1,0 +1,15 @@
+kind: helper
+name: prometheus-exporter-settings-seed
+call:
+  b3875:
+    prometheus_metrics_config:
+      - group: model
+        metrics: [litellm_cache_hits_metric]
+        include_labels: [api_key_alias, model]
+    prometheus_exclude_metrics: [litellm_spend_metric]
+    prometheus_exclude_labels: [model]
+    prometheus_latency_buckets: [0.25, 1.5]
+    prometheus_emit_input_sequence_length_label: true
+    caller_identity: both
+env: {}
+compare: {ignore: []}
