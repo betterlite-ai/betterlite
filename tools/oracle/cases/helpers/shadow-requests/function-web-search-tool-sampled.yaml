@@ -1,0 +1,63 @@
+kind: helper
+name: shadow-function-web-search-tool-sampled
+call:
+  b4082:
+    operation: sample
+    call_type: completion
+    kwargs:
+      model: gpt-4o
+      messages:
+        - role: user
+          content: hi
+    model_parameters:
+      tools:
+        - type: function
+          name: litellm_web_search
+    response:
+      choices:
+        - message:
+            role: assistant
+            content: answer
+calls:
+  - b4082:
+      operation: sample
+      call_type: completion
+      kwargs:
+        model: gpt-4o
+        messages:
+          - role: user
+            content: hi
+      model_parameters:
+        tools:
+          - type: function
+            name: get_weather
+      response:
+        choices:
+          - message:
+              role: assistant
+              content: answer
+  - b4082:
+      operation: sample
+      call_type: completion
+      kwargs:
+        model: gpt-4o
+        messages:
+          - role: user
+            content: hi
+      model_parameters:
+        tools:
+          - type: web_search_preview
+      response:
+        choices:
+          - message:
+              role: assistant
+              content: answer
+  - b4082:
+      operation: hosted_web_search
+      request:
+        tools:
+          - type: function
+            name: litellm_web_search
+          - type: web_search
+env: {}
+compare: {ignore: []}

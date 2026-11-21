@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use axum::http::StatusCode;
+use betterlite_test_ports::refused_port::RefusedPort;
 use rstest::rstest;
 use serde_json::value::RawValue;
 use tokio::io::AsyncWriteExt as _;
@@ -119,9 +120,8 @@ async fn a_slow_scan_api_is_a_transient_timeout_error() {
 
 #[tokio::test]
 async fn a_refused_connection_is_a_transient_network_error() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
-    let base = format!("http://{}", listener.local_addr().expect("addr"));
-    drop(listener);
+    let refused = RefusedPort::bind().expect("a refused port");
+    let base = format!("http://{}", refused.address);
     let verdict = call_panw_api(&guardrail(settings(&base)), request(Some("call-1"), None)).await;
     assert_eq!(verdict.category.as_deref(), Some("network_error"));
     assert_eq!(verdict.failure, Some(Failure::Transient));

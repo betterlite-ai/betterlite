@@ -1,0 +1,33 @@
+task: B736
+deviations:
+  - what: >-
+      A truthy non-mapping default_internal_user_params, or a max_budget that is
+      not finite or does not fit the numeric column, fails startup with the
+      setting name instead of reaching a later Python mapping or database
+      failure.
+    why: >-
+      The config crate is typed and money is a checked Decimal conversion, so an
+      unusable value cannot be carried to the upsert. Falsey-to-empty defaults and
+      finite numeric budget strings keep the source behavior: boolean zero and one
+      and numeric strings convert, and invalid text names the field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L2679-L2697
+  - what: >-
+      A failed background SSO-ID write produces a redacted WARN operation
+      diagnostic that shutdown drains, instead of an unhandled detached-task
+      exception report.
+    why: >-
+      The server task-owner rule requires the update to run in an owned task, and
+      diagnostics must not carry credentials. The lookup's success and its write
+      ordering are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L2576-L2582
+  - what: >-
+      A default_internal_user_params key that names a user relation
+      (organization_memberships, object_permission, verified_subjects) fails the
+      lookup with the field name; Prisma's create accepts the same key as a
+      nested relation write.
+    why: >-
+      The user row is written by one insert and betterlite does not port Prisma's
+      nested writes, so the relation value cannot be stored. Naming the key beats
+      dropping it silently.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/schema.prisma#L328-L334
+kept_bugs: []

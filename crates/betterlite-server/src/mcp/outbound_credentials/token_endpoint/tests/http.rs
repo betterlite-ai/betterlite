@@ -1,5 +1,6 @@
 use std::str::from_utf8;
 
+use betterlite_test_ports::refused_port::RefusedPort;
 use tokio::time::timeout;
 
 use super::*;
@@ -106,11 +107,9 @@ async fn posts_the_form_urlencoded_body_to_the_endpoint() {
 
 #[tokio::test]
 async fn reports_a_connection_failure_as_unreachable() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
+    let refused = RefusedPort::bind().unwrap();
     let outcome = poster(TransportLimits::DEFAULT)
-        .post(&format!("http://{address}/token"), &form())
+        .post(&format!("http://{}/token", refused.address), &form())
         .await;
     let PostedForm::Unreachable { kind } = outcome else {
         panic!("the endpoint is closed");

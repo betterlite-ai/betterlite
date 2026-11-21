@@ -1,0 +1,12 @@
+kind: helper
+name: prometheus-exporter-caller-identity-user-email
+call:
+  b3875:
+    prometheus_metrics_config: []
+    prometheus_exclude_metrics: []
+    prometheus_exclude_labels: []
+    prometheus_latency_buckets: null
+    prometheus_emit_input_sequence_length_label: false
+    caller_identity: user_email
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,22 @@
+kind: helper
+name: azure-chat-call-gpt5-base-model-selection
+call:
+  azure_chat_call:
+    function: completion
+    cases:
+      - model: gpt5_series/gpt-5
+        base_model: gpt-4o
+        messages:
+          - {role: user, content: hi}
+        api_key: key
+      - model: gpt5_series/gpt-5
+        base_model: gpt-5
+        messages:
+          - {role: user, content: hi}
+        api_key: key
+      - model: gpt5_series/gpt-5
+        messages:
+          - {role: user, content: hi}
+        api_key: key
+env: {}
+compare: {ignore: []}

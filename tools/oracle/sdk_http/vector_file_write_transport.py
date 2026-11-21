@@ -1,9 +1,275 @@
-from typing import ClassVar
+import asyncio
+from collections.abc import Coroutine, Mapping
+from datetime import UTC, datetime
+from typing import Final, Literal, Protocol
 
-from not_built import Unbuilt
+import httpx
+from litellm.litellm_core_utils.litellm_logging import Logging
+from litellm.llms.base_llm.chat.transformation import BaseLLMException
+from litellm.llms.base_llm.vector_store_files.transformation import (
+    BaseVectorStoreFilesConfig,
+)
+from litellm.llms.custom_httpx.llm_http_handler import BaseLLMHTTPHandler
+from litellm.llms.openai.vector_store_files.transformation import (
+    OpenAIVectorStoreFilesConfig,
+)
+from litellm.types.router import GenericLiteLLMParams
+from litellm.types.vector_store_files import VectorStoreFileUpdateRequest
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
+
+Operation = Literal["update", "delete"]
+Mode = Literal["sync", "async"]
+
+JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
+# the handlers take dict[str, object] maps, so the JSON-facing maps bind to that shape
+OBJECTS: Final = TypeAdapter(dict[str, object] | None)
+PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
+
+# the file object's last_error holds Any, so the handlers answer the mapping this adapter validates
+Answer = Mapping[str, object]
+AsyncAnswer = Coroutine[object, object, Answer]
+Work = Answer | AsyncAnswer
+ExtraBody = dict[str, object] | None
+
+class UpdateHandler(Protocol):
+    def __call__(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L11366-L11443
+        self,
+        *,
+        vector_store_id: str,
+        file_id: str,
+        update_request: VectorStoreFileUpdateRequest,
+        # ast-grep-ignore: no-long-names
+        vector_store_files_provider_config: BaseVectorStoreFilesConfig,
+        custom_llm_provider: str,
+        litellm_params: GenericLiteLLMParams,
+        logging_obj: Logging,
+        extra_headers: dict[str, str] | None = None,
+        extra_body: ExtraBody = None,
+        timeout: float | httpx.Timeout | None = None,
+    ) -> Work: ...
 
 
-class FileWriteTransportRequest(Unbuilt):
-    task: ClassVar[str] = "B2482"
+class AsyncUpdateHandler(Protocol):
+    def __call__(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L11300-L11364
+        self,
+        *,
+        vector_store_id: str,
+        file_id: str,
+        update_request: VectorStoreFileUpdateRequest,
+        # ast-grep-ignore: no-long-names
+        vector_store_files_provider_config: BaseVectorStoreFilesConfig,
+        custom_llm_provider: str,
+        litellm_params: GenericLiteLLMParams,
+        logging_obj: Logging,
+        extra_headers: dict[str, str] | None = None,
+        extra_body: ExtraBody = None,
+        timeout: float | httpx.Timeout | None = None,
+    ) -> AsyncAnswer: ...
 
-    vector_file_write_transport: None
+
+class DeleteHandler(Protocol):
+    def __call__(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L11504-L11572
+        self,
+        *,
+        vector_store_id: str,
+        file_id: str,
+        # ast-grep-ignore: no-long-names
+        vector_store_files_provider_config: BaseVectorStoreFilesConfig,
+        custom_llm_provider: str,
+        litellm_params: GenericLiteLLMParams,
+        logging_obj: Logging,
+        extra_headers: dict[str, str] | None = None,
+        timeout: float | httpx.Timeout | None = None,
+    ) -> Work: ...
+
+
+class AsyncDeleteHandler(Protocol):
+    def __call__(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L11445-L11502
+        self,
+        *,
+        vector_store_id: str,
+        file_id: str,
+        # ast-grep-ignore: no-long-names
+        vector_store_files_provider_config: BaseVectorStoreFilesConfig,
+        custom_llm_provider: str,
+        litellm_params: GenericLiteLLMParams,
+        logging_obj: Logging,
+        extra_headers: dict[str, str] | None = None,
+        timeout: float | httpx.Timeout | None = None,
+    ) -> AsyncAnswer: ...
+
+
+class Handlers(Protocol):
+    @property
+    # ast-grep-ignore: no-long-names
+    def vector_store_file_update_handler(self) -> UpdateHandler: ...
+
+    @property
+    # ast-grep-ignore: no-long-names
+    def async_vector_store_file_update_handler(self) -> AsyncUpdateHandler: ...
+
+    @property
+    # ast-grep-ignore: no-long-names
+    def vector_store_file_delete_handler(self) -> DeleteHandler: ...
+
+    @property
+    # ast-grep-ignore: no-long-names
+    def async_vector_store_file_delete_handler(self) -> AsyncDeleteHandler: ...
+
+
+HANDLER: Handlers = BaseLLMHTTPHandler()
+
+
+class UpdateFields(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    attributes: dict[str, str | int | float | bool] | None = None
+
+
+class TransportCall(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    operation: Operation
+    mode: Mode
+    vector_store_id: str
+    file_id: str
+    update_request: UpdateFields = Field(default_factory=UpdateFields)
+    extra_headers: dict[str, str] | None = None
+    extra_body: dict[str, JsonValue] | None = None
+    timeout_seconds: int | None = None
+
+
+class Failure(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    status_code: int = Field(serialization_alias="status")
+    status_code_is_synthesized: bool = Field(serialization_alias="synthesized")
+    message: str
+    headers: dict[str, str]
+
+
+class Outcome(BaseModel):
+    result: JsonValue = None
+    failure: Failure | None = None
+
+
+class TransportValue(BaseModel):
+    value: Outcome
+
+
+class TransportEnvelope(BaseModel):
+    vector_file_write_transport: TransportValue
+
+
+def logging_fixture(operation: Operation) -> Logging:
+    call_type = f"vector_store_file_{operation}"
+    return Logging(
+        model="",
+        messages="",
+        stream=False,
+        call_type=call_type,
+        start_time=datetime(2026, 1, 1, tzinfo=UTC),
+        litellm_call_id="vector-file-write-transport",
+        function_id="vector-file-write-transport",
+    )
+
+
+def requested_update(fields: UpdateFields) -> VectorStoreFileUpdateRequest:
+    request: VectorStoreFileUpdateRequest = {}
+    if fields.attributes is not None:
+        request["attributes"] = fields.attributes
+    return request
+
+
+def execute(
+    call: TransportCall,
+    config: BaseVectorStoreFilesConfig,
+    timeout: float | None,
+    api_base: str,
+) -> JsonValue:
+    logging_obj = logging_fixture(call.operation)
+    litellm_params = GenericLiteLLMParams(api_base=api_base)
+    body = OBJECTS.validate_python(call.extra_body)
+    update = requested_update(call.update_request)
+    if call.operation == "update":
+        if call.mode == "sync":
+            return JSON.validate_python(
+                HANDLER.vector_store_file_update_handler(
+                    vector_store_id=call.vector_store_id,
+                    file_id=call.file_id,
+                    update_request=update,
+                    vector_store_files_provider_config=config,
+                    custom_llm_provider="openai",
+                    litellm_params=litellm_params,
+                    logging_obj=logging_obj,
+                    extra_headers=call.extra_headers,
+                    extra_body=body,
+                    timeout=timeout,
+                )
+            )
+        return JSON.validate_python(
+            asyncio.run(
+                HANDLER.async_vector_store_file_update_handler(
+                    vector_store_id=call.vector_store_id,
+                    file_id=call.file_id,
+                    update_request=update,
+                    vector_store_files_provider_config=config,
+                    custom_llm_provider="openai",
+                    litellm_params=litellm_params,
+                    logging_obj=logging_obj,
+                    extra_headers=call.extra_headers,
+                    extra_body=body,
+                    timeout=timeout,
+                )
+            )
+        )
+    if call.mode == "sync":
+        return JSON.validate_python(
+            HANDLER.vector_store_file_delete_handler(
+                vector_store_id=call.vector_store_id,
+                file_id=call.file_id,
+                vector_store_files_provider_config=config,
+                custom_llm_provider="openai",
+                litellm_params=litellm_params,
+                logging_obj=logging_obj,
+                extra_headers=call.extra_headers,
+                timeout=timeout,
+            )
+        )
+    return JSON.validate_python(
+        asyncio.run(
+            HANDLER.async_vector_store_file_delete_handler(
+                vector_store_id=call.vector_store_id,
+                file_id=call.file_id,
+                vector_store_files_provider_config=config,
+                custom_llm_provider="openai",
+                litellm_params=litellm_params,
+                logging_obj=logging_obj,
+                extra_headers=call.extra_headers,
+                timeout=timeout,
+            )
+        )
+    )
+
+
+def run_transport(call: TransportCall, api_base: str) -> Outcome:
+    config: BaseVectorStoreFilesConfig = OpenAIVectorStoreFilesConfig()
+    timeout = None if call.timeout_seconds is None else float(call.timeout_seconds)
+    try:
+        result = execute(call, config, timeout, api_base)
+    except PROVIDER_ERROR as error:
+        return Outcome(failure=Failure.model_validate(error))
+    return Outcome(result=result)
+
+
+class FileWriteTransportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    vector_file_write_transport: TransportCall
+
+    def serialize(self, api_base: str) -> str:
+        outcome = run_transport(self.vector_file_write_transport, api_base)
+        value = TransportValue(value=outcome)
+        return TransportEnvelope(vector_file_write_transport=value).model_dump_json(
+            by_alias=True
+        )

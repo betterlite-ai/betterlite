@@ -1,7 +1,7 @@
 id: B533
 milestone: M3 providers
 title: Azure chat execution and SDK error propagation
-status: todo
+status: done
 depends_on: [B531, B532, B171, B505, B685, B004, B684, B249, B673, B668, B2202]
 file: tasks/B533-azure-chat-call.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/azure/chat/o_series_handler.py"
 parent: B025
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2814

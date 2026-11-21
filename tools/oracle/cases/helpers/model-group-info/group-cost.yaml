@@ -1,0 +1,49 @@
+kind: helper
+name: group-cost
+call:
+  model_group_info:
+    {
+      "model_group": "g",
+      "model_list": [
+        {
+          "model_name": "g",
+          "litellm_params": {
+            "model": "openai/b846-alpha"
+          },
+          "model_info": {
+            "id": "a"
+          }
+        },
+        {
+          "model_name": "g",
+          "litellm_params": {
+            "model": "anthropic/b846-beta"
+          },
+          "model_info": {
+            "id": "b"
+          }
+        }
+      ],
+      "model_group_alias": {},
+      "deployment_info": {
+        "a": {
+          "mode": "chat",
+          "input_cost_per_token": 0.5,
+          "output_cost_per_token": 0.25,
+          "input_cost_per_pixel": 0.03
+        },
+        "b": {
+          "mode": "chat",
+          "input_cost_per_token": 0.1,
+          "output_cost_per_token": 0.9,
+          "input_cost_per_pixel": 0.5
+        }
+      },
+      "model_cost": {},
+      "parameters": {},
+      "lookup_error": false,
+      "provider_error": "none",
+      "missing_ids": []
+    }
+env: {}
+compare: {ignore: []}
