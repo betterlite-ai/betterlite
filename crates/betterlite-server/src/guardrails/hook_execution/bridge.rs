@@ -19,13 +19,12 @@ const METADATA_BUCKETS: [&str; 2] = ["metadata", "litellm_metadata"];
 pub fn metadata_buckets(
     data: &JsonMap,
 ) -> Result<BTreeMap<String, GuardrailValue>, serde_json::Error> {
-    let buckets: JsonMap = METADATA_BUCKETS
-        .iter()
-        .filter_map(|key| {
-            data.get(*key)
-                .map(|value| ((*key).to_owned(), value.clone()))
-        })
-        .collect();
+    let mut buckets = JsonMap::new();
+    for key in METADATA_BUCKETS {
+        if let Some(value) = data.get(key) {
+            buckets.insert(key.to_owned(), value.clone());
+        }
+    }
     // OpaqueParams reads a number as a number; the derived GuardrailValue reads an arbitrary_precision number as a map
     serde_json::from_value::<OpaqueParams>(JsonValue::Object(buckets)).map(|params| params.0)
 }
@@ -34,9 +33,11 @@ pub fn write_buckets(
     data: &mut JsonMap,
     buckets: &BTreeMap<String, GuardrailValue>,
 ) -> Result<(), serde_json::Error> {
-    for (key, value) in buckets {
-        data.insert(key.clone(), serde_json::to_value(value)?);
-    }
+    let written = buckets
+        .iter()
+        .map(|(key, value)| serde_json::to_value(value).map(|converted| (key.clone(), converted)))
+        .collect::<Result<JsonMap, _>>()?;
+    data.extend(written);
     Ok(())
 }
 
