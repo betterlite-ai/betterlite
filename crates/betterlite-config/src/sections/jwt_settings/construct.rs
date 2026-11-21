@@ -58,7 +58,7 @@ pub struct Context<'context> {
 pub fn construct(mut raw: RawJwtAuth, context: &Context<'_>) -> Result<Settings, JwtSettingsError> {
     for (field, value) in &mut raw {
         resolve(field, value, context.lookup)?;
-        unlisted(field, value);
+        null_list_records(field, value);
     }
     if let Some(alias) = raw.shift_remove("jwt_client_id_field") {
         raw.entry("virtual_key_claim_field".to_owned())
@@ -84,7 +84,7 @@ pub fn construct(mut raw: RawJwtAuth, context: &Context<'_>) -> Result<Settings,
 }
 
 // serde reads a list as a record's fields in order and pydantic rejects it, so it becomes a null
-fn unlisted(key: &str, value: &mut GuardrailValue) {
+fn null_list_records(key: &str, value: &mut GuardrailValue) {
     if let GuardrailValue::Array(items) = value
         && RECORDS.contains(&key)
     {
