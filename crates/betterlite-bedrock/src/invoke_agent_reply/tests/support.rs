@@ -123,7 +123,7 @@ pub(super) fn content(response: &ModelResponse) -> &str {
         .unwrap()
 }
 
-pub(super) fn usage(response: &ModelResponse) -> (i64, i64, i64) {
+pub(super) const fn usage(response: &ModelResponse) -> (i64, i64, i64) {
     let usage = response.usage.as_ref().unwrap();
     (
         usage.prompt_tokens,

@@ -150,7 +150,7 @@ fn usable_object<'value>(
     }
 }
 
-fn object<'value>(
+const fn object<'value>(
     value: &'value Json,
     field: &'static str,
 ) -> Result<&'value IndexMap<String, Json>, ExtractError> {

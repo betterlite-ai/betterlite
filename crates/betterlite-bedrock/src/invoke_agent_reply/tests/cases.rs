@@ -1,3 +1,10 @@
+#![cfg_attr(
+    test,
+    expect(
+        clippy::too_many_lines,
+        reason = "each case states one LiteLLM behavior as a scenario, so its function reads top to bottom as the fixture steps"
+    )
+)]
 #![cfg(test)]
 
 use betterlite_models::decisions::Json;
@@ -145,7 +152,7 @@ fn chunk_parse_and_decode() {
     ];
     assert_eq!(response_content(&direct).unwrap(), "hihi");
 
-    let (captured, guard) = capture();
+    let (skipped_captured, skipped_guard) = capture();
     let skipped = [
         chunk_event(json("{\"bytes\":\"!!!\"}")),
         chunk_event(json("{\"bytes\":\"/w==\"}")),
@@ -155,9 +162,12 @@ fn chunk_parse_and_decode() {
         chunk_event(json("{}")),
     ];
     assert_eq!(response_content(&skipped).unwrap(), "");
-    let logs = captured.text();
-    assert!(logs.contains("Failed to decode chunk content:"), "{logs}");
-    drop(guard);
+    let skipped_logs = skipped_captured.text();
+    assert!(
+        skipped_logs.contains("Failed to decode chunk content:"),
+        "{skipped_logs}"
+    );
+    drop(skipped_guard);
 
     let empty_body = chunk_event(json("{}"));
     assert_eq!(response_content(&[empty_body]).unwrap(), "");
