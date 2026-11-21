@@ -1,7 +1,9 @@
 #![cfg(test)]
 
 mod block;
+mod detail;
 mod fake;
+mod keepalive;
 mod mock_iterator;
 mod moderation;
 mod post_call;
