@@ -570,7 +570,10 @@ fn a_non_integer_max_tokens_per_doc_is_refused() {
     let error = run(&identity, &entry, &redactor, args, &mut logging)
         .expect_err("a string max_tokens_per_doc raises");
     assert_eq!(error.message, "max_tokens_per_doc must be an integer");
-    assert!(matches!(error.class, ErrorClass::ApiConnection(_)));
+    let ErrorClass::ApiConnection(context) = error.class else {
+        panic!("the wrong-typed parameter is an api connection error");
+    };
+    assert_eq!(context.provider.as_deref(), Some("cohere"));
     assert_eq!(entry.begins(), 0);
 }
 
