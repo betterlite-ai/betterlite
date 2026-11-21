@@ -44,7 +44,7 @@ pub struct SpendCounterReseed<Rows: SpendCounterRows> {
 
 impl<Rows: SpendCounterRows> SpendCounterReseed<Rows> {
     // B1735's reader owns both reads: the primary entity row and the end-user budget floor
-    pub(crate) fn reader(&self) -> SpendCounterReader<Rows>
+    pub fn reader(&self) -> SpendCounterReader<Rows>
     where
         Rows: DbSpendCounterRows,
     {
