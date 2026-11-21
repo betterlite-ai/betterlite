@@ -84,11 +84,12 @@ pub fn strip_client_pricing_overrides(data: &mut RequestData) {
         data.shift_remove(name);
     }
     for slot in PRICING_METADATA_SLOTS {
-        if let Some(Json::Object(metadata)) = data.get_mut(slot) {
-            for field in CLIENT_PRICING_METADATA_FIELDS {
-                if metadata.shift_remove(field).is_some() {
-                    stripped.push(format!("{slot}.{field}"));
-                }
+        let Some(Json::Object(metadata)) = data.get_mut(slot) else {
+            continue;
+        };
+        for field in CLIENT_PRICING_METADATA_FIELDS {
+            if metadata.shift_remove(field).is_some() {
+                stripped.push(format!("{slot}.{field}"));
             }
         }
     }
@@ -123,13 +124,14 @@ fn strip_opt_out(label: &str, metadata: &mut IndexMap<String, Json>, stripped: &
 }
 
 fn strip_false_like(metadata: &mut IndexMap<String, Json>) -> bool {
-    match metadata.get(TURN_OFF_MESSAGE_LOGGING_KEY) {
-        Some(value) if is_false_like(value) => {
-            metadata.shift_remove(TURN_OFF_MESSAGE_LOGGING_KEY);
-            true
-        }
-        Some(_value) | None => false,
+    let Some(value) = metadata.get(TURN_OFF_MESSAGE_LOGGING_KEY) else {
+        return false;
+    };
+    if !is_false_like(value) {
+        return false;
     }
+    metadata.shift_remove(TURN_OFF_MESSAGE_LOGGING_KEY);
+    true
 }
 
 // only an explicit false, or the spellings a client uses for it, opts out of message logging

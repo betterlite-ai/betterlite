@@ -29,7 +29,7 @@ pub fn stampable_key_hash(principal: &MetadataPrincipal) -> Option<String> {
     }
     let api_key = principal.api_key.as_ref()?.expose_secret();
     if api_key == LITELLM_PROXY_MASTER_KEY_ALIAS || is_sha256_hex(api_key) {
-        return Some(api_key.clone());
+        return Some(api_key.to_owned());
     }
     None
 }
@@ -90,8 +90,7 @@ pub fn anthropic_session_id_from_metadata(metadata: &Json) -> Option<String> {
             | None => None,
         },
         Some(Json::Text(user_id)) => session_id_after_marker(user_id),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
-        | None => None,
+        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_)) | None => None,
     }
 }
 

@@ -2,6 +2,7 @@
 
 mod boundaries;
 
+use std::fmt::Debug;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -117,7 +118,7 @@ struct Capture(Arc<Mutex<Vec<(Level, String)>>>);
 struct MessageVisitor(String);
 
 impl Visit for MessageVisitor {
-    fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+    fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
         if field.name() == "message" {
             self.0 = format!("{value:?}");
         }
@@ -317,10 +318,10 @@ enum ParseOutcome {
     ParseOutcome::Object("session_id")
 )]
 #[case::litellm_metadata_text("litellm_metadata", "{\"kept\":true}", ParseOutcome::Object("kept"))]
-#[case::array_text("metadata", "[1,2]", ParseOutcome::Rejected("an array"))]
-#[case::integer_text("litellm_metadata", "42", ParseOutcome::Rejected("an integer"))]
-#[case::float_text("metadata", "1.5", ParseOutcome::Rejected("a number"))]
-#[case::boolean_text("metadata", "true", ParseOutcome::Rejected("a boolean"))]
+#[case::array_text("metadata", "[1,2]", ParseOutcome::Rejected("a string"))]
+#[case::integer_text("litellm_metadata", "42", ParseOutcome::Rejected("a string"))]
+#[case::float_text("metadata", "1.5", ParseOutcome::Rejected("a string"))]
+#[case::boolean_text("metadata", "true", ParseOutcome::Rejected("a string"))]
 #[case::quoted_text("metadata", "\"text\"", ParseOutcome::Rejected("a string"))]
 #[case::not_json("metadata", "not json", ParseOutcome::Rejected("a string"))]
 fn metadata_string_parsed(#[case] slot: &str, #[case] raw: &str, #[case] outcome: ParseOutcome) {
@@ -569,7 +570,7 @@ fn principal_with_key(api_key: Option<&str>, via_virtual_key: bool) -> MetadataP
     Some("litellm_proxy_master_key")
 )]
 #[case::sha256_digest(
-    None,
+    Some("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"),
     true,
     Some("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
 )]

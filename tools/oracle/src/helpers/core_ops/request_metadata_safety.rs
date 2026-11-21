@@ -51,13 +51,13 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         let mut results = Vec::with_capacity(input.calls.len());
         for call in &input.calls {
-            results.push(sanitize_value(call)?);
+            results.push(sanitize_value(call));
         }
         Ok(Value::Array(results))
     }
 }
 
-fn sanitize_value(call: &SanitizeCall) -> HelperResult {
+fn sanitize_value(call: &SanitizeCall) -> Value {
     let input = RequestMetadataSafetyInput {
         data: call.data.clone(),
         headers: call.headers.iter().cloned().collect(),
@@ -75,12 +75,12 @@ fn sanitize_value(call: &SanitizeCall) -> HelperResult {
         turn_off_message_logging: call.settings.turn_off_message_logging,
     };
     match sanitize_request_metadata(&input, &settings) {
-        Ok(result) => Ok(json!({
+        Ok(result) => json!({
             "data": result.data,
             "headers": header_pairs(&result.headers),
             "metadata_variable_name": result.metadata_variable_name.as_str(),
-        })),
-        Err(error) => Ok(json!({ "error": facts_json(error.facts()) })),
+        }),
+        Err(error) => json!({ "error": facts_json(error.facts()) }),
     }
 }
 

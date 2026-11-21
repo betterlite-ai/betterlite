@@ -33,10 +33,8 @@ use crate::api::request_metadata_safety::metadata::{
     normalized_metadata_object,
     normalized_metadata_slot,
 };
-use crate::api::request_metadata_safety::session::{
-    // ast-grep-ignore: no-long-names
-    apply_missing_session_id_policy,
-};
+// ast-grep-ignore: no-long-names
+use crate::api::request_metadata_safety::session::apply_missing_session_id_policy;
 use crate::api::request_metadata_safety::strip::{
     // ast-grep-ignore: no-long-names
     strip_client_callback_credentials,
