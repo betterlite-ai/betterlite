@@ -13,10 +13,7 @@ pub async fn pre_call_hook<R>(
 where
     R: HookRuntime,
 {
-    if runtime.should_run(data, GuardrailEventHooks::PreCall) {
-        return scan_user_messages(runtime, data, call_type, GuardrailEventHooks::PreCall).await;
-    }
-    Ok(())
+    scan_for_event(runtime, data, call_type, GuardrailEventHooks::PreCall).await
 }
 
 // LiteLLM's async_moderation_hook: the LLM call is already in flight, so a block propagates to the endpoint handler.
@@ -34,6 +31,16 @@ where
     } else {
         GuardrailEventHooks::DuringCall
     };
+    scan_for_event(runtime, data, call_type, event).await
+}
+
+// Both input hooks gate on their event and then scan the user messages the same way.
+async fn scan_for_event<R: HookRuntime>(
+    runtime: &R,
+    data: &mut RequestData,
+    call_type: &str,
+    event: GuardrailEventHooks,
+) -> Result<(), HookFailure> {
     if !runtime.should_run(data, event) {
         return Ok(());
     }
