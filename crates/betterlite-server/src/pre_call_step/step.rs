@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use betterlite_auth::auth_route_patterns::canonical::{RequestRouteSource, get_request_route};
+use betterlite_config::sections::settings::JsonValue;
 use betterlite_core::api::request_destination::parameters::tags_from_request_body;
 use betterlite_core::api::request_metadata_safety::metadata;
 use betterlite_error::proxy_error_types::ProxyErrorTypes;
@@ -22,7 +23,9 @@ use super::standalone::{
     AllowAllBudgets, AllowAllStores, NeverSupports, NoCompression, NoLoggers, NoRetrieval,
     NoRouterSettings, PassthroughHooks, PassthroughMerge, PassthroughPreparer,
 };
-use super::{PreCallError, PreCallInput, PreCallOutput, PreCallSettings, PreCallStep};
+use super::{
+    PreCallError, PreCallInput, PreCallOutput, PreCallSettings, PreCallStep, held_error, internal,
+};
 use crate::auth::route_match::decoded_route_path;
 use crate::pre_call::failure::{PreCallFailure, ProxyFailure};
 use crate::pre_call::key::PreCallKey;
@@ -91,7 +94,7 @@ impl<K: PreCallKey> PreCallStep<K> {
         final_data = hook(self, final_data, input).await?;
         check_added_tags(self, &final_data, input, tags_before).await?;
         attach(self, &mut final_data, input).await;
-        finish(&mut final_data, &mut logging)?;
+        finish(self, &mut final_data, &mut logging)?;
         Ok(PreCallOutput {
             data: final_data,
             logging,
@@ -113,7 +116,8 @@ impl<K: PreCallKey> PreCallStep<K> {
         let route = request_route(input.request);
         // ast-grep-ignore: no-long-names
         let bucket = metadata::metadata_variable_name_for_route(&route);
-        write_queue_time(&mut data, bucket.as_str(), started_seconds(started));
+        let queue_start = held_error(data.clone(), started_seconds(started))?;
+        write_queue_time(&mut data, bucket.as_str(), queue_start);
         rewrite_model(&self.settings, &mut data, input)?;
         router_phase(self, &mut data, input).await?;
         let call_id = identify(self, &mut data, input);
@@ -126,15 +130,17 @@ impl<K: PreCallKey> PreCallStep<K> {
 
 fn reject_model(data: &JsonMap) -> Option<PreCallFailure> {
     let requested = data.get("model")?;
-    if requested.is_string() {
-        return None;
+    match requested {
+        JsonValue::Null | JsonValue::String(_) => None,
+        JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Array(_) | JsonValue::Object(_) => {
+            Some(PreCallFailure::Proxy(ProxyFailure {
+                message: String::from("'model' must be a string."),
+                error_type: ProxyErrorTypes::BadRequestError.to_string(),
+                param: Some(String::from("model")),
+                code: 400,
+            }))
+        }
     }
-    Some(PreCallFailure::Proxy(ProxyFailure {
-        message: String::from("'model' must be a string."),
-        error_type: ProxyErrorTypes::BadRequestError.to_string(),
-        param: Some(String::from("model")),
-        code: 400,
-    }))
 }
 
 fn record_tags(data: &JsonMap, tags_before: &mut Option<BTreeSet<String>>) {
@@ -157,8 +163,11 @@ pub(super) fn request_route(request: &Parts) -> String {
     })
 }
 
-fn started_seconds(started: SystemTime) -> f64 {
-    started
-        .duration_since(UNIX_EPOCH)
-        .map_or(0.0_f64, |elapsed| elapsed.as_secs_f64())
+fn started_seconds(started: SystemTime) -> Result<f64, PreCallFailure> {
+    let elapsed = started.duration_since(UNIX_EPOCH).map_err(|_error| {
+        internal(String::from(
+            "the system clock reads a time before the Unix epoch",
+        ))
+    })?;
+    Ok(elapsed.as_secs_f64())
 }

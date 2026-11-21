@@ -15,3 +15,6 @@ deviations:
   - what: The logging state's messages come from the data's messages field only, not from function_setup's per-call-type extraction.
     why: That extraction reads a route-specific argument or field (input, prompt, contents, a file checksum) that the generic step does not receive; finish hands update_messages the data's messages array.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1200-L1296
+  - what: A system clock before the Unix epoch fails the request with an internal 500 instead of writing the negative queue_time_seconds LiteLLM's timestamp arithmetic would give.
+    why: The step reads its start seconds from duration_since(UNIX_EPOCH) with no numeric fallback, and no working setup serves TLS requests from a clock before 1970.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L2056-L2071

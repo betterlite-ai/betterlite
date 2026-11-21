@@ -29,6 +29,7 @@ use crate::pre_call::ports::{
 use crate::pre_call::rewrites::{CliOverrides, RequestModel};
 use crate::pre_call::route_type::RouteType;
 
+mod redaction;
 mod support;
 
 use support::{Fake, NoLoggers, TestLoggers, TestTracer, rate_limited};
@@ -396,6 +397,22 @@ async fn step_rejects_a_non_string_model_before_any_port() {
         })
     );
     assert_eq!(error.data, expected);
+}
+
+#[tokio::test]
+async fn step_resolves_a_null_model_to_the_default() {
+    let fake = Arc::new(Fake::new(behavior()));
+    let tracer: Arc<dyn Tracer + Send + Sync> = Arc::new(NullTracer);
+    let loggers: Arc<dyn LoggerResolver> = Arc::new(NoLoggers);
+    let mut settings = PreCallSettings::default();
+    settings.model_defaults.completion_model = Some(String::from("default-model"));
+    let step = step_full(&fake, tracer, loggers, settings);
+    let request = parts("/chat/completions", None);
+    let key = TestKey::default();
+    let input = input_for(r#"{"model": null}"#, &request, &key, RouteType::Completion);
+    let output = step.run(input.data.clone(), &input, None).await.unwrap();
+    assert_eq!(text_at(&output.data, "model"), "default-model");
+    assert!(fake.events().contains(&Call::Prepare));
 }
 
 #[tokio::test]
@@ -921,6 +938,24 @@ async fn fallback_returns_another_failure_with_the_rate_limited_data() {
     assert_eq!(error.failure, boom());
     assert_eq!(text_at(&error.data, "model"), "gpt");
     assert_eq!(hook_count(&events), 2);
+}
+
+#[tokio::test]
+async fn fallback_returns_a_non_rate_limit_failure_unchanged() {
+    let mut script = fallback_script(&["a"], &[]);
+    script.fail_models = vec![String::from("gpt")];
+    let (events, result) = fallback_run(script, r#"{"model": "gpt"}"#, TestKey::default()).await;
+    let Err(error) = result else {
+        panic!("a non-rate-limit failure must surface")
+    };
+    assert_eq!(error.failure, boom());
+    assert_eq!(text_at(&error.data, "model"), "gpt");
+    assert_eq!(hook_count(&events), 1);
+    assert!(
+        !events
+            .iter()
+            .any(|call| matches!(call, Call::FallbackModels(_, _)))
+    );
 }
 
 #[tokio::test]

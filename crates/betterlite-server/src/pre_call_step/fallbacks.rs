@@ -27,7 +27,12 @@ impl<K: PreCallKey> PreCall<K> for PreCallStep<K> {
             .await
         {
             Ok(output) => Ok(output),
-            Err(rate_limited) => {
+            Err(
+                rate_limited @ PreCallError {
+                    failure: PreCallFailure::RateLimited(_),
+                    ..
+                },
+            ) => {
                 let Some(original) =
                     can_fall_back(&rate_limited.data, pristine.as_ref(), configured.as_deref())
                 else {
@@ -51,6 +56,7 @@ impl<K: PreCallKey> PreCall<K> for PreCallStep<K> {
                 };
                 attempt_fallbacks(self, &input, plan, &mut tags_before).await
             }
+            Err(other) => Err(other),
         }
     }
 }
