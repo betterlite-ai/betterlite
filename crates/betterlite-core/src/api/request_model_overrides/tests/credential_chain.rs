@@ -1,14 +1,16 @@
+use std::sync::Arc;
+
 use betterlite_auth::auth_model_lists::credential::CredentialEntry;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use rstest::rstest;
 
 use super::support::{
-    TestCatalog, alias_map, build_service, catalog, credential, credential_settings, deployment,
+    TestCatalog, alias_map, build_service, credential, credential_settings, deployment,
     enforced_settings, input, model_config, model_config_field, request, text_field,
 };
 use crate::api::request_destination::RequestData;
-use crate::api::request_model_overrides::catalog::DeploymentParams;
+use crate::api::request_model_overrides::catalog::{DeploymentCatalogView, DeploymentParams};
 use crate::api::request_model_overrides::diagnostics::OverrideDiagnostic;
 use crate::api::request_model_overrides::error::RequestModelOverridesError;
 use crate::api::request_model_overrides::{
@@ -99,8 +101,9 @@ fn provider_prefix_selects_the_matching_entry() {
 
 #[test]
 fn deployment_provider_selects_the_matching_entry() {
-    let catalog_view =
-        catalog(TestCatalog::default().with_group("gpt-4", deployment("azure", "openai/gpt-4")));
+    let catalog_view: Option<Arc<dyn DeploymentCatalogView>> = Some(Arc::new(
+        TestCatalog::default().with_group("gpt-4", deployment("azure", "openai/gpt-4")),
+    ));
     let principal = principal_with(&[
         ("gpt-4", "openai", Some("openai-cred")),
         ("gpt-4", "azure", Some("azure-cred")),
@@ -116,7 +119,8 @@ fn deployment_model_prefix_supplies_the_provider() {
         custom_llm_provider: None,
         model: Some("azure/gpt-4".to_owned()),
     };
-    let catalog_view = catalog(TestCatalog::default().with_group("gpt-4", params));
+    let catalog_view: Option<Arc<dyn DeploymentCatalogView>> =
+        Some(Arc::new(TestCatalog::default().with_group("gpt-4", params)));
     let principal = principal_with(&[
         ("gpt-4", "openai", Some("openai-cred")),
         ("gpt-4", "azure", Some("azure-cred")),
@@ -132,7 +136,8 @@ fn deployment_without_provider_info_leaves_the_first_entry() {
         custom_llm_provider: None,
         model: Some("gpt-4".to_owned()),
     };
-    let catalog_view = catalog(TestCatalog::default().with_group("gpt-4", params));
+    let catalog_view: Option<Arc<dyn DeploymentCatalogView>> =
+        Some(Arc::new(TestCatalog::default().with_group("gpt-4", params)));
     let principal = principal_with(&[
         ("gpt-4", "openai", Some("openai-cred")),
         ("gpt-4", "azure", Some("azure-cred")),
@@ -144,8 +149,9 @@ fn deployment_without_provider_info_leaves_the_first_entry() {
 
 #[test]
 fn deployment_provider_reads_the_pre_alias_group() {
-    let catalog_view =
-        catalog(TestCatalog::default().with_group("public", deployment("azure", "openai/gpt-4")));
+    let catalog_view: Option<Arc<dyn DeploymentCatalogView>> = Some(Arc::new(
+        TestCatalog::default().with_group("public", deployment("azure", "openai/gpt-4")),
+    ));
     let principal = OverridesPrincipal {
         team_id: None,
         team_model_aliases: alias_map(&[("public", "resolved")]),

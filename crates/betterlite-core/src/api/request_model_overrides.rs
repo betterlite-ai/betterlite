@@ -63,9 +63,8 @@ pub struct RequestModelOverridesResult {
 
 // the data map holds the credential values this slice copied onto it, so it never reaches a debug line
 impl fmt::Debug for RequestModelOverridesResult {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("RequestModelOverridesResult")
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RequestModelOverridesResult")
             .field("data", &"<redacted>")
             .field("enforced_params", &self.enforced_params)
             .field("diagnostics", &self.diagnostics)

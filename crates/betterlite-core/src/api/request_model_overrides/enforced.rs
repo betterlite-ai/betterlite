@@ -73,13 +73,13 @@ pub(crate) fn check_enforced_params(
     enforced: Option<&[String]>,
     premium_user: bool,
 ) -> Result<(), RequestModelOverridesError> {
-    let Some(enforced) = enforced else {
+    let Some(listed) = enforced else {
         return Ok(());
     };
-    if !enforced.is_empty() && !premium_user {
+    if !listed.is_empty() && !premium_user {
         return Err(RequestModelOverridesError::NotPremiumUser);
     }
-    for param in enforced {
+    for param in listed {
         check_enforced_param(data, param)?;
     }
     Ok(())

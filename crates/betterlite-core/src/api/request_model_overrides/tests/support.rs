@@ -56,10 +56,6 @@ pub(super) fn deployment(provider: &str, model: &str) -> DeploymentParams {
     }
 }
 
-pub(super) fn catalog(catalog: TestCatalog) -> Option<Arc<dyn DeploymentCatalogView>> {
-    Some(Arc::new(catalog))
-}
-
 pub(super) fn credential_settings() -> ModelOverridesSettings {
     ModelOverridesSettings {
         credential_overrides: true,
@@ -137,10 +133,10 @@ pub(super) fn model_config(entries: &[(&str, &str, Option<&str>)]) -> JsonObject
     let mut providers_by_model: IndexMap<String, JsonObject> = IndexMap::new();
     for (model, provider, name) in entries {
         let mut fields = JsonObject::new();
-        if let Some(name) = name {
+        if let Some(credential_name) = name {
             fields.insert(
                 "litellm_credentials".to_owned(),
-                Json::Text((*name).to_owned()),
+                Json::Text((*credential_name).to_owned()),
             );
         }
         providers_by_model

@@ -30,19 +30,9 @@ impl RequestModelOverridesError {
     #[must_use]
     pub fn facts(&self) -> ErrorFacts {
         match self {
-            Self::InvalidField { field, .. } => ErrorFacts {
-                status: 400,
-                error_type: "invalid_request_error",
-                param: Some(field.clone()),
-                code: "400",
-            },
-            Self::MissingEnforcedParam { param } => ErrorFacts {
-                status: 400,
-                error_type: "invalid_request_error",
-                param: Some(param.clone()),
-                code: "400",
-            },
-            Self::EnforcedParamParentNotObject { field, .. } => ErrorFacts {
+            Self::InvalidField { field, .. }
+            | Self::MissingEnforcedParam { param: field }
+            | Self::EnforcedParamParentNotObject { field, .. } => ErrorFacts {
                 status: 400,
                 error_type: "invalid_request_error",
                 param: Some(field.clone()),

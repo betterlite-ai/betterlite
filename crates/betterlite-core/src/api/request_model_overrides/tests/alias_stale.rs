@@ -1,10 +1,13 @@
+use std::sync::Arc;
+
 use betterlite_config::sections::request_model_overrides::Settings as ModelOverridesSettings;
 use rstest::rstest;
 
 use super::support::{
-    TestCatalog, build_service, bypass_settings, catalog, deployment, fill, input, team_principal,
+    TestCatalog, build_service, bypass_settings, deployment, fill, input, team_principal,
     text_field,
 };
+use crate::api::request_model_overrides::catalog::DeploymentCatalogView;
 use crate::api::request_model_overrides::diagnostics::OverrideDiagnostic;
 use crate::api::request_model_overrides::warnings::{MAX_WARNING_KEYS, WarnOnce};
 
@@ -23,7 +26,7 @@ fn stale_alias_to_a_deleted_deployment_is_not_applied() {
     let principal = team_principal(&[("gpt-4o", STALE_TARGET)]);
     let service = build_service(
         bypass_settings(),
-        catalog(TestCatalog::default()),
+        Some(Arc::new(TestCatalog::default())),
         Vec::new(),
     );
     let result = service.apply(&input(principal, "gpt-4o")).unwrap();
@@ -35,7 +38,7 @@ fn stale_alias_to_a_deleted_deployment_is_not_applied() {
 fn stale_alias_warns_once_per_sighting() {
     let service = build_service(
         bypass_settings(),
-        catalog(TestCatalog::default()),
+        Some(Arc::new(TestCatalog::default())),
         Vec::new(),
     );
     let first = service.apply(&input(
@@ -66,9 +69,9 @@ fn stale_alias_without_a_catalog_is_applied() {
 
 #[test]
 fn stale_alias_with_a_live_deployment_and_no_siblings_is_applied() {
-    let catalog_view = catalog(
+    let catalog_view: Option<Arc<dyn DeploymentCatalogView>> = Some(Arc::new(
         TestCatalog::default().with_group(STALE_TARGET, deployment("openai", "openai/gpt-4o")),
-    );
+    ));
     let principal = team_principal(&[("gpt-4o", STALE_TARGET)]);
     let service = build_service(bypass_settings(), catalog_view, Vec::new());
     let result = service.apply(&input(principal, "gpt-4o")).unwrap();
@@ -78,11 +81,11 @@ fn stale_alias_with_a_live_deployment_and_no_siblings_is_applied() {
 
 #[test]
 fn stale_alias_over_sibling_deployments_is_applied_with_a_warning() {
-    let catalog_view = catalog(
+    let catalog_view: Option<Arc<dyn DeploymentCatalogView>> = Some(Arc::new(
         TestCatalog::default()
             .with_group(STALE_TARGET, deployment("openai", "openai/gpt-4o"))
             .with_team_group("team-1", "gpt-4o"),
-    );
+    ));
     let principal = team_principal(&[("gpt-4o", STALE_TARGET)]);
     let service = build_service(ModelOverridesSettings::default(), catalog_view, Vec::new());
     let result = service.apply(&input(principal, "gpt-4o")).unwrap();
@@ -98,11 +101,11 @@ fn stale_alias_over_sibling_deployments_is_applied_with_a_warning() {
 
 #[test]
 fn bypass_keeps_the_requested_model_without_a_warning() {
-    let catalog_view = catalog(
+    let catalog_view: Option<Arc<dyn DeploymentCatalogView>> = Some(Arc::new(
         TestCatalog::default()
             .with_group(STALE_TARGET, deployment("openai", "openai/gpt-4o"))
             .with_team_group("team-1", "gpt-4o"),
-    );
+    ));
     let principal = team_principal(&[("gpt-4o", STALE_TARGET)]);
     let service = build_service(bypass_settings(), catalog_view, Vec::new());
     let result = service.apply(&input(principal, "gpt-4o")).unwrap();
@@ -118,7 +121,7 @@ fn alias_outside_the_team_scope_is_applied(#[case] team_id: Option<&str>) {
     principal.team_id = team_id.map(str::to_owned);
     let service = build_service(
         bypass_settings(),
-        catalog(TestCatalog::default()),
+        Some(Arc::new(TestCatalog::default())),
         Vec::new(),
     );
     let result = service.apply(&input(principal, "gpt-4o")).unwrap();

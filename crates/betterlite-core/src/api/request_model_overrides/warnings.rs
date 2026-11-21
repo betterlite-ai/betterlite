@@ -22,6 +22,7 @@ impl WarnOnce {
         while seen.len() > MAX_WARNING_KEYS {
             seen.shift_remove_index(0);
         }
+        drop(seen);
         true
     }
 }

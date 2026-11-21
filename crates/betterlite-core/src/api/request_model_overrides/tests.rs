@@ -265,11 +265,11 @@ fn fill_metadata(data: &mut RequestData, metadata: BodyMetadata) {
 }
 
 fn assert_enforced_outcome(
-    result: Result<RequestModelOverridesResult, RequestModelOverridesError>,
+    outcome: Result<RequestModelOverridesResult, RequestModelOverridesError>,
     expected: Expected,
     enforced: &[&str],
 ) {
-    match (result, expected) {
+    match (outcome, expected) {
         (Ok(result), Expected::Passed) => assert_eq!(
             result.enforced_params,
             Some(
