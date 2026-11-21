@@ -51,10 +51,10 @@ pub struct Input {
     stall_escalation_enabled: Option<bool>,
     #[serde(default)]
     stall_escalation_window: Option<Json>,
-    #[serde(default)]
-    stall_escalation_repeat_threshold: Option<Json>,
-    #[serde(default)]
-    route_housekeeping_to_cheapest_tier: Option<bool>,
+    #[serde(default, rename = "stall_escalation_repeat_threshold")]
+    stall_repeat_threshold: Option<Json>,
+    #[serde(default, rename = "route_housekeeping_to_cheapest_tier")]
+    housekeeping_cheapest: Option<bool>,
     #[serde(default)]
     escalation_keywords: Option<Vec<String>>,
     #[serde(default)]

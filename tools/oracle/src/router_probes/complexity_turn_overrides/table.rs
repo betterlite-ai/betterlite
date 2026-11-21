@@ -55,6 +55,20 @@ impl TableEmbedder {
                 inputs: inputs.to_vec(),
             });
     }
+
+    fn collect(
+        &self,
+        stage: &'static str,
+        model: &str,
+        texts: Vec<String>,
+        failures: &AtomicU32,
+    ) -> Result<Vec<Vec<f64>>, EmbedError> {
+        self.record(stage, model, &texts);
+        if take_failure(failures) {
+            return Err(EmbedError::Injected { stage });
+        }
+        answer(&self.vectors, texts)
+    }
 }
 
 fn answer(
@@ -80,13 +94,7 @@ impl RouteEmbedder for TableEmbedder {
         model: &str,
         texts: Vec<String>,
     ) -> impl Future<Output = Result<Vec<Vec<f64>>, Self::Error>> + Send {
-        async move {
-            self.record("documents", model, &texts);
-            if take_failure(&self.document_failures) {
-                return Err(EmbedError::Injected { stage: "documents" });
-            }
-            answer(&self.vectors, texts)
-        }
+        std::future::ready(self.collect("documents", model, texts, &self.document_failures))
     }
 
     fn embed_query(
@@ -96,13 +104,7 @@ impl RouteEmbedder for TableEmbedder {
         _raw_text: &str,
         _caller: &CallerContext,
     ) -> impl Future<Output = Result<Vec<Vec<f64>>, Self::Error>> + Send {
-        async move {
-            self.record("query", model, std::slice::from_ref(&text));
-            if take_failure(&self.query_failures) {
-                return Err(EmbedError::Injected { stage: "query" });
-            }
-            answer(&self.vectors, vec![text])
-        }
+        std::future::ready(self.collect("query", model, vec![text], &self.query_failures))
     }
 }
 

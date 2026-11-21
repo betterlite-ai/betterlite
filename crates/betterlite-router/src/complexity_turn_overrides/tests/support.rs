@@ -11,6 +11,7 @@ use indexmap::IndexMap;
 use crate::complexity_scoring::tier::{ComplexityTier, Tier};
 use crate::complexity_turn_overrides::settings::Settings;
 use crate::semantic_router::service::{CallerContext, RouteEmbedder};
+use crate::tier_definitions::checks::ClassifierKind;
 use crate::tier_definitions::model::{TierDefinition, TierModelEntry, TierPool, TierSet};
 
 pub(crate) const BUILT_IN: [&str; 4] = ["SIMPLE", "MEDIUM", "COMPLEX", "REASONING"];
@@ -32,16 +33,18 @@ pub(crate) fn catalog(pools: &[(&str, &[&str])]) -> TierSet {
 // a custom tier set: the definitions carry the ascending severity order the ladder no longer provides
 pub(crate) fn custom_catalog(names: &[&str], pools: &[(&str, &[&str])]) -> TierSet {
     let mut set = catalog(pools);
-    set.definitions = Some(
-        names
-            .iter()
-            .map(|name| TierDefinition {
-                name: (*name).to_owned(),
-                description: None,
-            })
-            .collect(),
-    );
+    set.definitions = Some(definitions(names));
     set
+}
+
+fn definitions(names: &[&str]) -> Vec<TierDefinition> {
+    names
+        .iter()
+        .map(|name| TierDefinition {
+            name: (*name).to_owned(),
+            description: None,
+        })
+        .collect()
 }
 
 fn pool(models: &[&str]) -> TierPool {
@@ -83,21 +86,38 @@ pub(crate) fn rules(spec: &[(&[&str], &str)]) -> Vec<KeywordTierRule> {
         .collect()
 }
 
-pub(crate) fn text_rule_settings(keywords: &[&str], tier: &str) -> Settings {
+pub(crate) fn base_settings() -> Settings {
     Settings {
-        keyword_tier_rules: vec![rule(keywords, tier)],
-        ..Settings::default()
+        keyword_tier_rules: Vec::new(),
+        keyword_matching: KeywordMatching::Lexical,
+        embedding_model: None,
+        match_threshold: 0.5,
+        stall_escalation_enabled: false,
+        stall_escalation_window: 6,
+        stall_repeat_threshold: 3,
+        housekeeping_cheapest: true,
+        escalation_keywords: None,
+        plan_mode_min_tier: None,
+        plan_mode_patterns: Vec::new(),
+        housekeeping_patterns: Vec::new(),
+        reminder_markers: None,
+        classifier_type: ClassifierKind::Heuristic,
     }
 }
 
+pub(crate) fn text_rule_settings(keywords: &[&str], tier: &str) -> Settings {
+    let mut settings = base_settings();
+    settings.keyword_tier_rules = vec![rule(keywords, tier)];
+    settings
+}
+
 pub(crate) fn semantic_settings(spec: &[(&[&str], &str)], threshold: f64) -> Settings {
-    Settings {
-        keyword_tier_rules: rules(spec),
-        keyword_matching: KeywordMatching::Semantic,
-        embedding_model: Some("fake-embed".to_owned()),
-        match_threshold: threshold,
-        ..Settings::default()
-    }
+    let mut settings = base_settings();
+    settings.keyword_tier_rules = rules(spec);
+    settings.keyword_matching = KeywordMatching::Semantic;
+    settings.embedding_model = Some("fake-embed".to_owned());
+    settings.match_threshold = threshold;
+    settings
 }
 
 pub(crate) fn chat(role: Role, value: &str) -> ChatMessage {
@@ -112,14 +132,9 @@ pub(crate) fn chat(role: Role, value: &str) -> ChatMessage {
 }
 
 pub(crate) fn parts(role: Role, content: Vec<ContentPart>) -> ChatMessage {
-    ChatMessage {
-        role,
-        content: Some(MessageContent::Parts(content)),
-        name: None,
-        tool_calls: None,
-        tool_call_id: None,
-        passthrough: IndexMap::new(),
-    }
+    let mut message = chat(role, "");
+    message.content = Some(MessageContent::Parts(content));
+    message
 }
 
 pub(crate) fn text_part(value: Json) -> ContentPart {
@@ -221,6 +236,37 @@ impl FakeEmbedder {
     pub(crate) fn queries(&self) -> Vec<QueryCall> {
         self.queries.lock().unwrap().clone()
     }
+
+    fn document_answer(&self, model: &str, texts: Vec<String>) -> Result<Vec<Vec<f64>>, FakeError> {
+        self.documents.lock().unwrap().push(DocumentCall {
+            model: model.to_owned(),
+            texts: texts.clone(),
+        });
+        if take_failure(&self.document_failures) {
+            return Err(FakeError::Injected);
+        }
+        answer(&self.vectors, texts)
+    }
+
+    async fn query_answer(
+        &self,
+        model: &str,
+        text: String,
+        caller: &CallerContext,
+    ) -> Result<Vec<Vec<f64>>, FakeError> {
+        self.queries.lock().unwrap().push(QueryCall {
+            model: model.to_owned(),
+            text: text.clone(),
+            caller: caller.clone(),
+        });
+        if self.stall_query {
+            return pending().await;
+        }
+        if self.query_failure {
+            return Err(FakeError::Injected);
+        }
+        answer(&self.vectors, vec![text])
+    }
 }
 
 impl RouteEmbedder for FakeEmbedder {
@@ -231,16 +277,7 @@ impl RouteEmbedder for FakeEmbedder {
         model: &str,
         texts: Vec<String>,
     ) -> impl Future<Output = Result<Vec<Vec<f64>>, Self::Error>> + Send {
-        async move {
-            self.documents.lock().unwrap().push(DocumentCall {
-                model: model.to_owned(),
-                texts: texts.clone(),
-            });
-            if take_failure(&self.document_failures) {
-                return Err(FakeError::Injected);
-            }
-            answer(&self.vectors, texts)
-        }
+        std::future::ready(self.document_answer(model, texts))
     }
 
     fn embed_query(
@@ -250,20 +287,7 @@ impl RouteEmbedder for FakeEmbedder {
         _raw_text: &str,
         caller: &CallerContext,
     ) -> impl Future<Output = Result<Vec<Vec<f64>>, Self::Error>> + Send {
-        async move {
-            self.queries.lock().unwrap().push(QueryCall {
-                model: model.to_owned(),
-                text: text.clone(),
-                caller: caller.clone(),
-            });
-            if self.stall_query {
-                return pending().await;
-            }
-            if self.query_failure {
-                return Err(FakeError::Injected);
-            }
-            answer(&self.vectors, vec![text])
-        }
+        self.query_answer(model, text, caller)
     }
 }
 

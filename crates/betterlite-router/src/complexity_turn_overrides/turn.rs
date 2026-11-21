@@ -76,7 +76,7 @@ fn stalled_task(settings: &Settings, messages: Option<&[Json]>) -> bool {
     detect_stalled_task(
         messages,
         settings.stall_escalation_window,
-        settings.stall_escalation_repeat_threshold,
+        settings.stall_repeat_threshold,
     )
 }
 

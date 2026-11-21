@@ -17,8 +17,8 @@ pub struct Settings {
     pub match_threshold: f64,
     pub stall_escalation_enabled: bool,
     pub stall_escalation_window: u32,
-    pub stall_escalation_repeat_threshold: u32,
-    pub route_housekeeping_to_cheapest_tier: bool,
+    pub stall_repeat_threshold: u32,
+    pub housekeeping_cheapest: bool,
     // B329 owns these four keys, so their normalized values arrive through its Resolved view
     pub escalation_keywords: Option<Vec<String>>,
     pub plan_mode_min_tier: Option<String>,
@@ -36,11 +36,10 @@ impl Default for Settings {
             keyword_matching: section::KeywordMatching::default(),
             embedding_model: None,
             match_threshold: section::DEFAULT_MATCH_THRESHOLD,
-            stall_escalation_enabled: section::DEFAULT_STALL_ESCALATION_ENABLED,
-            stall_escalation_window: section::DEFAULT_STALL_ESCALATION_WINDOW,
-            stall_escalation_repeat_threshold: section::DEFAULT_STALL_ESCALATION_REPEAT_THRESHOLD,
-            route_housekeeping_to_cheapest_tier:
-                section::DEFAULT_ROUTE_HOUSEKEEPING_TO_CHEAPEST_TIER,
+            stall_escalation_enabled: section::DEFAULT_STALL_ENABLED,
+            stall_escalation_window: section::DEFAULT_STALL_WINDOW,
+            stall_repeat_threshold: section::DEFAULT_STALL_REPEAT,
+            housekeeping_cheapest: section::DEFAULT_HOUSEKEEPING,
             escalation_keywords: None,
             plan_mode_min_tier: None,
             plan_mode_patterns: Vec::new(),
@@ -66,8 +65,8 @@ impl Settings {
             match_threshold: overrides.match_threshold,
             stall_escalation_enabled: overrides.stall_escalation_enabled,
             stall_escalation_window: overrides.stall_escalation_window,
-            stall_escalation_repeat_threshold: overrides.stall_escalation_repeat_threshold,
-            route_housekeeping_to_cheapest_tier: overrides.route_housekeeping_to_cheapest_tier,
+            stall_repeat_threshold: overrides.stall_repeat_threshold,
+            housekeeping_cheapest: overrides.housekeeping_cheapest,
             escalation_keywords: resolved.escalation_keywords.clone(),
             plan_mode_min_tier: resolved.plan_mode_min_tier.clone(),
             plan_mode_patterns: resolved.plan_mode_patterns.clone().unwrap_or_default(),
@@ -80,13 +79,16 @@ impl Settings {
 
 // _active_tier_severity: the position of a tier in the active severity order
 pub fn tier_severity(catalog: &TierSet, tier: &Tier) -> Result<usize, TurnOverrideError> {
-    catalog
+    match catalog
         .tier_names()
         .iter()
         .position(|name| *name == tier.name())
-        .ok_or_else(|| TurnOverrideError::UnknownTier {
+    {
+        Some(rank) => Ok(rank),
+        None => Err(TurnOverrideError::UnknownTier {
             tier: tier.name().to_owned(),
-        })
+        }),
+    }
 }
 
 // a configured tier name as the pipeline tier: a defined name for a custom set, else the built-in member

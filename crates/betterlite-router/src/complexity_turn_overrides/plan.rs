@@ -13,45 +13,45 @@ use crate::tier_definitions::model::TierSet;
 use super::error::TurnOverrideError;
 use super::settings::{Settings, active_tier, tier_severity};
 
+type PlanResult<T> = Result<T, TurnOverrideError>;
+
 // _resolve_plan_mode_floor: the configured floor as an active tier, or None when the feature is off
-pub fn plan_mode_floor(
-    settings: &Settings,
-    catalog: &TierSet,
-) -> Result<Option<Tier>, TurnOverrideError> {
-    match settings.plan_mode_min_tier.as_deref() {
-        Some(name) => active_tier(catalog, name).map(Some),
-        None => Ok(None),
-    }
+pub fn plan_mode_floor(settings: &Settings, catalog: &TierSet) -> PlanResult<Option<Tier>> {
+    settings
+        .plan_mode_min_tier
+        .as_deref()
+        .map(|name| active_tier(catalog, name))
+        .transpose()
 }
 
 // _apply_plan_mode_floor: the higher of the decided tier and the floor, identity when the floor is unset
-pub fn apply_plan_mode_floor(
-    settings: &Settings,
-    catalog: &TierSet,
-    tier: Tier,
-) -> Result<Tier, TurnOverrideError> {
-    let Some(floor) = plan_mode_floor(settings, catalog)? else {
+pub fn apply_plan_mode_floor(config: &Settings, catalog: &TierSet, tier: Tier) -> PlanResult<Tier> {
+    let Some((floor, floor_rank)) = ranked_floor(config, catalog)? else {
         return Ok(tier);
     };
     let tier_rank = tier_severity(catalog, &tier)?;
-    let floor_rank = tier_severity(catalog, &floor)?;
     Ok(if tier_rank >= floor_rank { tier } else { floor })
 }
 
 // _plan_mode_floor_is_top_tier: no configured tier outranks the floor, so classification could never rise above it
-pub fn plan_mode_floor_is_top_tier(
-    settings: &Settings,
-    catalog: &TierSet,
-) -> Result<bool, TurnOverrideError> {
-    let Some(floor) = plan_mode_floor(settings, catalog)? else {
+pub fn plan_mode_floor_is_top_tier(settings: &Settings, catalog: &TierSet) -> PlanResult<bool> {
+    let Some((_floor, rank)) = ranked_floor(settings, catalog)? else {
         return Ok(false);
     };
-    let floor_rank = tier_severity(catalog, &floor)?;
-    Ok(catalog
-        .tier_names()
-        .iter()
-        .skip(floor_rank.saturating_add(1))
-        .all(|name| !catalog.pools.contains_key(*name)))
+    for name in catalog.tier_names().iter().skip(rank.saturating_add(1)) {
+        if catalog.pools.contains_key(*name) {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn ranked_floor(settings: &Settings, catalog: &TierSet) -> PlanResult<Option<(Tier, usize)>> {
+    let Some(floor) = plan_mode_floor(settings, catalog)? else {
+        return Ok(None);
+    };
+    let rank = tier_severity(catalog, &floor)?;
+    Ok(Some((floor, rank)))
 }
 
 // _matched_plan_mode_signal: the sentinel on this request, always None while the floor is unset

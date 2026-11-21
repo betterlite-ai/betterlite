@@ -17,9 +17,7 @@ pub fn matched_housekeeping_sentinel(
     settings: &Settings,
     newest_ask: Option<&str>,
 ) -> Option<String> {
-    if settings.classifier_type == ClassifierKind::Custom
-        || !settings.route_housekeeping_to_cheapest_tier
-    {
+    if settings.classifier_type == ClassifierKind::Custom || !settings.housekeeping_cheapest {
         return None;
     }
     let ask = newest_ask.filter(|ask| !ask.is_empty())?;

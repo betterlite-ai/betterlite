@@ -9,8 +9,7 @@ struct ToolCallEvent {
     is_error: Option<bool>,
 }
 
-// _json_arguments and _tool_call_signature: a JSON-string argument list is parsed, and both surfaces
-// canonicalize to one shape so the same call compares equal
+// _json_arguments and _tool_call_signature: both tool-call surfaces canonicalize to one shape
 fn canonical_arguments(value: &Json) -> String {
     if let Json::Text(text) = value
         && let Ok(parsed) = serde_json::from_str::<Json>(text)

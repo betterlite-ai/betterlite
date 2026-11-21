@@ -2,11 +2,12 @@
 
 use std::collections::BTreeMap;
 
+use rstest::rstest;
+
 use crate::loader::ConfigLoader;
 use crate::sections::complexity_turn_overrides::{
-    Config, DEFAULT_MATCH_THRESHOLD, DEFAULT_ROUTE_HOUSEKEEPING_TO_CHEAPEST_TIER,
-    DEFAULT_STALL_ESCALATION_REPEAT_THRESHOLD, DEFAULT_STALL_ESCALATION_WINDOW, KeywordMatching,
-    KeywordTierRule, Settings,
+    Config, DEFAULT_HOUSEKEEPING, DEFAULT_MATCH_THRESHOLD, DEFAULT_STALL_REPEAT,
+    DEFAULT_STALL_WINDOW, KeywordMatching, KeywordTierRule, Settings,
 };
 
 fn settings(source: &str, variables: &[(&str, &str)]) -> Result<Settings, String> {
@@ -52,12 +53,12 @@ fn the_defaults_are_the_pinned_litellm_values() {
         Config {
             keyword_tier_rules: None,
             stall_escalation_enabled: false,
-            stall_escalation_window: DEFAULT_STALL_ESCALATION_WINDOW,
-            stall_escalation_repeat_threshold: DEFAULT_STALL_ESCALATION_REPEAT_THRESHOLD,
+            stall_escalation_window: DEFAULT_STALL_WINDOW,
+            stall_repeat_threshold: DEFAULT_STALL_REPEAT,
             keyword_matching: KeywordMatching::Lexical,
             embedding_model: None,
             match_threshold: DEFAULT_MATCH_THRESHOLD,
-            route_housekeeping_to_cheapest_tier: DEFAULT_ROUTE_HOUSEKEEPING_TO_CHEAPEST_TIER,
+            housekeeping_cheapest: DEFAULT_HOUSEKEEPING,
         }
     );
 }
@@ -101,14 +102,14 @@ fn declared_values_replace_the_defaults() {
     );
     assert!(found.stall_escalation_enabled);
     assert_eq!(found.stall_escalation_window, 4);
-    assert_eq!(found.stall_escalation_repeat_threshold, 2);
+    assert_eq!(found.stall_repeat_threshold, 2);
     assert_eq!(found.keyword_matching, KeywordMatching::Semantic);
     assert_eq!(
         found.embedding_model.as_deref(),
         Some("openai/text-embedding-3-small")
     );
     assert_eq!(found.match_threshold, 0.7);
-    assert!(!found.route_housekeeping_to_cheapest_tier);
+    assert!(!found.housekeeping_cheapest);
 }
 
 #[test]
@@ -135,7 +136,7 @@ fn environment_values_resolve_once_in_the_config() {
     assert_eq!(found.stall_escalation_window, 8);
     assert_eq!(found.match_threshold, 0.25);
     assert_eq!(found.embedding_model, None);
-    assert!(!found.route_housekeeping_to_cheapest_tier);
+    assert!(!found.housekeeping_cheapest);
 }
 
 #[test]
@@ -170,15 +171,12 @@ fn a_repeat_threshold_below_two_is_rejected() {
     );
 }
 
-#[test]
-fn a_match_threshold_outside_the_unit_interval_is_rejected() {
-    for fields in [
-        "        match_threshold: 1.5\n",
-        "        match_threshold: -0.1\n",
-    ] {
-        let error = configured(fields, &[]).unwrap_err();
-        assert!(error.contains("match_threshold"), "{error}");
-    }
+#[rstest]
+#[case("        match_threshold: 1.5\n")]
+#[case("        match_threshold: -0.1\n")]
+fn a_match_threshold_outside_the_unit_interval_is_rejected(#[case] fields: &str) {
+    let error = configured(fields, &[]).unwrap_err();
+    assert!(error.contains("match_threshold"), "{error}");
 }
 
 #[test]
@@ -194,5 +192,5 @@ fn a_repeat_threshold_above_the_window_is_left_to_the_cross_field_checks() {
         "        stall_escalation_window: 2\n        stall_escalation_repeat_threshold: 3\n";
     let found = configured(fields, &[]).unwrap();
     assert_eq!(found.stall_escalation_window, 2);
-    assert_eq!(found.stall_escalation_repeat_threshold, 3);
+    assert_eq!(found.stall_repeat_threshold, 3);
 }

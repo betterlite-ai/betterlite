@@ -6,8 +6,8 @@ use rstest::rstest;
 use tokio::runtime::Builder;
 
 use super::support::{
-    FakeEmbedder, catalog, chat, custom_catalog, json_list, json_object, json_text, parts, rule,
-    rules, semantic_settings, text_part, tier,
+    FakeEmbedder, base_settings, catalog, chat, custom_catalog, json_list, json_object, json_text,
+    parts, rule, rules, semantic_settings, text_part, tier,
 };
 use crate::classifier_message_text::error::ClassifierTextError;
 use crate::complexity_scoring::tier::Tier;
@@ -35,10 +35,9 @@ fn all_pools() -> TierSet {
 }
 
 fn floor_settings(floor: &str) -> Settings {
-    Settings {
-        plan_mode_min_tier: Some(floor.to_owned()),
-        ..Settings::default()
-    }
+    let mut settings = base_settings();
+    settings.plan_mode_min_tier = Some(floor.to_owned());
+    settings
 }
 
 #[rstest]

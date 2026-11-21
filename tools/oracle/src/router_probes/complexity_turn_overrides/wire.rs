@@ -1,5 +1,6 @@
 use betterlite_models::decisions::Json;
 use serde::{Deserialize, Serialize};
+use serde_json::Number;
 
 use crate::router_probes::error::OperationError;
 
@@ -47,24 +48,29 @@ pub(super) struct Fields {
     pub(super) embedding_calls: Vec<CallOut>,
 }
 
-pub(super) fn number(value: Option<&Json>, default: f64) -> Result<f64, OperationError> {
+// an absent key is None and a non-number is an error, before any key-specific conversion
+fn numeric(value: Option<&Json>) -> Result<Option<&Number>, OperationError> {
     let Some(value) = value else {
-        return Ok(default);
+        return Ok(None);
     };
-    let Json::Number(found) = value else {
-        return Err(invalid("the value is not a number"));
-    };
-    found
-        .as_f64()
-        .ok_or_else(|| invalid("the number is not representable"))
+    if let Json::Number(found) = value {
+        return Ok(Some(found));
+    }
+    Err(invalid("the value is not a number"))
+}
+
+pub(super) fn number(value: Option<&Json>, default: f64) -> Result<f64, OperationError> {
+    match numeric(value)? {
+        None => Ok(default),
+        Some(found) => found
+            .as_f64()
+            .ok_or_else(|| invalid("the number is not representable")),
+    }
 }
 
 pub(super) fn count(value: Option<&Json>, default: u32) -> Result<u32, OperationError> {
-    let Some(value) = value else {
+    let Some(found) = numeric(value)? else {
         return Ok(default);
-    };
-    let Json::Number(found) = value else {
-        return Err(invalid("the value is not a number"));
     };
     let Some(whole) = found.as_u64() else {
         return Err(invalid("the value is not an unsigned integer"));

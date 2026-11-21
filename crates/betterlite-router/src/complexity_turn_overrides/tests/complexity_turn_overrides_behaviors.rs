@@ -8,8 +8,8 @@ use rstest::rstest;
 use tokio::runtime::Builder;
 
 use super::support::{
-    FakeEmbedder, catalog, chat, json_list, json_number, json_object, json_text, request_kwargs,
-    rules, semantic_settings, tier,
+    FakeEmbedder, base_settings, catalog, chat, json_list, json_number, json_object, json_text,
+    request_kwargs, rules, semantic_settings, tier,
 };
 use crate::classifier_verdict::call::RequestKwargs;
 use crate::complexity_turn_overrides::housekeeping::{
@@ -37,10 +37,9 @@ fn all_pools() -> TierSet {
 }
 
 fn floor_settings(floor: &str) -> Settings {
-    Settings {
-        plan_mode_min_tier: Some(floor.to_owned()),
-        ..Settings::default()
-    }
+    let mut settings = base_settings();
+    settings.plan_mode_min_tier = Some(floor.to_owned());
+    settings
 }
 
 #[rstest]
@@ -135,12 +134,10 @@ fn a_housekeeping_ask_routes_to_the_cheapest_tier_with_models() {
         Some("MEDIUM".to_owned())
     );
     let mut without_ask = settings.clone();
-    without_ask.route_housekeeping_to_cheapest_tier = false;
+    without_ask.housekeeping_cheapest = false;
     assert_eq!(matched_housekeeping_sentinel(&without_ask, Some(ask)), None);
-    let plugin = Settings {
-        classifier_type: ClassifierKind::Custom,
-        ..Settings::default()
-    };
+    let mut plugin = base_settings();
+    plugin.classifier_type = ClassifierKind::Custom;
     assert_eq!(matched_housekeeping_sentinel(&plugin, Some(ask)), None);
 }
 
@@ -156,18 +153,14 @@ fn the_escalation_keyword_defaults_to_the_shouted_phrase() {
         matched_escalation_keyword(&settings, &set, "liteLLM escalate"),
         None
     );
-    let custom = Settings {
-        escalation_keywords: Some(vec!["help me".to_owned()]),
-        ..Settings::default()
-    };
+    let mut custom = base_settings();
+    custom.escalation_keywords = Some(vec!["help me".to_owned()]);
     assert_eq!(
         matched_escalation_keyword(&custom, &set, "help me debug").as_deref(),
         Some("help me")
     );
-    let off = Settings {
-        escalation_keywords: Some(Vec::new()),
-        ..Settings::default()
-    };
+    let mut off = base_settings();
+    off.escalation_keywords = Some(Vec::new());
     assert_eq!(
         matched_escalation_keyword(&off, &set, "LITELLM ESCALATE"),
         None
@@ -255,8 +248,11 @@ fn a_semantic_hit_selects_its_route_and_reports_no_keyword() {
     ]));
     let index = SemanticKeywordIndex::new(&settings, &all_pools(), Arc::clone(&embedder)).unwrap();
     let caller = CallerContext {
+        metadata: IndexMap::new(),
+        litellm_metadata: IndexMap::new(),
+        turn_off_message_logging: None,
+        litellm_session_id: None,
         litellm_trace_id: Some("trace-1".to_owned()),
-        ..CallerContext::default()
     };
     let found = runtime().block_on(index.tier_override("please send an invoice", &caller));
     assert_eq!(
@@ -319,27 +315,19 @@ fn a_build_failure_is_retried_on_the_next_turn() {
 fn the_lexical_matcher_wins_while_semantic_matching_is_off() {
     let configured = rules(&[(&["invoice"], "COMPLEX"), (&["refund"], "SIMPLE")]);
     let lexical = LexicalRules::compile(&all_pools(), &configured).unwrap();
-    let settings = Settings {
-        keyword_tier_rules: rules(&[(&["invoice"], "COMPLEX"), (&["refund"], "SIMPLE")]),
-        ..Settings::default()
-    };
+    let mut settings = base_settings();
+    settings.keyword_tier_rules = rules(&[(&["invoice"], "COMPLEX"), (&["refund"], "SIMPLE")]);
     let embedder = Arc::new(FakeEmbedder::new(&[
         ("test", vec![1.0, 0.0]),
         ("invoice", vec![0.0, 1.0]),
         ("refund", vec![1.0, 0.0]),
         ("invoice and refund", vec![1.0, 0.0]),
     ]));
-    let semantic = SemanticKeywordIndex::new(
-        &Settings {
-            keyword_matching: KeywordMatching::Semantic,
-            embedding_model: Some("fake-embed".to_owned()),
-            match_threshold: 0.5,
-            ..settings.clone()
-        },
-        &all_pools(),
-        embedder,
-    )
-    .unwrap();
+    let mut index_settings = settings.clone();
+    index_settings.keyword_matching = KeywordMatching::Semantic;
+    index_settings.embedding_model = Some("fake-embed".to_owned());
+    index_settings.match_threshold = 0.5;
+    let semantic = SemanticKeywordIndex::new(&index_settings, &all_pools(), embedder).unwrap();
     let request = TurnRequest {
         request_kwargs: None,
         resolved_messages: None,
@@ -361,10 +349,8 @@ fn the_lexical_matcher_wins_while_semantic_matching_is_off() {
         lexical_outcome.keyword_override.unwrap().tier.name(),
         "COMPLEX"
     );
-    let semantic_mode = Settings {
-        keyword_matching: KeywordMatching::Semantic,
-        ..settings
-    };
+    let mut semantic_mode = settings;
+    semantic_mode.keyword_matching = KeywordMatching::Semantic;
     let semantic_outcome = runtime()
         .block_on(resolve_turn(
             &semantic_mode,
@@ -381,11 +367,9 @@ fn the_lexical_matcher_wins_while_semantic_matching_is_off() {
 
 #[test]
 fn the_turn_carries_every_observation_together() {
-    let settings = Settings {
-        plan_mode_min_tier: Some("COMPLEX".to_owned()),
-        stall_escalation_enabled: true,
-        ..Settings::default()
-    };
+    let mut settings = base_settings();
+    settings.plan_mode_min_tier = Some("COMPLEX".to_owned());
+    settings.stall_escalation_enabled = true;
     let messages = vec![
         tool_result("a1", true),
         assistant_tool_use("a1", "search", Json::Null),

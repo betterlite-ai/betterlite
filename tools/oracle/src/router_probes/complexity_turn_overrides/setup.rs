@@ -19,27 +19,33 @@ use crate::router_probes::error::OperationError;
 const DEFAULT_THRESHOLD: f64 = 0.5_f64;
 
 pub(super) fn build_catalog(input: &Input) -> TierSet {
-    let pools = input
-        .tiers
-        .iter()
-        .map(|(name, models)| (name.clone(), pool(models)))
-        .collect();
-    let definitions = input.tier_definitions.as_ref().map(|names| {
-        names
-            .iter()
-            .map(|name| TierDefinition {
-                name: name.clone(),
-                description: None,
-            })
-            .collect()
-    });
     TierSet {
-        definitions,
-        pools,
+        definitions: definitions(input),
+        pools: pools(input),
         labels: BTreeMap::new(),
         non_reasoning: input.non_reasoning.unwrap_or(false),
         fallback: None,
     }
+}
+
+fn definitions(input: &Input) -> Option<Vec<TierDefinition>> {
+    let names = input.tier_definitions.as_ref()?;
+    let mut found = Vec::with_capacity(names.len());
+    for name in names {
+        found.push(TierDefinition {
+            name: name.clone(),
+            description: None,
+        });
+    }
+    Some(found)
+}
+
+fn pools(input: &Input) -> BTreeMap<String, TierPool> {
+    input
+        .tiers
+        .iter()
+        .map(|(name, models)| (name.clone(), pool(models)))
+        .collect()
 }
 
 fn pool(models: &[String]) -> TierPool {
@@ -55,30 +61,37 @@ fn pool(models: &[String]) -> TierPool {
 }
 
 pub(super) fn build_settings(input: &Input) -> Result<Settings, OperationError> {
+    let keyword_tier_rules = rules(input);
+    let keyword_matching = if input.semantic_keyword_matching.unwrap_or(false) {
+        KeywordMatching::Semantic
+    } else {
+        KeywordMatching::Lexical
+    };
+    let match_threshold = number(input.match_threshold.as_ref(), DEFAULT_THRESHOLD)?;
+    let stall_window = count(input.stall_escalation_window.as_ref(), 6)?;
+    let stall_repeat = count(input.stall_repeat_threshold.as_ref(), 3)?;
+    let housekeeping_cheapest = input.housekeeping_cheapest.unwrap_or(true);
+    let escalation_keywords = input.escalation_keywords.clone();
+    let plan_mode_min_tier = input.plan_mode_min_tier.clone();
+    let plan_mode_patterns = input.plan_mode_patterns.clone();
+    let housekeeping_patterns = input.housekeeping_patterns.clone();
+    let reminder_markers = reminder_markers(input);
+    let classifier_type = classifier(input);
     Ok(Settings {
-        keyword_tier_rules: rules(input),
-        keyword_matching: if input.semantic_keyword_matching.unwrap_or(false) {
-            KeywordMatching::Semantic
-        } else {
-            KeywordMatching::Lexical
-        },
+        keyword_tier_rules,
+        keyword_matching,
         embedding_model: input.embedding_model.clone(),
-        match_threshold: number(input.match_threshold.as_ref(), DEFAULT_THRESHOLD)?,
+        match_threshold,
         stall_escalation_enabled: input.stall_escalation_enabled.unwrap_or(false),
-        stall_escalation_window: count(input.stall_escalation_window.as_ref(), 6)?,
-        stall_escalation_repeat_threshold: count(
-            input.stall_escalation_repeat_threshold.as_ref(),
-            3,
-        )?,
-        route_housekeeping_to_cheapest_tier: input
-            .route_housekeeping_to_cheapest_tier
-            .unwrap_or(true),
-        escalation_keywords: input.escalation_keywords.clone(),
-        plan_mode_min_tier: input.plan_mode_min_tier.clone(),
-        plan_mode_patterns: input.plan_mode_patterns.clone(),
-        housekeeping_patterns: input.housekeeping_patterns.clone(),
-        reminder_markers: reminder_markers(input),
-        classifier_type: classifier(input),
+        stall_escalation_window: stall_window,
+        stall_repeat_threshold: stall_repeat,
+        housekeeping_cheapest,
+        escalation_keywords,
+        plan_mode_min_tier,
+        plan_mode_patterns,
+        housekeeping_patterns,
+        reminder_markers,
+        classifier_type,
     })
 }
 

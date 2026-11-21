@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::sync::Arc;
 
 use betterlite_models::decisions::Json;
@@ -97,21 +98,16 @@ where
         user_message: &str,
         caller: &CallerContext,
     ) -> Result<Option<Tier>, SemanticError> {
-        let entries = self.entries().await?;
+        let entries = self.built.get_or_try_init(|| self.build_entries()).await?;
         let vectors = self.query_batch(user_message, caller).await?;
         let Some(query) = vectors.into_iter().next() else {
             return Err(SemanticError::EmptyQuery);
         };
-        let matched = select_route(&entries, &query)?;
+        let matched = select_route(entries, &query)?;
         Ok(matched.and_then(|name| self.catalog.resolve_classified_tier(&name)))
     }
 
     // the build embeds the static utterances once, through the same document path the route sync uses
-    async fn entries(&self) -> Result<Arc<[BuiltEntry]>, SemanticError> {
-        let entries = self.built.get_or_try_init(|| self.build_entries()).await?;
-        Ok(Arc::clone(entries))
-    }
-
     async fn build_entries(&self) -> Result<Arc<[BuiltEntry]>, SemanticError> {
         let _probe = self
             .document_batch(vec![DIMENSION_PROBE_TEXT.to_owned()])
@@ -135,31 +131,20 @@ where
 
     async fn document_batch(&self, texts: Vec<String>) -> Result<Vec<Vec<f64>>, SemanticError> {
         let expected = texts.len();
-        let answer = timeout(
-            EMBEDDING_TIMEOUT,
-            self.embedder.embed_documents(&self.model, texts),
-        )
-        .await;
-        match answer {
-            Ok(Ok(vectors)) => {
-                if vectors.len() != expected {
-                    return Err(SemanticError::VectorCount {
-                        stage: "documents",
-                        expected,
-                        found: vectors.len(),
-                    });
-                }
-                Ok(vectors)
-            }
-            Ok(Err(source)) => Err(SemanticError::Embedding {
+        let vectors = self
+            .wait(
+                "documents",
+                self.embedder.embed_documents(&self.model, texts),
+            )
+            .await?;
+        if vectors.len() != expected {
+            return Err(SemanticError::VectorCount {
                 stage: "documents",
-                source: source.to_string(),
-            }),
-            Err(_elapsed) => Err(SemanticError::Timeout {
-                stage: "documents",
-                seconds: EMBEDDING_TIMEOUT.as_secs(),
-            }),
+                expected,
+                found: vectors.len(),
+            });
         }
+        Ok(vectors)
     }
 
     async fn query_batch(
@@ -167,28 +152,33 @@ where
         user_message: &str,
         caller: &CallerContext,
     ) -> Result<Vec<Vec<f64>>, SemanticError> {
-        let answer = timeout(
-            EMBEDDING_TIMEOUT,
+        self.wait(
+            "query",
             self.embedder
                 .embed_query(&self.model, user_message.to_owned(), user_message, caller),
         )
-        .await;
-        match answer {
+        .await
+    }
+
+    async fn wait<F>(&self, stage: &'static str, answer: F) -> Result<Vec<Vec<f64>>, SemanticError>
+    where
+        F: Future<Output = Result<Vec<Vec<f64>>, E::Error>>,
+    {
+        match timeout(EMBEDDING_TIMEOUT, answer).await {
             Ok(Ok(vectors)) => Ok(vectors),
             Ok(Err(source)) => Err(SemanticError::Embedding {
-                stage: "query",
+                stage,
                 source: source.to_string(),
             }),
             Err(_elapsed) => Err(SemanticError::Timeout {
-                stage: "query",
+                stage,
                 seconds: EMBEDDING_TIMEOUT.as_secs(),
             }),
         }
     }
 }
 
-// _get_or_create_semantic_routelayer builds its route layer with aggregation="max", not the auto
-// router's default mean: a route's score is its best utterance among the top_k rows
+// _get_or_create_semantic_routelayer aggregates with max: a route scores by its best utterance
 fn select_route(entries: &[BuiltEntry], query: &[f64]) -> Result<Option<String>, MathError> {
     let mut scored: Vec<(&str, f64, f64)> = Vec::with_capacity(entries.len());
     for (index, entry) in entries.iter().enumerate() {
