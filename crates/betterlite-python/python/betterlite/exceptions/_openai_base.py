@@ -22,12 +22,12 @@ class APIError(OpenAIError):
         self.request = request
         self.message = message
         self.body = body
-        match body:  # ast-grep-ignore: no-match-wildcard
+        match body:
             case dict() as fields:
                 self.code = fields.get("code")
                 self.param = fields.get("param")
                 self.type = fields.get("type")
-            case _:
+            case list() | str() | bool() | float() | int() | bytes() | None:
                 self.code = None
                 self.param = None
                 self.type = None
