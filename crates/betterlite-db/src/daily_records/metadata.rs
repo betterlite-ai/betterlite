@@ -11,7 +11,7 @@ use betterlite_models::tiered_pricing::Scalar;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
-use crate::autorouter_facts::{INTERNAL_CALL_ORIGIN_KEY, counts_as_present};
+use crate::autorouter_facts::counts_as_present;
 use crate::redis_spend::codec::MAX_SPEND_BUFFER_BYTES;
 
 const STATUS_KEY: &str = "status";

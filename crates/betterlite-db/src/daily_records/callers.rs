@@ -204,7 +204,7 @@ async fn enqueue_update(
     Ok(())
 }
 
-fn entity_label(entity: DailySpendEntity) -> &'static str {
+const fn entity_label(entity: DailySpendEntity) -> &'static str {
     match entity {
         DailySpendEntity::User => "user",
         DailySpendEntity::Team => "team",

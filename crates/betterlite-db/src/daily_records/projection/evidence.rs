@@ -60,8 +60,8 @@ where
     Ok(compute_savings_spend(
         pricing.context,
         &SavingsSpendInput {
-            model: presence(&payload.model),
-            custom_llm_provider: presence(&payload.custom_llm_provider),
+            model: presence(payload.model.as_ref()),
+            custom_llm_provider: presence(payload.custom_llm_provider.as_ref()),
             compression_saved_tokens: compression_saved,
             gateway_injected_cache: marks_gateway_injection(
                 Some(&metadata.savings),
@@ -128,5 +128,6 @@ pub(super) fn request_counts(internal: bool, status: RequestStatus) -> (i64, i64
         return (0, 0, 0);
     }
     let successful = i64::from(status == RequestStatus::Success);
-    (1, successful, 1 - successful)
+    let failed = i64::from(status != RequestStatus::Success);
+    (1, successful, failed)
 }

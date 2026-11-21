@@ -71,7 +71,7 @@ pub struct DailyPricing<'pricing, C> {
 }
 
 // B004's call-type map, injected so this module neither owns nor widens ROUTE_ENDPOINT_MAPPING.
-pub trait CallTypeEndpoints {
+pub trait CallTypeEndpoints: Send + Sync {
     fn endpoint(&self, call_type: &str) -> Option<&str>;
 }
 
@@ -106,7 +106,7 @@ impl DailyPayload {
 }
 
 // A present null reads as absent: the source passes payload.get(key) into a field that is None either way.
-pub(super) fn presence(value: &Option<Option<String>>) -> Option<&str> {
+pub(super) const fn presence(value: Option<&Option<String>>) -> Option<&str> {
     match value {
         Some(Some(text)) => Some(text.as_str()),
         Some(None) | None => None,
@@ -158,7 +158,7 @@ fn common_identities(
 }
 
 // expected_keys and any_expected_keys: an mcp key counts whether or not it holds a value, and its presence alone excuses a missing provider or group; a model names a row only with both of them.
-fn has_required_keys(payload: &DailyPayload) -> bool {
+const fn has_required_keys(payload: &DailyPayload) -> bool {
     if payload.start_time.is_none() || payload.api_key.is_none() {
         return false;
     }

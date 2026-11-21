@@ -15,7 +15,7 @@ pub(super) fn base_transaction(
     date: String,
     evidence: &DailyEvidence,
 ) -> Result<BaseDailySpendTransaction, DailyRecordError> {
-    let Some(api_key) = presence(&payload.api_key) else {
+    let Some(api_key) = presence(payload.api_key.as_ref()) else {
         return Err(DailyRecordError::InvalidField { field: "api_key" });
     };
     let internal = evidence.internal;
@@ -24,10 +24,11 @@ pub(super) fn base_transaction(
     Ok(BaseDailySpendTransaction {
         date,
         api_key: api_key.to_owned(),
-        model: presence(&payload.model).map(str::to_owned),
-        model_group: presence(&payload.model_group).map(str::to_owned),
-        mcp_namespaced_tool_name: presence(&payload.mcp_namespaced_tool_name).map(str::to_owned),
-        custom_llm_provider: presence(&payload.custom_llm_provider).map(str::to_owned),
+        model: presence(payload.model.as_ref()).map(str::to_owned),
+        model_group: presence(payload.model_group.as_ref()).map(str::to_owned),
+        mcp_namespaced_tool_name: presence(payload.mcp_namespaced_tool_name.as_ref())
+            .map(str::to_owned),
+        custom_llm_provider: presence(payload.custom_llm_provider.as_ref()).map(str::to_owned),
         endpoint: evidence.endpoint.clone(),
         prompt_tokens: payload.prompt_tokens.unwrap_or_default(),
         completion_tokens: payload.completion_tokens.unwrap_or_default(),
