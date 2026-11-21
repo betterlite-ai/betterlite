@@ -5,6 +5,7 @@ use betterlite_openai::output_limits::raw_send::{
     RawChatResponse, send_raw_chat_async, send_raw_chat_sync,
 };
 use betterlite_openai::text_completion_transport::logging::SecretHeaders;
+use futures_util::future::{Either, select};
 
 use super::super::arguments::{ChatCall, Runtime, SentChat};
 use super::super::client::{ClientHandle, ClientSource, GetClient};
@@ -117,13 +118,12 @@ where
         );
         match exchange.call.cancel {
             None => pending.await,
-            Some(token) => tokio::select! {
-                biased;
-                answer = pending => answer,
-                () = token.cancelled() => return Err(logged_failure(
-                    exchange,
-                    AzureChatError::Cancelled,
-                )),
+            // azure.py's cancelled task had sent its request, so the send is polled before the token
+            Some(token) => match select(Box::pin(pending), Box::pin(token.cancelled())).await {
+                Either::Left((reply, _cancelled)) => reply,
+                Either::Right(((), _pending)) => {
+                    return Err(logged_failure(exchange, AzureChatError::Cancelled));
+                }
             },
         }
     } else {

@@ -61,7 +61,7 @@ fn version_args<Client>(call: &ChatCall<'_, Client>) -> IndexMap<String, decisio
     )])
 }
 
-fn extra_args(
+const fn extra_args(
     api_base: Option<String>,
     headers: Option<IndexMap<String, decisions::Json>>,
     complete_input_dict: Option<RawBody>,

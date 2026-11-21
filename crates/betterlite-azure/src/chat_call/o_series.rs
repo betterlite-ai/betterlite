@@ -1,9 +1,7 @@
-use std::future::Future;
-use std::pin::Pin;
-
 use betterlite_openai::text_completion_transport::logging::SecretHeaders;
 use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::message_content::Message;
+use futures_util::future::BoxFuture;
 use secrecy::SecretString;
 
 use crate::endpoints::initialize::EndpointError;
@@ -60,7 +58,7 @@ pub trait OSeriesDelegate: Send + Sync {
     fn completion<'call>(
         &'call self,
         call: OSeriesForward<'call, Self::Client>,
-    ) -> Pin<Box<dyn Future<Output = Result<Self::Reply, Self::Error>> + Send + 'call>>;
+    ) -> BoxFuture<'call, Result<Self::Reply, Self::Error>>;
 }
 
 #[derive(Debug)]

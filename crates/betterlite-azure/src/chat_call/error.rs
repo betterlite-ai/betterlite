@@ -29,7 +29,7 @@ pub enum AzureChatError {
 
 impl AzureChatError {
     #[must_use]
-    pub fn azure(status: u16, message: String) -> Self {
+    pub const fn azure(status: u16, message: String) -> Self {
         Self::Azure {
             status,
             message,

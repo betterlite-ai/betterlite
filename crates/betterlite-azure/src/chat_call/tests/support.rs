@@ -1,10 +1,11 @@
 #![cfg_attr(
     test,
     expect(
+        clippy::disallowed_methods,
         clippy::disallowed_types,
         clippy::struct_excessive_bools,
         clippy::too_many_lines,
-        reason = "B505's raw chat transports and the scripted replies they return speak serde_json values, the harness carries one flag per independent call shape, and one harness assembles a whole completion call"
+        reason = "B505's raw chat transports and the scripted replies they return speak serde_json values, the default harness messages are a json! literal, the harness carries one flag per independent call shape, and one harness assembles a whole completion call"
     )
 )]
 
@@ -111,9 +112,6 @@ pub(super) enum Answer {
     Timeout {
         message: String,
     },
-    Other {
-        message: String,
-    },
     Pending,
 }
 
@@ -127,15 +125,6 @@ impl Answer {
 
     pub(super) fn with_body(body: &str) -> Self {
         Self::Reply {
-            headers: json_headers(),
-            body: body.to_owned(),
-        }
-    }
-
-    pub(super) fn status(status: u16, message: &str, body: &str) -> Self {
-        Self::Status {
-            status,
-            message: message.to_owned(),
             headers: json_headers(),
             body: body.to_owned(),
         }
@@ -168,9 +157,6 @@ impl Answer {
                 body: body_value(body),
             }))),
             Self::Timeout { message } => Err(RawChatError::Timeout {
-                message: message.clone(),
-            }),
-            Self::Other { message } => Err(RawChatError::Other {
                 message: message.clone(),
             }),
             Self::Pending => Err(RawChatError::Other {
@@ -207,7 +193,6 @@ pub(super) struct RequestRecord {
 #[derive(Clone)]
 pub(super) struct GetRecord {
     pub api_version: Option<String>,
-    pub api_base: Option<String>,
     pub api_key: Option<String>,
     pub model: Option<String>,
     pub is_async: bool,
@@ -219,11 +204,7 @@ pub(super) struct GetRecord {
 pub(super) struct GatewayRecord {
     pub api_base: String,
     pub model: String,
-    pub api_version: Option<String>,
     pub max_retries: Value,
-    pub timeout: f64,
-    pub api_key: Option<String>,
-    pub acompletion: bool,
 }
 
 #[derive(Clone)]
@@ -370,7 +351,6 @@ impl ClientSource for ScriptedSource {
             &self.gets,
             GetRecord {
                 api_version: call.api_version.map(str::to_owned),
-                api_base: call.api_base.map(str::to_owned),
                 api_key: call.api_key.map(|key| key.expose_secret().to_owned()),
                 model: call.model.map(str::to_owned),
                 is_async: call.is_async,
@@ -382,19 +362,13 @@ impl ClientSource for ScriptedSource {
 
     fn gateway(&self, call: GatewayClient<'_>) -> Handled {
         let api_base = call.api_base.to_owned();
-        let api_version = call.api_version.map(str::to_owned);
         let max_retries = serde_json::to_value(&call.max_retries.0).unwrap_or(Value::Null);
-        let api_key = call.api_key.map(|key| key.expose_secret().to_owned());
         Ok(self.record(
             &self.gateways,
             GatewayRecord {
                 api_base,
                 model: call.model.to_owned(),
-                api_version,
                 max_retries,
-                timeout: call.timeout,
-                api_key,
-                acompletion: call.acompletion,
             },
         ))
     }

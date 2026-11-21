@@ -1,11 +1,14 @@
 #![cfg_attr(
     test,
     expect(
+        clippy::cognitive_complexity,
         clippy::default_numeric_fallback,
+        clippy::disallowed_methods,
         clippy::disallowed_types,
+        clippy::field_reassign_with_default,
         clippy::shadow_unrelated,
         clippy::too_many_lines,
-        reason = "each case states one LiteLLM behavior, its fixture JSON carries bare numbers, and the sync and async halves rebind the recorder, reply and error"
+        reason = "each case states one LiteLLM behavior, its fixture JSON carries bare numbers and json! literals, the sync and async halves rebind the recorder, reply and error, and each case scripts one harness field at a time"
     )
 )]
 
@@ -410,7 +413,7 @@ pub(super) fn output_limit_recovery() {
     assert_eq!(reply.response.usage.total_tokens, 11);
     // the recovered reply is logged as the original response like any other
     assert_eq!(recorder.post.len(), 1);
-    assert!(source.requests().len() == 1);
+    assert_eq!(source.requests().len(), 1);
 
     // the async wrapper recovers the same way and keeps the 400's headers on both paths
     let async_source = ScriptedSource::new(
