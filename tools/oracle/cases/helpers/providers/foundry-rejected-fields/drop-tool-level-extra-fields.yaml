@@ -1,0 +1,32 @@
+kind: helper
+name: foundry-rejected-fields-drop-tool-level-extra-fields
+call:
+  foundry_rejected_fields:
+    repairs:
+      # tools[0] and tools[1] name two fields, but every dict in the list loses both
+      - error: |-
+          {"error":{"message":"Extra inputs are not permitted: tools[0].extra and tools[1].other-param are not allowed","type":"invalid_request_error"}}
+        body:
+          model: deployment
+          messages: [{role: user, content: hi}]
+          tools:
+            - {type: function, function: {name: first}, extra: 1}
+            - {type: function, function: {name: second}, other-param: true}
+            - {type: function, function: {name: third}, extra: 3}
+            - plain-text
+          tool_choice: auto
+      # U+0345 after the name is a combining mark, which Python's \w leaves out, so extra drops and extra+mark stays
+      - error: |-
+          {"error":{"message":"Extra inputs are not permitted: tools[0].extraͅ","type":"invalid_request_error"}}
+        body:
+          model: deployment
+          tools:
+            - {type: function, extra: 1, "extraͅ": 2}
+      # a tool-level name without the extra-inputs marker leaves the tools alone
+      - error: |-
+          {"error":{"message":"tools[0].extra is not allowed","type":"invalid_request_error"}}
+        body:
+          model: deployment
+          tools: [{type: function, extra: 1}, {type: function, extra: 5}]
+env: {}
+compare: {ignore: []}
