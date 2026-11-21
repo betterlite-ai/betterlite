@@ -152,7 +152,11 @@ impl LoggingState {
         Clock: FnMut() -> Duration,
     {
         let prepared = prepare(&init, &mut correlation, redactor, next_trace_id, &mut clock)?;
-        Ok(Self {
+        Ok(Self::from_prepared(init, prepared))
+    }
+
+    fn from_prepared(init: LoggingInit, prepared: Prepared) -> Self {
+        Self {
             correlation: prepared.correlation,
             model_call_details: initial_model_call_details(&init, &prepared.trace_id),
             model: init.model,
@@ -189,7 +193,7 @@ impl LoggingState {
             shadow_eval_request_snapshot: None,
             deferred: DeferredLogging::default(),
             callback_policy: init.callback_policy,
-        })
+        }
     }
 }
 
