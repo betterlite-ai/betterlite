@@ -2,19 +2,22 @@ import asyncio
 import json
 import re
 import sys
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import UTC, datetime
 from importlib import import_module
 from types import ModuleType
-from typing import Literal, Protocol, TypedDict
+from typing import Literal, Protocol, TypedDict, cast
 
 import litellm
-from litellm.exceptions import BadRequestError as BadRequest, ContentPolicyViolationError as ContentPolicy
-from litellm.exceptions import ContextWindowExceededError as ContextWindow, UnsupportedParamsError as Unsupported
+from litellm.exceptions import BadRequestError as BadRequest
+from litellm.exceptions import ContentPolicyViolationError as ContentPolicy
+from litellm.exceptions import ContextWindowExceededError as ContextWindow
+from litellm.exceptions import UnsupportedParamsError as Unsupported
 from litellm.litellm_core_utils import health_check_utils
 from litellm.litellm_core_utils.health_check_helpers import HealthCheckHelpers
 from litellm.litellm_core_utils.litellm_logging import Logging
-from litellm.types.utils import ImageResponse as ImageReply, LlmProviders as Providers
+from litellm.types.utils import ImageResponse as ImageReply
+from litellm.types.utils import LlmProviders as Providers
 from pydantic import BaseModel, JsonValue, TypeAdapter, ValidationError
 from typing_extensions import override
 
@@ -24,12 +27,15 @@ REPLY: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 METADATA: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
 ERRORS: TypeAdapter[list[dict[str, JsonValue]]] = TypeAdapter(list[dict[str, JsonValue]])
 DROPPED = ("api_key", "litellm_logging_obj", "file", "image")
-TRACKED = ("tags", "user_api_key", "user_api_key_hash", "user_api_key_alias", "user_api_key_team_id",
-           "user_api_key_team_alias", "user_api_key_spend")
+TRACKED = (
+    "tags", "user_api_key", "user_api_key_hash", "user_api_key_alias",
+    "user_api_key_team_id", "user_api_key_team_alias", "user_api_key_spend",
+)
 CHEAPEST: list[str] = []
 Mode = Literal[
-    "chat", "completion", "embedding", "audio_speech", "audio_transcription", "image_generation",
-    "image_edit", "video_generation", "rerank", "realtime", "batch", "responses", "ocr", "evaluation",
+    "chat", "completion", "embedding", "audio_speech", "audio_transcription",
+    "image_generation", "image_edit", "video_generation", "rerank", "realtime",
+    "batch", "responses", "ocr", "evaluation",
 ]
 
 
@@ -92,9 +98,9 @@ class Recorder(ModuleType):
 class CallsModule(Recorder):
     def __init__(self, calls: list[JsonValue], failure: Exception | None) -> None:
         super().__init__("litellm", calls, failure)
-        self.ImageResponse = ImageReply
-        self.BadRequestError = BadRequest
-        self.ContentPolicyViolationError = ContentPolicy
+        self.ImageResponse = ImageReply  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2613
+        self.BadRequestError = BadRequest  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L219
+        self.ContentPolicyViolationError = ContentPolicy  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L619
         self.LlmProviders = Providers
 
     async def acompletion(self, **params: JsonValue) -> JsonValue:
@@ -151,15 +157,45 @@ class RequestUtils(ModuleType):
     def __init__(self) -> None:
         super().__init__("litellm.litellm_core_utils.llm_request_utils")
 
+    @override
     def __getattr__(self, name: str) -> Callable[[str, int], list[str]]:
         _ = name
         return cheapest_models
 
 
-GET_HANDLERS: Callable[..., dict[Mode, Callable[[], Awaitable[JsonValue]]]] = HealthCheckHelpers.get_mode_handlers  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_helpers.py#L164-L287
-WILDCARD: Callable[..., Awaitable[dict[str, JsonValue]]] = HealthCheckHelpers.ahealth_check_wildcard_models  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_helpers.py#L57-L85
-TRACK: Callable[..., dict[str, JsonValue]] = HealthCheckHelpers._update_model_params_with_health_check_tracking_information  # noqa: SLF001  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_helpers.py#L87-L110
-CREATE_RESPONSE: Callable[..., dict[str, JsonValue]] = health_check_utils._create_health_check_response  # noqa: SLF001  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_utils.py#L19-L30
+class ModeHandlersCall(Protocol):
+    def __call__(
+        self,
+        model: str,
+        custom_llm_provider: str,
+        model_params: Mapping[str, JsonValue | LoggingRecorder],
+        prompt: str | None,
+        inputs: list[str] | None,
+    ) -> dict[Mode, Callable[[], Awaitable[JsonValue]]]: ...
+
+
+class WildcardCall(Protocol):
+    def __call__(
+        self,
+        model: str,
+        custom_llm_provider: str,
+        model_params: Mapping[str, JsonValue],
+        logging: Logging,
+    ) -> Awaitable[dict[str, JsonValue]]: ...
+
+
+class TrackCall(Protocol):
+    def __call__(self, model_params: Mapping[str, JsonValue]) -> dict[str, JsonValue]: ...
+
+
+class ResponseCall(Protocol):
+    def __call__(self, headers: Mapping[str, str]) -> dict[str, JsonValue]: ...
+
+
+GET_HANDLERS = cast(ModeHandlersCall, cast(object, HealthCheckHelpers.get_mode_handlers))  # noqa: E501  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_helpers.py#L164-L287
+WILDCARD = cast(WildcardCall, cast(object, HealthCheckHelpers.ahealth_check_wildcard_models))  # noqa: E501  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_helpers.py#L57-L85
+TRACK = cast(TrackCall, cast(object, HealthCheckHelpers._update_model_params_with_health_check_tracking_information))  # noqa: E501, SLF001  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_helpers.py#L87-L110
+CREATE_RESPONSE = cast(ResponseCall, cast(object, health_check_utils._create_health_check_response))  # noqa: E501, SLF001  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_utils.py#L19-L30
 
 
 def scripted_failure(failure: Failure) -> Exception:
@@ -184,8 +220,10 @@ def clean(value: JsonValue | BaseModel) -> JsonValue:
     match value:
         case BaseModel():  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_helpers.py#L277-L287
             return model_json(value)
-        case dict(): return {key: clean(item) for key, item in value.items() if key not in DROPPED}
-        case list(): return [clean(item) for item in value]
+        case dict():
+            return {key: clean(item) for key, item in value.items() if key not in DROPPED}
+        case list():
+            return [clean(item) for item in value]
         case str() | bool() | int() | float() | None:
             return value
 
@@ -196,8 +234,9 @@ def project(params: JsonValue) -> JsonValue:
 
 
 def logging_object() -> Logging:
+    messages: list[JsonValue] = []
     return Logging(
-        model="health", messages=[], stream=False, call_type="acompletion",
+        model="health", messages=messages, stream=False, call_type="acompletion",
         litellm_call_id="b4440", function_id="b4440", start_time=datetime.now(UTC),
     )
 
@@ -227,13 +266,15 @@ async def mode_step(step: ModeStep) -> JsonValue:
     calls: list[JsonValue] = []
     failure = None if step["failure"] is None else scripted_failure(step["failure"])
     logging = LoggingRecorder()
-    params: dict[str, JsonValue | LoggingRecorder] = {
-        key: value for key, value in step["params"].items()
-    }
+    params: dict[str, JsonValue | LoggingRecorder] = {}
+    for key, value in step["params"].items():
+        params[key] = value
     if step["logging"]:
         params["litellm_logging_obj"] = logging
     saved_litellm = swap("litellm", CallsModule(calls, failure))
-    saved_realtime = swap("litellm.realtime_api.main", RealtimeModule("litellm.realtime_api.main", calls, failure))
+    saved_realtime = swap(
+        "litellm.realtime_api.main", RealtimeModule("litellm.realtime_api.main", calls, failure)
+    )
     try:
         handlers = GET_HANDLERS(
             step["model"], step["custom_llm_provider"], params, step["prompt"], step["inputs"]
@@ -275,7 +316,7 @@ async def wildcard_step(step: WildcardStep) -> JsonValue:
 
 
 def tracking_step(step: dict[str, dict[str, JsonValue]]) -> JsonValue:
-    tracked = TRACK(dict(step["params"]))
+    tracked = TRACK(step["params"].copy())
     metadata = METADATA.validate_json(json.dumps(tracked["litellm_metadata"], default=model_json))
     answer: dict[str, JsonValue] = {key: metadata.get(key) for key in TRACKED}
     return answer
@@ -291,5 +332,4 @@ async def run_steps(input_value: Input) -> list[JsonValue]:
 
 
 def run(input_value: Input) -> JsonValue:
-    results = asyncio.run(run_steps(input_value))
-    return results
+    return asyncio.run(run_steps(input_value))
