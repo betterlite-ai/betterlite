@@ -92,7 +92,12 @@ impl Section for Raw {
                 let resolved = resolve_string(text, DISABLE_CUSTOM_KEYS_PATH, lookup)?;
                 JsonValue::Bool(text_to_bool(&resolved) == Some(true))
             }
-            other => other,
+            other @ (JsonValue::Null
+            | JsonValue::Bool(_)
+            | JsonValue::Number(_)
+            | JsonValue::String(_)
+            | JsonValue::Array(_)
+            | JsonValue::Object(_)) => other,
         };
         let key_generation = self.litellm_settings.key_generation_settings.map_or_else(
             KeyGeneration::default,

@@ -90,13 +90,13 @@ fn required_param_check(
         return Ok(());
     };
     let supplied = data.project()?.supplied;
-    match params
+    if let Some(missing) = params
         .iter()
         .find(|param| !supplied.contains_key(param.as_str()))
     {
-        Some(missing) => Err(KeyAccessError::MissingParam {
+        return Err(KeyAccessError::MissingParam {
             param: missing.clone(),
-        }),
-        None => Ok(()),
+        });
     }
+    Ok(())
 }

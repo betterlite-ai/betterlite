@@ -17,8 +17,8 @@ fn load(source: &str, lookup: &[(&str, &str)]) -> Result<Settings, ConfigError> 
         .map(|config| config.sections.key_access)
 }
 
-fn roles(names: &[&str]) -> Option<Vec<String>> {
-    Some(names.iter().map(|name| (*name).to_owned()).collect())
+fn roles(names: &[&str]) -> Vec<String> {
+    names.iter().map(|name| (*name).to_owned()).collect()
 }
 
 #[test]
@@ -32,12 +32,12 @@ fn loads_settings() {
             key_generation: KeyGeneration {
                 configured: true,
                 team: TeamKeyGeneration {
-                    allowed_team_member_roles: roles(&["admin"]),
-                    required_params: roles(&["tags"]),
+                    allowed_team_member_roles: Some(roles(&["admin"])),
+                    required_params: Some(roles(&["tags"])),
                 },
                 personal: Some(PersonalKeyGeneration {
-                    allowed_user_roles: roles(&["proxy_admin", "internal_user"]),
-                    required_params: roles(&["key_alias", "duration"]),
+                    allowed_user_roles: Some(roles(&["proxy_admin", "internal_user"])),
+                    required_params: Some(roles(&["key_alias", "duration"])),
                 }),
             },
         }
@@ -80,7 +80,7 @@ fn generation_defaults(#[case] source: &str, #[case] expected: KeyGeneration) {
     assert!(!settings.disable_custom_api_keys);
     assert_eq!(
         TeamKeyGeneration::default().allowed_team_member_roles,
-        roles(&["admin", "user"])
+        Some(roles(&["admin", "user"]))
     );
 }
 
