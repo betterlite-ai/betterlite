@@ -200,7 +200,7 @@ fn guardrail_metadata(
                 policies: Vec::new(),
             });
         }
-        Some(Json::Object(metadata)) => metadata,
+        Some(Json::Object(found)) => found,
         Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
             return Err(HookPayloadError::AuthMetadata {
                 field,
@@ -221,7 +221,7 @@ fn names(
 ) -> Result<Vec<String>, HookPayloadError> {
     let items = match metadata.get(key) {
         None | Some(Json::Null) => return Ok(Vec::new()),
-        Some(Json::List(items)) => items,
+        Some(Json::List(list)) => list,
         Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
             return Err(HookPayloadError::AuthMetadata { field, key });
         }
@@ -246,7 +246,7 @@ fn merged_guardrails(
     for source in [metadata, parent] {
         let items = match source.get(GUARDRAILS) {
             None | Some(Json::Null) => continue,
-            Some(Json::List(items)) => items,
+            Some(Json::List(list)) => list,
             Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
                 return Err(HookPayloadError::GuardrailList);
             }

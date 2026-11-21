@@ -59,7 +59,7 @@ struct ToolRequest {
 enum Outcome {
     Error(String),
     Text(String),
-    Data(GuardrailHookData),
+    Data(Box<GuardrailHookData>),
 }
 
 impl Helper for Op {
@@ -120,7 +120,7 @@ fn outcome(scenario: &Scenario) -> Result<GuardrailOutcome, Box<HelperError>> {
     match &scenario.result {
         Some(Outcome::Error(message)) => Ok(GuardrailOutcome::Raised(message.clone())),
         Some(Outcome::Text(text)) => Ok(GuardrailOutcome::Text(text.clone())),
-        Some(Outcome::Data(data)) => Ok(GuardrailOutcome::Data(Box::new(data.clone()))),
+        Some(Outcome::Data(data)) => Ok(GuardrailOutcome::Data(data.clone())),
         None => Err(Box::new(HelperError {
             class: "B8401".to_owned(),
             status: None,

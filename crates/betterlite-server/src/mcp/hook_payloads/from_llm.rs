@@ -25,7 +25,7 @@ pub fn llm_result_to_pre_call(
                 hidden_params: HiddenParams::new(),
             }));
         }
-        GuardrailOutcome::Data(data) => data,
+        GuardrailOutcome::Data(answer) => answer,
     };
     let Some(content) = changed_content(data, call)? else {
         return Ok(None);
