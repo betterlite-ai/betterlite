@@ -23,7 +23,7 @@ use crate::atomic_counter::response::ResponseDecodeError;
 use crate::atomic_counter::value::CounterValueError as AtomicCounterValueError;
 use crate::concurrency_gauges::GaugeError;
 use crate::fail_closed::RateLimitUnverifiableError;
-use crate::limiter_records::{CacheCounterValue, ModelGroupResolver};
+use crate::limiter_records::{CacheCounterValue, ModelGroupResolver as _};
 use crate::rate_limit_window_store::WindowStoreError;
 use crate::request_stash::RequestStashSlot;
 use crate::settlement_and_rollback::SettlementError;
@@ -361,34 +361,34 @@ fn build_resolver(aliases: &[(&str, &str)]) -> RouterModelGroupResolver {
 #[test]
 fn resolver_returns_the_group_for_an_alias() {
     let resolver = build_resolver(&[("gpt4", "gpt-4")]);
-    let resolved = resolver.resolve("gpt4");
-    assert_eq!(resolved.as_deref(), Some("gpt-4"));
+    let group = resolver.resolve("gpt4");
+    assert_eq!(group.as_deref(), Some("gpt-4"));
 }
 
 #[test]
 fn resolver_returns_a_target_that_matches_the_name() {
     let resolver = build_resolver(&[("gpt4", "gpt4")]);
-    let resolved = resolver.resolve("gpt4");
-    assert_eq!(resolved.as_deref(), Some("gpt4"));
+    let group = resolver.resolve("gpt4");
+    assert_eq!(group.as_deref(), Some("gpt4"));
 }
 
 #[test]
 fn resolver_returns_nothing_for_a_group_name() {
     let resolver = build_resolver(&[("gpt4", "gpt-4")]);
-    let resolved = resolver.resolve("gpt-4");
-    assert_eq!(resolved, None);
+    let group = resolver.resolve("gpt-4");
+    assert_eq!(group, None);
 }
 
 #[test]
 fn resolver_returns_nothing_for_an_unknown_name() {
     let resolver = build_resolver(&[("gpt4", "gpt-4")]);
-    let resolved = resolver.resolve("unknown");
-    assert_eq!(resolved, None);
+    let group = resolver.resolve("unknown");
+    assert_eq!(group, None);
 }
 
 #[test]
 fn resolver_returns_nothing_for_an_empty_target() {
     let resolver = build_resolver(&[("gpt4", "")]);
-    let resolved = resolver.resolve("gpt4");
-    assert_eq!(resolved, None);
+    let group = resolver.resolve("gpt4");
+    assert_eq!(group, None);
 }

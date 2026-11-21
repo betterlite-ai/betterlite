@@ -33,7 +33,7 @@ pub(crate) struct NoScript;
 
 #[async_trait::async_trait]
 impl CounterScript for NoScript {
-    fn source(&self) -> &str {
+    fn source(&self) -> &'static str {
         "return nil"
     }
 
