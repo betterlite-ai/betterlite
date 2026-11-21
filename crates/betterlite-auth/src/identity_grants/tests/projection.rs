@@ -139,6 +139,19 @@ fn membership_zero_negative_and_null_kept() {
     assert!(!defaults.team_blocked);
 }
 
+// LiteLLM declares the four grant money fields as floats, so an integral Decimal still reads 50.0
+#[test]
+fn grants_money_serializes_as_floats() {
+    let no_spend: LiteLLMTeamMembership =
+        serde_json::from_str(r#"{"user_id": "u", "team_id": "t"}"#).unwrap();
+    let team = team_row(r#"{"team_id": "t", "max_budget": 50, "spend": 12.25}"#);
+    let value = serde_json::to_value(team_grants(&team, Some(&no_spend), None)).unwrap();
+    assert_eq!(value["team_member_spend"], serde_json::json!(0.0));
+    assert_eq!(value["team_max_budget"], serde_json::json!(50.0));
+    assert_eq!(value["team_spend"], serde_json::json!(12.25));
+    assert_eq!(value["team_soft_budget"], serde_json::Value::Null);
+}
+
 #[rstest]
 #[case::object(r#"{"fast": "gpt-4o", "smart": "o3"}"#, Some(aliases(&[("fast", "gpt-4o"), ("smart", "o3")])))]
 #[case::empty_map("{}", Some(ModelAliasMap::new()))]

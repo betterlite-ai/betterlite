@@ -30,12 +30,12 @@ pub struct TeamGrants {
     pub team_tpm_limit: Option<i64>,
     pub team_rpm_limit: Option<i64>,
     pub team_tpd_limit: Option<i64>,
-    #[serde(serialize_with = "rust_decimal::serde::arbitrary_precision_option::serialize")]
+    #[serde(serialize_with = "rust_decimal::serde::float_option::serialize")]
     pub team_max_budget: Option<Decimal>,
-    #[serde(serialize_with = "rust_decimal::serde::arbitrary_precision_option::serialize")]
+    #[serde(serialize_with = "rust_decimal::serde::float_option::serialize")]
     pub team_soft_budget: Option<Decimal>,
     pub team_model_max_budget: Option<BTreeMap<String, JsonData>>,
-    #[serde(serialize_with = "rust_decimal::serde::arbitrary_precision_option::serialize")]
+    #[serde(serialize_with = "rust_decimal::serde::float_option::serialize")]
     pub team_spend: Option<Decimal>,
     pub team_models: Vec<String>,
     pub team_blocked: bool,
@@ -44,7 +44,7 @@ pub struct TeamGrants {
     pub team_object_permission_id: Option<String>,
     pub team_object_permission: Option<LiteLLMObjectPermissionTable>,
     pub team_member: Option<Member>,
-    #[serde(serialize_with = "rust_decimal::serde::arbitrary_precision_option::serialize")]
+    #[serde(serialize_with = "rust_decimal::serde::float_option::serialize")]
     pub team_member_spend: Option<Decimal>,
     pub team_member_tpm_limit: Option<i64>,
     pub team_member_rpm_limit: Option<i64>,
