@@ -17,7 +17,7 @@ use betterlite_guardrails::guardrail_base::GuardrailBase;
 use betterlite_guardrails::guardrail_base::contract::GuardrailContract;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::guardrail_base::inputs::{GuardrailApiInputs, GuardrailLogTarget};
-use betterlite_guardrails::guardrail_base::settings::GuardrailSettings;
+use betterlite_guardrails::guardrail_base::settings::{GuardrailSettings, GuardrailSwitches};
 use betterlite_guardrails::guardrail_message_scope::Object;
 use betterlite_guardrails::guardrail_message_scope::scoped_indices::{
     GlobalSkipFlags, GuardrailSkipFlags,
@@ -272,7 +272,23 @@ pub(crate) fn applied(guardrail: &Arc<FakeGuardrail>) -> GuardrailToApply<FakeGu
 pub(crate) fn settings() -> GuardrailSettings {
     GuardrailSettings {
         guardrail_name: Some(NAME.to_owned()),
-        ..GuardrailSettings::default()
+        supported_event_hooks: None,
+        event_hook: None,
+        default_on: false,
+        mask_request_content: false,
+        mask_response_content: false,
+        violation_message_template: None,
+        end_session_after_n_fails: None,
+        on_violation: None,
+        realtime_violation_message: None,
+        on_sensitive_data: None,
+        sensitive_data_route_to_model: None,
+        sticky_session_routing: true,
+        run_in_parallel: false,
+        scan_raw_request: false,
+        only_scan_new_messages: false,
+        timeout: None,
+        switches: GuardrailSwitches::default(),
     }
 }
 
