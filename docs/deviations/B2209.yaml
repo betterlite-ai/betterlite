@@ -6,8 +6,8 @@ deviations:
   - what: Token counts are i64; a pre-processing sum or a prompt-plus-completion total that leaves the i64 range fails the response with a B682 BedrockError, where LiteLLM's Python ints grow without bound.
     why: betterlite's usage wire record types every token count as i64, and a total outside i64 cannot be held or serialized for the gateway.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_agent/transformation.py#L418-L426
-  - what: A trace event whose JSON nests deeper than serde_json's recursion limit is dropped with the trace warning; LiteLLM's json.loads parses it until the interpreter recursion limit, and a RecursionError there fails the whole response.
-    why: serde_json bounds nesting at parse time where Python's json module recurses on the C stack, so the depth at which each implementation gives up differs; betterlite keeps the parse failure a warn-and-drop frame.
+  - what: A trace event whose JSON nests deeper than serde_json's default recursion limit is dropped with the Failed to parse trace event JSON warning; LiteLLM's json.loads accepts deeper documents, and past the interpreter's own limit its per-frame catch logs Error processing event and drops that frame.
+    why: serde_json bounds nesting at parse time where Python's json module recurses on the C stack, so the depth at which each implementation gives up differs; betterlite keeps every parse failure a warn-and-drop frame.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_agent/transformation.py#L214-L222
 kept_bugs:
   - what: A mid-stream exception or error frame is debug-logged and discarded, so the response succeeds with the content of the other frames.
