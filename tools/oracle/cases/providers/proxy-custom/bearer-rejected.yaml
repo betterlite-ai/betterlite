@@ -6,22 +6,58 @@ config: |
         model: litellm_proxy/gemini/gemini-1.5-pro
         api_base: "{{upstream}}/unauthorized"
         api_key: oracle-wrong-key
+    - model_name: rejected-aleph-model
+      litellm_params:
+        model: aleph_alpha/luminous-base-control
+        api_base: "{{upstream}}/complete"
+        api_key: oracle-wrong-aleph-key
   router_settings: {num_retries: 0}
+config_files:
+  litellm.yaml: |
+    model_list:
+      - model_name: rejected-proxy-model
+        litellm_params:
+          model: litellm_proxy/gemini/gemini-1.5-pro
+          api_base: "{{upstream}}/unauthorized"
+          api_key: oracle-wrong-key
+      - model_name: rejected-aleph-model
+        litellm_params:
+          model: aleph_alpha/luminous-base-control
+          api_base: "{{upstream}}/complete"
+          api_key: oracle-wrong-aleph-key
+    litellm_settings:
+      custom_provider_map:
+        - provider: aleph_alpha
+          custom_handler: litellm.llms.deprecated_providers.aleph_alpha.AlephAlphaConfig
+    router_settings: {num_retries: 0}
 env: {}
-request:
-  method: POST
-  path: /chat/completions
-  headers: {content-type: application/json, authorization: Bearer oracle-master, x-litellm-call-id: oracle-call-rejected}
-  body:
-    model: rejected-proxy-model
-    messages: [{role: user, content: hi}]
 upstream:
   - status: 401
     headers: {content-type: application/json}
     body: {error: {message: "Incorrect API key provided", type: invalid_request_error, param: null, code: invalid_api_key}}
-compare:
-  headers: [content-type, x-litellm-call-id]
-  headers_present: []
-  upstream_headers: [authorization, content-type]
-  ignore:
-    - {pointer: /error/message, why: betterlite writes its own message}
+  - status: 401
+    headers: {content-type: application/json}
+    body: {error: {message: InvalidToken}}
+steps:
+  - request:
+      method: POST
+      path: /chat/completions
+      headers: {content-type: application/json, authorization: Bearer oracle-master, x-litellm-call-id: oracle-call-rejected}
+      body: {model: rejected-proxy-model, messages: [{role: user, content: hi}]}
+    compare:
+      headers: [content-type, x-litellm-call-id]
+      headers_present: []
+      upstream_headers: [authorization, content-type]
+      ignore:
+        - {pointer: /error/message, why: betterlite writes its own message}
+  - request:
+      method: POST
+      path: /v1/chat/completions
+      headers: {content-type: application/json, authorization: Bearer oracle-master, x-litellm-call-id: oracle-call-rejected-aleph}
+      body: {model: rejected-aleph-model, messages: [{role: user, content: hi}]}
+    compare:
+      headers: [content-type, x-litellm-call-id]
+      headers_present: []
+      upstream_headers: [authorization, content-type]
+      ignore:
+        - {pointer: /error/message, why: betterlite writes its own message}

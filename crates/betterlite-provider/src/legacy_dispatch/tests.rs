@@ -499,6 +499,8 @@ fn the_aleph_body_carries_the_call_parameters() {
         body.get("top_k"),
         Some(&serde_json::Value::Number(serde_json::Number::from(7_u64)))
     );
+    assert_eq!(body.get("stream"), Some(&serde_json::Value::Bool(false)));
+    assert_eq!(body.get("max_retries"), Some(&serde_json::json!(0)));
 }
 
 #[test]
@@ -590,7 +592,6 @@ fn an_aleph_failure_is_mapped_the_way_litellm_maps_it(
     assert_eq!(response.status, client_status);
     assert_eq!(response.body, text.as_bytes());
 }
-
 #[test]
 fn the_aleph_stream_is_refused() {
     let request = chat_operation(
@@ -613,7 +614,6 @@ fn the_aleph_stream_is_refused() {
     assert_eq!(provider, "aleph_alpha");
     assert_eq!(operation, "stream");
 }
-
 #[test]
 fn the_aleph_embedding_is_refused() {
     let operation = embedding_operation(br#"{"input":"hello"}"#);
