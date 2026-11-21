@@ -52,29 +52,29 @@ fn param(record: &IndexMap<String, Json>, name: &str) -> Json {
     params_of(record)[name].clone()
 }
 
+fn request(
+    query_text: &str,
+    options_json: &str,
+) -> Result<IndexMap<String, Json>, ApiserpentSearchError> {
+    let record = config(&[]).transform_search_request(
+        &query(query_text),
+        &optional_params(options_json),
+        None,
+        None,
+        &Headers::new(),
+    )?;
+    Ok(expected(&serde_json::to_string(&record).unwrap()))
+}
+
 fn request_body(query_text: &str, options_json: &str) -> IndexMap<String, Json> {
-    let record = config(&[])
-        .transform_search_request(
-            &query(query_text),
-            &optional_params(options_json),
-            None,
-            None,
-            &Headers::new(),
-        )
-        .unwrap();
-    expected(&serde_json::to_string(&record).unwrap())
+    request(query_text, options_json).expect("the options are accepted")
 }
 
 fn request_error(query_text: &str, options_json: &str) -> ApiserpentSearchError {
-    config(&[])
-        .transform_search_request(
-            &query(query_text),
-            &optional_params(options_json),
-            None,
-            None,
-            &Headers::new(),
-        )
-        .unwrap_err()
+    match request(query_text, options_json) {
+        Ok(record) => panic!("the options are accepted: {record:?}"),
+        Err(error) => error,
+    }
 }
 
 fn complete(api_base: Option<&str>, options_json: &str, values: &[(&str, &str)]) -> String {
