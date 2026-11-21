@@ -361,10 +361,9 @@ fn out_of_range_integers_follow_orjson() {
     let Some(Json::Number(seed)) = fields.get("seed") else {
         panic!("the seed is not a number");
     };
-    let expected = "1.2345678901234568e29"
-        .parse::<f64>()
-        .expect("the expected double parses");
-    assert_eq!(seed.as_f64().map(f64::to_bits), Some(expected.to_bits()));
+    // the stored number is the float from_f64 writes, not the original integer literal
+    assert!(seed.is_f64());
+    assert_eq!(seed.to_string(), "1.2345678901234568e+29");
     let Some(Json::Number(small)) = fields.get("small") else {
         panic!("the small integer is not a number");
     };
