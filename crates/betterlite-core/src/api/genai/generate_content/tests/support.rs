@@ -310,16 +310,16 @@ impl GenerateContentProviderConfig for TestConfig {
     fn transform_request(&self, request: &SetupRequest<'_>) -> Result<Json, TestConfigError> {
         let mut body = Object::new();
         body.insert("model".to_owned(), Json::Text(request.model.to_owned()));
-        body.insert("contents".to_owned(), request.contents.to_owned());
+        body.insert("contents".to_owned(), request.contents.clone());
         body.insert(
             "generationConfig".to_owned(),
-            Json::Object(request.generation_config.to_owned()),
+            Json::Object(request.generation_config.clone()),
         );
         if let Some(tools) = request.tools {
-            body.insert("tools".to_owned(), tools.to_owned());
+            body.insert("tools".to_owned(), tools.clone());
         }
         if let Some(instruction) = request.system_instruction {
-            body.insert("systemInstruction".to_owned(), instruction.to_owned());
+            body.insert("systemInstruction".to_owned(), instruction.clone());
         }
         Ok(Json::Object(body))
     }

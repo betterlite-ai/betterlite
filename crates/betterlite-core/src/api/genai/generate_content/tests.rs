@@ -176,10 +176,10 @@ async fn dispatch_adapter_call_forwards_params_and_narrows_a_negative_retry_coun
     let harness = Harness::new();
     let contents = contents();
     let kwargs = object(r#"{"max_retries":3,"organization":"org-1"}"#);
-    let request = request(ADAPTER_MODEL, &contents, None, &kwargs);
+    let positive_request = request(ADAPTER_MODEL, &contents, None, &kwargs);
 
     harness
-        .call(Entry::Generate, &request)
+        .call(Entry::Generate, &positive_request)
         .await
         .answer
         .expect("the call succeeds");
@@ -399,6 +399,11 @@ async fn dispatch_native_call_merges_native_fields_under_extra_body() {
     let payload: Json = serde_json::from_slice(&seen[0].body).expect("the request body is JSON");
     let expected = json(
         r#"{"model":"gemini-2.5-flash","contents":[{"role":"user","parts":[{"text":"Hi"}]}],"generationConfig":{},"safetySettings":[{"category":"HARM_CATEGORY_HATE_SPEECH","threshold":"BLOCK_NONE"}],"labels":{"team":"a"}}"#,
+    );
+    assert!(
+        seen[0]
+            .url
+            .starts_with("https://gemini.test/v1beta/models/gemini-2.5-flash:")
     );
     assert_eq!(payload, expected);
     assert_eq!(harness.config.auth_calls()[0].model, "gemini-2.5-flash");

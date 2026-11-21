@@ -28,7 +28,7 @@ pub(super) struct Caller {
 }
 
 // kwargs.pop(marker, False) at the entry points, kwargs.get(marker, False) at the adapter
-pub(super) fn flag_value(
+pub(super) const fn flag_value(
     value: Option<&Json>,
     marker: &'static str,
 ) -> Result<bool, RequestFieldError> {
