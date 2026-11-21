@@ -185,7 +185,7 @@ pub(crate) async fn insert_windows(
     windows: &[JsonData],
 ) {
     let sql = format!(
-        "INSERT INTO \"{table}\" ({id_column}, budget_limits) VALUES ($1, to_jsonb($2::text))"
+        "INSERT INTO \"{table}\" ({id_column}, budget_limits) VALUES ($1, $2::text::jsonb)"
     );
     let payload = serde_json::to_string(windows).expect("the windows json");
     client
