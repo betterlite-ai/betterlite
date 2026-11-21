@@ -73,6 +73,10 @@ fn openrouter(fixture: &Fixture) -> CompletionCall {
     arm_call(ChatConfigTag::Openrouter, fixture)
 }
 
+fn openrouter_key(fixture: &Fixture) -> Option<String> {
+    secret_text(openrouter(fixture).api_key.as_ref())
+}
+
 fn vercel(fixture: &Fixture) -> CompletionCall {
     arm_call(ChatConfigTag::VercelAiGateway, fixture)
 }
@@ -169,38 +173,32 @@ fn openrouter_key_follows_the_passed_global_openrouter_and_two_environment_value
     fixture.settings.openrouter_key = Some(secret("sk-openrouter"));
     fixture.settings.environment.openrouter_api_key = Some(secret("sk-openrouter-env"));
     fixture.settings.environment.or_api_key = Some(secret("sk-or"));
-    assert_eq!(
-        secret_text(openrouter(&fixture).api_key.as_ref()),
-        Some(String::from("sk-passed"))
-    );
+    assert_eq!(openrouter_key(&fixture), Some(String::from("sk-passed")));
 
     fixture.api_key = Some(secret(""));
     assert_eq!(
-        secret_text(openrouter(&fixture).api_key.as_ref()),
+        openrouter_key(&fixture),
         Some(String::from("sk-global")),
         "an empty passed key falls through"
     );
 
     fixture.settings.api_key = None;
     assert_eq!(
-        secret_text(openrouter(&fixture).api_key.as_ref()),
+        openrouter_key(&fixture),
         Some(String::from("sk-openrouter"))
     );
 
     fixture.settings.openrouter_key = Some(secret(""));
     assert_eq!(
-        secret_text(openrouter(&fixture).api_key.as_ref()),
+        openrouter_key(&fixture),
         Some(String::from("sk-openrouter-env"))
     );
 
     fixture.settings.environment.openrouter_api_key = None;
-    assert_eq!(
-        secret_text(openrouter(&fixture).api_key.as_ref()),
-        Some(String::from("sk-or"))
-    );
+    assert_eq!(openrouter_key(&fixture), Some(String::from("sk-or")));
 
     fixture.settings.environment.or_api_key = None;
-    assert_eq!(secret_text(openrouter(&fixture).api_key.as_ref()), None);
+    assert_eq!(openrouter_key(&fixture), None);
 }
 
 #[test]

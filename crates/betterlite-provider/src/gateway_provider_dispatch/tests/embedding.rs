@@ -32,6 +32,14 @@ fn resolve(provider: ProviderId, call: &EmbeddingCall, fixture: &Fixture) -> Emb
         .expect("the embedding table has this provider")
 }
 
+fn resolved_key(
+    provider: ProviderId,
+    request: &EmbeddingCall,
+    fixture: &Fixture,
+) -> Option<String> {
+    secret_text(resolve(provider, request, fixture).api_key.as_ref())
+}
+
 #[rstest]
 #[case::openai(ProviderId::Openai)]
 #[case::together(ProviderId::TogetherAi)]
@@ -61,10 +69,10 @@ fn openrouter_embedding_resolves_the_chat_base_and_key_chains() {
 
     request.api_base = Some(String::new());
     request.api_key = Some(secret(""));
-    let resolved = resolve(ProviderId::Openrouter, &request, &fixture);
-    assert_eq!(resolved.api_base.as_deref(), Some("http://global"));
+    let refreshed = resolve(ProviderId::Openrouter, &request, &fixture);
+    assert_eq!(refreshed.api_base.as_deref(), Some("http://global"));
     assert_eq!(
-        secret_text(resolved.api_key.as_ref()),
+        secret_text(refreshed.api_key.as_ref()),
         Some(String::from("sk-env")),
         "the global key is absent, so OPENROUTER_API_KEY answers"
     );
@@ -78,41 +86,25 @@ fn openrouter_embedding_key_falls_through_the_openrouter_and_or_values() {
     fixture.settings.environment.openrouter_api_key = Some(secret("sk-env"));
     fixture.settings.environment.or_api_key = Some(secret("sk-or"));
     assert_eq!(
-        secret_text(
-            resolve(ProviderId::Openrouter, &call(), &fixture)
-                .api_key
-                .as_ref()
-        ),
+        resolved_key(ProviderId::Openrouter, &call(), &fixture),
         Some(String::from("sk-litellm"))
     );
 
     fixture.settings.openrouter_key = None;
     assert_eq!(
-        secret_text(
-            resolve(ProviderId::Openrouter, &call(), &fixture)
-                .api_key
-                .as_ref()
-        ),
+        resolved_key(ProviderId::Openrouter, &call(), &fixture),
         Some(String::from("sk-env"))
     );
 
     fixture.settings.environment.openrouter_api_key = None;
     assert_eq!(
-        secret_text(
-            resolve(ProviderId::Openrouter, &call(), &fixture)
-                .api_key
-                .as_ref()
-        ),
+        resolved_key(ProviderId::Openrouter, &call(), &fixture),
         Some(String::from("sk-or"))
     );
 
     fixture.settings.environment.or_api_key = None;
     assert_eq!(
-        secret_text(
-            resolve(ProviderId::Openrouter, &call(), &fixture)
-                .api_key
-                .as_ref()
-        ),
+        resolved_key(ProviderId::Openrouter, &call(), &fixture),
         None
     );
 }
@@ -178,22 +170,14 @@ fn vercel_embedding_resolves_the_base_and_reads_the_oidc_token_last() {
 
     fixture.settings.environment.vercel_ai_gateway_api_key = Some(secret(""));
     assert_eq!(
-        secret_text(
-            resolve(ProviderId::VercelAiGateway, &request, &fixture)
-                .api_key
-                .as_ref()
-        ),
+        resolved_key(ProviderId::VercelAiGateway, &request, &fixture),
         Some(String::from("oidc")),
         "an empty gateway key falls through to VERCEL_OIDC_TOKEN"
     );
 
     fixture.settings.environment.vercel_oidc_token = None;
     assert_eq!(
-        secret_text(
-            resolve(ProviderId::VercelAiGateway, &request, &fixture)
-                .api_key
-                .as_ref()
-        ),
+        resolved_key(ProviderId::VercelAiGateway, &request, &fixture),
         None
     );
 
@@ -229,9 +213,9 @@ fn vercel_embedding_defaults_the_base_and_sends_the_request_headers_alone() {
         String::from("x-scope"),
         String::from("tenant"),
     )]));
-    let resolved = resolve(ProviderId::VercelAiGateway, &request, &fixture_with_globals);
+    let layered = resolve(ProviderId::VercelAiGateway, &request, &fixture_with_globals);
     assert_eq!(
-        resolved.headers,
+        layered.headers,
         Some(BTreeMap::from([(
             String::from("x-scope"),
             String::from("tenant"),

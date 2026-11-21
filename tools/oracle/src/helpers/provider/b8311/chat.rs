@@ -2,6 +2,7 @@ use betterlite_config::sections::gateway_provider_keys::Settings as SectionSetti
 use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_prompts::arguments::json::Object;
+use betterlite_provider::gateway_provider_dispatch::call::CompletionCall;
 use betterlite_provider::gateway_provider_dispatch::chat::dispatch;
 use betterlite_provider::gateway_provider_dispatch::context::{
     CallLogging, DispatchContext, DispatchSettings,
@@ -10,7 +11,7 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use serde_json::json;
 
 use super::fixtures::{Recorder, environment, logging, section_settings};
-use super::input::{Case, PreResolved, as_object, pre_resolved};
+use super::input::{Case, PreResolved, Provider, as_object, pre_resolved};
 use super::input_failure;
 use super::wire::{params_view, request_view};
 
@@ -55,6 +56,11 @@ pub(super) fn run(case: &Case) -> HelperResult {
     .ok_or_else(|| input_failure(format!("{} has no chat arm", case.provider.slug())))?
     .map_err(|error| input_failure(format!("the chat arm failed: {error}")))?;
     let call = handler.first()?;
+    view(case.provider, &call)
+}
+
+// the request view of the call the arm made, once the arm answered
+fn view(provider: Provider, call: &CompletionCall) -> HelperResult {
     let base = call
         .api_base
         .as_deref()
@@ -62,7 +68,7 @@ pub(super) fn run(case: &Case) -> HelperResult {
     let url = format!("{base}{CHAT_ENDPOINT}");
     Ok(json!({
         "request": request_view(&url, call.api_key.as_ref(), call.headers.as_ref()),
-        "params": params_view(&call.optional_params, call.stream, case.provider)?,
+        "params": params_view(&call.optional_params, call.stream, provider)?,
     }))
 }
 
