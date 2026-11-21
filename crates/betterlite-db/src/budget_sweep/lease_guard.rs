@@ -28,7 +28,7 @@ impl LeaseGuard {
     #[must_use]
     pub fn start<L>(holder: Arc<L>, cronjob_id: &'static str, tasks: &TaskTracker) -> Self
     where
-        L: LockReleaser + 'static,
+        L: LockReleaser + ?Sized + 'static,
     {
         let release_now = Arc::new(Notify::new());
         let wake = Arc::clone(&release_now);

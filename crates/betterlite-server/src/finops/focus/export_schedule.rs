@@ -1,13 +1,11 @@
 use std::error::Error;
 use std::sync::Arc;
 
+use betterlite_db::budget_sweep::lease_guard::{LeaseGuard, LockReleaser};
 use betterlite_db::queues::pod_lock::{LockCache, PodLockManager};
 use betterlite_logging::focus_records::destinations::FocusTimeWindow;
 use chrono::{DateTime, DurationRound as _, TimeDelta, Utc};
 use futures_util::future::BoxFuture;
-use tokio::sync::Notify;
-use tokio::task::JoinHandle;
-use tokio_util::task::TaskTracker;
 
 use super::error::{FocusError, FocusInitError, ScheduleError};
 use super::export::{FocusEngineFactory, FocusExporter, FocusLogger};
@@ -124,42 +122,10 @@ impl<Cache: LockCache> FocusPodLock for PodLockManager<Cache> {
     }
 }
 
-// The redis lease of one scheduled run: a tracked task releases the job's lock whether the export ends or its future is dropped.
-pub(crate) struct PodLockLease {
-    release_now: Arc<Notify>,
-    release_task: Option<JoinHandle<()>>,
-}
-
-impl PodLockLease {
-    pub(crate) fn start(
-        pod_lock: Arc<dyn FocusPodLock>,
-        job_name: &'static str,
-        tasks: &TaskTracker,
-    ) -> Self {
-        let release_now = Arc::new(Notify::new());
-        let wake = Arc::clone(&release_now);
-        let release_task = tasks.spawn(async move {
-            wake.notified().await;
-            pod_lock.release_lock(job_name).await;
-        });
-        Self {
-            release_now,
-            release_task: Some(release_task),
-        }
-    }
-
-    pub(crate) async fn release(mut self) {
-        self.release_now.notify_one();
-        if let Some(release_task) = self.release_task.take() {
-            let _released = release_task.await;
-        }
-    }
-}
-
-impl Drop for PodLockLease {
-    fn drop(&mut self) {
-        // a cancelled export never reaches release(): wake the tracked task so the lease is not held until its TTL
-        self.release_now.notify_one();
+// The lease guard releases through this port, so a scheduled export and the budget sweep hold their locks the same way.
+impl LockReleaser for dyn FocusPodLock {
+    async fn release(&self, cronjob_id: &str) {
+        self.release_lock(cronjob_id).await;
     }
 }
 
@@ -235,7 +201,7 @@ where
                 tracing::debug!("Focus export: unable to acquire pod lock");
                 return Ok(());
             }
-            Some(PodLockLease::start(
+            Some(LeaseGuard::start(
                 Arc::clone(pod_lock),
                 FOCUS_USAGE_DATA_JOB_NAME,
                 &logger.tasks,
