@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::future::{Future, ready};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use betterlite_auth::auth_identity::records::Principal;
@@ -159,7 +159,10 @@ pub(crate) struct SpanLog(pub(crate) Mutex<Vec<GuardrailInvocationRecord>>);
 
 impl GuardrailSpanSink for SpanLog {
     fn emit(&self, record: &GuardrailInvocationRecord) -> Result<(), GuardrailSpanError> {
-        self.0.lock().unwrap().push(record.clone());
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(record.clone());
         Ok(())
     }
 }
@@ -237,7 +240,10 @@ fn cache() -> DualLocalCache {
     )
 }
 
-pub(crate) fn registry<G: GuardrailContract + Send + Sync>() -> Registry<G> {
+pub(crate) fn registry<G>() -> Registry<G>
+where
+    G: GuardrailContract + Send + Sync,
+{
     build_registry(&RegistryConfig {
         stamps: FixedStamp,
         assembler: NoAssembler,
@@ -264,9 +270,10 @@ pub(crate) fn applied(guardrail: &Arc<FakeGuardrail>) -> GuardrailToApply<FakeGu
 }
 
 pub(crate) fn settings() -> GuardrailSettings {
-    let mut settings = GuardrailSettings::default();
-    settings.guardrail_name = Some(NAME.to_owned());
-    settings
+    GuardrailSettings {
+        guardrail_name: Some(NAME.to_owned()),
+        ..GuardrailSettings::default()
+    }
 }
 
 pub(crate) fn to_run(

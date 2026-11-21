@@ -53,12 +53,12 @@ impl<G: GuardrailContract + Send + Sync> GuardrailContract for RecordedGuardrail
             sink: self.sink.as_ref(),
         };
         let recorded = started.and_then(|invocation| match &outcome {
-            Ok(returned) => serde_json::to_value(returned)
-                .and_then(serde_json::from_value::<GuardrailValue>)
-                .map_err(|source| GuardrailRecordError::Json { source })
-                .and_then(|summary| {
-                    invocation.finish_success(&mut context, Some(&summary), finished_at)
-                }),
+            Ok(returned) => {
+                let summary = serde_json::to_value(returned)
+                    .and_then(serde_json::from_value::<GuardrailValue>)
+                    .map_err(|source| GuardrailRecordError::Json { source })?;
+                invocation.finish_success(&mut context, Some(&summary), finished_at)
+            }
             Err(failure) => invocation
                 .finish_failure(&mut context, failure.clone(), finished_at)
                 .map(|_returned| ()),

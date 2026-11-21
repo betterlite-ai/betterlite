@@ -67,11 +67,14 @@ impl<G: GuardrailContract> GenaiGuardrail for GenaiBridge<'_, G> {
 }
 
 // the response and the stream scan read the request and the key metadata the same way
-async fn scan_output<G: GuardrailContract>(
+async fn scan_output<G>(
     output: GuardedOutput<'_>,
     guardrail: &G,
     call: TranslationCall<'_, GuardrailLogTarget>,
-) -> Result<(), GuardrailFailure> {
+) -> Result<(), GuardrailFailure>
+where
+    G: GuardrailContract,
+{
     let request: Option<Object> = match call.request_data.as_deref() {
         Some(data) => Some(converted(data)?),
         None => None,

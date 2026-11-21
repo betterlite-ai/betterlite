@@ -63,8 +63,9 @@ fn adapters_keep_the_trait_defaults() {
     assert!(mcp.build_block_sse_chunks(&blocked(), true, None).is_none());
     assert!(genai.build_stream_error_items(&blocked(), None).is_none());
     assert_eq!(rerank.post_call_hook_response(response.clone()), response);
-    assert!(!<McpTranslation<FakeGuardrail> as BaseTranslation>::DELIVERS_ENDED_STREAM_REWRITES);
-    assert!(
-        !<GoogleGenAiTranslation<FakeGuardrail> as BaseTranslation>::ASSEMBLES_STREAMED_RESPONSE
-    );
+    let class_flags = [
+        <McpTranslation<FakeGuardrail> as BaseTranslation>::DELIVERS_ENDED_STREAM_REWRITES,
+        <GoogleGenAiTranslation<FakeGuardrail> as BaseTranslation>::ASSEMBLES_STREAMED_RESPONSE,
+    ];
+    assert_eq!(class_flags, [false, false]);
 }

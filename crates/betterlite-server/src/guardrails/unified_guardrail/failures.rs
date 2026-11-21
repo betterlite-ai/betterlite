@@ -71,7 +71,7 @@ macro_rules! guardrail_or_other {
             fn into_failure(self) -> GuardrailFailure {
                 match self {
                     $($found => $value,)+
-                    other @ ($rest) => GuardrailFailure::Other(other.to_string()),
+                    other @ $rest => GuardrailFailure::Other(other.to_string()),
                 }
             }
 

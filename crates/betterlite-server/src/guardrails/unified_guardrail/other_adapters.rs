@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::future::{Future, ready};
 use std::marker::PhantomData;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -46,13 +47,15 @@ impl<G: GuardrailContract> BaseTranslation for RerankTranslation<G> {
             .map_err(|CohereRerankGuardrailError::Guardrail(failure)| failure)
     }
 
-    async fn process_output_response(
+    fn process_output_response(
         &self,
         response: GuardrailValue,
         guardrail: &Self::Guardrail,
         _call: TranslationCall<'_, Self::LogTarget>,
-    ) -> Result<GuardrailValue, Self::Failure> {
-        Ok(CohereRerankHandler.process_output_response(response, guardrail))
+    ) -> impl Future<Output = Result<GuardrailValue, Self::Failure>> + Send {
+        ready(Ok(
+            CohereRerankHandler.process_output_response(response, guardrail)
+        ))
     }
 }
 

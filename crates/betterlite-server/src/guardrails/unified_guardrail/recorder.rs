@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
-pub trait AppliedGuardrailRecorder {
+pub trait AppliedGuardrailRecorder: Sync {
     fn record(
         &self,
         request_data: &mut BTreeMap<String, GuardrailValue>,
