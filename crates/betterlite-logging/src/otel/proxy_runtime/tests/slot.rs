@@ -76,18 +76,18 @@ async fn a_future_entered_with_the_captured_slot_sees_it() {
     let entered = finished
         .iter()
         .find(|seen| seen.0 == "entered")
-        .and_then(|seen| seen.1.clone());
+        .and_then(|seen| seen.1.as_ref().map(Arc::clone));
     let inherited = finished
         .iter()
         .find(|seen| seen.0 == "spawned")
-        .and_then(|seen| seen.1.clone());
-    assert!(entered.is_some_and(|entered| Arc::ptr_eq(&entered, &slot)));
+        .and_then(|seen| seen.1.as_ref().map(Arc::clone));
+    assert!(entered.is_some_and(|held| Arc::ptr_eq(&held, &slot)));
     assert!(
         inherited.is_none(),
         "a spawned task does not inherit the task_local slot"
     );
     let sync = enter_request_slot_sync(Some(Arc::clone(&slot)), || current_request_slot());
-    assert!(sync.is_some_and(|sync| Arc::ptr_eq(&sync, &slot)));
+    assert!(sync.is_some_and(|held| Arc::ptr_eq(&held, &slot)));
     assert!(
         enter_request_slot(None, async { current_request_slot() })
             .await

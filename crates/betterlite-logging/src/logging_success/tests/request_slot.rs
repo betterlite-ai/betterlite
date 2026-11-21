@@ -51,9 +51,9 @@ impl SlotReadingLogger {
         let mut seen = self.seen.lock().unwrap();
         seen.root = self.sources.trace_context().root.map(|root| root.context);
         let root: Option<Arc<dyn RootSpanSink>> = self.sources.request_root_span();
-        seen.recording = root.as_ref().is_some_and(|root| root.is_recording());
-        if let Some(root) = root {
-            root.set_attribute(TRACE_NAME, SERVER_SPAN.to_owned());
+        seen.recording = root.as_ref().is_some_and(|sink| sink.is_recording());
+        if let Some(sink) = root {
+            sink.set_attribute(TRACE_NAME, SERVER_SPAN.to_owned());
             seen.stamped = true;
         }
     }
@@ -81,7 +81,7 @@ fn add_logger(fixture: &mut Fixture, logger: &Arc<SlotReadingLogger>) {
         class_name: HANDLER_NAME.to_owned(),
         attributes: IndexMap::new(),
     };
-    let erased: Arc<dyn CallbackLogger> = Arc::clone(logger);
+    let erased = Arc::clone(logger);
     let sink = CallbackSink::Logger(erased);
     let registration = fixture
         .registry

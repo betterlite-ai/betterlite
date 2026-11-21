@@ -10,9 +10,9 @@ use opentelemetry_sdk::trace::SdkTracerProvider;
 use rstest::rstest;
 
 use crate::otel::content_projections::StreamOutputAssembler;
-use crate::otel::fan_out::scope::RequestScopeSource as _;
-use crate::otel::langfuse_root::RootSpanSource as _;
-use crate::otel::logger::v2::RequestTraceSource as _;
+use crate::otel::fan_out::scope::RequestScopeSource;
+use crate::otel::langfuse_root::RootSpanSource;
+use crate::otel::logger::v2::RequestTraceSource;
 use crate::otel::logger_runtime::LoggerRuntime;
 use crate::otel::logger_runtime::factory::build_otel_v2_logger;
 use crate::otel::logger_runtime::tests::support::{NoSettings, NullAssembler, destination};
@@ -78,7 +78,7 @@ fn attribute_limit(runtime: &LoggerRuntime) -> Option<usize> {
 #[case::unset(None, false)]
 fn the_v2_switch_follows_the_environment(#[case] value: Option<&str>, #[case] enabled: bool) {
     let lookup = match value {
-        Some(value) => environment(&[("LITELLM_OTEL_V2", value)]),
+        Some(switch) => environment(&[("LITELLM_OTEL_V2", switch)]),
         None => environment(&[]),
     };
     let runtime = runtime_with(lookup, None).expect("the runtime builds");
@@ -143,8 +143,10 @@ async fn the_runtime_reads_the_request_slot_through_its_sources() {
     request_slot_scope(async {
         anchor_request_root(anchored(5, 5), Context::new());
         set_destinations(carried.clone());
-        assert_eq!(runtime.trace.trace_context().root, Some(anchored(5, 5)));
-        assert_eq!(runtime.scope.scope().destinations, carried);
+        let trace: &dyn RequestTraceSource = runtime.trace.as_ref();
+        assert_eq!(trace.trace_context().root, Some(anchored(5, 5)));
+        let scope: &dyn RequestScopeSource = runtime.scope.as_ref();
+        assert_eq!(scope.scope().destinations, carried);
     })
     .await;
 }
@@ -187,7 +189,8 @@ async fn a_langfuse_content_config_builds_the_content_logger_with_the_assembler(
             http_route: None,
         };
         anchor_request_root(root, Context::current_with_span(span));
-        assert!(content.inner.roots.request_root_span().is_some());
+        let roots: &dyn RootSpanSource = content.inner.roots.as_ref();
+        assert!(roots.request_root_span().is_some());
     })
     .await;
 }

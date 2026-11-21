@@ -51,8 +51,8 @@ fn the_additive_flag_follows_the_tenant_destination_mode(
     #[case] additive: bool,
 ) {
     let mut lookup = BTreeMap::new();
-    if let Some(value) = value {
-        lookup.insert(TENANT_DESTINATION_MODE_ENV.to_owned(), value.to_owned());
+    if let Some(mode) = value {
+        lookup.insert(TENANT_DESTINATION_MODE_ENV.to_owned(), mode.to_owned());
     }
     assert_eq!(ProxyTraceSources::new(&lookup).scope().additive, additive);
 }
