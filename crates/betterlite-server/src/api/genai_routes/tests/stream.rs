@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use axum::http::header::CONTENT_TYPE;
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use betterlite_prompts::arguments::json::Json;
 use rstest::rstest;
@@ -103,5 +104,28 @@ async fn streaming_assigns_the_flags_over_caller_values() {
     assert_eq!(
         calls[0].data.get("_litellm_raw_sse_stream"),
         Some(&Json::Bool(true))
+    );
+}
+
+#[tokio::test]
+async fn a_content_type_from_the_pipeline_is_kept_on_the_stream() {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        CONTENT_TYPE,
+        HeaderValue::from_static("application/x-ndjson"),
+    );
+    let generation = FakeGeneration::streaming(GenerationAnswer {
+        headers,
+        body: GenerationBody::Events(events(vec![chunk()])),
+    });
+    let (status, response_headers, _body) = call(gen_router(generation), post(STREAM, "{}")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        response_headers.get("content-type"),
+        Some(&HeaderValue::from_static("application/x-ndjson"))
+    );
+    assert_eq!(
+        response_headers.get("cache-control"),
+        Some(&HeaderValue::from_static("no-cache"))
     );
 }

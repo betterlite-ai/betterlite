@@ -266,3 +266,36 @@ async fn the_text_of_a_count_without_a_total_is_still_a_number() {
         parse(r#"{"totalTokens":0,"promptTokensDetails":[]}"#)
     );
 }
+
+#[tokio::test]
+async fn the_path_model_is_used_even_when_the_body_sends_one() {
+    let translator = FakeTranslator::answering(Vec::new());
+    let counter = FakeCounter::returning(None);
+    let (status, _headers, _body) = call(
+        count_router(Arc::clone(&translator), Arc::clone(&counter)),
+        post(COUNT, r#"{"model":"body-model","contents":[]}"#),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        translator.calls(),
+        vec![(GEMINI.to_owned(), Json::List(Vec::new()))]
+    );
+    let requests = counter.calls();
+    assert_eq!(requests[0].0.model, GEMINI);
+}
+
+#[test]
+fn the_original_response_reads_the_provider_camel_case_fields() {
+    let original: TokenCountOriginal = serde_json::from_str(
+        r#"{"totalTokens":31,"promptTokensDetails":[{"modality":"TEXT","tokenCount":31}]}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        original,
+        TokenCountOriginal {
+            total_tokens: Some(31),
+            prompt_tokens_details: Some(vec![detail(Modality::Text, 31)]),
+        }
+    );
+}

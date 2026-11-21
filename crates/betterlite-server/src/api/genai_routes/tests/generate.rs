@@ -6,7 +6,9 @@ use rstest::rstest;
 
 use crate::api::genai_routes::ports::{GenerationAnswer, GenerationBody};
 
-use super::support::{FakeGeneration, answer, call, gen_router, json_body, object, post, text};
+use super::support::{
+    FakeGeneration, answer, call, gen_router, json_body, object, parse, post, text,
+};
 
 const GEMINI: &str = "gemini-2.0-flash";
 const GENERATE: &str = "/v1beta/models/gemini-2.0-flash:generateContent";
@@ -108,4 +110,24 @@ async fn the_pipeline_headers_are_copied_onto_the_answer() {
         response_headers.get("content-type"),
         Some(&HeaderValue::from_static("application/json"))
     );
+}
+
+#[tokio::test]
+async fn numbers_and_booleans_of_the_body_reach_the_pipeline() {
+    let generation = FakeGeneration::answering(answer(GenerationBody::Json(Json::Null)));
+    let (status, _headers, _body) = call(
+        gen_router(Arc::clone(&generation)),
+        post(
+            GENERATE,
+            r#"{"contents":[],"generationConfig":{"temperature":0.5,"topK":40},"stream":false}"#,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let calls = generation.calls();
+    assert_eq!(
+        calls[0].data.get("generationConfig"),
+        Some(&parse(r#"{"temperature":0.5,"topK":40}"#))
+    );
+    assert_eq!(calls[0].data.get("stream"), Some(&Json::Bool(false)));
 }
