@@ -131,6 +131,14 @@ pub enum LoggingStateError {
     FieldType { field: &'static str },
 }
 
+struct Prepared {
+    correlation: CorrelationOwnership,
+    trace_id: String,
+    session_id: String,
+    messages: Option<Vec<Json>>,
+    copy_ms: f64,
+}
+
 impl LoggingState {
     pub fn new<Id, Clock>(
         init: LoggingInit,
@@ -143,21 +151,18 @@ impl LoggingState {
         Id: FnOnce() -> String,
         Clock: FnMut() -> Duration,
     {
-        let session_id = session_id_from_kwargs(&init.kwargs)?;
-        let trace_id = init.litellm_trace_id.clone().unwrap_or_else(next_trace_id);
-        let (messages, copy_ms) = normalized_messages(init.messages.as_ref(), &mut clock);
+        let prepared = prepare(&init, &mut correlation, redactor, next_trace_id, &mut clock)?;
         Ok(Self {
-            // The literal moves the ids this borrows, so the correlation is built before them
-            correlation: apply_correlation(&mut correlation, &trace_id, &session_id, redactor),
-            model_call_details: initial_model_call_details(&init, &trace_id),
+            correlation: prepared.correlation,
+            model_call_details: initial_model_call_details(&init, &prepared.trace_id),
             model: init.model,
-            messages,
+            messages: prepared.messages,
             stream: init.stream,
             start_time: init.start_time,
             call_type: init.call_type,
             litellm_call_id: init.litellm_call_id,
-            litellm_trace_id: trace_id,
-            litellm_session_id: session_id,
+            litellm_trace_id: prepared.trace_id,
+            litellm_session_id: prepared.session_id,
             function_id: init.function_id,
             litellm_params: init.litellm_params,
             optional_params: IndexMap::new(),
@@ -168,7 +173,7 @@ impl LoggingState {
             custom_llm_provider: None,
             httpx_response: None,
             response_timing_metrics: IndexMap::new(),
-            message_copy_duration_ms: copy_ms,
+            message_copy_duration_ms: prepared.copy_ms,
             callback_duration_ms: 0.0,
             completion_start_time: None,
             dynamic_callbacks: init.dynamic_callbacks,
@@ -186,6 +191,31 @@ impl LoggingState {
             callback_policy: init.callback_policy,
         })
     }
+}
+
+fn prepare<Id, Clock>(
+    init: &LoggingInit,
+    setup: &mut CorrelationSetup<'_>,
+    redactor: &Redactor,
+    next_trace_id: Id,
+    clock: &mut Clock,
+) -> Result<Prepared, LoggingStateError>
+where
+    Id: FnOnce() -> String,
+    Clock: FnMut() -> Duration,
+{
+    let session_id = session_id_from_kwargs(&init.kwargs)?;
+    let trace_id = init.litellm_trace_id.clone().unwrap_or_else(next_trace_id);
+    let (messages, copy_ms) = normalized_messages(init.messages.as_ref(), clock);
+    // The ids move into Prepared, so the correlation is built before them
+    let correlation = apply_correlation(setup, &trace_id, &session_id, redactor);
+    Ok(Prepared {
+        correlation,
+        trace_id,
+        session_id,
+        messages,
+        copy_ms,
+    })
 }
 
 // The elapsed time is read from the injected clock, the way LiteLLM reads time.time() around its message copy
