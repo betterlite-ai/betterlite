@@ -1,0 +1,30 @@
+kind: helper
+name: auth-errors-escaped-user-agent
+call:
+  auth_errors:
+    rows:
+      # identity fields in the log line escape control and separator characters; the hook metadata keeps the agent as sent
+      - step: handle
+        failure: {kind: http, message: Authentication Error, key expired, type: auth_error, param: null, status_code: 401, marked: false, internal_message: ""}
+        reply: original
+        replacement: null
+        switches: [log_auth_failure_key_identity]
+        identity: {key_alias: "ops\nkey", user_id: "user one", user_email: "a​b@example.com", team_id: "t\u0001", team_alias: ""}
+        request_data: {model: gpt-4o, metadata: {user_agent: "", trace: kept}}
+        route: /v1/chat/completions
+        user_agent: "curl/8.5 (agent\tbeta)"
+        client_host: 203.0.113.7
+      # litellm_metadata wins by key presence, and a set user_agent is never overwritten
+      - step: handle
+        failure: {kind: http, message: Authentication Error, key expired, type: auth_error, param: null, status_code: 401, marked: false, internal_message: ""}
+        reply: original
+        replacement: null
+        switches: []
+        identity: {key_alias: "ops\nkey"}
+        request_data: {model: gpt-4o, litellm_metadata: {user_agent: preset/1.0}, metadata: {requester_ip_address: ""}}
+        route: /v1/chat/completions
+        user_agent: curl/8.5
+        client_host: 203.0.113.7
+env: {}
+compare:
+  ignore: []

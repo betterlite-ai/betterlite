@@ -1,0 +1,19 @@
+kind: helper
+name: auth-errors-route-escaped-user-agent
+call:
+  auth_errors:
+    rows:
+      # a carriage return in the key alias cannot forge a second log line
+      - step: handle
+        failure: {kind: http, message: Authentication Error, budget exceeded for key, type: auth_error, param: null, status_code: 400, marked: false, internal_message: ""}
+        reply: original
+        replacement: null
+        switches: [log_auth_failure_key_identity, log_client_error_tracebacks]
+        identity: {key_alias: "alias\r\nERROR forged", user_email: "ops@example.com"}
+        request_data: {model: gpt-4o, metadata: {user_agent: null}}
+        route: /v1/chat/completions
+        user_agent: "Mozilla/5.0 (X11; Linux x86_64)"
+        client_host: 192.0.2.10
+env: {}
+compare:
+  ignore: []

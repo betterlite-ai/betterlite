@@ -8,6 +8,7 @@ use betterlite_auth::auth_errors::conversion::ClientFailure;
 use betterlite_auth::auth_errors::handler::{
     AuthErrorHandler, AuthErrorSettings, FailedRequest, HandlerError, LogSwitches,
 };
+use betterlite_auth::auth_errors::request_state::record_unparsable_body_failure;
 use betterlite_auth::auth_request_policy::ip::RequestProvenance;
 use betterlite_auth::auth_route_patterns::normalize::RouteNormalizer;
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
@@ -20,7 +21,7 @@ use serde_json::{Value, json};
 use tokio::runtime::Builder;
 
 use self::recorder::Recorder;
-use self::types::{Input, Row, Switch, auth_failure};
+use self::types::{Input, Row, Step, Switch, auth_failure, proxy_exception};
 
 mod recorder;
 mod tests;
@@ -53,6 +54,9 @@ async fn answer(row: &Row, routes: &RouteNormalizer, redactor: &Redactor) -> Hel
         replacement: row.replacement.as_ref().map(auth_failure),
     };
     let resolved = row.identity.as_ref().map(identity).transpose()?;
+    if matches!(row.step, Step::Unparsable) {
+        return unparsable(row, ports, resolved).await;
+    }
     let mut headers = HeaderMap::new();
     if let Some(agent) = &row.user_agent {
         let value = HeaderValue::from_str(agent).map_err(|error| failure("HeaderError", &error))?;
@@ -80,6 +84,17 @@ async fn answer(row: &Row, routes: &RouteNormalizer, redactor: &Redactor) -> Hel
     let result = outcome(handler.handle(auth_failure(&row.failure), request).await)?;
     let events = ports.events.into_inner().unwrap_or_default();
     Ok(json!({"outcome": result, "events": events}))
+}
+
+async fn unparsable(row: &Row, ports: Recorder, resolved: Option<UserAPIKeyAuth>) -> HelperResult {
+    let caller = match resolved {
+        Some(known) => known,
+        None => identity(&BTreeMap::new())?,
+    };
+    let exception = proxy_exception(&row.failure);
+    record_unparsable_body_failure(&ports, &caller, &exception, &row.route).await;
+    let events = ports.events.into_inner().unwrap_or_default();
+    Ok(json!({"outcome": {"recorded": true}, "events": events}))
 }
 
 fn outcome(handled: Result<UserAPIKeyAuth, HandlerError>) -> HelperResult {

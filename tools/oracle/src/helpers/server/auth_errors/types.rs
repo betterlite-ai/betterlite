@@ -44,9 +44,18 @@ pub(super) enum Reply {
     Raise,
 }
 
+// handle runs _handle_authentication_error; unparsable runs _record_unparsable_body_failure
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum Step {
+    Handle,
+    Unparsable,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Row {
+    pub(super) step: Step,
     pub(super) failure: Failure,
     pub(super) reply: Reply,
     pub(super) replacement: Option<Failure>,
@@ -64,6 +73,18 @@ pub(crate) struct Input {
     pub(super) rows: Vec<Row>,
 }
 
+pub(super) fn proxy_exception(spec: &Failure) -> ProxyException {
+    ProxyException::new(ProxyExceptionInit {
+        message: spec.message.clone(),
+        error_type: spec.error_type.clone(),
+        param: spec.param.clone(),
+        code: ExceptionCode::Status(i64::from(spec.status_code)),
+        headers: BTreeMap::new(),
+        openai_code: None,
+        provider_specific_fields: BTreeMap::new(),
+    })
+}
+
 pub(super) fn auth_failure(spec: &Failure) -> AuthFailure {
     let message = spec.message.clone();
     match spec.kind {
@@ -74,15 +95,7 @@ pub(super) fn auth_failure(spec: &Failure) -> AuthFailure {
             invalid_virtual_key: spec.marked,
         },
         Kind::Proxy => AuthFailure::Proxy {
-            exception: ProxyException::new(ProxyExceptionInit {
-                message,
-                error_type: spec.error_type.clone(),
-                param: spec.param.clone(),
-                code: ExceptionCode::Status(i64::from(spec.status_code)),
-                headers: BTreeMap::new(),
-                openai_code: None,
-                provider_specific_fields: BTreeMap::new(),
-            }),
+            exception: proxy_exception(spec),
             invalid_virtual_key: spec.marked,
         },
         Kind::ModelDenial => AuthFailure::ModelAccessDenied {

@@ -5,6 +5,7 @@ use betterlite_db::database_faults::ErrorType;
 use betterlite_error::proxy_error_types::ProxyErrorTypes;
 use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
 use betterlite_models::decisions::Json;
+use betterlite_models::resolution::ResolutionError;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Number;
@@ -15,7 +16,8 @@ use super::support::{
 };
 use crate::auth_errors::conversion::AuthFailure;
 use crate::auth_errors::handler::{DB_UNAVAILABLE_FALLBACK_USER_ID, HandlerError};
-use crate::auth_errors::ports::{AuthLog, HookError, Level, Logger};
+use crate::auth_errors::ports::{AuthLog, HookError, Level, Logger, NoNativeProvider};
+use crate::rejection_provider::ProviderResolution as _;
 use crate::resolved_key::auth::{ApiKeySecret, user_api_key_has_admin_view};
 use crate::resolved_key::credential::safe_hash_api_key;
 use crate::user_roles::UserRole;
@@ -341,6 +343,15 @@ async fn transformed_exception_marker_and_non401_error_escalation(
             }))
         ));
     }
+}
+
+#[test]
+fn no_native_provider_never_resolves() {
+    let outcome = NoNativeProvider.resolve("gpt-4o");
+    assert!(
+        matches!(&outcome, Err(ResolutionError::MissingProvider { model }) if model == "gpt-4o"),
+        "{outcome:?}"
+    );
 }
 
 #[tokio::test]

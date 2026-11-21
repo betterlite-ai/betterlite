@@ -32,7 +32,8 @@ impl Recorder {
 #[async_trait]
 impl AuthErrorPorts for Recorder {
     fn record_service_failure(&self, failure: &ServiceFailure<'_>) {
-        self.push(json!({"event": "service", "call_type": failure.call_type}));
+        self.push(json!({"event": "service", "call_type": failure.call_type,
+            "duration": failure.duration.as_secs_f64()}));
     }
 
     fn log(&self, entry: AuthLog) {

@@ -86,7 +86,11 @@ async fn mark_called(Extension(reached): Extension<Arc<AtomicBool>>) -> &'static
 }
 
 async fn send(hook: Option<&Arc<Hook>>, key: &str) -> (StatusCode, String, bool) {
-    let state = state_for(&config(""));
+    send_with(hook, key, "").await
+}
+
+async fn send_with(hook: Option<&Arc<Hook>>, key: &str, extra: &str) -> (StatusCode, String, bool) {
+    let state = state_for(&config(extra));
     if let Some(installed) = hook
         && state.auth_errors.hook.set(Arc::clone(installed)).is_err()
     {
@@ -165,6 +169,18 @@ async fn failure_stops_downstream() {
         .collect();
     assert_eq!(ordered, client);
     assert!(original.contains("Access forbidden: IP address 203.0.113.9"));
+}
+
+#[tokio::test]
+async fn outage_setting_never_lets_an_unmatched_key_through() {
+    let hook = Hook::replying(Reply::Raise);
+    let outage = "  allow_requests_on_db_unavailable: true\n";
+    let (status, _, reached) = send_with(Some(&hook), "sk-wrong-key", outage).await;
+    assert_eq!(
+        (status, reached),
+        (StatusCode::INTERNAL_SERVER_ERROR, false)
+    );
+    assert_eq!(hook.seen.lock().unwrap().len(), 1);
 }
 
 #[tokio::test]

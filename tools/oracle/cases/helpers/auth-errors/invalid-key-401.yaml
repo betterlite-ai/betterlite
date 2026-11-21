@@ -1,0 +1,52 @@
+kind: helper
+name: auth-errors-invalid-key-401
+call:
+  auth_errors:
+    rows:
+      # a marked malformed key logs a quiet stdout warning without a traceback
+      - step: handle
+        failure: {kind: http, message: Invalid proxy server token passed., type: auth_error, param: null, status_code: 401, marked: true, internal_message: ""}
+        reply: original
+        replacement: null
+        switches: []
+        identity: null
+        request_data: {model: gpt-4o}
+        route: /v1/chat/completions
+        user_agent: curl/8.5
+        client_host: 203.0.113.7
+      # log_client_error_tracebacks turns the same rejection into an error with its traceback
+      - step: handle
+        failure: {kind: http, message: Invalid proxy server token passed., type: auth_error, param: null, status_code: 401, marked: true, internal_message: ""}
+        reply: original
+        replacement: null
+        switches: [log_client_error_tracebacks]
+        identity: null
+        request_data: {model: gpt-4o}
+        route: /v1/chat/completions
+        user_agent: curl/8.5
+        client_host: 203.0.113.7
+      # an unmarked 401 is an expected client error: error level, no traceback
+      - step: handle
+        failure: {kind: http, message: Authentication Error, key expired, type: auth_error, param: null, status_code: 401, marked: false, internal_message: ""}
+        reply: original
+        replacement: null
+        switches: []
+        identity: null
+        request_data: {}
+        route: /v1/chat/completions
+        user_agent: null
+        client_host: 203.0.113.7
+      # a proxy rejection keeps its own type, param and code
+      - step: handle
+        failure: {kind: proxy, message: Invalid proxy server token passed., type: auth_error, param: api_key, status_code: 401, marked: true, internal_message: ""}
+        reply: original
+        replacement: null
+        switches: []
+        identity: null
+        request_data: {model: gpt-4o}
+        route: /v1/chat/completions
+        user_agent: curl/8.5
+        client_host: 203.0.113.7
+env: {}
+compare:
+  ignore: []

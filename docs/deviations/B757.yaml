@@ -1,0 +1,37 @@
+task: B757
+deviations:
+  - what: >-
+      The gateway never issues the database-outage identity. With allow_requests_on_db_unavailable true, a
+      wrong master key is still rejected with its 400, where LiteLLM without a database serves the request as
+      the __db_unavailable_fallback__ internal user.
+    why: >-
+      The gateway reads no virtual key from a database, so the only no_db_connection rejection it raises is a
+      key that matched nothing. Serving that caller would let any string through as a user, which is a
+      security flaw rather than an outage fallback. The auth handler keeps the bypass for callers that do read
+      keys from a database (outage_connection_only_service_hook_then_warning_then_restricted_identity).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L106-L112
+  - what: >-
+      A failure callback that raises is answered as a plain 500, and the unparsable-body log line names a
+      fixed "a post-call failure callback raised" instead of the callback's own exception text.
+    why: >-
+      The callback's exception may carry request or credential text, and the task requires that hook
+      failures leak no secret. raising_hook_answers_500_without_the_key and
+      malformed_body_hook_failure_preserves_original_400 prove the response and the log line.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1405-L1406
+  - what: >-
+      Only the gateway stages that raise a ProxyException, and a key that matched nothing, run through the
+      auth error handler. A missing key and a model-access rejection keep their own responses and log no
+      failure line.
+    why: >-
+      Those two failures have their own response shapes from earlier tasks, and the handler has no way to
+      render them unchanged. invalid_key_reaches_the_hook_and_a_missing_key_does_not covers the split.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L128-L260
+  - what: >-
+      The gateway seeds no OpenTelemetry span with the failure identity, and budget rejections it attributes
+      fall back to the litellm_proxy provider.
+    why: >-
+      The gateway opens no server span yet and raises no budget rejection through this path, so both ports
+      have nothing to act on. The auth handler still calls both in LiteLLM's order
+      (identity_copy_api_key_route_and_model_seed, budget_missing_provider_resolved_before_hook).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L218-L235
+kept_bugs: []
