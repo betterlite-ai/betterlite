@@ -139,10 +139,9 @@ impl TokenReservations<'_> {
             });
         }
         self.reserve_output_bucket(
-            &itpm_descriptors,
+            (&itpm_descriptors, &otpm_descriptors),
             itpm_reserved,
             &itpm_response,
-            &otpm_descriptors,
             estimated_output_tokens,
         )
         .await
@@ -150,10 +149,9 @@ impl TokenReservations<'_> {
 
     async fn reserve_output_bucket(
         &self,
-        itpm_descriptors: &[RateLimitDescriptor],
+        (itpm_descriptors, otpm_descriptors): (&[RateLimitDescriptor], &[RateLimitDescriptor]),
         itpm_reserved: i64,
         itpm_response: &RateLimitResponse,
-        otpm_descriptors: &[RateLimitDescriptor],
         estimated_output_tokens: i64,
     ) -> Result<IoReservation, TokenReservationError> {
         let otpm_response = self
@@ -213,12 +211,12 @@ impl TokenReservations<'_> {
         estimated_input_tokens: i64,
         estimated_output_tokens: i64,
     ) -> Result<(), TokenReservationError> {
-        let Some(auth) = auth else {
+        let Some(caller) = auth else {
             return Ok(());
         };
         let mut descriptors = Vec::new();
         self.descriptors
-            .project_io_descriptors(auth, requested_model, &mut descriptors);
+            .project_io_descriptors(caller, requested_model, &mut descriptors);
         if descriptors.is_empty() {
             return Ok(());
         }

@@ -2,14 +2,13 @@
 
 use std::collections::BTreeSet;
 
-use betterlite_redis::cache_primitives::pipeline_increment::IncrementOperation;
 use betterlite_redis::cache_primitives::protocol::RedisScalar;
 use rstest::rstest;
 
 use crate::limiter_records::{CacheCounterValue, ReservationBackend};
 use crate::token_reservations::tests::support::{
-    RecordingScript, ReservationFixture, START, count, identity, local_write, read, scope, text,
-    tokens_key, window_key,
+    RecordingScript, ReservationFixture, START, count, identity, increment_tuples, local_write,
+    read, scope, text, tokens_key, window_key,
 };
 
 const ITPM: &str = "model_per_project_itpm";
@@ -93,12 +92,8 @@ async fn increments_unguarded_when_the_window_names_another_counter() {
         .unwrap();
 
     assert_eq!(
-        fixture.effects.increments(),
-        vec![IncrementOperation {
-            key: tokens_key(ITPM, VALUE),
-            increment_value: -100.0_f64,
-            ttl: Some(60),
-        }]
+        increment_tuples(&fixture.effects.increments()),
+        vec![(tokens_key(ITPM, VALUE), -100.0_f64, Some(60))]
     );
     assert!(fixture.effects.reads().is_empty());
     assert!(fixture.effects.writes().is_empty());

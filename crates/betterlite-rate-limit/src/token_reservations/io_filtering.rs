@@ -10,10 +10,10 @@ pub(crate) fn split_io_descriptors(
     let mut itpm = Vec::new();
     let mut otpm = Vec::new();
     for descriptor in descriptors {
-        if descriptor.key == PROJECT_ITPM_DESCRIPTOR_KEY {
-            itpm.push(descriptor.clone());
-        } else if descriptor.key == PROJECT_OTPM_DESCRIPTOR_KEY {
-            otpm.push(descriptor.clone());
+        match descriptor.key.as_str() {
+            PROJECT_ITPM_DESCRIPTOR_KEY => itpm.push(descriptor.clone()),
+            PROJECT_OTPM_DESCRIPTOR_KEY => otpm.push(descriptor.clone()),
+            _ => {}
         }
     }
     (itpm, otpm)

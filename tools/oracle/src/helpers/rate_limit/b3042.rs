@@ -207,10 +207,7 @@ fn answer(
     raised: Value,
     effects: &Effects,
 ) -> Value {
-    let rendered = match response {
-        Some(rate_limit_response) => response_json(rate_limit_response),
-        None => Value::Null,
-    };
+    let rendered = response.map_or(Value::Null, response_json);
     json!({
         "response": rendered,
         "itpm_reserved": itpm_reserved,

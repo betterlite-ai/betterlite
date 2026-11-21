@@ -328,6 +328,31 @@ pub(crate) fn local_write(key: &str, value: f64, ttl: i64) -> WriteRecord {
     write_record(key, WriteValue::Local(value), Some(ttl), true)
 }
 
+pub(crate) fn increment_tuples(
+    operations: &[IncrementOperation],
+) -> Vec<(String, f64, Option<i64>)> {
+    operations
+        .iter()
+        .map(|operation| {
+            (
+                operation.key.clone(),
+                operation.increment_value,
+                operation.ttl,
+            )
+        })
+        .collect()
+}
+
+pub(crate) fn pipeline_tuples(
+    pipelines: &[Vec<IncrementOperation>],
+) -> Vec<Vec<(String, f64, Option<i64>)>> {
+    pipelines
+        .iter()
+        .map(Vec::as_slice)
+        .map(increment_tuples)
+        .collect()
+}
+
 pub(crate) fn auth(fields: &str) -> UserAPIKeyAuth {
     let decoded: BTreeMap<String, JsonData> =
         serde_json::from_str(fields).expect("the auth fields decode");
@@ -355,11 +380,10 @@ impl ReservationFixture {
     ) -> Self {
         let effects = Arc::new(Effects::default());
         let cache = Arc::new(RecordingCache::new(entries, Arc::clone(&effects)));
-        let shared: Arc<dyn CounterCache> = Arc::clone(&cache);
         let usage = Arc::new(RecordingUsage::new(Arc::clone(&effects)));
         let adjustments = TokenAdjustments {
             windows: WindowStore {
-                cache: shared,
+                cache: Arc::clone(&cache),
                 rate_limiter_script: None,
                 counter_read_script: None,
                 request_batch: None,

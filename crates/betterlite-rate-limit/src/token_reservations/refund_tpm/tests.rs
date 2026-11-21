@@ -2,17 +2,9 @@
 
 use std::collections::BTreeSet;
 
-use betterlite_redis::cache_primitives::pipeline_increment::IncrementOperation;
-
-use crate::token_reservations::tests::support::{ReservationFixture, scope, tokens_key};
-
-fn payment(key: &str, value: &str, amount: f64) -> IncrementOperation {
-    IncrementOperation {
-        key: tokens_key(key, value),
-        increment_value: amount,
-        ttl: Some(60),
-    }
-}
+use crate::token_reservations::tests::support::{
+    ReservationFixture, pipeline_tuples, scope, tokens_key,
+};
 
 #[tokio::test]
 async fn refunds_one_pipeline_operation_per_scope() {
@@ -32,10 +24,18 @@ async fn refunds_one_pipeline_operation_per_scope() {
         .unwrap();
 
     assert_eq!(
-        fixture.effects.pipelines(),
+        pipeline_tuples(&fixture.effects.pipelines()),
         vec![vec![
-            payment("model_per_key", "key1:gpt-4", -100.0_f64),
-            payment("model_per_team", "team1:gpt-4", -100.0_f64),
+            (
+                tokens_key("model_per_key", "key1:gpt-4"),
+                -100.0_f64,
+                Some(60)
+            ),
+            (
+                tokens_key("model_per_team", "team1:gpt-4"),
+                -100.0_f64,
+                Some(60)
+            ),
         ]]
     );
     assert!(fixture.effects.reads().is_empty());
@@ -61,10 +61,18 @@ async fn refunds_a_scope_named_twice_twice() {
         .unwrap();
 
     assert_eq!(
-        fixture.effects.pipelines(),
+        pipeline_tuples(&fixture.effects.pipelines()),
         vec![vec![
-            payment("model_per_key", "key1:gpt-4", -100.0_f64),
-            payment("model_per_key", "key1:gpt-4", -100.0_f64),
+            (
+                tokens_key("model_per_key", "key1:gpt-4"),
+                -100.0_f64,
+                Some(60)
+            ),
+            (
+                tokens_key("model_per_key", "key1:gpt-4"),
+                -100.0_f64,
+                Some(60)
+            ),
         ]]
     );
 }
