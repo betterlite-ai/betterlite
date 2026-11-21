@@ -1,0 +1,25 @@
+kind: helper
+name: alias-delete
+call:
+  team_model_cleanup:
+    calls:
+      - function: delete_team_model_alias
+        public_model_name: pub
+        aliases:
+          - {id: 1, team_id: t1, aliases: {first: pub, second: pub}}
+          - {id: 2, aliases: {free: pub}}
+          - {id: 3, team_id: t2, aliases: {kept: other}}
+calls:
+  - team_model_cleanup:
+      calls:
+        - function: remove_unbacked_team_models
+          model_name: pub
+          team_id: t1
+          team_public_model_name: null
+          aliases:
+            - {id: 1, team_id: t1, aliases: {legacy: pub}}
+          deployments: []
+          served_names: []
+          team_models: [legacy, other]
+env: {}
+compare: {ignore: []}

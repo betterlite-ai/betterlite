@@ -2,9 +2,10 @@
 
 use betterlite_redis::redis_client_reuse::transport::RedisCacheFamily;
 use betterlite_redis::redis_connection_settings::model::nodes::ClusterNodeConfig;
+use betterlite_test_ports::refused_port::RefusedPort;
 use secrecy::ExposeSecret as _;
 
-use super::support::{closed_port, environment, no_environment, params, wiring};
+use super::support::{environment, no_environment, params, wiring};
 use crate::coord_redis_boot::build::{
     build_from_env, build_usage_redis, env_family, env_has_redis_target, usage_family,
 };
@@ -137,7 +138,8 @@ fn env_has_redis_target_ignores_boolean_node_texts() {
 
 #[tokio::test]
 async fn build_usage_redis_builds_a_plain_client() {
-    let port = closed_port();
+    let refused = RefusedPort::bind().unwrap();
+    let port = refused.address.port();
     let block = params(&format!(r#"{{"host": "127.0.0.1", "port": {port}}}"#));
     let cache = build_usage_redis(&block, &wiring(), &no_environment())
         .await
@@ -149,7 +151,8 @@ async fn build_usage_redis_builds_a_plain_client() {
 
 #[tokio::test]
 async fn build_usage_redis_builds_a_cluster_client() {
-    let port = closed_port();
+    let refused = RefusedPort::bind().unwrap();
+    let port = refused.address.port();
     let text = format!(r#"{{"startup_nodes": [{{"host": "127.0.0.1", "port": {port}}}]}}"#);
     let cache = build_usage_redis(&params(&text), &wiring(), &no_environment())
         .await
@@ -166,7 +169,8 @@ async fn build_usage_redis_builds_a_cluster_client() {
 
 #[tokio::test]
 async fn build_usage_redis_takes_the_cluster_from_the_environment() {
-    let port = closed_port();
+    let refused = RefusedPort::bind().unwrap();
+    let port = refused.address.port();
     let block = params(&format!(r#"{{"host": "127.0.0.1", "port": {port}}}"#));
     let env = environment(&[("REDIS_CLUSTER_NODES", &environment_nodes(port))]);
     let cache = build_usage_redis(&block, &wiring(), &env)
@@ -184,7 +188,8 @@ async fn build_usage_redis_takes_the_cluster_from_the_environment() {
 
 #[tokio::test]
 async fn build_usage_redis_reads_the_namespace_and_flush_size() {
-    let port = closed_port();
+    let refused = RefusedPort::bind().unwrap();
+    let port = refused.address.port();
     let text = format!(
         r#"{{"host": "127.0.0.1", "port": {port}, "namespace": "coordination", "redis_flush_size": 50}}"#
     );
@@ -197,7 +202,8 @@ async fn build_usage_redis_reads_the_namespace_and_flush_size() {
 
 #[tokio::test]
 async fn build_usage_redis_rejects_an_unknown_option() {
-    let port = closed_port();
+    let refused = RefusedPort::bind().unwrap();
+    let port = refused.address.port();
     let text = format!(r#"{{"host": "127.0.0.1", "port": {port}, "bogus_option": 1}}"#);
     let error = build_usage_redis(&params(&text), &wiring(), &no_environment())
         .await
@@ -208,7 +214,8 @@ async fn build_usage_redis_rejects_an_unknown_option() {
 
 #[tokio::test]
 async fn build_usage_redis_drops_null_parameters() {
-    let port = closed_port();
+    let refused = RefusedPort::bind().unwrap();
+    let port = refused.address.port();
     let block = params(&format!(
         r#"{{"host": "127.0.0.1", "port": {port}, "unsupported_option": null}}"#
     ));
@@ -228,7 +235,8 @@ async fn build_from_env_returns_none_without_a_target() {
 
 #[tokio::test]
 async fn build_from_env_builds_from_the_environment() {
-    let port = closed_port();
+    let refused = RefusedPort::bind().unwrap();
+    let port = refused.address.port();
     let env = environment(&[
         ("REDIS_HOST", "127.0.0.1"),
         ("REDIS_PORT", &port.to_string()),
@@ -246,7 +254,8 @@ async fn build_from_env_builds_from_the_environment() {
 
 #[tokio::test]
 async fn build_from_env_honors_a_configured_socket_timeout() {
-    let port = closed_port();
+    let refused = RefusedPort::bind().unwrap();
+    let port = refused.address.port();
     let env = environment(&[
         ("REDIS_HOST", "127.0.0.1"),
         ("REDIS_PORT", &port.to_string()),
@@ -261,7 +270,8 @@ async fn build_from_env_honors_a_configured_socket_timeout() {
 
 #[tokio::test]
 async fn build_from_env_rejects_a_malformed_socket_timeout() {
-    let port = closed_port();
+    let refused = RefusedPort::bind().unwrap();
+    let port = refused.address.port();
     let env = environment(&[
         ("REDIS_HOST", "127.0.0.1"),
         ("REDIS_PORT", &port.to_string()),
@@ -280,7 +290,8 @@ async fn build_from_env_rejects_a_malformed_socket_timeout() {
 
 #[tokio::test]
 async fn build_from_env_keeps_the_default_socket_timeout_when_unset() {
-    let port = closed_port();
+    let refused = RefusedPort::bind().unwrap();
+    let port = refused.address.port();
     let env = environment(&[
         ("REDIS_HOST", "127.0.0.1"),
         ("REDIS_PORT", &port.to_string()),
@@ -294,7 +305,8 @@ async fn build_from_env_keeps_the_default_socket_timeout_when_unset() {
 
 #[tokio::test]
 async fn build_from_env_keeps_the_default_socket_timeout_for_an_empty_value() {
-    let port = closed_port();
+    let refused = RefusedPort::bind().unwrap();
+    let port = refused.address.port();
     let env = environment(&[
         ("REDIS_HOST", "127.0.0.1"),
         ("REDIS_PORT", &port.to_string()),
@@ -310,7 +322,8 @@ async fn build_from_env_keeps_the_default_socket_timeout_for_an_empty_value() {
 // RedisCache's own socket_timeout default of 5.0 overrides REDIS_SOCKET_TIMEOUT on the block path, the way litellm's signature default does.
 #[tokio::test]
 async fn build_usage_redis_keeps_the_cache_default_timeout_over_the_environment() {
-    let port = closed_port();
+    let refused = RefusedPort::bind().unwrap();
+    let port = refused.address.port();
     let block = params(&format!(r#"{{"host": "127.0.0.1", "port": {port}}}"#));
     let env = environment(&[("REDIS_SOCKET_TIMEOUT", "2.5")]);
     let cache = build_usage_redis(&block, &wiring(), &env)
@@ -321,7 +334,8 @@ async fn build_usage_redis_keeps_the_cache_default_timeout_over_the_environment(
 
 #[tokio::test]
 async fn build_usage_redis_keeps_the_credentials_secret() {
-    let port = closed_port();
+    let refused = RefusedPort::bind().unwrap();
+    let port = refused.address.port();
     let text = format!(
         r#"{{"host": "127.0.0.1", "port": {port}, "password": "s3cr3t", "sentinel_password": "sentinel"}}"#
     );
@@ -346,7 +360,8 @@ async fn build_usage_redis_keeps_the_credentials_secret() {
 
 #[tokio::test]
 async fn build_from_env_builds_a_cluster_from_environment_nodes() {
-    let port = closed_port();
+    let refused = RefusedPort::bind().unwrap();
+    let port = refused.address.port();
     let env = environment(&[("REDIS_CLUSTER_NODES", &environment_nodes(port))]);
     let cache = build_from_env(&wiring(), &env)
         .await

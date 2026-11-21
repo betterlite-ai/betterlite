@@ -48,6 +48,8 @@ fn a_missing_location_is_required() {
 #[rstest]
 #[case::empty("")]
 #[case::parent("a..b")]
+#[case::encoded_parent("%2e%2e")]
+#[case::percent("bad%project")]
 #[case::slash("bad/project")]
 #[case::question("bad?project")]
 #[case::hash("bad#project")]

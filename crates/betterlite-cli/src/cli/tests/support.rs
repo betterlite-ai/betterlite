@@ -169,13 +169,6 @@ fn respond(stream: &mut TcpStream, answer: &Answer, request: &Mutex<Vec<u8>>) {
     let _shut = stream.shutdown(Shutdown::Write);
 }
 
-pub(crate) fn unused_base_url() -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
-    format!("http://{address}")
-}
-
 impl Write for Captured {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0

@@ -1,0 +1,32 @@
+task: B1009
+deviations:
+  - what: >-
+      A client socket that fails while a blocked guardrail sends its notice ends the client loop as
+      CLIENT_DISCONNECTED; LiteLLM's ConnectionClosed handler reports BACKEND_CLOSED for the same failure.
+    why: >-
+      The socket that failed is the client's, and BACKEND_CLOSED makes bidirectional_forward try to deliver
+      the upstream close to a client that is already gone; the client's own failure is a disconnect.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L891
+  - what: >-
+      A backend send that fails with an error other than a websocket close ends the client loop as
+      BACKEND_CLOSED; LiteLLM's generic exception handler reports CLIENT_DISCONNECTED for every error that
+      is not a websockets ConnectionClosed.
+    why: >-
+      betterlite's backend transport reports one error type for a failed backend socket, and the backend
+      failing is the cause; treating it as a client disconnect would skip the close the client is owed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L1562
+  - what: >-
+      bidirectional_forward takes the client and backend directions as futures from its caller instead of
+      spawning client_ack_messages and backend_to_client_send_messages itself.
+    why: >-
+      Both directions borrow the same session state in Rust, so the caller owns them; the first-completion
+      wait, the client-disconnect early return, the close, the cancellation and the join keep LiteLLM's order.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L1565
+kept_bugs:
+  - what: >-
+      A blocked user text message leaves the pending guardrail flag set, so the next response.create the
+      client sends is dropped even when it belongs to a later turn.
+    why: >-
+      An OpenAI client sends that response.create reflexively after the blocked message and LiteLLM spends
+      the flag on it; a setup that blocks text relies on the duplicate response being dropped.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L1414

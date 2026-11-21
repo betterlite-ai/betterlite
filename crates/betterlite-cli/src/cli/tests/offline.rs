@@ -1,6 +1,7 @@
+use betterlite_test_ports::refused_port::RefusedPort;
 use rstest::rstest;
 
-use crate::cli::tests::support::{FakeEnvironment, Harness, unused_base_url};
+use crate::cli::tests::support::{FakeEnvironment, Harness};
 
 #[rstest]
 #[case::models(&["models", "list"])]
@@ -25,7 +26,8 @@ use crate::cli::tests::support::{FakeEnvironment, Harness, unused_base_url};
 #[case::unconfigure(&["unconfigure"])]
 #[case::autoroute(&["autoroute", "configure"])]
 fn a_command_that_cannot_run_reports_one_error(#[case] command: &[&str]) {
-    let base_url = unused_base_url();
+    let refused = RefusedPort::bind().unwrap();
+    let base_url = format!("http://{}", refused.address);
     let mut argv: Vec<&str> = vec!["--base-url", &base_url];
     argv.extend_from_slice(command);
     let mut harness = Harness::new(FakeEnvironment::default());
