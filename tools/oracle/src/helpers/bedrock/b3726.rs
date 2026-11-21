@@ -8,9 +8,10 @@ use betterlite_bedrock::guardrail_hooks::post_call::post_call_success_hook;
 use betterlite_bedrock::guardrail_hooks::streaming::{StreamHook, streaming_iterator_hook};
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
-use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
+use serde_json::json;
 use tokio::runtime::Builder;
 
 mod assembly;
@@ -98,7 +99,24 @@ impl Helper for Op {
     type Input = Args;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = build_runtime(input)?;
+        let guardrail = build_guardrail(&input.guardrail)?;
+        let base = base_settings(&input.guardrail);
+        let settings = streaming_settings(
+            &input.guardrail,
+            &guardrail,
+            input.keepalive_interval_seconds,
+        );
+        let elapsed = input
+            .elapsed_seconds
+            .and_then(|seconds| Duration::try_from_secs_f64(seconds).ok())
+            .unwrap_or(Duration::ZERO);
+        let runtime = OracleRuntime::new(
+            guardrail,
+            base,
+            settings,
+            Sent::new(input.replies.clone()),
+            elapsed,
+        );
         let mut data = input.data.clone();
         let mut response = input.response.clone().unwrap_or(GuardrailValue::Null);
         let handle = Builder::new_current_thread()
@@ -110,11 +128,11 @@ impl Helper for Op {
             Ok(chunks) => (Ok(()), chunks),
             Err(failure) => (Err(failure), Vec::new()),
         };
-        Ok(view::report(
-            outcome,
-            &chunks,
-            runtime.transport.bodies().len(),
-        ))
+        Ok(json!({
+            "outcome": view::outcome(outcome),
+            "chunks": view::chunks(&chunks),
+            "scans": runtime.transport.bodies().len(),
+        }))
     }
 }
 
@@ -151,25 +169,4 @@ async fn run_hook(
             streaming_iterator_hook(hook).await
         }
     }
-}
-
-fn build_runtime(input: &Args) -> Result<OracleRuntime, Box<HelperError>> {
-    let guardrail = build_guardrail(&input.guardrail)?;
-    let base = base_settings(&input.guardrail);
-    let settings = streaming_settings(
-        &input.guardrail,
-        &guardrail,
-        input.keepalive_interval_seconds,
-    );
-    let elapsed = input
-        .elapsed_seconds
-        .and_then(|seconds| Duration::try_from_secs_f64(seconds).ok())
-        .unwrap_or(Duration::ZERO);
-    Ok(OracleRuntime::new(
-        guardrail,
-        base,
-        settings,
-        Sent::new(input.replies.clone()),
-        elapsed,
-    ))
 }
