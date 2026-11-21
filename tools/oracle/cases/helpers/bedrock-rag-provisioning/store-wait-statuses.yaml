@@ -1,0 +1,18 @@
+kind: helper
+name: store-wait-statuses
+call:
+  b3457:
+    step: store
+    vector:
+      custom_llm_provider: bedrock
+      aws_region_name: us-west-2
+      vector_store_id: KB123
+      wait_for_ingestion: true
+    environment: {}
+    unique_id: "0123abcd"
+    content: "hello bedrock"
+    filename: "note.txt"
+    content_type: "text/plain"
+    job_statuses: ["IN_PROGRESS", "COMPLETE"]
+env: {}
+compare: {ignore: []}
