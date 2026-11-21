@@ -15,11 +15,6 @@ pub enum Param<T> {
     Null,
     Value(T),
 }
-impl<T> Default for Param<T> {
-    fn default() -> Self {
-        Self::Absent
-    }
-}
 impl<T> Param<T> {
     #[must_use]
     pub const fn as_option(&self) -> Option<&T> {
@@ -29,7 +24,7 @@ impl<T> Param<T> {
         }
     }
 }
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct HealthProbeParams {
     pub model: Param<String>,
     pub api_base: Param<String>,
@@ -44,6 +39,25 @@ pub struct HealthProbeParams {
     pub cache: Param<Json>,
     pub parameters: IndexMap<String, Value>,
     pub litellm_logging_obj: Option<Arc<dyn HealthProbeLogging>>,
+}
+impl Default for HealthProbeParams {
+    fn default() -> Self {
+        Self {
+            model: Param::Absent,
+            api_base: Param::Absent,
+            api_key: None,
+            api_version: Param::Absent,
+            custom_llm_provider: Param::Absent,
+            max_tokens: Param::Absent,
+            voice: Param::Absent,
+            messages: Param::Absent,
+            fallbacks: Param::Absent,
+            litellm_metadata: Param::Absent,
+            cache: Param::Absent,
+            parameters: IndexMap::new(),
+            litellm_logging_obj: None,
+        }
+    }
 }
 impl HealthProbeParams {
     pub fn from_map(mut parameters: IndexMap<String, Value>) -> Result<Self, HealthProbeError> {
@@ -118,10 +132,10 @@ fn take_text(
     }
 }
 fn take_json(parameters: &mut IndexMap<String, Value>, key: &'static str) -> Param<Json> {
-    match parameters.shift_remove(key) {
-        None => Param::Absent,
-        Some(value) => Param::Value(json_from_value(value)),
-    }
+    parameters.shift_remove(key).map_or_else(
+        || Param::Absent,
+        |value| Param::Value(json_from_value(value)),
+    )
 }
 trait ParameterJson {
     fn parameter_json(&self) -> Json;
@@ -136,11 +150,10 @@ impl ParameterJson for Json {
         self.clone()
     }
 }
-fn insert_parameter<T: ParameterJson>(
-    parameters: &mut IndexMap<String, Json>,
-    key: &'static str,
-    value: &Param<T>,
-) {
+fn insert_parameter<T>(parameters: &mut IndexMap<String, Json>, key: &'static str, value: &Param<T>)
+where
+    T: ParameterJson,
+{
     match value {
         Param::Absent => {}
         Param::Null => {

@@ -23,9 +23,9 @@ pub fn plan_health_probe(
     params: HealthProbeParams,
     arguments: HealthProbeArguments,
 ) -> Option<HealthProbePlan> {
-    let mode = HealthProbeMode::from_name(mode)?;
+    let selected = HealthProbeMode::try_from(mode).ok()?;
     let plan = HealthProbePlan {
-        mode,
+        mode: selected,
         model: model.to_owned(),
         custom_llm_provider: custom_llm_provider.to_owned(),
         params,

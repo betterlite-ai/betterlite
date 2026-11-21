@@ -40,14 +40,11 @@ fn update_logging(
         return Ok(());
     };
     let api_base = params.api_base.as_option().filter(|text| !text.is_empty());
-    let litellm_params = match api_base {
-        Some(base) => {
-            let mut entries = IndexMap::new();
-            entries.insert("api_base".to_owned(), Json::Text(base.clone()));
-            Some(entries)
-        }
-        None => None,
-    };
+    let litellm_params = api_base.map(|base| {
+        let mut entries = IndexMap::new();
+        entries.insert("api_base".to_owned(), Json::Text(base.clone()));
+        entries
+    });
     let update = ProbeLoggingUpdate {
         kwargs: filtered.clone(),
         model: params.model.as_option().cloned(),

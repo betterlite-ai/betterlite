@@ -30,7 +30,7 @@ pub trait HealthProbeBackend: Send + Sync {
 }
 // pick_cheapest_chat_models_from_llm_provider behind the wildcard probe
 pub trait CheapestChatModels: Send + Sync {
-    fn cheapest_chat_models(&self, custom_llm_provider: &str, n: usize) -> Vec<String>;
+    fn cheapest_chat_models(&self, custom_llm_provider: &str, limit: usize) -> Vec<String>;
 }
 // get_health_check_document for the ocr mode
 pub trait OcrHealthDocuments: Send + Sync {

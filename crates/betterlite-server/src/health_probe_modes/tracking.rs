@@ -23,10 +23,10 @@ pub fn add_tracking_information(
     data.insert(METADATA_VARIABLE_NAME.to_owned(), Json::Object(metadata));
     add_principal_metadata(&mut data, MetadataField::LitellmMetadata, &principal)
         .map_err(|source| HealthProbeError::Tracking { source })?;
-    let Some(Json::Object(metadata)) = data.shift_remove(METADATA_VARIABLE_NAME) else {
+    let Some(Json::Object(tracked)) = data.shift_remove(METADATA_VARIABLE_NAME) else {
         return Err(HealthProbeError::TrackingMetadata);
     };
-    params.litellm_metadata = Param::Value(Json::Object(metadata));
+    params.litellm_metadata = Param::Value(Json::Object(tracked));
     Ok(params)
 }
 fn health_principal() -> Result<PrincipalFacts, HealthProbeError> {

@@ -68,7 +68,7 @@ pub(crate) fn evaluation_call(
         payload.insert(key, value);
     }
     let mut validated = validate_payload(payload)?;
-    validated.api_key = params.api_key.clone();
+    validated.api_key.clone_from(&params.api_key);
     Ok(EvaluationCall {
         params: validated,
         logging: params.litellm_logging_obj.clone(),
@@ -80,10 +80,13 @@ fn invalid_field(key: &'static str, detail: &str) -> HealthProbeError {
         detail: detail.to_owned(),
     }
 }
-fn take_field<F: DeserializeOwned>(
+fn take_field<F>(
     payload: &mut IndexMap<String, Json>,
     key: &'static str,
-) -> Result<F, HealthProbeError> {
+) -> Result<F, HealthProbeError>
+where
+    F: DeserializeOwned,
+{
     let value = payload.shift_remove(key).unwrap_or(Json::Null);
     let text =
         serde_json::to_string(&value).map_err(|error| invalid_field(key, &error.to_string()))?;

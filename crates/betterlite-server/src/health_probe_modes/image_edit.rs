@@ -33,7 +33,7 @@ fn swallowed(error: &HealthProbeError) -> bool {
         && (matches!(class, ErrorClass::ContentPolicyViolation(_))
             || message.contains("moderation_blocked"))
 }
-fn is_bad_request(class: &ErrorClass) -> bool {
+const fn is_bad_request(class: &ErrorClass) -> bool {
     matches!(
         class,
         ErrorClass::BadRequest(_)

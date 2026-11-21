@@ -33,15 +33,6 @@ impl HealthProbeMode {
         Self::Evaluation,
     ];
     #[must_use]
-    pub fn from_name(name: &str) -> Option<Self> {
-        for mode in Self::ALL {
-            if mode.name() == name {
-                return Some(mode);
-            }
-        }
-        None
-    }
-    #[must_use]
     pub const fn name(self) -> &'static str {
         match self {
             Self::Chat => "chat",
@@ -59,5 +50,18 @@ impl HealthProbeMode {
             Self::Ocr => "ocr",
             Self::Evaluation => "evaluation",
         }
+    }
+}
+// a mode name that no health check mode carries
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct UnknownHealthProbeMode;
+impl TryFrom<&str> for HealthProbeMode {
+    type Error = UnknownHealthProbeMode;
+
+    fn try_from(name: &str) -> Result<Self, Self::Error> {
+        Self::ALL
+            .into_iter()
+            .find(|&mode| mode.name() == name)
+            .ok_or(UnknownHealthProbeMode)
     }
 }
