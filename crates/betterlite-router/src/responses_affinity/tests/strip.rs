@@ -105,6 +105,25 @@ fn request_kwargs_messages_are_stripped_when_the_argument_is_empty() {
 }
 
 #[test]
+fn the_targets_own_message_block_is_kept_without_input_markers() {
+    let deployments = vec![target()];
+    let credentials = CredentialSnapshot::default();
+    let check = check(settings(true, &[]), &credentials);
+    let mut request = Request::new();
+    request.messages = Some(vec![message(vec![
+        thinking_part(Some("A")),
+        text_part("keep"),
+    ])]);
+    let returned = request.filter(&check, "gpt-group", &deployments).unwrap();
+    assert_eq!(ids(&returned), vec![Some("A".to_owned())]);
+    let expected = Some(vec![message(vec![
+        thinking_part(Some("A")),
+        text_part("keep"),
+    ])]);
+    assert_eq!(request.messages, expected);
+}
+
+#[test]
 fn a_same_id_origin_keeps_its_reasoning_without_a_router() {
     let deployments = vec![target()];
     let credentials = CredentialSnapshot::default();

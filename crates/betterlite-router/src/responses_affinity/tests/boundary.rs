@@ -79,6 +79,21 @@ fn falsy_values_have_no_boundary() {
 }
 
 #[test]
+fn an_empty_credential_name_keeps_the_deployment_values() {
+    let credentials = credentials(&[(
+        "",
+        object(&[
+            ("api_base", text("cred-base")),
+            ("api_key", text("cred-key")),
+        ]),
+    )]);
+    assert_eq!(
+        encryption_boundary(&params_with_credential(""), &credentials),
+        pair("deployment-base", "deployment-key")
+    );
+}
+
+#[test]
 fn non_text_values_have_no_boundary() {
     let credentials = CredentialSnapshot::default();
     let mut params = params(Some("u"), Some("k"));

@@ -129,6 +129,22 @@ fn a_null_metadata_raises_pythons_type_error() {
 }
 
 #[test]
+fn a_negative_number_metadata_raises_pythons_type_error() {
+    let deployments = vec![spec("A", params(Some("u"), Some("k")))];
+    let credentials = CredentialSnapshot::default();
+    let check = check(settings(true, &[]), &credentials);
+    let mut request = Request::new();
+    request.metadata = Some(Json::Number(serde_json::Number::from(-1_i32)));
+    let error = request
+        .filter(&check, "gpt-group", &deployments)
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "'int' object does not support item assignment"
+    );
+}
+
+#[test]
 fn a_text_metadata_raises_pythons_type_error() {
     let deployments = vec![spec("A", params(Some("u"), Some("k")))];
     let credentials = CredentialSnapshot::default();
