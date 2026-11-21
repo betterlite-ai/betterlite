@@ -40,7 +40,7 @@ fn usage() -> Usage {
 }
 
 #[test]
-fn request_usage_maps_the_estimate_usage_and_its_token_details() {
+fn request_usage_maps_the_estimate_token_counts() {
     let request = request_usage(&usage());
     assert_eq!(
         (
@@ -57,6 +57,11 @@ fn request_usage_maps_the_estimate_usage_and_its_token_details() {
         ),
         (2, 3)
     );
+}
+
+#[test]
+fn request_usage_maps_the_estimate_token_details() {
+    let request = request_usage(&usage());
     let prompt = request.usage.prompt_tokens_details.unwrap();
     assert_eq!(
         (
