@@ -142,8 +142,7 @@ def type_report(package):
               {"_headroom_interception_converted_stream": 0},
               {"_code_interpreter_interception_converted_stream": "yes"},
               {"model": "x"}, {}]
-    init_cls = module.StandardCustomLoggerInitParams
-    patch_cls = module.AgenticLoopRequestPatch
+    init_cls = module.StandardCustomLoggerInitParams; patch_cls = module.AgenticLoopRequestPatch
     safety = module.AgenticLoopSafetyError
     return {
         "is_internal": [module.is_interception_internal_key(key) for key in keys],
@@ -161,8 +160,7 @@ def type_report(package):
     }
 
 def surface_report(package):
-    logger_cls = logger_class(package)
-    batch_cls = batch_class(package)
+    logger_cls = logger_class(package); batch_cls = batch_class(package)
     suffixes = (LOGGER, BATCH, TYPES)
     return {
         "custom_logger_methods": method_rows(logger_cls),
@@ -395,14 +393,16 @@ def response_view(response):
 
 def helpers_report(package):
     cls = logger_class(package)
-    logger = cls()
-    redacting = cls(turn_off_message_logging=True)
+    logger = cls(); redacting = cls(turn_off_message_logging=True)
     s = {}
     s["truncate_text_long"] = logger._truncate_text("x" * LONG, LIMIT)
     s["truncate_text_short"] = logger._truncate_text("short", 10)
     s["truncate_field_none"] = logger._truncate_field(None, 10)
     s["truncate_field_short"] = logger._truncate_field("abc", 10)
     s["truncate_field_list"] = logger._truncate_field(["z" * 20], 10)
+    exact = "x" * LIMIT
+    s["truncate_exact"] = [logger._truncate_text(exact, LIMIT),
+                           logger._truncate_field(exact, LIMIT)]
     payload = {"id": "x", "error_str": "E" * LONG,
                "messages": [{"role": "user", "content": "M" * LONG}],
                "response": "short", "extra": {"keep": True}}
@@ -490,8 +490,7 @@ def helpers_report(package):
     return {"shared": s, "error_type": error_type}
 
 def batch_report(package):
-    batch_cls = batch_class(package)
-    s = {}
+    batch_cls = batch_class(package); s = {}
     default = batch_cls()
     s["defaults"] = {"flush_interval": default.flush_interval,
                      "batch_size": default.batch_size,
@@ -861,6 +860,7 @@ def test_logger_helper_truncate(helpers_report: JsonValue) -> None:
     assert ours["truncate_field_none"] is None
     assert ours["truncate_field_short"] is None
     assert text(ours["truncate_field_list"]).endswith(TRUNCATION_SUFFIX)
+    assert listing(ours["truncate_exact"]) == ["x" * MAX_STR_LENGTH, None]
     assert ours["truncated_input_unchanged"] is True
     assert ours["metadata_fields"] == [None, "metadata", "litellm_metadata", "litellm_metadata"]
     assert ours["keep_content"] == [
