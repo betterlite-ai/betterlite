@@ -7,8 +7,8 @@ use betterlite_openai::output_limits::RejectedFieldsError;
 use rstest::rstest;
 
 use super::{
-    INVALID_TOOL_CALL_INDEX_MARKER, RepairError, extra_parameters, first_bracket_group,
-    has_tool_level_extra_fields, repair, tool_level_field_names,
+    EXTRA_INPUTS_MARKER, FoundryRepair, INVALID_TOOL_CALL_INDEX_MARKER, RepairError,
+    extra_parameters, first_bracket_group, repair, tool_level_field_names,
 };
 
 // One row per foundry-rejected-fields oracle case file, each driving the production repair.
@@ -90,16 +90,20 @@ fn tool_level_fields_are_read_left_to_right() {
 
 #[test]
 fn tool_level_markers_need_a_decimal_index_and_a_dot() {
-    assert!(has_tool_level_extra_fields("tools[0]."));
-    assert!(has_tool_level_extra_fields("extra tools[12].x"));
-    assert!(has_tool_level_extra_fields("tools[\u{663}]."));
+    let policy = FoundryRepair {
+        call: false,
+        global: false,
+    };
+    assert!(policy.should_retry(&format!("{EXTRA_INPUTS_MARKER} tools[0].")));
+    assert!(policy.should_retry(&format!("{EXTRA_INPUTS_MARKER} extra tools[12].x")));
+    assert!(policy.should_retry(&format!("{EXTRA_INPUTS_MARKER} tools[\u{663}].")));
     // \d is the decimal-digit category, so a superscript two is not an index
-    assert!(!has_tool_level_extra_fields("tools[\u{b2}]."));
+    assert!(!policy.should_retry(&format!("{EXTRA_INPUTS_MARKER} tools[\u{b2}].")));
     // the pattern is not anchored, so a prefix does not hide it
-    assert!(has_tool_level_extra_fields("xtools[0]."));
-    assert!(!has_tool_level_extra_fields("tools[]."));
-    assert!(!has_tool_level_extra_fields("tools[x]."));
-    assert!(!has_tool_level_extra_fields("tools[0]"));
+    assert!(policy.should_retry(&format!("{EXTRA_INPUTS_MARKER} xtools[0].")));
+    assert!(!policy.should_retry(&format!("{EXTRA_INPUTS_MARKER} tools[].")));
+    assert!(!policy.should_retry(&format!("{EXTRA_INPUTS_MARKER} tools[x].")));
+    assert!(!policy.should_retry(&format!("{EXTRA_INPUTS_MARKER} tools[0]")));
 }
 
 #[test]

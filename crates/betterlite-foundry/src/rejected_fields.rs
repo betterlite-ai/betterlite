@@ -37,9 +37,7 @@ impl FoundryRepair {
         if error_text.contains(EXTRA_INPUTS_MARKER)
             && (self.call
                 || self.global
-                || Regex::new(TOOL_INDEX_PATTERN)
-                    .ok()
-                    .is_some_and(|pattern| pattern.is_match(error_text)))
+                || Regex::new(TOOL_INDEX_PATTERN).is_ok_and(|pattern| pattern.is_match(error_text)))
         {
             return true;
         }
@@ -72,9 +70,7 @@ pub fn repair(error_text: &str, request: &Object) -> Result<Object, RepairError>
         drop_extra_parameters(&mut repaired, error_text);
     }
     if error_text.contains(EXTRA_INPUTS_MARKER)
-        && Regex::new(TOOL_INDEX_PATTERN)
-            .ok()
-            .is_some_and(|pattern| pattern.is_match(error_text))
+        && Regex::new(TOOL_INDEX_PATTERN).is_ok_and(|pattern| pattern.is_match(error_text))
     {
         drop_tool_level_extra_fields(&mut repaired, error_text);
     }
