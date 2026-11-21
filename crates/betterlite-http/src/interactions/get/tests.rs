@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::net::{SocketAddr, TcpListener};
+use std::net::SocketAddr;
 use std::str::{Utf8Error, from_utf8};
 use std::sync::Mutex;
 use std::time::Duration;
@@ -9,6 +9,7 @@ use betterlite_config::tls::Verification;
 use betterlite_http_fixture::server::serve;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::identity::provider_id::ProviderId;
+use betterlite_test_ports::refused_port::RefusedPort;
 use reqwest::blocking::ClientBuilder as BlockingClientBuilder;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -174,13 +175,6 @@ fn clients() -> HttpClients {
         support::policy(Verification::Enabled, None),
         support::proxy_policy(&[]),
     )
-}
-
-fn dead_address() -> SocketAddr {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
-    address
 }
 
 fn caller_headers(entries: &[(&str, &str)]) -> RequestHeaders {
@@ -446,13 +440,14 @@ fn get_interaction_passes_a_transport_failure_through_the_error_handler() {
     let fixture = Fixture::default();
     let mut clients = clients();
     let mut logging = Logging::default();
+    let refused = RefusedPort::bind().unwrap();
 
     let error = get_interaction(
         &fixture,
         &mut clients,
         &mut logging,
         None,
-        &Call::new(dead_address()).request(),
+        &Call::new(refused.address).request(),
     )
     .unwrap_err();
 
@@ -473,7 +468,8 @@ fn get_interaction_passes_an_invalid_url_through_the_error_handler() {
     let fixture = Fixture::default();
     let mut clients = clients();
     let mut logging = Logging::default();
-    let mut call = Call::new(dead_address());
+    let refused = RefusedPort::bind().unwrap();
+    let mut call = Call::new(refused.address);
     call.params.insert(
         "api_base".to_owned(),
         JsonValue::Text("not a url".to_owned()),
@@ -667,7 +663,8 @@ fn get_interaction_refuses_a_proxy_it_cannot_use_instead_of_connecting_directly(
         support::proxy_policy(&[("HTTP_PROXY", proxy)]),
     );
     let mut logging = Logging::default();
-    let call = Call::new(dead_address());
+    let refused = RefusedPort::bind().unwrap();
+    let call = Call::new(refused.address);
 
     let error =
         get_interaction(&fixture, &mut clients, &mut logging, None, &call.request()).unwrap_err();
@@ -716,7 +713,8 @@ async fn async_get_interaction_refuses_a_proxy_it_cannot_use_instead_of_connecti
         support::proxy_policy(&[("HTTP_PROXY", proxy)]),
     );
     let mut logging = Logging::default();
-    let call = Call::new(dead_address());
+    let refused = RefusedPort::bind().unwrap();
+    let call = Call::new(refused.address);
 
     let error = async_get_interaction(&fixture, &mut clients, &mut logging, None, &call.request())
         .await

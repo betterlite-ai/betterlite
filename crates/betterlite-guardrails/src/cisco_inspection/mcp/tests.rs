@@ -9,6 +9,7 @@ use axum::routing::post;
 use betterlite_config::sections::cisco_verdict_contracts::{
     Configured, FallbackAction, FlaggedAction, InspectionType,
 };
+use betterlite_test_ports::refused_port::RefusedPort;
 use secrecy::SecretString;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
@@ -60,13 +61,6 @@ async fn serve(status: StatusCode, body: Vec<u8>) -> (String, JoinSet<io::Result
     (base, server)
 }
 
-async fn dead_base() -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
-    let base = format!("http://{}", listener.local_addr().expect("addr"));
-    drop(listener);
-    base
-}
-
 #[tokio::test]
 async fn inspect_mcp_request_sends_the_built_envelope_and_allows() {
     let (base, mut server) = serve(StatusCode::OK, br#"{"is_safe":true}"#.to_vec()).await;
@@ -80,7 +74,8 @@ async fn inspect_mcp_request_sends_the_built_envelope_and_allows() {
 
 #[tokio::test]
 async fn inspect_mcp_request_skips_without_a_call_when_no_payload_can_be_built() {
-    let guardrail = guardrail(dead_base().await);
+    let refused = RefusedPort::bind().expect("a refused port");
+    let guardrail = guardrail(format!("http://{}", refused.address));
     let mut request_data = obj("{}");
 
     let outcome = inspect_mcp_request(&guardrail, &mut request_data).await;
@@ -101,7 +96,8 @@ async fn inspect_mcp_response_sends_the_built_envelope_and_allows() {
 
 #[tokio::test]
 async fn inspect_mcp_response_skips_without_a_call_when_no_payload_can_be_built() {
-    let guardrail = guardrail(dead_base().await);
+    let refused = RefusedPort::bind().expect("a refused port");
+    let guardrail = guardrail(format!("http://{}", refused.address));
     let mut request_data = obj(r#"{"mcp_tool_name":"search"}"#);
     let response = Json::parse(r#""plain text""#);
 
