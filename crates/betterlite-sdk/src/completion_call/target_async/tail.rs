@@ -2,7 +2,7 @@ use super::AsyncCompletionTarget;
 use crate::call_setup::RequestMap;
 use crate::call_setup::correlation::{CallOutcome, ChatStream};
 use crate::call_wrapper::error::{CallError, plain_error};
-use crate::call_wrapper::target::CallTarget;
+use crate::call_wrapper::target::CallTarget as _;
 use crate::completion_call::error::CompletionCallError;
 use crate::completion_request::args::CompletionArgs;
 use async_trait::async_trait;
@@ -18,49 +18,47 @@ use betterlite_openai::stream::chunk::Chunk;
 use futures_util::{StreamExt as _, stream, stream::BoxStream};
 use indexmap::IndexMap;
 use serde_json::value::{RawValue, to_raw_value};
-impl AsyncCompletionTarget<'_> {
-    // the provider-agnostic dispatch point for the chat-completions agentic loop
-    pub(super) async fn agentic(
-        &self,
-        outcome: CallOutcome,
-        args: &CompletionArgs,
-        provider: Option<&str>,
-    ) -> Result<CallOutcome, CompletionCallError> {
-        let CallOutcome::Response(json) = &outcome else {
-            return Ok(outcome);
-        };
-        let text = serde_json::to_string(json)?;
-        if serde_json::from_str::<ChatResponse>(&text).is_err() {
-            return Ok(outcome);
+// the provider-agnostic dispatch point for the chat-completions agentic loop
+pub(super) async fn agentic(
+    target: &AsyncCompletionTarget<'_>,
+    outcome: CallOutcome,
+    args: &CompletionArgs,
+    provider: Option<&str>,
+) -> Result<CallOutcome, CompletionCallError> {
+    let CallOutcome::Response(json) = &outcome else {
+        return Ok(outcome);
+    };
+    let text = serde_json::to_string(json)?;
+    if serde_json::from_str::<ChatResponse>(&text).is_err() {
+        return Ok(outcome);
+    }
+    let raw = RawValue::from_string(text)?;
+    let model = args.model.clone().unwrap_or_default();
+    let messages = followup_messages(&args.messages)?;
+    let optional = optional_params(args)?;
+    let kwargs = raw_map(&args.kwargs)?;
+    let call = ChatLoopCall {
+        response: raw.as_ref(),
+        model: &model,
+        messages: &messages,
+        optional_params: &optional,
+        kwargs: &kwargs,
+        logging: AgenticLoggingHandle::Absent,
+        custom_llm_provider: provider.unwrap_or(""),
+        stream: args.stream == Some(true),
+    };
+    let ports = LoopPorts {
+        continuation: target,
+        fake_stream: target.fake_stream,
+    };
+    let Some(result) = maybe_run_chat_agentic_loop(&call, target.callbacks, &ports).await? else {
+        return Ok(outcome);
+    };
+    match result {
+        ChatLoopResult::Response(answer) => {
+            Ok(CallOutcome::Response(serde_json::from_str(answer.get())?))
         }
-        let raw = RawValue::from_string(text)?;
-        let model = args.model.clone().unwrap_or_default();
-        let messages = followup_messages(&args.messages)?;
-        let optional = optional_params(args)?;
-        let kwargs = raw_map(&args.kwargs)?;
-        let call = ChatLoopCall {
-            response: raw.as_ref(),
-            model: &model,
-            messages: &messages,
-            optional_params: &optional,
-            kwargs: &kwargs,
-            logging: AgenticLoggingHandle::Absent,
-            custom_llm_provider: provider.unwrap_or(""),
-            stream: args.stream == Some(true),
-        };
-        let ports = LoopPorts {
-            continuation: self,
-            fake_stream: self.fake_stream,
-        };
-        let Some(result) = maybe_run_chat_agentic_loop(&call, self.callbacks, &ports).await? else {
-            return Ok(outcome);
-        };
-        match result {
-            ChatLoopResult::Response(raw) => {
-                Ok(CallOutcome::Response(serde_json::from_str(raw.get())?))
-            }
-            ChatLoopResult::Stream(stream) => chunk_outcome(stream).await,
-        }
+        ChatLoopResult::Stream(stream) => chunk_outcome(stream).await,
     }
 }
 #[async_trait]
@@ -78,7 +76,7 @@ impl ChatContinuation for AsyncCompletionTarget<'_> {
             request.insert(
                 name.clone(),
                 serde_json::from_str::<Json>(value.get()).map_err(|error| {
-                    self.async_error(CompletionCallError::from(error), "", None)
+                    self.async_error(&CompletionCallError::from(error), "", None)
                 })?,
             );
         }
@@ -86,7 +84,7 @@ impl ChatContinuation for AsyncCompletionTarget<'_> {
         for message in messages {
             list.push(
                 serde_json::from_str::<Json>(message.0.get()).map_err(|error| {
-                    self.async_error(CompletionCallError::from(error), "", None)
+                    self.async_error(&CompletionCallError::from(error), "", None)
                 })?,
             );
         }
@@ -103,10 +101,10 @@ impl ChatContinuation for AsyncCompletionTarget<'_> {
                 if let Json::List(items) = stream.model_response {
                     for item in items {
                         let encoded = serde_json::to_value(item).map_err(|error| {
-                            self.async_error(CompletionCallError::from(error), "", None)
+                            self.async_error(&CompletionCallError::from(error), "", None)
                         })?;
                         chunks.push(serde_json::from_value(encoded).map_err(|error| {
-                            self.async_error(CompletionCallError::from(error), "", None)
+                            self.async_error(&CompletionCallError::from(error), "", None)
                         })?);
                     }
                 }

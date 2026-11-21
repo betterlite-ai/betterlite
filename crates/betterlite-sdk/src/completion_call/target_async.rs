@@ -7,7 +7,7 @@ use crate::call_wrapper::error::CallError;
 use crate::call_wrapper::state::LoggingHandle;
 use crate::call_wrapper::target::CallTarget;
 use crate::completion_request::args::CompletionArgs;
-use crate::completion_request::call::{MockCall, PreparedCompletion};
+use crate::completion_request::call::{FallbackCall, MockCall, PreparedCompletion};
 use crate::completion_request::prepare_acompletion;
 use async_trait::async_trait;
 use betterlite_context::agentic_callback::AgenticCallback;
@@ -32,12 +32,12 @@ impl AsyncCompletionTarget<'_> {
     // acompletion's except branch sets custom_llm_provider = custom_llm_provider or "openai"
     fn async_error(
         &self,
-        error: CompletionCallError,
+        error: &CompletionCallError,
         model: &str,
         provider: Option<&str>,
     ) -> CallError {
         into_call_error(
-            &error,
+            error,
             model,
             provider.unwrap_or("openai"),
             &self.inner.redactor,
@@ -94,10 +94,30 @@ impl AsyncCompletionTarget<'_> {
         )?;
         Ok(CallOutcome::Response(serde_json::from_slice(&body)?))
     }
+    // the fallback loop's answer, or acompletion's no-response error
+    async fn fallbacks_answer(
+        &self,
+        call: FallbackCall,
+        model: &str,
+        provider: Option<&str>,
+        logging: Option<&LoggingHandle>,
+    ) -> Result<CallOutcome, CallError> {
+        let outcome = super::fallbacks::run_fallbacks(self, call, logging)
+            .await
+            .map_err(|error| self.async_error(&error, model, provider))?;
+        if matches!(&outcome, CallOutcome::Response(Json::Null)) {
+            return Err(self.async_error(
+                &CompletionCallError::NoFallbackResponse,
+                model,
+                provider,
+            ));
+        }
+        Ok(outcome)
+    }
 }
 #[async_trait]
 impl CallTarget for AsyncCompletionTarget<'_> {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "acompletion"
     }
     async fn call(
@@ -106,47 +126,41 @@ impl CallTarget for AsyncCompletionTarget<'_> {
         logging: Option<&LoggingHandle>,
     ) -> Result<CallOutcome, CallError> {
         let encoded = serde_json::to_value(&request)
-            .map_err(|error| self.async_error(CompletionCallError::from(error), "", None))?;
+            .map_err(|error| self.async_error(&CompletionCallError::from(error), "", None))?;
         let args: CompletionArgs = serde_json::from_value(encoded)
-            .map_err(|error| self.async_error(CompletionCallError::from(error), "", None))?;
+            .map_err(|error| self.async_error(&CompletionCallError::from(error), "", None))?;
         let model = args.model.clone().unwrap_or_default();
-        let prepared = prepare_acompletion(&args, &self.inner.settings, &self.inner.ports)
+        let preparing = prepare_acompletion(&args, &self.inner.settings, &self.inner.ports);
+        let prepared = Box::pin(preparing)
             .await
-            .map_err(|error| self.async_error(CompletionCallError::from(error), &model, None))?;
+            .map_err(|error| self.async_error(&CompletionCallError::from(error), &model, None))?;
         let provider = provider_of(&prepared).map(str::to_owned);
         let hooked = match prepared {
             PreparedCompletion::Fallbacks(call) => {
-                let outcome = super::fallbacks::run_fallbacks(self, call, logging)
-                    .await
-                    .map_err(|error| self.async_error(error, &model, provider.as_deref()))?;
-                if matches!(&outcome, CallOutcome::Response(Json::Null)) {
-                    return Err(self.async_error(
-                        CompletionCallError::NoFallbackResponse,
-                        &model,
-                        provider.as_deref(),
-                    ));
-                }
-                return Ok(outcome);
+                return self
+                    .fallbacks_answer(call, &model, provider.as_deref(), logging)
+                    .await;
             }
             PreparedCompletion::Mock(call) => {
                 self.sleep_mock_delay(&call)
                     .await
-                    .map_err(|error| self.async_error(error, &model, provider.as_deref()))?;
+                    .map_err(|error| self.async_error(&error, &model, provider.as_deref()))?;
                 PreparedCompletion::Mock(call)
             }
-            other => other,
+            other @ PreparedCompletion::Dispatch(_)
+            | other @ PreparedCompletion::ModelList(_)
+            | other @ PreparedCompletion::ResponsesBridge(_)
+            | other @ PreparedCompletion::McpLoop(_) => other,
         };
-        let outcome = self
-            .inner
-            .run(hooked, true, logging)
+        let outcome = Box::pin(self.inner.run(hooked, true, logging))
             .await
-            .map_err(|error| self.async_error(error, &model, provider.as_deref()))?;
+            .map_err(|error| self.async_error(&error, &model, provider.as_deref()))?;
         let converted = self
             .convert_text_reply(provider.as_deref(), outcome)
-            .map_err(|error| self.async_error(error, &model, provider.as_deref()))?;
-        self.agentic(converted, &args, provider.as_deref())
+            .map_err(|error| self.async_error(&error, &model, provider.as_deref()))?;
+        tail::agentic(self, converted, &args, provider.as_deref())
             .await
-            .map_err(|error| self.async_error(error, &model, provider.as_deref()))
+            .map_err(|error| self.async_error(&error, &model, provider.as_deref()))
     }
     // acompletion_with_retries defaults original_function to completion, so the blocking entry runs
     async fn retry(

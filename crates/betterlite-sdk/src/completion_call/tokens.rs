@@ -9,7 +9,7 @@ use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 pub const LOCAL_TOKENIZER: &str = "local_tokenizer";
 // litellm.types.utils.TokenCountResponse
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TokenCountResponse {
     pub total_tokens: u64,
     pub request_model: String,
@@ -62,40 +62,35 @@ pub async fn count_tokens(
         api_key: request.api_key,
     })?;
     let provider = resolved.provider.slug().to_owned();
-    let api_key = request.api_key.or(resolved.api_key.as_ref());
-    let api_base = request.api_base.or(resolved.api_base.as_deref());
-    if let Some(counter) = counter.filter(|counter| counter.should_use(&provider)) {
-        let counted = counter
+    if let Some(usable) = counter.filter(|candidate| candidate.should_use(&provider)) {
+        let arrived = usable
             .count(&ProviderTokenCountRequest {
                 model_to_use: &resolved.model,
                 request_model: request.model,
                 messages: request.messages,
                 tools: request.tools,
                 system: request.system,
-                api_key,
-                api_base,
+                api_key: request.api_key.or(resolved.api_key.as_ref()),
+                api_base: request.api_base.or(resolved.api_base.as_deref()),
             })
             .await;
-        match counted {
-            Some(result) if !result.error => return Ok(result),
-            Some(_) | None => {
-                tracing::debug!(provider = %provider, "provider counting failed; counting locally");
-            }
+        if let Some(answer) = arrived.filter(|answer| !answer.error) {
+            return Ok(answer);
         }
+        tracing::debug!(provider = %provider, "provider counting failed; counting locally");
     }
     let mut messages: Vec<Json> = request.messages.map(<[Json]>::to_vec).unwrap_or_default();
     if let Some(system) = request.system.filter(|_given| !messages.is_empty()) {
         messages.insert(0, system_message(system));
     }
-    let total = local
-        .count(&LocalTokenCountRequest {
-            model: request.model,
-            messages: &messages,
-            tools: request.tools,
-        })
-        .await;
-    let answer = TokenCountResponse::local(total, request.model, &resolved.model);
-    Ok(answer)
+    let local_request = LocalTokenCountRequest {
+        model: request.model,
+        messages: &messages,
+        tools: request.tools,
+    };
+    let total = local.count(&local_request).await;
+    let model_used = resolved.model.as_str();
+    Ok(TokenCountResponse::local(total, request.model, model_used))
 }
 fn system_message(system: &str) -> Json {
     Json::Object(IndexMap::from([

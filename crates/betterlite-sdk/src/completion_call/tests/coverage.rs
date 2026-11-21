@@ -99,8 +99,7 @@ async fn target_model_list_tries_the_next_deployment_after_an_empty_answer() {
         deployments,
         args: args_from(&format!(r#"{{"model":"gpt-4o","messages":[{USER}]}}"#)),
     };
-    let outcome = target
-        .run(PreparedCompletion::ModelList(call), false, None)
+    let outcome = Box::pin(target.run(PreparedCompletion::ModelList(call), false, None))
         .await
         .unwrap();
     let CallOutcome::Response(answer) = outcome else {
@@ -131,8 +130,7 @@ async fn target_model_list_keeps_litellms_deployment_parameter_leak() {
         deployments,
         args: args_from(&format!(r#"{{"model":"gpt-4o","messages":[{USER}]}}"#)),
     };
-    target
-        .run(PreparedCompletion::ModelList(call), false, None)
+    Box::pin(target.run(PreparedCompletion::ModelList(call), false, None))
         .await
         .unwrap();
     let seen = harness.chat.seen();
@@ -187,7 +185,7 @@ async fn fallback_keeps_the_original_request_parameters() {
     assert!(calls[0].contains_key("messages"));
     assert!(matches!(
         calls[0].get("temperature"),
-        Some(Json::Number(number)) if number.as_f64() == Some(0.3)
+        Some(Json::Number(number)) if number.as_f64() == Some(0.3_f64)
     ));
 }
 
@@ -215,11 +213,11 @@ async fn retry_runs_the_completion_entry_and_the_async_entry() {
         .retry(async_call, None)
         .await
         .unwrap();
-    let CallOutcome::Response(answer) = async_outcome else {
+    let CallOutcome::Response(second) = async_outcome else {
         panic!("the async entry answers");
     };
     assert_eq!(
-        dig(&answer, &["id"]),
+        dig(&second, &["id"]),
         Some(&Json::Text(String::from("chatcmpl-1")))
     );
 }
@@ -235,7 +233,7 @@ fn async_provider_of_reads_the_prepared_call() {
 }
 
 #[tokio::test]
-async fn async_continuation_answers_and_streams_through_the_call() {
+async fn async_continuation_answers_the_buffered_call() {
     let harness = Harness::new();
     let target = harness.async_target();
     let messages = vec![FollowupMessage(
@@ -258,6 +256,16 @@ async fn async_continuation_answers_and_streams_through_the_call() {
         dig(&answer, &["id"]),
         Some(&Json::Text(String::from("chatcmpl-1")))
     );
+}
+
+#[tokio::test]
+async fn async_continuation_streams_through_the_call() {
+    let harness = Harness::new();
+    let target = harness.async_target();
+    let messages = vec![FollowupMessage(
+        RawValue::from_string(String::from(USER)).unwrap(),
+    )];
+    let kwargs = JsonMap::new();
     harness.chat.streams(&[
         "data: {\"id\":\"chunk-1\",\"object\":\"chat.completion.chunk\",\"created\":1700000000,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"he\"},\"finish_reason\":null}]}\n\n",
         "data: [DONE]\n\n",

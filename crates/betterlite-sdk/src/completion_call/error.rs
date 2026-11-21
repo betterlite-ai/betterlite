@@ -64,16 +64,16 @@ pub fn into_call_error(
     provider: &str,
     redactor: &Redactor,
 ) -> CallError {
-    match error {
-        CompletionCallError::Dispatch(source) => dispatch_error(source, model, provider, redactor),
-        other => classify(
-            model,
-            provider,
-            other.to_string(),
-            status_of(other),
-            redactor,
-        ),
+    if let CompletionCallError::Dispatch(source) = error {
+        return dispatch_error(source, model, provider, redactor);
     }
+    classify(
+        model,
+        provider,
+        error.to_string(),
+        status_of(error),
+        redactor,
+    )
 }
 fn dispatch_error(
     error: &DispatchError,
@@ -145,8 +145,8 @@ fn status_of(error: &CompletionCallError) -> Option<u16> {
         | CompletionCallError::AllFallbacksFailed { .. }
         | CompletionCallError::NoModelListAnswer => Some(500),
         CompletionCallError::Mock(source) => Some(source.status().unwrap_or(500)),
-        CompletionCallError::Dispatch(_) => None,
-        CompletionCallError::Palm
+        CompletionCallError::Dispatch(_)
+        | CompletionCallError::Palm
         | CompletionCallError::Http(_)
         | CompletionCallError::Body(_)
         | CompletionCallError::Conversion { .. }

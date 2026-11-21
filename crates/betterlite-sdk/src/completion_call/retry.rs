@@ -21,11 +21,10 @@ impl RetryStrategy {
     // LiteLLM names exponential_backoff_retry and takes its else branch for every other string
     pub fn parse(value: Option<&Json>) -> Result<Self, CompletionCallError> {
         match value {
-            None | Some(Json::Null) => Ok(Self::Constant),
             Some(Json::Text(text)) if text == "exponential_backoff_retry" => {
                 Ok(Self::ExponentialBackoff)
             }
-            Some(Json::Text(_)) => Ok(Self::Constant),
+            None | Some(Json::Null | Json::Text(_)) => Ok(Self::Constant),
             Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
                 Err(CompletionCallError::Field {
                     field: "retry_strategy",

@@ -142,7 +142,7 @@ impl CompletionTarget<'_> {
 }
 #[async_trait]
 impl CallTarget for CompletionTarget<'_> {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "completion"
     }
     async fn call(
@@ -167,7 +167,7 @@ impl CallTarget for CompletionTarget<'_> {
                     &self.redactor,
                 )
             })?;
-        self.run(prepared, false, logging)
+        Box::pin(self.run(prepared, false, logging))
             .await
             .map_err(|error| into_call_error(&error, &model, "", &self.redactor))
     }

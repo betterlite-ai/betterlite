@@ -144,8 +144,7 @@ async fn target_model_list_skips_a_failed_deployment() {
         deployments,
         args: args_from(&format!(r#"{{"model":"gpt-4o","messages":[{USER}]}}"#)),
     };
-    let outcome = target
-        .run(PreparedCompletion::ModelList(call), false, None)
+    let outcome = Box::pin(target.run(PreparedCompletion::ModelList(call), false, None))
         .await
         .unwrap();
     let Some(answer) = body_text(&outcome) else {
@@ -169,8 +168,7 @@ async fn target_model_list_without_an_answer_names_the_failure() {
         deployments,
         args: args_from(&format!(r#"{{"model":"gpt-4o","messages":[{USER}]}}"#)),
     };
-    let error = target
-        .run(PreparedCompletion::ModelList(call), false, None)
+    let error = Box::pin(target.run(PreparedCompletion::ModelList(call), false, None))
         .await
         .unwrap_err();
     assert!(matches!(&error, CompletionCallError::Call(_)));
@@ -194,8 +192,7 @@ async fn target_mock_answers_from_the_mock_response() {
         mock_delay: None,
         prompt_tokens: None,
     };
-    let outcome = target
-        .run(PreparedCompletion::Mock(call), false, None)
+    let outcome = Box::pin(target.run(PreparedCompletion::Mock(call), false, None))
         .await
         .unwrap();
     let Some(answer) = body_text(&outcome) else {
@@ -234,8 +231,7 @@ async fn target_mock_stream_is_a_chat_stream() {
         mock_delay: None,
         prompt_tokens: None,
     };
-    let outcome = target
-        .run(PreparedCompletion::Mock(call), true, None)
+    let outcome = Box::pin(target.run(PreparedCompletion::Mock(call), true, None))
         .await
         .unwrap();
     let CallOutcome::ChatStream(stream) = outcome else {
@@ -254,8 +250,7 @@ async fn target_palm_raises_its_value_error() {
     let target = harness.target();
     let mut call = prepared_call("palm");
     call.custom_llm_provider = Some(String::from("palm"));
-    let error = target
-        .run(PreparedCompletion::Dispatch(call), false, None)
+    let error = Box::pin(target.run(PreparedCompletion::Dispatch(call), false, None))
         .await
         .unwrap_err();
     assert!(matches!(&error, CompletionCallError::Palm));
@@ -271,12 +266,8 @@ async fn target_palm_raises_its_value_error() {
 async fn target_mcp_loop_without_a_runner_fails_by_name() {
     let harness = Harness::new();
     let target = harness.target();
-    let error = target
-        .run(
-            PreparedCompletion::McpLoop(PreparedCall::default()),
-            false,
-            None,
-        )
+    let prepared = PreparedCompletion::McpLoop(PreparedCall::default());
+    let error = Box::pin(target.run(prepared, false, None))
         .await
         .unwrap_err();
     assert!(matches!(&error, CompletionCallError::NoMcpLoop));
@@ -286,12 +277,8 @@ async fn target_mcp_loop_without_a_runner_fails_by_name() {
 async fn target_responses_bridge_reaches_the_responses_entry() {
     let harness = Harness::new();
     let target = harness.target();
-    let error = target
-        .run(
-            PreparedCompletion::ResponsesBridge(PreparedCall::default()),
-            false,
-            None,
-        )
+    let prepared = PreparedCompletion::ResponsesBridge(PreparedCall::default());
+    let error = Box::pin(target.run(prepared, false, None))
         .await
         .unwrap_err();
     let CompletionCallError::Dispatch(DispatchError::NotBuilt { entry }) = error else {
@@ -354,7 +341,7 @@ async fn fallback_dict_without_a_model_keeps_the_original() {
     assert_eq!(text_of(calls[1].get("model")), Some("gpt-4o"));
     assert!(matches!(
         calls[1].get("temperature"),
-        Some(Json::Number(number)) if number.as_f64() == Some(0.2)
+        Some(Json::Number(number)) if number.as_f64() == Some(0.2_f64)
     ));
 }
 
@@ -824,8 +811,10 @@ fn token_messages() -> Vec<Json> {
 
 #[tokio::test]
 async fn tokens_uses_the_provider_counter_when_it_answers() {
-    let mut metadata = support::FakeMetadata::default();
-    metadata.resolved_model = Some(String::from("gpt-4o-2024"));
+    let metadata = support::FakeMetadata {
+        resolved_model: Some(String::from("gpt-4o-2024")),
+        ..support::FakeMetadata::default()
+    };
     let mut answer = TokenCountResponse::local(11, "gpt-4o", "gpt-4o-provider");
     answer.tokenizer_type = String::from("provider_tokenizer");
     let counter = FakeProviderCounter::answering(answer);
@@ -850,8 +839,10 @@ async fn tokens_uses_the_provider_counter_when_it_answers() {
 
 #[tokio::test]
 async fn tokens_provider_error_falls_back_to_the_local_count() {
-    let mut metadata = support::FakeMetadata::default();
-    metadata.resolved_model = Some(String::from("gpt-4o-2024"));
+    let metadata = support::FakeMetadata {
+        resolved_model: Some(String::from("gpt-4o-2024")),
+        ..support::FakeMetadata::default()
+    };
     let mut answer = TokenCountResponse::local(11, "gpt-4o", "gpt-4o-provider");
     answer.error = true;
     let counter = FakeProviderCounter::answering(answer);
@@ -936,9 +927,11 @@ async fn tokens_system_message_is_prepended_only_with_messages() {
 
 #[tokio::test]
 async fn tokens_explicit_key_and_base_win_over_the_resolution() {
-    let mut metadata = support::FakeMetadata::default();
-    metadata.resolved_base = Some(String::from("https://resolved.test/v1"));
-    metadata.dynamic_key = Some(String::from("resolved-key"));
+    let metadata = support::FakeMetadata {
+        resolved_base: Some(String::from("https://resolved.test/v1")),
+        dynamic_key: Some(String::from("resolved-key")),
+        ..support::FakeMetadata::default()
+    };
     let counter = FakeProviderCounter::answering(TokenCountResponse::local(4, "gpt-4o", "m"));
     let local = FakeLocalCounter::new(0);
     let key = secret("explicit-key");

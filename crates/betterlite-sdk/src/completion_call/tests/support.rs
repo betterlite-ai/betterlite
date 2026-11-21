@@ -392,10 +392,6 @@ fn fake_chat() -> FakeChat {
 }
 
 impl FakeChat {
-    pub(super) fn answers(&self, body: &str) {
-        *lock(&self.completion) = body.to_owned();
-    }
-
     pub(super) fn answers_null(&self, model: &str) {
         lock(&self.null_models).push(model.to_owned());
     }
@@ -441,10 +437,11 @@ impl ChatCall for FakeChat {
         _control: ControlOptions,
     ) -> Result<ChatCompletionAnswer, ChatFailure> {
         self.record(&call);
-        if let Some(failure) = lock(&self.failures).pop_front() {
+        let queued = lock(&self.failures).pop_front();
+        if let Some(failure) = queued {
             return Err(failure);
         }
-        let body = if self.answers_empty(&call.request) {
+        let body = if self.answers_empty(call.request) {
             String::from("null")
         } else {
             lock(&self.completion).clone()
@@ -698,7 +695,7 @@ impl RecordingTarget {
 
 #[async_trait]
 impl CallTarget for RecordingTarget {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "recording"
     }
 
@@ -708,7 +705,8 @@ impl CallTarget for RecordingTarget {
         _logging: Option<&LoggingHandle>,
     ) -> Result<CallOutcome, CallError> {
         lock(&self.calls).push(request);
-        if let Some(outcome) = lock(&self.outcomes).pop_front() {
+        let queued = lock(&self.outcomes).pop_front();
+        if let Some(outcome) = queued {
             return outcome;
         }
         if self.fail_all {
@@ -748,11 +746,11 @@ const AGENTIC_OVERRIDES: AgenticOverrides = AgenticOverrides {
     cleanup: false,
 };
 
-fn gate(run: bool) -> Result<AgenticGate, AgenticHookError> {
-    Ok(AgenticGate {
+fn gate(run: bool) -> AgenticGate {
+    AgenticGate {
         run,
         tools: JsonMap::new(),
-    })
+    }
 }
 
 fn reply_of(reply: &str) -> Box<RawValue> {
@@ -765,7 +763,7 @@ pub(super) struct FakeCallback {
 
 #[async_trait]
 impl AgenticCallback for FakeCallback {
-    fn callback_name(&self) -> &str {
+    fn callback_name(&self) -> &'static str {
         "fake"
     }
 
@@ -777,7 +775,7 @@ impl AgenticCallback for FakeCallback {
         &self,
         _call: &AgenticCall<'_>,
     ) -> Result<AgenticGate, AgenticHookError> {
-        gate(true)
+        Ok(gate(true))
     }
 
     async fn run_agentic_loop(
@@ -795,7 +793,7 @@ pub(super) struct CheckingCallback {
 
 #[async_trait]
 impl AgenticCallback for CheckingCallback {
-    fn callback_name(&self) -> &str {
+    fn callback_name(&self) -> &'static str {
         "checking"
     }
 
@@ -812,7 +810,7 @@ impl AgenticCallback for CheckingCallback {
             .first()
             .is_some_and(|message| message.0.get().contains("\"hi\""));
         let marker = call.kwargs.contains_key("agentic_marker");
-        gate(message && marker && !call.stream)
+        Ok(gate(message && marker && !call.stream))
     }
 
     async fn run_agentic_loop(

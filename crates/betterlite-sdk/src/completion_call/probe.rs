@@ -1,7 +1,7 @@
 use super::target::CompletionTarget;
 use crate::call_setup::RequestMap;
 use crate::call_wrapper::error::CallError;
-use crate::call_wrapper::target::CallTarget;
+use crate::call_wrapper::target::CallTarget as _;
 use betterlite_core::environment_validation::probe::{ModelProbe, ProbeCompletion};
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
@@ -12,7 +12,6 @@ use http::{HeaderMap, HeaderValue, Method};
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Number;
-use std::future::Future;
 use std::time::Duration;
 use thiserror::Error;
 use url::Url;
@@ -97,43 +96,35 @@ impl CompletionProbe<'_, '_> {
 }
 impl ModelProbe for CompletionProbe<'_, '_> {
     type Failure = ProbeFailure;
-    fn retrieve_openai_model(
-        &self,
-        model: &str,
-    ) -> impl Future<Output = Result<(), Self::Failure>> + Send {
-        async move { self.retrieve(model).await }
+    async fn retrieve_openai_model(&self, model: &str) -> Result<(), Self::Failure> {
+        self.retrieve(model).await
     }
-    fn complete(
-        &self,
-        request: &ProbeCompletion<'_>,
-    ) -> impl Future<Output = Result<(), Self::Failure>> + Send {
-        async move {
-            let mut map = RequestMap::new();
-            map.insert(String::from("model"), Json::Text(request.model.to_owned()));
+    async fn complete(&self, request: &ProbeCompletion<'_>) -> Result<(), Self::Failure> {
+        let mut map = RequestMap::new();
+        map.insert(String::from("model"), Json::Text(request.model.to_owned()));
+        map.insert(
+            String::from("messages"),
+            Json::List(vec![Json::Object(IndexMap::from([
+                (String::from("role"), Json::Text(String::from("user"))),
+                (
+                    String::from("content"),
+                    Json::Text(request.user_message.to_owned()),
+                ),
+            ]))]),
+        );
+        if let Some(tokens) = request.max_tokens {
             map.insert(
-                String::from("messages"),
-                Json::List(vec![Json::Object(IndexMap::from([
-                    (String::from("role"), Json::Text(String::from("user"))),
-                    (
-                        String::from("content"),
-                        Json::Text(request.user_message.to_owned()),
-                    ),
-                ]))]),
+                String::from("max_tokens"),
+                Json::Number(Number::from(tokens)),
             );
-            if let Some(tokens) = request.max_tokens {
-                map.insert(
-                    String::from("max_tokens"),
-                    Json::Number(Number::from(tokens)),
-                );
-            }
-            if let Some(key) = request.api_key {
-                map.insert(
-                    String::from("api_key"),
-                    Json::Text(key.expose_secret().to_owned()),
-                );
-            }
-            self.completion.call(map, None).await?;
-            Ok(())
         }
+        if let Some(key) = request.api_key {
+            map.insert(
+                String::from("api_key"),
+                Json::Text(key.expose_secret().to_owned()),
+            );
+        }
+        self.completion.call(map, None).await?;
+        Ok(())
     }
 }
