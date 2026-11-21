@@ -136,7 +136,8 @@ def run(input_value: Input) -> JsonValue:
     proxy_server.prisma_client = None
     if input_value["database"]:
         proxy_server.prisma_client = FakePrismaClient(FakeWrapper(input_value["replies"], effects))
-    # the session handler looks asyncio.sleep up on its module at call time, so the fake records each delay and returns at once
+    # the session handler looks asyncio.sleep up on its module at call time,
+    # so the fake records each delay and returns at once
     asyncio.sleep = RecordingSleep(effects).sleep  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType, reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/session_handler.py#L308-L310
     merged = asyncio.run(merge(input_value))
     return {
