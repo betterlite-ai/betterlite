@@ -1,0 +1,37 @@
+kind: sdk_http
+name: responses-lifecycle-read-retrieve-routes-encoded-id
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  responses_lifecycle_read:
+    steps:
+      - get_responses:
+          call:
+            response_id: resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpkZXBsb3ltZW50LWE7cmVzcG9uc2VfaWQ6cmVzcC9h
+            custom_llm_provider: anthropic
+            litellm_metadata:
+              model_info: {id: deployment-a}
+      - aget_responses:
+          call:
+            response_id: resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpkZXBsb3ltZW50LWE7cmVzcG9uc2VfaWQ6cmVzcC9h
+            custom_llm_provider: anthropic
+            litellm_metadata:
+              model_info: {id: deployment-a}
+      - get_responses:
+          call:
+            response_id: resp_a
+            custom_llm_provider: openai
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: resp_a, created_at: 9, status: completed, model: gpt-4o, output: []}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: resp_a, created_at: 9, status: completed, model: gpt-4o, output: []}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: resp_a, created_at: 9, status: completed, model: gpt-4o, output: []}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization]
+  ignore: []

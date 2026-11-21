@@ -1,0 +1,11 @@
+task: B933
+deviations:
+  - {what: "Unsupported lifecycle calls expose the shared bounded error message rather than Python stack traces, retaining APIConnectionError and status=500.", why: "The existing B184/B187 diagnostics contract applies to these locally raised errors.", link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2692-L2709"}
+  - {what: "Every raised class carries the mapper's own text, while LiteLLM prefixes each exception's message with \"litellm.<Class>: \" in the exception constructor, so a caller reading str(exception) sees one prefix less on betterlite.", why: "The prefix is added by the Python exception class, not by the responses mapping; betterlite's bounded message is the mapper's text (see the previous entry), and the class, status and flat fields match it exactly.", link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm/exceptions.py#L232"}
+kept_bugs:
+  - what: All four SDK entries accept a timeout and hand it to a handler that never applies it to the GET, so a call runs on the selected client's own timeout whatever the caller asked for.
+    why: A deployment passing a short per-call timeout relies on the handler ignoring it; honoring it would time out calls LiteLLM lets run, and B2416 keeps the GET without a per-call deadline.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L3153-L3154
+  - what: get_responses and aget_responses accept extra_query and never forward it, so a caller's extra query keys never reach the retrieve GET.
+    why: A working setup may pass extra_query to the wrapper and still get a plain GET; betterlite keeps those keys off the wire so the request matches the one LiteLLM sends.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L1693-L1699
