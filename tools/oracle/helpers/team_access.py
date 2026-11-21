@@ -1,6 +1,6 @@
 import asyncio
 from dataclasses import dataclass, field
-from typing import Literal, Protocol, TypedDict, runtime_checkable
+from typing import Literal, TypedDict
 
 from litellm.models.team import LiteLLM_TeamTableCachedObj, Member
 from litellm.proxy._types import LitellmUserRoles, UserAPIKeyAuth
@@ -13,6 +13,7 @@ from litellm.proxy.management.teams.access import (
 from litellm.proxy.management_helpers.team_member_permission_checks import (
     TeamMemberPermissionChecks,
 )
+from pydantic import BaseModel
 from starlette.exceptions import HTTPException
 
 UserRole = Literal[
@@ -109,9 +110,8 @@ def run(input_value: Input) -> list[StepResult]:
     return results
 
 
-# the ProxyException fields the helper reads; its class type carries Any, so it is matched by shape
-@runtime_checkable
-class RaisedDenial(Protocol):
+# the ProxyException fields read by attribute, since mypy sees Any in its class type
+class RaisedDenial(BaseModel):
     type: str
     param: str | None
     code: str
@@ -124,19 +124,18 @@ async def run_step(step: Step, roles: CaseOrgRoles) -> StepResult:
     value: Answer = None
     error: ErrorOut | None = None
     match outcome:
-        case RaisedDenial():
-            error = {
-                "status": int(outcome.code),
-                "error_type": outcome.type,
-                "param": outcome.param,
-                "code": outcome.code,
-            }
         case HTTPException():
             error = {"status": outcome.status_code, "error_type": None, "param": None, "code": None}
         case ValueError():
             error = {"status": None, "error_type": None, "param": None, "code": None}
         case BaseException():
-            raise outcome
+            denial = RaisedDenial.model_validate(outcome, from_attributes=True)
+            error = {
+                "status": int(denial.code),
+                "error_type": denial.type,
+                "param": denial.param,
+                "code": denial.code,
+            }
         case bool() | str() | list() | None:
             value = outcome
     return {"value": value, "error": error, "org_lookups": roles.lookups}
@@ -144,11 +143,13 @@ async def run_step(step: Step, roles: CaseOrgRoles) -> StepResult:
 
 def build_caller(caller: CallerInput) -> UserAPIKeyAuth:
     role = caller["user_role"]
+    account = caller["metadata"]["service_account_id"]
+    metadata: dict[str, str | None] = {"service_account_id": account}
     return UserAPIKeyAuth(
         user_id=caller["user_id"],
         user_role=None if role is None else LitellmUserRoles(role),
         team_id=caller["team_id"],
-        metadata={"service_account_id": caller["metadata"]["service_account_id"]},
+        metadata=metadata,
     )
 
 
