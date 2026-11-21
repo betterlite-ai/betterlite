@@ -30,9 +30,9 @@ pub(super) fn payload(
     if let Some(hit) = cache_hit {
         fields.insert("cache_hit".to_owned(), Json::Bool(hit));
     }
-    if let Some(usage) = usage {
+    if let Some(value) = usage {
         let mut metadata = IndexMap::new();
-        metadata.insert("usage_object".to_owned(), usage.clone());
+        metadata.insert("usage_object".to_owned(), value.clone());
         fields.insert("metadata".to_owned(), Json::Object(metadata));
     }
     let text = serde_json::to_string(&Json::Object(fields))

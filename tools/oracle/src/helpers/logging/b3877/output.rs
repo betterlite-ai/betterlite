@@ -12,8 +12,8 @@ pub(super) fn events_value(counters: &ProbeCounters) -> Value {
     json!({ "events": events })
 }
 
-fn event_value(event: &ProbeEvent) -> Value {
-    match event {
+fn event_value(recorded: &ProbeEvent) -> Value {
+    match recorded {
         ProbeEvent::Update {
             event,
             metric,

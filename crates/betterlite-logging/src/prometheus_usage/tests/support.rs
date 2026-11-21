@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Instant;
 
 use betterlite_models::decisions::Json;
 use betterlite_models::zero_cost::{ZeroCostDiagnostic, ZeroCostReason};
@@ -339,7 +340,13 @@ pub(super) fn emit_zero_cost(counters: &FakeCounters, end_users: &[&str]) {
 pub(super) fn emit_requests(counters: &FakeCounters, end_users: &[&str]) {
     for end_user in end_users {
         let fixture = Fixture::with_end_user(end_user);
-        increment_request_and_spend(counters, &payload(Decimal::ZERO), fixture.labels()).unwrap();
+        increment_request_and_spend(
+            counters,
+            &payload(Decimal::ZERO),
+            fixture.labels(),
+            Instant::now(),
+        )
+        .unwrap();
     }
 }
 

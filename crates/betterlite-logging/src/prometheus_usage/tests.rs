@@ -34,6 +34,7 @@ fn request_spend_increments_requests_then_spend() {
         &counters,
         &payload(finite("0.25").decimal()),
         fixture.labels(),
+        Instant::now(),
     )
     .unwrap();
     assert_eq!(
@@ -59,6 +60,7 @@ fn request_spend_negative_cost_errors_and_stops() {
         &counters,
         &payload(finite("-0.5").decimal()),
         fixture.labels(),
+        Instant::now(),
     )
     .unwrap_err();
     assert!(matches!(error, PrometheusUsageError::NegativeAmount { .. }));
