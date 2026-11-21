@@ -227,7 +227,7 @@ fn select_acreate_batch_chooses_the_batch_limiter() {
 #[case::create_thread(CallType::CreateThread)]
 #[case::aget_thread(CallType::AgetThread)]
 #[case::get_thread(CallType::GetThread)]
-#[case::aadd_message(CallType::AAddMessage)]
+#[case::a_add_message(CallType::AAddMessage)]
 #[case::add_message(CallType::AddMessage)]
 #[case::aget_messages(CallType::AgetMessages)]
 #[case::get_messages(CallType::GetMessages)]
