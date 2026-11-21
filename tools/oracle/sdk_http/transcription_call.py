@@ -171,7 +171,7 @@ async def async_transcription(
 
 def project(response: TranscriptionResponse) -> Outcome:
     transcribed = TRANSCRIBED.validate_json(response.model_dump_json())
-    hidden: HiddenParams = cast("HiddenParams", response._hidden_params)  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportAny, reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2748
+    hidden: HiddenParams = cast("HiddenParams", response._hidden_params)  # noqa: SLF001  # pyright: ignore[reportAny, reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2748
     return Outcome(
         text=transcribed.text,
         words=transcribed.words,
