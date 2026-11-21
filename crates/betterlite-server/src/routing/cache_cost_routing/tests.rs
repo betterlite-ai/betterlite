@@ -103,20 +103,20 @@ impl World {
     }
 }
 
-fn entry(model: &str, ceiling: u64) -> TierModelEntry {
+fn entry(model: &str, limit: u64) -> TierModelEntry {
     TierModelEntry {
         model_name: model.to_owned(),
         params: [(
             "max_tokens".to_owned(),
-            TierParam::Value(Json::Number(Number::from(ceiling))),
+            TierParam::Value(Json::Number(Number::from(limit))),
         )]
         .into_iter()
         .collect(),
     }
 }
 
-fn ceiling(ceiling: u64) -> JsonMap {
-    [("max_tokens".to_owned(), Json::Number(Number::from(ceiling)))]
+fn ceiling(limit: u64) -> JsonMap {
+    [("max_tokens".to_owned(), Json::Number(Number::from(limit)))]
         .into_iter()
         .collect()
 }

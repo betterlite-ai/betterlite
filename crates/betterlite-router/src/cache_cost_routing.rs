@@ -98,13 +98,13 @@ impl CacheCostRouting<'_> {
             .await
             .ok()
             .flatten();
-        let Some(choice) = choice else {
+        let Some(chosen) = choice else {
             return Some(response);
         };
-        if !request.context_fit.accepts(&choice.model) {
+        if !request.context_fit.accepts(&chosen.model) {
             return Some(response);
         }
-        Some(self.stamp(response, &choice))
+        Some(self.stamp(response, &chosen))
     }
 
     fn stamp(
