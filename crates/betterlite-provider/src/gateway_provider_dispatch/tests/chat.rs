@@ -390,16 +390,22 @@ fn the_class_config_sets_extra_body_when_the_request_has_none() {
 }
 
 #[rstest]
-#[rustfmt::skip]
-#[case::request(json!({"extra_body": "text"}), json!({"extra_body": {"route": "fallback"}}))]
-#[case::config(json!({"extra_body": {"route": "caller"}}), json!({"extra_body": ["route"]}))]
+#[case::request(
+    r#"{"extra_body": "text"}"#,
+    r#"{"extra_body": {"route": "fallback"}}"#
+)]
+#[case::config(
+    r#"{"extra_body": {"route": "caller"}}"#,
+    r#"{"extra_body": ["route"]}"#
+)]
 fn an_extra_body_that_is_not_an_object_is_refused(
-    #[case] optional_params: impl serde::Serialize,
-    #[case] class_config: impl serde::Serialize,
+    #[case] optional_params: &str,
+    #[case] class_config: &str,
 ) {
     let mut fixture = Fixture::new();
-    fixture.optional_params = object(optional_params);
-    fixture.class_config = object(class_config);
+    fixture.optional_params =
+        serde_json::from_str(optional_params).expect("the request case parses");
+    fixture.class_config = serde_json::from_str(class_config).expect("the config case parses");
     let handler = Recorder::succeeding();
     let (outcome, _state) = run(ChatConfigTag::Openrouter, &fixture, &handler);
     let error = outcome

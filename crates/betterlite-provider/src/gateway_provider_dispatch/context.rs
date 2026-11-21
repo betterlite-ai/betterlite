@@ -70,12 +70,14 @@ impl DispatchSettings<'_> {
 // the first non-empty value of an "a or b or c" chain, since an empty string falls through in LiteLLM
 #[rustfmt::skip]
 pub(super) fn first_nonempty<const N: usize>(candidates: [Option<&str>; N]) -> Option<String> {
-    candidates.into_iter().flatten().find(|value| !value.is_empty()).map(str::to_owned)
+    candidates.into_iter().flatten()
+        .find(|value| !value.is_empty()).map(str::to_owned)
 }
 
 #[rustfmt::skip]
 pub(super) fn first_secret<const N: usize>(candidates: [Option<&SecretString>; N]) -> Option<SecretString> {
-    candidates.into_iter().flatten().find(|value| !value.expose_secret().is_empty()).cloned()
+    candidates.into_iter().flatten()
+        .find(|value| !value.expose_secret().is_empty()).cloned()
 }
 
 // the referer pair, then the request headers else litellm.headers laid on top when they are not empty

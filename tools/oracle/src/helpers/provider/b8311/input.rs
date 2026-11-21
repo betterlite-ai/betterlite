@@ -96,8 +96,7 @@ pub(super) fn as_object(value: Option<&Json>) -> Result<Object, Box<HelperError>
     }
 }
 
-// what get_llm_provider settles before main.py hands the call to an arm: Vercel also fills the base from
-// the environment and the key from VERCEL_OIDC_TOKEN, while OpenRouter reaches its arm with the caller's values
+// what get_llm_provider settles before the arm runs: Vercel fills the base and key, OIDC included, from the environment; OpenRouter passes the caller's values
 pub(super) struct PreResolved {
     pub(super) api_base: Option<String>,
     pub(super) api_key: Option<SecretString>,
@@ -105,12 +104,14 @@ pub(super) struct PreResolved {
 
 #[rustfmt::skip]
 fn nonempty(value: Option<&String>) -> Option<&str> {
-    value.filter(|text| !text.is_empty()).map(String::as_str)
+    value.filter(|text| !text.is_empty())
+        .map(String::as_str)
 }
 
 #[rustfmt::skip]
 fn variable<'env>(env: &'env BTreeMap<String, String>, name: &str) -> Option<&'env str> {
-    env.get(name).map(String::as_str).filter(|text| !text.is_empty())
+    env.get(name).map(String::as_str)
+        .filter(|text| !text.is_empty())
 }
 
 #[rustfmt::skip]

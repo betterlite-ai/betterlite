@@ -75,7 +75,10 @@ pub(super) fn secret_text(value: Option<&SecretString>) -> Option<String> {
     value.map(|key| key.expose_secret().to_owned())
 }
 
-pub(super) fn object(value: impl serde::Serialize) -> Object {
+pub(super) fn object<T>(value: T) -> Object
+where
+    T: serde::Serialize,
+{
     serde_json::from_value(serde_json::to_value(value).expect("the fixture value serializes"))
         .expect("the fixture object parses")
 }
