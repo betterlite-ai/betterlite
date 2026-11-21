@@ -1,3 +1,8 @@
+#![expect(
+    clippy::struct_excessive_bools,
+    reason = "the settings mirror LiteLLM's independent request header and tracing switches"
+)]
+
 use serde::Deserialize;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
