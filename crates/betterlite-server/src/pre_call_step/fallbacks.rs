@@ -172,7 +172,7 @@ fn enabled(value: Option<&JsonValue>) -> bool {
         Some(JsonValue::Bool(flag)) => *flag,
         Some(JsonValue::Number(number)) => number
             .as_f64()
-            .is_some_and(|value| !matches!(value.classify(), FpCategory::Zero)),
+            .is_some_and(|amount| !matches!(amount.classify(), FpCategory::Zero)),
         Some(JsonValue::String(text)) => !text.is_empty(),
         Some(JsonValue::Array(items)) => !items.is_empty(),
         Some(JsonValue::Object(fields)) => !fields.is_empty(),
