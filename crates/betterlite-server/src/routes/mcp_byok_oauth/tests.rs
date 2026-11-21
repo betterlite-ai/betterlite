@@ -29,29 +29,22 @@ impl RequestBaseUrl for FixedBaseUrl {
     }
 }
 
-#[derive(Default)]
-struct FakeCodesState {
-    record: Option<AuthCodeRecord>,
-    removed: AtomicBool,
-}
-
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub(crate) struct FakeCodes {
-    state: Arc<FakeCodesState>,
+    record: Option<AuthCodeRecord>,
+    removed: Arc<AtomicBool>,
 }
 
 impl FakeCodes {
     pub(crate) fn new(record: Option<AuthCodeRecord>) -> Self {
         Self {
-            state: Arc::new(FakeCodesState {
-                record,
-                removed: AtomicBool::new(false),
-            }),
+            record,
+            removed: Arc::new(AtomicBool::new(false)),
         }
     }
 
     pub(crate) fn removed(&self) -> bool {
-        self.state.removed.load(Ordering::Acquire)
+        self.removed.load(Ordering::Acquire)
     }
 }
 
@@ -59,11 +52,11 @@ impl AuthCodeLookup for FakeCodes {
     fn purge_expired(&self, _now: f64) {}
 
     fn get(&self, _code: &str) -> Option<AuthCodeRecord> {
-        self.state.record.clone()
+        self.record.clone()
     }
 
     fn remove(&self, _code: &str) {
-        self.state.removed.store(true, Ordering::Release);
+        self.removed.store(true, Ordering::Release);
     }
 }
 
@@ -108,6 +101,32 @@ impl FakeSink {
     }
 }
 
+impl FakeSink {
+    fn finish(
+        &self,
+        call: SinkCall,
+        failure: Option<SinkError>,
+    ) -> impl Future<Output = Result<(), SinkError>> + Send {
+        self.lock().calls.push(call);
+        std::future::ready(match failure {
+            Some(error) => Err(error),
+            None => Ok(()),
+        })
+    }
+
+    fn store_failure(&self) -> Option<SinkError> {
+        self.lock().fail_store.then(|| SinkError::Store {
+            message: "database unavailable".to_owned(),
+        })
+    }
+
+    fn invalidate_failure(&self) -> Option<SinkError> {
+        self.lock().fail_invalidate.then(|| SinkError::Invalidate {
+            message: "peer publish failed".to_owned(),
+        })
+    }
+}
+
 impl ByokCredentialSink for FakeSink {
     fn store_credential(
         &self,
@@ -115,15 +134,7 @@ impl ByokCredentialSink for FakeSink {
         _server_id: &str,
         _credential: &SecretString,
     ) -> impl Future<Output = Result<(), SinkError>> + Send {
-        self.lock().calls.push(SinkCall::Store);
-        let failure = self.lock().fail_store;
-        std::future::ready(if failure {
-            Err(SinkError::Store {
-                message: "database unavailable".to_owned(),
-            })
-        } else {
-            Ok(())
-        })
+        self.finish(SinkCall::Store, self.store_failure())
     }
 
     fn invalidate_cache(
@@ -131,15 +142,7 @@ impl ByokCredentialSink for FakeSink {
         _user_id: &str,
         _server_id: &str,
     ) -> impl Future<Output = Result<(), SinkError>> + Send {
-        self.lock().calls.push(SinkCall::Invalidate);
-        let failure = self.lock().fail_invalidate;
-        std::future::ready(if failure {
-            Err(SinkError::Invalidate {
-                message: "peer publish failed".to_owned(),
-            })
-        } else {
-            Ok(())
-        })
+        self.finish(SinkCall::Invalidate, self.invalidate_failure())
     }
 }
 
@@ -174,15 +177,24 @@ pub(crate) struct TestApp {
 }
 
 impl TestApp {
-    pub(crate) fn with_record() -> Self {
+    pub(crate) fn new(record: Option<AuthCodeRecord>) -> Self {
+        let (base_url, root_prefixes, suffix) = Self::defaults();
         Self {
-            record: Some(record()),
+            record,
             credentials: Some(FakeSink::default()),
             master_key: Some(master()),
-            base_url: "https://proxy.test".to_owned(),
-            root_prefixes: Vec::new(),
-            suffix: String::new(),
+            base_url,
+            root_prefixes,
+            suffix,
         }
+    }
+
+    fn defaults() -> (String, Vec<String>, String) {
+        ("https://proxy.test".to_owned(), Vec::new(), String::new())
+    }
+
+    pub(crate) fn with_record() -> Self {
+        Self::new(Some(record()))
     }
 
     pub(crate) fn build(self) -> Built {

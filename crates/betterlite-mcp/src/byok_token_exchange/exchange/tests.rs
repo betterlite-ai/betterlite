@@ -39,20 +39,18 @@ struct FakeCodes {
 
 impl FakeCodes {
     fn new(record: AuthCodeRecord) -> Self {
+        let state = FakeCodesState {
+            record: Some(record),
+            calls: Vec::new(),
+        };
         Self {
-            state: Mutex::new(FakeCodesState {
-                record: Some(record),
-                calls: Vec::new(),
-            }),
+            state: Mutex::new(state),
         }
     }
 
     fn empty() -> Self {
         Self {
-            state: Mutex::new(FakeCodesState {
-                record: None,
-                calls: Vec::new(),
-            }),
+            state: Mutex::new(FakeCodesState::default()),
         }
     }
 
@@ -132,6 +130,30 @@ impl FakeSink {
     fn lock(&self) -> MutexGuard<'_, FakeSinkState> {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
     }
+
+    fn finish(&self, call: SinkCall) -> impl Future<Output = Result<(), SinkError>> + Send {
+        let failure = match call {
+            SinkCall::Store { .. } => self.store_failure(),
+            SinkCall::Invalidate { .. } => self.invalidate_failure(),
+        };
+        self.lock().calls.push(call);
+        std::future::ready(match failure {
+            Some(error) => Err(error),
+            None => Ok(()),
+        })
+    }
+
+    fn store_failure(&self) -> Option<SinkError> {
+        self.lock().fail_store.then(|| SinkError::Store {
+            message: "database unavailable".to_owned(),
+        })
+    }
+
+    fn invalidate_failure(&self) -> Option<SinkError> {
+        self.lock().fail_invalidate.then(|| SinkError::Invalidate {
+            message: "peer publish failed".to_owned(),
+        })
+    }
 }
 
 impl ByokCredentialSink for FakeSink {
@@ -141,21 +163,7 @@ impl ByokCredentialSink for FakeSink {
         server_id: &str,
         credential: &SecretString,
     ) -> impl Future<Output = Result<(), SinkError>> + Send {
-        let mut state = self.lock();
-        state.calls.push(SinkCall::Store {
-            user_id: user_id.to_owned(),
-            server_id: server_id.to_owned(),
-            credential: credential.expose_secret().to_owned(),
-        });
-        let failure = state.fail_store;
-        drop(state);
-        std::future::ready(if failure {
-            Err(SinkError::Store {
-                message: "database unavailable".to_owned(),
-            })
-        } else {
-            Ok(())
-        })
+        self.finish(store_call(user_id, server_id, credential))
     }
 
     fn invalidate_cache(
@@ -163,20 +171,22 @@ impl ByokCredentialSink for FakeSink {
         user_id: &str,
         server_id: &str,
     ) -> impl Future<Output = Result<(), SinkError>> + Send {
-        let mut state = self.lock();
-        state.calls.push(SinkCall::Invalidate {
-            user_id: user_id.to_owned(),
-            server_id: server_id.to_owned(),
-        });
-        let failure = state.fail_invalidate;
-        drop(state);
-        std::future::ready(if failure {
-            Err(SinkError::Invalidate {
-                message: "peer publish failed".to_owned(),
-            })
-        } else {
-            Ok(())
-        })
+        self.finish(invalidate_call(user_id, server_id))
+    }
+}
+
+fn store_call(user_id: &str, server_id: &str, credential: &SecretString) -> SinkCall {
+    SinkCall::Store {
+        user_id: user_id.to_owned(),
+        server_id: server_id.to_owned(),
+        credential: credential.expose_secret().to_owned(),
+    }
+}
+
+fn invalidate_call(user_id: &str, server_id: &str) -> SinkCall {
+    SinkCall::Invalidate {
+        user_id: user_id.to_owned(),
+        server_id: server_id.to_owned(),
     }
 }
 
