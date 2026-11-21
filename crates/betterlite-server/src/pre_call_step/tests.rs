@@ -485,7 +485,7 @@ async fn step_sets_the_call_id_and_tracer_tags() {
     let tracer = Arc::new(TestTracer::default());
     let loggers: Arc<dyn LoggerResolver> = Arc::new(NoLoggers);
     let settings = PreCallSettings::default();
-    let step = step_full(&fake, Arc::clone(&tracer), loggers, settings);
+    let step = step_full(&fake, Arc::<TestTracer>::clone(&tracer), loggers, settings);
     let request = parts("/chat/completions", Some("call-1"));
     let key = TestKey::default();
     let input = input_for(r#"{"model": "gpt"}"#, &request, &key, RouteType::Completion);
