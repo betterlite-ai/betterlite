@@ -22,11 +22,6 @@ EVENT: Final[TypeAdapter[GuardrailEventHooks | None]] = TypeAdapter(GuardrailEve
 CHUNK: Final[TypeAdapter[ModelResponseStream]] = TypeAdapter(ModelResponseStream)
 MODEL: Final[TypeAdapter[ModelResponse]] = TypeAdapter(ModelResponse)
 ITEM: Final[TypeAdapter[bytes | ModelResponseStream]] = TypeAdapter(bytes | ModelResponseStream)
-SIGNING: Final = {
-    "aws_access_key_id": "AKIAIOSFODNN7EXAMPLE",
-    "aws_secret_access_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-    "aws_region_name": "us-west-2",
-}
 
 Payload: TypeAlias = dict[str, JsonValue]
 StreamItem: TypeAlias = ModelResponseStream | bytes
@@ -64,19 +59,26 @@ class HookCase(TypedDict):
 
 class Hooks(Protocol):
     async def async_pre_call_hook(
-        self, user: UserAPIKeyAuth, cache: DualCache, data: Payload, call_type: CallTypesLiteral
-    ) -> Exception | JsonValue: ...
+        self,
+        user_api_key_dict: UserAPIKeyAuth,
+        cache: DualCache,
+        data: Payload,
+        call_type: CallTypesLiteral,
+    ) -> object: ...
 
     async def async_moderation_hook(
-        self, data: Payload, user: UserAPIKeyAuth, call_type: CallTypesLiteral
-    ) -> Exception | JsonValue: ...
+        self, data: Payload, user_api_key_dict: UserAPIKeyAuth, call_type: CallTypesLiteral
+    ) -> object: ...
 
     async def async_post_call_success_hook(
-        self, data: Payload, user: UserAPIKeyAuth, response: ModelResponse
-    ) -> Exception | JsonValue: ...
+        self, data: Payload, user_api_key_dict: UserAPIKeyAuth, response: ModelResponse
+    ) -> object: ...
 
     def async_post_call_streaming_iterator_hook(  # ast-grep-ignore: no-long-names
-        self, user: UserAPIKeyAuth, response: AsyncIterator[StreamItem], request_data: Payload
+        self,
+        user_api_key_dict: UserAPIKeyAuth,
+        response: AsyncIterator[StreamItem],
+        request_data: Payload,
     ) -> AsyncGenerator[StreamItem, None]: ...
 
 
@@ -99,12 +101,15 @@ class Scripted:
 
 def rejected(error: HTTPException) -> JsonValue:
     detail = JSON.validate_python(error.detail)
-    return JSON.validate_python(
-        {"kind": "rejected", "status_code": error.status_code, "detail": detail}
-    )
+    payload: dict[str, JsonValue] = {
+        "kind": "rejected",
+        "status_code": error.status_code,
+        "detail": detail,
+    }
+    return JSON.validate_python(payload)
 
 
-async def attempt(call: Awaitable[Exception | JsonValue]) -> JsonValue:
+async def attempt(call: Awaitable[object]) -> JsonValue:
     try:
         await call
     except HTTPException as error:
@@ -131,16 +136,19 @@ def chat_json(chunk: Payload) -> JsonValue:
     rendered: JsonValue = None
     if usage is not None:
         tokens = DICT.validate_python(usage)
-        rendered = JSON.validate_python(
-            {
-                "prompt_tokens": tokens.get("prompt_tokens"),
-                "completion_tokens": tokens.get("completion_tokens"),
-                "total_tokens": tokens.get("total_tokens"),
-            }
-        )
-    return JSON.validate_python(
-        {"model": chunk.get("model"), "text": text, "usage": rendered, "finish_reason": finish}
-    )
+        token_counts: dict[str, JsonValue] = {
+            "prompt_tokens": tokens.get("prompt_tokens"),
+            "completion_tokens": tokens.get("completion_tokens"),
+            "total_tokens": tokens.get("total_tokens"),
+        }
+        rendered = JSON.validate_python(token_counts)
+    summary: dict[str, JsonValue] = {
+        "model": chunk.get("model"),
+        "text": text,
+        "usage": rendered,
+        "finish_reason": finish,
+    }
+    return JSON.validate_python(summary)
 
 
 def frames_json(text: str) -> JsonValue:
@@ -196,13 +204,11 @@ async def hook_outcome(
             outcome = await attempt(hooks.async_post_call_success_hook(data, user, response))
         case "streaming":
             stream = hooks.async_post_call_streaming_iterator_hook(user, stream_items(case), data)
-            outcome = {"kind": "allowed"}
             try:
-                async for item in stream:
-                    chunks.append(item_json(item))
+                chunks.extend([item_json(item) async for item in stream])
             except HTTPException as error:
-                outcome = rejected(error)
-                chunks = []
+                return rejected(error), []
+            outcome = {"kind": "allowed"}
     return outcome, chunks
 
 
@@ -218,7 +224,9 @@ def run(input_value: HookCase) -> JsonValue:
         streaming_buffer_until_moderated=setup["buffer_until_moderated"],
         streaming_end_of_stream_only=setup["streaming_end_of_stream_only"],
         streaming_buffer_release_on_scan=setup["buffer_release_on_scan"],
-        **SIGNING,
+        aws_access_key_id="AKIAIOSFODNN7EXAMPLE",
+        aws_secret_access_key="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+        aws_region_name="us-west-2",
     )
     hooks: Hooks = guardrail
     seen: list[JsonValue] = []
@@ -238,4 +246,5 @@ def run(input_value: HookCase) -> JsonValue:
     finally:
         proxy_server.premium_user = premium
         litellm.anthropic_sse_ping_interval_seconds = interval
-    return JSON.validate_python({"outcome": outcome, "chunks": chunks, "scans": len(seen)})
+    result: dict[str, JsonValue] = {"outcome": outcome, "chunks": chunks, "scans": len(seen)}
+    return JSON.validate_python(result)
