@@ -2,7 +2,7 @@ use std::io;
 use std::net::{SocketAddr, TcpStream};
 use std::time::Duration;
 
-use tokio::net::{TcpListener, TcpSocket};
+use tokio::net::TcpListener;
 
 use crate::loopback;
 
@@ -12,8 +12,9 @@ const FILL_ATTEMPTS: u8 = 4;
 
 pub struct FullListener {
     pub address: SocketAddr,
-    _listener: TcpListener,
-    _fillers: Vec<TcpStream>,
+    pub listener: TcpListener,
+    // the connects that fill the accept queue, kept so the queue stays full
+    pub fillers: Vec<TcpStream>,
 }
 
 impl FullListener {
@@ -27,8 +28,8 @@ impl FullListener {
             .collect();
         Ok(Self {
             address,
-            _listener: listener,
-            _fillers: fillers,
+            listener,
+            fillers,
         })
     }
 }

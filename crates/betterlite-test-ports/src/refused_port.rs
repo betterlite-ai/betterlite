@@ -7,17 +7,14 @@ use crate::loopback;
 
 pub struct RefusedPort {
     pub address: SocketAddr,
-    _socket: TcpSocket,
+    pub socket: TcpSocket,
 }
 
 impl RefusedPort {
     pub fn bind() -> io::Result<Self> {
         let socket = loopback::bind()?;
         let address = socket.local_addr()?;
-        Ok(Self {
-            address,
-            _socket: socket,
-        })
+        Ok(Self { address, socket })
     }
 }
 
