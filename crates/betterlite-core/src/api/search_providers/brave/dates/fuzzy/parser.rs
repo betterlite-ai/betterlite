@@ -17,7 +17,8 @@ impl Parser<'_> {
     pub(super) fn run(&mut self) -> Option<()> {
         let mut index = 0;
         while index < self.tokens.len() {
-            index = self.step(index)?.saturating_add(1);
+            // a step never moves back, and max keeps one that does from stalling the walk
+            index = self.step(index)?.max(index).saturating_add(1);
         }
         Some(())
     }
