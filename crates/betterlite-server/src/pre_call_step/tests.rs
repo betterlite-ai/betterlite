@@ -359,6 +359,16 @@ async fn step_runs_the_ports_in_order() {
     assert_eq!(output.data.get("include_fallback_errors"), None);
     assert!(output.data.contains_key("metadata"));
     assert_eq!(output.data.get("router_settings_override"), None);
+    let snapshot = output
+        .data
+        .get("proxy_server_request")
+        .and_then(|request| request.get("body"));
+    assert_eq!(
+        snapshot
+            .and_then(|body| body.get("model"))
+            .and_then(JsonValue::as_str),
+        Some("gpt")
+    );
 }
 
 #[tokio::test]
