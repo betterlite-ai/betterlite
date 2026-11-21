@@ -12,4 +12,7 @@ call:
     environment: {}
     unique_id: "0123abcd"
 env: {}
-compare: {ignore: ["/s3_bucket"]}
+compare:
+  ignore:
+    - pointer: /value/s3_bucket
+      why: "Python generates its own random unique id, so the created bucket name differs from the fixed id this helper passes to betterlite"
