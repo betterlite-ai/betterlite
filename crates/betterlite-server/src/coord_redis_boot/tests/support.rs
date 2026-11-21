@@ -4,7 +4,6 @@ use std::collections::BTreeMap;
 use std::error::Error as StdError;
 use std::fmt;
 use std::future::{Future, pending};
-use std::net::TcpListener;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
@@ -31,6 +30,7 @@ use betterlite_secret_managers::secret_lookup::ports::{
     OidcTokenCache,
 };
 use betterlite_secret_managers::secret_lookup::{SecretLookup, SecretValue};
+use betterlite_test_ports::refused_port::RefusedPort;
 use secrecy::SecretString;
 use tracing::field::{Field, Visit};
 use tracing::subscriber::{set_default, with_default};
@@ -98,14 +98,6 @@ pub(crate) fn wiring() -> RedisCacheWiring {
     }
 }
 
-// A listener on port zero names a port nothing listens on once it is closed again.
-pub(crate) fn closed_port() -> u16 {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback listener");
-    let port = listener.local_addr().expect("the listener address").port();
-    drop(listener);
-    port
-}
-
 pub(crate) fn overrides(port: u16) -> RedisOverrides {
     let text = format!(
         r#"{{"host": "127.0.0.1", "port": {port}, "socket_timeout": 1.0, "socket_connect_timeout": 1.0}}"#
@@ -140,10 +132,11 @@ pub(crate) fn block(text: &str) -> CoordinationRedisBlock {
     CoordinationRedisBlock { value: json(text) }
 }
 
-pub(crate) async fn standalone_cache() -> Arc<RedisCache> {
+pub(crate) async fn standalone_cache() -> (Arc<RedisCache>, RefusedPort) {
+    let refused = RefusedPort::bind().expect("a refused port");
     let wire = wiring();
     let request = RedisCacheRequest {
-        overrides: overrides(closed_port()),
+        overrides: overrides(refused.address.port()),
         family: RedisCacheFamily::Standalone,
         namespace: None,
         redis_flush_size: None,
@@ -151,8 +144,8 @@ pub(crate) async fn standalone_cache() -> Arc<RedisCache> {
     let cache = wire
         .build(request, &no_environment())
         .await
-        .expect("the cache builds against a closed port");
-    Arc::new(cache)
+        .expect("the cache builds against a refused port");
+    (Arc::new(cache), refused)
 }
 
 fn memory() -> Arc<LocalMemoryOps> {

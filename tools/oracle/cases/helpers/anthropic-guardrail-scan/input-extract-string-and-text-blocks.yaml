@@ -1,0 +1,6 @@
+kind: helper
+name: anthropic-guardrail-scan-input-extract-string-and-text-blocks
+call:
+  b3675: {"function": "extract", "scenarios": [{"message": {"role": "user", "content": "hello"}, "msg_idx": 2}, {"message": {"role": "user", "content": [{"type": "text", "text": "a"}, {"type": "image", "source": {"type": "url", "url": "http://x"}}, {"type": "custom", "text": "b"}, {"type": "text", "text": ""}, "junk", 7]}, "msg_idx": 1}, {"message": {"role": "user", "content": ""}, "msg_idx": 0}, {"message": {"role": "assistant", "content": 5}, "msg_idx": 0}, {"message": {"role": "user", "content": {"text": "x"}}, "msg_idx": 0}, {"message": {"content": "bare"}, "msg_idx": 3}]}
+env: {}
+compare: {ignore: []}

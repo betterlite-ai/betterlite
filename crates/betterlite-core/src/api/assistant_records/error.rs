@@ -271,7 +271,7 @@ fn replaced_text(body: &[u8]) -> String {
     text
 }
 
-const fn class_name(class: &ErrorClass) -> &'static str {
+pub(crate) const fn class_name(class: &ErrorClass) -> &'static str {
     match class {
         ErrorClass::Authentication(_) => "AuthenticationError",
         ErrorClass::NotFound(_) => "NotFoundError",

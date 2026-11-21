@@ -4,7 +4,6 @@ use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use std::io;
-use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
@@ -16,6 +15,7 @@ use betterlite_config::loader::ConfigLoader;
 use betterlite_http::health_probe::{
     HEALTH_TIMEOUT, HealthTransport, ReqwestHealth, TransportError,
 };
+use betterlite_test_ports::refused_port::RefusedPort;
 use rstest::rstest;
 
 use super::{
@@ -112,9 +112,8 @@ fn health_command_rejects_a_body_that_is_not_json() {
 
 #[test]
 fn health_command_writes_the_status_line_before_a_transport_failure() {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
-    drop(listener);
+    let refused = RefusedPort::bind().unwrap();
+    let port = refused.address.port();
     let transport = ReqwestHealth::new(HEALTH_TIMEOUT).expect("the client builds");
     let mut writer = Vec::new();
 

@@ -1,7 +1,7 @@
 id: B157
 milestone: M12 python
 title: The betterlite Python package over the Rust core, with LiteLLM's module-level settings
-status: todo
+status: done
 depends_on: [B5360, B5361, B5362, B5363, B5364, B5365, B5366, B5367, B5368, B5369]
 file: tasks/B157-python-module-settings.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/utils.py"
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2779

@@ -1,0 +1,25 @@
+kind: helper
+name: configured-sibling-kept
+call:
+  team_model_cleanup:
+    calls:
+      - function: remove_unbacked_team_models
+        model_name: shared
+        team_id: t1
+        team_public_model_name: shared
+        aliases:
+          - {id: 1, team_id: t1, aliases: {legacy: shared}}
+        deployments: []
+        served_names: [shared]
+        team_models: [shared, legacy]
+calls:
+  - team_model_cleanup:
+      calls:
+        - function: get_team_deployments
+          team_id: t1
+          deployments:
+            - {model_name: model_name_t1_a, model_info: {team_id: t1, team_public_model_name: shared}}
+            - {model_name: model_name_t1_b, model_info: {team_id: t2}}
+            - {model_name: model_name_t1_c, model_info: null}
+env: {}
+compare: {ignore: []}

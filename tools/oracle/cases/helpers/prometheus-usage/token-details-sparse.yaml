@@ -1,0 +1,145 @@
+kind: helper
+name: prometheus-usage-token-details-sparse
+call:
+  b3877:
+    function: token_detail
+    values: {user: alice}
+    supported_labels:
+      litellm_input_cached_tokens_metric: [user]
+      litellm_input_cache_creation_tokens_metric: [user]
+      litellm_input_audio_tokens_metric: [user]
+      litellm_output_reasoning_tokens_metric: [user]
+      litellm_output_audio_tokens_metric: [user]
+    response_cost: 0.0
+    cache_hit: null
+    total_tokens: 0
+    prompt_tokens: 0
+    completion_tokens: 0
+    usage_object:
+      prompt_tokens_details: {cached_tokens: 4, audio_tokens: 2, cache_creation_tokens: 6}
+      completion_tokens_details: {reasoning_tokens: 9, audio_tokens: 1}
+calls:
+  - b3877:
+      function: token_detail
+      values: {user: alice}
+      supported_labels:
+        litellm_input_cached_tokens_metric: [user]
+        litellm_input_cache_creation_tokens_metric: [user]
+        litellm_input_audio_tokens_metric: [user]
+        litellm_output_reasoning_tokens_metric: [user]
+        litellm_output_audio_tokens_metric: [user]
+      response_cost: 0.0
+      cache_hit: null
+      total_tokens: 0
+      prompt_tokens: 0
+      completion_tokens: 0
+      usage_object: null
+  - b3877:
+      function: token_detail
+      values: {user: alice}
+      supported_labels:
+        litellm_input_cached_tokens_metric: [user]
+        litellm_input_cache_creation_tokens_metric: [user]
+        litellm_input_audio_tokens_metric: [user]
+        litellm_output_reasoning_tokens_metric: [user]
+        litellm_output_audio_tokens_metric: [user]
+      response_cost: 0.0
+      cache_hit: null
+      total_tokens: 0
+      prompt_tokens: 0
+      completion_tokens: 0
+      usage_object: {}
+  - b3877:
+      function: token_detail
+      values: {user: alice}
+      supported_labels:
+        litellm_input_cached_tokens_metric: [user]
+        litellm_input_cache_creation_tokens_metric: [user]
+        litellm_input_audio_tokens_metric: [user]
+        litellm_output_reasoning_tokens_metric: [user]
+        litellm_output_audio_tokens_metric: [user]
+      response_cost: 0.0
+      cache_hit: null
+      total_tokens: 0
+      prompt_tokens: 0
+      completion_tokens: 0
+      usage_object:
+        prompt_tokens_details: {cached_tokens: 0, audio_tokens: "2", cache_write_tokens: -3}
+        completion_tokens_details: {reasoning_tokens: -1}
+  - b3877:
+      function: token_detail
+      values: {user: alice}
+      supported_labels:
+        litellm_input_cached_tokens_metric: [user]
+        litellm_input_cache_creation_tokens_metric: [user]
+        litellm_input_audio_tokens_metric: [user]
+        litellm_output_reasoning_tokens_metric: [user]
+        litellm_output_audio_tokens_metric: [user]
+      response_cost: 0.0
+      cache_hit: null
+      total_tokens: 0
+      prompt_tokens: 0
+      completion_tokens: 0
+      usage_object: {prompt_tokens_details: {cache_write_tokens: 0, cache_creation_tokens: 9}}
+  - b3877:
+      function: token_detail
+      values: {user: alice}
+      supported_labels:
+        litellm_input_cached_tokens_metric: [user]
+        litellm_input_cache_creation_tokens_metric: [user]
+        litellm_input_audio_tokens_metric: [user]
+        litellm_output_reasoning_tokens_metric: [user]
+        litellm_output_audio_tokens_metric: [user]
+      response_cost: 0.0
+      cache_hit: null
+      total_tokens: 0
+      prompt_tokens: 0
+      completion_tokens: 0
+      usage_object: {prompt_tokens_details: {cache_write_tokens: 5, cache_creation_tokens: 9}}
+  - b3877:
+      function: token_detail
+      values: {user: alice}
+      supported_labels:
+        litellm_input_cached_tokens_metric: [user]
+        litellm_input_cache_creation_tokens_metric: [user]
+        litellm_input_audio_tokens_metric: [user]
+        litellm_output_reasoning_tokens_metric: [user]
+        litellm_output_audio_tokens_metric: [user]
+      response_cost: 0.0
+      cache_hit: null
+      total_tokens: 0
+      prompt_tokens: 0
+      completion_tokens: 0
+      usage_object: {prompt_tokens_details: {cache_write_tokens: true, cache_creation_tokens: 3}}
+  - b3877:
+      function: token_detail
+      values: {user: alice}
+      supported_labels:
+        litellm_input_cached_tokens_metric: [user]
+        litellm_input_cache_creation_tokens_metric: [user]
+        litellm_input_audio_tokens_metric: [user]
+        litellm_output_reasoning_tokens_metric: [user]
+        litellm_output_audio_tokens_metric: [user]
+      response_cost: 0.0
+      cache_hit: null
+      total_tokens: 0
+      prompt_tokens: 0
+      completion_tokens: 0
+      usage_object: {prompt_tokens_details: {cached_tokens: 4.5, audio_tokens: true}}
+  - b3877:
+      function: token_detail
+      values: {user: alice}
+      supported_labels:
+        litellm_input_cached_tokens_metric: [user]
+        litellm_input_cache_creation_tokens_metric: [user]
+        litellm_input_audio_tokens_metric: [user]
+        litellm_output_reasoning_tokens_metric: [user]
+        litellm_output_audio_tokens_metric: [user]
+      response_cost: 0.0
+      cache_hit: null
+      total_tokens: 0
+      prompt_tokens: 0
+      completion_tokens: 0
+      usage_object: {prompt_tokens_details: 7, completion_tokens_details: {audio_tokens: 2}}
+env: {}
+compare: {ignore: []}

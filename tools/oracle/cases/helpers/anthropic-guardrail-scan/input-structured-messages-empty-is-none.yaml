@@ -1,0 +1,6 @@
+kind: helper
+name: anthropic-guardrail-scan-input-structured-messages-empty-is-none
+call:
+  b3675: {"function": "structured_messages", "scenarios": [{"data": {"model": "claude-sonnet-4-5", "messages": []}}, {"data": {"model": "claude-sonnet-4-5"}}, {"data": {"model": "claude-sonnet-4-5", "messages": null}}, {"data": {"model": "claude-sonnet-4-5", "system": "trusted", "messages": [{"role": "user", "content": "hi"}]}}, {"data": {"model": "claude-sonnet-4-5", "messages": [{"role": "user", "content": "hi"}]}}]}
+env: {}
+compare: {ignore: []}
