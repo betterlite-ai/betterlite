@@ -67,7 +67,7 @@ impl FakeCache {
     fn increment(&self, key: &str, ttl: Duration) -> i64 {
         let mut counts = self.redis.lock().unwrap_or_else(PoisonError::into_inner);
         let current = counts.get(key).copied().unwrap_or(0);
-        let next = current.checked_add(1).unwrap_or(i64::MAX);
+        let next = current.saturating_add(1);
         counts.insert(key.to_owned(), next);
         drop(counts);
         if next == 1 {
