@@ -63,10 +63,8 @@ pub fn repair(error_text: &str, request: &Object) -> Result<Object, RepairError>
     if error_text.contains(EXTRA_INPUTS_MARKER) && has_tool_level_extra_fields(error_text) {
         drop_tool_level_extra_fields(&mut repaired, error_text);
     }
-    Ok(without_rejected_fields(
-        ErrorBody::Http(error_text.as_bytes()),
-        &repaired,
-    )?)
+    let kept = without_rejected_fields(ErrorBody::Http(error_text.as_bytes()), &repaired)?;
+    Ok(kept)
 }
 
 // request_data.get("messages") is not None: an absent key and a null value both skip the tool-call repair

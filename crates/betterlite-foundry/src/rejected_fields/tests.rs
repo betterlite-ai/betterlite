@@ -74,17 +74,21 @@ fn tool_level_fields_are_read_left_to_right() {
     );
     assert_eq!(tool_level_field_names("tools[0]."), Vec::new());
     assert_eq!(
-        tool_level_field_names("tools[٣].extra"),
+        tool_level_field_names("tools[\u{663}].extra"),
         vec![String::from("extra")]
     );
     assert_eq!(
-        tool_level_field_names("tools[0].café_9-x"),
-        vec![String::from("café_9-x")]
+        tool_level_field_names("tools[0].caf\u{e9}_9-x"),
+        vec![String::from("caf\u{e9}_9-x")]
     );
-    // \w keeps a letter-number like Ⅳ and stops at a combining mark, other-alphabetic ones included
+    // \w keeps a letter-number like \u{2163} and stops at a combining mark, other-alphabetic ones included
     assert_eq!(
-        tool_level_field_names("tools[0].aⅣb tools[1].a\u{301}b tools[2].a\u{345}b"),
-        vec![String::from("aⅣb"), String::from("a"), String::from("a")]
+        tool_level_field_names("tools[0].a\u{2163}b tools[1].a\u{301}b tools[2].a\u{345}b"),
+        vec![
+            String::from("a\u{2163}b"),
+            String::from("a"),
+            String::from("a")
+        ]
     );
 }
 
@@ -92,9 +96,9 @@ fn tool_level_fields_are_read_left_to_right() {
 fn tool_level_markers_need_a_decimal_index_and_a_dot() {
     assert!(has_tool_level_extra_fields("tools[0]."));
     assert!(has_tool_level_extra_fields("extra tools[12].x"));
-    assert!(has_tool_level_extra_fields("tools[٣]."));
+    assert!(has_tool_level_extra_fields("tools[\u{663}]."));
     // \d is the decimal-digit category, so a superscript two is not an index
-    assert!(!has_tool_level_extra_fields("tools[²]."));
+    assert!(!has_tool_level_extra_fields("tools[\u{b2}]."));
     // the pattern is not anchored, so a prefix does not hide it
     assert!(has_tool_level_extra_fields("xtools[0]."));
     assert!(!has_tool_level_extra_fields("tools[]."));
