@@ -12,7 +12,7 @@ pub fn litellm_role(
     settings: &Settings,
 ) -> Result<Option<UserRole>, RoleClaimError> {
     let configured = settings.sync.jwt_litellm_role_map.as_ref();
-    let Some(mappings) = configured.filter(|mappings| !mappings.is_empty()) else {
+    let Some(mappings) = configured.filter(|listed| !listed.is_empty()) else {
         return Ok(None);
     };
     let claim = role_claim(claims, settings, RoleField::Roles, Some(&[]))?;
