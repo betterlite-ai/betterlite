@@ -175,8 +175,8 @@ JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 SEARCH_VIEW: Final[TypeAdapter[SearchView]] = TypeAdapter(SearchView)
 
 
-def error_view(call: ErrorCall) -> JsonValue:
-    error = EMBEDDING.get_error_class(call["message"], call["status"], {})
+def error_view(config: Embedding, call: ErrorCall) -> JsonValue:
+    error = config.get_error_class(call["message"], call["status"], {})
     return {
         "status": error.status_code,
         "message": error.message,
@@ -186,10 +186,10 @@ def error_view(call: ErrorCall) -> JsonValue:
     }
 
 
-def responses_headers(call: HeaderCall) -> JsonValue:
+def responses_headers(config: Responses, call: HeaderCall) -> JsonValue:
     os.environ.clear()
     os.environ.update(call["env"])
-    headers = RESPONSES.validate_environment(
+    headers = config.validate_environment(
         dict(call["headers"]), "sonar", Params(api_key=call["api_key"])
     )
     return {"ok": True, "headers": JSON.validate_python(headers)}
@@ -201,69 +201,79 @@ def base_url(config: Responses | Search, call: BaseCall) -> JsonValue:
     return config.get_complete_url(call["api_base"], EMPTY)
 
 
-def responses_request(call: ResponsesCall) -> JsonValue:
-    body = RESPONSES.transform_responses_api_request(
+def responses_request(config: Responses, call: ResponsesCall) -> JsonValue:
+    body = config.transform_responses_api_request(
         call["model"], call["input"], dict(call["params"]), Params(), {}
     )
     return {"ok": True, "value": body}
 
 
-def responses_reply(call: ReplyCall) -> JsonValue:
-    reply = RESPONSES.transform_response_api_response("sonar", response_of(call), LOG)
+def responses_reply(config: Responses, call: ReplyCall) -> JsonValue:
+    reply = config.transform_response_api_response("sonar", response_of(call), LOG)
     return {"ok": True, "id": reply.id}
 
 
-def search_headers(call: SearchKeyCall) -> JsonValue:
+def search_headers(config: Search, call: SearchKeyCall) -> JsonValue:
     os.environ.clear()
     os.environ.update(call["env"])
-    headers = SEARCH.validate_environment(dict(call["headers"]), call["api_key"], call["api_base"])
+    headers = config.validate_environment(dict(call["headers"]), call["api_key"], call["api_base"])
     return {"ok": True, "headers": JSON.validate_python(headers)}
 
 
-def search_reply(call: ReplyCall) -> JsonValue:
-    reply = SEARCH.transform_search_response(response_of(call), LOG)
+def search_reply(config: Search, call: ReplyCall) -> JsonValue:
+    reply = config.transform_search_response(response_of(call), LOG)
     view = SEARCH_VIEW.validate_json(reply.model_dump_json())
     return {"ok": True, "value": JSON.validate_python(view)}
 
 
-def embedding(input_value: EmbeddingInput) -> JsonValue:
+def embedding(config: Embedding, input_value: EmbeddingInput) -> JsonValue:
     urls: list[JsonValue] = [
-        EMBEDDING.get_complete_url(base, None, "pplx-embed-v1-0.6b", EMPTY, EMPTY)
+        config.get_complete_url(base, None, "pplx-embed-v1-0.6b", EMPTY, EMPTY)
         for base in input_value["urls"]
     ]
-    headers = partial(auth_headers, EMBEDDING)
-    requests = partial(embedding_request, EMBEDDING)
-    replies = partial(embedding_reply, EMBEDDING)
+    headers = partial(auth_headers, config)
+    requests = partial(embedding_request, config)
+    replies = partial(embedding_reply, config)
     return {
-        "supported": JSON.validate_python(EMBEDDING.get_supported_openai_params("m")),
+        "supported": JSON.validate_python(config.get_supported_openai_params("m")),
         "urls": urls,
         "headers": [guarded(headers, item) for item in input_value["headers"]],
         "requests": [guarded(requests, item) for item in input_value["requests"]],
         "replies": [guarded(replies, item) for item in input_value["replies"]],
-        "errors": [error_view(item) for item in input_value["errors"]],
+        "errors": [error_view(config, item) for item in input_value["errors"]],
     }
 
 
-def responses(input_value: ResponsesInput) -> JsonValue:
-    return {
-        "supported": JSON.validate_python(RESPONSES.get_supported_openai_params("sonar")),
-        "websocket": RESPONSES.supports_native_websocket(),
-        "headers": [guarded(responses_headers, item) for item in input_value["headers"]],
-        "urls": [base_url(RESPONSES, item) for item in input_value["urls"]],
-        "requests": [guarded(responses_request, item) for item in input_value["requests"]],
-        "replies": [guarded(responses_reply, item) for item in input_value["replies"]],
+def responses(config: Responses, input_value: ResponsesInput) -> JsonValue:
+    supported = config.get_supported_openai_params("sonar")
+    answer: Object = {
+        "supported": JSON.validate_python(supported),
+        "websocket": config.supports_native_websocket(),
     }
+    answer["headers"] = [
+        guarded(partial(responses_headers, config), item) for item in input_value["headers"]
+    ]
+    answer["urls"] = [base_url(config, item) for item in input_value["urls"]]
+    answer["requests"] = [
+        guarded(partial(responses_request, config), item) for item in input_value["requests"]
+    ]
+    answer["replies"] = [
+        guarded(partial(responses_reply, config), item) for item in input_value["replies"]
+    ]
+    return answer
 
 
-def search(input_value: SearchInput) -> JsonValue:
+def search(config: Search, input_value: SearchInput) -> JsonValue:
+    headers = partial(search_headers, config)
+    replies = partial(search_reply, config)
     return {
-        "headers": [guarded(search_headers, item) for item in input_value["headers"]],
-        "urls": [base_url(SEARCH, item) for item in input_value["urls"]],
+        "headers": [guarded(headers, item) for item in input_value["headers"]],
+        "urls": [base_url(config, item) for item in input_value["urls"]],
         "requests": [
-            SEARCH.transform_search_request(item["query"], dict(item["optional_params"]))
+            config.transform_search_request(item["query"], dict(item["optional_params"]))
             for item in input_value["requests"]
         ],
-        "replies": [guarded(search_reply, item) for item in input_value["replies"]],
+        "replies": [guarded(replies, item) for item in input_value["replies"]],
     }
 
 
@@ -282,9 +292,9 @@ def decisions(bases: list[str]) -> JsonValue:
 
 def run(input_value: Input) -> JsonValue:
     if input_value["op"] == "embedding":
-        return embedding(input_value)
+        return embedding(EMBEDDING, input_value)
     if input_value["op"] == "responses":
-        return responses(input_value)
+        return responses(RESPONSES, input_value)
     if input_value["op"] == "search":
-        return search(input_value)
+        return search(SEARCH, input_value)
     return decisions(input_value["bases"])
