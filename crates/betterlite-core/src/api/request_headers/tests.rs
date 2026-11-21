@@ -496,6 +496,7 @@ fn stamps_otel_trace_id(
 #[case::both(&[("anthropic-version", "2023-06-01"), ("anthropic-beta", "b"), ("Authorization", "Bearer sk-ant-oat-1")], vec![(ANTHROPIC_API_PROVIDERS, sorted(&[("anthropic-version", "2023-06-01"), ("anthropic-beta", "b")])), (ANTHROPIC_OAUTH_PROVIDERS, sorted(&[("Authorization", "Bearer sk-ant-oat-1")]))], true)]
 #[case::api_headers_only(&[("anthropic-beta", "b"), ("Anthropic-Version", "x")], vec![(ANTHROPIC_API_PROVIDERS, sorted(&[("anthropic-beta", "b")]))], false)]
 #[case::none(&[("x-a", "1")], Vec::new(), false)]
+#[case::oauth_value_in_other_header(&[("x-token", "Bearer sk-ant-oat-1")], Vec::new(), false)]
 fn provider_specific_headers(
     #[case] headers: Pairs,
     #[case] scoped: Vec<(&str, Vec<(String, String)>)>,
