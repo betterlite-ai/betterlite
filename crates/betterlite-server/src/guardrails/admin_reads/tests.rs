@@ -369,6 +369,19 @@ impl Harness {
                 .expect("the seed initializes"),
         );
     }
+
+    async fn seed_team_scoped(&self, guardrail: Guardrail, team_id: &str) {
+        let id = guardrail.guardrail_id.clone().expect("the seed has an id");
+        let mut held = self.runtime.handler().write().await;
+        drop(
+            held.initialize_guardrail(guardrail.clone(), GuardrailDefinitionLocation::Config)
+                .expect("the seed initializes"),
+        );
+        let mut scoped = guardrail;
+        scoped.team_id = Some(team_id.to_owned());
+        held.update_in_memory_guardrail(&id, scoped, GuardrailDefinitionLocation::Config)
+            .expect("the unchanged params keep the entry");
+    }
 }
 
 fn principal(subject: &str, roles: Vec<Role>, user: Option<&str>) -> AuthContext {

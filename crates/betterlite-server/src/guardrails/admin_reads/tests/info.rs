@@ -42,7 +42,7 @@ async fn info_falls_back_to_a_config_entry() {
     let harness = harness(Setup::default());
     harness
         .seed(
-            guardrail(Some("cfg-1"), "config-guard", BEDROCK_PRE, None),
+            guardrail(Some("cfg-1"), "config-guard", BEDROCK_SECRET, None),
             GuardrailDefinitionLocation::Config,
         )
         .await;
@@ -54,6 +54,10 @@ async fn info_falls_back_to_a_config_entry() {
         text(field(&parsed, "guardrail_definition_location")),
         "config"
     );
+    let params = field(&parsed, "litellm_params");
+    assert_eq!(text(field(params, "guardrail")), "bedrock");
+    assert_eq!(text(field(params, "mode")), "pre_call");
+    assert_eq!(text(field(params, "api_key")), "sk****34");
     assert!(field(&parsed, "created_at").is_null());
     assert!(field(&parsed, "updated_at").is_null());
     assert!(

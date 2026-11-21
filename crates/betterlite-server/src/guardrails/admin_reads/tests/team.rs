@@ -32,6 +32,50 @@ async fn team_a_viewer_role_sees_every_row() {
 }
 
 #[tokio::test]
+async fn team_the_master_key_sees_every_row_and_skips_the_team_lookup() {
+    let setup = Setup {
+        database: true,
+        rows: vec![
+            row("row1", "one", BEDROCK_PRE, None, Some("team-a")),
+            row("row2", "two", BEDROCK_PRE, None, Some("team-b")),
+        ],
+        teams: Err("the lookup must not run"),
+        ..Setup::default()
+    };
+    let harness = harness(setup);
+    let (status, body) = get(&harness, LIST_V2_PATH, Some(admin())).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(entry_ids(&parse(&body)), ["row1", "row2"]);
+    assert_eq!(harness.teams.calls(), 0);
+}
+
+#[tokio::test]
+async fn team_a_non_admin_sees_its_own_team_memory_entry() {
+    let setup = Setup {
+        database: true,
+        teams: Ok(vec!["team-a".to_owned()]),
+        ..Setup::default()
+    };
+    let harness = harness(setup);
+    harness
+        .seed_team_scoped(
+            guardrail(Some("mem-a"), "own-guard", BEDROCK_PRE, None),
+            "team-a",
+        )
+        .await;
+    harness
+        .seed_team_scoped(
+            guardrail(Some("mem-b"), "other-guard", BEDROCK_PRE, None),
+            "team-b",
+        )
+        .await;
+    let (status, body) = get(&harness, LIST_V2_PATH, Some(user_caller("user-1"))).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(entry_ids(&parse(&body)), ["mem-a"]);
+    assert_eq!(harness.teams.calls(), 1);
+}
+
+#[tokio::test]
 async fn team_a_non_admin_sees_own_and_teamless_rows() {
     let setup = Setup {
         database: true,
