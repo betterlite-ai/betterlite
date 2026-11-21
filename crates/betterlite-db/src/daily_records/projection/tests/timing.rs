@@ -4,7 +4,10 @@ use std::collections::BTreeMap;
 
 use rstest::rstest;
 
-use crate::daily_records::support::{Case, column, payload_with, project, projected_row};
+use crate::daily_records::DailyRecordError;
+use crate::daily_records::support::{
+    Case, column, payload_with, payload_with_metadata, project, projected_row,
+};
 use crate::daily_spend_sql::entities::{DailySpendEntity, SpendRow};
 use crate::daily_spend_sql::values::SpendColumnValue;
 
@@ -157,6 +160,14 @@ async fn an_absent_duration_leaves_the_request_untimed() {
     let text = payload_with(r#""metadata":"{}""#);
     let row = projected_row(&case, &text, DailySpendEntity::User).await;
     assert_timed(&row, 0, 0);
+}
+
+#[tokio::test]
+async fn an_unreadable_metadata_string_fails_the_row() {
+    let case = Case::with_prices(BTreeMap::new());
+    let text = payload_with_metadata("not json");
+    let result = project(&case, &text, DailySpendEntity::User).await;
+    assert!(matches!(result, Err(DailyRecordError::Metadata(_))));
 }
 
 #[tokio::test]
