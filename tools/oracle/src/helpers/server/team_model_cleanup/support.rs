@@ -9,7 +9,7 @@ use betterlite_server::team_fields::rows::TeamObjectCache;
 use betterlite_server::team_model_cleanup::alias::{AliasMap, AliasRow, AliasRows};
 use betterlite_server::team_model_cleanup::deployments::{DeploymentRow, DeploymentRows};
 use betterlite_server::team_model_cleanup::error::CleanupError;
-use betterlite_server::team_model_cleanup::remove::{RemovalContext, ServingNames, TeamModelRows};
+use betterlite_server::team_model_cleanup::remove::{ServingNames, TeamModelRows};
 use indexmap::IndexMap;
 use serde_json::{Value, json};
 
@@ -171,19 +171,5 @@ impl TeamObjectCache for FakeCache {
         let summary = json!({ "team_id": team_id, "models": team.team.fields.base.models });
         *self.stored.lock().unwrap_or_else(PoisonError::into_inner) = Some(summary);
         Ok(())
-    }
-}
-
-pub(super) fn context<'context>(
-    store: &'context FakeStore,
-    cache: &'context FakeCache,
-    serving: Option<&'context dyn ServingNames>,
-) -> RemovalContext<'context> {
-    RemovalContext {
-        aliases: store,
-        deployments: store,
-        teams: store,
-        serving,
-        cache,
     }
 }

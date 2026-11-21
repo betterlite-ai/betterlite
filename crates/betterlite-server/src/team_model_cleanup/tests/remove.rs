@@ -36,11 +36,11 @@ async fn last_sibling_removed() {
 
 #[tokio::test]
 async fn configured_sibling_kept() {
-    let aliases = vec![alias_row(1, Some("t1"), Some(r#"{"legacy":"shared"}"#))];
+    let alias_rows = vec![alias_row(1, Some("t1"), Some(r#"{"legacy":"shared"}"#))];
     let store = FakeStore::new(
         "t1",
         Some(names(&["shared", "legacy"])),
-        aliases,
+        alias_rows,
         Vec::new(),
     );
     let cache = FakeCache::default();
@@ -93,8 +93,13 @@ async fn a_deleted_model_without_a_team_is_ignored() {
 
 #[tokio::test]
 async fn a_legacy_alias_name_is_removed_with_the_deleted_deployment() {
-    let aliases = vec![alias_row(1, Some("t1"), Some(r#"{"legacy":"pub"}"#))];
-    let store = FakeStore::new("t1", Some(names(&["legacy", "other"])), aliases, Vec::new());
+    let alias_rows = vec![alias_row(1, Some("t1"), Some(r#"{"legacy":"pub"}"#))];
+    let store = FakeStore::new(
+        "t1",
+        Some(names(&["legacy", "other"])),
+        alias_rows,
+        Vec::new(),
+    );
     let cache = FakeCache::default();
     let updated = remove_unbacked_team_models(
         &deleted("pub", Some("t1"), None),
@@ -109,8 +114,13 @@ async fn a_legacy_alias_name_is_removed_with_the_deleted_deployment() {
 
 #[tokio::test]
 async fn an_alias_of_another_team_is_not_removed_from_the_models() {
-    let aliases = vec![alias_row(1, Some("t2"), Some(r#"{"foreign":"pub"}"#))];
-    let store = FakeStore::new("t1", Some(names(&["foreign", "pub"])), aliases, Vec::new());
+    let alias_rows = vec![alias_row(1, Some("t2"), Some(r#"{"foreign":"pub"}"#))];
+    let store = FakeStore::new(
+        "t1",
+        Some(names(&["foreign", "pub"])),
+        alias_rows,
+        Vec::new(),
+    );
     let cache = FakeCache::default();
     let updated = remove_unbacked_team_models(
         &deleted("pub", Some("t1"), Some("pub")),
@@ -153,8 +163,8 @@ async fn no_candidate_leaves_the_team_row_alone() {
 
 #[tokio::test]
 async fn a_missing_team_row_keeps_the_alias_cleanup() {
-    let aliases = vec![alias_row(1, Some("t1"), Some(r#"{"role":"pub"}"#))];
-    let store = FakeStore::new("t1", None, aliases, Vec::new());
+    let alias_rows = vec![alias_row(1, Some("t1"), Some(r#"{"role":"pub"}"#))];
+    let store = FakeStore::new("t1", None, alias_rows, Vec::new());
     let cache = FakeCache::default();
     let updated = remove_unbacked_team_models(
         &deleted("pub", Some("t1"), Some("pub")),
@@ -199,8 +209,8 @@ async fn a_deployment_catalog_serves_only_the_names_it_indexes() {
 
 #[tokio::test]
 async fn a_router_serving_a_candidate_keeps_it() {
-    let aliases = vec![alias_row(1, Some("t1"), Some(r#"{"role":"pub"}"#))];
-    let store = FakeStore::new("t1", Some(names(&["role", "pub"])), aliases, Vec::new());
+    let alias_rows = vec![alias_row(1, Some("t1"), Some(r#"{"role":"pub"}"#))];
+    let store = FakeStore::new("t1", Some(names(&["role", "pub"])), alias_rows, Vec::new());
     let cache = FakeCache::default();
     let router = serving(&["role"]);
     let updated = remove_unbacked_team_models(

@@ -49,7 +49,6 @@ impl ServingNames for DeploymentCatalog {
 }
 
 // _remove_unbacked_team_models: strip the public names no remaining deployment backs, then refresh the team cache.
-#[must_use]
 pub async fn remove_unbacked_team_models(
     model: &DeletedModel,
     context: &RemovalContext<'_>,

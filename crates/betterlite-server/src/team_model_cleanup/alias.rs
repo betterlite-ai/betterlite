@@ -45,10 +45,7 @@ pub async fn delete_team_model_alias(
             failure.get_or_insert(error);
         }
     }
-    match failure {
-        Some(error) => Err(error),
-        None => Ok(removed),
-    }
+    failure.map_or_else(|| Ok(removed), Err)
 }
 
 fn first_key_for(aliases: &AliasMap, public_model_name: &str) -> Option<String> {

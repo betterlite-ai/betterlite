@@ -6,11 +6,11 @@ use betterlite_server::team_model_cleanup::deployments::{
     team_deployments, team_public_model_names,
 };
 use betterlite_server::team_model_cleanup::remove::{
-    DeletedModel, ServingNames, remove_unbacked_team_models,
+    DeletedModel, RemovalContext, ServingNames, remove_unbacked_team_models,
 };
 use serde_json::{Value, json};
 
-use super::support::{FakeCache, FakeServing, FakeStore, context};
+use super::support::{FakeCache, FakeServing, FakeStore};
 use super::{AliasCall, Call, DeploymentCall, Input, RemoveCall, failure};
 
 pub(super) async fn answer(input: &Input) -> HelperResult {
@@ -66,19 +66,25 @@ async fn remove_answer(call: &RemoveCall) -> HelperResult {
         call.deployments.clone(),
     );
     let cache = FakeCache::default();
-    let router = call
-        .served_names
-        .as_ref()
-        .map(|names| FakeServing::new(names));
-    let serving = router.as_ref().map(|fake| fake as &dyn ServingNames);
+    let router = call.served_names.as_deref().map(FakeServing::new);
+    let serving = router.as_ref().map(|fake| -> &dyn ServingNames { fake });
     let model = DeletedModel {
         model_name: call.model_name.clone(),
         team_id: call.team_id.clone(),
         team_public_model_name: call.team_public_model_name.clone(),
     };
-    remove_unbacked_team_models(&model, &context(&store, &cache, serving))
-        .await
-        .map_err(|error| failure("CleanupError", error.to_string()))?;
+    remove_unbacked_team_models(
+        &model,
+        &RemovalContext {
+            aliases: &store,
+            deployments: &store,
+            teams: &store,
+            serving,
+            cache: &cache,
+        },
+    )
+    .await
+    .map_err(|error| failure("CleanupError", error.to_string()))?;
     Ok(json!({
         "team_models": store
             .team_models

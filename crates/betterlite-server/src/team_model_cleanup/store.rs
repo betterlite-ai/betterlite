@@ -141,12 +141,10 @@ impl TeamModelRows for PostgresTeamModels<'_> {
         };
         let text: String = row.try_get(0).map_err(backend)?;
         let parsed = TeamRecord::parse(text.as_bytes()).map_err(TeamQueryError::from)?;
-        match parsed {
-            Some(record) => Ok(record),
-            None => Err(CleanupError::from(TeamQueryError::from(
-                TeamRecordError::NotAnObject,
-            ))),
-        }
+        let record = parsed.ok_or_else(|| {
+            CleanupError::from(TeamQueryError::from(TeamRecordError::NotAnObject))
+        })?;
+        Ok(record)
     }
 }
 
