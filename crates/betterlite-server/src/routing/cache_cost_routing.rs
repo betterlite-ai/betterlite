@@ -32,7 +32,7 @@ pub struct CacheCostRoutingService<'deps> {
 
 impl<'deps> CacheCostRoutingService<'deps> {
     #[must_use]
-    pub fn new(
+    pub const fn new(
         config: &'deps section::Config,
         tier_labels: &'deps BTreeMap<ComplexityTier, String>,
         placement: &'deps TierPlacement<'deps>,
@@ -48,7 +48,7 @@ impl<'deps> CacheCostRoutingService<'deps> {
 
     // the service borrows the tier lookup, so it lives as long as the borrow of this adapter
     #[must_use]
-    pub fn routing(&self) -> CacheCostRouting<'_> {
+    pub const fn routing(&self) -> CacheCostRouting<'_> {
         CacheCostRouting {
             config: self.config,
             tier_labels: self.tier_labels,

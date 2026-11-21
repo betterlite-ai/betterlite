@@ -1,3 +1,4 @@
+use std::iter::once;
 use std::time::Duration;
 
 use betterlite_models::decisions::Json;
@@ -128,12 +129,8 @@ async fn a_decision_without_signals_or_cause_starts_a_fresh_list() {
     let fixture = Fixture::new();
     let chooser = FixedChooser::new(Some(choice("0.001", "0.004")), Duration::ZERO);
     let mut original = response();
-    original.routing_decision = Some(
-        [("routed_model", Json::Text("small".to_owned()))]
-            .into_iter()
-            .map(|(key, value)| (key.to_owned(), value))
-            .collect(),
-    );
+    original.routing_decision =
+        Some(once(("routed_model".to_owned(), Json::Text("small".to_owned()))).collect());
     let applied = fixture.apply(&chooser, Some(original), None).await.unwrap();
     let decision = applied.routing_decision.unwrap();
     assert_eq!(

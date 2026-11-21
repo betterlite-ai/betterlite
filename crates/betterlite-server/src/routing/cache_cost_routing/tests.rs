@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::iter::once;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -106,19 +107,16 @@ impl World {
 fn entry(model: &str, limit: u64) -> TierModelEntry {
     TierModelEntry {
         model_name: model.to_owned(),
-        params: [(
+        params: once((
             "max_tokens".to_owned(),
             TierParam::Value(Json::Number(Number::from(limit))),
-        )]
-        .into_iter()
+        ))
         .collect(),
     }
 }
 
 fn ceiling(limit: u64) -> JsonMap {
-    [("max_tokens".to_owned(), Json::Number(Number::from(limit)))]
-        .into_iter()
-        .collect()
+    once(("max_tokens".to_owned(), Json::Number(Number::from(limit)))).collect()
 }
 
 struct Limits;

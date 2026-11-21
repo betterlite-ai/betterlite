@@ -79,9 +79,7 @@ pub struct CacheCostRouting<'deps> {
 impl CacheCostRouting<'_> {
     // _apply_prompt_cache_routing: a chosen warm model replaces the classified route, and every other outcome keeps it
     pub async fn apply(&self, request: CacheCostRequest<'_>) -> Option<PreRoutingResponse> {
-        let Some(response) = request.response else {
-            return None;
-        };
+        let response = request.response?;
         if !self.config.enabled || response.routing_decision.is_none() {
             return Some(response);
         }
@@ -119,7 +117,7 @@ impl CacheCostRouting<'_> {
         let params = self
             .params_for_model
             .params_for_model(&choice.tier, &choice.model);
-        let decision = self.stamped_decision(decision, &classified_model, choice, &params);
+        let stamped = self.stamped_decision(decision, &classified_model, choice, &params);
         tracing::info!(
             "ComplexityRouter: cache-aware choice model={} original={} estimated_cost={} original_cost={}",
             choice.model,
@@ -127,9 +125,9 @@ impl CacheCostRouting<'_> {
             choice.estimated_cost,
             choice.original_cost,
         );
-        response.model = choice.model.clone();
+        response.model.clone_from(&choice.model);
         response.litellm_params = Some(params);
-        response.routing_decision = Some(decision);
+        response.routing_decision = Some(stamped);
         response
     }
 

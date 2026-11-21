@@ -86,7 +86,7 @@ impl World {
     }
 }
 
-fn config(input: &Input) -> section::Config {
+const fn config(input: &Input) -> section::Config {
     section::Config {
         enabled: input.enabled,
         output_tokens: input.output_tokens,
