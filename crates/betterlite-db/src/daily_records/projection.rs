@@ -152,7 +152,7 @@ fn common_identities(
 ) -> Result<Vec<Option<String>>, DailyRecordError> {
     let mut identity = payload.identity();
     if entity == DailySpendEntity::EndUser {
-        identity.end_user = payload.end_user_id.clone();
+        identity.end_user.clone_from(&payload.end_user_id);
     }
     Ok(daily_spend_entity_ids(&identity, entity)?)
 }

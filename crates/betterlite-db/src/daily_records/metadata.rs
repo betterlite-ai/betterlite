@@ -115,13 +115,13 @@ fn metadata_object<T>(
 where
     T: DeserializeOwned,
 {
-    let Some(value) = value.filter(|value| counts_as_present(value)) else {
+    let Some(present) = value.filter(|candidate| counts_as_present(candidate)) else {
         return Ok(None);
     };
-    let Json::Object(_) = value else {
+    let Json::Object(_) = present else {
         return Err(DailyMetadataError::NotAnObject { field });
     };
-    let text = serde_json::to_string(value)
+    let text = serde_json::to_string(present)
         .map_err(|source| DailyMetadataError::Field { field, source })?;
     serde_json::from_str(&text)
         .map_err(|source| DailyMetadataError::Field { field, source })
@@ -130,7 +130,7 @@ where
 
 // _usage_from_spend_log swallows every failure, so an unusable usage object only zeroes the auto-router driver.
 fn raw_usage_object(value: Option<&Json>) -> Option<RawUsageObject> {
-    let value = value.filter(|value| counts_as_present(value))?;
-    let text = serde_json::to_string(value).ok()?;
+    let present = value.filter(|candidate| counts_as_present(candidate))?;
+    let text = serde_json::to_string(present).ok()?;
     serde_json::from_str(&text).ok()
 }

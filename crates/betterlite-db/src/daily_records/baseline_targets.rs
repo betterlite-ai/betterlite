@@ -73,7 +73,7 @@ where
     C: SavingsPricingContext,
 {
     let mut normalized = payload.clone();
-    normalized.end_user_id = payload.end_user.clone();
+    normalized.end_user_id.clone_from(&payload.end_user);
     let mut projections = Vec::with_capacity(TABLE_ORDER.len());
     for entity in TABLE_ORDER {
         let projection =
