@@ -25,6 +25,7 @@ use self::types::{
     CallbackPolicy, CostState, DeferredLogging, DynamicCallbacks, Messages, RequestLoggingFlags,
 };
 use crate::callback_logger::event::GuardrailRequestSnapshot;
+use crate::otel::proxy_runtime::slot::{RequestSlot, current_request_slot};
 
 mod tests;
 
@@ -101,6 +102,8 @@ pub struct LoggingState {
     pub correlation: CorrelationOwnership,
     pub deferred: DeferredLogging,
     pub callback_policy: CallbackPolicy,
+    // the request's OTel slot, captured once so the four logging handlers can re-enter it off the request task
+    pub request_slot: Option<Arc<RequestSlot>>,
 }
 
 // Params, litellm_params and trusted variables carry credentials, so only identifiers are printed
@@ -188,6 +191,7 @@ impl LoggingState {
             shadow_eval_request_snapshot: None,
             deferred: DeferredLogging::default(),
             callback_policy: init.callback_policy,
+            request_slot: current_request_slot(),
         })
     }
 }

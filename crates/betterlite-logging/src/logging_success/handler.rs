@@ -32,6 +32,7 @@ use crate::logging_state::correlation::{CorrelationContext, restore_correlation_
 use crate::logging_state::events::{
     LoggingEvent, has_run_logging, is_sync_litellm_request, should_run_logging,
 };
+use crate::otel::proxy_runtime::slot::{enter_request_slot, enter_request_slot_sync};
 use crate::registry::CallbackRegistry;
 
 pub struct SuccessHandler<'handler> {
@@ -54,16 +55,19 @@ struct DeliveryPlan {
 }
 
 pub fn success_handler(
-    handler: &SuccessHandler<'_>,
+    success: &SuccessHandler<'_>,
     state: &mut LoggingState,
     correlation: &mut CorrelationContext,
     request: &SuccessRequest,
 ) {
-    let pending = begin(handler, state, request, SuccessMode::Sync);
-    if let Some(plan) = pending {
-        run_sync_callbacks(handler, state, &plan);
-    }
-    restore_correlation_context(state, correlation);
+    let slot = state.request_slot.clone();
+    let body = move || {
+        if let Some(plan) = begin(success, state, request, SuccessMode::Sync) {
+            run_sync_callbacks(success, state, &plan);
+        }
+        restore_correlation_context(state, correlation);
+    };
+    enter_request_slot_sync(slot, body);
 }
 
 pub async fn async_success_handler(
@@ -72,11 +76,14 @@ pub async fn async_success_handler(
     context: &mut CorrelationContext,
     call: &SuccessRequest,
 ) {
-    tracing::debug!(cache_hit = ?call.cache_hit, "LiteLLM-Async Success Call");
-    if let Some(plan) = begin(handler, logging, call, SuccessMode::Async) {
-        run_async_callbacks(handler, logging, &plan).await;
-    }
-    restore_correlation_context(logging, context);
+    enter_request_slot(logging.request_slot.clone(), async move {
+        tracing::debug!(cache_hit = ?call.cache_hit, "LiteLLM-Async Success Call");
+        if let Some(plan) = begin(handler, logging, call, SuccessMode::Async) {
+            run_async_callbacks(handler, logging, &plan).await;
+        }
+        restore_correlation_context(logging, context);
+    })
+    .await;
 }
 
 const fn stream_key(mode: SuccessMode) -> &'static str {
