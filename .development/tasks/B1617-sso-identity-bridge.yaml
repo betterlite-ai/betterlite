@@ -5,8 +5,10 @@ description: >-
   id_jag_assertion_capture.py, both functions in agent_subject_enrollment.py, plus
   RetentionCheck, warn_if_id_jag_assertion_uncaptured and warn_if_id_jag_capture_gap from
   ui_sso.py. Active-provider precedence is GOOGLE_CLIENT_ID, MICROSOFT_CLIENT_ID,
-  GENERIC_CLIENT_ID, then B1625's configured SAML, then none; all client IDs default absent
-  and an empty but present ID still wins. Only generic OIDC has an assertion-capture path.
+  GENERIC_CLIENT_ID, then SAML, then none; all client IDs default absent
+  and an empty but present ID still wins. SAML counts as configured when SAML_IDP_METADATA_URL or
+  SAML_IDP_METADATA_XML is set and nonempty (SAMLAuthHandler.is_saml_configured, saml_sso.py L118-L119),
+  read through this task's own config section like the client IDs; both default absent. Only generic OIDC has an assertion-capture path.
   Startup (id_jag_assertion_capture_gap_at_startup, the function B6763 passes to its config ID-JAG warning) suppresses the no-provider warning because DB settings have not been reconciled;
   post-login diagnostics do not. Consult B10011's assertion-retention-enabled query (ema_assertion_retention_enabled, retention_enabled there) only when
   necessary, swallowing its failure with a debug diagnostic. A supplied assertion needs no

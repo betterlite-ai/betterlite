@@ -15,7 +15,7 @@ description: >-
   Named case contracts: native_speech_selection: AVA dispatch resolves base from explicit, litellm_params_dict.api_base,
   litellm.api_base, AZURE_API_BASE; key from explicit, params.api_key, litellm.api_key, litellm.azure_key, AZURE_OPENAI_API_KEY,
   AZURE_API_KEY. String voice is unchanged; dict voice uses name or None; other values become None. Update params
-  with resolved credentials and call the B1083/B1084 speech handler with provider=azure, client=None and _is_async=aspeech.
+  with resolved credentials and call the injected text-to-speech handler port with provider=azure, client=None and _is_async=aspeech (the LiteLLM base_llm_http_handler.text_to_speech_handler, built by done B2452 in betterlite-provider speech_http; betterlite-azure cannot import it, since betterlite-provider depends on betterlite-azure, so the dispatch takes the handler as a port its caller fills).
   binary_speech_body: audio_speech pops optional max_retries default 2, overwriting the argument, but neither retries
   nor timeout/organization/separate token arguments are forwarded to SDK construction or speech.create; B531 gets
   litellm_params. Forward model/voice/input and remaining options, then wrap response.response as HttpxBinaryResponseContent.
@@ -73,10 +73,20 @@ description: >-
   needed, is B002.
 
 
+  B695 built the Azure media dispatcher in betterlite-provider (crates/betterlite-provider/src/azure_media_dispatch.rs) with
+  openai_speech and native_ssml arms that fail with a typed unavailable error. Replace both arms: openai_speech dispatches
+  this task's AzureChatCompletion.audio_speech path with its endpoint and auth headers, and native_ssml dispatches
+  AzureAVATextToSpeechConfig.dispatch_text_to_speech, which runs B538's SSML synthesis with its XML and media headers
+  (main.py L8410 and L8453). These arms are where this task's injected speech handler port gets filled: betterlite-provider
+  passes B2452's speech_http text_to_speech handler. Turn B695's case_N_openai_speech and case_N_native_ssml rstest cases
+  into dispatched cases that reach the leaf with a fake transport and assert the request, and add a leaf failure for each.
+
+
   Budget from 228 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
   docstrings; SDK overloads share an async implementation): 255 production lines, 220 behavior/config-test lines,
   110 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 610 planned, 625 maximum changed lines.
+  wiring lines; 610 planned, plus about 100 for the two B695 arms, their cases and two oracle cases: 710 planned, 725
+  maximum changed lines.
 scope:
   paths:
   - crates/betterlite-azure/Cargo.toml
@@ -89,8 +99,20 @@ scope:
   - tools/oracle/helpers/azure_speech/**
   - tools/oracle/cases/helpers/providers/azure-speech/**
   - tools/oracle/fuzz/corpus/helper_case/azure_speech*
+  - crates/betterlite-provider/Cargo.toml
+  - crates/betterlite-provider/src/azure_media_dispatch.rs
+  - crates/betterlite-provider/src/azure_media_dispatch/**
+  - tools/oracle/src/helpers/provider/azure_media_dispatch.rs
+  - tools/oracle/src/helpers/provider/azure_media_dispatch/**
+  - tools/oracle/helpers/azure_media_dispatch.py
+  - tools/oracle/helpers/azure_media_dispatch/**
+  - tools/oracle/cases/helpers/providers/azure-media-dispatch/**
   lint_tables: false
 references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L1362-L1426
+  why: AzureChatCompletion.audio_speech, the openai_speech arm of B695's dispatcher.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/text_to_speech/transformation.py#L62-L134
+  why: AzureAVATextToSpeechConfig.dispatch_text_to_speech, the native_ssml arm.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L1362-L1540
   why: Own AzureChatCompletion.audio_speech, AzureChatCompletion.async_audio_speech, AzureChatCompletion.get_headers.
     Other functions in this file remain with the owners listed below.
@@ -111,7 +133,7 @@ dod:
 - text: 'native_speech_selection: AVA dispatch resolves base from explicit, litellm_params_dict.api_base, litellm.api_base,
     AZURE_API_BASE; key from explicit, params.api_key, litellm.api_key, litellm.azure_key, AZURE_OPENAI_API_KEY,
     AZURE_API_KEY. String voice is unchanged; dict voice uses name or None; other values become None. Update params
-    with resolved credentials and call the B1083/B1084 speech handler with provider=azure, client=None and _is_async=aspeech.'
+    with resolved credentials and call the injected text-to-speech handler port with provider=azure, client=None and _is_async=aspeech (the LiteLLM base_llm_http_handler.text_to_speech_handler, built by done B2452 in betterlite-provider speech_http; betterlite-azure cannot import it, since betterlite-provider depends on betterlite-azure, so the dispatch takes the handler as a port its caller fills).'
   proof:
   - case-native-speech-selection
   - oracle
@@ -154,6 +176,16 @@ dod:
 - text: Debug and owned failure paths do not expose fixture credentials.
   proof:
   - secret-safe-failure
+- text: 'openai_speech: Dispatch Azure OpenAI binary speech with its endpoint and auth headers through the B695 dispatcher.'
+  proof:
+  - case-openai-speech
+  - oracle
+  - helper-python
+- text: 'native_ssml: Dispatch B538 native SSML speech with its XML and media headers through the B695 dispatcher.'
+  proof:
+  - case-native-ssml
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
@@ -168,7 +200,7 @@ checks:
     why: AVA dispatch resolves base from explicit, litellm_params_dict.api_base, litellm.api_base, AZURE_API_BASE;
       key from explicit, params.api_key, litellm.api_key, litellm.azure_key, AZURE_OPENAI_API_KEY, AZURE_API_KEY.
       String voice is unchanged; dict voice uses name or None; other values become None. Update params with resolved
-      credentials and call the B1083/B1084 speech handler with provider=azure, client=None and _is_async=aspeech.
+      credentials and call the injected text-to-speech handler port with provider=azure, client=None and _is_async=aspeech (the LiteLLM base_llm_http_handler.text_to_speech_handler, built by done B2452 in betterlite-provider speech_http; betterlite-azure cannot import it, since betterlite-provider depends on betterlite-azure, so the dispatch takes the handler as a port its caller fills).
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::speech_cases::case_[0-9]+_native_speech_selection$/)'
   - id: case-binary-speech-body
     why: audio_speech pops optional max_retries default 2, overwriting the argument, but neither retries nor timeout/organization/separate
@@ -207,6 +239,12 @@ checks:
   - id: secret-safe-failure
     why: Debug and owned failure paths do not expose fixture credentials.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_speech_secret_safe_failure$/)'
+  - id: case-openai-speech
+    why: The openai_speech arm of B695's dispatcher still fails as unavailable or skips its endpoint and auth headers.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::azure_media_dispatch_cases::case_[0-9]+_openai_speech$/)'
+  - id: case-native-ssml
+    why: The native_ssml arm of B695's dispatcher still fails as unavailable or skips its XML and media headers.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::azure_media_dispatch_cases::case_[0-9]+_native_ssml$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/azure-speech/openai-audio-speech-path.yaml
 - tools/oracle/cases/helpers/providers/azure-speech/v1-audio-speech.yaml
@@ -215,6 +253,8 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/azure-speech/azure-speech-supported-params.yaml
 - tools/oracle/cases/helpers/providers/azure-speech/azure-rate-limit-probe.yaml
 - tools/oracle/cases/helpers/providers/azure-speech/azure-probe-cloudflare.yaml
+- tools/oracle/cases/helpers/providers/azure-media-dispatch/openai-speech.yaml
+- tools/oracle/cases/helpers/providers/azure-media-dispatch/native-ssml.yaml
 deviations: []
 out_of_scope:
 - B025 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers

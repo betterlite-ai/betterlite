@@ -5,7 +5,9 @@ use betterlite_core::api::search_providers::nimble::error::NimbleSearchError;
 use betterlite_core::api::search_providers::parallel_ai::ParallelAiSearch;
 use betterlite_core::api::search_providers::parallel_ai::request::PARALLEL_AI_USAGE_PARAM;
 use betterlite_openai::openai_base_config::{Headers, Object};
-use betterlite_openai::search::provider::{ProviderResponse, SearchProvider, SearchQuery};
+use betterlite_openai::search::provider::{
+    ProviderResponse, RequestInput, SearchProvider, SearchQuery,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -144,7 +146,7 @@ where
     Search: SearchProvider,
 {
     let endpoint = search
-        .complete_url(api_base, &Object::new(), None)
+        .complete_url(api_base, &Object::new(), None, None)
         .map_err(|_error| None)?;
     Ok(Value::String(endpoint))
 }
@@ -157,8 +159,15 @@ fn request<Search>(
 where
     Search: SearchProvider,
 {
+    let empty_headers = Headers::new();
     let body = search
-        .transform_search_request(query, optional_params)
+        .transform_search_request(&RequestInput {
+            query,
+            optional_params,
+            api_key: None,
+            api_base: None,
+            headers: &empty_headers,
+        })
         .map_err(|_error| None)?;
     serde_json::to_value(body).map_err(|_error| None)
 }

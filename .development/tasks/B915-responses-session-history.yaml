@@ -4,7 +4,9 @@ description: >-
   Build api::responses_session_history around injected spend-log queries, cold-storage reads
   and an async sleeper. Own every function in session_handler.py and the complete
   async_responses_api_session_handler in transformation.py. B726 executes the parameterized
-  query using B858 rows; B1729 supplies the cold-storage reader. B903 unwraps the response ID,
+  query using B858 rows. The cold-storage reader is a port this module defines and receives, since
+  betterlite-core cannot import B1729's ColdStorageHandler in betterlite-server; the route caller
+  supplies the implementation. B903 unwraps the response ID,
   B909 rebuilds input messages and B911 repairs tool correlations. There is no recursive
   previous_response_id traversal in this source: fetch all rows in the matching session,
   ordered by endTime ascending. The caller must authorize the ID before invoking this service.

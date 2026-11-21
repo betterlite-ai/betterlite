@@ -1,7 +1,7 @@
 id: B387
 title: Automatic router benchmark aggregates
-description: 'Implement BenchmarkWindow, BenchmarkTotals and grouped rollup calculations over B344 repository
-  rows. Preserve date parsing, denominator/cohort rules, idle-router rows, canonical-user filtering and
+description: 'Implement BenchmarkWindow, BenchmarkTotals and grouped rollup calculations over the session aggregate
+  rows (`_SessionAggRow`, L618-L649, which this task defines; B355 runs the query over B344''s rollup table). Preserve date parsing, denominator/cohort rules, idle-router rows, canonical-user filtering and
   Decimal rounding. Return typed aggregates to B355 without HTTP or raw-spend-log scans. Implement the
   owned native service in crates/betterlite-server/src/benchmark_aggregates.rs. B301 registers ProbeOperation::BenchmarkAggregates and its Python entry as stubs, so fill only tools/oracle/src/router_probes/benchmark_aggregates.rs and tools/oracle/litellm/probes/benchmark_aggregates.py and leave mod.rs and registry.py as they are;
   the adapters only call production services.

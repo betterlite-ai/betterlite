@@ -1,0 +1,12 @@
+litellm_settings:
+  api_base: https://seed.example/v1
+  api_key: seed-key
+  openai_key: seed-openai-key
+  organization: seed-org
+  project: seed-project
+  azure_key: seed-azure-key
+  api_version: "2024-02-01"
+  headers:
+    x-seed: "1"
+  num_retries: 3
+  request_timeout: 15

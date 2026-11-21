@@ -1,0 +1,10 @@
+kind: helper
+name: jwt-settings-new-alias-null-wins
+call:
+  jwt_settings:
+    scenarios:
+      - {"settings": {"jwt_client_id_field": "sub", "virtual_key_claim_field": null}, "references": {}, "environment": {}, "issuers": [null]}
+      - {"settings": {"jwt_client_id_field": "sub", "virtual_key_claim_field": ""}, "references": {}, "environment": {}, "issuers": [null]}
+      - {"settings": {"jwt_client_id_field": null}, "references": {}, "environment": {}, "issuers": [null]}
+env: {}
+compare: {ignore: []}

@@ -2,7 +2,9 @@ use std::collections::BTreeMap;
 
 use betterlite_core::api::search_providers::apiserpent::ApiserpentSearchConfig;
 use betterlite_openai::openai_base_config::{Headers, Object};
-use betterlite_openai::search::provider::{ProviderResponse, SearchProvider as _, SearchQuery};
+use betterlite_openai::search::provider::{
+    ProviderResponse, RequestInput, SearchProvider as _, SearchQuery,
+};
 use secrecy::SecretString;
 use serde::Deserialize;
 
@@ -43,13 +45,20 @@ impl Helper for Op {
             )
             .or_value_error()?;
         let body = config
-            .transform_search_request(&input.query, &input.optional_params)
+            .transform_search_request(&RequestInput {
+                query: &input.query,
+                optional_params: &input.optional_params,
+                api_key: key.as_ref(),
+                api_base: input.api_base.as_deref(),
+                headers: &headers,
+            })
             .or_value_error()?;
         let url = config
             .complete_url(
                 input.api_base.as_deref(),
                 &input.optional_params,
                 Some(&body),
+                key.as_ref(),
             )
             .or_value_error()?;
         let params = serde_json::to_value(&body).or_value_error()?;

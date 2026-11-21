@@ -1,0 +1,75 @@
+id: B10034
+title: An unknown search provider answers 400, not 500
+description: >-
+  LiteLLM bug found in B3272's review (https://github.com/betterlite-ai/betterlite/pull/2843), decided "fix it".
+  B3272 was already in the merge queue, so the fix is this task. A search call whose search_provider has no search
+  config, an unknown name such as "nowhere" or a known provider without search, fails with
+  SearchCallError::Unsupported ("Search is not supported for provider: nowhere"). failure() in
+  crates/betterlite-core/src/search/error.rs sends that error through dispatch as a ValueError, so it comes out as
+  ErrorClass::ApiConnection with status 500, the way LiteLLM's SearchProviders(search_provider) ValueError goes
+  through exception_type. The provider name is the caller's input and the call can never succeed, so a 500 tells
+  the client the server broke when its own request was wrong.
+
+
+  failure() already answers SearchCallError::Query with ErrorClass::BadRequest(ResponseDetails::with_status(context,
+  None)), the model "{provider}/search" and the provider set. SearchCallError::Unsupported takes the same arm, so both
+  caller mistakes share one branch and no second copy of the ErrorContext is written. The message stays "Search is not
+  supported for provider: <name>". Every other error keeps its current class.
+
+
+  provider_lookup_rejects_a_provider_without_a_search_config in crates/betterlite-core/src/search/tests/provider_lookup.rs
+  asserts ApiConnection and 500 today; it asserts BadRequest and 400 after this task, plus the model and the provider
+  on the error context. In docs/deviations/B3272.yaml the row for search/main.py L243-L248 says both names fail with the
+  same class and status as LiteLLM; rewrite it to say they answer 400 where LiteLLM answers 500, why, and keep its link.
+  docs/deviations/B1037.yaml records the same fix for an unknown custom_llm_provider.
+scope:
+  paths:
+  - crates/betterlite-core/src/search/error.rs
+  - crates/betterlite-core/src/search/tests/provider_lookup.rs
+  - docs/deviations/B3272.yaml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/search/main.py#L243-L248
+  why: SearchProviders(search_provider) raises a bare ValueError for an unknown name, and exception_type maps it to APIConnectionError (500).
+dod:
+- text: >-
+    A search call with search_provider "nowhere" fails with SearchCallError::Unsupported and ErrorClass::BadRequest,
+    status 400, model "nowhere/search" and provider "nowhere"; the Query arm and every other error keep their class.
+  proof: [provider-lookup, exception-handling]
+- text: >-
+    docs/deviations/B3272.yaml records the unknown and unsupported provider as answering 400 where LiteLLM answers 500,
+    with the pinned LiteLLM link.
+  proof: [deviation-row]
+checks:
+  optional: []
+  commands:
+  - id: provider-lookup
+    why: An unknown search provider still answers 500, or another provider lookup case broke.
+    run: >-
+      grep -q -F 'ErrorClass::BadRequest' crates/betterlite-core/src/search/tests/provider_lookup.rs
+      && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^search::(provider_lookup|search_config)/)'
+  - id: exception-handling
+    why: Another search error changed its class.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^search::(exception_handling|search_error)/)'
+  - id: deviation-row
+    why: The deviation row for the unknown provider is missing its link or still records the 500 as parity.
+    run: >-
+      perl -0ne 'exit !(m{- what:(?:(?!- what:).)*?400(?:(?!- what:).)*?search/main[.]py[#]L243-L248}s)' docs/deviations/B3272.yaml
+oracle_cases: []
+deviations:
+- what: >-
+    A search_provider with no search config, unknown or known without search, answers BadRequestError (400) with
+    the model and provider set.
+  why: >-
+    LiteLLM's SearchProviders(search_provider) ValueError goes through exception_type and comes out as an
+    APIConnectionError (500), though the provider name is the caller's input and the call can never succeed.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/search/main.py#L243-L248
+out_of_scope:
+- The other search errors, including a missing api_base or api_key, keep their current class.
+pitfalls:
+- Match both SearchCallError::Query and SearchCallError::Unsupported in the one existing BadRequest branch of failure(); a second branch would copy the ErrorContext.
+review_level: standard
+budget:
+  max_changed_lines: 120
+  max_new_expects: 0

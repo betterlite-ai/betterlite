@@ -2,7 +2,7 @@ id: B6762
 milestone: M9 agents and mcp
 title: MCP OAuth discovery slots, retry and backoff
 status: todo
-depends_on: [B6760, B6761, B4731, B6590]
+depends_on: [B6760, B6761, B6590, B10020]
 file: tasks/B6762-mcp-discovery-slots.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/mcp_server_manager.py"

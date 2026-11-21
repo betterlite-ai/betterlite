@@ -1,0 +1,12 @@
+task: B737
+deviations:
+  - what: team_id_upsert creates the absent team through the injected TeamProvisioner port instead of calling the /team/new handler, and a lookup built without a provisioner answers the ordinary team 404 when it would have to create one.
+    why: The task replaces the reverse dependency on the management endpoint with a port that B804 implements and B053 registers, and B053 refuses to start a gateway that enables team_id_upsert without one, so a running gateway never reaches the missing-provisioner answer. The port gets the same team_id and PROXY_ADMIN principal new_team's synthetic request carries.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3151-L3164
+kept_bugs:
+  - what: When the team_id cache write of an alias lookup fails, the call answers 500 but the team_alias entry written just before it stays cached, so the next lookup by that alias succeeds from the cache.
+    why: The task asks for this order, and a setup that hit a transient cache failure already relies on the next request being served.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3502-L3515
+  - what: A team read inside the DB-read throttle window answers the ordinary 404 that says the team does not exist and should be created through /team/new, even when the row exists, and check_db_only waits out the same window.
+    why: LiteLLM raises a bare Exception there and get_team_object turns it into that 404; callers match on the status and detail, so the answer stays the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3183-L3201
