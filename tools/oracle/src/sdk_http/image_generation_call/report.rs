@@ -7,10 +7,12 @@ use betterlite_logging::logging_state::LoggingState;
 use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
 };
+use betterlite_openai::api::image_contracts::records::ImageResponse;
 use betterlite_redact::secret::Redactor;
 
 use super::super::error::SdkHttpError;
-use super::{Failure, Outcome};
+use super::super::result::{Failure, Nullable};
+use super::Outcome;
 
 // The logging init the fixture's logger starts from
 const FIXTURE_INIT: &str = r#"{"model":"image-generation-test","call_type":"image_generation","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
@@ -36,28 +38,26 @@ pub(super) fn failure(class: &ErrorClass, message: &str) -> Result<Failure, SdkH
     Ok(Failure {
         class: class_name(class)?.to_owned(),
         status: metadata.status_code,
-        kind: text_field(metadata.error_type),
-        param: text_field(metadata.param),
-        code: metadata.openai_code,
+        kind: field(metadata.error_type),
+        param: field(metadata.param),
+        code: Some(metadata.openai_code),
         message: message.to_owned(),
     })
 }
 
-// LiteLLMUnknownProvider is a BadRequestError carrying its own class name
+// LiteLLMUnknownProvider is a BadRequestError built without a body, so openai.APIError leaves type, param and code null
 pub(super) fn unknown_provider(message: &str) -> Failure {
     Failure {
         class: String::from("LiteLLMUnknownProvider"),
         status: 400,
-        kind: None,
-        param: None,
-        code: None,
+        kind: Some(None),
+        param: Some(None),
+        code: Some(None),
         message: message.to_owned(),
     }
 }
 
-pub(super) fn result_json(
-    response: &betterlite_openai::api::image_contracts::records::ImageResponse,
-) -> Result<Outcome, SdkHttpError> {
+pub(super) fn result_json(response: &ImageResponse) -> Result<Outcome, SdkHttpError> {
     Ok(Outcome {
         result: Some(
             serde_json::from_value(
@@ -69,10 +69,11 @@ pub(super) fn result_json(
     })
 }
 
-fn text_field(field: WireField) -> Option<String> {
-    match field {
-        WireField::Text(text) => Some(text),
-        WireField::Missing(_) | WireField::Null => None,
+fn field(wire: WireField) -> Nullable {
+    match wire {
+        WireField::Missing(_) => None,
+        WireField::Null => Some(None),
+        WireField::Text(text) => Some(Some(text)),
     }
 }
 

@@ -2,15 +2,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use betterlite_config::loader::ConfigLoader;
-use betterlite_config::proxy::ProxyPolicy;
-use betterlite_config::types::ProxyTrust;
 use betterlite_core::api::image_generation_call::call::{DEFAULT_TIMEOUT, ImageGenerationCall};
 use betterlite_core::api::image_generation_call::error::ImageGenerationException;
 use betterlite_core::api::image_generation_call::operations::CustomProviderSlot;
 use betterlite_core::api::image_generation_call::plan::{
     CatalogIdentity, ImageGenerationAnswer, ImageGenerationPlan, image_generation,
 };
-use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::catalog::BundledCatalog;
 use betterlite_models::decisions::Json;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
@@ -23,6 +20,7 @@ use secrecy::SecretString;
 
 use super::super::error::SdkHttpError;
 use super::super::result::kinds::SdkResult;
+use super::super::vector_query_embedding::outbound_client;
 use super::operations::Operations;
 use super::report::{failure, logging_state, result_json, unknown_provider};
 use super::sends::custom::CustomImage;
@@ -42,7 +40,7 @@ pub(super) async fn execute(
     .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?;
     let settings = config.sections.image_generation_call.clone();
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(SdkHttpError::Redactor)?;
-    let source = client(&environment)?;
+    let source = outbound_client(&environment)?;
     let catalog = BundledCatalog::default().get();
     let known_model_names = BTreeSet::new();
     let custom_providers: BTreeSet<String> = call.custom_providers.iter().cloned().collect();
@@ -97,14 +95,6 @@ fn settings_document(call: &Call, api_base: &str) -> Result<String, SdkHttpError
     let settings =
         serde_json::to_string(&call.litellm_settings).map_err(SdkHttpError::Serialize)?;
     Ok(format!("{{\"litellm_settings\":{settings}}}").replace(MOCK, api_base))
-}
-
-fn client(environment: &BTreeMap<String, String>) -> Result<ProxiedClient, SdkHttpError> {
-    let policy = Arc::new(
-        ProxyPolicy::resolve(&ProxyTrust::default(), environment)
-            .map_err(SdkHttpError::ProxyPolicy)?,
-    );
-    ProxiedClient::outbound(&policy).map_err(|error| SdkHttpError::Client(Box::new(error)))
 }
 
 fn core_call(call: &Call, api_base: &str) -> Result<ImageGenerationCall, SdkHttpError> {

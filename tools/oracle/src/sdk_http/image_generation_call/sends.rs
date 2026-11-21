@@ -44,7 +44,7 @@ pub(super) struct Post<'post> {
     pub(super) exception_type: &'post str,
 }
 
-pub(super) async fn post(
+async fn post(
     client: &ProxiedClient,
     request: Post<'_>,
 ) -> Result<UpstreamResponse, Box<RawException>> {
@@ -104,7 +104,7 @@ pub(super) fn model_prompt_body(
     Json::Object(body)
 }
 
-pub(super) fn parsed_response(
+fn parsed_response(
     bytes: &[u8],
     model: &str,
     provider: &str,

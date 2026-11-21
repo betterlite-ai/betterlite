@@ -10,7 +10,7 @@ use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
-use super::{Post, parsed_response, post};
+use super::{Post, answer};
 
 pub(in crate::sdk_http::image_generation_call) struct CustomImage {
     pub(in crate::sdk_http::image_generation_call) source: ProxiedClient,
@@ -45,7 +45,7 @@ pub(in crate::sdk_http::image_generation_call) async fn send(
         String::from("prompt"),
         Json::Text(request.prompt.to_owned()),
     );
-    let response = post(
+    answer(
         client,
         Post {
             url: format!("{base}/custom/images"),
@@ -57,9 +57,5 @@ pub(in crate::sdk_http::image_generation_call) async fn send(
             exception_type: "RateLimitError",
         },
     )
-    .await?;
-    Ok(BranchAnswer {
-        response: parsed_response(&response.body, model, request.provider)?,
-        hidden_model: None,
-    })
+    .await
 }

@@ -2,7 +2,8 @@ from typing import Final
 
 import httpx
 import litellm
-from litellm.exceptions import APIError, RateLimitError
+import openai
+from litellm.exceptions import RateLimitError
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.custom_httpx.http_handler import HTTPHandler
 from litellm.llms.custom_llm import CustomLLM
@@ -10,6 +11,9 @@ from litellm.types.llms.custom_llm import CustomLLMItem
 from litellm.types.utils import ImageResponse
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 from typing_extensions import override
+
+from image_variations import api_failure
+from openai_chat import Failure
 
 MOCK: Final = "{mock}"
 FIRST_ERROR_STATUS: Final = 400
@@ -48,17 +52,6 @@ class Call(BaseModel):
     base_model: str | None = None
     custom_providers: list[str] = Field(default_factory=list)
     litellm_settings: Settings = Field(default_factory=Settings)
-
-
-class Failure(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    class_name: str = Field(serialization_alias="class")
-    status: int
-    kind: str | None = Field(default=None, serialization_alias="type")
-    param: str | None = None
-    code: str | None = None
-    message: str
 
 
 class Outcome(BaseModel):
@@ -130,17 +123,6 @@ def install_custom_providers(call: Call, api_base: str) -> None:
     litellm.custom_provider_map = entries  # pyright: ignore[reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L503-L506
 
 
-def error_failure(error: APIError) -> Failure:
-    return Failure(
-        class_name=type(error).__name__,
-        status=error.status_code,
-        kind=error.type,  # pyright: ignore[reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L853-L861
-        param=error.param,
-        code=error.code,
-        message=error.message,
-    )
-
-
 def call_kwargs(call: Call, api_base: str) -> dict[str, JsonValue]:
     options: dict[str, JsonValue] = {
         "model": call.model,
@@ -187,8 +169,8 @@ def run(call: Call, api_base: str) -> Outcome:
     install_custom_providers(call, api_base)
     try:
         response: ImageResponse = litellm.image_generation(**call_kwargs(call, api_base))  # type: ignore[call-overload]  # pyright: ignore[reportAny, reportArgumentType, reportCallIssue, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L183-L561
-    except APIError as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L853-L861
-        return Outcome(failure=error_failure(error))
+    except openai.APIError as error:
+        return Outcome(failure=api_failure(error))
     finally:
         litellm.custom_provider_map = []  # pyright: ignore[reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L503-L506
     parsed = IMAGE.validate_python(response)
@@ -203,4 +185,4 @@ class ImageGenerationCallRequest(BaseModel):
     def serialize(self, api_base: str) -> str:
         value = TransportValue(value=run(self.image_generation_call, api_base))
         envelope = Envelope(image_generation_call=value)
-        return envelope.model_dump_json(by_alias=True, exclude_none=True)
+        return envelope.model_dump_json(by_alias=True, exclude_unset=True)

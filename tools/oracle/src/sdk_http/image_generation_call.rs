@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use super::call_kind::CallKind;
 use super::error::SdkHttpError;
+use super::result::Failure;
 use super::result::kinds::SdkResult;
 
 mod native;
@@ -60,20 +61,6 @@ pub struct Outcome {
     pub result: Option<Json>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failure: Option<Failure>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct Failure {
-    pub class: String,
-    pub status: u16,
-    #[serde(default, rename = "type", skip_serializing_if = "Option::is_none")]
-    pub kind: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub param: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub code: Option<String>,
-    pub message: String,
 }
 
 impl CallKind for Call {
