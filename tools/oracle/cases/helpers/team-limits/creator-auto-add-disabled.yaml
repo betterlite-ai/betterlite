@@ -1,0 +1,51 @@
+kind: helper
+name: creator_auto_add_disabled
+call:
+  team_limits:
+    function: creator_auto_add
+    user_id: "u1"
+    user_role: internal_user
+    disable: false
+calls:
+  - team_limits:
+      function: creator_auto_add
+      user_id: "u1"
+      user_role: internal_user
+      disable: true
+  - team_limits:
+      function: creator_auto_add
+      user_id: "u1"
+      user_role: proxy_admin
+      disable: true
+  - team_limits:
+      function: creator_auto_add
+      user_id: "u1"
+      user_role: proxy_admin
+      disable: false
+  - team_limits:
+      function: creator_auto_add
+      user_id: null
+      user_role: internal_user
+      disable: false
+  - team_limits:
+      function: creator_auto_add
+      user_id: ""
+      user_role: internal_user
+      disable: false
+  - team_limits:
+      function: creator_auto_add
+      user_id: ""
+      user_role: proxy_admin
+      disable: true
+  - team_limits:
+      function: creator_auto_add
+      user_id: "u1"
+      user_role: null
+      disable: false
+  - team_limits:
+      function: creator_auto_add
+      user_id: null
+      user_role: null
+      disable: true
+env: {}
+compare: {ignore: []}
