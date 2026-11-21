@@ -225,7 +225,9 @@ fn reaches_config_embedding_and_refuses_other_operations() {
     };
     assert_eq!(provider, "perplexity");
     let other = PreparedRequest::AiohttpOpenAi(AiohttpOpenAiPrepared);
-    let decoded = Perplexity.decode(&other, buffered(200, "{}")).unwrap_err();
+    let Err(decoded) = Perplexity.decode(&other, buffered(200, "{}")) else {
+        panic!("only an embedding reply is decoded");
+    };
     assert!(matches!(
         decoded,
         OperationError::UnsupportedOperation { .. }
@@ -258,10 +260,9 @@ fn reaches_config_embedding_reply_keeps_the_provider_failure(
     #[case] status: u16,
     #[case] text: &str,
 ) {
-    let failed = Perplexity
-        .decode(&prepared_embedding(), buffered(status, text))
-        .unwrap_err();
-    let OperationError::Provider { response } = failed else {
+    let Err(OperationError::Provider { response }) =
+        Perplexity.decode(&prepared_embedding(), buffered(status, text))
+    else {
         panic!("the provider's own failure");
     };
     assert_eq!(response.status, status);
@@ -273,9 +274,9 @@ fn reaches_config_embedding_reply_keeps_the_provider_failure(
 #[case::wrong_shape(r#"{"data":"nope"}"#)]
 #[case::missing_record_fields(r#"{"data":[{"embedding":[0.5]}]}"#)]
 fn reaches_config_embedding_reply_of_a_bad_shape_is_a_decode_error(#[case] text: &str) {
-    let failed = Perplexity
-        .decode(&prepared_embedding(), buffered(200, text))
-        .unwrap_err();
+    let Err(failed) = Perplexity.decode(&prepared_embedding(), buffered(200, text)) else {
+        panic!("a bad reply is a decode error");
+    };
     assert!(matches!(
         failed,
         OperationError::Decode {
@@ -288,9 +289,9 @@ fn reaches_config_embedding_reply_of_a_bad_shape_is_a_decode_error(#[case] text:
 #[test]
 fn reaches_config_embedding_reply_over_the_limit_is_too_large() {
     let text = " ".repeat(MAX_REPLY_BYTES.checked_add(1).unwrap());
-    let failed = Perplexity
-        .decode(&prepared_embedding(), buffered(200, &text))
-        .unwrap_err();
+    let Err(failed) = Perplexity.decode(&prepared_embedding(), buffered(200, &text)) else {
+        panic!("an oversized reply is refused");
+    };
     assert!(matches!(failed, OperationError::TooLarge { limit } if limit == MAX_REPLY_BYTES));
 }
 
