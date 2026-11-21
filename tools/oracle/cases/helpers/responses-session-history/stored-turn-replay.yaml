@@ -1,0 +1,57 @@
+kind: helper
+name: responses-session-history-stored-turn-replay
+call:
+  responses_session_history:
+    previous_response_id: chatcmpl-turn-1
+    database: true
+    disable_spend_logs: false
+    replies:
+    - - request_id: chatcmpl-turn-0
+        session_id: session-7
+        proxy_server_request: '{"input": {"role": "user", "content": "single item"}}'
+        response: {}
+      - request_id: chatcmpl-turn-1
+        session_id: session-7
+        proxy_server_request:
+          input:
+          - role: user
+            content:
+            - type: input_text
+              text: look it up
+          instructions: use tools
+        metadata: not json
+        response:
+          id: chatcmpl-y
+          object: chat.completion
+          created: 1
+          model: gpt-4o
+          choices:
+          - index: 0
+            finish_reason: tool_calls
+            message:
+              role: assistant
+              content: null
+              refusal: null
+              tool_calls:
+              - id: call-1
+                type: function
+                function:
+                  name: lookup
+                  arguments: redacted-by-litellm
+              - id: call-2
+                function:
+                  name: weather
+                  arguments: '{"city": "Oslo"}'
+              provider_specific_fields: {}
+    cold_storage: false
+    cold_objects: {}
+    cold_failures: []
+    request:
+      messages:
+      - role: user
+        content: and now?
+      model: gpt-4o
+      custom_llm_provider: openai
+env: {}
+compare:
+  ignore: []

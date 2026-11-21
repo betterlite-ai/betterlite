@@ -1,0 +1,44 @@
+kind: helper
+name: responses-session-history-session-query
+call:
+  responses_session_history:
+    previous_response_id: chatcmpl-turn-1
+    database: true
+    disable_spend_logs: false
+    replies:
+    - []
+    - - request_id: chatcmpl-turn-1
+        session_id: session-1
+        proxy_server_request: '{"input": "hello", "instructions": "be brief"}'
+        metadata: '{}'
+        response:
+          id: chatcmpl-x
+          object: chat.completion
+          created: 1
+          model: gpt-4o
+          choices:
+          - index: 0
+            finish_reason: stop
+            message:
+              role: assistant
+              content: hi there
+      - request_id: chatcmpl-turn-2
+        session_id: session-1
+        proxy_server_request:
+          messages:
+          - role: user
+            content: second
+        metadata: {}
+        response: '{}'
+    cold_storage: false
+    cold_objects: {}
+    cold_failures: []
+    request:
+      messages:
+      - role: user
+        content: and now?
+      model: gpt-4o
+      custom_llm_provider: openai
+env: {}
+compare:
+  ignore: []

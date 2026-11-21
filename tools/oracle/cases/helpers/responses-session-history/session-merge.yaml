@@ -1,0 +1,45 @@
+kind: helper
+name: responses-session-history-session-merge
+call:
+  responses_session_history:
+    previous_response_id: chatcmpl-turn-1
+    database: true
+    disable_spend_logs: false
+    replies:
+    - - request_id: chatcmpl-turn-1
+        session_id: merge-1
+        proxy_server_request:
+          input: find it
+        response:
+          id: chatcmpl-z
+          object: chat.completion
+          created: 1
+          model: gpt-4o
+          choices:
+          - index: 0
+            finish_reason: tool_calls
+            message:
+              role: assistant
+              content: null
+              tool_calls:
+              - id: c1
+                type: function
+                function:
+                  name: lookup
+                  arguments: '{}'
+    cold_storage: false
+    cold_objects: {}
+    cold_failures: []
+    request:
+      messages:
+      - role: tool
+        tool_call_id: c1
+        content: found
+      - role: user
+        content: thanks
+      tools: []
+      model: gpt-4o
+      custom_llm_provider: openai
+env: {}
+compare:
+  ignore: []
