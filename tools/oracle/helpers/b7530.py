@@ -1,12 +1,12 @@
 from typing import Literal, TypedDict
 
-from fastapi import HTTPException
 from litellm.proxy._experimental.mcp_server.discoverable_endpoints import (
-    _append_query_params,  # noqa: E501  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L518-L522
-    _validate_token_response,  # noqa: E501  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L568-L615
+    _append_query_params,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L518-L522
+    _validate_token_response,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L568-L615
     client_supplied_redirect_uris,
 )
 from pydantic import BaseModel, JsonValue, TypeAdapter
+from starlette.exceptions import HTTPException
 
 
 class RedirectUris(TypedDict):
@@ -35,16 +35,12 @@ class Rejection(BaseModel):
     detail: dict[str, JsonValue]
 
 
-def rejection(error: HTTPException) -> JsonValue:
+def rejection(error: HTTPException) -> dict[str, JsonValue]:
     validated = Rejection.model_validate(error, from_attributes=True)
-    return TypeAdapter(JsonValue).validate_python({
+    return {
         "status": validated.status_code,
         "detail": validated.detail,
-    })
-
-
-def redirect_uris(value: RedirectUris) -> JsonValue:
-    return TypeAdapter(JsonValue).validate_python(client_supplied_redirect_uris(value["value"]))
+    }
 
 
 def token_rules(value: TokenRules) -> JsonValue:
@@ -55,17 +51,15 @@ def token_rules(value: TokenRules) -> JsonValue:
     return None
 
 
-def query_params(value: AppendQueryParams) -> JsonValue:
-    return _append_query_params(value["url"], value["params"])
-
-
 def run(input_value: Input) -> JsonValue:
     answer: JsonValue = None
     match input_value["function"]:
         case "client_supplied_redirect_uris":
-            answer = redirect_uris(input_value)
+            answer = TypeAdapter(JsonValue).validate_python(
+                client_supplied_redirect_uris(input_value["value"])
+            )
         case "validate_token_response":
             answer = token_rules(input_value)
         case "append_query_params":
-            answer = query_params(input_value)
+            answer = _append_query_params(input_value["url"], input_value["params"])
     return answer

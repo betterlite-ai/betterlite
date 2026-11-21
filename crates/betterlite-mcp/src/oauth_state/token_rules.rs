@@ -31,11 +31,11 @@ pub fn validate_token_response(
                 message,
             });
         };
-        if normalize_for_comparison(actual) != normalize_for_comparison(expected) {
+        if comparison_text(actual) != comparison_text(expected) {
             let message = format!(
                 "OAuth token rejected: '{key}' = '{}', expected '{}'",
-                python_text(actual),
-                python_text(expected)
+                value_text(actual),
+                value_text(expected)
             );
             return Err(TokenValidationFailure {
                 server_id: server_id.to_owned(),
@@ -86,19 +86,15 @@ fn walk_dot_path<'value>(
     }
 }
 
-fn normalize_for_comparison(value: &JsonValue) -> String {
-    match value {
-        JsonValue::Bool(flag) => flag.to_string(),
-        JsonValue::Null
-        | JsonValue::String(_)
-        | JsonValue::Number(_)
-        | JsonValue::Array(_)
-        | JsonValue::Object(_) => python_text(value),
+fn comparison_text(value: &JsonValue) -> String {
+    if let JsonValue::Bool(flag) = value {
+        return flag.to_string();
     }
+    value_text(value)
 }
 
 // Python's str() of a JSON value: booleans and null in their Python spelling, numbers via the float repr.
-fn python_text(value: &JsonValue) -> String {
+fn value_text(value: &JsonValue) -> String {
     match value {
         JsonValue::Null => "None".to_owned(),
         JsonValue::Bool(true) => "True".to_owned(),
@@ -123,10 +119,10 @@ fn number_text(number: &Number) -> String {
     let Ok(value) = literal.parse::<f64>() else {
         return literal;
     };
-    python_float_text(value)
+    float_text(value)
 }
 
-fn python_float_text(value: f64) -> String {
+fn float_text(value: f64) -> String {
     if value.is_nan() {
         return "nan".to_owned();
     }
@@ -139,7 +135,7 @@ fn python_float_text(value: f64) -> String {
     }
     let magnitude = value.abs();
     if magnitude != 0.0 && !(SCIENTIFIC_LOW..SCIENTIFIC_HIGH).contains(&magnitude) {
-        return python_exponent_text(value);
+        return exponent_text(value);
     }
     let text = value.to_string();
     if text.contains('.') {
@@ -149,7 +145,7 @@ fn python_float_text(value: f64) -> String {
     }
 }
 
-fn python_exponent_text(value: f64) -> String {
+fn exponent_text(value: f64) -> String {
     let scientific = format!("{value:e}");
     let Some((mantissa, exponent)) = scientific.split_once('e') else {
         return scientific;

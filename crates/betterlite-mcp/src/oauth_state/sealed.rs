@@ -3,6 +3,7 @@ mod tests;
 use betterlite_db::mcp_stored_contracts::MCPTokenEndpointAuthMethod;
 use betterlite_db::mcp_stored_contracts::secret::StoredSecret;
 use secrecy::SecretString;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -10,6 +11,9 @@ use super::SealCipher;
 
 pub const BRIDGE_CODE_PREFIX: &str = "llm_bcode_";
 pub const PASSTHROUGH_CODE_PREFIX: &str = "llm_ptcode_";
+
+const BRIDGE_CODE_LABEL: &str = "bridge_authorization_code";
+const PASSTHROUGH_CODE_LABEL: &str = "passthrough_authorization_code";
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct BridgeAuthorizationCode {
@@ -53,6 +57,51 @@ impl BridgeCodePrefix for str {
     }
 }
 
+trait RequiredFields {
+    fn has_all_required_fields(&self) -> bool;
+}
+
+impl RequiredFields for BridgeAuthorizationCode {
+    fn has_all_required_fields(&self) -> bool {
+        !self.litellm_user_id.is_empty()
+            && !self.mcp_server_id.is_empty()
+            && !self.upstream_code.is_empty()
+    }
+}
+
+impl RequiredFields for PassthroughAuthorizationCode {
+    fn has_all_required_fields(&self) -> bool {
+        !self.client_id.is_empty()
+            && !self.mcp_server_id.is_empty()
+            && !self.upstream_code.is_empty()
+    }
+}
+
+fn seal_payload<TPayload>(prefix: &str, payload: &TPayload, cipher: &dyn SealCipher) -> String
+where
+    TPayload: Serialize,
+{
+    let json = match serde_json::to_string(payload) {
+        Ok(json) => json,
+        Err(_error) => String::new(),
+    };
+    format!("{prefix}{}", cipher.encrypt(&json))
+}
+
+fn open_payload<TPayload>(
+    prefix: &str,
+    label: &str,
+    code: &str,
+    cipher: &dyn SealCipher,
+) -> Option<TPayload>
+where
+    TPayload: DeserializeOwned,
+{
+    let sealed = code.strip_prefix(prefix)?;
+    let json = cipher.decrypt(sealed, label)?;
+    serde_json::from_str(&json).ok()
+}
+
 #[must_use]
 pub fn seal_bridge_code(
     upstream_code: &str,
@@ -67,22 +116,13 @@ pub fn seal_bridge_code(
         oauth_nonce: oauth_nonce.map(str::to_owned),
         upstream_code: upstream_code.to_owned(),
     };
-    let json = match serde_json::to_string(&sealed) {
-        Ok(json) => json,
-        Err(_error) => String::new(),
-    };
-    format!("{BRIDGE_CODE_PREFIX}{}", cipher.encrypt(&json))
+    seal_payload(BRIDGE_CODE_PREFIX, &sealed, cipher)
 }
 
 #[must_use]
 pub fn open_bridge_code(code: &str, cipher: &dyn SealCipher) -> Option<BridgeAuthorizationCode> {
-    let sealed = code.strip_prefix(BRIDGE_CODE_PREFIX)?;
-    let json = cipher.decrypt(sealed, "bridge_authorization_code")?;
-    let opened: BridgeAuthorizationCode = serde_json::from_str(&json).ok()?;
-    if opened.litellm_user_id.is_empty()
-        || opened.mcp_server_id.is_empty()
-        || opened.upstream_code.is_empty()
-    {
+    let opened = open_payload(BRIDGE_CODE_PREFIX, BRIDGE_CODE_LABEL, code, cipher)?;
+    if !opened.has_all_required_fields() {
         return None;
     }
     Some(opened)
@@ -104,11 +144,7 @@ pub fn seal_passthrough_code(
         token_endpoint_auth_method: client.token_endpoint_auth_method,
         upstream_code: upstream_code.to_owned(),
     };
-    let json = match serde_json::to_string(&sealed) {
-        Ok(json) => json,
-        Err(_error) => String::new(),
-    };
-    format!("{PASSTHROUGH_CODE_PREFIX}{}", cipher.encrypt(&json))
+    seal_payload(PASSTHROUGH_CODE_PREFIX, &sealed, cipher)
 }
 
 #[must_use]
@@ -116,13 +152,13 @@ pub fn open_passthrough_code(
     code: &str,
     cipher: &dyn SealCipher,
 ) -> Option<PassthroughAuthorizationCode> {
-    let sealed = code.strip_prefix(PASSTHROUGH_CODE_PREFIX)?;
-    let json = cipher.decrypt(sealed, "passthrough_authorization_code")?;
-    let opened: PassthroughAuthorizationCode = serde_json::from_str(&json).ok()?;
-    if opened.client_id.is_empty()
-        || opened.mcp_server_id.is_empty()
-        || opened.upstream_code.is_empty()
-    {
+    let opened = open_payload(
+        PASSTHROUGH_CODE_PREFIX,
+        PASSTHROUGH_CODE_LABEL,
+        code,
+        cipher,
+    )?;
+    if !opened.has_all_required_fields() {
         return None;
     }
     Some(opened)
