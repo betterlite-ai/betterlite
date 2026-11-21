@@ -21,6 +21,15 @@ deviations:
       The team table defaults models to an empty list, so a NULL row comes from a manual insert; betterlite
       reads it as empty rather than failing the delete.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L1900
+  - what: >-
+      The team row the models update returns carries the team columns only, so the cache entry refreshed from
+      it holds no object_permission relation, while LiteLLM's update includes object_permission and caches the
+      relation with the team.
+    why: >-
+      The refresh goes through the shared team_fields::rows::refresh_cached_team, whose cached object is built
+      from the typed TeamRecord; reading Prisma's include here would duplicate the team row decoder this task
+      must reuse, and the updated row is returned to the delete_model caller for its own cache invalidation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L1898-L1902
 kept_bugs:
   - what: >-
       Only the first aliases key whose value equals the deleted model name is removed; a second key with
