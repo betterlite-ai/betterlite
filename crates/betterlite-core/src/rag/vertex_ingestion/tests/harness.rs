@@ -292,12 +292,16 @@ fn state(name: Option<&str>, strategy: Option<ChunkingStrategyMap>) -> Ingestion
     .expect("an ingestion state")
 }
 
-pub(super) fn settings(project: Option<&str>, location: Option<&str>) -> VertexSettings {
+pub(super) fn settings(
+    project: Option<&str>,
+    location: Option<&str>,
+    credentials: Option<ConfiguredCredentials>,
+) -> VertexSettings {
     let defaults = VertexSettings::default();
     VertexSettings {
         project: project.map(str::to_owned),
         location: location.map(str::to_owned),
-        credentials: defaults.credentials,
+        credentials,
         adc: defaults.adc,
         default_video_duration_seconds: defaults.default_video_duration_seconds,
     }

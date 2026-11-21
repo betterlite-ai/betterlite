@@ -6,6 +6,7 @@ mod harness;
 use std::time::Duration;
 
 use betterlite_config::sections::vertex_credential_sources::VertexSettings;
+use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
 use rstest::rstest;
 use tokio::time::Instant;
 
@@ -91,7 +92,7 @@ async fn project_missing_project_fails_without_any_port_call() {
 async fn project_empty_project_option_is_missing() {
     let harness = build(
         r#"{"vertex_project":""}"#,
-        &settings(Some("settings-proj"), None),
+        &settings(Some("settings-proj"), None, None),
         None,
         None,
         &[],
@@ -110,7 +111,7 @@ async fn project_empty_project_option_is_missing() {
 async fn project_settings_project_is_used_when_the_options_omit_one() {
     let harness = build(
         "{}",
-        &settings(Some("settings-proj"), None),
+        &settings(Some("settings-proj"), None, None),
         None,
         None,
         &[(200, DONE)],
@@ -129,7 +130,7 @@ async fn project_vertex_project_wins_over_the_vertex_ai_alias() {
     let options = r#"{"vertex_project":"primary","vertex_ai_project":"alias"}"#;
     let harness = build(
         options,
-        &settings(Some("settings-proj"), None),
+        &settings(Some("settings-proj"), None, None),
         None,
         None,
         &[(200, DONE)],
@@ -141,6 +142,25 @@ async fn project_vertex_project_wins_over_the_vertex_ai_alias() {
         harness.http.calls()[0]
             .url
             .contains("/projects/primary/locations/")
+    );
+}
+
+#[tokio::test]
+async fn project_vertex_ai_alias_is_used_alone() {
+    let options = r#"{"vertex_ai_project":"alias"}"#;
+    let harness = build(
+        options,
+        &settings(None, None, None),
+        None,
+        None,
+        &[(200, DONE)],
+    );
+    store(&harness, File::default())
+        .await
+        .expect("a created corpus");
+    assert_eq!(
+        harness.http.calls()[0].url,
+        "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/alias/locations/us-central1/ragCorpora"
     );
 }
 
@@ -163,7 +183,7 @@ async fn project_location_defaults_to_us_central1() {
 async fn project_location_uses_the_settings_value() {
     let harness = build(
         PROJECT_OPTIONS,
-        &settings(None, Some("europe-west4")),
+        &settings(None, Some("europe-west4"), None),
         None,
         None,
         &[(200, DONE)],
@@ -344,6 +364,27 @@ async fn corpus_create_merges_the_embedding_model() {
 }
 
 #[tokio::test]
+async fn corpus_create_merges_the_embedding_model_without_a_config() {
+    let options = r#"{"vertex_project":"proj","embedding_model":"text-embedding-005"}"#;
+    let harness = build(
+        options,
+        &VertexSettings::default(),
+        None,
+        None,
+        &[(200, DONE)],
+    );
+    store(&harness, File::default())
+        .await
+        .expect("a created corpus");
+    assert_eq!(
+        json_body(&harness.http.calls()[0]),
+        expected(
+            r#"{"displayName":"litellm-rag-corpus","vectorDbConfig":{"ragEmbeddingModelConfig":{"vertexPredictionEndpoint":{"endpoint":"text-embedding-005"}}}}"#
+        )
+    );
+}
+
+#[tokio::test]
 async fn corpus_create_sends_vector_db_config_alone() {
     let options = r#"{"vertex_project":"proj","vector_db_config":{"a":1}}"#;
     let harness = build(
@@ -470,7 +511,7 @@ async fn poll_pending_operation_polls_until_done() {
         &VertexSettings::default(),
         None,
         None,
-        &[(200, NOT_DONE), (200, DONE)],
+        &[(200, NOT_DONE), (200, NOT_DONE), (200, DONE)],
     );
     let started = Instant::now();
     let (corpus, _) = store(&harness, File::default())
@@ -570,8 +611,24 @@ async fn poll_non_200_status_fails() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn poll_rejects_a_created_status() {
+    let replies = [(200, NOT_DONE), (201, "created-body")];
+    let harness = build(
+        PROJECT_OPTIONS,
+        &VertexSettings::default(),
+        None,
+        None,
+        &replies,
+    );
+    let error = store(&harness, File::default())
+        .await
+        .expect_err("a poll that only accepts 200");
+    assert_eq!(error.to_string(), "Failed to poll operation: created-body");
+}
+
+#[tokio::test(start_paused = true)]
 async fn poll_gives_up_after_thirty_attempts() {
-    let replies = [(200_u16, NOT_DONE); 30];
+    let replies = [(200_u16, NOT_DONE); 31];
     let harness = build(
         PROJECT_OPTIONS,
         &VertexSettings::default(),
@@ -678,6 +735,27 @@ async fn upload_chunking_config_carries_only_nonzero_sizes() {
         json_body(&harness.http.calls()[0]),
         expected(
             r#"{"rag_file":{"display_name":"notes.txt"},"upload_rag_file_config":{"rag_file_transformation_config":{"rag_file_chunking_config":{"fixed_length_chunking":{"chunk_size":500}}}}}"#
+        )
+    );
+}
+
+#[tokio::test]
+async fn upload_chunking_config_sends_a_nonzero_overlap() {
+    let strategy = chunking(&[("chunk_size", "500"), ("chunk_overlap", "50")]);
+    let harness = build(
+        EXISTING_OPTIONS,
+        &VertexSettings::default(),
+        None,
+        Some(strategy),
+        &[(200, FILE_REPLY)],
+    );
+    store(&harness, File::new(b"data", "notes.txt"))
+        .await
+        .expect("an uploaded file");
+    assert_eq!(
+        json_body(&harness.http.calls()[0]),
+        expected(
+            r#"{"rag_file":{"display_name":"notes.txt"},"upload_rag_file_config":{"rag_file_transformation_config":{"rag_file_chunking_config":{"fixed_length_chunking":{"chunk_size":500,"chunk_overlap":50}}}}}"#
         )
     );
 }
@@ -989,8 +1067,41 @@ async fn secret_credentials_stay_out_of_logs_and_errors() {
     let error = store(&harness, File::new(b"data", "notes.txt"))
         .await
         .expect_err("an upload failure");
-    assert_eq!(harness.token.credentials_seen(), vec![true]);
+    assert_eq!(harness.token.credentials_seen(), vec![true, true]);
     assert!(!logs.text().contains(SECRET));
     assert!(!error.to_string().contains(SECRET));
     assert!(!format!("{error:?}").contains(SECRET));
+}
+
+#[tokio::test]
+async fn secret_vertex_ai_credentials_alias_reaches_the_token_port() {
+    let options = r#"{"vertex_project":"proj","vertex_ai_credentials":"alias-material"}"#;
+    let harness = build(
+        options,
+        &VertexSettings::default(),
+        None,
+        None,
+        &[(200, DONE)],
+    );
+    store(&harness, File::default())
+        .await
+        .expect("a created corpus");
+    assert_eq!(harness.token.credentials_seen(), vec![true]);
+}
+
+#[tokio::test]
+async fn secret_settings_credentials_reach_the_token_port() {
+    let configured = ConfiguredCredentials::from_text("settings-material".to_owned())
+        .expect("configured credentials");
+    let harness = build(
+        PROJECT_OPTIONS,
+        &settings(None, None, Some(configured)),
+        None,
+        None,
+        &[(200, DONE)],
+    );
+    store(&harness, File::default())
+        .await
+        .expect("a created corpus");
+    assert_eq!(harness.token.credentials_seen(), vec![true]);
 }

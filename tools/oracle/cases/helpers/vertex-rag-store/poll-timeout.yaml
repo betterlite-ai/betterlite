@@ -66,5 +66,7 @@ call:
         body: '{"done":false,"name":"operations/1"}'
       - status: 200
         body: '{"done":false,"name":"operations/1"}'
+      - status: 200
+        body: '{"done":false,"name":"operations/1"}'
 env: {}
 compare: {ignore: []}
