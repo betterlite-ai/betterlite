@@ -114,12 +114,7 @@ pub fn request_timeout(timeout: Option<f64>, fallback_seconds: f64) -> Result<f6
     }
 }
 
-// the bedrock handler receives litellm_params.timeout unchanged, including its absence and zero
-pub fn unchanged_timeout(timeout: Option<f64>) -> Result<Option<f64>, ImageEditError> {
-    timeout.map(seconds_checked).transpose()
-}
-
-fn seconds_checked(seconds: f64) -> Result<f64, ImageEditError> {
+pub(crate) fn seconds_checked(seconds: f64) -> Result<f64, ImageEditError> {
     if seconds.is_finite() && seconds >= 0.0 {
         Ok(seconds)
     } else {

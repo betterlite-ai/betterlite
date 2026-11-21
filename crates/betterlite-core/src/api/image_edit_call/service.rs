@@ -2,7 +2,6 @@ use betterlite_config::sections::image_edit_call::Settings;
 use betterlite_context::media_config_selection::image_edit::{
     ImageEditConfigTag, select_image_edit,
 };
-use betterlite_context::non_default_params::Params;
 use betterlite_context::non_default_params::filters::filter_out_litellm_params;
 use betterlite_context::non_default_params::names::is_openai_compatible_provider;
 use betterlite_models::decisions::Json;
@@ -14,7 +13,7 @@ use betterlite_openai::api::image_contracts::records::{ImageFile, ImageParams};
 
 use super::call::{
     DEFAULT_MODEL, ImageEditCall, ImageEditClientKind, ImageEditStep, OPENAI_EDIT_PARAMS,
-    request_timeout, unchanged_timeout,
+    request_timeout, seconds_checked,
 };
 use super::entry::ImageEditOperation;
 use super::error::ImageEditError;
@@ -150,13 +149,18 @@ impl ImageEdits<'_> {
                 .ok_or_else(|| ImageEditError::UnsupportedConfig {
                     provider: resolved.provider.clone(),
                 })?;
-        let non_default = non_default_params(call);
+        let non_default =
+            filter_out_litellm_params(&control_params(&call.kwargs), &OPENAI_EDIT_PARAMS);
         let supported = provider.supported_openai_params(&resolved.model);
         let extensions = supported_extensions(&call.kwargs, &non_default, &supported);
         let options = requested_options(call, &extensions)?;
         let policy = params_policy(call, self.global_drop_params);
         let mut params = provider.map_edit_options(&options, &resolved.model, &policy)?;
-        if provider.use_multipart_form_data() && flattens_form_fields(&resolved.provider) {
+        if provider.use_multipart_form_data()
+            && (resolved.provider == "openai"
+                || resolved.provider == "azure"
+                || is_openai_compatible_provider(&resolved.provider))
+        {
             let fields = form_fields(call, &non_default)?;
             merge_form_fields(&mut params, fields);
         }
@@ -171,7 +175,7 @@ impl ImageEdits<'_> {
         check_branch_model(&tag, Some(&resolved.model))?;
         let timeout = branch_timeout(&tag, call.timeout, self.settings.request_timeout_seconds)?;
         if merges_non_default(&tag) {
-            merge_non_default(&mut params, &non_default);
+            merge_non_default(&mut params, &non_default)?;
         }
         let headers = merged_headers(call)?;
         provider.send(ImageEditSendRequest {
@@ -191,11 +195,6 @@ impl ImageEdits<'_> {
             asynchronous,
         })
     }
-}
-
-// filter_out_litellm_params(kwargs, excluding=openai_params), computed before async_call is popped
-fn non_default_params(call: &ImageEditCall) -> Params {
-    filter_out_litellm_params(&control_params(&call.kwargs), &OPENAI_EDIT_PARAMS)
 }
 
 // a supplied client of the other kind reaches no handler
@@ -226,11 +225,6 @@ const fn provider_id(identity: &ProviderIdentity) -> Option<ProviderId> {
         ProviderIdentity::Known(provider) => Some(*provider),
         ProviderIdentity::Anyscale | ProviderIdentity::Custom(_) => None,
     }
-}
-
-// the multipart flatten merge reaches openai, azure and the openai-compatible providers only
-fn flattens_form_fields(provider: &str) -> bool {
-    provider == "openai" || provider == "azure" || is_openai_compatible_provider(provider)
 }
 
 // bedrock and BFL refuse a model of None before sending; the config path above always resolves one
@@ -270,7 +264,7 @@ pub(crate) fn branch_timeout(
     fallback_seconds: f64,
 ) -> Result<Option<f64>, ImageEditError> {
     match tag {
-        ImageEditConfigTag::Bedrock(_) => unchanged_timeout(timeout),
+        ImageEditConfigTag::Bedrock(_) => timeout.map(seconds_checked).transpose(),
         ImageEditConfigTag::OpenAi(_)
         | ImageEditConfigTag::HostedVllm(_)
         | ImageEditConfigTag::Azure

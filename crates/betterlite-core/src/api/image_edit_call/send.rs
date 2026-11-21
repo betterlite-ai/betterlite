@@ -6,8 +6,7 @@ use super::error::ImageEditError;
 use crate::api::image_input_options::options::ImageEditOptionalRequestParams;
 use crate::api::image_input_options::selection::OptionalParamsPolicy;
 
-// The call a selected provider's send receives: the mapped options, the caller's connection controls and
-// the timeout the branch settled on.
+// The call a selected provider's send receives: the mapped options, the connection controls and the branch's timeout.
 pub struct ImageEditSendRequest<'send> {
     pub model: &'send str,
     pub prompt: Option<&'send str>,

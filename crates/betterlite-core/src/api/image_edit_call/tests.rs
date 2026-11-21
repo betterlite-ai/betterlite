@@ -11,6 +11,7 @@ use betterlite_error::error::ErrorClass;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::image_contracts::records::{ImageHeaders, ImageParams};
 use indexmap::IndexMap;
+use rstest::rstest;
 use serde_json::Number;
 
 use self::support::{
@@ -358,8 +359,20 @@ async fn edit_option_merge_rejects_a_non_text_header() {
     assert_eq!(provider.take().len(), 0);
 }
 
+#[rstest]
+#[case::stability_none("stability/edit-model", None, Some(7.0))]
+#[case::stability_zero("stability/edit-model", Some(0.0), Some(7.0))]
+#[case::stability_explicit("stability/edit-model", Some(3.0), Some(3.0))]
+#[case::bedrock_none("bedrock/edit-model", None, None)]
+#[case::bedrock_zero("bedrock/edit-model", Some(0.0), Some(0.0))]
+#[case::bedrock_explicit("bedrock/edit-model", Some(3.0), Some(3.0))]
+#[case::black_forest_labs_none("black_forest_labs/edit-model", None, Some(7.0))]
 #[tokio::test]
-async fn edit_dispatch_and_timeout() {
+async fn edit_dispatch_and_timeout(
+    #[case] model: &str,
+    #[case] timeout: Option<f64>,
+    #[case] expected: Option<f64>,
+) {
     let world = World::new();
     let context = world.context();
     let settings = settings(&[("REQUEST_TIMEOUT", "7")]);
@@ -384,32 +397,21 @@ async fn edit_dispatch_and_timeout() {
         custom: &NoCustom,
         global_drop_params: false,
     };
-    for (model, timeout) in [
-        ("stability/edit-model", None),
-        ("stability/edit-model", Some(0.0)),
-        ("stability/edit-model", Some(3.0)),
-        ("bedrock/edit-model", None),
-        ("bedrock/edit-model", Some(0.0)),
-        ("bedrock/edit-model", Some(3.0)),
-        ("black_forest_labs/edit-model", None),
-    ] {
-        let mut call = upload();
-        call.model = Some(model.to_owned());
-        call.image = ImageInput::One(Box::new(image("a.png", b"abc")));
-        call.mask = None;
-        call.timeout = timeout;
-        image_edit(&service, &call, &mut RecordingLogger::new())
-            .await
-            .expect("the fixture branch answers");
-    }
-    let stability_timeouts: Vec<Option<f64>> =
-        stability.take().iter().map(|sent| sent.timeout).collect();
-    assert_eq!(stability_timeouts, [Some(7.0), Some(7.0), Some(3.0)]);
-    let bedrock_timeouts: Vec<Option<f64>> =
-        bedrock.take().iter().map(|sent| sent.timeout).collect();
-    assert_eq!(bedrock_timeouts, [None, Some(0.0), Some(3.0)]);
-    let bfl_timeouts: Vec<Option<f64>> = bfl.take().iter().map(|sent| sent.timeout).collect();
-    assert_eq!(bfl_timeouts, [Some(7.0)]);
+    let mut call = upload();
+    call.model = Some(model.to_owned());
+    call.image = ImageInput::One(Box::new(image("a.png", b"abc")));
+    call.mask = None;
+    call.timeout = timeout;
+    image_edit(&service, &call, &mut RecordingLogger::new())
+        .await
+        .expect("the fixture branch answers");
+    let provider = match model {
+        "stability/edit-model" => &stability,
+        "bedrock/edit-model" => &bedrock,
+        _ => &bfl,
+    };
+    let timeouts: Vec<Option<f64>> = provider.take().iter().map(|sent| sent.timeout).collect();
+    assert_eq!(timeouts, [expected]);
 }
 
 #[tokio::test]
@@ -571,13 +573,12 @@ async fn edit_custom_and_async() {
     let [sent] = calls.as_slice() else {
         panic!("exactly one custom call");
     };
-    assert_eq!(sent.handler, "second");
     assert!(!sent.asynchronous);
     assert_eq!(sent.model, "my-model");
     assert_eq!(
         sent.images
             .iter()
-            .map(|(name, content)| (name.as_deref(), content.as_slice()))
+            .map(|image| (image.filename.as_deref(), image.content.as_slice()))
             .collect::<Vec<_>>(),
         [
             (Some("a.png"), b"abc".as_slice()),

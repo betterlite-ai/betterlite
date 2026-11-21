@@ -1,7 +1,13 @@
+#![expect(
+    clippy::disallowed_types,
+    reason = "ImageEditOptionalRequestParams carries its passthrough extensions as serde_json::Value, read only here"
+)]
+
 use betterlite_context::non_default_params::Params;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::image_contracts::records::{ImageFile, ImageParams};
 use betterlite_openai::image_edits::file::DEFAULT_MASK_NAME;
+use indexmap::IndexMap;
 use serde_json::Value;
 
 use super::call::ImageEditCall;
@@ -14,20 +20,22 @@ use crate::api::image_input_options::selection::OptionalParamsPolicy;
 // the typed ImageEditOptionalRequestParams names, which arrive as named arguments and never through kwargs
 const NAMED_PARAMS: [&str; 6] = ["mask", "n", "quality", "response_format", "size", "user"];
 
-// local_vars.update(kwargs), then get_requested_image_edit_optional_param: typed fields in signature order,
-// then every provider-supported kwargs entry in the caller's order
+// local_vars.update(kwargs) then get_requested_image_edit_optional_param: the typed fields first, then the supported kwargs in caller order
 pub(crate) fn requested_options(
     call: &ImageEditCall,
     provider_supported: &[String],
 ) -> Result<ImageEditOptionalRequestParams, ImageEditError> {
     let mut options = ImageEditOptionalRequestParams {
+        background: None,
+        input_fidelity: None,
         mask: call.mask.as_ref().map(mask_name),
         count: call.count,
         quality: call.quality,
         response_format: call.response_format,
         size: call.size.clone(),
         user: call.user.clone(),
-        ..ImageEditOptionalRequestParams::default()
+        image_config: None,
+        extensions: IndexMap::new(),
     };
     for name in provider_supported {
         if NAMED_PARAMS.contains(&name.as_str()) {

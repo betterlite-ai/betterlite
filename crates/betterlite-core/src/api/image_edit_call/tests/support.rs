@@ -20,7 +20,7 @@ use indexmap::IndexMap;
 use serde_json::Number;
 
 use crate::api::image_edit_call::call::{
-    ImageEditCall, ImageEditClientKind, ImageEditStep, ImageInput, PendingEdit,
+    ImageEditCall, ImageEditClientKind, ImageEditStep, ImageInput,
 };
 use crate::api::image_edit_call::error::ImageEditError;
 use crate::api::image_edit_call::logging::{ImageEditLogger, PreCallRecord};
@@ -52,10 +52,29 @@ pub(super) struct Sent {
     pub(super) asynchronous: bool,
 }
 
+impl Sent {
+    fn of(request: &ImageEditSendRequest<'_>) -> Self {
+        Self {
+            model: request.model.to_owned(),
+            prompt: request.prompt.map(str::to_owned),
+            images: request.images.to_vec(),
+            mask: request.mask.cloned(),
+            optional_params: request.optional_params.clone(),
+            extra_headers: request.extra_headers.cloned(),
+            extra_body: request.extra_body.cloned(),
+            timeout: request.timeout,
+            api_key: request.api_key.map(str::to_owned),
+            api_base: request.api_base.map(str::to_owned),
+            custom_llm_provider: request.custom_llm_provider.to_owned(),
+            client: request.client,
+            asynchronous: request.asynchronous,
+        }
+    }
+}
+
 pub(super) struct Provider {
     supported: Vec<String>,
     multipart: bool,
-    answer: ImageResponse,
     sends: Mutex<Vec<Sent>>,
     pending: bool,
 }
@@ -65,7 +84,6 @@ impl Provider {
         Self {
             supported: supported.iter().map(|name| (*name).to_owned()).collect(),
             multipart,
-            answer: response(),
             sends: Mutex::new(Vec::new()),
             pending: false,
         }
@@ -102,31 +120,8 @@ impl ImageEditProvider for Provider {
     }
 
     fn send(&self, request: ImageEditSendRequest<'_>) -> Result<ImageEditStep<'_>, ImageEditError> {
-        let record = Sent {
-            model: request.model.to_owned(),
-            prompt: request.prompt.map(str::to_owned),
-            images: request.images.to_vec(),
-            mask: request.mask.cloned(),
-            optional_params: request.optional_params.clone(),
-            extra_headers: request.extra_headers.cloned(),
-            extra_body: request.extra_body.cloned(),
-            timeout: request.timeout,
-            api_key: request.api_key.map(str::to_owned),
-            api_base: request.api_base.map(str::to_owned),
-            custom_llm_provider: request.custom_llm_provider.to_owned(),
-            client: request.client,
-            asynchronous: request.asynchronous,
-        };
-        self.sends
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(record);
-        if self.pending {
-            let answer = self.answer.clone();
-            let future: PendingEdit<'_> = Box::pin(async move { Ok(answer) });
-            return Ok(ImageEditStep::Pending(future));
-        }
-        Ok(ImageEditStep::Answer(self.answer.clone()))
+        record(&self.sends, Sent::of(&request));
+        Ok(step(self.pending))
     }
 }
 
@@ -187,24 +182,9 @@ impl ImageEditProviderSource for Source {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct CustomSent {
-    pub(super) handler: String,
-    pub(super) asynchronous: bool,
-    pub(super) model: String,
-    pub(super) images: Vec<(Option<String>, Vec<u8>)>,
-    pub(super) prompt: Option<String>,
-    pub(super) optional_params: ImageParams,
-    pub(super) api_key: Option<String>,
-    pub(super) api_base: Option<String>,
-    pub(super) timeout: Option<f64>,
-    pub(super) client: Option<ImageEditClientKind>,
-}
-
 pub(super) struct CustomHandler {
     name: &'static str,
-    answer: ImageResponse,
-    calls: Mutex<Vec<CustomSent>>,
+    calls: Mutex<Vec<Sent>>,
     pending: bool,
 }
 
@@ -212,7 +192,6 @@ impl CustomHandler {
     pub(super) fn new(name: &'static str) -> Self {
         Self {
             name,
-            answer: response(),
             calls: Mutex::new(Vec::new()),
             pending: false,
         }
@@ -224,7 +203,7 @@ impl CustomHandler {
         self
     }
 
-    pub(super) fn take(&self) -> Vec<CustomSent> {
+    pub(super) fn take(&self) -> Vec<Sent> {
         let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
         mem::take(&mut *calls)
     }
@@ -236,32 +215,39 @@ impl CustomEditHandler for CustomHandler {
         request: CustomEditRequest<'_>,
         asynchronous: bool,
     ) -> Result<ImageEditStep<'_>, ImageEditError> {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(CustomSent {
-                handler: self.name.to_owned(),
-                asynchronous,
-                model: request.model.to_owned(),
-                images: request
-                    .images
-                    .iter()
-                    .map(|image| (image.filename.clone(), image.content.clone()))
-                    .collect(),
-                prompt: request.prompt.map(str::to_owned),
-                optional_params: request.optional_params.clone(),
-                api_key: request.api_key.map(str::to_owned),
-                api_base: request.api_base.map(str::to_owned),
-                timeout: request.timeout,
-                client: request.client,
-            });
-        if self.pending {
-            let answer = self.answer.clone();
-            let future: PendingEdit<'_> = Box::pin(async move { Ok(answer) });
-            return Ok(ImageEditStep::Pending(future));
-        }
-        Ok(ImageEditStep::Answer(self.answer.clone()))
+        let view = ImageEditSendRequest {
+            model: request.model,
+            prompt: request.prompt,
+            images: request.images,
+            mask: None,
+            optional_params: request.optional_params,
+            litellm_params: request.optional_params,
+            extra_headers: None,
+            extra_body: None,
+            timeout: request.timeout,
+            api_key: request.api_key,
+            api_base: request.api_base,
+            custom_llm_provider: "",
+            client: request.client,
+            asynchronous,
+        };
+        record(&self.calls, Sent::of(&view));
+        Ok(step(self.pending))
     }
+}
+
+fn record<T>(calls: &Mutex<Vec<T>>, value: T) {
+    calls
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .push(value);
+}
+
+fn step(pending: bool) -> ImageEditStep<'static> {
+    if pending {
+        return ImageEditStep::Pending(Box::pin(async { Ok(response()) }));
+    }
+    ImageEditStep::Answer(response())
 }
 
 pub(super) struct CustomSource {
@@ -415,35 +401,30 @@ pub(super) fn gpt_image_tag() -> ImageEditConfigTag {
     ImageEditConfigTag::OpenAi(String::from("gpt-image-1"))
 }
 pub(super) fn custom_call() -> ImageEditCall {
-    ImageEditCall {
-        image: ImageInput::Many(Box::new([image("a.png", b"abc"), image("b.png", b"def")])),
-        prompt: Some(String::from("custom")),
-        model: Some(String::from("my-model")),
-        mask: None,
-        count: None,
-        quality: None,
-        response_format: None,
-        size: None,
-        user: None,
-        extra_headers: None,
-        extra_query: None,
-        extra_body: None,
-        timeout: None,
-        custom_llm_provider: Some(String::from("my-provider")),
-        kwargs: ImageParams::from([
-            (
-                String::from("settings"),
-                Json::Object(IndexMap::from([(
-                    String::from("strength"),
-                    Json::Number(Number::from(1)),
-                )])),
-            ),
-            (String::from("api_key"), Json::Text(String::from("sk-test"))),
-            (
-                String::from("api_base"),
-                Json::Text(String::from("https://host/v1")),
-            ),
-        ]),
-        client: Some(ImageEditClientKind::Sync),
-    }
+    let mut call = upload();
+    call.prompt = Some(String::from("custom"));
+    call.model = Some(String::from("my-model"));
+    call.mask = None;
+    call.count = None;
+    call.quality = None;
+    call.response_format = None;
+    call.size = None;
+    call.user = None;
+    call.custom_llm_provider = Some(String::from("my-provider"));
+    call.client = Some(ImageEditClientKind::Sync);
+    call.kwargs = ImageParams::from([
+        (
+            String::from("settings"),
+            Json::Object(IndexMap::from([(
+                String::from("strength"),
+                Json::Number(Number::from(1)),
+            )])),
+        ),
+        (String::from("api_key"), Json::Text(String::from("sk-test"))),
+        (
+            String::from("api_base"),
+            Json::Text(String::from("https://host/v1")),
+        ),
+    ]);
+    call
 }

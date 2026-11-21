@@ -1,8 +1,7 @@
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_openai::api::image_contracts::records::ImageParams;
 
-// The five values image_edit hands Logging.update_from_kwargs: the mapped options as they stand before
-// the bedrock, stability and BFL branches merge their non-defaults back in.
+// The five values image_edit hands Logging.update_from_kwargs, before the bedrock, stability and BFL branches merge their non-defaults back in.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreCallRecord {
     pub model: String,
