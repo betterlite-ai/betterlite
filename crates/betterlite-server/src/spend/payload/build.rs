@@ -11,7 +11,7 @@ use betterlite_logging::spend_bodies::session::{
 };
 use betterlite_logging::spend_metadata::records::SpendLogsMetadata;
 use betterlite_logging::spend_metadata::{
-    SpendLogsPayload, optional_text_field, status_for_spend_log,
+    SpendLogsPayload, cache_hit_text, optional_text_field, status_for_spend_log,
 };
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
@@ -20,8 +20,7 @@ use chrono::TimeZone;
 use rust_decimal::Decimal;
 
 use super::{
-    CompletionStart, Context, Pieces, SpendPayloadError, SpendPayloadSettings, cache_hit_text,
-    counter, instant,
+    CompletionStart, Context, Pieces, SpendPayloadError, SpendPayloadSettings, counter, instant,
 };
 
 // The record's times, normalized to UTC through the injected zone.

@@ -39,17 +39,13 @@ use crate::state::ServerState;
 use self::failure::{chat_failure, internal_failure, not_found_failure};
 use headers::success_headers;
 
-// LiteLLM's MAX_LITELLM_CALL_ID_LENGTH, the longest client-supplied call id the routes accept
-pub(super) const MAX_CALL_ID_LENGTH: usize = 256;
-
 pub(crate) fn chat_routes_with_call_id(
-    executor: Arc<ChatExecutor>,
+    calls: Arc<ChatCalls>,
     include_call_id: bool,
 ) -> Result<Router, EnvelopeError> {
     let errors = Arc::new(ErrorLayer::new()?);
-    let calls: Arc<dyn ChatCall> = Arc::new(ChatCalls {
-        executor: Arc::clone(&executor),
-    });
+    let executor = Arc::clone(&calls.executor);
+    let call_port: Arc<dyn ChatCall> = calls;
     let log = Arc::new(TracingCallLog);
     let dispatch = Arc::new(Dispatch::new(
         executor.deployments.clone(),
@@ -66,7 +62,7 @@ pub(crate) fn chat_routes_with_call_id(
         );
     Ok(router.with_state(ChatRouteState {
         executor,
-        calls,
+        calls: call_port,
         dispatch,
         include_call_id,
         errors,
