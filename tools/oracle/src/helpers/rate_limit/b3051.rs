@@ -22,7 +22,7 @@ use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
-enum CounterInput {
+pub(crate) enum CounterInput {
     Int(i64),
     Text(String),
 }
@@ -83,7 +83,7 @@ impl Helper for Op {
                 priority_reservation,
                 team_metadata,
                 key_metadata,
-            } => allocation_answer(&AllocationCase {
+            } => Ok(allocation_answer(&AllocationCase {
                 model,
                 limits: ModelGroupLimits {
                     rpm: *rpm,
@@ -93,7 +93,7 @@ impl Helper for Op {
                 reservation: priority_reservation.as_ref(),
                 team_metadata: team_metadata.as_ref(),
                 key_metadata,
-            }),
+            })),
             Input::Saturation {
                 model,
                 rpm,
@@ -134,7 +134,7 @@ fn encodable_values(values: &[String]) -> Vec<bool> {
         .collect()
 }
 
-fn allocation_answer(case: &AllocationCase<'_>) -> HelperResult {
+fn allocation_answer(case: &AllocationCase<'_>) -> serde_json::Value {
     let policy = priority_policy(case.reservation);
     let priority = priority_from_key_dict(case.team_metadata, case.key_metadata);
     let weights = normalize_priority_weights(&policy, Some(&case.limits));
@@ -148,12 +148,12 @@ fn allocation_answer(case: &AllocationCase<'_>) -> HelperResult {
         case.window_size,
     );
     let tracking = model_tracking_descriptor(case.model, &case.limits, 1, case.window_size);
-    Ok(json!({
+    json!({
         "weights": weights,
         "allocation": {"weight": allocation.weight, "key": allocation.key},
         "descriptors": descriptors,
         "tracking": tracking,
-    }))
+    })
 }
 
 fn priority_policy(reservation: Option<&BTreeMap<String, PriorityValue>>) -> PriorityPolicy {
