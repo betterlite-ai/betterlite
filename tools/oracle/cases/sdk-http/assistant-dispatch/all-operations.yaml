@@ -33,8 +33,7 @@ call:
         config: {custom_llm_provider: openai, litellm_params: {}}
       - operation: run_thread
         thread_id: thread_a
-        assistant_id: asst_a
-        payload: {stream: true}
+        payload: {assistant_id: asst_a, stream: true}
         params: {api_base: $API_BASE, api_key: sk-test}
         config: {custom_llm_provider: openai, litellm_params: {}}
 upstream:

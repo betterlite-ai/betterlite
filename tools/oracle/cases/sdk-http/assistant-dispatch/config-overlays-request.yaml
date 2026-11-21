@@ -56,4 +56,6 @@ compare:
   headers: []
   headers_present: []
   upstream_headers: [authorization, api-key, openai-beta]
-  ignore: []
+  ignore:
+    - pointer: /assistant_dispatch/value/results/2/failure/message
+      why: LiteLLM prefixes the mapped exception text and betterlite writes its own
