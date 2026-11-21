@@ -64,16 +64,15 @@ fn azure_requires_a_string_voice_and_accepts_empty() {
         SpeechFailure::Mapped(ErrorClass::BadRequest(_))
     ));
     assert!(harness.transport.sent().is_empty());
+    // Azure OpenAI TTS reaches the provider through the operations seam, so the voice is what it receives
     let empty = SpeechCall {
         voice: Some(named_voice("")),
         ..base_call("azure/my-deployment")
     };
     harness.run_ok(&empty);
-    let sent = harness.transport.sent();
-    assert_eq!(
-        sent_json(&sent[0]).get("voice"),
-        Some(&serde_json::json!(""))
-    );
+    let executed = harness.operations.take();
+    assert_eq!(executed.len(), 1);
+    assert_eq!(executed[0].voice, Some(named_voice("")));
 }
 
 #[test]
@@ -230,8 +229,10 @@ fn anyscale_and_custom_providers_are_not_valid_llm_providers() {
         RecordingTransport::ok("audio/mpeg", &[]),
         &[],
     );
+    // LiteLLM knows the anyscale prefix; betterlite reaches Anyscale through its api_base
     let anyscale = SpeechCall {
         voice: Some(named_voice("alice")),
+        api_base: Some(String::from("https://api.endpoints.anyscale.com/v1")),
         ..base_call("anyscale/mixtral-8x7b")
     };
     let anyscale_failure = harness.run_err(&anyscale);

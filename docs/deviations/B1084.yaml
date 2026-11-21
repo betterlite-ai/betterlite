@@ -34,4 +34,15 @@ deviations:
       voice refusals in the same function. The oracle cases cannot compare the two projections because the
       classes and statuses differ, so a core test proves this branch instead.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/elevenlabs/text_to_speech/transformation.py#L107-L108
+  - what: >-
+      A model whose prefix is anyscale/ resolves in LiteLLM through litellm.provider_list, so speech() reaches its
+      litellm.LlmProviders(custom_llm_provider) lookup and raises ValueError "'anyscale' is not a valid LlmProviders";
+      betterlite's provider resolution does not list the anyscale prefix, so the same call fails earlier as a 400
+      BadRequestError "LLM Provider NOT provided".
+    why: >-
+      The prefix table belongs to betterlite's provider resolution, not to speech(), and it reaches Anyscale only
+      through the registered api_base. speech() keeps LiteLLM's LlmProviders check for every model that does reach
+      Anyscale, and the core test proves it through that api_base, so the table can add the prefix later without
+      changing speech().
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L1202
 kept_bugs: []

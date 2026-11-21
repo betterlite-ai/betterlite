@@ -48,7 +48,8 @@ fn the_call_record_and_the_pre_call_reach_the_logging_object() {
         .expect("the speech call answers");
     assert_eq!(logging.pre_calls.len(), 1);
     assert_eq!(logging.pre_calls[0].0, "hello");
-    assert_eq!(logging.pre_calls[0].1, "https://api.openai.com/v1");
+    // LiteLLM logs str(openai_client.base_url), and the OpenAI client keeps a trailing slash
+    assert_eq!(logging.pre_calls[0].1, "https://api.openai.com/v1/");
     assert_eq!(logging.state.model, "tts-1");
     assert_eq!(logging.state.user.as_deref(), Some("u-1"));
     assert_eq!(
