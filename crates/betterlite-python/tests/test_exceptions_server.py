@@ -30,7 +30,7 @@ _RATE_BODY: Final[dict[str, JsonValue]] = {
 }
 _CONTENT: Final[bytes] = b"slow down"
 _BYTES: Final[bytes] = b"raw"
-_LATIN_CONTENT: Final[bytes] = b"caf\xe9"
+_LATIN_CONTENT: Final[bytes] = b"r\xe9sum\xe9"
 _LATIN_HEADERS: Final[dict[str, str]] = {
     "content-type": "text/plain; charset=latin-1",
     "x-request-id": "req_3",
