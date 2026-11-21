@@ -4,7 +4,6 @@ use std::collections::BTreeMap;
 use std::error::Error as StdError;
 use std::fmt;
 use std::io;
-use std::net::TcpListener;
 use std::str;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender};
@@ -393,14 +392,6 @@ impl ServiceHooks for NoopHooks {
 
 pub(crate) fn empty_environment() -> BTreeMap<String, String> {
     BTreeMap::new()
-}
-
-// A listener on port zero tells us a port nothing listens on once it is closed again.
-pub(crate) fn closed_port() -> u16 {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback listener");
-    let port = listener.local_addr().expect("the listener address").port();
-    drop(listener);
-    port
 }
 
 pub(crate) fn overrides(port: u16) -> RedisOverrides {

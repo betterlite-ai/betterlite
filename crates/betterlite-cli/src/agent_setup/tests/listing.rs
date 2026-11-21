@@ -123,10 +123,8 @@ async fn listing_empty_for_codex_names_codex() {
 
 #[tokio::test]
 async fn listing_unreachable_names_the_proxy_and_the_url_options() {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
-    let base_url = format!("http://{address}");
+    let refused = RefusedPort::bind().unwrap();
+    let base_url = format!("http://{}", refused.address);
     let error = fetch(&base_url, Target::Claude).await.unwrap_err();
     let AgentSetupError::ListingUnreachable {
         base_url: reported, ..
