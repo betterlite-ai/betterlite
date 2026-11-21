@@ -28,12 +28,12 @@ pub struct RateLimitResetWindow {
     pub window_size: i64,
 }
 
-// Why a v3 rejection can't become a ProxyRateLimitError: a clock or reset time no UTC timestamp can show, or a header HTTP refuses.
+// Why a v3 rejection can't become a ProxyRateLimitError: a clock or reset outside the range LiteLLM's datetime covers, or a header HTTP refuses.
 #[derive(Debug, thiserror::Error)]
 pub enum ProxyRateLimitProjectionError {
     #[error("the rate limiter's clock reads before 1970-01-01T00:00:00Z")]
     ClockBeforeEpoch,
-    #[error("the rate limit reset time cannot be shown as a UTC timestamp")]
+    #[error("the rate limit reset time falls outside the datetime range LiteLLM can format")]
     ResetOutOfRange,
     #[error(transparent)]
     Header(#[from] InvalidRateLimitHeader),
