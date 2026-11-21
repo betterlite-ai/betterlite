@@ -1,0 +1,105 @@
+id: B10029
+title: Lower crates hold the ports they expect to be refused
+description: >-
+  Move the lower crates' tests onto the port guards from B10028. Tests in 41 files of anthropic, cache, core, db,
+  guardrails, http, logging, openai, prompts and redis get a "dead" address by binding 127.0.0.1:0, reading the
+  port and dropping the listener, then expect a connection to it to fail. Once dropped, the port is free, and any
+  test that binds port 0 at the same moment, in the same process or another nextest process, can get it. The
+  request then reaches that test's server: the first test sees an answer where it wanted a refused connection, and
+  the other test loses the reply it queued. That is how fetches_userinfo_with_the_issued_bearer_token went red in
+  https://github.com/betterlite-ai/betterlite/actions/runs/44835631936 (B10028 has the details), and every one of
+  these sites can do the same to an unrelated test.
+
+
+  Each site holds a betterlite_test_ports::RefusedPort for as long as the request may go out and uses its
+  address. Most files wrap the pattern in a local helper (closed_port, dead_address, closed_base, closed_address,
+  closed_endpoint, dead_url, dead_base, refused_base, unreachable_base, unused_base_url, unreachable_cache,
+  offline_armor and others). A helper that only produced the dead address goes, and its callers hold the guard. A
+  helper that also builds something (a config, a client, a guardrail) keeps that job and takes or returns the
+  guard with it. The four copies of a saturated listener (crates/betterlite-core/src/api/container_file_endpoints/tests/support.rs,
+  crates/betterlite-guardrails/src/openai_moderation/tests.rs, crates/betterlite-http/src/proxy/tests.rs,
+  crates/betterlite-vertex/src/gemma_call/tests/status.rs) use betterlite_test_ports::FullListener. Each changed
+  crate lists betterlite-test-ports under [dev-dependencies].
+scope:
+  paths:
+  - crates/betterlite-anthropic/src/anthropic_http_stream/tests/ownership.rs
+  - crates/betterlite-cache/src/configuration/tests/support.rs
+  - crates/betterlite-core/src/api/container_file_endpoints/tests/support.rs
+  - crates/betterlite-core/src/api/eval_http/tests/support.rs
+  - crates/betterlite-core/src/api/interactions/lifecycle/tests/delete_calls.rs
+  - crates/betterlite-core/src/passthrough_stream/async_passthrough_request/tests.rs
+  - crates/betterlite-db/src/database_faults/native/tests.rs
+  - crates/betterlite-guardrails/src/akto/tests/transport.rs
+  - crates/betterlite-guardrails/src/alice/tests.rs
+  - crates/betterlite-guardrails/src/cato/tests/actions.rs
+  - crates/betterlite-guardrails/src/cisco_inspection/chat/tests.rs
+  - crates/betterlite-guardrails/src/cisco_inspection/mcp/tests.rs
+  - crates/betterlite-guardrails/src/cisco_inspection/transport/tests.rs
+  - crates/betterlite-guardrails/src/crowdstrike_aidr/tests.rs
+  - crates/betterlite-guardrails/src/deepkeep/tests.rs
+  - crates/betterlite-guardrails/src/grayswan/grayswan_monitoring/tests/transport.rs
+  - crates/betterlite-guardrails/src/grayswan/tests.rs
+  - crates/betterlite-guardrails/src/javelin/tests.rs
+  - crates/betterlite-guardrails/src/model_armor/hooks/tests/support.rs
+  - crates/betterlite-guardrails/src/noma_v2/tests/support.rs
+  - crates/betterlite-guardrails/src/openai_moderation/tests.rs
+  - crates/betterlite-guardrails/src/panw_prisma_airs/tests/prisma_scan_error_classification.rs
+  - crates/betterlite-guardrails/src/presidio_response/tests/presidio_response_post_call.rs
+  - crates/betterlite-guardrails/src/qohash/tests.rs
+  - crates/betterlite-guardrails/src/repello_lifecycle/tests/support.rs
+  - crates/betterlite-guardrails/src/singulr/tests/support.rs
+  - crates/betterlite-guardrails/src/straiker/delivery/payload_delivery/tests.rs
+  - crates/betterlite-guardrails/src/third_party_hooks_a/tests/akto_tests.rs
+  - crates/betterlite-http/src/gigachat_tokens/tests/oauth_request.rs
+  - crates/betterlite-http/src/health_probe/tests.rs
+  - crates/betterlite-http/src/interactions/agents_create_read/tests/support.rs
+  - crates/betterlite-http/src/interactions/agents_delete_versions/tests/support.rs
+  - crates/betterlite-http/src/interactions/create/tests/support.rs
+  - crates/betterlite-http/src/interactions/get/tests.rs
+  - crates/betterlite-http/src/interactions/lifecycle/tests/support.rs
+  - crates/betterlite-http/src/proxy/tests.rs
+  - crates/betterlite-logging/src/arize/phoenix/client/tests.rs
+  - crates/betterlite-logging/src/zerobus/client/tests/zerobus/support.rs
+  - crates/betterlite-openai/src/codestral_call/tests/transport.rs
+  - crates/betterlite-openai/src/compatible_embedding/tests.rs
+  - crates/betterlite-openai/src/copilot/device_auth/transport/tests.rs
+  - crates/betterlite-prompts/src/media_fetch/tests.rs
+  - crates/betterlite-redis/src/redis_cache_admin/tests/support.rs
+  - crates/betterlite-redis/src/redis_live_client/tests/fixtures.rs
+  - crates/betterlite-vertex/src/gemma_call/tests/status.rs
+  lint_tables: false
+references: []
+dod:
+- text: >-
+    No test in these crates frees a port it then expects to be refused, no local helper produces a bare dead
+    address any more, and the four saturated-listener copies use FullListener.
+  proof: [no-dropped-port, no-saturated-copies]
+- text: The tests in every changed test module pass.
+  proof: [lower-tests]
+checks:
+  optional: []
+  commands:
+  - id: lower-tests
+    why: A test in a changed module broke.
+    run: cargo nextest run --locked -p betterlite-anthropic -p betterlite-cache -p betterlite-core -p betterlite-db -p betterlite-guardrails -p betterlite-http -p betterlite-logging -p betterlite-openai -p betterlite-prompts -p betterlite-redis -p betterlite-vertex --no-tests=fail -E 'test(/^(akto::tests::transport|alice::tests|anthropic_http_stream::tests::ownership|api::container_file_endpoints::tests|api::eval_http::tests|api::interactions::lifecycle::tests::delete_calls|arize::phoenix::client::tests|cato::tests::actions|cisco_inspection::chat::tests|cisco_inspection::mcp::tests|cisco_inspection::transport::tests|codestral_call::tests::transport|compatible_embedding::tests|configuration::tests|copilot::device_auth::transport::tests|crowdstrike_aidr::tests|database_faults::native::tests|deepkeep::tests|gemma_call::tests::status|gigachat_tokens::tests::oauth_request|grayswan::grayswan_monitoring::tests::transport|grayswan::tests|health_probe::tests|interactions::agents_create_read::tests|interactions::agents_delete_versions::tests|interactions::create::tests|interactions::get::tests|interactions::lifecycle::tests|javelin::tests|media_fetch::tests|model_armor::hooks::tests|noma_v2::tests|openai_moderation::tests|panw_prisma_airs::tests::prisma_scan_error_classification|passthrough_stream::async_passthrough_request::tests|presidio_response::tests::presidio_response_post_call|proxy::tests|qohash::tests|redis_cache_admin::tests|redis_live_client::tests|repello_lifecycle::tests|singulr::tests|straiker::delivery::payload_delivery::tests|third_party_hooks_a::tests::akto_tests|zerobus::client::tests::zerobus)::/)'
+  - id: no-dropped-port
+    why: A test still drops a listener right after reading its port and then uses the freed port.
+    run: '! git grep -h -B5 -E "drop\((listener|socket)\);" -- crates/betterlite-anthropic crates/betterlite-cache crates/betterlite-core crates/betterlite-db crates/betterlite-guardrails crates/betterlite-http crates/betterlite-logging crates/betterlite-openai crates/betterlite-prompts crates/betterlite-redis crates/betterlite-vertex | grep -F local_addr'
+  - id: no-saturated-copies
+    why: A test still builds its own saturated listener instead of FullListener.
+    run: '! git grep -n -F ".listen(1)" -- crates/betterlite-anthropic crates/betterlite-cache crates/betterlite-core crates/betterlite-db crates/betterlite-guardrails crates/betterlite-http crates/betterlite-logging crates/betterlite-openai crates/betterlite-prompts crates/betterlite-redis crates/betterlite-vertex'
+oracle_cases: []
+deviations: []
+out_of_scope:
+- betterlite-server, betterlite-cli, betterlite and the oracle helpers; B10030 moves those.
+- The code under test. Only how the tests get a refused or a hanging address changes.
+- crates/betterlite-guardrails/src/cato/tests/cato_lifecycle/websocket.rs drops its listener after the one accept it needs; that is not this pattern.
+pitfalls:
+- '`let _ = RefusedPort::bind()` drops the guard on the same line. Bind it to a name that lives until the request has failed, for example `let refused = RefusedPort::bind().unwrap();`.'
+- A helper that returned a bare address or URL has to hand the guard to its caller too, or the caller binds the guard and passes the address in. A returned SocketAddr or String alone is the old bug.
+- If a site in scope drops a listener for another reason (it stops a server the test already used), it is not this pattern. Leave it, say so in the report, and the no-dropped-port check then needs the architect.
+- A test that needs a hanging connect takes FullListener, one that needs a refused connect takes RefusedPort. Keep each test's meaning.
+review_level: standard
+budget:
+  max_changed_lines: 250
+  max_new_expects: 0

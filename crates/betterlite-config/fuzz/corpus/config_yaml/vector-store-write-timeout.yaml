@@ -1,0 +1,4 @@
+litellm_settings:
+  request_timeout: 30
+router_settings:
+  timeout: 7

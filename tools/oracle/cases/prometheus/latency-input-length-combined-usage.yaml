@@ -1,0 +1,15 @@
+kind: helper
+name: prometheus-latency-input-length-combined-usage
+call:
+  b3878:
+    function: input_sequence_length
+    bucket_calls:
+      - {prompt_tokens: null, combined_usage: {upstream_total_tokens: 1}, response_has_usage: true, metadata_usage: {prompt_tokens: 5000}, response_is_object: true, response_usage_prompt_tokens: 70000}
+      - {prompt_tokens: null, combined_usage: {upstream_total_tokens: null}, response_has_usage: true, metadata_usage: {prompt_tokens: 5000}, response_is_object: false, response_usage_prompt_tokens: null}
+      - {prompt_tokens: null, combined_usage: {upstream_total_tokens: null}, response_has_usage: false, metadata_usage: null, response_is_object: true, response_usage_prompt_tokens: 70000}
+      - {prompt_tokens: null, combined_usage: {upstream_total_tokens: null}, response_has_usage: true, metadata_usage: null, response_is_object: true, response_usage_prompt_tokens: 70000}
+      - {prompt_tokens: 1500, combined_usage: {upstream_total_tokens: 1}, response_has_usage: true, metadata_usage: null, response_is_object: false, response_usage_prompt_tokens: null}
+      - {prompt_tokens: 0, combined_usage: {upstream_total_tokens: null}, response_has_usage: true, metadata_usage: null, response_is_object: true, response_usage_prompt_tokens: 70000}
+      - {prompt_tokens: null, combined_usage: {upstream_total_tokens: 1}, response_has_usage: false, metadata_usage: null, response_is_object: false, response_usage_prompt_tokens: null}
+env: {}
+compare: {ignore: []}

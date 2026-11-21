@@ -1,0 +1,8 @@
+task: B1066
+deviations:
+  - what: >-
+      The exception a failed update or delete raises renders the provider's message body, where LiteLLM prefixes the mapped class and provider, as in "BadRequestError: OpenAIException - vector store not found".
+    why: >-
+      betterlite's shared SDK exception mapping renders the provider body for every call, so the class, status, type, param and code match while only the message text differs; the oracle cases ignore the message pointers for this reason.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L373-L381
+kept_bugs: []

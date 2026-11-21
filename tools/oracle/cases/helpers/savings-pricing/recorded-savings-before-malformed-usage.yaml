@@ -1,0 +1,10 @@
+kind: helper
+name: recorded-savings-before-malformed-usage
+call:
+  savings_pricing:
+    operation: compute_savings_spend
+    compression_saved_tokens: 0
+    gateway_injected_cache: false
+    recorded_autorouter_savings: 5.0
+compare: {ignore: []}
+env: {}
