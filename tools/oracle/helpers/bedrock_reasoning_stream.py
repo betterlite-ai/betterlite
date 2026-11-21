@@ -1,0 +1,282 @@
+from datetime import UTC, datetime
+from typing import NotRequired, TypedDict
+
+import httpx
+from litellm.litellm_core_utils.core_helpers import (
+    get_provider_response_headers_from_hidden_params,
+)
+from litellm.litellm_core_utils.litellm_logging import Logging
+from litellm.llms.bedrock.chat.chat_completions.transformation import (
+    AmazonBedrockRuntimeChatCompletionsConfig,
+    BedrockRuntimeChatCompletionsStreamingHandler,
+    ReasoningTagSplitter,
+    chat_completions_params_refused_for,
+    chat_completions_params_refused_while_reasoning,
+    chat_completions_reasoning_efforts_refused_for,
+    non_string_reasoning_effort,
+    split_reasoning_tag,
+    without_refused_reasoning_effort,
+)
+from litellm.types.utils import ModelResponse, ModelResponseStream
+from pydantic import JsonValue, TypeAdapter
+
+JsonObject = dict[str, JsonValue]
+JsonAdapter: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
+
+
+class SplitStep(TypedDict):
+    fragments: list[str]
+    messages: list[str]
+
+
+class ChunkStep(TypedDict):
+    chunks: list[JsonObject]
+
+
+class EffortStep(TypedDict):
+    model: str
+    params: JsonObject
+
+
+class RefusalStep(TypedDict):
+    models: list[str]
+    params: JsonObject
+
+
+class BufferedStep(TypedDict):
+    reply: JsonValue
+    headers: dict[str, str]
+
+
+class Step(TypedDict, total=False):
+    split: SplitStep
+    chunks: ChunkStep
+    effort: EffortStep
+    refusals: RefusalStep
+    buffered: BufferedStep
+
+
+class Input(TypedDict):
+    step: Step
+
+
+class DeltaView(TypedDict):
+    role: NotRequired[str | None]
+    content: NotRequired[str | None]
+    reasoning_content: NotRequired[str | None]
+    tool_calls: NotRequired[JsonValue]
+
+
+class StreamChoiceView(TypedDict):
+    index: int
+    finish_reason: str | None
+    delta: DeltaView
+
+
+class StreamView(TypedDict):
+    id: str
+    created: int
+    model: str | None
+    choices: list[StreamChoiceView]
+    usage: NotRequired[JsonValue]
+    service_tier: NotRequired[str | None]
+
+
+class ReplyMessageView(TypedDict):
+    content: str | None
+    reasoning_content: NotRequired[str | None]
+
+
+class ReplyChoiceView(TypedDict):
+    index: int
+    finish_reason: str | None
+    message: ReplyMessageView
+
+
+class ReplyView(TypedDict):
+    id: str
+    created: int
+    model: str | None
+    choices: list[ReplyChoiceView]
+
+
+SPLIT_ADAPTER: TypeAdapter[SplitStep] = TypeAdapter(SplitStep)
+CHUNK_ADAPTER: TypeAdapter[ChunkStep] = TypeAdapter(ChunkStep)
+EFFORT_ADAPTER: TypeAdapter[EffortStep] = TypeAdapter(EffortStep)
+REFUSAL_ADAPTER: TypeAdapter[RefusalStep] = TypeAdapter(RefusalStep)
+BUFFERED_ADAPTER: TypeAdapter[BufferedStep] = TypeAdapter(BufferedStep)
+STREAM_ADAPTER: TypeAdapter[StreamView] = TypeAdapter(StreamView)
+REPLY_ADAPTER: TypeAdapter[ReplyView] = TypeAdapter(ReplyView)
+
+
+def make_logging() -> Logging:
+    messages: list[dict[str, str]] = []
+    return Logging(
+        model="bedrock-runtime",
+        messages=messages,
+        stream=False,
+        call_type="completion",
+        start_time=datetime(2020, 1, 1, tzinfo=UTC),
+        litellm_call_id="call-1",
+        function_id="function-1",
+        litellm_trace_id="trace-1",
+    )
+
+
+def split_view(state: ReasoningTagSplitter, reasoning: str, content: str) -> JsonObject:
+    return {
+        "phase": state.phase,
+        "pending": state.pending,
+        "reasoning": reasoning,
+        "content": content,
+    }
+
+
+def message_view(message: str) -> JsonObject:
+    reasoning, content = split_reasoning_tag(message)
+    return {"reasoning": reasoning, "content": content}
+
+
+def run_split(step: SplitStep) -> JsonValue:
+    state = ReasoningTagSplitter()
+    feeds: list[JsonValue] = []
+    for fragment in step["fragments"]:
+        state, reasoning, content = state.feed(fragment)
+        feeds.append(split_view(state, reasoning, content))
+    state, flush_reasoning, flush_content = state.flush()
+    flush = split_view(state, flush_reasoning, flush_content)
+    again, again_reasoning, again_content = state.flush()
+    return JsonAdapter.validate_python(
+        {
+            "feeds": feeds,
+            "flush": flush,
+            "flush_again": split_view(again, again_reasoning, again_content),
+            "messages": [message_view(message) for message in step["messages"]],
+        }
+    )
+
+
+def chunk_view(reply: ModelResponseStream) -> JsonObject:
+    view = STREAM_ADAPTER.validate_json(reply.model_dump_json())
+    choices: list[JsonValue] = []
+    for choice in view["choices"]:
+        delta = choice["delta"]
+        choices.append(
+            JsonAdapter.validate_python(
+                {
+                    "index": choice["index"],
+                    "finish_reason": choice["finish_reason"],
+                    "role": delta.get("role"),
+                    "content": delta.get("content"),
+                    "reasoning_content": delta.get("reasoning_content"),
+                    "tool_calls": delta.get("tool_calls"),
+                }
+            )
+        )
+    return {
+        "id": view["id"],
+        "created": view["created"],
+        "model": view["model"],
+        "choices": choices,
+        "usage": view.get("usage"),
+        "service_tier": view.get("service_tier"),
+    }
+
+
+def run_chunks(step: ChunkStep) -> JsonValue:
+    handler = BedrockRuntimeChatCompletionsStreamingHandler(
+        streaming_response=iter(()), sync_stream=True
+    )
+    return JsonAdapter.validate_python(
+        [chunk_view(handler.chunk_parser(chunk)) for chunk in step["chunks"]]
+    )
+
+
+def run_effort(step: EffortStep) -> JsonValue:
+    refused = chat_completions_params_refused_while_reasoning(step["model"], step["params"])
+    return JsonAdapter.validate_python(
+        {
+            "non_string": sorted(non_string_reasoning_effort(step["params"])),
+            "refused_while_reasoning": sorted(refused),
+        }
+    )
+
+
+def refusal_view(model: str, params: JsonObject) -> JsonValue:
+    return JsonAdapter.validate_python(
+        {
+            "model": model,
+            "refused_params": sorted(chat_completions_params_refused_for(model)),
+            "refused_efforts": sorted(chat_completions_reasoning_efforts_refused_for(model)),
+            "without_refused_effort": JsonAdapter.validate_python(
+                dict(without_refused_reasoning_effort(model, params))
+            ),
+        }
+    )
+
+
+def run_refusals(step: RefusalStep) -> JsonValue:
+    return JsonAdapter.validate_python(
+        [refusal_view(model, step["params"]) for model in step["models"]]
+    )
+
+
+def reply_choice_view(choice: ReplyChoiceView) -> JsonValue:
+    return JsonAdapter.validate_python(
+        {
+            "index": choice["index"],
+            "finish_reason": choice["finish_reason"],
+            "content": choice["message"].get("content"),
+            "reasoning_content": choice["message"].get("reasoning_content"),
+        }
+    )
+
+
+def run_buffered(step: BufferedStep) -> JsonValue:
+    config = AmazonBedrockRuntimeChatCompletionsConfig()
+    headers = httpx.Headers(step["headers"])
+    request_data: dict[str, JsonValue] = {}
+    optional_params: dict[str, JsonValue] = {}
+    litellm_params: dict[str, JsonValue] = {}
+    response = config.transform_response(
+        model="bedrock-runtime",
+        raw_response=httpx.Response(200, json=step["reply"], headers=headers),
+        model_response=ModelResponse(),
+        logging_obj=make_logging(),
+        request_data=request_data,
+        messages=[],
+        optional_params=optional_params,
+        litellm_params=litellm_params,
+        encoding=None,
+    )
+    view = REPLY_ADAPTER.validate_json(response.model_dump_json())
+    hidden = get_provider_response_headers_from_hidden_params(response) or {}
+    names = [name for name in step["headers"] if name in hidden]
+    return JsonAdapter.validate_python(
+        {
+            "id": view["id"],
+            "created": view["created"],
+            "choices": [reply_choice_view(choice) for choice in view["choices"]],
+            "headers": {name: hidden[name] for name in names},
+        }
+    )
+
+
+def run(input_value: Input) -> JsonValue:
+    step = input_value["step"]
+    split_step = step.get("split")
+    if split_step is not None:
+        return run_split(SPLIT_ADAPTER.validate_python(split_step))
+    chunk_step = step.get("chunks")
+    if chunk_step is not None:
+        return run_chunks(CHUNK_ADAPTER.validate_python(chunk_step))
+    effort_step = step.get("effort")
+    if effort_step is not None:
+        return run_effort(EFFORT_ADAPTER.validate_python(effort_step))
+    refusal_step = step.get("refusals")
+    if refusal_step is not None:
+        return run_refusals(REFUSAL_ADAPTER.validate_python(refusal_step))
+    buffered_step = step.get("buffered")
+    if buffered_step is not None:
+        return run_buffered(BUFFERED_ADAPTER.validate_python(buffered_step))
+    raise ValueError("step names no known function")

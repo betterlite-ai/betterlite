@@ -1,0 +1,14 @@
+kind: helper
+name: reasoning-and-text
+call:
+  bedrock_reasoning_stream:
+    step:
+      chunks:
+        chunks:
+          - {id: c1, created: 10, model: "openai.gpt-oss-20b-1:0", choices: [{index: 0, delta: {role: assistant, content: "<reasoning>th"}}]}
+          - {id: c1, created: 10, model: "openai.gpt-oss-20b-1:0", choices: [{index: 0, delta: {content: "ink</reasoning>\n\nanswer"}, finish_reason: null}]}
+          - {id: c1, created: 10, model: "openai.gpt-oss-20b-1:0", choices: [{index: 0, delta: {}, finish_reason: stop}]}
+          - {id: c1, created: 10, model: "openai.gpt-oss-20b-1:0", choices: [{index: 1, delta: {content: one}}, {index: 1, delta: {content: two}}]}
+          - {id: c1, created: 10, model: "openai.gpt-oss-20b-1:0", choices: [{index: 0, delta: {reasoning_content: "pre "}}, {index: 2, delta: {content: "<reasoning>b</reasoning>c"}}]}
+env: {}
+compare: {ignore: []}
