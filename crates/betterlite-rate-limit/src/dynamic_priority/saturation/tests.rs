@@ -80,8 +80,8 @@ async fn the_larger_ratio_wins() {
     let (tokens_win, reads) = saturation(&values, limits(Some(100), Some(1000))).await;
     assert_eq!(tokens_win.to_bits(), 0.9_f64.to_bits());
     assert_eq!(reads, vec![read(RPM_KEY), read(TPM_KEY)]);
-    let values = [(RPM_KEY, text("90")), (TPM_KEY, text("500"))];
-    let (requests_win, _) = saturation(&values, limits(Some(100), Some(1000))).await;
+    let request_values = [(RPM_KEY, text("90")), (TPM_KEY, text("500"))];
+    let (requests_win, _) = saturation(&request_values, limits(Some(100), Some(1000))).await;
     assert_eq!(requests_win.to_bits(), 0.9_f64.to_bits());
 }
 

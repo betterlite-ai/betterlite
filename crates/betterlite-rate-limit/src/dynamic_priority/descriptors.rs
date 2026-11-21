@@ -57,10 +57,7 @@ pub fn priority_based_descriptors(
 fn reserved_capacity(capacity: i64, weight: f64) -> i64 {
     let capacity_float = cast::<i64, f64>(capacity);
     let scaled = capacity_float.unwrap_or(f64::INFINITY).mul(weight);
-    match cast::<f64, i64>(scaled) {
-        Some(reserved) => reserved,
-        None => saturated_limit(scaled),
-    }
+    cast::<f64, i64>(scaled).unwrap_or_else(|| saturated_limit(scaled))
 }
 
 // int() raises on a share past every integer; betterlite stops at the bound so the request still has a pool

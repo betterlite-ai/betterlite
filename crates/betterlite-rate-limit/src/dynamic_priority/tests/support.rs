@@ -51,14 +51,13 @@ impl SaturationCache for RecordingCache {
         local_only: bool,
         local_ttl: i64,
     ) -> Option<CacheCounterValue> {
-        {
-            let mut reads = self.reads.lock().unwrap_or_else(PoisonError::into_inner);
-            reads.push(CacheRead {
-                key: key.to_owned(),
-                local_only,
-                local_ttl,
-            });
-        }
+        let mut reads = self.reads.lock().unwrap_or_else(PoisonError::into_inner);
+        reads.push(CacheRead {
+            key: key.to_owned(),
+            local_only,
+            local_ttl,
+        });
+        drop(reads);
         self.values.get(key).cloned()
     }
 }
@@ -67,7 +66,9 @@ pub(crate) struct FixedClock;
 
 impl LimiterClock for FixedClock {
     fn current_time(&self) -> SystemTime {
-        UNIX_EPOCH + Duration::from_secs(1_700_000_000)
+        UNIX_EPOCH
+            .checked_add(Duration::from_secs(1_700_000_000))
+            .expect("the fixed clock stays representable")
     }
 }
 

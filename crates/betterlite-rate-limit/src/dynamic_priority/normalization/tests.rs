@@ -27,7 +27,7 @@ fn a_total_within_capacity_is_kept() {
     let configured = policy(Some(&[("key_a", percent(0.2)), ("key_b", percent(0.3))]));
     assert_eq!(
         normalize_priority_weights(&configured, None),
-        weights(&[("key_a", 0.2), ("key_b", 0.3)])
+        weights(&[("key_a", 0.2_f64), ("key_b", 0.3_f64)])
     );
 }
 
@@ -37,7 +37,7 @@ fn a_total_of_exactly_one_is_not_renormalized() {
     let logs = capture(|| {
         assert_eq!(
             normalize_priority_weights(&configured, None),
-            weights(&[("key_a", 0.5), ("key_b", 0.5)])
+            weights(&[("key_a", 0.5_f64), ("key_b", 0.5_f64)])
         );
     });
     assert!(
@@ -51,9 +51,9 @@ fn an_over_allocated_total_is_normalized_and_logged() {
     let configured = policy(Some(&[("key_a", percent(0.6)), ("key_b", percent(0.8))]));
     let logs = capture(|| {
         let normalized = normalize_priority_weights(&configured, None);
-        assert!(normalized.values().sum::<f64>().sub(1.0_f64).abs() < 1e-12);
-        assert!(normalized["key_a"].sub(0.6_f64.div(1.4_f64)).abs() < 1e-12);
-        assert!(normalized["key_b"].sub(0.8_f64.div(1.4_f64)).abs() < 1e-12);
+        assert!(normalized.values().sum::<f64>().sub(1.0_f64).abs() < 1e-12_f64);
+        assert!(normalized["key_a"].sub(0.6_f64.div(1.4_f64)).abs() < 1e-12_f64);
+        assert!(normalized["key_b"].sub(0.8_f64.div(1.4_f64)).abs() < 1e-12_f64);
     });
     assert!(
         logs.contains("Normalized over-allocated priorities"),
@@ -72,6 +72,6 @@ fn reserved_capacities_join_the_total() {
         tpm: None,
     };
     let normalized = normalize_priority_weights(&configured, Some(&limits));
-    assert!(normalized.values().sum::<f64>().sub(1.0_f64).abs() < 1e-12);
-    assert!(normalized["key_b"].sub(0.5_f64.div(1.4_f64)).abs() < 1e-12);
+    assert!(normalized.values().sum::<f64>().sub(1.0_f64).abs() < 1e-12_f64);
+    assert!(normalized["key_b"].sub(0.5_f64.div(1.4_f64)).abs() < 1e-12_f64);
 }

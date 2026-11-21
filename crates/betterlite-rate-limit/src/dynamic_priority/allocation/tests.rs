@@ -24,7 +24,7 @@ fn allocation(
 #[test]
 fn an_explicit_priority_gets_its_own_pool() {
     let configured = policy(Some(&[("prod", percent(0.5)), ("dev", percent(0.25))]));
-    let weights = normalized(&[("prod", 0.5), ("dev", 0.25)]);
+    let weights = normalized(&[("prod", 0.5_f64), ("dev", 0.25_f64)]);
     assert_eq!(
         allocation(&configured, Some("prod"), &weights),
         PriorityAllocation {
@@ -50,7 +50,7 @@ fn a_priority_missing_from_the_normalized_weights_is_converted_again() {
 fn no_priority_shares_the_default_pool() {
     let configured = policy(Some(&[("prod", percent(0.5))]));
     assert_eq!(
-        allocation(&configured, None, &normalized(&[("prod", 0.5)])),
+        allocation(&configured, None, &normalized(&[("prod", 0.5_f64)])),
         PriorityAllocation {
             weight: 0.25,
             key: "gpt-4:default_pool".to_owned(),
@@ -62,7 +62,7 @@ fn no_priority_shares_the_default_pool() {
 fn an_unreserved_priority_shares_the_default_pool() {
     let configured = policy(Some(&[("prod", percent(0.5))]));
     assert_eq!(
-        allocation(&configured, Some("dev"), &normalized(&[("prod", 0.5)])),
+        allocation(&configured, Some("dev"), &normalized(&[("prod", 0.5_f64)])),
         PriorityAllocation {
             weight: 0.25,
             key: "gpt-4:default_pool".to_owned(),

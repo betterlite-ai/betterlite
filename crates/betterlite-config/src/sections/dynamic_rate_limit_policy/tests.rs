@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use rstest::rstest;
 
 use crate::loader::{ConfigError, ConfigLoader};
-use crate::sections::Section;
+use crate::sections::Section as _;
 
 use super::{
     PriorityReservationSetting, Raw, RawLitellmSettings, RawPrioritySettings, RawPriorityValue,
@@ -66,13 +66,17 @@ fn explicit_settings_are_read() {
 }
 
 #[rstest]
-#[case::bare_percent("key_a: 0.6", ReservationKind::Percent, 0.6)]
-#[case::percent_mapping("key_a: {type: percent, value: 0.4}", ReservationKind::Percent, 0.4)]
-#[case::rpm("key_a: {type: rpm, value: 900}", ReservationKind::Rpm, 900.0)]
-#[case::tpm("key_a: {type: tpm, value: 9000}", ReservationKind::Tpm, 9000.0)]
-#[case::unknown_type("key_a: {type: banana, value: 0.2}", ReservationKind::Percent, 0.2)]
-#[case::absent_type("key_a: {value: 0.3}", ReservationKind::Percent, 0.3)]
-#[case::absent_value("key_a: {type: rpm}", ReservationKind::Rpm, 1.0)]
+#[case::bare_percent("key_a: 0.6", ReservationKind::Percent, 0.6_f64)]
+#[case::percent_mapping(
+    "key_a: {type: percent, value: 0.4}",
+    ReservationKind::Percent,
+    0.4_f64
+)]
+#[case::rpm("key_a: {type: rpm, value: 900}", ReservationKind::Rpm, 900.0_f64)]
+#[case::tpm("key_a: {type: tpm, value: 9000}", ReservationKind::Tpm, 9_000.0_f64)]
+#[case::unknown_type("key_a: {type: banana, value: 0.2}", ReservationKind::Percent, 0.2_f64)]
+#[case::absent_type("key_a: {value: 0.3}", ReservationKind::Percent, 0.3_f64)]
+#[case::absent_value("key_a: {type: rpm}", ReservationKind::Rpm, 1.0_f64)]
 fn reservation_forms(#[case] entry: &str, #[case] kind: ReservationKind, #[case] value: f64) {
     let source = format!("litellm_settings:\n  priority_reservation:\n    {entry}\n");
     let settings = settings(&source);
