@@ -61,28 +61,7 @@ pub struct Settings {
 
 impl Default for Settings {
     fn default() -> Self {
-        Self {
-            request_timeout_seconds: DEFAULT_REQUEST_TIMEOUT,
-            num_retries: None,
-            api_base: None,
-            api_key: None,
-            openai_key: None,
-            organization: None,
-            project: None,
-            azure_key: None,
-            api_version: None,
-            headers: None,
-            openai_base_url: None,
-            openai_api_base: None,
-            openai_api_key: None,
-            openai_organization: None,
-            openai_project: None,
-            azure_api_base: None,
-            azure_api_version: None,
-            azure_openai_api_key: None,
-            azure_api_key: None,
-            azure_ad_token: None,
-        }
+        Self::from_environment(&BTreeMap::<String, String>::new())
     }
 }
 
@@ -102,13 +81,25 @@ impl Settings {
             azure_key: None,
             api_version: None,
             headers: None,
-            openai_base_url: environment_text(lookup, "OPENAI_BASE_URL"),
-            openai_api_base: environment_text(lookup, "OPENAI_API_BASE"),
+            openai_base_url: lookup
+                .lookup("OPENAI_BASE_URL")
+                .filter(|value| !value.is_empty()),
+            openai_api_base: lookup
+                .lookup("OPENAI_API_BASE")
+                .filter(|value| !value.is_empty()),
             openai_api_key: environment_secret(lookup, "OPENAI_API_KEY"),
-            openai_organization: environment_text(lookup, "OPENAI_ORGANIZATION"),
-            openai_project: environment_text(lookup, "OPENAI_PROJECT"),
-            azure_api_base: environment_text(lookup, "AZURE_API_BASE"),
-            azure_api_version: environment_text(lookup, "AZURE_API_VERSION"),
+            openai_organization: lookup
+                .lookup("OPENAI_ORGANIZATION")
+                .filter(|value| !value.is_empty()),
+            openai_project: lookup
+                .lookup("OPENAI_PROJECT")
+                .filter(|value| !value.is_empty()),
+            azure_api_base: lookup
+                .lookup("AZURE_API_BASE")
+                .filter(|value| !value.is_empty()),
+            azure_api_version: lookup
+                .lookup("AZURE_API_VERSION")
+                .filter(|value| !value.is_empty()),
             azure_openai_api_key: environment_secret(lookup, "AZURE_OPENAI_API_KEY"),
             azure_api_key: environment_secret(lookup, "AZURE_API_KEY"),
             azure_ad_token: environment_secret(lookup, "AZURE_AD_TOKEN"),
@@ -166,13 +157,6 @@ where
     Ok(configured
         .or(environment)
         .unwrap_or(DEFAULT_REQUEST_TIMEOUT))
-}
-
-fn environment_text<L>(lookup: &L, name: &str) -> Option<String>
-where
-    L: EnvironmentLookup,
-{
-    lookup.lookup(name).filter(|value| !value.is_empty())
 }
 
 fn resolved_text<L>(
