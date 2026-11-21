@@ -20,8 +20,7 @@ pub struct ModelFacts {
 }
 
 impl ModelFacts {
-    // L2960-2985: the first deployment of a group declares its preferences and price, and
-    // litellm_params.input_cost_per_token wins over model_info's copy when both are set.
+    // L2960-2985: the first deployment declares them; litellm_params.input_cost_per_token wins
     #[must_use]
     pub fn from_declarations(declarations: &[ModelDeclaration]) -> Self {
         let mut facts = Self::default();

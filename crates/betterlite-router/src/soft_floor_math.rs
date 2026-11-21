@@ -8,8 +8,7 @@ use rust_decimal::prelude::ToPrimitive as _;
 use crate::adaptive_classification::config::AdaptiveRouterWeights;
 use crate::bandit_math::error::BanditMathError;
 
-// L3119: quality_weight * quality_sample + cost_weight * cost_score - penalty_weight * distance,
-// evaluated term by term so the rounding matches the source's float expression.
+// L3119: quality_weight * quality_sample + cost_weight * cost_score - penalty_weight * distance
 pub fn placement_score(
     weights: AdaptiveRouterWeights,
     quality_sample: f64,

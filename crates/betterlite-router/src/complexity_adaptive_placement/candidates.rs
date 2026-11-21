@@ -22,11 +22,11 @@ impl AdaptivePlacement {
     ) -> Result<Vec<String>, AdaptivePlacementError> {
         let floor = query
             .hard_floor
-            .map(|tier| self.severity(tier))
+            .map(|tier| self.severity_name(tier.name()))
             .transpose()?;
         let ceiling = query
             .hard_ceiling
-            .map(|tier| self.severity(tier))
+            .map(|tier| self.severity_name(tier.name()))
             .transpose()?;
         let base = match self.settings.eligible {
             AdaptiveEligible::ClassifiedTier => self
@@ -53,11 +53,6 @@ impl AdaptivePlacement {
         Ok(candidates)
     }
 
-    // _active_tier_severity: a tier's position in the active severity order
-    pub(super) fn severity(&self, tier: &Tier) -> Result<u32, AdaptivePlacementError> {
-        self.severity_name(tier.name())
-    }
-
     // a model is eligible if at least one of its pools satisfies a bound
     pub(super) fn severities(
         &self,
@@ -65,10 +60,10 @@ impl AdaptivePlacement {
         classified_tier: &Tier,
     ) -> Result<Vec<u32>, AdaptivePlacementError> {
         let Some(state) = self.state.as_ref() else {
-            return Ok(vec![self.severity(classified_tier)?]);
+            return Ok(vec![self.severity_name(classified_tier.name())?]);
         };
         let Some(tiers) = state.model_tiers.get(model) else {
-            return Ok(vec![self.severity(classified_tier)?]);
+            return Ok(vec![self.severity_name(classified_tier.name())?]);
         };
         tiers.iter().map(|tier| self.severity_name(tier)).collect()
     }
@@ -90,7 +85,7 @@ impl AdaptivePlacement {
             .unwrap_or(0))
     }
 
-    fn severity_name(&self, name: &str) -> Result<u32, AdaptivePlacementError> {
+    pub(super) fn severity_name(&self, name: &str) -> Result<u32, AdaptivePlacementError> {
         let position = self.tier_names.iter().position(|tier| tier == name);
         position
             .and_then(|position| u32::try_from(position).ok())

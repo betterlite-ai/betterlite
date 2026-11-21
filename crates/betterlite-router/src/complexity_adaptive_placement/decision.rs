@@ -22,7 +22,7 @@ pub struct ColdStartCandidate {
 pub struct CandidateScore {
     pub model: String,
     pub quality_sample: f64,
-    pub cost_score: f64,
+    pub economy_score: f64,
     pub tier_distance: u32,
     pub score: f64,
 }
@@ -55,93 +55,88 @@ pub enum AdaptiveDecision {
     Adaptive(AdaptiveChoice),
 }
 
-impl AdaptiveDecision {
-    fn to_json(&self) -> Result<Json, AdaptivePlacementError> {
-        match self {
-            Self::ColdStart(decision) => decision.to_json(),
-            Self::Adaptive(choice) => choice.to_json(),
-        }
-    }
-}
-
-impl ColdStartDecision {
-    fn to_json(&self) -> Result<Json, AdaptivePlacementError> {
-        let mut fields = shared_fields(
-            &self.classified_tier,
-            self.request_type,
-            "classified_tier",
-            self.weights,
-            self.tier_distance_penalty,
-        )?;
-        fields.insert("phase".to_owned(), Json::Text("cold_start".to_owned()));
-        fields.insert(
-            "chosen_model".to_owned(),
-            Json::Text(self.chosen_model.clone()),
-        );
-        fields.insert(
-            "candidates".to_owned(),
-            Json::List(cold_start_candidates_json(&self.candidates)),
-        );
-        Ok(Json::Object(fields))
-    }
-}
-
-impl AdaptiveChoice {
-    fn to_json(&self) -> Result<Json, AdaptivePlacementError> {
-        let mut fields = shared_fields(
-            &self.classified_tier,
-            self.request_type,
-            self.eligible.as_str(),
-            self.weights,
-            self.tier_distance_penalty,
-        )?;
-        fields.insert("phase".to_owned(), Json::Text("adaptive".to_owned()));
-        fields.insert(
-            "chosen_model".to_owned(),
-            Json::Text(self.chosen_model.clone()),
-        );
-        fields.insert(
-            "candidates".to_owned(),
-            Json::List(candidate_scores_json(&self.candidates)?),
-        );
-        Ok(Json::Object(fields))
-    }
-}
-
-// the keys both decision phases record, in the order the source writes them
-fn shared_fields(
-    classified_tier: &str,
+// the fields both phases record apart from the phase, chosen model and candidates
+struct DecisionFields<'decision> {
+    classified_tier: &'decision str,
     request_type: RequestType,
-    eligible_mode: &str,
+    eligible_mode: &'static str,
     weights: AdaptiveRouterWeights,
     tier_distance_penalty: f64,
-) -> Result<IndexMap<String, Json>, AdaptivePlacementError> {
-    let mut fields = IndexMap::new();
-    fields.insert(
+    chosen_model: &'decision str,
+}
+
+impl AdaptiveDecision {
+    fn to_json(&self) -> Result<Json, AdaptivePlacementError> {
+        let (phase, candidates) = match self {
+            Self::ColdStart(decision) => (
+                "cold_start",
+                cold_start_candidates_json(&decision.candidates),
+            ),
+            Self::Adaptive(choice) => ("adaptive", candidate_scores_json(&choice.candidates)?),
+        };
+        render(&decision_fields(self), phase, candidates)
+    }
+}
+
+fn decision_fields(decision: &AdaptiveDecision) -> DecisionFields<'_> {
+    match decision {
+        AdaptiveDecision::ColdStart(decision) => DecisionFields {
+            classified_tier: &decision.classified_tier,
+            request_type: decision.request_type,
+            eligible_mode: "classified_tier",
+            weights: decision.weights,
+            tier_distance_penalty: decision.tier_distance_penalty,
+            chosen_model: &decision.chosen_model,
+        },
+        AdaptiveDecision::Adaptive(choice) => DecisionFields {
+            classified_tier: &choice.classified_tier,
+            request_type: choice.request_type,
+            eligible_mode: choice.eligible.as_str(),
+            weights: choice.weights,
+            tier_distance_penalty: choice.tier_distance_penalty,
+            chosen_model: &choice.chosen_model,
+        },
+    }
+}
+
+// the source's metadata entry, in the order _soft_floor_pick fills it
+fn render(
+    fields: &DecisionFields<'_>,
+    phase: &str,
+    candidates: Vec<Json>,
+) -> Result<Json, AdaptivePlacementError> {
+    let mut object = IndexMap::new();
+    object.insert(
         "classified_tier".to_owned(),
-        Json::Text(classified_tier.to_owned()),
+        Json::Text(fields.classified_tier.to_owned()),
     );
-    fields.insert(
+    object.insert(
         "request_type".to_owned(),
-        Json::Text(request_type.to_string()),
+        Json::Text(fields.request_type.to_string()),
     );
-    fields.insert(
+    object.insert(
         "eligible_mode".to_owned(),
-        Json::Text(eligible_mode.to_owned()),
+        Json::Text(fields.eligible_mode.to_owned()),
     );
-    fields.insert(
+    object.insert(
         "quality_weight".to_owned(),
-        number(weights.quality, "quality_weight")?,
+        number(fields.weights.quality, "quality_weight")?,
     );
-    fields.insert(
+    object.insert(
         "cost_weight".to_owned(),
-        number(weights.economy, "cost_weight")?,
+        number(fields.weights.economy, "cost_weight")?,
     );
-    fields.insert(
+    object.insert(
         "tier_distance_penalty".to_owned(),
-        number(tier_distance_penalty, "tier_distance_penalty")?,
+        number(fields.tier_distance_penalty, "tier_distance_penalty")?,
     );
-    Ok(fields)
+    object.insert("phase".to_owned(), Json::Text(phase.to_owned()));
+    object.insert(
+        "chosen_model".to_owned(),
+        Json::Text(fields.chosen_model.to_owned()),
+    );
+    object.insert("candidates".to_owned(), Json::List(candidates));
+    Ok(Json::Object(object))
 }
 
 fn cold_start_candidates_json(candidates: &[ColdStartCandidate]) -> Vec<Json> {
@@ -171,7 +166,7 @@ fn candidate_scores_json(
         );
         fields.insert(
             "cost_score".to_owned(),
-            number(candidate.cost_score, "cost_score")?,
+            number(candidate.economy_score, "cost_score")?,
         );
         fields.insert(
             "tier_distance".to_owned(),

@@ -25,7 +25,12 @@ fn a_non_adaptive_router_builds_without_pools() {
 
 #[test]
 fn an_adaptive_router_without_pools_is_rejected() {
-    let error = service_error(adaptive_settings(true), &[], &priced(&[]), &[]);
+    let error = service_error(adaptive_service(
+        adaptive_settings(true),
+        &[],
+        &priced(&[]),
+        &[],
+    ));
     assert!(matches!(error, AdaptivePlacementError::NoTierPools));
 }
 
@@ -33,7 +38,12 @@ fn an_adaptive_router_without_pools_is_rejected() {
 fn an_empty_configured_pool_is_rejected() {
     let empty: &[&str] = &[];
     let pools: &[(&str, &[&str])] = &[("SIMPLE", empty), ("MEDIUM", &["mid"])];
-    let error = service_error(adaptive_settings(true), pools, &priced(&[("mid", 1)]), &[]);
+    let error = service_error(adaptive_service(
+        adaptive_settings(true),
+        pools,
+        &priced(&[("mid", 1)]),
+        &[],
+    ));
     assert!(matches!(
         error,
         AdaptivePlacementError::EmptyTierPool { ref tier } if tier == "SIMPLE"
@@ -44,7 +54,12 @@ fn an_empty_configured_pool_is_rejected() {
 fn a_router_whose_only_pool_is_empty_is_rejected() {
     let empty: &[&str] = &[];
     let pools: &[(&str, &[&str])] = &[("SIMPLE", empty)];
-    let error = service_error(adaptive_settings(true), pools, &priced(&[]), &[]);
+    let error = service_error(adaptive_service(
+        adaptive_settings(true),
+        pools,
+        &priced(&[]),
+        &[],
+    ));
     assert!(matches!(error, AdaptivePlacementError::NoTierPools));
 }
 

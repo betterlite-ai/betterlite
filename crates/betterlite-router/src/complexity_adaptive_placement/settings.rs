@@ -30,8 +30,7 @@ impl Default for PlacementSettings {
 }
 
 impl PlacementSettings {
-    // adaptive_weights defaults to (0.3, 0.7) when undeclared; a declared object keeps pydantic's
-    // field defaults and its sum check, which AdaptiveRouterWeights::resolve already applies.
+    // adaptive_weights defaults to (0.3, 0.7); a declared object keeps its field defaults and sum check
     pub fn resolve(config: &section::Config) -> Result<Self, AdaptiveClassificationError> {
         let weights = match config.weights.as_ref() {
             Some(weights) => AdaptiveRouterWeights::resolve(Some(weights))?,

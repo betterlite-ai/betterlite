@@ -143,7 +143,7 @@ impl DecisionOutput {
                     model: candidate.model.clone(),
                     total_samples: None,
                     quality_sample: Some(format!("{:.6}", candidate.quality_sample)),
-                    cost_score: Some(format!("{:.6}", candidate.cost_score)),
+                    cost_score: Some(format!("{:.6}", candidate.economy_score)),
                     tier_distance: Some(candidate.tier_distance),
                     score: Some(format!("{:.6}", candidate.score)),
                 })

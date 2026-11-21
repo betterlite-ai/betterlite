@@ -52,8 +52,7 @@ pub struct PlacementSnapshot {
 }
 
 impl AdaptivePlacement {
-    // _ensure_adaptive_router: the pools supply the models, the facts their priors and prices.
-    // Building the state is one-shot, as the source's first call is; adaptive=false builds none.
+    // _ensure_adaptive_router: one-shot state from the pools and their facts; adaptive=false builds none
     pub fn new(
         settings: PlacementSettings,
         tiers: &TierSet,
@@ -153,9 +152,7 @@ impl AdaptivePlacement {
     }
 }
 
-// dict.fromkeys over the pools in ladder order: the active severity order first, so a built-in
-// config iterates SIMPLE, MEDIUM, COMPLEX, REASONING as LiteLLM's YAML does, then any pool the
-// ladder does not name (a custom tier set can only order by its definitions)
+// dict.fromkeys over the pools in ladder order, so a built-in config iterates as LiteLLM's YAML does
 fn available_models(tier_names: &[String], pools: &BTreeMap<String, Vec<String>>) -> Vec<String> {
     let mut models: IndexSet<String> = IndexSet::new();
     let mut named: IndexSet<&str> = IndexSet::new();

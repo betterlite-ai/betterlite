@@ -88,7 +88,12 @@ pub(super) fn fields_for(
     let world = World::new(&payload.pools, payload.default_model.as_deref())?;
     let settings = settings(payload)?;
     let facts = world::facts(&payload.deployments)?;
-    let mut router = service(payload, settings, &facts, &world.tiers)?;
+    let samples = payload
+        .samples
+        .iter()
+        .map(|text| number(text, "sample"))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut router = service(settings, &facts, &world.tiers, samples)?;
     warm(&mut router, payload)?;
     let context = world.context();
     let placement = world.placement(&context);
@@ -157,16 +162,11 @@ fn fit_filter(payload: &Payload) -> Option<BTreeSet<String>> {
 }
 
 fn service(
-    payload: &Payload,
     settings: PlacementSettings,
     facts: &ModelFacts,
     tiers: &TierSet,
+    samples: Vec<f64>,
 ) -> Result<AdaptivePlacement, OperationError> {
-    let samples = payload
-        .samples
-        .iter()
-        .map(|text| number(text, "sample"))
-        .collect::<Result<Vec<_>, _>>()?;
     let sampler = QualitySampler::Scripted(Box::new(ScriptedSampler {
         samples,
         position: 0,

@@ -118,7 +118,7 @@ impl AdaptivePlacement {
         request_type: RequestType,
         classified_tier: String,
     ) -> Result<Prepared, AdaptivePlacementError> {
-        let classified_severity = self.severity(request.classified_tier)?;
+        let classified_severity = self.severity_name(request.classified_tier.name())?;
         let broader = self.candidate_models(&CandidateQuery {
             classified_tier: request.classified_tier,
             hard_floor: None,
@@ -202,19 +202,19 @@ impl AdaptivePlacement {
             let cell = cell_of(state, plan.request_type, model)?;
             let quality_sample = state.sampler.sample(cell)?;
             let model_cost = state.costs.get(model).copied().unwrap_or(Decimal::ZERO);
-            let cost_score = normalized_cost(model_cost, &plan.all_costs)?;
+            let economy_score = normalized_cost(model_cost, &plan.all_costs)?;
             let tier_distance = plan.distances.get(index).copied().unwrap_or(0);
             let score = placement_score(
                 settings.weights,
                 quality_sample,
-                cost_score,
+                economy_score,
                 settings.tier_distance_penalty,
                 usize::from(tier_distance),
             )?;
             candidates.push(CandidateScore {
                 model: model.clone(),
                 quality_sample,
-                cost_score,
+                economy_score,
                 tier_distance,
                 score,
             });

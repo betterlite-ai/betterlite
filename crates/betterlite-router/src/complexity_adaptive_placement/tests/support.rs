@@ -1,12 +1,7 @@
 use std::collections::BTreeMap;
-use std::sync::Arc;
 
-use async_trait::async_trait;
 use betterlite_config::sections::complexity_adaptive_placement as placement_section;
-use betterlite_config::sections::complexity_placement as tier_section;
-use betterlite_config::sections::context_placement as context_section;
 use betterlite_models::decisions::Json;
-use betterlite_openai::chat::ChatMessage;
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use rust_decimal::Decimal;
@@ -14,26 +9,22 @@ use rust_decimal::Decimal;
 use crate::adaptive_classification::config::AdaptiveRouterPreferences;
 use crate::adaptive_classification::request_type::RequestType;
 use crate::adaptive_selection::SnapshotCell;
-use crate::affinity_claims::AffinityClaims;
-use crate::affinity_claims::local::LocalPins;
 use crate::bandit_math::sampler::{QualitySampler, ScriptedSampler};
-use crate::catalog_updates::catalog::DeploymentCatalog;
 use crate::complexity_adaptive_placement::AdaptivePlacement;
 use crate::complexity_adaptive_placement::PlacementSnapshot;
 use crate::complexity_adaptive_placement::error::AdaptivePlacementError;
 use crate::complexity_adaptive_placement::facts::{ModelDeclaration, ModelFacts};
 use crate::complexity_adaptive_placement::pick::{PickRequest, Placed};
 use crate::complexity_adaptive_placement::settings::PlacementSettings;
-use crate::complexity_placement::TierPlacement;
 use crate::complexity_scoring::tier::{ComplexityTier, Tier};
-use crate::context_placement::ContextPlacement;
-use crate::context_placement::error::PlacementError;
-use crate::context_placement::facts::{ModelLimitKey, RouterModelInfo};
-use crate::context_placement::request::RequestCounter;
-use crate::deployment_identity::spec::DeploymentSpec;
 use crate::router_predicates::JsonMap;
-use crate::routing_value_store::StoreSettings;
 use crate::tier_definitions::model::{TierModelEntry, TierPool, TierSet};
+
+mod service;
+mod world;
+
+pub(super) use self::service::adaptive_service;
+pub(super) use self::world::World;
 
 pub(super) const SEED: u64 = 7;
 
@@ -125,26 +116,12 @@ pub(super) fn scripted_sampler(samples: &[f64]) -> QualitySampler {
     }))
 }
 
-pub(super) fn adaptive_service(
-    settings: PlacementSettings,
-    pools: &[(&str, &[&str])],
-    facts: &ModelFacts,
-    samples: &[f64],
-) -> Result<AdaptivePlacement, AdaptivePlacementError> {
-    let tiers = tier_set(pools);
-    AdaptivePlacement::new(settings, &tiers, facts, scripted_sampler(samples))
-}
-
 pub(super) fn service_error(
-    settings: PlacementSettings,
-    pools: &[(&str, &[&str])],
-    facts: &ModelFacts,
-    samples: &[f64],
+    service: Result<AdaptivePlacement, AdaptivePlacementError>,
 ) -> AdaptivePlacementError {
-    let Err(error) = adaptive_service(settings, pools, facts, samples) else {
-        panic!("the adaptive service must be rejected");
-    };
-    error
+    service
+        .err()
+        .expect("the adaptive service must be rejected")
 }
 
 // one observed success on the model's cell for the request type: apply_delta(1.0, 0.0)
@@ -220,14 +197,8 @@ impl Harness {
         )
     }
 
-    pub(super) fn pick_silently(
-        &mut self,
-        request: &PickRequest<'_>,
-    ) -> Result<Placed, AdaptivePlacementError> {
-        let context = self.world.context();
-        let placement = self.world.placement(&context);
-        self.router
-            .pick(request, &placement, None, &mut self.random)
+    pub(super) fn reseed(&mut self, seed: u64) {
+        self.random = StdRng::seed_from_u64(seed);
     }
 
     pub(super) fn decision(&self) -> Option<&Json> {
@@ -261,98 +232,4 @@ fn tier_pool(models: &[&str]) -> TierPool {
             })
             .collect(),
     )
-}
-
-pub(super) struct NoLimits;
-
-impl RouterModelInfo for NoLimits {
-    fn limit(
-        &self,
-        _group: &str,
-        _deployment: &DeploymentSpec,
-        _key: ModelLimitKey,
-    ) -> Option<u64> {
-        None
-    }
-}
-
-pub(super) struct NoCounter;
-
-#[async_trait]
-impl RequestCounter for NoCounter {
-    async fn count(&self, _messages: &[ChatMessage], _text: &str) -> Result<u64, PlacementError> {
-        Ok(0)
-    }
-}
-
-// the collaborators TierPlacement carries, which the tier fallback never reads
-pub(super) struct World {
-    tiers: TierSet,
-    config: tier_section::Config,
-    context_config: context_section::Config,
-    deployments: DeploymentCatalog,
-    claims: AffinityClaims,
-    limits: NoLimits,
-    counter: NoCounter,
-    default_model: Option<String>,
-}
-
-impl World {
-    pub(super) fn new(pools: &[(&str, &[&str])], default_model: Option<&str>) -> Self {
-        let local = LocalPins::new(
-            StoreSettings {
-                max_size_in_memory: None,
-                default_ttl_seconds: None,
-                max_size_per_item: Some(1024_i64),
-                loaded_max_size_per_item_kib: 1024_i64,
-            },
-            Arc::new(|| 0.0_f64),
-        )
-        .expect("the test pin store starts");
-        Self {
-            tiers: tier_set(pools),
-            config: tier_section::Config {
-                return_raw_model_name: false,
-                max_tokens_from_tier_model: true,
-            },
-            context_config: context_section::Config {
-                enabled: false,
-                buffer: context_section::DEFAULT_BUFFER,
-            },
-            deployments: DeploymentCatalog::default(),
-            claims: AffinityClaims {
-                local,
-                shared: None,
-            },
-            limits: NoLimits,
-            counter: NoCounter,
-            default_model: default_model.map(str::to_owned),
-        }
-    }
-
-    pub(super) fn context(&self) -> ContextPlacement<'_> {
-        ContextPlacement {
-            config: &self.context_config,
-            deployments: &self.deployments,
-            model_info: &self.limits,
-            counter: &self.counter,
-        }
-    }
-
-    pub(super) fn placement<'deps>(
-        &'deps self,
-        context: &'deps ContextPlacement<'deps>,
-    ) -> TierPlacement<'deps> {
-        TierPlacement {
-            config: &self.config,
-            tiers: &self.tiers,
-            default_model: self.default_model.as_deref(),
-            context,
-            claims: &self.claims,
-            model_name: "probe",
-            tier_affinity_config: "probe-affinity",
-            deployment_pin: false,
-            session_affinity_ttl_seconds: 0,
-        }
-    }
 }

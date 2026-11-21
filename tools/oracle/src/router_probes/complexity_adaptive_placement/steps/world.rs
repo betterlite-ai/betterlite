@@ -30,7 +30,10 @@ const AFFINITY_CONFIG: &str = "probe-affinity";
 const SESSION_TTL: u32 = 3600;
 
 pub(super) fn tier(name: &str) -> Tier {
-    ComplexityTier::built_in(name).map_or_else(|| Tier::Named(name.to_owned()), Tier::BuiltIn)
+    match ComplexityTier::built_in(name) {
+        Some(tier) => Tier::BuiltIn(tier),
+        None => Tier::Named(name.to_owned()),
+    }
 }
 
 // the case's pools as the tier set the router reads; its name order is the case's order

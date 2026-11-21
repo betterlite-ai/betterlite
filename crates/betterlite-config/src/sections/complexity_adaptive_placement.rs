@@ -6,14 +6,18 @@ use crate::resolve::{parse_float, resolve_number, resolve_string};
 use crate::sections::Section;
 use crate::sections::adaptive_classification::Weights;
 
+use self::flag::RawFlag;
+use self::weights::RawWeights;
+
+mod flag;
 mod tests;
+mod weights;
 
 const PATH_ROOT: &str = "litellm_params.complexity_router_config";
 const ADAPTIVE_KEY: &str = "adaptive";
 const WEIGHTS_KEY: &str = "adaptive_weights";
 const PENALTY_KEY: &str = "tier_distance_penalty";
 const ELIGIBLE_KEY: &str = "adaptive_eligible";
-const ENV_MARKER: &str = "os.environ/";
 const ELIGIBLE_ALL: &str = "all";
 const ELIGIBLE_CLASSIFIED_TIER: &str = "classified_tier";
 
@@ -52,21 +56,6 @@ struct RawRouterConfig {
     adaptive_eligible: Option<String>,
 }
 
-#[derive(Debug, Default, Deserialize)]
-struct RawWeights {
-    #[serde(default)]
-    quality: Option<RawNumber>,
-    #[serde(default)]
-    cost: Option<RawNumber>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum RawFlag {
-    Literal(bool),
-    Text(String),
-}
-
 // adaptive_eligible: the two values the declared Literal accepts
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AdaptiveEligible {
@@ -80,6 +69,14 @@ impl AdaptiveEligible {
         match self {
             Self::All => ELIGIBLE_ALL,
             Self::ClassifiedTier => ELIGIBLE_CLASSIFIED_TIER,
+        }
+    }
+
+    fn declared(text: &str) -> Option<Self> {
+        match text {
+            ELIGIBLE_ALL => Some(Self::All),
+            ELIGIBLE_CLASSIFIED_TIER => Some(Self::ClassifiedTier),
+            _other => None,
         }
     }
 }
@@ -117,16 +114,18 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let mut deployments = Vec::with_capacity(self.model_list.len());
-        for (index, deployment) in self.model_list.into_iter().enumerate() {
-            deployments.push(
+        let deployments = self
+            .model_list
+            .into_iter()
+            .enumerate()
+            .map(|(index, deployment)| {
                 deployment
                     .litellm_params
                     .complexity_router_config
                     .map(|raw| raw.resolve(index, lookup))
-                    .transpose()?,
-            );
-        }
+                    .transpose()
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(Settings { deployments })
     }
 }
@@ -137,19 +136,31 @@ impl RawRouterConfig {
         L: EnvironmentLookup,
     {
         let prefix = format!("model_list.{index}.{PATH_ROOT}");
+        let penalty_path = format!("{prefix}.{PENALTY_KEY}");
+        let penalty = resolve_number(
+            self.tier_distance_penalty,
+            &penalty_path,
+            lookup,
+            parse_float,
+        )?;
+        // the declared field carries ge=0.0: a negative or non-finite penalty has no score to compute
+        if penalty.is_some_and(|value| !(value.is_finite() && value >= 0.0)) {
+            return Err(ConfigError::InvalidScalar {
+                path: penalty_path,
+                value: false,
+            });
+        }
         Ok(Config {
-            adaptive: flag(self.adaptive, &format!("{prefix}.{ADAPTIVE_KEY}"), lookup)?
+            adaptive: self
+                .adaptive
+                .map(|flag| flag.into_bool(&format!("{prefix}.{ADAPTIVE_KEY}"), lookup))
+                .transpose()?
                 .unwrap_or(DEFAULT_ADAPTIVE),
             weights: self
                 .adaptive_weights
                 .map(|weights| weights.resolve(&format!("{prefix}.{WEIGHTS_KEY}"), lookup))
                 .transpose()?,
-            tier_distance_penalty: penalty(
-                self.tier_distance_penalty,
-                &format!("{prefix}.{PENALTY_KEY}"),
-                lookup,
-            )?
-            .unwrap_or(DEFAULT_TIER_DISTANCE_PENALTY),
+            tier_distance_penalty: penalty.unwrap_or(DEFAULT_TIER_DISTANCE_PENALTY),
             eligible: eligible(
                 self.adaptive_eligible,
                 &format!("{prefix}.{ELIGIBLE_KEY}"),
@@ -157,54 +168,6 @@ impl RawRouterConfig {
             )?
             .unwrap_or(AdaptiveEligible::All),
         })
-    }
-}
-
-impl RawWeights {
-    fn resolve<L>(self, prefix: &str, lookup: &L) -> Result<Weights, ConfigError>
-    where
-        L: EnvironmentLookup,
-    {
-        let quality = resolve_number(
-            self.quality,
-            &format!("{prefix}.quality"),
-            lookup,
-            parse_float,
-        )?;
-        let economy = resolve_number(self.cost, &format!("{prefix}.cost"), lookup, parse_float)?;
-        Ok(Weights { quality, economy })
-    }
-}
-
-// LiteLLM resolves os.environ/ strings before pydantic reads the field as a bool
-fn flag<L>(raw: Option<RawFlag>, path: &str, lookup: &L) -> Result<Option<bool>, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    match raw {
-        None => Ok(None),
-        Some(RawFlag::Literal(flag)) => Ok(Some(flag)),
-        Some(RawFlag::Text(text)) => {
-            let name = text.strip_prefix(ENV_MARKER).unwrap_or(path).to_owned();
-            let resolved = resolve_string(text, path, lookup)?;
-            Ok(betterlite_env::flag(&name, &resolved)?)
-        }
-    }
-}
-
-// the declared field carries ge=0.0; a non-finite penalty has no score to compute
-fn penalty<L>(raw: Option<RawNumber>, path: &str, lookup: &L) -> Result<Option<f64>, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let resolved = resolve_number(raw, path, lookup, parse_float)?;
-    match resolved {
-        Some(value) if !(value.is_finite() && value >= 0.0) => Err(ConfigError::InvalidScalar {
-            path: path.to_owned(),
-            value: false,
-        }),
-        Some(value) => Ok(Some(value)),
-        None => Ok(None),
     }
 }
 
@@ -219,12 +182,11 @@ where
     let Some(text) = raw else {
         return Ok(None);
     };
-    match resolve_string(text, path, lookup)?.as_str() {
-        ELIGIBLE_ALL => Ok(Some(AdaptiveEligible::All)),
-        ELIGIBLE_CLASSIFIED_TIER => Ok(Some(AdaptiveEligible::ClassifiedTier)),
-        _other => Err(ConfigError::InvalidScalar {
+    let resolved = resolve_string(text, path, lookup)?;
+    AdaptiveEligible::declared(&resolved)
+        .map(Some)
+        .ok_or_else(|| ConfigError::InvalidScalar {
             path: path.to_owned(),
             value: false,
-        }),
-    }
+        })
 }

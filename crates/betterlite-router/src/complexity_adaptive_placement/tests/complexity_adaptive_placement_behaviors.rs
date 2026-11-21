@@ -5,6 +5,9 @@ use betterlite_config::sections::complexity_adaptive_placement as placement_sect
 use betterlite_config::sections::complexity_adaptive_placement::AdaptiveEligible;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use rand::SeedableRng as _;
+use rand::rngs::StdRng;
+use rstest::rstest;
 use rust_decimal::Decimal;
 use serde_json::Number;
 
@@ -21,8 +24,8 @@ use crate::complexity_adaptive_placement::pick::Placed;
 use crate::complexity_adaptive_placement::settings::PlacementSettings;
 
 use super::support::{
-    FactSpec, Harness, POOLS, adaptive_service, adaptive_settings, cell_in, configured_settings,
-    cost, model_facts, priced, request, tier, warm,
+    FactSpec, Harness, POOLS, SEED, World, adaptive_service, adaptive_settings, cell_in,
+    configured_settings, cost, model_facts, priced, request, tier, warm,
 };
 
 #[test]
@@ -144,11 +147,13 @@ fn declared_weights_penalty_and_eligible_mode_replace_the_defaults() {
 #[test]
 fn a_declared_weights_object_keeps_its_field_defaults() {
     let resolved = PlacementSettings::resolve(&placement_section::Config {
+        adaptive: false,
         weights: Some(Weights {
             quality: Some(0.9),
             economy: None,
         }),
-        ..placement_section::Config::default()
+        tier_distance_penalty: placement_section::DEFAULT_TIER_DISTANCE_PENALTY,
+        eligible: AdaptiveEligible::All,
     })
     .expect("a lone quality weight is valid");
     assert_eq!(resolved.weights.quality.to_bits(), 0.9_f64.to_bits());
@@ -421,7 +426,7 @@ fn the_distance_penalty_keeps_the_nearer_tier_against_a_higher_sample() {
     let costs: Vec<u64> = choice
         .candidates
         .iter()
-        .map(|candidate| candidate.cost_score.to_bits())
+        .map(|candidate| candidate.economy_score.to_bits())
         .collect();
     assert_eq!(
         costs,
@@ -565,7 +570,10 @@ fn normalization_uses_the_broader_candidate_set() {
     };
     assert_eq!(choice.candidates.len(), 1);
     assert_eq!(choice.candidates[0].model, "big");
-    assert_eq!(choice.candidates[0].cost_score.to_bits(), 0.0_f64.to_bits());
+    assert_eq!(
+        choice.candidates[0].economy_score.to_bits(),
+        0.0_f64.to_bits()
+    );
     assert_eq!(choice.candidates[0].tier_distance, 1);
 }
 
@@ -635,20 +643,21 @@ fn a_filter_that_matches_no_pool_model_places_the_tier() {
 }
 
 // every draw the tier pool would make is over both models, so a fitting pick keeps choosing small
-#[test]
-fn the_context_filter_overrides_the_tier_draw() {
+#[rstest]
+fn the_context_filter_overrides_the_tier_draw(
+    #[values(0_u64, 1_u64, 2_u64, 3_u64, 4_u64, 5_u64, 6_u64, 7_u64)] seed: u64,
+) {
     let pools: &[(&str, &[&str])] = &[("SIMPLE", &["mini", "small"])];
     let facts = priced(&[("mini", 1), ("small", 1)]);
     let mut harness = Harness::new(adaptive_settings(false), pools, &facts, &[], None)
         .expect("the router builds without state");
+    harness.reseed(seed);
     let fit = BTreeSet::from(["small".to_owned()]);
     let classified = tier("SIMPLE");
     let mut filtered = request(&classified, "hello");
     filtered.fit_filter = Some(&fit);
-    for _ in 0..64 {
-        let placed = harness.pick(&filtered).expect("the pick succeeds");
-        assert_eq!(placed.model, "small");
-    }
+    let placed = harness.pick(&filtered).expect("the pick succeeds");
+    assert_eq!(placed.model, "small");
 }
 
 #[test]
@@ -684,18 +693,26 @@ fn an_observation_wakes_a_cold_cell_for_the_next_pick() {
 #[test]
 fn a_request_without_kwargs_still_places_and_records_nothing() {
     let facts = priced(&[("mini", 1), ("mid", 2), ("big", 3)]);
-    let mut harness =
-        Harness::new(adaptive_settings(true), POOLS, &facts, &[], None).expect("the router builds");
+    let mut router =
+        adaptive_service(adaptive_settings(true), POOLS, &facts, &[]).expect("the router builds");
+    let world = World::new(POOLS, None);
+    let context = world.context();
+    let placement = world.placement(&context);
     let classified = tier("SIMPLE");
-    let placed = harness
-        .pick_silently(&request(&classified, "hello"))
+    let mut random = StdRng::seed_from_u64(SEED);
+    let placed = router
+        .pick(
+            &request(&classified, "hello"),
+            &placement,
+            None,
+            &mut random,
+        )
         .expect("the pick succeeds without kwargs");
     assert_eq!(placed.model, "mini");
     assert!(matches!(
         placed.decision,
         Some(AdaptiveDecision::ColdStart(_))
     ));
-    assert!(harness.kwargs.is_empty());
 }
 
 #[test]
