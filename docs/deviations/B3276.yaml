@@ -27,4 +27,7 @@ deviations:
   - what: The async timeout message renders the elapsed time as whole seconds plus zero-padded milliseconds (time taken=0.300), where LiteLLM interpolates the rounded float (time taken=0.3), and a timeout of a whole number of seconds prints without a .0.
     why: The shared converter B2402 owns renders typed Durations; the timeout the caller passed and the elapsed time are the same numbers.
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L852-L866"
+  - what: A search request that cannot be built before it is sent (a complete_url that does not parse, a header name or header value the HTTP layer refuses) reports betterlite's typed RequestError message with a synthesized 500, where httpx raises InvalidURL or a protocol error and _handle_error reports str(exception) with the same synthesized 500.
+    why: B173's RequestError names the failure before a connection is made; the status, the synthesis flag and the fact the provider never answered match.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L2002-L2005"
 kept_bugs: []
