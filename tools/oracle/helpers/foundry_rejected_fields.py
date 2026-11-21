@@ -1,13 +1,13 @@
 import io
 from contextlib import redirect_stdout
-from typing import Final, NotRequired, Protocol, TypedDict, runtime_checkable
+from typing import Final, NotRequired, Protocol, TypeAlias, TypedDict, runtime_checkable
 
 import httpx
 import litellm
 from litellm.llms.azure_ai.chat.transformation import AzureAIStudioConfig
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 
-JsonObject = dict[str, JsonValue]
+JsonObject: TypeAlias = dict[str, JsonValue]
 REQUEST: Final[httpx.Request] = httpx.Request("POST", "https://oracle.test/v1/chat/completions")
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 
