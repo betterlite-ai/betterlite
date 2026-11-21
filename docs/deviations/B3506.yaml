@@ -55,8 +55,9 @@ deviations:
       param body and code request_too_large.
     why: >-
       B1100's decoder owns the limit and its facts, and these are the fields the auth
-      body-limit path already answers. LiteLLM's _read_request_body has no size cap for a JSON
-      body; its only size check skips the surrogate repair and raises a 400.
+      body-limit path already answers. The route disables axum's own 2 MB extractor default so
+      B1100 answers the boundary instead of the framework. LiteLLM's _read_request_body has no
+      size cap for a JSON body; its only size check skips the surrogate repair and raises a 400.
     link: ""
 kept_bugs:
   - what: >-

@@ -44,13 +44,13 @@ fn event_response(
 // the three branches of google_count_tokens, in LiteLLM's order
 pub(super) fn token_count(response: Option<TokenCountResponse>) -> Response {
     let details = match response {
-        Some(response) => match response.original_response {
+        Some(counted) => match counted.original_response {
             Some(original) => TokenCountDetails {
                 total_tokens: original.total_tokens.unwrap_or(0),
                 prompt_tokens_details: original.prompt_tokens_details.unwrap_or_default(),
             },
             None => TokenCountDetails {
-                total_tokens: response.total_tokens,
+                total_tokens: counted.total_tokens,
                 prompt_tokens_details: Vec::new(),
             },
         },

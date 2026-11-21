@@ -7,7 +7,7 @@ mod tests;
 
 use axum::Router;
 use axum::body::Bytes;
-use axum::extract::{Extension, Path, State};
+use axum::extract::{DefaultBodyLimit, Extension, Path, State};
 use axum::http::HeaderMap;
 use axum::response::Response;
 use axum::routing::post;
@@ -28,6 +28,8 @@ pub fn routes(state: GenaiRoutesState) -> Router {
     Router::new()
         .route(V1BETA_MODELS, models.clone())
         .route(MODELS, models)
+        // axum's extractor default of 2 MB would answer before B1100, which owns the JSON limit and its facts
+        .layer(DefaultBodyLimit::disable())
         .with_state(state)
 }
 
@@ -120,7 +122,7 @@ async fn count_tokens(state: &GenaiRoutesState, model: &str, data: &Object) -> R
         messages,
     };
     match state.token_counter.count_tokens(&request, true).await {
-        Ok(response) => response::token_count(response),
+        Ok(counted) => response::token_count(counted),
         Err(exception) => error::failure_response(&exception),
     }
 }
