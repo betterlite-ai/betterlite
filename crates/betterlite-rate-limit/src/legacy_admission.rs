@@ -52,18 +52,18 @@ impl LegacyAdmission {
         }
         let minute = self.handler.precise_minute();
         let ids = counter_ids(&facts, request.model.as_deref(), &minute);
+        let objects = self
+            .handler
+            .get_all_cache_objects(ids.read_keys(cap.is_some()), None)
+            .await;
         let mut call = Call {
             principal,
             facts,
             ids,
             model: request.model.as_deref(),
-            objects: CacheObject::default(),
+            objects,
             counters: Vec::new(),
         };
-        call.objects = self
-            .handler
-            .get_all_cache_objects(call.ids.read_keys(cap.is_some()), None)
-            .await;
         if let Some(dimension) = checks::key_dimension(&call) {
             checks::enforce(&self.handler, &mut call, dimension).await?;
         }

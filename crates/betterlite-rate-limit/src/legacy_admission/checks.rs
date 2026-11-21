@@ -138,7 +138,7 @@ fn remaining(limit: Option<i64>, current: i64) -> JsonValue {
 }
 
 // one rate-limit dimension's state: the counter it reads and writes, its limits, and its stored value
-struct Dimension {
+pub(super) struct Dimension {
     counter_id: String,
     limits: DimensionLimits,
     current: Option<LegacyCacheValue>,
@@ -146,7 +146,7 @@ struct Dimension {
 }
 
 // steps 5 and 7-9 share this check; they differ only in the counter, limits and scope
-async fn enforce(
+pub(super) async fn enforce(
     handler: &LegacyRateLimitHandler,
     call: &mut Call<'_>,
     dimension: Dimension,
@@ -181,7 +181,7 @@ fn step(
 }
 
 // step 5: the key's own max_parallel_requests, tpm and rpm
-fn key_dimension(call: &Call<'_>) -> Option<Dimension> {
+pub(super) fn key_dimension(call: &Call<'_>) -> Option<Dimension> {
     let limits = DimensionLimits {
         max_parallel_requests: call.facts.max_parallel_requests,
         tpm_limit: call.facts.tpm_limit,
@@ -213,7 +213,7 @@ fn push(
 }
 
 // steps 7-9 in LiteLLM's order; the user and team gates are is-not-None, the end user's is truthiness
-fn other_dimensions(call: &Call<'_>) -> Vec<Dimension> {
+pub(super) fn other_dimensions(call: &Call<'_>) -> Vec<Dimension> {
     let end_user_id = call
         .facts
         .end_user_id
