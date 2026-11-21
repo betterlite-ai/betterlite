@@ -6,7 +6,7 @@ use crate::rate_limiters::legacy_rate_limit_counters::usage_cache::LegacyCacheVa
 
 const GLOBAL: &str = "global_max_parallel_requests";
 
-fn failure<'event>(
+const fn failure<'event>(
     user_api_key: Option<&'event str>,
     exception: &'event str,
 ) -> FailureEvent<'event> {
@@ -94,13 +94,26 @@ async fn global_slot_read_then_decremented_local_only(#[case] global_limit: Opti
 }
 
 #[rstest]
-#[case::cache_miss(None, counter(0, 0, 0))]
-#[case::existing(Some(counter(3, 40, 7)), counter(2, 40, 7))]
-#[case::floor_at_zero(Some(counter(0, 5, 1)), counter(0, 5, 1))]
+#[case::cache_miss(
+    None,
+    counter(0, 0, 0),
+    "{current_requests: 0, current_tpm: 0, current_rpm: 0}"
+)]
+#[case::existing(
+    Some(counter(3, 40, 7)),
+    counter(2, 40, 7),
+    "{current_requests: 2, current_tpm: 40, current_rpm: 7}"
+)]
+#[case::floor_at_zero(
+    Some(counter(0, 5, 1)),
+    counter(0, 5, 1),
+    "{current_requests: 0, current_tpm: 5, current_rpm: 1}"
+)]
 #[tokio::test]
 async fn key_counter_gives_back_one_request_only(
     #[case] stored: Option<LegacyCacheValue>,
     #[case] expected: LegacyCacheValue,
+    #[case] printed: &str,
 ) {
     let key = minute_key("sk-key");
     let stored_entries: Vec<(&str, LegacyCacheValue)> = stored
@@ -130,12 +143,9 @@ async fn key_counter_gives_back_one_request_only(
             .count(),
         1
     );
-    let LegacyCacheValue::Counter(new_val) = expected else {
-        panic!("the expectation is a counter");
-    };
     assert_eq!(
         fixture.console.lines().last(),
-        Some(&format!("updated_value in failure call: {new_val:?}"))
+        Some(&format!("updated_value in failure call: {printed}"))
     );
 }
 

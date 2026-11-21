@@ -20,7 +20,7 @@ fn headers(entries: &[(&str, i64)]) -> AdditionalHeaders {
         .collect()
 }
 
-fn hook<'call>(
+const fn hook<'call>(
     principal: &'call PrincipalFacts,
     limits: (Option<i64>, Option<i64>),
     additional_headers: Option<&'call mut AdditionalHeaders>,

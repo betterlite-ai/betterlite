@@ -1,3 +1,5 @@
+use std::fmt;
+
 use async_trait::async_trait;
 use betterlite_auth::resolved_key::auth::ParentOtelSpan;
 
@@ -70,4 +72,15 @@ pub(super) fn released_requests(current_requests: i64, key: &str) -> Result<i64,
             key: key.to_owned(),
         })?;
     Ok(lowered.max(0))
+}
+
+// the new value the success and failure hooks print, in the field order of LiteLLM's dict
+impl fmt::Display for MinuteCounter {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "{{current_requests: {}, current_tpm: {}, current_rpm: {}}}",
+            self.current_requests, self.current_tpm, self.current_rpm
+        )
+    }
 }

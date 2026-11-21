@@ -28,7 +28,7 @@ impl DeploymentLimitCatalog for DefaultTpm {
     }
 }
 
-fn metadata(user_api_key: UserApiKeyField) -> SuccessMetadata {
+const fn metadata(user_api_key: UserApiKeyField) -> SuccessMetadata {
     SuccessMetadata {
         global_max_parallel_requests: None,
         user_api_key,
@@ -40,7 +40,7 @@ fn metadata(user_api_key: UserApiKeyField) -> SuccessMetadata {
     }
 }
 
-fn event<'event>(metadata: SuccessMetadata) -> SuccessEvent<'event> {
+const fn event<'event>(metadata: SuccessMetadata) -> SuccessEvent<'event> {
     SuccessEvent {
         metadata,
         end_user: None,
@@ -106,13 +106,26 @@ async fn global_slot_released_local_only_when_the_limit_is_set(
 }
 
 #[rstest]
-#[case::cache_miss(None, counter(0, 10, 0))]
-#[case::existing(Some(counter(3, 100, 5)), counter(2, 110, 5))]
-#[case::floor_at_zero(Some(counter(0, 7, 2)), counter(0, 17, 2))]
+#[case::cache_miss(
+    None,
+    counter(0, 10, 0),
+    "{current_requests: 0, current_tpm: 10, current_rpm: 0}"
+)]
+#[case::existing(
+    Some(counter(3, 100, 5)),
+    counter(2, 110, 5),
+    "{current_requests: 2, current_tpm: 110, current_rpm: 5}"
+)]
+#[case::floor_at_zero(
+    Some(counter(0, 7, 2)),
+    counter(0, 17, 2),
+    "{current_requests: 0, current_tpm: 17, current_rpm: 2}"
+)]
 #[tokio::test]
 async fn key_counter_releases_the_slot_and_adds_tokens(
     #[case] stored: Option<LegacyCacheValue>,
     #[case] expected: LegacyCacheValue,
+    #[case] printed: &str,
 ) {
     let key_counter = minute_key("sk-key");
     let stored_entries: Vec<(&str, LegacyCacheValue)> = stored
@@ -122,14 +135,11 @@ async fn key_counter_releases_the_slot_and_adds_tokens(
     let fixture = fixture(&stored_entries, &[]);
     let entries = written(&fixture, &event(metadata(key()))).await;
     assert_eq!(entries, vec![(key_counter.clone(), expected)]);
-    let LegacyCacheValue::Counter(new_val) = expected else {
-        panic!("the expectation is a counter");
-    };
     assert_eq!(
         fixture.console.lines(),
         vec![
             String::from("INSIDE parallel request limiter ASYNC SUCCESS LOGGING"),
-            format!("updated_value in success call: {new_val:?}, precise_minute: {MINUTE}"),
+            format!("updated_value in success call: {printed}, precise_minute: {MINUTE}"),
         ]
     );
 }

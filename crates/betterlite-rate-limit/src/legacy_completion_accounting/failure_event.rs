@@ -74,7 +74,7 @@ impl LegacyRateLimitHandler {
             current_tpm: current.current_tpm,
             current_rpm: current.current_rpm,
         };
-        self.print_verbose(&format!("updated_value in failure call: {new_val:?}"));
+        self.print_verbose(&format!("updated_value in failure call: {new_val}"));
         let written = counters
             .set(
                 &key,
