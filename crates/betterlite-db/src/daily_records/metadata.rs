@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 
 use betterlite_models::decisions::Json;
 use betterlite_models::savings_evidence::cache_extraction::UsageObject;
-use betterlite_models::savings_evidence::dynamic::MappingOrScalar;
 use betterlite_models::savings_evidence::metadata::Metadata;
 use betterlite_models::savings_evidence::snapshot::CostBreakdown;
 use betterlite_models::savings_evidence::usage::RawUsageObject;
@@ -60,7 +59,7 @@ pub struct DailyMetadata {
 struct DailyMetadataDetails {
     internal_call_origin: Option<Json>,
     usage_object: Option<Json>,
-    routing_decision: Option<MappingOrScalar<AutoRouterDecision>>,
+    routing_decision: Option<Json>,
     cost_breakdown: Option<Json>,
 }
 
@@ -83,11 +82,7 @@ pub fn decode_daily_metadata(bytes: &[u8]) -> Result<DailyMetadata, DailyMetadat
             .is_some_and(counts_as_present),
         usage_object: metadata_object(details.usage_object.as_ref(), USAGE_OBJECT_KEY)?,
         raw_usage: raw_usage_object(details.usage_object.as_ref()),
-        routing_decision: details
-            .routing_decision
-            .as_ref()
-            .and_then(MappingOrScalar::as_mapping)
-            .cloned(),
+        routing_decision: routing_decision(details.routing_decision.as_ref()),
         cost_breakdown: metadata_object(details.cost_breakdown.as_ref(), COST_BREAKDOWN_KEY)?,
     })
 }
@@ -126,6 +121,15 @@ where
     serde_json::from_str(&text)
         .map_err(|source| DailyMetadataError::Field { field, source })
         .map(Some)
+}
+
+// savings.py reads a routing decision only when it is a Mapping; text, numbers, lists and null read as absent.
+fn routing_decision(value: Option<&Json>) -> Option<AutoRouterDecision> {
+    let Json::Object(_) = value? else {
+        return None;
+    };
+    let text = serde_json::to_string(value?).ok()?;
+    serde_json::from_str(&text).ok()
 }
 
 // _usage_from_spend_log swallows every failure, so an unusable usage object only zeroes the auto-router driver.
