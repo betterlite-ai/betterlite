@@ -160,6 +160,14 @@ async fn an_absent_duration_leaves_the_request_untimed() {
 }
 
 #[tokio::test]
+async fn an_absent_metadata_still_builds_the_row() {
+    let case = Case::with_prices(BTreeMap::new());
+    let text = payload_with(r#""request_duration_ms":5"#);
+    let projection = project(&case, &text, DailySpendEntity::User).await.unwrap();
+    assert!(projection.is_some());
+}
+
+#[tokio::test]
 async fn a_null_metadata_still_builds_the_row() {
     let case = Case::with_prices(BTreeMap::new());
     let text = payload_with(r#""metadata":null"#);
