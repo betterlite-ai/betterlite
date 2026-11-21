@@ -7,6 +7,8 @@ use std::path::PathBuf;
 use rstest::rstest;
 use rust_decimal::Decimal;
 
+use crate::loader::ConfigLoader;
+
 use super::{
     DEFAULT_DEQUEUE_COUNT, DEFAULT_MAX_PROMPT_LENGTH, ENV_DEQUEUE_COUNT, MissingSessionId,
     Settings, SpendUpdates, decode_spend_storage_policy, load_spend_storage_policy,
@@ -156,6 +158,29 @@ fn a_malformed_redis_dequeue_count_fails_loading(#[case] value: &str) {
     let lookup = environment(&[(ENV_DEQUEUE_COUNT, value)]);
     let error = load_spend_storage_policy(source, &lookup).unwrap_err();
     assert!(error.to_string().contains(ENV_DEQUEUE_COUNT));
+}
+
+// B2322's spend_reseed section owns the variable: unset keeps 10000, and int() rejects empty text
+const LOCK_LIMIT_VARIABLE: &str = "SPEND_COUNTER_RESEED_LOCKS_MAX_SIZE";
+
+#[rstest]
+#[case::unset(&[], Some(10_000))]
+#[case::configured(&[(LOCK_LIMIT_VARIABLE, "16")], Some(16))]
+#[case::empty_text(&[(LOCK_LIMIT_VARIABLE, "")], None)]
+#[case::spaces(&[(LOCK_LIMIT_VARIABLE, "  ")], None)]
+#[case::text(&[(LOCK_LIMIT_VARIABLE, "many")], None)]
+fn loads_reseed_lock_limit(#[case] pairs: &[(&str, &str)], #[case] expected: Option<i64>) {
+    let outcome = ConfigLoader {
+        lookup: environment(pairs),
+    }
+    .load("")
+    .map(|config| config.sections.spend_reseed.locks_max_size);
+    match (outcome, expected) {
+        (Ok(bound), Some(wanted)) => assert_eq!(bound, wanted),
+        (Err(error), None) => assert!(error.to_string().contains(LOCK_LIMIT_VARIABLE)),
+        (Ok(bound), None) => panic!("the lock limit load accepted {bound}"),
+        (Err(error), Some(wanted)) => panic!("the lock limit load failed for {wanted}: {error}"),
+    }
 }
 
 #[rstest]

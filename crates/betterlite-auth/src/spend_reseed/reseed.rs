@@ -1,10 +1,9 @@
-use std::error::Error as StdError;
-use std::future::Future;
 use std::sync::Arc;
 
 use betterlite_db::budget_permission_rows::Timestamp;
-use betterlite_db::database_failures::deadline::{DbLookupError, LookupRequest};
 use betterlite_db::database_failures::gate::{DbLookupStallTracker, LoopBoundSemaphore};
+use betterlite_db::spend_rows::reader::SpendCounterReader;
+use betterlite_db::spend_rows::rows::SpendCounterRows as DbSpendCounterRows;
 use rust_decimal::Decimal;
 use thiserror::Error;
 use tokio_util::task::TaskTracker;
@@ -14,16 +13,13 @@ use crate::budget_primitives::window_start::DurationParser;
 use crate::model_budget_limiter::clock::BudgetClock;
 use crate::spend_counter_batch::batch::{CounterValue, SpendCounterBatchError};
 
-use super::cache::{ActiveSpendBatch, ReseedCache};
+use super::cache::{ActiveSpendBatch, ReseedCache, WindowReseedCache};
 use super::locks::LockRegistry;
-use super::reads::{bounded_row, cached_amount, gated_primary, warm};
-use super::rows::{LookupAnswer, SpendCounterRows, SpendRow, SpendRowLookup, WindowEntity};
+use super::reads::{CounterDurations, cached_amount};
+use super::rows::{SpendCounterRows, WindowEntity};
 use super::values::{SpendValueError, aggregate_amount, stored_amount};
-use super::windows::WindowQuery;
-
-pub const SPEND_COUNTER_LOOKUP: &str = "spend_counter";
-pub const END_USER_SPEND_LOOKUP: &str = "end_user_spend";
-pub const END_USER_COUNTER_PREFIX: &str = "spend:end_user:";
+use super::warm::warm;
+use super::windows::{WindowQuery, WindowReseed, warm_window};
 
 #[derive(Debug, Error)]
 pub enum CoalescedError<CacheError> {
@@ -39,7 +35,7 @@ pub struct SpendCounterReseed<Rows: SpendCounterRows> {
     pub rows: Option<Arc<Rows>>,
     pub locks: LockRegistry,
     pub clock: Box<dyn BudgetClock>,
-    pub durations: Box<dyn DurationParser + Send + Sync>,
+    pub durations: Arc<dyn DurationParser + Send + Sync>,
     pub tasks: TaskTracker,
     pub gate: Arc<LoopBoundSemaphore>,
     pub stall_tracker: Arc<DbLookupStallTracker>,
@@ -47,65 +43,22 @@ pub struct SpendCounterReseed<Rows: SpendCounterRows> {
 }
 
 impl<Rows: SpendCounterRows> SpendCounterReseed<Rows> {
-    pub async fn from_db(&self, counter_key: &str) -> Result<Option<Decimal>, SpendValueError> {
-        let Some(rows) = self.rows.as_ref().map(Arc::clone) else {
-            return Ok(None);
-        };
-        if self.suppresses_db_read(counter_key) {
-            return Ok(None);
-        }
-        let key = counter_key.to_owned();
-        let gate = Arc::clone(&self.gate);
-        let lookup = async move {
-            let answer = gated_primary(gate.as_ref(), rows.as_ref(), &key).await;
-            Ok::<_, DbLookupError>(answer)
-        };
-        self.bounded_amount(lookup, SPEND_COUNTER_LOOKUP, counter_key)
-            .await
-    }
-
-    pub async fn end_user_from_db(
-        &self,
-        counter_key: &str,
-    ) -> Result<Option<Decimal>, SpendValueError> {
-        let Some(user_id) = counter_key.strip_prefix(END_USER_COUNTER_PREFIX) else {
-            return Ok(None);
-        };
-        let Some(rows) = self.rows.as_ref().map(Arc::clone) else {
-            return Ok(None);
-        };
-        let owner = user_id.to_owned();
-        // the floor read carries no db lookup gate: the bounded lookup alone guards it
-        let lookup = async move {
-            let answer = match rows.spend_row(SpendRowLookup::EndUser(&owner)).await {
-                Ok(row) => LookupAnswer::Row(row),
-                Err(error) => LookupAnswer::Failed(error),
-            };
-            Ok::<_, DbLookupError>(answer)
-        };
-        self.bounded_amount(lookup, END_USER_SPEND_LOOKUP, counter_key)
-            .await
-    }
-
-    async fn bounded_amount<Failure, Lookup>(
-        &self,
-        lookup: Lookup,
-        name: &str,
-        counter_key: &str,
-    ) -> Result<Option<Decimal>, SpendValueError>
+    // B1735's reader owns both reads: the primary entity row and the end-user budget floor
+    pub(crate) fn reader(&self) -> SpendCounterReader<Rows>
     where
-        Failure: StdError + Send + Sync + 'static,
-        Lookup: Future<Output = Result<LookupAnswer<SpendRow, Failure>, DbLookupError>>
-            + Send
-            + 'static,
+        Rows: DbSpendCounterRows,
     {
-        let Some(row) =
-            bounded_row(lookup, self.lookup_request(name), &self.tasks, counter_key).await
-        else {
-            return Ok(None);
-        };
-        row.map(|stored| stored_amount(stored.spend.as_ref()))
-            .transpose()
+        SpendCounterReader {
+            rows: self.rows.as_ref().map(Arc::clone),
+            durations: Arc::new(CounterDurations {
+                durations: Arc::clone(&self.durations),
+                now: self.clock.now(),
+            }),
+            tasks: self.tasks.clone(),
+            gate: Arc::clone(&self.gate),
+            stall_tracker: Arc::clone(&self.stall_tracker),
+            deadline_seconds: self.deadline_seconds,
+        }
     }
 
     pub async fn increment_in_memory<Cache>(
@@ -117,8 +70,7 @@ impl<Rows: SpendCounterRows> SpendCounterReseed<Rows> {
     where
         Cache: ReseedCache + ?Sized,
     {
-        let lock = self.locks.lock_for(counter_key);
-        let _guard = lock.lock().await;
+        let _guard = self.locks.hold(counter_key).await;
         cache.increment_local(counter_key, increment).await
     }
 
@@ -130,44 +82,49 @@ impl<Rows: SpendCounterRows> SpendCounterReseed<Rows> {
         require_cache_warm: bool,
     ) -> Result<Option<Decimal>, CoalescedError<Cache::Error>>
     where
+        Rows: DbSpendCounterRows,
         Cache: ReseedCache + ?Sized,
         Batch: ActiveSpendBatch + ?Sized,
     {
-        let lock = self.locks.lock_for(counter_key);
-        let _guard = lock.lock().await;
-        let batched = batch.read(counter_key).await?;
-        if let Some(CounterValue::Amount(amount)) = batched {
+        let _guard = self.locks.hold(counter_key).await;
+        if let Some(amount) = cached_answer(cache, batch, counter_key).await? {
             return Ok(Some(amount));
         }
-        if let Some(amount) = cached_amount(cache, batched.is_some(), counter_key).await? {
-            return Ok(Some(amount));
-        }
-        let Some(db_spend) = self.from_db(counter_key).await? else {
+        let Some(db_spend) = self.reader().from_db(counter_key).await else {
             return Ok(None);
         };
         warm(cache, batch, counter_key, db_spend, require_cache_warm).await
     }
 
-    fn lookup_request<'request>(&'request self, name: &'request str) -> LookupRequest<'request> {
-        LookupRequest {
-            name,
-            deadline_seconds: None,
-            default_deadline_seconds: self.deadline_seconds,
-            tracker: self.stall_tracker.as_ref(),
+    // same read precedence as coalesced, but a vanished winner's amount is added and warm failures propagate
+    pub async fn coalesced_window<Cache, Batch>(
+        &self,
+        cache: &Cache,
+        batch: &Batch,
+        request: &WindowReseed<'_>,
+    ) -> Result<Option<Decimal>, CoalescedError<Cache::Error>>
+    where
+        Cache: WindowReseedCache + ?Sized,
+        Batch: ActiveSpendBatch + ?Sized,
+    {
+        let _guard = self.locks.hold(request.counter_key).await;
+        if let Some(amount) = cached_answer(cache, batch, request.counter_key).await? {
+            return Ok(Some(amount));
         }
-    }
-
-    // _is_key_or_team_window_counter: only a suffix after the last :window: that parses suppresses the read
-    fn suppresses_db_read(&self, counter_key: &str) -> bool {
-        let prefixed =
-            counter_key.starts_with("spend:key:") || counter_key.starts_with("spend:team:");
-        if !prefixed {
-            return false;
+        match self
+            .window_from_db(
+                request.entity_type,
+                request.entity_id,
+                request.window_duration,
+                request.window_start,
+            )
+            .await?
+        {
+            None => Ok(None),
+            Some(window_spend) => {
+                warm_window(cache, batch, request.counter_key, window_spend).await
+            }
         }
-        let Some((_head, duration)) = counter_key.rsplit_once(":window:") else {
-            return false;
-        };
-        !duration.is_empty() && self.durations.seconds(duration, self.clock.now()).is_some()
     }
 
     pub async fn window_from_table(
@@ -246,5 +203,22 @@ impl<Rows: SpendCounterRows> SpendCounterReseed<Rows> {
         let rows = self.rows.as_deref()?;
         let entity = WindowEntity::from_counter_type(entity_type)?;
         Some((rows, entity))
+    }
+}
+
+// a batched amount answers first, and a batched null keeps the per-pod memory from answering
+async fn cached_answer<Cache, Batch>(
+    cache: &Cache,
+    batch: &Batch,
+    counter_key: &str,
+) -> Result<Option<Decimal>, CoalescedError<Cache::Error>>
+where
+    Cache: ReseedCache + ?Sized,
+    Batch: ActiveSpendBatch + ?Sized,
+{
+    match batch.read(counter_key).await? {
+        Some(CounterValue::Amount(amount)) => Ok(Some(amount)),
+        Some(CounterValue::Missing) => cached_amount(cache, true, counter_key).await,
+        None => cached_amount(cache, false, counter_key).await,
     }
 }
