@@ -17,7 +17,9 @@ where
     A: Serialize + ?Sized,
     B: DeserializeOwned,
 {
-    let payload = serde_json::to_value(value).ok()?;
+    let Ok(payload) = serde_json::to_value(value) else {
+        return None;
+    };
     serde_json::from_value(payload).ok()
 }
 
