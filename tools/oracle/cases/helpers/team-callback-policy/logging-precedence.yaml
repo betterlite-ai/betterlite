@@ -1,0 +1,18 @@
+kind: helper
+name: team-callback-policy-logging-precedence
+call:
+  team_callback_policy:
+    steps:
+      - {"function": "resolve", "encrypt": true, "salt_key": "team-callback-policy-salt", "metadata": {"logging": [], "callback_settings": {"success_callback": ["langfuse"], "callback_vars": {"langfuse_secret_key": "sk-legacy"}}}}
+      - {"function": "resolve", "encrypt": false, "salt_key": "team-callback-policy-salt", "metadata": {"logging": "langfuse", "callback_settings": {"success_callback": ["langfuse"]}}}
+      - {"function": "resolve", "encrypt": false, "salt_key": "team-callback-policy-salt", "metadata": {"logging": {"callback_name": "langfuse", "callback_vars": {}}, "callback_settings": {"success_callback": ["langfuse"]}}}
+      - {"function": "resolve", "encrypt": true, "salt_key": "team-callback-policy-salt", "metadata": {"logging": null, "callback_settings": {"success_callback": ["langfuse"], "failure_callback": null, "callback_vars": {"langfuse_secret_key": "sk-legacy", "langfuse_host": "https://lf.example"}}}}
+      - {"function": "resolve", "encrypt": true, "salt_key": "team-callback-policy-salt", "metadata": {"callback_settings": {"callbacks": ["langsmith"], "callback_vars": {"langsmith_api_key": "ls-legacy", "langsmith_project": "proj"}}}}
+      - {"function": "resolve", "encrypt": false, "salt_key": "team-callback-policy-salt", "metadata": {"callback_settings": "langfuse"}}
+      - {"function": "resolve", "encrypt": false, "salt_key": "team-callback-policy-salt", "metadata": {"logging": [{"callback_name": "langsmith", "callback_type": "failure", "callback_vars": {"langsmith_project": "proj"}}, {"callback_name": "langfuse", "callback_vars": {"not_a_callback_var": "x"}}, "langfuse", 7, {"callback_vars": {}}, {"callback_name": "langfuse", "callback_vars": {"langfuse_host": "os.environ/LANGFUSE_HOST"}}], "callback_settings": {"success_callback": ["datadog"]}}}
+      - {"function": "resolve", "encrypt": false, "salt_key": "team-callback-policy-salt", "metadata": {"logging": [{"callback_name": "langfuse", "callback_type": "success", "callback_vars": {"langfuse_host": "https://lf.example", "newrelic_region": "eu"}}, {"callback_name": "datadog", "callback_type": "failure", "callback_vars": {"dd_site": "datadoghq.eu"}}, {"callback_name": "langsmith", "callback_vars": {"langsmith_project": "first", "signoz_ingestion_endpoint": "https://signoz.example"}}, {"callback_name": "arize", "callback_type": null, "callback_vars": {}}, {"callback_name": "langfuse", "callback_type": "success_and_failure", "callback_vars": {}}, {"callback_name": "langsmith", "callback_type": "success", "callback_vars": {"langsmith_project": "second"}}]}}
+      - {"function": "resolve", "encrypt": false, "salt_key": "team-callback-policy-salt", "metadata": {"callback_settings": {"callback_vars": {"not_a_callback_var": "x"}}}}
+      - {"function": "resolve", "encrypt": false, "salt_key": "team-callback-policy-salt", "metadata": {"callback_settings": {"success_callback": "langfuse"}}}
+      - {"function": "resolve", "encrypt": false, "salt_key": "team-callback-policy-salt", "metadata": {"callback_settings": {"callback_vars": {"langfuse_secret_key": 7}}}}
+env: {}
+compare: {ignore: []}
