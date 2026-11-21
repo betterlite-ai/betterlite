@@ -1,0 +1,25 @@
+kind: helper
+name: bedrock-s3-signing-virtual-and-path-style
+call:
+  bedrock_services_s3_signing:
+    operation: url_conversion
+    urls:
+      - "https://s3.us-west-2.amazonaws.com/b/k%20x?q#f"
+      - "https://b.s3.us-west-2.amazonaws.com/a/b/"
+      - "https://s3.r.amazonaws.com/b/d/%2541\nz"
+      - "https://my-b.s3.r.amazonaws.com/k.jsonl"
+      - "https://S3.us-west-2.amazonaws.com/b/k?q"
+      - "https://s3.cn-north-1.amazonaws.com.cn/b/k"
+      - "http://localhost:9000//bkt/dir/f.jsonl?sig=1#x"
+      - "https://s3.r.amazonaws.com/b/"
+      - "https://h/b/k;v=1"
+      - "s3x://h/b/k;v=1"
+      - "  https://h/b/\tk"
+      - "b/k"
+      - "https://s3.us-west-2.amazonaws.com/bkt/litellm-bedrock-files/0123-%C3%A9.jsonl"
+      - "https://x/onlybucket"
+      - "https://my.bucket.s3.us-west-2.amazonaws.com/k"
+      - "https://[h/b/k"
+      - "https://h]/b/k"
+env: {}
+compare: {ignore: []}
