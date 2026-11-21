@@ -131,8 +131,7 @@ fn optional_params_map_keeps_the_decisions_shape() {
     assert_eq!(mapped.get("temperature"), Some(&json("0")));
 }
 
-// get_optional_params_transcription's extra_body members reach the transport beside the named
-// options, and a clashing member wins, as the OpenAI SDK's own extra_body merge does
+// the SDK's extra_body merge lays its members over the named options, with the member winning
 #[test]
 fn extra_body_members_are_laid_over_the_openai_options() {
     runtime().block_on(async {
@@ -618,8 +617,7 @@ fn riva_and_bedrock_ignore_the_caller_client() {
     });
 }
 
-// LiteLLM's xai audio config supports language only and copies it into optional_params, leaving
-// extra_body to the transform, so a fixture dispatch supplies that config to the native branch
+// LiteLLM's xai audio config maps language only, so a fixture dispatch supplies that config
 struct XaiParams;
 
 const XAI_SUPPORTED: [&str; 1] = ["language"];
@@ -669,8 +667,7 @@ impl TranscriptionDispatch for XaiDispatch<'_> {
     }
 }
 
-// a native destination keeps the mapper's named options beside the nested extra_body, the shape
-// LiteLLM's xai transform flattens with the direct option winning
+// a native destination keeps the mapper's named options beside the nested extra_body
 #[test]
 fn native_keeps_the_named_options_beside_the_nested_extra_body() {
     runtime().block_on(async {
