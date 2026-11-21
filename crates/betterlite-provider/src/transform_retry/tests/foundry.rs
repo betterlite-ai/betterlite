@@ -238,7 +238,37 @@ fn the_hook_reads_both_drop_params_flags() {
 }
 
 #[test]
-fn an_embedding_body_is_repaired_too() {
+fn a_stream_body_is_repaired_too() {
+    let hook = AzureAi;
+    let mut request = PreparedRequest::Stream(Box::new(PreparedChat {
+        http: PreparedHttp {
+            method: Method::POST,
+            url: Url::parse("https://studio.example.test/chat/completions").unwrap(),
+            headers: HeaderMap::new(),
+            body: CHAT.as_bytes().to_vec(),
+            deadline: Duration::from_secs(5),
+            body_limit: None,
+        },
+        retry: TransformRetry::bounded(MAX_ATTEMPTS).unwrap(),
+        client_model: None,
+    }));
+    let mut inputs = deployment();
+    inputs.global_drop_params = true;
+    hook.transform_request(&mut request, &error_response(REJECTED_TEMPERATURE), &inputs)
+        .unwrap();
+    let PreparedRequest::Stream(prepared) = &request else {
+        panic!("the fixture stays a stream request");
+    };
+    assert_eq!(
+        prepared.http.body,
+        br#"{"messages":[{"content":"hi","role":"user"}],"model":"deployment","top_p":0.5}"#
+            .to_vec()
+    );
+}
+
+// LiteLLM's embedding handler never calls the chat transform, so the body stays exactly as prepared
+#[test]
+fn an_embedding_body_is_left_alone() {
     let hook = AzureAi;
     let mut request = PreparedRequest::Embedding(Box::new(PreparedChat {
         http: PreparedHttp {
@@ -261,7 +291,7 @@ fn an_embedding_body_is_repaired_too() {
     };
     assert_eq!(
         prepared.http.body,
-        br#"{"input":"hi","model":"deployment"}"#.to_vec()
+        br#"{"model":"deployment","input":"hi","temperature":2}"#.to_vec()
     );
 }
 

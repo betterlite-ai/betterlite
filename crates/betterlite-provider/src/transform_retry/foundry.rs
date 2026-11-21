@@ -23,10 +23,8 @@ impl TransformOnUnprocessable for AzureAi {
         response: &UpstreamResponse,
         deployment: &Deployment,
     ) -> Result<(), OperationError> {
-        let (PreparedRequest::Chat(chat)
-        | PreparedRequest::Stream(chat)
-        | PreparedRequest::Embedding(chat)) = prepared
-        else {
+        // LiteLLM calls this transform only from the chat completion handler, so an embedding body stays as prepared
+        let (PreparedRequest::Chat(chat) | PreparedRequest::Stream(chat)) = prepared else {
             return Ok(());
         };
         let sent: Object = serde_json::from_slice(&chat.http.body)
