@@ -3,9 +3,11 @@
 mod support;
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use rstest::rstest;
 use tokio::sync::Notify;
+use tokio::time::timeout;
 use tokio_util::task::TaskTracker;
 
 use crate::budget_sweep::BudgetSweep;
@@ -413,7 +415,7 @@ async fn sweep_leader_cleanup(#[case] case: CleanupCase) {
             handle.abort();
             let _cancelled = handle.await;
             tasks.close();
-            tasks.wait().await;
+            timeout(Duration::from_secs(1), tasks.wait()).await.unwrap();
             assert!(tasks.is_empty());
             (None, cache.deletes())
         }
