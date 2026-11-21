@@ -73,8 +73,7 @@ class ClientSocket(Protocol):
     async def close(self, code: int = 1000, reason: str | None = None) -> None: ...
 
 
-# the handler is unannotated for its return, so the runner is named through this protocol
-# the probe never passes client or user_api_key_dict, so those two take only None
+# the unannotated handler is mirrored parameter for parameter; the probe passes no client or user_api_key_dict
 class RealtimeRunner(Protocol):
     async def async_realtime(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/realtime/handler.py#L133-L148
         self,
@@ -86,7 +85,7 @@ class RealtimeRunner(Protocol):
         api_version: str | None = None,
         azure_ad_token: str | None = None,
         client: None = None,
-        timeout: float | None = None,
+        timeout: float | None = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/realtime/handler.py#L143
         realtime_protocol: str | None = None,
         query_params: RealtimeQueryParams | None = None,
         user_api_key_dict: None = None,
