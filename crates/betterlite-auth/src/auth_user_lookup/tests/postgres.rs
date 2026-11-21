@@ -3,9 +3,11 @@
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
+use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::database_failures::gate::{DbLookupStallTracker, SystemClock};
 use betterlite_db::database_replica::availability::Availability;
 use betterlite_db::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
+use betterlite_db::postgres_store::errors::backend;
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
@@ -16,12 +18,13 @@ use tokio_postgres::NoTls;
 use tokio_postgres::types::{FromSql, ToSql};
 use tokio_util::task::TaskTracker;
 
-use super::tests::support::{FakeCache, FakeEnrollment, FakeReset, request_with};
+use super::tests::support::{FakeCache, FakeEnrollment, FakeReset, request_with, unavailable};
 use crate::auth_user_lookup::cache::UserCache;
 use crate::auth_user_lookup::cadence::{Cadence, WallClock};
 use crate::auth_user_lookup::error::{UserLookupError, UserReadFailure};
 use crate::auth_user_lookup::lookup::{UserLookup, UserLookupRequest};
 use crate::auth_user_lookup::ports::{BudgetResetCalculator, DefaultTeamEnrollment};
+use crate::auth_user_lookup::rows::UserRowError;
 use crate::auth_user_lookup::store::{DatabaseUserStore, UserStore};
 
 const SEED_CASE_EMAIL: &str = "INSERT INTO \"LiteLLM_UserTable\" (user_id, user_email) VALUES ('case-user', 'MixedCase@Example.com'), ('other-user', 'other@example.com')";
@@ -36,16 +39,19 @@ struct Environment {
     url: Option<String>,
 }
 
-async fn database() -> (PostgresFixture, Arc<DatabaseUserStore>) {
+async fn provision() -> PostgresFixture {
     let url = Environment::parse_from(["auth-user-lookup-postgres-tests"])
         .url
         .map(SecretString::from);
     let statements = catalog_statements(&PACKAGED_CATALOGS).expect("the migration text");
-    let fixture = PostgresFixture::provision_with_statements(url.as_ref(), statements)
+    PostgresFixture::provision_with_statements(url.as_ref(), statements)
         .resolve()
         .await
-        .expect("the database fixture");
-    let pool = Pool::builder(Manager::new(
+        .expect("the database fixture")
+}
+
+fn pool_for(fixture: &PostgresFixture) -> Pool {
+    let manager = Manager::new(
         fixture
             .options
             .url
@@ -53,21 +59,31 @@ async fn database() -> (PostgresFixture, Arc<DatabaseUserStore>) {
             .parse()
             .expect("the database url"),
         NoTls,
-    ))
-    .max_size(4)
-    .build()
-    .expect("the database pool");
-    let store = PostgresStore { pool: Some(pool) };
-    let tracker = Arc::new(DbLookupStallTracker {
+    );
+    Pool::builder(manager)
+        .max_size(4)
+        .build()
+        .expect("the database pool")
+}
+
+fn tracker() -> Arc<DbLookupStallTracker<SystemClock>> {
+    Arc::new(DbLookupStallTracker {
         clock: SystemClock,
         last_hit: Mutex::new(None),
-    });
+    })
+}
+
+async fn database() -> (PostgresFixture, Arc<DatabaseUserStore>) {
+    let fixture = provision().await;
+    let store = PostgresStore {
+        pool: Some(pool_for(&fixture)),
+    };
     let database = DatabaseUserStore {
         reader: store.clone(),
         writer: store,
         availability: Arc::new(Availability::default()),
         default_deadline_seconds: 5.0,
-        tracker,
+        tracker: tracker(),
         tasks: TaskTracker::new(),
     };
     (fixture, Arc::new(database))
@@ -328,5 +344,90 @@ async fn partial_failure_keeps_created_row() {
         Ok(value) => panic!("the cache write failure fails the lookup: {value:?}"),
     }
     assert_eq!(user_count(&store.reader, "partial-user").await, 1);
+    close(fixture, store).await;
+}
+
+#[tokio::test]
+async fn writer_flag_reads_through_the_writer() {
+    let fixture = provision().await;
+    let writer = PostgresStore {
+        pool: Some(pool_for(&fixture)),
+    };
+    let store = Arc::new(DatabaseUserStore {
+        reader: PostgresStore { pool: None },
+        writer: writer.clone(),
+        availability: Arc::new(Availability::default()),
+        default_deadline_seconds: 5.0,
+        tracker: tracker(),
+        tasks: TaskTracker::new(),
+    });
+    seed(&writer, SEED_CASE_EMAIL).await;
+    let found = store
+        .find_by_id("case-user", true)
+        .await
+        .expect("the writer lookup")
+        .expect("the seeded user");
+    match found {
+        JsonData::Object(fields) => assert_eq!(
+            fields.get("user_id"),
+            Some(&JsonData::String("case-user".to_owned()))
+        ),
+        other => panic!("the writer returns the stored user row: {other:?}"),
+    }
+    close(fixture, store).await;
+}
+
+#[tokio::test]
+async fn stale_plan_driver_errors_are_unavailable() {
+    let (fixture, store) = database().await;
+    seed(&store.reader, SEED_CAP).await;
+    let client = store
+        .reader
+        .session()
+        .await
+        .expect("the database connection");
+    let statement = client
+        .prepare("SELECT * FROM \"LiteLLM_UserTable\" WHERE user_id = $1")
+        .await
+        .expect("the prepared statement");
+    client
+        .query(&statement, &[&"cap-user"])
+        .await
+        .expect("the first plan");
+    client
+        .batch_execute("ALTER TABLE \"LiteLLM_UserTable\" ADD COLUMN b736_plan_marker integer")
+        .await
+        .expect("the schema change");
+    let driver = client
+        .query(&statement, &[&"cap-user"])
+        .await
+        .expect_err("the changed result type invalidates the cached plan");
+    assert!(
+        driver.as_db_error().is_some_and(|error| error
+            .message()
+            .contains("cached plan must not change result type")),
+        "the driver carries the stale plan: {driver}"
+    );
+    let native = backend::<UserRowError>(driver);
+    assert!(unavailable(Box::new(native)));
+    drop(client);
+    close(fixture, store).await;
+}
+
+#[tokio::test]
+async fn driver_data_errors_are_missing() {
+    let (fixture, store) = database().await;
+    let client = store
+        .reader
+        .session()
+        .await
+        .expect("the database connection");
+    let driver = client
+        .query("SELECT * FROM \"B736MissingTable\"", &[])
+        .await
+        .expect_err("the table does not exist");
+    let native = backend::<UserRowError>(driver);
+    assert!(!unavailable(Box::new(native)));
+    drop(client);
     close(fixture, store).await;
 }

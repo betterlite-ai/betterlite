@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, VecDeque};
+use std::error::Error;
 use std::future::pending;
 use std::io::Error as IoError;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -19,6 +20,7 @@ use crate::auth_cache::AuthCacheError;
 use crate::auth_cache::payload::PayloadError;
 use crate::auth_user_lookup::cache::{UserCache, UserCacheError};
 use crate::auth_user_lookup::cadence::{Cadence, CadenceClock, CadenceEntry};
+use crate::auth_user_lookup::error::{UserLookupError, user_read_failure};
 use crate::auth_user_lookup::lookup::{UserLookup, UserLookupRequest};
 use crate::auth_user_lookup::ports::{BudgetResetCalculator, DefaultTeamEnrollment, PortError};
 use crate::auth_user_lookup::rows::UserCreateData;
@@ -43,6 +45,14 @@ fn failure_error(kind: &FailureKind) -> UserStoreError {
         FailureKind::Io(message) => {
             UserStoreError::Other(Box::new(IoError::other(message.clone())))
         }
+    }
+}
+
+pub(crate) fn unavailable(cause: Box<dyn Error + Send + Sync>) -> bool {
+    match user_read_failure("u1", cause) {
+        UserLookupError::Unavailable(_) => true,
+        UserLookupError::UserMissing(_) => false,
+        other => panic!("a read failure classifies as unavailable or missing: {other:?}"),
     }
 }
 

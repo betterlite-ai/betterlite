@@ -2,12 +2,17 @@ use std::error::Error;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
+use betterlite_db::database_failures::deadline::{DbLookupDeadlineExceeded, DbLookupError};
+use betterlite_db::database_faults::{DbError as DatabaseFault, ErrorType};
+use betterlite_db::postgres_store::errors::DbError as NativeDbError;
 use tokio::time::timeout;
 
 use super::logs::Logs;
-use super::support::{FailureKind, Harness, request, request_with, user_with};
+use super::support::{FailureKind, Harness, request, request_with, unavailable, user_with};
 use crate::auth_identity::errors::AuthError;
+use crate::auth_read::table::AuthReadError;
 use crate::auth_user_lookup::error::UserLookupError;
+use crate::auth_user_lookup::rows::UserRowError;
 
 #[tokio::test]
 async fn not_found_rethrown_without_log() {
@@ -159,4 +164,81 @@ async fn cancellation_not_wrapped() {
         Ok(value) => panic!("the timeout cancels the lookup: {value:?}"),
     }
     assert!(logs.entries().is_empty());
+}
+
+fn fault(error_type: ErrorType, message: &str) -> DatabaseFault {
+    DatabaseFault {
+        error_type,
+        message: message.to_owned(),
+        code: None,
+        meta_code: None,
+        traceback_modules: Vec::new(),
+        cause: None,
+    }
+}
+
+#[test]
+fn prisma_faults_are_unavailable() {
+    let cause = Box::new(fault(ErrorType::Prisma, ""));
+    assert!(unavailable(cause));
+}
+
+#[test]
+fn transport_words_make_data_faults_unavailable() {
+    let cause = Box::new(fault(ErrorType::Data, "connection refused"));
+    assert!(unavailable(cause));
+}
+
+#[test]
+fn engine_tracebacks_make_faults_unavailable() {
+    let mut engine_fault = fault(ErrorType::Other, "");
+    engine_fault.traceback_modules = vec!["prisma.engine.errors".to_owned()];
+    assert!(unavailable(Box::new(engine_fault)));
+}
+
+#[test]
+fn quiet_data_faults_are_missing() {
+    let cause = Box::new(fault(ErrorType::Data, ""));
+    assert!(!unavailable(cause));
+}
+
+#[test]
+fn stale_plan_faults_are_unavailable() {
+    let cause = Box::new(fault(
+        ErrorType::Data,
+        "cached plan must not change result type",
+    ));
+    assert!(unavailable(cause));
+}
+
+#[test]
+fn lookup_deadlines_are_unavailable() {
+    let deadline = DbLookupDeadlineExceeded {
+        lookup: "user".to_owned(),
+        deadline_seconds: 5.0_f64,
+        cause: None,
+    };
+    assert!(unavailable(Box::new(DbLookupError::Deadline(deadline))));
+}
+
+#[test]
+fn lookup_data_faults_are_missing() {
+    let cause = DbLookupError::Database(fault(ErrorType::Data, ""));
+    assert!(!unavailable(Box::new(cause)));
+}
+
+#[test]
+fn repository_transport_errors_are_unavailable() {
+    let native = NativeDbError::<UserRowError>::NoDbConnected;
+    let cause = AuthReadError::Repository(native);
+    assert!(unavailable(Box::new(cause)));
+}
+
+#[test]
+fn repository_invalid_records_are_missing() {
+    let native = NativeDbError::<UserRowError>::InvalidRecord {
+        source: UserRowError::TooLarge { len: 1 },
+    };
+    let cause = AuthReadError::Repository(native);
+    assert!(!unavailable(Box::new(cause)));
 }
