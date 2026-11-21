@@ -2,10 +2,10 @@ task: B4779
 deviations:
   - what: A strict-mode lookup failure is the typed GrantError::PolicyUnavailable (status 503, message "Agent invocation policy is unavailable") instead of a raised HTTPException.
     why: betterlite errors are typed thiserror enums; the HTTP layer renders the same 503 and detail B4780 maps from status(). The oracle compares the status for every strict case.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_permission_handler.py#L323-L330
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_permission_handler.py#L330-L334
   - what: _agent_access_group_ceiling's injected resolve_ceiling callable is replaced by the constructor's AgentAccessGroups port, which serves both the strict and non-strict read through its check_db_only argument.
     why: betterlite passes dependencies through constructors and has no function-valued defaults reaching module globals. The reads and the ceiling are the same.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_permission_handler.py#L130-L147
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_permission_handler.py#L138-L154
   - what: The unified access group lookup is an optional port (Option<Unified>), so no database and no cache both mean an absent lookup and contribute no agents.
     why: LiteLLM returns [] when user_api_key_cache is None and separately when prisma_client is None; betterlite models the lookup object the server wires instead of two lazily imported globals. A working proxy has both or neither.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L4262-L4276
@@ -17,8 +17,8 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_permission_handler.py#L422-L435
   - what: A strict team read uses TeamSource::Writer and a non-strict one uses TeamSource::CacheThenDatabase, where LiteLLM passes check_db_only=strict to get_team_object.
     why: B737's TeamLookup takes the source as a three-way enum instead of two booleans; Writer is check_db_only=True and CacheThenDatabase is both false, so the read paths are the same.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_permission_handler.py#L386-L394
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_permission_handler.py#L369-L376
 kept_bugs:
   - what: A missing team reaches the caller as a failed lookup, so strict mode answers 503 and non-strict warns and allows, instead of the dead team_obj is None branch returning Restricted(empty).
     why: LiteLLM's get_team_object raises for a missing team and the handler catches every Exception, so the None branch is unreachable there too; betterlite copies the behavior a working deployment has.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3297-L3316
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3193-L3201
