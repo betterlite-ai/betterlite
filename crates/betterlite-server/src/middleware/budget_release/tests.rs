@@ -166,7 +166,7 @@ async fn concurrent_requests_each_release_only_their_own_reservation() {
     let layer = BudgetReleaseLayer {
         releaser: Arc::clone(&releaser),
     };
-    let mut first = layer.clone().layer(both_stamped);
+    let mut first = layer.layer(both_stamped);
     let mut second = first.clone();
     let (first_reply, second_reply) =
         tokio::join!(first.call(request(Some(1))), second.call(request(Some(2))));
@@ -188,7 +188,9 @@ async fn nested_layers_release_the_reservation_once() {
     let layer = BudgetReleaseLayer {
         releaser: Arc::clone(&releaser),
     };
-    let mut service = layer.layer(layer.layer(handler(Reply::Plain, &seen)));
+    let mut service = layer
+        .clone()
+        .layer(layer.layer(handler(Reply::Plain, &seen)));
     service.call(request(Some(9))).await.unwrap();
     assert_eq!(*seen.lock().unwrap(), ["handler 9 returned", "released 9"]);
 }

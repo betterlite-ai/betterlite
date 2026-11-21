@@ -112,23 +112,27 @@ impl Service<Request<Body>> for Handler {
             if let Some(waiting) = barrier {
                 waiting.wait().await;
             }
-            let label = stamped.map_or_else(|| "none".to_owned(), |id| id.to_string());
+            let label = stamped.map_or_else(|| "none".to_owned(), ToString::to_string);
             events
                 .lock()
                 .unwrap()
                 .push(format!("handler {label} returned"));
-            match reply {
-                Reply::Plain => Ok(Response::new(Body::from("ok"))),
-                Reply::ServerError => Ok(Response::builder()
-                    .status(StatusCode::INTERNAL_SERVER_ERROR)
-                    .body(Body::from("upstream broke"))
-                    .unwrap()),
-                Reply::Failed => Err(InnerFailed),
-                Reply::Streaming => Ok(Response::new(Body::from_stream(stream::pending::<
-                    Result<Bytes, io::Error>,
-                >()))),
-            }
+            respond(reply)
         })
+    }
+}
+
+fn respond(reply: Reply) -> Result<Response<Body>, InnerFailed> {
+    match reply {
+        Reply::Plain => Ok(Response::new(Body::from("ok"))),
+        Reply::ServerError => Ok(Response::builder()
+            .status(StatusCode::INTERNAL_SERVER_ERROR)
+            .body(Body::from("upstream broke"))
+            .unwrap()),
+        Reply::Failed => Err(InnerFailed),
+        Reply::Streaming => Ok(Response::new(Body::from_stream(stream::pending::<
+            Result<Bytes, io::Error>,
+        >()))),
     }
 }
 
