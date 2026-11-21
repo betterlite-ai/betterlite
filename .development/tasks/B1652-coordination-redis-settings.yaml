@@ -7,7 +7,9 @@ description: >-
   projections for the fifteen connection/cluster/sentinel fields. Read general_settings through
   B725's ConfigRepository; no database, missing row or null value yields an empty section,
   while a non-object row is an error. A dictionary-valued coordination_redis entry, including {},
-  overrides the file block. Otherwise consult B8380's config snapshot. Source reporting is a
+  overrides the file block. Otherwise read general_settings.coordination_redis from the config snapshot
+  (get_config_state, a JSON object), which current_settings takes as an argument; its caller B1653
+  passes B8380's ProxyConfigState snapshot. Source reporting is a
   separate decision: a nonempty explicit block wins, then a plain Redis/RedisCluster response
   cache, then B8377's REDIS_* target predicate (env_has_redis_target), then null. Thus an empty persisted block can
   suppress file settings while the reported source still comes from a fallback.

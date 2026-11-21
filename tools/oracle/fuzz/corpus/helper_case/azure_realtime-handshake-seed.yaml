@@ -1,0 +1,19 @@
+kind: helper
+name: azure-realtime-handshake-seed
+call:
+  azure_realtime:
+    kind: handshake
+    model: realtime-a
+    scope_headers: []
+    ssl_verification: enabled
+    max_message_size_bytes: 1048576
+    azure_api_base: null
+    azure_api_key: null
+    azure_api_version: null
+    queries: []
+    protocols: []
+    failures:
+      - {status_code: 401, message: "", send_error: null, close_error: null, api_key: "k1", azure_ad_token: null}
+    http_setups: []
+env: {}
+compare: {ignore: []}
