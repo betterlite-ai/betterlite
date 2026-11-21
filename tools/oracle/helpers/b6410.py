@@ -1,4 +1,5 @@
-from typing import Final, Literal, Protocol, TypedDict
+from collections.abc import Sequence
+from typing import Final, Literal, Protocol, TypedDict, cast
 
 import httpx
 import litellm
@@ -38,7 +39,7 @@ Provider = Literal[
 
 
 class ChatConfig(Protocol):
-    def get_supported_openai_params(self, model: str) -> list[JsonValue]: ...
+    def get_supported_openai_params(self, model: str) -> Sequence[JsonValue]: ...
 
     def map_openai_params(
         self,
@@ -49,7 +50,7 @@ class ChatConfig(Protocol):
         drop_params: bool,
     ) -> dict[str, JsonValue]: ...
 
-    def get_complete_url(
+    def get_complete_url(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/moonshot/chat/transformation.py#L77-L95
         self,
         api_base: str | None,
         api_key: str | None,
@@ -71,7 +72,7 @@ class ChatConfig(Protocol):
         /,
     ) -> dict[str, JsonValue]: ...
 
-    def validate_environment(
+    def validate_environment(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/novita/chat/transformation.py#L14-L31
         self,
         headers: dict[str, str],
         model: str,
@@ -118,7 +119,7 @@ class UrlCall(TypedDict):
 class RequestCall(TypedDict):
     model: str
     reasoning: bool
-    messages: list[AllMessageValues]
+    messages: list[JsonValue]
     optional_params: dict[str, JsonValue]
 
 
@@ -133,8 +134,8 @@ class NovitaCall(TypedDict):
 
 class CacheCall(TypedDict):
     model: str
-    messages: list[AllMessageValues]
-    tools: list[ChatCompletionToolParam] | None
+    messages: list[JsonValue]
+    tools: list[JsonValue] | None
 
 
 class ErrorCall(TypedDict):
@@ -155,17 +156,17 @@ class Input(TypedDict):
 
 
 CONFIGS: Final[dict[Provider, type[ChatConfig]]] = {
-    "maritalk": MaritalkConfig,
-    "llama": LlamaAPIConfig,
-    "moonshot": MoonshotChatConfig,
-    "morph": MorphChatConfig,
-    "nadir": NadirConfig,
-    "nebius": NebiusConfig,
-    "novita": NovitaConfig,
-    "nscale": NscaleConfig,
-    "v0": V0ChatConfig,
-    "wandb": WandbConfig,
-    "zai": ZAIChatConfig,
+    "maritalk": MaritalkConfig,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/maritalk.py#L19-L61
+    "llama": LlamaAPIConfig,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/meta_llama/chat/transformation.py#L13-L46
+    "moonshot": MoonshotChatConfig,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/moonshot/chat/transformation.py#L19-L254
+    "morph": MorphChatConfig,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/morph/chat/transformation.py#L13-L38
+    "nadir": NadirConfig,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nadir/chat/transformation.py#L36-L68
+    "nebius": NebiusConfig,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nebius/chat/transformation.py#L10-L29
+    "novita": NovitaConfig,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/novita/chat/transformation.py#L14-L31
+    "nscale": NscaleConfig,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nscale/chat/transformation.py#L11-L50
+    "v0": V0ChatConfig,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/v0/chat/transformation.py#L10-L42
+    "wandb": WandbConfig,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/wandb/chat/transformation.py#L10-L36
+    "zai": ZAIChatConfig,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/zai/chat/transformation.py#L10-L56
 }
 
 
@@ -177,7 +178,7 @@ def failure() -> JsonValue:
 def supported(call: SupportedCall) -> JsonValue:
     config = CONFIGS[call["provider"]]()
     params = config.get_supported_openai_params(call["model"])
-    return {"ok": True, "value": params, "status": None}
+    return {"ok": True, "value": list(params), "status": None}
 
 
 def params(call: ParamsCall) -> JsonValue:
@@ -198,7 +199,7 @@ def request(call: RequestCall) -> JsonValue:
     config = CONFIGS["moonshot"]()
     body = config.transform_request(
         call["model"],
-        list(call["messages"]),
+        cast(list[AllMessageValues], call["messages"]),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1-L60
         dict(call["optional_params"]),
         {"custom_llm_provider": "moonshot"},
         {},
@@ -216,7 +217,13 @@ def novita(call: NovitaCall) -> JsonValue:
     config = CONFIGS["novita"]()
     try:
         headers = config.validate_environment(
-            dict(call["headers"]), "novita/m", [], {}, {}, call["api_key"], None
+            dict(call["headers"]),
+            "novita/m",
+            cast(list[AllMessageValues], []),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/novita/chat/transformation.py#L14-L31
+            {},
+            {},
+            call["api_key"],
+            None,
         )
     except ValueError:
         return failure()
@@ -225,18 +232,22 @@ def novita(call: NovitaCall) -> JsonValue:
 
 def cache(call: CacheCall) -> JsonValue:
     config = CONFIGS["zai"]()
-    messages, tools = config.remove_cache_control_flag_from_messages_and_tools(
-        call["model"], list(call["messages"]), call["tools"]
+    messages, tools = config.remove_cache_control_flag_from_messages_and_tools(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/zai/chat/transformation.py#L36-L56
+        call["model"],
+        cast(list[AllMessageValues], call["messages"]),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1-L60
+        cast(list[ChatCompletionToolParam] | None, call["tools"]),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1-L60
     )
     value: dict[str, JsonValue] = {
-        "messages": JSON.validate_python(messages),
-        "tools": JSON.validate_python(tools),
+        "messages": JSON.validate_python(messages),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1-L60
+        "tools": JSON.validate_python(tools),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1-L60
     }
     return {"ok": True, "value": value, "status": None}
 
 
 def maritalk(call: ErrorCall) -> JsonValue:
-    error = MaritalkConfig().get_error_class(call["message"], call["status"], call["headers"])
+    error = MaritalkConfig().get_error_class(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/maritalk.py#L60-L61
+        call["message"], call["status"], call["headers"]
+    )
     value: dict[str, JsonValue] = {
         "status_code": error.status_code,
         "message": error.message,
