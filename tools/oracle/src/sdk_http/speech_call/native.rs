@@ -9,11 +9,11 @@ use betterlite_core::api::speech_call::service::SpeechDispatch;
 use betterlite_core::api::speech_chat_bridge::{
     SpeechCompletionAnswer, SpeechCompletionCall, SpeechCompletionOutput, SpeechCompletions,
 };
-use betterlite_http::proxy::ProxiedClient;
-use betterlite_logging::logging_state::LoggingState;
+use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
 use betterlite_models::decisions::{HiddenParams, Json};
 use betterlite_openai::chat::ChatRequest;
 use betterlite_openai::chat::execution::ChatError;
+use betterlite_openai::chat::response::ChatResponse;
 use betterlite_openai::files::error::StatusError;
 use betterlite_openai::files::records::BinaryContent;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
@@ -71,27 +71,31 @@ impl SpeechCompletions for BridgeCompletions {
                         message: format!("no deployment serves {model}"),
                     })?;
             match executor.send(deployment, &request).await {
-                Ok(answer) => Ok(SpeechCompletionOutput::Response(Box::new(
-                    SpeechCompletionAnswer {
-                        response: answer.response,
-                        hidden_params: HiddenParams::new(),
-                    },
-                ))),
-                Err(ChatError::Provider { response }) => {
-                    let status = StatusError::from_response(response.status, &response.body);
-                    Err(SpeechCallError::Provider {
-                        status: status.status,
-                        message: status.message,
-                        error_type: status.error_type,
-                        param: status.param,
-                        code: status.code,
-                    })
-                }
+                Ok(answer) => Ok(completion_output(answer.response)),
+                Err(ChatError::Provider { response }) => Err(provider_error(&response)),
                 Err(other) => Err(SpeechCallError::Internal {
                     message: SdkHttpError::Chat(Box::new(other)).to_string(),
                 }),
             }
         }
+    }
+}
+
+fn completion_output(response: ChatResponse) -> SpeechCompletionOutput {
+    SpeechCompletionOutput::Response(Box::new(SpeechCompletionAnswer {
+        response,
+        hidden_params: HiddenParams::new(),
+    }))
+}
+
+fn provider_error(response: &UpstreamResponse) -> SpeechCallError {
+    let status = StatusError::from_response(response.status, &response.body);
+    SpeechCallError::Provider {
+        status: status.status,
+        message: status.message,
+        error_type: status.error_type,
+        param: status.param,
+        code: status.code,
     }
 }
 
@@ -121,10 +125,7 @@ pub(super) async fn execute(
     api_base: &str,
     env: &BTreeMap<String, String>,
 ) -> Result<SdkResult, SdkHttpError> {
-    let environment: BTreeMap<String, String> = env
-        .iter()
-        .map(|(name, value)| (name.clone(), support::harness(value, api_base)))
-        .collect();
+    let environment = case_environment(env, api_base);
     let settings = support::settings(&call.globals, &environment, api_base)?;
     let fixture = Fixture::new(&environment, support::credentials(&call.globals, api_base))?;
     let context = fixture.context();
@@ -165,6 +166,12 @@ pub(super) async fn execute(
 
 type Dispatch<'service> =
     SpeechDispatch<'service, ProxiedClient, BridgeCompletions, StepConfigs, CannedOperations>;
+
+fn case_environment(env: &BTreeMap<String, String>, api_base: &str) -> BTreeMap<String, String> {
+    env.iter()
+        .map(|(name, value)| (name.clone(), support::harness(value, api_base)))
+        .collect()
+}
 
 fn step_outcome(
     result: Result<BinaryContent, SpeechException>,

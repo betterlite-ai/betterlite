@@ -24,11 +24,11 @@ use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
 use betterlite_openai::api::speech_provider_contract::SpeechVoice;
 use betterlite_openai::files::records::BinaryContent;
-use betterlite_openai::openai_base_config::Object;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use secrecy::SecretString;
+use serde::Serialize;
 
 use super::super::error::SdkHttpError;
 use super::super::result::{Failure, Nullable};
@@ -52,25 +52,22 @@ pub(super) fn settings(
         .api_base
         .as_deref()
         .map(|value| harness(value, api_base));
-    load(&source(globals, base.as_deref()), environment)
+    load(&source(globals, base.as_deref())?, environment)
+}
+
+#[derive(Serialize)]
+struct SettingsSource<'a> {
+    litellm_settings: &'a Globals,
 }
 
 // litellm_settings as the case sets it, with the base already resolved to the mock origin
-fn source(globals: &Globals, base: Option<&str>) -> String {
-    serde_json::json!({
-        "litellm_settings": {
-            "api_base": base,
-            "api_key": globals.api_key,
-            "openai_key": globals.openai_key,
-            "organization": globals.organization,
-            "project": globals.project,
-            "azure_key": globals.azure_key,
-            "api_version": globals.api_version,
-            "num_retries": globals.num_retries,
-            "request_timeout": globals.request_timeout,
-        }
+fn source(globals: &Globals, base: Option<&str>) -> Result<String, SdkHttpError> {
+    let mut resolved = globals.clone();
+    resolved.api_base = base.map(str::to_owned);
+    serde_json::to_string(&SettingsSource {
+        litellm_settings: &resolved,
     })
-    .to_string()
+    .map_err(SdkHttpError::Serialize)
 }
 
 fn load(source: &str, environment: &BTreeMap<String, String>) -> Result<Settings, SdkHttpError> {
@@ -172,8 +169,8 @@ pub(super) fn speak(step: &Step, api_base: &str) -> Result<SpeechCall, SdkHttpEr
 
 fn voice(voice: Option<&Json>) -> Result<Option<SpeechVoice>, SdkHttpError> {
     voice
-        .map(|voice| {
-            let wire = serde_json::to_value(voice).map_err(SdkHttpError::Serialize)?;
+        .map(|value| {
+            let wire = serde_json::to_value(value).map_err(SdkHttpError::Serialize)?;
             serde_json::from_value(wire).map_err(|error| {
                 SdkHttpError::Invalid(format!("the voice is not a string or an object: {error}"))
             })
