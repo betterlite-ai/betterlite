@@ -1,11 +1,6 @@
 use super::SessionIterationHandler;
 use super::cache::SessionIterationCache;
 
-// _make_cache_key: the hash tag keeps every key of one session on a single Redis Cluster slot
-fn cache_key(session_id: &str) -> String {
-    format!("{{session_iterations:{session_id}}}:count")
-}
-
 // _increment_and_get: the script counts atomically across instances, and any failure falls back to the local cache
 pub(crate) async fn count_after_increment<C>(
     handler: &SessionIterationHandler<C>,
@@ -14,7 +9,8 @@ pub(crate) async fn count_after_increment<C>(
 where
     C: SessionIterationCache,
 {
-    let key = cache_key(session_id);
+    // _make_cache_key: the hash tag keeps every key of one session on a single Redis Cluster slot
+    let key = format!("{{session_iterations:{session_id}}}:count");
     if let Some(script) = handler.script.as_ref() {
         let counted = handler
             .cache

@@ -140,9 +140,10 @@ where
             "Max iterations exceeded for session {}. Current count: {}, max_iterations: {}.",
             request.session_id, request.current_count, request.max_iterations
         )),
+        headers: None,
+        category: None,
         rate_limit_type: Some(RateLimitDimension::MaxIterations),
         model: Some(model),
         llm_provider: Some(llm_provider),
-        ..ProxyRateLimitErrorInit::default()
     })
 }

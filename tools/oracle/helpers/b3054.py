@@ -3,11 +3,11 @@ import os
 from collections.abc import Callable
 from typing import Literal, NotRequired, Protocol, TypeAlias, TypedDict
 
-from litellm.exceptions import RateLimitError
 from litellm.proxy.agent_endpoints.agent_registry import global_agent_registry
 from litellm.proxy.hooks import PROXY_HOOKS
 from litellm.types.agents import AgentResponse
 from pydantic import BaseModel, JsonValue, TypeAdapter
+from starlette.exceptions import HTTPException
 from typing_extensions import override
 
 TTL_VARIABLE: str = "LITELLM_MAX_ITERATIONS_TTL"
@@ -71,8 +71,8 @@ class FakeRedis(RedisCache):
         if self.mode == "script_fails":
             raise RuntimeError("the fake Redis script failed")
         key = keys[0]
-        current = self.store[key] if key in self.store else 0
-        total = current + 1
+        current = self.store.get(key)
+        total = 1 if current is None else current + 1
         self.store[key] = total
         if total == 1:
             self.expires[key] = args[0]
@@ -105,7 +105,7 @@ class FakeUsageCache:
             raise RuntimeError("the max iterations hook reads without a span")
         if not local_only:
             raise RuntimeError("the max iterations hook reads the local cache only")
-        return self.memory[key] if key in self.memory else None
+        return self.memory.get(key)
 
     async def async_set_cache(
         self,
@@ -192,7 +192,7 @@ async def pre_call_outcome(
             data=call["data"],
             call_type="completion",
         )
-    except RateLimitError as error:
+    except HTTPException as error:
         fields = RateLimitFields.model_validate(error, from_attributes=True)
         exceeded: dict[str, JsonValue] = {
             "kind": "pre_call",
@@ -205,7 +205,8 @@ async def pre_call_outcome(
             "detail": fields.detail,
         }
         return JSON.validate_python(exceeded)
-    return JSON.validate_python({"kind": "pre_call", "outcome": "admitted"})
+    admitted: dict[str, JsonValue] = {"kind": "pre_call", "outcome": "admitted"}
+    return JSON.validate_python(admitted)
 
 
 async def execute(parsed: Input) -> Output:

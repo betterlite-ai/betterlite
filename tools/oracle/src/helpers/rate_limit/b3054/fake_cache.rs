@@ -41,10 +41,26 @@ impl FakeCache {
 
     pub(super) fn snapshot(&self) -> Snapshot {
         Snapshot {
-            memory: counts(&self.memory),
-            memory_ttls: seconds(&self.memory_ttls),
-            redis: counts(&self.redis),
-            redis_ttls: seconds(&self.redis_ttls),
+            memory: self
+                .memory
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone(),
+            memory_ttls: self
+                .memory_ttls
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone(),
+            redis: self
+                .redis
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone(),
+            redis_ttls: self
+                .redis_ttls
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone(),
         }
     }
 
@@ -89,7 +105,13 @@ impl SessionIterationCache for FakeCache {
     }
 
     fn memory_count(&self, key: &str) -> impl Future<Output = Option<i64>> + Send {
-        ready(counts(&self.memory).get(key).copied())
+        ready(
+            self.memory
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .get(key)
+                .copied(),
+        )
     }
 
     fn memory_set_count(
@@ -108,12 +130,4 @@ impl SessionIterationCache for FakeCache {
             .insert(key.to_owned(), ttl.as_secs());
         ready(())
     }
-}
-
-fn counts(store: &Mutex<BTreeMap<String, i64>>) -> BTreeMap<String, i64> {
-    store.lock().unwrap_or_else(PoisonError::into_inner).clone()
-}
-
-fn seconds(store: &Mutex<BTreeMap<String, u64>>) -> BTreeMap<String, u64> {
-    store.lock().unwrap_or_else(PoisonError::into_inner).clone()
 }
