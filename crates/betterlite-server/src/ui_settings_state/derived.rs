@@ -10,7 +10,7 @@ use secrecy::ExposeSecret as _;
 
 use crate::jobs::ptu::attribution::{EnvironmentAttribution, PtuAttribution};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct DerivedUiSettings {
     pub enable_ptu_cost_attribution: bool,
     pub apply_user_budget_to_team_keys: bool,

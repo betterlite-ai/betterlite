@@ -161,6 +161,18 @@ fn environment_attribution_reports_a_configured_environment_value() {
 }
 
 #[test]
+fn environment_attribution_without_the_environment_value_is_unconfigured() {
+    let ptu = EnvironmentAttribution {
+        configured: BTreeMap::new(),
+    };
+    assert!(!ptu.configured());
+    assert_eq!(
+        ui_setting_source(PTU_COST_ATTRIBUTION_SETTING, &json("false"), &store(), &ptu),
+        FieldSource::Default
+    );
+}
+
+#[test]
 fn environment_attribution_derives_the_enabled_flag() {
     let configured = BTreeMap::from([(
         PTU_COST_ATTRIBUTION_ENV_VAR.to_owned(),
