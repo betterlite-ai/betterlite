@@ -113,6 +113,31 @@ pub(super) async fn global_drop_params() {
     );
 }
 
+pub(super) async fn nested_drop_params() {
+    let mut harness = Harness::new();
+    let rig = Rig::default();
+    rig.wire.queue(200, COMPACT_OK);
+    let prepost = base_env(&harness.redactor, &harness.sink, harness.now);
+    let mut log = LogContext {
+        state: &mut harness.state,
+        env: &prepost,
+    };
+    let mut dropping = call("openai/gpt-4o", text_input("hello"));
+    dropping.kwargs = kwargs(
+        r#"{"reasoning":{"summary":"auto"},"additional_drop_params":["reasoning.summary"]}"#,
+    );
+    compact_responses(&rig.deps(), &dropping, &mut log)
+        .await
+        .expect("the nested additional drop removes reasoning.summary");
+
+    let requests = rig.wire.requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(
+        body_json(&requests[0]),
+        json(r#"{"model":"gpt-4o","input":"hello","reasoning":{}}"#)
+    );
+}
+
 pub(super) async fn bypass_and_nulls() {
     let mut harness = Harness::new();
     let mut rig = Rig::default();

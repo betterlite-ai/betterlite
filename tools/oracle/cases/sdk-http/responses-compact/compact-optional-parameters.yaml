@@ -19,7 +19,20 @@ call:
         model: openai/gpt-4o
         input: hello
         kwargs: {top_k: 5, trace: t}
+      - mode: sync
+        model: openai/gpt-4o
+        input: hello
+        kwargs: {reasoning: {summary: auto}, additional_drop_params: ["reasoning.summary"]}
 upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: resp_compact
+      created_at: 100
+      object: response
+      status: completed
+      model: gpt-4o
+      output: []
   - status: 200
     headers: {content-type: application/json}
     body:

@@ -18,6 +18,7 @@ async fn compact_optional_parameters() {
     compact_optional_parameters::unsupported_rejected().await;
     compact_optional_parameters::drop_params_normalized().await;
     compact_optional_parameters::global_drop_params().await;
+    compact_optional_parameters::nested_drop_params().await;
     compact_optional_parameters::bypass_and_nulls().await;
 }
 

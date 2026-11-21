@@ -9,6 +9,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::response_events::ResponsesReply;
 use betterlite_openai::response_input::{ResponsesInput, ResponsesItem};
 use betterlite_prompts::arguments::json::Object;
+use indexmap::IndexMap;
 use secrecy::SecretString;
 
 use crate::api::response_id_traversal::record::Record;
@@ -192,6 +193,13 @@ fn requested_options(
         .iter()
         .map(|(name, value)| (name.clone(), value.clone()))
         .collect();
+    // local_vars.update(kwargs): kwargs are top-level locals, and the nested map keeps its copy
+    let mut nested: IndexMap<String, JsonValue> = IndexMap::new();
+    for (name, value) in &call.kwargs {
+        let converted = json_value(value);
+        optional.insert(name.clone(), converted.clone());
+        nested.insert(name.clone(), converted);
+    }
     if let Some(instructions) = &call.instructions {
         optional.insert(
             String::from("instructions"),
@@ -204,15 +212,7 @@ fn requested_options(
             JsonValue::Text(previous.clone()),
         );
     }
-    optional.insert(
-        String::from("kwargs"),
-        JsonValue::Object(
-            call.kwargs
-                .iter()
-                .map(|(name, value)| (name.clone(), json_value(value)))
-                .collect(),
-        ),
-    );
+    optional.insert(String::from("kwargs"), JsonValue::Object(nested));
     requested_optional_params(&mut optional)
         .map_err(CompactParamError::from)
         .map_err(CompactResponsesError::from)
