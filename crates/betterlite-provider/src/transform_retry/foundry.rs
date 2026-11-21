@@ -14,7 +14,7 @@ use crate::prepared::deployment::Deployment;
 impl TransformOnUnprocessable for AzureAi {
     // LiteLLM asks this policy for every HTTP error status; the markers in the body alone decide
     fn should_retry(&self, response: &UpstreamResponse, deployment: &Deployment) -> bool {
-        foundry_repair(deployment).should_retry(error_text(response))
+        foundry_repair(deployment).should_retry(str::from_utf8(&response.body).unwrap_or_default())
     }
 
     fn transform_request(
@@ -29,7 +29,8 @@ impl TransformOnUnprocessable for AzureAi {
         };
         let sent: Object = serde_json::from_slice(&chat.http.body)
             .map_err(|source| OperationError::Encode { source })?;
-        let repaired = repair(error_text(response), &sent).map_err(repair_error)?;
+        let repaired = repair(str::from_utf8(&response.body).unwrap_or_default(), &sent)
+            .map_err(repair_error)?;
         // only the body changes: the URL, the auth headers and the deadline stay as prepared
         chat.http.body =
             serde_json::to_vec(&repaired).map_err(|source| OperationError::Encode { source })?;
@@ -42,10 +43,6 @@ fn foundry_repair(deployment: &Deployment) -> FoundryRepair {
         call: normalize_drop_params(deployment.drop_params.as_ref()).unwrap_or(false),
         global: deployment.global_drop_params,
     }
-}
-
-fn error_text(response: &UpstreamResponse) -> &str {
-    str::from_utf8(&response.body).unwrap_or_default()
 }
 
 fn repair_error(error: RepairError) -> OperationError {

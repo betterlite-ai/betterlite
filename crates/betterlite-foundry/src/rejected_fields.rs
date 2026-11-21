@@ -100,19 +100,17 @@ fn extra_parameters(error_text: &str) -> Vec<String> {
     group
         .split(PARAMETER_SEPARATOR)
         .map(|parameter| {
+            // Python's str.strip() removes U+001C..U+001F too, which char::is_whitespace leaves
             parameter
-                .trim_matches(is_python_whitespace)
+                .trim_matches(|character: char| {
+                    character.is_whitespace() || matches!(character, '\u{1c}'..='\u{1f}')
+                })
                 .trim_matches('\'')
                 .trim_matches('"')
         })
         .filter(|name| !name.is_empty())
         .map(str::to_owned)
         .collect()
-}
-
-// Python's str.strip() reads the White_Space property and the four separators below it as whitespace
-const fn is_python_whitespace(character: char) -> bool {
-    character.is_whitespace() || matches!(character, '\u{1c}'..='\u{1f}')
 }
 
 // re's `\[(.*?)\]` searched left to right: the dot stops at a newline, so an unclosed bracket is skipped and a later one can match

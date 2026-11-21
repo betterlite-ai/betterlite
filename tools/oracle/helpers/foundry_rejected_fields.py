@@ -33,13 +33,13 @@ class Input(TypedDict):
 @runtime_checkable
 class RepairConfig(Protocol):
     @property
-    def max_retry_on_unprocessable_entity_error(self) -> int: ...
+    def max_retry_on_unprocessable_entity_error(self) -> int: ...  # ast-grep-ignore: no-long-names
 
-    def should_retry_llm_api_inside_llm_translation_on_http_error(
+    def should_retry_llm_api_inside_llm_translation_on_http_error(  # ast-grep-ignore: no-long-names
         self, e: Exception, litellm_params: JsonObject
     ) -> bool: ...
 
-    def transform_request_on_unprocessable_entity_error(
+    def transform_request_on_unprocessable_entity_error(  # ast-grep-ignore: no-long-names
         self, e: Exception, request_data: JsonObject
     ) -> JsonObject: ...
 
@@ -49,9 +49,8 @@ class ConfigBoundary(BaseModel):
     config: RepairConfig
 
 
-CONFIG: Final[RepairConfig] = ConfigBoundary.model_validate(
-    {"config": AzureAIStudioConfig()}
-).config
+CONFIG_VALUES: Final = {"config": AzureAIStudioConfig()}
+CONFIG: Final[RepairConfig] = ConfigBoundary.model_validate(CONFIG_VALUES).config
 
 litellm.suppress_debug_info = True
 
@@ -77,10 +76,6 @@ def repair_value(call: RepairCall) -> JsonObject:
     return {"body": JSON.validate_python(repaired)}
 
 
-def bounds_value() -> JsonObject:
-    return {"max_retry": CONFIG.max_retry_on_unprocessable_entity_error}
-
-
 def run(values: Input) -> JsonValue:
     answer: JsonObject = {}
     with redirect_stdout(io.StringIO()):
@@ -89,5 +84,5 @@ def run(values: Input) -> JsonValue:
         if "repairs" in values:
             answer["repairs"] = [repair_value(call) for call in values["repairs"]]
         if values.get("bounds") is True:
-            answer["bounds"] = bounds_value()
+            answer["bounds"] = {"max_retry": CONFIG.max_retry_on_unprocessable_entity_error}
     return answer
