@@ -1,7 +1,10 @@
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
+from datetime import datetime
 from typing import Literal, TypeAlias, get_args
 
 from pydantic import JsonValue
+
+from betterlite.types.utils.base import ModelValue
 
 _CALLBACK_NAMES = Literal[
     "lago", "openmeter", "logfire", "literalai", "litellm_agent", "dynamic_rate_limiter",
@@ -14,7 +17,13 @@ _CALLBACK_NAMES = Literal[
     "vector_store_pre_call_hook", "dotprompt", "bitbucket", "gitlab", "cloudzero", "focus",
     "mavvrik", "vantage", "posthog", "levo", "compression_interception", "newrelic", "signoz",
 ]
-Callback: TypeAlias = str | _CALLBACK_NAMES | Callable[..., JsonValue | Awaitable[JsonValue]]
+_CallbackResult: TypeAlias = JsonValue | Awaitable[JsonValue]
+_InputCallback: TypeAlias = Callable[[dict[str, JsonValue]], _CallbackResult]
+_EventCallback: TypeAlias = Callable[
+    [dict[str, JsonValue], ModelValue, datetime, datetime], _CallbackResult
+]
+_CallRule: TypeAlias = Callable[[str], _CallbackResult | Mapping[str, JsonValue]]
+Callback: TypeAlias = str | _CALLBACK_NAMES | _InputCallback | _EventCallback
 CALLBACK_TYPES: JsonValue = None
 input_callback: list[Callback] = []
 success_callback: list[Callback] = []
@@ -45,8 +54,8 @@ argilla_transformation_object = None
 _async_input_callback: list[Callback] = []
 _async_success_callback: list[Callback] = []
 _async_failure_callback: list[Callback] = []
-pre_call_rules: list[Callable[..., JsonValue | Awaitable[JsonValue]]] = []
-post_call_rules: list[Callable[..., JsonValue | Awaitable[JsonValue]]] = []
+pre_call_rules: list[_CallRule] = []
+post_call_rules: list[_CallRule] = []
 turn_off_message_logging = False
 standard_logging_payload_excluded_fields = None  # ast-grep-ignore: no-long-names
 log_raw_request_response = False

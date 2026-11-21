@@ -6,8 +6,8 @@ deviations:
   - what: CALLBACK_TYPES, in_memory_llm_clients_cache, _key_management_settings and vertexAITextEmbeddingConfig keep their names and hold None, where LiteLLM holds a type alias, an LLMClientCache instance, a KeyManagementSettings instance and a VertexAITextEmbeddingConfig instance.
     why: Those classes arrive with the tasks that build them, and the test names each placeholder with its reason.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L114
-  - what: 'The callback lists share one element type of str, LiteLLM''s 55 logger names and a callable returning JSON or an awaitable of it, so CustomLogger is missing from every union, betterlite.callbacks accepts a plain string, and the pre-call and post-call rules are callables that return JSON.'
-    why: CustomLogger is not built yet, and one element type keeps these lists usable from a type checker meanwhile.
+  - what: 'The callback lists hold a logger name or one of two typed callables, a one-argument input callback and a four-argument event callback, and the pre-call and post-call rules hold a callable of the response text, where LiteLLM''s CALLBACK_TYPES and rule lists are bare Callable. A bare Callable takes any arguments and returns Any, and the wheel''s types carry no Any or object, so a callback that annotates a parameter more narrowly than dict[str, JsonValue], ModelValue or datetime does not match.'
+    why: 'CustomLogger joins the union when the task that builds it lands, and the shapes follow where LiteLLM invokes each list: log_input_event and log_event in litellm/integrations/custom_logger.py, and pre_call_rules and post_call_rules in litellm/litellm_core_utils/rules.py.'
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L114-L119
   - what: A .env file is read from the process working folder, where LiteLLM calls load_dotenv() with no path and python-dotenv searches upward from the installed litellm package directory.
     why: The task's doD names the working folder, which is where a setup keeps the .env it starts the proxy from.

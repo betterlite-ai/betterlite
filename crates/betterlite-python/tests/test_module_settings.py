@@ -3,6 +3,7 @@ import importlib
 import inspect
 import json
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from pathlib import Path
 from types import ModuleType
 from typing import Final
@@ -13,6 +14,7 @@ from pydantic import JsonValue, TypeAdapter
 
 import betterlite
 from betterlite import _native
+from betterlite.types.utils.base import ModelValue
 
 ASSIGNMENT_LIMIT = 2314
 MIN_ASSIGNMENTS = 400
@@ -274,6 +276,31 @@ def _identify_bob_in_this_thread() -> str:
     return _thread_context_user()
 
 
+def _input_callback(kwargs: dict[str, JsonValue]) -> JsonValue:
+    if not kwargs:
+        return None
+    return kwargs
+
+
+def _event_callback(
+    kwargs: dict[str, JsonValue],
+    response_obj: ModelValue,
+    start_time: datetime,
+    end_time: datetime,
+) -> JsonValue:
+    return {
+        "kwargs": kwargs,
+        "response": str(response_obj),
+        "start": start_time.isoformat(),
+        "delta": (end_time - start_time).total_seconds(),
+    }
+
+
+def _call_rule(text: str) -> bool:
+    refused = "cannot answer" in text
+    return not refused
+
+
 # ast-grep-ignore: no-long-names
 def test_setting_defaults_match_litellm() -> None:
     ours = _members(betterlite)
@@ -463,6 +490,26 @@ def test_model_data_empty_lists_are_separate_objects() -> None:
     betterlite.success_callback.append("probe")
     assert betterlite.input_callback == []
     betterlite.success_callback.pop()
+
+
+# ast-grep-ignore: no-long-names
+def test_module_callback_lists_accept_typed_functions() -> None:
+    betterlite.input_callback.append(_input_callback)
+    betterlite.success_callback.append(_event_callback)
+    assert _input_callback in betterlite.input_callback
+    assert _event_callback in betterlite.success_callback
+    betterlite.input_callback.pop()
+    betterlite.success_callback.pop()
+
+
+# ast-grep-ignore: no-long-names
+def test_module_call_rules_accept_typed_functions() -> None:
+    betterlite.pre_call_rules.append(_call_rule)
+    betterlite.post_call_rules.append(_call_rule)
+    assert _call_rule in betterlite.pre_call_rules
+    assert _call_rule in betterlite.post_call_rules
+    betterlite.pre_call_rules.pop()
+    betterlite.post_call_rules.pop()
 
 
 # ast-grep-ignore: no-long-names
