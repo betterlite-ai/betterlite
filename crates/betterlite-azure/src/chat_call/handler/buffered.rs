@@ -17,10 +17,10 @@ use super::require_kind;
 const NOT_AN_OBJECT: &str = "the request body is not a JSON object";
 
 // the built request, the call that made it and the logging hooks every step reports to
-struct Exchange<'a, Client> {
-    sent: &'a SentChat<Client>,
-    call: &'a ChatCall<'a, Client>,
-    hooks: &'a mut dyn ChatHooks,
+struct Exchange<'call, Client> {
+    sent: &'call SentChat<Client>,
+    call: &'call ChatCall<'call, Client>,
+    hooks: &'call mut dyn ChatHooks,
 }
 
 // one body for both directions; only the async path stores headers and logs failures with post_call
@@ -56,7 +56,7 @@ where
     if exchange.call.acompletion {
         prepare_async(&mut exchange, &client)?;
     }
-    let raw = send(&client, &mut exchange, runtime).await?;
+    let raw = send::<Source>(&client, &mut exchange, runtime).await?;
     finish(&mut exchange, runtime, raw)
 }
 
