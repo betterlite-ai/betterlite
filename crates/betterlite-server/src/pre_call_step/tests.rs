@@ -15,9 +15,7 @@ use http::Request;
 use http::request::Parts;
 
 use super::standalone::{AllowAllBudgets, NoRouterSettings};
-use super::{
-    PreCall as _, PreCallError, PreCallInput, PreCallOutput, PreCallSettings, PreCallStep,
-};
+use super::{PreCall as _, PreCallInput, PreCallSettings, PreCallStep};
 use crate::pre_call::failure::{PreCallFailure, ProxyFailure};
 use crate::pre_call::key::PreCallKey;
 use crate::pre_call::ports::{
