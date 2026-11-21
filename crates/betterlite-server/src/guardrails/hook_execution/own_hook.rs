@@ -1,8 +1,8 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::SystemTime;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_config::sections::guardrail_params::opaque::OpaqueParams;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_guardrails::guardrail_base::GuardrailBase;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
@@ -91,13 +91,12 @@ pub async fn run_own_hook(
         return own_hook(call, data).await;
     };
     let started_at = execution.clock.now();
-    let started =
-        serde_json::from_value::<BTreeMap<String, GuardrailValue>>(JsonValue::Object(data.clone()))
-            .map_err(RecordError::from)
-            .and_then(|request_data| {
-                GuardrailInvocation::begin(hook_name, &request_data, None, started_at)
-                    .map_err(RecordError::from)
-            });
+    let started = serde_json::from_value::<OpaqueParams>(JsonValue::Object(data.clone()))
+        .map_err(RecordError::from)
+        .and_then(|request_data| {
+            GuardrailInvocation::begin(hook_name, &request_data.0, None, started_at)
+                .map_err(RecordError::from)
+        });
     let outcome = own_hook(call, data).await;
     let record = OpenRecord {
         started,
@@ -206,7 +205,10 @@ fn answer_value(answer: &HookAnswer) -> Result<Option<GuardrailValue>, serde_jso
         | HookAnswer::DuringCall
         | HookAnswer::PostCall(None) => return Ok(None),
     };
-    serde_json::from_value(value).map(Some)
+    // OpaqueParams reads only a map, so the answer goes in under one key
+    let wrapped = JsonMap::from_iter([("answer".to_owned(), value)]);
+    let mut fields = serde_json::from_value::<OpaqueParams>(JsonValue::Object(wrapped))?.0;
+    Ok(fields.remove("answer"))
 }
 
 // the record reads only the error text and whether it is an intervention

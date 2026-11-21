@@ -15,7 +15,7 @@ pub struct RouterGuardrailBalancer<Random> {
     pub rng: Mutex<Random>,
 }
 
-impl<R: Rng + Send> GuardrailBalancer for RouterGuardrailBalancer<Random> {
+impl<Random: Rng + Send> GuardrailBalancer for RouterGuardrailBalancer<Random> {
     fn should_use_load_balancing(&self, guardrail_name: &str) -> bool {
         let deployments = self
             .guardrails

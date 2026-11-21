@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_config::sections::guardrail_params::opaque::OpaqueParams;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_openai::openai_base_config::Object as JsonMap;
 
@@ -18,13 +19,15 @@ const METADATA_BUCKETS: [&str; 2] = ["metadata", "litellm_metadata"];
 pub fn metadata_buckets(
     data: &JsonMap,
 ) -> Result<BTreeMap<String, GuardrailValue>, serde_json::Error> {
-    let mut buckets = BTreeMap::new();
-    for key in METADATA_BUCKETS {
-        if let Some(value) = data.get(key) {
-            buckets.insert(key.to_owned(), serde_json::from_value(value.clone())?);
-        }
-    }
-    Ok(buckets)
+    let buckets: JsonMap = METADATA_BUCKETS
+        .iter()
+        .filter_map(|key| {
+            data.get(*key)
+                .map(|value| ((*key).to_owned(), value.clone()))
+        })
+        .collect();
+    // OpaqueParams reads a number as a number; the derived GuardrailValue reads an arbitrary_precision number as a map
+    serde_json::from_value::<OpaqueParams>(JsonValue::Object(buckets)).map(|params| params.0)
 }
 
 pub fn write_buckets(
@@ -108,9 +111,7 @@ pub fn enrich_error(
     let ProxyHookError::Http { status, detail } = error else {
         return;
     };
-    let Ok(parsed @ GuardrailValue::Object(_)) =
-        serde_json::from_str::<GuardrailValue>(detail.as_str())
-    else {
+    let Ok(parsed) = serde_json::from_str::<OpaqueParams>(detail.as_str()) else {
         return;
     };
     let event_hook = execution.bases.base(callback).and_then(|base| {
@@ -128,7 +129,7 @@ pub fn enrich_error(
     };
     let mut raised = RaisedError::Http(HttpException {
         status_code: *status,
-        detail: parsed,
+        detail: GuardrailValue::Object(parsed.0),
     });
     add_guardrail_context(&mut raised, &context, FastapiInstall::Installed);
     if let RaisedError::Http(enriched) = raised
