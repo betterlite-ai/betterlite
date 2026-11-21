@@ -435,6 +435,14 @@ def test_status_error_matches(theirs: BaseException, ours: BaseException) -> Non
     )
 
 
+def test_bare_request_raises() -> None:
+    assert not _OUR_BARE.has_request()
+    with pytest.raises(
+        RuntimeError, match="The request instance has not been set on this response"
+    ):
+        _ = _OUR_BARE.request
+
+
 def test_bad_request_non_dict_body() -> None:
     ours = our_errors.BadRequestError(
         message=_MESSAGE, model=_MODEL, llm_provider=_PROVIDER, body=_BYTES
