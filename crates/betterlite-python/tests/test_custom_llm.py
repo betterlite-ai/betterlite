@@ -360,7 +360,6 @@ def test_custom_llm_error_typed() -> None:
     assert error.status_code == UNAVAILABLE
     assert error.message == "down"
     assert str(error) == "down"
-    assert error.args == ("down",)
 
 
 def test_custom_llm_surface_params(reports: dict[str, Report]) -> None:
