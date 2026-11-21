@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use betterlite_error::proxy_error_types::ProxyErrorTypes;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
+use betterlite_models::resolution::{ResolutionError, ResolvedModel};
 
 use super::conversion::AuthFailure;
 use crate::rejection_provider::{DeploymentSnapshot, ProviderResolution};
@@ -50,6 +51,17 @@ pub struct FailureHookCall<'call> {
 pub enum HookError {
     #[error("a post-call failure callback raised")]
     Raised,
+}
+
+// a caller without the router's provider table: every budget rejection falls back to litellm_proxy
+pub struct NoNativeProvider;
+
+impl ProviderResolution for NoNativeProvider {
+    fn resolve(&self, model: &str) -> Result<ResolvedModel, ResolutionError> {
+        Err(ResolutionError::MissingProvider {
+            model: model.to_owned(),
+        })
+    }
 }
 
 #[async_trait]

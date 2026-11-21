@@ -6,9 +6,12 @@ use axum::body::{Body, Bytes};
 use axum::http::{HeaderMap, Request, StatusCode};
 use axum::response::{IntoResponse as _, Response};
 use betterlite_auth::auth_errors::conversion::AuthFailure;
-use betterlite_auth::auth_errors::handler::{AuthErrorHandler, FailedRequest, HandlerError};
+use betterlite_auth::auth_errors::handler::{
+    AuthErrorHandler, AuthErrorSettings, FailedRequest, HandlerError,
+};
 use betterlite_auth::auth_errors::ports::{
-    AuthErrorPorts, AuthLog, FailureHookCall, HookError, Level, Logger, ServiceFailure,
+    AuthErrorPorts, AuthLog, FailureHookCall, HookError, Level, Logger, NoNativeProvider,
+    ServiceFailure,
 };
 use betterlite_auth::auth_request_policy::ip::RequestProvenance;
 use betterlite_auth::rejection_provider::{DeploymentSnapshot, ProviderResolution};
@@ -16,7 +19,6 @@ use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
-use betterlite_models::resolution::{ResolutionError, ResolvedModel};
 use secrecy::SecretString;
 
 use super::auth_identity::StageFailure;
@@ -28,26 +30,13 @@ use crate::state::auth_errors::AuthFailureHook;
 
 mod tests;
 
-// the gateway resolves no budget rejection here, so the rate-limit provider falls back to litellm_proxy
-struct NoNativeProvider;
-
-impl ProviderResolution for NoNativeProvider {
-    // only a budget rejection asks for a provider, and no gateway stage raises one through this path
-    #[cfg_attr(test, mutants::skip)]
-    fn resolve(&self, model: &str) -> Result<ResolvedModel, ResolutionError> {
-        Err(ResolutionError::MissingProvider {
-            model: model.to_owned(),
-        })
-    }
-}
-
 struct ServerPorts<'slot> {
     hook: Option<&'slot Arc<dyn AuthFailureHook>>,
 }
 
 #[async_trait]
 impl AuthErrorPorts for ServerPorts<'_> {
-    // only a database failure reaches the outage bypass, and no gateway stage raises one through this path
+    // the gateway turns the outage bypass off, so nothing records a database failure here
     #[cfg_attr(test, mutants::skip)]
     fn record_service_failure(&self, failure: &ServiceFailure<'_>) {
         tracing::warn!(call_type = failure.call_type, error = %failure.error, "database service failure");
@@ -141,7 +130,11 @@ impl FailureContext {
             ports: &ServerPorts {
                 hook: slot.hook.get(),
             },
-            settings: slot.settings,
+            // the gateway reads no key from a database, so a rejected key never earns the outage identity
+            settings: AuthErrorSettings {
+                allow_requests_on_db_unavailable: false,
+                ..slot.settings
+            },
             routes,
             redactor,
         };
