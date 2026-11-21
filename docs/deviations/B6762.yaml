@@ -1,0 +1,24 @@
+task: B6762
+deviations:
+  - what: Callers for one server share one discovery run through a tokio watch channel held in the server's slot, the run is spawned into a TaskTracker the owner passes in, and each slot carries a generation number; the slots live in a field of DiscoverySlots, not on the manager and its event loop.
+    why: Rust has no module-level mutable state in this repo, detached tasks are not allowed, and tests need an injected clock.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L2183-L2208
+  - what: The registry is shared as Arc<RwLock<ServerRegistry>>; publish takes the write lock only around the map write and checks the slot generation while it holds it, and no lock is held across a fetch.
+    why: LiteLLM mutates a plain dict from asyncio tasks on one thread; Rust needs an explicit lock, and the check under the lock keeps a replaced slot from publishing old metadata.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L2062-L2080
+  - what: Inside one run, discovery is retried at the 0.05 s and 0.15 s delays only when a fetch failed on transport or with a 5xx status; a 404, 401, invalid document or metadata that still leaves the endpoints unresolved fails the run at once. LiteLLM retries every unresolved attempt.
+    why: The task asks for it; retrying a final answer 200 ms later only repeats the same requests. The failure is still recorded with the same backoff.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L2104-L2118
+  - what: reconcile also drops and recreates a slot whose running or finished discovery was started for a different url or auth_type than the server it is given. LiteLLM only compares requires_discovery with whether a slot exists.
+    why: The task asks for it, so a changed url never serves metadata found for the old one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L2220-L2227
+  - what: A temporary slot for a server that is not registered expires 300 s after it resolved, checked against the injected clock when any slot is next read, instead of a call_later timer.
+    why: The clock is injected so tests run without sleeping, and a lazy sweep needs no timer task.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L2073-L2079
+  - what: Each run logs one info line when it resolves the endpoints and one warning when it fails with incomplete metadata, both with the redacted server origin; LiteLLM logs only the timeout warning.
+    why: The task asks for one line per outcome so a failed discovery is visible without debug logging.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L2125-L2141
+  - what: A waiter whose run ended without an outcome (a cancelled task) rejoins like a stale outcome even when its slot is still current; LiteLLM re-raises the CancelledError there.
+    why: betterlite cancels a run only when its slot is replaced or on shutdown, and a rejoin is bounded to one retry before the 503, so the caller gets an answer instead of a 500.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L2251-L2256
+kept_bugs: []
