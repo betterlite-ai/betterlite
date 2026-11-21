@@ -18,52 +18,6 @@ enum ScopeError {
     Team(#[from] TeamReadError),
 }
 
-// which scope block a check runs after the shared short circuits
-enum ScopeCheck<'check> {
-    Privileges,
-    Invite(&'check str),
-}
-
-// the two public checks share every short circuit and the failure log, and differ only in their block
-async fn check_scope<Users, Teams>(
-    caller: &AdminCaller<'_>,
-    users: &Users,
-    teams: Option<&Teams>,
-    cache: Option<Arc<dyn UserCache>>,
-    which: ScopeCheck<'_>,
-) -> bool
-where
-    Users: AdminUserReads + ?Sized,
-    Teams: TeamReads + ?Sized,
-{
-    if caller.proxy_admin {
-        return true;
-    }
-    let Some(teams) = teams else {
-        return false;
-    };
-    let Some(user_id) = caller.user_id else {
-        return false;
-    };
-    let (what, outcome) = match which {
-        ScopeCheck::Privileges => (
-            "admin privileges",
-            privileges_block(user_id, caller, users, teams, cache).await,
-        ),
-        ScopeCheck::Invite(target_user_id) => (
-            "invite permission",
-            invite_block(target_user_id, caller, users, teams, cache).await,
-        ),
-    };
-    match outcome {
-        Ok(granted) => granted,
-        Err(error) => {
-            tracing::debug!("Error checking {what} for user {user_id}: {error}");
-            false
-        }
-    }
-}
-
 // _user_has_admin_privileges: proxy admin first, then any org_admin membership, then any roster team
 pub async fn user_has_admin_privileges<Users, Teams>(
     caller: &AdminCaller<'_>,
@@ -75,7 +29,19 @@ where
     Users: AdminUserReads + ?Sized,
     Teams: TeamReads + ?Sized,
 {
-    check_scope(caller, users, teams, cache, ScopeCheck::Privileges).await
+    if caller.proxy_admin {
+        return true;
+    }
+    let (Some(teams), Some(user_id)) = (teams, caller.user_id) else {
+        return false;
+    };
+    match privileges_block(user_id, caller, users, teams, cache).await {
+        Ok(granted) => granted,
+        Err(error) => {
+            tracing::debug!("Error checking admin privileges for user {user_id}: {error}");
+            false
+        }
+    }
 }
 
 async fn privileges_block<Users, Teams>(
@@ -133,14 +99,19 @@ where
     Users: AdminUserReads + ?Sized,
     Teams: TeamReads + ?Sized,
 {
-    check_scope(
-        caller,
-        users,
-        teams,
-        cache,
-        ScopeCheck::Invite(target_user_id),
-    )
-    .await
+    match (caller.proxy_admin, teams, caller.user_id) {
+        (true, _, _) => true,
+        (false, Some(teams), Some(user_id)) => {
+            match invite_block(target_user_id, caller, users, teams, cache).await {
+                Ok(granted) => granted,
+                Err(error) => {
+                    tracing::debug!("Error checking invite permission for user {user_id}: {error}");
+                    false
+                }
+            }
+        }
+        (false, _, _) => false,
+    }
 }
 
 // one cache serves both reads, and the caller row is loaded before the target row
