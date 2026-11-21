@@ -49,12 +49,12 @@ impl Helper for Op {
             .enable_all()
             .build()
             .map_err(failure)?;
-        runtime.block_on(run_case(input))
+        runtime.block_on(answer(input))
     }
 }
 
 // The internal rates come from the case rather than a catalog, so both sides price the same evidence.
-async fn run_case(input: &Input) -> HelperResult {
+async fn answer(input: &Input) -> HelperResult {
     let payload = serde_json::from_str::<DailyPayload>(&input.payload).map_err(failure)?;
     let prices = CasePrices {
         prices: input.prices.clone(),
@@ -93,7 +93,7 @@ async fn common_answer(
     };
     let (projection, raised) =
         outcome(common_daily_transaction(payload, entity, pricing, endpoints).await);
-    let base = projection.map(|projection| base_spend_row(&projection.base));
+    let base = projection.map(|record| base_spend_row(&record.base));
     Ok(json!({"base": base, "raised": raised}))
 }
 
