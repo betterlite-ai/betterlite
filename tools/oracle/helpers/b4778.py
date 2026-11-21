@@ -1,6 +1,6 @@
 import asyncio
-from collections.abc import Callable, Mapping, Sequence
-from typing import Final, Literal, TypeAlias, TypedDict
+from collections.abc import Mapping, Sequence
+from typing import Final, Literal, Protocol, TypeAlias, TypedDict, runtime_checkable
 
 from litellm.models.access_group import LiteLLM_AccessGroupTable
 from litellm.models.object_permission import LiteLLM_ObjectPermissionTable
@@ -18,7 +18,7 @@ from litellm.proxy.agent_endpoints.auth.agent_permission_handler import (
     UnrestrictedAgentAccess,
 )
 from litellm.types.agents import AgentCaller, AgentResponse
-from pydantic import JsonValue, TypeAdapter
+from pydantic import ConfigDict, JsonValue, TypeAdapter
 
 
 class GroupLists(TypedDict):
@@ -94,11 +94,19 @@ class CallerView(CallerFields):
     requires_fresh_policy: bool
 
 
+@runtime_checkable
+class ConfigRegistry(Protocol):
+    def load_agents_from_config(
+        self, agent_config: Sequence[Mapping[str, JsonValue]] | None = None
+    ) -> None: ...
+
+
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 CALLER_FIELDS: TypeAdapter[CallerFields] = TypeAdapter(CallerFields)
-LOAD_CONFIG: Callable[[Sequence[Mapping[str, JsonValue]]], None] = TypeAdapter(
-    Callable[[Sequence[Mapping[str, JsonValue]]], None]
-).validate_python(global_agent_registry.load_agents_from_config)
+AGENT: TypeAdapter[AgentResponse] = TypeAdapter(AgentResponse)
+REGISTRY: TypeAdapter[ConfigRegistry] = TypeAdapter(
+    ConfigRegistry, config=ConfigDict(arbitrary_types_allowed=True)
+)
 KEY_AGENT: Final = "invoking-agent"
 
 
@@ -169,7 +177,7 @@ def managed_ceilings(call: ManagedCall) -> JsonValue:
         "agent_card_params": {},
         "access_group_ids": list(call["access_group_ids"]),
     }
-    agent = AgentResponse.model_validate(fields)
+    agent = AGENT.validate_python(fields)
     ceilings = asyncio.run(resolve_managed_agent_ceilings(agent))
     return JSON.validate_python([ceiling_view(found) for found in ceilings])
 
@@ -227,7 +235,7 @@ def team_ceiling(side: Side) -> TeamCeiling:
 
 
 def intersect_access(call: AccessCall) -> JsonValue:
-    LOAD_CONFIG(call["config_agents"])
+    REGISTRY.validate_python(global_agent_registry).load_agents_from_config(call["config_agents"])
     key = key_auth(call["key_access"])
     team = team_ceiling(call["team_access"])
     resolving = AgentRequestHandler.resolve_agent_access(key, resolve_ceiling=team.resolve)

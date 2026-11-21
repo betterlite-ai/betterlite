@@ -41,20 +41,19 @@ impl<Reads: CallerReads> AgentCallerLoaders<Reads> {
         let Some(user_id) = caller.and_then(|found| found.user_id.as_deref()) else {
             return Ok(None);
         };
-        let user = self
-            .reads
-            .user(user_id)
-            .await
-            .map_err(|source| AgentCallerError::User {
+        match self.reads.user(user_id).await {
+            Ok(Some(user)) => Ok(Some(user)),
+            Ok(None) => {
+                debug!(
+                    user_id,
+                    "agent caller user {user_id} not found; no user ceiling applied"
+                );
+                Ok(None)
+            }
+            Err(source) => Err(AgentCallerError::User {
                 user_id: user_id.to_owned(),
                 source: Box::new(source),
-            })?;
-        if user.is_none() {
-            debug!(
-                user_id,
-                "agent caller user {user_id} not found; no user ceiling applied"
-            );
+            }),
         }
-        Ok(user)
     }
 }

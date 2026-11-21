@@ -16,27 +16,21 @@ use crate::auth_team_lookup::error::TeamLookupError;
 use crate::auth_user_lookup::error::UserLookupError;
 use crate::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 
+type TeamRead = Result<LiteLLMTeamTableCachedObj, TeamLookupError>;
+
 struct FakeCallerReads {
     teams: BTreeMap<String, LiteLLMTeamTableCachedObj>,
-    users: BTreeMap<String, LiteLLMUserTable>,
-    failing_users: Vec<String>,
+    users: BTreeMap<String, Option<LiteLLMUserTable>>,
     asked: Mutex<Vec<String>>,
 }
 
 impl CallerReads for FakeCallerReads {
-    fn team(
-        &self,
-        team_id: &str,
-    ) -> impl Future<Output = Result<LiteLLMTeamTableCachedObj, TeamLookupError>> + Send {
+    fn team(&self, team_id: &str) -> impl Future<Output = TeamRead> + Send {
         self.asked.lock().unwrap().push(format!("team:{team_id}"));
-        ready(
-            self.teams
-                .get(team_id)
-                .cloned()
-                .ok_or_else(|| TeamLookupError::TeamNotFound {
-                    team_id: team_id.to_owned(),
-                }),
-        )
+        let missing = TeamLookupError::TeamNotFound {
+            team_id: team_id.to_owned(),
+        };
+        ready(self.teams.get(team_id).cloned().ok_or(missing))
     }
 
     fn user(
@@ -44,10 +38,12 @@ impl CallerReads for FakeCallerReads {
         user_id: &str,
     ) -> impl Future<Output = Result<Option<LiteLLMUserTable>, UserLookupError>> + Send {
         self.asked.lock().unwrap().push(format!("user:{user_id}"));
-        if self.failing_users.iter().any(|failing| failing == user_id) {
-            return ready(Err(UserLookupError::NoDatabase));
-        }
-        ready(Ok(self.users.get(user_id).cloned()))
+        // a stored None is a read that fails, a missing key is a user without a row
+        ready(match self.users.get(user_id) {
+            Some(Some(row)) => Ok(Some(row.clone())),
+            Some(None) => Err(UserLookupError::NoDatabase),
+            None => Ok(None),
+        })
     }
 }
 
@@ -67,8 +63,10 @@ fn loaders() -> AgentCallerLoaders<FakeCallerReads> {
     AgentCallerLoaders {
         reads: FakeCallerReads {
             teams: BTreeMap::from([("humans".to_owned(), team("humans"))]),
-            users: BTreeMap::from([("human".to_owned(), user("human"))]),
-            failing_users: vec!["broken".to_owned()],
+            users: BTreeMap::from([
+                ("human".to_owned(), Some(user("human"))),
+                ("broken".to_owned(), None),
+            ]),
             asked: Mutex::new(Vec::new()),
         },
     }
