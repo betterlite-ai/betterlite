@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+mod boundaries;
+
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
