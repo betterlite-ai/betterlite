@@ -623,6 +623,7 @@ fn chain(headers: &[(&str, &str)]) -> Option<String> {
 #[case::codex_invalid_value_rejected(&[("user-agent", "codex_cli/1.0"), ("session-id", "not a session id")], None)]
 #[case::generic_invalid_value_rejected(&[("x-vendor-session-id", "not a session id")], None)]
 #[case::generic_short_value_rejected(&[("x-vendor-session-id", "short")], None)]
+#[case::minimum_length(&[("x-session-id", "12345678")], Some("12345678"))]
 fn chain_id_priority(#[case] headers: &[(&str, &str)], #[case] expected: Option<&str>) {
     assert_eq!(chain(headers).as_deref(), expected);
 }
