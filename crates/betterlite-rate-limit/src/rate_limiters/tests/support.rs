@@ -207,6 +207,19 @@ impl VerboseConsole for RecordingConsole {
     }
 }
 
+// a console whose writes always fail, for the system console's own error path
+pub(crate) struct BrokenConsole;
+
+impl io::Write for &BrokenConsole {
+    fn write(&mut self, _bytes: &[u8]) -> io::Result<usize> {
+        Err(io::Error::other("the console is gone"))
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
 // the native provider registry: one model resolves, everything else fails
 pub(crate) struct Native;
 

@@ -5,13 +5,18 @@ pub trait VerboseConsole: Send + Sync {
     fn print_line(&self, statement: &str) -> bool;
 }
 
-// the process console LiteLLM prints to when set_verbose is on
-#[derive(Clone, Copy, Debug, Default)]
-pub struct SystemVerboseConsole;
+// the process console LiteLLM prints to when set_verbose is on, over the writer a setup hands it
+#[derive(Default)]
+pub struct SystemVerboseConsole<W = io::Stdout> {
+    pub writer: W,
+}
 
-impl VerboseConsole for SystemVerboseConsole {
+impl<W> VerboseConsole for SystemVerboseConsole<W>
+where
+    W: Send + Sync,
+    for<'writer> &'writer W: io::Write,
+{
     fn print_line(&self, statement: &str) -> bool {
-        let mut stdout = io::stdout();
-        writeln!(stdout, "{statement}").is_ok()
+        writeln!(&self.writer, "{statement}").is_ok()
     }
 }

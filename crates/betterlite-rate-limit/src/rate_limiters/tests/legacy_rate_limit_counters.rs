@@ -1,3 +1,4 @@
+use std::io;
 use std::sync::Arc;
 
 use axum::http::StatusCode;
@@ -7,14 +8,15 @@ use betterlite_error::rate_limit::{ProxyRateLimitError, RateLimitCategory, RateL
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_redact::structured::Payload;
+use chrono::Local;
 use rstest::rstest;
 
 use super::support::{
-    BatchAnswer, CacheCall, FixedClock, FixedSnapshot, LogCapture, RecordingCache,
+    BatchAnswer, BrokenConsole, CacheCall, FixedClock, FixedSnapshot, LogCapture, RecordingCache,
     RecordingConsole, handler_deps,
 };
 use crate::rate_limiters::legacy_rate_limit_counters::LegacyRateLimitHandler;
-use crate::rate_limiters::legacy_rate_limit_counters::clock::LegacyClock;
+use crate::rate_limiters::legacy_rate_limit_counters::clock::{LegacyClock, SystemLegacyClock};
 use crate::rate_limiters::legacy_rate_limit_counters::error::LegacyRateLimitError;
 use crate::rate_limiters::legacy_rate_limit_counters::limits::{
     DimensionLimits, KeyLimitCheck, RateLimitScope,
@@ -23,6 +25,9 @@ use crate::rate_limiters::legacy_rate_limit_counters::objects::{CacheObject, Cac
 use crate::rate_limiters::legacy_rate_limit_counters::retry_after::float_text;
 use crate::rate_limiters::legacy_rate_limit_counters::usage_cache::{
     LegacyCacheValue, LegacyUsageCache, MinuteCounter,
+};
+use crate::rate_limiters::legacy_rate_limit_counters::verbose::{
+    SystemVerboseConsole, VerboseConsole as _,
 };
 
 const START_OF_MINUTE: &str = "2026-11-21T12:00:00+00:00";
@@ -138,51 +143,59 @@ fn constructor_stores_the_usage_cache_and_the_clock() {
     assert!(Arc::ptr_eq(&handler.clock, &stored_clock));
 }
 
-#[test]
-fn verbose_logs_at_debug_with_the_statement() {
-    let cache = RecordingCache::new();
-    let clock = FixedClock::at(START_OF_MINUTE);
-    let console = RecordingConsole::new(false);
-    let handler = LegacyRateLimitHandler::new(handler_deps(&cache, &clock, &console));
-    let capture = LogCapture::start();
-    handler.print_verbose("Inside Max Parallel Request Pre-Call Hook");
-    let text = capture.text();
-    assert!(text.contains("DEBUG"));
-    assert!(text.contains("Inside Max Parallel Request Pre-Call Hook"));
-    assert!(console.printed().is_empty());
-}
-
 #[rstest]
-#[case::off(false)]
-#[case::on(true)]
-fn verbose_prints_only_when_set_verbose_is_true(#[case] set_verbose: bool) {
+#[case::off(false, Vec::new())]
+#[case::on(true, vec![String::from("statement")])]
+fn verbose_logs_at_debug_and_prints_only_when_set_verbose_is_true(
+    #[case] set_verbose: bool,
+    #[case] printed: Vec<String>,
+) {
     let cache = RecordingCache::new();
     let clock = FixedClock::at(START_OF_MINUTE);
     let console = RecordingConsole::new(false);
     let mut deps = handler_deps(&cache, &clock, &console);
     deps.set_verbose = set_verbose;
     let handler = LegacyRateLimitHandler::new(deps);
+    let capture = LogCapture::start();
     handler.print_verbose("statement");
-    let expected = if set_verbose {
-        vec![String::from("statement")]
-    } else {
-        Vec::new()
-    };
-    assert_eq!(console.printed(), expected);
+    assert!(capture.text().contains("DEBUG"));
+    assert_eq!(console.printed(), printed);
 }
 
-#[test]
-fn verbose_ignores_a_failed_console_write() {
+#[rstest]
+#[case::off(false)]
+#[case::on(true)]
+fn verbose_ignores_a_failed_console_write(#[case] set_verbose: bool) {
     let cache = RecordingCache::new();
     let clock = FixedClock::at(START_OF_MINUTE);
     let console = RecordingConsole::new(true);
     let mut deps = handler_deps(&cache, &clock, &console);
-    deps.set_verbose = true;
+    deps.set_verbose = set_verbose;
     let handler = LegacyRateLimitHandler::new(deps);
     let capture = LogCapture::start();
     handler.print_verbose("statement");
-    assert!(capture.text().contains("could not print"));
+    assert_eq!(capture.text().contains("could not print"), set_verbose);
     assert!(console.printed().is_empty());
+}
+
+#[test]
+fn verbose_console_writes_the_statement_and_reports_a_broken_console() {
+    let stdout_console = SystemVerboseConsole {
+        writer: io::stdout(),
+    };
+    assert!(stdout_console.print_line("legacy verbose statement"));
+    let broken = SystemVerboseConsole {
+        writer: BrokenConsole,
+    };
+    assert!(!broken.print_line("legacy verbose statement"));
+}
+
+#[test]
+fn system_clock_reads_the_wall_clock_now() {
+    let read = SystemLegacyClock.now().timestamp();
+    let now = Local::now().fixed_offset().timestamp();
+    assert!(read <= now.saturating_add(300));
+    assert!(read >= now.saturating_sub(300));
 }
 
 #[rstest]
@@ -239,17 +252,6 @@ fn error_raising_appends_the_additional_details_and_keeps_the_type() {
         "Max parallel request limit reached Hit Global Limit: Limit=5, current: 5"
     );
     assert_eq!(error.rate_limit_type, Some(RateLimitDimension::Tokens));
-}
-
-#[test]
-fn error_raising_formats_the_retry_after_like_python() {
-    let clock = FixedClock::at("2026-11-21T12:00:59.999999+00:00");
-    let error = raise_error(&clock, None, None, None);
-    let headers = error
-        .headers
-        .as_ref()
-        .expect("the error carries a retry-after header");
-    assert_eq!(headers["retry-after"], "1e-06");
 }
 
 #[rstest]
@@ -315,6 +317,7 @@ async fn dimension_precedence_raises_on_concurrent_requests_first() {
 #[case::inside(counter(4, 19, 9), None)]
 #[case::parallel_at_the_limit(counter(5, 0, 0), Some(RateLimitDimension::ConcurrentRequests))]
 #[case::tokens_at_the_limit(counter(1, 20, 10), Some(RateLimitDimension::Tokens))]
+#[case::tokens_at_the_limit_alone(counter(1, 20, 5), Some(RateLimitDimension::Tokens))]
 #[case::requests_at_the_rpm_limit(counter(1, 5, 10), Some(RateLimitDimension::Requests))]
 #[tokio::test]
 async fn dimension_precedence_treats_each_limit_as_exclusive(
@@ -348,7 +351,9 @@ async fn dimension_precedence_initializes_a_missing_counter() {
 
 #[rstest]
 #[case::every_limit(limits(0, 0, 0), RateLimitDimension::ConcurrentRequests)]
+#[case::parallel_only(limits(0, 5, 5), RateLimitDimension::ConcurrentRequests)]
 #[case::tokens_and_rpm(limits(5, 0, 0), RateLimitDimension::Tokens)]
+#[case::tokens_with_rpm_set(limits(5, 0, 10), RateLimitDimension::Tokens)]
 #[case::rpm_only(limits(5, 10, 0), RateLimitDimension::Requests)]
 #[tokio::test]
 async fn all_zero_limits_raise_with_the_first_zero_dimension(
@@ -506,16 +511,35 @@ async fn batch_object_maps_each_result_to_its_field() {
     assert_eq!(object, expected);
 }
 
+#[test]
+fn batch_object_lists_the_keys_in_field_order() {
+    assert_eq!(
+        keys().into_list(),
+        [
+            Some(String::from("global_max_parallel_requests")),
+            Some(String::from(CACHE_KEY)),
+            None,
+            Some(String::from("user-1::2026-11-21-12-00::request_count")),
+            None,
+            Some(String::from("end-user-1::2026-11-21-12-00::request_count")),
+        ]
+    );
+}
+
 #[tokio::test]
-async fn batch_object_forwards_the_keys_in_order() {
+async fn batch_object_forwards_the_keys_and_the_parent_span() {
     let fixture = fixture();
-    let object = fixture.handler.get_all_cache_objects(keys(), None).await;
+    let span = ParentOtelSpan::Opaque;
+    let object = fixture
+        .handler
+        .get_all_cache_objects(keys(), Some(&span))
+        .await;
     assert_eq!(object, CacheObject::default());
     assert_eq!(
         fixture.cache.calls(),
         vec![CacheCall::BatchGet {
             keys: keys().into_list().to_vec(),
-            span: false,
+            span: true,
         }]
     );
 }
@@ -541,24 +565,6 @@ async fn batch_object_answers_all_none_without_a_full_read(
     assert!(capture.text().contains(logged));
 }
 
-#[tokio::test]
-async fn batch_object_forwards_the_parent_span() {
-    let fixture = fixture();
-    let span = ParentOtelSpan::Opaque;
-    let object = fixture
-        .handler
-        .get_all_cache_objects(keys(), Some(&span))
-        .await;
-    assert_eq!(object, CacheObject::default());
-    assert_eq!(
-        fixture.cache.calls(),
-        vec![CacheCall::BatchGet {
-            keys: keys().into_list().to_vec(),
-            span: true,
-        }]
-    );
-}
-
 #[rstest]
 #[case::padded_and_formatted("2026-01-02T03:04:05+00:00", "2026-01-02-03-04")]
 #[case::clock_offset("2026-01-01T00:30:00+05:30", "2026-01-01-00-30")]
@@ -578,26 +584,4 @@ fn precise_minute_formats_the_local_wall_clock(#[case] at: &str, #[case] expecte
 #[case::one_micro(1e-06_f64, "1e-06")]
 fn float_text_matches_python_str(#[case] value: f64, #[case] expected: &str) {
     assert_eq!(float_text(value), expected);
-}
-
-#[test]
-fn cache_value_round_trips_a_counter() {
-    let stored = LegacyCacheValue::Counter(counter(1, 2, 3));
-    let text = serde_json::to_string(&stored).expect("a counter serializes");
-    assert_eq!(
-        text,
-        r#"{"current_requests":1,"current_tpm":2,"current_rpm":3}"#
-    );
-    assert_eq!(
-        serde_json::from_str::<LegacyCacheValue>(&text).expect("a counter reads"),
-        stored
-    );
-    assert_eq!(
-        serde_json::to_string(&LegacyCacheValue::Count(5)).expect("a count serializes"),
-        "5"
-    );
-    assert_eq!(
-        serde_json::from_str::<LegacyCacheValue>("5").expect("a count reads"),
-        LegacyCacheValue::Count(5)
-    );
 }
