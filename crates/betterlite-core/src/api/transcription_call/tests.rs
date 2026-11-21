@@ -726,16 +726,16 @@ fn snapshot(target: TranscriptionTarget<'_>) -> Snapshot {
                 .map(|token| token.expose_secret().to_owned());
             recorded
         }
-        TranscriptionTarget::NvidiaRiva(call) => injected(TargetKind::NvidiaRiva, call),
-        TranscriptionTarget::Soniox(call) => injected(TargetKind::Soniox, call),
-        TranscriptionTarget::Bedrock(call) => injected(TargetKind::Bedrock, call),
+        TranscriptionTarget::NvidiaRiva(call) => injected(TargetKind::NvidiaRiva, &call),
+        TranscriptionTarget::Soniox(call) => injected(TargetKind::Soniox, &call),
+        TranscriptionTarget::Bedrock(call) => injected(TargetKind::Bedrock, &call),
         TranscriptionTarget::Native(call) | TranscriptionTarget::Watsonx(call) => {
-            injected(TargetKind::Native, call)
+            injected(TargetKind::Native, &call)
         }
     }
 }
 
-fn injected(kind: TargetKind, call: InjectedTranscription<'_>) -> Snapshot {
+fn injected(kind: TargetKind, call: &InjectedTranscription<'_>) -> Snapshot {
     let mut recorded = Snapshot::of(kind, &call.input);
     recorded.headers = call.headers.cloned();
     recorded.config = call.config;

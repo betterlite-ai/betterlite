@@ -78,9 +78,9 @@ where
     ) -> impl Future<Output = Result<TranscriptionAnswer, TranscriptionError<Dispatch::Error>>> + Send
     {
         let input = get_audio_file_name(&file);
-        let processed = process_audio_file(file, self.files);
+        let pending = process_audio_file(file, self.files);
         async move {
-            let processed = processed?;
+            let processed = pending?;
             let answer = execute(self, call, &processed, &input).await?;
             Ok(self.with_measured_duration(answer, &processed))
         }
