@@ -1,29 +1,6 @@
 task: B6030
 deviations:
   - what: >-
-      CustomLogger.__init__ takes turn_off_message_logging and message_logging as keyword-only
-      parameters. LiteLLM declares both positional-or-keyword, so CustomLogger(True) sets
-      turn_off_message_logging there and raises TypeError here.
-    why: >-
-      Ruff FBT001 and FBT002 reject a bool parameter that can be passed positionally, and the task's
-      suppression budget is zero. Every caller that names the parameters behaves the same, and the
-      defaults, the attribute names and the values stored are unchanged.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L87-L93
-  - what: >-
-      async_get_chat_completion_prompt, get_chat_completion_prompt, async_pre_routing_hook,
-      async_should_run_agentic_loop, async_run_agentic_loop, async_build_agentic_loop_plan,
-      async_should_run_chat_completion_agentic_loop, async_run_chat_completion_agentic_loop,
-      async_build_chat_completion_agentic_loop_plan, log_event and async_log_event take
-      **params with an Unpack[TypedDict] annotation instead of LiteLLM's named parameters. Each
-      TypedDict key is one of LiteLLM's parameter names with its type, so a keyword call behaves
-      the same, a positional call raises TypeError, and a call that leaves out a required
-      parameter raises KeyError where LiteLLM's signature raises TypeError.
-    why: >-
-      These methods have six to thirteen parameters, ruff PLR0913 and PLR0917 cap a definition at
-      five, A002 rejects LiteLLM's "input" parameter name in async_pre_routing_hook, and the
-      suppression budget is zero.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L200-L262
-  - what: >-
       CustomBatchLogger reads its default batch_size and flush_interval from
       betterlite._integrations.custom_logger_types.DEFAULT_BATCH_SIZE and
       DEFAULT_FLUSH_INTERVAL_SECONDS when the constructor runs. LiteLLM reads

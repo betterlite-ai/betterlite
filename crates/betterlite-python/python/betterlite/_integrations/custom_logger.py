@@ -25,9 +25,8 @@ class CustomLogger(
 
     def __init__(
         self,
-        *,
-        turn_off_message_logging: bool = False,
-        message_logging: bool = True,
+        turn_off_message_logging: bool = False,  # noqa: FBT001, FBT002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L89
+        message_logging: bool = True,  # noqa: FBT001, FBT002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L91
         **kwargs: JsonValue,
     ) -> None:
         _ = kwargs

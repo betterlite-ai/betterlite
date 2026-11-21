@@ -1,9 +1,7 @@
 from collections.abc import AsyncGenerator, Sequence
-from typing import Unpack
 
 from pydantic import BaseModel, JsonValue
 
-from betterlite._integrations import custom_logger_params as param_types
 from betterlite._integrations.custom_logger_types import (
     CallTypes,
     CallTypesLiteral,
@@ -28,7 +26,12 @@ from betterlite.types.utils import (
 
 class CustomLoggerProxyHooks:
     async def async_pre_routing_hook(
-        self, **params: Unpack[param_types.PreRoutingParams]
+        self,
+        model: str,
+        request_kwargs: dict[str, JsonValue],
+        messages: list[dict[str, JsonValue]] | None = None,
+        input: str | list[JsonValue] | None = None,  # noqa: A002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L256
+        specific_deployment: bool | None = False,  # noqa: FBT001, FBT002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L257
     ) -> PreRoutingHookResponse | None: ...
     async def async_filter_deployments(
         self,

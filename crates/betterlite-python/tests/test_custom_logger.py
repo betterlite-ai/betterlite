@@ -5,21 +5,6 @@ from typing import Final
 import pytest
 from pydantic import JsonValue, TypeAdapter
 
-UNPACK_METHODS: Final = frozenset(
-    {
-        "async_build_agentic_loop_plan",
-        "async_build_chat_completion_agentic_loop_plan",
-        "async_get_chat_completion_prompt",
-        "async_log_event",
-        "async_pre_routing_hook",
-        "async_run_agentic_loop",
-        "async_run_chat_completion_agentic_loop",
-        "async_should_run_agentic_loop",
-        "async_should_run_chat_completion_agentic_loop",
-        "get_chat_completion_prompt",
-        "log_event",
-    }
-)
 _NONE_HOOK_NAMES: Final = """async_agentic_run async_chat_run async_cleanup
 async_log_failure_event async_log_pre_api_call async_log_stream_event
 async_log_success_event audit_log callback_failure cold_storage failure_deployment
@@ -58,7 +43,7 @@ REDACTED_CONTENT: Final = "redacted-by-litellm"
 TRUNCATION_SUFFIX: Final = "...truncated by litellm, this logger does not support large content"
 PROBE: Final = """
 import asyncio; import importlib; import inspect; import json; import os; import sys
-from typing import get_args; os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"; import betterlite
+os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"; import betterlite
 import litellm; PACKAGES = {"litellm": litellm, "betterlite": betterlite}
 DATA = "data:image/png;base64,iVBORw0KGgo="; LIMIT = 10_000; LONG = 10_001
 LOGGER = "integrations.custom_logger"; BATCH = "integrations.custom_batch_logger"
@@ -67,12 +52,6 @@ def logger_class(package):
     return importlib.import_module(package.__name__ + "." + LOGGER).CustomLogger
 def batch_class(package):
     return importlib.import_module(package.__name__ + "." + BATCH).CustomBatchLogger
-def unpack_keys(member):
-    parameter = inspect.signature(member).parameters.get("params")
-    if parameter is None:
-        return []
-    arguments = get_args(parameter.annotation)
-    return sorted(getattr(arguments[0] if arguments else None, "__annotations__", {}))
 def param_row(item):
     default = "required"
     if item.default is not inspect.Parameter.empty:
@@ -86,7 +65,6 @@ def method_rows(cls):
         rows[name] = {
             "is_async": inspect.iscoroutinefunction(member) or inspect.isasyncgenfunction(member),
             "params": [param_row(i) for i in inspect.signature(member).parameters.values()],
-            "unpack_keys": unpack_keys(member),
         }
     return rows
 def module_view(package, suffix):
@@ -164,19 +142,17 @@ def init_report(cls):
     default = cls(); flagged = cls(turn_off_message_logging=True)
     unflagged = cls(message_logging=False)
     both = cls(turn_off_message_logging=True, message_logging=False)
-    try:
-        cls(True); positional = "none"
-    except TypeError:
-        positional = "TypeError"
-    return {"default_message_logging": default.message_logging,
+    positional = cls(True, False)
+    return {"positional_turn_off": positional.turn_off_message_logging,
+            "positional_message_logging": positional.message_logging,
+            "default_message_logging": default.message_logging,
             "default_turn_off": default.turn_off_message_logging,
             "flagged_message_logging": flagged.message_logging,
             "flagged_turn_off": flagged.turn_off_message_logging,
             "unflagged_message_logging": unflagged.message_logging,
             "unflagged_turn_off": unflagged.turn_off_message_logging,
             "both_message_logging": both.message_logging,
-            "both_turn_off": both.turn_off_message_logging,
-            "positional_error": positional}
+            "both_turn_off": both.turn_off_message_logging}
 def events_report(cls):
     logger = cls(); result = {}; calls, seen, verbose = [], {}, []
     def record(*args):
@@ -199,9 +175,7 @@ def events_report(cls):
     def record_event(*args):
         event_calls.append(len(args))
     event_kwargs = {}
-    logger.log_event(kwargs=event_kwargs, response_obj={"id": "r"}, start_time=1.0,
-                     end_time=2.0, print_verbose=event_verbose.append,
-                     callback_func=record_event)
+    logger.log_event(event_kwargs, {"id": "r"}, 1.0, 2.0, event_verbose.append, record_event)
     result["event_calls"] = event_calls[0]; result["event_type"] = event_kwargs["log_event_type"]
     result["event_verbose_count"] = len(event_verbose)
     try:
@@ -234,9 +208,7 @@ def events_report(cls):
         async def e_record(*args):
             e_calls.append(len(args))
         e_kwargs = {}
-        await logger.async_log_event(kwargs=e_kwargs, response_obj={"id": "r"}, start_time=1.0,
-                                     end_time=2.0, print_verbose=e_verbose.append,
-                                     callback_func=e_record)
+        await logger.async_log_event(e_kwargs, {"id": "r"}, 1.0, 2.0, e_verbose.append, e_record)
         a_result["async_event_calls"] = e_calls[0]
         a_result["async_event_type"] = e_kwargs["log_event_type"]
         a_result["async_event_verbose_count"] = len(e_verbose)
@@ -302,8 +274,9 @@ def hooks_report(package):
         nv["mcp_tool_call"] = await logger.async_post_mcp_tool_call_hook({}, None, None, None)
         nv["cold_storage"] = (
             await logger.get_proxy_server_request_from_cold_storage_with_object_key("k"))
-        nv["async_agentic_run"] = await logger.async_run_agentic_loop(**plan_kwargs)
-        nv["async_chat_run"] = await logger.async_run_chat_completion_agentic_loop(**chat_kwargs)
+        nv["async_agentic_run"] = await logger.async_run_agentic_loop(*plan_kwargs.values())
+        nv["async_chat_run"] = await logger.async_run_chat_completion_agentic_loop(
+            *chat_kwargs.values())
         plan = await logger.async_build_agentic_loop_plan(**plan_kwargs)
         v["agentic_plan"] = json.loads(plan.model_dump_json())
         chat_plan = await logger.async_build_chat_completion_agentic_loop_plan(**chat_kwargs)
@@ -311,7 +284,7 @@ def hooks_report(package):
         nv["async_cleanup"] = await logger.async_agentic_loop_cleanup_hook(plan, {})
         v["agentic_gate"] = list(await logger.async_should_run_agentic_loop(**gate_kwargs))
         v["chat_gate"] = list(
-            await logger.async_should_run_chat_completion_agentic_loop(**gate_kwargs))
+            await logger.async_should_run_chat_completion_agentic_loop(*gate_kwargs.values()))
         v["agentic_post_same"] = (
             await logger.async_post_agentic_loop_response_hook(response, plan, {})
         ) is response
@@ -613,31 +586,12 @@ def batch_report() -> JsonValue:
     return adapter.validate_json(run_probe("batch"))
 
 
-def compare_methods(
-    theirs: dict[str, JsonValue], ours: dict[str, JsonValue], *, keyword_init: bool
-) -> None:
+def compare_methods(theirs: dict[str, JsonValue], ours: dict[str, JsonValue]) -> None:
     assert set(ours) == set(theirs)
     for name in sorted(theirs):
         expected = mapping(theirs[name])
         found = mapping(ours[name])
         assert found["is_async"] == expected["is_async"], name
-        expected_rows = [mapping(item) for item in listing(expected["params"])]
-        found_rows = [mapping(item) for item in listing(found["params"])]
-        if name in UNPACK_METHODS:
-            assert [row["name"] for row in found_rows] == ["self", "params"], name
-            assert found_rows[1]["kind"] == "VAR_KEYWORD", name
-            expected_names = [text(row["name"]) for row in expected_rows]
-            unpacked = sorted(text(item) for item in listing(found["unpack_keys"]))
-            assert unpacked == sorted(item for item in expected_names if item != "self"), name
-            continue
-        if name == "__init__" and keyword_init:
-            assert [row["name"] for row in found_rows] == [row["name"] for row in expected_rows], (
-                name
-            )
-            assert [row["default"] for row in found_rows] == [
-                row["default"] for row in expected_rows
-            ], name
-            continue
         assert found["params"] == expected["params"], name
 
 
@@ -645,25 +599,29 @@ def test_logger_surface_methods(surface_report: JsonValue) -> None:
     theirs = mapping(dig(surface_report, "litellm"))
     ours = mapping(dig(surface_report, "betterlite"))
     our_methods = mapping(ours["custom_logger_methods"])
-    their_methods = mapping(theirs["custom_logger_methods"])
-    compare_methods(their_methods, our_methods, keyword_init=True)
-    compare_methods(
-        mapping(theirs["custom_batch_methods"]),
-        mapping(ours["custom_batch_methods"]),
-        keyword_init=False,
-    )
-    init_params = {
-        text(mapping(item)["name"]): mapping(item)
-        for item in listing(mapping(our_methods["__init__"])["params"])
-    }
-    assert init_params["turn_off_message_logging"]["kind"] == "KEYWORD_ONLY"
-    assert init_params["message_logging"]["kind"] == "KEYWORD_ONLY"
-    their_params = {
-        text(mapping(item)["name"]): mapping(item)
-        for item in listing(mapping(their_methods["__init__"])["params"])
-    }
-    assert their_params["turn_off_message_logging"]["kind"] == "POSITIONAL_OR_KEYWORD"
-    assert their_params["message_logging"]["kind"] == "POSITIONAL_OR_KEYWORD"
+    compare_methods(mapping(theirs["custom_logger_methods"]), our_methods)
+    compare_methods(mapping(theirs["custom_batch_methods"]), mapping(ours["custom_batch_methods"]))
+    log_event_names = [
+        mapping(item)["name"] for item in listing(mapping(our_methods["log_event"])["params"])
+    ]
+    assert log_event_names == [
+        "self",
+        "kwargs",
+        "response_obj",
+        "start_time",
+        "end_time",
+        "print_verbose",
+        "callback_func",
+    ]
+    init_kinds = [
+        mapping(item)["kind"] for item in listing(mapping(our_methods["__init__"])["params"])
+    ]
+    assert init_kinds == [
+        "POSITIONAL_OR_KEYWORD",
+        "POSITIONAL_OR_KEYWORD",
+        "POSITIONAL_OR_KEYWORD",
+        "VAR_KEYWORD",
+    ]
     class_vars = mapping(ours["class_vars"])
     assert class_vars == mapping(theirs["class_vars"])
     assert class_vars["server_fulfilled_tool_names"] == []
@@ -810,10 +768,11 @@ def test_logger_hook_init(hooks_report: JsonValue) -> None:
         "unflagged_message_logging": False,
         "both_message_logging": False,
         "both_turn_off": True,
+        "positional_turn_off": True,
+        "positional_message_logging": False,
     }
     assert {field: ours[field] for field in expected} == expected
-    assert ours["positional_error"] == "TypeError"
-    assert theirs["positional_error"] == "none"
+    assert ours == theirs
 
 
 def test_logger_helper_truncate(helpers_report: JsonValue) -> None:
