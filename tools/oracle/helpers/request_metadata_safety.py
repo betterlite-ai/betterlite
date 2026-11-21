@@ -35,7 +35,7 @@ class SanitizeSettings(TypedDict):
 class SanitizeCall(TypedDict):
     function: Literal["sanitize"]
     data: dict[str, JsonValue]
-    headers: list[list[str]]
+    headers: list[tuple[str, str]]
     route: str
     principal: SanitizePrincipal
     settings: SanitizeSettings
@@ -55,13 +55,14 @@ CALLS: Final = TypeAdapter(Calls)
 
 
 def request_for(route: str) -> Request:
+    headers: list[tuple[bytes, bytes]] = []
     scope: Scope = {
         "type": "http",
         "scheme": "http",
         "method": "POST",
         "path": route,
         "query_string": b"",
-        "headers": [],
+        "headers": headers,
     }
     return Request(scope=scope)
 
@@ -99,7 +100,7 @@ def sanitize_outcome(call: SanitizeCall) -> JsonValue:
     variable = metadata_variable_name_for_route(call["route"])
     if data.get(variable) is None:
         data[variable] = {}
-    headers = {name: value for name, value in call["headers"]}
+    headers = dict(call["headers"])
     principal = user_api_key_auth(call["principal"])
     allow_opt_out = _key_or_team_allows_client_message_redaction_opt_out(principal)
     _strip_untrusted_request_header_controls(
