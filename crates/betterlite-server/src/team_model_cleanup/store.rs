@@ -111,15 +111,15 @@ impl TeamModelRows for PostgresTeamModels<'_> {
     async fn team_models(&self, team_id: &str) -> Result<Option<Vec<String>>, CleanupError> {
         let access = self.access()?;
         let client = access.read.session().await?;
-        let found = client
-            .query_opt(TEAM_MODELS_SQL, &[&team_id])
+        let rows = client
+            .query(TEAM_MODELS_SQL, &[&team_id])
             .await
             .map_err(backend)?;
-        let Some(row) = found else {
-            return Ok(None);
-        };
-        let models: Vec<String> = row.try_get(0).map_err(backend)?;
-        Ok(Some(models))
+        let models: Option<Vec<String>> = rows
+            .first()
+            .map(|row| row.try_get(0).map_err(backend))
+            .transpose()?;
+        Ok(models)
     }
 
     async fn save_team_models(
