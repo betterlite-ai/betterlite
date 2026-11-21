@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
+use std::ops::Div as _;
 
-use betterlite_auth::auth_request_policy::bytes::bytes_to_mb;
 use betterlite_auth::auth_request_policy::invalid_key::{
     ErrorClass, ErrorFacts, MarkOutcome, Marker, is_invalid_virtual_key_error,
     mark_invalid_virtual_key_error,
@@ -18,12 +18,14 @@ use betterlite_config::sections::request_body_safety::Settings as BodySafetySett
 use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
+use rust_decimal::prelude::ToPrimitive as _;
 use serde_json::{Value, json};
 
 use super::{Call, ClassifyCase, ErrorKind, IpCase, MarkCase, MarkerName, PreDbCase};
 
 const AUTH_ERROR: &str = "auth_error";
 const PARAM_NONE: &str = "None";
+const MEBIBYTE: f64 = 1_048_576.0;
 
 pub(super) fn answer(call: &Call) -> Value {
     match call {
@@ -31,7 +33,7 @@ pub(super) fn answer(call: &Call) -> Value {
             json!(
                 values
                     .iter()
-                    .map(|value| bytes_to_mb(*value))
+                    .map(|value| value.to_f64().map(|megabytes| megabytes.div(MEBIBYTE)))
                     .collect::<Vec<_>>()
             )
         }
@@ -78,24 +80,26 @@ fn facts<'row>(row: &'row ClassifyCase, class: ErrorClass) -> ErrorFacts<'row> {
 }
 
 fn classify_proxy(row: &ClassifyCase) -> bool {
-    let exception = classed_exception(row);
+    let exception = row_exception(&row.message, row.code.clone(), BTreeMap::new(), None);
     is_invalid_virtual_key_error(&ErrorFacts {
         marker: marker(row.marker),
         ..ErrorFacts::proxy(&exception)
     })
 }
 
-fn classed_exception(row: &ClassifyCase) -> ProxyException {
+fn row_exception(
+    message: &str,
+    code: Option<String>,
+    headers: BTreeMap<String, String>,
+    openai_code: Option<String>,
+) -> ProxyException {
     ProxyException::new(ProxyExceptionInit {
-        message: row.message.clone(),
+        message: message.to_owned(),
         error_type: AUTH_ERROR.to_owned(),
         param: Some(PARAM_NONE.to_owned()),
-        code: match &row.code {
-            Some(code) => ExceptionCode::Text(code.clone()),
-            None => ExceptionCode::Absent,
-        },
-        headers: BTreeMap::new(),
-        openai_code: None,
+        code: code.map_or(ExceptionCode::Absent, ExceptionCode::Text),
+        headers,
+        openai_code,
         provider_specific_fields: BTreeMap::new(),
     })
 }
@@ -109,7 +113,12 @@ const fn marker(name: MarkerName) -> Marker {
 }
 
 fn mark(row: &MarkCase) -> Value {
-    let exception = marked_exception(row);
+    let exception = row_exception(
+        &row.message,
+        Some(row.code.clone()),
+        row.headers.clone(),
+        row.openai_code.clone(),
+    );
     let outcome = mark_invalid_virtual_key_error(&exception, row.is_invalid_virtual_key);
     let marked = match &outcome {
         MarkOutcome::Same => &exception,
@@ -127,18 +136,6 @@ fn mark(row: &MarkCase) -> Value {
         "code": marked.code,
         "openai_code": marked.openai_code,
         "headers": marked.headers,
-    })
-}
-
-fn marked_exception(row: &MarkCase) -> ProxyException {
-    ProxyException::new(ProxyExceptionInit {
-        message: row.message.clone(),
-        error_type: AUTH_ERROR.to_owned(),
-        param: Some(PARAM_NONE.to_owned()),
-        code: ExceptionCode::Text(row.code.clone()),
-        headers: row.headers.clone(),
-        openai_code: row.openai_code.clone(),
-        provider_specific_fields: BTreeMap::new(),
     })
 }
 
