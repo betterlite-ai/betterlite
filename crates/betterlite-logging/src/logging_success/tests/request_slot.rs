@@ -7,7 +7,9 @@ use async_trait::async_trait;
 use indexmap::IndexMap;
 use opentelemetry::Context;
 use opentelemetry::Value;
-use opentelemetry::trace::{Span as _, SpanContext, Tracer as _, TracerProvider as _};
+use opentelemetry::trace::{
+    Span as _, SpanContext, TraceContextExt as _, Tracer as _, TracerProvider as _,
+};
 use opentelemetry_sdk::trace::InMemorySpanExporter;
 use tokio::task::JoinSet;
 

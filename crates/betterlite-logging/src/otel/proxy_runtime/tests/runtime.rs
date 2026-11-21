@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use betterlite_config::loader::EnvironmentLookup;
 use opentelemetry::Context;
-use opentelemetry::trace::{Span as _, Tracer as _, TracerProvider as _};
+use opentelemetry::trace::{Span as _, TraceContextExt as _, Tracer as _, TracerProvider as _};
 use opentelemetry_sdk::trace::SdkTracerProvider;
 use rstest::rstest;
 

@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use opentelemetry::Context;
 use opentelemetry::Value;
-use opentelemetry::trace::{Span as _, Tracer as _, TracerProvider as _};
+use opentelemetry::trace::{Span as _, TraceContextExt as _, Tracer as _, TracerProvider as _};
 use opentelemetry_sdk::trace::InMemorySpanExporter;
 use rstest::rstest;
 
@@ -19,7 +19,7 @@ use crate::otel::plumbing::context::destination_routing::TENANT_DESTINATION_MODE
 use crate::otel::proxy_runtime::slot::{anchor_request_root, request_slot_scope, set_destinations};
 use crate::otel::proxy_runtime::sources::ProxyTraceSources;
 
-use super::support::{anchored, invalid_anchor};
+use super::support::{anchored, invalid_anchor, span_context};
 
 #[tokio::test]
 async fn the_scope_carries_the_slot_destinations() {
@@ -87,6 +87,34 @@ async fn the_root_sink_writes_onto_the_anchored_live_span() {
     assert!(finished[0].attributes.iter().any(|attribute| {
         attribute.key.as_str() == TRACE_NAME && attribute.value == Value::from("kept")
     }));
+}
+
+#[tokio::test]
+async fn a_slot_without_a_live_root_has_no_root_span() {
+    let sources = ProxyTraceSources::new(&BTreeMap::<String, String>::new());
+    request_slot_scope(async {
+        anchor_request_root(invalid_anchor(), Context::new());
+        assert!(sources.request_root_span().is_none());
+    })
+    .await;
+    assert!(sources.request_root_span().is_none());
+}
+
+#[tokio::test]
+async fn a_valid_root_that_no_longer_records_reports_not_recording() {
+    let sources = ProxyTraceSources::new(&BTreeMap::<String, String>::new());
+    request_slot_scope(async {
+        anchor_request_root(
+            anchored(6, 6),
+            Context::new().with_remote_span_context(span_context(6, 6)),
+        );
+        let sink: Arc<dyn RootSpanSink> = sources
+            .request_root_span()
+            .expect("a valid root context reaches the sink");
+        assert!(!sink.is_recording());
+        sink.set_attribute(TRACE_NAME, "dropped".to_owned());
+    })
+    .await;
 }
 
 #[tokio::test]
