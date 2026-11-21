@@ -592,6 +592,23 @@ fn mantle_policies_strip_the_provider_and_region_prefixes() {
     );
 }
 
+// split_mantle_region_prefix: a head that names no Bedrock region stays part of the model id
+#[test]
+fn mantle_policies_keep_a_non_region_head() {
+    let mut args = base_args();
+    args.model = String::from("bedrock_mantle/openai.gpt-oss-120b/extra");
+    args.custom_llm_provider = Some(String::from("bedrock_mantle"));
+    let policies = mantle::policies(&args);
+    let endpoint = policies
+        .mantle
+        .expect("the call builds the Mantle endpoint");
+    assert_eq!(endpoint.base_model, "openai.gpt-oss-120b/extra");
+    assert_eq!(
+        endpoint.api_base,
+        "https://bedrock-mantle.us-east-1.api.aws/v1"
+    );
+}
+
 // get_llm_provider gets no litellm_params from the passthrough call, so aws_region_name never reaches this
 #[test]
 fn mantle_policies_take_the_region_from_the_model_prefix_alone() {
