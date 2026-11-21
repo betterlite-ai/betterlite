@@ -9,10 +9,11 @@ from litellm.llms.base_llm.chat.transformation import BaseLLMException
 from litellm.llms.base_llm.search.transformation import SearchResponse
 from litellm.llms.perplexity.decisions.transformation import PerplexityDecisionsConfig
 from litellm.llms.perplexity.embedding.transformation import PerplexityEmbeddingConfig
-from litellm.llms.perplexity.responses.transformation import PerplexityResponsesConfig
 from litellm.llms.perplexity.search.transformation import PerplexitySearchConfig
 from litellm.types.llms.openai import ResponsesAPIResponse
 from litellm.types.router import GenericLiteLLMParams as Params
+from litellm.types.utils import LlmProviders
+from litellm.utils import ProviderConfigManager
 from openai.types.responses.response_input_param import ResponseInputParam
 from pydantic import JsonValue, TypeAdapter
 
@@ -162,7 +163,12 @@ class SearchView(TypedDict):
 
 
 EMBEDDING: Final[Embedding] = PerplexityEmbeddingConfig()
-RESPONSES: Final[Responses] = PerplexityResponsesConfig()
+FOUND: Final = ProviderConfigManager.get_provider_responses_api_config(
+    provider=LlmProviders.PERPLEXITY
+)
+if FOUND is None:
+    raise ValueError("no Perplexity responses config")
+RESPONSES: Final[Responses] = FOUND
 SEARCH: Final[Search] = PerplexitySearchConfig()
 DECISIONS: Final = PerplexityDecisionsConfig()
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
