@@ -15,12 +15,12 @@ from litellm.proxy._types import (
     UserAPIKeyAuth,
 )
 from litellm.proxy.db.prisma_client import PrismaWrapper
+from litellm.proxy.management_endpoints import key_management_endpoints
 from litellm.proxy.management_endpoints.key_management_endpoints import (
     common_key_access_checks,
     get_new_token,
     key_generation_check,
     raise_on_invalid_key_logging_config,
-    validate_team_id_used_in_service_account_request,
 )
 from litellm.proxy.utils import PrismaClient
 from litellm.types.utils import StandardKeyGenerationConfig
@@ -42,8 +42,8 @@ CALLER: Final[TypeAdapter[UserAPIKeyAuth]] = TypeAdapter(UserAPIKeyAuth)
 REQUEST: Final[TypeAdapter[GenerateKeyRequest]] = TypeAdapter(GenerateKeyRequest)
 TEAM: Final[TypeAdapter[LiteLLM_TeamTableCachedObj]] = TypeAdapter(LiteLLM_TeamTableCachedObj)
 # the LiteLLM check declares no return type, so the annotated name gives its call one
-VALIDATE_TEAM: Final[Callable[[str | None, PrismaClient | None], Awaitable[object]]] = (
-    validate_team_id_used_in_service_account_request
+VALIDATE_TEAM: Final[Callable[[str | None, PrismaClient | None], Awaitable[bool]]] = (
+    key_management_endpoints.validate_team_id_used_in_service_account_request
 )
 
 
