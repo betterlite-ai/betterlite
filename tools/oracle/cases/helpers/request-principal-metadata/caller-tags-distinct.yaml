@@ -1,0 +1,45 @@
+kind: helper
+name: request-principal-metadata-caller-tags-distinct
+call:
+  request_principal_metadata:
+    pre_auth_tags:
+      - data: {}
+        headers: [[x-litellm-tags, "a, ,b"]]
+        route: /v1/chat/completions
+        principal: {api_key: hash-1, metadata: {}}
+      - data: {model: gpt-4}
+        headers: [[x-litellm-tags, " , "]]
+        route: /v1/chat/completions
+        principal: {api_key: hash-1, metadata: {}}
+    request_metadata:
+      - data: {}
+        slot: metadata
+        bucket: {}
+        headers: [[x-litellm-tags, "a, ,b"]]
+        principal: {api_key: hash-1, metadata: {}}
+        invoked_agent_id: null
+        managed_agent_context: null
+      - data: {tags: [x]}
+        slot: metadata
+        bucket: {}
+        headers: [[x-litellm-tags, a]]
+        principal: {api_key: hash-1, metadata: {}}
+        invoked_agent_id: null
+        managed_agent_context: null
+      - data: {tags: x}
+        slot: metadata
+        bucket: {}
+        headers: [[x-litellm-tags, a]]
+        principal: {api_key: hash-1, metadata: {}}
+        invoked_agent_id: null
+        managed_agent_context: null
+      - data: {}
+        slot: metadata
+        bucket: {agent_id: header-agent}
+        headers: []
+        principal: {api_key: hash-1, metadata: {}}
+        invoked_agent_id: null
+        managed_agent_context: null
+    team_callbacks: []
+env: {}
+compare: {ignore: []}

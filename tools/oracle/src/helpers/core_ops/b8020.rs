@@ -9,7 +9,7 @@ use betterlite_core::api::search_providers::serper::{
     SerperSearchConfig, SerperSearchError, SerperSearchSettings,
 };
 use betterlite_openai::openai_base_config::{Headers, Object};
-use betterlite_openai::search::provider::{SearchProvider as _, SearchQuery};
+use betterlite_openai::search::provider::{RequestInput, SearchProvider as _, SearchQuery};
 use betterlite_openai::search::records::SearchResponse;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
@@ -114,18 +114,28 @@ impl Config {
 
     fn complete_url(&self, api_base: Option<&str>) -> Result<String, B8020HelperError> {
         match self {
-            Self::Exa(config) => Ok(config.complete_url(api_base, &Object::new(), None)?),
-            Self::Serper(config) => Ok(config.complete_url(api_base, &Object::new(), None)?),
+            Self::Exa(config) => Ok(config.complete_url(api_base, &Object::new(), None, None)?),
+            Self::Serper(config) => {
+                Ok(config.complete_url(api_base, &Object::new(), None, None)?)
+            }
         }
     }
 
     fn request(&self, query: &SearchQuery, options: &Object) -> Result<Value, B8020HelperError> {
+        let empty_headers = Headers::new();
+        let input = RequestInput {
+            query,
+            optional_params: options,
+            api_key: None,
+            api_base: None,
+            headers: &empty_headers,
+        };
         match self {
             Self::Exa(config) => Ok(serde_json::to_value(
-                config.transform_search_request(query, options)?,
+                config.transform_search_request(&input)?,
             )?),
             Self::Serper(config) => Ok(serde_json::to_value(
-                config.transform_search_request(query, options)?,
+                config.transform_search_request(&input)?,
             )?),
         }
     }

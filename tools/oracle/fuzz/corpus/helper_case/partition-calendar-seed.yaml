@@ -1,0 +1,19 @@
+kind: helper
+name: partition-calendar-corpus-seed
+call:
+  partition_calendar:
+    function: upcoming
+    today: "2026-01-01"
+    interval: day
+    ahead: 1
+calls:
+  - partition_calendar:
+      function: drop
+      cutoff: "2026-01-03T00:00:00"
+      partitions:
+        - name: LiteLLM_SpendLogs_p20260101
+          bound: "FOR VALUES FROM ('2026-01-01 00:00:00') TO ('2026-01-02 00:00:00')"
+        - name: LiteLLM_SpendLogs_pdefault
+          bound: DEFAULT
+env: {}
+compare: {ignore: []}

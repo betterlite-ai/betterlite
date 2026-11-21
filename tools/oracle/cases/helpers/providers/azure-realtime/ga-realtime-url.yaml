@@ -1,0 +1,25 @@
+kind: helper
+name: azure-realtime-ga-realtime-url
+call:
+  azure_realtime:
+    kind: connect
+    model: realtime-a
+    scope_headers: []
+    ssl_verification: enabled
+    max_message_size_bytes: 4096
+    azure_api_base: null
+    azure_api_key: null
+    azure_api_version: null
+    queries:
+      - {api_base: "https://example.test", api_version: null, realtime_protocol: "GA", query_params: null, api_key: "k", azure_ad_token: null}
+      - {api_base: "http://example.test/base/x", api_version: "ignored", realtime_protocol: "v1", query_params: {}, api_key: "k", azure_ad_token: null}
+      - {api_base: "https://example.test/", api_version: null, realtime_protocol: "V1", query_params: {model: "customer", foo: "bar"}, api_key: "k", azure_ad_token: null}
+      - {api_base: "https://example.test", api_version: null, realtime_protocol: "GA", query_params: {intent: "transcription", model: "customer"}, api_key: "k", azure_ad_token: null}
+      - {api_base: "https://example.test", api_version: null, realtime_protocol: "GA", query_params: {model: "x", intent: "a b"}, api_key: "k", azure_ad_token: null}
+      - {api_base: "https://example.test", api_version: null, realtime_protocol: "GA", query_params: {intent: null}, api_key: "k", azure_ad_token: null}
+    protocols: []
+    failures: []
+    http_setups: []
+env:
+  REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES: "4096"
+compare: {ignore: []}

@@ -1,7 +1,7 @@
 id: B7640
 milestone: M8 platform
 title: Health check table store and changed-result persistence
-status: todo
+status: done
 depends_on: [B700, B703, B706, B401, B860, B4443]
 file: tasks/B7640-health-check-store.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/health_endpoints/_health_endpoints.py"
 parent: B130
 split_from: B4445
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2812

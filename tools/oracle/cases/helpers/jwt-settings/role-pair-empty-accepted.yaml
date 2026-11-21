@@ -1,0 +1,9 @@
+kind: helper
+name: jwt-settings-role-pair-empty-accepted
+call:
+  jwt_settings:
+    scenarios:
+      - {"settings": {"user_roles_jwt_field": "", "user_allowed_roles": []}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"user_roles_jwt_field": "", "user_allowed_roles": null}, "references": {}, "environment": {}, "issuers": []}
+env: {}
+compare: {ignore: []}

@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::search::provider::{
-    HttpMethod, ProviderResponse, SearchProvider as _, SearchQuery,
+    HttpMethod, ProviderResponse, RequestInput, SearchProvider as _, SearchQuery,
 };
 use betterlite_openai::search::records::{SearchObject, SearchResponse};
 use rstest::rstest;
@@ -91,7 +91,7 @@ fn duckduckgo_search_settings_default_the_base() {
     let body = build_request(&single("rust"), &Object::new()).unwrap();
 
     let url = loaded
-        .complete_url(None, &Object::new(), Some(&body))
+        .complete_url(None, &Object::new(), Some(&body), None)
         .unwrap();
 
     assert_eq!(url, "https://api.duckduckgo.com/?q=rust&format=json");
@@ -103,13 +103,18 @@ fn duckduckgo_search_settings_prefer_the_caller_base() {
     let body = build_request(&single("rust"), &Object::new()).unwrap();
 
     let explicit = loaded
-        .complete_url(Some("https://caller.test"), &Object::new(), Some(&body))
+        .complete_url(
+            Some("https://caller.test"),
+            &Object::new(),
+            Some(&body),
+            None,
+        )
         .unwrap();
     let empty = loaded
-        .complete_url(Some(""), &Object::new(), Some(&body))
+        .complete_url(Some(""), &Object::new(), Some(&body), None)
         .unwrap();
     let absent = loaded
-        .complete_url(None, &Object::new(), Some(&body))
+        .complete_url(None, &Object::new(), Some(&body), None)
         .unwrap();
 
     assert_eq!(explicit, "https://caller.test/?q=rust&format=json");
@@ -123,7 +128,7 @@ fn duckduckgo_search_settings_read_the_environment_base() {
     let body = build_request(&single("rust"), &Object::new()).unwrap();
 
     let url = loaded
-        .complete_url(None, &Object::new(), Some(&body))
+        .complete_url(None, &Object::new(), Some(&body), None)
         .unwrap();
 
     assert_eq!(url, "https://environment.test/?q=rust&format=json");
@@ -135,7 +140,7 @@ fn duckduckgo_search_settings_treat_an_empty_base_as_unset() {
     let body = build_request(&single("rust"), &Object::new()).unwrap();
 
     let url = loaded
-        .complete_url(None, &Object::new(), Some(&body))
+        .complete_url(None, &Object::new(), Some(&body), None)
         .unwrap();
 
     assert_eq!(url, "https://api.duckduckgo.com/?q=rust&format=json");
@@ -759,7 +764,13 @@ fn the_config_decodes_with_the_query_it_built() {
     let request_options = options(&[("max_results", JsonValue::from(1_i64))]);
     let headers = Headers::new();
     loaded
-        .transform_search_request(&single("q"), &request_options)
+        .transform_search_request(&RequestInput {
+            query: &single("q"),
+            optional_params: &request_options,
+            api_key: None,
+            api_base: None,
+            headers: &Headers::new(),
+        })
         .unwrap();
 
     let body = r#"{"RelatedTopics":[
