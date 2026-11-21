@@ -156,6 +156,15 @@ impl Configs {
             env_api_key: config.sections.resource_sdk_settings.openai_api_key.clone(),
         }
     }
+
+    fn search_mapper(&self) -> OpenAiSearchConfig {
+        OpenAiSearchConfig::new(
+            self.credentials.clone(),
+            LiteLlmGlobals::default(),
+            self.env_api_key.clone(),
+            None,
+        )
+    }
 }
 
 impl VectorStoreConfigs for Configs {
@@ -176,17 +185,6 @@ impl VectorStoreConfigs for Configs {
             return None;
         }
         Some(Arc::new(self.search_mapper()))
-    }
-}
-
-impl Configs {
-    fn search_mapper(&self) -> OpenAiSearchConfig {
-        OpenAiSearchConfig::new(
-            self.credentials.clone(),
-            LiteLlmGlobals::default(),
-            self.env_api_key.clone(),
-            None,
-        )
     }
 }
 

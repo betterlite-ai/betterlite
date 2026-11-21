@@ -16,10 +16,10 @@ impl EmbeddingExecutorSource for Executors {
         supplied: Option<&'selection dyn QueryEmbeddingExecutor>,
         _request_kwargs: &Params,
     ) -> SelectedExecutor<'selection> {
-        match supplied {
-            Some(executor) => SelectedExecutor::Supplied(executor),
-            None => SelectedExecutor::Built(Box::new(UnusedExecutor)),
-        }
+        supplied.map_or_else(
+            || SelectedExecutor::Built(Box::new(UnusedExecutor)),
+            SelectedExecutor::Supplied,
+        )
     }
 }
 
