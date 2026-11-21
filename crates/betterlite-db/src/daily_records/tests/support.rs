@@ -54,44 +54,30 @@ pub(super) struct CasePrices {
 }
 
 impl PriceLookup for CasePrices {
-    fn effective_model_info(
-        &self,
-        model: &str,
-        custom_llm_provider: Option<&str>,
-    ) -> Option<PriceRecord> {
-        self.prices
-            .get(&price_key(model, custom_llm_provider))
-            .cloned()
+    fn effective_model_info(&self, model: &str, provider: Option<&str>) -> Option<PriceRecord> {
+        self.prices.get(&price_key(model, provider)).cloned()
     }
 
     fn raw_cost_map_entry(&self, key: &str) -> Option<PriceRecord> {
         self.prices.get(key).cloned()
     }
 
-    fn effective_priced_model(
-        &self,
-        model: &str,
-        custom_llm_provider: Option<&str>,
-    ) -> Option<PricedModel> {
-        self.effective_model_info(model, custom_llm_provider)
-            .map(|record| PricedModel {
-                record,
-                tiered_pricing: Vec::new(),
-                off_peak_pricing: None,
-                off_peak_cache_read_present: false,
-            })
+    fn effective_priced_model(&self, model: &str, provider: Option<&str>) -> Option<PricedModel> {
+        let record = self.effective_model_info(model, provider)?;
+        Some(PricedModel {
+            record,
+            tiered_pricing: Vec::new(),
+            off_peak_pricing: None,
+            off_peak_cache_read_present: false,
+        })
     }
 }
 
 impl SavingsPricingContext for CasePrices {
-    fn resolve_model(
-        &self,
-        model: &str,
-        custom_llm_provider: Option<&str>,
-    ) -> Option<ModelIdentity> {
+    fn resolve_model(&self, model: &str, provider: Option<&str>) -> Option<ModelIdentity> {
         Some(ModelIdentity {
             model: model.to_owned(),
-            provider: custom_llm_provider.unwrap_or_default().to_owned(),
+            provider: provider.unwrap_or_default().to_owned(),
         })
     }
 

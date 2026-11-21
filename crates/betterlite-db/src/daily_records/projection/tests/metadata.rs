@@ -59,31 +59,18 @@ fn reads_the_usage_object_both_ways() {
 }
 
 #[rstest]
-#[case::list(r#"{"usage_object":[1]}"#)]
-#[case::text(r#"{"usage_object":"x"}"#)]
-#[case::number(r#"{"usage_object":5}"#)]
-#[case::boolean(r#"{"usage_object":true}"#)]
-fn a_truthy_non_object_usage_object_fails_the_row(#[case] text: &str) {
+#[case::usage_list(r#"{"usage_object":[1]}"#, "usage_object")]
+#[case::usage_text(r#"{"usage_object":"x"}"#, "usage_object")]
+#[case::usage_number(r#"{"usage_object":5}"#, "usage_object")]
+#[case::usage_boolean(r#"{"usage_object":true}"#, "usage_object")]
+#[case::cost_text(r#"{"cost_breakdown":"batch"}"#, "cost_breakdown")]
+#[case::cost_list(r#"{"cost_breakdown":[1]}"#, "cost_breakdown")]
+fn a_truthy_non_object_metadata_field_fails_the_row(#[case] text: &str, #[case] field: &str) {
     let result = decode_daily_metadata(text.as_bytes());
-    assert!(matches!(
-        result,
-        Err(DailyMetadataError::NotAnObject {
-            field: "usage_object"
-        })
-    ));
-}
-
-#[rstest]
-#[case::text(r#"{"cost_breakdown":"batch"}"#)]
-#[case::list(r#"{"cost_breakdown":[1]}"#)]
-fn a_truthy_non_object_cost_breakdown_fails_the_row(#[case] text: &str) {
-    let result = decode_daily_metadata(text.as_bytes());
-    assert!(matches!(
-        result,
-        Err(DailyMetadataError::NotAnObject {
-            field: "cost_breakdown"
-        })
-    ));
+    match result {
+        Err(DailyMetadataError::NotAnObject { field: reported }) => assert_eq!(reported, field),
+        other => panic!("expected a non-object field error, got {other:?}"),
+    }
 }
 
 #[test]
