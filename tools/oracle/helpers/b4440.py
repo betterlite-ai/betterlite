@@ -6,18 +6,14 @@ from collections.abc import Awaitable, Callable, Mapping
 from datetime import UTC, datetime
 from importlib import import_module
 from types import ModuleType
-from typing import Literal, Protocol, TypedDict, cast
+from typing import Literal, Protocol, TypedDict
 
 import litellm
-from litellm.exceptions import BadRequestError as BadRequest
-from litellm.exceptions import ContentPolicyViolationError as ContentPolicy
-from litellm.exceptions import ContextWindowExceededError as ContextWindow
-from litellm.exceptions import UnsupportedParamsError as Unsupported
+from litellm import exceptions
 from litellm.litellm_core_utils import health_check_utils
 from litellm.litellm_core_utils.health_check_helpers import HealthCheckHelpers
 from litellm.litellm_core_utils.litellm_logging import Logging
-from litellm.types.utils import ImageResponse as ImageReply
-from litellm.types.utils import LlmProviders as Providers
+from litellm.types import utils
 from pydantic import BaseModel, JsonValue, TypeAdapter, ValidationError
 from typing_extensions import override
 
@@ -27,10 +23,9 @@ REPLY: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 METADATA: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
 ERRORS: TypeAdapter[list[dict[str, JsonValue]]] = TypeAdapter(list[dict[str, JsonValue]])
 DROPPED = ("api_key", "litellm_logging_obj", "file", "image")
-TRACKED = (
-    "tags", "user_api_key", "user_api_key_hash", "user_api_key_alias",
-    "user_api_key_team_id", "user_api_key_team_alias", "user_api_key_spend",
-)
+TRACKED = ("tags", "user_api_key", "user_api_key_hash",
+           "user_api_key_alias", "user_api_key_team_id",
+           "user_api_key_team_alias", "user_api_key_spend")
 CHEAPEST: list[str] = []
 Mode = Literal[
     "chat", "completion", "embedding", "audio_speech", "audio_transcription",
@@ -98,10 +93,10 @@ class Recorder(ModuleType):
 class CallsModule(Recorder):
     def __init__(self, calls: list[JsonValue], failure: Exception | None) -> None:
         super().__init__("litellm", calls, failure)
-        self.ImageResponse = ImageReply  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2613
-        self.BadRequestError = BadRequest  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L219
-        self.ContentPolicyViolationError = ContentPolicy  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L619
-        self.LlmProviders = Providers
+        self.ImageResponse = utils.ImageResponse  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2613
+        self.BadRequestError = exceptions.BadRequestError  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L219
+        self.ContentPolicyViolationError = exceptions.ContentPolicyViolationError  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L619
+        self.LlmProviders = utils.LlmProviders
 
     async def acompletion(self, **params: JsonValue) -> JsonValue:
         return self.note("acompletion", params)
@@ -163,57 +158,27 @@ class RequestUtils(ModuleType):
         return cheapest_models
 
 
-class ModeHandlersCall(Protocol):
-    def __call__(
-        self,
-        model: str,
-        custom_llm_provider: str,
-        model_params: Mapping[str, JsonValue | LoggingRecorder],
-        prompt: str | None,
-        inputs: list[str] | None,
-    ) -> dict[Mode, Callable[[], Awaitable[JsonValue]]]: ...
-
-
-class WildcardCall(Protocol):
-    def __call__(
-        self,
-        model: str,
-        custom_llm_provider: str,
-        model_params: Mapping[str, JsonValue],
-        logging: Logging,
-    ) -> Awaitable[dict[str, JsonValue]]: ...
-
-
-class TrackCall(Protocol):
-    def __call__(self, model_params: Mapping[str, JsonValue]) -> dict[str, JsonValue]: ...
-
-
-class ResponseCall(Protocol):
-    def __call__(self, headers: Mapping[str, str]) -> dict[str, JsonValue]: ...
-
-
-GET_HANDLERS = cast(ModeHandlersCall, cast(object, HealthCheckHelpers.get_mode_handlers))  # noqa: E501  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_helpers.py#L164-L287
-WILDCARD = cast(WildcardCall, cast(object, HealthCheckHelpers.ahealth_check_wildcard_models))  # noqa: E501  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_helpers.py#L57-L85
-TRACK = cast(TrackCall, cast(object, HealthCheckHelpers._update_model_params_with_health_check_tracking_information))  # noqa: E501, SLF001  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_helpers.py#L87-L110
-CREATE_RESPONSE = cast(ResponseCall, cast(object, health_check_utils._create_health_check_response))  # noqa: E501, SLF001  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_utils.py#L19-L30
+GET_HANDLERS: Callable[[str, str, Mapping[str, JsonValue | LoggingRecorder], str | None, list[str] | None], dict[Mode, Callable[[], Awaitable[JsonValue]]]] = HealthCheckHelpers.get_mode_handlers  # noqa: E501  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_helpers.py#L164-L287
+WILDCARD: Callable[[str, str, Mapping[str, JsonValue], Logging], Awaitable[dict[str, JsonValue]]] = HealthCheckHelpers.ahealth_check_wildcard_models  # noqa: E501  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_helpers.py#L57-L85
+TRACK: Callable[[Mapping[str, JsonValue]], dict[str, JsonValue]] = HealthCheckHelpers._update_model_params_with_health_check_tracking_information  # noqa: E501, SLF001  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_helpers.py#L87-L110
+CREATE_RESPONSE: Callable[[Mapping[str, str]], dict[str, JsonValue]] = health_check_utils._create_health_check_response  # noqa: E501, SLF001  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_utils.py#L19-L30
 
 
 def scripted_failure(failure: Failure) -> Exception:
     class_name = failure["class_name"]
     if class_name == "content_policy":
-        return ContentPolicy(failure["message"], "model", "openai")
+        return exceptions.ContentPolicyViolationError(failure["message"], "model", "openai")
     if class_name == "bad_request":
-        return BadRequest(failure["message"], "model", "openai")
+        return exceptions.BadRequestError(failure["message"], "model", "openai")
     if class_name == "context_window":
-        return ContextWindow(failure["message"], "model", "openai")
+        return exceptions.ContextWindowExceededError(failure["message"], "model", "openai")
     if class_name == "unsupported_params":
-        return Unsupported(failure["message"], "model", "openai")
+        return exceptions.UnsupportedParamsError(failure["message"], "model", "openai")
     return RuntimeError(failure["message"])
 
 
 def model_json(value: BaseModel) -> JsonValue:
-    text = value.model_dump_json()
-    return REPLY.validate_json(text)
+    return REPLY.validate_json(value.model_dump_json())
 
 
 def clean(value: JsonValue | BaseModel) -> JsonValue:
@@ -249,9 +214,7 @@ def swap(name: str, module: ModuleType) -> ModuleType:
 
 def repeated_key(message: str) -> str:
     found = re.search(r"multiple values for keyword argument '([^']+)'", message)
-    if found is None:
-        return message
-    return found.group(1)
+    return message if found is None else found.group(1)
 
 
 def payload_field(error: ValidationError) -> str:
