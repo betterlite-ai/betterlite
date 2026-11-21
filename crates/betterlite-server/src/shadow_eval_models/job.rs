@@ -82,7 +82,7 @@ impl ShadowJob {
     }
 }
 
-fn default_direction() -> ShadowEvalDirection {
+const fn default_direction() -> ShadowEvalDirection {
     ShadowEvalDirection::Forward
 }
 
