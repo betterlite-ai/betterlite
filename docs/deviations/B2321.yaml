@@ -3,4 +3,7 @@ deviations:
   - what: A Redis set-max reply that is NaN or infinite repairs nothing in the request's spend counter batch, and the counter stays forgotten there.
     why: Spend is a Decimal in betterlite and no Decimal holds a non-finite float. LiteLLM would record inf in the batch and admit or reject the rest of the request against it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2911-L2912
+  - what: The DEBUG line for a failed Redis repair carries the error and its source chain in an error field instead of a Python traceback.
+    why: A Rust error has no traceback; the level, the counter_key field and the return without undoing the local repair match LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2904-L2910
 kept_bugs: []
