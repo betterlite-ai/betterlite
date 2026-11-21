@@ -1,0 +1,20 @@
+kind: helper
+name: foundry-resource-dispatch-image-edit
+call:
+  foundry_resource_dispatch:
+    case: image_edit
+    model: flux.2-pro
+    prompt: add a hat
+    images:
+      - text: aGk=
+    options: {}
+calls:
+  - foundry_resource_dispatch:
+      case: image_edit
+      model: mai-image-1
+      prompt: add a hat
+      images:
+        - text: aGk=
+      options: {}
+env: {}
+compare: {ignore: []}
