@@ -2,8 +2,6 @@ import asyncio
 from typing import Protocol, TypedDict, Unpack, runtime_checkable
 
 import litellm
-from b3042.answers import raised_json, response_json, window_json
-from b3042.fakes import FixedFailClosed, FixedTime, GroupMap, RecordingCache
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.hooks import PROXY_HOOKS
 from litellm.proxy.hooks.parallel_request_limiter_v3 import (
@@ -14,6 +12,9 @@ from litellm.proxy.hooks.parallel_request_limiter_v3 import (
     get_or_create_request_stash,
 )
 from pydantic import ConfigDict, JsonValue, TypeAdapter
+
+from b3042.answers import raised_json, response_json, window_json
+from b3042.fakes import FixedFailClosed, FixedTime, GroupMap, RecordingCache
 
 litellm.suppress_debug_info = True
 
