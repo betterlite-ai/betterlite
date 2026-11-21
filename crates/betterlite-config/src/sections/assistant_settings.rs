@@ -38,7 +38,6 @@ struct Fields {
     litellm_params: OptionalParams,
 }
 
-// the one key the startup block reads once the mapping is nonempty
 #[derive(Debug, Error)]
 #[error("missing field `litellm_params`")]
 struct MissingParams;

@@ -116,30 +116,38 @@ impl AssistantClient {
                 }))
             }
             SuppliedClass::AzureOpenAi | SuppliedClass::AsyncAzureOpenAi => {
-                // the SDK's own constructor arguments: its endpoint, key, api_version, timeout and class
-                let inputs: AzureClientInputs<'static> = AzureClientInputs {
-                    endpoint: EndpointSelection {
-                        azure_endpoint: self.api_base.clone(),
-                        base_url: None,
-                    },
-                    api_version: self
-                        .api_version
-                        .clone()
-                        .or_else(|| environment.lookup("AZURE_API_VERSION"))
-                        .unwrap_or_else(|| default_api_version.to_owned()),
-                    api_key: self.api_key.clone(),
-                    azure_ad_token: None,
-                    token_provider: None,
-                    max_retries: 0,
-                    timeout: self.timeout,
-                    http_client: HttpClient {
-                        is_async: kind == ClientKind::Async,
-                        shared: false,
-                    },
-                };
+                let inputs = self.azure_inputs(kind, environment, default_api_version);
                 AzureAssistantsClient::new(kind, inputs, environment, transport)
                     .map(ThreadClient::Azure)
             }
+        }
+    }
+
+    fn azure_inputs(
+        &self,
+        kind: ClientKind,
+        environment: &dyn EnvironmentLookup,
+        default_api_version: &str,
+    ) -> AzureClientInputs<'static> {
+        AzureClientInputs {
+            endpoint: EndpointSelection {
+                azure_endpoint: self.api_base.clone(),
+                base_url: None,
+            },
+            api_version: self
+                .api_version
+                .clone()
+                .or_else(|| environment.lookup("AZURE_API_VERSION"))
+                .unwrap_or_else(|| default_api_version.to_owned()),
+            api_key: self.api_key.clone(),
+            azure_ad_token: None,
+            token_provider: None,
+            max_retries: 0,
+            timeout: self.timeout,
+            http_client: HttpClient {
+                is_async: kind == ClientKind::Async,
+                shared: false,
+            },
         }
     }
 

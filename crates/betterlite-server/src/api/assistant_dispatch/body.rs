@@ -31,7 +31,7 @@ fn finite_floats(value: &Json) -> Result<(), AssistantBodyError> {
             let literal = number.to_string();
             // an integer literal of any size stays an integer, as it does in Python
             let float = literal.contains(['.', 'e', 'E']);
-            if float && !number.as_f64().is_some_and(|double| double.is_finite()) {
+            if float && !number.as_f64().is_some_and(f64::is_finite) {
                 return Err(AssistantBodyError::NonFiniteNumber);
             }
             Ok(())

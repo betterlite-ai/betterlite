@@ -43,7 +43,6 @@ pub struct AssistantDispatcher<'deps, 'resolution, T, S> {
     pub limits: ApiLimits,
 }
 
-// The factory's result: the provider it selected and the kwargs handed to the installed function.
 struct Merged {
     provider: String,
     kwargs: BTreeMap<String, Json>,
