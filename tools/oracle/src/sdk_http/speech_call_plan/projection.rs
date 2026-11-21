@@ -40,7 +40,7 @@ pub(super) fn project(
         Err(AspeechError::Raised {
             error: Raised::Speech(failure),
             ..
-        }) => failure,
+        }) => *failure,
         Err(AspeechError::Raised {
             error: Raised::Harness(error),
             ..
@@ -49,7 +49,7 @@ pub(super) fn project(
             model,
             provider,
             error: Raised::Resolution(source),
-        }) => resolution_failure(source, &model, &provider, redactor)?,
+        }) => resolution_failure(*source, &model, &provider, redactor)?,
     };
     Ok(StepOutcome {
         value: None,

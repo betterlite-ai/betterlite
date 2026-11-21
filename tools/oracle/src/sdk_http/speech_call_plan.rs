@@ -51,14 +51,14 @@ pub struct Outcome {
 // how one speech() invocation fails here: B1084's projected failure, the wrapper's resolver, or the harness
 #[derive(Debug)]
 enum Raised {
-    Speech(Failure),
-    Resolution(ResolutionError),
+    Speech(Box<Failure>),
+    Resolution(Box<ResolutionError>),
     Harness(SdkHttpError),
 }
 
 impl From<ResolutionError> for Raised {
     fn from(source: ResolutionError) -> Self {
-        Self::Resolution(source)
+        Self::Resolution(Box::new(source))
     }
 }
 
@@ -163,7 +163,7 @@ fn answer(result: Result<SdkResult, SdkHttpError>) -> Result<BinaryValue, Raised
         Some(StepOutcome {
             value: None,
             failure: Some(failure),
-        }) => Err(Raised::Speech(failure)),
+        }) => Err(Raised::Speech(Box::new(failure))),
         Some(
             StepOutcome {
                 value: Some(_),
@@ -204,13 +204,9 @@ impl CallKind for Call {
     }
 }
 
-async fn execute(
-    call: &Call,
-    api_base: &str,
-    env: &BTreeMap<String, String>,
-) -> Result<SdkResult, SdkHttpError> {
-    let environment: BTreeMap<String, String> = env
-        .iter()
+// the case env as the wrapper's resolver reads it, with the sentinel replaced by the mock's origin
+fn substituted(env: &BTreeMap<String, String>, api_base: &str) -> BTreeMap<String, String> {
+    env.iter()
         .map(|(name, value)| {
             let resolved = if value == API_BASE_SENTINEL {
                 api_base
@@ -219,7 +215,15 @@ async fn execute(
             };
             (name.clone(), resolved.to_owned())
         })
-        .collect();
+        .collect()
+}
+
+async fn execute(
+    call: &Call,
+    api_base: &str,
+    env: &BTreeMap<String, String>,
+) -> Result<SdkResult, SdkHttpError> {
+    let environment = substituted(env, api_base);
     let catalog = ModelCatalog::default();
     let names = BTreeSet::new();
     let resolution = ResolutionContext {
