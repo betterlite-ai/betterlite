@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use betterlite_openai::speech::request::SpeechOptions;
+use betterlite_openai::speech::request::{SpeechFormat, SpeechOptions};
 use http::Method;
 use rust_decimal::Decimal;
 use serde_json::Value;
@@ -10,7 +10,7 @@ use super::support::*;
 
 fn native_call() -> SpeechCall {
     SpeechCall {
-        voice: named_voice("alloy"),
+        voice: Some(named_voice("alloy")),
         response_format: Some(String::from("wav")),
         speed: Some(Decimal::ZERO),
         instructions: Some(String::new()),
@@ -43,7 +43,7 @@ fn native_defaults_post_the_audio_speech_body() {
     assert_eq!(sent.len(), 1);
     assert_eq!(sent[0].method, Method::POST);
     assert_eq!(sent[0].url.path(), "/v1/audio/speech");
-    assert_eq!(sent[0].deadline, Duration::from_secs(6_000));
+    assert_eq!(sent[0].deadline, Duration::from_mins(100));
     assert_eq!(
         header(&sent[0], "authorization").as_deref(),
         Some("Bearer sk-default")
@@ -56,14 +56,10 @@ fn native_defaults_post_the_audio_speech_body() {
     assert_eq!(header(&sent[0], "x-extra"), None);
     assert_eq!(
         sent_json(&sent[0]),
-        serde_json::json!({
-            "input": "hello",
-            "model": "tts-1",
-            "voice": "alloy",
-            "response_format": "wav",
-            "speed": 0,
-            "instructions": "",
-        })
+        Value::Object(object(
+            r#"{"input": "hello", "model": "tts-1", "voice": "alloy",
+                "response_format": "wav", "speed": 0, "instructions": ""}"#,
+        ))
     );
 }
 
@@ -80,7 +76,7 @@ fn configured_global_headers_stay_out_of_the_request() {
         &variables,
     );
     let native = SpeechCall {
-        voice: named_voice("alloy"),
+        voice: Some(named_voice("alloy")),
         ..base_call("openai/tts-1")
     };
     harness.run_ok(&native);
@@ -156,7 +152,9 @@ fn initial_options_keep_explicit_zero_and_empty() {
         .expect("the options build");
     assert_eq!(
         Value::Object(params),
-        serde_json::json!({"response_format": "wav", "speed": 0, "instructions": ""})
+        Value::Object(object(
+            r#"{"response_format": "wav", "speed": 0, "instructions": ""}"#,
+        ))
     );
 }
 
@@ -178,7 +176,7 @@ fn native_options_deserialize_into_the_sdk_options() {
     assert_eq!(sdk_options.speed, Some(Decimal::ZERO));
     assert_eq!(sdk_options.instructions.as_deref(), Some(""));
     assert_eq!(
-        sdk_options.response_format.map(|format| format.wire_name()),
+        sdk_options.response_format.map(SpeechFormat::wire_name),
         Some("wav")
     );
 }

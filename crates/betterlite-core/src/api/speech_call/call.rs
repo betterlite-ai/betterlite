@@ -78,12 +78,14 @@ impl SpeechCall {
     // max_retries=None takes litellm.num_retries or 2, while an explicit zero stays zero
     #[must_use]
     pub fn max_retries(&self, settings: &Settings) -> u32 {
-        match self.max_retries {
-            Some(value) => value,
-            None => settings
-                .num_retries
-                .filter(|value| *value != 0)
-                .unwrap_or(DEFAULT_MAX_RETRIES),
-        }
+        self.max_retries.map_or_else(
+            || {
+                settings
+                    .num_retries
+                    .filter(|value| *value != 0)
+                    .unwrap_or(DEFAULT_MAX_RETRIES)
+            },
+            |value| value,
+        )
     }
 }

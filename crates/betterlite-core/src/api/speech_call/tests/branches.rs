@@ -28,7 +28,7 @@ fn elevenlabs_maps_the_voice_and_keeps_the_query_params() {
         ScriptedOperations::ok(b"audio"),
     );
     let native = SpeechCall {
-        voice: named_voice("  id  "),
+        voice: Some(named_voice("  id  ")),
         api_base: Some(String::from("https://eleven.test")),
         api_key: Some(SecretString::from("sk-eleven")),
         kwargs: object(
@@ -54,7 +54,7 @@ fn elevenlabs_maps_the_voice_and_keeps_the_query_params() {
     );
     assert_eq!(
         operation.litellm_params.get("__elevenlabs_query_params__"),
-        Some(&serde_json::json!({"enable_logging": false}))
+        Some(&Value::Object(object(r#"{"enable_logging": false}"#)))
     );
     assert_eq!(operation.kwargs.get("__elevenlabs_query_params__"), None);
     assert_eq!(operation.kwargs.get("tags"), None);
@@ -76,7 +76,7 @@ fn elevenlabs_maps_the_voice_and_keeps_the_query_params() {
             .options
             .kwargs
             .get("__elevenlabs_query_params__"),
-        Some(&serde_json::json!({"enable_logging": false}))
+        Some(&Value::Object(object(r#"{"enable_logging": false}"#)))
     );
 }
 
@@ -87,7 +87,7 @@ fn elevenlabs_drops_a_non_dict_query_and_rejects_blank_voices() {
         ScriptedOperations::ok(b"audio"),
     );
     let native = SpeechCall {
-        voice: named_voice("id"),
+        voice: Some(named_voice("id")),
         kwargs: object(r#"{"__elevenlabs_query_params__": "junk"}"#),
         ..base_call("elevenlabs/eleven_multilingual_v2")
     };
@@ -101,7 +101,7 @@ fn elevenlabs_drops_a_non_dict_query_and_rejects_blank_voices() {
         None
     );
     let blank = SpeechCall {
-        voice: named_voice("   "),
+        voice: Some(named_voice("   ")),
         ..base_call("elevenlabs/eleven_multilingual_v2")
     };
     let blank_failure = harness.run_err(&blank);
@@ -114,7 +114,7 @@ fn elevenlabs_drops_a_non_dict_query_and_rejects_blank_voices() {
         SpeechFailure::Mapped(ErrorClass::BadRequest(_))
     ));
     let dict = SpeechCall {
-        voice: dict_voice(r#"{"voice_id": "id"}"#),
+        voice: Some(dict_voice(r#"{"voice_id": "id"}"#)),
         ..base_call("elevenlabs/eleven_multilingual_v2")
     };
     let dict_failure = harness.run_err(&dict);
@@ -133,7 +133,7 @@ fn elevenlabs_drops_a_non_dict_query_and_rejects_blank_voices() {
 fn minimax_selects_the_first_truthy_voice(#[case] source: &str, #[case] expected: Option<&str>) {
     let harness = branch_harness(Configs::absent(), ScriptedOperations::ok(b"audio"));
     let native = SpeechCall {
-        voice: dict_voice(source),
+        voice: Some(dict_voice(source)),
         ..base_call("minimax/speech-02-hd")
     };
     harness.run_ok(&native);
@@ -151,11 +151,11 @@ fn minimax_selects_the_first_truthy_voice(#[case] source: &str, #[case] expected
 fn the_generic_families_keep_a_string_voice(#[case] model: &str, #[case] voice: &str) {
     let harness = branch_harness(Configs::absent(), ScriptedOperations::ok(b"audio"));
     let native = SpeechCall {
-        voice: named_voice(voice),
+        voice: Some(named_voice(voice)),
         ..base_call(model)
     };
     harness.run_ok(&native);
-    assert_eq!(harness.operations.take()[0].voice, named_voice(voice));
+    assert_eq!(harness.operations.take()[0].voice, Some(named_voice(voice)));
 }
 
 #[rstest]
@@ -164,7 +164,7 @@ fn the_generic_families_keep_a_string_voice(#[case] model: &str, #[case] voice: 
 fn mistral_and_edenai_take_only_string_voices(#[case] model: &str) {
     let harness = branch_harness(Configs::absent(), ScriptedOperations::ok(b"audio"));
     let native = SpeechCall {
-        voice: dict_voice(r#"{"voice": "alice"}"#),
+        voice: Some(dict_voice(r#"{"voice": "alice"}"#)),
         ..base_call(model)
     };
     harness.run_ok(&native);
@@ -179,7 +179,7 @@ fn mistral_and_edenai_take_only_string_voices(#[case] model: &str) {
 fn edenai_records_the_resolved_api_base() {
     let harness = branch_harness(Configs::absent(), ScriptedOperations::ok(b"audio"));
     let native = SpeechCall {
-        voice: named_voice("alice"),
+        voice: Some(named_voice("alice")),
         api_base: Some(String::from("https://eden.test/v1")),
         ..base_call("edenai/text-to-speech")
     };
@@ -189,7 +189,7 @@ fn edenai_records_the_resolved_api_base() {
         Some(&Value::String(String::from("https://eden.test/v1")))
     );
     let default_base = SpeechCall {
-        voice: named_voice("alice"),
+        voice: Some(named_voice("alice")),
         ..base_call("edenai/text-to-speech")
     };
     harness.run_ok(&default_base);
@@ -203,25 +203,28 @@ fn edenai_records_the_resolved_api_base() {
 fn polly_keeps_the_mapped_dict_voice() {
     let harness = branch_harness(
         Configs::scripted(ScriptedConfig::mapped(
-            dict_voice(r#"{"voice": "Joanna"}"#),
+            Some(dict_voice(r#"{"voice": "Joanna"}"#)),
             "{}",
         )),
         ScriptedOperations::ok(b"audio"),
     );
     let native = SpeechCall {
-        voice: named_voice("alice"),
+        voice: Some(named_voice("alice")),
         ..base_call("aws_polly/generative")
     };
     harness.run_ok(&native);
     let executed = harness.operations.take();
     assert_eq!(executed[0].kind, SpeechOperationKind::Dispatch);
-    assert_eq!(executed[0].voice, dict_voice(r#"{"voice": "Joanna"}"#));
+    assert_eq!(
+        executed[0].voice,
+        Some(dict_voice(r#"{"voice": "Joanna"}"#))
+    );
 }
 
 #[test]
 fn azure_speech_models_need_the_ava_config() {
     let native = SpeechCall {
-        voice: dict_voice(r#"{"name": "en-US-JennyNeural"}"#),
+        voice: Some(dict_voice(r#"{"name": "en-US-JennyNeural"}"#)),
         ..base_call("azure/speech/azure-text-to-speech")
     };
     let missing = branch_harness(Configs::absent(), ScriptedOperations::ok(b"audio"));
@@ -248,7 +251,7 @@ fn azure_speech_models_need_the_ava_config() {
     );
     assert_eq!(
         executed[0].voice,
-        dict_voice(r#"{"name": "en-US-JennyNeural"}"#)
+        Some(dict_voice(r#"{"name": "en-US-JennyNeural"}"#))
     );
 }
 
@@ -259,7 +262,7 @@ fn azure_ai_speech_models_never_reach_a_config() {
         ScriptedOperations::ok(b"audio"),
     );
     let native = SpeechCall {
-        voice: named_voice("alloy"),
+        voice: Some(named_voice("alloy")),
         ..base_call("azure_ai/speech/azure-text-to-speech")
     };
     let failure = harness.run_err(&native);
@@ -281,7 +284,7 @@ fn azure_ai_speech_models_never_reach_a_config() {
 #[test]
 fn runwayml_needs_its_config_and_dispatches_with_it() {
     let native = SpeechCall {
-        voice: named_voice("Maya"),
+        voice: Some(named_voice("Maya")),
         ..base_call("runwayml/text-to-speech")
     };
     let missing = branch_harness(Configs::absent(), ScriptedOperations::ok(b"audio"));
@@ -313,7 +316,7 @@ fn openai_compatible_providers_use_the_openai_branch() {
         &variables,
     );
     let native = SpeechCall {
-        voice: named_voice("alloy"),
+        voice: Some(named_voice("alloy")),
         ..base_call("groq/playai-tts")
     };
     harness.run_ok(&native);
@@ -333,7 +336,7 @@ fn the_mapping_receives_drop_params_false_and_the_options() {
         ScriptedOperations::ok(b"audio"),
     );
     let native = SpeechCall {
-        voice: named_voice("alloy"),
+        voice: Some(named_voice("alloy")),
         response_format: Some(String::from("wav")),
         kwargs: object(r#"{"tags": ["a"], "user": "u-1"}"#),
         ..base_call("elevenlabs/eleven_multilingual_v2")
@@ -347,7 +350,7 @@ fn the_mapping_receives_drop_params_false_and_the_options() {
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].model, "eleven_multilingual_v2");
     assert!(!calls[0].options.drop_params);
-    assert_eq!(calls[0].options.voice, named_voice("alloy"));
+    assert_eq!(calls[0].options.voice, Some(named_voice("alloy")));
     assert_eq!(calls[0].options.kwargs.get("tags"), None);
     assert_eq!(
         calls[0].options.kwargs.get("user"),

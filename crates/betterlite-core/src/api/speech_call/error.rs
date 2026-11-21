@@ -60,7 +60,7 @@ impl From<SpeechError> for SpeechCallError {
                 param: status.param,
                 code: status.code,
             },
-            error @ (SpeechError::MissingApiKey
+            failure @ (SpeechError::MissingApiKey
             | SpeechError::BaseUrl { .. }
             | SpeechError::Header { .. }
             | SpeechError::Encode { .. }
@@ -68,7 +68,7 @@ impl From<SpeechError> for SpeechCallError {
             | SpeechError::Transport { .. }
             | SpeechError::Logging { .. }
             | SpeechError::Body { .. }
-            | SpeechError::TooLarge) => sdk(&error),
+            | SpeechError::TooLarge) => sdk(&failure),
         }
     }
 }

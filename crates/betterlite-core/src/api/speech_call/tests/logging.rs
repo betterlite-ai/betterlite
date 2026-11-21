@@ -34,7 +34,7 @@ fn the_call_record_and_the_pre_call_reach_the_logging_object() {
         &variables,
     );
     let native = SpeechCall {
-        voice: named_voice("alloy"),
+        voice: Some(named_voice("alloy")),
         response_format: Some(String::from("wav")),
         kwargs: object(r#"{"user": "u-1"}"#),
         ..base_call("openai/tts-1")

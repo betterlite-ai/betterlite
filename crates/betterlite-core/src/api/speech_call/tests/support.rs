@@ -157,12 +157,12 @@ pub(super) fn json(source: &str) -> Json {
     serde_json::from_str(source).expect("a JSON value")
 }
 
-pub(super) fn named_voice(name: &str) -> Option<SpeechVoice> {
-    Some(SpeechVoice::Name(name.to_owned()))
+pub(super) fn named_voice(name: &str) -> SpeechVoice {
+    SpeechVoice::Name(name.to_owned())
 }
 
-pub(super) fn dict_voice(source: &str) -> Option<SpeechVoice> {
-    Some(SpeechVoice::Options(object(source)))
+pub(super) fn dict_voice(source: &str) -> SpeechVoice {
+    SpeechVoice::Options(object(source))
 }
 
 pub(super) struct RecordingTransport {
@@ -267,9 +267,14 @@ pub(super) struct MappingCall {
     pub(super) options: SpeechMappingOptions,
 }
 
-// the mapping a provider config applies; voice None keeps the caller's, Some(None) drops it
+// the voice a scripted mapping applies: the caller's, or the one the mapping sets
+pub(super) enum VoiceMapping {
+    Keep,
+    Set(Option<SpeechVoice>),
+}
+
 pub(super) struct ScriptedConfig {
-    voice: Option<Option<SpeechVoice>>,
+    voice: VoiceMapping,
     appended: Object,
     pub(super) calls: Mutex<Vec<MappingCall>>,
 }
@@ -277,7 +282,7 @@ pub(super) struct ScriptedConfig {
 impl ScriptedConfig {
     pub(super) fn keeping(appended: &str) -> Self {
         Self {
-            voice: None,
+            voice: VoiceMapping::Keep,
             appended: object(appended),
             calls: Mutex::new(Vec::new()),
         }
@@ -285,7 +290,7 @@ impl ScriptedConfig {
 
     pub(super) fn mapped(voice: Option<SpeechVoice>, appended: &str) -> Self {
         Self {
-            voice: Some(voice),
+            voice: VoiceMapping::Set(voice),
             appended: object(appended),
             calls: Mutex::new(Vec::new()),
         }
@@ -313,8 +318,8 @@ impl SpeechConfigOperation for ScriptedConfig {
             });
         optional_params.extend(self.appended.clone());
         let voice = match &self.voice {
-            None => options.voice.clone(),
-            Some(voice) => voice.clone(),
+            VoiceMapping::Keep => options.voice.clone(),
+            VoiceMapping::Set(voice) => voice.clone(),
         };
         (voice, optional_params)
     }
@@ -368,8 +373,6 @@ pub(super) struct OperationRecord {
     pub(super) provider: String,
     pub(super) config_tag: Option<TextToSpeechConfigTag>,
     pub(super) config_present: bool,
-    pub(super) model: String,
-    pub(super) input: String,
     pub(super) voice: Option<SpeechVoice>,
     pub(super) optional_params: Object,
     pub(super) litellm_params: Object,
@@ -382,7 +385,6 @@ pub(super) struct OperationRecord {
     pub(super) max_retries: u32,
     pub(super) azure_ad_token: Option<String>,
     pub(super) azure_ad_token_provider: Option<Value>,
-    pub(super) aspeech: bool,
     pub(super) kwargs: Object,
 }
 
@@ -393,8 +395,6 @@ impl From<&SpeechOperation<'_>> for OperationRecord {
             provider: operation.provider.clone(),
             config_tag: operation.config_tag,
             config_present: operation.config.is_some(),
-            model: operation.model.clone(),
-            input: operation.input.clone(),
             voice: operation.voice.clone(),
             optional_params: operation.optional_params.clone(),
             litellm_params: operation.litellm_params.clone(),
@@ -413,7 +413,6 @@ impl From<&SpeechOperation<'_>> for OperationRecord {
                 .as_ref()
                 .map(|token| token.expose_secret().to_owned()),
             azure_ad_token_provider: operation.azure_ad_token_provider.clone(),
-            aspeech: operation.aspeech,
             kwargs: operation.kwargs.clone(),
         }
     }

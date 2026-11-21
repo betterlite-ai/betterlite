@@ -11,7 +11,7 @@ use super::support::*;
 
 fn keyed(key: Option<&str>) -> SpeechCall {
     SpeechCall {
-        voice: named_voice("alloy"),
+        voice: Some(named_voice("alloy")),
         api_key: key.map(SecretString::from),
         ..base_call("openai/tts-1")
     }
@@ -181,7 +181,7 @@ fn azure_credentials_fill_the_operation() {
         &variables,
     );
     let native = SpeechCall {
-        voice: named_voice("alloy"),
+        voice: Some(named_voice("alloy")),
         api_base: Some(String::from("https://azure.test")),
         api_version: Some(String::from("2024-06-01")),
         api_key: Some(SecretString::from("sk-azure")),
@@ -204,11 +204,11 @@ fn azure_credentials_fill_the_operation() {
     assert_eq!(operation.azure_ad_token.as_deref(), Some("env-token"));
     assert_eq!(
         operation.azure_ad_token_provider,
-        Some(serde_json::json!({"kind": "provider"}))
+        Some(Value::Object(object(r#"{"kind": "provider"}"#)))
     );
     assert_eq!(
         operation.optional_params.get("extra_headers"),
-        Some(&serde_json::json!({"x-header": "yes"}))
+        Some(&Value::Object(object(r#"{"x-header": "yes"}"#)))
     );
     assert_eq!(
         operation.kwargs.get("callbacks"),
@@ -229,7 +229,7 @@ fn azure_empty_call_values_fall_through_to_the_settings() {
         &[],
     );
     let native = SpeechCall {
-        voice: named_voice("alloy"),
+        voice: Some(named_voice("alloy")),
         api_base: Some(String::new()),
         api_version: Some(String::new()),
         api_key: Some(SecretString::from("")),
@@ -255,7 +255,7 @@ fn azure_environment_tiers_fill_the_operation() {
         &variables,
     );
     let native = SpeechCall {
-        voice: named_voice("alloy"),
+        voice: Some(named_voice("alloy")),
         ..base_call("azure/my-deployment")
     };
     harness.run_ok(&native);
@@ -280,7 +280,7 @@ fn azure_ad_token_prefers_the_options_body() {
     );
     assert_eq!(
         Value::Object(params),
-        serde_json::json!({"extra_body": {"other": 1}})
+        Value::Object(object(r#"{"extra_body": {"other": 1}}"#))
     );
     let mut empty = object(r#"{"extra_body": {"azure_ad_token": ""}}"#);
     assert_eq!(
@@ -303,7 +303,7 @@ fn the_resolved_key_reaches_litellm_params() {
         &variables,
     );
     let native = SpeechCall {
-        voice: named_voice("alice"),
+        voice: Some(named_voice("alice")),
         ..base_call("mistral/mistral-small")
     };
     harness.run_ok(&native);

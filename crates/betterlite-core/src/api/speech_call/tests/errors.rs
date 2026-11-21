@@ -13,9 +13,7 @@ fn openai_requires_a_string_voice() {
         RecordingTransport::ok("audio/mpeg", &[1]),
         &variables,
     );
-    let missing = SpeechCall {
-        ..base_call("openai/tts-1")
-    };
+    let missing = base_call("openai/tts-1");
     let missing_failure = harness.run_err(&missing);
     assert_eq!(
         missing_failure.message,
@@ -27,7 +25,7 @@ fn openai_requires_a_string_voice() {
     ));
     assert!(harness.transport.sent().is_empty());
     let dict = SpeechCall {
-        voice: dict_voice(r#"{"voice": "alloy"}"#),
+        voice: Some(dict_voice(r#"{"voice": "alloy"}"#)),
         ..base_call("openai/tts-1")
     };
     let dict_failure = harness.run_err(&dict);
@@ -36,7 +34,7 @@ fn openai_requires_a_string_voice() {
         "'voice' is required to be passed as a string for OpenAI TTS"
     );
     let empty = SpeechCall {
-        voice: named_voice(""),
+        voice: Some(named_voice("")),
         ..base_call("openai/tts-1")
     };
     harness.run_ok(&empty);
@@ -55,9 +53,7 @@ fn azure_requires_a_string_voice_and_accepts_empty() {
         RecordingTransport::ok("audio/mpeg", &[]),
         &[],
     );
-    let missing = SpeechCall {
-        ..base_call("azure/my-deployment")
-    };
+    let missing = base_call("azure/my-deployment");
     let failure = harness.run_err(&missing);
     assert_eq!(
         failure.message,
@@ -69,7 +65,7 @@ fn azure_requires_a_string_voice_and_accepts_empty() {
     ));
     assert!(harness.transport.sent().is_empty());
     let empty = SpeechCall {
-        voice: named_voice(""),
+        voice: Some(named_voice("")),
         ..base_call("azure/my-deployment")
     };
     harness.run_ok(&empty);
@@ -90,7 +86,7 @@ fn provider_status_errors_keep_the_mapped_fields() {
         &variables,
     );
     let native = SpeechCall {
-        voice: named_voice("alloy"),
+        voice: Some(named_voice("alloy")),
         ..base_call("openai/tts-1")
     };
     let failure = harness.run_err(&native);
@@ -124,7 +120,7 @@ fn transport_failures_are_connection_errors() {
         &variables,
     );
     let native = SpeechCall {
-        voice: named_voice("alloy"),
+        voice: Some(named_voice("alloy")),
         ..base_call("openai/tts-1")
     };
     let failure = harness.run_err(&native);
@@ -145,7 +141,7 @@ fn resolution_failures_map_to_bad_request() {
         &[],
     );
     let native = SpeechCall {
-        voice: named_voice("alloy"),
+        voice: Some(named_voice("alloy")),
         ..base_call("not-a-known-model")
     };
     let failure = harness.run_err(&native);
@@ -172,7 +168,7 @@ fn a_bridge_completion_failure_keeps_its_class() {
     )
     .completions(completions);
     let native = SpeechCall {
-        voice: named_voice("Kore"),
+        voice: Some(named_voice("Kore")),
         ..base_call("gemini/gemini-2.5-flash-preview-tts")
     };
     let failure = harness.run_err(&native);
@@ -196,7 +192,7 @@ fn internal_failures_are_plain_exceptions() {
     )
     .completions(completions);
     let native = SpeechCall {
-        voice: named_voice("Kore"),
+        voice: Some(named_voice("Kore")),
         ..base_call("gemini/gemini-2.5-flash-preview-tts")
     };
     let failure = harness.run_err(&native);
@@ -212,7 +208,7 @@ fn unmapped_providers_raise_the_provider_list_exception() {
         &[],
     );
     let native = SpeechCall {
-        voice: named_voice("alice"),
+        voice: Some(named_voice("alice")),
         ..base_call("anthropic/claude-3")
     };
     let failure = harness.run_err(&native);
@@ -235,7 +231,7 @@ fn anyscale_and_custom_providers_are_not_valid_llm_providers() {
         &[],
     );
     let anyscale = SpeechCall {
-        voice: named_voice("alice"),
+        voice: Some(named_voice("alice")),
         ..base_call("anyscale/mixtral-8x7b")
     };
     let anyscale_failure = harness.run_err(&anyscale);
@@ -250,7 +246,7 @@ fn anyscale_and_custom_providers_are_not_valid_llm_providers() {
         "'anyscale' is not a valid LlmProviders"
     );
     let custom = SpeechCall {
-        voice: named_voice("alice"),
+        voice: Some(named_voice("alice")),
         custom_llm_provider: Some(String::from("my-own")),
         ..base_call("model")
     };
@@ -271,7 +267,7 @@ fn a_provider_never_reached_keeps_the_speech_errors() {
         &variables,
     );
     let native = SpeechCall {
-        voice: named_voice("alloy"),
+        voice: Some(named_voice("alloy")),
         ..base_call("openai/tts-1")
     };
     let failure = harness.run_err(&native);

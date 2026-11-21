@@ -24,7 +24,7 @@ fn vertex_dispatch_passes_the_call_headers_and_params() {
         ScriptedOperations::ok(b"audio"),
     );
     let native = SpeechCall {
-        voice: dict_voice(r#"{"language_code": "en-US"}"#),
+        voice: Some(dict_voice(r#"{"language_code": "en-US"}"#)),
         headers: Some(object(r#"{"x-call": "yes"}"#)),
         kwargs: object(
             r#"{"extra_headers": {"x-kw": "no"}, "vertex_project": "proj",
@@ -48,7 +48,10 @@ fn vertex_dispatch_passes_the_call_headers_and_params() {
         operation.extra_headers,
         Some(object(r#"{"x-call": "yes"}"#))
     );
-    assert_eq!(operation.voice, dict_voice(r#"{"language_code": "en-US"}"#));
+    assert_eq!(
+        operation.voice,
+        Some(dict_voice(r#"{"language_code": "en-US"}"#))
+    );
     assert_eq!(
         operation.litellm_params.get("vertex_project"),
         Some(&Value::String(String::from("proj")))
@@ -59,14 +62,14 @@ fn vertex_dispatch_passes_the_call_headers_and_params() {
     );
     assert_eq!(
         operation.litellm_params.get("vertex_credentials"),
-        Some(&serde_json::json!({"type": "service_account"}))
+        Some(&Value::Object(object(r#"{"type": "service_account"}"#)))
     );
     let plain_harness = vertex_harness(
         Configs::scripted(ScriptedConfig::keeping("{}")),
         ScriptedOperations::ok(b"audio"),
     );
     let plain = SpeechCall {
-        voice: named_voice("en-US-Studio-O"),
+        voice: Some(named_voice("en-US-Studio-O")),
         ..base_call("vertex_ai/text-to-speech")
     };
     plain_harness.run_ok(&plain);
@@ -89,7 +92,7 @@ fn vertex_ai_beta_takes_the_fallback_config_after_the_mapping() {
         ScriptedOperations::ok(b"audio"),
     );
     let native = SpeechCall {
-        voice: named_voice("en-US-Studio-O"),
+        voice: Some(named_voice("en-US-Studio-O")),
         ..base_call("vertex_ai_beta/text-to-speech")
     };
     harness.run_ok(&native);
@@ -124,7 +127,7 @@ fn a_vertex_gemini_model_uses_the_completion_bridge() {
     let harness = vertex_harness(Configs::absent(), ScriptedOperations::ok(b"unused"))
         .completions(completions);
     let native = SpeechCall {
-        voice: named_voice("Kore"),
+        voice: Some(named_voice("Kore")),
         headers: Some(object(r#"{"x-call": "yes"}"#)),
         ..base_call("vertex_ai/gemini-2.5-preview-tts")
     };
@@ -166,7 +169,7 @@ fn a_gemini_provider_uses_the_completion_bridge_with_empty_headers() {
     let harness = vertex_harness(Configs::absent(), ScriptedOperations::ok(b"unused"))
         .completions(completions);
     let native = SpeechCall {
-        voice: named_voice("Kore"),
+        voice: Some(named_voice("Kore")),
         ..base_call("gemini/gemini-2.5-flash-preview-tts")
     };
     let content = harness.run_ok(&native);
@@ -190,7 +193,7 @@ fn a_gemini_provider_uses_the_completion_bridge_with_empty_headers() {
 fn the_vertex_gemini_check_is_case_sensitive() {
     let harness = vertex_harness(Configs::absent(), ScriptedOperations::ok(b"audio"));
     let native = SpeechCall {
-        voice: named_voice("Kore"),
+        voice: Some(named_voice("Kore")),
         ..base_call("vertex_ai/Gemini-2.5-preview-tts")
     };
     harness.run_ok(&native);
