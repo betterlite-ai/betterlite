@@ -107,7 +107,7 @@ pub(super) fn prepared_call(model: &str) -> PreparedCall {
     }
 }
 
-pub(super) fn dig<'a>(json: &'a Json, path: &[&str]) -> Option<&'a Json> {
+pub(super) fn dig<'json>(json: &'json Json, path: &[&str]) -> Option<&'json Json> {
     let mut current = json;
     for key in path {
         let Json::Object(fields) = current else {
@@ -376,7 +376,7 @@ pub(super) struct FakeChat {
     frames: Mutex<Vec<String>>,
     null_models: Mutex<Vec<String>>,
     failures: Mutex<VecDeque<ChatFailure>>,
-    pub seen: Arc<Mutex<Vec<SeenCall>>>,
+    seen: Arc<Mutex<Vec<SeenCall>>>,
 }
 
 const DEFAULT_COMPLETION: &str = r#"{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"gpt-4o","choices":[{"index":0,"message":{"role":"assistant","content":"hello"},"finish_reason":"stop"}]}"#;
@@ -887,7 +887,7 @@ impl Harness {
     }
 
     pub(super) fn target(&self) -> CompletionTarget<'_> {
-        let calls: Arc<dyn ChatCall> = Arc::clone(&self.chat);
+        let calls: Arc<dyn ChatCall> = Arc::<FakeChat>::clone(&self.chat);
         let settings = self.settings.clone();
         let dispatch = Arc::clone(&self.dispatch);
         let redactor = Redactor::new(16).expect("the default redactor");

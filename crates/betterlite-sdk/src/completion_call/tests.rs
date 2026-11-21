@@ -11,8 +11,10 @@ use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::sections::openai_credentials::Settings;
 use betterlite_config::types::ProxyTrust;
 use betterlite_core::dispatch::error::DispatchError;
-use betterlite_core::environment_validation::probe::ProbeCompletion;
-use betterlite_core::responses_bridge::{ModelInfoError, ReasoningEffort};
+use betterlite_core::environment_validation::probe::{ModelProbe as _, ProbeCompletion};
+use betterlite_core::responses_bridge::{
+    ModelInfoError, ReasoningEffort, ResponsesBridgeCapabilities as _,
+};
 use betterlite_error::error::ErrorClass;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::decisions::Json;
@@ -24,6 +26,7 @@ use tokio::task::JoinSet;
 
 use crate::call_setup::correlation::CallOutcome;
 use crate::call_wrapper::error::{class_name, class_status};
+use crate::call_wrapper::target::CallTarget as _;
 use crate::completion_call::bridge_facts::ModelBridgeFacts;
 use crate::completion_call::error::{CompletionCallError, into_call_error};
 use crate::completion_call::fallbacks::run_fallbacks;
@@ -716,7 +719,10 @@ async fn probe_complete_calls_the_completion_target() {
 
 // ---- bridge_facts_ ----
 
-fn bridge<'a>(facts: &'a FakeFacts, foundry: &'a FakeFoundry) -> ModelBridgeFacts<'a, FakeFoundry> {
+fn bridge<'facts>(
+    facts: &'facts FakeFacts,
+    foundry: &'facts FakeFoundry,
+) -> ModelBridgeFacts<'facts, FakeFoundry> {
     ModelBridgeFacts {
         facts,
         foundry,

@@ -4,6 +4,7 @@ use betterlite_config::sections::openai_credentials::Settings;
 use betterlite_context::agentic_loop_plan::{FollowupMessage, JsonMap};
 use betterlite_core::api::chat_agentic_loop::{ChatContinuation, ChatLoopResult};
 use betterlite_core::operation::chat::ChatFailure;
+use betterlite_core::responses_bridge::ResponsesBridgeCapabilities as _;
 use betterlite_models::decisions::Json;
 use betterlite_openai::chat::execution::ChatError;
 use betterlite_openai::stream::chunk::Chunk;
@@ -18,6 +19,7 @@ use super::support::{
 };
 use crate::call_setup::correlation::CallOutcome;
 use crate::call_wrapper::error::class_status;
+use crate::call_wrapper::target::CallTarget as _;
 use crate::completion_call::bridge_facts::ModelBridgeFacts;
 use crate::completion_call::error::{CompletionCallError, into_call_error};
 use crate::completion_call::fallbacks::run_fallbacks;

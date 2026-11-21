@@ -30,8 +30,8 @@ pub async fn run_fallbacks(
     candidates.push(Json::Text(original.clone()));
     candidates.extend(call.fallbacks);
     let mut last_error: Option<String> = None;
-    for (attempted, candidate) in candidates.iter().enumerate() {
-        let (model, attempt) = match candidate {
+    for (position, candidate) in candidates.iter().enumerate() {
+        let (model, chosen) = match candidate {
             Json::Text(model) => (model.clone(), base.clone()),
             Json::Object(fields) => {
                 let model = fields
@@ -44,11 +44,11 @@ pub async fn run_fallbacks(
                 return Err(CompletionCallError::Field { field: "fallbacks" });
             }
         };
-        let mut attempt = filter_internal_params(attempt);
+        let mut attempt = filter_internal_params(chosen);
         attempt.insert(String::from("model"), Json::Text(model.clone()));
         match requester.call(attempt, logging).await {
             Ok(outcome) if !matches!(&outcome, CallOutcome::Response(Json::Null)) => {
-                return Ok(with_attempt_header(outcome, attempted));
+                return Ok(with_attempt_header(outcome, position));
             }
             Ok(_) => {}
             Err(error) => {

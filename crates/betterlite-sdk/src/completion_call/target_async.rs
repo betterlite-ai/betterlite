@@ -1,5 +1,4 @@
 use super::error::{CompletionCallError, into_call_error};
-use super::request;
 use super::retry;
 use super::target::CompletionTarget;
 use crate::call_setup::RequestMap;
@@ -51,12 +50,12 @@ impl AsyncCompletionTarget<'_> {
         let Some(value) = &call.mock_delay else {
             return Ok(());
         };
-        let seconds = match value {
+        let parsed = match value {
             Json::Number(number) => number.as_f64(),
             Json::Text(text) => text.parse::<f64>().ok(),
             Json::Null | Json::Bool(_) | Json::List(_) | Json::Object(_) => None,
         };
-        let Some(seconds) = seconds else {
+        let Some(seconds) = parsed else {
             return Err(CompletionCallError::Field {
                 field: "mock_delay",
             });
@@ -73,10 +72,10 @@ impl AsyncCompletionTarget<'_> {
         provider: Option<&str>,
         outcome: CallOutcome,
     ) -> Result<CallOutcome, CompletionCallError> {
-        let Some(provider) = provider else {
+        let Some(name) = provider else {
             return Ok(outcome);
         };
-        if !TEXT_COMPLETION_PROVIDERS.contains(&provider) {
+        if !TEXT_COMPLETION_PROVIDERS.contains(&name) {
             return Ok(outcome);
         }
         let CallOutcome::Response(json) = &outcome else {
@@ -88,7 +87,11 @@ impl AsyncCompletionTarget<'_> {
             return Ok(outcome);
         };
         let created = self.inner.clock.now().timestamp();
-        let body = chat_completion_body(&response, created, response.model.as_deref())?;
+        let body = chat_completion_body(&response, created, response.model.as_deref()).map_err(
+            |failure| CompletionCallError::Conversion {
+                message: failure.message,
+            },
+        )?;
         Ok(CallOutcome::Response(serde_json::from_slice(&body)?))
     }
 }

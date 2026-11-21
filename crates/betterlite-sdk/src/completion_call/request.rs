@@ -60,11 +60,7 @@ pub fn chat_operation(
 pub fn call_id(call: &PreparedCall) -> String {
     match call.kwargs.get("litellm_call_id") {
         Some(Json::Text(id)) => id.clone(),
-        Some(Json::Null)
-        | Some(Json::Bool(_))
-        | Some(Json::Number(_))
-        | Some(Json::List(_))
-        | Some(Json::Object(_))
+        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
         | None => Uuid::new_v4().to_string(),
     }
 }
@@ -124,10 +120,10 @@ pub fn sse_chunks(bytes: &[u8]) -> Result<Json, CompletionCallError> {
     let mut chunks = Vec::new();
     for event in text.split("\n\n") {
         for line in event.lines() {
-            let Some(payload) = line.strip_prefix("data:") else {
+            let Some(field) = line.strip_prefix("data:") else {
                 continue;
             };
-            let payload = payload.trim();
+            let payload = field.trim();
             if payload.is_empty() || payload == "[DONE]" {
                 continue;
             }

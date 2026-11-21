@@ -68,11 +68,11 @@ pub async fn with_retries(
         String::from("max_retries"),
         Json::Number(Number::from(0_i64)),
     );
-    let attempts = u32::try_from(count.max(1)).unwrap_or(u32::MAX);
-    for attempt in 1..=attempts {
+    let total = u32::try_from(count.max(1)).unwrap_or(u32::MAX);
+    for attempt in 1..=total {
         match target.call(request.clone(), logging).await {
             Ok(outcome) => return Ok(outcome),
-            Err(error) if attempt == attempts => return Err(error),
+            Err(error) if attempt == total => return Err(error),
             Err(_error) => sleeper.sleep(strategy.wait(attempt)).await,
         }
     }

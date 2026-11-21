@@ -15,6 +15,7 @@ use crate::completion_request::prepare_completion;
 use async_trait::async_trait;
 use betterlite_config::sections::mock_response::failure::MockError;
 use betterlite_config::sections::mock_response::selection::resolve_mock;
+use betterlite_config::sections::mock_response::{MockResponse, MockToolCall};
 use betterlite_core::dispatch::Dispatch;
 use betterlite_core::mock;
 use betterlite_core::operation::Operation;
@@ -75,8 +76,8 @@ impl CompletionTarget<'_> {
         request::execute(&self.dispatch, Operation::Responses(ResponsesRequest)).await
     }
     fn mock_call(&self, call: &MockCall) -> Result<CallOutcome, CompletionCallError> {
-        let mock_response = optional_kwarg(&call.call, "mock_response")?;
-        let tool_calls = optional_kwarg(&call.call, "mock_tool_calls")?;
+        let mock_response: Option<MockResponse> = optional_kwarg(&call.call, "mock_response")?;
+        let tool_calls: Option<Vec<MockToolCall>> = optional_kwarg(&call.call, "mock_tool_calls")?;
         let choice_count = call
             .call
             .choice_count
@@ -124,8 +125,8 @@ impl CompletionTarget<'_> {
         let mut last_failure: Option<CompletionCallError> = None;
         let mut request = request::args_to_map(&call.args)?;
         request.shift_remove("model_list");
-        for deployment in &call.deployments {
-            for (name, value) in deployment {
+        for entry in &call.deployments {
+            for (name, value) in entry {
                 request.insert(name.clone(), value.clone());
             }
             match self.call(request.clone(), logging).await {
@@ -178,10 +179,13 @@ impl CallTarget for CompletionTarget<'_> {
         retry::with_retries(self, request, logging, self.sleeper).await
     }
 }
-fn optional_kwarg<T: DeserializeOwned>(
+fn optional_kwarg<T>(
     call: &PreparedCall,
     name: &'static str,
-) -> Result<Option<T>, CompletionCallError> {
+) -> Result<Option<T>, CompletionCallError>
+where
+    T: DeserializeOwned,
+{
     match call.kwargs.get(name) {
         None | Some(Json::Null) => Ok(None),
         Some(value) => {

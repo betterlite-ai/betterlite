@@ -9,7 +9,6 @@ use betterlite_http::error::HttpError;
 use betterlite_models::resolution::ResolutionError;
 use betterlite_openai::chat::RequestError;
 use betterlite_openai::chat::execution::ChatError;
-use betterlite_openai::text_completion_execution::failure::CompletionFailure;
 use betterlite_redact::secret::Redactor;
 use thiserror::Error;
 #[derive(Debug, Error)]
@@ -24,8 +23,8 @@ pub enum CompletionCallError {
     Http(#[from] HttpError),
     #[error(transparent)]
     Body(#[from] serde_json::Error),
-    #[error(transparent)]
-    Conversion(#[from] CompletionFailure),
+    #[error("{message}")]
+    Conversion { message: String },
     #[error(transparent)]
     Agentic(#[from] AgenticLoopError),
     #[error(transparent)]
@@ -150,7 +149,7 @@ fn status_of(error: &CompletionCallError) -> Option<u16> {
         CompletionCallError::Palm
         | CompletionCallError::Http(_)
         | CompletionCallError::Body(_)
-        | CompletionCallError::Conversion(_)
+        | CompletionCallError::Conversion { .. }
         | CompletionCallError::Agentic(_)
         | CompletionCallError::Resolution(_)
         | CompletionCallError::Call(_)
