@@ -4,8 +4,9 @@ description: >-
   Implement summary_history for all compact.py helpers at L630-L1016 and apply_client_compaction_block_history
   L1114-L1157, plus _PROPAGATED_METADATA_KEYS and _SUMMARY_TAG_RE. These operate on parsed messages and response
   text; provider response byte decoding stays with the provider. Use B964 message conversion with
-  preserve_midturn_system=true, B2431 tool conversion, B013 token counting, B968 constants/results and B969's
-  identity/tool-result predicates. No summary is sent here. Do not depend on B972 or its execution part, which
+  preserve_midturn_system=true, B2431 tool conversion, B013 token counting, B968 constants/results. It also
+  owns the two predicates only these helpers call (compact.py L97-L103): `_as_object`, an identity cast with no Rust
+  counterpart, and `_is_tool_result_block`, true for a JSON object whose type is "tool_result". No summary is sent here. Do not depend on B972 or its execution part, which
   call these helpers.
 
   Register HelperCall::SummaryHistory actions for slicing, trigger, prompts, metadata, count, extraction and
@@ -131,7 +132,7 @@ oracle_cases:
 - tools/oracle/cases/helpers/summary-history/client-compaction-without-edit.yaml
 deviations: []
 out_of_scope:
-- B969 owns compact.py L97-L392 primitive predicates/settings/access; B970 owns L395-L627 budget and rate checks.
+- B969 owns compact.py L105-L392 summary call types, settings and access; B970 owns L395-L627 budget and rate checks.
 - B2432 owns compact.py L1019-L1111 and L1160-L1380 provider calls/execution, and B972 owns dispatcher.py.
 - B013 owns tokenization and model metadata; B964/B2431 own adapter message/tool conversion and their internal warnings.
 pitfalls:

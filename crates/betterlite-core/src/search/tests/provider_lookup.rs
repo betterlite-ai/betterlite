@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use betterlite_error::error::ErrorClass;
+use betterlite_error::error::{ErrorClass, class_message};
 use betterlite_http_fixture::reply::reply;
 use betterlite_http_fixture::server::serve;
 
@@ -27,11 +27,15 @@ async fn provider_lookup_rejects_a_provider_without_a_search_config() {
     );
     assert_eq!(registry.asked(), ["nowhere"]);
     assert!(recorder.calls().is_empty());
-    assert!(matches!(failure.class, ErrorClass::ApiConnection(_)));
-    assert_eq!(status_of(&failure.class), 500);
+    assert!(matches!(failure.class, ErrorClass::BadRequest(_)));
+    assert_eq!(status_of(&failure.class), 400);
     let metadata = failure.class.metadata();
     assert_eq!(metadata.model.as_deref(), Some("nowhere/search"));
     assert_eq!(metadata.provider.as_deref(), Some("nowhere"));
+    assert_eq!(
+        class_message(&failure.class),
+        "Search is not supported for provider: nowhere"
+    );
     assert_eq!(harness.state.model, "unset");
 }
 

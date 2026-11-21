@@ -24,7 +24,7 @@ description: >-
 
   `/model/metrics/slow_responses` (model group default "gpt-4-32k"): per api_base, total_count and slow_count, where
   slow means a duration of at least the alerting threshold in seconds (the Slack alerting instance's
-  alerting_threshold from B8399, else DEFAULT_SLACK_ALERTING_THRESHOLD, 300), ordered by slow_count; each api_base is
+  alerting_threshold, which is B4020's `alert_settings::Settings::alerting_threshold_seconds` in betterlite-config on main, else DEFAULT_SLACK_ALERTING_THRESHOLD, 300, then cut to an integer), ordered by slow_count; each api_base is
   cut at "/openai/" and a null becomes "". `/model/metrics/exceptions`: from the error logs, per model name (joined to
   api_base with "-" when api_base is not empty), total_exceptions and a count per exception type, at most 200 rows;
   the answer is {"data": [{"model", "total_exceptions", <type>: count...}], "exception_types": [types]}.
@@ -66,7 +66,7 @@ checks:
 oracle_cases: []
 deviations: []
 out_of_scope:
-  - "The spend and error log tables and their writers: the spend log tasks. The Slack alerting settings: B8399."
+  - "The spend and error log tables and their writers: the spend log tasks. The Slack alerting settings: B4020 (betterlite-config sections::alert_settings, on main)."
 pitfalls:
   - The exceptions query filters only on the window and model group; LiteLLM passes api_key as a fourth bind its SQL never names, so do not add an api_key filter.
   - The same-day streaming query uses the request id as the series key, so its "date" field holds a request id.

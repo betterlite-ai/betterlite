@@ -41,8 +41,9 @@ description: >-
   string code '401', message "Authentication Error, user '{user_id}' no longer exists." TeamGone
   invokes B737 TeamNotFoundError, HTTP 404 with detail {error: "Team doesn't exist in db.
   Team={team_id}. Create team via `/team/new` call."}. NotAMember raises HTTP 403 with detail
-  "Team '{team_id}' is not in your team memberships." B757's existing boundary turns those HTTP
-  exceptions into auth_error, param 'None', codes '404'/'403', retaining detail shape. This helper
+  "Team '{team_id}' is not in your team memberships." Return those as typed status-and-detail errors,
+  the way B737's TeamLookupError does; B757 later renders them as
+  auth_error, param 'None', codes '404'/'403', retaining detail shape. This helper
   takes only the denial union, not LookupDegraded. B738 decides whether session snapshots may stand
   in after degraded reads; do not turn that outcome into automatic denial or an HTTP success here.
 
@@ -78,7 +79,8 @@ description: >-
   empty_team_still_loaded, missing_user_allows_team_load, team_error_classification and
   cancellation_not_degraded, recording all effects. Postgres integration through the real three
   readers uses POSTGRES_TEST_URL when set, otherwise testcontainers; configured connection failure
-  fails the test. Native public_denial_envelopes composes raise_public with B757 exactly once.
+  fails the test. Native public_denial_envelopes asserts raise_public's raw status, type, param, code
+  and detail for each denial; rendering through B757 is tested by the callers B738/B765/B877.
 
   Pure oracle operations call source user_models, canonical_user_id, raise_public, team_model_aliases
   and team_grants under B856 Management::auth. No async resolver with a fake DB goes into helper cases.

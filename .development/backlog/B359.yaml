@@ -2,7 +2,7 @@ id: B359
 milestone: M2 routing
 title: Keyword, plan-mode and stall overrides
 status: todo
-depends_on: [B334, B330, B327, B301, B002]
+depends_on: [B334, B384, B327, B301, B002, B328, B375]
 file: tasks/B359-complexity-turn-overrides.yaml
 covers:
   - "litellm/router_strategy/complexity_router/complexity_router.py"
