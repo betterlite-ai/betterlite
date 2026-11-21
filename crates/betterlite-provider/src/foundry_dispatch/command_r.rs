@@ -2,12 +2,6 @@ use betterlite_prompts::azure::error::AzureError;
 use betterlite_prompts::azure::stringify::stringify_tool_content;
 use betterlite_prompts::message_content::Message;
 
-// LiteLLM gates the helper on the case-sensitive substring, so Command-R keeps its messages untouched
-#[must_use]
-pub fn triggers(model: &str) -> bool {
-    model.contains("command-r")
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum CommandRError {
     #[error(transparent)]
@@ -15,7 +9,8 @@ pub enum CommandRError {
 }
 
 pub fn transform(messages: &[Message], model: &str) -> Result<Vec<Message>, CommandRError> {
-    if !triggers(model) {
+    // LiteLLM gates the helper on the case-sensitive substring, so Command-R keeps its messages untouched
+    if !model.contains("command-r") {
         return Ok(messages.to_vec());
     }
     Ok(stringify_tool_content(messages)?)

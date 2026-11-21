@@ -110,7 +110,9 @@ fn deployment(
     globals: &Globals<'_>,
     key: Option<&SecretString>,
 ) -> Option<Deployment> {
-    let base = credentials::resolve_base(case.api_base.as_deref(), globals);
+    let base = globals
+        .accessors()
+        .api_base(case.api_base.as_deref().filter(|text| !text.is_empty()));
     let url = base.as_deref().unwrap_or("https://placeholder.test");
     let mut params: IndexMap<String, JsonValue> = IndexMap::new();
     params.insert(String::from("model"), JsonValue::Text(case.model.clone()));
@@ -164,7 +166,10 @@ fn claude_case(
     globals: &Globals<'_>,
     explicit_key: Option<&SecretString>,
 ) -> Observation {
-    let Some(base) = credentials::resolve_base(case.api_base.as_deref(), globals) else {
+    let base = globals
+        .accessors()
+        .api_base(case.api_base.as_deref().filter(|text| !text.is_empty()));
+    let Some(base) = base else {
         return failed();
     };
     Observation {
@@ -244,7 +249,9 @@ pub(super) fn embedding_case(case: &EmbeddingCase) -> Observation {
     };
     Observation {
         branch: Some("embedding"),
-        base: credentials::resolve_base(case.api_base.as_deref(), &globals),
+        base: globals
+            .accessors()
+            .api_base(case.api_base.as_deref().filter(|text| !text.is_empty())),
         key: credentials::resolve_key(explicit_key.as_ref(), &globals)
             .map(|key| key.expose_secret().to_owned()),
         headers: None,

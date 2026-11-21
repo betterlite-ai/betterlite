@@ -25,26 +25,23 @@ pub struct Globals<'data> {
 }
 
 impl Globals<'_> {
-    fn accessors(&self) -> ModelInfoAccessors<'_> {
+    pub fn accessors(&self) -> ModelInfoAccessors<'_> {
         ModelInfoAccessors {
-            global_api_base: non_empty(self.api_base),
-            global_api_key: self.api_key.filter(|key| non_empty_secret(key)),
-            environment_api_base: non_empty(self.environment_api_base),
-            environment_api_key: self.environment_api_key.filter(|key| non_empty_secret(key)),
+            global_api_base: self.api_base.filter(|text| !text.is_empty()),
+            global_api_key: self.api_key.filter(|key| !key.expose_secret().is_empty()),
+            environment_api_base: self.environment_api_base.filter(|text| !text.is_empty()),
+            environment_api_key: self
+                .environment_api_key
+                .filter(|key| !key.expose_secret().is_empty()),
         }
     }
-}
-
-#[must_use]
-pub fn resolve_base(explicit: Option<&str>, globals: &Globals<'_>) -> Option<String> {
-    globals.accessors().api_base(non_empty(explicit))
 }
 
 #[must_use]
 pub fn resolve_key(explicit: Option<&SecretString>, globals: &Globals<'_>) -> Option<SecretString> {
     globals
         .accessors()
-        .api_key(explicit.filter(|key| non_empty_secret(key)))
+        .api_key(explicit.filter(|key| !key.expose_secret().is_empty()))
 }
 
 // LiteLLM's embedding call falls back to an Entra token for the API-key slot once the three strings are unset
@@ -62,7 +59,7 @@ pub fn resolve_embedding_key(
         refresh_enabled: globals.refresh_enabled,
         sources: globals.sources,
     })?;
-    Ok(token.filter(non_empty_secret))
+    Ok(token.filter(|key| !key.expose_secret().is_empty()))
 }
 
 // LiteLLM reads `headers or litellm.headers`, so an empty map falls back like an absent one
@@ -84,12 +81,4 @@ pub fn secret_headers(headers: Option<&Headers>) -> BTreeMap<String, SecretStrin
             .map(|(name, value)| (name.clone(), SecretString::from(value.clone())))
             .collect()
     })
-}
-
-fn non_empty(value: Option<&str>) -> Option<&str> {
-    value.filter(|text| !text.is_empty())
-}
-
-fn non_empty_secret(value: &SecretString) -> bool {
-    !value.expose_secret().is_empty()
 }

@@ -12,7 +12,7 @@ use betterlite_prompts::arguments::json::Object;
 use secrecy::SecretString;
 use thiserror::Error;
 
-use super::credentials::{Globals, resolve_base, resolve_embedding_key};
+use super::credentials::{Globals, resolve_embedding_key};
 
 pub struct Call<'data> {
     pub model: &'data str,
@@ -45,7 +45,9 @@ where
     Factory: EmbeddingClientFactory,
     Text: TextEmbedding,
 {
-    let api_base = resolve_base(call.api_base, globals);
+    let api_base = globals
+        .accessors()
+        .api_base(call.api_base.filter(|text| !text.is_empty()));
     let api_key = resolve_embedding_key(call.api_key, call.params, globals)?;
     let request = FoundryEmbeddingRequest {
         model: call.model,

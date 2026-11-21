@@ -13,7 +13,7 @@ use secrecy::SecretString;
 use url::Url;
 
 use super::super::command_r::{self, CommandRError};
-use super::super::credentials::{Globals, headers_or_global, resolve_base, resolve_key};
+use super::super::credentials::{Globals, headers_or_global, resolve_key};
 use super::super::route::{self, Route};
 use super::{Call, EXTRA_HEADERS_FIELD};
 use crate::operation::OperationError;
@@ -113,7 +113,9 @@ pub fn prepare(call: &Call<'_>, globals: &Globals<'_>) -> Result<Plan, PrepareEr
     let extra_headers = take_extra_headers(&mut params)?;
     let api_version = text_field(params.shift_remove(API_VERSION_FIELD));
     let optional = object(JsonValue::Object(params))?;
-    let base = resolve_base(call.api_base, globals);
+    let base = globals
+        .accessors()
+        .api_base(call.api_base.filter(|text| !text.is_empty()));
     let key = resolve_key(call.api_key, globals);
     let headers = headers_or_global(call.headers, globals).cloned();
     let leaf = FoundryChatOptions {

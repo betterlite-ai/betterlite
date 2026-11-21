@@ -90,6 +90,13 @@ pub struct Env {
 
 impl Default for Env {
     fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Env {
+    #[must_use]
+    pub fn new() -> Self {
         Self {
             global_api_base: None,
             global_api_key: None,
@@ -100,15 +107,49 @@ impl Default for Env {
             environment: BTreeMap::new(),
         }
     }
-}
 
-impl Env {
-    pub fn with_globals(api_base: &str, api_key: &str) -> Self {
+    #[must_use]
+    pub fn global_base(self, api_base: &str) -> Self {
         Self {
             global_api_base: Some(api_base.to_owned()),
-            global_api_key: Some(SecretString::from(api_key)),
-            ..Self::default()
+            ..self
         }
+    }
+
+    #[must_use]
+    pub fn global_key(self, api_key: &str) -> Self {
+        Self {
+            global_api_key: Some(SecretString::from(api_key)),
+            ..self
+        }
+    }
+
+    #[must_use]
+    pub fn environment_base(self, api_base: &str) -> Self {
+        Self {
+            environment_api_base: Some(api_base.to_owned()),
+            ..self
+        }
+    }
+
+    #[must_use]
+    pub fn environment_key(self, api_key: &str) -> Self {
+        Self {
+            environment_api_key: Some(SecretString::from(api_key)),
+            ..self
+        }
+    }
+
+    #[must_use]
+    pub fn headers(self, headers: Headers) -> Self {
+        Self {
+            headers: Some(headers),
+            ..self
+        }
+    }
+
+    pub fn with_globals(api_base: &str, api_key: &str) -> Self {
+        Self::new().global_base(api_base).global_key(api_key)
     }
 
     pub fn globals(&self) -> Globals<'_> {

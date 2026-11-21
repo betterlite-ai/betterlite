@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::Headers;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::ExposeSecret as _;
 
 use super::support::{self, Env, field};
 use crate::foundry_dispatch::chat;
@@ -18,14 +18,10 @@ const ALPHA_BASE: &str = "https://alpha.services.ai.azure.com/models";
 const BETA_BASE: &str = "https://beta.openai.azure.com/models";
 
 fn identity(key: &str, tenant: &str) -> Env {
-    Env {
-        global_api_key: Some(SecretString::from(key.to_owned())),
-        headers: Some(Headers::from([(
-            String::from("x-tenant"),
-            tenant.to_owned(),
-        )])),
-        ..Env::default()
-    }
+    Env::new().global_key(key).headers(Headers::from([(
+        String::from("x-tenant"),
+        tenant.to_owned(),
+    )]))
 }
 
 fn prepared_headers(prepared: &PreparedRequest) -> &http::HeaderMap {
@@ -39,8 +35,7 @@ fn text_header<'headers>(headers: &'headers http::HeaderMap, name: &str) -> Opti
     headers.get(name).and_then(|value| value.to_str().ok())
 }
 
-// Two configured identities keep their own key, their own base and their own header map, and a
-// call made twice settles the same way, so nothing resolved for one identity is reused by another
+// Two identities keep their own key, base and headers, and a repeated call settles the same way
 #[test]
 fn foundry_provider_credential_identity_isolation() {
     support::block_on(async {

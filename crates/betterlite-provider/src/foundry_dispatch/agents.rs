@@ -13,7 +13,7 @@ use betterlite_prompts::arguments::json::Object;
 use secrecy::SecretString;
 use thiserror::Error;
 
-use super::credentials::{Globals, headers_or_global, resolve_base, resolve_key, secret_headers};
+use super::credentials::{Globals, headers_or_global, resolve_key, secret_headers};
 use super::route;
 
 pub struct Call<'data> {
@@ -64,7 +64,10 @@ pub struct Resolved {
 
 // What main.py hands the agent config before it is called: the two resolved values and the headers
 pub fn resolve(call: &Call<'_>, globals: &Globals<'_>) -> Result<Resolved, DispatchError> {
-    let api_base = resolve_base(call.api_base, globals).ok_or(DispatchError::MissingBase)?;
+    let api_base = globals
+        .accessors()
+        .api_base(call.api_base.filter(|text| !text.is_empty()))
+        .ok_or(DispatchError::MissingBase)?;
     Ok(Resolved {
         api_base,
         api_key: resolve_key(call.api_key, globals),
@@ -73,17 +76,13 @@ pub fn resolve(call: &Call<'_>, globals: &Globals<'_>) -> Result<Resolved, Dispa
 }
 
 impl Dispatch<'_> {
-    pub fn resolve(&self) -> Result<Resolved, DispatchError> {
-        resolve(&self.call, &self.globals)
-    }
-
     // This branch has no post_call in main.py, so an agent failure reaches the caller unlogged
     pub async fn run(&self) -> Result<Outcome, DispatchError> {
         let Resolved {
             api_base,
             api_key,
             headers,
-        } = self.resolve()?;
+        } = resolve(&self.call, &self.globals)?;
         let route = dispatch_run(
             DispatchCall {
                 model: self.call.model,

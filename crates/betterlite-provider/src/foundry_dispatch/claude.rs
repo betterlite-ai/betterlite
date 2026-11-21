@@ -17,7 +17,7 @@ use indexmap::IndexMap;
 use secrecy::SecretString;
 use thiserror::Error;
 
-use super::credentials::{Globals, resolve_base, resolve_key};
+use super::credentials::{Globals, resolve_key};
 use super::post_call::{self, FoundryLogger};
 use super::route;
 use crate::openai_dispatch::logging::{LoggedCall, logged_json};
@@ -91,7 +91,10 @@ where
 }
 
 pub fn prepare(call: &Call<'_>, globals: &Globals<'_>) -> Result<Prepared, PrepareError> {
-    let base = resolve_base(call.api_base, globals).ok_or(PrepareError::MissingBase)?;
+    let base = globals
+        .accessors()
+        .api_base(call.api_base.filter(|text| !text.is_empty()))
+        .ok_or(PrepareError::MissingBase)?;
     Ok(Prepared {
         url: endpoint(&base),
         // main.py resolves the key through B549 before the handler builds its headers
@@ -194,7 +197,9 @@ where
                 .first()
                 .and_then(|choice| choice.message.content.as_deref()),
         ),
-        ChatOutcome::Stream(_) => post_call::stream_report(),
+        ChatOutcome::Stream(_) => {
+            Json::Object(IndexMap::from([(String::from("stream"), Json::Bool(true))]))
+        }
         // a chat call cannot answer with an embedding; main.py never logs one here
         ChatOutcome::Embedding => post_call::reply_report(None, None),
     }

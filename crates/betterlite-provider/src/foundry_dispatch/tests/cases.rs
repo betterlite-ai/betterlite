@@ -31,7 +31,7 @@ use crate::foundry_dispatch::fixtures::claude::{Harness, Mapper, NOW, TIMEOUT, T
 use crate::foundry_dispatch::fixtures::embedding::{Factory as EmbeddingFactory, Text};
 use crate::foundry_dispatch::fixtures::logger::RecordingLogger;
 use crate::foundry_dispatch::route::{self, Route};
-use crate::foundry_dispatch::{agents, chat, claude, command_r, embedding};
+use crate::foundry_dispatch::{agents, chat, claude, embedding};
 use crate::operation::{ChatCompletion, OperationError, OperationResult};
 use crate::prepared::PreparedRequest;
 use crate::prepared::deployment::Deployment;
@@ -227,11 +227,9 @@ async fn embedding_case() {
         timeout: Duration::from_secs(5),
         mode: EmbeddingMode::Async,
     };
-    let env = Env {
-        environment_api_base: Some(String::from("https://res.services.ai.azure.com")),
-        environment_api_key: Some(SecretString::from(KEY)),
-        ..Env::default()
-    };
+    let env = Env::new()
+        .environment_base("https://res.services.ai.azure.com")
+        .environment_key(KEY);
     let response = embedding::dispatch(&call, &env.globals(), None, &factory, &text)
         .await
         .expect("the embedding dispatch runs");
@@ -272,11 +270,7 @@ async fn embedding_case() {
 
     // an explicit key beats the global and environment values
     let explicit = SecretString::from("explicit-key");
-    let global_env = Env {
-        global_api_key: Some(SecretString::from("global-key")),
-        environment_api_key: Some(SecretString::from(KEY)),
-        ..Env::default()
-    };
+    let global_env = Env::new().global_key("global-key").environment_key(KEY);
     let call = embedding::Call {
         api_key: Some(&explicit),
         ..call
@@ -466,13 +460,10 @@ async fn agent_case() {
     let messages = agent_messages();
     let optional = PromptObject::new();
     let params = PromptObject::new();
-    let env = Env {
-        headers: Some(BTreeMap::from([(
-            String::from("x-team"),
-            String::from("alpha"),
-        )])),
-        ..Env::default()
-    };
+    let env = Env::new().headers(BTreeMap::from([(
+        String::from("x-team"),
+        String::from("alpha"),
+    )]));
     let call = agents::Call {
         model: "agents/my-agent",
         messages: &messages,
@@ -636,13 +627,10 @@ async fn agents_missing_base() {
     assert_eq!(error.to_string(), route::AGENTS_BASE_MESSAGE);
 
     // a supplied map wins over the global map
-    let env = Env {
-        headers: Some(BTreeMap::from([(
-            String::from("x-global"),
-            String::from("g"),
-        )])),
-        ..Env::default()
-    };
+    let env = Env::new().headers(BTreeMap::from([(
+        String::from("x-global"),
+        String::from("g"),
+    )]));
     let supplied = BTreeMap::from([(String::from("x-supplied"), String::from("s"))]);
     let call = agents::Call {
         model: "agents/my-agent",
@@ -656,18 +644,7 @@ async fn agents_missing_base() {
         stream: false,
         reply: agent_reply(),
     };
-    let resolved = agents::Dispatch {
-        call,
-        globals: env.globals(),
-        deps: agents::Deps {
-            factory: &factory,
-            sleeper: &clock,
-            counter: &tally,
-            resolver: &resolver,
-        },
-    }
-    .resolve()
-    .expect("the base resolves");
+    let resolved = agents::resolve(&call, &env.globals()).expect("the base resolves");
     assert_eq!(resolved.api_base, "https://res.services.ai.azure.com");
     assert!(resolved.headers.contains_key("x-supplied"));
     assert!(!resolved.headers.contains_key("x-global"));
@@ -688,14 +665,12 @@ async fn claude_missing_base() {
     assert_eq!(error.to_string(), route::CLAUDE_BASE_MESSAGE);
 
     // a global base is a fallback, and a global header map never reaches this branch
-    let env = Env {
-        global_api_base: Some(String::from("https://res.services.ai.azure.com")),
-        headers: Some(BTreeMap::from([(
+    let env = Env::new()
+        .global_base("https://res.services.ai.azure.com")
+        .headers(BTreeMap::from([(
             String::from("x-global"),
             String::from("g"),
-        )])),
-        ..Env::default()
-    };
+        )]));
     let globals = env.globals();
     let prepared = claude::prepare(&call, &globals).expect("the global base resolves");
     let request = claude::request(&prepared, &call, &globals);
@@ -752,9 +727,7 @@ fn command_r_case() {
         Some(Content::Text(String::from("next")))
     );
 
-    // Command-R keeps its messages untouched
-    assert!(!command_r::triggers("Command-R"));
-    assert!(command_r::triggers("command-r-plus"));
+    // Command-R keeps its messages untouched, since LiteLLM's substring check is case-sensitive
     let request = support::request(
         r#"{"model":"Command-R","messages":[{"role":"tool","content":"not json"}]}"#,
     );
@@ -879,13 +852,10 @@ async fn http_case() {
 }
 
 async fn post_call_case() {
-    let env = Env {
-        headers: Some(BTreeMap::from([(
-            String::from("x-logged"),
-            String::from("1"),
-        )])),
-        ..Env::default()
-    };
+    let env = Env::new().headers(BTreeMap::from([(
+        String::from("x-logged"),
+        String::from("1"),
+    )]));
     let deployment = support::deployment(BASE, Some(KEY));
 
     // a normal non-stream success logs nothing

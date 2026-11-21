@@ -4,6 +4,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::chat::ChatRequest;
 use betterlite_openai::openai_base_config::Headers;
 use http::HeaderMap;
+use indexmap::IndexMap;
 use secrecy::SecretString;
 
 use super::AzureAi;
@@ -62,7 +63,10 @@ impl Dispatch<'_> {
             Ok(result) => {
                 // main.py logs a normal success only when optional_params["stream"] is truthy
                 if self.call.stream {
-                    logger.post_call(record(&plan, post_call::stream_report()));
+                    logger.post_call(record(
+                        &plan,
+                        Json::Object(IndexMap::from([(String::from("stream"), Json::Bool(true))])),
+                    ));
                 }
                 Ok(Outcome {
                     prepared: plan.prepared,
@@ -70,7 +74,7 @@ impl Dispatch<'_> {
                 })
             }
             Err(error) => {
-                logger.post_call(record(&plan, post_call::failure_report(&error)));
+                logger.post_call(record(&plan, Json::Text(error.to_string())));
                 Err(error)
             }
         }
