@@ -1,6 +1,5 @@
 import asyncio
-from typing import Final, Literal, Protocol, cast
-from unittest.mock import patch
+from typing import Final, Literal, Protocol, TypeAlias, cast
 
 import litellm
 import litellm.images.main as images_main
@@ -10,6 +9,7 @@ from litellm.llms.base_llm.image_edit.transformation import BaseImageEditConfig
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, HTTPHandler
 from litellm.llms.custom_llm import CustomLLM
 from litellm.types.llms.custom_llm import CustomLLMItem
+from litellm.types.router import GenericLiteLLMParams
 from litellm.types.utils import ImageResponse, LlmProviders
 from litellm.utils import ProviderConfigManager, custom_llm_setup
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
@@ -19,17 +19,23 @@ from image_edit_http import FixtureConfig
 from image_variations import Success, api_failure, datum
 from openai_chat import Failure
 
+Argument: TypeAlias = JsonValue | bytes | list[bytes] | HTTPHandler | AsyncHTTPHandler
+Unused: TypeAlias = Logging | ImageResponse | GenericLiteLLMParams | BaseImageEditConfig | Argument
+
 
 class ImageEditEntry(Protocol):
-    def image_edit(self, /, **kwargs: object) -> ImageResponse: ...
+    def image_edit(self, /, **kwargs: Argument) -> ImageResponse: ...
 
-    async def aimage_edit(self, /, **kwargs: object) -> ImageResponse: ...
+    async def aimage_edit(self, /, **kwargs: Argument) -> ImageResponse: ...
 
 
 ENTRY = cast("ImageEditEntry", images_main)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1674
 PARAMS: Final = TypeAdapter(dict[str, JsonValue])
 FIXTURE: Final = FixtureConfig(multipart=False)
 SELECT_CONFIG: Final = ProviderConfigManager.get_provider_image_edit_config
+BEDROCK_EDIT: Final = images_main.bedrock_image_edit.image_edit
+BFL_EDIT: Final = images_main.bfl_image_edit.image_edit
+EDIT_HANDLER: Final = images_main.base_llm_http_handler.image_edit_handler
 
 
 class CustomProvider(BaseModel):
@@ -111,14 +117,6 @@ class Envelope(BaseModel):
     image_edit_call: ImageEditCallValue
 
 
-def contents(images: list[bytes]) -> list[str]:
-    return [image.decode() for image in images]
-
-
-def answer() -> ImageResponse:
-    return ImageResponse(created=1, data=[])
-
-
 class Recorder:
     def __init__(self) -> None:
         self.sent: Sent | None = None
@@ -133,20 +131,20 @@ class Recorder:
         timeout: float | None,
         aimage_edit: bool,
         extra_headers: dict[str, JsonValue] | None,
-        **_unused: object,
+        **_unused: Unused,
     ) -> ImageResponse:
         self.sent = Sent(
             provider="bedrock",
             model=model,
             prompt=prompt,
-            images=contents(image),
+            images=[part.decode() for part in image],
             optional_params=PARAMS.validate_python(optional_params),
             extra_headers=extra_headers,
             extra_body=None,
             timeout=timeout,
             asynchronous=aimage_edit,
         )
-        return answer()
+        return ImageResponse(created=1, data=[])
 
     def black_forest_labs(
         self,
@@ -154,24 +152,26 @@ class Recorder:
         model: str,
         image: list[bytes],
         prompt: str | None,
+        # ast-grep-ignore: no-long-names
         image_edit_optional_request_params: dict[str, JsonValue],
         timeout: float | None,
         aimage_edit: bool,
         extra_headers: dict[str, JsonValue] | None,
-        **_unused: object,
+        **_unused: Unused,
     ) -> ImageResponse:
         self.sent = Sent(
             provider="black_forest_labs",
             model=model,
             prompt=prompt,
-            images=contents(image),
+            images=[part.decode() for part in image],
+            # ast-grep-ignore: no-long-names
             optional_params=PARAMS.validate_python(image_edit_optional_request_params),
             extra_headers=extra_headers,
             extra_body=None,
             timeout=timeout,
             asynchronous=aimage_edit,
         )
-        return answer()
+        return ImageResponse(created=1, data=[])
 
     def handler(
         self,
@@ -179,26 +179,28 @@ class Recorder:
         model: str,
         image: list[bytes],
         prompt: str | None,
+        # ast-grep-ignore: no-long-names
         image_edit_optional_request_params: dict[str, JsonValue],
         custom_llm_provider: str,
         extra_headers: dict[str, JsonValue] | None,
         extra_body: dict[str, JsonValue] | None,
         timeout: float | None,
         _is_async: bool,
-        **_unused: object,
+        **_unused: Unused,
     ) -> ImageResponse:
         self.sent = Sent(
             provider=custom_llm_provider,
             model=model,
             prompt=prompt,
-            images=contents(image),
+            images=[part.decode() for part in image],
+            # ast-grep-ignore: no-long-names
             optional_params=PARAMS.validate_python(image_edit_optional_request_params),
             extra_headers=extra_headers,
             extra_body=extra_body,
             timeout=timeout,
             asynchronous=_is_async,
         )
-        return answer()
+        return ImageResponse(created=1, data=[])
 
 
 def recorded_config(model: str, provider: LlmProviders) -> BaseImageEditConfig | None:
@@ -208,11 +210,13 @@ def recorded_config(model: str, provider: LlmProviders) -> BaseImageEditConfig |
 
 
 def client_kind(client: HTTPHandler | AsyncHTTPHandler | None) -> Literal["sync", "async"] | None:
-    if isinstance(client, AsyncHTTPHandler):
-        return "async"
     if client is None:
         return None
-    return "sync"
+    match client:
+        case AsyncHTTPHandler():
+            return "async"
+        case HTTPHandler():
+            return "sync"
 
 
 class Handler(CustomLLM):
@@ -224,7 +228,7 @@ class Handler(CustomLLM):
 
     def record(
         self,
-        values: tuple[str, list[bytes], str | None, dict[str, object], float | None],
+        values: tuple[str, list[bytes], str | None, dict[str, Argument | Logging], float | None],
         client: HTTPHandler | AsyncHTTPHandler | None,
         asynchronous: bool,
     ) -> ImageResponse:
@@ -232,7 +236,7 @@ class Handler(CustomLLM):
         self.received = CustomRecord(
             handler=self.name,
             model=model,
-            images=contents(image),
+            images=[part.decode() for part in image],
             prompt=prompt,
             optional_params=PARAMS.validate_python(
                 {name: optional_params[name] for name in self.kwargs if name in optional_params}
@@ -241,7 +245,7 @@ class Handler(CustomLLM):
             client=client_kind(client),
             asynchronous=asynchronous,
         )
-        return answer()
+        return ImageResponse(created=1, data=[])
 
     @override
     def image_edit(
@@ -252,7 +256,7 @@ class Handler(CustomLLM):
         model_response: ImageResponse,
         api_key: str | None,
         api_base: str | None,
-        optional_params: dict[str, object],
+        optional_params: dict[str, Argument | Logging],
         logging_obj: Logging,
         timeout: float | None = None,
         client: HTTPHandler | None = None,
@@ -268,7 +272,7 @@ class Handler(CustomLLM):
         model_response: ImageResponse,
         api_key: str | None,
         api_base: str | None,
-        optional_params: dict[str, object],
+        optional_params: dict[str, Argument | Logging],
         logging_obj: Logging,
         timeout: float | None = None,
         client: AsyncHTTPHandler | None = None,
@@ -292,21 +296,25 @@ def register(run: Run) -> list[Handler]:
     return handlers
 
 
-def arguments(run: Run, api_base: str) -> dict[str, object]:
-    values: dict[str, object] = dict(run.kwargs)
+def arguments(run: Run, api_base: str) -> dict[str, Argument]:
+    values: dict[str, Argument] = dict(run.kwargs)
     if not run.custom_providers:
         values["api_base"] = api_base
-    if run.client == "sync":
-        values["client"] = HTTPHandler()
-    if run.client == "async":
-        values["client"] = AsyncHTTPHandler()
-    image: object = None
-    if isinstance(run.image, list):
-        image = [part.encode() for part in run.image]
-    elif run.image is not None:
-        image = run.image.encode()
+    match run.client:
+        case "sync":
+            values["client"] = HTTPHandler()
+        case "async":
+            values["client"] = AsyncHTTPHandler()
+        case None:
+            pass
+    values["image"] = None
+    if run.image is not None:
+        match run.image:
+            case str() as content:
+                values["image"] = content.encode()
+            case list() as parts:
+                values["image"] = [part.encode() for part in parts]
     values.update(
-        image=image,
         prompt=run.prompt,
         model=run.model,
         mask=None if run.mask is None else run.mask.encode(),
@@ -332,13 +340,17 @@ def call_entry(run: Run, api_base: str) -> ImageResponse:
 
 
 def recorded_call(run: Run, api_base: str, recorder: Recorder) -> ImageResponse:
-    with (
-        patch.object(ProviderConfigManager, "get_provider_image_edit_config", recorded_config),
-        patch.object(images_main.bedrock_image_edit, "image_edit", recorder.bedrock),
-        patch.object(images_main.bfl_image_edit, "image_edit", recorder.black_forest_labs),
-        patch.object(images_main.base_llm_http_handler, "image_edit_handler", recorder.handler),
-    ):
+    ProviderConfigManager.get_provider_image_edit_config = recorded_config  # type: ignore[method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L833-L836
+    images_main.bedrock_image_edit.image_edit = recorder.bedrock  # type: ignore[assignment, method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L888
+    images_main.bfl_image_edit.image_edit = recorder.black_forest_labs  # type: ignore[assignment, method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L924
+    images_main.base_llm_http_handler.image_edit_handler = recorder.handler  # type: ignore[assignment, method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L937
+    try:
         return call_entry(run, api_base)
+    finally:
+        ProviderConfigManager.get_provider_image_edit_config = SELECT_CONFIG  # type: ignore[method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L833-L836
+        images_main.bedrock_image_edit.image_edit = BEDROCK_EDIT  # type: ignore[method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L888
+        images_main.bfl_image_edit.image_edit = BFL_EDIT  # type: ignore[method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L924
+        images_main.base_llm_http_handler.image_edit_handler = EDIT_HANDLER  # type: ignore[method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L937
 
 
 def run_one(run: Run, api_base: str) -> RunOutcome:
