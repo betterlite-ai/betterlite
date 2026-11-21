@@ -17,5 +17,12 @@ call:
         api_base: https://gateway.ai.cloudflare.com/v1/account/gateway
         supplied: false
         optional_params: {max_retries: 5}
+      - model: gpt-4o-deployment
+        messages:
+          - {role: user, content: hi}
+        api_key: key
+        api_base: https://gateway.ai.cloudflare.com/v1/account/gateway
+        supplied: false
+        optional_params: {max_retries: null}
 env: {}
 compare: {ignore: []}

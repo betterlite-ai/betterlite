@@ -274,6 +274,35 @@ pub(super) fn max_retries_default_two() {
     let _reply =
         block_on(async { buffered(chosen.run(&explicit, &mut recorder).await.expect("reply")) });
     assert_eq!(explicit.gateways()[0].max_retries, json!(5));
+
+    // an explicit null is the None azure.py replaces with the default, not a value of its own
+    let null_retries = ScriptedSource::new(ClientKind::AzureOpenAi, Some("key"), Answer::reply());
+    let mut absent = Harness::default();
+    absent.api_base = "https://gateway.ai.cloudflare.com/v1/account/gateway".to_owned();
+    absent.supplied = false;
+    absent.optional_params = json!({"max_retries": null});
+    let mut recorder = Recorder::default();
+    let _reply = block_on(async {
+        buffered(
+            absent
+                .run(&null_retries, &mut recorder)
+                .await
+                .expect("reply"),
+        )
+    });
+    assert_eq!(null_retries.gateways()[0].max_retries, json!(2));
+    assert_eq!(null_retries.requests().len(), 1);
+
+    // the fallback is the configured loader value, not the literal 2 it defaults to
+    let configured = ScriptedSource::new(ClientKind::AzureOpenAi, Some("key"), Answer::reply());
+    let mut seven = Harness::default();
+    seven.api_base = "https://gateway.ai.cloudflare.com/v1/account/gateway".to_owned();
+    seven.supplied = false;
+    seven.default_max_retries = 7;
+    let mut recorder = Recorder::default();
+    let _reply =
+        block_on(async { buffered(seven.run(&configured, &mut recorder).await.expect("reply")) });
+    assert_eq!(configured.gateways()[0].max_retries, json!(7));
 }
 
 pub(super) fn invalid_retries_422() {

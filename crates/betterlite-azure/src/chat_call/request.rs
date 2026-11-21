@@ -22,11 +22,10 @@ pub struct Retries(pub Json);
 impl Retries {
     #[must_use]
     pub fn pop(optional: &mut Object, default: i64) -> Self {
-        Self(
-            optional
-                .shift_remove(MAX_RETRIES_KEY)
-                .unwrap_or_else(|| Json::Number(Number::from(default))),
-        )
+        match optional.shift_remove(MAX_RETRIES_KEY) {
+            None | Some(Json::Null) => Self(Json::Number(Number::from(default))),
+            Some(value) => Self(value),
+        }
     }
 
     // isinstance(value, int) accepts a bool, which Python's JSON decoder builds for true and false
