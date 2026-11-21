@@ -1,9 +1,10 @@
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 
+use super::RequestData;
 use super::errors::HookFailure;
 use super::response::response_has_text;
-use super::runtime::{HookRuntime, RequestData, ScanCall, ScanSource};
+use super::runtime::{HookRuntime, ScanCall, ScanSource};
 
 // LiteLLM's async_post_call_success_hook: OUTPUT scans the model response, skips tool-only replies and keeps its usage on a block.
 pub async fn post_call_success_hook<R>(

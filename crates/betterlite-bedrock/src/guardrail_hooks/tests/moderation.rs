@@ -17,7 +17,7 @@ fn request(messages: Vec<GuardrailValue>) -> BTreeMap<String, GuardrailValue> {
 
 fn scripted_runtime(kind: &str) -> super::fake::FakeRuntime {
     let mut runtime = base();
-    let messages = vec![message("user", kind)];
+    let messages = vec![message("user", text(kind))];
     runtime.messages = Some(messages.clone());
     runtime.selection = RoleSelection {
         payload: Some(messages.clone()),

@@ -47,12 +47,14 @@ fn integer_of(fields: &BTreeMap<String, GuardrailValue>, key: &str) -> i64 {
         Some(GuardrailValue::SignedInteger(count)) => *count,
         Some(GuardrailValue::UnsignedInteger(count)) => i64::try_from(*count).unwrap_or(i64::MAX),
         None
-        | Some(GuardrailValue::Null)
-        | Some(GuardrailValue::Boolean(_))
-        | Some(GuardrailValue::Decimal(_))
-        | Some(GuardrailValue::Text(_))
-        | Some(GuardrailValue::Array(_))
-        | Some(GuardrailValue::Object(_)) => 0,
+        | Some(
+            GuardrailValue::Null
+            | GuardrailValue::Boolean(_)
+            | GuardrailValue::Decimal(_)
+            | GuardrailValue::Text(_)
+            | GuardrailValue::Array(_)
+            | GuardrailValue::Object(_),
+        ) => 0,
     }
 }
 

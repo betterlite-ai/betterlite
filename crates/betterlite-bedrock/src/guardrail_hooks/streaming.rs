@@ -10,8 +10,8 @@ use super::errors::{BlockedChat, BlockedMessage, HookFailure, ModifyFailure, det
 use super::frames::error_frames;
 use super::keepalive::keepalive_ping_has_fired;
 use super::response::{chat_chunk, model_response_text, response_model, response_usage};
-use super::runtime::{HookRuntime, RequestData, ScanCall, ScanSource, UnifiedCall};
-use super::{StreamingSettings, is_responses_api_route, streams_incrementally};
+use super::runtime::{HookRuntime, ScanCall, ScanSource, UnifiedCall};
+use super::{RequestData, StreamingSettings, is_responses_api_route, streams_incrementally};
 
 pub struct StreamHook<'hook, R: HookRuntime, T: RouteCallTypes<CallType>> {
     pub runtime: &'hook R,

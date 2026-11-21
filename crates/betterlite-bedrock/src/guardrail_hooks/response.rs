@@ -41,7 +41,10 @@ pub fn response_has_text(response: &GuardrailValue) -> Option<bool> {
     Some(has_text)
 }
 
-fn response_field<'a>(response: &'a GuardrailValue, key: &str) -> Option<&'a GuardrailValue> {
+fn response_field<'response>(
+    response: &'response GuardrailValue,
+    key: &str,
+) -> Option<&'response GuardrailValue> {
     let GuardrailValue::Object(fields) = response else {
         return None;
     };
@@ -136,37 +139,18 @@ pub fn chat_chunk(response: &GuardrailValue) -> Option<StreamChunk> {
 }
 
 fn choices(response: &GuardrailValue) -> Option<&[GuardrailValue]> {
-    match response {
-        GuardrailValue::Object(fields) => match fields.get("choices") {
-            Some(GuardrailValue::Array(choices)) => Some(choices),
-            None
-            | Some(GuardrailValue::Null)
-            | Some(GuardrailValue::Boolean(_))
-            | Some(GuardrailValue::SignedInteger(_))
-            | Some(GuardrailValue::UnsignedInteger(_))
-            | Some(GuardrailValue::Decimal(_))
-            | Some(GuardrailValue::Text(_))
-            | Some(GuardrailValue::Object(_)) => None,
-        },
-        GuardrailValue::Null
-        | GuardrailValue::Boolean(_)
-        | GuardrailValue::SignedInteger(_)
-        | GuardrailValue::UnsignedInteger(_)
-        | GuardrailValue::Decimal(_)
-        | GuardrailValue::Text(_)
-        | GuardrailValue::Array(_) => None,
-    }
+    let GuardrailValue::Object(fields) = response else {
+        return None;
+    };
+    let Some(GuardrailValue::Array(items)) = fields.get("choices") else {
+        return None;
+    };
+    Some(items.as_slice())
 }
 
 fn message_object(choice: &GuardrailValue) -> Option<&GuardrailValue> {
-    match choice {
-        GuardrailValue::Object(choice_fields) => choice_fields.get("message"),
-        GuardrailValue::Null
-        | GuardrailValue::Boolean(_)
-        | GuardrailValue::SignedInteger(_)
-        | GuardrailValue::UnsignedInteger(_)
-        | GuardrailValue::Decimal(_)
-        | GuardrailValue::Text(_)
-        | GuardrailValue::Array(_) => None,
-    }
+    let GuardrailValue::Object(choice_fields) = choice else {
+        return None;
+    };
+    choice_fields.get("message")
 }

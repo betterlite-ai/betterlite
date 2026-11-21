@@ -11,14 +11,20 @@ pub(super) fn failed(message: &str) -> HookFailure {
     }
 }
 
-pub(super) fn encode<T: Serialize>(value: &T) -> Option<GuardrailValue> {
+pub(super) fn encode<T>(value: &T) -> Option<GuardrailValue>
+where
+    T: Serialize,
+{
     let Ok(payload) = serde_json::to_value(value) else {
         return None;
     };
     serde_json::from_value(payload).ok()
 }
 
-pub(super) fn decode<T: DeserializeOwned>(value: &GuardrailValue) -> Option<T> {
+pub(super) fn decode<T>(value: &GuardrailValue) -> Option<T>
+where
+    T: DeserializeOwned,
+{
     let Ok(payload) = serde_json::to_value(value) else {
         return None;
     };
