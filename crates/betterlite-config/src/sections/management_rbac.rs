@@ -52,7 +52,7 @@ pub struct Settings {
 
 // rbac_utils.py tests general_settings.get(flag, False) for truthiness, so a quoted "false" still switches on
 impl RawSwitch {
-    fn truthy(self, lookup: &dyn EnvironmentLookup) -> Result<bool, ConfigError> {
+    fn switched_on(self, lookup: &dyn EnvironmentLookup) -> Result<bool, ConfigError> {
         Ok(match self {
             Self::Boolean(value) => value,
             Self::Integer(number) => number != 0,
@@ -79,7 +79,8 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         let general = self.general_settings;
-        let state = |switch: Option<RawSwitch>| switch.map_or(Ok(false), |raw| raw.truthy(lookup));
+        let state =
+            |switch: Option<RawSwitch>| switch.map_or(Ok(false), |raw| raw.switched_on(lookup));
         Ok(Settings {
             agents: FeatureSwitches {
                 disabled: state(general.agents_disabled)?,
