@@ -239,8 +239,12 @@ impl Call<'_> {
         let lines = WarningLines::default();
         let subscriber = tracing_subscriber::registry().with(lines.clone());
         let outcome = with_default(subscriber, || runtime.block_on(self.answer()));
-        let warnings = lines.0.lock().unwrap_or_else(PoisonError::into_inner);
-        (outcome, warnings.clone())
+        let warnings = lines
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        (outcome, warnings)
     }
 
     async fn answer(&self) -> Result<(), KeyAccessError> {

@@ -65,7 +65,7 @@ pub(super) struct ListedTeams {
 impl TeamDirectory for ListedTeams {
     async fn team_exists(&self, team_id: &str) -> Result<bool, TeamQueryError> {
         self.asked.lock().unwrap().push(team_id.to_owned());
-        Ok(self.teams.contains(&team_id))
+        Ok(self.teams.iter().any(|known| *known == team_id))
     }
 }
 
