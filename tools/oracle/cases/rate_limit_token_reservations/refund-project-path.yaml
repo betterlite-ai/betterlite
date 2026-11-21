@@ -1,0 +1,22 @@
+kind: helper
+name: refund-project-path
+call:
+  b3042:
+    function: refund_reserved_tokens
+    scopes:
+      - ["model_per_project_itpm", "p1:gpt-4"]
+    amount: 100
+    reservation_windows:
+      - counter_key: "{model_per_project_itpm:p1:gpt-4}:tokens"
+        window_start: "1699999970"
+        backend: local
+    window_size: 60
+    now: 1700000000
+    groups: {}
+    cache:
+      "{model_per_project_itpm:p1:gpt-4}:window": "1699999970"
+      "{model_per_project_itpm:p1:gpt-4}:tokens": 300
+env:
+  LITELLM_RATE_LIMIT_WINDOW_SIZE: "60"
+compare:
+  ignore: []

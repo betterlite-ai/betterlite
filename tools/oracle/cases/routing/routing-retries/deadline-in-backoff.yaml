@@ -1,0 +1,44 @@
+kind: probe
+name: routing-retries-deadline-in-backoff
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    operation:
+      routing_retries:
+        deployments: [{id: a}]
+        num_retries: 2
+        timeout: "0.5"
+        steps:
+          - error: {class: rate_limit, status: 429}
+          - {}
+compare:
+  ignore: []
+  expected_difference:
+    - pointer: /output/routing_retries/outcome
+      reference: answered
+      rust: failed
+      why: LiteLLM's retry loop has no routing deadline and sleeps through it, while betterlite refuses a backoff that would reach the deadline and raises the latest provider error
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7784-L7792
+    - pointer: /output/routing_retries/calls
+      reference:
+        - {deployment: a, attempted_retries: 0, max_retries: 2, breadcrumbs: 0}
+        - {deployment: a, attempted_retries: 1, max_retries: 2, breadcrumbs: 1}
+      rust:
+        - {deployment: a, attempted_retries: 0, max_retries: 2, breadcrumbs: 0}
+      why: the retry LiteLLM sends once the deadline has passed never starts in betterlite
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7794-L7800
+    - pointer: /output/routing_retries/backoffs
+      reference: ["0.500000"]
+      rust: []
+      why: the half-second backoff equals the half-second routing deadline, so betterlite never sleeps it
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7784-L7792
+    - pointer: /output/routing_retries/headers
+      reference: {attempted_retries: 1, max_retries: 2}
+      rust: null
+      why: betterlite answers with the rate limit error, so no response carries retry headers
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7804-L7809
+    - pointer: /output/routing_retries/error
+      reference: null
+      rust: {status: 429, code: "429", max_retries: null, num_retries: null}
+      why: the deadline stops the retries before they run out, so the error carries no exhausted retry counts
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7863-L7873

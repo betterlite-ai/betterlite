@@ -1,0 +1,42 @@
+kind: helper
+name: roster-none-and-empty-ids
+call:
+  management_admins:
+    cases:
+      - function: is_team_admin
+        caller_user_id: null
+        team:
+          team_id: team-1
+          members_with_roles:
+            - user_id: user-1
+              role: admin
+      - function: is_team_admin
+        caller_user_id: null
+        team:
+          team_id: team-1
+          members_with_roles:
+            - user_email: user-1@example.com
+              role: admin
+      - function: is_team_admin
+        caller_user_id: ""
+        team:
+          team_id: team-1
+          members_with_roles:
+            - user_id: ""
+              role: admin
+      - function: is_team_admin
+        caller_user_id: ""
+        team:
+          team_id: team-1
+          members_with_roles:
+            - user_id: user-1
+              role: admin
+      - function: is_team_admin
+        caller_user_id: user-1
+        team:
+          team_id: team-1
+          members_with_roles:
+            - user_email: user-1
+              role: admin
+env: {}
+compare: {ignore: []}

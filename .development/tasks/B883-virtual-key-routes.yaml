@@ -33,8 +33,10 @@ description: >-
   If no grant matches, protected pass-through gets HTTP 403 with instructions to configure
   allowed_passthrough_routes. Otherwise metadata.password_reset_required is True gives a separate 403
   directing the user to POST /user/password/change or /ui/change-password and then another login; only
-  after this branch is the ordinary virtual-route 403 used. B757 translates each HTTPException to
-  auth_error, param string None and code 403; compare those fields and ignore /error/message wording.
+  after this branch is the ordinary virtual-route 403 used. LiteLLM's _as_proxy_exception turns each
+  HTTPException into auth_error, param string None and code 403, and this stage builds that ProxyException
+  itself for the server's existing stage-failure rendering (auth/failures.rs), as auth_resource_grants
+  does; compare those fields and ignore /error/message wording.
 
   Metadata grants choose the key's truthy allowed_passthrough_routes, otherwise the team's, otherwise [].
   Missing keys or two null values deny. A nonempty key list overrides the team rather than unioning with

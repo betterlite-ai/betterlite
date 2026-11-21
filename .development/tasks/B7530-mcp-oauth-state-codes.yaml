@@ -95,7 +95,7 @@ deviations:
 
 out_of_scope:
   - "The callback route that opens the state and seals the codes, and _get_validated_client_redirect_uri: no owner found, see the architect notes."
-  - "validate_trusted_redirect_uri and get_request_base_url: B4654 and B4655."
+  - "validate_trusted_redirect_uri and get_request_base_url: B4654 and B4655. The flows run them and pass base_url in; nothing here calls them."
   - "The flows that call these helpers: B7531 (register and ephemeral client) and B7532 (authorize and token)."
   - "The StoredCipher implementation: B1600."
 

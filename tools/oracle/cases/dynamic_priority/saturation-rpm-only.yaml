@@ -1,0 +1,12 @@
+kind: helper
+name: dynamic-priority-saturation-rpm-only
+call:
+  b3051:
+    function: saturation
+    model: gpt-4
+    rpm: 100
+    tpm: null
+    cache:
+      "{model_saturation_check:gpt-4}:requests": 50
+env: {}
+compare: {ignore: []}

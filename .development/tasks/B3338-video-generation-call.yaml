@@ -53,6 +53,8 @@ description: >-
   the video_generation mode with `HealthProbeError` naming it as not built. Once this task is merged, add its field to
   NativeHealthBackend and replace that answer with a call to this task's entry, converting B4440's call arguments in
   and the reply out with hidden params headers carried over, as B4449 does for the other modes.
+
+  B3332's `get_provider_video_config` returns `Result<Option<_>, VideoSelectionError>`. None still raises the ValueError-class error as above; map `VideoSelectionError::Unavailable` (a provider whose video config isn't built yet, such as edenai until B5838 lands) into this task's own error and keep its message.
 scope:
   paths:
     - crates/betterlite-core/src/api/video_generation_call.rs

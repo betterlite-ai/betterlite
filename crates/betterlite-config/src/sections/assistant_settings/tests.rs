@@ -1,0 +1,139 @@
+#![cfg(test)]
+
+use std::collections::BTreeMap;
+
+use betterlite_models::decisions::Json;
+use rstest::rstest;
+
+use crate::loader::{ConfigError, ConfigLoader};
+use crate::sections::assistant_settings::Settings;
+
+fn settings(source: &str, variables: &[(&str, &str)]) -> Result<Settings, ConfigError> {
+    let lookup: BTreeMap<String, String> = variables
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect();
+    Ok(ConfigLoader { lookup }
+        .load(source)?
+        .sections
+        .assistant_settings)
+}
+
+fn params(settings: Settings) -> BTreeMap<String, Json> {
+    settings
+        .config
+        .expect("the assistant is configured")
+        .litellm_params
+        .expect("the parameters are configured")
+}
+
+#[rstest]
+#[case::absent("model_list: []", None)]
+#[case::blank("assistant_settings:", None)]
+#[case::null("assistant_settings: null", None)]
+#[case::empty("assistant_settings: {}", None)]
+#[case::configured(
+    "assistant_settings:\n  custom_llm_provider: openai\n  litellm_params:\n    api_key: sk-config\n    model: gpt-4o-mini\n",
+    Some(("openai", "sk-config", "gpt-4o-mini"))
+)]
+fn loads_assistant_settings(#[case] source: &str, #[case] expected: Option<(&str, &str, &str)>) {
+    let loaded = settings(source, &[]).expect("the source loads");
+    let Some((provider, api_key, model)) = expected else {
+        assert_eq!(loaded, Settings::default(), "{source}");
+        return;
+    };
+    let config = loaded.config.expect("the assistant is configured");
+    assert_eq!(config.custom_llm_provider.as_deref(), Some(provider));
+    let params = config.litellm_params.expect("the parameters are loaded");
+    assert_eq!(params.get("api_key"), Some(&Json::Text(api_key.to_owned())));
+    assert_eq!(params.get("model"), Some(&Json::Text(model.to_owned())));
+}
+
+#[test]
+fn expands_only_top_level_environment_strings() {
+    let source = "assistant_settings:\n  custom_llm_provider: openai\n  litellm_params:\n    api_key: os.environ/Aos.environ/B\n    model: os.environ/EMPTY\n    api_base: os.environ/MISSING\n    organization: plain\n    extra_body:\n      api_key: os.environ/UNTOUCHED\n";
+    let loaded =
+        settings(source, &[("AB", "combined"), ("EMPTY", "")]).expect("the environment resolves");
+    let params = params(loaded);
+    assert_eq!(
+        params.get("api_key"),
+        Some(&Json::Text("combined".to_owned()))
+    );
+    assert_eq!(params.get("model"), Some(&Json::Text(String::new())));
+    assert_eq!(params.get("api_base"), Some(&Json::Null));
+    assert_eq!(
+        params.get("organization"),
+        Some(&Json::Text("plain".to_owned()))
+    );
+    let nested = match params.get("extra_body") {
+        Some(Json::Object(fields)) => fields.get("api_key"),
+        Some(_) => panic!("extra_body should be a mapping"),
+        None => None,
+    };
+    assert_eq!(nested, Some(&Json::Text("os.environ/UNTOUCHED".to_owned())));
+}
+
+#[test]
+fn a_nonempty_mapping_without_params_fails_to_load() {
+    let error = settings("assistant_settings:\n  custom_llm_provider: openai\n", &[])
+        .expect_err("the mapping is missing litellm_params");
+    assert!(
+        error.to_string().contains("litellm_params"),
+        "the missing key is named: {error}"
+    );
+}
+
+// a null provider keeps the mapping nonempty, so startup still reads litellm_params
+#[test]
+fn a_null_provider_without_params_fails_to_load() {
+    assert_eq!(
+        settings("assistant_settings: {}\n", &[]).expect("an empty mapping loads"),
+        Settings::default()
+    );
+    let error = settings("assistant_settings:\n  custom_llm_provider: null\n", &[])
+        .expect_err("the nonempty mapping is missing litellm_params");
+    let message = error.to_string();
+    assert!(
+        message.contains("litellm_params"),
+        "the null provider mapping failed without naming the key: {message}"
+    );
+}
+
+#[test]
+fn a_null_params_value_fails_to_load() {
+    let error = settings("assistant_settings:\n  litellm_params: null\n", &[])
+        .expect_err("startup cannot iterate a null litellm_params");
+    assert!(
+        error.to_string().contains("litellm_params"),
+        "the null value is named: {error}"
+    );
+}
+
+#[test]
+fn a_null_provider_loads_for_the_dispatcher() {
+    let loaded = settings(
+        "assistant_settings:\n  custom_llm_provider: null\n  litellm_params:\n    api_key: sk-config\n",
+        &[],
+    )
+    .expect("the mapping is nonempty and litellm_params is one");
+    let config = loaded.config.expect("the assistant is configured");
+    assert_eq!(config.custom_llm_provider, None);
+}
+
+#[test]
+fn a_mapping_without_a_provider_loads_for_the_dispatcher() {
+    let loaded = settings(
+        "assistant_settings:\n  litellm_params:\n    api_key: sk-config\n",
+        &[],
+    )
+    .expect("only the factory reads custom_llm_provider");
+    let config = loaded.config.expect("the assistant is configured");
+    assert_eq!(config.custom_llm_provider, None);
+    assert_eq!(
+        config
+            .litellm_params
+            .expect("the parameters are loaded")
+            .get("api_key"),
+        Some(&Json::Text("sk-config".to_owned()))
+    );
+}

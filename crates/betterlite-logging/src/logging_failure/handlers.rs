@@ -24,6 +24,7 @@ use crate::logging_state::correlation::restore_correlation_context;
 use crate::logging_state::events::{
     LoggingEvent, has_run_logging, is_sync_litellm_request, should_run_logging,
 };
+use crate::otel::proxy_runtime::slot::{enter_request_slot, enter_request_slot_sync};
 
 pub fn failure_handler(
     log: &mut FailureCall<'_>,
@@ -31,10 +32,13 @@ pub fn failure_handler(
     loggers: &FailureCallbacks<'_>,
     dependencies: &FailureDeps<'_>,
 ) {
-    if prepare_failure(log, failure, dependencies, LoggingEvent::SyncFailure) {
-        deliver_sync_loggers(log, loggers, dependencies);
-    }
-    restore_correlation_context(log.state, log.context);
+    let slot = log.state.request_slot.clone();
+    enter_request_slot_sync(slot, || {
+        if prepare_failure(log, failure, dependencies, LoggingEvent::SyncFailure) {
+            deliver_sync_loggers(log, loggers, dependencies);
+        }
+        restore_correlation_context(log.state, log.context);
+    });
 }
 
 fn prepare_failure(
@@ -84,6 +88,19 @@ fn logger_may_run(state: &LoggingState, logger: &dyn CallbackLogger) -> bool {
 }
 
 pub async fn async_failure_handler(
+    call: &mut FailureCall<'_>,
+    report: &FailureReport,
+    callbacks: &FailureCallbacks<'_>,
+    deps: &FailureDeps<'_>,
+) {
+    enter_request_slot(
+        call.state.request_slot.clone(),
+        run_async_failure(call, report, callbacks, deps),
+    )
+    .await;
+}
+
+async fn run_async_failure(
     call: &mut FailureCall<'_>,
     report: &FailureReport,
     callbacks: &FailureCallbacks<'_>,

@@ -102,20 +102,22 @@ pub fn map_rerank_params(
         RerankVersion::V1 => "max_chunks_per_doc",
         RerankVersion::V2 => "max_tokens_per_doc",
     };
-    let mut mapped = RerankParams::from(["query", "documents", "top_n", "rank_fields", limit].map(
-        |name| {
+    RerankParams::from(
+        [
+            "query",
+            "documents",
+            "top_n",
+            "rank_fields",
+            "return_documents",
+            limit,
+        ]
+        .map(|name| {
             (
                 name.to_owned(),
                 options.get(name).cloned().unwrap_or(Json::Null),
             )
-        },
-    ));
-    let returned = match options.get("return_documents") {
-        None | Some(Json::Null) => Json::Bool(true),
-        Some(given) => given.clone(),
-    };
-    mapped.insert("return_documents".to_owned(), returned);
-    mapped
+        }),
+    )
 }
 
 pub fn transform_rerank_request(
