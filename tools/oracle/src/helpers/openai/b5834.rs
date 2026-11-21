@@ -168,7 +168,6 @@ fn responses(
     }))
 }
 
-// LiteLLM's helper clears the environment and sets only the case's variables
 fn embedding_headers(call: &HeaderCall) -> Value {
     let key = call.api_key.clone().map(SecretString::from);
     let headers = perplexity_embedding::validate_environment(key.as_ref(), &call.env);
@@ -209,7 +208,6 @@ fn responses_headers(call: &HeaderCall) -> Value {
     json!({"ok": true, "headers": headers})
 }
 
-// a request LiteLLM rejects raises a ValueError, which the shared guard reports without a status
 fn responses_request(call: &ResponsesCall) -> Value {
     perplexity_responses::transform_request(&call.model, &call.input, &call.params, None)
         .map_or_else(

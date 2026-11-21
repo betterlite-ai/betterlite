@@ -90,7 +90,10 @@ fn prepared_embedding(
     operation: &EmbeddingOperation,
     deployment: &Deployment,
 ) -> Result<PreparedRequest, OperationError> {
-    let call = embedding_call(operation, deployment)?;
+    let requested: Object = serde_json::to_vec(&operation.request)
+        .and_then(|bytes| serde_json::from_slice(&bytes))
+        .map_err(|source| OperationError::Encode { source })?;
+    let call = embedding_call(operation, &requested, deployment);
     let Ok(resolved) = embedding(&call) else {
         return Err(unsupported());
     };
@@ -102,9 +105,15 @@ fn prepared_embedding(
     .map_err(|error| OperationError::Encode {
         source: serde_json::Error::custom(error),
     })?;
+    let url = Url::parse(&perplexity_embedding::get_complete_url(
+        resolved.api_base.as_deref(),
+    ))
+    .map_err(|source| OperationError::Encode {
+        source: serde_json::Error::custom(source),
+    })?;
     let http = PreparedHttp {
         method: Method::POST,
-        url: embedding_url(&resolved)?,
+        url,
         headers: embedding_headers(resolved.api_key.as_ref())?,
         body: serde_json::to_vec(&body).map_err(|source| OperationError::Encode { source })?,
         deadline: resolved.timeout,
@@ -119,14 +128,12 @@ fn prepared_embedding(
 
 fn embedding_call(
     operation: &EmbeddingOperation,
+    requested: &Object,
     deployment: &Deployment,
-) -> Result<EmbeddingCall, OperationError> {
-    let requested: Object = serde_json::to_vec(&operation.request)
-        .and_then(|bytes| serde_json::from_slice(&bytes))
-        .map_err(|source| OperationError::Encode { source })?;
+) -> EmbeddingCall {
     let mut optional_params = Object::new();
-    perplexity_embedding::map_openai_params(&requested, &mut optional_params);
-    Ok(EmbeddingCall {
+    perplexity_embedding::map_openai_params(requested, &mut optional_params);
+    EmbeddingCall {
         model: deployment.model.clone(),
         input: operation.request.input.clone(),
         optional_params,
@@ -136,14 +143,7 @@ fn embedding_call(
         headers: None,
         timeout: deployment.timeout,
         aembedding: false,
-    })
-}
-
-fn embedding_url(resolved: &EmbeddingCall) -> Result<Url, OperationError> {
-    let url = perplexity_embedding::get_complete_url(resolved.api_base.as_deref());
-    Url::parse(&url).map_err(|source| OperationError::Encode {
-        source: serde_json::Error::custom(source),
-    })
+    }
 }
 
 // the proxy hands no process environment to an adapter, so only the deployment's own key is read

@@ -62,7 +62,11 @@ pub fn transform_embedding_response(
         });
     }
     let wire = decode_wire(status_code, raw)?;
-    let data = decoded_data(wire.data)?;
+    let mut data = wire.data.unwrap_or_default();
+    for item in &mut data {
+        let decoded = decoded_embedding(item.get("embedding"))?;
+        item.insert(String::from("embedding"), decoded);
+    }
     let (prompt_tokens, total_tokens) = wire.usage.map_or((None, None), |usage| {
         (usage.prompt_tokens, usage.total_tokens)
     });
@@ -91,34 +95,18 @@ fn decode_wire(status_code: u16, raw: &[u8]) -> Result<WireReply, PerplexityEmbe
         }
         Err(_not_json) => {
             // httpx reads raw_response.text with errors="replace", so each invalid sequence reads as one U+FFFD
-            let text = replaced_text(raw);
+            let mut text = String::with_capacity(raw.len());
+            for chunk in raw.utf8_chunks() {
+                text.push_str(chunk.valid());
+                if !chunk.invalid().is_empty() {
+                    text.push(char::REPLACEMENT_CHARACTER);
+                }
+            }
             Err(PerplexityEmbeddingError::Provider {
                 error: Box::new(get_error_class(&text, status_code, &Headers::new())),
             })
         }
     }
-}
-
-// every data item is copied with all of its keys, and only its embedding is rewritten
-fn decoded_data(items: Option<Vec<Object>>) -> Result<Vec<Object>, PerplexityEmbeddingError> {
-    let mut data = items.unwrap_or_default();
-    for item in &mut data {
-        let decoded = decoded_embedding(item.get("embedding"))?;
-        item.insert(String::from("embedding"), decoded);
-    }
-    Ok(data)
-}
-
-// httpx replaces each invalid sequence with one U+FFFD, which clippy.toml keeps String::from_utf8_lossy from doing
-fn replaced_text(body: &[u8]) -> String {
-    let mut text = String::with_capacity(body.len());
-    for chunk in body.utf8_chunks() {
-        text.push_str(chunk.valid());
-        if !chunk.invalid().is_empty() {
-            text.push(char::REPLACEMENT_CHARACTER);
-        }
-    }
-    text
 }
 
 // a string is base64 of signed bytes, each divided by 127; a list or any other value stays as sent
@@ -132,8 +120,7 @@ fn decoded_embedding(embedding: Option<&Json>) -> Result<Json, PerplexityEmbeddi
     let bytes = STANDARD
         .decode(encoded)
         .map_err(|source| PerplexityEmbeddingError::Base64 { source })?;
-    // struct.unpack(f"{count}b") reads each byte as a signed value, which is cast_signed's two's complement
-    // float_arithmetic is denied; Div::div is the same IEEE division as LiteLLM's float(v) / 127.0
+    // struct.unpack(f"{count}b") reads a signed byte; Div::div replaces the banned / operator
     let floats = bytes
         .into_iter()
         .map(|byte| f64::from(byte.cast_signed()).div(INT8_SCALE))

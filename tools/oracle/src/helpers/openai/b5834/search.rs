@@ -53,7 +53,6 @@ pub(super) fn values(
     }))
 }
 
-// LiteLLM raises a ValueError for a missing key and for a server key sent to a caller's host
 fn key_value(call: &SearchKeyCall) -> Value {
     let config = PerplexitySearch {
         environment: &call.env,

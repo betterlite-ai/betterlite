@@ -31,7 +31,6 @@ impl LogSink for Silent {
     fn emit(&self, _record: LogRecord) {}
 }
 
-// b6412's Python view: the request model is "m", and usage keeps the two token counts
 pub(super) fn embedding_reply(call: &ReplyCall) -> Value {
     match transform_embedding_response("m", call.status, call.body.as_bytes()) {
         Ok(reply) => json!({
@@ -66,7 +65,6 @@ pub(super) fn responses_replies(calls: &[ReplyCall]) -> Result<Value, Box<Helper
     Ok(Value::Array(values))
 }
 
-// LiteLLM builds a logging state per call, so each reply gets its own
 fn one_reply(
     call: &ReplyCall,
     redactor: &Redactor,

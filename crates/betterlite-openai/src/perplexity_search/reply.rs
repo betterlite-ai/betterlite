@@ -36,7 +36,6 @@ struct WireResult {
     date: Option<String>,
     #[serde(default)]
     last_updated: Option<String>,
-    // a flattened map keeps serde from accepting a JSON array in place of this object
     #[serde(flatten)]
     _extra: Fields,
 }

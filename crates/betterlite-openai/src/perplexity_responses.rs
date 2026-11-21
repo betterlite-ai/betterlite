@@ -16,7 +16,6 @@ use crate::response_input::{ResponsesInput, ResponsesItem, transform_responses_r
 use error::PerplexityResponsesError;
 
 pub const PROVIDER: ProviderId = ProviderId::Perplexity;
-// supports_native_websocket returns False for Perplexity, so the HTTP transport stays the one used
 pub const SUPPORTS_NATIVE_WEBSOCKET: bool = false;
 pub const SUPPORTED_OPENAI_PARAMS: [&str; 8] = [
     "max_output_tokens",

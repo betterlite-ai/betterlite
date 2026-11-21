@@ -20,7 +20,6 @@ const PROVIDER: &str = "perplexity";
 pub mod adapter;
 mod tests;
 
-// the request a Perplexity config builds: no PreparedRequest variant carries search or decisions yet
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PerplexityRequest {
     pub url: String,
@@ -94,7 +93,6 @@ pub fn search(
     PerplexityRequest::encoded(url, headers, &body)
 }
 
-// the first non-empty value among the call's own and the config's variable names, in order
 fn first_set(
     own: Option<&str>,
     names: &[&str],
