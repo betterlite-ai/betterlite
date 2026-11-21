@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use betterlite_bedrock::guardrail_hooks::RequestData;
 use betterlite_bedrock::guardrail_hooks::chunks::StreamChunk;
@@ -165,6 +165,7 @@ async fn run_hook(
                 request_route: input.request_route.as_deref(),
                 data,
                 chunks: stream_chunks(input),
+                started: Instant::now(),
             };
             streaming_iterator_hook(hook).await
         }

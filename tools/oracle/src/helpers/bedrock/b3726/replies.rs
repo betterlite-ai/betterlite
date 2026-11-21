@@ -6,7 +6,6 @@ use betterlite_bedrock_guardrails::bedrock_post::GuardrailTransport;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
-use reqwest::header::HeaderMap;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -41,7 +40,7 @@ impl Sent {
 fn response(reply: &Reply) -> UpstreamResponse {
     UpstreamResponse {
         status: reply.status,
-        headers: HeaderMap::new(),
+        headers: Default::default(),
         body: serde_json::to_vec(&reply.body).unwrap_or_default(),
     }
 }

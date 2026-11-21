@@ -10,7 +10,12 @@ from litellm.proxy import proxy_server
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.guardrails.guardrail_hooks.bedrock_guardrails import BedrockGuardrail
 from litellm.types.guardrails import GuardrailEventHooks
-from litellm.types.utils import CallTypesLiteral, ModelResponse, ModelResponseStream
+from litellm.types.utils import (
+    CallTypesLiteral,
+    ModelResponse,
+    ModelResponseStream,
+    TextCompletionResponse,
+)
 from pydantic import ConfigDict, JsonValue, TypeAdapter
 from starlette.exceptions import HTTPException
 
@@ -20,12 +25,12 @@ LIST: Final[TypeAdapter[list[JsonValue]]] = TypeAdapter(list[JsonValue])
 STRING: Final[TypeAdapter[str]] = TypeAdapter(str)
 EVENT: Final[TypeAdapter[GuardrailEventHooks | None]] = TypeAdapter(GuardrailEventHooks | None)
 CHUNK: Final[TypeAdapter[ModelResponseStream]] = TypeAdapter(ModelResponseStream)
+TEXT_CHUNK: Final[TypeAdapter[TextCompletionResponse]] = TypeAdapter(TextCompletionResponse)
 MODEL: Final[TypeAdapter[ModelResponse]] = TypeAdapter(ModelResponse)
-ITEM: Final[TypeAdapter[bytes | ModelResponseStream]] = TypeAdapter(bytes | ModelResponseStream)
 SIGNING: Final = {"aws_secret_access_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"}
 
 Payload: TypeAlias = dict[str, JsonValue]
-StreamItem: TypeAlias = ModelResponseStream | bytes
+StreamItem: TypeAlias = ModelResponseStream | TextCompletionResponse | bytes
 
 
 class GuardrailSetup(TypedDict):
@@ -122,18 +127,25 @@ async def attempt(call: Awaitable[JsonValue | Exception]) -> JsonValue:
     return {"kind": "allowed"}
 
 
+# A chat chunk carries its text in the delta; a text-completion chunk carries it on the choice.
+def choice_text(record: Payload) -> str:
+    delta = record.get("delta")
+    if delta is not None:
+        part = DICT.validate_python(delta).get("content")
+    else:
+        part = record.get("text")
+    return "" if part is None else STRING.validate_python(part)
+
+
 # The caller-visible chunk fields: the model, the assistant text, the usage and the finish reason.
-def chat_json(chunk: Payload) -> JsonValue:
+def chunk_json(chunk: Payload) -> JsonValue:
     text = ""
     finish: JsonValue = None
     choices = chunk.get("choices")
     if choices is not None:
         for choice in LIST.validate_python(choices):
             record = DICT.validate_python(choice)
-            delta = record.get("delta")
-            part = None if delta is None else DICT.validate_python(delta).get("content")
-            if part is not None:
-                text += STRING.validate_python(part)
+            text += choice_text(record)
             reason = record.get("finish_reason")
             if reason is not None:
                 finish = reason
@@ -171,14 +183,21 @@ def frames_json(text: str) -> JsonValue:
 
 
 def item_json(item: StreamItem) -> JsonValue:
-    payload = JSON.validate_json(ITEM.dump_json(item))
-    match payload:
-        case str():
-            return frames_json(payload)
-        case dict():
-            return chat_json(DICT.validate_python(payload))
-        case None | bool() | int() | float() | list():
-            return None
+    if isinstance(item, bytes):
+        return frames_json(item.decode("utf-8"))
+    if isinstance(item, TextCompletionResponse):
+        return chunk_json(DICT.validate_python(JSON.validate_json(item.model_dump_json())))
+    return chunk_json(DICT.validate_python(JSON.validate_json(CHUNK.dump_json(item))))
+
+
+# LiteLLM's stream_chunk_builder sends a stream whose first choice carries text to text completion.
+def stream_item(chunk: Payload) -> StreamItem:
+    choices = chunk.get("choices")
+    if isinstance(choices, list) and choices:
+        first = choices[0]
+        if isinstance(first, dict) and "text" in first:
+            return TEXT_CHUNK.validate_python(chunk)
+    return CHUNK.validate_python(chunk)
 
 
 async def stream_items(case: HookCase) -> AsyncGenerator[StreamItem, None]:
@@ -187,7 +206,7 @@ async def stream_items(case: HookCase) -> AsyncGenerator[StreamItem, None]:
             yield frame.encode("utf-8")
     else:
         for chunk in case["chunks"]:
-            yield CHUNK.validate_python(chunk)
+            yield stream_item(chunk)
 
 
 async def hook_outcome(

@@ -13,6 +13,10 @@ use betterlite_bedrock_guardrails::bedrock_transport::BedrockGuardrail;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_core::api::messages_chat_output::records::ResponseRecord;
+use betterlite_core::api::messages_fake_stream::MessagesFakeStream;
+use betterlite_guardrails::anthropic_sse::error_frames::anthropic_sse_error_frames;
+use betterlite_guardrails::anthropic_sse::is_raw_sse_stream::is_raw_sse_stream as raw_sse_stream;
+use betterlite_guardrails::anthropic_sse::model_response_text::model_response_text as record_text;
 use betterlite_guardrails::anthropic_sse::sse_chunks_from_response::sse_chunks_from_response;
 use betterlite_guardrails::bedrock_apply::{ApiInvocation, make_bedrock_api_request};
 use betterlite_guardrails::bedrock_checks::request::ChecksScan;
@@ -24,13 +28,15 @@ use betterlite_guardrails::bedrock_message_selection::reconcile;
 use betterlite_guardrails::bedrock_message_selection::wire::ModelResponse;
 use betterlite_guardrails::bedrock_records::{Response as GuardrailResponse, Source};
 use betterlite_guardrails::guardrail_base::GuardrailBase;
-use betterlite_guardrails::guardrail_message_scope::blocked_usage::OriginalResponse;
+use betterlite_guardrails::guardrail_message_scope::StreamItem;
+use betterlite_guardrails::guardrail_message_scope::blocked_usage::{
+    OriginalResponse, blocked_response_usage,
+};
 use betterlite_guardrails::guardrail_selection::gate::GuardrailSelection as _;
 use betterlite_guardrails::tool_permission_requests::header_mutation::record_applied_guardrail;
 use betterlite_models::catalog::BundledCatalog;
-use betterlite_server::guardrails::anthropic_translation::block_continuation::{
-    BlockedException, build_block_sse_chunks,
-};
+use betterlite_models::decisions::Json;
+use serde_json::json;
 
 use super::assembly::{assemble, block_chat_chunks};
 use super::replies::Sent;
@@ -195,12 +201,30 @@ impl HookRuntime for OracleRuntime {
         }
     }
 
+    fn is_raw_sse_stream(&self, chunks: &[StreamChunk]) -> bool {
+        let items: Vec<StreamItem> = chunks
+            .iter()
+            .map(|chunk| match chunk {
+                StreamChunk::Json(value) => StreamItem::Json(value.clone()),
+                StreamChunk::Bytes(bytes) => StreamItem::Bytes(bytes.clone()),
+            })
+            .collect();
+        raw_sse_stream(&items)
+    }
+
     fn assemble(
         &self,
         chunks: &[StreamChunk],
         raw_sse: bool,
     ) -> impl Future<Output = Option<GuardrailValue>> + Send {
         ready(assemble(chunks, raw_sse))
+    }
+
+    fn model_response_text(&self, response: &GuardrailValue) -> String {
+        let Some(record) = via_json::<GuardrailValue, ResponseRecord>(response) else {
+            return String::new();
+        };
+        record_text(&record)
     }
 
     fn reassemble_sse(&self, response: &GuardrailValue) -> Result<Vec<Vec<u8>>, HookFailure> {
@@ -211,26 +235,35 @@ impl HookRuntime for OracleRuntime {
         })
     }
 
+    fn error_frames(&self, message: &str) -> Vec<StreamChunk> {
+        let Ok(frames) = anthropic_sse_error_frames(message) else {
+            return Vec::new();
+        };
+        frames.into_iter().map(StreamChunk::Bytes).collect()
+    }
+
+    // AnthropicMessagesHandler().build_block_sse_chunks over a stream that has not started, U1
     fn block_sse_chunks(&self, block: &BlockedMessage) -> Result<Vec<Vec<u8>>, HookFailure> {
-        let original = match &block.original_response {
-            GuardrailValue::Object(fields) => OriginalResponse::Response(fields.clone()),
-            GuardrailValue::Null
-            | GuardrailValue::Boolean(_)
-            | GuardrailValue::SignedInteger(_)
-            | GuardrailValue::UnsignedInteger(_)
-            | GuardrailValue::Decimal(_)
-            | GuardrailValue::Text(_)
-            | GuardrailValue::Array(_) => OriginalResponse::Absent,
+        let original = if let GuardrailValue::Object(fields) = &block.original_response {
+            OriginalResponse::Response(fields.clone())
+        } else {
+            OriginalResponse::Absent
         };
-        let blocked = BlockedException {
-            message: &block.message,
-            model: &block.model,
-            message_id: BLOCK_MESSAGE_ID,
-            original_response: &original,
-        };
-        build_block_sse_chunks(&blocked, false, None).map_err(|error| HookFailure::Failed {
+        let payload = json!({
+            "id": BLOCK_MESSAGE_ID,
+            "type": "message",
+            "role": "assistant",
+            "content": [{"type": "text", "text": block.message.as_str()}],
+            "model": block.model.as_str(),
+            "stop_reason": "end_turn",
+            "usage": blocked_response_usage(&original),
+        });
+        let response: Json =
+            via_json(&payload).ok_or_else(|| failed("the block reply could not be encoded"))?;
+        let frames = MessagesFakeStream::new(&response).map_err(|error| HookFailure::Failed {
             message: error.to_string(),
-        })
+        })?;
+        Ok(frames.collect())
     }
 
     fn block_chat_chunks(&self, block: &BlockedChat) -> Result<Vec<StreamChunk>, HookFailure> {

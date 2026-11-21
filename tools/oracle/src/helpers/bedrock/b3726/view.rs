@@ -25,11 +25,7 @@ pub(super) fn outcome(result: Result<(), HookFailure>) -> Value {
 }
 
 pub(super) fn chunks(items: &[StreamChunk]) -> Value {
-    let mut rendered = Vec::new();
-    for item in items {
-        rendered.push(chunk(item));
-    }
-    Value::Array(rendered)
+    Value::Array(items.iter().map(chunk).collect())
 }
 
 fn chunk(item: &StreamChunk) -> Value {

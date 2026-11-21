@@ -44,19 +44,13 @@ fn text_of(fields: &BTreeMap<String, GuardrailValue>, key: &str) -> Option<Strin
 }
 
 fn integer_of(fields: &BTreeMap<String, GuardrailValue>, key: &str) -> i64 {
-    match fields.get(key) {
-        Some(GuardrailValue::SignedInteger(count)) => *count,
-        Some(GuardrailValue::UnsignedInteger(count)) => i64::try_from(*count).unwrap_or(i64::MAX),
-        None
-        | Some(
-            GuardrailValue::Null
-            | GuardrailValue::Boolean(_)
-            | GuardrailValue::Decimal(_)
-            | GuardrailValue::Text(_)
-            | GuardrailValue::Array(_)
-            | GuardrailValue::Object(_),
-        ) => 0,
+    if let Some(GuardrailValue::SignedInteger(count)) = fields.get(key) {
+        return *count;
     }
+    if let Some(GuardrailValue::UnsignedInteger(count)) = fields.get(key) {
+        return i64::try_from(*count).unwrap_or(i64::MAX);
+    }
+    0
 }
 
 pub(super) fn merge_choices(
@@ -73,6 +67,9 @@ pub(super) fn merge_choices(
         {
             text.push_str(part);
         }
+        if let Some(GuardrailValue::Text(part)) = choice_fields.get("text") {
+            text.push_str(part);
+        }
         if let Some(reason) = field(choice_fields, "finish_reason") {
             *finish = reason;
         }
@@ -80,12 +77,13 @@ pub(super) fn merge_choices(
     Some(())
 }
 
-// LiteLLM's stream_chunk_builder over the plain chat chunks the cases replay: deltas merge in order, the last usage wins.
+// LiteLLM's stream_chunk_builder over the chunks the cases replay: deltas merge in order, the last usage wins.
 fn assemble_chat(chunks: &[StreamChunk]) -> Option<GuardrailValue> {
     let mut text = String::new();
     let mut finish = Value::Null;
     let mut model = Value::Null;
     let mut usage = Value::Null;
+    let mut chosen = false;
     for chunk in chunks {
         let StreamChunk::Json(GuardrailValue::Object(fields)) = chunk else {
             return None;
@@ -99,6 +97,16 @@ fn assemble_chat(chunks: &[StreamChunk]) -> Option<GuardrailValue> {
         let Some(GuardrailValue::Array(choices)) = fields.get("choices") else {
             continue;
         };
+        // A first choice that carries text makes LiteLLM's stream_chunk_builder build a text completion, not a chat ModelResponse.
+        if !chosen && !choices.is_empty() {
+            chosen = true;
+            if matches!(
+                choices.first(),
+                Some(GuardrailValue::Object(first)) if first.contains_key("text")
+            ) {
+                return None;
+            }
+        }
         merge_choices(choices, &mut text, &mut finish)?;
     }
     from_json(json!({
