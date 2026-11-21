@@ -1,0 +1,27 @@
+kind: helper
+name: small-chat-hosts-params-seed
+call:
+  b6410:
+    supported:
+      - {provider: zai, model: zai/glm-4.6, reasoning: true, chat_models: [], text_models: []}
+      - {provider: moonshot, model: moonshot/kimi-thinking-preview, reasoning: false, chat_models: [], text_models: []}
+    params:
+      - {provider: moonshot, model: moonshot/moonshot-v1-8k, reasoning: false, requested: {temperature: 0.1, n: 2}, existing: {}, chat_models: [], text_models: []}
+      - {provider: nebius, model: nebius/meta-llama/Llama-3.1-8B-Instruct, reasoning: false, requested: {max_completion_tokens: 12}, existing: {max_tokens: 4}, chat_models: [], text_models: []}
+      - provider: llama
+        model: llama/llama-3-8b
+        reasoning: false
+        requested: {response_format: {type: json_schema}}
+        existing: {}
+        chat_models: []
+        text_models: []
+    moonshot_urls:
+      - {api_base: "https://example.com/v1"}
+    moonshot_requests: []
+    nadir_cost: []
+    novita_headers:
+      - {api_key: null, headers: {X-Trace: "1"}}
+    zai_cache: []
+    maritalk_errors: []
+env: {}
+compare: {ignore: []}

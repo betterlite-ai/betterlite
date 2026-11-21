@@ -1,11 +1,12 @@
 use std::time::{Duration, Instant};
 
+use betterlite_test_ports::refused_port::RefusedPort;
 use redis::Value;
 use redis::cmd;
 use secrecy::SecretString;
 
 use super::fake_server::{FakeServer, Reply};
-use super::fixtures::{closed_address, credential, factory, open_error, sentinel_record, source};
+use super::fixtures::{credential, factory, open_error, sentinel_record, source};
 use crate::redis_client_factories::RedisClient;
 use crate::redis_live_client::LiveClientError;
 
@@ -18,7 +19,8 @@ async fn a_dead_monitor_is_skipped() {
     let master = FakeServer::start().await;
     let monitor = FakeServer::start().await;
     monitor_for(&monitor, &master);
-    let record = sentinel_record(&[closed_address(), monitor.addr()], "mymaster");
+    let refused = RefusedPort::bind().unwrap();
+    let record = sentinel_record(&[refused.address, monitor.addr()], "mymaster");
     let client = factory(None)
         .open_async(&RedisClient::Sentinel(record), None)
         .await

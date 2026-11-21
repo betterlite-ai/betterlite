@@ -252,13 +252,6 @@ pub(crate) fn client_with(
     }
 }
 
-pub(crate) async fn closed_endpoint() -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
-    format!("http://{address}")
-}
-
 pub(crate) fn token_reply(token: &str, expires_in: &str) -> String {
     format!(r#"{{"access_token": "{token}", "expires_in": {expires_in}}}"#)
 }

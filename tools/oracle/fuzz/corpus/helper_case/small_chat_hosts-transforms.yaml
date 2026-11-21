@@ -1,0 +1,31 @@
+kind: helper
+name: small-chat-hosts-transforms-seed
+call:
+  b6410:
+    supported: []
+    params: []
+    moonshot_urls: []
+    moonshot_requests:
+      - model: moonshot/kimi-k2.5
+        reasoning: true
+        messages:
+          - {role: user, content: [{type: text, text: "sum "}, {type: text, text: these}]}
+          - role: assistant
+            content: ""
+            tool_calls:
+              - {id: call-9, type: function, function: {name: add, arguments: "{}"}}
+            provider_specific_fields: {reasoning_content: thinking, kept: true}
+        optional_params: {tool_choice: required}
+    nadir_cost:
+      - {body: '{"nadir_metadata":{"cost":{"total_cost_usd":2.25}}}'}
+      - {body: '{"nadir_metadata":{"cost":{"total_cost_usd":true}}}'}
+    novita_headers: []
+    zai_cache:
+      - model: zai/glm-4.6
+        messages:
+          - {role: user, content: hi, cache_control: {type: ephemeral}}
+        tools: null
+    maritalk_errors:
+      - {message: rate limited, status: 429, headers: {retry-after: "3"}}
+env: {}
+compare: {ignore: []}

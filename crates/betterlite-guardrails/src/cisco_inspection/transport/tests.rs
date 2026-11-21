@@ -10,6 +10,7 @@ use axum::routing::post;
 use betterlite_config::sections::cisco_verdict_contracts::{
     Configured, FallbackAction, FlaggedAction, InspectionType,
 };
+use betterlite_test_ports::refused_port::RefusedPort;
 use secrecy::SecretString;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
@@ -106,9 +107,8 @@ async fn post_inspection_wraps_a_non_json_body() {
 
 #[tokio::test]
 async fn post_inspection_wraps_a_connection_failure() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
-    let base = format!("http://{}/inspect", listener.local_addr().expect("addr"));
-    drop(listener);
+    let refused = RefusedPort::bind().expect("a refused port");
+    let base = format!("http://{}/inspect", refused.address);
     let guardrail = guardrail(10.0);
     let error = post_inspection(&guardrail, &base, &(), "chat")
         .await
