@@ -170,13 +170,16 @@ def slicing(call: SlicingCall) -> JsonValue:
     messages = call["messages"]
     history = cast("list[dict[str, object]]", messages)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L679-L681
     sliced, block = _slice_around_compaction_block(messages)
-    return {
-        "messages": ANSWER.validate_python(sliced),
-        "block": ANSWER.validate_python(block),
-        "stripped": ANSWER.validate_python(_strip_compaction_blocks(history)),
-        "last_question": ANSWER.validate_python(_select_last_user_question(history)[0]),
-        "input": ANSWER.validate_python(messages),
+    stripped = _strip_compaction_blocks(history)
+    question = _select_last_user_question(history)[0]
+    answer = {
+        "messages": sliced,
+        "block": block,
+        "stripped": stripped,
+        "last_question": question,
+        "input": messages,
     }
+    return ANSWER.validate_python(answer)
 
 
 def trigger(call: TriggerCall) -> JsonValue:
