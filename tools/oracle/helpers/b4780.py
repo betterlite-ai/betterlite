@@ -30,6 +30,13 @@ class AgentFields(TypedDict):
     identity_managed: bool
 
 
+class ListedAgent(TypedDict):
+    agent_id: str
+    agent_name: str
+    agent_card_params: dict[str, str]
+    identity_managed: bool
+
+
 class ContextFields(TypedDict):
     user_id: str
 
@@ -171,12 +178,12 @@ def accessible(call: AccessibleCall) -> JsonValue:
     case = CaseAccess(call, lister)
     agents = tuple(
         AGENT.validate_python(
-            {
-                "agent_id": agent["agent_id"],
-                "agent_name": agent["agent_id"],
-                "agent_card_params": {},
-                "identity_managed": agent["identity_managed"],
-            }
+            ListedAgent(
+                agent_id=agent["agent_id"],
+                agent_name=agent["agent_id"],
+                agent_card_params={},
+                identity_managed=agent["identity_managed"],
+            )
         )
         for agent in call["agents"]
     )
