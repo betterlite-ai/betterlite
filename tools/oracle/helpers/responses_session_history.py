@@ -1,6 +1,9 @@
 import asyncio
 import logging
-from typing import Final, TypedDict, TypeVar, overload
+from collections.abc import Callable
+from contextvars import Context
+from functools import partial
+from typing import Final, TypedDict, TypeVarTuple, Unpack
 
 import litellm
 from litellm.integrations.s3_v2 import S3Logger
@@ -14,7 +17,7 @@ from litellm.types.utils import Message
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
-ResultT = TypeVar("ResultT")
+ArgsT = TypeVarTuple("ArgsT")
 Completed = dict[str, JsonValue | list[JsonValue | Message]]
 
 PROXY_LOGGER: Final = logging.getLogger("LiteLLM Proxy")
@@ -77,7 +80,8 @@ class FakeColdStorage(S3Logger):
         self.recorded = effects
 
     @override
-    async def get_proxy_server_request_from_cold_storage_with_object_key(  # ast-grep-ignore: no-long-names
+    # ast-grep-ignore: no-long-names
+    async def get_proxy_server_request_from_cold_storage_with_object_key(
         self,
         object_key: str,
     ) -> dict[str, JsonValue] | None:
@@ -89,19 +93,22 @@ class FakeColdStorage(S3Logger):
         return None
 
 
-class FakeSleep:
+# asyncio.sleep waits through call_later, so the loop records each retry delay and fires at once
+class RecordingLoop(asyncio.SelectorEventLoop):
     def __init__(self, effects: Effects) -> None:
+        super().__init__()
         self.effects = effects
 
-    @overload
-    async def __call__(self, delay: float) -> None: ...
-
-    @overload
-    async def __call__(self, delay: float, result: ResultT) -> ResultT: ...
-
-    async def __call__(self, delay: float, result: ResultT | None = None) -> ResultT | None:
+    @override
+    def call_later(
+        self,
+        delay: float,
+        callback: Callable[[Unpack[ArgsT]], object],
+        *args: Unpack[ArgsT],
+        context: Context | None = None,
+    ) -> asyncio.TimerHandle:
         self.effects.sleeps.append(delay)
-        return result
+        return super().call_later(0, callback, *args, context=context)
 
 
 class DebugCapture(logging.Handler):
@@ -133,8 +140,8 @@ def run(input_value: Input) -> JsonValue:
     proxy_server.prisma_client = None
     if input_value["database"]:
         proxy_server.prisma_client = FakePrismaClient(FakeWrapper(input_value["replies"], effects))
-    asyncio.sleep = FakeSleep(effects)
-    merged = asyncio.run(merge(input_value))
+    with asyncio.Runner(loop_factory=partial(RecordingLoop, effects)) as runner:
+        merged = runner.run(merge(input_value))
     return {
         "queries": effects.queries,
         "reads": effects.reads,
