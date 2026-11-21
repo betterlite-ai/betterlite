@@ -270,7 +270,6 @@ impl ModelMetadata for FakeMetadata {
         request: &ParameterMappingRequest<'_>,
     ) -> Result<ParameterMapping, ParameterError> {
         let supported: Vec<_> = DEFAULT_CHAT_COMPLETION_PARAMS.split_whitespace().collect();
-        // a reserved control such as max_retries is spent by the call and never reaches a provider
         let mut kept = request.parameters.clone();
         kept.passthrough
             .retain(|name, _v| !RESERVED_PARAMETER_NAMES.contains(&name.as_str()));
@@ -847,10 +846,8 @@ impl AgenticCallback for CheckingCallback {
         &self,
         call: &AgenticCall<'_>,
     ) -> Result<AgenticGate, AgenticHookError> {
-        let message = call
-            .messages
-            .first()
-            .is_some_and(|message| message.0.get().contains("\"hi\""));
+        let first = call.messages.first();
+        let message = first.is_some_and(|message| message.0.get().contains("\"hi\""));
         let marker = call.kwargs.contains_key("agentic_marker");
         Ok(gate(message && marker && !call.stream))
     }
@@ -859,7 +856,10 @@ impl AgenticCallback for CheckingCallback {
         &self,
         call: &AgenticLoopCall<'_>,
     ) -> Result<Option<Box<RawValue>>, AgenticHookError> {
-        if !call.optional_params.contains_key("temperature") {
+        let leaked = call.optional_params.contains_key("model")
+            || call.optional_params.contains_key("messages")
+            || call.optional_params.contains_key("stream");
+        if !call.optional_params.contains_key("temperature") || leaked {
             return Ok(None);
         }
         Ok(Some(reply_of(&self.reply)))
