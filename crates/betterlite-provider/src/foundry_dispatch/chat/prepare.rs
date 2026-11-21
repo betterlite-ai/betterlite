@@ -260,7 +260,10 @@ fn header_map(headers: &Headers, extra: Option<&Headers>) -> Result<HeaderMap, P
     Ok(map)
 }
 
-fn encode(reason: impl Into<Box<dyn StdError + Send + Sync>>) -> PrepareError {
+fn encode<Reason>(reason: Reason) -> PrepareError
+where
+    Reason: Into<Box<dyn StdError + Send + Sync>>,
+{
     PrepareError::Encode {
         source: serde_json::Error::io(IoError::other(reason)),
     }

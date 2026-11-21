@@ -285,13 +285,12 @@ pub(super) struct ClaudeInputs {
 
 impl ClaudeInputs {
     pub(super) fn new() -> Self {
-        let user: PromptObject =
-            serde_json::from_str(r#"{"role":"user","content":"hi"}"#).expect("a message");
-        Self {
-            messages: vec![user],
-            key: Some(SecretString::from(KEY)),
-            ..Self::default()
-        }
+        let mut inputs = Self::default();
+        inputs
+            .messages
+            .push(serde_json::from_str(r#"{"role":"user","content":"hi"}"#).expect("a message"));
+        inputs.key = Some(SecretString::from(KEY));
+        inputs
     }
 
     pub(super) fn call(&self, style: Style, stream: bool) -> claude::Call<'_> {
