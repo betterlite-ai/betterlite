@@ -160,10 +160,8 @@ impl TokenReservations<'_> {
             .charge_token_bucket(otpm_descriptors, estimated_output_tokens)
             .await?;
         if otpm_response.overall_code == "OVER_LIMIT" {
-            if itpm_reserved > 0 {
-                self.refund_itpm_after_otpm_failure(itpm_descriptors, itpm_reserved, itpm_response)
-                    .await?;
-            }
+            self.refund_itpm_after_otpm_failure(itpm_descriptors, itpm_reserved, itpm_response)
+                .await?;
             return Ok(IoReservation {
                 response: otpm_response,
                 itpm_reserved: 0,
