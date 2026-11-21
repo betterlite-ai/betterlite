@@ -228,8 +228,10 @@ pub(super) async fn execute(
         body: RequestBody::Json(call.body.clone()),
         deadline: call.timeout,
     };
-    // litellm.module_level_client follows no redirect, so the deprecated path does not either
-    let response = client.send(outbound).await.map_err(OperationError::from)?;
+    let response = client
+        .send_following(outbound)
+        .await
+        .map_err(OperationError::from)?;
     let buffered = response
         .buffered(client.limits.body_bytes)
         .await

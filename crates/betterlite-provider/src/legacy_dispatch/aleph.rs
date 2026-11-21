@@ -132,8 +132,10 @@ pub(super) async fn execute(
         body: RequestBody::Json(body),
         deadline: call.timeout,
     };
-    // litellm.module_level_client follows no redirect, so the deprecated path does not either
-    let response = client.send(outbound).await.map_err(OperationError::from)?;
+    let response = client
+        .send_following(outbound)
+        .await
+        .map_err(OperationError::from)?;
     let buffered = response
         .buffered(client.limits.body_bytes)
         .await
@@ -148,7 +150,7 @@ pub(super) fn decode(call: &Call, upstream: Upstream) -> Result<OperationResult,
             operation: String::from("stream"),
         });
     };
-    let checked = success(response)?;
+    let checked = success(response).map_err(error::aleph_failure)?;
     let choices = decode_aleph_reply(checked.status, &checked.body).map_err(error::aleph)?;
     let tokenizer = aleph_tokenizer()?;
     let usage = resolve_usage(&call.request.prompt, &choices, &tokenizer).map_err(error::aleph)?;

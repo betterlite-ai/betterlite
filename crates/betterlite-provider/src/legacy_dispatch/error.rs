@@ -1,7 +1,11 @@
 use std::io::Error as IoError;
 
+use betterlite_error::native_errors_b::aleph_alpha::{
+    AlephAlphaExceptionInput, map_aleph_alpha_exception,
+};
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_openai::aleph_alpha::error::AlephAlphaError;
+use betterlite_openai::aleph_alpha::reply::decode_aleph_reply;
 use http::HeaderMap;
 use serde_json::Error as JsonError;
 use thiserror::Error;
@@ -61,19 +65,31 @@ pub(super) fn operation(error: LegacyError) -> OperationError {
     }
 }
 
-// Aleph Alpha keeps the status its reply arrived with, and the transport errors keep their own class
+// LiteLLM maps every aleph_alpha failure through _map_aleph_alpha_exception before the proxy renders it
+fn mapped_provider(status_code: u16, message: String, headers: HeaderMap) -> OperationError {
+    let error_str = message.as_str();
+    let mapped = map_aleph_alpha_exception(&AlephAlphaExceptionInput {
+        model: String::new(),
+        error_str: error_str.to_owned(),
+        status_code: Some(status_code),
+        message: None,
+    });
+    OperationError::Provider {
+        response: Box::new(UpstreamResponse {
+            status: mapped.map_or(status_code, |class| class.metadata().status_code),
+            headers,
+            body: message.into_bytes(),
+        }),
+    }
+}
+
+// the reply-level failures take the same mapping, and the transport errors keep their own class
 pub(super) fn aleph(error: AlephAlphaError) -> OperationError {
     match error {
         AlephAlphaError::Provider {
             status_code,
             message,
-        } => OperationError::Provider {
-            response: Box::new(UpstreamResponse {
-                status: status_code,
-                headers: HeaderMap::new(),
-                body: message.into_bytes(),
-            }),
-        },
+        } => mapped_provider(status_code, message, HeaderMap::new()),
         AlephAlphaError::Header { name, source } => OperationError::InvalidHeader {
             name: name.to_owned(),
             source,
@@ -88,4 +104,22 @@ pub(super) fn aleph(error: AlephAlphaError) -> OperationError {
         | AlephAlphaError::Tokenize { .. }
         | AlephAlphaError::LineTooLong { .. }) => undecodable(other.to_string()),
     }
+}
+
+// a non-2xx reply becomes the AlephAlphaError LiteLLM raises from that reply, then takes the same mapping
+pub(super) fn aleph_failure(error: OperationError) -> OperationError {
+    let OperationError::Provider { response } = error else {
+        return error;
+    };
+    let UpstreamResponse {
+        status,
+        headers,
+        body,
+    } = *response;
+    let message = match decode_aleph_reply(status, &body) {
+        Err(AlephAlphaError::Provider { message, .. }) => message,
+        Err(other) => other.to_string(),
+        Ok(_) => String::from_utf8_lossy(&body).into_owned(),
+    };
+    mapped_provider(status, message, headers)
 }

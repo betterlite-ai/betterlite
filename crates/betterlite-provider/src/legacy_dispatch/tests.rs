@@ -20,7 +20,7 @@ use http::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderName};
 use rstest::rstest;
 use secrecy::SecretString;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 use url::Url;
 
 use super::custom::{self, CustomChatMethod, custom_chat_llm_router, decode_custom_output};
@@ -540,7 +540,7 @@ fn the_aleph_reply_becomes_the_synthetic_chat_completion() {
 }
 
 #[test]
-fn an_aleph_error_body_keeps_its_provider_status() {
+fn an_aleph_error_body_is_mapped_like_a_provider_failure() {
     let request = chat_operation(br#"{"messages":[{"role":"user","content":"hi"}]}"#, false);
     let deployment = deployment(
         "luminous-base",
@@ -552,7 +552,42 @@ fn an_aleph_error_body_keeps_its_provider_status() {
     let OperationError::Provider { response } = refused else {
         panic!("an error body is a provider error");
     };
+    // no status branch matches a 200 reply, so LiteLLM's outer connection error answers 500
+    assert_eq!(response.status, 500);
     assert_eq!(response.body, b"boom");
+}
+
+#[rstest]
+#[case::authentication(401, "Incorrect API key provided", 401)]
+#[case::invalid_token(401, "InvalidToken supplied", 401)]
+#[case::no_token_provided(401, "No token provided", 401)]
+#[case::bad_request(400, "bad request", 400)]
+#[case::rate_limited(429, "slow down", 429)]
+#[case::service_unavailable(500, "The server had an error", 503)]
+#[case::unmatched_status(404, "no such page", 500)]
+#[case::context_window(500, "This is longer than the model's maximum context length", 500)]
+fn an_aleph_failure_is_mapped_the_way_litellm_maps_it(
+    #[case] upstream_status: u16,
+    #[case] text: &str,
+    #[case] client_status: u16,
+) {
+    let request = chat_operation(br#"{"messages":[{"role":"user","content":"hi"}]}"#, false);
+    let deployment = deployment(
+        "luminous-base",
+        "https://api.aleph-alpha.com/complete",
+        Some("aleph-key"),
+    );
+    let call = aleph::prepare(&request, &deployment).unwrap();
+    let body = format!("{{\"error\":\"{text}\"}}");
+    let refused = error_of(aleph::decode(
+        &call,
+        buffered(upstream_status, body.as_bytes()),
+    ));
+    let OperationError::Provider { response } = refused else {
+        panic!("a failed aleph reply is a provider error");
+    };
+    assert_eq!(response.status, client_status);
+    assert_eq!(response.body, text.as_bytes());
 }
 
 #[test]
@@ -844,8 +879,40 @@ async fn a_proxy_call_keeps_a_buffered_answer_buffered_and_a_stream_streamed(
     assert!(served.starts_with("POST /chat/completions "), "{served}");
 }
 
-async fn serve_json(listener: TcpListener) -> String {
-    let (mut socket, _) = listener.accept().await.unwrap();
+#[rstest]
+#[case::aleph(
+    Legacy::AlephAlpha,
+    r#"{"completions":[{"completion":"Paris.","finish_reason":"stop"}]}"#
+)]
+#[case::custom(Legacy::Custom, r#"{"data":[{"output":["Paris."]}]}"#)]
+#[tokio::test]
+async fn a_legacy_post_follows_a_redirect_to_the_next_answer(
+    #[case] legacy: Legacy,
+    #[case] final_body: &str,
+) {
+    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap();
+    let client = ProxiedClient::outbound(&Arc::new(policy)).unwrap();
+    let request = chat_operation(br#"{"messages":[{"role":"user","content":"hi"}]}"#, false);
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let base = format!("http://127.0.0.1:{port}/start");
+    let deployment = deployment("model-name", &base, Some("test-key"));
+    let prepared = legacy.prepare(&request, &deployment, &catalog()).unwrap();
+    let (served, answered) = tokio::join!(
+        serve_redirect(listener, final_body),
+        legacy.execute(&client, &prepared, &deployment)
+    );
+    let Upstream::Buffered(answer) = answered.unwrap() else {
+        panic!("a legacy post answers buffered");
+    };
+    assert_eq!(answer.status, 200);
+    assert_eq!(answer.body, final_body.as_bytes());
+    assert!(served[0].starts_with("POST /start "), "{}", served[0]);
+    // a 307 repeats the post on the next hop, which is how httpx follows a legacy base
+    assert!(served[1].starts_with("POST /next "), "{}", served[1]);
+}
+
+async fn read_request(socket: &mut TcpStream) -> String {
     let mut received = Vec::new();
     while !received.ends_with(b"\r\n\r\n") {
         received.push(socket.read_u8().await.unwrap());
@@ -857,10 +924,34 @@ async fn serve_json(listener: TcpListener) -> String {
         .map_or(0, |value| value.parse().unwrap());
     let mut sent = vec![0_u8; length];
     socket.read_exact(&mut sent).await.unwrap();
+    head
+}
+
+async fn serve_json(listener: TcpListener) -> String {
+    let (mut socket, _) = listener.accept().await.unwrap();
+    let head = read_request(&mut socket).await;
     let reply = "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{}";
     socket.write_all(reply.as_bytes()).await.unwrap();
     socket.shutdown().await.unwrap();
     head
+}
+
+async fn serve_redirect(listener: TcpListener, final_body: &str) -> Vec<String> {
+    let mut requests = Vec::new();
+    let (mut socket, _) = listener.accept().await.unwrap();
+    requests.push(read_request(&mut socket).await);
+    let redirect = "HTTP/1.1 307 Temporary Redirect\r\nlocation: /next\r\ncontent-length: 0\r\nconnection: close\r\n\r\n";
+    socket.write_all(redirect.as_bytes()).await.unwrap();
+    socket.shutdown().await.unwrap();
+    let (mut next, _) = listener.accept().await.unwrap();
+    requests.push(read_request(&mut next).await);
+    let reply = format!(
+        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{final_body}",
+        final_body.len()
+    );
+    next.write_all(reply.as_bytes()).await.unwrap();
+    next.shutdown().await.unwrap();
+    requests
 }
 
 #[test]
