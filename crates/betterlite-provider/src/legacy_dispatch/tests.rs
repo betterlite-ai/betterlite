@@ -500,7 +500,7 @@ fn the_aleph_body_carries_the_call_parameters() {
         Some(&serde_json::Value::Number(serde_json::Number::from(7_u64)))
     );
     assert_eq!(body.get("stream"), Some(&serde_json::Value::Bool(false)));
-    assert_eq!(body.get("max_retries"), Some(&serde_json::json!(0)));
+    assert_eq!(body.get("max_retries"), Some(&serde_json::json!(0_i64)));
 }
 
 #[test]

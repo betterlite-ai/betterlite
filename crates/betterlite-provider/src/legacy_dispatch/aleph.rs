@@ -72,7 +72,10 @@ fn chat_call(chat: &ChatOperation, deployment: &Deployment) -> Result<Call, Oper
     let mut optional_params = optional_params(params)?;
     // LiteLLM zeroes max_retries on a router call and passes stream, and the handler forwards both
     optional_params.insert(String::from("stream"), serde_json::Value::Bool(false));
-    optional_params.insert(String::from("max_retries"), serde_json::Value::from(0_u64));
+    optional_params.insert(
+        String::from("max_retries"),
+        serde_json::Value::Number(serde_json::Number::from(0_u64)),
+    );
     let config = AlephAlphaConfig::new(ALEPH_MAX_TOKENS, Object::new()).map_err(|error| {
         OperationError::from(error::LegacyError::Settings {
             message: error.to_string(),
