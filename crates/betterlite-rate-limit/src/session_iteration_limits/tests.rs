@@ -12,6 +12,7 @@ use rstest::rstest;
 use self::support::FakeCache;
 use self::support::LIMIT_FIVE;
 use self::support::LIMIT_FLOAT;
+use self::support::LIMIT_HUGE;
 use self::support::LIMIT_INVALID;
 use self::support::LIMIT_LIST;
 use self::support::LIMIT_NULL;
@@ -19,7 +20,9 @@ use self::support::LIMIT_ONE;
 use self::support::LIMIT_TEXT;
 use self::support::LIMIT_TRUE;
 use self::support::LIMIT_TWO;
+use self::support::LIMIT_ZERO;
 use self::support::NO_LIMIT;
+use self::support::NO_PARAMS;
 use self::support::agent_key;
 use self::support::agent_registry_with;
 use self::support::expected_detail;
@@ -64,6 +67,23 @@ async fn missing_max_iterations() {
 
     assert_eq!(handler.cache.memory(&memory_key("s1")), None);
     assert!(handler.cache.memory_keys().is_empty());
+}
+
+#[tokio::test]
+async fn zero_limit_rejects_the_first_call() {
+    let cache = FakeCache::without_redis();
+    let handler = iteration_handler(cache);
+    let registry = agent_registry_with(&[LIMIT_ZERO]);
+    let data = session_data("s1");
+
+    let error = rejection(
+        handler
+            .async_pre_call_hook(&registry, None, agent_key(), &data)
+            .await
+            .unwrap_err(),
+    );
+
+    assert_eq!(error.detail, Payload::String(expected_detail("s1", 1, 0)));
 }
 
 #[tokio::test]
@@ -209,6 +229,29 @@ async fn agent_params_wins_over_metadata() {
 }
 
 #[tokio::test]
+async fn unregistered_agent_falls_back_to_key_metadata() {
+    let cache = FakeCache::without_redis();
+    cache.preload_memory(&memory_key("s1"), 1);
+    let handler = iteration_handler(cache);
+    let registry = agent_registry_with(&[]);
+    let metadata = key_metadata(r#"{"max_iterations":1}"#);
+    let key = KeyIterations {
+        agent_id: Some(support::AGENT_ID),
+        metadata: Some(&metadata),
+    };
+    let data = session_data("s1");
+
+    let error = rejection(
+        handler
+            .async_pre_call_hook(&registry, None, key, &data)
+            .await
+            .unwrap_err(),
+    );
+
+    assert_eq!(error.detail, Payload::String(expected_detail("s1", 2, 1)));
+}
+
+#[tokio::test]
 async fn cache_key_uses_hash_tag() {
     let cache = FakeCache::without_redis();
     let handler = iteration_handler(cache);
@@ -260,6 +303,7 @@ async fn ttl_expires_counter() {
 #[rstest]
 #[case::absent_value(LIMIT_NULL)]
 #[case::absent_entry(NO_LIMIT)]
+#[case::absent_params(NO_PARAMS)]
 #[tokio::test]
 async fn agent_without_a_limit_falls_back_to_key_metadata(#[case] record: &str) {
     let cache = FakeCache::without_redis();
@@ -339,6 +383,26 @@ async fn key_metadata_coerce_like_int(#[case] text: &str, #[case] limit: i64) {
     );
 }
 
+#[tokio::test]
+async fn null_key_max_iterations_reads_as_absent() {
+    let cache = FakeCache::without_redis();
+    let handler = iteration_handler(cache);
+    let registry = agent_registry_with(&[NO_LIMIT]);
+    let metadata = key_metadata(r#"{"max_iterations":null}"#);
+    let key = KeyIterations {
+        agent_id: Some(support::AGENT_ID),
+        metadata: Some(&metadata),
+    };
+    let data = session_data("s1");
+
+    handler
+        .async_pre_call_hook(&registry, None, key, &data)
+        .await
+        .unwrap();
+
+    assert!(handler.cache.memory_keys().is_empty());
+}
+
 #[rstest]
 #[case::text(LIMIT_INVALID)]
 #[case::list(LIMIT_LIST)]
@@ -384,6 +448,46 @@ async fn invalid_key_max_iterations_is_a_typed_error() {
 }
 
 #[tokio::test]
+async fn max_iterations_beyond_i64_is_a_typed_error() {
+    let cache = FakeCache::without_redis();
+    let handler = iteration_handler(cache);
+    let registry = agent_registry_with(&[LIMIT_HUGE]);
+    let data = session_data("s1");
+
+    let error = handler
+        .async_pre_call_hook(&registry, None, agent_key(), &data)
+        .await
+        .unwrap_err();
+
+    let SessionIterationLimitError::InvalidAgentIterations { .. } = error else {
+        panic!("expected an invalid agent max_iterations");
+    };
+    assert!(handler.cache.memory_keys().is_empty());
+}
+
+#[tokio::test]
+async fn key_max_iterations_beyond_i64_is_a_typed_error() {
+    let cache = FakeCache::without_redis();
+    let handler = iteration_handler(cache);
+    let registry = agent_registry_with(&[NO_LIMIT]);
+    let metadata = key_metadata(r#"{"max_iterations":9223372036854775808}"#);
+    let key = KeyIterations {
+        agent_id: Some(support::AGENT_ID),
+        metadata: Some(&metadata),
+    };
+    let data = session_data("s1");
+
+    let error = handler
+        .async_pre_call_hook(&registry, None, key, &data)
+        .await
+        .unwrap_err();
+
+    let SessionIterationLimitError::InvalidKeyIterations = error else {
+        panic!("expected an invalid key max_iterations");
+    };
+}
+
+#[tokio::test]
 async fn non_text_session_id_reads_as_absent() {
     let cache = FakeCache::without_redis();
     let handler = iteration_handler(cache);
@@ -404,6 +508,39 @@ async fn session_id_falls_back_to_litellm_metadata() {
     let handler = iteration_handler(cache);
     let registry = agent_registry_with(&[LIMIT_TWO]);
     let data = json(r#"{"model":"gpt-4o","litellm_metadata":{"session_id":"s1"}}"#);
+
+    handler
+        .async_pre_call_hook(&registry, None, agent_key(), &data)
+        .await
+        .unwrap();
+
+    assert_eq!(handler.cache.memory(&memory_key("s1")), Some(1));
+}
+
+#[tokio::test]
+async fn session_id_metadata_wins_over_litellm_metadata() {
+    let cache = FakeCache::without_redis();
+    let handler = iteration_handler(cache);
+    let registry = agent_registry_with(&[LIMIT_TWO]);
+    let data = json(
+        r#"{"model":"gpt-4o","metadata":{"session_id":"first"},"litellm_metadata":{"session_id":"second"}}"#,
+    );
+
+    handler
+        .async_pre_call_hook(&registry, None, agent_key(), &data)
+        .await
+        .unwrap();
+
+    assert_eq!(handler.cache.memory(&memory_key("first")), Some(1));
+    assert_eq!(handler.cache.memory(&memory_key("second")), None);
+}
+
+#[tokio::test]
+async fn text_metadata_bucket_reads_as_absent() {
+    let cache = FakeCache::without_redis();
+    let handler = iteration_handler(cache);
+    let registry = agent_registry_with(&[LIMIT_TWO]);
+    let data = json(r#"{"model":"gpt-4o","metadata":"s1","litellm_metadata":{"session_id":"s1"}}"#);
 
     handler
         .async_pre_call_hook(&registry, None, agent_key(), &data)

@@ -33,7 +33,11 @@ pub(crate) const LIMIT_FLOAT: &str = r#"{"agent_id":"agent-1","agent_name":"alph
 pub(crate) const LIMIT_NULL: &str = r#"{"agent_id":"agent-1","agent_name":"alpha","agent_card_params":{"model":"gpt-4o"},"litellm_params":{"max_iterations":null}}"#;
 pub(crate) const LIMIT_INVALID: &str = r#"{"agent_id":"agent-1","agent_name":"alpha","agent_card_params":{"model":"gpt-4o"},"litellm_params":{"max_iterations":"soon"}}"#;
 pub(crate) const LIMIT_LIST: &str = r#"{"agent_id":"agent-1","agent_name":"alpha","agent_card_params":{"model":"gpt-4o"},"litellm_params":{"max_iterations":[]}}"#;
+pub(crate) const LIMIT_HUGE: &str = r#"{"agent_id":"agent-1","agent_name":"alpha","agent_card_params":{"model":"gpt-4o"},"litellm_params":{"max_iterations":9223372036854775808}}"#;
+pub(crate) const LIMIT_ZERO: &str = r#"{"agent_id":"agent-1","agent_name":"alpha","agent_card_params":{"model":"gpt-4o"},"litellm_params":{"max_iterations":0}}"#;
 pub(crate) const NO_LIMIT: &str = r#"{"agent_id":"agent-1","agent_name":"alpha","agent_card_params":{"model":"gpt-4o"},"litellm_params":{"other":true}}"#;
+pub(crate) const NO_PARAMS: &str =
+    r#"{"agent_id":"agent-1","agent_name":"alpha","agent_card_params":{"model":"gpt-4o"}}"#;
 
 #[derive(Debug, Error)]
 #[error("the fake cache failed")]
