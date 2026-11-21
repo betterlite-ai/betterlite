@@ -68,15 +68,19 @@ struct World {
 }
 
 impl World {
-    fn assemble(input: &Input, fit: ContextFit, choice: Option<CacheAwareChoice>) -> Self {
+    fn assemble(
+        input: &Input,
+        context_fit: ContextFit,
+        prediction: Option<CacheAwareChoice>,
+    ) -> Self {
         Self {
             config: config(input),
             labels: labels(&input.tier_labels),
             params: ProbeParams {
                 entries: params_map(input),
             },
-            fit,
-            choice,
+            fit: context_fit,
+            choice: prediction,
             delay: Duration::from_millis(input.chooser_delay_ms),
         }
     }
