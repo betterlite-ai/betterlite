@@ -9,6 +9,7 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use chrono::{DateTime, TimeDelta, Utc};
+use tokio::task::yield_now;
 use tracing::Level;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::{MakeWriter, fmt};
@@ -229,7 +230,7 @@ impl FakeStore {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(new.clone());
-        tokio::task::yield_now().await;
+        yield_now().await;
         self.in_flight.fetch_sub(1, Ordering::SeqCst);
         if failed { None } else { Some(stored) }
     }

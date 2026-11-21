@@ -74,9 +74,17 @@ fn index_skips_a_deployment_without_a_usable_model_param() {
 #[test]
 fn index_treats_a_non_text_or_empty_model_id_as_missing() {
     let deployments = vec![
-        deployment_json("number", "p1", Some(Json::Number(Number::from(7_u8)))),
-        deployment_json("empty", "p2", Some(Json::Text(String::new()))),
-        deployment_json("null", "p3", Some(Json::Null)),
+        deployment_json(
+            "number",
+            Json::Text(String::from("p1")),
+            Some(Json::Number(Number::from(7_u8))),
+        ),
+        deployment_json(
+            "empty",
+            Json::Text(String::from("p2")),
+            Some(Json::Text(String::new())),
+        ),
+        deployment_json("null", Json::Text(String::from("p3")), Some(Json::Null)),
         deployment("absent", "p4", None),
         deployment("text", "p5", Some("dep-1")),
     ];

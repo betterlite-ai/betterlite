@@ -31,7 +31,7 @@ fn configured_url() -> Option<SecretString> {
 
 fn pool(url: &SecretString) -> Pool {
     let mut config: tokio_postgres::Config = url.expose_secret().parse().unwrap();
-    config.options(&format!("-csearch_path={SCHEMA}"));
+    config.options(format!("-csearch_path={SCHEMA}"));
     let manager = Manager::new(config, NoTls);
     Pool::builder(manager).max_size(4).build().unwrap()
 }

@@ -9,6 +9,7 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use chrono::{DateTime, TimeDelta, Utc};
+use futures_util::future::join_all;
 use indexmap::IndexMap;
 use writes::{elapsed_ms, endpoint_status, latest_by_key};
 
@@ -210,7 +211,7 @@ where
         });
     }
     let writes = pending.iter().map(|new| rows.persist_result(new));
-    let saved = futures_util::future::join_all(writes).await;
+    let saved = join_all(writes).await;
     saved.iter().all(Option::is_some)
 }
 
