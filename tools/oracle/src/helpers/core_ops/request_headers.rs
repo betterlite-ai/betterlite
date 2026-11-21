@@ -194,7 +194,7 @@ fn metadata_value(call: &MetadataCall) -> Value {
 fn otel_value(call: &OtelCall) -> Value {
     let mut data = call.data.clone();
     let span = call.span.as_ref().map(|span| SpanContext {
-        trace_id: span.trace_id,
+        trace_id: u128::from(span.trace_id),
         is_valid: span.trace_id != 0 && span.span_id != 0,
     });
     add_otel_trace_id(&mut data, slot(&call.slot), span);

@@ -63,7 +63,7 @@ pub(crate) struct MetadataCall {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct Span {
-    pub(super) trace_id: u128,
+    pub(super) trace_id: u64,
     pub(super) span_id: u64,
 }
 

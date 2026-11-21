@@ -1,0 +1,46 @@
+kind: helper
+name: request-headers-seed
+call:
+  request_headers:
+    clean:
+      - headers: [[Authorization, Bearer sk-1], [x-api-key, k], [X-Custom, v]]
+        litellm_key_header_name: x-my-key
+        forward_llm_provider_auth_headers: true
+        authenticated_with_header: authorization
+    backend:
+      - headers: [[x-litellm-timeout, "9"], [x-custom, one]]
+        request_data: {model: gpt-4o}
+        principal: {spend: 1.5}
+        general_settings: {forward_client_headers_to_llm_api: true, forward_openai_org_id: false}
+        add_user_information: false
+    model_group:
+      - data: {model: gpt-4o}
+        headers: [[x-custom, one]]
+        principal: {spend: 1.5}
+        team_model_aliases: {}
+        models: [gpt-4o]
+        add_user_information: false
+    metadata:
+      - headers: [[traceparent, 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01]]
+        data: {metadata: {}}
+        slot: metadata
+    otel_trace_id:
+      - data: {metadata: {}}
+        slot: metadata
+        span: {trace_id: 42, span_id: 7}
+    traceparent:
+      - data: {}
+        headers: [[traceparent, 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01]]
+        forward: true
+        otel_enabled: true
+    user:
+      - headers: [[x-user, ada]]
+        general_settings:
+          user_header_name: x-user
+          user_header_mappings: [{header_name: x-user, litellm_user_role: internal_user}]
+        principal_user_id: null
+    provider:
+      - [[anthropic-version, "2023-06-01"]]
+    cache_control: [max-age=60, no-store]
+env: {}
+compare: {ignore: []}
