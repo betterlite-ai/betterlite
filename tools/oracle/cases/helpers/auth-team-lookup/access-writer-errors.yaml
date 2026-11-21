@@ -1,0 +1,104 @@
+kind: helper
+name: auth-team-lookup-access-writer-errors
+call:
+  auth_team_lookup:
+    row: access_cache_hit
+    function: access
+    target: g1
+    flags: []
+    in_memory_ttl: 5
+    throttled_at: null
+    cached_teams: {}
+    cached_groups: {"access_group_id:g1": {access_group_id: g1, access_group_name: cached}}
+    teams: []
+    groups: [{access_group_id: g1, access_group_name: group one}]
+    permissions: []
+    created: null
+    steps: [{now: 100, fail: []}]
+calls:
+  - auth_team_lookup:
+      row: access_writer_skips_cache
+      function: access
+      target: g1
+      flags: [db_only]
+      in_memory_ttl: 5
+      throttled_at: null
+      cached_teams: {}
+      cached_groups: {"access_group_id:g1": {access_group_id: g1, access_group_name: cached}}
+      teams: []
+      groups: [{access_group_id: g1, access_group_name: group one}]
+      permissions: []
+      created: null
+      steps: [{now: 100, fail: []}, {now: 101, fail: []}]
+  - auth_team_lookup:
+      row: access_missing_404
+      function: access
+      target: g1
+      flags: []
+      in_memory_ttl: 5
+      throttled_at: null
+      cached_teams: {}
+      cached_groups: {}
+      teams: []
+      groups: [{access_group_id: g2, access_group_name: group two}]
+      permissions: []
+      created: null
+      steps: [{now: 100, fail: []}]
+  - auth_team_lookup:
+      row: access_read_failure_404
+      function: access
+      target: g1
+      flags: []
+      in_memory_ttl: 5
+      throttled_at: null
+      cached_teams: {}
+      cached_groups: {}
+      teams: []
+      groups: [{access_group_id: g1, access_group_name: group one}]
+      permissions: []
+      created: null
+      steps: [{now: 100, fail: [litellm_accessgrouptable]}, {now: 101, fail: ["write access_group_id:g1"]}]
+  - auth_team_lookup:
+      row: access_writer_failure_503
+      function: access
+      target: g1
+      flags: [db_only]
+      in_memory_ttl: 5
+      throttled_at: null
+      cached_teams: {}
+      cached_groups: {}
+      teams: []
+      groups: [{access_group_id: g1, access_group_name: group one}]
+      permissions: []
+      created: null
+      steps: [{now: 100, fail: [litellm_accessgrouptable]}, {now: 101, fail: ["write access_group_id:g1"]}]
+  - auth_team_lookup:
+      row: access_http_error_preserved
+      function: access
+      target: g1
+      flags: [db_only]
+      in_memory_ttl: 5
+      throttled_at: null
+      cached_teams: {}
+      cached_groups: {}
+      teams: []
+      groups: []
+      permissions: []
+      created: null
+      steps: [{now: 100, fail: []}]
+  - auth_team_lookup:
+      row: access_no_database
+      function: access
+      target: g1
+      flags: [no_database]
+      in_memory_ttl: 5
+      throttled_at: null
+      cached_teams: {}
+      cached_groups: {"access_group_id:g1": {access_group_id: g1, access_group_name: cached}}
+      teams: []
+      groups: []
+      permissions: []
+      created: null
+      steps: [{now: 100, fail: []}]
+env: {}
+compare: {ignore: []}
