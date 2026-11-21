@@ -45,33 +45,22 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let deployments = self
-            .model_list
-            .into_iter()
-            .enumerate()
-            .map(|(index, deployment)| {
-                deployment
-                    .litellm_params
-                    .resolve(&format!("model_list.{index}.litellm_params"), lookup)
-            })
-            .collect::<Result<Box<[_]>, _>>()?;
-        Ok(Settings { deployments })
-    }
-}
-
-impl Params {
-    fn resolve<L>(self, path: &str, lookup: &L) -> Result<S3Location, ConfigError>
-    where
-        L: EnvironmentLookup,
-    {
-        let resolve = |value: Option<String>, key: &str| {
+        let resolve = |value: Option<String>, index: usize, key: &str| {
+            let path = format!("model_list.{index}.litellm_params.{key}");
             value
-                .map(|text| resolve_string(text, &format!("{path}.{key}"), lookup))
+                .map(|text| resolve_string(text, &path, lookup))
                 .transpose()
         };
-        Ok(S3Location {
-            region_name: resolve(self.s3_region_name, REGION_NAME_PARAM)?,
-            endpoint_url: resolve(self.s3_endpoint_url, ENDPOINT_URL_PARAM)?,
+        let mut deployments = Vec::with_capacity(self.model_list.len());
+        for (index, deployment) in self.model_list.into_iter().enumerate() {
+            let params = deployment.litellm_params;
+            deployments.push(S3Location {
+                region_name: resolve(params.s3_region_name, index, REGION_NAME_PARAM)?,
+                endpoint_url: resolve(params.s3_endpoint_url, index, ENDPOINT_URL_PARAM)?,
+            });
+        }
+        Ok(Settings {
+            deployments: deployments.into_boxed_slice(),
         })
     }
 }

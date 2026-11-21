@@ -286,17 +286,32 @@ fn s3_pair_skips_the_chain(first: &AwsSignedRequest) {
     assert_eq!(authorization(&counted), authorization(first));
 }
 
-fn secret_failures() -> [S3SigningError; 3] {
-    let secret_pair =
-        r#"{"s3_access_key_id": "AKIDLEAK", "s3_secret_access_key": "leaked-secret-value"}"#;
-    let invalid_url = Upload {
-        params: secret_pair,
-        content: "x",
-        api_base: "not a url",
-        key: Some("kms-secret-key"),
-    };
-    let failure = sign_with(invalid_url, chain_credentials).unwrap_err();
+const LEAK_PAIR: &str =
+    r#"{"s3_access_key_id": "AKIDLEAK", "s3_secret_access_key": "leaked-secret-value"}"#;
+const LEAK_UPLOAD: Upload<'static> = Upload {
+    params: LEAK_PAIR,
+    content: "x",
+    api_base: "not a url",
+    key: Some("kms-secret-key"),
+};
+
+fn error_chain(error: &S3SigningError) -> String {
+    let mut parts = vec![format!("{error} {error:?}")];
+    let mut source = error.source();
+    while let Some(cause) = source {
+        parts.push(format!("{cause} {cause:?}"));
+        source = cause.source();
+    }
+    parts.join(" ")
+}
+
+fn unsignable_url() -> String {
+    let failure = sign_with(LEAK_UPLOAD, chain_credentials).unwrap_err();
     assert!(matches!(failure, S3SigningError::Sign(_)));
+    error_chain(&failure)
+}
+
+fn failed_lookup() -> String {
     let failing_chain = |_settings: &AwsSettings, _region: &str| {
         ready(Err::<Credentials, CredentialError>(
             CredentialError::Source(SourceError::MissingProvider),
@@ -304,48 +319,41 @@ fn secret_failures() -> [S3SigningError; 3] {
     };
     let chain_params =
         r#"{"aws_access_key_id": "AKIDLEAK", "aws_secret_access_key": "leaked-secret-value"}"#;
-    let lookup = sign_with(
-        Upload {
-            params: chain_params,
-            ..invalid_url
-        },
-        failing_chain,
-    )
-    .unwrap_err();
+    let upload = Upload {
+        params: chain_params,
+        ..LEAK_UPLOAD
+    };
+    let lookup = sign_with(upload, failing_chain).unwrap_err();
     assert_eq!(lookup.to_string(), "the AWS credential lookup failed");
-    let wrong_params = r#"{"s3_secret_access_key": ["leaked-secret-value"]}"#;
-    let wrong_type = sign_with(
-        Upload {
-            params: wrong_params,
-            ..invalid_url
-        },
-        chain_credentials,
-    )
-    .unwrap_err();
-    assert!(wrong_type.to_string().starts_with("s3_secret_access_key: "));
-    [failure, lookup, wrong_type]
+    error_chain(&lookup)
 }
 
-#[test]
-fn bedrock_services_s3_signing_secret_safe_failure() {
-    for error in secret_failures() {
-        let mut parts = vec![format!("{error} {error:?}")];
-        let mut source = error.source();
-        while let Some(cause) = source {
-            parts.push(format!("{cause} {cause:?}"));
-            source = cause.source();
-        }
-        let rendered = parts.join(" ");
-        for secret in ["AKIDLEAK", "leaked-secret-value", "kms-secret-key"] {
-            assert!(!rendered.contains(secret), "{secret} leaked in {rendered}");
-        }
-    }
-    let leak_pair =
-        r#"{"s3_access_key_id": "AKIDLEAK", "s3_secret_access_key": "leaked-secret-value"}"#;
-    let signed = sign(leak_pair, "x");
-    let debug = format!("{signed:?}");
-    assert!(
-        !debug.contains("AKIDLEAK") && !debug.contains("Signature="),
-        "{debug}"
-    );
+fn wrong_secret_type() -> String {
+    let upload = Upload {
+        params: r#"{"s3_secret_access_key": ["leaked-secret-value"]}"#,
+        ..LEAK_UPLOAD
+    };
+    let wrong_type = sign_with(upload, chain_credentials).unwrap_err();
+    assert!(wrong_type.to_string().starts_with("s3_secret_access_key: "));
+    error_chain(&wrong_type)
+}
+
+fn signed_request_debug() -> String {
+    let debug = format!("{:?}", sign(LEAK_PAIR, "x"));
+    assert!(!debug.contains("Signature="), "{debug}");
+    debug
+}
+
+#[rstest::rstest]
+#[case::unsignable_url(unsignable_url)]
+#[case::failed_lookup(failed_lookup)]
+#[case::wrong_secret_type(wrong_secret_type)]
+#[case::signed_request_debug(signed_request_debug)]
+fn bedrock_services_s3_signing_secret_safe_failure(#[case] rendered: fn() -> String) {
+    let text = rendered();
+    let leaked: Vec<&str> = ["AKIDLEAK", "leaked-secret-value", "kms-secret-key"]
+        .into_iter()
+        .filter(|secret| text.contains(secret))
+        .collect();
+    assert!(leaked.is_empty(), "{leaked:?} leaked in {text}");
 }

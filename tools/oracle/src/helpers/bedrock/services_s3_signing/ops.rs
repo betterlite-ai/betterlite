@@ -62,23 +62,16 @@ pub(super) fn run(input: &Input) -> HelperResult {
 }
 
 fn file_responses(input: &Input) -> HelperResult {
-    let files = input
-        .responses
-        .iter()
-        .map(|response| {
-            file_reply(
-                &to_params(&response.litellm_params),
-                &response.headers,
-                response.now,
-            )
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let errors = input
-        .errors
-        .iter()
-        .map(error_class)
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(json!({"results": files, "errors": errors}))
+    let mut files = Vec::new();
+    for response in &input.responses {
+        files.push(file_reply(
+            &response.litellm_params,
+            &response.headers,
+            response.now,
+        )?);
+    }
+    let errors: Result<Vec<_>, _> = input.errors.iter().map(error_class).collect();
+    Ok(json!({"results": files, "errors": errors?}))
 }
 
 fn to_params(map: &Map<String, Value>) -> Params {
@@ -127,8 +120,8 @@ fn object_name(file: &ObjectFile) -> HelperResult {
     })
 }
 
-fn file_reply(params: &Params, headers: &[(String, String)], now: i64) -> HelperResult {
-    match transform_create_file_response(params, headers, now) {
+fn file_reply(params: &Map<String, Value>, headers: &[(String, String)], now: i64) -> HelperResult {
+    match transform_create_file_response(&to_params(params), headers, now) {
         Ok(file) => {
             Ok(json!({"failed": false, "file": serde_json::to_value(file).or_value_error()?}))
         }
@@ -138,15 +131,9 @@ fn file_reply(params: &Params, headers: &[(String, String)], now: i64) -> Helper
 
 // the Python side reads the URL back through transform_create_file_response, so the same call runs here
 fn converted(url: &str) -> HelperResult {
-    let mut params = Params::new();
-    params.insert(
-        UPLOAD_URL_PARAM.to_owned(),
-        RequestValue::Text(url.to_owned()),
-    );
-    params.insert(
-        UPLOAD_CONTENT_LENGTH_PARAM.to_owned(),
-        RequestValue::Raw("0".to_owned()),
-    );
+    let mut params = Map::new();
+    params.insert(UPLOAD_URL_PARAM.to_owned(), Value::String(url.to_owned()));
+    params.insert(UPLOAD_CONTENT_LENGTH_PARAM.to_owned(), json!(0));
     file_reply(&params, &[], 0)
 }
 

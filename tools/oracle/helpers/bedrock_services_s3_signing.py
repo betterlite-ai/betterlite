@@ -3,7 +3,7 @@ import os
 import time
 from datetime import UTC, datetime
 from typing import Final, Literal, NotRequired, TypedDict
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import botocore.auth  # type: ignore[import-untyped]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L1125
 import fastuuid
@@ -11,7 +11,6 @@ import httpx
 import litellm
 from fastuuid import UUID
 from litellm.llms.bedrock.files.transformation import BedrockFilesConfig
-from litellm.types.llms.openai import CreateFileRequest
 from litellm.types.utils import ExtractedFileData
 from pydantic import JsonValue, TypeAdapter
 
@@ -20,7 +19,6 @@ litellm.suppress_debug_info = True
 JSON: Final = TypeAdapter(JsonValue)
 OBJECT_ID: Final = "11111111-2222-4333-8444-555555555555"
 SIGNING_SECONDS: Final = 1_704_067_200
-REAL_TIME: Final = time.time
 # boto3's environment provider hands this pair to LiteLLM when a signing names no keys
 ENV_ACCESS_KEY: Final = "AKIDEXAMPLE"
 ENV_KEY_VALUE: Final = "secret"
@@ -134,14 +132,6 @@ class FixedNow:
         return self.moment
 
 
-class FixedTime:
-    def __init__(self, seconds: int) -> None:
-        self.seconds = float(seconds)
-
-    def __call__(self) -> float:
-        return self.seconds
-
-
 # _sign_s3_request is private and only B646's transform_create_file_request reaches it publicly
 class SigningConfig(BedrockFilesConfig):
     def signed(self, signing: Signing) -> JsonValue:
@@ -149,13 +139,12 @@ class SigningConfig(BedrockFilesConfig):
         base = signing["api_base"]
         params = signing["optional_params"]
         key = signing["encryption_key_id"]
-        pair: tuple[dict[str, str], str] = (
-            self  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L1116
-            ._sign_s3_request(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L1114
+        pair: tuple[dict[str, str], str] = (  # pyright: ignore[reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L1116
+            self._sign_s3_request(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L1114
                 content, base, params, key
             )
         )
-        headers = JSON.validate_json(json.dumps(list(pair[0].items())))
+        headers = JSON.validate_json(json.dumps(list(pair[0].items())))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L1116
         return {"failed": False, "headers": headers, "body": pair[1]}
 
 
@@ -195,18 +184,16 @@ def created(config: BedrockFilesConfig, response: Response) -> JsonValue:
     pairs = [(name.encode(), value.encode("latin-1")) for name, value in response["headers"]]
     raw_response = httpx.Response(status_code=200, headers=pairs)
     params = response["litellm_params"]
-    time.time = FixedTime(response["now"])
     try:
-        file_object = (
-            config
-            .transform_create_file_response(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L1242
-                None, raw_response, MagicMock(), params
+        with patch.object(time, "time", return_value=float(response["now"])):
+            file_object = (
+                config
+                .transform_create_file_response(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L1242
+                    None, raw_response, MagicMock(), params
+                )
             )
-        )
     except ValueError:
         return {"failed": True}
-    finally:
-        time.time = REAL_TIME
     reply = TypeAdapter(FileReply).validate_json(file_object.model_dump_json())
     return {"failed": False, "file": JSON.validate_json(json.dumps(reply))}
 
@@ -226,7 +213,7 @@ def error_class(config: BedrockFilesConfig, call: ErrorCall) -> JsonValue:
 
 def destination(config: BedrockFilesConfig, upload: Upload) -> JsonValue:
     reset_environment(upload["environment"])
-    data: CreateFileRequest = {}
+    data: dict[str, object] = {}
     if "file" in upload:
         data["file"] = (upload["file"]["filename"], upload["file"]["content"].encode())
     if "purpose" in upload:
@@ -236,7 +223,8 @@ def destination(config: BedrockFilesConfig, upload: Upload) -> JsonValue:
     deployment = upload["litellm_params"]
     try:
         url = config.get_complete_file_url(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L511
-            None, None, model, optional, deployment, data
+            None, None, model, optional, deployment,
+            data,  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L513
         )
     except ValueError:
         return {"failed": True}
@@ -246,9 +234,8 @@ def destination(config: BedrockFilesConfig, upload: Upload) -> JsonValue:
 def handoff(config: BedrockFilesConfig, call: Handoff) -> JsonValue:
     params = call["litellm_params"]
     unused: dict[str, JsonValue] = {}
-    merged: dict[str, JsonValue] = (
-        config  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L416
-        .validate_environment(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L412
+    merged: dict[str, JsonValue] = (  # pyright: ignore[reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L416
+        config.validate_environment(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L412
             {**call["headers"]},
             "",
             [],  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L411
@@ -262,9 +249,8 @@ def handoff(config: BedrockFilesConfig, call: Handoff) -> JsonValue:
 def contract(config: BedrockFilesConfig, call: Contract) -> JsonValue:
     handoffs = [handoff(config, item) for item in call["handoffs"]]
     optional = call["optional_params"]
-    mapped: dict[str, JsonValue] = (
-        config  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L558
-        .map_openai_params(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L554
+    mapped: dict[str, JsonValue] = (  # pyright: ignore[reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L558
+        config.map_openai_params(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L554
             optional, optional, "", drop_params=False
         )
     )

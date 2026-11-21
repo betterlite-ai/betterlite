@@ -33,20 +33,6 @@ pub struct UploadTarget<'source> {
     pub id: Uuid,
 }
 
-// the upload bucket comes from litellm_params as sent; only downloads require B643's trusted snapshot
-fn upload_bucket(target: &UploadTarget<'_>) -> Result<String, S3SigningError> {
-    let configured = param_text(target.litellm_params, BUCKET_NAME_PARAM)?
-        .filter(|bucket| !bucket.is_empty())
-        .or_else(|| {
-            target
-                .environment
-                .get(BUCKET_NAME_ENV)
-                .filter(|bucket| !bucket.is_empty())
-                .cloned()
-        });
-    configured.ok_or(S3SigningError::BucketRequired)
-}
-
 // s3_region_name is used as given; only the aws_region_name fallback is validated
 fn upload_region(
     target: &UploadTarget<'_>,
@@ -72,7 +58,15 @@ fn upload_region(
 
 pub fn get_complete_file_url(target: &UploadTarget<'_>) -> Result<String, S3SigningError> {
     let request_params = merge_aws_request_params(target.litellm_params, target.optional_params);
-    let (bucket, prefix) = split_bucket_name(&upload_bucket(target)?)?;
+    // the upload bucket comes from litellm_params as sent; only downloads require B643's trusted snapshot
+    let configured = param_text(target.litellm_params, BUCKET_NAME_PARAM)?;
+    let environment = target.environment.get(BUCKET_NAME_ENV).cloned();
+    let bucket_name = [configured, environment]
+        .into_iter()
+        .flatten()
+        .find(|bucket| !bucket.is_empty())
+        .ok_or(S3SigningError::BucketRequired)?;
+    let (bucket, prefix) = split_bucket_name(&bucket_name)?;
     let region = upload_region(target, &request_params)?;
     let file = target.file.ok_or(S3SigningError::FileRequired)?;
     let purpose = target.purpose.ok_or(S3SigningError::PurposeRequired)?;

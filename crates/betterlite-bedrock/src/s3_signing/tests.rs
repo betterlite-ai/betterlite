@@ -7,7 +7,7 @@ mod support;
 mod urls;
 
 use std::fs;
-use std::path::Path;
+use std::path::PathBuf;
 
 use betterlite_openai::files::records::{FileKind, FileObject, FileStatus, FilesPurpose};
 
@@ -175,23 +175,16 @@ fn file_config_contract() {
     assert_eq!(rendered(&absent), rendered(&headers));
 }
 
-#[test]
-fn replays_the_bedrock_services_s3_signing_corpus() {
-    let corpus =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/bedrock_services_s3_signing");
-    let mut seeds = 0_usize;
-    for entry in fs::read_dir(corpus).expect("the corpus directory exists") {
-        let path = entry.expect("the corpus entry reads").path();
-        let name = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .expect("the seed name is UTF-8")
-            .to_owned();
-        let bytes = fs::read(&path).expect("the seed reads");
-        let expected = name.starts_with("valid") || name.starts_with("boundary-valid");
-        let decoded = decode_upload_record(&bytes);
-        assert_eq!(decoded.is_ok(), expected, "seed {name}");
-        seeds = seeds.saturating_add(1);
-    }
-    assert!(seeds >= 6, "the corpus holds only {seeds} seeds");
+#[rstest::rstest]
+fn replays_the_bedrock_services_s3_signing_corpus(
+    #[files("fuzz/corpus/bedrock_services_s3_signing/*")] path: PathBuf,
+) {
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .expect("the seed name is UTF-8");
+    let bytes = fs::read(&path).expect("the seed reads");
+    let expected = name.starts_with("valid") || name.starts_with("boundary-valid");
+    let decoded = decode_upload_record(&bytes);
+    assert_eq!(decoded.is_ok(), expected, "seed {name}");
 }

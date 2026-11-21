@@ -11,25 +11,28 @@ const PARAM_SCHEMES: [&str; 16] = [
     "sip", "sips", "mms", "sftp", "tel",
 ];
 
-// re.match(r"https://s3\.([^.]+)\.amazonaws\.com/([^/]+)/(.+)"), whose final . stops at a newline
-fn path_style(url: &str) -> Option<(&str, &str)> {
+// re.match(r"https://s3\.([^.]+)\.amazonaws\.com/([^/]+)/(.+)")
+fn path_style(url: &str) -> Option<(&str, &str, &str)> {
     let (region, after_region) = url.strip_prefix("https://s3.")?.split_once('.')?;
     let (bucket, key) = after_region
         .strip_prefix("amazonaws.com/")?
         .split_once('/')?;
-    let matched = key.split('\n').next()?;
-    (!region.is_empty() && !bucket.is_empty() && !matched.is_empty()).then_some((bucket, matched))
+    Some((region, bucket, key))
 }
 
 // re.match(r"https://([^.]+)\.s3\.([^.]+)\.amazonaws\.com/(.+)"), so a dotted bucket never matches
-fn virtual_host(url: &str) -> Option<(&str, &str)> {
+fn virtual_host(url: &str) -> Option<(&str, &str, &str)> {
     let (bucket, after_bucket) = url.strip_prefix("https://")?.split_once('.')?;
     let (region, after_region) = after_bucket.strip_prefix("s3.")?.split_once('.')?;
-    let matched = after_region
-        .strip_prefix("amazonaws.com/")?
-        .split('\n')
-        .next()?;
-    (!bucket.is_empty() && !region.is_empty() && !matched.is_empty()).then_some((bucket, matched))
+    Some((region, bucket, after_region.strip_prefix("amazonaws.com/")?))
+}
+
+// every capture of both patterns is non-empty, and their final . stops at a newline
+fn captured<'url>(
+    (region, bucket, key): (&str, &'url str, &'url str),
+) -> Option<(&'url str, &'url str)> {
+    let matched = key.split('\n').next()?;
+    (!region.is_empty() && !bucket.is_empty() && !matched.is_empty()).then_some((bucket, matched))
 }
 
 // urllib.parse.urlparse(url).path, without the query, fragment and ;params it splits off
@@ -76,7 +79,10 @@ pub fn convert_https_url_to_s3_uri(url: &str) -> Result<(String, String), S3Sign
     let unparsable = || S3SigningError::UnparsableUrl {
         url: url.to_owned(),
     };
-    let (bucket, raw_key) = match path_style(url).or_else(|| virtual_host(url)) {
+    let regex_match = path_style(url)
+        .and_then(captured)
+        .or_else(|| virtual_host(url).and_then(captured));
+    let (bucket, raw_key) = match regex_match {
         Some((bucket, key)) => (bucket.to_owned(), key.to_owned()),
         None => {
             let path = parsed_path(url).ok_or_else(unparsable)?;
@@ -128,14 +134,16 @@ pub fn transform_create_file_response(
     response_headers: &[(String, String)],
     created_at: i64,
 ) -> Result<FileObject, S3SigningError> {
-    let (id, filename) =
-        match param_text(litellm_params, UPLOAD_URL_PARAM)?.filter(|url| !url.is_empty()) {
-            Some(url) => convert_https_url_to_s3_uri(&url)?,
-            None => (String::new(), String::new()),
-        };
+    let upload_url = param_text(litellm_params, UPLOAD_URL_PARAM)?.filter(|url| !url.is_empty());
+    let (id, filename) = upload_url
+        .as_deref()
+        .map(convert_https_url_to_s3_uri)
+        .transpose()?
+        .unwrap_or_default();
+    let bytes = uploaded_object_size(litellm_params, response_headers)?;
     Ok(FileObject {
         id,
-        bytes: uploaded_object_size(litellm_params, response_headers)?,
+        bytes,
         created_at,
         filename,
         object: FileKind::File,
