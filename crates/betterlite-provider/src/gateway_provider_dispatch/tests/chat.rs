@@ -12,7 +12,7 @@ use crate::gateway_provider_dispatch::call::CompletionCall;
 use crate::gateway_provider_dispatch::chat::{
     OPENROUTER_DEFAULT_API_BASE, OPENROUTER_PROVIDER, VERCEL_PROVIDER, dispatch,
 };
-use crate::gateway_provider_dispatch::context::CallLogging;
+use crate::gateway_provider_dispatch::context::{CallLogging, DispatchContext, DispatchSettings};
 use crate::gateway_provider_dispatch::error::DispatchError;
 use crate::gateway_provider_dispatch::handler::HandlerError;
 
@@ -25,12 +25,27 @@ fn run(
 ) -> (Option<Result<String, DispatchError>>, LoggingState) {
     let redactor = redactor();
     let (mut state, env) = logging(&redactor);
+    let context = DispatchContext {
+        acompletion: false,
+        api_base: fixture.api_base.as_deref(),
+        api_key: fixture.api_key.as_ref(),
+        custom_llm_provider: &fixture.provider,
+        class_config: &fixture.class_config,
+        headers: fixture.headers.as_ref(),
+        litellm_params: &fixture.litellm_params,
+        messages: &fixture.messages,
+        model: &fixture.model,
+        optional_params: &fixture.optional_params,
+        stream: fixture.stream,
+        timeout: fixture.timeout,
+        settings: DispatchSettings::from(&fixture.settings),
+    };
     let outcome = {
         let mut log = CallLogging {
             state: &mut state,
             env: &env,
         };
-        dispatch(tag, &fixture.context(), handler, &mut log)
+        dispatch(tag, &context, handler, &mut log)
     };
     (outcome, state)
 }
@@ -200,13 +215,20 @@ fn vercel_key_stops_at_the_gateway_key_and_never_reads_the_oidc_token() {
     );
 
     fixture.settings.environment.vercel_ai_gateway_api_key = Some(secret("sk-vercel"));
-    fixture.settings.api_key = Some(secret("sk-global"));
     assert_eq!(
         secret_text(vercel(&fixture).api_key.as_ref()),
         Some(String::from("sk-vercel"))
     );
 
-    fixture.settings.environment.vercel_ai_gateway_api_key = None;
+    fixture.settings.api_key = Some(secret("sk-global"));
+    assert_eq!(
+        secret_text(vercel(&fixture).api_key.as_ref()),
+        Some(String::from("sk-global")),
+        "the arm's own chain reads litellm.api_key before the environment key; \
+         get_llm_provider's pre-resolved key wins over both in a public call"
+    );
+
+    fixture.settings.environment.vercel_ai_gateway_api_key = Some(secret(""));
     assert_eq!(
         secret_text(vercel(&fixture).api_key.as_ref()),
         Some(String::from("sk-global"))

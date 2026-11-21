@@ -99,7 +99,7 @@ class AnswerHandler(BaseHTTPRequestHandler):
         server.requests.append(
             {
                 "url": server.base + self.path,
-                "headers": {name: value for name, value in self.headers.items()},
+                "headers": dict(self.headers.items()),
                 "body": (
                     None
                     if not content

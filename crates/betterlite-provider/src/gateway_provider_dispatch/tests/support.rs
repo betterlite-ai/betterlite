@@ -18,7 +18,6 @@ use chrono::DateTime;
 use secrecy::SecretString;
 
 use crate::gateway_provider_dispatch::call::CompletionCall;
-use crate::gateway_provider_dispatch::context::{DispatchContext, DispatchSettings};
 use crate::gateway_provider_dispatch::handler::{ChatCompletionHandler, HandlerError};
 
 const INIT: &str = r#"{"model":"oracle","call_type":"completion","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
@@ -161,24 +160,6 @@ impl Fixture {
             litellm_params: Object::new(),
             class_config: Object::new(),
             settings: SectionSettings::default(),
-        }
-    }
-
-    pub(super) fn context(&self) -> DispatchContext<'_> {
-        DispatchContext {
-            acompletion: false,
-            api_base: self.api_base.as_deref(),
-            api_key: self.api_key.as_ref(),
-            custom_llm_provider: &self.provider,
-            class_config: &self.class_config,
-            headers: self.headers.as_ref(),
-            litellm_params: &self.litellm_params,
-            messages: &self.messages,
-            model: &self.model,
-            optional_params: &self.optional_params,
-            stream: self.stream,
-            timeout: self.timeout,
-            settings: DispatchSettings::from(&self.settings),
         }
     }
 }

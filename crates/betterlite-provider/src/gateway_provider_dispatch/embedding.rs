@@ -1,12 +1,8 @@
 use betterlite_models::identity::provider_id::ProviderId;
-use betterlite_openai::vercel_ai_gateway::DEFAULT_API_BASE as VERCEL_DEFAULT_API_BASE;
 
 use super::call::EmbeddingCall;
-use super::chat::OPENROUTER_DEFAULT_API_BASE;
+use super::chat::{Gateway, Which, chains};
 use super::context::{DispatchSettings, first_nonempty, first_secret, referer_headers};
-
-const OPENROUTER_REFERER: &str = "HTTP-Referer";
-const OPENROUTER_TITLE: &str = "X-Title";
 
 // main.py's embedding arms; the skip keeps the exhaustive no-op arm within clippy's line limit
 #[rustfmt::skip]
@@ -17,8 +13,8 @@ pub fn dispatch(
     settings: DispatchSettings<'_>,
 ) -> Option<EmbeddingCall> {
     match provider {
-        ProviderId::Openrouter => Some(openrouter(call, settings)),
-        ProviderId::VercelAiGateway => Some(vercel(call, settings)),
+        ProviderId::Openrouter => Some(resolve(call, settings, &Gateway::OPENROUTER)),
+        ProviderId::VercelAiGateway => Some(resolve(call, settings, &Gateway::VERCEL)),
         ProviderId::FireworksAi | ProviderId::Openai | ProviderId::Chatgpt | ProviderId::OpenaiLike | ProviderId::JinaAi | ProviderId::Xai | ProviderId::Zai | ProviderId::CustomOpenai | ProviderId::TextCompletionOpenai | ProviderId::Cohere | ProviderId::CohereChat | ProviderId::Clarifai | ProviderId::Anthropic
         | ProviderId::AnthropicText | ProviderId::Bytez | ProviderId::Replicate | ProviderId::Reducto | ProviderId::AwsTextract | ProviderId::Runwayml | ProviderId::AwsPolly | ProviderId::Transcribe | ProviderId::Huggingface | ProviderId::TogetherAi | ProviderId::Datarobot
         | ProviderId::VertexAi | ProviderId::VertexAiBeta | ProviderId::Gemini | ProviderId::Ai21 | ProviderId::Baseten | ProviderId::BlackForestLabs | ProviderId::Azure | ProviderId::AzureText | ProviderId::AzureAi | ProviderId::Sagemaker | ProviderId::SagemakerChat | ProviderId::SagemakerNova
@@ -36,52 +32,43 @@ pub fn dispatch(
     }
 }
 
-// the openrouter arm uses the chat base, key and referer rules
-fn openrouter(call: &EmbeddingCall, settings: DispatchSettings<'_>) -> EmbeddingCall {
+// the chat base and key chains, then the arm's own header rule
+fn resolve(
+    call: &EmbeddingCall,
+    settings: DispatchSettings<'_>,
+    gateway: &Gateway,
+) -> EmbeddingCall {
+    let values = chains(settings, gateway.which);
     let mut resolved = call.clone();
     resolved.api_base = Some(
-        first_nonempty([
-            call.api_base.as_deref(),
-            settings.api_base,
-            settings.openrouter_api_base,
-        ])
-        .unwrap_or_else(|| String::from(OPENROUTER_DEFAULT_API_BASE)),
+        first_nonempty([call.api_base.as_deref(), settings.api_base, values.api_base])
+            .unwrap_or_else(|| String::from(gateway.default_api_base)),
     );
-    resolved.api_key = first_secret([
-        call.api_key.as_ref(),
-        settings.api_key,
-        settings.openrouter_key,
-        settings.openrouter_api_key,
-        settings.or_api_key,
-    ]);
-    resolved.headers = Some(referer_headers(
-        call.headers.as_ref(),
-        settings.headers,
-        OPENROUTER_REFERER,
-        OPENROUTER_TITLE,
-        settings.or_site_url,
-        settings.or_app_name,
-    ));
-    resolved
-}
-
-// the vercel arm adds VERCEL_OIDC_TOKEN after VERCEL_AI_GATEWAY_API_KEY, and sends the request headers alone
-fn vercel(call: &EmbeddingCall, settings: DispatchSettings<'_>) -> EmbeddingCall {
-    let mut resolved = call.clone();
-    resolved.api_base = Some(
-        first_nonempty([
-            call.api_base.as_deref(),
-            settings.api_base,
-            settings.vercel_ai_gateway_api_base,
-        ])
-        .unwrap_or_else(|| String::from(VERCEL_DEFAULT_API_BASE)),
-    );
-    resolved.api_key = first_secret([
-        call.api_key.as_ref(),
-        settings.api_key,
-        settings.vercel_ai_gateway_api_key,
-        settings.vercel_oidc_token,
-    ]);
-    resolved.headers = call.headers.clone();
+    resolved.api_key = match gateway.which {
+        Which::Openrouter => first_secret([
+            call.api_key.as_ref(),
+            settings.api_key,
+            values.first_key,
+            values.second_key,
+            values.third_key,
+        ]),
+        Which::Vercel => first_secret([
+            call.api_key.as_ref(),
+            settings.api_key,
+            values.first_key,
+            settings.vercel_oidc_token,
+        ]),
+    };
+    resolved.headers = match gateway.which {
+        Which::Openrouter => Some(referer_headers(
+            call.headers.as_ref(),
+            settings.headers,
+            gateway.referer,
+            gateway.title,
+            values.site_url,
+            values.app_name,
+        )),
+        Which::Vercel => call.headers.clone(),
+    };
     resolved
 }

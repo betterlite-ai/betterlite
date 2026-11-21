@@ -60,23 +60,23 @@ pub fn dispatch<R>(
 }
 
 // the names and the environment positions one arm uses, so both arms share one body
-struct Gateway {
-    which: Which,
-    provider: &'static str,
-    default_api_base: &'static str,
-    referer: &'static str,
-    title: &'static str,
+pub(super) struct Gateway {
+    pub(super) which: Which,
+    pub(super) provider: &'static str,
+    pub(super) default_api_base: &'static str,
+    pub(super) referer: &'static str,
+    pub(super) title: &'static str,
 }
 
 #[derive(Clone, Copy)]
-enum Which {
+pub(super) enum Which {
     Openrouter,
     Vercel,
 }
 
 impl Gateway {
     // _complete_openrouter: the base chain ends at OPENROUTER_API_BASE, the key chain at OR_API_KEY
-    const OPENROUTER: Self = Self {
+    pub(super) const OPENROUTER: Self = Self {
         which: Which::Openrouter,
         provider: OPENROUTER_PROVIDER,
         default_api_base: OPENROUTER_DEFAULT_API_BASE,
@@ -85,7 +85,7 @@ impl Gateway {
     };
 
     // _complete_vercel_ai_gateway: lower-case header names; its chat key chain skips VERCEL_OIDC_TOKEN
-    const VERCEL: Self = Self {
+    pub(super) const VERCEL: Self = Self {
         which: Which::Vercel,
         provider: VERCEL_PROVIDER,
         default_api_base: VERCEL_DEFAULT_API_BASE,
@@ -95,16 +95,16 @@ impl Gateway {
 }
 
 // the provider variables each arm falls back to, in chain order; Vercel's chat chain stops at its gateway key
-struct Chains<'settings> {
-    api_base: Option<&'settings str>,
-    first_key: Option<&'settings SecretString>,
-    second_key: Option<&'settings SecretString>,
-    third_key: Option<&'settings SecretString>,
-    site_url: Option<&'settings str>,
-    app_name: Option<&'settings str>,
+pub(super) struct Chains<'settings> {
+    pub(super) api_base: Option<&'settings str>,
+    pub(super) first_key: Option<&'settings SecretString>,
+    pub(super) second_key: Option<&'settings SecretString>,
+    pub(super) third_key: Option<&'settings SecretString>,
+    pub(super) site_url: Option<&'settings str>,
+    pub(super) app_name: Option<&'settings str>,
 }
 
-const fn chains(settings: DispatchSettings<'_>, which: Which) -> Chains<'_> {
+pub(super) const fn chains(settings: DispatchSettings<'_>, which: Which) -> Chains<'_> {
     match which {
         Which::Openrouter => Chains {
             api_base: settings.openrouter_api_base,
