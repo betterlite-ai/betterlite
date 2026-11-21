@@ -92,6 +92,7 @@ CREATE TABLE "LiteLLM_BudgetTable" (
 CREATE TABLE "LiteLLM_VerificationToken" (
     token TEXT PRIMARY KEY,
     key_alias TEXT,
+    team_id TEXT,
     budget_id TEXT,
     spend NUMERIC DEFAULT 0,
     created_at TIMESTAMP,
@@ -254,6 +255,7 @@ async fn assert_team_visibility(client: PrismaClient<'_>) {
         own_found,
         vec![
             "blocked-key",
+            "created-team-a",
             "expired-key",
             "own-alice",
             "project-key",
