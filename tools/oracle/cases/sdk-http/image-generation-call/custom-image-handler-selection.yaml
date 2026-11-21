@@ -1,0 +1,19 @@
+kind: sdk_http
+name: image-generation-call-custom-image-handler-selection
+env: {}
+call:
+  image_generation_call:
+    prompt: cat
+    model: custom-model
+    custom_llm_provider: myprov
+    custom_providers: [myprov, myprov]
+    api_key: custom-key
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {created: 5, data: [{url: "https://example.test/c.png"}]}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [content-type]
+  ignore: []
