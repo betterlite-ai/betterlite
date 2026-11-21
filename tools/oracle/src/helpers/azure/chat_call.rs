@@ -27,6 +27,11 @@ pub(crate) struct Input {
     cases: Vec<CallCase>,
 }
 
+// A bool on the wire; the newtype keeps struct_excessive_bools off the case input.
+#[derive(Clone, Copy, Default, Deserialize)]
+#[serde(transparent)]
+pub(super) struct Flag(bool);
+
 // AzureChatCompletion.completion's arguments as the oracle cases spell them
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -65,9 +70,9 @@ pub(crate) struct CallCase {
     #[serde(default = "default_retries")]
     pub(super) default_max_retries: i64,
     #[serde(default)]
-    pub(super) openai_system_messages_first: bool,
+    pub(super) openai_system_messages_first: Flag,
     #[serde(default)]
-    pub(super) cancel: bool,
+    pub(super) cancel: Flag,
     #[serde(default)]
     pub(super) answer: source::answer::Answer,
 }

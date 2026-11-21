@@ -1,3 +1,4 @@
+use std::future::pending;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
@@ -90,7 +91,7 @@ impl AsyncRawChatTransport for ScriptedTransport {
     async fn create(&self, data: &Map<String, Value>, timeout: f64) -> RawReply {
         if self.answer.error == Some(ErrorKind::Pending) {
             self.record(data);
-            return std::future::pending::<RawReply>().await;
+            return pending::<RawReply>().await;
         }
         SyncRawChatTransport::create(self, data, timeout)
     }
@@ -100,9 +101,9 @@ pub(super) struct ScriptedSource {
     kind: ClientKind,
     api_key: Option<SecretString>,
     answer: Answer,
-    pub requests: Arc<Mutex<Vec<RequestRecord>>>,
-    pub gets: Arc<Mutex<Vec<GetRecord>>>,
-    pub gateways: Arc<Mutex<Vec<GatewayRecord>>>,
+    requests: Arc<Mutex<Vec<RequestRecord>>>,
+    gets: Arc<Mutex<Vec<GetRecord>>>,
+    gateways: Arc<Mutex<Vec<GatewayRecord>>>,
 }
 
 impl ScriptedSource {
@@ -133,11 +134,11 @@ impl ScriptedSource {
         &self,
         slot: &Arc<Mutex<Vec<Record>>>,
         value: Record,
-    ) -> Result<ClientHandle<ScriptedTransport>, EndpointError> {
+    ) -> ClientHandle<ScriptedTransport> {
         slot.lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(value);
-        Ok(self.handle())
+        self.handle()
     }
 
     pub(super) fn requests(&self) -> Vec<RequestRecord> {
@@ -165,8 +166,8 @@ impl ScriptedSource {
 impl ClientSource for ScriptedSource {
     type Client = ScriptedTransport;
 
-    fn get(&self, call: GetClient<'_>) -> Handled {
-        self.record(
+    fn get(&self, call: GetClient<'_, ScriptedTransport>) -> Handled {
+        Ok(self.record(
             &self.gets,
             GetRecord {
                 api_version: call.api_version.map(str::to_owned),
@@ -183,7 +184,7 @@ impl ClientSource for ScriptedSource {
                 timeout: call.litellm_params.timeout,
                 supplied: call.supplied.is_some(),
             },
-        )
+        ))
     }
 
     fn gateway(&self, call: GatewayClient<'_>) -> Handled {
@@ -191,7 +192,7 @@ impl ClientSource for ScriptedSource {
         let api_version = call.api_version.map(str::to_owned);
         let max_retries = serde_json::to_value(&call.max_retries.0).unwrap_or(Value::Null);
         let api_key = call.api_key.map(|key| key.expose_secret().to_owned());
-        self.record(
+        Ok(self.record(
             &self.gateways,
             GatewayRecord {
                 api_base,
@@ -202,7 +203,7 @@ impl ClientSource for ScriptedSource {
                 api_key,
                 acompletion: call.acompletion,
             },
-        )
+        ))
     }
 
     fn stream(

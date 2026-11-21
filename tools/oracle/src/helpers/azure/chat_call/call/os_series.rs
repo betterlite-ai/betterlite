@@ -16,13 +16,13 @@ use super::super::CallCase;
 use super::super::hooks::Recorder;
 use super::super::source::{ScriptedSource, ScriptedTransport};
 use super::super::view::{self, Outcome};
-use super::{Secrets, block_on, litellm_params, message_text, optional_object, source_of};
+use super::{Secrets, block_on, message_text, optional_object, source_of};
 
 struct Delegate {
     forward: Arc<Mutex<Value>>,
 }
 
-fn kind_name(kind: ClientKind) -> &'static str {
+const fn kind_name(kind: ClientKind) -> &'static str {
     match kind {
         ClientKind::AzureOpenAi => "azure_sync",
         ClientKind::AsyncAzureOpenAi => "azure_async",
@@ -78,7 +78,10 @@ impl OSeriesDelegate for Delegate {
         call: OSeriesForward<'call, Self::Client>,
     ) -> Pin<Box<dyn Future<Output = Result<Self::Reply, Self::Error>> + Send + 'call>> {
         let forward = forward_value(&call);
-        *self.forward.lock().unwrap_or_else(PoisonError::into_inner) = forward.clone();
+        self.forward
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone_from(&forward);
         Box::pin(async move { Ok(forward) })
     }
 }
@@ -98,7 +101,7 @@ fn o_series_call<'call>(
         azure_ad_token: secrets.token.as_ref(),
         timeout: Some(case.timeout),
         optional_params: params,
-        litellm_params: litellm_params(case),
+        litellm_params: case.litellm_params.clone(),
         acompletion: case.acompletion,
         headers: secrets.headers.as_ref(),
         organization: case.organization.as_deref(),
@@ -147,6 +150,6 @@ pub(crate) fn run(case: &CallCase) -> Result<Value, Box<HelperError>> {
         forward: Arc::new(Mutex::new(Value::Null)),
     };
     let recorder = Recorder::default();
-    let outcome = block_on(o_series::completion(&source, &call, &delegate));
+    let outcome = block_on(o_series::completion(&source, &call, &delegate))?;
     Ok(report(&source, &recorder, outcome))
 }

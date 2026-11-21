@@ -4,7 +4,6 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_azure::azure_default_chain::grant::{ClientSecretRecord, UsernamePasswordRecord};
-use betterlite_azure::chat_call::CancellationToken;
 use betterlite_azure::chat_call::arguments::{ChatCall, Runtime};
 use betterlite_azure::chat_call::client::ClientHandle;
 use betterlite_azure::chat_call::error::AzureChatError;
@@ -24,6 +23,7 @@ use betterlite_streaming::stream_chunk_shaping::creation::StreamInstant;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Value;
 use tokio::runtime::Builder;
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use super::CallCase;
@@ -97,15 +97,15 @@ impl CredentialSources for NoCredentials {
     }
 }
 
-fn block_on<Fut>(future: Fut) -> Fut::Output
+fn block_on<Fut>(future: Fut) -> Result<Fut::Output, Box<HelperError>>
 where
     Fut: Future,
 {
     let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
-        .expect("oracle runtime");
-    runtime.block_on(future)
+        .or_value_error()?;
+    Ok(runtime.block_on(future))
 }
 
 fn message_text(secret: Option<&SecretString>) -> Value {
@@ -114,7 +114,7 @@ fn message_text(secret: Option<&SecretString>) -> Value {
     })
 }
 
-fn runtime<'runtime>(tokens: &'runtime FixedTokens) -> Runtime<'runtime> {
+fn runtime(tokens: &FixedTokens) -> Runtime<'_> {
     Runtime {
         identifier: IDENTIFIER,
         clock: CLOCK_READ,
@@ -206,21 +206,25 @@ fn outcome_of(outcome: Result<ChatOutcome, AzureChatError>) -> Outcome {
     }
 }
 
+fn optional_object(case: &CallCase) -> Result<Object, Box<HelperError>> {
+    let value = serde_json::to_value(&case.optional_params).or_value_error()?;
+    serde_json::from_value(value).or_value_error()
+}
+
 pub(super) fn completion(case: &CallCase) -> Result<Value, Box<HelperError>> {
     let source = source_of(case);
     let secrets = Secrets::of(case);
-    let value = serde_json::to_value(&case.optional_params).or_value_error()?;
-    let mut params: Object = serde_json::from_value(value).or_value_error()?;
+    let mut params = optional_object(case)?;
     let settings = Settings {
         azure: AzureSettings {
             default_max_retries: case.default_max_retries,
             azure_default_api_version: case.api_version.clone(),
         },
         chat: ChatContentSettings {
-            openai_system_messages_first: case.openai_system_messages_first,
+            openai_system_messages_first: case.openai_system_messages_first.0,
         },
         sources: NoCredentials,
-        cancel: case.cancel.then(CancellationToken::new),
+        cancel: case.cancel.0.then(CancellationToken::new),
     };
     if let Some(token) = &settings.cancel {
         token.cancel();
@@ -234,7 +238,7 @@ pub(super) fn completion(case: &CallCase) -> Result<Value, Box<HelperError>> {
         &mut call,
         &runtime(&tokens),
         &mut recorder,
-    ));
+    ))?;
     Ok(view::report(&source, &recorder, &outcome_of(outcome)))
 }
 
