@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 use std::convert::Infallible;
+use std::future::pending;
 use std::io;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -11,6 +12,8 @@ use betterlite_config::tls::Verification;
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use indexmap::IndexMap;
+use tokio::sync::Mutex as TokioMutex;
+use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
 use crate::api::realtime_backend_relay::source::{RealtimeBackendSource, RelayReceiveError};
@@ -116,7 +119,7 @@ pub(super) fn websocket(message: &str) -> DialOutcome {
     })
 }
 
-pub(super) fn invalid_status(status_code: u16) -> DialOutcome {
+pub(super) const fn invalid_status(status_code: u16) -> DialOutcome {
     DialOutcome::Fail(DialError::InvalidStatus {
         status_code,
         message: String::new(),
@@ -135,7 +138,7 @@ struct DialRecord {
     ssl: RealtimeSsl,
     max_size: usize,
     open_timeout: Duration,
-    at: tokio::time::Instant,
+    at: Instant,
 }
 
 struct ScriptedDialer {
@@ -155,7 +158,7 @@ impl RealtimeWebSocketDialer for ScriptedDialer {
             ssl: request.ssl.clone(),
             max_size: request.max_size,
             open_timeout: request.open_timeout,
-            at: tokio::time::Instant::now(),
+            at: Instant::now(),
         });
         let outcome = self
             .outcomes
@@ -166,7 +169,7 @@ impl RealtimeWebSocketDialer for ScriptedDialer {
         match outcome {
             DialOutcome::Fail(error) => Err(error),
             DialOutcome::Hang => {
-                std::future::pending::<()>().await;
+                pending::<()>().await;
                 Err(DialError::Other {
                     message: String::new(),
                 })
@@ -524,7 +527,7 @@ fn provider_of(options: &HarnessOptions, logs: &SharedLogs) -> Arc<TestProvider>
 fn client_of(options: &HarnessOptions, logs: &SharedLogs) -> ClientHandle {
     let socket: Box<dyn RealtimeClientSocket> = Box::new(FakeClient::new(options, logs));
     ClientHandle {
-        socket: Arc::new(tokio::sync::Mutex::new(socket)),
+        socket: Arc::new(TokioMutex::new(socket)),
         scope: WebSocketScope::default(),
     }
 }
@@ -611,7 +614,7 @@ pub(super) struct DialObservation {
     pub(super) ssl: RealtimeSsl,
     pub(super) max_size: usize,
     pub(super) open_timeout: Duration,
-    pub(super) at: tokio::time::Instant,
+    pub(super) at: Instant,
 }
 
 impl Harness<'_> {
@@ -666,12 +669,12 @@ impl Harness<'_> {
         let records = self.records.lock().unwrap();
         records
             .iter()
-            .map(|record| DialObservation {
-                url: record.url.clone(),
-                ssl: record.ssl.clone(),
-                max_size: record.max_size,
-                open_timeout: record.open_timeout,
-                at: record.at,
+            .map(|entry| DialObservation {
+                url: entry.url.clone(),
+                ssl: entry.ssl.clone(),
+                max_size: entry.max_size,
+                open_timeout: entry.open_timeout,
+                at: entry.at,
             })
             .collect()
     }

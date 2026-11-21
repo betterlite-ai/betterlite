@@ -1,5 +1,7 @@
 use crate::api::realtime_backend_transport::protocol::{ClientSlot, client_wants_beta};
-use crate::api::realtime_contracts::transport::{ClientWebSocket, ScopedWebSocket, WebSocketScope};
+use crate::api::realtime_contracts::transport::{
+    ClientWebSocket as _, ScopedWebSocket as _, WebSocketScope,
+};
 
 use super::harness::{HarnessOptions, client_handle};
 
@@ -27,5 +29,6 @@ async fn client_slot_forwards_receive_text() {
     let mut slot = ClientSlot {
         handle: client_handle(&HarnessOptions::default()),
     };
-    assert!(slot.receive_text().await.is_err());
+    let error = slot.receive_text().await.unwrap_err();
+    assert_eq!(error.message, "the fake client holds no frames");
 }

@@ -34,16 +34,16 @@ async fn injects_the_guardrail_disable_into_the_one_setup() {
     };
     let mut setup = harness(options, refs);
     setup.run().await.unwrap();
-    let sent = setup.sent();
-    assert_eq!(sent.len(), 1);
+    let frames = setup.sent();
+    assert_eq!(frames.len(), 1);
     assert_eq!(
-        parse(text_of(&sent[0])),
+        parse(text_of(&frames[0])),
         parse(SETUP_WITH_DISABLED_DETECTION)
     );
     let observation = setup.observation.lock().unwrap();
     assert_eq!(
         observation.session_configuration_request.as_deref(),
-        Some(text_of(&sent[0]))
+        Some(text_of(&frames[0]))
     );
     let request_data = observation.request_data.clone();
     assert_eq!(
@@ -141,14 +141,14 @@ async fn sets_or_keeps_the_model_for_an_intent() {
     );
     assert!(!transcription.dials()[0].url.contains("intent"));
 
-    let translation_options = HarnessOptions {
+    let other_intent_options = HarnessOptions {
         query_params: Some(IndexMap::from([(
             "intent".to_owned(),
             "translation".to_owned(),
         )])),
         ..HarnessOptions::default()
     };
-    let mut other_intent = harness(translation_options, Vec::new());
+    let mut other_intent = harness(other_intent_options, Vec::new());
     other_intent.run().await.unwrap();
     assert_eq!(
         other_intent
