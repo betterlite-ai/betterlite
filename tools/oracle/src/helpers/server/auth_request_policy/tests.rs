@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::fs;
+use std::ops::Div as _;
 use std::path::{Path, PathBuf};
 
 use betterlite_oracle_helper_api::helper::Helper as _;
@@ -49,7 +50,7 @@ fn helper_seeds_select_auth_request_policy() {
 
 #[test]
 fn byte_projection_divides_by_a_mebibyte() {
-    let one_byte_over = 1_048_577.0_f64 / 1_048_576.0_f64;
+    let one_byte_over = 1_048_577.0_f64.div(1_048_576.0_f64);
     let output = Op::decode_and_run(&json!({
         "calls": [{"function": "bytes_to_mb", "values": [0, 524_288, 1_048_576, 1_048_577]}],
     }))
