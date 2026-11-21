@@ -233,6 +233,33 @@ fn async_provider_of_reads_the_prepared_call() {
 }
 
 #[tokio::test]
+async fn async_fallbacks_answer_through_the_acompletion_entry() {
+    let harness = Harness::new();
+    harness.chat.answers_null("gpt-4o");
+    let target = harness.async_target();
+    let call = request(&format!(
+        r#"{{"model":"gpt-4o","messages":[{USER}],"fallbacks":["gpt-4o-mini"]}}"#
+    ));
+    let outcome = target.call(call, None).await.unwrap();
+    let CallOutcome::Response(answer) = outcome else {
+        panic!("the fallback answers a response");
+    };
+    assert_eq!(
+        dig(&answer, &["id"]),
+        Some(&Json::Text(String::from("chatcmpl-1")))
+    );
+    let attempt = dig(
+        &answer,
+        &[
+            "_hidden_params",
+            "additional_headers",
+            "x-litellm-attempted-fallbacks",
+        ],
+    );
+    assert!(matches!(attempt, Some(Json::Number(number)) if number.as_u64() == Some(1)));
+}
+
+#[tokio::test]
 async fn async_continuation_answers_the_buffered_call() {
     let harness = Harness::new();
     let target = harness.async_target();
