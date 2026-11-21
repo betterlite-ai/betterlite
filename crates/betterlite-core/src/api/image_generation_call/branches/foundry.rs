@@ -91,8 +91,7 @@ where
     Operations: ImageGenerationOperations,
 {
     let caller_set_auth = mapped.headers.keys().any(|name| {
-        let lowered = name.to_lowercase();
-        lowered == "api-key" || lowered == "authorization"
+        name.eq_ignore_ascii_case("api-key") || name.eq_ignore_ascii_case("authorization")
     });
     let auth_headers = if caller_set_auth {
         mapped.headers.clone()
