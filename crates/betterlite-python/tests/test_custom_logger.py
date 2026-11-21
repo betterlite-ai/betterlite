@@ -662,6 +662,10 @@ def test_logger_surface_subclass(surface_report: JsonValue) -> None:
     assert ours["seen"] == ["model-one"]
     assert ours["filtered"] == ["keep-me"]
     assert ours["redacted_nested"] == {"a": ["SUB", {"b": "SUB"}], "c": "outer"}
+
+
+def test_logger_surface_twins(surface_report: JsonValue) -> None:
+    ours = mapping(dig(surface_report, "betterlite", "subclass"))
     assert ours["gates"] == [[True, {"tool": "m"}], [False, {}]]
     assert ours["async_prompt"] == ["m", [{"role": "user", "content": "hi"}], {"t": 1}]
 
