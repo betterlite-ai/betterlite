@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Final, Literal, TypedDict
 
@@ -40,6 +41,10 @@ DetailShape = Literal["text", "error"]
 CALLER: Final[TypeAdapter[UserAPIKeyAuth]] = TypeAdapter(UserAPIKeyAuth)
 REQUEST: Final[TypeAdapter[GenerateKeyRequest]] = TypeAdapter(GenerateKeyRequest)
 TEAM: Final[TypeAdapter[LiteLLM_TeamTableCachedObj]] = TypeAdapter(LiteLLM_TeamTableCachedObj)
+# the LiteLLM check declares no return type, so the annotated name gives its call one
+VALIDATE_TEAM: Final[Callable[[str | None, PrismaClient | None], Awaitable[object]]] = (
+    validate_team_id_used_in_service_account_request
+)
 
 
 class CallerInput(TypedDict):
@@ -251,9 +256,7 @@ async def call(step: Step, table: CaseTeamTable) -> Answer:
             raise_on_invalid_key_logging_config(step["metadata"])
         case "service_team":
             client = CasePrisma(table) if step["database"] else None
-            await validate_team_id_used_in_service_account_request(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L1074-L1077
-                team_id=step["team_id"], prisma_client=client
-            )
+            await VALIDATE_TEAM(step["team_id"], client)
         case "object_permission":
             return Answer(permission=permission_dump(step["object_permission"]))
     return Answer(permission=None)
