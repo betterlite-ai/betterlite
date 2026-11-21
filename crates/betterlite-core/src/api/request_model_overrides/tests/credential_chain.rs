@@ -35,13 +35,42 @@ fn team_credentials() -> Vec<CredentialEntry> {
 }
 
 #[rstest]
-#[case::client_api_key_present("api_key", Json::Text("client-key".to_owned()), None)]
-#[case::client_api_base_present("api_base", Json::Text("https://client.example".to_owned()), None)]
-#[case::null_api_key_counts_as_absent("api_key", Json::Null, Some("sk-team"))]
-fn client_credentials_skip_the_walk(
+#[case::client_api_key_present(
+    "api_key",
+    Json::Text("client-key".to_owned()),
+    Some("client-key"),
+    Vec::new()
+)]
+#[case::client_api_base_present(
+    "api_base",
+    Json::Text("https://client.example".to_owned()),
+    None,
+    Vec::new()
+)]
+#[case::empty_api_key_counts_as_present("api_key", Json::Text(String::new()), Some(""), Vec::new())]
+#[case::null_api_key_still_runs_the_walk(
+    "api_key",
+    Json::Null,
+    None,
+    vec![OverrideDiagnostic::CredentialApplied {
+        credential: "team-azure".to_owned(),
+        model: "gpt-4o".to_owned(),
+    }]
+)]
+#[case::null_api_base_still_runs_the_walk(
+    "api_base",
+    Json::Null,
+    Some("sk-team"),
+    vec![OverrideDiagnostic::CredentialApplied {
+        credential: "team-azure".to_owned(),
+        model: "gpt-4o".to_owned(),
+    }]
+)]
+fn client_credential_fields_gate_the_walk(
     #[case] field: &str,
     #[case] value: Json,
     #[case] expected_key: Option<&str>,
+    #[case] expected_diagnostics: Vec<OverrideDiagnostic>,
 ) {
     let mut data = request(&[("model", "gpt-4o")]);
     data.insert(field.to_owned(), value);
@@ -54,6 +83,7 @@ fn client_credentials_skip_the_walk(
     let service = build_service(credential_settings(), None, team_credentials());
     let result = service.apply(&input).unwrap();
     assert_eq!(text_field(&result.data, "api_key"), expected_key);
+    assert_eq!(result.diagnostics, expected_diagnostics);
 }
 
 #[test]

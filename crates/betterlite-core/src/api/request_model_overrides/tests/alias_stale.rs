@@ -1,3 +1,4 @@
+use betterlite_config::sections::request_model_overrides::Settings as ModelOverridesSettings;
 use rstest::rstest;
 
 use super::support::{
@@ -83,7 +84,7 @@ fn stale_alias_over_sibling_deployments_is_applied_with_a_warning() {
             .with_team_group("team-1", "gpt-4o"),
     );
     let principal = team_principal(&[("gpt-4o", STALE_TARGET)]);
-    let service = build_service(bypass_settings(), catalog_view, Vec::new());
+    let service = build_service(ModelOverridesSettings::default(), catalog_view, Vec::new());
     let result = service.apply(&input(principal, "gpt-4o")).unwrap();
     assert_eq!(text_field(&result.data, "model"), Some(STALE_TARGET));
     assert_eq!(
