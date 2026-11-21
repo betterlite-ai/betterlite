@@ -68,9 +68,19 @@ async fn hooks_run_in_order_and_see_the_call() {
         ("x-validated".to_owned(), "yes".to_owned()),
     ]);
     let hooks = seen_values(&run.provider);
+    assert_eq!(hooks.validate_api_key.as_deref(), Some("sk-search"));
+    assert_eq!(hooks.validate_api_base.as_deref(), Some(run.base.as_str()));
+    assert_eq!(
+        hooks.validate_headers,
+        BTreeMap::from([("x-caller".to_owned(), "1".to_owned())])
+    );
     assert_eq!(hooks.transform_api_key.as_deref(), Some("sk-search"));
     assert_eq!(hooks.transform_api_base.as_deref(), Some(run.base.as_str()));
     assert_eq!(hooks.transform_headers, validated);
+    assert_eq!(hooks.url_api_base.as_deref(), Some(run.base.as_str()));
+    assert_eq!(hooks.url_api_key.as_deref(), Some("sk-search"));
+    assert_eq!(hooks.url_params, Object::new());
+    assert_eq!(hooks.url_body.as_ref(), Some(&run.provider.body));
     assert_eq!(hooks.sign_api_base, run.base);
     assert_eq!(hooks.sign_api_key.as_deref(), Some("sk-search"));
     assert_eq!(hooks.sign_headers, validated);

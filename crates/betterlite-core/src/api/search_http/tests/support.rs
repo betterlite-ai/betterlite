@@ -188,9 +188,16 @@ pub(super) enum TestError {
 
 #[derive(Clone, Default)]
 pub(super) struct Seen {
+    pub(super) validate_api_key: Option<String>,
+    pub(super) validate_api_base: Option<String>,
+    pub(super) validate_headers: Headers,
     pub(super) transform_api_key: Option<String>,
     pub(super) transform_api_base: Option<String>,
     pub(super) transform_headers: Headers,
+    pub(super) url_api_base: Option<String>,
+    pub(super) url_api_key: Option<String>,
+    pub(super) url_params: Object,
+    pub(super) url_body: Option<Object>,
     pub(super) sign_api_base: String,
     pub(super) sign_api_key: Option<String>,
     pub(super) sign_headers: Headers,
@@ -263,22 +270,33 @@ impl SearchProvider for TestProvider {
     fn validate_environment(
         &self,
         mut headers: Headers,
-        _api_key: Option<&SecretString>,
-        _api_base: Option<&str>,
+        api_key: Option<&SecretString>,
+        api_base: Option<&str>,
     ) -> Headers {
         record(&self.events, "validate");
+        let mut observed = self.seen.lock().unwrap_or_else(PoisonError::into_inner);
+        observed.validate_api_key = api_key.map(|key| key.expose_secret().to_owned());
+        observed.validate_api_base = api_base.map(str::to_owned);
+        observed.validate_headers = headers.clone();
+        drop(observed);
         headers.insert("x-validated".to_owned(), "yes".to_owned());
         headers
     }
 
     fn complete_url(
         &self,
-        _api_base: Option<&str>,
-        _optional_params: &Object,
-        _body: Option<&Object>,
-        _api_key: Option<&SecretString>,
+        api_base: Option<&str>,
+        optional_params: &Object,
+        body: Option<&Object>,
+        api_key: Option<&SecretString>,
     ) -> Result<String, TestError> {
         record(&self.events, "url");
+        let mut observed = self.seen.lock().unwrap_or_else(PoisonError::into_inner);
+        observed.url_api_base = api_base.map(str::to_owned);
+        observed.url_api_key = api_key.map(|key| key.expose_secret().to_owned());
+        observed.url_params = optional_params.clone();
+        observed.url_body = body.cloned();
+        drop(observed);
         Ok(self.complete.clone())
     }
 
