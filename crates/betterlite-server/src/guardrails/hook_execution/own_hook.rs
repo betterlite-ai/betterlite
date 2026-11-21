@@ -71,8 +71,9 @@ pub enum RecordError {
         #[from]
         source: serde_json::Error,
     },
+    // boxed so the record variant stays the size of the JSON one
     #[error(transparent)]
-    Record(#[from] GuardrailRecordError),
+    Record(#[from] Box<GuardrailRecordError>),
 }
 
 struct OpenRecord {
@@ -95,7 +96,7 @@ pub async fn run_own_hook(
         .map_err(RecordError::from)
         .and_then(|request_data| {
             GuardrailInvocation::begin(hook_name, &request_data.0, None, started_at)
-                .map_err(RecordError::from)
+                .map_err(|error| RecordError::from(Box::new(error)))
         });
     let outcome = own_hook(call, data).await;
     let record = OpenRecord {
@@ -150,11 +151,15 @@ fn close_record(
     match outcome {
         Ok(answer) => {
             let response = answer_value(answer)?;
-            invocation.finish_success(&mut context, response.as_ref(), record.finished_at)?;
+            invocation
+                .finish_success(&mut context, response.as_ref(), record.finished_at)
+                .map_err(Box::new)?;
         }
         Err(error) => {
             let failure = guardrail_failure(error);
-            invocation.finish_failure(&mut context, failure, record.finished_at)?;
+            invocation
+                .finish_failure(&mut context, failure, record.finished_at)
+                .map_err(Box::new)?;
         }
     }
     write_buckets(data, &buckets)?;
