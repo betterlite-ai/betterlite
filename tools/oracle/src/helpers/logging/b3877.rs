@@ -149,7 +149,7 @@ struct LabelFixture {
 }
 
 impl LabelFixture {
-    fn usage_labels(&self) -> UsageLabels<'_> {
+    const fn usage_labels(&self) -> UsageLabels<'_> {
         UsageLabels {
             values: &self.values,
             context: &self.context,
