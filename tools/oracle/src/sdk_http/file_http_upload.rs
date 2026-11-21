@@ -65,7 +65,7 @@ pub struct Call {
     pub plan: Plan,
     // Uploads the case runs after this one, over the same mock script
     #[serde(default)]
-    pub also: Vec<Call>,
+    pub also: Vec<Self>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -190,7 +190,7 @@ pub struct Outcome {
     pub diagnostics: Option<Diagnostics>,
     // The outcomes of the uploads this case ran after the first, in order
     #[serde(default)]
-    pub also: Vec<Outcome>,
+    pub also: Vec<Self>,
 }
 
 impl CallKind for Call {
