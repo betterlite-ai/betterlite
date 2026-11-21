@@ -107,10 +107,10 @@ async fn one(
     api_base: &str,
 ) -> Result<Step, SdkHttpError> {
     let settings = assistant_config(run, wiring.environment)?;
-    let data = data(run, api_base);
+    let body = data(run, api_base);
     let request = AssistantRequest {
         operation: run.operation,
-        data: &data,
+        data: &body,
         thread_id: run.thread_id.as_deref(),
         assistant_id: run.assistant_id.as_deref(),
         client: None,
