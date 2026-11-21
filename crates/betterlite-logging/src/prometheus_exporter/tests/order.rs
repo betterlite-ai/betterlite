@@ -1,7 +1,6 @@
 use betterlite_prometheus::collector_registry::metric::CollectorKind;
 
 use crate::prometheus_exporter::PrometheusExporterSettings;
-use crate::prometheus_label_schema::PrometheusLabelSettings;
 
 use super::{default_label_settings, registered};
 

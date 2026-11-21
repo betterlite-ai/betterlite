@@ -1,9 +1,9 @@
 use rust_decimal::Decimal;
 
-use betterlite_prometheus::collector_factory::collector::{Collector, MetricValue};
+use betterlite_prometheus::collector_factory::collector::{Collector as _, MetricValue};
 
 use crate::prometheus_exporter::PrometheusExporterSettings;
-use crate::prometheus_helpers::bounded_series_tracker::{ChildRemoval, RemovableMetric};
+use crate::prometheus_helpers::bounded_series_tracker::{ChildRemoval, RemovableMetric as _};
 
 use super::{default_label_settings, registered};
 

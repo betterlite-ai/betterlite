@@ -69,7 +69,7 @@ struct Builder<'builder, 'settings> {
     latency_buckets: &'builder [Bucket],
 }
 
-impl<'builder, 'settings> Builder<'builder, 'settings> {
+impl Builder<'_, '_> {
     fn resolve(&mut self, labels: Labels<'_>) -> Result<Vec<String>, PrometheusExporterError> {
         match labels {
             Labels::Schema(metric) => Ok(self.factory.get_labels_for_metric(metric)?),
@@ -747,13 +747,16 @@ impl PrometheusCollectors {
             &label_settings.custom_metadata_labels,
             &label_settings.custom_tags,
         )?;
-        let latency_buckets = match &settings.prometheus_latency_buckets {
-            Some(custom) => custom
-                .iter()
-                .map(|seconds| Bucket::Seconds(*seconds))
-                .collect(),
-            None => time_bounds(&LATENCY_BUCKETS),
-        };
+        let latency_buckets: Vec<Bucket> =
+            settings.prometheus_latency_buckets.as_ref().map_or_else(
+                || time_bounds(&LATENCY_BUCKETS),
+                |custom| {
+                    custom
+                        .iter()
+                        .map(|seconds| Bucket::Seconds(*seconds))
+                        .collect()
+                },
+            );
         let mut builder = Builder {
             factory: &mut factory,
             registry,
