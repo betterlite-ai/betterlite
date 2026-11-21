@@ -1,7 +1,9 @@
 #![cfg(test)]
 
 mod edges;
+mod flags_cases;
 mod harness;
+mod project_cases;
 
 use std::time::Duration;
 
@@ -9,10 +11,6 @@ use betterlite_config::sections::vertex_credential_sources::VertexSettings;
 use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
 use rstest::rstest;
 use tokio::time::Instant;
-
-use crate::rag::ingestion::IngestionState;
-
-use super::VertexIngestion;
 
 use harness::{File, Kind, build, capture, chunking, expected, json_body, settings, store};
 
@@ -27,102 +25,10 @@ const UPLOAD_URL: &str =
     "https://us-central1-aiplatform.googleapis.com/upload/v1beta1/corpora/7/ragFiles:upload";
 
 #[test]
-fn flags_supports_existing_file_id_matches_the_shared_state() {
-    let supported = VertexIngestion::SUPPORTS_EXISTING_FILE_ID;
-    assert!(!supported);
-    assert_eq!(supported, IngestionState::SUPPORTS_EXISTING_FILE_ID);
-}
-
-#[test]
 fn flags_embed_returns_no_embeddings() {
     let harness = build(PROJECT_OPTIONS, &VertexSettings::default(), None, None, &[]);
     let chunks = ["one chunk".to_owned()];
     assert_eq!(harness.ingestion.embed(&chunks), None);
-}
-
-#[tokio::test]
-async fn flags_existing_file_id_is_ignored() {
-    let harness = build(
-        EXISTING_OPTIONS,
-        &VertexSettings::default(),
-        None,
-        None,
-        &[(200, FILE_REPLY)],
-    );
-    let file = File {
-        content: Some(b"data".as_slice()),
-        filename: Some("n.txt"),
-        content_type: None,
-        existing_file_id: Some("legacy"),
-    };
-    let (_, file_id) = store(&harness, file).await.expect("a stored file");
-    assert_eq!(file_id.as_deref(), Some("files/1"));
-    let idle = build(
-        EXISTING_OPTIONS,
-        &VertexSettings::default(),
-        None,
-        None,
-        &[],
-    );
-    let idle_file = File {
-        content: None,
-        filename: None,
-        content_type: None,
-        existing_file_id: Some("legacy"),
-    };
-    let (_, skipped_file_id) = store(&idle, idle_file).await.expect("a skipped upload");
-    assert_eq!(skipped_file_id, None);
-}
-
-#[tokio::test]
-async fn project_missing_project_fails_without_any_port_call() {
-    let harness = build("{}", &VertexSettings::default(), None, None, &[]);
-    let error = store(&harness, File::default())
-        .await
-        .expect_err("a missing project");
-    assert_eq!(
-        error.to_string(),
-        "vertex_project is required for Vertex AI RAG ingestion. Set it in vector_store config."
-    );
-    assert!(harness.token.credentials_seen().is_empty());
-    assert!(harness.http.calls().is_empty());
-}
-
-#[tokio::test]
-async fn project_empty_project_option_is_missing() {
-    let harness = build(
-        r#"{"vertex_project":""}"#,
-        &settings(Some("settings-proj"), None, None),
-        None,
-        None,
-        &[],
-    );
-    let error = store(&harness, File::default())
-        .await
-        .expect_err("an empty project");
-    assert_eq!(
-        error.to_string(),
-        "vertex_project is required for Vertex AI RAG ingestion. Set it in vector_store config."
-    );
-    assert!(harness.token.credentials_seen().is_empty());
-}
-
-#[tokio::test]
-async fn project_settings_project_is_used_when_the_options_omit_one() {
-    let harness = build(
-        "{}",
-        &settings(Some("settings-proj"), None, None),
-        None,
-        None,
-        &[(200, DONE)],
-    );
-    store(&harness, File::default())
-        .await
-        .expect("a created corpus");
-    assert_eq!(
-        harness.http.calls()[0].url,
-        "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/settings-proj/locations/us-central1/ragCorpora"
-    );
 }
 
 #[tokio::test]
@@ -146,25 +52,6 @@ async fn project_vertex_project_wins_over_the_vertex_ai_alias() {
 }
 
 #[tokio::test]
-async fn project_vertex_ai_alias_is_used_alone() {
-    let options = r#"{"vertex_ai_project":"alias"}"#;
-    let harness = build(
-        options,
-        &settings(None, None, None),
-        None,
-        None,
-        &[(200, DONE)],
-    );
-    store(&harness, File::default())
-        .await
-        .expect("a created corpus");
-    assert_eq!(
-        harness.http.calls()[0].url,
-        "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/alias/locations/us-central1/ragCorpora"
-    );
-}
-
-#[tokio::test]
 async fn project_location_defaults_to_us_central1() {
     let harness = build(
         PROJECT_OPTIONS,
@@ -177,24 +64,6 @@ async fn project_location_defaults_to_us_central1() {
         .await
         .expect("a created corpus");
     assert_eq!(harness.http.calls()[0].url, CORPUS_URL);
-}
-
-#[tokio::test]
-async fn project_location_uses_the_settings_value() {
-    let harness = build(
-        PROJECT_OPTIONS,
-        &settings(None, Some("europe-west4"), None),
-        None,
-        None,
-        &[(200, DONE)],
-    );
-    store(&harness, File::default())
-        .await
-        .expect("a created corpus");
-    assert_eq!(
-        harness.http.calls()[0].url,
-        "https://europe-west4-aiplatform.googleapis.com/v1beta1/projects/proj/locations/europe-west4/ragCorpora"
-    );
 }
 
 #[tokio::test]
@@ -218,25 +87,6 @@ async fn project_location_aliases_fall_through_empties() {
 }
 
 #[tokio::test]
-async fn project_location_uses_the_global_host() {
-    let options = r#"{"vertex_project":"proj","vertex_location":"global"}"#;
-    let harness = build(
-        options,
-        &VertexSettings::default(),
-        None,
-        None,
-        &[(200, DONE)],
-    );
-    store(&harness, File::default())
-        .await
-        .expect("a created corpus");
-    assert_eq!(
-        harness.http.calls()[0].url,
-        "https://aiplatform.googleapis.com/v1beta1/projects/proj/locations/global/ragCorpora"
-    );
-}
-
-#[tokio::test]
 async fn project_location_uses_the_multiregion_host() {
     let options = r#"{"vertex_project":"proj","vertex_location":"eu"}"#;
     let harness = build(
@@ -253,18 +103,6 @@ async fn project_location_uses_the_multiregion_host() {
         harness.http.calls()[0].url,
         "https://aiplatform.eu.rep.googleapis.com/v1beta1/projects/proj/locations/eu/ragCorpora"
     );
-}
-
-#[tokio::test]
-async fn project_invalid_location_fails_after_the_token_call() {
-    let options = r#"{"vertex_project":"proj","vertex_location":"Bad_Location"}"#;
-    let harness = build(options, &VertexSettings::default(), None, None, &[]);
-    let error = store(&harness, File::default())
-        .await
-        .expect_err("an invalid location");
-    assert_eq!(error.to_string(), "invalid vertex_location format");
-    assert_eq!(harness.token.credentials_seen().len(), 1);
-    assert!(harness.http.calls().is_empty());
 }
 
 #[tokio::test]
