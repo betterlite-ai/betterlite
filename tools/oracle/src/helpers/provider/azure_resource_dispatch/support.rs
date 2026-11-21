@@ -40,11 +40,7 @@ where
     })
 }
 
-pub(super) fn failure_with_status<M>(status: u16, message: M) -> Box<HelperError>
-where
-    M: Display,
-{
-    let mut error = failure(message);
+pub(super) fn with_status(mut error: Box<HelperError>, status: u16) -> Box<HelperError> {
     error.status = Some(status);
     error
 }

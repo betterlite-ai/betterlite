@@ -20,11 +20,30 @@ pub(super) fn run(input: &Input) -> HelperResult {
     let runtime = runtime()?;
     let mut streaming = Vec::with_capacity(input.streaming_steps.len());
     for step in &input.streaming_steps {
-        streaming.push(streaming_view(&runtime, step)?);
+        let call = Call::StreamingRequest {
+            endpoint: &step.endpoint,
+            request_data: &step.request_data,
+        };
+        streaming.push(dispatch_value(&runtime, None, call)?);
     }
     let mut urls = Vec::with_capacity(input.url_steps.len());
     for step in &input.url_steps {
-        urls.push(url_view(&runtime, step)?);
+        let request = PassthroughUrlRequest {
+            api_base: step.api_base.as_deref(),
+            api_key: None,
+            target: PassthroughTarget {
+                model: &step.model,
+                custom_llm_provider: "azure",
+                endpoint: &step.endpoint,
+            },
+            request_query_params: step.request_query_params.as_ref(),
+            litellm_params: &step.litellm_params,
+        };
+        urls.push(dispatch_value(
+            &runtime,
+            step.env_base.clone(),
+            Call::CompleteUrl(request),
+        )?);
     }
     Ok(json!({"streaming": streaming, "urls": urls}))
 }
@@ -58,45 +77,6 @@ pub(crate) struct UrlStep {
     pub(super) env_base: Option<String>,
 }
 
-fn streaming_view(runtime: &Runtime, step: &StreamStep) -> Result<Value, Box<HelperError>> {
-    let config = config(None);
-    let mut logging = RecordingPassthrough::default();
-    let outcome = through(
-        runtime,
-        &config,
-        &mut logging,
-        Call::StreamingRequest {
-            endpoint: &step.endpoint,
-            request_data: &step.request_data,
-        },
-    )?;
-    match outcome {
-        Outcome::Streaming(streaming) => Ok(json!(streaming)),
-        _ => Err(failure(OTHER)),
-    }
-}
-
-fn url_view(runtime: &Runtime, step: &UrlStep) -> Result<Value, Box<HelperError>> {
-    let config = config(step.env_base.clone());
-    let mut logging = RecordingPassthrough::default();
-    let request = PassthroughUrlRequest {
-        api_base: step.api_base.as_deref(),
-        api_key: None,
-        target: PassthroughTarget {
-            model: &step.model,
-            custom_llm_provider: "azure",
-            endpoint: &step.endpoint,
-        },
-        request_query_params: step.request_query_params.as_ref(),
-        litellm_params: &step.litellm_params,
-    };
-    let outcome = through(runtime, &config, &mut logging, Call::CompleteUrl(request))?;
-    match outcome {
-        Outcome::Url { url, base } => Ok(json!({"url": url, "base": base})),
-        _ => Err(failure(OTHER)),
-    }
-}
-
 fn config(api_base_env: Option<String>) -> passthrough::Config {
     passthrough::Config {
         api_base_env,
@@ -107,21 +87,25 @@ fn config(api_base_env: Option<String>) -> passthrough::Config {
     }
 }
 
-fn through(
+fn dispatch_value(
     runtime: &Runtime,
-    config: &passthrough::Config,
-    logging: &mut RecordingPassthrough,
+    env_base: Option<String>,
     call: Call<'_>,
-) -> Result<Outcome, Box<HelperError>> {
+) -> Result<Value, Box<HelperError>> {
+    let config = config(env_base);
+    let mut logging = RecordingPassthrough::default();
     let result = runtime.block_on(dispatch(AzureResourceOperation::Passthrough(Box::new(
         passthrough::Dispatch {
-            config,
-            logging,
+            config: &config,
+            logging: &mut logging,
             call,
         },
     ))));
     match result {
-        Ok(AzureResourceResult::Passthrough(outcome)) => Ok(outcome),
+        Ok(AzureResourceResult::Passthrough(Outcome::Streaming(streaming))) => Ok(json!(streaming)),
+        Ok(AzureResourceResult::Passthrough(Outcome::Url { url, base })) => {
+            Ok(json!({"url": url, "base": base}))
+        }
         Ok(_) => Err(failure(OTHER)),
         Err(AzureResourceError::Passthrough(error)) => Err(failure(&error)),
         Err(error) => Err(failure(error)),

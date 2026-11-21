@@ -13,7 +13,7 @@ use betterlite_provider::azure_resource_dispatch::{
 };
 use serde_json::{Map, Value, json};
 
-use super::super::support::{OTHER, failure, failure_with_status, runtime};
+use super::super::support::{OTHER, failure, runtime, with_status};
 use super::{Fixture, Step};
 
 const CREATE_TEXT: &str =
@@ -158,7 +158,7 @@ fn value(reply: BatchReply) -> Value {
 
 fn sdk_failure(source: &SdkError) -> Box<HelperError> {
     match source {
-        SdkError::Status { status, .. } => failure_with_status(*status, "the fixture failed"),
+        SdkError::Status { status, .. } => with_status(failure("the fixture failed"), *status),
         error => failure(error),
     }
 }

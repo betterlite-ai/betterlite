@@ -18,7 +18,7 @@ use secrecy::SecretString;
 use serde_json::{Value, json};
 use url::Url;
 
-use super::super::support::{FileFake, OTHER, Reply, failure, failure_with_status, runtime};
+use super::super::support::{FileFake, OTHER, Reply, failure, runtime, with_status};
 use super::{Fixture, Step};
 
 pub(super) fn answer(step: &Step) -> HelperResult {
@@ -107,7 +107,7 @@ fn value(reply: FileReply) -> Value {
 
 fn leaf_failure(source: &FilesError) -> Box<HelperError> {
     match source {
-        FilesError::Status(status) => failure_with_status(status.status, status.message.clone()),
+        FilesError::Status(status) => with_status(failure(status.message.clone()), status.status),
         error => failure(error),
     }
 }

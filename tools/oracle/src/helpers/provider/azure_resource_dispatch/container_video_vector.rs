@@ -21,11 +21,36 @@ pub(super) fn run(input: &Input) -> HelperResult {
     let runtime = runtime()?;
     let mut urls = Vec::with_capacity(input.urls.len());
     for step in &input.urls {
-        urls.push(url_view(&runtime, step)?);
+        let from_env = env::var("AZURE_API_BASE").ok();
+        let fallback = step.module.api_base.clone().or(from_env);
+        let request = UrlRequest {
+            api_base: step.api_base.as_deref(),
+            fallback_api_base: fallback.as_deref(),
+            api_version: step.api_version.as_deref(),
+        };
+        let Outcome::Url(url) = through(
+            &runtime,
+            Call::Url {
+                resource: AzureResource::Container,
+                request,
+            },
+        )?
+        else {
+            return Err(failure(OTHER));
+        };
+        urls.push(json!({"url": url, "params_api_version": step.api_version}));
     }
     let mut video = Vec::with_capacity(input.video.len());
     for step in &input.video {
-        video.push(video_view(&runtime, step)?);
+        let options: VideoCreate =
+            serde_json::from_value(Value::Object(step.options.clone())).map_err(failure)?;
+        let Outcome::VideoParams(mapped) = through(&runtime, Call::VideoParams(&options))? else {
+            return Err(failure(OTHER));
+        };
+        let Outcome::VideoSupported(supported) = through(&runtime, Call::VideoSupported)? else {
+            return Err(failure(OTHER));
+        };
+        video.push(json!({"supported": supported, "mapped": *mapped}));
     }
     Ok(json!({"urls": urls, "video": video}))
 }
@@ -61,54 +86,14 @@ pub(crate) struct VideoStep {
     pub(super) options: Object,
 }
 
-fn url_view(runtime: &Runtime, step: &UrlStep) -> Result<Value, Box<HelperError>> {
-    let from_env = env::var("AZURE_API_BASE").ok();
-    let fallback = step.module.api_base.clone().or(from_env);
-    let request = UrlRequest {
-        api_base: step.api_base.as_deref(),
-        fallback_api_base: fallback.as_deref(),
-        api_version: step.api_version.as_deref(),
-    };
+fn through(runtime: &Runtime, call: Call<'_>) -> Result<Outcome, Box<HelperError>> {
     let result = runtime.block_on(dispatch(AzureResourceOperation::ResourceUrls(Box::new(
-        resource_urls::Dispatch {
-            call: Call::Url {
-                resource: AzureResource::Container,
-                request,
-            },
-        },
+        resource_urls::Dispatch { call },
     ))));
-    let url = match result {
-        Ok(AzureResourceResult::ResourceUrls(Outcome::Url(url))) => url,
-        Ok(_) => return Err(failure(OTHER)),
-        Err(AzureResourceError::ResourceUrls(error)) => return Err(failure(&error)),
-        Err(error) => return Err(failure(error)),
-    };
-    Ok(json!({"url": url, "params_api_version": step.api_version}))
-}
-
-fn video_view(runtime: &Runtime, step: &VideoStep) -> Result<Value, Box<HelperError>> {
-    let options: VideoCreate =
-        serde_json::from_value(Value::Object(step.options.clone())).map_err(failure)?;
-    let result = runtime.block_on(dispatch(AzureResourceOperation::ResourceUrls(Box::new(
-        resource_urls::Dispatch {
-            call: Call::VideoParams(&options),
-        },
-    ))));
-    let mapped = match result {
-        Ok(AzureResourceResult::ResourceUrls(Outcome::VideoParams(mapped))) => *mapped,
-        Ok(_) => return Err(failure(OTHER)),
-        Err(AzureResourceError::ResourceUrls(error)) => return Err(failure(&error)),
-        Err(error) => return Err(failure(error)),
-    };
-    let supported = match runtime.block_on(dispatch(AzureResourceOperation::ResourceUrls(
-        Box::new(resource_urls::Dispatch {
-            call: Call::VideoSupported,
-        }),
-    ))) {
-        Ok(AzureResourceResult::ResourceUrls(Outcome::VideoSupported(supported))) => supported,
-        Ok(_) => return Err(failure(OTHER)),
-        Err(AzureResourceError::ResourceUrls(error)) => return Err(failure(&error)),
-        Err(error) => return Err(failure(error)),
-    };
-    Ok(json!({"supported": supported, "mapped": mapped}))
+    match result {
+        Ok(AzureResourceResult::ResourceUrls(outcome)) => Ok(outcome),
+        Ok(_) => Err(failure(OTHER)),
+        Err(AzureResourceError::ResourceUrls(error)) => Err(failure(&error)),
+        Err(error) => Err(failure(error)),
+    }
 }

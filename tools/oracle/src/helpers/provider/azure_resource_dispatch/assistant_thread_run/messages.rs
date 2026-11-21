@@ -14,7 +14,7 @@ use betterlite_provider::azure_resource_dispatch::{
 use serde_json::json;
 
 use super::super::support::{
-    AssistantsFake, OTHER, Reply as FakeReply, failure, failure_with_status, runtime,
+    AssistantsFake, OTHER, Reply as FakeReply, failure, runtime, with_status,
 };
 use super::{Answer, Fixture, Step};
 
@@ -70,7 +70,7 @@ pub(super) fn answer(step: &Step) -> Answer {
         Ok(_) => return Err(failure(OTHER)),
         Err(AzureResourceError::AssistantMessages(MessagesError::Threads(
             ThreadsError::Status { status, .. },
-        ))) => return Err(failure_with_status(status, "the fixture failed")),
+        ))) => return Err(with_status(failure("the fixture failed"), status)),
         Err(error) => return Err(failure(error)),
     };
     Ok((kind, value))

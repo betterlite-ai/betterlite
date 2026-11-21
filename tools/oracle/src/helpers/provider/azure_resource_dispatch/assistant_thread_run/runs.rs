@@ -15,7 +15,7 @@ use futures_util::StreamExt as _;
 use serde_json::json;
 use tokio::runtime::Runtime;
 
-use super::super::support::{AssistantsFake, OTHER, failure, failure_with_status, runtime};
+use super::super::support::{AssistantsFake, OTHER, failure, runtime, with_status};
 use super::{Answer, Fixture, Planned, Step};
 
 const RUN_TEXT: &str = r#"{"thread_id":"thread_1","assistant_id":"asst_1","model":"gpt-4o-mini","instructions":"base"}"#;
@@ -64,7 +64,7 @@ pub(super) fn answer(step: &Step) -> Answer {
         Ok(_) => Err(failure(OTHER)),
         Err(AzureResourceError::AssistantRuns(AssistantsRunError::Runs(
             ThreadRunsError::Status(status, _body),
-        ))) => Err(failure_with_status(status, "the fixture failed")),
+        ))) => Err(with_status(failure("the fixture failed"), status)),
         Err(error) => Err(failure(error)),
     }
 }

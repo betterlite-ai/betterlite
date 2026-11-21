@@ -111,41 +111,8 @@ fn http_view(runtime: &Runtime, step: &HttpSetup) -> Result<Value, Box<HelperErr
     };
     let base = settings.api_base(step.api_base.as_deref());
     let key = settings.api_key(step.api_key.as_deref());
-    let complete = url_outcome(
-        runtime,
-        Call::SessionUrl {
-            route: SessionRoute::ClientSecrets,
-            settings: &settings,
-            base: Some(&base),
-            version: step.api_version.as_deref(),
-        },
-    )?;
-    let calls = url_outcome(
-        runtime,
-        Call::SessionUrl {
-            route: SessionRoute::Calls,
-            settings: &settings,
-            base: Some(&base),
-            version: step.api_version.as_deref(),
-        },
-    )?;
-    let transcription = url_outcome(
-        runtime,
-        Call::SessionUrl {
-            route: SessionRoute::Transcription,
-            settings: &settings,
-            base: Some(&base),
-            version: step.api_version.as_deref(),
-        },
-    )?;
-    let headers = headers_outcome(
-        runtime,
-        Call::SessionHeaders {
-            headers: &step.headers,
-            api_key: Some(&key),
-        },
-    )?;
-    let calls_headers = headers_outcome(runtime, Call::CallsHeaders(&step.ephemeral_key))?;
+    let [complete, calls, transcription] = session_urls(runtime, &settings, step, &base)?;
+    let (headers, calls_headers) = session_headers(runtime, step, &key)?;
     Ok(json!({
         "api_base": base,
         "api_key": key.expose_secret(),
@@ -157,21 +124,56 @@ fn http_view(runtime: &Runtime, step: &HttpSetup) -> Result<Value, Box<HelperErr
     }))
 }
 
-fn url_outcome(runtime: &Runtime, call: Call<'_>) -> Result<String, Box<HelperError>> {
-    match through(runtime, call)? {
-        Outcome::Url(url) => Ok(url),
-        _ => Err(failure(OTHER)),
+fn session_urls(
+    runtime: &Runtime,
+    settings: &RealtimeHttpSettings,
+    step: &HttpSetup,
+    base: &str,
+) -> Result<[String; 3], Box<HelperError>> {
+    let mut urls = [String::new(), String::new(), String::new()];
+    let routes = [
+        SessionRoute::ClientSecrets,
+        SessionRoute::Calls,
+        SessionRoute::Transcription,
+    ];
+    for (slot, route) in urls.iter_mut().zip(routes) {
+        let Outcome::Url(url) = through(
+            runtime,
+            Call::SessionUrl {
+                route,
+                settings,
+                base: Some(base),
+                version: step.api_version.as_deref(),
+            },
+        )?
+        else {
+            return Err(failure(OTHER));
+        };
+        *slot = url;
     }
+    Ok(urls)
 }
 
-fn headers_outcome(
+fn session_headers(
     runtime: &Runtime,
-    call: Call<'_>,
-) -> Result<BTreeMap<String, String>, Box<HelperError>> {
-    match through(runtime, call)? {
-        Outcome::Headers(headers) => Ok(headers),
-        _ => Err(failure(OTHER)),
-    }
+    step: &HttpSetup,
+    key: &SecretString,
+) -> Result<(BTreeMap<String, String>, BTreeMap<String, String>), Box<HelperError>> {
+    let headers = match through(
+        runtime,
+        Call::SessionHeaders {
+            headers: &step.headers,
+            api_key: Some(key),
+        },
+    )? {
+        Outcome::Headers(headers) => headers,
+        Outcome::Url(_) | Outcome::Connection(_) => return Err(failure(OTHER)),
+    };
+    let calls_headers = match through(runtime, Call::CallsHeaders(&step.ephemeral_key))? {
+        Outcome::Headers(headers) => headers,
+        Outcome::Url(_) | Outcome::Connection(_) => return Err(failure(OTHER)),
+    };
+    Ok((headers, calls_headers))
 }
 
 fn through(runtime: &Runtime, call: Call<'_>) -> Result<Outcome, Box<HelperError>> {

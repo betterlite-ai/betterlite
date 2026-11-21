@@ -21,7 +21,7 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::super::support::{NoSources, OTHER, failure, failure_with_status, runtime};
+use super::super::support::{NoSources, OTHER, failure, runtime, with_status};
 
 const CREATE_TEXT: &str = r#"{"model":"gpt-4o-mini","training_file":"file_a"}"#;
 
@@ -174,7 +174,7 @@ fn through(
     match result {
         Ok(outcome) => Ok(outcome),
         Err(AzureResourceError::FineTuning(AzureFineTuneError::Sdk { source })) => {
-            Err(failure_with_status(source.status, source.message))
+            Err(with_status(failure(source.message), source.status))
         }
         Err(error) => Err(failure(error)),
     }

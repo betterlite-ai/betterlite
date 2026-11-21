@@ -12,7 +12,7 @@ use betterlite_provider::azure_resource_dispatch::{
 use secrecy::SecretString;
 use serde_json::json;
 
-use super::super::support::{OTHER, failure, failure_with_status, runtime};
+use super::super::support::{OTHER, failure, runtime, with_status};
 use super::{Answer, HeadersStep, SearchReplyStep, SearchRequestStep, Step};
 
 // B546's headers, URL, request and reply calls over the grounded-search settings
@@ -141,7 +141,7 @@ fn body_of(step: &Step) -> &[u8] {
 
 fn search_failure(error: &AzureSearchError) -> Box<HelperError> {
     match error.status_code() {
-        Some(status) => failure_with_status(status, error),
+        Some(status) => with_status(failure(error), status),
         None => failure(error),
     }
 }
