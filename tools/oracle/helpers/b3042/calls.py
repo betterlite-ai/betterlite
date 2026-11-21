@@ -15,7 +15,9 @@ async def reserve_tpm(
 
 
 async def refund(limiter: Operations, cache: RecordingCache, call: RefundInput) -> JsonValue:
-    await limiter.refund_reserved(call["scopes"], call["amount"], call["reservation_windows"])
+    await Operations.refund_reserved(
+        limiter, call["scopes"], call["amount"], call["reservation_windows"]
+    )
     return answer(None, 0, 0, None, cache)
 
 
