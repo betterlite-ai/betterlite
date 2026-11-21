@@ -30,6 +30,7 @@ tracing.workspace = true
 url = "2.5.8"
 
 [dev-dependencies]
+betterlite-test-ports = { path = "../betterlite-test-ports" }
 crc16 = "0.4.0"
 rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem"] }
 rstest = "=0.27.0"

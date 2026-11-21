@@ -2,7 +2,6 @@
 
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
-use std::net::{SocketAddr, TcpStream};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -10,6 +9,7 @@ use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
+use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http::proxy::{ProxiedClient, base_builder};
 use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
@@ -33,12 +33,13 @@ use betterlite_openai::containers::container_file_http::{
 use betterlite_openai::openai_base_config::Object;
 use betterlite_prompts::media_metadata::{FileBody, FileData};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use betterlite_test_ports::full_listener::FullListener;
 use http::Method;
 use http::header::HeaderMap;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use tokio::io::AsyncReadExt as _;
-use tokio::net::{TcpListener, TcpSocket};
+use tokio::net::TcpListener;
 use tokio::time::sleep;
 use url::Url;
 
@@ -247,59 +248,47 @@ pub(super) enum TimeoutKind {
     Connect,
 }
 
-// a listener whose accept queue is full, so a connect waits instead of failing
-fn saturated_listener() -> (TcpListener, Vec<TcpStream>) {
-    let socket = TcpSocket::new_v4().expect("the socket");
-    socket
-        .bind("127.0.0.1:0".parse::<SocketAddr>().expect("the address"))
-        .expect("the bind");
-    let listener = socket.listen(1).expect("the listen");
-    let address = listener.local_addr().expect("the address");
-    let fillers = (0_u8..4)
-        .filter_map(|_| TcpStream::connect_timeout(&address, LOCAL_TIMEOUT).ok())
-        .collect();
-    (listener, fillers)
-}
-
 // the client's own read or connect timeout is the source, so a local listener makes each one real
 pub(super) async fn timeout_failure(kind: TimeoutKind) -> ContainerFileHttpError {
-    let (listener, _fillers) = match kind {
-        TimeoutKind::Deadline => (
-            TcpListener::bind("127.0.0.1:0")
-                .await
-                .expect("the listener"),
-            Vec::new(),
-        ),
-        TimeoutKind::Connect => saturated_listener(),
+    let error = match kind {
+        TimeoutKind::Deadline => deadline_failure().await,
+        TimeoutKind::Connect => connect_failure().await,
     };
+    ContainerFileHttpError::Transfer(TransferError::Transport(error))
+}
+
+async fn deadline_failure() -> TransportError {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("the listener");
     let address = listener.local_addr().expect("the address");
-    let client = local_client(match kind {
-        TimeoutKind::Deadline => TransportLimits {
-            read_timeout: LOCAL_TIMEOUT,
-            ..TransportLimits::DEFAULT
-        },
-        TimeoutKind::Connect => TransportLimits {
-            connect_timeout: LOCAL_TIMEOUT,
-            ..TransportLimits::DEFAULT
-        },
+    let client = local_client(TransportLimits {
+        read_timeout: LOCAL_TIMEOUT,
+        ..TransportLimits::DEFAULT
     });
     let url = Url::parse(&format!("http://{address}/v1/files")).expect("the URL");
-    let result = match kind {
-        TimeoutKind::Deadline => {
-            let held = async {
-                let (mut stream, _) = listener.accept().await.expect("the connection");
-                let mut chunk = [0_u8; 64];
-                let read = stream.read(&mut chunk).await.expect("the request bytes");
-                assert_ne!(read, 0, "the client sends its request");
-                sleep(LOCAL_HOLD).await;
-            };
-            let (result, ()) = tokio::join!(client.send_buffered(timeout_request(url)), held);
-            result
-        }
-        TimeoutKind::Connect => client.send_buffered(timeout_request(url)).await,
+    let held = async {
+        let (mut stream, _) = listener.accept().await.expect("the connection");
+        let mut chunk = [0_u8; 64];
+        let read = stream.read(&mut chunk).await.expect("the request bytes");
+        assert_ne!(read, 0, "the client sends its request");
+        sleep(LOCAL_HOLD).await;
     };
-    let error = result.expect_err("the timeout ends the request");
-    ContainerFileHttpError::Transfer(TransferError::Transport(error))
+    let (result, ()) = tokio::join!(client.send_buffered(timeout_request(url)), held);
+    result.expect_err("the timeout ends the request")
+}
+
+async fn connect_failure() -> TransportError {
+    let full = FullListener::bind().expect("the listener");
+    let client = local_client(TransportLimits {
+        connect_timeout: LOCAL_TIMEOUT,
+        ..TransportLimits::DEFAULT
+    });
+    let url = Url::parse(&format!("http://{}/v1/files", full.address)).expect("the URL");
+    client
+        .send_buffered(timeout_request(url))
+        .await
+        .expect_err("the timeout ends the request")
 }
 
 pub(super) struct StubHandler {

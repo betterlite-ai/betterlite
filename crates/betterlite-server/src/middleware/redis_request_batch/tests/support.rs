@@ -22,8 +22,8 @@ use betterlite_redis::redis_connection_settings::model::scalars::{FloatOrText, I
 use betterlite_redis::redis_connection_settings::model::settings::RedisOverrides;
 use betterlite_redis::redis_live_client::LiveClientFactory;
 use betterlite_redis::request_batch::scope::active_request_redis_batch;
+use betterlite_test_ports::refused_port::RefusedPort;
 use futures_util::stream;
-use tokio::net::TcpListener;
 use tower::Service;
 
 pub(crate) const DECLARED_KEY: &str = "batch-key";
@@ -111,14 +111,11 @@ async fn cache_at(port: u16) -> Arc<RedisCache> {
     Arc::new(connect(options, &env).await.expect("a cache"))
 }
 
-// A port nothing listens on: every read and flush fails at connect, which is what a flush-failure test needs.
-pub(crate) async fn unreachable_cache() -> Arc<RedisCache> {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("a bound port");
-    let address = listener.local_addr().expect("the bound address");
-    drop(listener);
-    cache_at(address.port()).await
+// A refused port stays bound without listening, so every read and flush fails at connect while the guard lives.
+pub(crate) async fn unreachable_cache() -> (Arc<RedisCache>, RefusedPort) {
+    let refused = RefusedPort::bind().expect("a refused port");
+    let cache = cache_at(refused.address.port()).await;
+    (cache, refused)
 }
 
 pub(crate) fn request() -> Request<Body> {

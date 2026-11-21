@@ -13,6 +13,7 @@ use axum::http::{StatusCode as AxumStatusCode, Uri, header};
 use axum::response::{IntoResponse as _, Response as AxumResponse};
 use axum::routing::post;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_test_ports::refused_port::RefusedPort;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
@@ -711,14 +712,8 @@ async fn alice_guardrail_timeout_follows_the_policy() {
 
 #[tokio::test]
 async fn alice_guardrail_connection_failure_follows_the_policy() {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("a loopback listener");
-    let base = format!(
-        "http://{}",
-        listener.local_addr().expect("a listener address")
-    );
-    drop(listener);
+    let refused = RefusedPort::bind().expect("a refused port");
+    let base = format!("http://{}", refused.address);
     let instance = guardrail(&base, UnreachableFallback::FailOpen, Duration::from_secs(2));
     let outcome = apply(&instance, text_inputs(&["x"]), &BTreeMap::new()).await;
     assert_eq!(returned_inputs(outcome), text_inputs(&["x"]));

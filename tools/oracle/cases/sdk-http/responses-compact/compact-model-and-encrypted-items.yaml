@@ -1,0 +1,69 @@
+kind: sdk_http
+name: responses-compact-model-and-encrypted-items
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  responses_compact:
+    runs:
+      - mode: sync
+        model: openai/gpt-4o
+        input:
+          - type: reasoning
+            id: encitem_bGl0ZWxsbTptb2RlbF9pZDpkZXBsb3ltZW50X2E7aXRlbV9pZDptc2dfYWJj
+            summary: []
+            encrypted_content: litellm_enc:bW9kZWxfaWQ6ZGVwbG95bWVudF9h;gAAAA-secret
+        instructions: short
+        previous_response_id: resp_previous
+        kwargs:
+          litellm_metadata:
+            model_info: {id: deployment_a}
+            encrypted_content_affinity_enabled: true
+      - mode: async
+        model: openai/gpt-4o
+        input:
+          - type: reasoning
+            id: encitem_bGl0ZWxsbTptb2RlbF9pZDpkZXBsb3ltZW50X2E7aXRlbV9pZDptc2dfYWJj
+            summary: []
+            encrypted_content: litellm_enc:bW9kZWxfaWQ6ZGVwbG95bWVudF9h;gAAAA-secret
+        instructions: short
+        previous_response_id: resp_previous
+        kwargs:
+          litellm_metadata:
+            model_info: {id: deployment_a}
+            encrypted_content_affinity_enabled: true
+      - mode: sync
+        model: responses/gpt-4o
+        custom_llm_provider: openai
+        input: hello
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: resp_compact
+      created_at: 100
+      object: response
+      status: completed
+      model: gpt-4o
+      output: []
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: resp_compact
+      created_at: 100
+      object: response
+      status: completed
+      model: gpt-4o
+      output: []
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: resp_compact
+      created_at: 100
+      object: response
+      status: completed
+      model: gpt-4o
+      output: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore: []
