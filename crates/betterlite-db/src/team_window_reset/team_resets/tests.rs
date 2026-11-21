@@ -239,7 +239,9 @@ async fn a_failed_read_reports_the_phase_without_writing() {
     assert_eq!(events.len(), 1_usize);
     let event = events.first().unwrap();
     assert_eq!(event.call_type, "reset_budget_teams");
-    assert!(event.error.contains("LiteLLM_TeamTable"));
+    // The failure text is the typed DbError, not the driver's message (docs/deviations/B3013.yaml).
+    assert!(event.error.contains("database SQLSTATE 42P01"));
+    assert!(!event.error.contains("LiteLLM_TeamTable"));
     assert_eq!(number_of(&event.event_metadata, "num_teams_found"), Some(0));
     assert!(harness.cache.calls().is_empty());
     close_store(harness.store.clone());
@@ -263,7 +265,9 @@ async fn a_failed_write_reports_the_phase_and_stops() {
     assert_eq!(events.len(), 1_usize);
     let event = events.first().unwrap();
     assert_eq!(event.call_type, "reset_budget_teams");
-    assert!(event.error.contains("budget updates are frozen"));
+    // The failure text is the typed DbError, not the driver's message (docs/deviations/B3013.yaml).
+    assert!(event.error.contains("database SQLSTATE P0001"));
+    assert!(!event.error.contains("budget updates are frozen"));
     assert_eq!(number_of(&event.event_metadata, "num_teams_found"), Some(2));
     assert_spend(&client, TEAM_TABLE, TEAM_COLUMN, "a", 10.0).await;
     assert_spend(&client, TEAM_TABLE, TEAM_COLUMN, "b", 4.0).await;
