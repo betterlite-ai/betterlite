@@ -1,0 +1,57 @@
+{
+  "kind": "helper",
+  "name": "command-r-tool-content",
+  "call": {
+    "foundry_provider": {
+      "inputs": [
+        {
+          "op": "dispatch",
+          "model": "command-r-plus",
+          "messages": [
+            {"role": "user", "content": "hi"},
+            {"role": "tool", "content": "not json"}
+          ],
+          "api_base": "https://res.services.ai.azure.com",
+          "api_key": "sk-foundry-fixture",
+          "headers": null,
+          "globals": {"api_base": null, "api_key": null, "headers": null},
+          "environment": {},
+          "stream": false,
+          "status": null
+        },
+        {
+          "op": "dispatch",
+          "model": "Command-R-plus",
+          "messages": [
+            {"role": "user", "content": "hi"},
+            {"role": "tool", "content": "not json"}
+          ],
+          "api_base": "https://res.services.ai.azure.com",
+          "api_key": "sk-foundry-fixture",
+          "headers": null,
+          "globals": {"api_base": null, "api_key": null, "headers": null},
+          "environment": {},
+          "stream": false,
+          "status": null
+        },
+        {
+          "op": "dispatch",
+          "model": "command-r",
+          "messages": [
+            {"role": "user", "content": "hi"},
+            {"role": "tool", "content": "{\"a\":1}"}
+          ],
+          "api_base": "https://res.services.ai.azure.com",
+          "api_key": "sk-foundry-fixture",
+          "headers": null,
+          "globals": {"api_base": null, "api_key": null, "headers": null},
+          "environment": {},
+          "stream": false,
+          "status": null
+        }
+      ]
+    }
+  },
+  "env": {"LITELLM_RUST": "false", "LITELLM_LOCAL_MODEL_COST_MAP": "true"},
+  "compare": {"ignore": []}
+}
