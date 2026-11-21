@@ -29,14 +29,11 @@ pub enum PassthroughRoute {
 
 // route_llm_request's passthrough branches in LiteLLM's order, up to the router choice
 #[must_use]
-pub fn plan_passthrough_route<View>(
+pub fn plan_passthrough_route(
     input: &PassthroughRouteInput,
-    view: Option<&View>,
+    view: Option<&(dyn VideoRouteView + Send + Sync)>,
     blocked: &dyn BlockedModels,
-) -> PassthroughRoute
-where
-    View: VideoRouteView + ?Sized,
-{
+) -> PassthroughRoute {
     if input.has_api_key_or_base.0 {
         return callee(view);
     }
@@ -52,10 +49,7 @@ where
     plan_with_router(input, router_view, blocked)
 }
 
-const fn callee<View>(view: Option<&View>) -> PassthroughRoute
-where
-    View: ?Sized,
-{
+const fn callee(view: Option<&(dyn VideoRouteView + Send + Sync)>) -> PassthroughRoute {
     if view.is_some() {
         return PassthroughRoute::Router {
             specific_deployment: false,
@@ -64,14 +58,11 @@ where
     PassthroughRoute::Direct
 }
 
-fn plan_with_router<View>(
+fn plan_with_router(
     input: &PassthroughRouteInput,
-    view: &View,
+    view: &(dyn VideoRouteView + Send + Sync),
     blocked: &dyn BlockedModels,
-) -> PassthroughRoute
-where
-    View: VideoRouteView + ?Sized,
-{
+) -> PassthroughRoute {
     // _raise_if_model_fully_blocked skips an empty model and runs before the team mapping
     if !input.model.is_empty() && blocked.all_blocked(&input.model, input.team_id.as_deref()) {
         return PassthroughRoute::Blocked;
@@ -96,10 +87,10 @@ where
     PassthroughRoute::NotFound
 }
 
-fn plan_unlisted<View>(input: &PassthroughRouteInput, view: &View) -> PassthroughRoute
-where
-    View: VideoRouteView + ?Sized,
-{
+fn plan_unlisted(
+    input: &PassthroughRouteInput,
+    view: &(dyn VideoRouteView + Send + Sync),
+) -> PassthroughRoute {
     if view.pass_through_all_models() {
         return PassthroughRoute::Direct;
     }
@@ -117,10 +108,10 @@ where
 }
 
 // The route enum records only that the team maps the model, so the entry asks again for the mapped name
-pub(super) fn team_model<View>(input: &PassthroughRouteInput, view: &View) -> Option<String>
-where
-    View: VideoRouteView + ?Sized,
-{
+pub(super) fn team_model(
+    input: &PassthroughRouteInput,
+    view: &(dyn VideoRouteView + Send + Sync),
+) -> Option<String> {
     let Some(team_id) = input.team_id.as_deref() else {
         return None;
     };
