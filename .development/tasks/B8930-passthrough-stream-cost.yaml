@@ -33,8 +33,8 @@ description: >-
   calculate_usage for message_delta, including cache-read and both cache-creation durations.
   For OpenAI, project prompt_tokens and completion_tokens with default zero, total_tokens with
   the sum as its default, and preserve nonnull prompt_tokens_details and completion_tokens_details
-  using B031's Usage record. Inputs follow LiteLLM's declared numeric types and docs/compatibility.md.
-  A string service_tier is passed to model-name pricing. Build B031's ModelResponse from this
+  using the CostUsage record (betterlite-models, on main). Inputs follow LiteLLM's declared numeric types and docs/compatibility.md.
+  A string service_tier is passed to model-name pricing. Build B1717's typed RecordResponse from this
   usage and try the call's B1717 recorder first, so deployment prices apply. Before that call,
   save cost_breakdown and the presence and value of
   model_call_details.response_cost_failure_debug_information; restore both on success and on
@@ -125,7 +125,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L4134-L4152
 out_of_scope:
   - "B3609 owns stream eligibility, frame accumulation and chunk_processor; B8931 supplies this injector to its production seam, and B102 owns the HTTP proof."
-  - "B068 owns completion_cost, B1717 owns the call's cost recorder, B579 owns Anthropic usage calculation and B031 owns Usage/ModelResponse; none is reimplemented here."
+  - "B068 owns completion_cost, B1717 owns the call's cost recorder, B579 owns Anthropic usage calculation, and the Usage and ModelResponse shapes are CostUsage (betterlite-models) and B1717's RecordResponse, both on main; none is reimplemented here."
   - "All other common_request_processing.py functions retain B004, B7324, B8605, B8693, B8694 and B8800-B8805 ownership; no request-processing pipeline or route is added."
   - "All other litellm/__init__.py settings and initialization remain with their existing consuming tasks, including B198's shared settings."
 pitfalls:

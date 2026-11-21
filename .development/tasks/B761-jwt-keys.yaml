@@ -42,8 +42,9 @@ description: >-
   comma/whitespace-only gives an empty URL list and a no-matching-key error. Trim comma-separated URLs
   and try in order. Only NoMatchingJWTPublicKeyError DEBUG-logs and continues; an unreachable first
   endpoint ERROR-logs and immediately returns 503 auth_provider_unavailable, param string None, with
-  the signature-could-not-be-verified/retry-shortly message. Other errors propagate through B757 as
-  auth_error 401. A kid miss never forces refresh of an otherwise fresh cache. parse_keys preserves
+  the signature-could-not-be-verified/retry-shortly message. Other errors become auth_error 401 with
+  the Authentication Error, prefix and param string None, mapped at this stage the way the done auth
+  stages map a bare error (auth_tag_budgets.rs). A kid miss never forces refresh of an otherwise fresh cache. parse_keys preserves
   the peculiar cardinality rules: a length-one dict or list accepts matching kid or absent requested
   kid; longer lists require a nonnull matching kid and choose the last match; longer dicts iterate
   field names and yield no key. Empty values yield none. NoRegisteredAgents returns empty/None.
@@ -125,8 +126,9 @@ description: >-
 
   Pin externally visible verification/key-fetch failures through B001 HTTP cases against the real MIT
   proxy and betterlite, using B860 independent databases and a configured local JWKS mock. Register this
-  production pre-identity stage through B732; a rejected signature or unavailable key must pass through
-  the real HTTP auth exception mapper before any identity lookup or downstream handler. Compare status
+  production pre-identity stage through B732; a rejected signature or unavailable key must leave as a
+  B8410 ProxyException through this stage's own StageFailure variant and B749's denial_response
+  before any identity lookup or downstream handler. Compare status
   and error type/param/code, including unavailable-key 503 versus invalid-token 401. Successful claim
   projections remain helper cases until B053 installs the complete JWT identity backend; do not use a
   fabricated HTTP success. Server registration tests live at auth::jwt_keys::tests::stage_is_registered

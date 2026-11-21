@@ -13,9 +13,12 @@ description: >-
 
   Callback failure counters. Nothing else builds the `failure_counters` slice of the logging success handler's inputs (betterlite-logging logging_success handler.rs) and of the failure handler's `FailureDeps.counters` (logging_failure). Build both here from the callback loggers that `init_callbacks` resolves, taking the Prometheus hooks value (B8561's PrometheusHooks) as the counter, so litellm_callback_logging_failures_metric moves. Take the loggers through the resolver `init_callbacks` is given; do not depend on B8742, which depends on this task.
 
-  ports.rs. The services other tasks inject: the ProxyLogging hooks service B084 and B1126 take (pre_call, post_call_failure), the guardrails-only pre-call port B1023 calls with `guardrails_only` and `has_pre_call_guardrails`, the failure hook port B941 records, and the disconnect release B2400 selects. Each forwards to the part that owns the behavior.
+  ports.rs. The services other tasks inject: the ProxyLogging hooks service B084 and B1126 take (pre_call, post_call_failure), the guardrails-only pre-call port B1023 declares in betterlite-core (api::file_batch_guardrails), implemented here with `guardrails_only` and `has_pre_call_guardrails`, the failure hook port B941 records, and the disconnect release B2400 selects. Each forwards to the part that owns the behavior.
 
   HTTP oracle cases in tools/oracle/cases/guardrails/proxy-logging/ boot the proxy with `generic_guardrail_api` guardrails (B3771) against the mock provider: a pre_call guardrail that blocks a chat request (status, error type and message), a during_call guardrail that blocks, a post_call guardrail that blocks the response, and a passing guardrail whose name shows in the x-litellm-applied-guardrails response header.
+
+
+  B3680 (https://github.com/betterlite-ai/betterlite/pull/2838) wrote twelve more HTTP cases in tools/oracle/cases/guardrails/unified-lifecycle/. They boot both gateways with a `litellm_content_filter` guardrail (B3693) that blocks a fixed word, and they need B3680's UnifiedGuardrailHooks registered as proxy hooks, so they run here. Make them pass as they are, with one exception: unmapped-route-post-call-skipped.yaml calls /v1/ocr, which B036 builds later, so point it at a route on main that has no guardrail translation and keep what it checks, a response that comes back unchanged.
 scope:
   paths:
     - crates/betterlite-server/src/proxy_logging.rs
@@ -23,6 +26,7 @@ scope:
     - crates/betterlite-config/src/sections/proxy_hook_selection.rs
     - crates/betterlite-config/src/sections/proxy_hook_selection/**
     - tools/oracle/cases/guardrails/proxy-logging/**
+    - tools/oracle/cases/guardrails/unified-lifecycle/**
     - tools/oracle/helpers/b8399.py
     - tools/oracle/helpers/b8399/**
     - tools/oracle/src/helpers/server/b8399.rs
@@ -44,6 +48,8 @@ dod:
     proof: [wiring-tests]
   - text: Pre, during and post call guardrail blocks and the applied guardrails header match LiteLLM through the booted proxy.
     proof: [oracle]
+  - text: B3680's unified guardrail pre-call, during-call and post-call blocks and masks reach clients through the booted proxy with the same status, error body and headers as LiteLLM on the endpoint families its cases cover.
+    proof: [oracle]
   - text: LEGACY_MULTI_INSTANCE_RATE_LIMITING defaults to false and selects the legacy limiter only when its lowercased text equals true, and the limiter's success, failure and proxy hooks share one instance and request stash.
     proof: [wiring-tests, hook-selection-section]
 checks:
@@ -60,6 +66,18 @@ oracle_cases:
   - tools/oracle/cases/guardrails/proxy-logging/during-call-block.yaml
   - tools/oracle/cases/guardrails/proxy-logging/post-call-block.yaml
   - tools/oracle/cases/guardrails/proxy-logging/applied-guardrails-header.yaml
+  - tools/oracle/cases/guardrails/unified-lifecycle/chat-pre-call-block.yaml
+  - tools/oracle/cases/guardrails/unified-lifecycle/chat-pre-call-mask.yaml
+  - tools/oracle/cases/guardrails/unified-lifecycle/chat-post-call-block.yaml
+  - tools/oracle/cases/guardrails/unified-lifecycle/chat-during-call-block.yaml
+  - tools/oracle/cases/guardrails/unified-lifecycle/responses-pre-call-block.yaml
+  - tools/oracle/cases/guardrails/unified-lifecycle/anthropic-messages-pre-call-block.yaml
+  - tools/oracle/cases/guardrails/unified-lifecycle/anthropic-messages-post-call-block.yaml
+  - tools/oracle/cases/guardrails/unified-lifecycle/text-completion-pre-call-block.yaml
+  - tools/oracle/cases/guardrails/unified-lifecycle/embeddings-pre-call-block.yaml
+  - tools/oracle/cases/guardrails/unified-lifecycle/image-generation-pre-call-block.yaml
+  - tools/oracle/cases/guardrails/unified-lifecycle/passthrough-pre-call-block.yaml
+  - tools/oracle/cases/guardrails/unified-lifecycle/unmapped-route-post-call-skipped.yaml
 deviations:
   - what: The enterprise email logger is not created, so its email budget alerts never send. Legacy SMTP email stays reachable through B8891's bindings and B8400.
     why: The enterprise email loggers ship only in litellm_enterprise; open-source LiteLLM leaves email_logging_instance None too.
