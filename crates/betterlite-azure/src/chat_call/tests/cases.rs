@@ -20,6 +20,7 @@ use betterlite_prompts::arguments::json::Object;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Map, Value, json};
 
+use crate::azure_urls::AuthParams;
 use crate::chat_call::error::{
     ASYNC_CLIENT, AzureChatError, MAX_RETRIES_TYPE, MISSING_MODEL_OR_MESSAGES, SYNC_CLIENT,
 };
@@ -194,7 +195,9 @@ pub(super) fn cross_deployment_auth() {
     harness.azure_ad_token = Some("ad-token".to_owned());
     harness.litellm_params = LiteLlmParams {
         azure_ad_token: Some(SecretString::from("ad-token")),
-        ..LiteLlmParams::default()
+        auth: AuthParams::default(),
+        max_retries: None,
+        timeout: None,
     };
     let mut recorder = Recorder::default();
     let _reply =

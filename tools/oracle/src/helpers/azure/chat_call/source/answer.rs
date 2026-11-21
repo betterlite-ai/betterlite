@@ -63,47 +63,34 @@ impl Answer {
         map
     }
 
-    fn body_value(&self) -> Value {
-        let text = self.body.clone().unwrap_or_else(|| CHAT_BODY.to_owned());
-        serde_json::from_str(&text).unwrap_or(Value::String(text))
-    }
-
-    fn message(&self) -> String {
-        self.message.clone().unwrap_or_default()
-    }
-
     pub(super) fn make(&self) -> Result<RawChatResponse, RawChatError> {
+        let text = self.body.clone().unwrap_or_else(|| CHAT_BODY.to_owned());
+        let body =
+            serde_json::from_str(&text).unwrap_or_else(|_unparsed| Value::String(text.clone()));
+        let message = self.message.clone().unwrap_or_default();
         match self.error {
             None => Ok(RawChatResponse {
                 headers: self.headers(),
-                body: self.body_value(),
+                body,
             }),
             Some(ErrorKind::Status) => Err(RawChatError::Status(Box::new(StatusReply {
                 status: self.status.unwrap_or(400),
-                message: self.message(),
+                message,
                 headers: self.headers(),
-                body: self.body_value(),
+                body,
             }))),
             Some(ErrorKind::BadRequest) => {
                 Err(RawChatError::BadRequest(Box::new(BadRequestReply {
-                    message: self.message(),
+                    message,
                     headers: self.headers(),
-                    body: self.body_value(),
+                    body,
                 })))
             }
-            Some(ErrorKind::Timeout) => Err(RawChatError::Timeout {
-                message: self.message(),
-            }),
-            Some(ErrorKind::Other) => Err(RawChatError::Other {
-                message: self.message(),
-            }),
+            Some(ErrorKind::Timeout) => Err(RawChatError::Timeout { message }),
+            Some(ErrorKind::Other) => Err(RawChatError::Other { message }),
             Some(ErrorKind::Pending) => Err(RawChatError::Other {
                 message: "the scripted answer never arrives on the sync transport".to_owned(),
             }),
         }
-    }
-
-    pub(super) fn pending(&self) -> bool {
-        self.error == Some(ErrorKind::Pending)
     }
 }

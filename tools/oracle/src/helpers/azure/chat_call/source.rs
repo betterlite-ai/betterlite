@@ -14,7 +14,7 @@ use serde_json::{Map, Value};
 
 pub(super) mod answer;
 
-use answer::Answer;
+use answer::{Answer, ErrorKind};
 
 pub(super) const CHAT_BODY: &str = concat!(
     r#"{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"#,
@@ -91,13 +91,13 @@ impl AsyncRawChatTransport for ScriptedTransport {
     async fn create(
         &self,
         data: &Map<String, Value>,
-        _timeout: f64,
+        timeout: f64,
     ) -> Result<RawChatResponse, RawChatError> {
-        self.record(data);
-        if self.answer.pending() {
+        if self.answer.error == Some(ErrorKind::Pending) {
+            self.record(data);
             return std::future::pending::<Result<RawChatResponse, RawChatError>>().await;
         }
-        self.answer.make()
+        SyncRawChatTransport::create(self, data, timeout)
     }
 }
 
@@ -134,6 +134,17 @@ impl ScriptedSource {
         }
     }
 
+    fn record<Record>(
+        &self,
+        slot: &Arc<Mutex<Vec<Record>>>,
+        value: Record,
+    ) -> Result<ClientHandle<ScriptedTransport>, EndpointError> {
+        slot.lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(value);
+        Ok(self.handle())
+    }
+
     pub(super) fn requests(&self) -> Vec<RequestRecord> {
         self.requests
             .lock()
@@ -161,10 +172,9 @@ impl ClientSource for ScriptedSource {
 
     fn get(&self, call: GetClient<'_>) -> Result<ClientHandle<Self::Client>, EndpointError> {
         let params = &call.litellm_params;
-        self.gets
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(GetRecord {
+        self.record(
+            &self.gets,
+            GetRecord {
                 api_version: call.api_version.map(str::to_owned),
                 api_base: call.api_base.map(str::to_owned),
                 api_key: call.api_key.map(|key| key.expose_secret().to_owned()),
@@ -177,18 +187,17 @@ impl ClientSource for ScriptedSource {
                 max_retries: params.max_retries,
                 timeout: params.timeout,
                 supplied: call.supplied.is_some(),
-            });
-        Ok(self.handle())
+            },
+        )
     }
 
     fn gateway(
         &self,
         call: GatewayClient<'_>,
     ) -> Result<ClientHandle<Self::Client>, EndpointError> {
-        self.gateways
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(GatewayRecord {
+        self.record(
+            &self.gateways,
+            GatewayRecord {
                 api_base: call.api_base.to_owned(),
                 model: call.model.to_owned(),
                 api_version: call.api_version.map(str::to_owned),
@@ -196,8 +205,8 @@ impl ClientSource for ScriptedSource {
                 timeout: call.timeout,
                 api_key: call.api_key.map(|key| key.expose_secret().to_owned()),
                 acompletion: call.acompletion,
-            });
-        Ok(self.handle())
+            },
+        )
     }
 
     fn stream(

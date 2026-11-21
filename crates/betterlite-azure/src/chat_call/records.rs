@@ -61,23 +61,48 @@ fn version_args<Client>(call: &ChatCall<'_, Client>) -> IndexMap<String, decisio
     )])
 }
 
+fn extra_args(
+    api_base: Option<String>,
+    headers: Option<IndexMap<String, decisions::Json>>,
+    complete_input_dict: Option<RawBody>,
+    openai_sdk: Option<bool>,
+    passthrough: IndexMap<String, decisions::Json>,
+) -> AdditionalArgs {
+    AdditionalArgs {
+        api_base,
+        headers,
+        complete_input_dict,
+        request_str: None,
+        openai_sdk,
+        passthrough,
+    }
+}
+
+fn messages_input(data: &Object) -> decisions::Json {
+    data.get("messages")
+        .cloned()
+        .map_or(decisions::Json::Null, |messages| logged(messages))
+}
+
 // pre_call(input=messages, api_key=api_key, additional_args={"headers", "api_version", "api_base", "complete_input_dict", "openai_sdk"})
 pub(super) fn sync_pre_call<Client>(
     call: &ChatCall<'_, Client>,
     input: decisions::Json,
     data: &Object,
 ) -> PreCallRecord {
+    let mut additional_args = extra_args(
+        Some(call.api_base.to_owned()),
+        Some(token_headers(call)),
+        None,
+        None,
+        version_args(call),
+    );
+    additional_args.complete_input_dict = Some(RawBody::Object(logged_object(data)));
+    additional_args.openai_sdk = Some(true);
     PreCallRecord {
         input,
         api_key: call.api_key.cloned(),
-        additional_args: AdditionalArgs {
-            api_base: Some(call.api_base.to_owned()),
-            headers: Some(token_headers(call)),
-            complete_input_dict: Some(RawBody::Object(logged_object(data))),
-            request_str: None,
-            openai_sdk: Some(true),
-            passthrough: version_args(call),
-        },
+        additional_args,
     }
 }
 
@@ -88,17 +113,18 @@ pub(super) fn sync_post_call<Client>(
     original: decisions::Json,
     headers: &SecretHeaders,
 ) -> PostCall {
+    let mut additional_args = extra_args(
+        Some(call.api_base.to_owned()),
+        None,
+        None,
+        None,
+        version_args(call),
+    );
+    additional_args.headers = Some(headers_object(headers));
     PostCall {
         original_response: original,
         input,
-        additional_args: AdditionalArgs {
-            api_base: Some(call.api_base.to_owned()),
-            headers: Some(headers_object(headers)),
-            complete_input_dict: None,
-            request_str: None,
-            openai_sdk: None,
-            passthrough: version_args(call),
-        },
+        additional_args,
     }
 }
 
@@ -109,41 +135,29 @@ pub(super) fn async_pre_call<Client>(
     data: &Object,
 ) -> PreCallRecord {
     PreCallRecord {
-        input: data
-            .get("messages")
-            .cloned()
-            .map_or(decisions::Json::Null, |messages| logged(messages)),
+        input: messages_input(data),
         api_key: client.api_key.clone(),
-        additional_args: AdditionalArgs {
-            api_base: Some(call.api_base.to_owned()),
-            headers: Some(token_headers(call)),
-            complete_input_dict: Some(RawBody::Object(logged_object(data))),
-            request_str: None,
-            openai_sdk: Some(true),
-            passthrough: IndexMap::from([("acompletion".to_owned(), decisions::Json::Bool(true))]),
-        },
+        additional_args: extra_args(
+            Some(call.api_base.to_owned()),
+            Some(token_headers(call)),
+            Some(RawBody::Object(logged_object(data))),
+            Some(true),
+            IndexMap::from([("acompletion".to_owned(), decisions::Json::Bool(true))]),
+        ),
     }
 }
 
-// post_call(input=data["messages"], api_key=api_key, additional_args={"complete_input_dict"})
-pub(super) fn async_post_call<Client>(
-    call: &ChatCall<'_, Client>,
-    data: &Object,
-    original: decisions::Json,
-) -> PostCall {
+// post_call(input=data["messages"], original_response=stringified_response, additional_args={"complete_input_dict"})
+pub(super) fn async_post_call(data: &Object, original: decisions::Json) -> PostCall {
     PostCall {
         original_response: original,
-        input: data
-            .get("messages")
-            .cloned()
-            .map_or(decisions::Json::Null, |messages| logged(messages)),
-        additional_args: AdditionalArgs {
-            api_base: None,
-            headers: None,
-            complete_input_dict: Some(RawBody::Object(logged_object(data))),
-            request_str: None,
-            openai_sdk: None,
-            passthrough: IndexMap::new(),
-        },
+        input: messages_input(data),
+        additional_args: extra_args(
+            None,
+            None,
+            Some(RawBody::Object(logged_object(data))),
+            None,
+            IndexMap::new(),
+        ),
     }
 }

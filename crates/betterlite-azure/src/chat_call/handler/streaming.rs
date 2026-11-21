@@ -47,75 +47,62 @@ impl StreamHooks for Adapted<'_> {
     }
 }
 
-pub async fn streaming<Source>(
+// Completion.stream for either direction: B685 owns the stream bookkeeping
+#[derive(Clone, Copy)]
+pub enum Direction {
+    Sync,
+    Async,
+}
+
+pub async fn stream<Source>(
     source: &Source,
     sent: &SentChat<Source::Client>,
     call: &ChatCall<'_, Source::Client>,
     runtime: &Runtime<'_>,
     hooks: &mut dyn ChatHooks,
+    direction: Direction,
 ) -> Result<AzureChatStream, AzureChatError>
 where
     Source: ClientSource,
 {
-    let client = source
-        .stream(sent.supplied.as_ref(), request(sent, call, false))
-        .map_err(|error| AzureChatError::from_endpoint(&error))?;
-    let data = records::logged_object(&sent.data);
-    let stream_call = stream_call(sent, call, &client, &data);
-    let delegated = Delegated(client);
-    let mut adapted = Adapted { hooks };
-    run_streaming(
-        &delegated,
-        call.sources,
-        &stream_call,
-        &mut adapted,
-        stream_runtime(runtime),
-    )
-    .await
-    .map_err(|error: StreamingError| AzureChatError::from_streaming(&error))
-}
-
-pub async fn async_streaming<Source>(
-    source: &Source,
-    sent: &SentChat<Source::Client>,
-    call: &ChatCall<'_, Source::Client>,
-    runtime: &Runtime<'_>,
-    hooks: &mut dyn ChatHooks,
-) -> Result<AzureChatStream, AzureChatError>
-where
-    Source: ClientSource,
-{
-    let client = source
-        .stream(sent.supplied.as_ref(), request(sent, call, true))
-        .map_err(|error| AzureChatError::from_endpoint(&error))?;
-    let data = records::logged_object(&sent.data);
-    let stream_call = stream_call(sent, call, &client, &data);
-    let delegated = Delegated(client);
-    let mut adapted = Adapted { hooks };
-    run_async_streaming(
-        &delegated,
-        &stream_call,
-        &mut adapted,
-        stream_runtime(runtime),
-    )
-    .await
-    .map_err(|error: StreamingError| AzureChatError::from_streaming(&error))
-}
-
-fn request<'call, Client>(
-    sent: &'call SentChat<Client>,
-    call: &'call ChatCall<'_, Client>,
-    is_async: bool,
-) -> GetStreamClient<'call> {
-    GetStreamClient {
+    let requested = GetStreamClient {
         api_version: call.api_version,
         api_base: call.api_base,
         api_key: call.api_key,
         model: &sent.model,
         supplied: None,
         litellm_params: &sent.litellm_params,
-        is_async,
-    }
+        is_async: matches!(direction, Direction::Async),
+    };
+    let client = source
+        .stream(sent.supplied.as_ref(), requested)
+        .map_err(|error| AzureChatError::from(&error))?;
+    let data = records::logged_object(&sent.data);
+    let call_record = stream_call(sent, call, &client, &data);
+    let delegated = Delegated(client);
+    let mut adapted = Adapted { hooks };
+    let outcome = match direction {
+        Direction::Sync => {
+            run_streaming(
+                &delegated,
+                call.sources,
+                &call_record,
+                &mut adapted,
+                stream_runtime(runtime),
+            )
+            .await
+        }
+        Direction::Async => {
+            run_async_streaming(
+                &delegated,
+                &call_record,
+                &mut adapted,
+                stream_runtime(runtime),
+            )
+            .await
+        }
+    };
+    outcome.map_err(|error: StreamingError| AzureChatError::from_streaming(&error))
 }
 
 fn stream_call<'call, Client>(

@@ -13,20 +13,12 @@ pub const ASYNC_CLIENT: &str = "Azure client is not an instance of AsyncAzureOpe
 pub const STRING_RESPONSE: &str = "Unexpected string response from Azure";
 pub const PREVIEW_CHARS: usize = 500;
 
-// One failure as AzureChatCompletion.completion reports it: an AzureOpenAIError, a source exception acompletion re-raises, or a cancelled call
+// One failure as AzureChatCompletion.completion reports it: an AzureOpenAIError carrying the SDK's status, or a cancelled call
 #[derive(Debug, Error)]
 pub enum AzureChatError {
     #[error("{message}")]
     Azure {
         status: u16,
-        message: String,
-        headers: Option<SecretHeaders>,
-        body: Option<Json>,
-    },
-    // acompletion re-raises an exception that carries its own status_code unchanged
-    #[error("{message}")]
-    Source {
-        status: Option<u16>,
         message: String,
         headers: Option<SecretHeaders>,
         body: Option<Json>,
@@ -46,7 +38,7 @@ impl AzureChatError {
         }
     }
 
-    // getattr(error, "status_code", 500), headers and body off a failure the send raised
+    // getattr(error, "status_code", 500), headers and body off a failure the send raised, in either direction
     #[must_use]
     pub fn wrapped(source: &RawChatError) -> Self {
         match source {
@@ -67,34 +59,6 @@ impl AzureChatError {
             | RawChatError::Count { .. }
             | RawChatError::Encode { .. } => Self::azure(500, source.to_string()),
         }
-    }
-
-    // the async wrapper re-raises a status-bearing exception and wraps the rest into a 500
-    #[must_use]
-    pub fn async_failure(source: &RawChatError) -> Self {
-        match source {
-            RawChatError::Status(status) => Self::Source {
-                status: Some(status.status),
-                message: status.message.clone(),
-                headers: Some(SecretHeaders::from_response(&status.headers)),
-                body: Some(serde_json::from_value(status.body.clone()).unwrap_or(Json::Null)),
-            },
-            RawChatError::BadRequest(reply) => Self::Source {
-                status: Some(400),
-                message: reply.message.clone(),
-                headers: Some(SecretHeaders::from_response(&reply.headers)),
-                body: Some(serde_json::from_value(reply.body.clone()).unwrap_or(Json::Null)),
-            },
-            RawChatError::Timeout { .. }
-            | RawChatError::Other { .. }
-            | RawChatError::Count { .. }
-            | RawChatError::Encode { .. } => Self::azure(500, source.to_string()),
-        }
-    }
-
-    #[must_use]
-    pub fn from_endpoint(error: &EndpointError) -> Self {
-        Self::azure(error.status().unwrap_or(500), error.to_string())
     }
 
     // the outer try re-raises an AzureOpenAIError and wraps every other exception with its status
@@ -121,32 +85,27 @@ impl AzureChatError {
         }
     }
 
-    // acompletion's status-bearing rethrow becomes the AzureOpenAIError the outer completion raises
-    #[must_use]
-    pub fn wrap_source(self) -> Self {
-        match self {
-            Self::Source {
-                status,
-                message,
-                headers,
-                body,
-            } => Self::Azure {
-                status: status.unwrap_or(500),
-                message,
-                headers,
-                body,
-            },
-            Self::Azure { .. } | Self::Cancelled => self,
-        }
-    }
-
     // str(exception), which the async except blocks log as the original response
     #[must_use]
     pub fn text(&self) -> String {
         match self {
-            Self::Azure { message, .. } | Self::Source { message, .. } => message.clone(),
+            Self::Azure { message, .. } => message.clone(),
             Self::Cancelled => String::new(),
         }
+    }
+}
+
+// the client factory raises an OpenAIError carrying its own status_code
+impl From<&EndpointError> for AzureChatError {
+    fn from(error: &EndpointError) -> Self {
+        Self::azure(error.status().unwrap_or(500), error.to_string())
+    }
+}
+
+// a body that does not parse is the 500 the SDK raises around its model validation
+impl From<serde_json::Error> for AzureChatError {
+    fn from(error: serde_json::Error) -> Self {
+        Self::azure(500, error.to_string())
     }
 }
 

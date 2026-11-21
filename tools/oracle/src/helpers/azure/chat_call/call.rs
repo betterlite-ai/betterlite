@@ -13,7 +13,6 @@ use betterlite_azure::credentials::source::{
     CallableTokenProvider, CredentialSources, SourceFailure,
 };
 use betterlite_azure::endpoints::cloudflare::CloudflareParams;
-use betterlite_azure::endpoints::projection::LiteLlmParams;
 use betterlite_azure::oidc_exchange::OidcExchangeInput;
 use betterlite_config::sections::azure_endpoints::Settings as AzureSettings;
 use betterlite_config::sections::openai_chat_content::Settings as ChatContentSettings;
@@ -115,15 +114,6 @@ fn message_text(secret: Option<&SecretString>) -> Value {
     })
 }
 
-fn optional_object(case: &CallCase) -> Result<Object, Box<HelperError>> {
-    let value = serde_json::to_value(&case.optional_params).or_value_error()?;
-    serde_json::from_value(value).or_value_error()
-}
-
-fn litellm_params(case: &CallCase) -> LiteLlmParams {
-    case.litellm_params.clone()
-}
-
 fn runtime<'runtime>(tokens: &'runtime FixedTokens) -> Runtime<'runtime> {
     Runtime {
         identifier: IDENTIFIER,
@@ -174,7 +164,7 @@ where
         dynamic_params: false,
         timeout: case.timeout,
         optional_params: params,
-        litellm_params: litellm_params(case),
+        litellm_params: case.litellm_params.clone(),
         base_model: case.base_model.as_deref(),
         cloudflare_params: CloudflareParams::default(),
         acompletion: case.acompletion,
@@ -219,7 +209,8 @@ fn outcome_of(outcome: Result<ChatOutcome, AzureChatError>) -> Outcome {
 pub(super) fn completion(case: &CallCase) -> Result<Value, Box<HelperError>> {
     let source = source_of(case);
     let secrets = Secrets::of(case);
-    let mut params = optional_object(case)?;
+    let value = serde_json::to_value(&case.optional_params).or_value_error()?;
+    let mut params: Object = serde_json::from_value(value).or_value_error()?;
     let settings = Settings {
         azure: AzureSettings {
             default_max_retries: case.default_max_retries,

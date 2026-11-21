@@ -64,14 +64,3 @@ pub trait ClientSource: Send + Sync {
         call: GetStreamClient<'_>,
     ) -> Result<StreamClient, EndpointError>;
 }
-
-// Sync accepts the Azure and OpenAI spellings, and OnlyOther names the kind neither guard lets through
-#[must_use]
-pub const fn is_sync_chat(kind: ClientKind) -> bool {
-    matches!(kind, ClientKind::AzureOpenAi | ClientKind::OpenAi)
-}
-
-#[must_use]
-pub const fn is_async_chat(kind: ClientKind) -> bool {
-    matches!(kind, ClientKind::AsyncAzureOpenAi | ClientKind::AsyncOpenAi)
-}

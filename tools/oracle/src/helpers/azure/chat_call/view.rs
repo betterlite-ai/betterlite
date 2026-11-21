@@ -1,7 +1,7 @@
 use betterlite_azure::azure_stream_errors::records::PreCallRecord;
 use betterlite_azure::chat_call::error::AzureChatError;
 use betterlite_azure::chat_call::response::ChatReply;
-use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
+use betterlite_logging::logging_pre_post::args::AdditionalArgs;
 use betterlite_logging::logging_pre_post::post_call::PostCall;
 use betterlite_models::decisions::Json as DecisionsJson;
 use betterlite_openai::text_completion_transport::logging::SecretHeaders;
@@ -9,7 +9,7 @@ use secrecy::ExposeSecret as _;
 use serde_json::{Map, Value, json};
 
 use super::hooks::Recorder;
-use super::source::{GatewayRecord, GetRecord, ScriptedSource};
+use super::source::ScriptedSource;
 
 const TIMEOUT_DIAGNOSTIC: &str = "- timeout value=";
 
@@ -18,10 +18,6 @@ pub(super) struct Outcome {
     pub(super) reply: Value,
     pub(super) error: Value,
     pub(super) forward: Value,
-}
-
-pub(super) fn calls(values: Vec<Value>) -> Value {
-    json!({"calls": values})
 }
 
 pub(super) fn report(source: &ScriptedSource, recorder: &Recorder, outcome: &Outcome) -> Value {
@@ -36,8 +32,40 @@ pub(super) fn report(source: &ScriptedSource, recorder: &Recorder, outcome: &Out
                     .collect(),
             )
         });
-    let gets: Vec<Value> = source.gets().iter().map(get_value).collect();
-    let gateways: Vec<Value> = source.gateways().iter().map(gateway_value).collect();
+    let gets: Vec<Value> = source
+        .gets()
+        .iter()
+        .map(|record| {
+            json!({
+                "api_version": record.api_version,
+                "api_base": record.api_base,
+                "api_key": record.api_key,
+                "model": record.model,
+                "is_async": record.is_async,
+                "supplied": record.supplied,
+                "litellm_params": {
+                    "azure_ad_token": record.azure_ad_token,
+                    "max_retries": record.max_retries,
+                    "timeout": record.timeout,
+                },
+            })
+        })
+        .collect();
+    let gateways: Vec<Value> = source
+        .gateways()
+        .iter()
+        .map(|record| {
+            json!({
+                "api_base": record.api_base,
+                "model": record.model,
+                "api_version": record.api_version,
+                "max_retries": record.max_retries,
+                "timeout": record.timeout,
+                "api_key": record.api_key,
+                "acompletion": record.acompletion,
+            })
+        })
+        .collect();
     let requests: Vec<Value> = source
         .requests()
         .iter()
@@ -64,38 +92,6 @@ pub(super) fn report(source: &ScriptedSource, recorder: &Recorder, outcome: &Out
     })
 }
 
-fn get_value(record: &GetRecord) -> Value {
-    json!({
-        "api_version": record.api_version,
-        "api_base": record.api_base,
-        "api_key": record.api_key,
-        "model": record.model,
-        "is_async": record.is_async,
-        "supplied": record.supplied,
-        "litellm_params": {
-            "azure_ad_token": record.azure_ad_token,
-            "max_retries": record.max_retries,
-            "timeout": record.timeout,
-        },
-    })
-}
-
-fn gateway_value(record: &GatewayRecord) -> Value {
-    json!({
-        "api_base": record.api_base,
-        "model": record.model,
-        "api_version": record.api_version,
-        "max_retries": record.max_retries,
-        "timeout": record.timeout,
-        "api_key": record.api_key,
-        "acompletion": record.acompletion,
-    })
-}
-
-fn body_value(body: &RawBody) -> Value {
-    serde_json::to_value(body).unwrap_or(Value::Null)
-}
-
 fn headers_value(args: &AdditionalArgs) -> Value {
     args.headers.as_ref().map_or(Value::Null, |headers| {
         Value::Object(
@@ -112,10 +108,6 @@ fn headers_value(args: &AdditionalArgs) -> Value {
     })
 }
 
-fn text_value(value: Option<&String>) -> Value {
-    value.map_or(Value::Null, |text| Value::String(text.clone()))
-}
-
 fn args_fields(args: &AdditionalArgs) -> Map<String, Value> {
     let acompletion = matches!(
         args.passthrough.get("acompletion"),
@@ -123,7 +115,12 @@ fn args_fields(args: &AdditionalArgs) -> Map<String, Value> {
     );
     let mut fields = Map::new();
     fields.insert("headers".to_owned(), headers_value(args));
-    fields.insert("api_base".to_owned(), text_value(args.api_base.as_ref()));
+    fields.insert(
+        "api_base".to_owned(),
+        args.api_base
+            .as_ref()
+            .map_or(Value::Null, |text| Value::String(text.clone())),
+    );
     fields.insert(
         "api_version".to_owned(),
         serde_json::to_value(args.passthrough.get("api_version")).unwrap_or(Value::Null),
@@ -136,7 +133,9 @@ fn args_fields(args: &AdditionalArgs) -> Map<String, Value> {
     let body = args
         .complete_input_dict
         .as_ref()
-        .map_or(Value::Null, body_value);
+        .map_or(Value::Null, |raw| {
+            serde_json::to_value(raw).unwrap_or(Value::Null)
+        });
     fields.insert("complete_input_dict".to_owned(), body);
     fields
 }
@@ -176,26 +175,22 @@ fn post_value(call: &PostCall) -> Value {
     Value::Object(fields)
 }
 
-fn choice_value(reply: &ChatReply) -> Value {
-    let Some(choice) = reply.response.choices.first() else {
-        return Value::Null;
-    };
-    json!({
-        "index": choice.index,
-        "finish_reason": choice.finish_reason,
-        "role": choice.message.role,
-        "content": choice.message.content,
-        "has_tool_calls": choice.message.tool_calls.is_some(),
-    })
-}
-
 pub(super) fn reply_value(reply: &ChatReply) -> Value {
     let response = &reply.response;
+    let choice = response.choices.first().map_or(Value::Null, |choice| {
+        json!({
+            "index": choice.index,
+            "finish_reason": choice.finish_reason,
+            "role": choice.message.role,
+            "content": choice.message.content,
+            "has_tool_calls": choice.message.tool_calls.is_some(),
+        })
+    });
     json!({
         "id": response.id,
         "model": response.model,
         "created": response.created,
-        "choice": choice_value(reply),
+        "choice": choice,
         "usage": {
             "prompt_tokens": response.usage.prompt_tokens,
             "completion_tokens": response.usage.completion_tokens,
@@ -213,12 +208,6 @@ pub(super) fn error_value(error: &AzureChatError) -> Value {
             headers,
             body,
         } => error_fields(Some(*status), message, headers.as_ref(), body.as_ref()),
-        AzureChatError::Source {
-            status,
-            message,
-            headers,
-            body,
-        } => error_fields(*status, message, headers.as_ref(), body.as_ref()),
         AzureChatError::Cancelled => Value::Null,
     }
 }

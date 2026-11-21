@@ -13,7 +13,8 @@ fn helper_seeds_select_azure_chat_call() {
     let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let seeds: Vec<(String, String)> = fs::read_dir(corpus)
         .expect("the helper corpus should exist")
-        .map(|entry| entry.expect("a corpus entry").path())
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
         .filter(|path| {
             path.file_name()
                 .and_then(|name| name.to_str())
@@ -30,21 +31,14 @@ fn helper_seeds_select_azure_chat_call() {
         })
         .collect();
     assert!(!seeds.is_empty(), "no azure_chat_call seed exists");
-    for (name, source) in &seeds {
+    assert!(seeds.iter().all(|(name, source)| {
         let case: HelperCase =
             serde_saphyr::from_str(source).expect("a seed parses as a helper case");
         let input: Input = serde_json::from_value(case.call.input.clone())
             .expect("the seed input has the typed shape");
         let o_series = matches!(input.function, Function::OSeries);
-        assert_eq!(
-            o_series,
-            name.contains("o-series"),
-            "{name} must carry the function its name says"
-        );
-        assert_eq!(case.call.operation, "azure_chat_call");
-        assert!(
-            validate_helper(Path::new("<helper>"), &case).is_ok(),
-            "{name} must validate as a helper case"
-        );
-    }
+        o_series == name.contains("o-series")
+            && case.call.operation == "azure_chat_call"
+            && validate_helper(Path::new("<helper>"), &case).is_ok()
+    }));
 }

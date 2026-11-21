@@ -254,11 +254,11 @@ impl AsyncRawChatTransport for ScriptedTransport {
         data: &Map<String, Value>,
         timeout: f64,
     ) -> Result<RawChatResponse, RawChatError> {
-        self.record(data, timeout);
         if matches!(self.answer, Answer::Pending) {
+            self.record(data, timeout);
             return std::future::pending::<Result<RawChatResponse, RawChatError>>().await;
         }
-        self.answer.make()
+        SyncRawChatTransport::create(self, data, timeout)
     }
 }
 
@@ -298,6 +298,17 @@ impl ScriptedSource {
         }
     }
 
+    fn record<Record>(
+        &self,
+        slot: &Arc<Mutex<Vec<Record>>>,
+        value: Record,
+    ) -> Result<ClientHandle<ScriptedTransport>, EndpointError> {
+        slot.lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(value);
+        Ok(self.handle())
+    }
+
     pub(super) fn requests(&self) -> Vec<RequestRecord> {
         self.requests
             .lock()
@@ -324,10 +335,9 @@ impl ClientSource for ScriptedSource {
     type Client = ScriptedTransport;
 
     fn get(&self, call: GetClient<'_>) -> Result<ClientHandle<Self::Client>, EndpointError> {
-        self.gets
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(GetRecord {
+        self.record(
+            &self.gets,
+            GetRecord {
                 api_version: call.api_version.map(str::to_owned),
                 api_base: call.api_base.map(str::to_owned),
                 api_key: call.api_key.map(|key| key.expose_secret().to_owned()),
@@ -335,18 +345,17 @@ impl ClientSource for ScriptedSource {
                 is_async: call.is_async,
                 litellm_params: call.litellm_params.clone(),
                 supplied: call.supplied.is_some(),
-            });
-        Ok(self.handle())
+            },
+        )
     }
 
     fn gateway(
         &self,
         call: GatewayClient<'_>,
     ) -> Result<ClientHandle<Self::Client>, EndpointError> {
-        self.gateways
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(GatewayRecord {
+        self.record(
+            &self.gateways,
+            GatewayRecord {
                 api_base: call.api_base.to_owned(),
                 model: call.model.to_owned(),
                 api_version: call.api_version.map(str::to_owned),
@@ -354,8 +363,8 @@ impl ClientSource for ScriptedSource {
                 timeout: call.timeout,
                 api_key: call.api_key.map(|key| key.expose_secret().to_owned()),
                 acompletion: call.acompletion,
-            });
-        Ok(self.handle())
+            },
+        )
     }
 
     // the owned cases never stream; B685 owns the streaming path
@@ -581,7 +590,6 @@ pub(super) fn decisions_of(value: Value) -> decisions::Json {
 pub(super) fn status_of(error: &AzureChatError) -> Option<u16> {
     match error {
         AzureChatError::Azure { status, .. } => Some(*status),
-        AzureChatError::Source { status, .. } => *status,
         AzureChatError::Cancelled => None,
     }
 }

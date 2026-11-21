@@ -61,24 +61,6 @@ pub fn inject_headers(optional: &mut Object, headers: &SecretHeaders) {
     optional.insert(EXTRA_HEADERS_KEY.to_owned(), Json::Object(fields));
 }
 
-// optional_params.pop("json_mode", False)
-#[must_use]
-pub fn pop_json_mode(optional: &mut Object) -> bool {
-    matches!(optional.shift_remove(JSON_MODE_KEY), Some(Json::Bool(true)))
-}
-
-// optional_params.get("stream", False)
-#[must_use]
-pub fn wants_async_stream(optional: &Object) -> bool {
-    optional.get(STREAM_KEY).is_some_and(Json::is_truthy)
-}
-
-// "stream" in optional_params and optional_params["stream"] is True
-#[must_use]
-pub fn wants_sync_stream(optional: &Object) -> bool {
-    matches!(optional.get(STREAM_KEY), Some(Json::Bool(true)))
-}
-
 // The request body: the Cloudflare branch sends the deployment in the url, so its model is null
 pub fn build_data(
     model: &str,
