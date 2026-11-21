@@ -1,0 +1,12 @@
+kind: helper
+name: jwt-settings-routing-override-required-issuer-and-oauth2-only
+call:
+  jwt_settings:
+    scenarios:
+      - {"settings": {"routing_overrides": [{"iss": "https://idp.example.com", "client_id": ["cli-a", "cli-b"], "scope": "", "aud": []}]}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"routing_overrides": [{"iss": [], "path": "oauth2"}, {"iss": ["https://a.example.com", "https://b.example.com"]}]}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"routing_overrides": [{"client_id": "cli"}]}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"routing_overrides": [{"iss": "https://idp.example.com", "path": "api_key"}]}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"routing_overrides": [{"iss": "https://idp.example.com", "wildcard": true}]}, "references": {}, "environment": {}, "issuers": []}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,9 @@
+kind: helper
+name: jwt-settings-null-and-empty-fields
+call:
+  jwt_settings:
+    scenarios:
+      - {"settings": {"admin_allowed_routes": [], "team_id_jwt_field": "", "team_ids_jwt_field": null, "team_allowed_routes": [], "team_id_default": "", "team_alias_jwt_field": null, "org_id_jwt_field": null, "org_alias_jwt_field": "", "user_id_jwt_field": null, "user_email_jwt_field": "", "user_allowed_email_domain": "", "user_roles_jwt_field": null, "user_allowed_roles": null, "end_user_id_jwt_field": null, "agent_id_jwt_field": "", "mcp_client_id_jwt_field": null, "public_allowed_routes": [], "roles_jwt_field": "", "role_mappings": null, "object_id_jwt_field": null, "scope_mappings": null, "jwt_litellm_role_map": [], "oidc_userinfo_endpoint": "", "virtual_key_claim_field": null, "routing_overrides": [], "issuers": []}, "references": {}, "environment": {}, "issuers": [null, ""]}
+      - {"settings": {"role_mappings": [], "jwt_litellm_role_map": null, "routing_overrides": null, "issuers": null, "admin_jwt_scope": ""}, "references": {}, "environment": {}, "issuers": []}
+env: {}
+compare: {ignore: []}
