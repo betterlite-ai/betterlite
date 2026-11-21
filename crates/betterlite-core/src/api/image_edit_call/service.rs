@@ -7,7 +7,7 @@ use betterlite_context::non_default_params::names::is_openai_compatible_provider
 use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_models::resolution::{
-    ProviderIdentity, ResolutionContext, ResolutionRequest, resolve,
+    ProviderIdentity, ResolutionContext, ResolutionError, ResolutionRequest, resolve,
 };
 use betterlite_openai::api::image_contracts::records::{ImageFile, ImageParams};
 
@@ -50,25 +50,7 @@ impl ImageEditOperation for ImageEdits<'_> {
         asynchronous: bool,
         logger: &mut dyn ImageEditLogger,
     ) -> Result<ImageEditStep<'_>, ImageEditError> {
-        let requested_model = call
-            .model
-            .clone()
-            .unwrap_or_else(|| DEFAULT_MODEL.to_owned());
-        // get_llm_provider runs without an api_base here, so no registered endpoint is consulted
-        let resolved = resolve(
-            &ResolutionRequest {
-                model: &requested_model,
-                custom_llm_provider: call.custom_llm_provider.as_deref(),
-                api_base: None,
-                api_key: None,
-            },
-            self.resolution,
-        )?;
-        let resolved = ResolvedEdit {
-            model: resolved.model,
-            provider: resolved.provider.slug().to_owned(),
-            identity: resolved.provider,
-        };
+        let resolved = self.resolve_call(call)?;
         let images = call.image.images();
         if let Some(step) = self.custom_step(call, &resolved, &images, asynchronous)? {
             return Ok(step);
@@ -78,23 +60,10 @@ impl ImageEditOperation for ImageEdits<'_> {
 
     // image_edit rebinds model and custom_llm_provider only when get_llm_provider returns
     fn attribution(&self, call: &ImageEditCall) -> Attribution {
-        let requested_model = call
-            .model
-            .clone()
-            .unwrap_or_else(|| DEFAULT_MODEL.to_owned());
-        let resolved = resolve(
-            &ResolutionRequest {
-                model: &requested_model,
-                custom_llm_provider: call.custom_llm_provider.as_deref(),
-                api_base: None,
-                api_key: None,
-            },
-            self.resolution,
-        );
-        match resolved {
+        match self.resolve_call(call) {
             Ok(resolved) => Attribution {
                 model: Some(resolved.model),
-                provider: Some(resolved.provider.slug().to_owned()),
+                provider: Some(resolved.provider),
             },
             Err(_unresolved) => Attribution {
                 model: call.model.clone(),
@@ -105,6 +74,26 @@ impl ImageEditOperation for ImageEdits<'_> {
 }
 
 impl ImageEdits<'_> {
+    // get_llm_provider runs without an api_base here, so no registered endpoint is consulted
+    fn resolve_call(&self, call: &ImageEditCall) -> Result<ResolvedEdit, ResolutionError> {
+        let requested_model = call
+            .model
+            .clone()
+            .unwrap_or_else(|| DEFAULT_MODEL.to_owned());
+        let request = ResolutionRequest {
+            model: &requested_model,
+            custom_llm_provider: call.custom_llm_provider.as_deref(),
+            api_base: None,
+            api_key: None,
+        };
+        let resolved = resolve(&request, self.resolution)?;
+        Ok(ResolvedEdit {
+            model: resolved.model,
+            provider: resolved.provider.slug().to_owned(),
+            identity: resolved.provider,
+        })
+    }
+
     // a listed custom provider skips config lookup, option projection and logging entirely
     fn custom_step<'this>(
         &'this self,
@@ -180,7 +169,6 @@ impl ImageEdits<'_> {
             litellm_params: logged_params(&params, &call.kwargs),
             custom_llm_provider: resolved.provider.clone(),
         })?;
-        check_branch_model(&tag, Some(&resolved.model))?;
         let timeout = branch_timeout(&tag, call.timeout, self.settings.request_timeout_seconds)?;
         if merges_non_default(&tag) {
             merge_non_default(&mut params, &non_default)?;
@@ -235,57 +223,16 @@ const fn provider_id(identity: &ProviderIdentity) -> Option<ProviderId> {
     }
 }
 
-// bedrock and BFL refuse a model of None before sending; the config path above always resolves one
-pub(crate) fn check_branch_model(
-    tag: &ImageEditConfigTag,
-    model: Option<&str>,
-) -> Result<(), ImageEditError> {
-    match tag {
-        ImageEditConfigTag::Bedrock(_) => require_model(model, "bedrock"),
-        ImageEditConfigTag::BlackForestLabs => require_model(model, "black_forest_labs"),
-        ImageEditConfigTag::OpenAi(_)
-        | ImageEditConfigTag::HostedVllm(_)
-        | ImageEditConfigTag::Azure
-        | ImageEditConfigTag::Recraft
-        | ImageEditConfigTag::FalAi(_)
-        | ImageEditConfigTag::AzureAi(_)
-        | ImageEditConfigTag::Gemini(_)
-        | ImageEditConfigTag::LiteLlmProxy
-        | ImageEditConfigTag::VertexAi(_)
-        | ImageEditConfigTag::Stability(_)
-        | ImageEditConfigTag::OpenRouter(_) => Ok(()),
-    }
-}
-
-fn require_model(model: Option<&str>, provider: &'static str) -> Result<(), ImageEditError> {
-    if model.is_some() {
-        Ok(())
-    } else {
-        Err(ImageEditError::ModelRequired { provider })
-    }
-}
-
 // timeout or DEFAULT_REQUEST_TIMEOUT everywhere but bedrock, which keeps the caller's value unchanged
 pub(crate) fn branch_timeout(
     tag: &ImageEditConfigTag,
     timeout: Option<f64>,
     fallback_seconds: f64,
 ) -> Result<Option<f64>, ImageEditError> {
-    match tag {
-        ImageEditConfigTag::Bedrock(_) => timeout.map(seconds_checked).transpose(),
-        ImageEditConfigTag::OpenAi(_)
-        | ImageEditConfigTag::HostedVllm(_)
-        | ImageEditConfigTag::Azure
-        | ImageEditConfigTag::Recraft
-        | ImageEditConfigTag::BlackForestLabs
-        | ImageEditConfigTag::FalAi(_)
-        | ImageEditConfigTag::AzureAi(_)
-        | ImageEditConfigTag::Gemini(_)
-        | ImageEditConfigTag::LiteLlmProxy
-        | ImageEditConfigTag::VertexAi(_)
-        | ImageEditConfigTag::Stability(_)
-        | ImageEditConfigTag::OpenRouter(_) => request_timeout(timeout, fallback_seconds).map(Some),
+    if matches!(tag, ImageEditConfigTag::Bedrock(_)) {
+        return timeout.map(seconds_checked).transpose();
     }
+    request_timeout(timeout, fallback_seconds).map(Some)
 }
 
 #[must_use]

@@ -15,8 +15,6 @@ pub enum ImageEditError {
     Resolution(#[from] ResolutionError),
     #[error("image edit is not supported for {provider}")]
     UnsupportedConfig { provider: String },
-    #[error("Model needs to be set for {provider}")]
-    ModelRequired { provider: &'static str },
     #[error(
         "Unmapped LLM provider for this endpoint. You passed model={model}, custom_llm_provider={provider}. Check supported provider and route: https://docs.litellm.ai/docs/providers"
     )]
@@ -48,7 +46,6 @@ impl ImageEditError {
             Self::Provider(source) => Some(source.status_code),
             Self::Resolution(_)
             | Self::UnsupportedConfig { .. }
-            | Self::ModelRequired { .. }
             | Self::UnknownProvider { .. }
             | Self::Options(_)
             | Self::FormField(_)
@@ -87,8 +84,8 @@ impl ImageEditException {
         redactor: &Redactor,
     ) -> Self {
         match error {
-            ImageEditError::Resolution(source) => {
-                let message = source.to_string();
+            ImageEditError::Resolution(_) | ImageEditError::UnknownProvider { .. } => {
+                let message = error.to_string();
                 project(
                     raw_exception(&message, Some(400), false, model, provider),
                     &message,
@@ -107,16 +104,7 @@ impl ImageEditException {
                 &source.message,
                 redactor,
             ),
-            ImageEditError::UnknownProvider { .. } => {
-                let message = error.to_string();
-                project(
-                    raw_exception(&message, Some(400), false, model, provider),
-                    &message,
-                    redactor,
-                )
-            }
             ImageEditError::UnsupportedConfig { .. }
-            | ImageEditError::ModelRequired { .. }
             | ImageEditError::Options(_)
             | ImageEditError::FormField(_)
             | ImageEditError::Json(_)

@@ -22,7 +22,7 @@ use self::support::{
 use super::call::{DEFAULT_MODEL, DEFAULT_REQUEST_TIMEOUT, ImageEditClientKind, ImageInput};
 use super::entry::ImageEditEntry;
 use super::error::ImageEditError;
-use super::service::{ImageEdits, branch_timeout, check_branch_model};
+use super::service::{ImageEdits, branch_timeout};
 use crate::api::image_input_options::options::{Quality, ResponseFormat};
 
 mod support;
@@ -521,26 +521,6 @@ async fn edit_dispatch_and_timeout_without_a_config() {
         "image edit is not supported for anthropic"
     );
     assert!(matches!(exception.class, ErrorClass::ApiConnection(_)));
-}
-
-#[tokio::test]
-async fn edit_dispatch_and_timeout_requires_a_model() {
-    assert_eq!(
-        check_branch_model(&ImageEditConfigTag::Bedrock(String::from("m")), None)
-            .expect_err("bedrock needs a model")
-            .to_string(),
-        "Model needs to be set for bedrock"
-    );
-    assert_eq!(
-        check_branch_model(&ImageEditConfigTag::BlackForestLabs, None)
-            .expect_err("black forest labs needs a model")
-            .to_string(),
-        "Model needs to be set for black_forest_labs"
-    );
-    check_branch_model(&ImageEditConfigTag::Stability(String::from("m")), None)
-        .expect("stability accepts no model");
-    check_branch_model(&ImageEditConfigTag::Bedrock(String::from("m")), Some("m"))
-        .expect("bedrock accepts a model");
 }
 
 #[tokio::test]
