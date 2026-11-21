@@ -21,6 +21,8 @@ const TURN: &str = r#"{"api_key":"key","session_id":"session","router_name":"rou
 
 const DAILY: &str = r#"{"date":"2026-01-02","api_key":"key","model":"m","custom_llm_provider":"anthropic","model_group":null,"endpoint":"/v1/chat/completions","mcp_namespaced_tool_name":null,"targets":[{"entity":"user","entity_id":"user"},{"entity":"tag","entity_id":null}]}"#;
 
+const COMPOSITE_PRICES: &str = r#"{"input_cost_per_token":0.5,"max_results_range":[1,2],"search_context_cost_per_query":{"search_context_size_low":0.01}}"#;
+
 fn with_scope_digest(digest: &str) -> String {
     VALID_RECORD.replace(DIGEST, digest)
 }
@@ -64,6 +66,18 @@ fn canonical_serialization_matches_pythons_serialized_record_bytes() {
     assert_eq!(serialized.len(), 2361);
     let retried = decode_baseline_record(expected.as_bytes()).unwrap();
     assert_eq!(serialize_record(&retried), expected);
+}
+
+// The deviation in docs/deviations/B1698.yaml: a composite rate keeps its container shape but not its content.
+#[test]
+fn canonical_record_keeps_only_the_shape_of_composite_price_rates() {
+    let json = record_with("\"prices\":null", &format!("\"prices\":{COMPOSITE_PRICES}"));
+    let record = decode_baseline_record(json.as_bytes()).unwrap();
+    let serialized = serialize_record(&record);
+    let expected = r#""prices":{"input_cost_per_token":0.5,"max_results_range":[],"search_context_cost_per_query":{}}"#;
+    assert!(serialized.contains(expected));
+    let retried = decode_baseline_record(serialized.as_bytes()).unwrap();
+    assert_eq!(serialize_record(&retried), serialized);
 }
 
 #[test]
@@ -184,6 +198,25 @@ fn compares_turn_spend_against_actual_plus_classifier() {
     );
     let rejected = missing_classifier.replace("\"turn\":null", TURN);
     assert!(matches!(invalid(&rejected), RecordError::InconsistentTurn));
+}
+
+// The deviation in docs/deviations/B1698.yaml: the sum is exact, where the source adds two Python floats.
+#[test]
+fn compares_the_turn_spend_as_an_exact_decimal_sum() {
+    let priced = record_with(
+        "\"actual_spend\":0.5,\"classifier_cost\":0.0",
+        "\"actual_spend\":0.1,\"classifier_cost\":0.2",
+    );
+    let exact = priced.replace(
+        "\"turn\":null",
+        &TURN.replace("\"spend\":0.5", "\"spend\":0.3"),
+    );
+    decode_baseline_record(exact.as_bytes()).unwrap();
+    let rounded = priced.replace(
+        "\"turn\":null",
+        &TURN.replace("\"spend\":0.5", "\"spend\":0.30000000000000004"),
+    );
+    assert!(matches!(invalid(&rounded), RecordError::InconsistentTurn));
 }
 
 #[test]

@@ -6,4 +6,10 @@ deviations:
   - what: A correction's actual_delta and savings_delta, and the per-entity daily savings written from them, are exact decimal differences of the two publications' amounts, where LiteLLM subtracts the same amounts as Python floats.
     why: The daily savings column is Decimal money in betterlite, and an exact difference keeps stored corrections reversible to the cent; the two agree whenever both amounts are representable in binary floating point and can differ in the last bit otherwise.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/baseline_accounting.py#L317-L334
+  - what: The turn consistency check compares turn.spend against the exact sum of actual_spend and classifier_cost as decimals, where LiteLLM adds the same two source Float fields as Python floats before comparing.
+    why: Money is Decimal from the moment it is read, so the check stays in exact arithmetic; a stored row whose float sum rounds (0.1 + 0.2 becoming 0.30000000000000004) is accepted here where LiteLLM rejects it, and a row carrying that rounded sum is rejected here where LiteLLM accepts it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/baseline_accounting.py#L96-L97
+  - what: A stored record's composite price rates keep the canonical text of their container shape only; a JSON array or object rate, such as search_context_cost_per_query, serializes back as an empty array or object.
+    why: B1693's tiered Scalar keeps only the shape marker of a composite rate because the source's price coercion treats it as an unsupported rate shape, so the parsed snapshot has no nested content left to write; LiteLLM's _serialized keeps it, so a row written by LiteLLM and re-serialized here differs, while betterlite's own retries round-trip to the same bytes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/baseline_accounting.py#L313-L314
 kept_bugs: []
