@@ -45,75 +45,51 @@ async fn passes_the_cap_to_the_dialer() {
     );
 }
 
-async fn accepts_an_empty_frame_under_a_zero_cap() {
+async fn outcome_with_cap(max: usize, frames: Vec<RealtimeMessage>) -> SourceOutcome {
     let mut options = HarnessOptions::default();
-    options.max_message_size_bytes = 0;
-    options.source_frames = vec![RealtimeMessage::Text(String::new())];
-    let mut empty_frame = harness(options, Vec::new());
-    empty_frame.run().await.unwrap();
-    match &empty_frame.observation.lock().unwrap().source_outcome {
-        SourceOutcome::Text(text) => assert!(text.is_empty()),
-        SourceOutcome::Unread | SourceOutcome::Closed { .. } => {
-            panic!("an empty frame fits under a zero-byte cap");
-        }
-    }
+    options.max_message_size_bytes = max;
+    options.source_frames = frames;
+    let mut configured = harness(options, Vec::new());
+    configured.run().await.unwrap();
+    configured.source_outcome()
+}
+
+fn assert_closed(outcome: SourceOutcome, expected_message: &str) {
+    let SourceOutcome::Closed {
+        code,
+        reason,
+        message,
+    } = outcome
+    else {
+        panic!("a frame over the cap closes the session");
+    };
+    assert_eq!(code, Some(MESSAGE_TOO_BIG_CODE));
+    assert_eq!(reason.as_deref(), Some(MESSAGE_TOO_BIG_REASON));
+    assert_eq!(message, expected_message);
+}
+
+async fn accepts_an_empty_frame_under_a_zero_cap() {
+    let outcome = outcome_with_cap(0, vec![RealtimeMessage::Text(String::new())]).await;
+    assert!(matches!(outcome, SourceOutcome::Text(text) if text.is_empty()));
 }
 
 async fn closes_a_nonempty_frame_under_a_zero_cap() {
-    let mut options = HarnessOptions::default();
-    options.max_message_size_bytes = 0;
-    options.source_frames = vec![RealtimeMessage::Text("a".to_owned())];
-    let mut zero_cap = harness(options, Vec::new());
-    zero_cap.run().await.unwrap();
-    match &zero_cap.observation.lock().unwrap().source_outcome {
-        SourceOutcome::Closed {
-            code,
-            reason,
-            message,
-        } => {
-            assert_eq!(*code, Some(MESSAGE_TOO_BIG_CODE));
-            assert_eq!(reason.as_deref(), Some(MESSAGE_TOO_BIG_REASON));
-            assert_eq!(
-                message.as_str(),
-                "the realtime backend message exceeds the 0-byte limit"
-            );
-        }
-        SourceOutcome::Unread | SourceOutcome::Text(_) => {
-            panic!("a nonempty frame exceeds a zero-byte cap");
-        }
-    }
+    let outcome = outcome_with_cap(0, vec![RealtimeMessage::Text("a".to_owned())]).await;
+    assert_closed(
+        outcome,
+        "the realtime backend message exceeds the 0-byte limit",
+    );
 }
 
 async fn accepts_a_frame_at_the_cap() {
-    let mut options = HarnessOptions::default();
-    options.max_message_size_bytes = 4;
-    options.source_frames = vec![RealtimeMessage::Text("abcd".to_owned())];
-    let mut at_cap = harness(options, Vec::new());
-    at_cap.run().await.unwrap();
-    match &at_cap.observation.lock().unwrap().source_outcome {
-        SourceOutcome::Text(text) => assert_eq!(text, "abcd"),
-        SourceOutcome::Unread | SourceOutcome::Closed { .. } => {
-            panic!("a frame at the cap is accepted");
-        }
-    }
+    let outcome = outcome_with_cap(4, vec![RealtimeMessage::Text("abcd".to_owned())]).await;
+    assert!(matches!(outcome, SourceOutcome::Text(text) if text == "abcd"));
 }
 
 async fn closes_a_binary_frame_over_the_cap() {
-    let mut options = HarnessOptions::default();
-    options.max_message_size_bytes = 4;
-    options.source_frames = vec![RealtimeMessage::Binary(vec![1, 2, 3, 4, 5])];
-    let mut over_cap = harness(options, Vec::new());
-    over_cap.run().await.unwrap();
-    match &over_cap.observation.lock().unwrap().source_outcome {
-        SourceOutcome::Closed { code, message, .. } => {
-            assert_eq!(*code, Some(MESSAGE_TOO_BIG_CODE));
-            assert_eq!(
-                message.as_str(),
-                "the realtime backend message exceeds the 4-byte limit"
-            );
-        }
-        SourceOutcome::Unread | SourceOutcome::Text(_) => {
-            panic!("a binary frame over the cap closes the session");
-        }
-    }
+    let outcome = outcome_with_cap(4, vec![RealtimeMessage::Binary(vec![1, 2, 3, 4, 5])]).await;
+    assert_closed(
+        outcome,
+        "the realtime backend message exceeds the 4-byte limit",
+    );
 }

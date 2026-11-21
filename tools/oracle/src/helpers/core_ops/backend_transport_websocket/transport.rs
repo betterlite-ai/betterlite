@@ -128,35 +128,29 @@ fn record_dial(records: &Mutex<Vec<DialRecord>>, request: &DialRequest<'_>) {
 }
 
 impl ScriptedDialer {
-    fn connect_success(&self, request: &DialRequest<'_>) -> Result<ConnectedBackend, DialError> {
-        if request.url.starts_with("ws://") {
-            return Err(DialError::Other {
-                message: String::from("ssl argument is incompatible with a ws:// URI"),
-            });
-        }
-        Ok(ConnectedBackend {
-            sender: Box::new(RecordingBackend {
-                sent: Arc::clone(&self.sent),
-                closed: Arc::clone(&self.closed),
-            }),
-            source: Some(Box::new(ClosedSource)),
+    fn next_attempt(&self) -> DialDocument {
+        let attempt = self.attempts.locked().pop_front();
+        attempt.unwrap_or_else(|| DialDocument::Os {
+            message: String::from("the dial script ran out"),
         })
     }
-}
 
-#[async_trait]
-impl RealtimeWebSocketDialer for ScriptedDialer {
-    async fn connect(&self, request: &DialRequest<'_>) -> Result<ConnectedBackend, DialError> {
-        record_dial(&self.records, request);
-        let attempt = self
-            .attempts
-            .locked()
-            .pop_front()
-            .unwrap_or_else(|| DialDocument::Os {
-                message: String::from("the dial script ran out"),
-            });
+    fn attempt_result(
+        &self,
+        request: &DialRequest<'_>,
+        attempt: DialDocument,
+    ) -> Result<ConnectedBackend, DialError> {
         match attempt {
-            DialDocument::Connect => self.connect_success(request),
+            DialDocument::Connect if request.url.starts_with("ws://") => Err(DialError::Other {
+                message: String::from("ssl argument is incompatible with a ws:// URI"),
+            }),
+            DialDocument::Connect => Ok(ConnectedBackend {
+                sender: Box::new(RecordingBackend {
+                    sent: Arc::clone(&self.sent),
+                    closed: Arc::clone(&self.closed),
+                }),
+                source: Some(Box::new(ClosedSource)),
+            }),
             DialDocument::Timeout { message } => Err(DialError::Timeout { message }),
             DialDocument::Os { message } => Err(DialError::Os { message }),
             DialDocument::WebSocket { message } => Err(DialError::WebSocket { message }),
@@ -172,6 +166,15 @@ impl RealtimeWebSocketDialer for ScriptedDialer {
                 message,
             }),
         }
+    }
+}
+
+#[async_trait]
+impl RealtimeWebSocketDialer for ScriptedDialer {
+    async fn connect(&self, request: &DialRequest<'_>) -> Result<ConnectedBackend, DialError> {
+        record_dial(&self.records, request);
+        let attempt = self.next_attempt();
+        self.attempt_result(request, attempt)
     }
 }
 

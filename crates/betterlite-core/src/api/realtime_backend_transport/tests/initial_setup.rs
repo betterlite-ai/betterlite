@@ -14,8 +14,7 @@ async fn realtime_initial_setup_sequence() {
     sends_the_synthetic_session_created().await;
     skips_a_missing_synthetic_event().await;
     drops_an_empty_metadata_map().await;
-    forces_the_model_for_a_transcription_intent().await;
-    keeps_the_model_for_another_intent().await;
+    sets_or_keeps_the_model_for_an_intent().await;
     closes_after_a_cancelled_relay().await;
 }
 
@@ -110,7 +109,7 @@ async fn drops_an_empty_metadata_map() {
     );
 }
 
-async fn forces_the_model_for_a_transcription_intent() {
+async fn sets_or_keeps_the_model_for_an_intent() {
     let mut options = HarnessOptions::default();
     options.query_params = Some(IndexMap::from([(
         "intent".to_owned(),
@@ -128,9 +127,7 @@ async fn forces_the_model_for_a_transcription_intent() {
         Some("gemini-test")
     );
     assert!(!transcription.dials()[0].url.contains("intent"));
-}
 
-async fn keeps_the_model_for_another_intent() {
     let mut options = HarnessOptions::default();
     options.query_params = Some(IndexMap::from([(
         "intent".to_owned(),

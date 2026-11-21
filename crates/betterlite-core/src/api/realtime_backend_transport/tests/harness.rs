@@ -34,6 +34,12 @@ use crate::api::realtime_contracts::transport::{RealtimeBackend, RealtimeMessage
 use crate::api::realtime_guardrail_policy::RealtimeGuardrailCallback;
 use crate::api::request_destination::RequestData;
 
+fn websocket_error(message: &str) -> WebSocketError {
+    WebSocketError {
+        message: message.to_owned(),
+    }
+}
+
 #[derive(Default)]
 struct BackendLog {
     sent: Vec<RealtimeMessage>,
@@ -49,13 +55,11 @@ struct FakeBackend {
 #[async_trait]
 impl RealtimeBackend for FakeBackend {
     async fn send(&mut self, message: RealtimeMessage) -> Result<(), WebSocketError> {
-        let Some(error) = &self.send_error else {
-            self.log.lock().unwrap().sent.push(message);
-            return Ok(());
-        };
-        Err(WebSocketError {
-            message: error.clone(),
-        })
+        if let Some(error) = &self.send_error {
+            return Err(websocket_error(error));
+        }
+        self.log.lock().unwrap().sent.push(message);
+        Ok(())
     }
 
     async fn recv(&mut self, _decode: Option<bool>) -> Result<RealtimeMessage, WebSocketError> {
@@ -67,9 +71,7 @@ impl RealtimeBackend for FakeBackend {
     async fn close(&mut self) -> Result<(), WebSocketError> {
         self.log.lock().unwrap().closed = true;
         match &self.close_error {
-            Some(error) => Err(WebSocketError {
-                message: error.clone(),
-            }),
+            Some(error) => Err(websocket_error(error)),
             None => Ok(()),
         }
     }
@@ -194,18 +196,24 @@ struct FakeClient {
     close_error: Option<ClientCloseError>,
 }
 
+impl FakeClient {
+    fn new(options: &HarnessOptions, logs: &SharedLogs) -> Self {
+        Self {
+            log: Arc::clone(&logs.client),
+            send_error: options.send_error.clone(),
+            close_error: options.close_error.clone(),
+        }
+    }
+}
+
 #[async_trait]
 impl RealtimeClientSocket for FakeClient {
     async fn send_text(&mut self, data: &str) -> Result<(), WebSocketError> {
-        match &self.send_error {
-            Some(message) => Err(WebSocketError {
-                message: message.clone(),
-            }),
-            None => {
-                self.log.lock().unwrap().texts.push(data.to_owned());
-                Ok(())
-            }
+        if let Some(message) = &self.send_error {
+            return Err(websocket_error(message));
         }
+        self.log.lock().unwrap().texts.push(data.to_owned());
+        Ok(())
     }
 
     async fn receive_text(&mut self) -> Result<String, WebSocketError> {
@@ -338,7 +346,7 @@ impl RealtimeGuardrailCallback for TestCallback {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(super) enum SourceOutcome {
     #[default]
     Unread,
@@ -478,22 +486,12 @@ pub(super) struct Harness<'callback> {
     pub(super) observation: Arc<Mutex<RelayObservation>>,
 }
 
+#[derive(Default)]
 struct SharedLogs {
     backend: Arc<Mutex<BackendLog>>,
     client: Arc<Mutex<ClientLog>>,
     records: Arc<Mutex<Vec<DialRecord>>>,
     observation: Arc<Mutex<RelayObservation>>,
-}
-
-impl SharedLogs {
-    fn new() -> Self {
-        Self {
-            backend: Arc::new(Mutex::new(BackendLog::default())),
-            client: Arc::new(Mutex::new(ClientLog::default())),
-            records: Arc::new(Mutex::new(Vec::new())),
-            observation: Arc::new(Mutex::new(RelayObservation::default())),
-        }
-    }
 }
 
 fn provider_of(options: &HarnessOptions, logs: &SharedLogs) -> Arc<TestProvider> {
@@ -510,13 +508,9 @@ fn provider_of(options: &HarnessOptions, logs: &SharedLogs) -> Arc<TestProvider>
 }
 
 fn client_of(options: &HarnessOptions, logs: &SharedLogs) -> ClientHandle {
+    let socket: Box<dyn RealtimeClientSocket> = Box::new(FakeClient::new(options, logs));
     ClientHandle {
-        socket: Arc::new(tokio::sync::Mutex::new(Box::new(FakeClient {
-            log: Arc::clone(&logs.client),
-            send_error: options.send_error.clone(),
-            close_error: options.close_error.clone(),
-        })
-            as Box<dyn RealtimeClientSocket>)),
+        socket: Arc::new(tokio::sync::Mutex::new(socket)),
         scope: WebSocketScope::default(),
     }
 }
@@ -560,7 +554,7 @@ pub(super) fn harness<'callback>(
     options: HarnessOptions,
     callback_refs: Vec<&'callback TestCallback>,
 ) -> Harness<'callback> {
-    let logs = SharedLogs::new();
+    let logs = SharedLogs::default();
     let cancellation = CancellationToken::new();
     if options.cancellation {
         cancellation.cancel();
@@ -661,6 +655,10 @@ impl Harness<'_> {
                 at: record.at,
             })
             .collect()
+    }
+
+    pub(super) fn source_outcome(&self) -> SourceOutcome {
+        self.observation.lock().unwrap().source_outcome.clone()
     }
 }
 

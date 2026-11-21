@@ -50,8 +50,7 @@ async fn ignorable_runtime_close_errors_are_swallowed(#[case] message: &str) {
 async fn realtime_backend_connection_errors() {
     redacts_the_secret_from_the_error_event().await;
     closes_a_dead_client_with_the_error().await;
-    reports_another_runtime_close_error().await;
-    reports_a_close_error_of_another_class().await;
+    reports_unexpected_and_other_close_errors().await;
 }
 
 async fn redacts_the_secret_from_the_error_event() {
@@ -82,7 +81,7 @@ async fn closes_a_dead_client_with_the_error() {
     );
 }
 
-async fn reports_another_runtime_close_error() {
+async fn reports_unexpected_and_other_close_errors() {
     let mut options = HarnessOptions::default();
     options.dials = vec![os("boom")];
     options.close_error = Some(ClientCloseError::Runtime {
@@ -94,9 +93,7 @@ async fn reports_another_runtime_close_error() {
         error.to_string(),
         "Unexpected error while closing WebSocket: another runtime failure"
     );
-}
 
-async fn reports_a_close_error_of_another_class() {
     let mut options = HarnessOptions::default();
     options.dials = vec![os("boom")];
     options.close_error = Some(ClientCloseError::Other {

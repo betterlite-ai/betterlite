@@ -104,26 +104,24 @@ where
             .provider
             .validate_environment(&environment)
             .map_err(RealtimeConnectionError::Config)?;
-        match self.run(&url, &headers).await {
-            Ok(()) => Ok(()),
+        let connected = match self.dial(&url, &headers).await {
+            Ok(connected) => connected,
             Err(RealtimeConnectionError::Dial(DialError::InvalidStatus {
                 status_code, ..
-            })) => self.refuse(status_code).await,
-            Err(error) => self.handle_failure(&error).await,
-        }
-    }
-
-    async fn run(
-        &mut self,
-        url: &str,
-        headers: &HeaderMap,
-    ) -> Result<(), RealtimeConnectionError<Config::Error, Callback::Error, Relay::Error>> {
-        let ConnectedBackend { sender, source } = self.dial(url, headers).await?;
+            })) => {
+                return self.refuse(status_code).await;
+            }
+            Err(error) => return self.handle_failure(&error).await,
+        };
+        let ConnectedBackend { sender, source } = connected;
         let mut state = self.build_state(sender);
         let relayed = self.forward(&mut state, source).await;
         // the async context manager exits on every path, and a close failure replaces whatever the body was returning
-        Self::close_backend(&mut state).await?;
-        relayed
+        let closed = Self::close_backend(&mut state).await;
+        match (relayed, closed) {
+            (_, Err(error)) | (Err(error), Ok(())) => self.handle_failure(&error).await,
+            (Ok(()), Ok(())) => Ok(()),
+        }
     }
 
     async fn dial(
@@ -173,23 +171,15 @@ where
         let source_ref = limited
             .as_mut()
             .map(|limited| limited as &mut dyn RealtimeBackendSource);
-        let setup = if self.provider.requires_session_configuration() {
-            self.send_setup(state).await
-        } else {
-            self.send_synthetic(state).await
-        };
-        match setup {
-            Ok(()) => self
-                .relay
-                .relay(SessionRelay {
-                    state,
-                    source: source_ref,
-                    cancellation: &self.cancellation,
-                })
-                .await
-                .map_err(RealtimeConnectionError::Relay),
-            Err(error) => Err(error),
-        }
+        self.send_initial_frame(state).await?;
+        self.relay
+            .relay(SessionRelay {
+                state,
+                source: source_ref,
+                cancellation: &self.cancellation,
+            })
+            .await
+            .map_err(RealtimeConnectionError::Relay)
     }
 
     fn build_state(&mut self, backend: Box<dyn RealtimeBackend>) -> RealtimeStreaming {
