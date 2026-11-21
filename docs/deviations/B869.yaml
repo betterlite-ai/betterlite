@@ -1,0 +1,27 @@
+task: B869
+deviations:
+  - what: A rejected general_settings.litellm_jwtauth reaches the config loader as ConfigError (Unsupported for unknown keys, InvalidScalar naming the field for every other rejection), and LiteLLM's ValueError or ValidationError text is logged at error level instead of returned.
+    why: The shared config boundary from B002 reports a path, not free text; construct() still returns JwtSettingsError with LiteLLM's exact message for callers that need it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5535-L5550
+  - what: A configured custom_validate with no ValidatorLoader installed is a startup error naming the module, instead of importing the module.
+    why: betterlite cannot import Python callables; B165 and B054 install the real loader behind the ValidatorLoader contract, and a validator that silently does nothing would accept tokens LiteLLM rejects.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5530-L5533
+  - what: An os.environ/ reference in litellm_jwtauth to a variable that is not set fails the load with an error naming the variable and the field.
+    why: The shared env resolution of the config boundary treats a missing variable as a configuration error rather than passing whatever get_secret returns into the model.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10365-L10368
+  - what: An os.environ/ reference for enforce_scope_based_access is read as a bool by betterlite-env before the scope_mappings precheck, so a value such as "no" or "0" next to scope_mappings fails the load with LiteLLM's precheck error. LiteLLM checks the raw text, finds it truthy, and then loads the flag as false, so scope enforcement is silently off.
+    why: docs/compatibility.md reads an env string into the field's type and does not port truthiness, and failing the startup is safer than a scope_mappings list that never applies. "true", "false" and padded or upper-case forms of them behave as in LiteLLM, since get_secret's str_to_bool already converts those.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5549-L5550
+  - what: When one litellm_jwtauth mapping holds several invalid values, the error names the first in betterlite's order. Fields are checked in LiteLLM_JWTAuth's annotation order, keys inside one record in alphabetical order, and every issuer's fields before any issuer's audience rule, so [{issuer a without audience}, {issuer 5}] reports issuers.1.issuer where LiteLLM reports the audience error of issuers.0.
+    why: pydantic collects every error and lists them in validation order; betterlite stops at the first one, and a configuration that loads in LiteLLM loads the same here. Only which of several errors is named first differs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5315-L5325
+  - what: A .nan, .inf or -.inf value in litellm_jwtauth fails the config load, since the shared YAML parser rejects non-finite floats. pydantic accepts them for public_key_ttl, oidc_userinfo_cache_ttl and virtual_key_mapping_cache_ttl, and .inf for public_key_stale_ttl.
+    why: The settings dump is standard JSON, which has no NaN or infinity, and a NaN cache lifetime never expires or always expires depending on the comparison.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5414
+  - what: An unquoted y, Y, n or N as a litellm_jwtauth value reads as a bool, so a text field such as audience or team_id_jwt_field set to it fails its type check. PyYAML keeps those four as text, and LiteLLM accepts them.
+    why: The raw mapping is read untyped before LiteLLM's raw checks, and the shared YAML parser's untyped reading takes y and n as YAML 1.1 bools. Quoting the value gives the same result as LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5254-L5266
+kept_bugs:
+  - what: The scope_mappings precheck error text says "scope_mappings must be set if enforce_scope_based_access is true." although it is raised when scope_mappings is set and enforcement is off.
+    why: Operators and log searches match the message word for word, so it is kept as LiteLLM prints it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5549-L5550

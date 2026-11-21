@@ -1,0 +1,14 @@
+kind: helper
+name: jwt-settings-all-unregistered-client-policies
+call:
+  jwt_settings:
+    scenarios:
+      - {"settings": {"unregistered_jwt_client_behavior": "fallback_team_mapping"}, "references": {}, "environment": {}, "issuers": [null]}
+      - {"settings": {"unregistered_jwt_client_behavior": "reject"}, "references": {}, "environment": {}, "issuers": [null]}
+      - {"settings": {"unregistered_jwt_client_behavior": "auto_register"}, "references": {}, "environment": {}, "issuers": [null]}
+      - {"settings": {"unregistered_jwt_client_behavior": "deny"}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"unregistered_jwt_client_behavior": "REJECT"}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"issuers": [{"issuer": "https://idp.example.com", "audience": "a", "unregistered_jwt_client_behavior": "reject"}]}, "references": {}, "environment": {}, "issuers": ["https://idp.example.com", null]}
+      - {"settings": {"issuers": [{"issuer": "https://idp.example.com", "audience": "a", "unregistered_jwt_client_behavior": "deny"}]}, "references": {}, "environment": {}, "issuers": []}
+env: {}
+compare: {ignore: []}

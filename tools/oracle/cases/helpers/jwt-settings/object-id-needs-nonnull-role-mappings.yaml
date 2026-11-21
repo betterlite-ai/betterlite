@@ -1,0 +1,13 @@
+kind: helper
+name: jwt-settings-object-id-needs-nonnull-role-mappings
+call:
+  jwt_settings:
+    scenarios:
+      - {"settings": {"object_id_jwt_field": "oid"}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"object_id_jwt_field": "oid", "role_mappings": null}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"object_id_jwt_field": "", "role_mappings": null}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"object_id_jwt_field": "oid", "role_mappings": []}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"object_id_jwt_field": null}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"role_mappings": [{"role": "admin", "internal_role": "proxy_admin"}]}, "references": {}, "environment": {}, "issuers": []}
+env: {}
+compare: {ignore: []}
