@@ -39,6 +39,8 @@ where
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DecodedResponseId {
     Unmanaged,
+    // a managed payload with fewer than two fields: the addressed id stays the routing id and no owner is checked
+    Fallback,
     Managed {
         original_id: String,
         user_id: String,
@@ -77,11 +79,7 @@ pub(super) fn decode_owned_response_id_text(
     }
     let parts: Vec<&str> = decrypted.split(';').collect();
     match parts.as_slice() {
-        [] | [_] => Ok(DecodedResponseId::Managed {
-            original_id: text.to_owned(),
-            user_id: String::new(),
-            team_id: String::new(),
-        }),
+        [] | [_] => Ok(DecodedResponseId::Fallback),
         [_, _] => Err(Error::MalformedOwnedPayload { fields: 2 }),
         [response_part, user_part, team_part, ..] => Ok(DecodedResponseId::Managed {
             original_id: response_part

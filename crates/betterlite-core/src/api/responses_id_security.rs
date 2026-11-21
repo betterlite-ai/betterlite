@@ -140,6 +140,8 @@ where
                     Err(Error::Forbidden(Forbidden::Unmanaged))
                 }
             }
+            // the managed prefix still holds, but there is no owner to check
+            DecodedResponseId::Fallback => Ok(response_id.to_owned()),
         }
     }
 

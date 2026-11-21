@@ -884,14 +884,9 @@ fn replays_corpus() {
                 decoded,
                 Err(Error::MalformedOwnedPayload { fields: 2 })
             )),
-            "managed-one-field" => assert!(matches!(
-                decoded.unwrap(),
-                DecodedResponseId::Managed {
-                    user_id,
-                    team_id,
-                    ..
-                } if user_id.is_empty() && team_id.is_empty()
-            )),
+            "managed-one-field" => {
+                assert_eq!(decoded.unwrap(), DecodedResponseId::Fallback)
+            }
             "non-utf8" => assert!(matches!(decoded, Err(Error::NotUtf8))),
             "wrong-key" | "not-managed-payload" => {
                 assert_eq!(decoded.unwrap(), DecodedResponseId::Unmanaged)
