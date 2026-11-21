@@ -1,0 +1,22 @@
+kind: helper
+name: brave-search-seed
+call:
+  brave_search:
+    environment: {BRAVE_API_KEY: seed-key}
+    calls:
+      - kind: request
+        headers: {X-Seed: "1"}
+        api_key: null
+        api_base: null
+        query: [seed, query]
+        optional_params: {max_results: 2, result_filter: web, count: 2}
+      - kind: reply
+        query: seed
+        optional_params: {result_filter: "videos,faq", count: 3}
+        body: '{"videos": {"results": [{"title": "v1", "url": "https://v1.test", "description": "video"}]}, "faq": {"results": [{"title": "q1", "url": "https://q1.test", "description": "answer", "page_age": "2024-03-05"}]}}'
+      - kind: date
+        value: "20240305"
+        dayfirst: false
+        yearfirst: false
+env: {}
+compare: {ignore: []}

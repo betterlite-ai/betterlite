@@ -499,3 +499,10 @@ path = "fuzz_targets/gemini_upload_reply.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "brave_search"
+path = "fuzz_targets/brave_search.rs"
+test = false
+doc = false
+bench = false

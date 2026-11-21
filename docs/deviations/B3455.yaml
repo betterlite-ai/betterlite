@@ -15,6 +15,22 @@ deviations:
   - what: betterlite-core resolves the project, location and credential aliases and builds the Vertex host itself instead of calling betterlite-vertex's VertexBase getters and get_vertex_base_url.
     why: betterlite-vertex depends on betterlite-core, so core cannot call it. The rules and results match the mirrored functions, and B1301, B1305 and B1302 keep owning the shared ones.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L444-L459
+  - what: >-
+      A project that validate_vertex_project rejects (empty, or with "..", "/", "?", "#", "\", ":", "%" or whitespace)
+      fails the RAG ingest with the typed project error before any token or HTTP call.
+    why: >-
+      LiteLLM formats the project into the corpus create URL, so such a value sends the proxy's token to another Google
+      resource. Every other Vertex URL builder already checks the project.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L187
+  - what: >-
+      The corpus id goes into the upload URL segment by segment: an empty id or an empty or dot segment fails before
+      any call, and characters outside the RFC 3986 unreserved set are percent-encoded. A full resource name is unchanged.
+    why: >-
+      LiteLLM formats vector_store_id raw into the upload URL, where "..", "?" or "#" change the path or query of a call
+      that carries the proxy's token.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L342
 kept_bugs:
   - what: The poll loop sleeps for the retry delay after its last attempt and only then raises the timeout, so a timed-out operation takes 60 seconds instead of 58.
     why: A setup that tuned its timeouts against LiteLLM's real timing keeps the same timing after the switch.

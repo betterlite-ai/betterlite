@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use betterlite_http::url_path::encode_segments;
 use betterlite_models::decisions::{Extra, Json};
 use serde_json::Number;
 use thiserror::Error;
@@ -21,9 +22,10 @@ pub(super) async fn upload_file(
     content: &[u8],
     content_type: Option<&str>,
 ) -> Result<String, VertexIngestionError> {
+    let corpus_path = encode_segments(corpus_id, "vector_store_id")?;
     let token = ingestion.bearer_token(ingestion.project.as_deref()).await?;
     let base_url = ingestion.base_url()?;
-    let url = format!("{base_url}/upload/{API_VERSION}/{corpus_id}/ragFiles:upload");
+    let url = format!("{base_url}/upload/{API_VERSION}/{corpus_path}/ragFiles:upload");
     let encoded =
         serde_json::to_string(&upload_metadata(ingestion, filename)?).map_err(|source| {
             VertexIngestionError::Write {
