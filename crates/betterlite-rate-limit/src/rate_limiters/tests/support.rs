@@ -93,7 +93,11 @@ impl LegacyUsageCache for RecordingCache {
             keys: keys.to_vec(),
             span: parent_otel_span.is_some(),
         });
-        let answer = self.answer.lock().expect("the cache lock").clone();
+        let answer = self
+            .answer
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
         match answer {
             BatchAnswer::None => Ok(None),
             BatchAnswer::Values(values) => Ok(Some(values)),
@@ -231,10 +235,13 @@ pub(crate) fn handler_deps(
     clock: &Arc<FixedClock>,
     console: &Arc<RecordingConsole>,
 ) -> LegacyRateLimitDeps {
+    let usage_cache_arc: Arc<dyn LegacyUsageCache> = Arc::<RecordingCache>::clone(cache);
+    let wall_clock_arc: Arc<dyn LegacyClock> = Arc::<FixedClock>::clone(clock);
+    let verbose_console_arc: Arc<dyn VerboseConsole> = Arc::<RecordingConsole>::clone(console);
     LegacyRateLimitDeps {
-        internal_usage_cache: Arc::clone(cache),
-        clock: Arc::clone(clock),
-        verbose: Arc::clone(console),
+        internal_usage_cache: usage_cache_arc,
+        clock: wall_clock_arc,
+        verbose: verbose_console_arc,
         set_verbose: false,
         native: Arc::new(Native),
         router: None,
@@ -279,7 +286,7 @@ impl LogCapture {
     }
 
     pub(crate) fn text(&self) -> String {
-        String::from_utf8(self.buffer.lock().expect("the capture lock").clone())
-            .expect("the capture is UTF-8")
+        let bytes = self.buffer.lock().expect("the capture lock").clone();
+        String::from_utf8(bytes).expect("the capture is UTF-8")
     }
 }

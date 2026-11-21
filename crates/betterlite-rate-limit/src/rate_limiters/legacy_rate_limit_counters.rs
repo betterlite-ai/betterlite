@@ -73,7 +73,7 @@ impl LegacyRateLimitHandler {
         }
     }
 
-    pub(crate) fn print_verbose(&self, statement: &str) {
+    pub fn print_verbose(&self, statement: &str) {
         tracing::debug!("{statement}");
         if self.set_verbose && !self.verbose.print_line(statement) {
             tracing::debug!("litellm.set_verbose could not print the statement");
@@ -81,7 +81,7 @@ impl LegacyRateLimitHandler {
     }
 
     #[must_use]
-    pub(crate) fn precise_minute(&self) -> String {
+    pub fn precise_minute(&self) -> String {
         let now = self.clock.now();
         format!(
             "{:04}-{:02}-{:02}-{:02}-{:02}",
@@ -94,7 +94,7 @@ impl LegacyRateLimitHandler {
     }
 
     #[must_use]
-    pub(crate) fn time_to_next_minute(&self) -> f64 {
+    pub fn time_to_next_minute(&self) -> f64 {
         let now = self.clock.now();
         let elapsed = u64::from(now.second())
             .saturating_mul(1_000_000)
@@ -104,7 +104,7 @@ impl LegacyRateLimitHandler {
     }
 
     #[must_use]
-    pub(crate) fn raise_rate_limit_error(
+    pub fn raise_rate_limit_error(
         &self,
         additional_details: Option<&str>,
         rate_limit_type: Option<RateLimitDimension>,
@@ -118,7 +118,7 @@ impl LegacyRateLimitHandler {
         self.rate_limit_error(detail, dimension, requested_model)
     }
 
-    pub(crate) async fn check_key_in_limits(
+    pub async fn check_key_in_limits(
         &self,
         check: KeyLimitCheck<'_>,
         values_to_update_in_cache: &mut Vec<(String, LegacyCacheValue)>,
@@ -147,7 +147,8 @@ impl LegacyRateLimitHandler {
         Ok(new_val)
     }
 
-    pub(crate) async fn get_all_cache_objects(
+    #[must_use]
+    pub async fn get_all_cache_objects(
         &self,
         keys: CacheObjectKeys,
         parent_otel_span: Option<&ParentOtelSpan>,

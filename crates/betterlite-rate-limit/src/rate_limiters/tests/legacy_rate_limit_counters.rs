@@ -33,11 +33,11 @@ use crate::rate_limiters::legacy_rate_limit_counters::verbose::{
 const START_OF_MINUTE: &str = "2026-11-21T12:00:00+00:00";
 const CACHE_KEY: &str = "sk-test::2026-11-21-12-00::request_count";
 
-const fn counter(current_requests: i64, current_tpm: i64, current_rpm: i64) -> MinuteCounter {
+const fn counter(requests: i64, tokens: i64, rpm: i64) -> MinuteCounter {
     MinuteCounter {
-        current_requests,
-        current_tpm,
-        current_rpm,
+        current_requests: requests,
+        current_tpm: tokens,
+        current_rpm: rpm,
     }
 }
 
@@ -137,8 +137,8 @@ fn constructor_stores_the_usage_cache_and_the_clock() {
     let clock = FixedClock::at(START_OF_MINUTE);
     let console = RecordingConsole::new(false);
     let handler = LegacyRateLimitHandler::new(handler_deps(&cache, &clock, &console));
-    let stored_cache: Arc<dyn LegacyUsageCache> = Arc::clone(&cache);
-    let stored_clock: Arc<dyn LegacyClock> = Arc::clone(&clock);
+    let stored_cache: Arc<dyn LegacyUsageCache> = Arc::<RecordingCache>::clone(&cache);
+    let stored_clock: Arc<dyn LegacyClock> = Arc::<FixedClock>::clone(&clock);
     assert!(Arc::ptr_eq(&handler.internal_usage_cache, &stored_cache));
     assert!(Arc::ptr_eq(&handler.clock, &stored_clock));
 }
