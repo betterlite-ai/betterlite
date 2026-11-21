@@ -112,41 +112,14 @@ impl CacheCostRouting<'_> {
         mut response: PreRoutingResponse,
         choice: &CacheAwareChoice,
     ) -> PreRoutingResponse {
-        let Some(mut decision) = response.routing_decision.take() else {
+        let Some(decision) = response.routing_decision.take() else {
             return response;
         };
         let classified_model = response.model.clone();
-        let previous_cause = cause_text(decision.get("cause"));
-        let mut signals = match decision.get("signals") {
-            Some(Json::List(signals)) => signals.clone(),
-            None
-            | Some(
-                Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_),
-            ) => Vec::new(),
-        };
-        signals.push(Json::Text(format!(
-            "cache-aware:classified-model={classified_model}"
-        )));
-        signals.push(Json::Text(format!(
-            "cache-aware:classification-cause={previous_cause}"
-        )));
-        signals.push(Json::Text(format!(
-            "cache-aware:estimated-cost={};original-cost={}",
-            cost_text(choice.estimated_cost),
-            cost_text(choice.original_cost),
-        )));
         let params = self
             .params_for_model
             .params_for_model(&choice.tier, &choice.model);
-        decision.insert("routed_model".to_owned(), Json::Text(choice.model.clone()));
-        decision.insert("cause".to_owned(), Json::Text(CAUSE.to_owned()));
-        decision.insert("tier".to_owned(), Json::Text(choice.tier.clone()));
-        decision.insert(
-            "tier_label".to_owned(),
-            Json::Text(self.tier_label(&choice.tier)),
-        );
-        decision.insert("tier_litellm_params".to_owned(), masked_params(&params));
-        decision.insert("signals".to_owned(), Json::List(signals));
+        let decision = self.stamped_decision(decision, &classified_model, choice, &params);
         tracing::info!(
             "ComplexityRouter: cache-aware choice model={} original={} estimated_cost={} original_cost={}",
             choice.model,
@@ -160,12 +133,61 @@ impl CacheCostRouting<'_> {
         response
     }
 
+    // the classified decision's keys survive; the cache comparison's fields replace the routed ones
+    fn stamped_decision(
+        &self,
+        mut decision: RoutingDecision,
+        classified_model: &str,
+        choice: &CacheAwareChoice,
+        params: &JsonMap,
+    ) -> RoutingDecision {
+        let signals = extended_signals(&decision, classified_model, choice);
+        decision.insert("routed_model".to_owned(), Json::Text(choice.model.clone()));
+        decision.insert("cause".to_owned(), Json::Text(CAUSE.to_owned()));
+        decision.insert("tier".to_owned(), Json::Text(choice.tier.clone()));
+        decision.insert(
+            "tier_label".to_owned(),
+            Json::Text(self.tier_label(&choice.tier)),
+        );
+        decision.insert("tier_litellm_params".to_owned(), masked_params(params));
+        decision.insert("signals".to_owned(), Json::List(signals));
+        decision
+    }
+
     // tier_labels[tier] or the tier's own name; the stamp writes the label even when it equals the name
     fn tier_label(&self, tier: &str) -> String {
         ComplexityTier::built_in(tier)
             .and_then(|built_in| self.tier_labels.get(&built_in))
             .map_or_else(|| tier.to_owned(), Clone::clone)
     }
+}
+
+// the classified signals plus the model, cause and both costs the cache comparison weighed
+fn extended_signals(
+    decision: &RoutingDecision,
+    classified_model: &str,
+    choice: &CacheAwareChoice,
+) -> Vec<Json> {
+    let mut signals = match decision.get("signals") {
+        Some(Json::List(signals)) => signals.clone(),
+        None
+        | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
+            Vec::new()
+        }
+    };
+    signals.push(Json::Text(format!(
+        "cache-aware:classified-model={classified_model}"
+    )));
+    signals.push(Json::Text(format!(
+        "cache-aware:classification-cause={}",
+        cause_text(decision.get("cause"))
+    )));
+    signals.push(Json::Text(format!(
+        "cache-aware:estimated-cost={};original-cost={}",
+        cost_text(choice.estimated_cost),
+        cost_text(choice.original_cost),
+    )));
+    signals
 }
 
 // routing_decision["cause"] as the signal writes it: an absent or null cause reads as Python's None

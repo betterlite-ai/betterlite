@@ -5,6 +5,7 @@ use betterlite_models::decisions::Json;
 use super::support::{
     FixedChooser, FixedParams, Fixture, Seen, capture_logs, choice, fit, message, params, response,
 };
+use crate::complexity_scoring::decision::RoutingDecision;
 use crate::complexity_scoring::tier::ComplexityTier;
 
 #[tokio::test]
@@ -91,7 +92,11 @@ async fn a_warm_cheaper_model_replaces_the_route() {
     );
     assert_eq!(applied.session_affinity_ttl_seconds, Some(3600));
     assert_eq!(applied.messages, Some(vec![message()]));
-    let decision = applied.routing_decision.unwrap();
+    assert_classified_keys_survive(applied.routing_decision.as_ref().unwrap());
+}
+
+// the classified decision's keys stay; the cache comparison's fields replace the routed ones
+fn assert_classified_keys_survive(decision: &RoutingDecision) {
     assert_eq!(
         decision["router_model_name"],
         Json::Text("probe".to_owned())

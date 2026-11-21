@@ -7,6 +7,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use betterlite_config::sections::cache_cost_routing as section;
 use betterlite_models::decisions::Json;
+use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::message_content::{Content, Message};
 use rust_decimal::Decimal;
 use serde_json::Number;
@@ -39,7 +40,7 @@ pub(super) fn message() -> Message {
         role: "user".to_owned(),
         content: Some(Content::Text("hello".to_owned())),
         name: None,
-        provider_specific_fields: JsonMap::new(),
+        provider_specific_fields: Object::new(),
     }
 }
 
@@ -132,7 +133,7 @@ impl TierParams for FixedParams {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct Seen {
     pub(super) model: String,
     pub(super) decision_present: bool,
