@@ -1,3 +1,6 @@
+use std::collections::BTreeMap;
+
+use betterlite_config::sections::settings::settings_resolution::FieldSource;
 use betterlite_config::sections::team_admin_fields::{
     MEMBER_KEY_BUDGETS_PERMISSION, PROJECTS_PERMISSION, SUPPORTED_TEAM_FIELDS,
 };
@@ -5,6 +8,7 @@ use rstest::rstest;
 
 use super::support::{json, settings};
 use crate::ui_settings_state::record::{UiSettingErrorKind, UiSettings, UiSettingsError};
+use crate::ui_settings_state::response::UiSettingsResponse;
 use crate::ui_settings_state::schema::ui_settings_schema;
 
 const DEFAULT_DUMP: &str = r#"{
@@ -223,6 +227,22 @@ fn schema_reports_the_pydantic_property_entries() {
             r#"{"enum": ["max_budget", "member_key_budgets", "projects", "rpm_limit", "tpm_limit"], "type": "string"}"#
         )
     );
+}
+
+#[test]
+fn response_reports_values_schema_and_source() {
+    let response = UiSettingsResponse {
+        values: settings(r#"{"enable_chat_ui": true}"#),
+        field_schema: ui_settings_schema(),
+        source: BTreeMap::from([("enable_chat_ui".to_owned(), FieldSource::Config)]),
+    };
+    let dumped = serde_json::to_value(&response).expect("the response serializes");
+    assert_eq!(dumped["values"]["enable_chat_ui"], json("true"));
+    assert_eq!(
+        dumped["field_schema"]["enable_chat_ui"]["type"],
+        json(r#""boolean""#)
+    );
+    assert_eq!(dumped["source"]["enable_chat_ui"], json(r#""config""#));
 }
 
 #[test]
