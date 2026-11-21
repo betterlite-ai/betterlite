@@ -1,0 +1,12 @@
+kind: helper
+name: model-write-fields-seed
+call:
+  model_write_fields:
+    steps:
+      - {"function": "model_call", "caller": {"user_id": "admin-1", "user_role": "internal_user", "team_id": "key-team"}, "team_id": "team-1", "teams": [{"team_id": "team-1", "organization_id": "org-1", "members_with_roles": [{"user_id": "admin-1", "role": "admin"}, {"user_id": "member-1", "role": "user"}]}], "allow_missing_team": false, "patch": null, "stored": null, "null_detaches": false, "salt_key": "model-write-fields-salt"}
+      - {"function": "model_call", "caller": {"user_id": "admin-1", "user_role": null, "team_id": "key-team"}, "team_id": "team-1", "teams": [{"team_id": "team-1", "organization_id": "org-1", "members_with_roles": [{"user_id": "admin-1", "role": "admin"}, {"user_id": "member-1", "role": "user"}]}], "allow_missing_team": false, "patch": null, "stored": null, "null_detaches": false, "salt_key": "model-write-fields-salt"}
+      - {"function": "model_call", "caller": {"user_id": "member-1", "user_role": "internal_user", "team_id": "key-team"}, "team_id": "team-1", "teams": [{"team_id": "team-1", "organization_id": "org-1", "members_with_roles": [{"user_id": "admin-1", "role": "admin"}, {"user_id": "member-1", "role": "user"}]}], "allow_missing_team": false, "patch": null, "stored": null, "null_detaches": false, "salt_key": "model-write-fields-salt"}
+      - {"function": "session_tags", "caller": {"user_id": "member-1", "user_role": "internal_user", "team_id": "key-team"}, "team_id": null, "teams": [{"team_id": "team-1", "organization_id": "org-1", "members_with_roles": [{"user_id": "admin-1", "role": "admin"}, {"user_id": "member-1", "role": "user"}]}], "allow_missing_team": false, "patch": {"aws_session_tags": [{"Key": "team", "Value": "a"}, {"Key": "env", "Value": "prod"}]}, "stored": null, "null_detaches": false, "salt_key": "model-write-fields-salt"}
+      - {"function": "session_tags", "caller": {"user_id": "member-1", "user_role": "internal_user", "team_id": "key-team"}, "team_id": null, "teams": [{"team_id": "team-1", "organization_id": "org-1", "members_with_roles": [{"user_id": "admin-1", "role": "admin"}, {"user_id": "member-1", "role": "user"}]}], "allow_missing_team": false, "patch": {"aws_session_tags": [{"Key": "team", "Value": "a"}, {"Key": "env", "Value": "prod"}]}, "stored": {"aws_session_tags": null}, "null_detaches": false, "salt_key": "model-write-fields-salt"}
+env: {}
+compare: {ignore: []}

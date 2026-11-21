@@ -1,0 +1,12 @@
+task: B3054
+deviations:
+  - what: A max_iterations that does not fit a 64-bit integer, such as the JSON integer 9223372036854775808 or a float of 1e30, is refused with a typed error that names the field, where LiteLLM's int() keeps the arbitrary-precision value, so a limit that large is simply never reached, or below i64::MIN always exceeded.
+    why: betterlite counts sessions and compares limits as i64, so a value outside that range has no counter to compare against, and no working setup configures a limit near 2^63; docs/compatibility.md rejects a value the field cannot hold with an error that names it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/max_iterations_limiter.py#L165-L171
+  - what: LITELLM_MAX_ITERATIONS_TTL must parse as an unsigned 64-bit count of seconds, so a negative value or one above u64::MAX is a config load error that names the variable.
+    why: LiteLLM's int() accepts any Python integer and passes it to the Lua script's EXPIRE and to the local cache, where a negative TTL expires the counter on its first write, so the session limit never accumulates. A negative lifetime means nothing for a session counter, and every other environment number in betterlite is refused the same way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/max_iterations_limiter.py#L71-L82
+kept_bugs:
+  - what: A Redis failure during the increment falls back to the in-process counter, so while Redis is unhealthy a session's counts land only in memory, and once Redis answers again its older count is the one that decides, which lets a session exceed its limit by the calls made during the outage.
+    why: the fallback is what keeps agentic loops running through a Redis outage, and a working setup that pairs betterlite with LiteLLM instances on the same Redis relies on both sides counting the same way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/max_iterations_limiter.py#L183-L204

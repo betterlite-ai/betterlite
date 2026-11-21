@@ -1,0 +1,13 @@
+model_list:
+  - model_name: gpt
+    litellm_params:
+      model: openai/gpt-4o-mini
+general_settings:
+  maximum_spend_logs_retention_period: 30d
+  maximum_autorouter_session_retention_period: 12h
+  maximum_health_check_retention_period: 7
+  maximum_daily_tag_spend_retention_period: 90d
+  maximum_spend_logs_cleanup_batch_size: 250
+  maximum_spend_logs_cleanup_max_batches: "40"
+  maximum_spend_logs_cleanup_run_budget: 10m
+  maximum_spend_logs_cleanup_batch_timeout: 90s
