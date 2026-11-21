@@ -5,7 +5,7 @@ use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::guardrail_message_scope::Object;
 use uuid::Uuid;
 
-use super::super::{failure_parts, to_json};
+use super::super::failure_parts;
 use crate::guardrails::chat_guardrail_translation::block_framing::blocked_identity::FreshIdentity;
 use crate::guardrails::chat_guardrail_translation::rewrites::response::{
     ChatResponse, ContentPart, MessageContent, ResponseMessage, ResponseToolCall,
@@ -63,7 +63,10 @@ pub(super) fn write_object_chunks(
     chunks: &[Object],
 ) {
     for (position, chunk) in positions.iter().zip(chunks) {
-        items[*position] = GuardrailValue::Object(chunk.clone());
+        let Some(slot) = items.get_mut(*position) else {
+            continue;
+        };
+        *slot = GuardrailValue::Object(chunk.clone());
     }
 }
 
@@ -89,13 +92,13 @@ pub(super) fn write_back(
         let Some(GuardrailValue::Object(message)) = choice.get_mut("message") else {
             continue;
         };
-        write_content(message.get_mut("content"), was, now);
-        write_tool_calls(message.get_mut("tool_calls"), was, now);
+        write_content(message.get_mut("content"), &was.message, &now.message);
+        write_tool_calls(message.get_mut("tool_calls"), &was.message, &now.message);
     }
 }
 
 fn write_content(slot: Option<&mut GuardrailValue>, was: &ResponseMessage, now: &ResponseMessage) {
-    let Some(slot) = slot else {
+    let Some(target) = slot else {
         return;
     };
     let (Some(was_content), Some(now_content)) = (was.content.as_ref(), now.content.as_ref())
@@ -104,12 +107,12 @@ fn write_content(slot: Option<&mut GuardrailValue>, was: &ResponseMessage, now: 
     };
     if let (MessageContent::Text(old), MessageContent::Text(new)) = (was_content, now_content) {
         if old != new {
-            *slot = GuardrailValue::Text(new.clone());
+            *target = GuardrailValue::Text(new.clone());
         }
         return;
     }
     if let (MessageContent::Parts(old), MessageContent::Parts(new)) = (was_content, now_content) {
-        write_parts(slot, old, new);
+        write_parts(target, old, new);
     }
 }
 
@@ -136,12 +139,12 @@ fn write_tool_calls(
     was: &ResponseMessage,
     now: &ResponseMessage,
 ) {
-    let (Some(slot), Some(was_calls), Some(now_calls)) =
+    let (Some(target), Some(was_calls), Some(now_calls)) =
         (slot, was.tool_calls.as_ref(), now.tool_calls.as_ref())
     else {
         return;
     };
-    let GuardrailValue::Array(calls) = slot else {
+    let GuardrailValue::Array(calls) = target else {
         return;
     };
     for (call, (was_call, now_call)) in calls.iter_mut().zip(was_calls.iter().zip(now_calls)) {
@@ -175,11 +178,11 @@ fn write_call(call: &mut GuardrailValue, was: &ResponseToolCall, now: &ResponseT
 }
 
 fn write_function_text(fields: &mut Object, key: &str, was: Option<&str>, now: Option<&str>) {
-    let Some(now) = now else {
+    let Some(replacement) = now else {
         return;
     };
-    if was == Some(now) {
+    if was == Some(replacement) {
         return;
     }
-    fields.insert(key.to_owned(), GuardrailValue::Text(now.to_owned()));
+    fields.insert(key.to_owned(), GuardrailValue::Text(replacement.to_owned()));
 }

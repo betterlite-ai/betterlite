@@ -67,8 +67,8 @@ impl<G: GuardrailContract + Send + Sync> GuardrailContract for GuardrailToApply<
 
 // The one conversion from a guardrail value to the JSON the handler modules work on
 #[must_use]
-pub(crate) fn to_json(value: &GuardrailValue) -> JsonValue {
-    match value {
+pub(crate) fn to_json(input: &GuardrailValue) -> JsonValue {
+    match input {
         GuardrailValue::Null => JsonValue::Null,
         GuardrailValue::Boolean(flag) => JsonValue::Bool(*flag),
         GuardrailValue::SignedInteger(number) => {
@@ -85,7 +85,7 @@ pub(crate) fn to_json(value: &GuardrailValue) -> JsonValue {
         GuardrailValue::Object(fields) => JsonValue::Object(
             fields
                 .iter()
-                .map(|(key, value)| (key.clone(), to_json(value)))
+                .map(|(name, value)| (name.clone(), to_json(value)))
                 .collect(),
         ),
     }

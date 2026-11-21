@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::future::Future;
 use std::marker::PhantomData;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -54,6 +53,7 @@ pub struct AnthropicTranslation<G, S> {
 }
 
 impl<G, S> AnthropicTranslation<G, S> {
+    #[must_use]
     pub fn new(stamps: S) -> Self {
         Self {
             stamps,
@@ -86,22 +86,25 @@ where
         }
     }
 
-    fn process_input_messages(
+    async fn process_input_messages(
         &self,
         data: &mut BTreeMap<String, GuardrailValue>,
         guardrail: &Self::Guardrail,
         logging_obj: Option<&mut Self::LogTarget>,
-    ) -> impl Future<Output = Result<(), Self::Failure>> + Send {
+    ) -> Result<(), Self::Failure> {
         let context = InputContext {
             skip_flags: guardrail.skip_flags,
             global_flags: guardrail.global_flags,
             guardrail_name: guardrail.guardrail_name.as_deref(),
         };
-        let applied = guardrail.guardrail.as_ref();
-        async move {
-            process_input::process_input_messages(data, applied, &context, logging_obj).await?;
-            Ok(())
-        }
+        process_input::process_input_messages(
+            data,
+            guardrail.guardrail.as_ref(),
+            &context,
+            logging_obj,
+        )
+        .await?;
+        Ok(())
     }
 
     async fn process_output_response(
@@ -121,12 +124,12 @@ where
         Ok(response)
     }
 
-    fn process_streaming_response(
+    async fn process_streaming_response(
         &self,
         responses_so_far: &mut Vec<GuardrailValue>,
         guardrail: &Self::Guardrail,
         call: TranslationCall<'_, Self::LogTarget>,
-    ) -> impl Future<Output = Result<(), Self::Failure>> + Send {
+    ) -> Result<(), Self::Failure> {
         let mut chunks = to_chunks(responses_so_far);
         let name = guardrail.guardrail_name.as_deref();
         let applied = guardrail.guardrail.as_ref();
@@ -134,22 +137,20 @@ where
         let user_api_key_dict = call.user_api_key_dict;
         let request_data = call.request_data;
         let deliver = call.deliver_ended_stream_rewrites;
-        async move {
-            // ast-grep-ignore: no-long-names
-            let result = process_stream::process_output_streaming_response(
-                &mut chunks,
-                applied,
-                name,
-                logged,
-                user_api_key_dict,
-                request_data,
-                deliver,
-            )
-            .await;
-            write_chunks(responses_so_far, &chunks);
-            result?;
-            Ok(())
-        }
+        // ast-grep-ignore: no-long-names
+        let result = process_stream::process_output_streaming_response(
+            &mut chunks,
+            applied,
+            name,
+            logged,
+            user_api_key_dict,
+            request_data,
+            deliver,
+        )
+        .await;
+        write_chunks(responses_so_far, &chunks);
+        result?;
+        Ok(())
     }
 
     fn get_streaming_scan_key(

@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::future::Future;
 use std::marker::PhantomData;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -73,6 +72,7 @@ pub struct ChatTranslation<G, S, A> {
 }
 
 impl<G, S, A> ChatTranslation<G, S, A> {
+    #[must_use]
     pub fn new(stamps: S, assembler: A) -> Self {
         Self {
             stamps,
@@ -95,21 +95,25 @@ where
     const DELIVERS_ENDED_STREAM_REWRITES: bool = true;
     const ASSEMBLES_STREAMED_RESPONSE: bool = true;
 
-    fn process_input_messages(
+    async fn process_input_messages(
         &self,
         data: &mut BTreeMap<String, GuardrailValue>,
         guardrail: &Self::Guardrail,
         logging_obj: Option<&mut Self::LogTarget>,
-    ) -> impl Future<Output = Result<(), Self::Failure>> + Send {
+    ) -> Result<(), Self::Failure> {
         let scope = InputScope {
             flags: ScopeFlags::resolve(&guardrail.skip_flags, &guardrail.global_flags),
             guardrail_name: guardrail.guardrail_name.as_deref(),
         };
         let applied = guardrail.guardrail.as_ref();
-        async move {
-            chat_rewrites::process_input_messages(data, applied, &scope, logging_obj).await?;
-            Ok(())
-        }
+        let _skip_reason = chat_rewrites::process_input::process_input_messages(
+            data,
+            applied,
+            &scope,
+            logging_obj,
+        )
+        .await?;
+        Ok(())
     }
 
     async fn process_output_response(
@@ -130,12 +134,12 @@ where
         Ok(response)
     }
 
-    fn process_streaming_response(
+    async fn process_streaming_response(
         &self,
         responses_so_far: &mut Vec<GuardrailValue>,
         guardrail: &Self::Guardrail,
         call: TranslationCall<'_, Self::LogTarget>,
-    ) -> impl Future<Output = Result<(), Self::Failure>> + Send {
+    ) -> Result<(), Self::Failure> {
         let (positions, mut chunks) = object_chunks(responses_so_far);
         let ended = EndedStream {
             principal: &guardrail.principal,
@@ -148,18 +152,16 @@ where
         let sink = call.stream_transform_sink;
         let assembler = &self.assembler;
         let applied = guardrail.guardrail.as_ref();
-        async move {
-            process_output_streaming::process_streaming_response(
-                &mut chunks,
-                applied,
-                assembler,
-                &ended,
-                sink,
-            )
-            .await?;
-            write_object_chunks(responses_so_far, &positions, &chunks);
-            Ok(())
-        }
+        process_output_streaming::process_streaming_response(
+            &mut chunks,
+            applied,
+            assembler,
+            &ended,
+            sink,
+        )
+        .await?;
+        write_object_chunks(responses_so_far, &positions, &chunks);
+        Ok(())
     }
 
     fn get_streaming_scan_key(

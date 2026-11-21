@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::future::Future;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
@@ -22,9 +21,7 @@ use super::stamps::StampSource;
 use super::undeliverable;
 use super::{GuardrailToApply, failure_message, modify_response, to_json};
 use crate::guardrails::responses_translation::block_events;
-use crate::guardrails::responses_translation::block_events::guardrail_json::{
-    blocked_original_response, to_guardrail,
-};
+use crate::guardrails::responses_translation::block_events::guardrail_json::to_guardrail;
 use crate::guardrails::responses_translation::output_rewrite;
 use crate::guardrails::responses_translation::output_rewrite::OutputContext;
 use crate::guardrails::responses_translation::output_rewrite::error::OutputRewriteError;
@@ -66,6 +63,7 @@ pub struct ResponsesTranslation<G, S> {
 }
 
 impl<G, S> ResponsesTranslation<G, S> {
+    #[must_use]
     pub fn new(stamps: S, limits: ApiLimits, cache: Arc<DualLocalCache>) -> Self {
         Self {
             stamps,
@@ -88,12 +86,12 @@ where
     const DELIVERS_ENDED_STREAM_REWRITES: bool = true;
     const ASSEMBLES_STREAMED_RESPONSE: bool = true;
 
-    fn process_input_messages(
+    async fn process_input_messages(
         &self,
         data: &mut BTreeMap<String, GuardrailValue>,
         guardrail: &Self::Guardrail,
         logging_obj: Option<&mut Self::LogTarget>,
-    ) -> impl Future<Output = Result<(), Self::Failure>> + Send {
+    ) -> Result<(), Self::Failure> {
         let context = RequestContext {
             skip_system_message: ScopeFlags::resolve(
                 &guardrail.skip_flags,
@@ -104,11 +102,14 @@ where
             limits: self.limits,
             cache: self.cache.as_ref(),
         };
-        let applied = guardrail.guardrail.as_ref();
-        async move {
-            request_rewrite::process_input_messages(data, applied, &context, logging_obj).await?;
-            Ok(())
-        }
+        request_rewrite::process_input_messages(
+            data,
+            guardrail.guardrail.as_ref(),
+            &context,
+            logging_obj,
+        )
+        .await?;
+        Ok(())
     }
 
     async fn process_output_response(
@@ -132,12 +133,12 @@ where
         Ok(response)
     }
 
-    fn process_streaming_response(
+    async fn process_streaming_response(
         &self,
         responses_so_far: &mut Vec<GuardrailValue>,
         guardrail: &Self::Guardrail,
         call: TranslationCall<'_, Self::LogTarget>,
-    ) -> impl Future<Output = Result<(), Self::Failure>> + Send {
+    ) -> Result<(), Self::Failure> {
         let mut events: Vec<JsonValue> = responses_so_far.iter().map(to_json).collect();
         let name = guardrail.guardrail_name.as_deref();
         let applied = guardrail.guardrail.as_ref();
@@ -145,26 +146,24 @@ where
         let user_api_key_dict = call.user_api_key_dict;
         let request_data = call.request_data;
         let deliver = call.deliver_ended_stream_rewrites;
-        async move {
-            // ast-grep-ignore: no-long-names
-            let result = stream_output::process_output_streaming_response(
-                &mut events,
-                applied,
-                name,
-                logged,
-                user_api_key_dict,
-                request_data,
-                deliver,
-            )
-            .await;
-            write_events(responses_so_far, &events);
-            match result {
-                Ok(()) => Ok(()),
-                Err(StreamOutputError::Sync(sync)) => Err(ResponsesTranslationError::from(
-                    undeliverable::from_stream_sync(sync),
-                )),
-                Err(error) => Err(ResponsesTranslationError::Stream(error)),
-            }
+        // ast-grep-ignore: no-long-names
+        let result = stream_output::process_output_streaming_response(
+            &mut events,
+            applied,
+            name,
+            logged,
+            user_api_key_dict,
+            request_data,
+            deliver,
+        )
+        .await;
+        write_events(responses_so_far, &events);
+        match result {
+            Ok(()) => Ok(()),
+            Err(StreamOutputError::Sync(sync)) => Err(ResponsesTranslationError::from(
+                undeliverable::from_stream_sync(sync),
+            )),
+            Err(error) => Err(ResponsesTranslationError::Stream(error)),
         }
     }
 
