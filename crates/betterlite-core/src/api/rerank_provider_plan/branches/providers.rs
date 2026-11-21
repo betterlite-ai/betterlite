@@ -64,17 +64,25 @@ impl Branches<'_> {
         Ok((self.dynamic_key(), Some(api_base)))
     }
     fn together_ai(&self) -> Result<Chain, Box<RawException>> {
-        let key = self.required_key(self.together_key(), TOGETHER_KEY_ERROR)?;
-        Ok((Some(key), self.base_with_global(None, Some(TOGETHER_BASE))))
+        let key = self.together_key();
+        let base = self.base_with_global(None, Some(TOGETHER_BASE));
+        self.keyed((key, base), TOGETHER_KEY_ERROR)
     }
     fn jina_ai(&self) -> Result<Chain, Box<RawException>> {
-        let key = self.required_key(self.resolved.api_key.clone(), JINA_KEY_ERROR)?;
+        let Some(api_key) = self.resolved.api_key.clone() else {
+            return Err(Box::new(value_failure(
+                JINA_KEY_ERROR,
+                self.model,
+                self.provider,
+            )));
+        };
         let base = self.base_with_global(self.environment.bedrock_api_base.as_ref(), None);
-        Ok((Some(key), base))
+        Ok((Some(api_key), base))
     }
     fn nvidia_nim(&self) -> Result<Chain, Box<RawException>> {
-        let key = self.required_key(self.resolved.api_key.clone(), NVIDIA_KEY_ERROR)?;
-        Ok((Some(key), self.nvidia_base()))
+        let key = self.resolved.api_key.clone();
+        let base = self.nvidia_base();
+        self.keyed((key, base), NVIDIA_KEY_ERROR)
     }
     fn bedrock(&self) -> Chain {
         (
@@ -143,12 +151,12 @@ impl Branches<'_> {
             .or_else(|| self.environment.voyage_api_key.clone())
             .or_else(|| self.environment.voyage_ai_api_key.clone())
     }
-    fn required_key(
-        &self,
-        key: Option<SecretString>,
-        error: &str,
-    ) -> Result<SecretString, Box<RawException>> {
-        key.ok_or_else(|| Box::new(value_failure(error, self.model, self.provider)))
+    fn keyed(&self, chain: Chain, error: &str) -> Result<Chain, Box<RawException>> {
+        let (key, base) = chain;
+        match key {
+            Some(api_key) => Ok((Some(api_key), base)),
+            None => Err(Box::new(value_failure(error, self.model, self.provider))),
+        }
     }
     fn required_base(
         &self,

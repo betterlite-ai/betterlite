@@ -542,28 +542,28 @@ fn mock_response_does_not_bypass_the_provider_call() {
     );
 }
 
-#[test]
-fn drop_params_uses_the_call_value_then_the_global_value() {
+#[rstest]
+#[case(true, Some(false), true)]
+#[case(false, Some(true), true)]
+#[case(false, None, false)]
+fn drop_params_uses_the_call_value_then_the_global_value(
+    #[case] global: bool,
+    #[case] call_flag: Option<bool>,
+    #[case] expected: bool,
+) {
     let ops = FakeOps::default();
     let identity = cohere_identity();
-    let cases = [
-        (true, Some(false), true),
-        (false, Some(true), true),
-        (false, None, false),
-    ];
-    for (index, (global, call_flag, expected)) in cases.into_iter().enumerate() {
-        let mut settings = defaults();
-        settings.drop_params = global;
-        let mut call = rerank_call("cohere");
-        if let Some(flag) = call_flag {
-            call.kwargs = with(&[("drop_params", Json::Bool(flag))]);
-        }
-        let case = Case::new(&ops, settings, BTreeMap::new());
-        let mut logging = logging_state();
-        case.dispatch(&identity, call, &mut logging)
-            .expect("the call dispatches");
-        assert_eq!(ops.options()[index].drop_params, expected);
+    let mut settings = defaults();
+    settings.drop_params = global;
+    let mut call = rerank_call("cohere");
+    if let Some(flag) = call_flag {
+        call.kwargs = with(&[("drop_params", Json::Bool(flag))]);
     }
+    let case = Case::new(&ops, settings, BTreeMap::new());
+    let mut logging = logging_state();
+    case.dispatch(&identity, call, &mut logging)
+        .expect("the call dispatches");
+    assert_eq!(ops.options()[0].drop_params, expected);
 }
 
 #[test]
